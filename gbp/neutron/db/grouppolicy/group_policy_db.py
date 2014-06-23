@@ -393,3 +393,83 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
                                     sorts=sorts, limit=limit,
                                     marker_obj=marker_obj,
                                     page_reverse=page_reverse)
+
+    @log.log
+    def create_policy_classifier(self, context, policy_classifier):
+        pass
+
+    @log.log
+    def update_policy_classifier(self, context, policy_classifier_id,
+                                 policy_classifier):
+        pass
+
+    @log.log
+    def delete_policy_classifier(self, context, policy_classifier_id):
+        pass
+
+    @log.log
+    def get_policy_classifier(self, context, policy_classifier_id,
+                              fields=None):
+        pass
+
+    @log.log
+    def get_policy_classifiers(self, context, filters=None, fields=None,
+                               sorts=None, limit=None, marker=None,
+                               page_reverse=False):
+        pass
+
+    @log.log
+    def get_policy_classifiers_count(self, context, filters=None):
+        pass
+
+    @log.log
+    def create_policy_action(self, context, policy_action):
+        pass
+
+    @log.log
+    def update_policy_action(self, context, policy_action_id, policy_action):
+        pass
+
+    @log.log
+    def delete_policy_action(self, context, policy_action_id):
+        pass
+
+    @log.log
+    def get_policy_action(self, context, policy_action_id, fields=None):
+        pass
+
+    @log.log
+    def get_policy_actions(self, context, filters=None, fields=None,
+                           sorts=None, limit=None, marker=None,
+                           page_reverse=False):
+        pass
+
+    @log.log
+    def get_policy_actions_count(self, context, filters=None):
+        pass
+
+    @log.log
+    def create_policy_rule(self, context, policy_rule):
+        pass
+
+    @log.log
+    def update_policy_rule(self, context, policy_rule_id, policy_rule):
+        pass
+
+    @log.log
+    def delete_policy_rule(self, context, policy_rule_id):
+        pass
+
+    @log.log
+    def get_policy_rule(self, context, policy_rule_id, fields=None):
+        pass
+
+    @log.log
+    def get_policy_rules(self, context, filters=None, fields=None,
+                         sorts=None, limit=None, marker=None,
+                         page_reverse=False):
+        pass
+
+    @log.log
+    def get_policy_rules_count(self, context, filters=None):
+        pass
