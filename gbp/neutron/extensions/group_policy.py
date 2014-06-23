@@ -18,10 +18,12 @@ from neutron.api import extensions
 from neutron.api.v2 import attributes as attr
 from neutron.api.v2 import resource_helper
 from neutron.common import exceptions as nexc
+from neutron.openstack.common import log as logging
 from neutron.plugins.common import constants
 from neutron.services import service_base
 
 import gbp.neutron.extensions
+from gbp.neutron.services.grouppolicy.common import constants as gp_constants
 
 # The code below is a monkey patch of key Neutron's modules. This is needed for
 # the GBP service to be loaded correctly. GBP extensions' path is added
@@ -32,6 +34,9 @@ constants.GROUP_POLICY = "GROUP_POLICY"
 constants.COMMON_PREFIXES["GROUP_POLICY"] = "/grouppolicy"
 constants.EXT_TO_SERVICE_MAPPING['gp'] = constants.GROUP_POLICY
 constants.ALLOWED_SERVICES.append(constants.GROUP_POLICY)
+
+
+LOG = logging.getLogger(__name__)
 
 
 # Group Policy Exceptions
@@ -56,10 +61,74 @@ class InvalidDefaultSubnetPrefixLength(nexc.InvalidInput):
                 "ipv%(protocol)s")
 
 
+class GroupPolicyInvalidProtocol(nexc.InvalidInput):
+    message = _("Protocol %(protocol)s is not supported. "
+                "Only protocol values %(values)s and their integer "
+                "representation (0 to 255) are supported.")
+
+
+# Group Policy Values
+gp_supported_actions = [None, gp_constants.GP_ACTION_ALLOW,
+                        gp_constants.GP_ACTION_REDIRECT]
+gp_supported_directions = [None, gp_constants.GP_DIRECTION_IN,
+                           gp_constants.GP_DIRECTION_OUT,
+                           gp_constants.GP_DIRECTION_BI]
+gp_supported_protocols = [None, constants.TCP, constants.UDP, constants.ICMP]
+
+
+# Group Policy input value conversion and validation functions
+def convert_protocol(value):
+    if value is None:
+        return
+    if value.lower() in gp_supported_protocols:
+        return value.lower()
+    else:
+        raise GroupPolicyInvalidProtocol(
+            protocol=value, values=gp_supported_protocols)
+
+
+def convert_action_to_case_insensitive(value):
+    if value is None:
+        return
+    else:
+        return value.lower()
+
+
+def convert_port_to_string(value):
+    if value is None:
+        return
+    else:
+        return str(value)
+
+
+def _validate_port_range(data, key_specs=None):
+    if data is None:
+        return
+    data = str(data)
+    ports = data.split(':')
+    for p in ports:
+        try:
+            val = int(p)
+        except (ValueError, TypeError):
+            msg = _("Port '%s' is not a valid number") % p
+            LOG.debug(msg)
+            return msg
+        if val <= 0 or val > 65535:
+            msg = _("Invalid port '%s', valid range 0 < port < 65536") % p
+            LOG.debug(msg)
+            return msg
+
+
+attr.validators['type:port_range'] = _validate_port_range
+
+
 ENDPOINTS = 'endpoints'
 ENDPOINT_GROUPS = 'endpoint_groups'
 L2_POLICIES = 'l2_policies'
 L3_POLICIES = 'l3_policies'
+POLICY_CLASSIFIERS = 'policy_classifiers'
+POLICY_ACTIONS = 'policy_actions'
+POLICY_RULES = 'policy_rules'
 
 
 RESOURCE_ATTRIBUTE_MAP = {
@@ -165,6 +234,79 @@ RESOURCE_ATTRIBUTE_MAP = {
                         'validate': {'type:uuid_list': None},
                         'convert_to': attr.convert_none_to_empty_list,
                         'default': None, 'is_visible': True},
+    },
+    POLICY_CLASSIFIERS: {
+        'id': {'allow_post': False, 'allow_put': False,
+               'validate': {'type:uuid': None},
+               'is_visible': True, 'primary_key': True},
+        'name': {'allow_post': True, 'allow_put': True,
+                 'validate': {'type:string': None},
+                 'default': '', 'is_visible': True},
+        'description': {'allow_post': True, 'allow_put': True,
+                        'validate': {'type:string': None},
+                        'is_visible': True, 'default': ''},
+        'tenant_id': {'allow_post': True, 'allow_put': False,
+                      'validate': {'type:string': None},
+                      'required_by_policy': True,
+                      'is_visible': True},
+        'protocol': {'allow_post': True, 'allow_put': True,
+                     'is_visible': True, 'default': None,
+                     'convert_to': convert_protocol,
+                     'validate': {'type:values': gp_supported_protocols}},
+        'port_range': {'allow_post': True, 'allow_put': True,
+                       'validate': {'type:port_range': None},
+                       'convert_to': convert_port_to_string,
+                       'default': None, 'is_visible': True},
+        'direction': {'allow_post': True, 'allow_put': True,
+                      'validate': {'type:values': gp_supported_directions},
+                      'default': None, 'is_visible': True},
+    },
+    POLICY_ACTIONS: {
+        'id': {'allow_post': False, 'allow_put': False,
+               'validate': {'type:uuid': None},
+               'is_visible': True,
+               'primary_key': True},
+        'name': {'allow_post': True, 'allow_put': True,
+                 'validate': {'type:string': None},
+                 'default': '', 'is_visible': True},
+        'description': {'allow_post': True, 'allow_put': True,
+                        'validate': {'type:string': None},
+                        'is_visible': True, 'default': ''},
+        'tenant_id': {'allow_post': True, 'allow_put': False,
+                      'validate': {'type:string': None},
+                      'required_by_policy': True,
+                      'is_visible': True},
+        'action_type': {'allow_post': True, 'allow_put': True,
+                        'convert_to': convert_action_to_case_insensitive,
+                        'validate': {'type:values': gp_supported_actions},
+                        'is_visible': True, 'default': 'allow'},
+        'action_value': {'allow_post': True, 'allow_put': True,
+                         'validate': {'type:uuid_or_none': None},
+                         'default': None, 'is_visible': True},
+    },
+    POLICY_RULES: {
+        'id': {'allow_post': False, 'allow_put': False,
+               'validate': {'type:uuid': None},
+               'is_visible': True, 'primary_key': True},
+        'name': {'allow_post': True, 'allow_put': True,
+                 'validate': {'type:string': None},
+                 'default': '', 'is_visible': True},
+        'description': {'allow_post': True, 'allow_put': True,
+                        'validate': {'type:string': None},
+                        'is_visible': True, 'default': ''},
+        'tenant_id': {'allow_post': True, 'allow_put': False,
+                      'validate': {'type:string': None},
+                      'required_by_policy': True, 'is_visible': True},
+        'enabled': {'allow_post': True, 'allow_put': True,
+                    'default': True, 'convert_to': attr.convert_to_boolean,
+                    'is_visible': True},
+        'policy_classifier_id': {'allow_post': True, 'allow_put': True,
+                                 'validate': {'type:uuid': None},
+                                 'is_visible': True, 'required': True},
+        'policy_actions': {'allow_post': True, 'allow_put': True,
+                           'default': None, 'is_visible': True,
+                           'validate': {'type:uuid_list': None},
+                           'convert_to': attr.convert_none_to_empty_list},
     },
 }
 
@@ -308,4 +450,66 @@ class GroupPolicyPluginBase(service_base.ServicePluginBase):
 
     @abc.abstractmethod
     def delete_l3_policy(self, context, l3_policy_id):
+        pass
+
+    @abc.abstractmethod
+    def get_policy_classifiers(self, context, filters=None, fields=None):
+        pass
+
+    @abc.abstractmethod
+    def get_policy_classifier(self, context, policy_classifier_id,
+                              fields=None):
+        pass
+
+    @abc.abstractmethod
+    def create_policy_classifier(self, context, policy_classifier):
+        pass
+
+    @abc.abstractmethod
+    def update_policy_classifier(self, context, policy_classifier_id,
+                                 policy_classifier):
+        pass
+
+    @abc.abstractmethod
+    def delete_policy_classifier(self, context, policy_classifier_id):
+        pass
+
+    @abc.abstractmethod
+    def get_policy_actions(self, context, filters=None, fields=None):
+        pass
+
+    @abc.abstractmethod
+    def get_policy_action(self, context, policy_action_id, fields=None):
+        pass
+
+    @abc.abstractmethod
+    def create_policy_action(self, context, policy_action):
+        pass
+
+    @abc.abstractmethod
+    def update_policy_action(self, context, policy_action_id, policy_action):
+        pass
+
+    @abc.abstractmethod
+    def delete_policy_action(self, context, policy_action_id):
+        pass
+
+    @abc.abstractmethod
+    def get_policy_rules(self, context, filters=None, fields=None):
+        pass
+
+    @abc.abstractmethod
+    def get_policy_rule(self, context, policy_rule_id, fields=None):
+        pass
+
+    @abc.abstractmethod
+    def create_policy_rule(self, context, policy_rule):
+        pass
+
+    @abc.abstractmethod
+    def update_policy_rule(self, context, policy_rule_id, policy_rule):
+        pass
+
+    @abc.abstractmethod
+    def delete_policy_rule(self, context, policy_rule_id):
         pass
