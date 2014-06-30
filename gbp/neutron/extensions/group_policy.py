@@ -57,6 +57,22 @@ class InvalidDefaultSubnetPrefixLength(nexc.InvalidInput):
                 "ipv%(protocol)s")
 
 
+class PolicyClassifierNotFound(nexc.NotFound):
+    message = _("PolicyClassifier %(policy_classifier_id)s could not be found")
+
+
+class PolicyActionNotFound(nexc.NotFound):
+    message = _("PolicyAction %(policy_action_id)s could not be found")
+
+
+class PolicyRuleNotFound(nexc.NotFound):
+    message = _("PolicyRule %(policy_rule_id)s could not be found")
+
+
+class GroupPolicyInvalidPortValue(nexc.InvalidInput):
+    message = _("Invalid value for port %(port)s")
+
+
 class GroupPolicyInvalidProtocol(nexc.InvalidInput):
     message = _("Protocol %(protocol)s is not supported. "
                 "Only protocol values %(values)s and their integer "
