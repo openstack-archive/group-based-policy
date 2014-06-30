@@ -284,6 +284,95 @@ class PolicyRuleContext(object):
 
 
 @six.add_metaclass(abc.ABCMeta)
+class PolicyClassifierContext(object):
+    """Context passed to policy engine for policy_classifier resource changes.
+
+    An PolicyClassifierContext instance wraps an policy_classifier resource.
+    It provides helper methods for accessing other relevant information.
+    Results from expensive operations are cached for convenient access.
+    """
+
+    @abc.abstractproperty
+    def current(self):
+        """Return the current state of the policy_classifier.
+
+        Return the current state of the policy_classifier, as defined by
+        GroupPolicyPlugin.create_policy_classifier.
+        """
+        pass
+
+    @abc.abstractproperty
+    def original(self):
+        """Return the original state of the policy_classifier.
+
+        Return the original state of the policy_classifier, prior to a call to
+        update_policy_classifier. Method is only valid within calls to
+        update_policy_classifier_precommit and
+        update_policy_classifier_postcommit.
+        """
+        pass
+
+
+@six.add_metaclass(abc.ABCMeta)
+class PolicyActionContext(object):
+    """Context passed to policy engine for policy_action resource changes.
+
+    An PolicyActionContext instance wraps an policy_action resource.
+    It provides helper methods for accessing other relevant information.
+    Results from expensive operations are cached for convenient access.
+    """
+
+    @abc.abstractproperty
+    def current(self):
+        """Return the current state of the policy_action.
+
+        Return the current state of the policy_action, as defined by
+        GroupPolicyPlugin.create_policy_action.
+        """
+        pass
+
+    @abc.abstractproperty
+    def original(self):
+        """Return the original state of the policy_action.
+
+        Return the original state of the policy_action, prior to a call to
+        update_policy_action. Method is only valid within calls to
+        update_policy_action_precommit and update_policy_action_postcommit.
+        """
+        pass
+
+
+@six.add_metaclass(abc.ABCMeta)
+class PolicyRuleContext(object):
+    """Context passed to policy engine for policy_rule resource changes.
+
+    An PolicyRuleContext instance wraps an policy_rule resource.
+    It provides helper methods for accessing other relevant information.
+    Results from expensive operations are cached for convenient access.
+    """
+
+    @abc.abstractproperty
+    def current(self):
+        """Return the current state of the policy_rule.
+
+        Return the current state of the policy_rule, as defined by
+        GroupPolicyPlugin.create_policy_rule.
+        """
+        pass
+
+    @abc.abstractproperty
+    def original(self):
+        """Return the original state of the policy_rule.
+
+        Return the original state of the policy_rule, prior to a call to
+        update_policy_rule. Method is only valid within calls to
+        update_policy_rule_precommit and
+        update_policy_rule_postcommit.
+        """
+        pass
+
+
+@six.add_metaclass(abc.ABCMeta)
 class PolicyDriver(object):
     """Define stable abstract interface for Group Policy drivers.
 
