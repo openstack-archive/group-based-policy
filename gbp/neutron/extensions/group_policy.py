@@ -141,6 +141,7 @@ L3_POLICIES = 'l3_policies'
 POLICY_CLASSIFIERS = 'policy_classifiers'
 POLICY_ACTIONS = 'policy_actions'
 POLICY_RULES = 'policy_rules'
+CONTRACTS = 'contracts'
 
 
 RESOURCE_ATTRIBUTE_MAP = {
@@ -319,6 +320,34 @@ RESOURCE_ATTRIBUTE_MAP = {
                            'default': None, 'is_visible': True,
                            'validate': {'type:uuid_list': None},
                            'convert_to': attr.convert_none_to_empty_list},
+    },
+    CONTRACTS: {
+        'id': {'allow_post': False, 'allow_put': False,
+               'validate': {'type:uuid': None},
+               'is_visible': True,
+               'primary_key': True},
+        'name': {'allow_post': True, 'allow_put': True,
+                 'validate': {'type:string': None},
+                 'default': '',
+                 'is_visible': True},
+        'description': {'allow_post': True, 'allow_put': True,
+                        'validate': {'type:string': None},
+                        'is_visible': True, 'default': ''},
+        'tenant_id': {'allow_post': True, 'allow_put': False,
+                      'validate': {'type:string': None},
+                      'required_by_policy': True,
+                      'is_visible': True},
+        'parent_id': {'allow_post': False, 'allow_put': False,
+                      'validate': {'type:uuid': None},
+                      'is_visible': True},
+        'child_contracts': {'allow_post': True, 'allow_put': True,
+                            'default': None, 'is_visible': True,
+                            'validate': {'type:uuid_list': None},
+                            'convert_to': attr.convert_none_to_empty_list},
+        'policy_rules': {'allow_post': True, 'allow_put': True,
+                         'default': None, 'validate': {'type:uuid_list': None},
+                         'convert_to': attr.convert_none_to_empty_list,
+                         'is_visible': True},
     },
 }
 
@@ -524,4 +553,24 @@ class GroupPolicyPluginBase(service_base.ServicePluginBase):
 
     @abc.abstractmethod
     def delete_policy_rule(self, context, policy_rule_id):
+        pass
+
+    @abc.abstractmethod
+    def create_contract(self, context, contract):
+        pass
+
+    @abc.abstractmethod
+    def update_contract(self, context, contract_id, contract):
+        pass
+
+    @abc.abstractmethod
+    def get_contracts(self, context, filters=None, fields=None):
+        pass
+
+    @abc.abstractmethod
+    def get_contract(self, context, contract_id, fields=None):
+        pass
+
+    @abc.abstractmethod
+    def delete_contract(self, context, contract_id):
         pass
