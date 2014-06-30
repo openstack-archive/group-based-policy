@@ -116,3 +116,54 @@ class L3PolicyContext(GroupPolicyContext, api.L3PolicyContext):
         routers = self._plugin._add_router_to_l3_policy(
             self._plugin_context, self._l3_policy['id'], router_id)
         self._l3_policy['routers'] = routers
+
+
+class PolicyClassifierContext(GroupPolicyContext, api.PolicyClassifierContext):
+
+    def __init__(self, plugin, plugin_context, policy_classifier,
+                 original_policy_classifier=None):
+        super(PolicyClassifierContext, self).__init__(plugin, plugin_context)
+        self._policy_classifier = policy_classifier
+        self._original_policy_classifier = original_policy_classifier
+
+    @property
+    def current(self):
+        return self._policy_classifier
+
+    @property
+    def original(self):
+        return self._original_policy_classifier
+
+
+class PolicyActionContext(GroupPolicyContext, api.PolicyActionContext):
+
+    def __init__(self, plugin, plugin_context, policy_action,
+                 original_policy_action=None):
+        super(PolicyActionContext, self).__init__(plugin, plugin_context)
+        self._policy_action = policy_action
+        self._original_policy_action = original_policy_action
+
+    @property
+    def current(self):
+        return self._policy_action
+
+    @property
+    def original(self):
+        return self._original_policy_action
+
+
+class PolicyRuleContext(GroupPolicyContext, api.PolicyRuleContext):
+
+    def __init__(self, plugin, plugin_context, policy_rule,
+                 original_policy_rule=None):
+        super(PolicyRuleContext, self).__init__(plugin, plugin_context)
+        self._policy_rule = policy_rule
+        self._original_policy_rule = original_policy_rule
+
+    @property
+    def current(self):
+        return self._policy_rule
+
+    @property
+    def original(self):
+        return self._original_policy_rule
