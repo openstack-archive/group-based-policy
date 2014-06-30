@@ -16,6 +16,7 @@ import webob.exc
 from neutron.api import extensions
 from neutron import context
 from neutron.openstack.common import importutils
+from neutron.openstack.common import uuidutils
 from neutron.plugins.common import constants
 from neutron.tests.unit import test_db_plugin
 from neutron.tests.unit import test_extensions
@@ -26,6 +27,7 @@ from gbp.neutron.extensions import group_policy as gpolicy
 
 
 JSON_FORMAT = 'json'
+_uuid = uuidutils.generate_uuid
 
 
 class GroupPolicyDBTestBase(object):
@@ -92,6 +94,38 @@ class GroupPolicyDBTestBase(object):
                  'tenant_id': self._tenant_id, 'ip_version': ip_version,
                  'ip_pool': ip_pool,
                  'subnet_prefix_length': subnet_prefix_length}
+
+        return attrs
+
+    def _get_test_policy_classifier_attrs(self, name='pc1',
+                                          description='test pc',
+                                          protocol=None, port_range=None,
+                                          direction=None):
+        attrs = {'name': name, 'description': description,
+                 'protocol': protocol, 'port_range': port_range,
+                 'direction': direction, 'tenant_id': self._tenant_id}
+
+        return attrs
+
+    def _get_test_policy_action_attrs(self, name='pa1',
+                                      description='test pa',
+                                      action_type='allow',
+                                      action_value=None):
+        attrs = {'name': name, 'description': description,
+                 'action_type': action_type, 'action_value': action_value,
+                 'tenant_id': self._tenant_id}
+
+        return attrs
+
+    def _get_test_policy_rule_attrs(self, policy_classifier_id, name='pr1',
+                                    description='test pr', policy_actions=None,
+                                    enabled=True):
+        if not policy_actions:
+            policy_actions = []
+        attrs = {'name': name, 'description': description,
+                 'tenant_id': self._tenant_id,
+                 'policy_classifier_id': policy_classifier_id,
+                 'policy_actions': policy_actions, 'enabled': enabled}
 
         return attrs
 
@@ -180,6 +214,71 @@ class GroupPolicyDBTestBase(object):
         l3p = self.deserialize(self.fmt, l3p_res)
 
         return l3p
+
+    def create_policy_classifier(self, expected_res_status=None, **kwargs):
+        defaults = {'name': 'pc1', 'description': 'test pc', 'protocol': None,
+                    'port_range': None, 'direction': None}
+        defaults.update(kwargs)
+        kwargs = defaults
+
+        data = {'policy_classifier': {'tenant_id': self._tenant_id}}
+        data['policy_classifier'].update(kwargs)
+
+        pc_req = self.new_create_request('policy_classifiers', data, self.fmt)
+        pc_res = pc_req.get_response(self.ext_api)
+
+        if expected_res_status:
+            self.assertEqual(pc_res.status_int, expected_res_status)
+        elif pc_res.status_int >= webob.exc.HTTPClientError.code:
+            raise webob.exc.HTTPClientError(code=pc_res.status_int)
+
+        pc = self.deserialize(self.fmt, pc_res)
+
+        return pc
+
+    def create_policy_action(self, expected_res_status=None, **kwargs):
+        defaults = {'name': 'pa1', 'description': 'test pa',
+                    'action_type': 'allow', 'action_value': None}
+        defaults.update(kwargs)
+        kwargs = defaults
+
+        data = {'policy_action': {'tenant_id': self._tenant_id}}
+        data['policy_action'].update(kwargs)
+
+        pa_req = self.new_create_request('policy_actions', data, self.fmt)
+        pa_res = pa_req.get_response(self.ext_api)
+
+        if expected_res_status:
+            self.assertEqual(pa_res.status_int, expected_res_status)
+        elif pa_res.status_int >= webob.exc.HTTPClientError.code:
+            raise webob.exc.HTTPClientError(code=pa_res.status_int)
+
+        pa = self.deserialize(self.fmt, pa_res)
+
+        return pa
+
+    def create_policy_rule(self, policy_classifier_id,
+                           expected_res_status=None, **kwargs):
+        defaults = {'name': 'pr1', 'description': 'test pr',
+                    'policy_classifier_id': policy_classifier_id,
+                    'policy_actions': None, 'enabled': True}
+        defaults.update(kwargs)
+        kwargs = defaults
+
+        data = {'policy_rule': {'tenant_id': self._tenant_id}}
+        data['policy_rule'].update(kwargs)
+
+        pr_req = self.new_create_request('policy_rules', data, self.fmt)
+        pr_res = pr_req.get_response(self.ext_api)
+
+        if expected_res_status:
+            self.assertEqual(pr_res.status_int, expected_res_status)
+        elif pr_res.status_int >= webob.exc.HTTPClientError.code:
+            raise webob.exc.HTTPClientError(code=pr_res.status_int)
+
+        pr = self.deserialize(self.fmt, pr_res)
+
+        return pr
 
 
 class GroupPolicyDBTestPlugin(gpdb.GroupPolicyDbPlugin):
@@ -468,3 +567,206 @@ class TestGroupResources(GroupPolicyDbTestCase):
         self.assertEqual(res.status_int, webob.exc.HTTPNoContent.code)
         self.assertRaises(gpolicy.L3PolicyNotFound, self.plugin.get_l3_policy,
                           ctx, l3p_id)
+
+    def test_create_and_show_policy_classifier(self):
+        name = "pc1"
+        attrs = self._get_test_policy_classifier_attrs(name=name)
+
+        pc = self.create_policy_classifier(name=name)
+
+        for k, v in attrs.iteritems():
+            self.assertEqual(pc['policy_classifier'][k], v)
+
+        req = self.new_show_request('policy_classifiers',
+                                    pc['policy_classifier']['id'],
+                                    fmt=self.fmt)
+        res = self.deserialize(self.fmt, req.get_response(self.ext_api))
+
+        for k, v in attrs.iteritems():
+            self.assertEqual(res['policy_classifier'][k], v)
+
+        self._test_show_resource('policy_classifier',
+                                 pc['policy_classifier']['id'], attrs)
+
+    def test_list_policy_classifiers(self):
+        policy_classifiers = [
+            self.create_policy_classifier(name='pc1', description='pc'),
+            self.create_policy_classifier(name='pc2', description='pc'),
+            self.create_policy_classifier(name='pc3', description='pc')]
+        self._test_list_resources('policy_classifier', policy_classifiers,
+                                  query_params='description=pc')
+
+    def test_update_policy_classifier(self):
+        name = "new_policy_classifier"
+        description = 'new desc'
+        protocol = 'tcp'
+        port_range = '100:200'
+        direction = 'in'
+        attrs = self._get_test_policy_classifier_attrs(
+            name=name, description=description, protocol=protocol,
+            port_range=port_range, direction=direction)
+
+        pc = self.create_policy_classifier()
+        data = {'policy_classifier': {'name': name, 'description': description,
+                                      'protocol': protocol, 'port_range':
+                                      port_range, 'direction': direction}}
+
+        req = self.new_update_request('policy_classifiers', data,
+                                      pc['policy_classifier']['id'])
+        res = self.deserialize(self.fmt, req.get_response(self.ext_api))
+
+        for k, v in attrs.iteritems():
+            self.assertEqual(res['policy_classifier'][k], v)
+
+        self._test_show_resource('policy_classifier',
+                                 pc['policy_classifier']['id'], attrs)
+
+    def test_delete_policy_classifier(self):
+        ctx = context.get_admin_context()
+
+        pc = self.create_policy_classifier()
+        pc_id = pc['policy_classifier']['id']
+
+        req = self.new_delete_request('policy_classifiers', pc_id)
+        res = req.get_response(self.ext_api)
+        self.assertEqual(res.status_int, webob.exc.HTTPNoContent.code)
+        self.assertRaises(gpolicy.PolicyClassifierNotFound,
+                          self.plugin.get_policy_classifier, ctx, pc_id)
+
+    def test_create_and_show_policy_action(self):
+        name = "pa1"
+        attrs = self._get_test_policy_action_attrs(name=name)
+
+        pa = self.create_policy_action(name=name)
+
+        for k, v in attrs.iteritems():
+            self.assertEqual(pa['policy_action'][k], v)
+
+        req = self.new_show_request('policy_actions',
+                                    pa['policy_action']['id'],
+                                    fmt=self.fmt)
+        res = self.deserialize(self.fmt, req.get_response(self.ext_api))
+
+        for k, v in attrs.iteritems():
+            self.assertEqual(res['policy_action'][k], v)
+
+        self._test_show_resource('policy_action',
+                                 pa['policy_action']['id'], attrs)
+
+    def test_list_policy_actions(self):
+        policy_actions = [
+            self.create_policy_action(name='pa1', description='pa'),
+            self.create_policy_action(name='pa2', description='pa'),
+            self.create_policy_action(name='pa3', description='pa')]
+        self._test_list_resources('policy_action', policy_actions,
+                                  query_params='description=pa')
+
+    def test_update_policy_action(self):
+        name = "new_policy_action"
+        description = 'new desc'
+        action_value = _uuid()
+        attrs = self._get_test_policy_action_attrs(
+            name=name, description=description, action_value=action_value)
+
+        pa = self.create_policy_action()
+        data = {'policy_action': {'name': name, 'description': description,
+                                  'action_value': action_value}}
+
+        req = self.new_update_request('policy_actions', data,
+                                      pa['policy_action']['id'])
+        res = self.deserialize(self.fmt, req.get_response(self.ext_api))
+
+        for k, v in attrs.iteritems():
+            self.assertEqual(res['policy_action'][k], v)
+
+        self._test_show_resource('policy_action',
+                                 pa['policy_action']['id'], attrs)
+
+    def test_delete_policy_action(self):
+        ctx = context.get_admin_context()
+
+        pa = self.create_policy_action()
+        pa_id = pa['policy_action']['id']
+
+        req = self.new_delete_request('policy_actions', pa_id)
+        res = req.get_response(self.ext_api)
+        self.assertEqual(res.status_int, webob.exc.HTTPNoContent.code)
+        self.assertRaises(gpolicy.PolicyActionNotFound,
+                          self.plugin.get_policy_action, ctx, pa_id)
+
+    def test_create_and_show_policy_rule(self):
+        name = "pr1"
+        pc = self.create_policy_classifier()
+        pc_id = pc['policy_classifier']['id']
+        attrs = self._get_test_policy_rule_attrs(
+            name=name, policy_classifier_id=pc_id)
+
+        pr = self.create_policy_rule(
+            name=name, policy_classifier_id=pc_id)
+
+        for k, v in attrs.iteritems():
+            self.assertEqual(pr['policy_rule'][k], v)
+
+        req = self.new_show_request('policy_rules', pr['policy_rule']['id'],
+                                    fmt=self.fmt)
+        res = self.deserialize(self.fmt, req.get_response(self.ext_api))
+
+        for k, v in attrs.iteritems():
+            self.assertEqual(res['policy_rule'][k], v)
+
+        self._test_show_resource('policy_rule',
+                                 pr['policy_rule']['id'], attrs)
+
+    def test_list_policy_rules(self):
+        pcs = [self.create_policy_classifier()['policy_classifier']['id'],
+               self.create_policy_classifier()['policy_classifier']['id'],
+               self.create_policy_classifier()['policy_classifier']['id']]
+        policy_rules = [
+            self.create_policy_rule(name='pr1', description='pr',
+                                    policy_classifier_id=pcs[0]),
+            self.create_policy_rule(name='pr2', description='pr',
+                                    policy_classifier_id=pcs[1]),
+            self.create_policy_rule(name='pr3', description='pr',
+                                    policy_classifier_id=pcs[2])]
+        self._test_list_resources('policy_rule', policy_rules,
+                                  query_params='description=pr')
+
+    def test_update_policy_rule(self):
+        name = "new_policy_rule"
+        description = 'new desc'
+        enabled = False
+        pc = self.create_policy_classifier()
+        pc_id = pc['policy_classifier']['id']
+        pa = self.create_policy_action()
+        pa_id = pa['policy_action']['id']
+        attrs = self._get_test_policy_rule_attrs(
+            name=name, description=description, policy_classifier_id=pc_id,
+            policy_actions=[pa_id], enabled=enabled)
+
+        pr = self.create_policy_rule(policy_classifier_id=pc_id)
+        data = {'policy_rule': {'name': name, 'description': description,
+                                'policy_classifier_id': pc_id,
+                                'policy_actions': [pa_id], 'enabled': enabled}}
+
+        req = self.new_update_request('policy_rules', data,
+                                      pr['policy_rule']['id'])
+        res = self.deserialize(self.fmt, req.get_response(self.ext_api))
+
+        for k, v in attrs.iteritems():
+            self.assertEqual(res['policy_rule'][k], v)
+
+        self._test_show_resource('policy_rule',
+                                 pr['policy_rule']['id'], attrs)
+
+    def test_delete_policy_rule(self):
+        ctx = context.get_admin_context()
+        pc = self.create_policy_classifier()
+        pc_id = pc['policy_classifier']['id']
+        pr = self.create_policy_rule(policy_classifier_id=pc_id)
+        pr_id = pr['policy_rule']['id']
+
+        req = self.new_delete_request('policy_rules', pr_id)
+        res = req.get_response(self.ext_api)
+        self.assertEqual(res.status_int, webob.exc.HTTPNoContent.code)
+        self.assertRaises(gpolicy.PolicyRuleNotFound,
+                          self.plugin.get_policy_rule, ctx, pr_id)
