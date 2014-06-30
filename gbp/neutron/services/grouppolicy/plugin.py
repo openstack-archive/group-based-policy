@@ -293,3 +293,193 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
                 LOG.error(_("delete_l3_policy_postcommit "
                             " failed, deleting l3_policy '%s'"), l3_policy_id)
         return True
+
+    @log.log
+    def create_policy_classifier(self, context, policy_classifier):
+        session = context.session
+        with session.begin(subtransactions=True):
+            result = super(
+                GroupPolicyPlugin, self).create_policy_classifier(
+                    context, policy_classifier)
+            policy_context = p_context.PolicyClassifierContext(self, context,
+                                                               result)
+            self.policy_driver_manager.create_policy_classifier_precommit(
+                policy_context)
+
+        try:
+            self.policy_driver_manager.create_policy_classifier_postcommit(
+                policy_context)
+        except gp_exc.GroupPolicyDriverError:
+            with excutils.save_and_reraise_exception():
+                LOG.error(_(
+                    "policy_driver_manager.create_policy_classifier_postcommit"
+                    " failed, deleting policy_classifier '%s'"), result['id'])
+                self.delete_policy_classifier(context, result['id'])
+
+        return result
+
+    @log.log
+    def update_policy_classifier(self, context, id, policy_classifier):
+        session = context.session
+        with session.begin(subtransactions=True):
+            original_policy_classifier = super(
+                GroupPolicyPlugin, self).get_policy_classifier(context, id)
+            updated_policy_classifier = super(
+                GroupPolicyPlugin, self).update_policy_classifier(
+                    context, id, policy_classifier)
+            policy_context = p_context.PolicyClassifierContext(
+                self, context, updated_policy_classifier,
+                original_policy_classifier=original_policy_classifier)
+            self.policy_driver_manager.update_policy_classifier_precommit(
+                policy_context)
+
+        self.policy_driver_manager.update_policy_classifier_postcommit(
+            policy_context)
+        return updated_policy_classifier
+
+    @log.log
+    def delete_policy_classifier(self, context, id):
+        session = context.session
+        with session.begin(subtransactions=True):
+            policy_classifier = self.get_policy_classifier(context, id)
+            policy_context = p_context.PolicyClassifierContext(
+                self, context, policy_classifier)
+            self.policy_driver_manager.delete_policy_classifier_precommit(
+                policy_context)
+            super(GroupPolicyPlugin, self).delete_policy_classifier(
+                context, id)
+
+        try:
+            self.policy_driver_manager.delete_policy_classifier_postcommit(
+                policy_context)
+        except gp_exc.GroupPolicyDriverError:
+            with excutils.save_and_reraise_exception():
+                LOG.error(_(
+                    "policy_driver_manager.delete_policy_classifier_postcommit"
+                    " failed, deleting policy_classifier '%s'"), id)
+
+    @log.log
+    def create_policy_action(self, context, policy_action):
+        session = context.session
+        with session.begin(subtransactions=True):
+            result = super(GroupPolicyPlugin,
+                           self).create_policy_action(context, policy_action)
+            policy_context = p_context.PolicyActionContext(self, context,
+                                                           result)
+            self.policy_driver_manager.create_policy_action_precommit(
+                policy_context)
+
+        try:
+            self.policy_driver_manager.create_policy_action_postcommit(
+                policy_context)
+        except gp_exc.GroupPolicyDriverError:
+            with excutils.save_and_reraise_exception():
+                LOG.error(_(
+                    "policy_driver_manager.create_policy_action_postcommit "
+                    "failed, deleting policy_action '%s'"), result['id'])
+                self.delete_policy_action(context, result['id'])
+
+        return result
+
+    @log.log
+    def update_policy_action(self, context, id, policy_action):
+        session = context.session
+        with session.begin(subtransactions=True):
+            original_policy_action = super(
+                GroupPolicyPlugin, self).get_policy_action(context, id)
+            updated_policy_action = super(
+                GroupPolicyPlugin, self).update_policy_action(context, id,
+                                                              policy_action)
+            policy_context = p_context.PolicyActionContext(
+                self, context, updated_policy_action,
+                original_policy_action=original_policy_action)
+            self.policy_driver_manager.update_policy_action_precommit(
+                policy_context)
+
+        self.policy_driver_manager.update_policy_action_postcommit(
+            policy_context)
+        return updated_policy_action
+
+    @log.log
+    def delete_policy_action(self, context, id):
+        session = context.session
+        with session.begin(subtransactions=True):
+            policy_action = self.get_policy_action(context, id)
+            policy_context = p_context.PolicyActionContext(self, context,
+                                                           policy_action)
+            self.policy_driver_manager.delete_policy_action_precommit(
+                policy_context)
+            super(GroupPolicyPlugin, self).delete_policy_action(context, id)
+
+        try:
+            self.policy_driver_manager.delete_policy_action_postcommit(
+                policy_context)
+        except gp_exc.GroupPolicyDriverError:
+            with excutils.save_and_reraise_exception():
+                LOG.error(_(
+                    "policy_driver_manager.delete_policy_action_postcommit "
+                    "failed, deleting policy_action '%s'"), id)
+
+    @log.log
+    def create_policy_rule(self, context, policy_rule):
+        session = context.session
+        with session.begin(subtransactions=True):
+            result = super(
+                GroupPolicyPlugin, self).create_policy_rule(
+                    context, policy_rule)
+            policy_context = p_context.PolicyRuleContext(self, context,
+                                                         result)
+            self.policy_driver_manager.create_policy_rule_precommit(
+                policy_context)
+
+        try:
+            self.policy_driver_manager.create_policy_rule_postcommit(
+                policy_context)
+        except gp_exc.GroupPolicyDriverError:
+            with excutils.save_and_reraise_exception():
+                LOG.error(_(
+                    "policy_driver_manager.create_policy_rule_postcommit"
+                    " failed, deleting policy_rule '%s'"), result['id'])
+                self.delete_policy_rule(context, result['id'])
+
+        return result
+
+    @log.log
+    def update_policy_rule(self, context, id, policy_rule):
+        session = context.session
+        with session.begin(subtransactions=True):
+            original_policy_rule = super(
+                GroupPolicyPlugin, self).get_policy_rule(context, id)
+            updated_policy_rule = super(
+                GroupPolicyPlugin, self).update_policy_rule(
+                    context, id, policy_rule)
+            policy_context = p_context.PolicyRuleContext(
+                self, context, updated_policy_rule,
+                original_policy_rule=original_policy_rule)
+            self.policy_driver_manager.update_policy_rule_precommit(
+                policy_context)
+
+        self.policy_driver_manager.update_policy_rule_postcommit(
+            policy_context)
+        return updated_policy_rule
+
+    @log.log
+    def delete_policy_rule(self, context, id):
+        session = context.session
+        with session.begin(subtransactions=True):
+            policy_rule = self.get_policy_rule(context, id)
+            policy_context = p_context.PolicyRuleContext(self, context,
+                                                         policy_rule)
+            self.policy_driver_manager.delete_policy_rule_precommit(
+                policy_context)
+            super(GroupPolicyPlugin, self).delete_policy_rule(
+                context, id)
+
+        try:
+            self.policy_driver_manager.delete_policy_rule_postcommit(
+                policy_context)
+        except gp_exc.GroupPolicyDriverError:
+            with excutils.save_and_reraise_exception():
+                LOG.error(_(
+                    "policy_driver_manager.delete_policy_rule_postcommit"
+                    " failed, deleting policy_rule '%s'"), id)
