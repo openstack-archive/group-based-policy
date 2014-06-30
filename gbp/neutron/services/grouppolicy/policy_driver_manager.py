@@ -199,3 +199,60 @@ class PolicyDriverManager(stevedore.named.NamedExtensionManager):
     def delete_l3_policy_postcommit(self, context):
         self._call_on_drivers("delete_l3_policy_postcommit", context,
                               continue_on_failure=True)
+
+    def create_policy_classifier_precommit(self, context):
+        self._call_on_drivers("create_policy_classifier_precommit", context)
+
+    def create_policy_classifier_postcommit(self, context):
+        self._call_on_drivers("create_policy_classifier_postcommit", context)
+
+    def update_policy_classifier_precommit(self, context):
+        self._call_on_drivers("update_policy_classifier_precommit", context)
+
+    def update_policy_classifier_postcommit(self, context):
+        self._call_on_drivers("update_policy_classifier_postcommit", context)
+
+    def delete_policy_classifier_precommit(self, context):
+        self._call_on_drivers("delete_policy_classifier_precommit", context)
+
+    def delete_policy_classifier_postcommit(self, context):
+        self._call_on_drivers("delete_policy_classifier_postcommit", context,
+                              continue_on_failure=True)
+
+    def create_policy_action_precommit(self, context):
+        self._call_on_drivers("create_policy_action_precommit", context)
+
+    def create_policy_action_postcommit(self, context):
+        self._call_on_drivers("create_policy_action_postcommit", context)
+
+    def update_policy_action_precommit(self, context):
+        self._call_on_drivers("update_policy_action_precommit", context)
+
+    def update_policy_action_postcommit(self, context):
+        self._call_on_drivers("update_policy_action_postcommit", context)
+
+    def delete_policy_action_precommit(self, context):
+        self._call_on_drivers("delete_policy_action_precommit", context)
+
+    def delete_policy_action_postcommit(self, context):
+        self._call_on_drivers("delete_policy_action_postcommit", context,
+                              continue_on_failure=True)
+
+    def create_policy_rule_precommit(self, context):
+        self._call_on_drivers("create_policy_rule_precommit", context)
+
+    def create_policy_rule_postcommit(self, context):
+        self._call_on_drivers("create_policy_rule_postcommit", context)
+
+    def update_policy_rule_precommit(self, context):
+        self._call_on_drivers("update_policy_rule_precommit", context)
+
+    def update_policy_rule_postcommit(self, context):
+        self._call_on_drivers("update_policy_rule_postcommit", context)
+
+    def delete_policy_rule_precommit(self, context):
+        self._call_on_drivers("delete_policy_rule_precommit", context)
+
+    def delete_policy_rule_postcommit(self, context):
+        self._call_on_drivers("delete_policy_rule_postcommit", context,
+                              continue_on_failure=True)
