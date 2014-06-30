@@ -20,8 +20,10 @@ from neutron.db import model_base
 from neutron.db import models_v2
 from neutron.openstack.common import log as logging
 from neutron.openstack.common import uuidutils
+from neutron.plugins.common import constants
 
 from gbp.neutron.extensions import group_policy as gpolicy
+from gbp.neutron.services.grouppolicy.common import constants as gp_constants
 
 
 LOG = logging.getLogger(__name__)
@@ -95,6 +97,68 @@ class L3Policy(model_base.BASEV2, models_v2.HasId, models_v2.HasTenant):
     l2_policies = orm.relationship(L2Policy, backref='l3_policy')
 
 
+class PolicyRuleActionAssociation(model_base.BASEV2):
+    """Many to many relation between PolicyRules and PolicyActions."""
+    __tablename__ = 'gp_policy_rule_action_associations'
+    policy_rule_id = sa.Column(sa.String(36),
+                               sa.ForeignKey('gp_policy_rules.id'),
+                               primary_key=True)
+    policy_action_id = sa.Column(sa.String(36),
+                                 sa.ForeignKey(
+                                 'gp_policy_actions.id'),
+                                 primary_key=True)
+
+
+class PolicyRule(model_base.BASEV2, models_v2.HasId, models_v2.HasTenant):
+    """Represents a Group Policy Rule."""
+    __tablename__ = 'gp_policy_rules'
+    name = sa.Column(sa.String(50))
+    description = sa.Column(sa.String(255))
+    enabled = sa.Column(sa.Boolean)
+    policy_classifier_id = sa.Column(sa.String(36),
+                                     sa.ForeignKey(
+                                     'gp_policy_classifiers.id'),
+                                     nullable=False)
+    policy_actions = orm.relationship(PolicyRuleActionAssociation,
+                                      backref='gp_policy_rules',
+                                      cascade='all', lazy="joined")
+
+
+class PolicyClassifier(model_base.BASEV2, models_v2.HasId,
+                       models_v2.HasTenant):
+    """Represents a Group Policy Classifier."""
+    __tablename__ = 'gp_policy_classifiers'
+    name = sa.Column(sa.String(50))
+    description = sa.Column(sa.String(255))
+    protocol = sa.Column(sa.Enum(constants.TCP, constants.UDP, constants.ICMP,
+                                 name="protocol_type"),
+                         nullable=True)
+    port_range_min = sa.Column(sa.Integer)
+    port_range_max = sa.Column(sa.Integer)
+    direction = sa.Column(sa.Enum(gp_constants.GP_DIRECTION_IN,
+                                  gp_constants.GP_DIRECTION_OUT,
+                                  gp_constants.GP_DIRECTION_BI,
+                                  name='direction'))
+    policy_rules = orm.relationship(PolicyRule,
+                                    backref='gp_policy_classifiers')
+
+
+class PolicyAction(model_base.BASEV2, models_v2.HasId, models_v2.HasTenant):
+    """Represents a Group Policy Action."""
+    __tablename__ = 'gp_policy_actions'
+    name = sa.Column(sa.String(50))
+    description = sa.Column(sa.String(255))
+    action_type = sa.Column(sa.Enum(gp_constants.GP_ALLOW,
+                                    gp_constants.GP_REDIRECT,
+                                    name='action_type'))
+    # Default action_value would be Null when action_type is allow
+    # however, value is required if something meaningful needs to be done
+    # for redirect
+    action_value = sa.Column(sa.String(36), nullable=True)
+    policy_rules = orm.relationship(PolicyRuleActionAssociation,
+                                    cascade='all', backref='gp_policy_actions')
+
+
 class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
                           common_db_mixin.CommonDbMixin):
     """GroupPolicy plugin interface implementation using SQLAlchemy models."""
@@ -130,8 +194,87 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
         try:
             return self._get_by_id(context, L3Policy, l3_policy_id)
         except exc.NoResultFound:
-            raise gpolicy.L3PolicyNotFound(
-                l3_policy_id=l3_policy_id)
+            raise gpolicy.L3PolicyNotFound(l3_policy_id=
+                                           l3_policy_id)
+
+    def _get_policy_classifier(self, context, policy_classifier_id):
+        try:
+            return self._get_by_id(context, PolicyClassifier,
+                                   policy_classifier_id)
+        except exc.NoResultFound:
+            raise gpolicy.PolicyClassifierNotFound(policy_classifier_id=
+                                                   policy_classifier_id)
+
+    def _get_policy_action(self, context, policy_action_id):
+        try:
+            policy_action = self._get_by_id(context, PolicyAction,
+                                            policy_action_id)
+        except exc.NoResultFound:
+            raise gpolicy.PolicyActionNotFound(policy_action_id=
+                                               policy_action_id)
+        return policy_action
+
+    def _get_policy_rule(self, context, policy_rule_id):
+        try:
+            policy_rule = self._get_by_id(context, PolicyRule,
+                                          policy_rule_id)
+        except exc.NoResultFound:
+            raise gpolicy.PolicyRuleNotFound(policy_rule_id=
+                                             policy_rule_id)
+        return policy_rule
+
+    def _get_min_max_ports_from_range(self, port_range):
+        if not port_range:
+            return [None, None]
+        min_port, sep, max_port = port_range.partition(":")
+        if not max_port:
+            max_port = min_port
+        return [int(min_port), int(max_port)]
+
+    def _get_port_range_from_min_max_ports(self, min_port, max_port):
+        if not min_port:
+            return None
+        if min_port == max_port:
+            return str(min_port)
+        else:
+            return '%d:%d' % (min_port, max_port)
+
+    def _set_l3_policy_for_l2_policy(self, context, l2p_id, l3p_id):
+        with context.session.begin(subtransactions=True):
+            l2p_db = self._get_l2_policy(context, l2p_id)
+            l2p_db.l3_policy_id = l3p_id
+
+    def _set_l2_policy_for_endpoint_group(self, context, epg_id, l2p_id):
+        with context.session.begin(subtransactions=True):
+            epg_db = self._get_endpoint_group(context, epg_id)
+            epg_db.l2_policy_id = l2p_id
+
+    def _set_actions_for_rule(self, context, policy_rule_db, action_id_list):
+        pr_db = policy_rule_db
+        if not action_id_list:
+            pr_db.policy_actions = []
+            return
+        with context.session.begin(subtransactions=True):
+            # We will first check if the new list of actions is valid
+            filters = {'id': [a_id for a_id in action_id_list]}
+            actions_in_db = self._get_collection_query(context, PolicyAction,
+                                                       filters=filters)
+            actions_dict = dict((a_db['id'], a_db) for a_db in actions_in_db)
+            for action_id in action_id_list:
+                if action_id not in actions_dict:
+                    # If we find an invalid action in the list we
+                    # do not perform the update
+                    raise gpolicy.PolicyActionNotFound(policy_action_id=
+                                                       action_id)
+            # New list of actions is valid so we will first reset the existing
+            # list and then add each action in order.
+            # Note that the list could be empty in which case we interpret
+            # it as clearing existing rules.
+            pr_db.policy_actions = []
+            for action_id in action_id_list:
+                assoc = PolicyRuleActionAssociation(policy_rule_id=pr_db.id,
+                                                    policy_action_id=action_id)
+                pr_db.policy_actions.append(assoc)
 
     def _make_endpoint_dict(self, ep, fields=None):
         res = {'id': ep['id'],
@@ -175,6 +318,39 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
                l3p['subnet_prefix_length']}
         res['l2_policies'] = [l2p['id']
                               for l2p in l3p['l2_policies']]
+        return self._fields(res, fields)
+
+    def _make_policy_classifier_dict(self, pc, fields=None):
+        port_range = self._get_port_range_from_min_max_ports(
+            pc['port_range_min'],
+            pc['port_range_max'])
+        res = {'id': pc['id'],
+               'tenant_id': pc['tenant_id'],
+               'name': pc['name'],
+               'description': pc['description'],
+               'protocol': pc['protocol'],
+               'port_range': port_range,
+               'direction': pc['direction']}
+        return self._fields(res, fields)
+
+    def _make_policy_action_dict(self, pa, fields=None):
+        res = {'id': pa['id'],
+               'tenant_id': pa['tenant_id'],
+               'name': pa['name'],
+               'description': pa['description'],
+               'action_type': pa['action_type'],
+               'action_value': pa['action_value']}
+        return self._fields(res, fields)
+
+    def _make_policy_rule_dict(self, pr, fields=None):
+        res = {'id': pr['id'],
+               'tenant_id': pr['tenant_id'],
+               'name': pr['name'],
+               'description': pr['description'],
+               'enabled': pr['enabled'],
+               'policy_classifier_id': pr['policy_classifier_id']}
+        res['policy_actions'] = [pa['policy_action_id']
+                                 for pa in pr['policy_actions']]
         return self._fields(res, fields)
 
     @staticmethod
@@ -396,80 +572,163 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
 
     @log.log
     def create_policy_classifier(self, context, policy_classifier):
-        pass
+        pc = policy_classifier['policy_classifier']
+        tenant_id = self._get_tenant_id_for_create(context, pc)
+        port_min, port_max = self._get_min_max_ports_from_range(
+            pc['port_range'])
+        with context.session.begin(subtransactions=True):
+            pc_db = PolicyClassifier(id=uuidutils.generate_uuid(),
+                                     tenant_id=tenant_id,
+                                     name=pc['name'],
+                                     description=pc['description'],
+                                     protocol=pc['protocol'],
+                                     port_range_min=port_min,
+                                     port_range_max=port_max,
+                                     direction=pc['direction'])
+            context.session.add(pc_db)
+        return self._make_policy_classifier_dict(pc_db)
 
     @log.log
     def update_policy_classifier(self, context, policy_classifier_id,
                                  policy_classifier):
-        pass
+        pc = policy_classifier['policy_classifier']
+        with context.session.begin(subtransactions=True):
+            pc_db = self._get_policy_classifier(context, policy_classifier_id)
+            if 'port_range' in pc:
+                port_min, port_max = self._get_min_max_ports_from_range(
+                    pc['port_range'])
+                pc.update({'port_range_min': port_min,
+                           'port_range_max': port_max})
+                del pc['port_range']
+            pc_db.update(pc)
+        return self._make_policy_classifier_dict(pc_db)
 
     @log.log
     def delete_policy_classifier(self, context, policy_classifier_id):
-        pass
+        with context.session.begin(subtransactions=True):
+            pc_db = self._get_policy_classifier(context, policy_classifier_id)
+            context.session.delete(pc_db)
 
     @log.log
     def get_policy_classifier(self, context, policy_classifier_id,
                               fields=None):
-        pass
+        pc = self._get_policy_classifier(context, policy_classifier_id)
+        return self._make_policy_classifier_dict(pc, fields)
 
     @log.log
     def get_policy_classifiers(self, context, filters=None, fields=None,
                                sorts=None, limit=None, marker=None,
                                page_reverse=False):
-        pass
+        marker_obj = self._get_marker_obj(context, 'policy_classifier', limit,
+                                          marker)
+        return self._get_collection(context, PolicyClassifier,
+                                    self._make_policy_classifier_dict,
+                                    filters=filters, fields=fields,
+                                    sorts=sorts, limit=limit,
+                                    marker_obj=marker_obj,
+                                    page_reverse=page_reverse)
 
     @log.log
     def get_policy_classifiers_count(self, context, filters=None):
-        pass
+        return self._get_collection_count(context, PolicyClassifier,
+                                          filters=filters)
 
     @log.log
     def create_policy_action(self, context, policy_action):
-        pass
+        pa = policy_action['policy_action']
+        tenant_id = self._get_tenant_id_for_create(context, pa)
+        with context.session.begin(subtransactions=True):
+            pa_db = PolicyAction(id=uuidutils.generate_uuid(),
+                                 tenant_id=tenant_id,
+                                 name=pa['name'],
+                                 description=pa['description'],
+                                 action_type=pa['action_type'],
+                                 action_value=pa['action_value'])
+            context.session.add(pa_db)
+        return self._make_policy_action_dict(pa_db)
 
     @log.log
     def update_policy_action(self, context, policy_action_id, policy_action):
-        pass
+        pa = policy_action['policy_action']
+        with context.session.begin(subtransactions=True):
+            pa_db = self._get_policy_action(context, policy_action_id)
+            pa_db.update(pa)
+        return self._make_policy_action_dict(pa_db)
 
     @log.log
     def delete_policy_action(self, context, policy_action_id):
-        pass
+        with context.session.begin(subtransactions=True):
+            pa_db = self._get_policy_action(context, policy_action_id)
+            context.session.delete(pa_db)
 
     @log.log
-    def get_policy_action(self, context, policy_action_id, fields=None):
-        pass
+    def get_policy_action(self, context, id, fields=None):
+        pa = self._get_policy_action(context, id)
+        return self._make_policy_action_dict(pa, fields)
 
     @log.log
     def get_policy_actions(self, context, filters=None, fields=None,
                            sorts=None, limit=None, marker=None,
                            page_reverse=False):
-        pass
+        marker_obj = self._get_marker_obj(context, 'policy_action', limit,
+                                          marker)
+        return self._get_collection(context, PolicyAction,
+                                    self._make_policy_action_dict,
+                                    filters=filters, fields=fields,
+                                    sorts=sorts, limit=limit,
+                                    marker_obj=marker_obj,
+                                    page_reverse=page_reverse)
 
     @log.log
     def get_policy_actions_count(self, context, filters=None):
-        pass
+        return self._get_collection_count(context, PolicyAction,
+                                          filters=filters)
 
     @log.log
     def create_policy_rule(self, context, policy_rule):
-        pass
+        pr = policy_rule['policy_rule']
+        tenant_id = self._get_tenant_id_for_create(context, pr)
+        with context.session.begin(subtransactions=True):
+            pr_db = PolicyRule(id=uuidutils.generate_uuid(),
+                               tenant_id=tenant_id, name=pr['name'],
+                               description=pr['description'],
+                               enabled=pr['enabled'],
+                               policy_classifier_id=pr['policy_classifier_id'])
+            context.session.add(pr_db)
+            self._set_actions_for_rule(context, pr_db,
+                                       pr['policy_actions'])
+        return self._make_policy_rule_dict(pr_db)
 
     @log.log
     def update_policy_rule(self, context, policy_rule_id, policy_rule):
-        pass
+        pr = policy_rule['policy_rule']
+        with context.session.begin(subtransactions=True):
+            pr_db = self._get_policy_rule(context, policy_rule_id)
+            if 'policy_actions' in pr:
+                self._set_actions_for_rule(context, pr_db,
+                                           pr['policy_actions'])
+                del pr['policy_actions']
+            pr_db.update(pr)
+        return self._make_policy_rule_dict(pr_db)
 
     @log.log
     def delete_policy_rule(self, context, policy_rule_id):
-        pass
+        with context.session.begin(subtransactions=True):
+            pr_db = self._get_policy_rule(context, policy_rule_id)
+            context.session.delete(pr_db)
 
     @log.log
     def get_policy_rule(self, context, policy_rule_id, fields=None):
-        pass
+        pr = self._get_policy_rule(context, policy_rule_id)
+        return self._make_policy_rule_dict(pr, fields)
 
     @log.log
-    def get_policy_rules(self, context, filters=None, fields=None,
-                         sorts=None, limit=None, marker=None,
-                         page_reverse=False):
-        pass
+    def get_policy_rules(self, context, filters=None, fields=None):
+        return self._get_collection(context, PolicyRule,
+                                    self._make_policy_rule_dict,
+                                    filters=filters, fields=fields)
 
     @log.log
     def get_policy_rules_count(self, context, filters=None):
-        pass
+        return self._get_collection_count(context, PolicyRule,
+                                          filters=filters)
