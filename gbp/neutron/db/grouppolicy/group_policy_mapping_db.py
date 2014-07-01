@@ -128,7 +128,6 @@ class GroupPolicyMappingDbPlugin(gpdb.GroupPolicyDbPlugin):
                                           name=epg['name'],
                                           description=epg['description'],
                                           l2_policy_id=epg['l2_policy_id'])
-            # TODO(Sumit): handle contracts when supported
             context.session.add(epg_db)
             if 'subnets' in epg:
                 for subnet in epg['subnets']:
@@ -137,6 +136,7 @@ class GroupPolicyMappingDbPlugin(gpdb.GroupPolicyDbPlugin):
                         subnet_id=subnet
                     )
                     epg_db.subnets.append(assoc)
+            self._process_contracts_for_epg(context, epg_db, epg)
         return self._make_endpoint_group_dict(epg_db)
 
     @log.log
@@ -145,7 +145,7 @@ class GroupPolicyMappingDbPlugin(gpdb.GroupPolicyDbPlugin):
         epg = endpoint_group['endpoint_group']
         with context.session.begin(subtransactions=True):
             epg_db = self._get_endpoint_group(context, endpoint_group_id)
-            # TODO(Sumit): handle contracts when supported
+            self._process_contracts_for_epg(context, epg_db, epg)
             if 'subnets' in epg:
                 # Add/remove associations for changes in subnets.
                 new_subnets = set(epg['subnets'])
