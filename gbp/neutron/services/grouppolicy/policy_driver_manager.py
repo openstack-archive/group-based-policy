@@ -260,3 +260,22 @@ class PolicyDriverManager(stevedore.named.NamedExtensionManager):
     def delete_policy_rule_postcommit(self, context):
         self._call_on_drivers("delete_policy_rule_postcommit", context,
                               continue_on_failure=True)
+
+    def create_contract_precommit(self, context):
+        self._call_on_drivers("create_contract_precommit", context)
+
+    def create_contract_postcommit(self, context):
+        self._call_on_drivers("create_contract_postcommit", context)
+
+    def update_contract_precommit(self, context):
+        self._call_on_drivers("update_contract_precommit", context)
+
+    def update_contract_postcommit(self, context):
+        self._call_on_drivers("update_contract_postcommit", context)
+
+    def delete_contract_precommit(self, context):
+        self._call_on_drivers("delete_contract_precommit", context)
+
+    def delete_contract_postcommit(self, context):
+        self._call_on_drivers("delete_contract_postcommit", context,
+                              continue_on_failure=True)
