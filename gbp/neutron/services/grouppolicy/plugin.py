@@ -479,3 +479,60 @@ class GroupPolicyPlugin(group_policy_db.GroupPolicyDbPlugin):
                 LOG.error(_(
                     "policy_driver_manager.delete_policy_rule_postcommit"
                     " failed, deleting policy_rule '%s'"), id)
+
+    @log.log
+    def create_contract(self, context, contract):
+        session = context.session
+        with session.begin(subtransactions=True):
+            result = super(GroupPolicyPlugin, self).create_contract(context,
+                                                                    contract)
+            policy_context = p_context.ContractContext(self, context, result)
+            self.policy_driver_manager.create_contract_precommit(
+                policy_context)
+
+        try:
+            self.policy_driver_manager.create_contract_postcommit(
+                policy_context)
+        except gp_exc.GroupPolicyDriverError:
+            with excutils.save_and_reraise_exccttion():
+                LOG.error(_("policy_driver_manager.create_contract_postcommit "
+                            "failed, deleting contract '%s'"), result['id'])
+                self.delete_contract(context, result['id'])
+
+        return result
+
+    @log.log
+    def update_contract(self, context, id, contract):
+        session = context.session
+        with session.begin(subtransactions=True):
+            original_contract = super(GroupPolicyPlugin,
+                                      self).get_contract(context, id)
+            updated_contract = super(GroupPolicyPlugin,
+                                     self).update_contract(context, id,
+                                                           contract)
+            policy_context = p_context.ContractContext(
+                self, context, updated_contract,
+                original_contract=original_contract)
+            self.policy_driver_manager.update_contract_precommit(
+                policy_context)
+
+        self.policy_driver_manager.update_contract_postcommit(policy_context)
+        return updated_contract
+
+    @log.log
+    def delete_contract(self, context, id):
+        session = context.session
+        with session.begin(subtransactions=True):
+            contract = self.get_contract(context, id)
+            policy_context = p_context.ContractContext(self, context, contract)
+            self.policy_driver_manager.delete_contract_precommit(
+                policy_context)
+            super(GroupPolicyPlugin, self).delete_contract(context, id)
+
+        try:
+            self.policy_driver_manager.delete_contract_postcommit(
+                policy_context)
+        except gp_exc.GroupPolicyDriverError:
+            with excutils.save_and_reraise_exccttion():
+                LOG.error(_("policy_driver_manager.delete_contract_postcommit "
+                            "failed, deleting contract '%s'"), id)

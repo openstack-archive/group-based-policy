@@ -222,6 +222,35 @@ class PolicyRuleContext(object):
 
 
 @six.add_metaclass(abc.ABCMeta)
+class ContractContext(object):
+    """Context passed to policy engine for changes to contract resources.
+
+    An ContractContext instance wraps an contract resource. It provides
+    helper methods for accessing other relevant information. Results
+    from expensive operations are cached for convenient access.
+    """
+
+    @abc.abstractproperty
+    def current(self):
+        """Return the current state of the contract.
+
+        Return the current state of the contract, as defined by
+        GroupPolicyPlugin.create_contract.
+        """
+        pass
+
+    @abc.abstractproperty
+    def original(self):
+        """Return the original state of the contract.
+
+        Return the original state of the contract, prior to a call to
+        update_contract. Method is only valid within calls to
+        update_contract_precommit and update_contract_postcommit.
+        """
+        pass
+
+
+@six.add_metaclass(abc.ABCMeta)
 class PolicyDriver(object):
     """Define stable abstract interface for Group Policy drivers.
 
@@ -600,5 +629,55 @@ class PolicyDriver(object):
 
         :param context: PolicyRuleContext instance describing the current
         state of the policy_rule, prior to the call to delete it.
+        """
+        pass
+
+    def create_contract_precommit(self, context):
+        """Allocate resources for a new contract.
+
+        :param context: ContractContext instance describing the new
+        contract.
+        """
+        pass
+
+    def create_contract_postcommit(self, context):
+        """Create a contract.
+
+        :param context: ContractContext instance describing the new
+        contract.
+        """
+        pass
+
+    def update_contract_precommit(self, context):
+        """Update resources of a contract.
+
+        :param context: ContractContext instance describing the new
+        state of the contract, as well as the original state prior
+        to the update_contract call.
+        """
+        pass
+
+    def update_contract_postcommit(self, context):
+        """Update a contract.
+
+        :param context: ContractContext instance describing the new
+        state of the contract, as well as the original state prior
+        to the update_contract call.
+        """
+        pass
+
+    def delete_contract_precommit(self, context):
+        """Delete resources for a contract.
+
+        :param context: ContractContext instance describing the current
+        state of the contract, prior to the call to delete it.
+        """
+        pass
+
+    def delete_contract_postcommit(self, context):
+        """Delete a contract.
+
+        :param context: ContractContext instance describing the current
+        state of the contract, prior to the call to delete it.
         """
         pass
