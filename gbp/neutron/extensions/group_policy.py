@@ -69,6 +69,10 @@ class PolicyRuleNotFound(nexc.NotFound):
     message = _("PolicyRule %(policy_rule_id)s could not be found")
 
 
+class ContractNotFound(nexc.NotFound):
+    message = _("Contract %(contract_id)s could not be found")
+
+
 class GroupPolicyInvalidPortValue(nexc.InvalidInput):
     message = _("Invalid value for port %(port)s")
 
