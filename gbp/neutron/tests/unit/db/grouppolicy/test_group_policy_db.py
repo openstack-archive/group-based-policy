@@ -71,10 +71,15 @@ class GroupPolicyDBTestBase(object):
                                        l2_policy_id=None,
                                        provided_contracts=None,
                                        consumed_contracts=None):
+        pc_ids = cc_ids = []
+        if provided_contracts:
+            pc_ids = [pc_id for pc_id in provided_contracts]
+        if consumed_contracts:
+            cc_ids = [cc_id for cc_id in consumed_contracts]
         attrs = {'name': name, 'description': description,
                  'tenant_id': self._tenant_id, 'l2_policy_id': l2_policy_id,
-                 'provided_contracts': provided_contracts or {},
-                 'consumed_contracts': consumed_contracts or {}}
+                 'provided_contracts': pc_ids,
+                 'consumed_contracts': cc_ids}
 
         return attrs
 
@@ -126,6 +131,20 @@ class GroupPolicyDBTestBase(object):
                  'tenant_id': self._tenant_id,
                  'policy_classifier_id': policy_classifier_id,
                  'policy_actions': policy_actions, 'enabled': enabled}
+
+        return attrs
+
+    def _get_test_contract_attrs(self, name='contract1',
+                                 description='test contract',
+                                 child_contracts=None, policy_rules=None):
+        if not child_contracts:
+            child_contracts = []
+        if not policy_rules:
+            policy_rules = []
+        attrs = {'name': name, 'description': description,
+                 'tenant_id': self._tenant_id,
+                 'child_contracts': child_contracts,
+                 'policy_rules': policy_rules}
 
         return attrs
 
@@ -280,6 +299,27 @@ class GroupPolicyDBTestBase(object):
 
         return pr
 
+    def create_contract(self, expected_res_status=None, **kwargs):
+        defaults = {'name': 'contract1', 'description': 'test contract',
+                    'child_contracts': [], 'policy_rules': []}
+        defaults.update(kwargs)
+        kwargs = defaults
+
+        data = {'contract': {'tenant_id': self._tenant_id}}
+        data['contract'].update(kwargs)
+
+        ct_req = self.new_create_request('contracts', data, self.fmt)
+        ct_res = ct_req.get_response(self.ext_api)
+
+        if expected_res_status:
+            self.assertEqual(ct_res.status_int, expected_res_status)
+        elif ct_res.status_int >= webob.exc.HTTPClientError.code:
+            raise webob.exc.HTTPClientError(code=ct_res.status_int)
+
+        ct = self.deserialize(self.fmt, ct_res)
+
+        return ct
+
 
 class GroupPolicyDBTestPlugin(gpdb.GroupPolicyDbPlugin):
 
@@ -379,11 +419,27 @@ class TestGroupResources(GroupPolicyDbTestCase):
                           ctx, ep_id)
 
     def test_create_and_show_endpoint_group(self):
-        l3p_id = self.create_l3_policy()['l3_policy']['id']
-        l2p_id = self.create_l2_policy(l3_policy_id=l3p_id)['l2_policy']['id']
-        attrs = self._get_test_endpoint_group_attrs(l2_policy_id=l2p_id)
+        name = "epg1"
+        l3p = self.create_l3_policy()
+        l3p_id = l3p['l3_policy']['id']
 
-        epg = self.create_endpoint_group(l2_policy_id=l2p_id)
+        l2p = self.create_l2_policy(name=name, l3_policy_id=l3p_id)
+        l2p_id = l2p['l2_policy']['id']
+
+        provided_ct_id = self.create_contract()['contract']['id']
+        consumed_ct_id = self.create_contract()['contract']['id']
+        attrs = self._get_test_endpoint_group_attrs(name,
+                                                    l2_policy_id=l2p_id,
+                                                    provided_contracts=
+                                                    [provided_ct_id],
+                                                    consumed_contracts=
+                                                    [consumed_ct_id])
+
+        epg = self.create_endpoint_group(name=name, l2_policy_id=l2p_id,
+                                         provided_contracts={provided_ct_id:
+                                                             None},
+                                         consumed_contracts={consumed_ct_id:
+                                                             None})
 
         for k, v in attrs.iteritems():
             self.assertEqual(epg['endpoint_group'][k], v)
@@ -406,16 +462,22 @@ class TestGroupResources(GroupPolicyDbTestCase):
         attrs = self._get_test_endpoint_group_attrs(name=name,
                                                     description=description,
                                                     l2_policy_id=l2p_id)
-
-        epg = self.create_endpoint_group()
+        ct1_id = self.create_contract(name='contract1')['contract']['id']
+        ct2_id = self.create_contract(name='contract2')['contract']['id']
+        epg = self.create_endpoint_group(consumed_contracts={ct1_id: 'scope'},
+                                         provided_contracts={ct2_id: 'scope'})
+        ct3_id = self.create_contract(name='contract3')['contract']['id']
+        ct4_id = self.create_contract(name='contract4')['contract']['id']
         data = {'endpoint_group': {'name': name, 'description': description,
                                    'l2_policy_id': l2p_id,
-                                   'provided_contracts': {},
-                                   'consumed_contracts': {}}}
+                                   'provided_contracts': {ct3_id: 'scope'},
+                                   'consumed_contracts': {ct4_id: 'scope'}}}
         req = self.new_update_request('endpoint_groups', data,
                                       epg['endpoint_group']['id'])
         res = self.deserialize(self.fmt, req.get_response(self.ext_api))
 
+        attrs['provided_contracts'] = [ct3_id]
+        attrs['consumed_contracts'] = [ct4_id]
         for k, v in attrs.iteritems():
             self.assertEqual(res['endpoint_group'][k], v)
 
@@ -773,3 +835,114 @@ class TestGroupResources(GroupPolicyDbTestCase):
         self.assertEqual(res.status_int, webob.exc.HTTPNoContent.code)
         self.assertRaises(gpolicy.PolicyRuleNotFound,
                           self.plugin.get_policy_rule, ctx, pr_id)
+
+    def test_create_and_show_contract(self):
+        name = "contract1"
+        attrs = self._get_test_contract_attrs(name=name)
+
+        ct = self.create_contract(name=name)
+
+        for k, v in attrs.iteritems():
+            self.assertEqual(ct['contract'][k], v)
+
+        req = self.new_show_request('contracts', ct['contract']['id'],
+                                    fmt=self.fmt)
+        res = self.deserialize(self.fmt, req.get_response(self.ext_api))
+
+        for k, v in attrs.iteritems():
+            self.assertEqual(res['contract'][k], v)
+
+        self._test_show_resource('contract',
+                                 ct['contract']['id'], attrs)
+
+    def test_create_contract_with_multiple_rules_children(self, **kwargs):
+        policy_classifiers = [
+            self.create_policy_classifier()['policy_classifier']['id'],
+            self.create_policy_classifier()['policy_classifier']['id']]
+        policy_rules = sorted([
+            self.create_policy_rule(
+                policy_classifier_id=
+                policy_classifiers[0])['policy_rule']['id'],
+            self.create_policy_rule(
+                policy_classifier_id=
+                policy_classifiers[1])['policy_rule']['id']])
+        child_contracts = sorted([self.create_contract()['contract']['id'],
+                                  self.create_contract()['contract']['id']])
+        attrs = self._get_test_contract_attrs(
+            policy_rules=policy_rules, child_contracts=child_contracts)
+        ct = self.create_contract(policy_rules=policy_rules,
+                                  child_contracts=child_contracts)
+
+        req = self.new_show_request('contracts', ct['contract']['id'],
+                                    fmt=self.fmt)
+        res = self.deserialize(self.fmt, req.get_response(self.ext_api))
+
+        parent_id = res['contract']['id']
+        res['contract']['policy_rules'] = sorted(
+            res['contract']['policy_rules'])
+        res['contract']['child_contracts'] = sorted(
+            res['contract']['child_contracts'])
+        for k, v in attrs.iteritems():
+            self.assertEqual(res['contract'][k], v)
+
+        req = self.new_show_request('contracts', child_contracts[0],
+                                    fmt=self.fmt)
+        c1 = self.deserialize(self.fmt, req.get_response(self.ext_api))
+        self.assertEqual(c1['contract']['parent_id'], parent_id)
+        req = self.new_show_request('contracts', child_contracts[1],
+                                    fmt=self.fmt)
+        c2 = self.deserialize(self.fmt, req.get_response(self.ext_api))
+        self.assertEqual(c2['contract']['parent_id'], parent_id)
+
+    def test_create_child_contract_fail(self, **kwargs):
+        self.create_contract(child_contracts=[
+            '00000000-ffff-ffff-ffff-000000000000'],
+            expected_res_status=webob.exc.HTTPNotFound.code)
+
+    def test_list_contracts(self):
+        contracts = [
+            self.create_contract(name='ct1', description='ct'),
+            self.create_contract(name='ct2', description='ct'),
+            self.create_contract(name='ct3', description='ct')]
+        self._test_list_resources('contract', contracts,
+                                  query_params='description=ct')
+
+    def test_update_contract(self):
+        name = "new_contract"
+        description = 'new desc'
+        pc_id = self.create_policy_classifier()['policy_classifier']['id']
+        policy_rules = [self.create_policy_rule(
+            policy_classifier_id=pc_id)['policy_rule']['id']]
+        child_contracts = [self.create_contract()['contract']['id']]
+        ct = self.create_contract(child_contracts=child_contracts,
+                                  policy_rules=policy_rules)
+        child_contracts = [self.create_contract()['contract']['id']]
+        policy_rules = [self.create_policy_rule(
+            policy_classifier_id=pc_id)['policy_rule']['id']]
+        attrs = self._get_test_contract_attrs(
+            name=name, description=description, policy_rules=policy_rules,
+            child_contracts=child_contracts)
+        data = {'contract': {'name': name, 'description': description,
+                             'policy_rules': policy_rules,
+                             'child_contracts': child_contracts}}
+
+        req = self.new_update_request('contracts', data,
+                                      ct['contract']['id'])
+        res = self.deserialize(self.fmt, req.get_response(self.ext_api))
+
+        for k, v in attrs.iteritems():
+            self.assertEqual(res['contract'][k], v)
+
+        self._test_show_resource('contract',
+                                 ct['contract']['id'], attrs)
+
+    def test_delete_contract(self):
+        ctx = context.get_admin_context()
+        ct = self.create_contract()
+        ct_id = ct['contract']['id']
+
+        req = self.new_delete_request('contracts', ct_id)
+        res = req.get_response(self.ext_api)
+        self.assertEqual(res.status_int, webob.exc.HTTPNoContent.code)
+        self.assertRaises(gpolicy.ContractNotFound,
+                          self.plugin.get_contract, ctx, ct_id)

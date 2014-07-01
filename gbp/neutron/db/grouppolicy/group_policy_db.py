@@ -15,6 +15,7 @@ from sqlalchemy import orm
 from sqlalchemy.orm import exc
 
 from neutron.common import log
+from neutron import context
 from neutron.db import common_db_mixin
 from neutron.db import model_base
 from neutron.db import models_v2
@@ -49,6 +50,28 @@ class Endpoint(model_base.BASEV2, models_v2.HasId, models_v2.HasTenant):
                                   nullable=True)
 
 
+class EndpointGroupContractProvidingAssociation(model_base.BASEV2):
+    """Models  many to many providing relation between EPGs and Contracts."""
+    __tablename__ = 'gp_endpoint_group_contract_providing_associations'
+    contract_id = sa.Column(sa.String(36),
+                            sa.ForeignKey('gp_contracts.id'),
+                            primary_key=True)
+    endpoint_group_id = sa.Column(sa.String(36),
+                                  sa.ForeignKey('gp_endpoint_groups.id'),
+                                  primary_key=True)
+
+
+class EndpointGroupContractConsumingAssociation(model_base.BASEV2):
+    """Models many to many consuming relation between EPGs and Contracts."""
+    __tablename__ = 'gp_endpoint_group_contract_consuming_associations'
+    contract_id = sa.Column(sa.String(36),
+                            sa.ForeignKey('gp_contracts.id'),
+                            primary_key=True)
+    endpoint_group_id = sa.Column(sa.String(36),
+                                  sa.ForeignKey('gp_endpoint_groups.id'),
+                                  primary_key=True)
+
+
 class EndpointGroup(model_base.BASEV2, models_v2.HasId, models_v2.HasTenant):
     """Represents an Endpoint Group that is a collection of endpoints."""
     __tablename__ = 'gp_endpoint_groups'
@@ -63,6 +86,12 @@ class EndpointGroup(model_base.BASEV2, models_v2.HasId, models_v2.HasTenant):
     l2_policy_id = sa.Column(sa.String(36),
                              sa.ForeignKey('gp_l2_policies.id'),
                              nullable=True)
+    provided_contracts = orm.relationship(
+        EndpointGroupContractProvidingAssociation,
+        backref='providing_endpoint_group', cascade='all, delete-orphan')
+    consumed_contracts = orm.relationship(
+        EndpointGroupContractConsumingAssociation,
+        backref='consuming_endpoint_group', cascade='all, delete-orphan')
 
 
 class L2Policy(model_base.BASEV2, models_v2.HasId, models_v2.HasTenant):
@@ -95,6 +124,17 @@ class L3Policy(model_base.BASEV2, models_v2.HasId, models_v2.HasTenant):
     ip_pool = sa.Column(sa.String(64), nullable=False)
     subnet_prefix_length = sa.Column(sa.Integer, nullable=False)
     l2_policies = orm.relationship(L2Policy, backref='l3_policy')
+
+
+class ContractPolicyRuleAssociation(model_base.BASEV2):
+    """Models the many to many relation between Contract and Policy rules."""
+    __tablename__ = 'gp_contract_policy_rule_associations'
+    contract_id = sa.Column(sa.String(36),
+                            sa.ForeignKey('gp_contracts.id'),
+                            primary_key=True)
+    policy_rule_id = sa.Column(sa.String(36),
+                               sa.ForeignKey('gp_policy_rules.id'),
+                               primary_key=True)
 
 
 class PolicyRuleActionAssociation(model_base.BASEV2):
@@ -157,6 +197,29 @@ class PolicyAction(model_base.BASEV2, models_v2.HasId, models_v2.HasTenant):
     action_value = sa.Column(sa.String(36), nullable=True)
     policy_rules = orm.relationship(PolicyRuleActionAssociation,
                                     cascade='all', backref='gp_policy_actions')
+
+
+class Contract(model_base.BASEV2, models_v2.HasTenant):
+    """Represents a Contract that is a collection of Policy rules."""
+    __tablename__ = 'gp_contracts'
+    id = sa.Column(sa.String(36), primary_key=True,
+                   default=uuidutils.generate_uuid)
+    name = sa.Column(sa.String(50))
+    description = sa.Column(sa.String(255))
+    parent_id = sa.Column(sa.String(255), sa.ForeignKey('gp_contracts.id'),
+                          nullable=True)
+    child_contracts = orm.relationship('Contract',
+                                       backref=orm.backref('parent',
+                                                           remote_side=[id]))
+    policy_rules = orm.relationship(ContractPolicyRuleAssociation,
+                                    backref='contract', lazy="joined",
+                                    cascade='all, delete-orphan')
+    providing_endpoint_groups = orm.relationship(
+        EndpointGroupContractProvidingAssociation, backref='provided_contract',
+        lazy="joined", cascade='all')
+    consuming_endpoint_groups = orm.relationship(
+        EndpointGroupContractConsumingAssociation, backref='consumed_contract',
+        lazy="joined", cascade='all')
 
 
 class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
@@ -223,6 +286,13 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
                                              policy_rule_id)
         return policy_rule
 
+    def _get_contract(self, context, contract_id):
+        try:
+            contract = self._get_by_id(context, Contract, contract_id)
+        except exc.NoResultFound:
+            raise gpolicy.ContractNotFound(contract_id=contract_id)
+        return contract
+
     def _get_min_max_ports_from_range(self, port_range):
         if not port_range:
             return [None, None]
@@ -276,15 +346,113 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
                                                     policy_action_id=action_id)
                 pr_db.policy_actions.append(assoc)
 
-    def _set_l3_policy_for_l2_policy(self, context, l2p_id, l3p_id):
+    def _set_providers_or_consumers_for_endpoint_group(self, context, epg_db,
+                                                       contracts_dict,
+                                                       provider=True):
+        # TODO(Sumit): Check that the same contract ID does not belong to
+        # belong provider and consumer dicts
+        if not contracts_dict:
+            if provider:
+                epg_db.provided_contracts = []
+                return
+            else:
+                epg_db.consumed_contracts = []
+                return
         with context.session.begin(subtransactions=True):
-            l2p_db = self._get_l2_policy(context, l2p_id)
-            l2p_db.l3_policy_id = l3p_id
+            contracts_id_list = contracts_dict.keys()
+            # We will first check if the new list of contracts is valid
+            filters = {'id': [c_id for c_id in contracts_id_list]}
+            contracts_in_db = self._get_collection_query(context, Contract,
+                                                         filters=filters)
+            contracts_dict = dict((c_db['id'],
+                                   c_db) for c_db in contracts_in_db)
+            for contract_id in contracts_id_list:
+                if contract_id not in contracts_dict:
+                    # If we find an invalid contract id in the list we
+                    # do not perform the update
+                    raise gpolicy.ContractNotFound(contract_id=contract_id)
+            # New list of contracts is valid so we will first reset the
+            #  existing list and then add each action in order.
+            # Note that the list could be empty in which case we interpret
+            # it as clearing existing rules.
+            if provider:
+                epg_db.provided_contracts = []
+            else:
+                epg_db.consumed_contracts = []
+            for contract_id in contracts_dict:
+                if provider:
+                    assoc = EndpointGroupContractProvidingAssociation(
+                        endpoint_group_id=epg_db.id,
+                        contract_id=contract_id)
+                    epg_db.provided_contracts.append(assoc)
+                else:
+                    assoc = EndpointGroupContractConsumingAssociation(
+                        endpoint_group_id=epg_db.id,
+                        contract_id=contract_id)
+                    epg_db.consumed_contracts.append(assoc)
 
-    def _set_l2_policy_for_endpoint_group(self, context, epg_id, l2p_id):
+    def _set_children_for_contract(self, context, contract_db, child_id_list):
+        ct_db = contract_db
+        if not child_id_list:
+            ct_db.child_contracts = []
+            return
         with context.session.begin(subtransactions=True):
-            epg_db = self._get_endpoint_group(context, epg_id)
-            epg_db.l2_policy_id = l2p_id
+            # We will first check if the new list of contracts is valid
+            filters = {'id': [c_id for c_id in child_id_list]}
+            contracts_in_db = self._get_collection_query(context, Contract,
+                                                         filters=filters)
+            contracts_dict = dict((c_db['id'],
+                                   c_db) for c_db in contracts_in_db)
+            for contract_id in child_id_list:
+                if contract_id not in contracts_dict:
+                    # If we find an invalid contract in the list we
+                    # do not perform the update
+                    raise gpolicy.ContractNotFound(contract_id=contract_id)
+            # New list of child contracts is valid so we will first reset the
+            # existing # list and then add each contract.
+            # Note that the list could be empty in which case we interpret
+            # it as clearing existing child contracts.
+            ct_db.child_contracts = []
+            for child in contracts_in_db:
+                ct_db.child_contracts.append(child)
+
+    def _set_rules_for_contract(self, context, contract_db, rule_id_list):
+        ct_db = contract_db
+        if not rule_id_list:
+            ct_db.policy_rules = []
+            return
+        with context.session.begin(subtransactions=True):
+            # We will first check if the new list of rules is valid
+            filters = {'id': [r_id for r_id in rule_id_list]}
+            rules_in_db = self._get_collection_query(context, PolicyRule,
+                                                     filters=filters)
+            rules_dict = dict((r_db['id'], r_db) for r_db in rules_in_db)
+            for rule_id in rule_id_list:
+                if rule_id not in rules_dict:
+                    # If we find an invalid rule in the list we
+                    # do not perform the update
+                    raise gpolicy.PolicyRuleNotFound(policy_rule_id=rule_id)
+            # New list of rules is valid so we will first reset the existing
+            # list and then add each rule in order.
+            # Note that the list could be empty in which case we interpret
+            # it as clearing existing rules.
+            ct_db.policy_rules = []
+            for rule_id in rule_id_list:
+                ct_rule_db = ContractPolicyRuleAssociation(
+                    policy_rule_id=rule_id,
+                    contract_id=ct_db.id)
+                ct_db.policy_rules.append(ct_rule_db)
+
+    def _process_contracts_for_epg(self, context, epg_db, epg):
+        if 'provided_contracts' in epg:
+            self._set_providers_or_consumers_for_endpoint_group(
+                context, epg_db, epg['provided_contracts'])
+            del epg['provided_contracts']
+        if 'consumed_contracts' in epg:
+            self._set_providers_or_consumers_for_endpoint_group(
+                context, epg_db, epg['consumed_contracts'], False)
+            del epg['consumed_contracts']
+        return epg
 
     def _make_endpoint_dict(self, ep, fields=None):
         res = {'id': ep['id'],
@@ -302,9 +470,10 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
                'l2_policy_id': epg['l2_policy_id']}
         res['endpoints'] = [ep['id']
                             for ep in epg['endpoints']]
-        # TODO(Sumit): populate contracts when supported
-        res['provided_contracts'] = {}
-        res['consumed_contracts'] = {}
+        res['provided_contracts'] = [pc['contract_id']
+                                     for pc in epg['provided_contracts']]
+        res['consumed_contracts'] = [cc['contract_id']
+                                     for cc in epg['consumed_contracts']]
         return self._fields(res, fields)
 
     def _make_l2_policy_dict(self, l2p, fields=None):
@@ -361,6 +530,27 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
                'policy_classifier_id': pr['policy_classifier_id']}
         res['policy_actions'] = [pa['policy_action_id']
                                  for pa in pr['policy_actions']]
+        return self._fields(res, fields)
+
+    def _make_contract_dict(self, ct, fields=None):
+        res = {'id': ct['id'],
+               'tenant_id': ct['tenant_id'],
+               'name': ct['name'],
+               'description': ct['description']}
+        if ct['parent']:
+            res['parent_id'] = ct['parent']['id']
+        else:
+            res['parent_id'] = None
+        ctx = context.get_admin_context()
+        with ctx.session.begin(subtransactions=True):
+            filters = {'parent_id': [ct['id']]}
+            child_contracts_in_db = self._get_collection_query(ctx, Contract,
+                                                               filters=filters)
+            res['child_contracts'] = [child_ct['id']
+                                      for child_ct in child_contracts_in_db]
+
+        res['policy_rules'] = [pr['policy_rule_id']
+                               for pr in ct['policy_rules']]
         return self._fields(res, fields)
 
     @staticmethod
@@ -435,8 +625,8 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
                                    name=epg['name'],
                                    description=epg['description'],
                                    l2_policy_id=epg['l2_policy_id'])
-            # TODO(Sumit): handle contracts when supported
             context.session.add(epg_db)
+            self._process_contracts_for_epg(context, epg_db, epg)
         return self._make_endpoint_group_dict(epg_db)
 
     @log.log
@@ -445,7 +635,7 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
         epg = endpoint_group['endpoint_group']
         with context.session.begin(subtransactions=True):
             epg_db = self._get_endpoint_group(context, endpoint_group_id)
-            # TODO(Sumit): hanndle contracts when supported
+            epg = self._process_contracts_for_epg(context, epg_db, epg)
             epg_db.update(epg)
         return self._make_endpoint_group_dict(epg_db)
 
@@ -745,20 +935,54 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
 
     @log.log
     def create_contract(self, context, contract):
-        pass
+        ct = contract['contract']
+        tenant_id = self._get_tenant_id_for_create(context, ct)
+        with context.session.begin(subtransactions=True):
+            ct_db = Contract(id=uuidutils.generate_uuid(),
+                             tenant_id=tenant_id,
+                             name=ct['name'],
+                             description=ct['description'])
+            context.session.add(ct_db)
+            self._set_rules_for_contract(context, ct_db,
+                                         ct['policy_rules'])
+            self._set_children_for_contract(context, ct_db,
+                                            ct['child_contracts'])
+        return self._make_contract_dict(ct_db)
 
     @log.log
     def update_contract(self, context, contract_id, contract):
-        pass
-
-    @log.log
-    def get_contracts(self, context, filters=None, fields=None):
-        pass
-
-    @log.log
-    def get_contract(self, context, contract_id, fields=None):
-        pass
+        ct = contract['contract']
+        with context.session.begin(subtransactions=True):
+            ct_db = self._get_contract(context, contract_id)
+            if 'policy_rules' in ct:
+                self._set_rules_for_contract(context, ct_db,
+                                             ct['policy_rules'])
+                del ct['policy_rules']
+            if 'child_contracts' in ct:
+                self._set_children_for_contract(context, ct_db,
+                                                ct['child_contracts'])
+                del ct['child_contracts']
+            ct_db.update(ct)
+        return self._make_contract_dict(ct_db)
 
     @log.log
     def delete_contract(self, context, contract_id):
-        pass
+        with context.session.begin(subtransactions=True):
+            ct_db = self._get_contract(context, contract_id)
+            context.session.delete(ct_db)
+
+    @log.log
+    def get_contract(self, context, contract_id, fields=None):
+        ct = self._get_contract(context, contract_id)
+        return self._make_contract_dict(ct, fields)
+
+    @log.log
+    def get_contracts(self, context, filters=None, fields=None):
+        return self._get_collection(context, Contract,
+                                    self._make_contract_dict,
+                                    filters=filters, fields=fields)
+
+    @log.log
+    def get_contracts_count(self, context, filters=None):
+        return self._get_collection_count(context, Contract,
+                                          filters=filters)
