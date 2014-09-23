@@ -12,8 +12,17 @@
 # License for the specific language governing permissions and limitations
 # under the License.
 
-import pbr.version
+"""
+test_group-based-policy
+----------------------------------
+
+Tests for `group-based-policy` module.
+"""
+
+from gbp.tests import base
 
 
-__version__ = pbr.version.VersionInfo(
-    'group-based-policy').version_string()
+class TestGroupBasedPolicy(base.TestCase):
+
+    def test_something(self):
+        pass

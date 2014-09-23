@@ -1,5 +1,6 @@
-# -*- coding: utf-8 -*-
-
+# Copyright 2010-2011 OpenStack Foundation
+# Copyright (c) 2013 Hewlett-Packard Development Company, L.P.
+#
 # Licensed under the Apache License, Version 2.0 (the "License"); you may
 # not use this file except in compliance with the License. You may obtain
 # a copy of the License at
@@ -12,8 +13,9 @@
 # License for the specific language governing permissions and limitations
 # under the License.
 
-import pbr.version
+import testtools
 
 
-__version__ = pbr.version.VersionInfo(
-    'group-based-policy').version_string()
+class TestCase(testtools.TestCase):
+
+    """Test case base class for all unit tests."""
