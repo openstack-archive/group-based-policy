@@ -1,0 +1,7 @@
+[run]
+branch = True
+source = gbp
+omit = gbp/tests/*,gbp/openstack/*
+
+[report]
+ignore-errors = True
