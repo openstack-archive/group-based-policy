@@ -37,6 +37,11 @@ class Endpoint(model_base.BASEV2, models_v2.HasId, models_v2.HasTenant):
     """
 
     __tablename__ = 'gp_endpoints'
+    type = sa.Column(sa.String(15))
+    __mapper_args__ = {
+        'polymorphic_on': type,
+        'polymorphic_identity': 'base'
+    }
     name = sa.Column(sa.String(50))
     description = sa.Column(sa.String(255))
     endpoint_group_id = sa.Column(sa.String(36),
@@ -47,6 +52,11 @@ class Endpoint(model_base.BASEV2, models_v2.HasId, models_v2.HasTenant):
 class EndpointGroup(model_base.BASEV2, models_v2.HasId, models_v2.HasTenant):
     """Represents an Endpoint Group that is a collection of endpoints."""
     __tablename__ = 'gp_endpoint_groups'
+    type = sa.Column(sa.String(15))
+    __mapper_args__ = {
+        'polymorphic_on': type,
+        'polymorphic_identity': 'base'
+    }
     name = sa.Column(sa.String(50))
     description = sa.Column(sa.String(255))
     endpoints = orm.relationship(Endpoint, backref='endpoint_group')
@@ -58,6 +68,11 @@ class EndpointGroup(model_base.BASEV2, models_v2.HasId, models_v2.HasTenant):
 class L2Policy(model_base.BASEV2, models_v2.HasId, models_v2.HasTenant):
     """Represents a L2 Policy for a collection of endpoint_groups."""
     __tablename__ = 'gp_l2_policies'
+    type = sa.Column(sa.String(15))
+    __mapper_args__ = {
+        'polymorphic_on': type,
+        'polymorphic_identity': 'base'
+    }
     name = sa.Column(sa.String(50))
     description = sa.Column(sa.String(255))
     endpoint_groups = orm.relationship(EndpointGroup, backref='l2_policy')
@@ -69,6 +84,11 @@ class L2Policy(model_base.BASEV2, models_v2.HasId, models_v2.HasTenant):
 class L3Policy(model_base.BASEV2, models_v2.HasId, models_v2.HasTenant):
     """Represents a L3 Policy with a non-overlapping IP address space."""
     __tablename__ = 'gp_l3_policies'
+    type = sa.Column(sa.String(15))
+    __mapper_args__ = {
+        'polymorphic_on': type,
+        'polymorphic_identity': 'base'
+    }
     name = sa.Column(sa.String(50))
     description = sa.Column(sa.String(255))
     ip_version = sa.Column(sa.Integer, nullable=False)
