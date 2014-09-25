@@ -17,6 +17,7 @@ import six
 from neutron.api import extensions
 from neutron.api.v2 import attributes as attr
 from neutron.api.v2 import resource_helper
+from neutron.common import exceptions as nexc
 from neutron.plugins.common import constants
 from neutron.services import service_base
 
@@ -25,6 +26,31 @@ import gbp.neutron.extensions
 extensions.append_api_extensions_path(gbp.neutron.extensions.__path__)
 constants.GROUP_POLICY = "GROUP_POLICY"
 constants.COMMON_PREFIXES["GROUP_POLICY"] = "/grouppolicy"
+constants.EXT_TO_SERVICE_MAPPING['gp'] = constants.GROUP_POLICY
+constants.ALLOWED_SERVICES.append(constants.GROUP_POLICY)
+
+
+# Group Policy Exceptions
+class EndpointNotFound(nexc.NotFound):
+    message = _("Endpoint %(endpoint_id)s could not be found")
+
+
+class EndpointGroupNotFound(nexc.NotFound):
+    message = _("EndpointGroup %(endpoint_group_id)s could not be found")
+
+
+class L2PolicyNotFound(nexc.NotFound):
+    message = _("L2Policy %(l2_policy_id)s could not be found")
+
+
+class L3PolicyNotFound(nexc.NotFound):
+    message = _("L3Policy %(l3_policy_id)s could not be found")
+
+
+class InvalidDefaultSubnetPrefixLength(nexc.InvalidInput):
+    message = _("Default subnet prefix length %(length)s is invalid for"
+                "ipv%(protocol)s")
+
 
 ENDPOINTS = 'endpoints'
 ENDPOINT_GROUPS = 'endpoint_groups'
