@@ -32,14 +32,16 @@ DB_GP_PLUGIN_KLASS = (GroupPolicyMappingDBTestPlugin.__module__ + '.' +
 class GroupPolicyMappingDbTestCase(tgpdb.GroupPolicyDbTestCase,
                                    test_l3_plugin.L3NatTestCaseMixin):
 
-    def setUp(self, gp_plugin=None, service_plugins=None):
+    def setUp(self, core_plugin=None, gp_plugin=None, service_plugins=None):
         if not gp_plugin:
             gp_plugin = DB_GP_PLUGIN_KLASS
         if not service_plugins:
             service_plugins = {'l3_plugin_name': "router",
                                'gp_plugin_name': gp_plugin}
         super(GroupPolicyMappingDbTestCase, self).setUp(
-            gp_plugin=gp_plugin, service_plugins=service_plugins)
+            core_plugin=core_plugin, gp_plugin=gp_plugin,
+            service_plugins=service_plugins
+        )
 
     def _get_test_endpoint_attrs(self, name='ep1', description='test ep',
                                  endpoint_group_id=None, port_id=None):
