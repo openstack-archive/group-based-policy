@@ -13,7 +13,9 @@
 
 from oslo.config import cfg
 
-import gbp.neutron.tests.unit.db.grouppolicy.test_group_policy_db as tdb
+import gbp.neutron.tests.unit.db.grouppolicy.test_group_policy_db as tgpdb
+import gbp.neutron.tests.unit.db.grouppolicy.test_group_policy_mapping_db as \
+    tgpmdb
 
 
 cfg.CONF.import_opt('policy_drivers',
@@ -24,7 +26,7 @@ GP_PLUGIN_KLASS = (
 )
 
 
-class GroupPolicyPluginTestCase(tdb.GroupPolicyDbTestCase):
+class GroupPolicyPluginTestCase(tgpmdb.GroupPolicyMappingDbTestCase):
 
     def setUp(self, core_plugin=None, gp_plugin=None, ext_mgr=None):
         super(GroupPolicyPluginTestCase, self).setUp(
@@ -33,6 +35,12 @@ class GroupPolicyPluginTestCase(tdb.GroupPolicyDbTestCase):
 
 
 class TestGroupPolicyPluginGroupResources(
-    GroupPolicyPluginTestCase, tdb.TestGroupResources):
+    GroupPolicyPluginTestCase, tgpdb.TestGroupResources):
+
+    pass
+
+
+class TestGroupPolicyPluginMappedGroupResourceAttrs(
+    GroupPolicyPluginTestCase, tgpmdb.TestMappedGroupResourceAttrs):
 
     pass
