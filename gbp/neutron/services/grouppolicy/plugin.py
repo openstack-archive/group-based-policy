@@ -270,9 +270,13 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
         return updated_l3_policy
 
     @log.log
-    def delete_l3_policy(self, context, l3_policy_id):
+    def delete_l3_policy(self, context, l3_policy_id, check_unused=False):
         session = context.session
         with session.begin(subtransactions=True):
+            if (check_unused and
+                (session.query(group_policy_mapping_db.L2PolicyMapping).
+                 filter_by(l3_policy_id=l3_policy_id).count())):
+                return False
             l3_policy = self.get_l3_policy(context, l3_policy_id)
             policy_context = p_context.L3PolicyContext(self, context,
                                                        l3_policy)
@@ -288,3 +292,4 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
             with excutils.save_and_reraise_exception():
                 LOG.error(_("delete_l3_policy_postcommit "
                             " failed, deleting l3_policy '%s'"), l3_policy_id)
+        return True

@@ -72,6 +72,16 @@ class EndpointGroupContext(object):
         """
         pass
 
+    @abc.abstractmethod
+    def set_l2_policy_id(self, l2_policy_id):
+        """Set the l2_policy for the endpoint_group.
+
+        :param l2_policy_id: l2_policy for the endpoint_group.
+
+        Set the l2_policy for the endpoint_group.
+        """
+        pass
+
 
 @six.add_metaclass(abc.ABCMeta)
 class L2PolicyContext(object):
@@ -98,6 +108,16 @@ class L2PolicyContext(object):
         Return the original state of the l2_policy, prior to a call to
         update_l2_policy. Method is only valid within calls to
         update_l2_policy_precommit and update_l2_policy_postcommit.
+        """
+        pass
+
+    @abc.abstractmethod
+    def set_l3_policy_id(self, l3_policy_id):
+        """Set the l3_policy for the l2_policy.
+
+        :param l3_policy_id: l3_policy for the l2_policy.
+
+        Set the l3_policy for the l2_policy.
         """
         pass
 
