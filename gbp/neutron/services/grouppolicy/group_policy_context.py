@@ -36,6 +36,11 @@ class EndpointContext(GroupPolicyContext, api.EndpointContext):
     def original(self):
         return self._original_endpoint
 
+    def set_port_id(self, port_id):
+        self._plugin._set_port_for_endpoint(
+            self._plugin_context, self._endpoint['id'], port_id)
+        self._endpoint['port_id'] = port_id
+
 
 class EndpointGroupContext(GroupPolicyContext, api.EndpointGroupContext):
 
@@ -57,6 +62,11 @@ class EndpointGroupContext(GroupPolicyContext, api.EndpointGroupContext):
         self._plugin._set_l2_policy_for_endpoint_group(
             self._plugin_context, self._endpoint_group['id'], l2_policy_id)
         self._endpoint_group['l2_policy_id'] = l2_policy_id
+
+    def add_subnet(self, subnet_id):
+        subnets = self._plugin._add_subnet_to_endpoint_group(
+            self._plugin_context, self._endpoint_group['id'], subnet_id)
+        self._endpoint_group['subnets'] = subnets
 
 
 class L2PolicyContext(GroupPolicyContext, api.L2PolicyContext):
@@ -80,6 +90,11 @@ class L2PolicyContext(GroupPolicyContext, api.L2PolicyContext):
             self._plugin_context, self._l2_policy['id'], l3_policy_id)
         self._l2_policy['l3_policy_id'] = l3_policy_id
 
+    def set_network_id(self, network_id):
+        self._plugin._set_network_for_l2_policy(
+            self._plugin_context, self._l2_policy['id'], network_id)
+        self._l2_policy['network_id'] = network_id
+
 
 class L3PolicyContext(GroupPolicyContext, api.L3PolicyContext):
 
@@ -96,3 +111,8 @@ class L3PolicyContext(GroupPolicyContext, api.L3PolicyContext):
     @property
     def original(self):
         return self._original_l3_policy
+
+    def add_router(self, router_id):
+        routers = self._plugin._add_router_to_l3_policy(
+            self._plugin_context, self._l3_policy['id'], router_id)
+        self._l3_policy['routers'] = routers
