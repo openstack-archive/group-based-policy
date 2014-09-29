@@ -133,6 +133,16 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
             raise gpolicy.L3PolicyNotFound(
                 l3_policy_id=l3_policy_id)
 
+    def _set_l3_policy_for_l2_policy(self, context, l2p_id, l3p_id):
+        with context.session.begin(subtransactions=True):
+            l2p_db = self._get_l2_policy(context, l2p_id)
+            l2p_db.l3_policy_id = l3p_id
+
+    def _set_l2_policy_for_endpoint_group(self, context, epg_id, l2p_id):
+        with context.session.begin(subtransactions=True):
+            epg_db = self._get_endpoint_group(context, epg_id)
+            epg_db.l2_policy_id = l2p_id
+
     def _make_endpoint_dict(self, ep, fields=None):
         res = {'id': ep['id'],
                'tenant_id': ep['tenant_id'],
