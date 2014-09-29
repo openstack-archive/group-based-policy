@@ -53,6 +53,11 @@ class EndpointGroupContext(GroupPolicyContext, api.EndpointGroupContext):
     def original(self):
         return self._original_endpoint_group
 
+    def set_l2_policy_id(self, l2_policy_id):
+        self._plugin._set_l2_policy_for_endpoint_group(
+            self._plugin_context, self._endpoint_group['id'], l2_policy_id)
+        self._endpoint_group['l2_policy_id'] = l2_policy_id
+
 
 class L2PolicyContext(GroupPolicyContext, api.L2PolicyContext):
 
@@ -69,6 +74,11 @@ class L2PolicyContext(GroupPolicyContext, api.L2PolicyContext):
     @property
     def original(self):
         return self._original_l2_policy
+
+    def set_l3_policy_id(self, l3_policy_id):
+        self._plugin._set_l3_policy_for_l2_policy(
+            self._plugin_context, self._l2_policy['id'], l3_policy_id)
+        self._l2_policy['l3_policy_id'] = l3_policy_id
 
 
 class L3PolicyContext(GroupPolicyContext, api.L3PolicyContext):
