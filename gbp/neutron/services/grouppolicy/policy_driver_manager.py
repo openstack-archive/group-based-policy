@@ -111,7 +111,11 @@ class PolicyDriverManager(stevedore.named.NamedExtensionManager):
         for driver in self.ordered_policy_drivers:
             try:
                 getattr(driver.obj, method_name)(context)
+            except gp_exc.GroupPolicyException:
+                # This is an exception for the user.
+                raise
             except Exception:
+                # This is an internal failure.
                 LOG.exception(
                     _("Policy driver '%(name)s' failed in %(method)s"),
                     {'name': driver.name, 'method': method_name}

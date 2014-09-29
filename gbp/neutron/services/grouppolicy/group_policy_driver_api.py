@@ -43,6 +43,16 @@ class EndpointContext(object):
         """
         pass
 
+    @abc.abstractmethod
+    def set_port_id(self, port_id):
+        """Set the port for the endpoint.
+
+        :param port_id: Port to which endpoint is mapped.
+
+        Set the neutron port to which the endpoint is mapped.
+        """
+        pass
+
 
 @six.add_metaclass(abc.ABCMeta)
 class EndpointGroupContext(object):
@@ -79,6 +89,17 @@ class EndpointGroupContext(object):
         :param l2_policy_id: l2_policy for the endpoint_group.
 
         Set the l2_policy for the endpoint_group.
+        """
+        pass
+
+    @abc.abstractmethod
+    def add_subnet(self, subnet_id):
+        """Add the subnet to the endpoint_group.
+
+        :param subnet_id: Subnet to which endpoint_group is mapped.
+
+        Add a neutron subnet to the set of subnets to which the
+        endpoint_group is mapped.
         """
         pass
 
@@ -121,6 +142,16 @@ class L2PolicyContext(object):
         """
         pass
 
+    @abc.abstractmethod
+    def set_network_id(self, network_id):
+        """Set the network for the l2_policy.
+
+        :param network_id: Network to which l2_policy is mapped.
+
+        Set the neutron network to which the l2_policy is mapped.
+        """
+        pass
+
 
 @six.add_metaclass(abc.ABCMeta)
 class L3PolicyContext(object):
@@ -148,6 +179,17 @@ class L3PolicyContext(object):
         Return the original state of the l3_policy, prior to a call to
         update_l3_policy. Method is only valid within calls to
         update_l3_policy_precommit and update_l3_policy_postcommit.
+        """
+        pass
+
+    @abc.abstractmethod
+    def add_router(self, router_id):
+        """Add the router to the l3_policy.
+
+        :param router_id: Router to which l3_policy is mapped.
+
+        Add a neutron router to the set of routers to which the
+        l3_policy is mapped.
         """
         pass
 

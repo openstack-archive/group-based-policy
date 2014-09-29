@@ -194,7 +194,8 @@ DB_GP_PLUGIN_KLASS = (GroupPolicyDBTestPlugin.__module__ + '.' +
 class GroupPolicyDbTestCase(GroupPolicyDBTestBase,
                             test_db_plugin.NeutronDbPluginV2TestCase):
 
-    def setUp(self, gp_plugin=None, service_plugins=None, ext_mgr=None):
+    def setUp(self, core_plugin=None, gp_plugin=None, service_plugins=None,
+              ext_mgr=None):
         extensions.append_api_extensions_path(gbp.neutron.extensions.__path__)
         if not gp_plugin:
             gp_plugin = DB_GP_PLUGIN_KLASS
@@ -203,7 +204,7 @@ class GroupPolicyDbTestCase(GroupPolicyDBTestBase,
             service_plugins = {'gp_plugin_name': gp_plugin}
 
         super(GroupPolicyDbTestCase, self).setUp(
-            ext_mgr=ext_mgr,
+            plugin=core_plugin, ext_mgr=ext_mgr,
             service_plugins=service_plugins
         )
 
