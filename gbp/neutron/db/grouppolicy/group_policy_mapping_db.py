@@ -103,6 +103,32 @@ class GroupPolicyMappingDbPlugin(gpdb.GroupPolicyDbPlugin):
         res['routers'] = [router.router_id for router in l3p.routers]
         return self._fields(res, fields)
 
+    def _set_port_for_endpoint(self, context, ep_id, port_id):
+        with context.session.begin(subtransactions=True):
+            ep_db = self._get_endpoint(context, ep_id)
+            ep_db.port_id = port_id
+
+    def _add_subnet_to_endpoint_group(self, context, epg_id, subnet_id):
+        with context.session.begin(subtransactions=True):
+            epg_db = self._get_endpoint_group(context, epg_id)
+            assoc = EndpointGroupSubnetAssociation(endpoint_group_id=epg_id,
+                                                   subnet_id=subnet_id)
+            epg_db.subnets.append(assoc)
+        return [subnet.subnet_id for subnet in epg_db.subnets]
+
+    def _set_network_for_l2_policy(self, context, l2p_id, network_id):
+        with context.session.begin(subtransactions=True):
+            l2p_db = self._get_l2_policy(context, l2p_id)
+            l2p_db.network_id = network_id
+
+    def _add_router_to_l3_policy(self, context, l3p_id, router_id):
+        with context.session.begin(subtransactions=True):
+            l3p_db = self._get_l3_policy(context, l3p_id)
+            assoc = L3PolicyRouterAssociation(l3_policy_id=l3p_id,
+                                              router_id=router_id)
+            l3p_db.routers.append(assoc)
+        return [router.router_id for router in l3p_db.routers]
+
     @log.log
     def create_endpoint(self, context, endpoint):
         ep = endpoint['endpoint']
