@@ -14,7 +14,7 @@ from neutron.common import log
 from neutron.openstack.common import excutils
 from neutron.openstack.common import log as logging
 
-from gbp.neutron.db.grouppolicy import group_policy_db
+from gbp.neutron.db.grouppolicy import group_policy_mapping_db
 from gbp.neutron.services.grouppolicy.common import exceptions as gp_exc
 from gbp.neutron.services.grouppolicy import group_policy_context as p_context
 from gbp.neutron.services.grouppolicy import policy_driver_manager as manager
@@ -23,7 +23,7 @@ from gbp.neutron.services.grouppolicy import policy_driver_manager as manager
 LOG = logging.getLogger(__name__)
 
 
-class GroupPolicyPlugin(group_policy_db.GroupPolicyDbPlugin):
+class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
 
     """Implementation of the Group Policy Model Plugin.
 
@@ -31,7 +31,7 @@ class GroupPolicyPlugin(group_policy_db.GroupPolicyDbPlugin):
     Most DB related works are implemented in class
     db_group_policy_mapping.GroupPolicyMappingDbMixin.
     """
-    supported_extension_aliases = ["group-policy"]
+    supported_extension_aliases = ["group-policy", "group-policy-mapping"]
 
     def __init__(self):
         self.policy_driver_manager = manager.PolicyDriverManager()
