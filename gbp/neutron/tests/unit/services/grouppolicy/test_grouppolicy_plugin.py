@@ -28,10 +28,11 @@ GP_PLUGIN_KLASS = (
 
 class GroupPolicyPluginTestCase(tgpmdb.GroupPolicyMappingDbTestCase):
 
-    def setUp(self, core_plugin=None, gp_plugin=None, ext_mgr=None):
-        super(GroupPolicyPluginTestCase, self).setUp(
-            gp_plugin=GP_PLUGIN_KLASS
-        )
+    def setUp(self, core_plugin=None, gp_plugin=None):
+        if not gp_plugin:
+            gp_plugin = GP_PLUGIN_KLASS
+        super(GroupPolicyPluginTestCase, self).setUp(core_plugin=core_plugin,
+                                                     gp_plugin=gp_plugin)
 
 
 class TestGroupPolicyPluginGroupResources(
