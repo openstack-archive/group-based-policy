@@ -293,7 +293,8 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
             raise gpolicy.ContractNotFound(contract_id=contract_id)
         return contract
 
-    def _get_min_max_ports_from_range(self, port_range):
+    @staticmethod
+    def _get_min_max_ports_from_range(port_range):
         if not port_range:
             return [None, None]
         min_port, sep, max_port = port_range.partition(":")
@@ -548,6 +549,11 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
                                for pr in ct['policy_rules']]
         return self._fields(res, fields)
 
+    def _get_policy_rule_contracts(self, context, policy_rule_id):
+        return [x['contract_id'] for x in
+                context.session.query(ContractPolicyRuleAssociation).filter_by(
+                    policy_rule_id=policy_rule_id)]
+
     @staticmethod
     def validate_subnet_prefix_length(ip_version, new_prefix_length):
         if (new_prefix_length < 2) or (
@@ -769,7 +775,7 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
     def create_policy_classifier(self, context, policy_classifier):
         pc = policy_classifier['policy_classifier']
         tenant_id = self._get_tenant_id_for_create(context, pc)
-        port_min, port_max = self._get_min_max_ports_from_range(
+        port_min, port_max = GroupPolicyDbPlugin._get_min_max_ports_from_range(
             pc['port_range'])
         with context.session.begin(subtransactions=True):
             pc_db = PolicyClassifier(id=uuidutils.generate_uuid(),
@@ -790,8 +796,9 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
         with context.session.begin(subtransactions=True):
             pc_db = self._get_policy_classifier(context, policy_classifier_id)
             if 'port_range' in pc:
-                port_min, port_max = self._get_min_max_ports_from_range(
-                    pc['port_range'])
+                port_min, port_max = (GroupPolicyDbPlugin.
+                                      _get_min_max_ports_from_range(
+                    pc['port_range']))
                 pc.update({'port_range_min': port_min,
                            'port_range_max': port_max})
                 del pc['port_range']
