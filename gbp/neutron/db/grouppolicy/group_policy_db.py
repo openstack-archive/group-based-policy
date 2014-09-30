@@ -293,7 +293,8 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
             raise gpolicy.ContractNotFound(contract_id=contract_id)
         return contract
 
-    def _get_min_max_ports_from_range(self, port_range):
+    @staticmethod
+    def _get_min_max_ports_from_range(port_range):
         if not port_range:
             return [None, None]
         min_port, sep, max_port = port_range.partition(":")
@@ -547,6 +548,11 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
         res['policy_rules'] = [pr['policy_rule_id']
                                for pr in ct['policy_rules']]
         return self._fields(res, fields)
+
+    def _get_policy_rule_contracts(self, context, policy_rule_id):
+        return [x['contract_id'] for x in
+                context.session.query(ContractPolicyRuleAssociation).filter_by(
+                    policy_rule_id=policy_rule_id)]
 
     @staticmethod
     def validate_subnet_prefix_length(ip_version, new_prefix_length):
