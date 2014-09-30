@@ -548,6 +548,11 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
                                for pr in ct['policy_rules']]
         return self._fields(res, fields)
 
+    def _get_policy_rule_contracts(self, context, policy_rule_id):
+        return [x['contract_id'] for x in
+                context.session.query(ContractPolicyRuleAssociation).filter_by(
+                    policy_rule_id=policy_rule_id)]
+
     @staticmethod
     def validate_subnet_prefix_length(ip_version, new_prefix_length):
         if (new_prefix_length < 2) or (
