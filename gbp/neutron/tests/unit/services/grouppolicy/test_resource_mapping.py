@@ -16,13 +16,24 @@ import mock
 import webob.exc
 
 from neutron.api.rpc.agentnotifiers import dhcp_rpc_agent_api
+from neutron.extensions import securitygroup as ext_sg
 from neutron.notifiers import nova
+from neutron.tests.unit import test_extension_security_group
+from neutron.tests.unit import test_l3_plugin
 
+from gbp.neutron.services.grouppolicy.common import constants as gconst
 from gbp.neutron.services.grouppolicy import config
 from gbp.neutron.tests.unit.services.grouppolicy import test_grouppolicy_plugin
 
 
-CORE_PLUGIN = 'neutron.tests.unit.test_l3_plugin.TestNoL3NatPlugin'
+class NoL3NatSGTestPlugin(test_l3_plugin.TestNoL3NatPlugin,
+                  test_extension_security_group.SecurityGroupTestPlugin):
+
+    supported_extension_aliases = ["external-net", "security-group"]
+
+
+CORE_PLUGIN = ('gbp.neutron.tests.unit.services.grouppolicy.'
+               'test_resource_mapping.NoL3NatSGTestPlugin')
 
 
 class ResourceMappingTestCase(
@@ -52,6 +63,10 @@ class TestEndpoint(ResourceMappingTestCase):
         # group's subnet.
 
         # Verify deleting endpoint cleans up port.
+        self.getendpoint = mock.patch(
+            'gbp.neutron.db.grouppolicy.group_policy_db.'
+            'GroupPolicyDbPlugin.get_endpoint').start()
+        self.getendpoint.return_value = ep['endpoint']
         req = self.new_delete_request('endpoints', ep_id)
         res = req.get_response(self.ext_api)
         self.assertEqual(res.status_int, webob.exc.HTTPNoContent.code)
@@ -76,6 +91,10 @@ class TestEndpoint(ResourceMappingTestCase):
             self.assertEqual(port_id, ep['endpoint']['port_id'])
 
             # Verify deleting endpoint does not cleanup port.
+            self.getendpoint = mock.patch(
+                'gbp.neutron.db.grouppolicy.group_policy_db.'
+                'GroupPolicyDbPlugin.get_endpoint').start()
+            self.getendpoint.return_value = ep['endpoint']
             req = self.new_delete_request('endpoints', ep_id)
             res = req.get_response(self.ext_api)
             self.assertEqual(res.status_int, webob.exc.HTTPNoContent.code)
@@ -387,3 +406,134 @@ class NotificationTest(ResourceMappingTestCase):
             nova_notifier.assert_any_call("create_network", {}, mock.ANY)
             nova_notifier.assert_any_call("create_subnet", {}, mock.ANY)
             nova_notifier.assert_any_call("create_port", {}, mock.ANY)
+
+
+# TODO: We need a UT that verifies that the EP's ports have the default SG
+# when there are no contracts involved, that the default SG is properly
+# created and shared, and that it has the right content.
+class TestContract(ResourceMappingTestCase):
+
+    def test_contract_creation(self):
+        # Create contracts
+        classifier = self.create_policy_classifier(name="class1",
+                protocol="tcp", direction="out", port_range="50:100")
+        classifier_id = classifier['policy_classifier']['id']
+        action = self.create_policy_action(name="action1")
+        action_id = action['policy_action']['id']
+        action_id_list = [action_id]
+        policy_rule = self.create_policy_rule(name='pr1',
+                policy_classifier_id=classifier_id,
+                policy_actions=action_id_list)
+        policy_rule_id = policy_rule['policy_rule']['id']
+        policy_rule_list = [policy_rule_id]
+        contract = self.create_contract(name="c1",
+                policy_rules=policy_rule_list)
+        contract_id = contract['contract']['id']
+        epg = self.create_endpoint_group(name="epg1",
+                provided_contracts={contract_id: None})
+        epg_id = epg['endpoint_group']['id']
+        ep = self.create_endpoint(name="ep1", endpoint_group_id=epg_id)
+
+        # verify SG bind to port
+        port_id = ep['endpoint']['port_id']
+        res = self.new_show_request('ports', port_id)
+        port = self.deserialize(self.fmt, res.get_response(self.api))
+        security_groups = port['port'][ext_sg.SECURITYGROUPS]
+        self.assertEqual(len(security_groups), 2)
+
+    # TODO: we also need to verify that those security groups have the right
+    # rules
+    def test_consumed_contract(self):
+        classifier = self.create_policy_classifier(name="class1",
+                protocol="tcp", direction="in", port_range="20:90")
+        classifier_id = classifier['policy_classifier']['id']
+        action = self.create_policy_action(name="action1",
+                                           action_type=gconst.GP_ACTION_ALLOW)
+        action_id = action['policy_action']['id']
+        action_id_list = [action_id]
+        policy_rule = self.create_policy_rule(name='pr1',
+                policy_classifier_id=classifier_id,
+                policy_actions=action_id_list)
+        policy_rule_id = policy_rule['policy_rule']['id']
+        policy_rule_list = [policy_rule_id]
+        contract = self.create_contract(name="c1",
+                policy_rules=policy_rule_list)
+        contract_id = contract['contract']['id']
+        self.create_endpoint_group(name="epg1",
+                                   provided_contracts={contract_id: None})
+        consumed_epg = self.create_endpoint_group(name="epg2",
+                            consumed_contracts={contract_id: None})
+        epg_id = consumed_epg['endpoint_group']['id']
+        ep = self.create_endpoint(name="ep2", endpoint_group_id=epg_id)
+
+        # verify SG bind to port
+        port_id = ep['endpoint']['port_id']
+        res = self.new_show_request('ports', port_id)
+        port = self.deserialize(self.fmt, res.get_response(self.api))
+        security_groups = port['port'][ext_sg.SECURITYGROUPS]
+        self.assertEqual(len(security_groups), 2)
+
+    # Test update and delete of EPG, how it affects SG mapping
+    def test_endpoint_group_update(self):
+        # create two contracts: bind one to an EPG, update with
+        # adding another one (increase SG count on EP on EPG)
+        classifier1 = self.create_policy_classifier(name="class1",
+                protocol="tcp", direction="bi", port_range="30:80")
+        classifier2 = self.create_policy_classifier(name="class2",
+                protocol="udp", direction="out", port_range="20:30")
+        classifier1_id = classifier1['policy_classifier']['id']
+        classifier2_id = classifier2['policy_classifier']['id']
+        action = self.create_policy_action(name="action1",
+                                           action_type=gconst.GP_ACTION_ALLOW)
+        action_id = action['policy_action']['id']
+        action_id_list = [action_id]
+        policy_rule1 = self.create_policy_rule(name='pr1',
+                policy_classifier_id=classifier1_id,
+                policy_actions=action_id_list)
+        policy_rule2 = self.create_policy_rule(name='pr2',
+                policy_classifier_id=classifier2_id,
+                policy_actions=action_id_list)
+        policy_rule1_id = policy_rule1['policy_rule']['id']
+        policy_rule1_list = [policy_rule1_id]
+        policy_rule2_id = policy_rule2['policy_rule']['id']
+        policy_rule2_list = [policy_rule2_id]
+        contract1 = self.create_contract(name="c1",
+                policy_rules=policy_rule1_list)
+        contract1_id = contract1['contract']['id']
+        contract2 = self.create_contract(name="c2",
+                policy_rules=policy_rule2_list)
+        contract2_id = contract2['contract']['id']
+        epg1 = self.create_endpoint_group(name="epg1",
+                            provided_contracts={contract1_id: None})
+        epg2 = self.create_endpoint_group(name="epg2",
+                            consumed_contracts={contract1_id: None})
+        epg1_id = epg1['endpoint_group']['id']
+        epg2_id = epg2['endpoint_group']['id']
+
+        # endpoint ep1 now with epg2 consumes contract1_id
+        ep1 = self.create_endpoint(name="ep1",
+                                   endpoint_group_id=epg2_id)
+        # ep1's port should have 2 SG associated
+        port_id = ep1['endpoint']['port_id']
+        res = self.new_show_request('ports', port_id)
+        port = self.deserialize(self.fmt, res.get_response(self.api))
+        security_groups = port['port'][ext_sg.SECURITYGROUPS]
+        self.assertEqual(len(security_groups), 2)
+
+        # now add a contract to EPG
+        # First we update contract2 to be provided by consumed_epg
+        data = {'endpoint_group': {'provided_contracts': {contract2_id: None}}}
+        req = self.new_update_request('endpoint_groups', data, epg2_id)
+        res = req.get_response(self.ext_api)
+        self.assertEqual(res.status_int, webob.exc.HTTPOk.code)
+        # set epg1 to provide contract1 and consume contract2
+        # contract2 now maps to SG which has epg2's subnet as CIDR on rules
+        data = {'endpoint_group': {'consumed_contracts': {contract2_id: None}}}
+        req = self.new_update_request('endpoint_groups', data, epg1_id)
+        res = req.get_response(self.ext_api)
+        self.assertEqual(res.status_int, webob.exc.HTTPOk.code)
+        port_id = ep1['endpoint']['port_id']
+        res = self.new_show_request('ports', port_id)
+        port = self.deserialize(self.fmt, res.get_response(self.api))
+        security_groups = port['port'][ext_sg.SECURITYGROUPS]
+        self.assertEqual(len(security_groups), 3)
