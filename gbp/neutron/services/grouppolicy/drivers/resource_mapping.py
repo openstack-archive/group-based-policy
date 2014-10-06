@@ -12,9 +12,6 @@
 
 import netaddr
 
-from oslo.config import cfg
-import sqlalchemy as sa
-
 from neutron.api.rpc.agentnotifiers import dhcp_rpc_agent_api
 from neutron.api.v2 import attributes
 from neutron.common import constants as const
@@ -26,7 +23,10 @@ from neutron import manager
 from neutron.notifiers import nova
 from neutron.openstack.common import log as logging
 from neutron.plugins.common import constants as pconst
+from oslo.config import cfg
+import sqlalchemy as sa
 
+from gbp.neutron.db.grouppolicy import group_policy_db as gpdb
 from gbp.neutron.services.grouppolicy.common import constants as gconst
 from gbp.neutron.services.grouppolicy.common import exceptions as exc
 from gbp.neutron.services.grouppolicy import group_policy_driver_api as api
@@ -39,6 +39,7 @@ class OwnedPort(model_base.BASEV2):
     """A Port owned by the resource_mapping driver."""
 
     __tablename__ = 'gpm_owned_ports'
+    __table_args__ = gpdb.gbp_schema
     port_id = sa.Column(sa.String(36),
                         sa.ForeignKey('ports.id', ondelete='CASCADE'),
                         nullable=False, primary_key=True)
@@ -48,6 +49,7 @@ class OwnedSubnet(model_base.BASEV2):
     """A Subnet owned by the resource_mapping driver."""
 
     __tablename__ = 'gpm_owned_subnets'
+    __table_args__ = gpdb.gbp_schema
     subnet_id = sa.Column(sa.String(36),
                           sa.ForeignKey('subnets.id', ondelete='CASCADE'),
                           nullable=False, primary_key=True)
@@ -57,6 +59,7 @@ class OwnedNetwork(model_base.BASEV2):
     """A Network owned by the resource_mapping driver."""
 
     __tablename__ = 'gpm_owned_networks'
+    __table_args__ = gpdb.gbp_schema
     network_id = sa.Column(sa.String(36),
                            sa.ForeignKey('networks.id', ondelete='CASCADE'),
                            nullable=False, primary_key=True)
@@ -66,6 +69,7 @@ class OwnedRouter(model_base.BASEV2):
     """A Router owned by the resource_mapping driver."""
 
     __tablename__ = 'gpm_owned_routers'
+    __table_args__ = gpdb.gbp_schema
     router_id = sa.Column(sa.String(36),
                           sa.ForeignKey('routers.id', ondelete='CASCADE'),
                           nullable=False, primary_key=True)
@@ -75,8 +79,9 @@ class ContractSGsMapping(model_base.BASEV2):
     """Contract to SGs mapping DB."""
 
     __tablename__ = 'gpm_contract_sg_mapping'
+    __table_args__ = gpdb.gbp_schema
     contract_id = sa.Column(sa.String(36),
-                          sa.ForeignKey('gp_contracts.id', ondelete='CASCADE'),
+                          sa.ForeignKey(gpdb.Contract.id, ondelete='CASCADE'),
                             nullable=False, primary_key=True)
     provided_sg_id = sa.Column(sa.String(36),
                                sa.ForeignKey('securitygroups.id'))

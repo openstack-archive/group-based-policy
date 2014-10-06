@@ -10,9 +10,7 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-import sqlalchemy as sa
-from sqlalchemy import orm
-from sqlalchemy.orm import exc
+import re
 
 from neutron.common import log
 from neutron import context
@@ -22,6 +20,10 @@ from neutron.db import models_v2
 from neutron.openstack.common import log as logging
 from neutron.openstack.common import uuidutils
 from neutron.plugins.common import constants
+from oslo.config import cfg
+import sqlalchemy as sa
+from sqlalchemy import orm
+from sqlalchemy.orm import exc
 
 from gbp.neutron.extensions import group_policy as gpolicy
 from gbp.neutron.services.grouppolicy.common import constants as gp_constants
@@ -31,88 +33,22 @@ LOG = logging.getLogger(__name__)
 MAX_IPV4_SUBNET_PREFIX_LENGTH = 31
 MAX_IPV6_SUBNET_PREFIX_LENGTH = 127
 
+gbp_opts = [
+    cfg.StrOpt('connection',
+               secret=True,
+               default='',
+               help=_('URL to database')),
+]
 
-class Endpoint(model_base.BASEV2, models_v2.HasId, models_v2.HasTenant):
-    """Endpoint is the lowest unit of abstraction on which a policy is applied.
-
-    This Endpoint is unrelated to the Endpoint terminology used in Keystone.
-    """
-    __tablename__ = 'gp_endpoints'
-    type = sa.Column(sa.String(15))
-    __mapper_args__ = {
-        'polymorphic_on': type,
-        'polymorphic_identity': 'base'
-    }
-    name = sa.Column(sa.String(50))
-    description = sa.Column(sa.String(255))
-    endpoint_group_id = sa.Column(sa.String(36),
-                                  sa.ForeignKey('gp_endpoint_groups.id'),
-                                  nullable=True)
-
-
-class EndpointGroupContractProvidingAssociation(model_base.BASEV2):
-    """Models  many to many providing relation between EPGs and Contracts."""
-    __tablename__ = 'gp_endpoint_group_contract_providing_associations'
-    contract_id = sa.Column(sa.String(36),
-                            sa.ForeignKey('gp_contracts.id'),
-                            primary_key=True)
-    endpoint_group_id = sa.Column(sa.String(36),
-                                  sa.ForeignKey('gp_endpoint_groups.id'),
-                                  primary_key=True)
-
-
-class EndpointGroupContractConsumingAssociation(model_base.BASEV2):
-    """Models many to many consuming relation between EPGs and Contracts."""
-    __tablename__ = 'gp_endpoint_group_contract_consuming_associations'
-    contract_id = sa.Column(sa.String(36),
-                            sa.ForeignKey('gp_contracts.id'),
-                            primary_key=True)
-    endpoint_group_id = sa.Column(sa.String(36),
-                                  sa.ForeignKey('gp_endpoint_groups.id'),
-                                  primary_key=True)
-
-
-class EndpointGroup(model_base.BASEV2, models_v2.HasId, models_v2.HasTenant):
-    """Represents an Endpoint Group that is a collection of endpoints."""
-    __tablename__ = 'gp_endpoint_groups'
-    type = sa.Column(sa.String(15))
-    __mapper_args__ = {
-        'polymorphic_on': type,
-        'polymorphic_identity': 'base'
-    }
-    name = sa.Column(sa.String(50))
-    description = sa.Column(sa.String(255))
-    endpoints = orm.relationship(Endpoint, backref='endpoint_group')
-    l2_policy_id = sa.Column(sa.String(36),
-                             sa.ForeignKey('gp_l2_policies.id'),
-                             nullable=True)
-    provided_contracts = orm.relationship(
-        EndpointGroupContractProvidingAssociation,
-        backref='providing_endpoint_group', cascade='all, delete-orphan')
-    consumed_contracts = orm.relationship(
-        EndpointGroupContractConsumingAssociation,
-        backref='consuming_endpoint_group', cascade='all, delete-orphan')
-
-
-class L2Policy(model_base.BASEV2, models_v2.HasId, models_v2.HasTenant):
-    """Represents a L2 Policy for a collection of endpoint_groups."""
-    __tablename__ = 'gp_l2_policies'
-    type = sa.Column(sa.String(15))
-    __mapper_args__ = {
-        'polymorphic_on': type,
-        'polymorphic_identity': 'base'
-    }
-    name = sa.Column(sa.String(50))
-    description = sa.Column(sa.String(255))
-    endpoint_groups = orm.relationship(EndpointGroup, backref='l2_policy')
-    l3_policy_id = sa.Column(sa.String(36),
-                             sa.ForeignKey('gp_l3_policies.id'),
-                             nullable=True)
+cfg.CONF.register_opts(gbp_opts, 'gbp_database')
+gbp_schema = re.split(r'[/?]', cfg.CONF.gbp_database.connection)
+gbp_schema = {'schema': gbp_schema[3]} if len(gbp_schema) > 3 else {}
 
 
 class L3Policy(model_base.BASEV2, models_v2.HasId, models_v2.HasTenant):
     """Represents a L3 Policy with a non-overlapping IP address space."""
     __tablename__ = 'gp_l3_policies'
+    __table_args__ = gbp_schema
     type = sa.Column(sa.String(15))
     __mapper_args__ = {
         'polymorphic_on': type,
@@ -123,51 +59,75 @@ class L3Policy(model_base.BASEV2, models_v2.HasId, models_v2.HasTenant):
     ip_version = sa.Column(sa.Integer, nullable=False)
     ip_pool = sa.Column(sa.String(64), nullable=False)
     subnet_prefix_length = sa.Column(sa.Integer, nullable=False)
-    l2_policies = orm.relationship(L2Policy, backref='l3_policy')
+    l2_policies = orm.relationship('L2Policy', backref='l3_policy')
 
 
-class ContractPolicyRuleAssociation(model_base.BASEV2):
-    """Models the many to many relation between Contract and Policy rules."""
-    __tablename__ = 'gp_contract_policy_rule_associations'
-    contract_id = sa.Column(sa.String(36),
-                            sa.ForeignKey('gp_contracts.id'),
-                            primary_key=True)
-    policy_rule_id = sa.Column(sa.String(36),
-                               sa.ForeignKey('gp_policy_rules.id'),
-                               primary_key=True)
-
-
-class PolicyRuleActionAssociation(model_base.BASEV2):
-    """Many to many relation between PolicyRules and PolicyActions."""
-    __tablename__ = 'gp_policy_rule_action_associations'
-    policy_rule_id = sa.Column(sa.String(36),
-                               sa.ForeignKey('gp_policy_rules.id'),
-                               primary_key=True)
-    policy_action_id = sa.Column(sa.String(36),
-                                 sa.ForeignKey(
-                                 'gp_policy_actions.id'),
-                                 primary_key=True)
-
-
-class PolicyRule(model_base.BASEV2, models_v2.HasId, models_v2.HasTenant):
-    """Represents a Group Policy Rule."""
-    __tablename__ = 'gp_policy_rules'
+class L2Policy(model_base.BASEV2, models_v2.HasId, models_v2.HasTenant):
+    """Represents a L2 Policy for a collection of endpoint_groups."""
+    __tablename__ = 'gp_l2_policies'
+    __table_args__ = gbp_schema
+    type = sa.Column(sa.String(15))
+    __mapper_args__ = {
+        'polymorphic_on': type,
+        'polymorphic_identity': 'base'
+    }
     name = sa.Column(sa.String(50))
     description = sa.Column(sa.String(255))
-    enabled = sa.Column(sa.Boolean)
-    policy_classifier_id = sa.Column(sa.String(36),
-                                     sa.ForeignKey(
-                                     'gp_policy_classifiers.id'),
-                                     nullable=False)
-    policy_actions = orm.relationship(PolicyRuleActionAssociation,
-                                      backref='gp_policy_rules',
-                                      cascade='all', lazy="joined")
+    endpoint_groups = orm.relationship('EndpointGroup', backref='l2_policy')
+    l3_policy_id = sa.Column(sa.String(36),
+                             sa.ForeignKey(L3Policy.id),
+                             nullable=True)
+
+
+class EndpointGroup(model_base.BASEV2, models_v2.HasId, models_v2.HasTenant):
+    """Represents an Endpoint Group that is a collection of endpoints."""
+    __tablename__ = 'gp_endpoint_groups'
+    __table_args__ = gbp_schema
+    type = sa.Column(sa.String(15))
+    __mapper_args__ = {
+        'polymorphic_on': type,
+        'polymorphic_identity': 'base'
+    }
+    name = sa.Column(sa.String(50))
+    description = sa.Column(sa.String(255))
+    endpoints = orm.relationship('Endpoint', backref='endpoint_group')
+    l2_policy_id = sa.Column(sa.String(36),
+                             sa.ForeignKey(L2Policy.id),
+                             nullable=True)
+    provided_contracts = orm.relationship(
+        'EndpointGroupContractProvidingAssociation',
+        backref='providing_endpoint_group', cascade='all, delete-orphan')
+    consumed_contracts = orm.relationship(
+        'EndpointGroupContractConsumingAssociation',
+        backref='consuming_endpoint_group', cascade='all, delete-orphan')
+
+
+class Endpoint(model_base.BASEV2, models_v2.HasId,
+               models_v2.HasTenant):
+    """Endpoint is the lowest unit of abstraction on which a policy is applied.
+
+    This Endpoint is unrelated to the Endpoint terminology used in Keystone.
+    """
+    __tablename__ = 'gp_endpoints'
+    __table_args__ = gbp_schema
+    type = sa.Column(sa.String(15))
+    __mapper_args__ = {
+        'polymorphic_on': type,
+        'polymorphic_identity': 'base'
+    }
+    name = sa.Column(sa.String(50))
+    description = sa.Column(sa.String(255))
+    endpoint_group_id = sa.Column(sa.String(36),
+                                  sa.ForeignKey(
+                                      EndpointGroup.id),
+                                  nullable=True)
 
 
 class PolicyClassifier(model_base.BASEV2, models_v2.HasId,
                        models_v2.HasTenant):
     """Represents a Group Policy Classifier."""
     __tablename__ = 'gp_policy_classifiers'
+    __table_args__ = gbp_schema
     name = sa.Column(sa.String(50))
     description = sa.Column(sa.String(255))
     protocol = sa.Column(sa.Enum(constants.TCP, constants.UDP, constants.ICMP,
@@ -179,13 +139,30 @@ class PolicyClassifier(model_base.BASEV2, models_v2.HasId,
                                   gp_constants.GP_DIRECTION_OUT,
                                   gp_constants.GP_DIRECTION_BI,
                                   name='direction'))
-    policy_rules = orm.relationship(PolicyRule,
+    policy_rules = orm.relationship('PolicyRule',
                                     backref='gp_policy_classifiers')
+
+
+class PolicyRule(model_base.BASEV2, models_v2.HasId, models_v2.HasTenant):
+    """Represents a Group Policy Rule."""
+    __tablename__ = 'gp_policy_rules'
+    __table_args__ = gbp_schema
+    name = sa.Column(sa.String(50))
+    description = sa.Column(sa.String(255))
+    enabled = sa.Column(sa.Boolean)
+    policy_classifier_id = sa.Column(sa.String(36),
+                                     sa.ForeignKey(
+                                     PolicyClassifier.id),
+                                     nullable=False)
+    policy_actions = orm.relationship('PolicyRuleActionAssociation',
+                                      backref='gp_policy_rules',
+                                      cascade='all', lazy="joined")
 
 
 class PolicyAction(model_base.BASEV2, models_v2.HasId, models_v2.HasTenant):
     """Represents a Group Policy Action."""
     __tablename__ = 'gp_policy_actions'
+    __table_args__ = gbp_schema
     name = sa.Column(sa.String(50))
     description = sa.Column(sa.String(255))
     action_type = sa.Column(sa.Enum(gp_constants.GP_ALLOW,
@@ -195,31 +172,89 @@ class PolicyAction(model_base.BASEV2, models_v2.HasId, models_v2.HasTenant):
     # however, value is required if something meaningful needs to be done
     # for redirect
     action_value = sa.Column(sa.String(36), nullable=True)
-    policy_rules = orm.relationship(PolicyRuleActionAssociation,
+    policy_rules = orm.relationship('PolicyRuleActionAssociation',
                                     cascade='all', backref='gp_policy_actions')
+
+
+class PolicyRuleActionAssociation(model_base.BASEV2):
+    """Many to many relation between PolicyRules and PolicyActions."""
+    __tablename__ = 'gp_policy_rule_action_associations'
+    __table_args__ = gbp_schema
+    policy_rule_id = sa.Column(sa.String(36),
+                               sa.ForeignKey(PolicyRule.id),
+                               primary_key=True)
+    policy_action_id = sa.Column(sa.String(36),
+                                 sa.ForeignKey(
+                                 PolicyAction.id),
+                                 primary_key=True)
 
 
 class Contract(model_base.BASEV2, models_v2.HasTenant):
     """Represents a Contract that is a collection of Policy rules."""
     __tablename__ = 'gp_contracts'
+    __table_args__ = gbp_schema
     id = sa.Column(sa.String(36), primary_key=True,
                    default=uuidutils.generate_uuid)
     name = sa.Column(sa.String(50))
     description = sa.Column(sa.String(255))
-    parent_id = sa.Column(sa.String(255), sa.ForeignKey('gp_contracts.id'),
-                          nullable=True)
+    parent_id = sa.Column(
+        sa.String(255), sa.ForeignKey(
+            ((gbp_schema.get('schema') + '.') if gbp_schema else '')
+            + 'gp_contracts.id'),
+        nullable=True)
     child_contracts = orm.relationship('Contract',
                                        backref=orm.backref('parent',
                                                            remote_side=[id]))
-    policy_rules = orm.relationship(ContractPolicyRuleAssociation,
+    policy_rules = orm.relationship('ContractPolicyRuleAssociation',
                                     backref='contract', lazy="joined",
                                     cascade='all, delete-orphan')
     providing_endpoint_groups = orm.relationship(
-        EndpointGroupContractProvidingAssociation, backref='provided_contract',
+        'EndpointGroupContractProvidingAssociation',
+        backref='provided_contract',
         lazy="joined", cascade='all')
     consuming_endpoint_groups = orm.relationship(
-        EndpointGroupContractConsumingAssociation, backref='consumed_contract',
+        'EndpointGroupContractConsumingAssociation',
+        backref='consumed_contract',
         lazy="joined", cascade='all')
+
+
+class EndpointGroupContractProvidingAssociation(model_base.BASEV2):
+    """Models  many to many providing relation between EPGs and Contracts."""
+    __tablename__ = 'gp_endpoint_group_contract_providing_associations'
+    __table_args__ = gbp_schema
+    contract_id = sa.Column(sa.String(36),
+                            sa.ForeignKey(
+                                Contract.id),
+                            primary_key=True)
+    endpoint_group_id = sa.Column(sa.String(36),
+                                  sa.ForeignKey(
+                                      EndpointGroup.id),
+                                  primary_key=True)
+
+
+class EndpointGroupContractConsumingAssociation(model_base.BASEV2):
+    """Models many to many consuming relation between EPGs and Contracts."""
+    __tablename__ = 'gp_endpoint_group_contract_consuming_associations'
+    __table_args__ = gbp_schema
+    contract_id = sa.Column(sa.String(36),
+                            sa.ForeignKey(Contract.id),
+                            primary_key=True)
+    endpoint_group_id = sa.Column(sa.String(36),
+                                  sa.ForeignKey(
+                                      EndpointGroup.id),
+                                  primary_key=True)
+
+
+class ContractPolicyRuleAssociation(model_base.BASEV2):
+    """Models the many to many relation between Contract and Policy rules."""
+    __tablename__ = 'gp_contract_policy_rule_associations'
+    __table_args__ = gbp_schema
+    contract_id = sa.Column(sa.String(36),
+                            sa.ForeignKey(Contract.id),
+                            primary_key=True)
+    policy_rule_id = sa.Column(sa.String(36),
+                               sa.ForeignKey(PolicyRule.id),
+                               primary_key=True)
 
 
 class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,

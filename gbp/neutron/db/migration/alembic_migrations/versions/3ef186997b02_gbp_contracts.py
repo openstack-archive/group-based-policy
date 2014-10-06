@@ -28,7 +28,7 @@ from alembic import op
 import sqlalchemy as sa
 
 
-def upgrade():
+def upgrade(neutron_db=None):
     op.create_table(
         'gp_contracts',
         sa.Column('id', sa.String(36), nullable=False),
@@ -38,7 +38,8 @@ def upgrade():
         sa.Column('parent_id', sa.String(length=36), nullable=True),
         sa.ForeignKeyConstraint(['parent_id'],
                                 ['gp_contracts.id']),
-        sa.PrimaryKeyConstraint('id'))
+        sa.PrimaryKeyConstraint('id'),
+        mysql_DEFAULT_CHARSET='utf8')
 
     op.create_table(
         'gp_endpoint_group_contract_providing_associations',
@@ -48,7 +49,8 @@ def upgrade():
         sa.Column('endpoint_group_id', sa.String(length=36), nullable=True),
         sa.ForeignKeyConstraint(['endpoint_group_id'],
                                 ['gp_endpoint_groups.id'], ondelete='CASCADE'),
-        sa.PrimaryKeyConstraint('contract_id', 'endpoint_group_id'))
+        sa.PrimaryKeyConstraint('contract_id', 'endpoint_group_id'),
+        mysql_DEFAULT_CHARSET='utf8')
 
     op.create_table(
         'gp_endpoint_group_contract_consuming_associations',
@@ -58,7 +60,8 @@ def upgrade():
         sa.Column('endpoint_group_id', sa.String(length=36), nullable=True),
         sa.ForeignKeyConstraint(['endpoint_group_id'],
                                 ['gp_endpoint_groups.id'], ondelete='CASCADE'),
-        sa.PrimaryKeyConstraint('contract_id', 'endpoint_group_id'))
+        sa.PrimaryKeyConstraint('contract_id', 'endpoint_group_id'),
+        mysql_DEFAULT_CHARSET='utf8')
 
     op.create_table(
         'gp_contract_policy_rule_associations',
@@ -68,10 +71,11 @@ def upgrade():
         sa.Column('policy_rule_id', sa.String(length=36), nullable=True),
         sa.ForeignKeyConstraint(['policy_rule_id'],
                                 ['gp_policy_rules.id'], ondelete='CASCADE'),
-        sa.PrimaryKeyConstraint('contract_id', 'policy_rule_id'))
+        sa.PrimaryKeyConstraint('contract_id', 'policy_rule_id'),
+        mysql_DEFAULT_CHARSET='utf8')
 
 
-def downgrade():
+def downgrade(neutron_db=None):
     op.drop_table('gp_endpoint_group_contract_providing_associations')
     op.drop_table('gp_endpoint_group_contract_consuming_associations')
     op.drop_table('gp_contract_policy_rule_associations')

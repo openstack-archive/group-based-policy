@@ -32,7 +32,7 @@ import sqlalchemy as sa
 from gbp.neutron.services.grouppolicy.common import constants as gp_constants
 
 
-def upgrade(active_plugins=None, options=None):
+def upgrade(neutron_db=None):
     op.create_table(
         'gp_policy_classifiers',
         sa.Column('id', sa.String(36), nullable=False),
@@ -50,7 +50,8 @@ def upgrade(active_plugins=None, options=None):
                                        gp_constants.GP_DIRECTION_BI,
                                        name='direction'),
                   nullable=True),
-        sa.PrimaryKeyConstraint('id'))
+        sa.PrimaryKeyConstraint('id'),
+        mysql_DEFAULT_CHARSET='utf8')
 
     op.create_table(
         'gp_policy_rules',
@@ -63,7 +64,8 @@ def upgrade(active_plugins=None, options=None):
         sa.ForeignKeyConstraint(['policy_classifier_id'],
                                 ['gp_policy_classifiers.id'],
                                 ondelete='CASCADE'),
-        sa.PrimaryKeyConstraint('id'))
+        sa.PrimaryKeyConstraint('id'),
+        mysql_DEFAULT_CHARSET='utf8')
 
     op.create_table(
         'gp_policy_actions',
@@ -77,7 +79,8 @@ def upgrade(active_plugins=None, options=None):
                                          name='action_type'),
                   nullable=True),
         sa.Column('action_value', sa.String(36), nullable=True),
-        sa.PrimaryKeyConstraint('id'))
+        sa.PrimaryKeyConstraint('id'),
+        mysql_DEFAULT_CHARSET='utf8')
 
     op.create_table(
         'gp_policy_rule_action_associations',
@@ -87,10 +90,11 @@ def upgrade(active_plugins=None, options=None):
         sa.Column('policy_action_id', sa.String(length=36), nullable=True),
         sa.ForeignKeyConstraint(['policy_action_id'],
                                 ['gp_policy_actions.id'], ondelete='CASCADE'),
-        sa.PrimaryKeyConstraint('policy_rule_id', 'policy_action_id'))
+        sa.PrimaryKeyConstraint('policy_rule_id', 'policy_action_id'),
+        mysql_DEFAULT_CHARSET='utf8')
 
 
-def downgrade(active_plugins=None, options=None):
+def downgrade(neutron_db=None):
     op.drop_table('gp_policy_rule_action_associations')
     op.drop_table('gp_policy_rules')
     op.drop_table('gp_policy_classifiers')

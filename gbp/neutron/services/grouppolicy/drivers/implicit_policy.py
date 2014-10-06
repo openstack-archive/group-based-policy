@@ -10,13 +10,13 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-from oslo.config import cfg
-import sqlalchemy as sa
-
 from neutron.common import log
 from neutron.db import model_base
 from neutron.openstack.common import log as logging
+from oslo.config import cfg
+import sqlalchemy as sa
 
+from gbp.neutron.db.grouppolicy import group_policy_db as gpdb
 from gbp.neutron.services.grouppolicy import group_policy_driver_api as api
 
 
@@ -49,8 +49,9 @@ class OwnedL2Policy(model_base.BASEV2):
     """An L2 Policy owned by the mapping driver."""
 
     __tablename__ = 'gpm_owned_l2_policies'
+    __table_args__ = gpdb.gbp_schema
     l2_policy_id = sa.Column(sa.String(36),
-                             sa.ForeignKey('gp_l2_policies.id',
+                             sa.ForeignKey(gpdb.L2Policy.id,
                                            ondelete='CASCADE'),
                              nullable=False, primary_key=True)
 
@@ -59,8 +60,9 @@ class OwnedL3Policy(model_base.BASEV2):
     """An L3 Policy owned by the mapping driver."""
 
     __tablename__ = 'gpm_owned_l3_policies'
+    __table_args__ = gpdb.gbp_schema
     l3_policy_id = sa.Column(sa.String(36),
-                             sa.ForeignKey('gp_l3_policies.id',
+                             sa.ForeignKey(gpdb.L3Policy.id,
                                            ondelete='CASCADE'),
                              nullable=False, primary_key=True)
 
