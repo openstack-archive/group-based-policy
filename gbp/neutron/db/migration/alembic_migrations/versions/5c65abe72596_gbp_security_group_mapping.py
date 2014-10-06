@@ -29,7 +29,7 @@ from alembic import op
 import sqlalchemy as sa
 
 
-def upgrade():
+def upgrade(neutron_db=None):
 
     op.create_table(
         'gpm_contract_sg_mapping',
@@ -38,12 +38,23 @@ def upgrade():
         sa.Column('consumed_sg_id', sa.String(length=36)),
         sa.ForeignKeyConstraint(['contract_id'], ['gp_contracts.id'],
                                 ondelete='CASCADE'),
-        sa.ForeignKeyConstraint(['provided_sg_id'], ['securitygroups.id']),
-        sa.ForeignKeyConstraint(['consumed_sg_id'], ['securitygroups.id']),
-        sa.PrimaryKeyConstraint('contract_id')
+        sa.PrimaryKeyConstraint('contract_id'),
+        mysql_DEFAULT_CHARSET='utf8'
     )
 
+    op.create_foreign_key('gpm_contract_sg_mapping_ibfk_2',
+                          source='gpm_contract_sg_mapping',
+                          referent='securitygroups',
+                          local_cols=['provided_sg_id'], remote_cols=['id'],
+                          referent_schema=neutron_db)
 
-def downgrade():
+    op.create_foreign_key('gpm_contract_sg_mapping_ibfk_3',
+                          source='gpm_contract_sg_mapping',
+                          referent='securitygroups',
+                          local_cols=['consumed_sg_id'], remote_cols=['id'],
+                          referent_schema=neutron_db)
+
+
+def downgrade(neutron_db=None):
 
     op.drop_table('gpm_contract_sg_mapping')

@@ -30,14 +30,15 @@ from alembic import op
 import sqlalchemy as sa
 
 
-def upgrade():
+def upgrade(neutron_db=None):
 
     op.create_table(
         'gpm_owned_l3_policies',
         sa.Column('l3_policy_id', sa.String(length=36), nullable=False),
         sa.ForeignKeyConstraint(['l3_policy_id'], ['gp_l3_policies.id'],
                                 ondelete='CASCADE'),
-        sa.PrimaryKeyConstraint('l3_policy_id')
+        sa.PrimaryKeyConstraint('l3_policy_id'),
+        mysql_DEFAULT_CHARSET='utf8'
     )
 
     op.create_table(
@@ -45,11 +46,12 @@ def upgrade():
         sa.Column('l2_policy_id', sa.String(length=36), nullable=False),
         sa.ForeignKeyConstraint(['l2_policy_id'], ['gp_l2_policies.id'],
                                 ondelete='CASCADE'),
-        sa.PrimaryKeyConstraint('l2_policy_id')
+        sa.PrimaryKeyConstraint('l2_policy_id'),
+        mysql_DEFAULT_CHARSET='utf8'
     )
 
 
-def downgrade():
+def downgrade(neutron_db=None):
 
     op.drop_table('gpm_owned_l2_policies')
     op.drop_table('gpm_owned_l3_policies')

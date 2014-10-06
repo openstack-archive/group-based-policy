@@ -30,7 +30,7 @@ from alembic import op
 import sqlalchemy as sa
 
 
-def upgrade():
+def upgrade(neutron_db=None):
 
     op.create_table(
         'gp_endpoint_group_subnet_associations',
@@ -38,18 +38,29 @@ def upgrade():
         sa.Column('subnet_id', sa.String(length=36), nullable=False),
         sa.ForeignKeyConstraint(['endpoint_group_id'],
                                 ['gp_endpoint_groups.id']),
-        sa.ForeignKeyConstraint(['subnet_id'], ['subnets.id']),
-        sa.PrimaryKeyConstraint('endpoint_group_id', 'subnet_id')
+        sa.PrimaryKeyConstraint('endpoint_group_id', 'subnet_id'),
+        mysql_DEFAULT_CHARSET='utf8'
     )
+    op.create_foreign_key('gp_endpoint_group_subnet_associations_ibfk_2',
+                          source='gp_endpoint_group_subnet_associations',
+                          referent='subnets',
+                          local_cols=['subnet_id'], remote_cols=['id'],
+                          referent_schema=neutron_db)
 
     op.create_table(
         'gp_l3_policy_router_associations',
         sa.Column('l3_policy_id', sa.String(length=36), nullable=False),
         sa.Column('router_id', sa.String(length=36), nullable=False),
         sa.ForeignKeyConstraint(['l3_policy_id'], ['gp_l3_policies.id']),
-        sa.ForeignKeyConstraint(['router_id'], ['routers.id']),
-        sa.PrimaryKeyConstraint('l3_policy_id', 'router_id')
+        sa.PrimaryKeyConstraint('l3_policy_id', 'router_id'),
+        mysql_DEFAULT_CHARSET='utf8'
     )
+
+    op.create_foreign_key('gp_l3_policy_router_associations_ibfk_2',
+                          source='gp_l3_policy_router_associations',
+                          referent='routers',
+                          local_cols=['router_id'], remote_cols=['id'],
+                          referent_schema=neutron_db)
 
     op.add_column(
         'gp_endpoint_groups',
@@ -78,7 +89,8 @@ def upgrade():
     op.create_unique_constraint(None, 'gp_endpoints', ['port_id'])
     op.create_foreign_key('gp_endpoints_ibfk_2',
                           source='gp_endpoints', referent='ports',
-                          local_cols=['port_id'], remote_cols=['id'])
+                          local_cols=['port_id'], remote_cols=['id'],
+                          referent_schema=neutron_db)
 
     op.add_column(
         'gp_l2_policies',
@@ -87,10 +99,11 @@ def upgrade():
     op.create_unique_constraint(None, 'gp_l2_policies', ['network_id'])
     op.create_foreign_key('gp_l2_policies_ibfk_2',
                           source='gp_l2_policies', referent='networks',
-                          local_cols=['network_id'], remote_cols=['id'])
+                          local_cols=['network_id'], remote_cols=['id'],
+                          referent_schema=neutron_db)
 
 
-def downgrade():
+def downgrade(neutron_db=None):
 
     op.drop_constraint('gp_l2_policies_ibfk_2', 'gp_l2_policies', 'foreignkey')
     op.drop_column('gp_l2_policies', 'network_id')

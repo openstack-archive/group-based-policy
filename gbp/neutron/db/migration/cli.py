@@ -12,6 +12,16 @@
 
 from neutron.db.migration.cli import *  # noqa
 
+_gbp_opts = [
+    cfg.StrOpt('connection',
+               deprecated_name='sql_gbp_connection',
+               default='',
+               secret=True,
+               help=_('URL to database')),
+]
+
+CONF.register_cli_opts(_gbp_opts, 'gbp_database')
+
 
 def main():
     config = alembic_config.Config(
