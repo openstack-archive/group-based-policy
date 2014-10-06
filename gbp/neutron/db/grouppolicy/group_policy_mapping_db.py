@@ -10,13 +10,12 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-import sqlalchemy as sa
-from sqlalchemy import orm
-
 from neutron.common import log
 from neutron.db import model_base
 from neutron.openstack.common import log as logging
 from neutron.openstack.common import uuidutils
+import sqlalchemy as sa
+from sqlalchemy import orm
 
 from gbp.neutron.db.grouppolicy import group_policy_db as gpdb
 
@@ -26,7 +25,8 @@ LOG = logging.getLogger(__name__)
 
 class EndpointMapping(gpdb.Endpoint):
     """Mapping of Endpoint to Neutron Port."""
-    __table_args__ = {'extend_existing': True}
+    __table_args__ = dict({'extend_existing': True}.items() +
+                          gpdb.gbp_schema.items())
     __mapper_args__ = {'polymorphic_identity': 'mapping'}
     port_id = sa.Column(sa.String(36), sa.ForeignKey('ports.id'),
                         nullable=True, unique=True)
@@ -35,8 +35,9 @@ class EndpointMapping(gpdb.Endpoint):
 class EndpointGroupSubnetAssociation(model_base.BASEV2):
     """Models the many to many relation between EndpointGroup and Subnets."""
     __tablename__ = 'gp_endpoint_group_subnet_associations'
+    __table_args__ = gpdb.gbp_schema
     endpoint_group_id = sa.Column(sa.String(36),
-                                  sa.ForeignKey('gp_endpoint_groups.id'),
+                                  sa.ForeignKey(gpdb.EndpointGroup.id),
                                   primary_key=True)
     subnet_id = sa.Column(sa.String(36), sa.ForeignKey('subnets.id'),
                           primary_key=True)
@@ -44,7 +45,8 @@ class EndpointGroupSubnetAssociation(model_base.BASEV2):
 
 class EndpointGroupMapping(gpdb.EndpointGroup):
     """Mapping of EndpointGroup to set of Neutron Subnets."""
-    __table_args__ = {'extend_existing': True}
+    __table_args__ = dict({'extend_existing': True}.items() +
+                          gpdb.gbp_schema.items())
     __mapper_args__ = {'polymorphic_identity': 'mapping'}
     subnets = orm.relationship(EndpointGroupSubnetAssociation,
                                cascade='all', lazy="joined")
@@ -52,7 +54,8 @@ class EndpointGroupMapping(gpdb.EndpointGroup):
 
 class L2PolicyMapping(gpdb.L2Policy):
     """Mapping of L2Policy to Neutron Network."""
-    __table_args__ = {'extend_existing': True}
+    __table_args__ = dict({'extend_existing': True}.items() +
+                          gpdb.gbp_schema.items())
     __mapper_args__ = {'polymorphic_identity': 'mapping'}
     network_id = sa.Column(sa.String(36), sa.ForeignKey('networks.id'),
                            nullable=True, unique=True)
@@ -61,7 +64,8 @@ class L2PolicyMapping(gpdb.L2Policy):
 class L3PolicyRouterAssociation(model_base.BASEV2):
     """Models the many to many relation between L3Policies and Routers."""
     __tablename__ = 'gp_l3_policy_router_associations'
-    l3_policy_id = sa.Column(sa.String(36), sa.ForeignKey('gp_l3_policies.id'),
+    __table_args__ = gpdb.gbp_schema
+    l3_policy_id = sa.Column(sa.String(36), sa.ForeignKey(gpdb.L3Policy.id),
                              primary_key=True)
     router_id = sa.Column(sa.String(36), sa.ForeignKey('routers.id'),
                           primary_key=True)
@@ -69,7 +73,8 @@ class L3PolicyRouterAssociation(model_base.BASEV2):
 
 class L3PolicyMapping(gpdb.L3Policy):
     """Mapping of L3Policy to set of Neutron Routers."""
-    __table_args__ = {'extend_existing': True}
+    __table_args__ = dict({'extend_existing': True}.items() +
+                          gpdb.gbp_schema.items())
     __mapper_args__ = {'polymorphic_identity': 'mapping'}
     routers = orm.relationship(L3PolicyRouterAssociation,
                                cascade='all', lazy="joined")

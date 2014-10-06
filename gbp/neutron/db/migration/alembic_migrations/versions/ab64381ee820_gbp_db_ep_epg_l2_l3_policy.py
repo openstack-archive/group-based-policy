@@ -20,14 +20,14 @@ Revision ID: ab64381ee820
 
 # revision identifiers, used by Alembic.
 revision = 'ab64381ee820'
-down_revision = '1680e1f0c4dc'
+down_revision = None
 
 
 from alembic import op
 import sqlalchemy as sa
 
 
-def upgrade():
+def upgrade(neutron_db=None):
 
     op.create_table(
         'gp_l3_policies',
@@ -38,7 +38,8 @@ def upgrade():
         sa.Column('ip_version', sa.Integer, nullable=False),
         sa.Column('ip_pool', sa.String(length=64), nullable=False),
         sa.Column('subnet_prefix_length', sa.Integer, nullable=False),
-        sa.PrimaryKeyConstraint('id'))
+        sa.PrimaryKeyConstraint('id'),
+        mysql_DEFAULT_CHARSET='utf8')
 
     op.create_table(
         'gp_l2_policies',
@@ -49,7 +50,8 @@ def upgrade():
         sa.Column('l3_policy_id', sa.String(length=36), nullable=True),
         sa.ForeignKeyConstraint(['l3_policy_id'],
                                 ['gp_l3_policies.id'], ondelete='CASCADE'),
-        sa.PrimaryKeyConstraint('id'))
+        sa.PrimaryKeyConstraint('id'),
+        mysql_DEFAULT_CHARSET='utf8')
 
     op.create_table(
         'gp_endpoint_groups',
@@ -60,7 +62,8 @@ def upgrade():
         sa.Column('l2_policy_id', sa.String(length=36), nullable=True),
         sa.ForeignKeyConstraint(['l2_policy_id'],
                                 ['gp_l2_policies.id'], ondelete='CASCADE'),
-        sa.PrimaryKeyConstraint('id'))
+        sa.PrimaryKeyConstraint('id'),
+        mysql_DEFAULT_CHARSET='utf8')
 
     op.create_table(
         'gp_endpoints',
@@ -71,10 +74,11 @@ def upgrade():
         sa.Column('endpoint_group_id', sa.String(length=36), nullable=True),
         sa.ForeignKeyConstraint(['endpoint_group_id'],
                                 ['gp_endpoint_groups.id'], ondelete='CASCADE'),
-        sa.PrimaryKeyConstraint('id'))
+        sa.PrimaryKeyConstraint('id'),
+        mysql_DEFAULT_CHARSET='utf8')
 
 
-def downgrade():
+def downgrade(neutron_db=None):
 
     op.drop_table('gp_endpoints')
     op.drop_table('gp_endpoint_groups')
