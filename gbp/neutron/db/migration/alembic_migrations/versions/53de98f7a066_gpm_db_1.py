@@ -78,7 +78,8 @@ def upgrade():
     op.create_unique_constraint(None, 'gp_endpoints', ['port_id'])
     op.create_foreign_key('gp_endpoints_ibfk_2',
                           source='gp_endpoints', referent='ports',
-                          local_cols=['port_id'], remote_cols=['id'])
+                          local_cols=['port_id'], remote_cols=['id'],
+                          ondelete='CASCADE')
 
     op.add_column(
         'gp_l2_policies',

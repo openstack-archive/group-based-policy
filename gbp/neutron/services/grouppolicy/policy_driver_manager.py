@@ -108,7 +108,10 @@ class PolicyDriverManager(stevedore.named.NamedExtensionManager):
         if any policy driver call fails.
         """
         error = False
-        for driver in self.ordered_policy_drivers:
+        drivers = (self.ordered_policy_drivers if not
+                   method_name.startswith('delete') else
+                   reversed(self.ordered_policy_drivers))
+        for driver in drivers:
             try:
                 getattr(driver.obj, method_name)(context)
             except Exception:
