@@ -28,7 +28,10 @@ class EndpointMapping(gpdb.Endpoint):
     """Mapping of Endpoint to Neutron Port."""
     __table_args__ = {'extend_existing': True}
     __mapper_args__ = {'polymorphic_identity': 'mapping'}
-    port_id = sa.Column(sa.String(36), sa.ForeignKey('ports.id'),
+    # REVISIT(ivar): Set null on delete is a temporary workaround until Nova
+    # bug 1158684 is fixed.
+    port_id = sa.Column(sa.String(36), sa.ForeignKey('ports.id',
+                                                     ondelete='SET NULL'),
                         nullable=True, unique=True)
 
 
