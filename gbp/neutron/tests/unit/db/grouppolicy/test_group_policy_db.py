@@ -943,3 +943,29 @@ class TestGroupResources(GroupPolicyDbTestCase):
         self.assertEqual(res.status_int, webob.exc.HTTPNoContent.code)
         self.assertRaises(gpolicy.ContractNotFound,
                           self.plugin.get_contract, ctx, ct_id)
+
+    def test_contract_one_hierarchy_children(self):
+        child = self.create_contract()['contract']
+        parent = self.create_contract(
+            child_contracts = [child['id']])['contract']
+        self.create_contract(
+            child_contracts = [parent['id']],
+            expected_res_status=webob.exc.HTTPBadRequest.code)
+
+    def test_contract_one_hierarchy_parent(self):
+        child = self.create_contract()['contract']
+        # parent
+        self.create_contract(
+            child_contracts = [child['id']])['contract']
+        nephew = self.create_contract()['contract']
+        data = {'contract': {'child_contracts': [nephew['id']]}}
+        req = self.new_update_request('contracts', data, child['id'])
+        res = req.get_response(self.ext_api)
+        self.assertEqual(res.status_int, webob.exc.HTTPBadRequest.code)
+
+    def test_contract_parent_no_loop(self):
+        ct = self.create_contract()['contract']
+        data = {'contract': {'child_contracts': [ct['id']]}}
+        req = self.new_update_request('contracts', data, ct['id'])
+        res = req.get_response(self.ext_api)
+        self.assertEqual(res.status_int, webob.exc.HTTPBadRequest.code)
