@@ -1093,10 +1093,17 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
         return self._make_policy_rule_dict(pr, fields)
 
     @log.log
-    def get_policy_rules(self, context, filters=None, fields=None):
+    def get_policy_rules(self, context, filters=None, fields=None,
+                         sorts=None, limit=None, marker=None,
+                         page_reverse=False):
+        marker_obj = self._get_marker_obj(context, 'policy_rule', limit,
+                                          marker)
         return self._get_collection(context, PolicyRule,
                                     self._make_policy_rule_dict,
-                                    filters=filters, fields=fields)
+                                    filters=filters, fields=fields,
+                                    sorts=sorts, limit=limit,
+                                    marker_obj=marker_obj,
+                                    page_reverse=page_reverse)
 
     @log.log
     def get_policy_rules_count(self, context, filters=None):
@@ -1148,10 +1155,17 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
         return self._make_policy_rule_set_dict(prs, fields)
 
     @log.log
-    def get_policy_rule_sets(self, context, filters=None, fields=None):
+    def get_policy_rule_sets(self, context, filters=None, fields=None,
+                             sorts=None, limit=None, marker=None,
+                             page_reverse=False):
+        marker_obj = self._get_marker_obj(context, 'policy_rule_set', limit,
+                                          marker)
         return self._get_collection(context, PolicyRuleSet,
                                     self._make_policy_rule_set_dict,
-                                    filters=filters, fields=fields)
+                                    filters=filters, fields=fields,
+                                    sorts=sorts, limit=limit,
+                                    marker_obj=marker_obj,
+                                    page_reverse=page_reverse)
 
     @log.log
     def get_policy_rule_sets_count(self, context, filters=None):

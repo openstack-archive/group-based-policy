@@ -19,6 +19,12 @@ group_policy_opts = [
                 help=_("An ordered list of group policy driver "
                        "entrypoints to be loaded from the "
                        "gbp.neutron.group_policy.policy_drivers namespace.")),
+    cfg.ListOpt('extension_drivers',
+                default=[],
+                help=_("An ordered list of extension driver "
+                       "entrypoints to be loaded from the "
+                       "gbp.neutron.group_policy.extension_drivers "
+                       "namespace.")),
 ]
 
 

@@ -16,6 +16,7 @@ from neutron.openstack.common import log as logging
 
 from gbp.neutron.db.grouppolicy import group_policy_mapping_db
 from gbp.neutron.services.grouppolicy.common import exceptions as gp_exc
+from gbp.neutron.services.grouppolicy import extension_manager as ext_manager
 from gbp.neutron.services.grouppolicy import group_policy_context as p_context
 from gbp.neutron.services.grouppolicy import policy_driver_manager as manager
 
@@ -31,11 +32,21 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
     Most DB related works are implemented in class
     db_group_policy_mapping.GroupPolicyMappingDbMixin.
     """
-    supported_extension_aliases = ["group-policy", "group-policy-mapping"]
+    _supported_extension_aliases = ["group-policy", "group-policy-mapping"]
+
+    @property
+    def supported_extension_aliases(self):
+        if not hasattr(self, '_aliases'):
+            aliases = self._supported_extension_aliases[:]
+            aliases += self.extension_manager.extension_aliases()
+            self._aliases = aliases
+        return self._aliases
 
     def __init__(self):
+        self.extension_manager = ext_manager.ExtensionManager()
         self.policy_driver_manager = manager.PolicyDriverManager()
         super(GroupPolicyPlugin, self).__init__()
+        self.extension_manager.initialize()
         self.policy_driver_manager.initialize()
 
     @log.log
@@ -44,6 +55,8 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
         with session.begin(subtransactions=True):
             result = super(GroupPolicyPlugin,
                            self).create_policy_target(context, policy_target)
+            self.extension_manager.process_create_policy_target(
+                session, policy_target, result)
             policy_context = p_context.PolicyTargetContext(self, context,
                                                            result)
             self.policy_driver_manager.create_policy_target_precommit(
@@ -65,12 +78,13 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
     def update_policy_target(self, context, policy_target_id, policy_target):
         session = context.session
         with session.begin(subtransactions=True):
-            original_policy_target = super(
-                GroupPolicyPlugin, self).get_policy_target(context,
-                                                           policy_target_id)
+            original_policy_target = self.get_policy_target(context,
+                                                            policy_target_id)
             updated_policy_target = super(
                 GroupPolicyPlugin, self).update_policy_target(
                     context, policy_target_id, policy_target)
+            self.extension_manager.process_update_policy_target(
+                session, policy_target, updated_policy_target)
             policy_context = p_context.PolicyTargetContext(
                 self, context, updated_policy_target,
                 original_policy_target=original_policy_target)
@@ -102,6 +116,26 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
                             "failed, deleting policy_rule_set '%s'"),
                           policy_target_id)
 
+    def get_policy_target(self, context, policy_target_id, fields=None):
+        session = context.session
+        with session.begin(subtransactions=True):
+            result = super(GroupPolicyPlugin, self).get_policy_target(
+                context, policy_target_id, None)
+            self.extension_manager.extend_policy_target_dict(session, result)
+        return self._fields(result, fields)
+
+    def get_policy_targets(self, context, filters=None, fields=None,
+                           sorts=None, limit=None, marker=None,
+                           page_reverse=False):
+        session = context.session
+        with session.begin(subtransactions=True):
+            results = super(GroupPolicyPlugin, self).get_policy_targets(
+                context, filters, None, sorts, limit, marker, page_reverse)
+            for result in results:
+                self.extension_manager.extend_policy_target_dict(
+                    session, result)
+        return [self._fields(result, fields) for result in results]
+
     @log.log
     def create_policy_target_group(self, context, policy_target_group):
         session = context.session
@@ -109,6 +143,8 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
             result = super(GroupPolicyPlugin,
                            self).create_policy_target_group(
                                context, policy_target_group)
+            self.extension_manager.process_create_policy_target_group(
+                session, policy_target_group, result)
             policy_context = p_context.PolicyTargetGroupContext(
                 self, context, result)
             self.policy_driver_manager.create_policy_target_group_precommit(
@@ -131,12 +167,13 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
                                    policy_target_group):
         session = context.session
         with session.begin(subtransactions=True):
-            original_policy_target_group = super(
-                GroupPolicyPlugin, self).get_policy_target_group(
+            original_policy_target_group = self.get_policy_target_group(
                     context, policy_target_group_id)
             updated_policy_target_group = super(
                 GroupPolicyPlugin, self).update_policy_target_group(
                     context, policy_target_group_id, policy_target_group)
+            self.extension_manager.process_update_policy_target_group(
+                session, policy_target_group, updated_policy_target_group)
             policy_context = p_context.PolicyTargetGroupContext(
                 self, context, updated_policy_target_group,
                 original_policy_target_group=original_policy_target_group)
@@ -173,12 +210,36 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
                             "failed, deleting policy_target_group '%s'"),
                           policy_target_group_id)
 
+    def get_policy_target_group(self, context, policy_target_group_id,
+                                fields=None):
+        session = context.session
+        with session.begin(subtransactions=True):
+            result = super(GroupPolicyPlugin, self).get_policy_target_group(
+                context, policy_target_group_id, None)
+            self.extension_manager.extend_policy_target_group_dict(session,
+                                                                   result)
+        return self._fields(result, fields)
+
+    def get_policy_target_groups(self, context, filters=None, fields=None,
+                                 sorts=None, limit=None, marker=None,
+                                 page_reverse=False):
+        session = context.session
+        with session.begin(subtransactions=True):
+            results = super(GroupPolicyPlugin, self).get_policy_target_groups(
+                context, filters, None, sorts, limit, marker, page_reverse)
+            for result in results:
+                self.extension_manager.extend_policy_target_group_dict(
+                    session, result)
+        return [self._fields(result, fields) for result in results]
+
     @log.log
     def create_l2_policy(self, context, l2_policy):
         session = context.session
         with session.begin(subtransactions=True):
             result = super(GroupPolicyPlugin,
                            self).create_l2_policy(context, l2_policy)
+            self.extension_manager.process_create_l2_policy(
+                session, l2_policy, result)
             policy_context = p_context.L2PolicyContext(self, context, result)
             self.policy_driver_manager.create_l2_policy_precommit(
                 policy_context)
@@ -198,12 +259,12 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
     def update_l2_policy(self, context, l2_policy_id, l2_policy):
         session = context.session
         with session.begin(subtransactions=True):
-            original_l2_policy = super(GroupPolicyPlugin,
-                                       self).get_l2_policy(context,
-                                                           l2_policy_id)
+            original_l2_policy = self.get_l2_policy(context, l2_policy_id)
             updated_l2_policy = super(GroupPolicyPlugin,
                                       self).update_l2_policy(
                                           context, l2_policy_id, l2_policy)
+            self.extension_manager.process_update_l2_policy(
+                session, l2_policy, updated_l2_policy)
             policy_context = p_context.L2PolicyContext(
                 self, context, updated_l2_policy,
                 original_l2_policy=original_l2_policy)
@@ -234,6 +295,26 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
                 LOG.error(_("delete_l2_policy_postcommit "
                             " failed, deleting l2_policy '%s'"), l2_policy_id)
 
+    def get_l2_policy(self, context, l2_policy_id, fields=None):
+        session = context.session
+        with session.begin(subtransactions=True):
+            result = super(GroupPolicyPlugin, self).get_l2_policy(
+                context, l2_policy_id, None)
+            self.extension_manager.extend_l2_policy_dict(session, result)
+        return self._fields(result, fields)
+
+    def get_l2_policies(self, context, filters=None, fields=None,
+                        sorts=None, limit=None, marker=None,
+                        page_reverse=False):
+        session = context.session
+        with session.begin(subtransactions=True):
+            results = super(GroupPolicyPlugin, self).get_l2_policies(
+                context, filters, None, sorts, limit, marker, page_reverse)
+            for result in results:
+                self.extension_manager.extend_l2_policy_dict(
+                    session, result)
+        return [self._fields(result, fields) for result in results]
+
     @log.log
     def create_network_service_policy(self, context, network_service_policy):
         session = context.session
@@ -241,6 +322,8 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
             result = super(GroupPolicyPlugin,
                            self).create_network_service_policy(
                                context, network_service_policy)
+            self.extension_manager.process_create_network_service_policy(
+                session, network_service_policy, result)
             policy_context = p_context.NetworkServicePolicyContext(
                 self, context, result)
             pdm = self.policy_driver_manager
@@ -270,6 +353,9 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
             updated_network_service_policy = super(
                 GroupPolicyPlugin, self).update_network_service_policy(
                     context, network_service_policy_id, network_service_policy)
+            self.extension_manager.process_update_network_service_policy(
+                session, network_service_policy,
+                updated_network_service_policy)
             policy_context = p_context.NetworkServicePolicyContext(
                 self, context, updated_network_service_policy,
                 original_network_service_policy=
@@ -304,12 +390,37 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
                             " failed, deleting network_service_policy '%s'"),
                           network_service_policy_id)
 
+    def get_network_service_policy(self, context, network_service_policy_id,
+                                   fields=None):
+        session = context.session
+        with session.begin(subtransactions=True):
+            result = super(GroupPolicyPlugin, self).get_network_service_policy(
+                context, network_service_policy_id, None)
+            self.extension_manager.extend_network_service_policy_dict(session,
+                                                                      result)
+        return self._fields(result, fields)
+
+    def get_network_service_policies(self, context, filters=None, fields=None,
+                                     sorts=None, limit=None, marker=None,
+                                     page_reverse=False):
+        session = context.session
+        with session.begin(subtransactions=True):
+            results = super(GroupPolicyPlugin,
+                            self).get_network_service_policies(
+                context, filters, None, sorts, limit, marker, page_reverse)
+            for result in results:
+                self.extension_manager.extend_network_service_policy_dict(
+                    session, result)
+        return [self._fields(result, fields) for result in results]
+
     @log.log
     def create_l3_policy(self, context, l3_policy):
         session = context.session
         with session.begin(subtransactions=True):
             result = super(GroupPolicyPlugin,
                            self).create_l3_policy(context, l3_policy)
+            self.extension_manager.process_create_l3_policy(
+                session, l3_policy, result)
             policy_context = p_context.L3PolicyContext(self, context,
                                                        result)
             self.policy_driver_manager.create_l3_policy_precommit(
@@ -330,12 +441,12 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
     def update_l3_policy(self, context, l3_policy_id, l3_policy):
         session = context.session
         with session.begin(subtransactions=True):
-            original_l3_policy = super(GroupPolicyPlugin,
-                                       self).get_l3_policy(context,
-                                                           l3_policy_id)
+            original_l3_policy = self.get_l3_policy(context, l3_policy_id)
             updated_l3_policy = super(
                 GroupPolicyPlugin, self).update_l3_policy(
                     context, l3_policy_id, l3_policy)
+            self.extension_manager.process_update_l3_policy(
+                session, l3_policy, updated_l3_policy)
             policy_context = p_context.L3PolicyContext(
                 self, context, updated_l3_policy,
                 original_l3_policy=original_l3_policy)
@@ -371,6 +482,26 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
                             " failed, deleting l3_policy '%s'"), l3_policy_id)
         return True
 
+    def get_l3_policy(self, context, l3_policy_id, fields=None):
+        session = context.session
+        with session.begin(subtransactions=True):
+            result = super(GroupPolicyPlugin, self).get_l3_policy(
+                context, l3_policy_id, None)
+            self.extension_manager.extend_l3_policy_dict(session, result)
+        return self._fields(result, fields)
+
+    def get_l3_policies(self, context, filters=None, fields=None,
+                        sorts=None, limit=None, marker=None,
+                        page_reverse=False):
+        session = context.session
+        with session.begin(subtransactions=True):
+            results = super(GroupPolicyPlugin, self).get_l3_policies(
+                context, filters, None, sorts, limit, marker, page_reverse)
+            for result in results:
+                self.extension_manager.extend_l3_policy_dict(
+                    session, result)
+        return [self._fields(result, fields) for result in results]
+
     @log.log
     def create_policy_classifier(self, context, policy_classifier):
         session = context.session
@@ -378,6 +509,8 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
             result = super(
                 GroupPolicyPlugin, self).create_policy_classifier(
                     context, policy_classifier)
+            self.extension_manager.process_create_policy_classifier(
+                session, policy_classifier, result)
             policy_context = p_context.PolicyClassifierContext(self, context,
                                                                result)
             self.policy_driver_manager.create_policy_classifier_precommit(
@@ -404,6 +537,8 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
             updated_policy_classifier = super(
                 GroupPolicyPlugin, self).update_policy_classifier(
                     context, id, policy_classifier)
+            self.extension_manager.process_update_policy_classifier(
+                session, policy_classifier, updated_policy_classifier)
             policy_context = p_context.PolicyClassifierContext(
                 self, context, updated_policy_classifier,
                 original_policy_classifier=original_policy_classifier)
@@ -435,12 +570,36 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
                     "policy_driver_manager.delete_policy_classifier_postcommit"
                     " failed, deleting policy_classifier '%s'"), id)
 
+    def get_policy_classifier(self, context, policy_classifier_id,
+                              fields=None):
+        session = context.session
+        with session.begin(subtransactions=True):
+            result = super(GroupPolicyPlugin, self).get_policy_classifier(
+                context, policy_classifier_id, None)
+            self.extension_manager.extend_policy_classifier_dict(session,
+                                                                 result)
+        return self._fields(result, fields)
+
+    def get_policy_classifiers(self, context, filters=None, fields=None,
+                               sorts=None, limit=None, marker=None,
+                               page_reverse=False):
+        session = context.session
+        with session.begin(subtransactions=True):
+            results = super(GroupPolicyPlugin, self).get_policy_classifiers(
+                context, filters, None, sorts, limit, marker, page_reverse)
+            for result in results:
+                self.extension_manager.extend_policy_classifier_dict(
+                    session, result)
+        return [self._fields(result, fields) for result in results]
+
     @log.log
     def create_policy_action(self, context, policy_action):
         session = context.session
         with session.begin(subtransactions=True):
             result = super(GroupPolicyPlugin,
                            self).create_policy_action(context, policy_action)
+            self.extension_manager.process_create_policy_action(
+                session, policy_action, result)
             policy_context = p_context.PolicyActionContext(self, context,
                                                            result)
             self.policy_driver_manager.create_policy_action_precommit(
@@ -467,6 +626,8 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
             updated_policy_action = super(
                 GroupPolicyPlugin, self).update_policy_action(context, id,
                                                               policy_action)
+            self.extension_manager.process_update_policy_action(
+                session, policy_action, updated_policy_action)
             policy_context = p_context.PolicyActionContext(
                 self, context, updated_policy_action,
                 original_policy_action=original_policy_action)
@@ -497,6 +658,26 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
                     "policy_driver_manager.delete_policy_action_postcommit "
                     "failed, deleting policy_action '%s'"), id)
 
+    def get_policy_action(self, context, policy_action_id, fields=None):
+        session = context.session
+        with session.begin(subtransactions=True):
+            result = super(GroupPolicyPlugin, self).get_policy_action(
+                context, policy_action_id, None)
+            self.extension_manager.extend_policy_action_dict(session, result)
+        return self._fields(result, fields)
+
+    def get_policy_actions(self, context, filters=None, fields=None,
+                           sorts=None, limit=None, marker=None,
+                           page_reverse=False):
+        session = context.session
+        with session.begin(subtransactions=True):
+            results = super(GroupPolicyPlugin, self).get_policy_actions(
+                context, filters, None, sorts, limit, marker, page_reverse)
+            for result in results:
+                self.extension_manager.extend_policy_action_dict(
+                    session, result)
+        return [self._fields(result, fields) for result in results]
+
     @log.log
     def create_policy_rule(self, context, policy_rule):
         session = context.session
@@ -504,6 +685,8 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
             result = super(
                 GroupPolicyPlugin, self).create_policy_rule(
                     context, policy_rule)
+            self.extension_manager.process_create_policy_rule(
+                session, policy_rule, result)
             policy_context = p_context.PolicyRuleContext(self, context,
                                                          result)
             self.policy_driver_manager.create_policy_rule_precommit(
@@ -530,6 +713,8 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
             updated_policy_rule = super(
                 GroupPolicyPlugin, self).update_policy_rule(
                     context, id, policy_rule)
+            self.extension_manager.process_update_policy_rule(
+                session, policy_rule, updated_policy_rule)
             policy_context = p_context.PolicyRuleContext(
                 self, context, updated_policy_rule,
                 original_policy_rule=original_policy_rule)
@@ -561,6 +746,26 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
                     "policy_driver_manager.delete_policy_rule_postcommit"
                     " failed, deleting policy_rule '%s'"), id)
 
+    def get_policy_rule(self, context, policy_rule_id, fields=None):
+        session = context.session
+        with session.begin(subtransactions=True):
+            result = super(GroupPolicyPlugin, self).get_policy_rule(
+                context, policy_rule_id, None)
+            self.extension_manager.extend_policy_rule_dict(session, result)
+        return self._fields(result, fields)
+
+    def get_policy_rules(self, context, filters=None, fields=None,
+                         sorts=None, limit=None, marker=None,
+                         page_reverse=False):
+        session = context.session
+        with session.begin(subtransactions=True):
+            results = super(GroupPolicyPlugin, self).get_policy_rules(
+                context, filters, None, sorts, limit, marker, page_reverse)
+            for result in results:
+                self.extension_manager.extend_policy_rule_dict(
+                    session, result)
+        return [self._fields(result, fields) for result in results]
+
     @log.log
     def create_policy_rule_set(self, context, policy_rule_set):
         session = context.session
@@ -568,6 +773,8 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
             result = super(GroupPolicyPlugin,
                            self).create_policy_rule_set(
                                context, policy_rule_set)
+            self.extension_manager.process_create_policy_rule_set(
+                session, policy_rule_set, result)
             policy_context = p_context.PolicyRuleSetContext(
                 self, context, result)
             self.policy_driver_manager.create_policy_rule_set_precommit(
@@ -594,6 +801,8 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
             updated_policy_rule_set = super(
                 GroupPolicyPlugin, self).update_policy_rule_set(
                     context, id, policy_rule_set)
+            self.extension_manager.process_update_policy_rule_set(
+                session, policy_rule_set, updated_policy_rule_set)
             policy_context = p_context.PolicyRuleSetContext(
                 self, context, updated_policy_rule_set,
                 original_policy_rule_set=original_policy_rule_set)
@@ -623,3 +832,23 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
                 LOG.error(_(
                     "policy_driver_manager.delete_policy_rule_set_postcommit "
                     "failed, deleting policy_rule_set '%s'"), id)
+
+    def get_policy_rule_set(self, context, policy_rule_set_id, fields=None):
+        session = context.session
+        with session.begin(subtransactions=True):
+            result = super(GroupPolicyPlugin, self).get_policy_rule_set(
+                context, policy_rule_set_id, None)
+            self.extension_manager.extend_policy_rule_set_dict(session, result)
+        return self._fields(result, fields)
+
+    def get_policy_rule_sets(self, context, filters=None, fields=None,
+                             sorts=None, limit=None, marker=None,
+                             page_reverse=False):
+        session = context.session
+        with session.begin(subtransactions=True):
+            results = super(GroupPolicyPlugin, self).get_policy_rule_sets(
+                context, filters, None, sorts, limit, marker, page_reverse)
+            for result in results:
+                self.extension_manager.extend_policy_rule_set_dict(
+                    session, result)
+        return [self._fields(result, fields) for result in results]
