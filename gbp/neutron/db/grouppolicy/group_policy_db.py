@@ -396,6 +396,9 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
         if not child_id_list:
             ct_db.child_contracts = []
             return
+        if ct_db['parent_id']:
+            # Only one indirection level allowed for now
+            raise gpolicy.ContractAlreadyHasParent(contract_id=ct_db['id'])
         with context.session.begin(subtransactions=True):
             # We will first check if the new list of contracts is valid
             filters = {'id': [c_id for c_id in child_id_list]}
@@ -408,6 +411,12 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
                     # If we find an invalid contract in the list we
                     # do not perform the update
                     raise gpolicy.ContractNotFound(contract_id=contract_id)
+                elif (contracts_dict[contract_id]['child_contracts'] or
+                      contract_id == ct_db['id']):
+                    # Only one level contract relationship supported for now
+                    # No loops allowed
+                    raise gpolicy.BadContractRelationship(
+                        parent_id=ct_db['id'], child_id=contract_id)
             # New list of child contracts is valid so we will first reset the
             # existing # list and then add each contract.
             # Note that the list could be empty in which case we interpret
@@ -542,12 +551,18 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
         else:
             res['parent_id'] = None
         ctx = context.get_admin_context()
-        with ctx.session.begin(subtransactions=True):
-            filters = {'parent_id': [ct['id']]}
-            child_contracts_in_db = self._get_collection_query(ctx, Contract,
-                                                               filters=filters)
+        if 'child_contracts' in ct:
+            # They have been updated
             res['child_contracts'] = [child_ct['id']
-                                      for child_ct in child_contracts_in_db]
+                                      for child_ct in ct['child_contracts']]
+        else:
+            with ctx.session.begin(subtransactions=True):
+                filters = {'parent_id': [ct['id']]}
+                child_contracts_in_db = self._get_collection_query(
+                    ctx, Contract, filters=filters)
+                res['child_contracts'] = [child_ct['id']
+                                          for child_ct in
+                                          child_contracts_in_db]
 
         res['policy_rules'] = [pr['policy_rule_id']
                                for pr in ct['policy_rules']]

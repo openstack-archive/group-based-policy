@@ -77,6 +77,18 @@ class ContractNotFound(nexc.NotFound):
     message = _("Contract %(contract_id)s could not be found")
 
 
+class BadContractRelationship(nexc.BadRequest):
+    message = _("Contract %(parent_id)s is an invalid parent for "
+                "%(child_id)s, make sure that child contract has no "
+                "children, or that you are not creating a relationship loop")
+
+
+class ContractAlreadyHasParent(nexc.BadRequest):
+    message = _("Can't add children to contract %s(contract_id)s "
+                "which already has a parent. Only one level of indirection "
+                "allowed")
+
+
 class GroupPolicyInvalidPortValue(nexc.InvalidInput):
     message = _("Invalid value for port %(port)s")
 
