@@ -400,12 +400,21 @@ class ResourceMappingDriver(api.PolicyDriver):
 
     @log.log
     def update_contract_postcommit(self, context):
+        # Update contract rules
         old_rules = set(context.original['policy_rules'])
         new_rules = set(context.current['policy_rules'])
         to_add = new_rules - old_rules
         to_remove = old_rules - new_rules
         self._remove_contract_rules(context, context.current, to_remove)
         self._apply_contract_rules(context, context.current, to_add)
+        # Update children contraint
+        to_recompute = (set(context.original['child_contracts']) ^
+                        set(context.current['child_contracts']))
+        self._recompute_contracts(context, to_recompute)
+        if to_add or to_remove:
+            to_recompute = (set(context.original['child_contracts']) &
+                            set(context.current['child_contracts']))
+            self._recompute_contracts(context, to_recompute)
 
     @log.log
     def delete_contract_precommit(self, context):
@@ -987,11 +996,32 @@ class ResourceMappingDriver(api.PolicyDriver):
                                      '0.0.0.0/0', unset=unset)
 
     def _apply_contract_rules(self, context, contract, policy_rules):
+        if contract['parent_id']:
+            parent = context._plugin.get_contract(
+                context._plugin_context, contract['parent_id'])
+            policy_rules = policy_rules & set(parent['policy_rules'])
+        # Don't add rules unallowed by the parent
         self._manage_contract_rules(context, contract, policy_rules)
 
     def _remove_contract_rules(self, context, contract, policy_rules):
         self._manage_contract_rules(context, contract, policy_rules,
                                     unset=True)
+
+    def _recompute_contracts(self, context, children):
+        # Rules in child but not in parent shall be removed
+        # Child rules will be set after being filtered by the parent
+        for child in children:
+            child = context._plugin.get_contract(
+                context._plugin_context, child)
+            child_rules = set(child['policy_rules'])
+            if child['parent_id']:
+                parent = context._plugin.get_contract(
+                    context._plugin_context, child['parent_id'])
+                parent_rules = set(parent['policy_rules'])
+                self._remove_contract_rules(context, child,
+                                            child_rules - parent_rules)
+            # Old parent may have filtered some rules, need to add them again
+            self._apply_contract_rules(context, child, child_rules)
 
     def _ensure_default_security_group(self, context, tenant_id):
         filters = {'name': ['gbp_default'], 'tenant_id': [tenant_id]}
