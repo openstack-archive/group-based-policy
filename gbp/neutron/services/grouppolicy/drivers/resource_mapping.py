@@ -14,12 +14,17 @@ import netaddr
 
 from oslo.config import cfg
 import sqlalchemy as sa
+from sqlalchemy.orm import exc as sql_exc
 
 from neutron.api.rpc.agentnotifiers import dhcp_rpc_agent_api
 from neutron.api.v2 import attributes
 from neutron.common import constants as const
 from neutron.common import exceptions as n_exc
 from neutron.common import log
+from neutron.db.grouppolicy.group_policy_db import (
+                    EndpointGroupContractConsumingAssociation)
+from neutron.db.grouppolicy.group_policy_db import (
+                    EndpointGroupContractProvidingAssociation)
 from neutron.db import model_base
 from neutron.extensions import securitygroup as ext_sg
 from neutron import manager
@@ -82,6 +87,18 @@ class ContractSGsMapping(model_base.BASEV2):
                                sa.ForeignKey('securitygroups.id'))
     consumed_sg_id = sa.Column(sa.String(36),
                                sa.ForeignKey('securitygroups.id'))
+
+
+class RuleServiceChainInstanceMapping(model_base.BASEV2):
+    """Policy Rule to ServiceChainInstance mapping DB."""
+
+    __tablename__ = 'gpm_rule_servicechain_mapping'
+    rule_id = sa.Column(sa.String(36),
+                        sa.ForeignKey('gp_policy_rules.id'),
+                        nullable=False, primary_key=True)
+    servicechain_instance_id = sa.Column(sa.String(36),
+                                         sa.ForeignKey('sc_instances.id',
+                                                       ondelete='CASCADE'))
 
 
 class ResourceMappingDriver(api.PolicyDriver):
@@ -222,11 +239,9 @@ class ResourceMappingDriver(api.PolicyDriver):
 
     @log.log
     def delete_endpoint_group_postcommit(self, context):
+        self._cleanup_redirect_action(context)
         l2p_id = context.current['l2_policy_id']
-        l2p = context._plugin.get_l2_policy(context._plugin_context, l2p_id)
-        l3p_id = l2p['l3_policy_id']
-        l3p = context._plugin.get_l3_policy(context._plugin_context, l3p_id)
-        router_id = l3p['routers'][0]
+        router_id = self._get_routerid_for_l2policy(context, l2p_id)
         for subnet_id in context.current['subnets']:
             self._cleanup_subnet(context, subnet_id, router_id)
 
@@ -436,6 +451,12 @@ class ResourceMappingDriver(api.PolicyDriver):
         # Delete SGs
         [self._delete_sg(context, x) for x in sg_list]
 
+    def _get_routerid_for_l2policy(self, context, l2p_id):
+        l2p = context._plugin.get_l2_policy(context._plugin_context, l2p_id)
+        l3p_id = l2p['l3_policy_id']
+        l3p = context._plugin.get_l3_policy(context._plugin_context, l3p_id)
+        return l3p['routers'][0]
+
     def _use_implicit_port(self, context):
         epg_id = context.current['endpoint_group_id']
         epg = context._plugin.get_endpoint_group(context._plugin_context,
@@ -567,10 +588,98 @@ class ResourceMappingDriver(api.PolicyDriver):
         provided_contracts = context.current['provided_contracts']
         subnets = context.current['subnets']
         epg_id = context.current['id']
+        if provided_contracts or consumed_contracts:
+            self._handle_redirect_action(context, consumed_contracts,
+                                         provided_contracts)
         self._assoc_sg_to_epg(context, subnets, provided_contracts,
                               consumed_contracts)
         self._update_sgs_on_epg(context, epg_id, provided_contracts,
                                 consumed_contracts, "ASSOCIATE")
+
+    def _get_epgs_providing_contract(self, session, contract_id):
+        try:
+            with session.begin(subtransactions=True):
+                return (session.query(
+                            EndpointGroupContractProvidingAssociation).
+                        filter_by(contract_id=contract_id).one())
+        except sql_exc.NoResultFound:
+            return None
+
+    def _get_epgs_consuming_contract(self, session, contract_id):
+        try:
+            with session.begin(subtransactions=True):
+                return (session.query(
+                            EndpointGroupContractConsumingAssociation).
+                        filter_by(contract_id=contract_id).one())
+        except sql_exc.NoResultFound:
+            return None
+
+    def _handle_redirect_action(self, context, consumed_contracts,
+                                provided_contracts):
+        contracts = provided_contracts + consumed_contracts
+        for contract_id in contracts:
+            epgs_consuming_contract = self._get_epgs_consuming_contract(
+                                            context._plugin_context._session,
+                                            contract_id)
+            epgs_providing_contract = self._get_epgs_providing_contract(
+                                            context._plugin_context._session,
+                                            contract_id)
+
+            #Create the ServiceChain Instance when we have both Provider and
+            #consumer EPGs
+            if not epgs_consuming_contract or not epgs_providing_contract:
+                continue
+
+            contract = context._plugin.get_contract(
+                context._plugin_context, contract_id)
+            for rule_id in contract.get('policy_rules'):
+                rule_chain_map = self._get_rule_servicechain_mapping(
+                                    context._plugin_context.session, rule_id)
+                if rule_chain_map:
+                    break  # Only one redirect action per rule
+                policy_rule = context._plugin.get_policy_rule(
+                                   context._plugin_context, rule_id)
+                for action_id in policy_rule.get("policy_actions"):
+                    policy_action = context._plugin.get_policy_action(
+                                    context._plugin_context, action_id)
+                    if policy_action['action_type'].upper() == "REDIRECT":
+                        chain_instance = self._create_servicechain_instance(
+                                            context,
+                                            policy_action.get("action_value"),
+                                            epgs_providing_contract)
+                        chain_instance_id = chain_instance['id']
+                        self._set_rule_servicechain_instance_mapping(
+                                    context._plugin_context.session,
+                                    rule_id, chain_instance_id)
+                        break
+
+    def _cleanup_redirect_action(self, context):
+        consumed_contracts = context.current['consumed_contracts']
+        provided_contracts = context.current['provided_contracts']
+        if provided_contracts or consumed_contracts:
+            contracts = provided_contracts + consumed_contracts
+            for contract_id in contracts:
+                epgs_consuming_contract = self._get_epgs_consuming_contract(
+                                            context._plugin_context._session,
+                                            contract_id)
+                epgs_providing_contract = self._get_epgs_providing_contract(
+                                            context._plugin_context._session,
+                                            contract_id)
+                #Delete the ServiceChain Instance when we do not have wither
+                #the Provider or the consumer EPGs
+                if not epgs_consuming_contract or not epgs_providing_contract:
+                    contract = context._plugin.get_contract(
+                        context._plugin_context, contract_id)
+                    for rule_id in contract.get('policy_rules'):
+                        chain_id = self._get_rule_servicechain_mapping(
+                                    context._plugin_context.session,
+                                    rule_id).servicechain_instance_id
+                        if not chain_id:
+                            break  # Only one redirect action per rule
+                        self._delete_servicechain_instance(
+                            context,
+                            chain_id)
+                        break
 
     # The following methods perform the necessary subset of
     # functionality from neutron.api.v2.base.Controller.
@@ -667,6 +776,40 @@ class ResourceMappingDriver(api.PolicyDriver):
                               context._plugin_context,
                               'security_group_rule', sg_rule_id)
 
+    def _create_servicechain_instance(self, context, servicechain_spec,
+                                      providing_epgs, port_id=None,
+                                      config_params=None):
+        providerepg = providing_epgs.endpoint_group_id
+        epg = context._plugin.get_endpoint_group(context._plugin_context,
+                                                 providerepg)
+        router_id = self._get_routerid_for_l2policy(context,
+                                                    epg['l2_policy_id'])
+        router_ports = self._core_plugin.get_ports(
+                                context._plugin_context,
+                                filters=({'device_id': [router_id]}))
+        port_id = None
+        for port in router_ports:
+            if port.get('fixed_ips') and port.get('fixed_ips')[0]:
+                if (port.get('fixed_ips')[0].get('subnet_id') ==
+                        epg.get('subnets')[0]):
+                    port_id = port['id']
+                    break
+        attrs = {'tenant_id': context.current['tenant_id'],
+                 'name': 'gbp_' + context.current['name'],
+                 'description': "",
+                 'servicechain_spec': servicechain_spec,
+                 'port_id': port_id,
+                 'config_params': ""}
+        return self._create_resource(self._servicechain_plugin,
+                                     context._plugin_context,
+                                     'servicechain_instance', attrs)
+
+    def _delete_servicechain_instance(self, context, servicechain_instance_id):
+        self._delete_resource(self._servicechain_plugin,
+                              context._plugin_context,
+                              'servicechain_instance',
+                              servicechain_instance_id)
+
     def _create_resource(self, plugin, context, resource, attrs):
         # REVISIT(rkukura): Do create.start notification?
         # REVISIT(rkukura): Check authorization?
@@ -730,6 +873,17 @@ class ResourceMappingDriver(api.PolicyDriver):
             LOG.error(_("No L3 router service plugin found."))
             raise exc.GroupPolicyDeploymentError()
         return l3_plugin
+
+    @property
+    def _servicechain_plugin(self):
+        # REVISIT(rkukura): Need initialization method after all
+        # plugins are loaded to grab and store plugin.
+        plugins = manager.NeutronManager.get_service_plugins()
+        servicechain_plugin = plugins.get(pconst.SERVICECHAIN)
+        if not servicechain_plugin:
+            LOG.error(_("No Servicechain service plugin found."))
+            raise exc.GroupPolicyDeploymentError()
+        return servicechain_plugin
 
     @property
     def _dhcp_agent_notifier(self):
@@ -1062,3 +1216,19 @@ class ResourceMappingDriver(api.PolicyDriver):
                 context, epg_mapping['providing_epgs']),
             'consuming_cidrs': self._get_epg_cidrs(
                 context, epg_mapping['consuming_epgs'])}
+
+    def _set_rule_servicechain_instance_mapping(self, session, rule_id,
+                                                servicechain_instance_id):
+        with session.begin(subtransactions=True):
+            mapping = RuleServiceChainInstanceMapping(
+                            rule_id=rule_id,
+                            servicechain_instance_id=servicechain_instance_id)
+            session.add(mapping)
+
+    def _get_rule_servicechain_mapping(self, session, rule_id):
+        try:
+            with session.begin(subtransactions=True):
+                return (session.query(RuleServiceChainInstanceMapping).
+                        filter_by(rule_id=rule_id).one())
+        except sql_exc.NoResultFound:
+            return None
