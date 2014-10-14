@@ -20,7 +20,7 @@ Revision ID: ab64381ee820
 
 # revision identifiers, used by Alembic.
 revision = 'ab64381ee820'
-down_revision = '1680e1f0c4dc'
+down_revision = None
 
 
 from alembic import op
