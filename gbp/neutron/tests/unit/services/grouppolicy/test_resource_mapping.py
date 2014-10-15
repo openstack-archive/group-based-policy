@@ -18,11 +18,14 @@ import webob.exc
 from neutron.api.rpc.agentnotifiers import dhcp_rpc_agent_api
 from neutron.extensions import securitygroup as ext_sg
 from neutron.notifiers import nova
+from neutron.openstack.common import uuidutils
 from neutron.tests.unit import test_extension_security_group
 from neutron.tests.unit import test_l3_plugin
 
 from gbp.neutron.services.grouppolicy.common import constants as gconst
 from gbp.neutron.services.grouppolicy import config
+from gbp.neutron.services.grouppolicy.drivers import resource_mapping
+from gbp.neutron.services.servicechain import servicechain_plugin
 from gbp.neutron.tests.unit.services.grouppolicy import test_grouppolicy_plugin
 
 
@@ -529,3 +532,64 @@ class TestContract(ResourceMappingTestCase):
         port = self.deserialize(self.fmt, res.get_response(self.api))
         security_groups = port['port'][ext_sg.SECURITYGROUPS]
         self.assertEqual(len(security_groups), 3)
+
+    def test_redirect_to_chain(self):
+        classifier = self.create_policy_classifier(name="class1",
+                protocol="tcp", direction="in", port_range="20:90")
+        classifier_id = classifier['policy_classifier']['id']
+        action = self.create_policy_action(
+                                name="action1",
+                                action_type=gconst.GP_ACTION_REDIRECT,
+                                action_value=uuidutils.generate_uuid())
+        action_id = action['policy_action']['id']
+        action_id_list = [action_id]
+        policy_rule = self.create_policy_rule(name='pr1',
+                policy_classifier_id=classifier_id,
+                policy_actions=action_id_list)
+        policy_rule_id = policy_rule['policy_rule']['id']
+        policy_rule_list = [policy_rule_id]
+        contract = self.create_contract(name="c1",
+                policy_rules=policy_rule_list)
+        contract_id = contract['contract']['id']
+        self.create_endpoint_group(name="epg1",
+                                   provided_contracts={contract_id: None})
+
+        create_chain_instance = mock.patch.object(
+                                    servicechain_plugin.ServiceChainPlugin,
+                                    'create_servicechain_instance')
+        create_chain_instance = create_chain_instance.start()
+        chain_instance_id = uuidutils.generate_uuid()
+        create_chain_instance.return_value = {'id': chain_instance_id}
+
+        with mock.patch.object(
+                resource_mapping.ResourceMappingDriver,
+                '_set_rule_servicechain_instance_mapping') as set_rule:
+            self.create_endpoint_group(name="epg2",
+                                       consumed_contracts={contract_id: None})
+            set_rule.assert_called_once_with(mock.ANY, policy_rule_id,
+                                             chain_instance_id)
+        #TODO(Magesh): Enable the delete test after Bug#1378530 is fixed
+        #Use contextlib.nested rather than nested with blocks
+        '''
+        with mock.patch.object(servicechain_plugin.ServiceChainPlugin,
+                               'delete_servicechain_instance') as del_sc_inst:
+            with mock.patch.object(
+                            resource_mapping.ResourceMappingDriver,
+                            '_get_rule_servicechain_mapping') as get_rule:
+                r_sc_map = resource_mapping.RuleServiceChainInstanceMapping()
+                r_sc_map.rule_id = policy_rule_id
+                r_sc_map.servicechain_instance_id = chain_instance_id
+                get_rule.return_value = r_sc_map
+                get_chain_inst = mock.patch.object(
+                                        servicechain_db.ServiceChainDbPlugin,
+                                        'get_servicechain_instance')
+                get_chain_inst.start()
+                get_chain_inst.return_value = {
+                                        "servicechain_instance": {
+                                                    'id': chain_instance_id}}
+                req = self.new_delete_request(
+                                        'endpoint_groups',
+                                        consumed_epg['endpoint_group']['id'])
+                res = req.get_response(self.ext_api)
+                self.assertEqual(res.status_int, webob.exc.HTTPNoContent.code)
+        '''
