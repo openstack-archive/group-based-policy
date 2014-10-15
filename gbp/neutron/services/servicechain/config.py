@@ -20,6 +20,10 @@ service_chain_opts = [
                        "entrypoints to be loaded from the "
                        "neutron.servicechain.servicechain_drivers "
                        "namespace.")),
+    cfg.ListOpt('heat_uri',
+                default='http://localhost:8004/v1',
+                help=_("Heat server address to create services "
+                       "specified in the service chain.")),
 ]
 
 
