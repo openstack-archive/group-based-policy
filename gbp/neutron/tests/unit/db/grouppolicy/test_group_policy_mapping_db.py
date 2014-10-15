@@ -29,6 +29,10 @@ class GroupPolicyMappingDBTestPlugin(gpmdb.GroupPolicyMappingDbPlugin):
 DB_GP_PLUGIN_KLASS = (GroupPolicyMappingDBTestPlugin.__module__ + '.' +
                       GroupPolicyMappingDBTestPlugin.__name__)
 
+SC_PLUGIN_KLASS = (
+    "gbp.neutron.services.servicechain.servicechain_plugin.ServiceChainPlugin"
+)
+
 
 class GroupPolicyMappingDbTestCase(tgpdb.GroupPolicyDbTestCase,
                                    test_l3_plugin.L3NatTestCaseMixin):
@@ -39,7 +43,8 @@ class GroupPolicyMappingDbTestCase(tgpdb.GroupPolicyDbTestCase,
             gp_plugin = DB_GP_PLUGIN_KLASS
         if not service_plugins:
             service_plugins = {'l3_plugin_name': "router",
-                               'gp_plugin_name': gp_plugin}
+                               'gp_plugin_name': gp_plugin,
+                               'servicechain_plugin': SC_PLUGIN_KLASS}
         super(GroupPolicyMappingDbTestCase, self).setUp(
             core_plugin=core_plugin, gp_plugin=gp_plugin,
             service_plugins=service_plugins
