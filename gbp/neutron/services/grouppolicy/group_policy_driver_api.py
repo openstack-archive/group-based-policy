@@ -93,6 +93,16 @@ class EndpointGroupContext(object):
         pass
 
     @abc.abstractmethod
+    def set_network_service_policy_id(self, network_service_policy_id):
+        """Set the network_service_policy for the endpoint_group.
+
+        :param network_service_policy_id: network_service_policy for the epg.
+
+        Set the network_service_policy for the endpoint_group.
+        """
+        pass
+
+    @abc.abstractmethod
     def add_subnet(self, subnet_id):
         """Add the subnet to the endpoint_group.
 
@@ -190,6 +200,40 @@ class L3PolicyContext(object):
 
         Add a neutron router to the set of routers to which the
         l3_policy is mapped.
+        """
+        pass
+
+
+@six.add_metaclass(abc.ABCMeta)
+class NetworkServicePolicyContext(object):
+    """
+    Context passed to policy engine for network_service_policy resource
+    changes.
+
+    A NetworkServicePolicyContext instance wraps a network_service_policy
+    resource. It provides helper methods for accessing other relevant
+    information. Results from expensive operations are cached for convenient
+    access.
+    """
+
+    @abc.abstractproperty
+    def current(self):
+        """Return the current state of the network_service_policy.
+
+        Return the current state of the network_service_policy, as defined by
+        GroupPolicyPlugin.create_network_service_policy.
+        """
+        pass
+
+    @abc.abstractproperty
+    def original(self):
+        """Return the original state of the network_service_policy.
+
+        Return the original state of the network_service_policy, prior to a
+        call to
+        update_network_service_policy. Method is only valid within calls to
+        update_network_service_policy_precommit and
+        update_network_service_policy_postcommit.
         """
         pass
 
@@ -741,5 +785,57 @@ class PolicyDriver(object):
 
         :param context: ContractContext instance describing the current
         state of the contract, prior to the call to delete it.
+        """
+        pass
+
+    def create_network_service_policy_precommit(self, context):
+        """Allocate resources for a new network service policy.
+
+        :param context: NetworkServicePolicyContext instance describing the new
+        network service policy.
+        """
+        pass
+
+    def create_network_service_policy_postcommit(self, context):
+        """Create a network service policy.
+
+        :param context: NetworkServicePolicyContext instance describing the new
+        network service policy.
+        """
+        pass
+
+    def update_network_service_policy_precommit(self, context):
+        """Update resources of a network service policy.
+
+        :param context: NetworkServicePolicyContext instance describing the new
+        state of the NetworkServicePolicy, as well as the original state prior
+        to the update_network_service_policy call.
+        """
+        pass
+
+    def update_network_service_policy_postcommit(self, context):
+        """Update a network service policy.
+
+        :param context: NetworkServicePolicyContext instance describing the new
+        state of the NetworkServicePolicy, as well as the original state prior
+        to the update_network_service_policy call.
+        """
+        pass
+
+    def delete_network_service_policy_precommit(self, context):
+        """Delete resources for a network service policy.
+
+        :param context: NetworkServicePolicyContext instance describing the
+        current state of the NetworkServicePolicy, prior to the call to
+        delete it.
+        """
+        pass
+
+    def delete_network_service_policy_postcommit(self, context):
+        """Delete a network service policy.
+
+        :param context: NetworkServicePolicyContext instance describing the
+        current state of the NetworkServicePolicy, prior to the call to
+        delete it.
         """
         pass
