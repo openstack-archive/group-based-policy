@@ -118,6 +118,30 @@ class NoopDriver(api.PolicyDriver):
         pass
 
     @log.log
+    def create_network_service_policy_precommit(self, context):
+        pass
+
+    @log.log
+    def create_network_service_policy_postcommit(self, context):
+        pass
+
+    @log.log
+    def update_network_service_policy_precommit(self, context):
+        pass
+
+    @log.log
+    def update_network_service_policy_postcommit(self, context):
+        pass
+
+    @log.log
+    def delete_network_service_policy_precommit(self, context):
+        pass
+
+    @log.log
+    def delete_network_service_policy_postcommit(self, context):
+        pass
+
+    @log.log
     def create_policy_classifier_precommit(self, context):
         pass
 
