@@ -156,7 +156,9 @@ class GroupPolicyMappingDbPlugin(gpdb.GroupPolicyDbPlugin):
                                           tenant_id=tenant_id,
                                           name=epg['name'],
                                           description=epg['description'],
-                                          l2_policy_id=epg['l2_policy_id'])
+                                          l2_policy_id=epg['l2_policy_id'],
+                                          network_service_policy_id=
+                                          epg['network_service_policy_id'])
             context.session.add(epg_db)
             if 'subnets' in epg:
                 for subnet in epg['subnets']:
