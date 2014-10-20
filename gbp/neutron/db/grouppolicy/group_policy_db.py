@@ -981,3 +981,40 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
     def get_contracts_count(self, context, filters=None):
         return self._get_collection_count(context, Contract,
                                           filters=filters)
+
+    @log.log
+    def get_network_service_policies(self, context, filters=None, fields=None):
+        pass
+
+    @log.log
+    def get_network_service_policy(
+        self, context, network_service_policy_id, fields=None):
+        pass
+
+    @log.log
+    def create_network_service_policy(self, context, network_service_policy):
+        pass
+
+    @log.log
+    def update_network_service_policy(
+        self, context, network_service_policy_id, network_service_policy):
+        pass
+
+    @log.log
+    def delete_network_service_policy(
+        self, context, network_service_policy_id):
+        pass
+
+    """"
+    @log.log
+    def get_network_service_policies(
+        self, context, filters=None, fields=None):
+        return self._get_collection(context, NetworkServicePolicy,
+                                    self._make_network_service_policy_dict,
+                                    filters=filters, fields=fields)
+
+    @log.log
+    def get_network_service_policies_count(self, context, filters=None):
+        return self._get_collection_count(context, NetworkServicePolicy,
+                                          filters=filters)
+    """

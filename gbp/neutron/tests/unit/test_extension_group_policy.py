@@ -36,6 +36,7 @@ POLICY_RULES_URI = GROUPPOLICY_URI + '/' + 'policy_rules'
 POLICY_CLASSIFIERS_URI = GROUPPOLICY_URI + '/' + 'policy_classifiers'
 POLICY_ACTIONS_URI = GROUPPOLICY_URI + '/' + 'policy_actions'
 CONTRACTS_URI = GROUPPOLICY_URI + '/' + 'contracts'
+NET_SVC_POLICIES_URI = GROUPPOLICY_URI + '/' + 'network_service_policies'
 
 
 class GroupPolicyExtensionTestCase(test_api_v2_extension.ExtensionTestCase):
@@ -43,8 +44,9 @@ class GroupPolicyExtensionTestCase(test_api_v2_extension.ExtensionTestCase):
 
     def setUp(self):
         super(GroupPolicyExtensionTestCase, self).setUp()
-        plural_mappings = {'l2_policy': 'l2_policies',
-                           'l3_policy': 'l3_policies'}
+        plural_mappings = {
+            'l2_policy': 'l2_policies', 'l3_policy': 'l3_policies',
+            'network_service_policy': 'network_service_policies'}
         self._setUpExtension(
             GP_PLUGIN_BASE_NAME, constants.GROUP_POLICY,
             gp.RESOURCE_ATTRIBUTE_MAP, gp.Group_policy, GROUPPOLICY_URI,
@@ -165,13 +167,15 @@ class GroupPolicyExtensionTestCase(test_api_v2_extension.ExtensionTestCase):
 
     def _get_create_endpoint_group_default_attrs(self):
         return {'name': '', 'description': '', 'l2_policy_id': None,
-                'provided_contracts': {}, 'consumed_contracts': {}}
+                'provided_contracts': {}, 'consumed_contracts': {},
+                'network_service_policy_id': None}
 
     def _get_create_endpoint_group_attrs(self):
         return {'name': 'epg1', 'tenant_id': _uuid(),
                 'description': 'test endpoint group', 'l2_policy_id': _uuid(),
                 'provided_contracts': {_uuid(): None},
-                'consumed_contracts': {_uuid(): None}}
+                'consumed_contracts': {_uuid(): None},
+                'network_service_policy_id': _uuid()}
 
     def _get_update_endpoint_group_attrs(self):
         return {'name': 'new_name'}
@@ -884,6 +888,117 @@ class GroupPolicyExtensionTestCase(test_api_v2_extension.ExtensionTestCase):
 
     def test_delete_contract(self):
         self._test_entity_delete('contract')
+
+    def _test_create_network_service_policy(
+        self, data, expected_value, default_data=None):
+        if not default_data:
+            default_data = data
+        create_svc_policy = self.instance.create_network_service_policy
+        create_svc_policy.return_value = expected_value
+        res = self.api.post(_get_path(NET_SVC_POLICIES_URI, fmt=self.fmt),
+                            self.serialize(data),
+                            content_type='application/%s' % self.fmt)
+        create_svc_policy.assert_called_once_with(
+            mock.ANY, network_service_policy=default_data)
+        self.assertEqual(exc.HTTPCreated.code, res.status_int)
+        res = self.deserialize(res)
+        self.assertIn('network_service_policy', res)
+        self.assertEqual(expected_value, res['network_service_policy'])
+
+    def _get_create_network_service_policy_default_attrs(self):
+        return {'name': '', 'description': '',
+                'network_service_params': {}}
+
+    def _get_create_network_service_policy_attrs(self):
+        return {'name': 'nsp1', 'tenant_id': _uuid(),
+                'description': 'test Net Svc Policy',
+                'network_service_params': {'vip': {'type': 'external',
+                                                   'value': 'many'}}}
+
+    def _get_update_network_service_policy_attrs(self):
+        return {'name': 'new_name'}
+
+    def test_create_network_service_policy_with_defaults(self):
+        network_service_policy_id = _uuid()
+        data = {'network_service_policy': {'tenant_id': _uuid()}}
+        default_attrs = self._get_create_network_service_policy_default_attrs()
+        default_data = copy.copy(data)
+        default_data['network_service_policy'].update(default_attrs)
+        expected_value = dict(default_data['network_service_policy'])
+        expected_value['id'] = network_service_policy_id
+
+        self._test_create_network_service_policy(
+            data, expected_value, default_data)
+
+    def test_create_network_service_policy(self):
+        network_service_policy_id = _uuid()
+        data = {'network_service_policy':
+                self._get_create_network_service_policy_attrs()}
+        expected_value = copy.deepcopy(data['network_service_policy'])
+        expected_value['id'] = network_service_policy_id
+
+        self._test_create_network_service_policy(data, expected_value)
+
+    def test_list_network_service_policies(self):
+        network_service_policy_id = _uuid()
+        expected_value = [{'tenant_id': _uuid(),
+                           'id': network_service_policy_id}]
+
+        get_svc_policies = self.instance.get_network_service_policies
+        get_svc_policies.return_value = expected_value
+
+        res = self.api.get(_get_path(NET_SVC_POLICIES_URI, fmt=self.fmt))
+
+        get_svc_policies.assert_called_once_with(
+            mock.ANY, fields=mock.ANY, filters=mock.ANY)
+        self.assertEqual(exc.HTTPOk.code, res.status_int)
+        res = self.deserialize(res)
+        self.assertIn('network_service_policies', res)
+        self.assertEqual(expected_value, res['network_service_policies'])
+
+    def test_get_network_service_policy(self):
+        network_service_policy_id = _uuid()
+        expected_value = {'tenant_id': _uuid(),
+                          'id': network_service_policy_id}
+
+        self.instance.get_network_service_policy.return_value = expected_value
+
+        res = self.api.get(_get_path(NET_SVC_POLICIES_URI,
+                                     id=network_service_policy_id,
+                                     fmt=self.fmt))
+
+        self.instance.get_network_service_policy.assert_called_once_with(
+            mock.ANY, network_service_policy_id, fields=mock.ANY)
+        self.assertEqual(exc.HTTPOk.code, res.status_int)
+        res = self.deserialize(res)
+        self.assertIn('network_service_policy', res)
+        self.assertEqual(expected_value, res['network_service_policy'])
+
+    def test_update_network_service_policy(self):
+        network_service_policy_id = _uuid()
+        update_data = {'network_service_policy':
+                       self._get_update_network_service_policy_attrs()}
+        expected_value = {'tenant_id': _uuid(),
+                          'id': network_service_policy_id}
+
+        update_svc_policy = self.instance.update_network_service_policy
+        update_svc_policy.return_value = expected_value
+
+        res = self.api.put(_get_path(NET_SVC_POLICIES_URI,
+                                     id=network_service_policy_id,
+                                     fmt=self.fmt),
+                           self.serialize(update_data))
+
+        update_svc_policy.assert_called_once_with(
+            mock.ANY, network_service_policy_id,
+            network_service_policy=update_data)
+        self.assertEqual(exc.HTTPOk.code, res.status_int)
+        res = self.deserialize(res)
+        self.assertIn('network_service_policy', res)
+        self.assertEqual(expected_value, res['network_service_policy'])
+
+    def test_delete_network_service_policy(self):
+        self._test_entity_delete('network_service_policy')
 
 
 class TestGroupPolicyAttributeConverters(base.BaseTestCase):
