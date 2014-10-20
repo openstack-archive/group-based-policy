@@ -102,6 +102,17 @@ class GroupPolicyDBTestBase(object):
 
         return attrs
 
+    def _get_test_network_service_policy_attrs(
+        self, name='nsp1', description='test network_service_policy',
+        network_service_policy_id=None, network_service_params=None):
+        if not network_service_params:
+            network_service_params = []
+        attrs = {'name': name, 'description': description,
+                 'tenant_id': self._tenant_id,
+                 'network_service_params': network_service_params}
+
+        return attrs
+
     def _get_test_policy_classifier_attrs(self, name='pc1',
                                           description='test pc',
                                           protocol=None, port_range=None,
@@ -233,6 +244,29 @@ class GroupPolicyDBTestBase(object):
         l3p = self.deserialize(self.fmt, l3p_res)
 
         return l3p
+
+    def create_network_service_policy(
+        self, expected_res_status=None, **kwargs):
+        defaults = {'name': 'nsp1',
+                    'description': 'test network_service_policy',
+                    'network_service_params': []}
+        defaults.update(kwargs)
+
+        data = {'network_service_policy': {'tenant_id': self._tenant_id}}
+        data['network_service_policy'].update(defaults)
+
+        nsp_req = self.new_create_request('network_service_policies',
+                                          data, self.fmt)
+        nsp_res = nsp_req.get_response(self.ext_api)
+
+        if expected_res_status:
+            self.assertEqual(expected_res_status, nsp_res.status_int)
+        elif nsp_res.status_int >= webob.exc.HTTPClientError.code:
+            raise webob.exc.HTTPClientError(code=nsp_res.status_int)
+
+        nsp = self.deserialize(self.fmt, nsp_res)
+
+        return nsp
 
     def create_policy_classifier(self, expected_res_status=None, **kwargs):
         defaults = {'name': 'pc1', 'description': 'test pc', 'protocol': None,
@@ -629,6 +663,59 @@ class TestGroupResources(GroupPolicyDbTestCase):
         self.assertEqual(res.status_int, webob.exc.HTTPNoContent.code)
         self.assertRaises(gpolicy.L3PolicyNotFound, self.plugin.get_l3_policy,
                           ctx, l3p_id)
+
+    def test_create_and_show_network_service_policy(self):
+        params = [{'type': 'ip_single', 'name': 'vip', 'value': 'self_subnet'}]
+        attrs = self._get_test_network_service_policy_attrs(
+            network_service_params=params)
+
+        nsp = self.create_network_service_policy(network_service_params=params)
+        for k, v in attrs.iteritems():
+            self.assertEqual(nsp['network_service_policy'][k], v)
+
+        self._test_show_resource('network_service_policy',
+                                 nsp['network_service_policy']['id'], attrs)
+
+    def test_list_network_service_policies(self):
+        network_service_policies = [
+            self.create_network_service_policy(name='nsp1', description='nsp'),
+            self.create_network_service_policy(name='nsp2', description='nsp'),
+            self.create_network_service_policy(name='nsp3', description='nsp')]
+        self._test_list_resources('network_service_policy',
+                                  network_service_policies,
+                                  query_params='description=nsp')
+
+    def test_update_network_service_policy(self):
+        name = "new_network_service_policy"
+        description = 'new desc'
+        attrs = self._get_test_network_service_policy_attrs(
+            name=name, description=description)
+
+        nsp = self.create_network_service_policy()
+        data = {'network_service_policy': {'name': name,
+                                           'description': description}}
+        req = self.new_update_request('network_service_policies', data,
+                                      nsp['network_service_policy']['id'])
+        res = self.deserialize(self.fmt, req.get_response(self.ext_api))
+
+        for k, v in attrs.iteritems():
+            self.assertEqual(res['network_service_policy'][k], v)
+
+        self._test_show_resource('network_service_policy',
+                                 nsp['network_service_policy']['id'], attrs)
+
+    def test_delete_network_service_policy(self):
+        ctx = context.get_admin_context()
+
+        nsp = self.create_network_service_policy()
+        nsp_id = nsp['network_service_policy']['id']
+
+        req = self.new_delete_request('network_service_policies', nsp_id)
+        res = req.get_response(self.ext_api)
+        self.assertEqual(webob.exc.HTTPNoContent.code, res.status_int)
+        self.assertRaises(gpolicy.NetworkServicePolicyNotFound,
+                          self.plugin.get_network_service_policy,
+                          ctx, nsp_id)
 
     def test_create_and_show_policy_classifier(self):
         name = "pc1"

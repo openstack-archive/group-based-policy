@@ -56,6 +56,11 @@ class L3PolicyNotFound(nexc.NotFound):
     message = _("L3Policy %(l3_policy_id)s could not be found")
 
 
+class NetworkServicePolicyNotFound(nexc.NotFound):
+    message = _("NetworkServicePolicy %(network_service_policy_id)s "
+                "could not be found")
+
+
 class InvalidDefaultSubnetPrefixLength(nexc.InvalidInput):
     message = _("Default subnet prefix length %(length)s is invalid for"
                 "ipv%(protocol)s")
@@ -106,6 +111,17 @@ gp_supported_directions = [None, gp_constants.GP_DIRECTION_IN,
                            gp_constants.GP_DIRECTION_OUT,
                            gp_constants.GP_DIRECTION_BI]
 gp_supported_protocols = [None, constants.TCP, constants.UDP, constants.ICMP]
+gp_network_service_param_types = [
+    gp_constants.GP_NETWORK_SVC_PARAM_TYPE_IP_SINGLE,
+    gp_constants.GP_NETWORK_SVC_PARAM_TYPE_IP_POOL,
+    gp_constants.GP_NETWORK_SVC_PARAM_TYPE_STRING]
+gp_network_service_param_keys = [
+    gp_constants.GP_NETWORK_SVC_PARAM_TYPE,
+    gp_constants.GP_NETWORK_SVC_PARAM_NAME,
+    gp_constants.GP_NETWORK_SVC_PARAM_VALUE]
+gp_network_service_param_values = [
+    gp_constants.GP_NETWORK_SVC_PARAM_VALUE_EXTERNAL_SUBNET,
+    gp_constants.GP_NETWORK_SVC_PARAM_VALUE_SELF_SUBNET]
 
 
 # Group Policy input value conversion and validation functions
@@ -170,7 +186,47 @@ def _validate_port_range(data, key_specs=None):
             return msg
 
 
+def _validate_network_svc_params(data, key_specs=None):
+    if data is None:
+        return
+    # A valid network_svc_params dict is:
+    # [{'type': <type>, 'name': <param_name>, 'value': <param_value>}]
+    # e.g. [{'type': 'ip_single', 'name': 'vip', 'value': 'self_subnet'}]
+    # The type and value are validated, the name is treated as a literal.
+    # The name of the param is chosen by the service chain implementation,
+    # and as such is validated by the service chain provider.
+    # The supported types are defined in gp_network_service_param_types.
+    # The supported values are defined in gp_network_service_param_values,
+    # but the values are not validated when the tpye is 'string'.
+    if not isinstance(data, list):
+        msg = _("'%s' is not a list") % data
+        LOG.debug(msg)
+        return msg
+    for d in data:
+        if not isinstance(d, dict):
+            msg = _("'%s' is not a dictionary") % d
+            LOG.debug(msg)
+            return msg
+        if set(d) != set(gp_network_service_param_keys):
+            s = ", ".join(set(d) - set(gp_network_service_param_keys))
+            msg = _("Unknown key(s) '%s' in network service params") % s
+            LOG.debug(msg)
+            return msg
+        if d['type'] not in gp_network_service_param_types:
+            msg = _("Network service param type(s) '%s' not supported") % (
+                d['type'])
+            LOG.debug(msg)
+            return msg
+        if d['type'] != gp_constants.GP_NETWORK_SVC_PARAM_TYPE_STRING:
+            if d['value'] not in gp_network_service_param_values:
+                msg = _("Network service param value '%s' is not "
+                        "supported") % d['value']
+                LOG.debug(msg)
+                return msg
+
+
 attr.validators['type:port_range'] = _validate_port_range
+attr.validators['type:network_service_params'] = _validate_network_svc_params
 
 
 ENDPOINTS = 'endpoints'
@@ -181,6 +237,7 @@ POLICY_CLASSIFIERS = 'policy_classifiers'
 POLICY_ACTIONS = 'policy_actions'
 POLICY_RULES = 'policy_rules'
 CONTRACTS = 'contracts'
+NETWORK_SERVICE_POLICIES = 'network_service_policies'
 
 
 RESOURCE_ATTRIBUTE_MAP = {
@@ -229,6 +286,9 @@ RESOURCE_ATTRIBUTE_MAP = {
                                'validate': {'type:dict_or_none': None},
                                'convert_to': attr.convert_none_to_empty_dict,
                                'default': None, 'is_visible': True},
+        'network_service_policy_id': {'allow_post': True, 'allow_put': True,
+                                      'validate': {'type:uuid_or_none': None},
+                                      'default': None, 'is_visible': True},
     },
     L2_POLICIES: {
         'id': {'allow_post': False, 'allow_put': False,
@@ -388,6 +448,28 @@ RESOURCE_ATTRIBUTE_MAP = {
                          'convert_to': attr.convert_none_to_empty_list,
                          'is_visible': True},
     },
+    NETWORK_SERVICE_POLICIES: {
+        'id': {'allow_post': False, 'allow_put': False,
+               'validate': {'type:uuid': None}, 'is_visible': True,
+               'primary_key': True},
+        'name': {'allow_post': True, 'allow_put': True,
+                 'validate': {'type:string': None},
+                 'default': '', 'is_visible': True},
+        'description': {'allow_post': True, 'allow_put': True,
+                        'validate': {'type:string': None},
+                        'is_visible': True, 'default': ''},
+        'tenant_id': {'allow_post': True, 'allow_put': False,
+                      'validate': {'type:string': None},
+                      'required_by_policy': True, 'is_visible': True},
+        'endpoint_groups': {'allow_post': False, 'allow_put': False,
+                            'validate': {'type:uuid_list': None},
+                            'convert_to': attr.convert_none_to_empty_list,
+                            'default': None, 'is_visible': True},
+        'network_service_params': {'allow_post': True, 'allow_put': True,
+                                   'validate':
+                                   {'type:network_service_params': None},
+                                   'default': None, 'is_visible': True},
+    },
 }
 
 
@@ -415,8 +497,9 @@ class Group_policy(extensions.ExtensionDescriptor):
 
     @classmethod
     def get_resources(cls):
-        special_mappings = {'l2_policies': 'l2_policy',
-                            'l3_policies': 'l3_policy'}
+        special_mappings = {
+            'l2_policies': 'l2_policy', 'l3_policies': 'l3_policy',
+            'network_service_policies': 'network_service_policy'}
         plural_mappings = resource_helper.build_plural_mappings(
             special_mappings, RESOURCE_ATTRIBUTE_MAP)
         attr.PLURALS.update(plural_mappings)
@@ -530,6 +613,29 @@ class GroupPolicyPluginBase(service_base.ServicePluginBase):
 
     @abc.abstractmethod
     def delete_l3_policy(self, context, l3_policy_id):
+        pass
+
+    @abc.abstractmethod
+    def get_network_service_policies(self, context, filters=None, fields=None):
+        pass
+
+    @abc.abstractmethod
+    def get_network_service_policy(
+        self, context, network_service_policy_id, fields=None):
+        pass
+
+    @abc.abstractmethod
+    def create_network_service_policy(self, context, network_service_policy):
+        pass
+
+    @abc.abstractmethod
+    def update_network_service_policy(
+        self, context, network_service_policy_id, network_service_policy):
+        pass
+
+    @abc.abstractmethod
+    def delete_network_service_policy(
+        self, context, network_service_policy_id):
         pass
 
     @abc.abstractmethod

@@ -63,6 +63,12 @@ class EndpointGroupContext(GroupPolicyContext, api.EndpointGroupContext):
             self._plugin_context, self._endpoint_group['id'], l2_policy_id)
         self._endpoint_group['l2_policy_id'] = l2_policy_id
 
+    def set_network_service_policy_id(self, network_service_policy_id):
+        nsp_id = network_service_policy_id
+        self._plugin._set_network_service_policy_for_endpoint_group(
+            self._plugin_context, self._endpoint_group['id'], nsp_id)
+        self._endpoint_group['network_service_policy_id'] = nsp_id
+
     def add_subnet(self, subnet_id):
         subnets = self._plugin._add_subnet_to_endpoint_group(
             self._plugin_context, self._endpoint_group['id'], subnet_id)
@@ -116,6 +122,25 @@ class L3PolicyContext(GroupPolicyContext, api.L3PolicyContext):
         routers = self._plugin._add_router_to_l3_policy(
             self._plugin_context, self._l3_policy['id'], router_id)
         self._l3_policy['routers'] = routers
+
+
+class NetworkServicePolicyContext(
+    GroupPolicyContext, api.NetworkServicePolicyContext):
+
+    def __init__(self, plugin, plugin_context, network_service_policy,
+                 original_network_service_policy=None):
+        super(NetworkServicePolicyContext, self).__init__(
+            plugin, plugin_context)
+        self._network_service_policy = network_service_policy
+        self._original_network_service_policy = original_network_service_policy
+
+    @property
+    def current(self):
+        return self._network_service_policy
+
+    @property
+    def original(self):
+        return self._original_network_service_policy
 
 
 class PolicyClassifierContext(GroupPolicyContext, api.PolicyClassifierContext):
