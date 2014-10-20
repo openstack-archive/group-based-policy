@@ -86,6 +86,9 @@ class EndpointGroup(model_base.BASEV2, models_v2.HasId, models_v2.HasTenant):
     l2_policy_id = sa.Column(sa.String(36),
                              sa.ForeignKey('gp_l2_policies.id'),
                              nullable=True)
+    network_service_policy_id = sa.Column(
+        sa.String(36), sa.ForeignKey('gp_network_service_policies.id'),
+        nullable=True)
     provided_contracts = orm.relationship(
         EndpointGroupContractProvidingAssociation,
         backref='providing_endpoint_group', cascade='all, delete-orphan')
@@ -124,6 +127,29 @@ class L3Policy(model_base.BASEV2, models_v2.HasId, models_v2.HasTenant):
     ip_pool = sa.Column(sa.String(64), nullable=False)
     subnet_prefix_length = sa.Column(sa.Integer, nullable=False)
     l2_policies = orm.relationship(L2Policy, backref='l3_policy')
+
+
+class NetworkServiceParam(model_base.BASEV2, models_v2.HasId):
+    """Represents a network service param used in a NetworkServicePolicy."""
+    __tablename__ = 'gp_network_service_params'
+    param_type = sa.Column(sa.String(50), nullable=False)
+    param_name = sa.Column(sa.String(50), nullable=False)
+    param_value = sa.Column(sa.String(50), nullable=False)
+    network_service_policy_id = sa.Column(
+        sa.String(36), sa.ForeignKey('gp_network_service_policies.id'),
+        nullable=False)
+
+
+class NetworkServicePolicy(
+    model_base.BASEV2, models_v2.HasId, models_v2.HasTenant):
+    """Represents a Network Service Policy."""
+    __tablename__ = 'gp_network_service_policies'
+    name = sa.Column(sa.String(50))
+    description = sa.Column(sa.String(255))
+    endpoint_groups = orm.relationship(EndpointGroup,
+                                       backref='network_service_policy')
+    network_service_params = orm.relationship(NetworkServiceParam,
+                                              backref='network_service_policy')
 
 
 class ContractPolicyRuleAssociation(model_base.BASEV2):
@@ -259,6 +285,14 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
         except exc.NoResultFound:
             raise gpolicy.L3PolicyNotFound(l3_policy_id=
                                            l3_policy_id)
+
+    def _get_network_service_policy(self, context, network_service_policy_id):
+        try:
+            return self._get_by_id(context, NetworkServicePolicy,
+                                   network_service_policy_id)
+        except exc.NoResultFound:
+            raise gpolicy.NetworkServicePolicyNotFound(
+                network_service_policy_id=network_service_policy_id)
 
     def _get_policy_classifier(self, context, policy_classifier_id):
         try:
@@ -462,6 +496,29 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
             epg_db = self._get_endpoint_group(context, epg_id)
             epg_db.l2_policy_id = l2p_id
 
+    def _set_network_service_policy_for_endpoint_group(
+        self, context, epg_id, nsp_id):
+        with context.session.begin(subtransactions=True):
+            epg_db = self._get_endpoint_group(context, epg_id)
+            epg_db.network_service_policy_id = nsp_id
+
+    def _set_params_for_network_service_policy(
+        self, context, network_service_policy_db, network_service_policy):
+        nsp_db = network_service_policy_db
+        params = network_service_policy['network_service_params']
+        if not params:
+            nsp_db.network_service_params = []
+            return
+        with context.session.begin(subtransactions=True):
+            nsp_db.network_service_params = []
+            for param in params:
+                param_db = NetworkServiceParam(
+                    param_type=param,
+                    param_name=params[param]['name'],
+                    param_value=params[param]['value'])
+                nsp_db.network_service_params.append(param_db)
+            del network_service_policy['network_service_params']
+
     def _make_endpoint_dict(self, ep, fields=None):
         res = {'id': ep['id'],
                'tenant_id': ep['tenant_id'],
@@ -475,7 +532,8 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
                'tenant_id': epg['tenant_id'],
                'name': epg['name'],
                'description': epg['description'],
-               'l2_policy_id': epg['l2_policy_id']}
+               'l2_policy_id': epg['l2_policy_id'],
+               'network_service_policy_id': epg['network_service_policy_id']}
         res['endpoints'] = [ep['id']
                             for ep in epg['endpoints']]
         res['provided_contracts'] = [pc['contract_id']
@@ -505,6 +563,21 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
                l3p['subnet_prefix_length']}
         res['l2_policies'] = [l2p['id']
                               for l2p in l3p['l2_policies']]
+        return self._fields(res, fields)
+
+    def _make_network_service_policy_dict(self, nsp, fields=None):
+        res = {'id': nsp['id'],
+               'tenant_id': nsp['tenant_id'],
+               'name': nsp['name'],
+               'description': nsp['description']}
+        res['endpoint_groups'] = [epg['id']
+                                  for epg in nsp['endpoint_groups']]
+        params = {}
+        for param in nsp['network_service_params']:
+            params[param['param_type']] = {
+                gp_constants.GP_NETWORK_SVC_PARAM_NAME: param['param_name'],
+                gp_constants.GP_NETWORK_SVC_PARAM_VALUE: param['param_value']}
+        res['network_service_params'] = params
         return self._fields(res, fields)
 
     def _make_policy_classifier_dict(self, pc, fields=None):
@@ -643,7 +716,9 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
                                    tenant_id=tenant_id,
                                    name=epg['name'],
                                    description=epg['description'],
-                                   l2_policy_id=epg['l2_policy_id'])
+                                   l2_policy_id=epg['l2_policy_id'],
+                                   network_service_policy_id=
+                                   epg['network_service_policy_id'])
             context.session.add(epg_db)
             self._process_contracts_for_epg(context, epg_db, epg)
         return self._make_endpoint_group_dict(epg_db)
@@ -788,6 +863,66 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
                                     sorts=sorts, limit=limit,
                                     marker_obj=marker_obj,
                                     page_reverse=page_reverse)
+
+    @log.log
+    def create_network_service_policy(self, context, network_service_policy):
+        nsp = network_service_policy['network_service_policy']
+        tenant_id = self._get_tenant_id_for_create(context, nsp)
+        with context.session.begin(subtransactions=True):
+            nsp_db = NetworkServicePolicy(id=uuidutils.generate_uuid(),
+                                          tenant_id=tenant_id,
+                                          name=nsp['name'],
+                                          description=nsp['description'])
+            context.session.add(nsp_db)
+            self._set_params_for_network_service_policy(
+                context, nsp_db, nsp)
+        return self._make_network_service_policy_dict(nsp_db)
+
+    @log.log
+    def update_network_service_policy(
+        self, context, network_service_policy_id, network_service_policy):
+        nsp = network_service_policy['network_service_policy']
+        with context.session.begin(subtransactions=True):
+            nsp_db = self._get_network_service_policy(
+                context, network_service_policy_id)
+            if 'network_service_params' in network_service_policy:
+                self._set_params_for_network_service_policy(
+                    context, nsp_db, nsp)
+            nsp_db.update(nsp)
+        return self._make_network_service_policy_dict(nsp_db)
+
+    @log.log
+    def delete_network_service_policy(
+        self, context, network_service_policy_id):
+        with context.session.begin(subtransactions=True):
+            nsp_db = self._get_network_service_policy(
+                context, network_service_policy_id)
+            context.session.delete(nsp_db)
+
+    @log.log
+    def get_network_service_policy(
+        self, context, network_service_policy_id, fields=None):
+        nsp = self._get_network_service_policy(
+            context, network_service_policy_id)
+        return self._make_network_service_policy_dict(nsp, fields)
+
+    @log.log
+    def get_network_service_policies(
+        self, context, filters=None, fields=None, sorts=None, limit=None,
+        marker=None, page_reverse=False):
+        marker_obj = self._get_marker_obj(
+            context, 'network_service_policy', limit, marker)
+        return self._get_collection(context, NetworkServicePolicy,
+                                    self._make_network_service_policy_dict,
+                                    filters=filters, fields=fields,
+                                    sorts=sorts, limit=limit,
+                                    marker_obj=marker_obj,
+                                    page_reverse=page_reverse)
+
+    @log.log
+    def get_network_service_policies_count(self, context, filters=None):
+        return self._get_collection_count(context, NetworkServicePolicy,
+                                          filters=filters)
 
     @log.log
     def create_policy_classifier(self, context, policy_classifier):
