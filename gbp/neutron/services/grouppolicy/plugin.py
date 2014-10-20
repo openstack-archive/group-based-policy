@@ -228,6 +228,76 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
                             " failed, deleting l2_policy '%s'"), l2_policy_id)
 
     @log.log
+    def create_network_service_policy(self, context, network_service_policy):
+        session = context.session
+        with session.begin(subtransactions=True):
+            result = super(GroupPolicyPlugin,
+                           self).create_network_service_policy(
+                               context, network_service_policy)
+            policy_context = p_context.NetworkServicePolicyContext(
+                self, context, result)
+            pdm = self.policy_driver_manager
+            pdm.create_network_service_policy_precommit(
+                policy_context)
+
+        try:
+            pdm.create_network_service_policy_postcommit(
+                policy_context)
+        except gp_exc.GroupPolicyDriverError:
+            with excutils.save_and_reraise_exception():
+                LOG.error(_("create_network_service_policy_postcommit "
+                            "failed, deleting network_service_policy '%s'"),
+                          result['id'])
+                self.delete_network_service_policy(context, result['id'])
+
+        return result
+
+    @log.log
+    def update_network_service_policy(
+        self, context, network_service_policy_id, network_service_policy):
+        session = context.session
+        with session.begin(subtransactions=True):
+            original_network_service_policy = super(
+                GroupPolicyPlugin, self).get_network_service_policy(
+                    context, network_service_policy_id)
+            updated_network_service_policy = super(
+                GroupPolicyPlugin, self).update_network_service_policy(
+                    context, network_service_policy_id, network_service_policy)
+            policy_context = p_context.NetworkServicePolicyContext(
+                self, context, updated_network_service_policy,
+                original_network_service_policy=
+                original_network_service_policy)
+            self.policy_driver_manager.update_network_service_policy_precommit(
+                policy_context)
+
+        self.policy_driver_manager.update_network_service_policy_postcommit(
+            policy_context)
+        return updated_network_service_policy
+
+    @log.log
+    def delete_network_service_policy(
+        self, context, network_service_policy_id):
+        session = context.session
+        with session.begin(subtransactions=True):
+            network_service_policy = self.get_network_service_policy(
+                context, network_service_policy_id)
+            policy_context = p_context.NetworkServicePolicyContext(
+                self, context, network_service_policy)
+            self.policy_driver_manager.delete_network_service_policy_precommit(
+                policy_context)
+            super(GroupPolicyPlugin, self).delete_network_service_policy(
+                context, network_service_policy_id)
+
+        try:
+            pdm = self.policy_driver_manager
+            pdm.delete_network_service_policy_postcommit(policy_context)
+        except gp_exc.GroupPolicyDriverError:
+            with excutils.save_and_reraise_exception():
+                LOG.error(_("delete_network_service_policy_postcommit "
+                            " failed, deleting network_service_policy '%s'"),
+                          network_service_policy_id)
+
+    @log.log
     def create_l3_policy(self, context, l3_policy):
         session = context.session
         with session.begin(subtransactions=True):
