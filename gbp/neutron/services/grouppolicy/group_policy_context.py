@@ -118,6 +118,25 @@ class L3PolicyContext(GroupPolicyContext, api.L3PolicyContext):
         self._l3_policy['routers'] = routers
 
 
+class NetworkServicePolicyContext(
+    GroupPolicyContext, api.NetworkServicePolicyContext):
+
+    def __init__(self, plugin, plugin_context, network_service_policy,
+                 original_network_service_policy=None):
+        super(NetworkServicePolicyContext, self).__init__(
+            plugin, plugin_context)
+        self._network_service_policy = network_service_policy
+        self._original_network_service_policy = original_network_service_policy
+
+    @property
+    def current(self):
+        return self._network_service_policy
+
+    @property
+    def original(self):
+        return self._original_network_service_policy
+
+
 class PolicyClassifierContext(GroupPolicyContext, api.PolicyClassifierContext):
 
     def __init__(self, plugin, plugin_context, policy_classifier,

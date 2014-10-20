@@ -210,6 +210,31 @@ class PolicyDriverManager(stevedore.named.NamedExtensionManager):
         self._call_on_drivers("delete_l3_policy_postcommit", context,
                               continue_on_failure=True)
 
+    def create_network_service_policy_precommit(self, context):
+        self._call_on_drivers(
+            "create_network_service_policy_precommit", context)
+
+    def create_network_service_policy_postcommit(self, context):
+        self._call_on_drivers(
+            "create_network_service_policy_postcommit", context)
+
+    def update_network_service_policy_precommit(self, context):
+        self._call_on_drivers(
+            "update_network_service_policy_precommit", context)
+
+    def update_network_service_policy_postcommit(self, context):
+        self._call_on_drivers(
+            "update_network_service_policy_postcommit", context)
+
+    def delete_network_service_policy_precommit(self, context):
+        self._call_on_drivers(
+            "delete_network_service_policy_precommit", context)
+
+    def delete_network_service_policy_postcommit(self, context):
+        self._call_on_drivers(
+            "delete_network_service_policy_postcommit", context,
+            continue_on_failure=True)
+
     def create_policy_classifier_precommit(self, context):
         self._call_on_drivers("create_policy_classifier_precommit", context)
 
