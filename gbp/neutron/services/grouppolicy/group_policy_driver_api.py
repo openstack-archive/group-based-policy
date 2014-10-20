@@ -195,6 +195,40 @@ class L3PolicyContext(object):
 
 
 @six.add_metaclass(abc.ABCMeta)
+class NetworkServicePolicyContext(object):
+    """
+    Context passed to policy engine for network_service_policy resource
+    changes.
+
+    A NetworkServicePolicyContext instance wraps a network_service_policy
+    resource. It provides helper methods for accessing other relevant
+    information. Results from expensive operations are cached for convenient
+    access.
+    """
+
+    @abc.abstractproperty
+    def current(self):
+        """Return the current state of the network_service_policy.
+
+        Return the current state of the network_service_policy, as defined by
+        GroupPolicyPlugin.create_network_service_policy.
+        """
+        pass
+
+    @abc.abstractproperty
+    def original(self):
+        """Return the original state of the network_service_policy.
+
+        Return the original state of the network_service_policy, prior to a
+        call to
+        update_network_service_policy. Method is only valid within calls to
+        update_network_service_policy_precommit and
+        update_network_service_policy_postcommit.
+        """
+        pass
+
+
+@six.add_metaclass(abc.ABCMeta)
 class PolicyClassifierContext(object):
     """Context passed to policy engine for policy_classifier resource changes.
 
