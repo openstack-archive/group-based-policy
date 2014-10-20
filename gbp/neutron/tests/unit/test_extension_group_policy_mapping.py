@@ -36,7 +36,9 @@ class GroupPolicyMappingExtTestCase(tgp.GroupPolicyExtensionTestCase):
         attr_map[gp.L3_POLICIES].update(
             gpm.EXTENDED_ATTRIBUTES_2_0[gp.L3_POLICIES])
         plural_mappings = {'l2_policy': 'l2_policies',
-                           'l3_policy': 'l3_policies'}
+                           'l3_policy': 'l3_policies',
+                           'network_service_policy':
+                           'network_service_policies'}
         self._setUpExtension(
             tgp.GP_PLUGIN_BASE_NAME, constants.GROUP_POLICY, attr_map,
             gp.Group_policy, tgp.GROUPPOLICY_URI,
