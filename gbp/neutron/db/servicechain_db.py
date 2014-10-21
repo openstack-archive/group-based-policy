@@ -10,6 +10,7 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+import ast
 import sqlalchemy as sa
 from sqlalchemy import orm
 from sqlalchemy.orm import exc
@@ -18,6 +19,7 @@ from neutron.common import log
 from neutron.db import common_db_mixin
 from neutron.db import model_base
 from neutron.db import models_v2
+from neutron.openstack.common import jsonutils
 from neutron.openstack.common import log as logging
 from neutron.openstack.common import uuidutils
 
@@ -58,11 +60,20 @@ class ServiceChainInstance(model_base.BASEV2, models_v2.HasId,
     __tablename__ = 'sc_instances'
     name = sa.Column(sa.String(50))
     description = sa.Column(sa.String(255))
-    config_params = sa.Column(sa.String(1024))
-    port_id = sa.Column(sa.String(36), sa.ForeignKey('ports.id'))
+    config_param_values = sa.Column(sa.String(1024))
     servicechain_spec = sa.Column(sa.String(36),
                         sa.ForeignKey('sc_specs.id'),
                         nullable=True)
+    provider_epg = sa.Column(sa.String(36),
+                             #FixMe(Magesh) Deletes the instances table itself
+                             #sa.ForeignKey('gp_endpoint_groups.id'),
+                             nullable=True)
+    consumer_epg = sa.Column(sa.String(36),
+                             #sa.ForeignKey('gp_endpoint_groups.id'),
+                             nullable=True)
+    classifier = sa.Column(sa.String(36),
+                           #sa.ForeignKey('gp_policy_classifiers.id'),
+                           nullable=True)
 
 
 class ServiceChainSpec(model_base.BASEV2, models_v2.HasId,
@@ -75,6 +86,7 @@ class ServiceChainSpec(model_base.BASEV2, models_v2.HasId,
     nodes = orm.relationship(
         SpecNodeAssociation,
         backref='specs', cascade='all, delete, delete-orphan')
+    config_param_names = sa.Column(sa.String(1024))
     instances = orm.relationship(ServiceChainInstance,
                                  backref="specs")
 
@@ -123,9 +135,9 @@ class ServiceChainDbPlugin(schain.ServiceChainPluginBase,
         res = {'id': spec['id'],
                'tenant_id': spec['tenant_id'],
                'name': spec['name'],
-               'description': spec['description']}
-        res['nodes'] = [sc_node['node_id']
-                        for sc_node in spec['nodes']]
+               'description': spec['description'],
+               'config_param_names': spec['config_param_names']}
+        res['nodes'] = [sc_node['node_id'] for sc_node in spec['nodes']]
         return self._fields(res, fields)
 
     def _make_sc_instance_dict(self, instance, fields=None):
@@ -133,9 +145,11 @@ class ServiceChainDbPlugin(schain.ServiceChainPluginBase,
                'tenant_id': instance['tenant_id'],
                'name': instance['name'],
                'description': instance['description'],
-               'config_params': instance['config_params'],
-               'port_id': instance['port_id'],
-               'servicechain_spec': instance['servicechain_spec']}
+               'config_param_values': instance['config_param_values'],
+               'servicechain_spec': instance['servicechain_spec'],
+               'provider_epg': instance['provider_epg'],
+               'consumer_epg': instance['consumer_epg'],
+               'classifier': instance['classifier']}
         return self._fields(res, fields)
 
     @staticmethod
@@ -226,6 +240,19 @@ class ServiceChainDbPlugin(schain.ServiceChainPluginBase,
             # it as clearing existing nodes.
             spec_db.nodes = []
             for node_id in nodes_id_list:
+                sc_node = self.get_servicechain_node(context, node_id)
+                node_dict = jsonutils.loads(sc_node['config'])
+                config_params = (node_dict.get('parameters') or
+                                 node_dict.get('Parameters'))
+                if config_params:
+                    if not spec_db.config_param_names:
+                        spec_db.config_param_names = str(config_params.keys())
+                    else:
+                        config_param_names = ast.literal_eval(
+                                                spec_db.config_param_names)
+                        config_param_names.extend(config_params.keys())
+                        spec_db.config_param_names = str(config_param_names)
+
                 assoc = SpecNodeAssociation(servicechain_spec=spec_db.id,
                                             node_id=node_id)
                 spec_db.nodes.append(assoc)
@@ -238,7 +265,8 @@ class ServiceChainDbPlugin(schain.ServiceChainPluginBase,
             spec_db = ServiceChainSpec(id=uuidutils.generate_uuid(),
                                        tenant_id=tenant_id,
                                        name=spec['name'],
-                                       description=spec['description'])
+                                       description=spec['description'],
+                                       config_param_names="")
             self._process_nodes_for_spec(context, spec_db, spec)
             context.session.add(spec_db)
         return self._make_sc_spec_dict(spec_db)
@@ -290,16 +318,18 @@ class ServiceChainDbPlugin(schain.ServiceChainPluginBase,
         instance = servicechain_instance['servicechain_instance']
         tenant_id = self._get_tenant_id_for_create(context, instance)
         with context.session.begin(subtransactions=True):
-            instance_db = ServiceChainInstance(id=uuidutils.generate_uuid(),
-                                               tenant_id=tenant_id,
-                                               name=instance['name'],
-                                               description=
-                                               instance['description'],
-                                               config_params=
-                                               instance['config_params'],
-                                               port_id=instance['port_id'],
-                                               servicechain_spec=instance[
-                                                        'servicechain_spec'])
+            instance_db = ServiceChainInstance(
+                                       id=uuidutils.generate_uuid(),
+                                       tenant_id=tenant_id,
+                                       name=instance['name'],
+                                       description=instance['description'],
+                                       config_param_values=instance[
+                                                        'config_param_values'],
+                                       servicechain_spec=instance[
+                                                'servicechain_spec'],
+                                       provider_epg=instance['provider_epg'],
+                                       consumer_epg=instance['consumer_epg'],
+                                       classifier=instance['classifier'])
             context.session.add(instance_db)
         return self._make_sc_instance_dict(instance_db)
 
