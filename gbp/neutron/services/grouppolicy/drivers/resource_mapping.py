@@ -10,6 +10,7 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+import ast
 import netaddr
 
 from oslo.config import cfg
@@ -25,6 +26,7 @@ from neutron.db import model_base
 from neutron.extensions import securitygroup as ext_sg
 from neutron import manager
 from neutron.notifiers import nova
+from neutron.openstack.common import jsonutils
 from neutron.openstack.common import log as logging
 from neutron.plugins.common import constants as pconst
 
@@ -607,7 +609,7 @@ class ResourceMappingDriver(api.PolicyDriver):
             with session.begin(subtransactions=True):
                 return (session.query(
                     group_policy_db.EndpointGroupContractConsumingAssociation).
-                        filter_by(contract_id=contract_id).one())
+                        filter_by(contract_id=contract_id).all())
         except sql_exc.NoResultFound:
             return None
 
@@ -618,13 +620,14 @@ class ResourceMappingDriver(api.PolicyDriver):
             epgs_consuming_contract = self._get_epgs_consuming_contract(
                                             context._plugin_context._session,
                                             contract_id)
-            epgs_providing_contract = self._get_epgs_providing_contract(
+            epg_providing_contract = self._get_epgs_providing_contract(
                                             context._plugin_context._session,
                                             contract_id)
 
             #Create the ServiceChain Instance when we have both Provider and
-            #consumer EPGs
-            if not epgs_consuming_contract or not epgs_providing_contract:
+            #consumer EPGs. If Labels are available, they have to be applied
+            #here
+            if not epgs_consuming_contract or not epg_providing_contract:
                 continue
 
             contract = context._plugin.get_contract(
@@ -636,18 +639,24 @@ class ResourceMappingDriver(api.PolicyDriver):
                     break  # Only one redirect action per rule
                 policy_rule = context._plugin.get_policy_rule(
                                    context._plugin_context, rule_id)
+                classifier_id = policy_rule.get("policy_classifier_id")
                 for action_id in policy_rule.get("policy_actions"):
                     policy_action = context._plugin.get_policy_action(
                                     context._plugin_context, action_id)
                     if policy_action['action_type'].upper() == "REDIRECT":
-                        chain_instance = self._create_servicechain_instance(
+                        for epg_consuming_contract in epgs_consuming_contract:
+                            sc_instance = self._create_servicechain_instance(
                                             context,
                                             policy_action.get("action_value"),
-                                            epgs_providing_contract)
-                        chain_instance_id = chain_instance['id']
-                        self._set_rule_servicechain_instance_mapping(
-                                    context._plugin_context.session,
-                                    rule_id, chain_instance_id)
+                                            epg_providing_contract.
+                                            endpoint_group_id,
+                                            epg_consuming_contract.
+                                            endpoint_group_id,
+                                            classifier_id)
+                            chain_instance_id = sc_instance['id']
+                            self._set_rule_servicechain_instance_mapping(
+                                        context._plugin_context.session,
+                                        rule_id, chain_instance_id)
                         break
 
     def _cleanup_redirect_action(self, context):
@@ -668,14 +677,15 @@ class ResourceMappingDriver(api.PolicyDriver):
                     contract = context._plugin.get_contract(
                         context._plugin_context, contract_id)
                     for rule_id in contract.get('policy_rules'):
-                        chain_id = self._get_rule_servicechain_mapping(
+                        rule_chain_map = self._get_rule_servicechain_mapping(
                                     context._plugin_context.session,
-                                    rule_id).servicechain_instance_id
-                        if not chain_id:
+                                    rule_id)
+                        if not rule_chain_map or not (
+                                rule_chain_map.servicechain_instance_id):
                             break  # Only one redirect action per rule
                         self._delete_servicechain_instance(
                             context,
-                            chain_id)
+                            rule_chain_map.servicechain_instance_id)
                         break
 
     # The following methods perform the necessary subset of
@@ -774,29 +784,25 @@ class ResourceMappingDriver(api.PolicyDriver):
                               'security_group_rule', sg_rule_id)
 
     def _create_servicechain_instance(self, context, servicechain_spec,
-                                      providing_epgs, port_id=None,
-                                      config_params=None):
-        providerepg = providing_epgs.endpoint_group_id
-        epg = context._plugin.get_endpoint_group(context._plugin_context,
-                                                 providerepg)
-        router_id = self._get_routerid_for_l2policy(context,
-                                                    epg['l2_policy_id'])
-        router_ports = self._core_plugin.get_ports(
-                                context._plugin_context,
-                                filters=({'device_id': [router_id]}))
-        port_id = None
-        for port in router_ports:
-            if port.get('fixed_ips') and port.get('fixed_ips')[0]:
-                if (port.get('fixed_ips')[0].get('subnet_id') ==
-                        epg.get('subnets')[0]):
-                    port_id = port['id']
-                    break
+                                      provider_epg, consumer_epg,
+                                      classifier_id, config_params=None):
+        chain_spec = self._get_resource(self._servicechain_plugin,
+                                        context._plugin_context,
+                                        'servicechain_spec',
+                                        servicechain_spec)
+        config_param_names = chain_spec.get('config_param_names', [])
+        if config_param_names:
+            config_param_names = ast.literal_eval(config_param_names)
+        config_param_values = {}
+
         attrs = {'tenant_id': context.current['tenant_id'],
                  'name': 'gbp_' + context.current['name'],
                  'description': "",
                  'servicechain_spec': servicechain_spec,
-                 'port_id': port_id,
-                 'config_params': ""}
+                 'provider_epg': provider_epg,
+                 'consumer_epg': consumer_epg,
+                 'classifier': classifier_id,
+                 'config_param_values': jsonutils.dumps(config_param_values)}
         return self._create_resource(self._servicechain_plugin,
                                      context._plugin_context,
                                      'servicechain_instance', attrs)
@@ -853,6 +859,16 @@ class ResourceMappingDriver(api.PolicyDriver):
             self._dhcp_agent_notifier.notify(context,
                                              {resource: obj},
                                              resource + '.delete.end')
+
+    def _get_resource(self, plugin, context, resource, resource_id):
+        obj_getter = getattr(plugin, 'get_' + resource)
+        obj = obj_getter(context, resource_id)
+        return obj
+
+    def _get_resources(self, plugin, context, resource, filters=[]):
+        obj_getter = getattr(plugin, 'get_' + resource + 's')
+        obj = obj_getter(context, filters)
+        return obj
 
     @property
     def _core_plugin(self):
