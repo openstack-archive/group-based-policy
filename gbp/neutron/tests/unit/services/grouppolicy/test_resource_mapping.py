@@ -560,15 +560,19 @@ class TestContract(ResourceMappingTestCase):
         create_chain_instance = create_chain_instance.start()
         chain_instance_id = uuidutils.generate_uuid()
         create_chain_instance.return_value = {'id': chain_instance_id}
-
+        #TODO(Magesh):Add tests which verifies that provide/consumer EPGs
+        #are set correctly for the SCI
         with mock.patch.object(
                 resource_mapping.ResourceMappingDriver,
                 '_set_rule_servicechain_instance_mapping') as set_rule:
-            consumer_epg = self.create_endpoint_group(name="epg2",
+            with mock.patch.object(servicechain_db.ServiceChainDbPlugin,
+                                   'get_servicechain_spec') as sc_spec_get:
+                sc_spec_get.return_value = {'servicechain_spec': {}}
+                consumer_epg = self.create_endpoint_group(name="epg2",
                                        consumed_contracts={contract_id: None})
-            consumer_epg_id = consumer_epg['endpoint_group']['id']
-            set_rule.assert_called_once_with(mock.ANY, policy_rule_id,
-                                             chain_instance_id)
+                consumer_epg_id = consumer_epg['endpoint_group']['id']
+                set_rule.assert_called_once_with(mock.ANY, policy_rule_id,
+                                                 chain_instance_id)
         with mock.patch.object(servicechain_plugin.ServiceChainPlugin,
                                'delete_servicechain_instance'):
             with mock.patch.object(

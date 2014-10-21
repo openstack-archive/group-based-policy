@@ -16,6 +16,7 @@ import webob.exc
 from neutron.api import extensions
 from neutron import context
 from neutron.openstack.common import importutils
+from neutron.openstack.common import uuidutils
 from neutron.plugins.common import constants
 from neutron.tests.unit import test_db_plugin
 from neutron.tests.unit import test_extensions
@@ -80,14 +81,18 @@ class ServiceChainDBTestBase(object):
 
     def _get_test_servicechain_instance_attrs(self, name='sci1',
                                   description='test sci',
-                                  config_params="{}",
+                                  config_param_values="{}",
                                   servicechain_spec=None,
-                                  port_id=None):
+                                  provider_epg=None,
+                                  consumer_epg=None,
+                                  classifier=None):
         attrs = {'name': name, 'description': description,
                  'tenant_id': self._tenant_id,
-                 'config_params': config_params,
+                 'config_param_values': config_param_values,
                  'servicechain_spec': servicechain_spec,
-                 'port_id': port_id}
+                 'provider_epg': provider_epg,
+                 'consumer_epg': consumer_epg,
+                 'classifier': classifier}
 
         return attrs
 
@@ -136,16 +141,20 @@ class ServiceChainDBTestBase(object):
         return scs
 
     def create_servicechain_instance(self, servicechain_spec=None,
-                                     config_params="{}", port_id=None,
-                                     expected_res_status=None,
-                                     **kwargs):
+                                     config_param_values="{}",
+                                     provider_epg=None,
+                                     consumer_epg=None,
+                                     classifier=None,
+                                     expected_res_status=None, **kwargs):
         defaults = {'name': 'sci1', 'description': 'test sci'}
         defaults.update(kwargs)
         data = {'servicechain_instance': {
-                                'config_params': config_params,
+                                'config_param_values': config_param_values,
                                 'servicechain_spec': servicechain_spec,
                                 'tenant_id': self._tenant_id,
-                                'port_id': port_id}}
+                                'provider_epg': provider_epg,
+                                'consumer_epg': consumer_epg,
+                                'classifier': classifier}}
         data['servicechain_instance'].update(defaults)
 
         sci_req = self.new_create_request('servicechain_instances',
@@ -318,27 +327,31 @@ class TestServiceChainResources(ServiceChainDbTestCase):
 
     def test_create_and_show_servicechain_instance(self):
         scs_id = self.create_servicechain_spec()['servicechain_spec']['id']
-        with self.port() as port:
-            port_id = port['port']['id']
-            config_params = "test_params"
-            attrs = self._get_test_servicechain_instance_attrs(
-                                            servicechain_spec=scs_id,
-                                            port_id=port_id,
-                                            config_params=config_params)
+        endpoint_group_id = uuidutils.generate_uuid()
+        classifier_id = uuidutils.generate_uuid()
+        config_param_values = "{}"
+        attrs = self._get_test_servicechain_instance_attrs(
+                                    servicechain_spec=scs_id,
+                                    provider_epg=endpoint_group_id,
+                                    consumer_epg=endpoint_group_id,
+                                    classifier=classifier_id,
+                                    config_param_values=config_param_values)
 
-            sci = self.create_servicechain_instance(
-                                        servicechain_spec=scs_id,
-                                        port_id=port_id,
-                                        config_params=config_params)
-            for k, v in attrs.iteritems():
-                self.assertEqual(sci['servicechain_instance'][k], v)
+        sci = self.create_servicechain_instance(
+                                    servicechain_spec=scs_id,
+                                    provider_epg=endpoint_group_id,
+                                    consumer_epg=endpoint_group_id,
+                                    classifier=classifier_id,
+                                    config_param_values=config_param_values)
+        for k, v in attrs.iteritems():
+            self.assertEqual(sci['servicechain_instance'][k], v)
 
-            self._test_show_resource('servicechain_instance',
-                                     sci['servicechain_instance']['id'],
-                                     attrs)
-            req = self.new_delete_request('servicechain_instances',
-                                          sci['servicechain_instance']['id'])
-            req.get_response(self.ext_api)
+        self._test_show_resource('servicechain_instance',
+                                 sci['servicechain_instance']['id'],
+                                 attrs)
+        req = self.new_delete_request('servicechain_instances',
+                                      sci['servicechain_instance']['id'])
+        req.get_response(self.ext_api)
 
     def test_list_servicechain_instances(self):
         servicechain_instances = [self.create_servicechain_instance(
@@ -354,36 +367,40 @@ class TestServiceChainResources(ServiceChainDbTestCase):
     def test_update_servicechain_instance(self):
         name = "new_servicechain_instance"
         description = 'new desc'
-        config_params = 'test_params'
+        config_param_values = "{}"
         scs_id = self.create_servicechain_spec()['servicechain_spec']['id']
-        with self.port() as port:
-            port_id = port['port']['id']
-            attrs = self._get_test_servicechain_instance_attrs(
-                                                name=name,
-                                                description=description,
-                                                servicechain_spec=scs_id,
-                                                port_id=port_id,
-                                                config_params=config_params)
+        provider_epg = uuidutils.generate_uuid()
+        consumer_epg = uuidutils.generate_uuid()
+        classifier = uuidutils.generate_uuid()
+        attrs = self._get_test_servicechain_instance_attrs(
+                                    name=name,
+                                    description=description,
+                                    servicechain_spec=scs_id,
+                                    provider_epg=provider_epg,
+                                    consumer_epg=consumer_epg,
+                                    classifier=classifier,
+                                    config_param_values=config_param_values)
 
-            sci = self.create_servicechain_instance(
-                                                servicechain_spec=scs_id,
-                                                port_id=port_id,
-                                                config_params=config_params)
-            data = {'servicechain_instance': {'name': name,
-                                              'description': description,
-                                              'servicechain_spec': scs_id,
-                                              'port_id': port_id}}
-            req = self.new_update_request('servicechain_instances', data,
-                                          sci['servicechain_instance']['id'])
-            res = self.deserialize(self.fmt, req.get_response(self.ext_api))
-            for k, v in attrs.iteritems():
-                self.assertEqual(res['servicechain_instance'][k], v)
+        sci = self.create_servicechain_instance(
+                                    servicechain_spec=scs_id,
+                                    provider_epg=provider_epg,
+                                    consumer_epg=consumer_epg,
+                                    classifier=classifier,
+                                    config_param_values=config_param_values)
+        data = {'servicechain_instance': {'name': name,
+                                          'description': description,
+                                          'servicechain_spec': scs_id}}
+        req = self.new_update_request('servicechain_instances', data,
+                                      sci['servicechain_instance']['id'])
+        res = self.deserialize(self.fmt, req.get_response(self.ext_api))
+        for k, v in attrs.iteritems():
+            self.assertEqual(res['servicechain_instance'][k], v)
 
-            self._test_show_resource('servicechain_instance',
-                                     sci['servicechain_instance']['id'], attrs)
-            req = self.new_delete_request('servicechain_instances',
-                                          sci['servicechain_instance']['id'])
-            req.get_response(self.ext_api)
+        self._test_show_resource('servicechain_instance',
+                                 sci['servicechain_instance']['id'], attrs)
+        req = self.new_delete_request('servicechain_instances',
+                                      sci['servicechain_instance']['id'])
+        req.get_response(self.ext_api)
 
     def test_delete_servicechain_instance(self):
         ctx = context.get_admin_context()
