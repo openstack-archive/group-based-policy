@@ -14,8 +14,18 @@ import ast
 from heatclient import client as heat_client
 from neutron.common import log
 from neutron.db import model_base
+from neutron import manager
+from neutron.openstack.common import jsonutils
+from neutron.openstack.common import log as logging
+from neutron.plugins.common import constants as pconst
 from oslo.config import cfg
 import sqlalchemy as sa
+
+
+from gbp.neutron.services.servicechain.common import exceptions as exc
+
+
+LOG = logging.getLogger(__name__)
 
 
 class ServiceChainInstanceStack(model_base.BASEV2):
@@ -100,7 +110,7 @@ class SimpleChainDriver(object):
             context._plugin_context, sc_spec_id)
         sc_node_ids = sc_spec.get('nodes')
         self._create_servicechain_instance_stacks(context, sc_node_ids,
-                                                  sc_instance)
+                                                  sc_instance, sc_spec)
 
     @log.log
     def update_servicechain_instance_precommit(self, context):
@@ -125,34 +135,91 @@ class SimpleChainDriver(object):
         self._delete_servicechain_instance_stacks(context._plugin_context,
                                                   context.current['id'])
 
+    def _get_epg(self, context, epg_id):
+        return self._get_resource(self._grouppolicy_plugin,
+                                  context._plugin_context,
+                                  'endpoint_group',
+                                  epg_id)
+
+    def _get_ep(self, context, ep_id):
+        return self._get_resource(self._grouppolicy_plugin,
+                                  context._plugin_context,
+                                  'endpoint',
+                                  ep_id)
+
+    def _get_port(self, context, port_id):
+        return self._get_resource(self._core_plugin,
+                                  context._plugin_context,
+                                  'port',
+                                  port_id)
+
+    def _get_epg_subnet(self, context, epg_id):
+        epg = self._get_epg(context, epg_id)
+        return epg.get("subnets")[0]
+
+    def _get_member_ips(self, context, epg_id):
+        epg = self._get_epg(context, epg_id)
+        ep_ids = epg.get("endpoints")
+        member_addresses = []
+        for ep_id in ep_ids:
+            ep = self._get_ep(context, ep_id)
+            port_id = ep.get("port_id")
+            port = self._get_port(context, port_id)
+            ipAddress = port.get('fixed_ips')[0].get("ip_address")
+            member_addresses.append(ipAddress)
+        return member_addresses
+
+    def _fetch_template_and_params(self, context, sc_instance,
+                                   sc_spec, sc_node):
+        stack_template = sc_node.get('config')
+        #TODO(magesh):Throw an exception ??
+        if not stack_template:
+            return
+        stack_template = jsonutils.loads(stack_template)
+        config_param_values = sc_instance.get('config_param_values', {})
+        stack_params = {}
+        #config_param_values has the parameters for all Nodes. Only apply
+        #the ones relevant for this Node
+        if config_param_values:
+            config_param_values = jsonutils.loads(config_param_values)
+        config_param_names = sc_spec.get('config_param_names', [])
+        if config_param_names:
+            config_param_names = ast.literal_eval(config_param_names)
+        #TODO(magesh):Process on the basis of ResourceType rather than Name
+        provider_epg = sc_instance.get("provider_epg")
+        for key in config_param_names:
+            if key == "PoolMemberIPs":
+                value = self._get_member_ips(context, provider_epg)
+                #TODO(Magesh):Return one value for now
+                value = value[0] if value else ""
+                config_param_values[key] = value
+            elif key == "Subnet":
+                value = self._get_epg_subnet(context, provider_epg)
+                config_param_values[key] = value
+            node_params = (stack_template.get('Parameters')
+                           or stack_template.get('parameters'))
+            if node_params:
+                for parameter in config_param_values.keys():
+                    if parameter in node_params.keys():
+                        stack_params[parameter] = config_param_values[
+                                                                parameter]
+        return (stack_template, stack_params)
+
     def _create_servicechain_instance_stacks(self, context, sc_node_ids,
-                                             sc_instance):
+                                             sc_instance, sc_spec):
         heatclient = HeatClient(context._plugin_context)
         for sc_node_id in sc_node_ids:
             sc_node = context._plugin.get_servicechain_node(
                 context._plugin_context, sc_node_id)
-            stack_template = sc_node.get('config')
-            if not stack_template:
-                return
-            stack_template = ast.literal_eval(stack_template)
-            template_params = sc_instance.get('config_params', {})
-            stack_param = {}
-            #template_params has the parameters for all Nodes. Only apply
-            #the ones relevant for this Node
-            if template_params:
-                instance_params = ast.literal_eval(template_params)
-                stack_params = (stack_template.get('Parameters')
-                                or stack_template.get('parameters'))
-                if stack_params:
-                    for parameter in (set(instance_params.keys()) &
-                                      set(stack_params.keys())):
-                        stack_param[parameter] = instance_params[parameter]
+
+            stack_template, stack_params = self._fetch_template_and_params(
+                                context, sc_instance, sc_spec, sc_node)
 
             stack = heatclient.create(
                 "stack_" + sc_instance['name'] + sc_node['name']
                 + sc_node['id'][:5],
                 stack_template,
-                stack_param)
+                stack_params)
 
             self._insert_chain_stack_db(context._plugin_context.session,
                                      sc_instance['id'], stack['stack']['id'])
@@ -198,6 +265,28 @@ class SimpleChainDriver(object):
                                       ).filter_by(instance_id=sc_instance_id
                                                   ).all()
         return stack_ids
+
+    def _get_resource(self, plugin, context, resource, resource_id):
+        obj_getter = getattr(plugin, 'get_' + resource)
+        obj = obj_getter(context, resource_id)
+        return obj
+
+    @property
+    def _core_plugin(self):
+        # REVISIT(rkukura): Need initialization method after all
+        # plugins are loaded to grab and store plugin.
+        return manager.NeutronManager.get_plugin()
+
+    @property
+    def _grouppolicy_plugin(self):
+        # REVISIT(rkukura): Need initialization method after all
+        # plugins are loaded to grab and store plugin.
+        plugins = manager.NeutronManager.get_service_plugins()
+        grouppolicy_plugin = plugins.get(pconst.GROUP_POLICY)
+        if not grouppolicy_plugin:
+            LOG.error(_("No Grouppolicy service plugin found."))
+            raise exc.ServiceChainDeploymentError()
+        return grouppolicy_plugin
 
 
 class HeatClient:

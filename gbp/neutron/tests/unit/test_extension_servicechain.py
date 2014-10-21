@@ -301,15 +301,17 @@ class ServiceChainExtensionTestCase(test_api_v2_extension.ExtensionTestCase):
         self.assertEqual(expected_value, res['servicechain_instance'])
 
     def _get_create_servicechain_instance_default_attrs(self):
-        return {'name': '', 'description': '', 'config_params': ''}
+        return {'name': '', 'description': '', 'config_param_values': "{}"}
 
     def _get_create_servicechain_instance_attrs(self):
         return {
             'name': 'servicechaininstance1',
             'servicechain_spec': _uuid(),
             'tenant_id': _uuid(),
-            'port_id': _uuid(),
-            'config_params': 'config_params1',
+            'provider_epg': _uuid(),
+            'consumer_epg': _uuid(),
+            'classifier': _uuid(),
+            'config_param_values': "{}",
             'description': 'test servicechain instance'
         }
 
@@ -317,7 +319,9 @@ class ServiceChainExtensionTestCase(test_api_v2_extension.ExtensionTestCase):
         return {
             'name': 'new_name',
             'servicechain_spec': _uuid(),
-            'port_id': _uuid()
+            'provider_epg': _uuid(),
+            'consumer_epg': _uuid(),
+            'classifier': _uuid(),
         }
 
     def test_create_servicechain_instance_with_defaults(self):
@@ -326,7 +330,9 @@ class ServiceChainExtensionTestCase(test_api_v2_extension.ExtensionTestCase):
             'servicechain_instance': {
                         'servicechain_spec': _uuid(),
                         'tenant_id': _uuid(),
-                        'port_id': _uuid()
+                        'provider_epg': _uuid(),
+                        'consumer_epg': _uuid(),
+                        'classifier': _uuid()
                     }
         }
         default_attrs = self._get_create_servicechain_instance_default_attrs()
