@@ -23,3 +23,7 @@ class ServiceChainDriverError(exceptions.NeutronException):
 class ServiceChainException(exceptions.NeutronException):
     """Base for servicechain driver exceptions returned to user."""
     pass
+
+
+class ServiceChainDeploymentError(ServiceChainException):
+    message = _("Deployment not configured properly. See logs for details.")
