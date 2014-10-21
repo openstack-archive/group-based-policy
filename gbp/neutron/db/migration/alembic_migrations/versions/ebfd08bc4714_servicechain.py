@@ -48,6 +48,7 @@ def upgrade(active_plugins=None, options=None):
         sa.Column('id', sa.String(length=36), nullable=False),
         sa.Column('name', sa.String(length=50), nullable=True),
         sa.Column('description', sa.String(length=255), nullable=True),
+        sa.Column('config_param_names', sa.String(length=4096), nullable=True),
         sa.PrimaryKeyConstraint('id')
     )
 
@@ -57,10 +58,19 @@ def upgrade(active_plugins=None, options=None):
         sa.Column('id', sa.String(length=36), nullable=False),
         sa.Column('name', sa.String(length=50), nullable=True),
         sa.Column('description', sa.String(length=255), nullable=True),
-        sa.Column('config_params', sa.String(length=1024), nullable=True),
-        sa.Column('port_id', sa.String(length=36), nullable=True),
+        sa.Column('config_param_values', sa.String(length=1024),
+                  nullable=True),
+        sa.Column('provider_epg', sa.String(length=36), nullable=True),
+        sa.Column('consumer_epg', sa.String(length=36), nullable=True),
+        sa.Column('classifier', sa.String(length=36), nullable=True),
         sa.Column('servicechain_spec', sa.String(length=36), nullable=True),
-        sa.ForeignKeyConstraint(['port_id'], ['ports.id']),
+        #FixMe(Magesh) Deletes the instances table itself !!!
+        #sa.ForeignKeyConstraint(['provider_epg'], ['gp_endpoint_groups.id'],
+        #                        ondelete='CASCADE'),
+        #sa.ForeignKeyConstraint(['consumer_epg'], ['gp_endpoint_groups.id'],
+        #                        ondelete='CASCADE'),
+        #sa.ForeignKeyConstraint(['classifier'], ['gp_policy_classifiers.id'],
+        #                        ondelete='CASCADE'),
         sa.ForeignKeyConstraint(['servicechain_spec'], ['sc_specs.id']),
         sa.PrimaryKeyConstraint('id')
     )
