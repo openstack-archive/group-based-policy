@@ -22,6 +22,7 @@ from neutron.openstack.common import uuidutils
 from neutron.tests.unit import test_extension_security_group
 from neutron.tests.unit import test_l3_plugin
 
+from gbp.neutron.db import servicechain_db
 from gbp.neutron.services.grouppolicy.common import constants as gconst
 from gbp.neutron.services.grouppolicy import config
 from gbp.neutron.services.grouppolicy.drivers import resource_mapping
@@ -564,10 +565,13 @@ class TestContract(ResourceMappingTestCase):
         with mock.patch.object(
                 resource_mapping.ResourceMappingDriver,
                 '_set_rule_servicechain_instance_mapping') as set_rule:
-            self.create_endpoint_group(name="epg2",
-                                       consumed_contracts={contract_id: None})
-            set_rule.assert_called_once_with(mock.ANY, policy_rule_id,
-                                             chain_instance_id)
+            with mock.patch.object(servicechain_db.ServiceChainDbPlugin,
+                                   'get_servicechain_spec') as sc_spec_get:
+                sc_spec_get.return_value = {'servicechain_spec': {}}
+                self.create_endpoint_group(name="epg2", consumed_contracts={
+                                                        contract_id: "None"})
+                set_rule.assert_called_once_with(mock.ANY, policy_rule_id,
+                                                 chain_instance_id)
         #TODO(Magesh): Enable the delete test after Bug#1378530 is fixed
         #Use contextlib.nested rather than nested with blocks
         '''

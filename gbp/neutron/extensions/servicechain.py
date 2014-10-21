@@ -65,12 +65,32 @@ class PortNotFound(nexc.NotFound):
 sc_supported_type = [None, constants.VPN, constants.FIREWALL]
 
 
+def _validate_str_list(data, valid_values=None):
+    if not isinstance(data, list):
+        msg = _("'%s' is not a list") % data
+        LOG.debug(msg)
+        return msg
+
+    for item in data:
+        msg = attr._validate_string(item)
+        if msg:
+            LOG.debug(msg)
+            return msg
+
+    if len(set(data)) != len(data):
+        msg = _("Duplicate items in the list: '%s'") % ', '.join(data)
+        LOG.debug(msg)
+        return msg
+
+
 def convert_port_to_string(value):
     if value is None:
         return
     else:
         return str(value)
 
+
+attr.validators['type:string_list'] = _validate_str_list
 
 SERVICECHAIN_NODES = 'servicechain_nodes'
 SERVICECHAIN_SPECS = 'servicechain_specs'
@@ -115,6 +135,9 @@ RESOURCE_ATTRIBUTE_MAP = {
                   'convert_to': attr.convert_none_to_empty_list,
                   'default': None, 'is_visible': True,
                   'required': True},
+        'config_param_names': {'allow_post': False, 'allow_put': False,
+                               'validate': {'type:string_list': None},
+                               'default': [], 'is_visible': True},
     },
     SERVICECHAIN_INSTANCES: {
         'id': {'allow_post': False, 'allow_put': False,
@@ -133,13 +156,21 @@ RESOURCE_ATTRIBUTE_MAP = {
                               'validate': {'type:uuid_or_none': None},
                               'default': None, 'is_visible': True,
                               'required': True},
-        'port_id': {'allow_post': True, 'allow_put': True,
-                    'validate': {'type:uuid_or_none': None},
-                    'is_visible': True, 'default': None,
-                    'required': True},
-        'config_params': {'allow_post': True, 'allow_put': True,
+        'provider_epg': {'allow_post': True, 'allow_put': True,
+                         'validate': {'type:uuid_or_none': None},
+                         'is_visible': True, 'default': None,
+                         'required': True},
+        'consumer_epg': {'allow_post': True, 'allow_put': True,
+                         'validate': {'type:uuid_or_none': None},
+                         'is_visible': True, 'default': None,
+                         'required': True},
+        'classifier': {'allow_post': True, 'allow_put': True,
+                       'validate': {'type:uuid_or_none': None},
+                       'is_visible': True, 'default': None,
+                       'required': True},
+        'config_param_values': {'allow_post': True, 'allow_put': True,
                           'validate': {'type:string': None},
-                          'default': '', 'is_visible': True},
+                          'default': "", 'is_visible': True},
     },
 }
 
