@@ -61,6 +61,7 @@ class PolicyDriverManager(stevedore.named.NamedExtensionManager):
         # Ordered list of policy drivers, defining
         # the order in which the drivers are called.
         self.ordered_policy_drivers = []
+        self.reverse_ordered_policy_drivers = []
 
         LOG.info(_("Configured policy driver names: %s"),
                  cfg.CONF.group_policy.policy_drivers)
@@ -81,6 +82,8 @@ class PolicyDriverManager(stevedore.named.NamedExtensionManager):
         for ext in self:
             self.policy_drivers[ext.name] = ext
             self.ordered_policy_drivers.append(ext)
+
+        self.reverse_ordered_policy_drivers = self.ordered_policy_drivers[::-1]
         LOG.info(_("Registered policy drivers: %s"),
                  [driver.name for driver in self.ordered_policy_drivers])
 
@@ -108,7 +111,10 @@ class PolicyDriverManager(stevedore.named.NamedExtensionManager):
         if any policy driver call fails.
         """
         error = False
-        for driver in self.ordered_policy_drivers:
+        drivers = (self.ordered_policy_drivers if not
+                   method_name.startswith('delete') else
+                   self.reverse_ordered_policy_drivers)
+        for driver in drivers:
             try:
                 getattr(driver.obj, method_name)(context)
             except gp_exc.GroupPolicyException:
