@@ -15,3 +15,5 @@ GP_ACTION_REDIRECT = "redirect"
 GP_DIRECTION_IN = 'in'
 GP_DIRECTION_OUT = 'out'
 GP_DIRECTION_BI = 'bi'
+
+DEVICE_OWNER_GP_POLICY_TARGET = "network:gp_policy_target"
