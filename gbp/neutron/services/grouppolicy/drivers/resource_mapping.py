@@ -482,13 +482,14 @@ class ResourceMappingDriver(api.PolicyDriver):
                 subnet = self._create_subnet(context, attrs)
                 subnet_id = subnet['id']
                 try:
-                    router_id = l3p['routers'][0]
-                    interface_info = {'subnet_id': subnet_id}
-                    self._add_router_interface(context, router_id,
-                                               interface_info)
-                    self._mark_subnet_owned(
-                        context._plugin_context.session, subnet_id)
-                    context.add_subnet(subnet_id)
+                    if l3p['routers']:
+                        router_id = l3p['routers'][0]
+                        interface_info = {'subnet_id': subnet_id}
+                        self._add_router_interface(context, router_id,
+                                                   interface_info)
+                        self._mark_subnet_owned(
+                            context._plugin_context.session, subnet_id)
+                        context.add_subnet(subnet_id)
                     return
                 except n_exc.InvalidInput:
                     # This exception is not expected. We catch this
@@ -510,7 +511,8 @@ class ResourceMappingDriver(api.PolicyDriver):
 
     def _cleanup_subnet(self, context, subnet_id, router_id):
         interface_info = {'subnet_id': subnet_id}
-        self._remove_router_interface(context, router_id, interface_info)
+        if router_id:
+            self._remove_router_interface(context, router_id, interface_info)
         if self._subnet_is_owned(context._plugin_context.session, subnet_id):
             self._delete_subnet(context, subnet_id)
 
