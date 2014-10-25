@@ -172,7 +172,7 @@ class SimpleChainDriver(object):
     def _fetch_template_and_params(self, context, sc_instance,
                                    sc_spec, sc_node):
         stack_template = sc_node.get('config')
-        #TODO(magesh):Throw an exception ??
+        #TODO(magesh):Raise an exception ??
         if not stack_template:
             return
         stack_template = jsonutils.loads(stack_template)
@@ -185,14 +185,24 @@ class SimpleChainDriver(object):
         config_param_names = sc_spec.get('config_param_names', [])
         if config_param_names:
             config_param_names = ast.literal_eval(config_param_names)
+
+        #This service chain driver knows how to fill in two parameter values
+        #for the template at present.
+        #1)Subnet -> Provider EPG subnet is used
+        #2)PoolMemberIPs -> List of IP Addresses of all EPs in Provider EPG
+
         #TODO(magesh):Process on the basis of ResourceType rather than Name
+        #eg: Type: OS::Neutron::PoolMember
+        #Variable number of pool members is not handled yet. We may have to
+        #dynamically modify the template json to achieve that
         provider_epg = sc_instance.get("provider_epg")
         for key in config_param_names:
             if key == "PoolMemberIPs":
                 value = self._get_member_ips(context, provider_epg)
                 #TODO(Magesh):Return one value for now
-                value = value[0] if value else ""
-                config_param_values[key] = value
+                if value:
+                    value = value[0]
+                    config_param_values[key] = value
             elif key == "Subnet":
                 value = self._get_epg_subnet(context, provider_epg)
                 config_param_values[key] = value
