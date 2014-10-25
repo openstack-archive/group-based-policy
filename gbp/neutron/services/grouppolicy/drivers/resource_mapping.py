@@ -23,6 +23,7 @@ from neutron.common import constants as const
 from neutron.common import exceptions as n_exc
 from neutron.common import log
 from neutron.db import model_base
+from neutron.db import models_v2
 from neutron.extensions import securitygroup as ext_sg
 from neutron import manager
 from neutron.notifiers import nova
@@ -100,6 +101,18 @@ class RuleServiceChainInstanceMapping(model_base.BASEV2):
                                          sa.ForeignKey('sc_instances.id',
                                                        ondelete='CASCADE'))
 
+class ServicePolicyEPGIpAddressMapping(model_base.BASEV2):
+    """Service Policy to IP Address mapping DB."""
+
+    __tablename__ = 'gpm_service_policy_ipaddress_mapping'
+    service_policy_id = sa.Column(sa.String(36),
+                        sa.ForeignKey('gp_network_service_policies.id'),
+                        nullable=False, primary_key=True)
+    endpoint_group = sa.Column(sa.String(36),
+                        sa.ForeignKey('gp_network_service_policies.id'),
+                        nullable=False, primary_key=True)
+    ipaddress = sa.Column(sa.String(36))
+
 
 class ResourceMappingDriver(api.PolicyDriver):
     """Resource Mapping driver for Group Policy plugin.
@@ -172,7 +185,49 @@ class ResourceMappingDriver(api.PolicyDriver):
                                           router_id)
         else:
             self._use_implicit_subnet(context)
+        self._handle_network_service_policy(context)
         self._handle_contracts(context)
+
+    def _handle_network_service_policy(self, context):
+        network_service_policy_id = context.current.get(
+                                            "network_service_policy_id")
+        if not network_service_policy_id:
+            return
+
+        nsp = context._plugin.get_network_service_policy(
+                            context._plugin_context, network_service_policy_id)
+        nsp_params = nsp.get("network_service_params")
+        if not nsp_params or not nsp_params.get("ip_single") or not (
+                    nsp_params["ip_single"].get("value") == "self_subnet"):
+            return
+        free_ip = self._get_last_free_ip(context._plugin_context,
+                                         context.current['subnets'])
+        #TODO(Magesh):raise an exception
+        if not free_ip:
+            return
+        #TODO(Magesh):Fetch subnet from EPG to which Service Policy is attached
+        self._remove_ip_from_allocation_pool(context,
+                                             context.current['subnets'][0],
+                                             free_ip)
+        self._set_policy_ipaddress_mapping(context._plugin_context.session,
+                                           network_service_policy_id,
+                                           context.current['id'],
+                                           free_ip)
+    def _get_service_policy_ipaddress(self, context, endpoint_group):
+        ipaddress = self._get_epg_policy_ipaddress_mapping(
+                                            context._plugin_context.session,
+                                            endpoint_group)
+        return ipaddress
+
+    def _cleanup_network_service_policy(self, context, subnet, epg_id):
+        ipaddress = self._get_epg_policy_ipaddress_mapping(
+                                            context._plugin_context.session,
+                                            epg_id)
+        if not ipaddress:
+            return
+        self._restore_ip_to_allocation_pool(context, subnet, ipaddress)
+        self._delete_policy_ipaddress_mapping(context._plugin_context.session,
+                                              epg_id)
 
     @log.log
     def update_endpoint_group_precommit(self, context):
@@ -230,6 +285,9 @@ class ResourceMappingDriver(api.PolicyDriver):
 
     @log.log
     def delete_endpoint_group_postcommit(self, context):
+        self._cleanup_network_service_policy(context,
+                                             context.current['subnets'][0],
+                                             context.current['id'])
         self._cleanup_redirect_action(context)
         l2p_id = context.current['l2_policy_id']
         router_id = self._get_routerid_for_l2policy(context, l2p_id)
@@ -445,6 +503,19 @@ class ResourceMappingDriver(api.PolicyDriver):
         for sg in sg_list:
             self._delete_sg(context._plugin_context, sg)
 
+    @log.log
+    def update_network_service_policy_postcommit(self, context):
+        #TODO(Magesh): Update has to be handled or disallowed
+        pass
+
+    @log.log
+    def delete_network_service_policy_postcommit(self, context):
+        for epg_id in context.current.get("endpoint_groups"):
+            epg = context._plugin.get_endpoint_group(context._plugin_context,
+                                                     epg_id)
+            subnet = epg.get('subnets')[0]
+            self._cleanup_network_service_policy(self, context, subnet, epg_id)
+
     def _get_routerid_for_l2policy(self, context, l2p_id):
         l2p = context._plugin.get_l2_policy(context._plugin_context, l2p_id)
         l3p_id = l2p['l3_policy_id']
@@ -609,6 +680,31 @@ class ResourceMappingDriver(api.PolicyDriver):
                         filter_by(contract_id=contract_id).all())
         except sql_exc.NoResultFound:
             return None
+    
+    def _set_policy_ipaddress_mapping(self, session, service_policy_id,
+                                      endpoint_group, ipaddress):
+        with session.begin(subtransactions=True):
+            mapping = ServicePolicyEPGIpAddressMapping(
+                            service_policy_id=service_policy_id,
+                            endpoint_group=endpoint_group,
+                            ipaddress=ipaddress)
+            session.add(mapping)
+
+    def _get_epg_policy_ipaddress_mapping(self, session, endpoint_group):
+        try:
+            with session.begin(subtransactions=True):
+                return (session.query(ServicePolicyEPGIpAddressMapping).
+                        filter_by(endpoint_group=endpoint_group).one())
+        except sql_exc.NoResultFound:
+            return None
+        
+    def _delete_policy_ipaddress_mapping(self, session, endpoint_group):
+        with session.begin(subtransactions=True):
+            mappings = session.query(ServicePolicyEPGIpAddressMapping
+                                   ).filter_by(
+                            endpoint_group=endpoint_group).one()
+            for ip_map in mappings:
+                session.delete(ip_map)
 
     def _handle_redirect_action(self, context, consumed_contracts,
                                 provided_contracts):
@@ -623,7 +719,7 @@ class ResourceMappingDriver(api.PolicyDriver):
 
             #Create the ServiceChain Instance when we have both Provider and
             #consumer EPGs. If Labels are available, they have to be applied
-            #here
+            #to select the EPGs
             if not epgs_consuming_contract or not epg_providing_contract:
                 continue
 
@@ -668,7 +764,7 @@ class ResourceMappingDriver(api.PolicyDriver):
                 epgs_providing_contract = self._get_epgs_providing_contract(
                                             context._plugin_context._session,
                                             contract_id)
-                #Delete the ServiceChain Instance when we do not have wither
+                #Delete the ServiceChain Instance when we do not have either
                 #the Provider or the consumer EPGs
                 if not epgs_consuming_contract or not epgs_providing_contract:
                     contract = context._plugin.get_contract(
@@ -707,6 +803,10 @@ class ResourceMappingDriver(api.PolicyDriver):
     def _create_subnet(self, plugin_context, attrs):
         return self._create_resource(self._core_plugin, plugin_context,
                                      'subnet', attrs)
+    
+    def _update_subnet(self, plugin_context, subnet_id, attrs):
+        return self._update_resource(self._core_plugin, plugin_context, 'subnet',
+                                     subnet_id, attrs)
 
     def _delete_subnet(self, plugin_context, subnet_id):
         self._delete_resource(self._core_plugin, plugin_context, 'subnet',
@@ -766,17 +866,72 @@ class ResourceMappingDriver(api.PolicyDriver):
         self._delete_resource(self._core_plugin, plugin_context,
                               'security_group_rule', sg_rule_id)
 
+    def _restore_ip_to_allocation_pool(self, context, subnet_id, ip_address):
+        #TODO(Magesh):Pass subnets and loop on subnets. Better to add logic
+        #to Merge the pools together after Fragmentation
+        subnet = self._core_plugin.get_subnet(context._plugin_context,
+                                              subnet_id)
+        allocation_pools = subnet['allocation_pools']
+        for allocation_pool in allocation_pools:
+            pool_end_ip = allocation_pool.get('end')
+            if ip_address == str(netaddr.IPAddress(pool_end_ip) + 1):
+                new_last_ip = ip_address
+                allocation_pool['end'] = new_last_ip
+                del subnet['gateway_ip']
+                subnet = self._update_subnet(context._plugin_context,
+                                             subnet['id'], subnet)
+                return
+        #TODO(Magesh):Have to test this logic. Add proper sunit tests
+        subnet['allocation_pools'].append({"start": ip_address,
+                                          "end": ip_address})
+        del subnet['gateway_ip']
+        subnet = self._update_subnet(context._plugin_context,
+                                     subnet['id'], subnet)            
+
+    def _remove_ip_from_allocation_pool(self, context, subnet_id, ip_address):
+        #TODO(Magesh):Pass subnets and loop on subnets
+        subnet = self._core_plugin.get_subnet(context._plugin_context,
+                                              subnet_id)
+        allocation_pools = subnet['allocation_pools']
+        for allocation_pool in reversed(allocation_pools):
+            if ip_address == allocation_pool.get('end'):
+                new_last_ip = str(netaddr.IPAddress(ip_address) - 1)
+                allocation_pool['end'] = new_last_ip
+                del subnet['gateway_ip']
+                self._update_subnet(context._plugin_context,
+                                    subnet['id'], subnet)
+                break
+
+    def _get_last_free_ip(self, context, subnets):
+        #Hope lock_mode update is not needed
+        range_qry = context.session.query(
+            models_v2.IPAvailabilityRange).join(
+                models_v2.IPAllocationPool)
+        for subnet_id in subnets:
+            ip_range = range_qry.filter_by(subnet_id=subnet_id).first()
+            if not ip_range:
+                continue
+            ip_address = ip_range['last_ip']
+            return ip_address
     def _create_servicechain_instance(self, context, servicechain_spec,
                                       provider_epg, consumer_epg,
                                       classifier_id, config_params=None):
-        chain_spec = self._get_resource(self._servicechain_plugin,
-                                        context._plugin_context,
-                                        'servicechain_spec',
-                                        servicechain_spec)
-        config_param_names = chain_spec.get('config_param_names', [])
-        if config_param_names:
-            config_param_names = ast.literal_eval(config_param_names)
         config_param_values = {}
+
+        epg = context._plugin.get_endpoint_group(context._plugin_context,
+                                                 provider_epg)
+        network_service_policy_id = epg.get("network_service_policy_id")
+        if network_service_policy_id:
+            nsp = context._plugin.get_network_service_policy(
+                            context._plugin_context, network_service_policy_id)
+            service_params = nsp.get("network_service_params")
+            ip_single = service_params.get("ip_single")
+            if ip_single:
+                key = ip_single['name']
+                servicepolicy_epg_ip_map = self._get_service_policy_ipaddress(
+                                            context, provider_epg)
+                servicepolicy_ip = servicepolicy_epg_ip_map.get("ipaddress")
+                config_param_values[key] = servicepolicy_ip
 
         attrs = {'tenant_id': context.current['tenant_id'],
                  'name': 'gbp_' + context.current['name'],
