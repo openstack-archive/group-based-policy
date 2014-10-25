@@ -465,7 +465,7 @@ RESOURCE_ATTRIBUTE_MAP = {
                             'validate': {'type:uuid_list': None},
                             'convert_to': attr.convert_none_to_empty_list,
                             'default': None, 'is_visible': True},
-        'network_service_params': {'allow_post': True, 'allow_put': True,
+        'network_service_params': {'allow_post': True, 'allow_put': False,
                                    'validate':
                                    {'type:network_service_params': None},
                                    'default': None, 'is_visible': True},
