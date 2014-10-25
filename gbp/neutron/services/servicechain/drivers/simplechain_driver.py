@@ -172,7 +172,7 @@ class SimpleChainDriver(object):
     def _fetch_template_and_params(self, context, sc_instance,
                                    sc_spec, sc_node):
         stack_template = sc_node.get('config')
-        #TODO(magesh):Throw an exception ??
+        #TODO(magesh):Raise an exception ??
         if not stack_template:
             LOG.error(_("Service Config is not defined for the service"
                         " chain Node"))
@@ -187,24 +187,33 @@ class SimpleChainDriver(object):
         config_param_names = sc_spec.get('config_param_names', [])
         if config_param_names:
             config_param_names = ast.literal_eval(config_param_names)
-            #TODO(magesh):Process on the basis of ResourceType rather than Name
-            provider_epg = sc_instance.get("provider_epg")
-            node_params = (stack_template.get('Parameters')
-                           or stack_template.get('parameters'))
-            for key in config_param_names:
-                if key == "PoolMemberIPs":
-                    value = self._get_member_ips(context, provider_epg)
-                    #TODO(Magesh):Return one value for now
-                    value = value[0] if value else ""
+
+        #This service chain driver knows how to fill in two parameter values
+        #for the template at present.
+        #1)Subnet -> Provider EPG subnet is used
+        #2)PoolMemberIPs -> List of IP Addresses of all EPs in Provider EPG
+
+        #TODO(magesh):Process on the basis of ResourceType rather than Name
+        #eg: Type: OS::Neutron::PoolMember
+        #Variable number of pool members is not handled yet. We may have to
+        #dynamically modify the template json to achieve that
+        provider_epg = sc_instance.get("provider_epg")
+        for key in config_param_names or []:
+            if key == "PoolMemberIPs":
+                value = self._get_member_ips(context, provider_epg)
+                #TODO(Magesh):Return one value for now
+                if value:
+                    value = value[0]
                     config_param_values[key] = value
-                elif key == "Subnet":
-                    value = self._get_epg_subnet(context, provider_epg)
-                    config_param_values[key] = value
-                if node_params:
-                    for parameter in config_param_values.keys():
-                        if parameter in node_params.keys():
-                            stack_params[parameter] = config_param_values[
-                                                                    parameter]
+            elif key == "Subnet":
+                value = self._get_epg_subnet(context, provider_epg)
+                config_param_values[key] = value
+        node_params = (stack_template.get('Parameters')
+                       or stack_template.get('parameters'))
+        if node_params:
+            for parameter in config_param_values.keys():
+                if parameter in node_params.keys():
+                    stack_params[parameter] = config_param_values[parameter]
         return (stack_template, stack_params)
 
     def _create_servicechain_instance_stacks(self, context, sc_node_ids,
