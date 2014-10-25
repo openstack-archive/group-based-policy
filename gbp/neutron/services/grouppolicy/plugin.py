@@ -149,7 +149,9 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
         with session.begin(subtransactions=True):
             endpoint_group = self.get_endpoint_group(context,
                                                      endpoint_group_id)
-            # TODO(sumit) : Do not delete if EPG has EPs
+            if endpoint_group['endpoints']:
+                raise gp_exc.EndpointGroupInUse(
+                    endpoint_group=endpoint_group_id)
             policy_context = p_context.EndpointGroupContext(self, context,
                                                             endpoint_group)
             self.policy_driver_manager.delete_endpoint_group_precommit(
