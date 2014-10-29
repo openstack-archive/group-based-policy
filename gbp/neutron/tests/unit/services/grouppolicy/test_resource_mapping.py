@@ -46,6 +46,7 @@ class ResourceMappingTestCase(
         config.cfg.CONF.set_override('policy_drivers',
                                      ['implicit_policy', 'resource_mapping'],
                                      group='group_policy')
+        config.cfg.CONF.set_override('allow_overlapping_ips', True)
         super(ResourceMappingTestCase, self).setUp(core_plugin=CORE_PLUGIN)
 
 
@@ -266,6 +267,19 @@ class TestEndpointGroup(ResourceMappingTestCase):
 
         self.assertNotEqual(subnet1['subnet']['cidr'],
                             subnet2['subnet']['cidr'])
+
+    def test_no_extra_subnets_created(self):
+        count = len(self._get_all_subnets())
+        self.create_endpoint_group()
+        self.create_endpoint_group()
+        new_count = len(self._get_all_subnets())
+        self.assertEqual(count + 2, new_count)
+
+    def _get_all_subnets(self):
+        req = self.new_list_request('subnets', fmt=self.fmt)
+        return self.deserialize(self.fmt,
+                                req.get_response(self.api))['subnets']
+
 
     # TODO(rkukura): Test ip_pool exhaustion.
 
