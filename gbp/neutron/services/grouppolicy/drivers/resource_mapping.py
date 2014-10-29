@@ -555,7 +555,21 @@ class ResourceMappingDriver(api.PolicyDriver):
         l3p_id = l2p['l3_policy_id']
         l3p = context._plugin.get_l3_policy(context._plugin_context, l3p_id)
         pool = netaddr.IPNetwork(l3p['ip_pool'])
+
+        l2ps = context._plugin.get_l2_policies(
+            context._plugin_context, filters={'l3_policy_id': [l3p['id']]})
+        epgs = context._plugin.get_endpoint_groups(
+            context._plugin_context,
+            filters={'l2_policy_id': [x['id'] for x in l2ps]})
+        subnets = []
+        for epg in epgs:
+            subnets.extend(epg['subnets'])
+        subnets = self._core_plugin.get_subnets(context._plugin_context,
+                                                filters={'id': subnets})
         for cidr in pool.subnet(l3p['subnet_prefix_length']):
+            if not self._validate_subnet_overlap_for_l3p(subnets,
+                                                         cidr.__str__()):
+                continue
             try:
                 attrs = {'tenant_id': context.current['tenant_id'],
                          'name': 'epg_' + context.current['name'],
@@ -592,6 +606,13 @@ class ResourceMappingDriver(api.PolicyDriver):
                 # exception and repeat with the next CIDR.
                 pass
         raise exc.NoSubnetAvailable()
+
+    def _validate_subnet_overlap_for_l3p(self, subnets, subnet_cidr):
+        new_subnet_ipset = netaddr.IPSet([subnet_cidr])
+        for subnet in subnets:
+            if (netaddr.IPSet([subnet['cidr']]) & new_subnet_ipset):
+                return False
+        return True
 
     def _use_explicit_subnet(self, plugin_context, subnet_id, router_id):
         interface_info = {'subnet_id': subnet_id}
