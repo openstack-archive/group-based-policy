@@ -746,7 +746,7 @@ class ResourceMappingDriver(api.PolicyDriver):
     def _cleanup_redirect_action(self, context):
         consumed_contracts = context.current['consumed_contracts']
         provided_contracts = context.current['provided_contracts']
-        if not provided_contracts or not consumed_contracts:
+        if not provided_contracts and not consumed_contracts:
             return
         contracts = provided_contracts + consumed_contracts
         for contract_id in contracts:
@@ -762,13 +762,12 @@ class ResourceMappingDriver(api.PolicyDriver):
                 contract = context._plugin.get_contract(
                                 context._plugin_context, contract_id)
                 for rule_id in contract.get('policy_rules'):
-                    chain_id = self._get_rule_servicechain_mapping(
+                    chain_id_map = self._get_rule_servicechain_mapping(
                                 context._plugin_context.session,
-                                rule_id).servicechain_instance_id
-                    if not chain_id:
-                        continue
-                    else:
-                        self._delete_servicechain_instance(context, chain_id)
+                                rule_id)
+                    if chain_id_map:
+                        self._delete_servicechain_instance(
+                            context, chain_id_map.servicechain_instance_id)
                         break  # Only one redirect action per rule
 
     # The following methods perform the necessary subset of
