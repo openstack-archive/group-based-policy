@@ -165,7 +165,7 @@ class ResourceMappingDriver(api.PolicyDriver):
             l3p_id = l2p['l3_policy_id']
             l3p = context._plugin.get_l3_policy(context._plugin_context,
                                                 l3p_id)
-            router_id = l3p['routers'][0]
+            router_id = l3p['routers'][0] if l3p['routers'] else None
             for subnet_id in subnets:
                 self._use_explicit_subnet(context._plugin_context, subnet_id,
                                           router_id)
@@ -465,7 +465,7 @@ class ResourceMappingDriver(api.PolicyDriver):
                  'fixed_ips': attributes.ATTR_NOT_SPECIFIED,
                  'device_id': '',
                  'device_owner': '',
-                 'security_groups': [sg_id],
+                 'security_groups': [sg_id] if sg_id else None,
                  'admin_state_up': True}
         port = self._create_port(context._plugin_context, attrs)
         port_id = port['id']
@@ -502,10 +502,11 @@ class ResourceMappingDriver(api.PolicyDriver):
                 subnet = self._create_subnet(context._plugin_context, attrs)
                 subnet_id = subnet['id']
                 try:
-                    router_id = l3p['routers'][0]
-                    interface_info = {'subnet_id': subnet_id}
-                    self._add_router_interface(context._plugin_context,
-                                               router_id, interface_info)
+                    if l3p['routers']:
+                        router_id = l3p['routers'][0]
+                        interface_info = {'subnet_id': subnet_id}
+                        self._add_router_interface(context._plugin_context,
+                                                   router_id, interface_info)
                     self._mark_subnet_owned(
                         context._plugin_context.session, subnet_id)
                     context.add_subnet(subnet_id)
@@ -526,13 +527,15 @@ class ResourceMappingDriver(api.PolicyDriver):
 
     def _use_explicit_subnet(self, plugin_context, subnet_id, router_id):
         interface_info = {'subnet_id': subnet_id}
-        self._add_router_interface(plugin_context, router_id,
-                                   interface_info)
+        if router_id:
+            self._add_router_interface(plugin_context, router_id,
+                                       interface_info)
 
     def _cleanup_subnet(self, plugin_context, subnet_id, router_id):
         interface_info = {'subnet_id': subnet_id}
-        self._remove_router_interface(plugin_context, router_id,
-                                      interface_info)
+        if router_id:
+            self._remove_router_interface(plugin_context, router_id,
+                                          interface_info)
         if self._subnet_is_owned(plugin_context.session, subnet_id):
             self._delete_subnet(plugin_context, subnet_id)
 
