@@ -60,3 +60,7 @@ class L3PolicyRoutersUpdateNotSupported(GroupPolicyBadRequest):
 
 class NoSubnetAvailable(exceptions.ResourceExhausted, GroupPolicyException):
     message = _("No subnet is available from l3 policy's pool.")
+
+
+class EndpointGroupInUse(GroupPolicyBadRequest):
+    message = _("Endpoint Group %(endpoint_group)s is in use")
