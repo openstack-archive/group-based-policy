@@ -214,6 +214,9 @@ class ResourceMappingDriver(api.PolicyDriver):
                                            network_service_policy_id,
                                            context.current['id'],
                                            free_ip)
+        provided_contracts = context.current['provided_contracts']
+        self._allow_vip_traffic_on_provider(context, provided_contracts,
+                                            free_ip)
 
     def _get_service_policy_ipaddress(self, context, endpoint_group):
         ipaddress = self._get_epg_policy_ipaddress_mapping(
@@ -270,6 +273,12 @@ class ResourceMappingDriver(api.PolicyDriver):
             self._update_sgs_on_epg(context, epg_id,
                                     new_provided_contracts,
                                     new_consumed_contracts, "ASSOCIATE")
+            vip_ip_address = self._get_service_policy_ipaddress(context,
+                                                                epg_id)
+            if vip_ip_address:
+                self._allow_vip_traffic_on_provider(context,
+                                                    new_provided_contracts,
+                                                    vip_ip_address)
         # generate the list of contracts (SGs) to remove from current ports
         removed_provided_contracts = list(set(orig_provided_contracts) -
                                           set(curr_provided_contracts))
@@ -1234,6 +1243,33 @@ class ResourceMappingDriver(api.PolicyDriver):
                     self._add_or_remove_contract_rule(context, policy_rule,
                                                       contract_sg_mappings,
                                                       cidr_mapping)
+
+    #Revisit(Magesh): Need to handle directions and rule removal/update
+    #Can merge a part of this method and _assoc_sg_to_epg and
+    #_add_or_remove_contract_rule into a generic method
+    def _allow_vip_traffic_on_provider(self, context, provided_contracts,
+                                       vip_ip):
+        if not provided_contracts:
+            return
+        cidr = vip_ip + "/32"
+        for contract_id in provided_contracts:
+            contract = context._plugin.get_contract(
+                    context._plugin_context, contract_id)
+            contract_sg_mappings = self._get_contract_sg_mapping(
+                    context._plugin_context.session, contract_id)
+            policy_rules = contract['policy_rules']
+            for policy_rule_id in policy_rules:
+                policy_rule = context._plugin.get_policy_rule(
+                    context._plugin_context, policy_rule_id)
+                classifier_id = policy_rule['policy_classifier_id']
+                classifier = context._plugin.get_policy_classifier(
+                    context._plugin_context, classifier_id)
+                protocol = classifier['protocol']
+                port_range = classifier['port_range']
+                self._sg_ingress_rule(context,
+                                      contract_sg_mappings['provided_sg_id'],
+                                      protocol, port_range,
+                                      cidr, unset=False)
 
     def _manage_contract_rules(self, context, contract, policy_rules,
                                unset=False):
