@@ -46,7 +46,6 @@ class ResourceMappingTestCase(
         config.cfg.CONF.set_override('policy_drivers',
                                      ['implicit_policy', 'resource_mapping'],
                                      group='group_policy')
-        config.cfg.CONF.set_override('allow_overlapping_ips', True)
         super(ResourceMappingTestCase, self).setUp(core_plugin=CORE_PLUGIN)
 
 
@@ -267,18 +266,6 @@ class TestEndpointGroup(ResourceMappingTestCase):
 
         self.assertNotEqual(subnet1['subnet']['cidr'],
                             subnet2['subnet']['cidr'])
-
-    def test_no_extra_subnets_created(self):
-        count = len(self._get_all_subnets())
-        self.create_endpoint_group()
-        self.create_endpoint_group()
-        new_count = len(self._get_all_subnets())
-        self.assertEqual(count + 2, new_count)
-
-    def _get_all_subnets(self):
-        req = self.new_list_request('subnets', fmt=self.fmt)
-        return self.deserialize(self.fmt,
-                                req.get_response(self.api))['subnets']
 
     # TODO(rkukura): Test ip_pool exhaustion.
 
@@ -564,9 +551,19 @@ class TestContract(ResourceMappingTestCase):
         contract = self.create_contract(name="c1",
                 policy_rules=policy_rule_list)
         contract_id = contract['contract']['id']
+        sg_ingress_rule = mock.patch.object(
+                                    resource_mapping.ResourceMappingDriver,
+                                    '_sg_ingress_rule')
+        sg_ingress_rule = sg_ingress_rule.start()
+        params = [{'type': 'ip_single', 'name': 'vip', 'value': 'self_subnet'}]
+        nsp = self.create_network_service_policy(network_service_params=params)
+        nsp_id = nsp['network_service_policy']['id']
         self.create_endpoint_group(name="epg1",
-                                   provided_contracts={contract_id: None})
-
+                                   provided_contracts={contract_id: None},
+                                   network_service_policy_id=nsp_id)
+        sg_ingress_rule.assert_called_once_with(mock.ANY, mock.ANY,
+                                                "tcp", "20:90", mock.ANY,
+                                                unset=False)
         create_chain_instance = mock.patch.object(
                                     servicechain_plugin.ServiceChainPlugin,
                                     'create_servicechain_instance')
