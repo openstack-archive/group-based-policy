@@ -196,8 +196,13 @@ class ResourceMappingDriver(api.PolicyDriver):
         nsp = context._plugin.get_network_service_policy(
                             context._plugin_context, network_service_policy_id)
         nsp_params = nsp.get("network_service_params")
-        if not nsp_params or not nsp_params.get("ip_single") or not (
-                    nsp_params["ip_single"].get("value") == "self_subnet"):
+        if not nsp_params:
+            return
+
+        #RM Driver only supports one parameter of type ip_single and value
+        #self_subnet right now. Handle the other cases when we have usecase
+        if (len(nsp_params) > 1 or nsp_params[0].get("type") != "ip_single"
+            or nsp_params[0].get("value") != "self_subnet"):
             return
         #TODO(Magesh):Handle concurrency issues
         free_ip = self._get_last_free_ip(context._plugin_context,
@@ -916,9 +921,10 @@ class ResourceMappingDriver(api.PolicyDriver):
             nsp = context._plugin.get_network_service_policy(
                             context._plugin_context, network_service_policy_id)
             service_params = nsp.get("network_service_params")
-            ip_single = service_params.get("ip_single")
-            if ip_single:
-                key = ip_single['name']
+            #Supporting only one value now
+            param_type = service_params[0].get("type")
+            if param_type == "ip_single":
+                key = service_params[0].get("name")
                 servicepolicy_epg_ip_map = self._get_service_policy_ipaddress(
                                             context, provider_epg)
                 servicepolicy_ip = servicepolicy_epg_ip_map.get("ipaddress")
