@@ -517,7 +517,9 @@ class ApicMappingDriver(api.ResourceMappingDriver):
                                                        port_info['ptg_id'])
             self._delete_port_path(context, atenant_id, ptg, port_info)
 
-    def _ensure_default_security_group(self, context, tenant_id):
+    def _get_default_security_group(self, context, epg_id, tenant_id):
+        # Default SG in APIC mapping is per tenant, and allows all the traffic
+        # since the contracts will be enforced by ACI and not via SG
         filters = {'name': ['gbp_apic_default'], 'tenant_id': [tenant_id]}
         default_group = self._core_plugin.get_security_groups(
             context, filters)
@@ -527,19 +529,15 @@ class ApicMappingDriver(api.ResourceMappingDriver):
             ret = self._create_sg(context, attrs)
             for ethertype in ext_sg.sg_supported_ethertypes:
                 for direction in ['ingress', 'egress']:
-                    attrs = {'tenant_id': tenant_id,
-                             'direction': direction,
-                             'ethertype': ethertype,
-                             'security_group_id': ret['id'],
-                             'port_range_min': None,
-                             'port_range_max': None,
-                             'remote_ip_prefix': None,
-                             'remote_group_id': None,
-                             'protocol': None}
-                    self._create_sg_rule(context, attrs)
+                    self._sg_rule(context, tenant_id, ret['id'], direction,
+                                  ethertype=ethertype)
             return ret['id']
         else:
             return default_group[0]['id']
+
+    def _update_default_security_group(self, plugin_context, epg_id,
+                                       tenant_id, subnets=None):
+        pass
 
     def _assoc_ptg_sg_to_pt(self, context, pt_id, ptg_id):
         pass
@@ -552,8 +550,8 @@ class ApicMappingDriver(api.ResourceMappingDriver):
         return '%s/%s' % (subnet['gateway_ip'], str(cidr.prefixlen))
 
     def _subnet_ids_to_objects(self, plugin_context, ids):
-        return [x for x in self._core_plugin.get_subnets(
-                plugin_context, filters={'id': ids})]
+        return self._core_plugin.get_subnets(plugin_context,
+                                             filters={'id': ids})
 
     def _port_to_ptg_network(self, context, port, host=None):
         ptg = self._port_id_to_ptg(context, port['id'])

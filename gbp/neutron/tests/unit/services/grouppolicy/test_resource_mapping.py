@@ -14,7 +14,10 @@
 import contextlib
 import mock
 from neutron.api.rpc.agentnotifiers import dhcp_rpc_agent_api
+from neutron.common import constants as cst
+from neutron import context as nctx
 from neutron.extensions import securitygroup as ext_sg
+from neutron import manager
 from neutron.notifiers import nova
 from neutron.openstack.common import uuidutils
 from neutron.tests.unit import test_extension_security_group
@@ -47,6 +50,7 @@ class ResourceMappingTestCase(
         config.cfg.CONF.set_override('policy_drivers',
                                      ['implicit_policy', 'resource_mapping'],
                                      group='group_policy')
+        config.cfg.CONF.set_override('allow_overlapping_ips', True)
         super(ResourceMappingTestCase, self).setUp(core_plugin=CORE_PLUGIN)
 
 
@@ -306,6 +310,91 @@ class TestPolicyTargetGroup(ResourceMappingTestCase):
 
         self.assertNotEqual(subnet1['subnet']['cidr'],
                             subnet2['subnet']['cidr'])
+
+    def test_no_extra_subnets_created(self):
+        count = len(self._get_all_subnets())
+        self.create_policy_target_group()
+        self.create_policy_target_group()
+        new_count = len(self._get_all_subnets())
+        self.assertEqual(count + 2, new_count)
+
+    def _get_all_subnets(self):
+        req = self.new_list_request('subnets', fmt=self.fmt)
+        return self.deserialize(self.fmt,
+                                req.get_response(self.api))['subnets']
+
+    def test_default_security_group_allows_intra_ptg(self):
+        # Create PTG and retrieve subnet
+        ptg = self.create_policy_target_group()['policy_target_group']
+        subnets = ptg['subnets']
+        req = self.new_show_request('subnets', subnets[0], fmt=self.fmt)
+        subnet = self.deserialize(self.fmt,
+                                  req.get_response(self.api))['subnet']
+        #Create PT and retrieve port
+        pt = self.create_policy_target(ptg['id'])['policy_target']
+        req = self.new_show_request('ports', pt['port_id'], fmt=self.fmt)
+        port = self.deserialize(self.fmt, req.get_response(self.api))['port']
+
+        ip_v = {4: cst.IPv4, 6: cst.IPv6}
+
+        # Verify Port's SG has all the right rules
+        # Allow all ingress traffic from same ptg subnet
+        filters = {'tenant_id': [ptg['tenant_id']],
+                   'security_group_id': [port['security_groups'][0]],
+                   'ethertype': [ip_v[subnet['ip_version']]],
+                   'remote_ip_prefix': [subnet['cidr']],
+                   'direction': ['ingress']}
+        sg_rule = self._get_sg_rule(**filters)
+        self.assertTrue(len(sg_rule) == 1)
+        self.assertIsNone(sg_rule[0]['protocol'])
+        self.assertIsNone(sg_rule[0]['port_range_max'])
+        self.assertIsNone(sg_rule[0]['port_range_min'])
+
+    def test_default_security_group_allows_intra_ptg_update(self):
+        # Create ptg and retrieve subnet and network
+        ptg = self.create_policy_target_group()['policy_target_group']
+        subnets = ptg['subnets']
+        req = self.new_show_request('subnets', subnets[0], fmt=self.fmt)
+        subnet1 = self.deserialize(self.fmt,
+                                   req.get_response(self.api))['subnet']
+        req = self.new_show_request('networks', subnet1['network_id'],
+                                    fmt=self.fmt)
+        network = self.deserialize(self.fmt,
+                                   req.get_response(self.api))
+        with self.subnet(network=network, cidr='9.8.7.0/5') as subnet2:
+            # Add subnet
+            subnet2 = subnet2['subnet']
+            subnets = [subnet1['id'], subnet2['id']]
+            data = {'policy_target_group': {'subnets': subnets}}
+            req = self.new_update_request('policy_target_groups', data,
+                                          ptg['id'])
+            ptg = self.deserialize(
+                self.fmt, req.get_response(
+                    self.ext_api))['policy_target_group']
+            #Create PT and retrieve port
+            pt = self.create_policy_target(ptg['id'])['policy_target']
+            req = self.new_show_request('ports', pt['port_id'], fmt=self.fmt)
+            port = self.deserialize(self.fmt,
+                                    req.get_response(self.api))['port']
+            ip_v = {4: cst.IPv4, 6: cst.IPv6}
+            # Verify all the expected rules are set
+            for subnet in [subnet1, subnet2]:
+                filters = {'tenant_id': [ptg['tenant_id']],
+                           'security_group_id': [port['security_groups'][0]],
+                           'ethertype': [ip_v[subnet['ip_version']]],
+                           'remote_ip_prefix': [subnet['cidr']],
+                           'direction': ['ingress']}
+                sg_rule = self._get_sg_rule(**filters)
+                self.assertTrue(len(sg_rule) == 1)
+                self.assertIsNone(sg_rule[0]['protocol'])
+                self.assertIsNone(sg_rule[0]['port_range_max'])
+                self.assertIsNone(sg_rule[0]['port_range_min'])
+
+    def _get_sg_rule(self, **filters):
+        plugin = manager.NeutronManager.get_plugin()
+        context = nctx.get_admin_context()
+        return plugin.get_security_group_rules(
+            context, filters)
 
     # TODO(rkukura): Test ip_pool exhaustion.
 
@@ -601,18 +690,8 @@ class TestPolicyRuleSet(ResourceMappingTestCase):
         policy_rule_set = self.create_policy_rule_set(
             name="c1", policy_rules=policy_rule_list)
         policy_rule_set_id = policy_rule_set['policy_rule_set']['id']
-        sg_ingress_rule = mock.patch.object(
-            resource_mapping.ResourceMappingDriver, '_sg_ingress_rule')
-        sg_ingress_rule = sg_ingress_rule.start()
-        params = [{'type': 'ip_single', 'name': 'vip', 'value': 'self_subnet'}]
-        nsp = self.create_network_service_policy(network_service_params=params)
-        nsp_id = nsp['network_service_policy']['id']
         self.create_policy_target_group(
-            name="ptg1", provided_policy_rule_sets={policy_rule_set_id: None},
-            network_service_policy_id=nsp_id)
-        sg_ingress_rule.assert_called_once_with(mock.ANY, mock.ANY,
-                                                "tcp", "20:90", mock.ANY,
-                                                unset=False)
+            name="ptg1", provided_policy_rule_sets={policy_rule_set_id: None})
         create_chain_instance = mock.patch.object(
             servicechain_plugin.ServiceChainPlugin,
             'create_servicechain_instance')

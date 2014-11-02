@@ -212,6 +212,10 @@ class ResourceMappingDriver(api.PolicyDriver):
             self._use_implicit_subnet(context)
         self._handle_network_service_policy(context)
         self._handle_policy_rule_sets(context)
+        self._update_default_security_group(context._plugin_context,
+                                            context.current['id'],
+                                            context.current['tenant_id'],
+                                            context.current['subnets'])
 
     def _handle_network_service_policy(self, context):
         network_service_policy_id = context.current.get(
@@ -245,10 +249,6 @@ class ResourceMappingDriver(api.PolicyDriver):
                                            network_service_policy_id,
                                            context.current['id'],
                                            free_ip)
-        provided_policy_rule_sets = context.current[
-            'provided_policy_rule_sets']
-        self._allow_vip_traffic_on_provider(
-            context, provided_policy_rule_sets, free_ip)
 
     def _get_service_policy_ipaddress(self, context, policy_target_group):
         ipaddress = self._get_ptg_policy_ipaddress_mapping(
@@ -306,29 +306,28 @@ class ResourceMappingDriver(api.PolicyDriver):
         # the policy rules, then assoicate SGs to ports
         if new_provided_policy_rule_sets or new_consumed_policy_rule_sets:
             subnets = context.current['subnets']
-            self._assoc_sg_to_ptg(
-                context, subnets, new_provided_policy_rule_sets,
-                new_consumed_policy_rule_sets)
+            self._assoc_sg_to_ptg(context, subnets,
+                                  new_provided_policy_rule_sets,
+                                  new_consumed_policy_rule_sets)
             self._update_sgs_on_ptg(context, ptg_id,
                                     new_provided_policy_rule_sets,
                                     new_consumed_policy_rule_sets, "ASSOCIATE")
-            vip_ip_address = self._get_service_policy_ipaddress(context,
-                                                                ptg_id)
-            if vip_ip_address:
-                self._allow_vip_traffic_on_provider(
-                    context, new_provided_policy_rule_sets, vip_ip_address)
-        # generate list of policy_rule_sets (SGs) to remove from current ports
-        removed_provided_policy_rule_sets = list(
-            set(orig_provided_policy_rule_sets) - set(
-                curr_provided_policy_rule_sets))
-        removed_consumed_policy_rule_sets = list(
-            set(orig_consumed_policy_rule_sets) - set(
-                curr_consumed_policy_rule_sets))
-        if removed_provided_policy_rule_sets or (
-            removed_consumed_policy_rule_sets):
-            self._update_sgs_on_ptg(
-                context, ptg_id, removed_provided_policy_rule_sets,
-                removed_consumed_policy_rule_sets, "DISASSOCIATE")
+        # generate the list of contracts (SGs) to remove from current ports
+        removed_provided_prs = list(set(orig_provided_policy_rule_sets) -
+                                    set(curr_provided_policy_rule_sets))
+        removed_consumed_prs = list(set(orig_consumed_policy_rule_sets) -
+                                    set(curr_consumed_policy_rule_sets))
+        if removed_provided_prs or removed_consumed_prs:
+            self._update_sgs_on_ptg(context, ptg_id,
+                                    removed_provided_prs,
+                                    removed_consumed_prs, "DISASSOCIATE")
+        # Deal with new added subnets for default SG
+        # Subnet removal not possible for now
+        new_subnets = list(set(context.current['subnets']) -
+                           set(context.original['subnets']))
+        self._update_default_security_group(
+            context._plugin_context, context.current['id'],
+            context.current['tenant_id'], subnets=new_subnets)
 
     @log.log
     def delete_policy_target_group_precommit(self, context):
@@ -344,6 +343,9 @@ class ResourceMappingDriver(api.PolicyDriver):
         router_id = self._get_routerid_for_l2policy(context, l2p_id)
         for subnet_id in context.current['subnets']:
             self._cleanup_subnet(context._plugin_context, subnet_id, router_id)
+        self._delete_default_security_group(
+            context._plugin_context, context.current['id'],
+            context.current['tenant_id'])
 
     @log.log
     def create_l2_policy_precommit(self, context):
@@ -574,8 +576,8 @@ class ResourceMappingDriver(api.PolicyDriver):
             context._plugin_context, ptg_id)
         l2p_id = ptg['l2_policy_id']
         l2p = context._plugin.get_l2_policy(context._plugin_context, l2p_id)
-        sg_id = self._ensure_default_security_group(
-            context._plugin_context, context.current['tenant_id'])
+        sg_id = self._get_default_security_group(
+            context._plugin_context, ptg_id, context.current['tenant_id'])
         attrs = {'tenant_id': context.current['tenant_id'],
                  'name': 'pt_' + context.current['name'],
                  'network_id': l2p['network_id'],
@@ -1170,14 +1172,19 @@ class ResourceMappingDriver(api.PolicyDriver):
             return (session.query(PolicyRuleSetSGsMapping).
                     filter_by(policy_rule_set_id=policy_rule_set_id).one())
 
-    def _sg_rule(self, context, sg_id, protocol, port_range, cidr,
-                 direction, unset=False):
-        port_min, port_max = (gpdb.GroupPolicyDbPlugin.
-                              _get_min_max_ports_from_range(port_range))
-        attrs = {'tenant_id': context.current['tenant_id'],
+    def _sg_rule(self, plugin_context, tenant_id, sg_id, direction,
+                 protocol=None, port_range=None, cidr=None,
+                 ethertype=const.IPv4, unset=False):
+        if port_range:
+            port_min, port_max = (gpdb.GroupPolicyDbPlugin.
+                                  _get_min_max_ports_from_range(port_range))
+        else:
+            port_min, port_max = None, None
+
+        attrs = {'tenant_id': tenant_id,
                  'security_group_id': sg_id,
                  'direction': direction,
-                 'ethertype': const.IPv4,
+                 'ethertype': ethertype,
                  'protocol': protocol,
                  'port_range_min': port_min,
                  'port_range_max': port_max,
@@ -1190,21 +1197,23 @@ class ResourceMappingDriver(api.PolicyDriver):
                 if value:
                     filters[key] = [value]
             rule = self._core_plugin.get_security_group_rules(
-                context._plugin_context, filters)
+                plugin_context, filters)
             if rule:
-                self._delete_sg_rule(context._plugin_context, rule[0]['id'])
+                self._delete_sg_rule(plugin_context, rule[0]['id'])
         else:
-            return self._create_sg_rule(context._plugin_context, attrs)
+            return self._create_sg_rule(plugin_context, attrs)
 
     def _sg_ingress_rule(self, context, sg_id, protocol, port_range, cidr,
                          unset=False):
-        return self._sg_rule(context, sg_id, protocol, port_range,
-                             cidr, 'ingress', unset)
+        return self._sg_rule(
+            context._plugin_context, context.current['tenant_id'], sg_id,
+            'ingress', protocol, port_range, cidr, unset=unset)
 
     def _sg_egress_rule(self, context, sg_id, protocol, port_range,
                         cidr, unset=False):
-        return self._sg_rule(context, sg_id, protocol, port_range,
-                             cidr, 'egress', unset)
+        return self._sg_rule(
+            context._plugin_context, context.current['tenant_id'], sg_id,
+            'egress', protocol, port_range, cidr, unset=unset)
 
     def _assoc_sgs_to_pt(self, context, pt_id, sg_list):
         pt = context._plugin.get_policy_target(context._plugin_context, pt_id)
@@ -1309,32 +1318,6 @@ class ResourceMappingDriver(api.PolicyDriver):
                         context, policy_rule, policy_rule_set_sg_mappings,
                         cidr_mapping)
 
-    # Revisit(Magesh): Need to handle directions and rule removal/update
-    # Can merge a part of this method and _assoc_sg_to_ptg and
-    # _add_or_remove_policy_rule_set_rule into a generic method
-    def _allow_vip_traffic_on_provider(self, context,
-                                       provided_policy_rule_sets, vip_ip):
-        if not provided_policy_rule_sets:
-            return
-        cidr = vip_ip + "/32"
-        for policy_rule_set_id in provided_policy_rule_sets:
-            policy_rule_set = context._plugin.get_policy_rule_set(
-                context._plugin_context, policy_rule_set_id)
-            policy_rule_set_sg_mappings = self._get_policy_rule_set_sg_mapping(
-                context._plugin_context.session, policy_rule_set_id)
-            policy_rules = policy_rule_set['policy_rules']
-            for policy_rule_id in policy_rules:
-                policy_rule = context._plugin.get_policy_rule(
-                    context._plugin_context, policy_rule_id)
-                classifier_id = policy_rule['policy_classifier_id']
-                classifier = context._plugin.get_policy_classifier(
-                    context._plugin_context, classifier_id)
-                protocol = classifier['protocol']
-                port_range = classifier['port_range']
-                self._sg_ingress_rule(
-                    context, policy_rule_set_sg_mappings['provided_sg_id'],
-                    protocol, port_range, cidr, unset=False)
-
     def _manage_policy_rule_set_rules(self, context, policy_rule_set,
                                       policy_rules, unset=False):
         policy_rule_set_sg_mappings = self._get_policy_rule_set_sg_mapping(
@@ -1409,17 +1392,39 @@ class ResourceMappingDriver(api.PolicyDriver):
             # Old parent may have filtered some rules, need to add them again
             self._apply_policy_rule_set_rules(context, child, child_rules)
 
-    def _ensure_default_security_group(self, plugin_context, tenant_id):
-        filters = {'name': ['gbp_default'], 'tenant_id': [tenant_id]}
+    def _get_default_security_group(self, plugin_context, epg_id,
+                                    tenant_id):
+        port_name = 'gbp_%s' % epg_id
+        filters = {'name': [port_name], 'tenant_id': [tenant_id]}
         default_group = self._core_plugin.get_security_groups(
             plugin_context, filters)
-        if not default_group:
-            attrs = {'name': 'gbp_default', 'tenant_id': tenant_id,
+        return default_group[0]['id'] if default_group else None
+
+    def _update_default_security_group(self, plugin_context, epg_id,
+                                       tenant_id, subnets=None):
+
+        sg_id = self._get_default_security_group(plugin_context, epg_id,
+                                                 tenant_id)
+        ip_v = {4: const.IPv4, 6: const.IPv6}
+        if not sg_id:
+            port_name = 'gbp_%s' % epg_id
+            attrs = {'name': port_name, 'tenant_id': tenant_id,
                      'description': 'default'}
-            ret = self._create_sg(plugin_context, attrs)
-            return ret['id']
-        else:
-            return default_group[0]['id']
+            sg_id = self._create_sg(plugin_context, attrs)['id']
+
+        for subnet in self._core_plugin.get_subnets(
+                plugin_context, filters={'id': subnets or []}):
+            self._sg_rule(plugin_context, tenant_id, sg_id,
+                          'ingress', cidr=subnet['cidr'],
+                          ethertype=ip_v[subnet['ip_version']])
+        return sg_id
+
+    def _delete_default_security_group(self, plugin_context, epg_id,
+                                       tenant_id):
+        sg_id = self._get_default_security_group(plugin_context, epg_id,
+                                                 tenant_id)
+        if sg_id:
+            self._delete_sg(plugin_context, sg_id)
 
     def _get_policy_rule_set_ptg_mapping(self, context, policy_rule_set):
         # REVISIT(ivar): This will be removed once navigability issue is
