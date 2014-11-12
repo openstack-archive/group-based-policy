@@ -16,100 +16,101 @@ import six
 
 
 @six.add_metaclass(abc.ABCMeta)
-class EndpointContext(object):
-    """Context passed to policy engine for endpoint resource changes.
+class PolicyTargetContext(object):
+    """Context passed to policy engine for policy_target resource changes.
 
-    An EndpointContext instance wraps an endpoint resource. It provides
+    A PolicyTargetContext instance wraps a policy_target resource. It provides
     helper methods for accessing other relevant information. Results
     from expensive operations are cached for convenient access.
     """
 
     @abc.abstractproperty
     def current(self):
-        """Return the current state of the endpoint.
+        """Return the current state of the policy_target.
 
-        Return the current state of the endpoint, as defined by
-        GroupPolicyPlugin.create_endpoint.
+        Return the current state of the policy_target, as defined by
+        GroupPolicyPlugin.create_policy_target.
         """
         pass
 
     @abc.abstractproperty
     def original(self):
-        """Return the original state of the endpoint.
+        """Return the original state of the policy_target.
 
-        Return the original state of the endpoint, prior to a call to
-        update_endpoint. Method is only valid within calls to
-        update_endpoint_precommit and update_endpoint_postcommit.
+        Return the original state of the policy_target, prior to a call to
+        update_policy_target. Method is only valid within calls to
+        update_policy_target_precommit and update_policy_target_postcommit.
         """
         pass
 
     @abc.abstractmethod
     def set_port_id(self, port_id):
-        """Set the port for the endpoint.
+        """Set the port for the policy_target.
 
-        :param port_id: Port to which endpoint is mapped.
+        :param port_id: Port to which policy_target is mapped.
 
-        Set the neutron port to which the endpoint is mapped.
+        Set the neutron port to which the policy_target is mapped.
         """
         pass
 
 
 @six.add_metaclass(abc.ABCMeta)
-class EndpointGroupContext(object):
-    """Context passed to policy engine for endpoint_group resource changes.
+class PolicyTargetGroupContext(object):
+    """Context passed to policy engine for policy_target_group resource changes.
 
-    An EndpointContext instance wraps an endpoint_group resource. It provides
-    helper methods for accessing other relevant information. Results
+    PolicyTargetContext instance wraps an policy_target_group resource. It
+    provides helper methods for accessing other relevant information. Results
     from expensive operations are cached for convenient access.
     """
 
     @abc.abstractproperty
     def current(self):
-        """Return the current state of the endpoint_group.
+        """Return the current state of the policy_target_group.
 
-        Return the current state of the endpoint_group, as defined by
-        GroupPolicyPlugin.create_endpoint_group.
+        Return the current state of the policy_target_group, as defined by
+        GroupPolicyPlugin.create_policy_target_group.
         """
         pass
 
     @abc.abstractproperty
     def original(self):
-        """Return the original state of the endpoint_group.
+        """Return the original state of the policy_target_group.
 
-        Return the original state of the endpoint_group, prior to a call to
-        update_endpoint_group. Method is only valid within calls to
-        update_endpoint_group_precommit and update_endpoint_group_postcommit.
+        Return the original state of the policy_target_group, prior to a call
+        to update_policy_target_group. Method is only valid within calls to
+        update_policy_target_group_precommit and
+        update_policy_target_group_postcommit.
         """
         pass
 
     @abc.abstractmethod
     def set_l2_policy_id(self, l2_policy_id):
-        """Set the l2_policy for the endpoint_group.
+        """Set the l2_policy for the policy_target_group.
 
-        :param l2_policy_id: l2_policy for the endpoint_group.
+        :param l2_policy_id: l2_policy for the policy_target_group.
 
-        Set the l2_policy for the endpoint_group.
+        Set the l2_policy for the policy_target_group.
         """
         pass
 
     @abc.abstractmethod
     def set_network_service_policy_id(self, network_service_policy_id):
-        """Set the network_service_policy for the endpoint_group.
+        """Set the network_service_policy for the policy_target_group.
 
         :param network_service_policy_id: network_service_policy for the epg.
 
-        Set the network_service_policy for the endpoint_group.
+        Set the network_service_policy for the policy_target_group.
         """
         pass
 
     @abc.abstractmethod
     def add_subnet(self, subnet_id):
-        """Add the subnet to the endpoint_group.
+        """Add the subnet to the policy_target_group.
 
-        :param subnet_id: Subnet to which endpoint_group is mapped.
+        :param subnet_id: Subnet to which policy_target_group is mapped.
 
         Add a neutron subnet to the set of subnets to which the
-        endpoint_group is mapped.
+        policy_target_group is mapped.
         """
         pass
 
@@ -328,30 +329,30 @@ class PolicyRuleContext(object):
 
 
 @six.add_metaclass(abc.ABCMeta)
-class ContractContext(object):
-    """Context passed to policy engine for changes to contract resources.
+class PolicyRuleSetContext(object):
+    """Context passed to policy engine for changes to policy_rule_set resources.
 
-    An ContractContext instance wraps an contract resource. It provides
-    helper methods for accessing other relevant information. Results
+    PolicyRuleSetContext instance wraps an policy_rule_set resource. It
+    provides helper methods for accessing other relevant information. Results
     from expensive operations are cached for convenient access.
     """
 
     @abc.abstractproperty
     def current(self):
-        """Return the current state of the contract.
+        """Return the current state of the policy_rule_set.
 
-        Return the current state of the contract, as defined by
-        GroupPolicyPlugin.create_contract.
+        Return the current state of the policy_rule_set, as defined by
+        GroupPolicyPlugin.create_policy_rule_set.
         """
         pass
 
     @abc.abstractproperty
     def original(self):
-        """Return the original state of the contract.
+        """Return the original state of the policy_rule_set.
 
-        Return the original state of the contract, prior to a call to
-        update_contract. Method is only valid within calls to
-        update_contract_precommit and update_contract_postcommit.
+        Return the original state of the policy_rule_set, prior to a call to
+        update_policy_rule_set. Method is only valid within calls to
+        update_policy_rule_set_precommit and update_policy_rule_set_postcommit.
         """
         pass
 
@@ -388,103 +389,105 @@ class PolicyDriver(object):
         """
         pass
 
-    def create_endpoint_precommit(self, context):
-        """Allocate resources for a new endpoint.
+    def create_policy_target_precommit(self, context):
+        """Allocate resources for a new policy_target.
 
-        :param context: EndpointContext instance describing the new
-        endpoint.
+        :param context: PolicyTargetContext instance describing the new
+        policy_target.
         """
         pass
 
-    def create_endpoint_postcommit(self, context):
-        """Create a endpoint.
+    def create_policy_target_postcommit(self, context):
+        """Create a policy_target.
 
-        :param context: EndpointContext instance describing the new
-        endpoint.
+        :param context: PolicyTargetContext instance describing the new
+        policy_target.
         """
         pass
 
-    def update_endpoint_precommit(self, context):
-        """Update resources of a endpoint.
+    def update_policy_target_precommit(self, context):
+        """Update resources of a policy_target.
 
-        :param context: EndpointContext instance describing the new
-        state of the endpoint, as well as the original state prior
-        to the update_endpoint call.
+        :param context: PolicyTargetContext instance describing the new
+        state of the policy_target, as well as the original state prior
+        to the update_policy_target call.
         """
         pass
 
-    def update_endpoint_postcommit(self, context):
-        """Update a endpoint.
+    def update_policy_target_postcommit(self, context):
+        """Update a policy_target.
 
-        :param context: EndpointContext instance describing the new
-        state of the endpoint, as well as the original state prior
-        to the update_endpoint call.
+        :param context: PolicyTargetContext instance describing the new
+        state of the policy_target, as well as the original state prior
+        to the update_policy_target call.
         """
         pass
 
-    def delete_endpoint_precommit(self, context):
-        """Delete resources for a endpoint.
+    def delete_policy_target_precommit(self, context):
+        """Delete resources for a policy_target.
 
-        :param context: EndpointContext instance describing the current
-        state of the endpoint, prior to the call to delete it.
+        :param context: PolicyTargetContext instance describing the current
+        state of the policy_target, prior to the call to delete it.
         """
         pass
 
-    def delete_endpoint_postcommit(self, context):
-        """Delete a endpoint.
+    def delete_policy_target_postcommit(self, context):
+        """Delete a policy_target.
 
-        :param context: EndpointContext instance describing the current
-        state of the endpoint, prior to the call to delete it.
+        :param context: PolicyTargetContext instance describing the current
+        state of the policy_target, prior to the call to delete it.
         """
         pass
 
-    def create_endpoint_group_precommit(self, context):
-        """Allocate resources for a new endpoint_group.
+    def create_policy_target_group_precommit(self, context):
+        """Allocate resources for a new policy_target_group.
 
-        :param context: EndpointGroupContext instance describing the new
-        endpoint_group.
+        :param context: PolicyTargetGroupContext instance describing the new
+        policy_target_group.
         """
         pass
 
-    def create_endpoint_group_postcommit(self, context):
-        """Create a endpoint_group.
+    def create_policy_target_group_postcommit(self, context):
+        """Create a policy_target_group.
 
-        :param context: EndpointGroupContext instance describing the new
-        endpoint_group.
+        :param context: PolicyTargetGroupContext instance describing the new
+        policy_target_group.
         """
         pass
 
-    def update_endpoint_group_precommit(self, context):
-        """Update resources of a endpoint_group.
+    def update_policy_target_group_precommit(self, context):
+        """Update resources of a policy_target_group.
 
-        :param context: EndpointGroupContext instance describing the new
-        state of the endpoint_group, as well as the original state prior
-        to the update_endpoint_group call.
+        :param context: PolicyTargetGroupContext instance describing the new
+        state of the policy_target_group, as well as the original state prior
+        to the update_policy_target_group call.
         """
         pass
 
-    def update_endpoint_group_postcommit(self, context):
-        """Update a endpoint_group.
+    def update_policy_target_group_postcommit(self, context):
+        """Update a policy_target_group.
 
-        :param context: EndpointGroupContext instance describing the new
-        state of the endpoint_group, as well as the original state prior
-        to the update_endpoint_group call.
+        :param context: PolicyTargetGroupContext instance describing the new
+        state of the policy_target_group, as well as the original state prior
+        to the update_policy_target_group call.
         """
         pass
 
-    def delete_endpoint_group_precommit(self, context):
-        """Delete resources for a endpoint_group.
+    def delete_policy_target_group_precommit(self, context):
+        """Delete resources for a policy_target_group.
 
-        :param context: EndpointGroupContext instance describing the current
-        state of the endpoint_group, prior to the call to delete it.
+        :param context: PolicyTargetGroupContext instance describing the
+        current state of the policy_target_group, prior to the call to delete
+        it.
         """
         pass
 
-    def delete_endpoint_group_postcommit(self, context):
-        """Delete a endpoint_group.
+    def delete_policy_target_group_postcommit(self, context):
+        """Delete a policy_target_group.
 
-        :param context: EndpointGroupContext instance describing the current
-        state of the endpoint_group, prior to the call to delete it.
+        :param context: PolicyTargetGroupContext instance describing the
+        current state of the policy_target_group, prior to the call to delete
+        it.
         """
         pass
 
@@ -738,53 +741,53 @@ class PolicyDriver(object):
         """
         pass
 
-    def create_contract_precommit(self, context):
-        """Allocate resources for a new contract.
+    def create_policy_rule_set_precommit(self, context):
+        """Allocate resources for a new policy_rule_set.
 
-        :param context: ContractContext instance describing the new
-        contract.
+        :param context: PolicyRuleSetContext instance describing the new
+        policy_rule_set.
         """
         pass
 
-    def create_contract_postcommit(self, context):
-        """Create a contract.
+    def create_policy_rule_set_postcommit(self, context):
+        """Create a policy_rule_set.
 
-        :param context: ContractContext instance describing the new
-        contract.
+        :param context: PolicyRuleSetContext instance describing the new
+        policy_rule_set.
         """
         pass
 
-    def update_contract_precommit(self, context):
-        """Update resources of a contract.
+    def update_policy_rule_set_precommit(self, context):
+        """Update resources of a policy_rule_set.
 
-        :param context: ContractContext instance describing the new
-        state of the contract, as well as the original state prior
-        to the update_contract call.
+        :param context: PolicyRuleSetContext instance describing the new
+        state of the policy_rule_set, as well as the original state prior
+        to the update_policy_rule_set call.
         """
         pass
 
-    def update_contract_postcommit(self, context):
-        """Update a contract.
+    def update_policy_rule_set_postcommit(self, context):
+        """Update a policy_rule_set.
 
-        :param context: ContractContext instance describing the new
-        state of the contract, as well as the original state prior
-        to the update_contract call.
+        :param context: PolicyRuleSetContext instance describing the new
+        state of the policy_rule_set, as well as the original state prior
+        to the update_policy_rule_set call.
         """
         pass
 
-    def delete_contract_precommit(self, context):
-        """Delete resources for a contract.
+    def delete_policy_rule_set_precommit(self, context):
+        """Delete resources for a policy_rule_set.
 
-        :param context: ContractContext instance describing the current
-        state of the contract, prior to the call to delete it.
+        :param context: PolicyRuleSetContext instance describing the current
+        state of the policy_rule_set, prior to the call to delete it.
         """
         pass
 
-    def delete_contract_postcommit(self, context):
-        """Delete a contract.
+    def delete_policy_rule_set_postcommit(self, context):
+        """Delete a policy_rule_set.
 
-        :param context: ContractContext instance describing the current
-        state of the contract, prior to the call to delete it.
+        :param context: PolicyRuleSetContext instance describing the current
+        state of the policy_rule_set, prior to the call to delete it.
         """
         pass
 

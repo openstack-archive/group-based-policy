@@ -38,16 +38,19 @@ class GroupPolicyBadRequest(exceptions.BadRequest, GroupPolicyException):
     pass
 
 
-class EndpointRequiresEndpointGroup(GroupPolicyBadRequest):
-    message = _("An endpoint group was not specified when creating endpoint.")
+class PolicyTargetRequiresPolicyTargetGroup(GroupPolicyBadRequest):
+    message = _("An policy target group was not specified when "
+                "creating policy_target.")
 
 
-class EndpointEndpointGroupUpdateNotSupported(GroupPolicyBadRequest):
-    message = _("Updating endpoint's endpoint group is not supported.")
+class PolicyTargetGroupUpdateOfPolicyTargetNotSupported(GroupPolicyBadRequest):
+    message = _("Updating policy target group of policy target ",
+                "is not supported.")
 
 
-class EndpointGroupSubnetRemovalNotSupported(GroupPolicyBadRequest):
-    message = _("Removing a subnet from an endpoint group is not supported.")
+class PolicyTargetGroupSubnetRemovalNotSupported(GroupPolicyBadRequest):
+    message = _("Removing a subnet from an policy target group is not "
+                "supported.")
 
 
 class L3PolicyMultipleRoutersNotSupported(GroupPolicyBadRequest):
@@ -62,5 +65,5 @@ class NoSubnetAvailable(exceptions.ResourceExhausted, GroupPolicyException):
     message = _("No subnet is available from l3 policy's pool.")
 
 
-class EndpointGroupInUse(GroupPolicyBadRequest):
-    message = _("Endpoint Group %(endpoint_group)s is in use")
+class PolicyTargetGroupInUse(GroupPolicyBadRequest):
+    message = _("Policy Target Group %(policy_target_group)s is in use")

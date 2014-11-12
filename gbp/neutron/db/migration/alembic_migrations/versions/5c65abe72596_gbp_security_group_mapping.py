@@ -32,18 +32,18 @@ import sqlalchemy as sa
 def upgrade():
 
     op.create_table(
-        'gpm_contract_sg_mapping',
-        sa.Column('contract_id', sa.String(length=36), nullable=False),
+        'gpm_policy_rule_set_sg_mapping',
+        sa.Column('policy_rule_set_id', sa.String(length=36), nullable=False),
         sa.Column('provided_sg_id', sa.String(length=36)),
         sa.Column('consumed_sg_id', sa.String(length=36)),
-        sa.ForeignKeyConstraint(['contract_id'], ['gp_contracts.id'],
+        sa.ForeignKeyConstraint(['policy_rule_set_id'], ['gp_contracts.id'],
                                 ondelete='CASCADE'),
         sa.ForeignKeyConstraint(['provided_sg_id'], ['securitygroups.id']),
         sa.ForeignKeyConstraint(['consumed_sg_id'], ['securitygroups.id']),
-        sa.PrimaryKeyConstraint('contract_id')
+        sa.PrimaryKeyConstraint('policy_rule_set_id')
     )
 
 
 def downgrade():
 
-    op.drop_table('gpm_contract_sg_mapping')
+    op.drop_table('gpm_policy_rule_set_sg_mapping')

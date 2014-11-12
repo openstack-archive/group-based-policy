@@ -54,14 +54,14 @@ def upgrade():
         sa.PrimaryKeyConstraint('id'))
 
     op.add_column(
-        'gp_endpoint_groups',
+        'gp_policy_target_groups',
         sa.Column('network_service_policy_id',
                   sa.String(length=36), nullable=True))
 
-    op.create_unique_constraint(None, 'gp_endpoint_groups',
+    op.create_unique_constraint(None, 'gp_policy_target_groups',
                                 ['network_service_policy_id'])
-    op.create_foreign_key('gp_endpoint_groups_ibfk_nsp',
-                          source='gp_endpoint_groups',
+    op.create_foreign_key('gp_policy_target_groups_ibfk_nsp',
+                          source='gp_policy_target_groups',
                           referent='gp_network_service_policies',
                           local_cols=['network_service_policy_id'],
                           remote_cols=['id'], ondelete='CASCADE')
@@ -69,8 +69,9 @@ def upgrade():
 
 def downgrade():
 
-    op.drop_constraint('gp_endpoint_groups_ibfk_nsp', 'gp_endpoint_groups',
+    op.drop_constraint('gp_policy_target_groups_ibfk_nsp',
+                       'gp_policy_target_groups',
                        'foreignkey')
-    op.drop_column('gp_endpoint_groups', 'network_service_policy_id')
+    op.drop_column('gp_policy_target_groups', 'network_service_policy_id')
     op.drop_table('gp_network_service_params')
     op.drop_table('gp_network_service_policies')
