@@ -87,9 +87,9 @@ class ServiceChainExtensionTestCase(test_api_v2_extension.ExtensionTestCase):
         servicechain_node_id = _uuid()
         data = {
             'servicechain_node': {
-                        'service_type': 'FIREWALL',
-                        'tenant_id': _uuid(),
-                        'config': 'test_config'
+                'service_type': 'FIREWALL',
+                'tenant_id': _uuid(),
+                'config': 'test_config'
             }
         }
         default_attrs = self._get_create_servicechain_node_default_attrs()
@@ -127,8 +127,7 @@ class ServiceChainExtensionTestCase(test_api_v2_extension.ExtensionTestCase):
     def test_get_servicechain_node(self):
         servicechain_node_id = _uuid()
         expected_value = {
-                    'tenant_id': _uuid(), 'id': servicechain_node_id
-                }
+            'tenant_id': _uuid(), 'id': servicechain_node_id}
         self.instance.get_servicechain_node.return_value = expected_value
 
         res = self.api.get(_get_path(SERVICECHAIN_NODES_URI,
@@ -207,8 +206,7 @@ class ServiceChainExtensionTestCase(test_api_v2_extension.ExtensionTestCase):
         servicechain_spec_id = _uuid()
         data = {
             'servicechain_spec': {
-                    'nodes': [_uuid(), _uuid()],
-                    'tenant_id': _uuid()
+                'nodes': [_uuid(), _uuid()], 'tenant_id': _uuid()
             }
         }
         default_attrs = self._get_create_servicechain_spec_default_attrs()
@@ -287,7 +285,7 @@ class ServiceChainExtensionTestCase(test_api_v2_extension.ExtensionTestCase):
         if not default_data:
             default_data = data
         self.instance.create_servicechain_instance.return_value = (
-                                                            expected_value)
+            expected_value)
         res = self.api.post(_get_path(SERVICECHAIN_INSTANCES_URI,
                                       fmt=self.fmt),
                             self.serialize(data),
@@ -308,8 +306,8 @@ class ServiceChainExtensionTestCase(test_api_v2_extension.ExtensionTestCase):
             'name': 'servicechaininstance1',
             'servicechain_spec': _uuid(),
             'tenant_id': _uuid(),
-            'provider_epg': _uuid(),
-            'consumer_epg': _uuid(),
+            'provider_ptg': _uuid(),
+            'consumer_ptg': _uuid(),
             'classifier': _uuid(),
             'config_param_values': "{}",
             'description': 'test servicechain instance'
@@ -325,12 +323,12 @@ class ServiceChainExtensionTestCase(test_api_v2_extension.ExtensionTestCase):
         servicechain_instance_id = _uuid()
         data = {
             'servicechain_instance': {
-                        'servicechain_spec': _uuid(),
-                        'tenant_id': _uuid(),
-                        'provider_epg': _uuid(),
-                        'consumer_epg': _uuid(),
-                        'classifier': _uuid()
-                    }
+                'servicechain_spec': _uuid(),
+                'tenant_id': _uuid(),
+                'provider_ptg': _uuid(),
+                'consumer_ptg': _uuid(),
+                'classifier': _uuid()
+            }
         }
         default_attrs = self._get_create_servicechain_instance_default_attrs()
         default_data = copy.copy(data)
@@ -387,7 +385,7 @@ class ServiceChainExtensionTestCase(test_api_v2_extension.ExtensionTestCase):
                        self._get_update_servicechain_instance_attrs()}
         expected_value = {'tenant_id': _uuid(), 'id': servicechain_instance_id}
         self.instance.update_servicechain_instance.return_value = (
-                                                        expected_value)
+            expected_value)
 
         res = self.api.put(_get_path(SERVICECHAIN_INSTANCES_URI,
                                      id=servicechain_instance_id,

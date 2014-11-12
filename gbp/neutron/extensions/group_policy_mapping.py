@@ -17,12 +17,12 @@ from gbp.neutron.extensions import group_policy as gp
 
 # Extended attributes for Group Policy resource to map to Neutron constructs
 EXTENDED_ATTRIBUTES_2_0 = {
-    gp.ENDPOINTS: {
+    gp.POLICY_TARGETS: {
         'port_id': {'allow_post': True, 'allow_put': False,
                     'validate': {'type:uuid_or_none': None},
                     'is_visible': True, 'default': None},
     },
-    gp.ENDPOINT_GROUPS: {
+    gp.POLICY_TARGET_GROUPS: {
         'subnets': {'allow_post': True, 'allow_put': True,
                     'validate': {'type:uuid_list': None},
                     'convert_to': attr.convert_none_to_empty_list,

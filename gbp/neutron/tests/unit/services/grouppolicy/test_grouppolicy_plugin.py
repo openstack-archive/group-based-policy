@@ -64,10 +64,11 @@ class GroupPolicyPluginTestCase(tgpmdb.GroupPolicyMappingDbTestCase):
         finally:
             manager.ordered_policy_drivers = drivers
 
-    def test_delete_fails_on_used_epg(self):
-        epg = self.create_endpoint_group()['endpoint_group']
-        self.create_endpoint(endpoint_group_id=epg['id'])
-        req = self.new_delete_request('endpoint_groups', epg['id'], self.fmt)
+    def test_delete_fails_on_used_ptg(self):
+        ptg = self.create_policy_target_group()['policy_target_group']
+        self.create_policy_target(policy_target_group_id=ptg['id'])
+        req = self.new_delete_request('policy_target_groups', ptg['id'],
+                                      self.fmt)
         res = req.get_response(self.ext_api)
         self.assertEqual(res.status_int, 400)
 
