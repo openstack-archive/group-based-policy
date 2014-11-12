@@ -84,7 +84,7 @@ class SimpleChainDriver(object):
     def update_servicechain_spec_postcommit(self, context):
         filters = {'servicechain_spec': [context.original['id']]}
         sc_instances = context._plugin.get_servicechain_instances(
-                                    context._plugin_context, filters)
+            context._plugin_context, filters)
         if sc_instances:
             self._update_servicechain_instance(context,
                                                sc_instances[0],
@@ -122,7 +122,7 @@ class SimpleChainDriver(object):
         new_spec_id = context.current.get('servicechain_spec')
         if original_spec_id != new_spec_id:
             newspec = context._plugin.get_servicechain_spec(
-                                    context._plugin_context, new_spec_id)
+                context._plugin_context, new_spec_id)
             self._update_servicechain_instance(context, context.current,
                                                newspec)
 
@@ -135,17 +135,17 @@ class SimpleChainDriver(object):
         self._delete_servicechain_instance_stacks(context._plugin_context,
                                                   context.current['id'])
 
-    def _get_epg(self, context, epg_id):
+    def _get_ptg(self, context, ptg_id):
         return self._get_resource(self._grouppolicy_plugin,
                                   context._plugin_context,
-                                  'endpoint_group',
-                                  epg_id)
+                                  'policy_target_group',
+                                  ptg_id)
 
-    def _get_ep(self, context, ep_id):
+    def _get_pt(self, context, pt_id):
         return self._get_resource(self._grouppolicy_plugin,
                                   context._plugin_context,
-                                  'endpoint',
-                                  ep_id)
+                                  'policy_target',
+                                  pt_id)
 
     def _get_port(self, context, port_id):
         return self._get_resource(self._core_plugin,
@@ -153,17 +153,17 @@ class SimpleChainDriver(object):
                                   'port',
                                   port_id)
 
-    def _get_epg_subnet(self, context, epg_id):
-        epg = self._get_epg(context, epg_id)
-        return epg.get("subnets")[0]
+    def _get_ptg_subnet(self, context, ptg_id):
+        ptg = self._get_ptg(context, ptg_id)
+        return ptg.get("subnets")[0]
 
-    def _get_member_ips(self, context, epg_id):
-        epg = self._get_epg(context, epg_id)
-        ep_ids = epg.get("endpoints")
+    def _get_member_ips(self, context, ptg_id):
+        ptg = self._get_ptg(context, ptg_id)
+        pt_ids = ptg.get("policy_targets")
         member_addresses = []
-        for ep_id in ep_ids:
-            ep = self._get_ep(context, ep_id)
-            port_id = ep.get("port_id")
+        for pt_id in pt_ids:
+            pt = self._get_pt(context, pt_id)
+            port_id = pt.get("port_id")
             port = self._get_port(context, port_id)
             ipAddress = port.get('fixed_ips')[0].get("ip_address")
             member_addresses.append(ipAddress)
@@ -172,7 +172,7 @@ class SimpleChainDriver(object):
     def _fetch_template_and_params(self, context, sc_instance,
                                    sc_spec, sc_node):
         stack_template = sc_node.get('config')
-        #TODO(magesh):Raise an exception ??
+        # TODO(magesh):Raise an exception ??
         if not stack_template:
             LOG.error(_("Service Config is not defined for the service"
                         " chain Node"))
@@ -180,33 +180,33 @@ class SimpleChainDriver(object):
         stack_template = jsonutils.loads(stack_template)
         config_param_values = sc_instance.get('config_param_values', {})
         stack_params = {}
-        #config_param_values has the parameters for all Nodes. Only apply
-        #the ones relevant for this Node
+        # config_param_values has the parameters for all Nodes. Only apply
+        # the ones relevant for this Node
         if config_param_values:
             config_param_values = jsonutils.loads(config_param_values)
         config_param_names = sc_spec.get('config_param_names', [])
         if config_param_names:
             config_param_names = ast.literal_eval(config_param_names)
 
-        #This service chain driver knows how to fill in two parameter values
-        #for the template at present.
-        #1)Subnet -> Provider EPG subnet is used
-        #2)PoolMemberIPs -> List of IP Addresses of all EPs in Provider EPG
+        # This service chain driver knows how to fill in two parameter values
+        # for the template at present.
+        # 1)Subnet -> Provider PTG subnet is used
+        # 2)PoolMemberIPs -> List of IP Addresses of all PTs in Provider PTG
 
-        #TODO(magesh):Process on the basis of ResourceType rather than Name
-        #eg: Type: OS::Neutron::PoolMember
-        #Variable number of pool members is not handled yet. We may have to
-        #dynamically modify the template json to achieve that
-        provider_epg = sc_instance.get("provider_epg")
+        # TODO(magesh):Process on the basis of ResourceType rather than Name
+        # eg: Type: OS::Neutron::PoolMember
+        # Variable number of pool members is not handled yet. We may have to
+        # dynamically modify the template json to achieve that
+        provider_ptg = sc_instance.get("provider_ptg")
         for key in config_param_names or []:
             if key == "PoolMemberIPs":
-                value = self._get_member_ips(context, provider_epg)
-                #TODO(Magesh):Return one value for now
+                value = self._get_member_ips(context, provider_ptg)
+                # TODO(Magesh):Return one value for now
                 if value:
                     value = value[0]
                     config_param_values[key] = value
             elif key == "Subnet":
-                value = self._get_epg_subnet(context, provider_epg)
+                value = self._get_ptg_subnet(context, provider_ptg)
                 config_param_values[key] = value
         node_params = (stack_template.get('Parameters')
                        or stack_template.get('parameters'))
@@ -224,7 +224,7 @@ class SimpleChainDriver(object):
                 context._plugin_context, sc_node_id)
 
             stack_template, stack_params = self._fetch_template_and_params(
-                                context, sc_instance, sc_spec, sc_node)
+                context, sc_instance, sc_spec, sc_node)
 
             stack = heatclient.create(
                 "stack_" + sc_instance['name'] + sc_node['name']
@@ -232,8 +232,9 @@ class SimpleChainDriver(object):
                 stack_template,
                 stack_params)
 
-            self._insert_chain_stack_db(context._plugin_context.session,
-                                     sc_instance['id'], stack['stack']['id'])
+            self._insert_chain_stack_db(
+                context._plugin_context.session, sc_instance['id'],
+                stack['stack']['id'])
 
     def _delete_servicechain_instance_stacks(self, context, instance_id):
         stack_ids = self._get_chain_stacks(context.session, instance_id)
@@ -245,7 +246,7 @@ class SimpleChainDriver(object):
     def _get_instance_by_spec_id(self, context, spec_id):
         filters = {'servicechain_spec': [spec_id]}
         return context._plugin.get_servicechain_instances(
-                                    context._plugin_context, filters)
+            context._plugin_context, filters)
 
     def _update_servicechain_instance(self, context, sc_instance, newspec):
             self._delete_servicechain_instance_stacks(context._plugin_context,

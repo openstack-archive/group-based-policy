@@ -50,24 +50,26 @@ class GroupPolicyMappingDbTestCase(tgpdb.GroupPolicyDbTestCase,
             service_plugins=service_plugins
         )
 
-    def _get_test_endpoint_attrs(self, name='ep1', description='test ep',
-                                 endpoint_group_id=None, port_id=None):
+    def _get_test_policy_target_attrs(self, name='pt1',
+                                      description='test pt',
+                                      policy_target_group_id=None,
+                                      port_id=None):
         attrs = (super(GroupPolicyMappingDbTestCase, self).
-                 _get_test_endpoint_attrs(name, description,
-                                          endpoint_group_id))
+                 _get_test_policy_target_attrs(name, description,
+                                               policy_target_group_id))
         attrs.update({'port_id': port_id})
         return attrs
 
-    def _get_test_endpoint_group_attrs(self, name='epg1',
-                                       description='test epg',
-                                       l2_policy_id=None,
-                                       provided_contracts=None,
-                                       consumed_contracts=None, subnets=None):
+    def _get_test_policy_target_group_attrs(self, name='ptg1',
+                                            description='test ptg',
+                                            l2_policy_id=None,
+                                            provided_policy_rule_sets=None,
+                                            consumed_policy_rule_sets=None,
+                                            subnets=None):
         attrs = (super(GroupPolicyMappingDbTestCase, self).
-                 _get_test_endpoint_group_attrs(name, description,
-                                                l2_policy_id,
-                                                provided_contracts,
-                                                consumed_contracts))
+                 _get_test_policy_target_group_attrs(
+                     name, description, l2_policy_id,
+                     provided_policy_rule_sets, consumed_policy_rule_sets))
         attrs.update({'subnets': subnets or []})
         return attrs
 
@@ -97,62 +99,62 @@ class TestMappedGroupResources(GroupPolicyMappingDbTestCase,
 
 class TestMappedGroupResourceAttrs(GroupPolicyMappingDbTestCase):
 
-    def test_create_delete_endpoint_with_port(self):
+    def test_create_delete_policy_target_with_port(self):
         with self.port() as port:
             port_id = port['port']['id']
-            ep = self.create_endpoint(port_id=port_id)
-            ep_id = ep['endpoint']['id']
-            self.assertEqual(port_id, ep['endpoint']['port_id'])
-            req = self.new_show_request('endpoints', ep_id, fmt=self.fmt)
+            pt = self.create_policy_target(port_id=port_id)
+            pt_id = pt['policy_target']['id']
+            self.assertEqual(port_id, pt['policy_target']['port_id'])
+            req = self.new_show_request('policy_targets', pt_id, fmt=self.fmt)
             res = self.deserialize(self.fmt, req.get_response(self.ext_api))
-            self.assertEqual(port_id, res['endpoint']['port_id'])
-            req = self.new_delete_request('endpoints', ep_id)
+            self.assertEqual(port_id, res['policy_target']['port_id'])
+            req = self.new_delete_request('policy_targets', pt_id)
             res = req.get_response(self.ext_api)
             self.assertEqual(res.status_int, webob.exc.HTTPNoContent.code)
 
-    def test_create_delete_endpoint_group_with_subnets(self):
+    def test_create_delete_policy_target_group_with_subnets(self):
         with contextlib.nested(self.subnet(cidr='10.10.1.0/24'),
                                self.subnet(cidr='10.10.2.0/24')) as (
                                    subnet1, subnet2):
             subnets = [subnet1['subnet']['id'], subnet2['subnet']['id']]
-            epg = self.create_endpoint_group(subnets=subnets)
-            epg_id = epg['endpoint_group']['id']
+            ptg = self.create_policy_target_group(subnets=subnets)
+            ptg_id = ptg['policy_target_group']['id']
             self.assertEqual(sorted(subnets),
-                             sorted(epg['endpoint_group']['subnets']))
-            req = self.new_show_request('endpoint_groups', epg_id,
+                             sorted(ptg['policy_target_group']['subnets']))
+            req = self.new_show_request('policy_target_groups', ptg_id,
                                         fmt=self.fmt)
             res = self.deserialize(self.fmt, req.get_response(self.ext_api))
             self.assertEqual(sorted(subnets),
-                             sorted(res['endpoint_group']['subnets']))
-            req = self.new_delete_request('endpoint_groups', epg_id)
+                             sorted(res['policy_target_group']['subnets']))
+            req = self.new_delete_request('policy_target_groups', ptg_id)
             res = req.get_response(self.ext_api)
             self.assertEqual(res.status_int, webob.exc.HTTPNoContent.code)
 
-    def test_update_endpoint_group_subnets(self):
+    def test_update_policy_target_group_subnets(self):
         with contextlib.nested(self.subnet(cidr='10.10.1.0/24'),
                                self.subnet(cidr='10.10.2.0/24'),
                                self.subnet(cidr='10.10.3.0/24')) as (
                                    subnet1, subnet2, subnet3):
             orig_subnets = [subnet1['subnet']['id'], subnet2['subnet']['id']]
-            epg = self.create_endpoint_group(subnets=orig_subnets)
-            epg_id = epg['endpoint_group']['id']
+            ptg = self.create_policy_target_group(subnets=orig_subnets)
+            ptg_id = ptg['policy_target_group']['id']
             self.assertEqual(sorted(orig_subnets),
-                             sorted(epg['endpoint_group']['subnets']))
+                             sorted(ptg['policy_target_group']['subnets']))
             new_subnets = [subnet1['subnet']['id'], subnet3['subnet']['id']]
-            data = {'endpoint_group': {'subnets': new_subnets}}
-            req = self.new_update_request('endpoint_groups', data, epg_id)
+            data = {'policy_target_group': {'subnets': new_subnets}}
+            req = self.new_update_request('policy_target_groups', data, ptg_id)
             res = self.deserialize(self.fmt, req.get_response(self.ext_api))
             self.assertEqual(sorted(new_subnets),
-                             sorted(res['endpoint_group']['subnets']))
-            req = self.new_show_request('endpoint_groups', epg_id,
+                             sorted(res['policy_target_group']['subnets']))
+            req = self.new_show_request('policy_target_groups', ptg_id,
                                         fmt=self.fmt)
             res = self.deserialize(self.fmt, req.get_response(self.ext_api))
             self.assertEqual(sorted(new_subnets),
-                             sorted(res['endpoint_group']['subnets']))
+                             sorted(res['policy_target_group']['subnets']))
             # REVISIT(rkukura): Remove delete once subnet() context
             # manager is replaced with a function that does not delete
             # the resource(s) that are created.
-            req = self.new_delete_request('endpoint_groups', epg_id)
+            req = self.new_delete_request('policy_target_groups', ptg_id)
             res = req.get_response(self.ext_api)
             self.assertEqual(res.status_int, webob.exc.HTTPNoContent.code)
 

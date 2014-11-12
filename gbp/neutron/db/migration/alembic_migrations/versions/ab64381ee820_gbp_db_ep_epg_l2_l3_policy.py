@@ -13,7 +13,7 @@
 #    under the License.
 #
 
-""" gbp_db_ep_epg_l2_l3_policy
+""" gbp_db_ep_ptg_l2_l3_policy
 
 Revision ID: ab64381ee820
 """
@@ -52,7 +52,7 @@ def upgrade():
         sa.PrimaryKeyConstraint('id'))
 
     op.create_table(
-        'gp_endpoint_groups',
+        'gp_policy_target_groups',
         sa.Column('id', sa.String(36), nullable=False),
         sa.Column('tenant_id', sa.String(length=255), nullable=True),
         sa.Column('name', sa.String(length=50), nullable=True),
@@ -63,20 +63,22 @@ def upgrade():
         sa.PrimaryKeyConstraint('id'))
 
     op.create_table(
-        'gp_endpoints',
+        'gp_policy_targets',
         sa.Column('id', sa.String(36), nullable=False),
         sa.Column('tenant_id', sa.String(length=255), nullable=True),
         sa.Column('name', sa.String(length=50), nullable=True),
         sa.Column('description', sa.String(length=255), nullable=True),
-        sa.Column('endpoint_group_id', sa.String(length=36), nullable=True),
-        sa.ForeignKeyConstraint(['endpoint_group_id'],
-                                ['gp_endpoint_groups.id'], ondelete='CASCADE'),
+        sa.Column('policy_target_group_id', sa.String(length=36),
+                  nullable=True),
+        sa.ForeignKeyConstraint(['policy_target_group_id'],
+                                ['gp_policy_target_groups.id'],
+                                ondelete='CASCADE'),
         sa.PrimaryKeyConstraint('id'))
 
 
 def downgrade():
 
-    op.drop_table('gp_endpoints')
-    op.drop_table('gp_endpoint_groups')
+    op.drop_table('gp_policy_targets')
+    op.drop_table('gp_policy_target_groups')
     op.drop_table('gp_l2_policies')
     op.drop_table('gp_l3_policies')
