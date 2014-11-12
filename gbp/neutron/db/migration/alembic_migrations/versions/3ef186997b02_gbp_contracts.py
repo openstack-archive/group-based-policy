@@ -13,7 +13,7 @@
 #    under the License.
 #
 
-"""gbp_contracts
+"""gbp_policy_rule_sets
 
 Revision ID: 3ef186997b02
 Create Date: 2014-07-30 14:48:49.838182
@@ -30,49 +30,58 @@ import sqlalchemy as sa
 
 def upgrade():
     op.create_table(
-        'gp_contracts',
+        'gp_policy_rule_sets',
         sa.Column('id', sa.String(36), nullable=False),
         sa.Column('tenant_id', sa.String(length=255), nullable=True),
         sa.Column('name', sa.String(length=50), nullable=True),
         sa.Column('description', sa.String(length=255), nullable=True),
         sa.Column('parent_id', sa.String(length=36), nullable=True),
         sa.ForeignKeyConstraint(['parent_id'],
-                                ['gp_contracts.id']),
+                                ['gp_policy_rule_sets.id']),
         sa.PrimaryKeyConstraint('id'))
 
     op.create_table(
-        'gp_endpoint_group_contract_providing_associations',
-        sa.Column('contract_id', sa.String(length=36), nullable=True),
-        sa.ForeignKeyConstraint(['contract_id'],
-                                ['gp_contracts.id'], ondelete='CASCADE'),
-        sa.Column('endpoint_group_id', sa.String(length=36), nullable=True),
-        sa.ForeignKeyConstraint(['endpoint_group_id'],
-                                ['gp_endpoint_groups.id'], ondelete='CASCADE'),
-        sa.PrimaryKeyConstraint('contract_id', 'endpoint_group_id'))
+        'gp_ptg_to_prs_providing_associations',
+        sa.Column('policy_rule_set_id', sa.String(length=36), nullable=True),
+        sa.ForeignKeyConstraint(['policy_rule_set_id'],
+                                ['gp_policy_rule_sets.id'],
+                                ondelete='CASCADE'),
+        sa.Column('policy_target_group_id', sa.String(length=36),
+                  nullable=True),
+        sa.ForeignKeyConstraint(['policy_target_group_id'],
+                                ['gp_policy_target_groups.id'],
+                                ondelete='CASCADE'),
+        sa.PrimaryKeyConstraint('policy_rule_set_id',
+                                'policy_target_group_id'))
 
     op.create_table(
-        'gp_endpoint_group_contract_consuming_associations',
-        sa.Column('contract_id', sa.String(length=36), nullable=True),
-        sa.ForeignKeyConstraint(['contract_id'],
-                                ['gp_contracts.id'], ondelete='CASCADE'),
-        sa.Column('endpoint_group_id', sa.String(length=36), nullable=True),
-        sa.ForeignKeyConstraint(['endpoint_group_id'],
-                                ['gp_endpoint_groups.id'], ondelete='CASCADE'),
-        sa.PrimaryKeyConstraint('contract_id', 'endpoint_group_id'))
+        'gp_ptg_to_prs_consuming_associations',
+        sa.Column('policy_rule_set_id', sa.String(length=36), nullable=True),
+        sa.ForeignKeyConstraint(['policy_rule_set_id'],
+                                ['gp_policy_rule_sets.id'],
+                                ondelete='CASCADE'),
+        sa.Column('policy_target_group_id', sa.String(length=36),
+                  nullable=True),
+        sa.ForeignKeyConstraint(['policy_target_group_id'],
+                                ['gp_policy_target_groups.id'],
+                                ondelete='CASCADE'),
+        sa.PrimaryKeyConstraint('policy_rule_set_id',
+                                'policy_target_group_id'))
 
     op.create_table(
-        'gp_contract_policy_rule_associations',
-        sa.Column('contract_id', sa.String(length=36), nullable=True),
-        sa.ForeignKeyConstraint(['contract_id'],
-                                ['gp_contracts.id'], ondelete='CASCADE'),
+        'gp_policy_rule_set_policy_rule_associations',
+        sa.Column('policy_rule_set_id', sa.String(length=36), nullable=True),
+        sa.ForeignKeyConstraint(['policy_rule_set_id'],
+                                ['gp_policy_rule_sets.id'],
+                                ondelete='CASCADE'),
         sa.Column('policy_rule_id', sa.String(length=36), nullable=True),
         sa.ForeignKeyConstraint(['policy_rule_id'],
                                 ['gp_policy_rules.id'], ondelete='CASCADE'),
-        sa.PrimaryKeyConstraint('contract_id', 'policy_rule_id'))
+        sa.PrimaryKeyConstraint('policy_rule_set_id', 'policy_rule_id'))
 
 
 def downgrade():
-    op.drop_table('gp_endpoint_group_contract_providing_associations')
-    op.drop_table('gp_endpoint_group_contract_consuming_associations')
-    op.drop_table('gp_contract_policy_rule_associations')
-    op.drop_table('gp_contracts')
+    op.drop_table('gp_ptg_to_prs_consuming_associations')
+    op.drop_table('gp_ptg_to_prs_providing_associations')
+    op.drop_table('gp_policy_rule_set_policy_rule_associations')
+    op.drop_table('gp_policy_rule_sets')
