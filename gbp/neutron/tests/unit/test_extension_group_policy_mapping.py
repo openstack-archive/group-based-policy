@@ -27,10 +27,10 @@ class GroupPolicyMappingExtTestCase(tgp.GroupPolicyExtensionTestCase):
         super(tgp.GroupPolicyExtensionTestCase, self).setUp()
 
         attr_map = gp.RESOURCE_ATTRIBUTE_MAP
-        attr_map[gp.ENDPOINTS].update(
-            gpm.EXTENDED_ATTRIBUTES_2_0[gp.ENDPOINTS])
-        attr_map[gp.ENDPOINT_GROUPS].update(
-            gpm.EXTENDED_ATTRIBUTES_2_0[gp.ENDPOINT_GROUPS])
+        attr_map[gp.POLICY_TARGETS].update(
+            gpm.EXTENDED_ATTRIBUTES_2_0[gp.POLICY_TARGETS])
+        attr_map[gp.POLICY_TARGET_GROUPS].update(
+            gpm.EXTENDED_ATTRIBUTES_2_0[gp.POLICY_TARGET_GROUPS])
         attr_map[gp.L2_POLICIES].update(
             gpm.EXTENDED_ATTRIBUTES_2_0[gp.L2_POLICIES])
         attr_map[gp.L3_POLICIES].update(
@@ -48,33 +48,33 @@ class GroupPolicyMappingExtTestCase(tgp.GroupPolicyExtensionTestCase):
     def _restore_gp_attr_map(self):
         gp.RESOURCE_ATTRIBUTE_MAP = self._saved_gp_attr_map
 
-    def _get_create_endpoint_default_attrs(self):
+    def _get_create_policy_target_default_attrs(self):
         attrs = (super(GroupPolicyMappingExtTestCase, self).
-                 _get_create_endpoint_default_attrs())
+                 _get_create_policy_target_default_attrs())
         attrs.update({'port_id': None})
         return attrs
 
-    def _get_create_endpoint_attrs(self):
+    def _get_create_policy_target_attrs(self):
         attrs = (super(GroupPolicyMappingExtTestCase, self).
-                 _get_create_endpoint_attrs())
+                 _get_create_policy_target_attrs())
         attrs.update({'port_id': tgp._uuid()})
         return attrs
 
-    def _get_create_endpoint_group_default_attrs(self):
+    def _get_create_policy_target_group_default_attrs(self):
         attrs = (super(GroupPolicyMappingExtTestCase, self).
-                 _get_create_endpoint_group_default_attrs())
+                 _get_create_policy_target_group_default_attrs())
         attrs.update({'subnets': []})
         return attrs
 
-    def _get_create_endpoint_group_attrs(self):
+    def _get_create_policy_target_group_attrs(self):
         attrs = (super(GroupPolicyMappingExtTestCase, self).
-                 _get_create_endpoint_group_attrs())
+                 _get_create_policy_target_group_attrs())
         attrs.update({'subnets': [tgp._uuid()]})
         return attrs
 
-    def _get_update_endpoint_group_attrs(self):
+    def _get_update_policy_target_group_attrs(self):
         attrs = (super(GroupPolicyMappingExtTestCase, self).
-                 _get_update_endpoint_group_attrs())
+                 _get_update_policy_target_group_attrs())
         attrs.update({'subnets': [tgp._uuid()]})
         return attrs
 
