@@ -28,14 +28,14 @@ GP_PLUGIN_BASE_NAME = (
     gp.GroupPolicyPluginBase.__module__ + '.' +
     gp.GroupPolicyPluginBase.__name__)
 GROUPPOLICY_URI = 'grouppolicy'
-ENDPOINTS_URI = GROUPPOLICY_URI + '/' + 'endpoints'
-ENDPOINT_GROUPS_URI = GROUPPOLICY_URI + '/' + 'endpoint_groups'
+POLICY_TARGETS_URI = GROUPPOLICY_URI + '/' + 'policy_targets'
+POLICY_TARGET_GROUPS_URI = GROUPPOLICY_URI + '/' + 'policy_target_groups'
 L2_POLICIES_URI = GROUPPOLICY_URI + '/' + 'l2_policies'
 L3_POLICIES_URI = GROUPPOLICY_URI + '/' + 'l3_policies'
 POLICY_RULES_URI = GROUPPOLICY_URI + '/' + 'policy_rules'
 POLICY_CLASSIFIERS_URI = GROUPPOLICY_URI + '/' + 'policy_classifiers'
 POLICY_ACTIONS_URI = GROUPPOLICY_URI + '/' + 'policy_actions'
-CONTRACTS_URI = GROUPPOLICY_URI + '/' + 'contracts'
+POLICY_RULE_SETS_URI = GROUPPOLICY_URI + '/' + 'policy_rule_sets'
 NET_SVC_POLICIES_URI = GROUPPOLICY_URI + '/' + 'network_service_policies'
 
 
@@ -53,204 +53,210 @@ class GroupPolicyExtensionTestCase(test_api_v2_extension.ExtensionTestCase):
             plural_mappings=plural_mappings)
         self.instance = self.plugin.return_value
 
-    def _test_create_endpoint(self, data, expected_value, default_data=None):
+    def _test_create_policy_target(self, data, expected_value,
+                                   default_data=None):
         if not default_data:
             default_data = data
-        self.instance.create_endpoint.return_value = expected_value
-        res = self.api.post(_get_path(ENDPOINTS_URI, fmt=self.fmt),
+        self.instance.create_policy_target.return_value = expected_value
+        res = self.api.post(_get_path(POLICY_TARGETS_URI, fmt=self.fmt),
                             self.serialize(data),
                             content_type='application/%s' % self.fmt)
-        self.instance.create_endpoint.assert_called_once_with(
-            mock.ANY, endpoint=default_data)
+        self.instance.create_policy_target.assert_called_once_with(
+            mock.ANY, policy_target=default_data)
         self.assertEqual(exc.HTTPCreated.code, res.status_int)
         res = self.deserialize(res)
-        self.assertIn('endpoint', res)
-        self.assertEqual(expected_value, res['endpoint'])
+        self.assertIn('policy_target', res)
+        self.assertEqual(expected_value, res['policy_target'])
 
-    def _get_create_endpoint_default_attrs(self):
+    def _get_create_policy_target_default_attrs(self):
         return {'name': '', 'description': ''}
 
-    def _get_create_endpoint_attrs(self):
-        return {'name': 'ep1', 'endpoint_group_id': _uuid(),
-                'tenant_id': _uuid(), 'description': 'test endpoint'}
+    def _get_create_policy_target_attrs(self):
+        return {'name': 'ep1', 'policy_target_group_id': _uuid(),
+                'tenant_id': _uuid(), 'description': 'test policy_target'}
 
-    def _get_update_endpoint_attrs(self):
+    def _get_update_policy_target_attrs(self):
         return {'name': 'new_name'}
 
-    def test_create_endpoint_with_defaults(self):
-        endpoint_id = _uuid()
-        data = {'endpoint': {'endpoint_group_id': _uuid(),
-                             'tenant_id': _uuid()}}
-        default_attrs = self._get_create_endpoint_default_attrs()
+    def test_create_policy_target_with_defaults(self):
+        policy_target_id = _uuid()
+        data = {'policy_target': {'policy_target_group_id': _uuid(),
+                                  'tenant_id': _uuid()}}
+        default_attrs = self._get_create_policy_target_default_attrs()
         default_data = copy.copy(data)
-        default_data['endpoint'].update(default_attrs)
-        expected_value = dict(default_data['endpoint'])
-        expected_value['id'] = endpoint_id
+        default_data['policy_target'].update(default_attrs)
+        expected_value = dict(default_data['policy_target'])
+        expected_value['id'] = policy_target_id
 
-        self._test_create_endpoint(data, expected_value, default_data)
+        self._test_create_policy_target(data, expected_value, default_data)
 
-    def test_create_endpoint(self):
-        endpoint_id = _uuid()
-        data = {'endpoint': self._get_create_endpoint_attrs()}
-        expected_value = dict(data['endpoint'])
-        expected_value['id'] = endpoint_id
+    def test_create_policy_target(self):
+        policy_target_id = _uuid()
+        data = {'policy_target': self._get_create_policy_target_attrs()}
+        expected_value = dict(data['policy_target'])
+        expected_value['id'] = policy_target_id
 
-        self._test_create_endpoint(data, expected_value)
+        self._test_create_policy_target(data, expected_value)
 
-    def test_list_endpoints(self):
-        endpoint_id = _uuid()
-        expected_value = [{'tenant_id': _uuid(), 'id': endpoint_id}]
+    def test_list_policy_targets(self):
+        policy_target_id = _uuid()
+        expected_value = [{'tenant_id': _uuid(), 'id': policy_target_id}]
 
-        self.instance.get_endpoints.return_value = expected_value
+        self.instance.get_policy_targets.return_value = expected_value
 
-        res = self.api.get(_get_path(ENDPOINTS_URI, fmt=self.fmt))
+        res = self.api.get(_get_path(POLICY_TARGETS_URI, fmt=self.fmt))
 
-        self.instance.get_endpoints.assert_called_once_with(
+        self.instance.get_policy_targets.assert_called_once_with(
             mock.ANY, fields=mock.ANY, filters=mock.ANY)
         self.assertEqual(exc.HTTPOk.code, res.status_int)
         res = self.deserialize(res)
-        self.assertIn('endpoints', res)
-        self.assertEqual(expected_value, res['endpoints'])
+        self.assertIn('policy_targets', res)
+        self.assertEqual(expected_value, res['policy_targets'])
 
-    def test_get_endpoint(self):
-        endpoint_id = _uuid()
-        expected_value = {'tenant_id': _uuid(), 'id': endpoint_id}
+    def test_get_policy_target(self):
+        policy_target_id = _uuid()
+        expected_value = {'tenant_id': _uuid(), 'id': policy_target_id}
 
-        self.instance.get_endpoint.return_value = expected_value
+        self.instance.get_policy_target.return_value = expected_value
 
-        res = self.api.get(_get_path(ENDPOINTS_URI, id=endpoint_id,
+        res = self.api.get(_get_path(POLICY_TARGETS_URI, id=policy_target_id,
                                      fmt=self.fmt))
 
-        self.instance.get_endpoint.assert_called_once_with(
-            mock.ANY, endpoint_id, fields=mock.ANY)
+        self.instance.get_policy_target.assert_called_once_with(
+            mock.ANY, policy_target_id, fields=mock.ANY)
         self.assertEqual(exc.HTTPOk.code, res.status_int)
         res = self.deserialize(res)
-        self.assertIn('endpoint', res)
-        self.assertEqual(expected_value, res['endpoint'])
+        self.assertIn('policy_target', res)
+        self.assertEqual(expected_value, res['policy_target'])
 
-    def test_update_endpoint(self):
-        endpoint_id = _uuid()
-        update_data = {'endpoint': self._get_update_endpoint_attrs()}
-        expected_value = {'tenant_id': _uuid(), 'id': endpoint_id}
+    def test_update_policy_target(self):
+        policy_target_id = _uuid()
+        update_data = {'policy_target': self._get_update_policy_target_attrs()}
+        expected_value = {'tenant_id': _uuid(), 'id': policy_target_id}
 
-        self.instance.update_endpoint.return_value = expected_value
+        self.instance.update_policy_target.return_value = expected_value
 
-        res = self.api.put(_get_path(ENDPOINTS_URI, id=endpoint_id,
+        res = self.api.put(_get_path(POLICY_TARGETS_URI, id=policy_target_id,
                                      fmt=self.fmt),
                            self.serialize(update_data))
 
-        self.instance.update_endpoint.assert_called_once_with(
-            mock.ANY, endpoint_id, endpoint=update_data)
+        self.instance.update_policy_target.assert_called_once_with(
+            mock.ANY, policy_target_id, policy_target=update_data)
         self.assertEqual(exc.HTTPOk.code, res.status_int)
         res = self.deserialize(res)
-        self.assertIn('endpoint', res)
-        self.assertEqual(expected_value, res['endpoint'])
+        self.assertIn('policy_target', res)
+        self.assertEqual(expected_value, res['policy_target'])
 
-    def test_delete_endpoint(self):
-        self._test_entity_delete('endpoint')
+    def test_delete_policy_target(self):
+        self._test_entity_delete('policy_target')
 
-    def _test_create_endpoint_group(self, data, expected_value,
-                                    default_data=None):
+    def _test_create_policy_target_group(self, data, expected_value,
+                                         default_data=None):
         if not default_data:
             default_data = data
 
-        self.instance.create_endpoint_group.return_value = expected_value
-        res = self.api.post(_get_path(ENDPOINT_GROUPS_URI, fmt=self.fmt),
+        self.instance.create_policy_target_group.return_value = expected_value
+        res = self.api.post(_get_path(POLICY_TARGET_GROUPS_URI, fmt=self.fmt),
                             self.serialize(data),
                             content_type='application/%s' % self.fmt)
-        self.instance.create_endpoint_group.assert_called_once_with(
-            mock.ANY, endpoint_group=default_data)
+        self.instance.create_policy_target_group.assert_called_once_with(
+            mock.ANY, policy_target_group=default_data)
         self.assertEqual(exc.HTTPCreated.code, res.status_int)
         res = self.deserialize(res)
-        self.assertIn('endpoint_group', res)
-        self.assertEqual(expected_value, res['endpoint_group'])
+        self.assertIn('policy_target_group', res)
+        self.assertEqual(expected_value, res['policy_target_group'])
 
-    def _get_create_endpoint_group_default_attrs(self):
+    def _get_create_policy_target_group_default_attrs(self):
         return {'name': '', 'description': '', 'l2_policy_id': None,
-                'provided_contracts': {}, 'consumed_contracts': {},
+                'provided_policy_rule_sets': {},
+                'consumed_policy_rule_sets': {},
                 'network_service_policy_id': None}
 
-    def _get_create_endpoint_group_attrs(self):
+    def _get_create_policy_target_group_attrs(self):
         return {'name': 'epg1', 'tenant_id': _uuid(),
-                'description': 'test endpoint group', 'l2_policy_id': _uuid(),
-                'provided_contracts': {_uuid(): None},
-                'consumed_contracts': {_uuid(): None},
+                'description': 'test policy_target group',
+                'l2_policy_id': _uuid(),
+                'provided_policy_rule_sets': {_uuid(): None},
+                'consumed_policy_rule_sets': {_uuid(): None},
                 'network_service_policy_id': _uuid()}
 
-    def _get_update_endpoint_group_attrs(self):
+    def _get_update_policy_target_group_attrs(self):
         return {'name': 'new_name'}
 
-    def test_create_endpoint_group_with_defaults(self):
-        endpoint_group_id = _uuid()
-        data = {'endpoint_group': {'tenant_id': _uuid()}}
-        default_attrs = self._get_create_endpoint_group_default_attrs()
+    def test_create_policy_target_group_with_defaults(self):
+        policy_target_group_id = _uuid()
+        data = {'policy_target_group': {'tenant_id': _uuid()}}
+        default_attrs = self._get_create_policy_target_group_default_attrs()
         default_data = copy.copy(data)
-        default_data['endpoint_group'].update(default_attrs)
-        expected_value = copy.deepcopy(default_data['endpoint_group'])
-        expected_value['id'] = endpoint_group_id
+        default_data['policy_target_group'].update(default_attrs)
+        expected_value = copy.deepcopy(default_data['policy_target_group'])
+        expected_value['id'] = policy_target_group_id
 
-        self._test_create_endpoint_group(data, expected_value, default_data)
+        self._test_create_policy_target_group(data, expected_value,
+                                              default_data)
 
-    def test_create_endpoint_group(self):
-        endpoint_group_id = _uuid()
-        data = {'endpoint_group': self._get_create_endpoint_group_attrs()}
-        expected_value = copy.deepcopy(data['endpoint_group'])
-        expected_value['id'] = endpoint_group_id
+    def test_create_policy_target_group(self):
+        policy_target_group_id = _uuid()
+        data = {'policy_target_group':
+                self._get_create_policy_target_group_attrs()}
+        expected_value = copy.deepcopy(data['policy_target_group'])
+        expected_value['id'] = policy_target_group_id
 
-        self._test_create_endpoint_group(data, expected_value)
+        self._test_create_policy_target_group(data, expected_value)
 
-    def test_list_endpoint_groups(self):
-        endpoint_group_id = _uuid()
-        expected_value = [{'tenant_id': _uuid(), 'id': endpoint_group_id}]
+    def test_list_policy_target_groups(self):
+        policy_target_group_id = _uuid()
+        expected_value = [{'tenant_id': _uuid(), 'id': policy_target_group_id}]
 
-        self.instance.get_endpoint_groups.return_value = expected_value
+        self.instance.get_policy_target_groups.return_value = expected_value
 
-        res = self.api.get(_get_path(ENDPOINT_GROUPS_URI, fmt=self.fmt))
+        res = self.api.get(_get_path(POLICY_TARGET_GROUPS_URI, fmt=self.fmt))
 
-        self.instance.get_endpoint_groups.assert_called_once_with(
+        self.instance.get_policy_target_groups.assert_called_once_with(
             mock.ANY, fields=mock.ANY, filters=mock.ANY)
         self.assertEqual(exc.HTTPOk.code, res.status_int)
         res = self.deserialize(res)
-        self.assertIn('endpoint_groups', res)
-        self.assertEqual(expected_value, res['endpoint_groups'])
+        self.assertIn('policy_target_groups', res)
+        self.assertEqual(expected_value, res['policy_target_groups'])
 
-    def test_get_endpoint_group(self):
-        endpoint_group_id = _uuid()
-        expected_value = {'tenant_id': _uuid(), 'id': endpoint_group_id}
+    def test_get_policy_target_group(self):
+        policy_target_group_id = _uuid()
+        expected_value = {'tenant_id': _uuid(), 'id': policy_target_group_id}
 
-        self.instance.get_endpoint_group.return_value = expected_value
+        self.instance.get_policy_target_group.return_value = expected_value
 
-        res = self.api.get(_get_path(ENDPOINT_GROUPS_URI, id=endpoint_group_id,
+        res = self.api.get(_get_path(POLICY_TARGET_GROUPS_URI,
+                                     id=policy_target_group_id,
                                      fmt=self.fmt))
 
-        self.instance.get_endpoint_group.assert_called_once_with(
-            mock.ANY, endpoint_group_id, fields=mock.ANY)
+        self.instance.get_policy_target_group.assert_called_once_with(
+            mock.ANY, policy_target_group_id, fields=mock.ANY)
         self.assertEqual(exc.HTTPOk.code, res.status_int)
         res = self.deserialize(res)
-        self.assertIn('endpoint_group', res)
-        self.assertEqual(expected_value, res['endpoint_group'])
+        self.assertIn('policy_target_group', res)
+        self.assertEqual(expected_value, res['policy_target_group'])
 
-    def test_update_endpoint_group(self):
-        endpoint_group_id = _uuid()
-        update_data = {'endpoint_group':
-                       self._get_update_endpoint_group_attrs()}
-        expected_value = {'tenant_id': _uuid(), 'id': endpoint_group_id}
+    def test_update_policy_target_group(self):
+        policy_target_group_id = _uuid()
+        update_data = {'policy_target_group':
+                       self._get_update_policy_target_group_attrs()}
+        expected_value = {'tenant_id': _uuid(), 'id': policy_target_group_id}
 
-        self.instance.update_endpoint_group.return_value = expected_value
+        self.instance.update_policy_target_group.return_value = expected_value
 
-        res = self.api.put(_get_path(ENDPOINT_GROUPS_URI,
-                                     id=endpoint_group_id, fmt=self.fmt),
+        res = self.api.put(_get_path(POLICY_TARGET_GROUPS_URI,
+                                     id=policy_target_group_id, fmt=self.fmt),
                            self.serialize(update_data))
 
-        self.instance.update_endpoint_group.assert_called_once_with(
-            mock.ANY, endpoint_group_id, endpoint_group=update_data)
+        self.instance.update_policy_target_group.assert_called_once_with(
+            mock.ANY, policy_target_group_id, policy_target_group=update_data)
         self.assertEqual(exc.HTTPOk.code, res.status_int)
         res = self.deserialize(res)
-        self.assertIn('endpoint_group', res)
-        self.assertEqual(expected_value, res['endpoint_group'])
+        self.assertIn('policy_target_group', res)
+        self.assertEqual(expected_value, res['policy_target_group'])
 
-    def test_delete_endpoint_group(self):
-        self._test_entity_delete('endpoint_group')
+    def test_delete_policy_target_group(self):
+        self._test_entity_delete('policy_target_group')
 
     def _test_create_l2_policy(self, data, expected_value, default_data=None):
         if not default_data:
@@ -619,11 +625,8 @@ class GroupPolicyExtensionTestCase(test_api_v2_extension.ExtensionTestCase):
 
         res = self.api.get(_get_path(POLICY_CLASSIFIERS_URI, fmt=self.fmt))
 
-        instance.get_policy_classifiers.assert_called_once_with(mock.ANY,
-                                                                fields=
-                                                                mock.ANY,
-                                                                filters=
-                                                                mock.ANY)
+        instance.get_policy_classifiers.assert_called_once_with(
+            mock.ANY, fields=mock.ANY, filters=mock.ANY)
         self.assertEqual(res.status_int, exc.HTTPOk.code)
 
     def test_get_policy_classifier(self):
@@ -781,113 +784,114 @@ class GroupPolicyExtensionTestCase(test_api_v2_extension.ExtensionTestCase):
     def test_delete_policy_rule(self):
         self._test_entity_delete('policy_action')
 
-    def _test_create_contract(self, data, expected_value, default_data=None):
+    def _test_create_policy_rule_set(self, data, expected_value,
+                                     default_data=None):
         if not default_data:
             default_data = data
 
-        self.instance.create_contract.return_value = expected_value
-        res = self.api.post(_get_path(CONTRACTS_URI, fmt=self.fmt),
+        self.instance.create_policy_rule_set.return_value = expected_value
+        res = self.api.post(_get_path(POLICY_RULE_SETS_URI, fmt=self.fmt),
                             self.serialize(data),
                             content_type='application/%s' % self.fmt)
-        self.instance.create_contract.assert_called_once_with(
-            mock.ANY, contract=default_data)
+        self.instance.create_policy_rule_set.assert_called_once_with(
+            mock.ANY, policy_rule_set=default_data)
         self.assertEqual(res.status_int, exc.HTTPCreated.code)
         res = self.deserialize(res)
-        self.assertIn('contract', res)
-        self.assertEqual(expected_value, res['contract'])
+        self.assertIn('policy_rule_set', res)
+        self.assertEqual(expected_value, res['policy_rule_set'])
 
-    def _get_create_contract_default_attrs(self):
+    def _get_create_policy_rule_set_default_attrs(self):
         return {'name': '',
                 'description': '',
-                'child_contracts': [],
+                'child_policy_rule_sets': [],
                 'policy_rules': []}
 
-    def _get_create_contract_attrs(self):
-        return {'name': 'contract1',
-                'description': 'test contract',
+    def _get_create_policy_rule_set_attrs(self):
+        return {'name': 'policy_rule_set1',
+                'description': 'test policy_rule_set',
                 'tenant_id': _uuid(),
-                'child_contracts': [_uuid()],
+                'child_policy_rule_sets': [_uuid()],
                 'policy_rules': [_uuid()]}
 
-    def _get_update_contract_attrs(self):
+    def _get_update_policy_rule_set_attrs(self):
         return {'name': 'new_name'}
 
-    def test_create_contract_with_defaults(self):
-        contract_id = _uuid()
-        data = {'contract': {'tenant_id': _uuid()}}
-        default_attrs = self._get_create_contract_default_attrs()
+    def test_create_policy_rule_set_with_defaults(self):
+        policy_rule_set_id = _uuid()
+        data = {'policy_rule_set': {'tenant_id': _uuid()}}
+        default_attrs = self._get_create_policy_rule_set_default_attrs()
         default_data = copy.copy(data)
-        default_data['contract'].update(default_attrs)
-        expected_value = dict(default_data['contract'])
-        expected_value['id'] = contract_id
+        default_data['policy_rule_set'].update(default_attrs)
+        expected_value = dict(default_data['policy_rule_set'])
+        expected_value['id'] = policy_rule_set_id
 
-        self._test_create_contract(data, expected_value, default_data)
+        self._test_create_policy_rule_set(data, expected_value, default_data)
 
-    def test_create_contract(self):
-        contract_id = _uuid()
-        data = {'contract':
-                self._get_create_contract_attrs()}
-        expected_value = dict(data['contract'])
-        expected_value['id'] = contract_id
+    def test_create_policy_rule_set(self):
+        policy_rule_set_id = _uuid()
+        data = {'policy_rule_set':
+                self._get_create_policy_rule_set_attrs()}
+        expected_value = dict(data['policy_rule_set'])
+        expected_value['id'] = policy_rule_set_id
 
-        self._test_create_contract(data, expected_value)
+        self._test_create_policy_rule_set(data, expected_value)
 
-    def test_list_contracts(self):
-        contract_id = _uuid()
+    def test_list_policy_rule_sets(self):
+        policy_rule_set_id = _uuid()
         expected_value = [{'tenant_id': _uuid(),
-                           'id': contract_id}]
+                           'id': policy_rule_set_id}]
 
         instance = self.plugin.return_value
-        instance.get_contracts.return_value = expected_value
+        instance.get_policy_rule_sets.return_value = expected_value
 
-        res = self.api.get(_get_path(CONTRACTS_URI, fmt=self.fmt))
+        res = self.api.get(_get_path(POLICY_RULE_SETS_URI, fmt=self.fmt))
 
-        instance.get_contracts.assert_called_once_with(mock.ANY,
-                                                       fields=mock.ANY,
-                                                       filters=mock.ANY)
+        instance.get_policy_rule_sets.assert_called_once_with(
+            mock.ANY, fields=mock.ANY, filters=mock.ANY)
         self.assertEqual(res.status_int, exc.HTTPOk.code)
 
-    def test_get_contract(self):
-        contract_id = _uuid()
+    def test_get_policy_rule_set(self):
+        policy_rule_set_id = _uuid()
         expected_value = {'tenant_id': _uuid(),
-                          'id': contract_id}
+                          'id': policy_rule_set_id}
 
         instance = self.plugin.return_value
-        instance.get_contract.return_value = expected_value
+        instance.get_policy_rule_set.return_value = expected_value
 
-        res = self.api.get(_get_path(CONTRACTS_URI,
-                                     id=contract_id, fmt=self.fmt))
+        res = self.api.get(_get_path(POLICY_RULE_SETS_URI,
+                                     id=policy_rule_set_id, fmt=self.fmt))
 
-        instance.get_contract.assert_called_once_with(
-            mock.ANY, contract_id, fields=mock.ANY)
+        instance.get_policy_rule_set.assert_called_once_with(
+            mock.ANY, policy_rule_set_id, fields=mock.ANY)
         self.assertEqual(res.status_int, exc.HTTPOk.code)
         res = self.deserialize(res)
-        self.assertIn('contract', res)
-        self.assertEqual(expected_value, res['contract'])
+        self.assertIn('policy_rule_set', res)
+        self.assertEqual(expected_value, res['policy_rule_set'])
 
-    def test_update_contract(self):
-        contract_id = _uuid()
-        update_data = {'contract':
-                       self._get_update_contract_attrs()}
+    def test_update_policy_rule_set(self):
+        policy_rule_set_id = _uuid()
+        update_data = {'policy_rule_set':
+                       self._get_update_policy_rule_set_attrs()}
         expected_value = {'tenant_id': _uuid(),
-                          'id': contract_id}
+                          'id': policy_rule_set_id}
 
         instance = self.plugin.return_value
-        instance.update_contract.return_value = expected_value
+        instance.update_policy_rule_set.return_value = expected_value
 
-        res = self.api.put(_get_path(CONTRACTS_URI, id=contract_id,
+        res = self.api.put(_get_path(POLICY_RULE_SETS_URI,
+                                     id=policy_rule_set_id,
                                      fmt=self.fmt),
                            self.serialize(update_data))
 
-        instance.update_contract.assert_called_once_with(
-            mock.ANY, contract_id, contract=update_data)
+        instance.update_policy_rule_set.assert_called_once_with(
+            mock.ANY, policy_rule_set_id, policy_rule_set=update_data)
         self.assertEqual(res.status_int, exc.HTTPOk.code)
         res = self.deserialize(res)
-        self.assertIn('contract', res)
-        self.assertEqual(expected_value, res['contract'])
+        self.assertIn('policy_rule_set', res)
+        self.assertEqual(expected_value, res['policy_rule_set'])
 
-    def test_delete_contract(self):
-        self._test_entity_delete('contract')
+    def test_delete_policy_rule_set(self):
+        self._test_entity_delete('policy_rule_set')
 
     def _test_create_network_service_policy(
         self, data, expected_value, default_data=None):

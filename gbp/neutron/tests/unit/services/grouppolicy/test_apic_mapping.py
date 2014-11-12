@@ -29,7 +29,7 @@ from gbp.neutron.tests.unit.services.grouppolicy import test_grouppolicy_plugin
 APIC_L2_POLICY = 'l2_policy'
 APIC_L3_POLICY = 'l3_policy'
 APIC_CONTRACT = 'contract'
-APIC_ENDPOINT_GROUP = 'endpoint_group'
+APIC_ENDPOINT_GROUP = 'policy_target_group'
 APIC_POLICY_RULE = 'policy_rule'
 
 CORE_PLUGIN = 'neutron.plugins.ml2.plugin.Ml2Plugin'
@@ -71,7 +71,7 @@ class ApicMappingTestCase(
         self.driver.name_mapper.contract = echo
         self.driver.name_mapper.policy_rule = echo
         self.driver.name_mapper.app_profile.return_value = mocked.APIC_AP
-        self.driver.name_mapper.endpoint_group = echo
+        self.driver.name_mapper.policy_target_group = echo
         self.driver.apic_manager = mock.Mock(name_mapper=mock.Mock())
         self.driver.apic_manager.apic.transaction = self.fake_transaction
 
@@ -80,21 +80,23 @@ class ApicMappingTestCase(
         return self.deserialize(self.fmt, req.get_response(api))
 
 
-class TestEndpoint(ApicMappingTestCase):
+class TestPolicyTarget(ApicMappingTestCase):
 
-    def test_endpoint_created_on_apic(self):
-        epg = self.create_endpoint_group()['endpoint_group']
-        subnet = self._get_object('subnets', epg['subnets'][0], self.api)
+    def test_policy_target_created_on_apic(self):
+        ptg = self.create_policy_target_group()['policy_target_group']
+        subnet = self._get_object('subnets', ptg['subnets'][0], self.api)
         with self.port(subnet=subnet) as port:
             self._bind_port_to_host(port['port']['id'], 'h1')
-            self.create_endpoint(epg['id'], port_id=port['port']['id'])
+            self.create_policy_target(ptg['id'], port_id=port['port']['id'])
             mgr = self.driver.apic_manager
             self.assertEqual(mgr.ensure_path_created_for_port.call_count, 1)
 
-    def test_endpoint_port_update_on_apic_none_to_host(self):
-        epg = self.create_endpoint_group(name="epg1")['endpoint_group']
-        ep = self.create_endpoint(endpoint_group_id=epg['id'])['endpoint']
-        port = self._get_object('ports', ep['port_id'], self.api)
+    def test_policy_target_port_update_on_apic_none_to_host(self):
+        ptg = self.create_policy_target_group(
+            name="ptg1")['policy_target_group']
+        pt = self.create_policy_target(
+            policy_target_group_id=ptg['id'])['policy_target']
+        port = self._get_object('ports', pt['port_id'], self.api)
         port_up = self._bind_port_to_host(port['port']['id'], 'h1')
 
         self.driver.process_port_changed(context.get_admin_context(),
@@ -102,24 +104,26 @@ class TestEndpoint(ApicMappingTestCase):
         mgr = self.driver.apic_manager
         self.assertEqual(mgr.ensure_path_created_for_port.call_count, 1)
 
-    def test_endpoint_port_deleted_on_apic(self):
-        epg = self.create_endpoint_group()['endpoint_group']
-        subnet = self._get_object('subnets', epg['subnets'][0], self.api)
+    def test_policy_target_port_deleted_on_apic(self):
+        ptg = self.create_policy_target_group()['policy_target_group']
+        subnet = self._get_object('subnets', ptg['subnets'][0], self.api)
         with self.port(subnet=subnet) as port:
             self._bind_port_to_host(port['port']['id'], 'h1')
-            ep = self.create_endpoint(epg['id'], port_id=port['port']['id'])
-            self.new_delete_request('endpoints', ep['endpoint']['id'],
-                                    self.fmt).get_response(self.ext_api)
+            pt = self.create_policy_target(
+                ptg['id'], port_id=port['port']['id'])
+            self.new_delete_request(
+                'policy_targets', pt['policy_target']['id'],
+                self.fmt).get_response(self.ext_api)
             mgr = self.driver.apic_manager
             self.assertEqual(mgr.ensure_path_deleted_for_port.call_count, 1)
 
-    def test_endpoint_port_deleted_on_apic_host_to_host(self):
-        epg = self.create_endpoint_group()['endpoint_group']
-        subnet = self._get_object('subnets', epg['subnets'][0], self.api)
+    def test_policy_target_port_deleted_on_apic_host_to_host(self):
+        ptg = self.create_policy_target_group()['policy_target_group']
+        subnet = self._get_object('subnets', ptg['subnets'][0], self.api)
         with self.port(subnet=subnet) as port:
             # Create EP with bound port
             port = self._bind_port_to_host(port['port']['id'], 'h1')
-            self.create_endpoint(epg['id'], port_id=port['port']['id'])
+            self.create_policy_target(ptg['id'], port_id=port['port']['id'])
 
             # Change port binding and notify driver
             port_up = self._bind_port_to_host(port['port']['id'], 'h2')
@@ -132,16 +136,19 @@ class TestEndpoint(ApicMappingTestCase):
             # Path deleted 1 time
             self.assertEqual(mgr.ensure_path_deleted_for_port.call_count, 1)
 
-    def test_endpoint_port_not_deleted(self):
+    def test_policy_target_port_not_deleted(self):
         # Create 2 EP same EPG same host bound
-        epg = self.create_endpoint_group(name="epg1")['endpoint_group']
-        ep1 = self.create_endpoint(endpoint_group_id=epg['id'])['endpoint']
-        self._bind_port_to_host(ep1['port_id'], 'h1')
-        ep2 = self.create_endpoint(endpoint_group_id=epg['id'])['endpoint']
-        self._bind_port_to_host(ep2['port_id'], 'h1')
+        ptg = self.create_policy_target_group(
+            name="ptg1")['policy_target_group']
+        pt1 = self.create_policy_target(
+            policy_target_group_id=ptg['id'])['policy_target']
+        self._bind_port_to_host(pt1['port_id'], 'h1')
+        pt2 = self.create_policy_target(
+            policy_target_group_id=ptg['id'])['policy_target']
+        self._bind_port_to_host(pt2['port_id'], 'h1')
 
         # Delete EP1
-        self.new_delete_request('endpoints', ep1['id'],
+        self.new_delete_request('policy_targets', pt1['id'],
                                 self.fmt).get_response(self.ext_api)
         # APIC path not deleted
         mgr = self.driver.apic_manager
@@ -155,106 +162,113 @@ class TestEndpoint(ApicMappingTestCase):
         return self.deserialize(self.fmt, req.get_response(self.api))
 
 
-class TestEndpointGroup(ApicMappingTestCase):
+class TestPolicyTargetGroup(ApicMappingTestCase):
 
-    def test_endpoint_group_created_on_apic(self):
-        epg = self.create_endpoint_group(name="epg1")['endpoint_group']
+    def test_policy_target_group_created_on_apic(self):
+        ptg = self.create_policy_target_group(
+            name="ptg1")['policy_target_group']
 
         mgr = self.driver.apic_manager
-        mgr.ensure_epg_created.assert_called_once_with(
-            epg['tenant_id'], epg['id'], bd_name=epg['l2_policy_id'])
+        mgr.ensure_ptg_created.assert_called_once_with(
+            ptg['tenant_id'], ptg['id'], bd_name=ptg['l2_policy_id'])
 
-    def _test_epg_contract_created(self, provider=True):
-        cntr = self.create_contract(name='c')['contract']
+    def _test_ptg_policy_rule_set_created(self, provider=True):
+        cntr = self.create_policy_rule_set(name='c')['contract']
 
         if provider:
-            epg = self.create_endpoint_group(
-                provided_contracts={cntr['id']: 'scope'})['endpoint_group']
+            ptg = self.create_policy_target_group(
+                provided_policy_rule_sets={cntr['id']: 'scope'})[
+                    'policy_target_group']
         else:
-            epg = self.create_endpoint_group(
-                consumed_contracts={cntr['id']: 'scope'})['endpoint_group']
+            ptg = self.create_policy_target_group(
+                consumed_policy_rule_sets={cntr['id']: 'scope'})[
+                    'policy_target_group']
 
         # Verify that the apic call is issued
         mgr = self.driver.apic_manager
-        mgr.set_contract_for_epg.assert_called_with(
-            epg['tenant_id'], epg['id'], cntr['id'], transaction='transaction',
+        mgr.set_policy_rule_set_for_ptg.assert_called_with(
+            ptg['tenant_id'], ptg['id'], cntr['id'], transaction='transaction',
             provider=provider)
 
-    def _test_epg_contract_updated(self, provider=True):
-        p_or_c = {True: 'provided_contracts', False: 'consumed_contracts'}
-        cntr = self.create_contract(name='c1')['contract']
-        new_cntr = self.create_contract(name='c2')['contract']
+    def _test_ptg_policy_rule_set_updated(self, provider=True):
+        p_or_c = {True: 'provided_policy_rule_sets',
+                  False: 'consumed_contracts'}
+        cntr = self.create_policy_rule_set(name='c1')['contract']
+        new_cntr = self.create_policy_rule_set(name='c2')['contract']
 
         if provider:
-            epg = self.create_endpoint_group(
-                provided_contracts={cntr['id']: 'scope'})
+            ptg = self.create_policy_target_group(
+                provided_policy_rule_sets={cntr['id']: 'scope'})
         else:
-            epg = self.create_endpoint_group(
-                consumed_contracts={cntr['id']: 'scope'})
+            ptg = self.create_policy_target_group(
+                consumed_policy_rule_sets={cntr['id']: 'scope'})
 
-        data = {'endpoint_group': {p_or_c[provider]:
+        data = {'policy_target_group': {p_or_c[provider]:
                 {new_cntr['id']: 'scope'}}}
-        req = self.new_update_request('endpoint_groups', data,
-                                      epg['endpoint_group']['id'], self.fmt)
-        epg = self.deserialize(self.fmt, req.get_response(self.ext_api))
-        epg = epg['endpoint_group']
+        req = self.new_update_request('policy_target_groups', data,
+                                      ptg['policy_target_group']['id'],
+                                      self.fmt)
+        ptg = self.deserialize(self.fmt, req.get_response(self.ext_api))
+        ptg = ptg['policy_target_group']
         mgr = self.driver.apic_manager
-        mgr.set_contract_for_epg.assert_called_with(
-            epg['tenant_id'], epg['id'], new_cntr['id'],
+        mgr.set_policy_rule_set_for_ptg.assert_called_with(
+            ptg['tenant_id'], ptg['id'], new_cntr['id'],
             transaction='transaction', provider=provider)
-        mgr.unset_contract_for_epg.assert_called_with(
-            epg['tenant_id'], epg['id'], cntr['id'],
+        mgr.unset_policy_rule_set_for_ptg.assert_called_with(
+            ptg['tenant_id'], ptg['id'], cntr['id'],
             transaction='transaction', provider=provider)
 
-    def test_epg_contract_provider_created(self):
-        self._test_epg_contract_created()
+    def test_ptg_policy_rule_set_provider_created(self):
+        self._test_ptg_policy_rule_set_created()
 
-    def test_epg_contract_provider_updated(self):
-        self._test_epg_contract_updated()
+    def test_ptg_policy_rule_set_provider_updated(self):
+        self._test_ptg_policy_rule_set_updated()
 
-    def test_epg_contract_consumer_created(self):
-        self._test_epg_contract_created(False)
+    def test_ptg_policy_rule_set_consumer_created(self):
+        self._test_ptg_policy_rule_set_created(False)
 
-    def test_epg_contract_consumer_updated(self):
-        self._test_epg_contract_updated(False)
+    def test_ptg_policy_rule_set_consumer_updated(self):
+        self._test_ptg_policy_rule_set_updated(False)
 
-    def test_endpoint_group_deleted_on_apic(self):
-        epg = self.create_endpoint_group(name="epg1")['endpoint_group']
-        req = self.new_delete_request('endpoint_groups', epg['id'], self.fmt)
+    def test_policy_target_group_deleted_on_apic(self):
+        ptg = self.create_policy_target_group(
+            name="ptg1")['policy_target_group']
+        req = self.new_delete_request(
+            'policy_target_groups', ptg['id'], self.fmt)
         req.get_response(self.ext_api)
         mgr = self.driver.apic_manager
-        mgr.delete_epg_for_network.assert_called_once_with(
-            epg['tenant_id'], epg['id'])
+        mgr.delete_ptg_for_network.assert_called_once_with(
+            ptg['tenant_id'], ptg['id'])
 
-    def test_endpoint_group_subnet_created_on_apic(self):
+    def test_policy_target_group_subnet_created_on_apic(self):
 
-        epg = self._create_explicit_subnet_epg('10.0.0.0/24')
+        ptg = self._create_explicit_subnet_ptg('10.0.0.0/24')
 
         mgr = self.driver.apic_manager
         mgr.ensure_subnet_created_on_apic.assert_called_once_with(
-            epg['tenant_id'], epg['l2_policy_id'], '10.0.0.1/24',
+            ptg['tenant_id'], ptg['l2_policy_id'], '10.0.0.1/24',
             transaction='transaction')
 
-    def test_endpoint_group_subnet_added(self):
-        epg = self._create_explicit_subnet_epg('10.0.0.0/24')
-        l2p = self._get_object('l2_policies', epg['l2_policy_id'],
+    def test_policy_target_group_subnet_added(self):
+        ptg = self._create_explicit_subnet_ptg('10.0.0.0/24')
+        l2p = self._get_object('l2_policies', ptg['l2_policy_id'],
                                self.ext_api)
         network = self._get_object('networks', l2p['l2_policy']['network_id'],
                                    self.api)
 
         with self.subnet(network=network, cidr='10.0.1.0/24') as subnet:
-            data = {'endpoint_group':
-                    {'subnets': epg['subnets'] + [subnet['subnet']['id']]}}
+            data = {'policy_target_group':
+                    {'subnets': ptg['subnets'] + [subnet['subnet']['id']]}}
             mgr = self.driver.apic_manager
-            self.new_update_request('endpoint_groups', data, epg['id'],
+            self.new_update_request('policy_target_groups', data, ptg['id'],
                                     self.fmt).get_response(self.ext_api)
             mgr.ensure_subnet_created_on_apic.assert_called_with(
-                epg['tenant_id'], epg['l2_policy_id'], '10.0.1.1/24',
+                ptg['tenant_id'], ptg['l2_policy_id'], '10.0.1.1/24',
                 transaction='transaction')
 
     def test_process_subnet_update(self):
-        epg = self._create_explicit_subnet_epg('10.0.0.0/24')
-        subnet = self._get_object('subnets', epg['subnets'][0], self.api)
+        ptg = self._create_explicit_subnet_ptg('10.0.0.0/24')
+        subnet = self._get_object('subnets', ptg['subnets'][0], self.api)
         subnet2 = copy.deepcopy(subnet)
         subnet2['subnet']['gateway_ip'] = '10.0.0.254'
         mgr = self.driver.apic_manager
@@ -262,22 +276,22 @@ class TestEndpointGroup(ApicMappingTestCase):
         self.driver.process_subnet_changed(context.get_admin_context(),
                                            subnet['subnet'], subnet2['subnet'])
         mgr.ensure_subnet_created_on_apic.assert_called_once_with(
-                epg['tenant_id'], epg['l2_policy_id'], '10.0.0.254/24',
-                transaction='transaction')
+            ptg['tenant_id'], ptg['l2_policy_id'], '10.0.0.254/24',
+            transaction='transaction')
         mgr.ensure_subnet_deleted_on_apic.assert_called_with(
-                epg['tenant_id'], epg['l2_policy_id'], '10.0.0.1/24',
-                transaction='transaction')
+            ptg['tenant_id'], ptg['l2_policy_id'], '10.0.0.1/24',
+            transaction='transaction')
 
-    def _create_explicit_subnet_epg(self, cidr):
+    def _create_explicit_subnet_ptg(self, cidr):
         l2p = self.create_l2_policy(name="l2p")
         l2p_id = l2p['l2_policy']['id']
         network_id = l2p['l2_policy']['network_id']
         network = self._get_object('networks', network_id, self.api)
         with self.subnet(network=network, cidr=cidr) as subnet:
             subnet_id = subnet['subnet']['id']
-            return self.create_endpoint_group(
-                name="epg1", l2_policy_id=l2p_id,
-                subnets=[subnet_id])['endpoint_group']
+            return self.create_policy_target_group(
+                name="ptg1", l2_policy_id=l2p_id,
+                subnets=[subnet_id])['policy_target_group']
 
 
 class TestL2Policy(ApicMappingTestCase):
@@ -317,57 +331,60 @@ class TestL3Policy(ApicMappingTestCase):
             l3p['tenant_id'], l3p['id'])
 
 
-class TestContract(ApicMappingTestCase):
+class TestPolicyRuleSet(ApicMappingTestCase):
 
-    # TODO(ivar): verify rule intersection with hierarchical contracts happens
-    # on APIC
-    def test_contract_created_on_apic(self):
-        self.create_contract(name="ctr")
+    # TODO(ivar): verify rule intersection with hierarchical policy_rule_sets
+    # happens on APIC
+    def test_policy_rule_set_created_on_apic(self):
+        self.create_policy_rule_set(name="ctr")
 
         mgr = self.driver.apic_manager
-        self.assertEqual(1, mgr.create_contract.call_count)
+        self.assertEqual(1, mgr.create_policy_rule_set.call_count)
 
-    def test_contract_created_with_rules(self):
+    def test_policy_rule_set_created_with_rules(self):
         bi, in_d, out = range(3)
         rules = self._create_3_direction_rules()
         # exclude BI rule for now
-        ctr = self.create_contract(
-            name="ctr", policy_rules=[x['id'] for x in rules[1:]])['contract']
+        ctr = self.create_policy_rule_set(
+            name="ctr", policy_rules=[x['id'] for x in rules[1:]])[
+                'policy_rule_set']
 
         # Verify that the in-out rules are correctly enforced on the APIC
         mgr = self.driver.apic_manager
-        mgr.manage_contract_subject_in_filter.assert_called_once_with(
+        mgr.manage_policy_rule_set_subject_in_filter.assert_called_once_with(
             ctr['id'], ctr['id'], rules[in_d]['id'], owner=ctr['tenant_id'],
             transaction='transaction', unset=False)
-        mgr.manage_contract_subject_out_filter.assert_called_once_with(
+        mgr.manage_policy_rule_set_subject_out_filter.assert_called_once_with(
             ctr['id'], ctr['id'], rules[out]['id'], owner=ctr['tenant_id'],
             transaction='transaction', unset=False)
 
-        # Create contract with BI rule
-        ctr = self.create_contract(
-            name="ctr", policy_rules=[rules[bi]['id']])['contract']
+        # Create policy_rule_set with BI rule
+        ctr = self.create_policy_rule_set(
+            name="ctr", policy_rules=[rules[bi]['id']])['policy_rule_set']
 
-        mgr.manage_contract_subject_in_filter.assert_called_with(
+        mgr.manage_policy_rule_set_subject_in_filter.assert_called_with(
             ctr['id'], ctr['id'], rules[bi]['id'], owner=ctr['tenant_id'],
             transaction='transaction', unset=False)
-        mgr.manage_contract_subject_out_filter.assert_called_with(
+        mgr.manage_policy_rule_set_subject_out_filter.assert_called_with(
             ctr['id'], ctr['id'], rules[bi]['id'], owner=ctr['tenant_id'],
             transaction='transaction', unset=False)
 
-    def test_contract_updated_with_new_rules(self):
+    def test_policy_rule_set_updated_with_new_rules(self):
         bi, in_d, out = range(3)
         old_rules = self._create_3_direction_rules()
         new_rules = self._create_3_direction_rules()
         # exclude BI rule for now
-        ctr = self.create_contract(
+        ctr = self.create_policy_rule_set(
             name="ctr",
-            policy_rules=[x['id'] for x in old_rules[1:]])['contract']
-        data = {'contract': {'policy_rules': [x['id'] for x in new_rules[1:]]}}
+            policy_rules=[x['id'] for x in old_rules[1:]])['policy_rule_set']
+        data = {'policy_rule_set':
+                {'policy_rules': [x['id'] for x in new_rules[1:]]}}
         mgr = self.driver.apic_manager
         mgr.manage_contract_subject_in_filter = MockCallRecorder()
         mgr.manage_contract_subject_out_filter = MockCallRecorder()
         self.new_update_request(
-            'contracts', data, ctr['id'], self.fmt).get_response(self.ext_api)
+            'policy_rule_sets', data, ctr['id'], self.fmt).get_response(
+                self.ext_api)
         # Verify old IN rule unset and new IN rule set
         self.assertTrue(
             mgr.manage_contract_subject_in_filter.call_happened_with(
@@ -388,12 +405,13 @@ class TestContract(ApicMappingTestCase):
                 owner=ctr['tenant_id'], transaction='transaction',
                 unset=False))
 
-        ctr = self.create_contract(
+        ctr = self.create_policy_rule_set(
             name="ctr",
-            policy_rules=[old_rules[0]['id']])['contract']
-        data = {'contract': {'policy_rules': [new_rules[0]['id']]}}
+            policy_rules=[old_rules[0]['id']])['policy_rule_set']
+        data = {'policy_rule_set': {'policy_rules': [new_rules[0]['id']]}}
         self.new_update_request(
-            'contracts', data, ctr['id'], self.fmt).get_response(self.ext_api)
+            'policy_rule_sets', data, ctr['id'], self.fmt).get_response(
+                self.ext_api)
         # Verify old BI rule unset and new Bu rule set
         self.assertTrue(
             mgr.manage_contract_subject_in_filter.call_happened_with(

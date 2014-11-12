@@ -30,38 +30,39 @@ class ImplicitPolicyTestCase(
 class TestImplicitL2Policy(ImplicitPolicyTestCase):
 
     def test_impicit_lifecycle(self):
-        # Create endpoint group with implicit L2 policy.
-        epg1 = self.create_endpoint_group()
-        epg1_id = epg1['endpoint_group']['id']
-        l2p1_id = epg1['endpoint_group']['l2_policy_id']
+        # Create policy_target group with implicit L2 policy.
+        ptg1 = self.create_policy_target_group()
+        ptg1_id = ptg1['policy_target_group']['id']
+        l2p1_id = ptg1['policy_target_group']['l2_policy_id']
         self.assertIsNotNone(l2p1_id)
-        req = self.new_show_request('endpoint_groups', epg1_id, fmt=self.fmt)
+        req = self.new_show_request('policy_target_groups', ptg1_id,
+                                    fmt=self.fmt)
         res = self.deserialize(self.fmt, req.get_response(self.ext_api))
-        self.assertEqual(l2p1_id, res['endpoint_group']['l2_policy_id'])
+        self.assertEqual(l2p1_id, res['policy_target_group']['l2_policy_id'])
         req = self.new_show_request('l2_policies', l2p1_id, fmt=self.fmt)
         l2p1 = self.deserialize(self.fmt, req.get_response(self.ext_api))
-        self.assertEqual(epg1['endpoint_group']['name'],
+        self.assertEqual(ptg1['policy_target_group']['name'],
                          l2p1['l2_policy']['name'])
 
-        # Create 2nd endpoint group with different implicit L2 policy.
-        epg2 = self.create_endpoint_group()
-        epg2_id = epg2['endpoint_group']['id']
-        l2p2_id = epg2['endpoint_group']['l2_policy_id']
+        # Create 2nd policy_target group with different implicit L2 policy.
+        ptg2 = self.create_policy_target_group()
+        ptg2_id = ptg2['policy_target_group']['id']
+        l2p2_id = ptg2['policy_target_group']['l2_policy_id']
         self.assertIsNotNone(l2p2_id)
         self.assertNotEqual(l2p1_id, l2p2_id)
 
-        # Verify deleting 1st endpoint group does cleanup its L2
+        # Verify deleting 1st policy_target group does cleanup its L2
         # policy.
-        req = self.new_delete_request('endpoint_groups', epg1_id)
+        req = self.new_delete_request('policy_target_groups', ptg1_id)
         res = req.get_response(self.ext_api)
         self.assertEqual(res.status_int, webob.exc.HTTPNoContent.code)
         req = self.new_show_request('l2_policies', l2p1_id, fmt=self.fmt)
         res = req.get_response(self.ext_api)
         self.assertEqual(res.status_int, webob.exc.HTTPNotFound.code)
 
-        # Verify deleting 2nd endpoint group does cleanup its L2
+        # Verify deleting 2nd policy_target group does cleanup its L2
         # policy.
-        req = self.new_delete_request('endpoint_groups', epg2_id)
+        req = self.new_delete_request('policy_target_groups', ptg2_id)
         res = req.get_response(self.ext_api)
         self.assertEqual(res.status_int, webob.exc.HTTPNoContent.code)
         req = self.new_show_request('l2_policies', l2p2_id, fmt=self.fmt)
@@ -69,15 +70,15 @@ class TestImplicitL2Policy(ImplicitPolicyTestCase):
         self.assertEqual(res.status_int, webob.exc.HTTPNotFound.code)
 
     def test_explicit_lifecycle(self):
-        # Create endpoint group with explicit L2 policy.
+        # Create policy_target group with explicit L2 policy.
         l2p = self.create_l2_policy()
         l2p_id = l2p['l2_policy']['id']
-        epg = self.create_endpoint_group(l2_policy_id=l2p_id)
-        epg_id = epg['endpoint_group']['id']
-        self.assertEqual(l2p_id, epg['endpoint_group']['l2_policy_id'])
+        ptg = self.create_policy_target_group(l2_policy_id=l2p_id)
+        ptg_id = ptg['policy_target_group']['id']
+        self.assertEqual(l2p_id, ptg['policy_target_group']['l2_policy_id'])
 
-        # Verify deleting endpoint group does not cleanup L2 policy.
-        req = self.new_delete_request('endpoint_groups', epg_id)
+        # Verify deleting policy_target group does not cleanup L2 policy.
+        req = self.new_delete_request('policy_target_groups', ptg_id)
         res = req.get_response(self.ext_api)
         self.assertEqual(res.status_int, webob.exc.HTTPNoContent.code)
         req = self.new_show_request('l2_policies', l2p_id, fmt=self.fmt)
@@ -85,31 +86,31 @@ class TestImplicitL2Policy(ImplicitPolicyTestCase):
         self.assertEqual(res.status_int, webob.exc.HTTPOk.code)
 
     def test_update_from_implicit(self):
-        # Create endpoint group with implicit L2 policy.
-        epg = self.create_endpoint_group()
-        epg_id = epg['endpoint_group']['id']
-        l2p1_id = epg['endpoint_group']['l2_policy_id']
+        # Create policy_target group with implicit L2 policy.
+        ptg = self.create_policy_target_group()
+        ptg_id = ptg['policy_target_group']['id']
+        l2p1_id = ptg['policy_target_group']['l2_policy_id']
         req = self.new_show_request('l2_policies', l2p1_id, fmt=self.fmt)
         l2p1 = self.deserialize(self.fmt, req.get_response(self.ext_api))
-        self.assertEqual(epg['endpoint_group']['name'],
+        self.assertEqual(ptg['policy_target_group']['name'],
                          l2p1['l2_policy']['name'])
 
-        # Update endpoint group to explicit L2 policy.
+        # Update policy_target group to explicit L2 policy.
         l2p2 = self.create_l2_policy()
         l2p2_id = l2p2['l2_policy']['id']
-        data = {'endpoint_group': {'l2_policy_id': l2p2_id}}
-        req = self.new_update_request('endpoint_groups', data, epg_id)
-        epg = self.deserialize(self.fmt, req.get_response(self.ext_api))
-        self.assertEqual(l2p2_id, epg['endpoint_group']['l2_policy_id'])
+        data = {'policy_target_group': {'l2_policy_id': l2p2_id}}
+        req = self.new_update_request('policy_target_groups', data, ptg_id)
+        ptg = self.deserialize(self.fmt, req.get_response(self.ext_api))
+        self.assertEqual(l2p2_id, ptg['policy_target_group']['l2_policy_id'])
 
         # Verify old L2 policy was cleaned up.
         req = self.new_show_request('l2_policies', l2p1_id, fmt=self.fmt)
         res = req.get_response(self.ext_api)
         self.assertEqual(res.status_int, webob.exc.HTTPNotFound.code)
 
-        # Verify deleting endpoint group does not cleanup new L2
+        # Verify deleting policy_target group does not cleanup new L2
         # policy.
-        req = self.new_delete_request('endpoint_groups', epg_id)
+        req = self.new_delete_request('policy_target_groups', ptg_id)
         res = req.get_response(self.ext_api)
         self.assertEqual(res.status_int, webob.exc.HTTPNoContent.code)
         req = self.new_show_request('l2_policies', l2p2_id, fmt=self.fmt)
@@ -117,23 +118,23 @@ class TestImplicitL2Policy(ImplicitPolicyTestCase):
         self.assertEqual(res.status_int, webob.exc.HTTPOk.code)
 
     def test_update_to_implicit(self):
-        # Create endpoint group with explicit L2 policy.
+        # Create policy_target group with explicit L2 policy.
         l2p1 = self.create_l2_policy()
         l2p1_id = l2p1['l2_policy']['id']
-        epg = self.create_endpoint_group(l2_policy_id=l2p1_id)
-        epg_id = epg['endpoint_group']['id']
-        self.assertEqual(l2p1_id, epg['endpoint_group']['l2_policy_id'])
+        ptg = self.create_policy_target_group(l2_policy_id=l2p1_id)
+        ptg_id = ptg['policy_target_group']['id']
+        self.assertEqual(l2p1_id, ptg['policy_target_group']['l2_policy_id'])
 
-        # Update endpoint group to implicit L2 policy.
-        data = {'endpoint_group': {'l2_policy_id': None}}
-        req = self.new_update_request('endpoint_groups', data, epg_id)
-        epg = self.deserialize(self.fmt, req.get_response(self.ext_api))
-        l2p2_id = epg['endpoint_group']['l2_policy_id']
+        # Update policy_target group to implicit L2 policy.
+        data = {'policy_target_group': {'l2_policy_id': None}}
+        req = self.new_update_request('policy_target_groups', data, ptg_id)
+        ptg = self.deserialize(self.fmt, req.get_response(self.ext_api))
+        l2p2_id = ptg['policy_target_group']['l2_policy_id']
         self.assertNotEqual(l2p1_id, l2p2_id)
         self.assertIsNotNone(l2p2_id)
         req = self.new_show_request('l2_policies', l2p2_id, fmt=self.fmt)
         l2p2 = self.deserialize(self.fmt, req.get_response(self.ext_api))
-        self.assertEqual(epg['endpoint_group']['name'],
+        self.assertEqual(ptg['policy_target_group']['name'],
                          l2p2['l2_policy']['name'])
 
         # Verify old L2 policy was not cleaned up.
@@ -141,8 +142,8 @@ class TestImplicitL2Policy(ImplicitPolicyTestCase):
         res = req.get_response(self.ext_api)
         self.assertEqual(res.status_int, webob.exc.HTTPOk.code)
 
-        # Verify deleting endpoint group does cleanup new L2 policy.
-        req = self.new_delete_request('endpoint_groups', epg_id)
+        # Verify deleting policy_target group does cleanup new L2 policy.
+        req = self.new_delete_request('policy_target_groups', ptg_id)
         res = req.get_response(self.ext_api)
         self.assertEqual(res.status_int, webob.exc.HTTPNoContent.code)
         req = self.new_show_request('l2_policies', l2p2_id, fmt=self.fmt)

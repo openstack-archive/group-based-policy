@@ -64,12 +64,14 @@ def upgrade(active_plugins=None, options=None):
         sa.Column('consumer_epg', sa.String(length=36), nullable=True),
         sa.Column('classifier', sa.String(length=36), nullable=True),
         sa.Column('servicechain_spec', sa.String(length=36), nullable=True),
-        #FixMe(Magesh) Deletes the instances table itself !!!
-        #sa.ForeignKeyConstraint(['provider_epg'], ['gp_endpoint_groups.id'],
-        #                        ondelete='CASCADE'),
-        #sa.ForeignKeyConstraint(['consumer_epg'], ['gp_endpoint_groups.id'],
-        #                        ondelete='CASCADE'),
-        #sa.ForeignKeyConstraint(['classifier'], ['gp_policy_classifiers.id'],
+        # FixMe(Magesh) Deletes the instances table itself !!!
+        # sa.ForeignKeyConstraint(['provider_epg'],
+        #                         ['gp_policy_target_groups.id'],
+        #                         ondelete='CASCADE'),
+        # sa.ForeignKeyConstraint(['consumer_epg'],
+        #                         ['gp_policy_target_groups.id'],
+        #                         ondelete='CASCADE'),
+        # sa.ForeignKeyConstraint(['classifier'], ['gp_policy_classifiers.id'],
         #                        ondelete='CASCADE'),
         sa.ForeignKeyConstraint(['servicechain_spec'], ['sc_specs.id']),
         sa.PrimaryKeyConstraint('id')
