@@ -32,10 +32,10 @@ from gbp.neutron.services.grouppolicy.drivers import resource_mapping as api
 LOG = logging.getLogger(__name__)
 
 
-class L2PolicyMultipleEndpointGroupNotSupportedOnApicDriver(
+class L2PolicyMultiplePolicyTargetGroupNotSupportedOnApicDriver(
         gpexc.GroupPolicyBadRequest):
-    message = _("An L2 policy can't have multiple endpoint groups on APIC "
-                "GBP driver.")
+    message = _("An L2 policy can't have multiple policy target groups on "
+                "APIC GBP driver.")
 
 
 class RedirectActionNotSupportedOnApicDriver(gpexc.GroupPolicyBadRequest):
@@ -108,48 +108,49 @@ class ApicMappingDriver(api.ResourceMappingDriver):
         port_id = (kwargs.get('port_id') or
                    self._core_plugin._device_to_port_id(kwargs['device']))
         port = self._core_plugin.get_port(context, port_id)
-        # retrieve EPG and network from a given Port
-        if not kwargs.get('endpoint'):
-            epg, network = self._port_to_epg_network(context, port,
+        # retrieve PTG and network from a given Port
+        if not kwargs.get('policy_target'):
+            ptg, network = self._port_to_ptg_network(context, port,
                                                      kwargs['host'])
-            if not epg:
+            if not ptg:
                 return
         else:
-            ep = kwargs['endpoint']
-            epg = self.gbp_plugin.get_endpoint_group(context,
-                                                     ep['endpoint_group_id'])
-            network = self._l2p_id_to_network(context, epg['l2_policy_id'])
+            pt = kwargs['policy_target']
+            ptg = self.gbp_plugin.get_policy_target_group(
+                context, pt['policy_target_group_id'])
+            network = self._l2p_id_to_network(context, ptg['l2_policy_id'])
 
         return {'port_id': port_id,
                 'mac_address': port['mac_address'],
-                'epg_id': epg['id'],
+                'ptg_id': ptg['id'],
                 'segmentation_id': network[pn.SEGMENTATION_ID],
                 'network_type': network[pn.NETWORK_TYPE],
-                'l2_policy_id': epg['l2_policy_id'],
+                'l2_policy_id': ptg['l2_policy_id'],
                 'tenant_id': port['tenant_id'],
                 'host': port['binding:host_id']
                 }
 
-    def create_dhcp_endpoint_if_needed(self, plugin_context, port):
+    def create_dhcp_policy_target_if_needed(self, plugin_context, port):
         session = plugin_context.session
         if (self._port_is_owned(session, port['id'])):
             # Nothing to do
             return
 
-        # Retrieve EPG
+        # Retrieve PTG
         filters = {'network_id': [port['network_id']]}
-        epgs = self.gbp_plugin.get_endpoint_groups(plugin_context,
-                                                   filters=filters)
-        if epgs:
-            epg = epgs[0]
-            # Create Endpoint
-            attrs = {'endpoint':
+        ptgs = self.gbp_plugin.get_policy_target_groups(
+            plugin_context, filters=filters)
+        if ptgs:
+            ptg = ptgs[0]
+            # Create PolicyTarget
+            attrs = {'policy_target':
                      {'tenant_id': port['tenant_id'],
-                      'name': 'dhcp-%s' % epg['id'],
-                      'description': _("Implicitly created DHCP endpoint"),
-                      'endpoint_group_id': epg['id'],
+                      'name': 'dhcp-%s' % ptg['id'],
+                      'description': _("Implicitly created DHCP policy "
+                                       "target"),
+                      'policy_target_group_id': ptg['id'],
                       'port_id': port['id']}}
-            self.gbp_plugin.create_endpoint(plugin_context, attrs)
+            self.gbp_plugin.create_policy_target(plugin_context, attrs)
         sg_id = self._ensure_default_security_group(plugin_context,
                                                     port['tenant_id'])
         data = {'port': {'security_groups': [sg_id]}}
@@ -188,42 +189,46 @@ class ApicMappingDriver(api.ResourceMappingDriver):
             self.apic_manager.create_tenant_filter(policy_rule, owner=tenant,
                                                    **attrs)
 
-    def create_contract_postcommit(self, context):
+    def create_policy_rule_set_postcommit(self, context):
         # Create APIC contract
         tenant = self.name_mapper.tenant(context, context.current['tenant_id'])
-        contract = self.name_mapper.contract(context, context.current['id'])
+        contract = self.name_mapper.policy_rule_set(context,
+                                                    context.current['id'])
         with self.apic_manager.apic.transaction(None) as trs:
-            self.apic_manager.create_contract(contract, owner=tenant,
-                                              transaction=trs)
-            self._apply_contract_rules(context, context.current,
-                                       context.current['policy_rules'],
-                                       transaction=trs)
+            self.apic_manager.create_contract(
+                contract, owner=tenant, transaction=trs)
+            self._apply_policy_rule_set_rules(
+                context, context.current, context.current['policy_rules'],
+                transaction=trs)
 
-    def create_endpoint_postcommit(self, context):
+    def create_policy_target_postcommit(self, context):
         # The path needs to be created at bind time, this will be taken
         # care by the GBP ML2 apic driver.
-        super(ApicMappingDriver, self).create_endpoint_postcommit(context)
-        self._manage_endpoint_port(context._plugin_context, context.current)
+        super(ApicMappingDriver, self).create_policy_target_postcommit(context)
+        self._manage_policy_target_port(
+            context._plugin_context, context.current)
 
-    def create_endpoint_group_postcommit(self, context):
-        super(ApicMappingDriver, self).create_endpoint_group_postcommit(
+    def create_policy_target_group_postcommit(self, context):
+        super(ApicMappingDriver, self).create_policy_target_group_postcommit(
             context)
         tenant = self.name_mapper.tenant(context, context.current['tenant_id'])
         l2_policy = self.name_mapper.l2_policy(context,
                                                context.current['l2_policy_id'])
-        epg = self.name_mapper.endpoint_group(context, context.current['id'])
+        ptg = self.name_mapper.policy_target_group(context,
+                                                   context.current['id'])
 
         with self.apic_manager.apic.transaction(None) as trs:
-            self.apic_manager.ensure_epg_created(tenant, epg,
+            self.apic_manager.ensure_epg_created(tenant, ptg,
                                                  bd_name=l2_policy)
             subnets = self._subnet_ids_to_objects(context._plugin_context,
                                                   context.current['subnets'])
-            self._manage_epg_subnets(context._plugin_context, context.current,
+            self._manage_ptg_subnets(context._plugin_context, context.current,
                                      subnets, [], transaction=trs)
-            self._manage_epg_contracts(
+            self._manage_ptg_policy_rule_sets(
                 context._plugin_context, context.current,
-                context.current['provided_contracts'],
-                context.current['consumed_contracts'], [], [], transaction=trs)
+                context.current['provided_policy_rule_sets'],
+                context.current['consumed_policy_rule_sets'], [], [],
+                transaction=trs)
 
     def create_l2_policy_postcommit(self, context):
         super(ApicMappingDriver, self).create_l2_policy_postcommit(context)
@@ -249,37 +254,39 @@ class ApicMappingDriver(api.ResourceMappingDriver):
                                                    context.current['id'])
         self.apic_manager.delete_tenant_filter(policy_rule, owner=tenant)
 
-    def delete_contract_precommit(self, context):
+    def delete_policy_rule_set_precommit(self, context):
         # Intercept Parent Call
         pass
 
-    def delete_contract_postcommit(self, context):
+    def delete_policy_rule_set_postcommit(self, context):
         # TODO(ivar): disassociate EPGs to avoid reference leak
         tenant = self.name_mapper.tenant(context, context.current['tenant_id'])
-        contract = self.name_mapper.contract(context, context.current['id'])
-        self.apic_manager.delete_contract(contract, owner=tenant)
+        policy_rule_set = self.name_mapper.policy_rule_set(
+            context, context.current['id'])
+        self.apic_manager.delete_contract(policy_rule_set, owner=tenant)
 
-    def delete_endpoint_postcommit(self, context):
+    def delete_policy_target_postcommit(self, context):
         port = self._core_plugin.get_port(context._plugin_context,
                                           context.current['port_id'])
         if port['binding:host_id']:
             self.process_path_deletion(context._plugin_context, port,
-                                       endpoint=context.current)
+                                       policy_target=context.current)
         # Delete Neutron's port
-        super(ApicMappingDriver, self).delete_endpoint_postcommit(context)
+        super(ApicMappingDriver, self).delete_policy_target_postcommit(context)
 
-    def delete_endpoint_group_postcommit(self, context):
+    def delete_policy_target_group_postcommit(self, context):
         if context.current['subnets']:
             subnets = self._subnet_ids_to_objects(context._plugin_context,
                                                   context.current['subnets'])
-            self._manage_epg_subnets(context._plugin_context, context.current,
+            self._manage_ptg_subnets(context._plugin_context, context.current,
                                      [], subnets)
         for subnet_id in context.current['subnets']:
             self._cleanup_subnet(context._plugin_context, subnet_id, None)
         tenant = self.name_mapper.tenant(context, context.current['tenant_id'])
-        epg = self.name_mapper.endpoint_group(context, context.current['id'])
+        ptg = self.name_mapper.policy_target_group(context,
+                                                   context.current['id'])
 
-        self.apic_manager.delete_epg_for_network(tenant, epg)
+        self.apic_manager.delete_epg_for_network(tenant, ptg)
 
     def delete_l2_policy_postcommit(self, context):
         super(ApicMappingDriver, self).delete_l2_policy_postcommit(context)
@@ -294,7 +301,7 @@ class ApicMappingDriver(api.ResourceMappingDriver):
 
         self.apic_manager.ensure_context_deleted(tenant, l3_policy)
 
-    def update_endpoint_postcommit(self, context):
+    def update_policy_target_postcommit(self, context):
         # TODO(ivar): redo binding procedure if the EPG is modified,
         # not doable unless driver extension framework is in place
         pass
@@ -303,21 +310,29 @@ class ApicMappingDriver(api.ResourceMappingDriver):
         # TODO(ivar): add support for action update on policy rules
         raise PolicyRuleUpdateNotSupportedOnApicDriver()
 
-    def update_endpoint_group_postcommit(self, context):
+    def update_policy_target_group_postcommit(self, context):
         # TODO(ivar): refactor parent to avoid code duplication
-        orig_provided_contracts = context.original['provided_contracts']
-        curr_provided_contracts = context.current['provided_contracts']
-        orig_consumed_contracts = context.original['consumed_contracts']
-        curr_consumed_contracts = context.current['consumed_contracts']
+        orig_provided_policy_rule_sets = context.original[
+            'provided_policy_rule_sets']
+        curr_provided_policy_rule_sets = context.current[
+            'provided_policy_rule_sets']
+        orig_consumed_policy_rule_sets = context.original[
+            'consumed_policy_rule_sets']
+        curr_consumed_policy_rule_sets = context.current[
+            'consumed_policy_rule_sets']
 
-        new_provided_contracts = list(set(curr_provided_contracts) -
-                                      set(orig_provided_contracts))
-        new_consumed_contracts = list(set(curr_consumed_contracts) -
-                                      set(orig_consumed_contracts))
-        removed_provided_contracts = list(set(orig_provided_contracts) -
-                                          set(curr_provided_contracts))
-        removed_consumed_contracts = list(set(orig_consumed_contracts) -
-                                          set(curr_consumed_contracts))
+        new_provided_policy_rule_sets = list(
+            set(curr_provided_policy_rule_sets) - set(
+                orig_provided_policy_rule_sets))
+        new_consumed_policy_rule_sets = list(
+            set(curr_consumed_policy_rule_sets) - set(
+                orig_consumed_policy_rule_sets))
+        removed_provided_policy_rule_sets = list(
+            set(orig_provided_policy_rule_sets) - set(
+                curr_provided_policy_rule_sets))
+        removed_consumed_policy_rule_sets = list(
+            set(orig_consumed_policy_rule_sets) - set(
+                curr_consumed_policy_rule_sets))
 
         orig_subnets = context.original['subnets']
         curr_subnets = context.current['subnets']
@@ -325,67 +340,69 @@ class ApicMappingDriver(api.ResourceMappingDriver):
         removed_subnets = list(set(orig_subnets) - set(curr_subnets))
 
         with self.apic_manager.apic.transaction(None) as trs:
-            self._manage_epg_contracts(
+            self._manage_ptg_policy_rule_sets(
                 context._plugin_context, context.current,
-                new_provided_contracts, new_consumed_contracts,
-                removed_provided_contracts, removed_consumed_contracts,
-                transaction=trs)
+                new_provided_policy_rule_sets, new_consumed_policy_rule_sets,
+                removed_provided_policy_rule_sets,
+                removed_consumed_policy_rule_sets, transaction=trs)
 
             new_subnets = self._subnet_ids_to_objects(
                 context._plugin_context, new_subnets)
             removed_subnets = self._subnet_ids_to_objects(
                 context._plugin_context, removed_subnets)
 
-            self._manage_epg_subnets(context._plugin_context, context.current,
+            self._manage_ptg_subnets(context._plugin_context, context.current,
                                      new_subnets, removed_subnets)
 
     def process_subnet_changed(self, context, old, new):
         if old['gateway_ip'] != new['gateway_ip']:
-            epg = self._subnet_to_epg(context, new['id'])
-            if epg:
+            ptg = self._subnet_to_ptg(context, new['id'])
+            if ptg:
                 # Is GBP owned, reflect on APIC
-                self._manage_epg_subnets(context, epg, [new], [old])
+                self._manage_ptg_subnets(context, ptg, [new], [old])
 
     def process_port_changed(self, context, old, new):
         # Port's EP can't change unless EP is deleted/created, therefore the
         # binding will mostly be the same except for the host
         if old['binding:host_id'] != new['binding:host_id']:
-            ep = self._port_id_to_ep(context, new['id'])
-            if ep:
+            pt = self._port_id_to_pt(context, new['id'])
+            if pt:
                 if old['binding:host_id']:
                     self.process_path_deletion(context, old)
-                self._manage_endpoint_port(context, ep)
+                self._manage_policy_target_port(context, pt)
 
-    def process_path_deletion(self, context, port, endpoint=None):
+    def process_path_deletion(self, context, port, policy_target=None):
         port_details = self.get_gbp_details(
             context, port_id=port['id'], host=port['binding:host_id'],
-            endpoint=endpoint)
+            policy_target=policy_target)
         self._delete_path_if_last(context, port_details)
 
-    def _apply_contract_rules(self, context, contract, policy_rules,
-                              transaction=None):
+    def _apply_policy_rule_set_rules(
+            self, context, policy_rule_set, policy_rules, transaction=None):
         # TODO(ivar): refactor parent to avoid code duplication
-        if contract['parent_id']:
-            parent = context._plugin.get_contract(
-                context._plugin_context, contract['parent_id'])
+        if policy_rule_set['parent_id']:
+            parent = context._plugin.get_policy_rule_set(
+                context._plugin_context, policy_rule_set['parent_id'])
             policy_rules = policy_rules & set(parent['policy_rules'])
         # Don't add rules unallowed by the parent
-        self._manage_contract_rules(context, contract, policy_rules,
-                                    transaction=transaction)
+        self._manage_policy_rule_set_rules(
+            context, policy_rule_set, policy_rules, transaction=transaction)
 
-    def _remove_contract_rules(self, context, contract, policy_rules,
-                               transaction=None):
-        self._manage_contract_rules(context, contract, policy_rules,
-                                    unset=True, transaction=transaction)
+    def _remove_policy_rule_set_rules(
+            self, context, policy_rule_set, policy_rules, transaction=None):
+        self._manage_policy_rule_set_rules(
+            context, policy_rule_set, policy_rules, unset=True,
+            transaction=transaction)
 
-    def _manage_contract_rules(self, context, contract, policy_rules,
-                               unset=False, transaction=None):
+    def _manage_policy_rule_set_rules(
+            self, context, policy_rule_set, policy_rules, unset=False,
+            transaction=None):
         # REVISIT(ivar): figure out what should be moved in apicapi instead
         if policy_rules:
             tenant = self.name_mapper.tenant(context,
                                              context.current['tenant_id'])
-            contract = self.name_mapper.contract(context,
-                                                 context.current['id'])
+            policy_rule_set = self.name_mapper.policy_rule_set(
+                context, context.current['id'])
             in_dir = [g_const.GP_DIRECTION_BI, g_const.GP_DIRECTION_IN]
             out_dir = [g_const.GP_DIRECTION_BI, g_const.GP_DIRECTION_OUT]
             filters = {'id': policy_rules}
@@ -395,20 +412,21 @@ class ApicMappingDriver(api.ResourceMappingDriver):
                 classifier = context._plugin.get_policy_classifier(
                     context._plugin_context, rule['policy_classifier_id'])
                 with self.apic_manager.apic.transaction(transaction) as trs:
+                    mgr = self.apic_manager
                     if classifier['direction'] in in_dir:
                         # Contract and subject are the same thing in this case
-                        self.apic_manager.manage_contract_subject_in_filter(
-                            contract, contract, policy_rule, owner=tenant,
-                            transaction=trs, unset=unset)
+                        mgr.manage_contract_subject_in_filter(
+                            policy_rule_set, policy_rule_set, policy_rule,
+                            owner=tenant, transaction=trs, unset=unset)
                     if classifier['direction'] in out_dir:
                         # Contract and subject are the same thing in this case
-                        self.apic_manager.manage_contract_subject_out_filter(
-                            contract, contract, policy_rule, owner=tenant,
-                            transaction=trs, unset=unset)
+                        mgr.manage_contract_subject_out_filter(
+                            policy_rule_set, policy_rule_set, policy_rule,
+                            owner=tenant, transaction=trs, unset=unset)
 
     @lockutils.synchronized('apic-portlock')
-    def _manage_endpoint_port(self, plugin_context, ep):
-        port = self._core_plugin.get_port(plugin_context, ep['port_id'])
+    def _manage_policy_target_port(self, plugin_context, pt):
+        port = self._core_plugin.get_port(plugin_context, pt['port_id'])
         if port.get('binding:host_id'):
             port_details = self.get_gbp_details(
                 plugin_context, port_id=port['id'],
@@ -419,28 +437,28 @@ class ApicMappingDriver(api.ResourceMappingDriver):
                 plugin_context._plugin_context = plugin_context
                 tenant_id = self.name_mapper.tenant(plugin_context,
                                                     port['tenant_id'])
-                epg = self.name_mapper.endpoint_group(
-                    plugin_context, port_details['epg_id'])
+                ptg = self.name_mapper.policy_target_group(
+                    plugin_context, port_details['ptg_id'])
                 bd = self.name_mapper.l2_policy(
                     plugin_context, port_details['l2_policy_id'])
                 seg = port_details['segmentation_id']
                 # Create a static path attachment for the host/epg/switchport
                 with self.apic_manager.apic.transaction() as trs:
                     self.apic_manager.ensure_path_created_for_port(
-                        tenant_id, epg, port['binding:host_id'], seg,
+                        tenant_id, ptg, port['binding:host_id'], seg,
                         bd_name=bd,
                         transaction=trs)
 
-    def _manage_epg_contracts(self, plugin_context, epg, added_provided,
-                              added_consumed, removed_provided,
-                              removed_consumed, transaction=None):
+    def _manage_ptg_policy_rule_sets(
+            self, plugin_context, ptg, added_provided, added_consumed,
+            removed_provided, removed_consumed, transaction=None):
         # TODO(ivar): change APICAPI to not expect a resource context
         plugin_context._plugin = self.gbp_plugin
         plugin_context._plugin_context = plugin_context
         mapped_tenant = self.name_mapper.tenant(plugin_context,
-                                                epg['tenant_id'])
-        mapped_epg = self.name_mapper.endpoint_group(plugin_context,
-                                                     epg['id'])
+                                                ptg['tenant_id'])
+        mapped_ptg = self.name_mapper.policy_target_group(plugin_context,
+                                                          ptg['id'])
         provided = [added_provided, removed_provided]
         consumed = [added_consumed, removed_consumed]
         methods = [self.apic_manager.set_contract_for_epg,
@@ -448,24 +466,24 @@ class ApicMappingDriver(api.ResourceMappingDriver):
         with self.apic_manager.apic.transaction(transaction) as trs:
             for x in xrange(len(provided)):
                 for c in provided[x]:
-                    c = self.name_mapper.contract(plugin_context, c)
-                    methods[x](mapped_tenant, mapped_epg, c, provider=True,
+                    c = self.name_mapper.policy_rule_set(plugin_context, c)
+                    methods[x](mapped_tenant, mapped_ptg, c, provider=True,
                                transaction=trs)
             for x in xrange(len(consumed)):
                 for c in consumed[x]:
-                    c = self.name_mapper.contract(plugin_context, c)
-                    methods[x](mapped_tenant, mapped_epg, c, provider=False,
+                    c = self.name_mapper.policy_rule_set(plugin_context, c)
+                    methods[x](mapped_tenant, mapped_ptg, c, provider=False,
                                transaction=trs)
 
-    def _manage_epg_subnets(self, plugin_context, epg, added_subnets,
+    def _manage_ptg_subnets(self, plugin_context, ptg, added_subnets,
                             removed_subnets, transaction=None):
         # TODO(ivar): change APICAPI to not expect a resource context
         plugin_context._plugin = self.gbp_plugin
         plugin_context._plugin_context = plugin_context
         mapped_tenant = self.name_mapper.tenant(plugin_context,
-                                                epg['tenant_id'])
+                                                ptg['tenant_id'])
         mapped_l2p = self.name_mapper.l2_policy(plugin_context,
-                                                epg['l2_policy_id'])
+                                                ptg['l2_policy_id'])
         subnets = [added_subnets, removed_subnets]
         methods = [self.apic_manager.ensure_subnet_created_on_apic,
                    self.apic_manager.ensure_subnet_deleted_on_apic]
@@ -483,10 +501,10 @@ class ApicMappingDriver(api.ResourceMappingDriver):
                     models.PortBinding.port_id != port_info['port_id']).count()
 
     @lockutils.synchronized('apic-portlock')
-    def _delete_port_path(self, context, atenant_id, epg, port_info):
+    def _delete_port_path(self, context, atenant_id, ptg, port_info):
         if not self._get_active_path_count(context, port_info):
             self.apic_manager.ensure_path_deleted_for_port(
-                atenant_id, epg, port_info['host'])
+                atenant_id, ptg, port_info['host'])
 
     def _delete_path_if_last(self, context, port_info):
         if not self._get_active_path_count(context, port_info):
@@ -495,8 +513,9 @@ class ApicMappingDriver(api.ResourceMappingDriver):
             context._plugin_context = context
             atenant_id = self.name_mapper.tenant(context,
                                                  port_info['tenant_id'])
-            epg = self.name_mapper.endpoint_group(context, port_info['epg_id'])
-            self._delete_port_path(context, atenant_id, epg, port_info)
+            ptg = self.name_mapper.policy_target_group(context,
+                                                       port_info['ptg_id'])
+            self._delete_port_path(context, atenant_id, ptg, port_info)
 
     def _ensure_default_security_group(self, context, tenant_id):
         filters = {'name': ['gbp_apic_default'], 'tenant_id': [tenant_id]}
@@ -522,10 +541,10 @@ class ApicMappingDriver(api.ResourceMappingDriver):
         else:
             return default_group[0]['id']
 
-    def _assoc_epg_sg_to_ep(self, context, ep_id, epg_id):
+    def _assoc_ptg_sg_to_pt(self, context, pt_id, ptg_id):
         pass
 
-    def _handle_contracts(self, context):
+    def _handle_policy_rule_sets(self, context):
         pass
 
     def _gateway_ip(self, subnet):
@@ -536,26 +555,26 @@ class ApicMappingDriver(api.ResourceMappingDriver):
         return [x for x in self._core_plugin.get_subnets(
                 plugin_context, filters={'id': ids})]
 
-    def _port_to_epg_network(self, context, port, host=None):
-        epg = self._port_id_to_epg(context, port['id'])
-        if not epg:
+    def _port_to_ptg_network(self, context, port, host=None):
+        ptg = self._port_id_to_ptg(context, port['id'])
+        if not ptg:
             # Not GBP port
             return None, None
-        network = self._l2p_id_to_network(context, epg['l2_policy_id'])
-        return epg, network
+        network = self._l2p_id_to_network(context, ptg['l2_policy_id'])
+        return ptg, network
 
-    def _port_id_to_ep(self, context, port_id):
-        ep = (context.session.query(gpdb.EndpointMapping).
+    def _port_id_to_pt(self, context, port_id):
+        pt = (context.session.query(gpdb.PolicyTargetMapping).
               filter_by(port_id=port_id).first())
-        if ep:
+        if pt:
             db_utils = gpdb.GroupPolicyMappingDbPlugin()
-            return db_utils._make_endpoint_dict(ep)
+            return db_utils._make_policy_target_dict(pt)
 
-    def _port_id_to_epg(self, context, port_id):
-        ep = self._port_id_to_ep(context, port_id)
-        if ep:
-            return self.gbp_plugin.get_endpoint_group(
-                context, ep['endpoint_group_id'])
+    def _port_id_to_ptg(self, context, port_id):
+        pt = self._port_id_to_pt(context, port_id)
+        if pt:
+            return self.gbp_plugin.get_policy_target_group(
+                context, pt['policy_target_group_id'])
         return
 
     def _l2p_id_to_network(self, context, l2p_id):
@@ -567,12 +586,12 @@ class ApicMappingDriver(api.ResourceMappingDriver):
             context, filters={'network_id': [network_id]})
         return l2ps[0] if l2ps else None
 
-    def _subnet_to_epg(self, context, subnet_id):
-        epg = (context.session.query(gpdb.EndpointGroupMapping).
-               join(gpdb.EndpointGroupMapping.subnets).
-               filter(gpdb.EndpointGroupSubnetAssociation.subnet_id ==
+    def _subnet_to_ptg(self, context, subnet_id):
+        ptg = (context.session.query(gpdb.PolicyTargetGroupMapping).
+               join(gpdb.PolicyTargetGroupMapping.subnets).
+               filter(gpdb.PTGToSubnetAssociation.subnet_id ==
                       subnet_id).
                first())
-        if epg:
+        if ptg:
             db_utils = gpdb.GroupPolicyMappingDbPlugin()
-            return db_utils._make_endpoint_group_dict(epg)
+            return db_utils._make_policy_target_group_dict(ptg)
