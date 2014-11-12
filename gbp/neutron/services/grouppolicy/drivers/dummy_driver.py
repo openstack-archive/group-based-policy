@@ -22,51 +22,51 @@ class NoopDriver(api.PolicyDriver):
         pass
 
     @log.log
-    def create_endpoint_precommit(self, context):
+    def create_policy_target_precommit(self, context):
         pass
 
     @log.log
-    def create_endpoint_postcommit(self, context):
+    def create_policy_target_postcommit(self, context):
         pass
 
     @log.log
-    def update_endpoint_precommit(self, context):
+    def update_policy_target_precommit(self, context):
         pass
 
     @log.log
-    def update_endpoint_postcommit(self, context):
+    def update_policy_target_postcommit(self, context):
         pass
 
     @log.log
-    def delete_endpoint_precommit(self, context):
+    def delete_policy_target_precommit(self, context):
         pass
 
     @log.log
-    def delete_endpoint_postcommit(self, context):
+    def delete_policy_target_postcommit(self, context):
         pass
 
     @log.log
-    def create_endpoint_group_precommit(self, context):
+    def create_policy_target_group_precommit(self, context):
         pass
 
     @log.log
-    def create_endpoint_group_postcommit(self, context):
+    def create_policy_target_group_postcommit(self, context):
         pass
 
     @log.log
-    def update_endpoint_group_precommit(self, context):
+    def update_policy_target_group_precommit(self, context):
         pass
 
     @log.log
-    def update_endpoint_group_postcommit(self, context):
+    def update_policy_target_group_postcommit(self, context):
         pass
 
     @log.log
-    def delete_endpoint_group_precommit(self, context):
+    def delete_policy_target_group_precommit(self, context):
         pass
 
     @log.log
-    def delete_endpoint_group_postcommit(self, context):
+    def delete_policy_target_group_postcommit(self, context):
         pass
 
     @log.log
@@ -214,25 +214,25 @@ class NoopDriver(api.PolicyDriver):
         pass
 
     @log.log
-    def create_contract_precommit(self, context):
+    def create_policy_rule_set_precommit(self, context):
         pass
 
     @log.log
-    def create_contract_postcommit(self, context):
+    def create_policy_rule_set_postcommit(self, context):
         pass
 
     @log.log
-    def update_contract_precommit(self, context):
+    def update_policy_rule_set_precommit(self, context):
         pass
 
     @log.log
-    def update_contract_postcommit(self, context):
+    def update_policy_rule_set_postcommit(self, context):
         pass
 
     @log.log
-    def delete_contract_precommit(self, context):
+    def delete_policy_rule_set_precommit(self, context):
         pass
 
     @log.log
-    def delete_contract_postcommit(self, context):
+    def delete_policy_rule_set_postcommit(self, context):
         pass

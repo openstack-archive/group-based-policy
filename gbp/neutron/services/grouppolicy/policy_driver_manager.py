@@ -32,10 +32,10 @@ class PolicyDriverManager(stevedore.named.NamedExtensionManager):
     resources.
 
     precommit operation:
-    Notifies all policy drivers during endpoint creation.
+    Notifies all policy drivers during policy_target creation.
 
     Raises neutron.services.grouppolicy.common.GroupPolicyDriverError
-    if any policy driver create_endpoint_precommit call fails.
+    if any policy driver create_policy_target_precommit call fails.
 
     Called within the database transaction. If a policy driver
     raises an exception, then a GroupPolicyDriverError is propogated
@@ -43,14 +43,14 @@ class PolicyDriverManager(stevedore.named.NamedExtensionManager):
     that all policy drivers are called in this case.
 
     postcommit operation:
-    Notifies all policy drivers after endpoint creation.
+    Notifies all policy drivers after policy_target creation.
 
     Raises neutron.services.grouppolicy.common.GroupPolicyDriverError
-    if any policy driver create_endpoint_postcommit call fails.
+    if any policy driver create_policy_target_postcommit call fails.
 
     Called after the database transaction. If a policy driver
     raises an exception, then a GroupPolicyDriverError is propagated
-    to the caller, where the endpoint will be deleted, triggering
+    to the caller, where the policy_target will be deleted, triggering
     any required cleanup. There is no guarantee that all policy
     drivers are called in this case.
     """
@@ -134,42 +134,42 @@ class PolicyDriverManager(stevedore.named.NamedExtensionManager):
                 method=method_name
             )
 
-    def create_endpoint_precommit(self, context):
-        self._call_on_drivers("create_endpoint_precommit", context)
+    def create_policy_target_precommit(self, context):
+        self._call_on_drivers("create_policy_target_precommit", context)
 
-    def create_endpoint_postcommit(self, context):
-        self._call_on_drivers("create_endpoint_postcommit", context)
+    def create_policy_target_postcommit(self, context):
+        self._call_on_drivers("create_policy_target_postcommit", context)
 
-    def update_endpoint_precommit(self, context):
-        self._call_on_drivers("update_endpoint_precommit", context)
+    def update_policy_target_precommit(self, context):
+        self._call_on_drivers("update_policy_target_precommit", context)
 
-    def update_endpoint_postcommit(self, context):
-        self._call_on_drivers("update_endpoint_postcommit", context)
+    def update_policy_target_postcommit(self, context):
+        self._call_on_drivers("update_policy_target_postcommit", context)
 
-    def delete_endpoint_precommit(self, context):
-        self._call_on_drivers("delete_endpoint_precommit", context)
+    def delete_policy_target_precommit(self, context):
+        self._call_on_drivers("delete_policy_target_precommit", context)
 
-    def delete_endpoint_postcommit(self, context):
-        self._call_on_drivers("delete_endpoint_postcommit", context,
+    def delete_policy_target_postcommit(self, context):
+        self._call_on_drivers("delete_policy_target_postcommit", context,
                               continue_on_failure=True)
 
-    def create_endpoint_group_precommit(self, context):
-        self._call_on_drivers("create_endpoint_group_precommit", context)
+    def create_policy_target_group_precommit(self, context):
+        self._call_on_drivers("create_policy_target_group_precommit", context)
 
-    def create_endpoint_group_postcommit(self, context):
-        self._call_on_drivers("create_endpoint_group_postcommit", context)
+    def create_policy_target_group_postcommit(self, context):
+        self._call_on_drivers("create_policy_target_group_postcommit", context)
 
-    def update_endpoint_group_precommit(self, context):
-        self._call_on_drivers("update_endpoint_group_precommit", context)
+    def update_policy_target_group_precommit(self, context):
+        self._call_on_drivers("update_policy_target_group_precommit", context)
 
-    def update_endpoint_group_postcommit(self, context):
-        self._call_on_drivers("update_endpoint_group_postcommit", context)
+    def update_policy_target_group_postcommit(self, context):
+        self._call_on_drivers("update_policy_target_group_postcommit", context)
 
-    def delete_endpoint_group_precommit(self, context):
-        self._call_on_drivers("delete_endpoint_group_precommit", context)
+    def delete_policy_target_group_precommit(self, context):
+        self._call_on_drivers("delete_policy_target_group_precommit", context)
 
-    def delete_endpoint_group_postcommit(self, context):
-        self._call_on_drivers("delete_endpoint_group_postcommit", context,
+    def delete_policy_target_group_postcommit(self, context):
+        self._call_on_drivers("delete_policy_target_group_postcommit", context,
                               continue_on_failure=True)
 
     def create_l2_policy_precommit(self, context):
@@ -292,21 +292,21 @@ class PolicyDriverManager(stevedore.named.NamedExtensionManager):
         self._call_on_drivers("delete_policy_rule_postcommit", context,
                               continue_on_failure=True)
 
-    def create_contract_precommit(self, context):
-        self._call_on_drivers("create_contract_precommit", context)
+    def create_policy_rule_set_precommit(self, context):
+        self._call_on_drivers("create_policy_rule_set_precommit", context)
 
-    def create_contract_postcommit(self, context):
-        self._call_on_drivers("create_contract_postcommit", context)
+    def create_policy_rule_set_postcommit(self, context):
+        self._call_on_drivers("create_policy_rule_set_postcommit", context)
 
-    def update_contract_precommit(self, context):
-        self._call_on_drivers("update_contract_precommit", context)
+    def update_policy_rule_set_precommit(self, context):
+        self._call_on_drivers("update_policy_rule_set_precommit", context)
 
-    def update_contract_postcommit(self, context):
-        self._call_on_drivers("update_contract_postcommit", context)
+    def update_policy_rule_set_postcommit(self, context):
+        self._call_on_drivers("update_policy_rule_set_postcommit", context)
 
-    def delete_contract_precommit(self, context):
-        self._call_on_drivers("delete_contract_precommit", context)
+    def delete_policy_rule_set_precommit(self, context):
+        self._call_on_drivers("delete_policy_rule_set_precommit", context)
 
-    def delete_contract_postcommit(self, context):
-        self._call_on_drivers("delete_contract_postcommit", context,
+    def delete_policy_rule_set_postcommit(self, context):
+        self._call_on_drivers("delete_policy_rule_set_postcommit", context,
                               continue_on_failure=True)

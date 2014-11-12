@@ -33,13 +33,13 @@ opts = [
     cfg.StrOpt('default_ip_pool',
                default='172.16.0.0/12',
                help=_("IP pool for implicitly created default L3 policies, "
-                      "from which subnets are allocated for endpoint "
+                      "from which subnets are allocated for policy target "
                       "groups.")),
     cfg.IntOpt('default_subnet_prefix_length',
                default=26,
                help=_("Subnet prefix length for implicitly created default L3 "
                       "polices, controlling size of subnets allocated for "
-                      "endpoint groups.")),
+                      "policy target groups.")),
 ]
 
 cfg.CONF.register_opts(opts, "group_policy_implicit_policy")
@@ -69,7 +69,7 @@ class ImplicitPolicyDriver(api.PolicyDriver):
     """Implicit Policy driver for Group Policy plugin.
 
     This driver ensures that the l2_policy_id attribute of
-    EndpointGroup references an L2Policy instance and that the
+    PolicyTargetGroup references an L2Policy instance and that the
     l3_policy_id attribute of L2Policy references an L3Policy instance
     when the default value of None is specified.
     """
@@ -83,12 +83,12 @@ class ImplicitPolicyDriver(api.PolicyDriver):
         self._default_subnet_prefix_length = gpip.default_subnet_prefix_length
 
     @log.log
-    def create_endpoint_group_postcommit(self, context):
+    def create_policy_target_group_postcommit(self, context):
         if not context.current['l2_policy_id']:
             self._use_implicit_l2_policy(context)
 
     @log.log
-    def update_endpoint_group_postcommit(self, context):
+    def update_policy_target_group_postcommit(self, context):
         old_l2p_id = context.original['l2_policy_id']
         new_l2p_id = context.current['l2_policy_id']
         if old_l2p_id != new_l2p_id:
@@ -97,7 +97,7 @@ class ImplicitPolicyDriver(api.PolicyDriver):
                 self._use_implicit_l2_policy(context)
 
     @log.log
-    def delete_endpoint_group_postcommit(self, context):
+    def delete_policy_target_group_postcommit(self, context):
         l2p_id = context.current['l2_policy_id']
         self._cleanup_l2_policy(context, l2p_id)
 

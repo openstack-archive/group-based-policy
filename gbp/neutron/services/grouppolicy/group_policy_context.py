@@ -20,59 +20,61 @@ class GroupPolicyContext(object):
         self._plugin_context = plugin_context
 
 
-class EndpointContext(GroupPolicyContext, api.EndpointContext):
+class PolicyTargetContext(GroupPolicyContext, api.PolicyTargetContext):
 
-    def __init__(self, plugin, plugin_context, endpoint,
-                 original_endpoint=None):
-        super(EndpointContext, self).__init__(plugin, plugin_context)
-        self._endpoint = endpoint
-        self._original_endpoint = original_endpoint
+    def __init__(self, plugin, plugin_context, policy_target,
+                 original_policy_target=None):
+        super(PolicyTargetContext, self).__init__(plugin, plugin_context)
+        self._policy_target = policy_target
+        self._original_policy_target = original_policy_target
 
     @property
     def current(self):
-        return self._endpoint
+        return self._policy_target
 
     @property
     def original(self):
-        return self._original_endpoint
+        return self._original_policy_target
 
     def set_port_id(self, port_id):
-        self._plugin._set_port_for_endpoint(
-            self._plugin_context, self._endpoint['id'], port_id)
-        self._endpoint['port_id'] = port_id
+        self._plugin._set_port_for_policy_target(
+            self._plugin_context, self._policy_target['id'], port_id)
+        self._policy_target['port_id'] = port_id
 
 
-class EndpointGroupContext(GroupPolicyContext, api.EndpointGroupContext):
+class PolicyTargetGroupContext(GroupPolicyContext,
+                               api.PolicyTargetGroupContext):
 
-    def __init__(self, plugin, plugin_context, endpoint_group,
-                 original_endpoint_group=None):
-        super(EndpointGroupContext, self).__init__(plugin, plugin_context)
-        self._endpoint_group = endpoint_group
-        self._original_endpoint_group = original_endpoint_group
+    def __init__(self, plugin, plugin_context, policy_target_group,
+                 original_policy_target_group=None):
+        super(PolicyTargetGroupContext, self).__init__(plugin, plugin_context)
+        self._policy_target_group = policy_target_group
+        self._original_policy_target_group = original_policy_target_group
 
     @property
     def current(self):
-        return self._endpoint_group
+        return self._policy_target_group
 
     @property
     def original(self):
-        return self._original_endpoint_group
+        return self._original_policy_target_group
 
     def set_l2_policy_id(self, l2_policy_id):
-        self._plugin._set_l2_policy_for_endpoint_group(
-            self._plugin_context, self._endpoint_group['id'], l2_policy_id)
-        self._endpoint_group['l2_policy_id'] = l2_policy_id
+        self._plugin._set_l2_policy_for_policy_target_group(
+            self._plugin_context, self._policy_target_group['id'],
+            l2_policy_id)
+        self._policy_target_group['l2_policy_id'] = l2_policy_id
 
     def set_network_service_policy_id(self, network_service_policy_id):
         nsp_id = network_service_policy_id
-        self._plugin._set_network_service_policy_for_endpoint_group(
-            self._plugin_context, self._endpoint_group['id'], nsp_id)
-        self._endpoint_group['network_service_policy_id'] = nsp_id
+        self._plugin._set_network_service_policy_for_policy_target_group(
+            self._plugin_context, self._policy_target_group['id'], nsp_id)
+        self._policy_target_group['network_service_policy_id'] = nsp_id
 
     def add_subnet(self, subnet_id):
-        subnets = self._plugin._add_subnet_to_endpoint_group(
-            self._plugin_context, self._endpoint_group['id'], subnet_id)
-        self._endpoint_group['subnets'] = subnets
+        subnets = self._plugin._add_subnet_to_policy_target_group(
+            self._plugin_context, self._policy_target_group['id'], subnet_id)
+        self._policy_target_group['subnets'] = subnets
 
 
 class L2PolicyContext(GroupPolicyContext, api.L2PolicyContext):
@@ -194,18 +196,18 @@ class PolicyRuleContext(GroupPolicyContext, api.PolicyRuleContext):
         return self._original_policy_rule
 
 
-class ContractContext(GroupPolicyContext, api.ContractContext):
+class PolicyRuleSetContext(GroupPolicyContext, api.PolicyRuleSetContext):
 
-    def __init__(self, plugin, plugin_context, contract,
-                 original_contract=None):
-        super(ContractContext, self).__init__(plugin, plugin_context)
-        self._contract = contract
-        self._original_contract = original_contract
+    def __init__(self, plugin, plugin_context, policy_rule_set,
+                 original_policy_rule_set=None):
+        super(PolicyRuleSetContext, self).__init__(plugin, plugin_context)
+        self._policy_rule_set = policy_rule_set
+        self._original_policy_rule_set = original_policy_rule_set
 
     @property
     def current(self):
-        return self._contract
+        return self._policy_rule_set
 
     @property
     def original(self):
-        return self._original_contract
+        return self._original_policy_rule_set

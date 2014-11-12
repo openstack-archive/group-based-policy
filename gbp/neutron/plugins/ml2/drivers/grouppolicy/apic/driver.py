@@ -38,7 +38,7 @@ class APICMechanismGBPDriver(api.MechanismDriver):
         # DHCP Ports are created implicitly by Neutron, need to inform GBP
         if (context.current.get('device_owner') ==
                 n_constants.DEVICE_OWNER_DHCP):
-            self.apic_gbp.create_dhcp_endpoint_if_needed(
+            self.apic_gbp.create_dhcp_policy_target_if_needed(
                 context._plugin_context, context.current)
 
     def update_port_postcommit(self, context):
