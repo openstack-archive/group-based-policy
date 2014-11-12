@@ -33,9 +33,8 @@ MAX_IPV6_SUBNET_PREFIX_LENGTH = 127
 class SpecNodeAssociation(model_base.BASEV2):
     """Models  many to many providing relation between Specs and Nodes."""
     __tablename__ = 'sc_spec_node_associations'
-    servicechain_spec = sa.Column(sa.String(36),
-                        sa.ForeignKey('sc_specs.id'),
-                        primary_key=True)
+    servicechain_spec = sa.Column(
+        sa.String(36), sa.ForeignKey('sc_specs.id'), primary_key=True)
     node_id = sa.Column(sa.String(36),
                         sa.ForeignKey('sc_nodes.id'),
                         primary_key=True)
@@ -61,18 +60,17 @@ class ServiceChainInstance(model_base.BASEV2, models_v2.HasId,
     name = sa.Column(sa.String(50))
     description = sa.Column(sa.String(255))
     config_param_values = sa.Column(sa.String(4096))
-    servicechain_spec = sa.Column(sa.String(36),
-                        sa.ForeignKey('sc_specs.id'),
-                        nullable=True)
-    provider_epg = sa.Column(sa.String(36),
-                             #FixMe(Magesh) Deletes the instances table itself
-                             #sa.ForeignKey('gp_endpoint_groups.id'),
+    servicechain_spec = sa.Column(
+        sa.String(36), sa.ForeignKey('sc_specs.id'), nullable=True)
+    provider_ptg = sa.Column(sa.String(36),
+                             # FixMe(Magesh) Deletes the instances table itself
+                             # sa.ForeignKey('gp_policy_target_groups.id'),
                              nullable=True)
-    consumer_epg = sa.Column(sa.String(36),
-                             #sa.ForeignKey('gp_endpoint_groups.id'),
+    consumer_ptg = sa.Column(sa.String(36),
+                             # sa.ForeignKey('gp_policy_target_groups.id'),
                              nullable=True)
     classifier = sa.Column(sa.String(36),
-                           #sa.ForeignKey('gp_policy_classifiers.id'),
+                           # sa.ForeignKey('gp_policy_classifiers.id'),
                            nullable=True)
 
 
@@ -120,7 +118,7 @@ class ServiceChainDbPlugin(schain.ServiceChainPluginBase,
             return self._get_by_id(context, ServiceChainInstance, instance_id)
         except exc.NoResultFound:
             raise schain.ServiceChainInstanceNotFound(
-                                        sc_instance_id=instance_id)
+                sc_instance_id=instance_id)
 
     def _make_sc_node_dict(self, sc_node, fields=None):
         res = {'id': sc_node['id'],
@@ -147,8 +145,8 @@ class ServiceChainDbPlugin(schain.ServiceChainPluginBase,
                'description': instance['description'],
                'config_param_values': instance['config_param_values'],
                'servicechain_spec': instance['servicechain_spec'],
-               'provider_epg': instance['provider_epg'],
-               'consumer_epg': instance['consumer_epg'],
+               'provider_ptg': instance['provider_ptg'],
+               'consumer_ptg': instance['consumer_ptg'],
                'classifier': instance['classifier']}
         return self._fields(res, fields)
 
@@ -249,7 +247,7 @@ class ServiceChainDbPlugin(schain.ServiceChainPluginBase,
                         spec_db.config_param_names = str(config_params.keys())
                     else:
                         config_param_names = ast.literal_eval(
-                                                spec_db.config_param_names)
+                            spec_db.config_param_names)
                         config_param_names.extend(config_params.keys())
                         spec_db.config_param_names = str(config_param_names)
 
@@ -318,17 +316,14 @@ class ServiceChainDbPlugin(schain.ServiceChainPluginBase,
         tenant_id = self._get_tenant_id_for_create(context, instance)
         with context.session.begin(subtransactions=True):
             instance_db = ServiceChainInstance(
-                                       id=uuidutils.generate_uuid(),
-                                       tenant_id=tenant_id,
-                                       name=instance['name'],
-                                       description=instance['description'],
-                                       config_param_values=instance[
-                                                        'config_param_values'],
-                                       servicechain_spec=instance[
-                                                'servicechain_spec'],
-                                       provider_epg=instance['provider_epg'],
-                                       consumer_epg=instance['consumer_epg'],
-                                       classifier=instance['classifier'])
+                id=uuidutils.generate_uuid(),
+                tenant_id=tenant_id, name=instance['name'],
+                description=instance['description'],
+                config_param_values=instance['config_param_values'],
+                servicechain_spec=instance['servicechain_spec'],
+                provider_ptg=instance['provider_ptg'],
+                consumer_ptg=instance['consumer_ptg'],
+                classifier=instance['classifier'])
             context.session.add(instance_db)
         return self._make_sc_instance_dict(instance_db)
 
@@ -338,8 +333,7 @@ class ServiceChainDbPlugin(schain.ServiceChainPluginBase,
         instance = servicechain_instance['servicechain_instance']
         with context.session.begin(subtransactions=True):
             instance_db = self._get_servicechain_instance(
-                                                context,
-                                                servicechain_instance_id)
+                context, servicechain_instance_id)
             instance_db.update(instance)
         return self._make_sc_instance_dict(instance_db)
 
@@ -347,8 +341,7 @@ class ServiceChainDbPlugin(schain.ServiceChainPluginBase,
     def delete_servicechain_instance(self, context, servicechain_instance_id):
         with context.session.begin(subtransactions=True):
             instance_db = self._get_servicechain_instance(
-                                            context,
-                                            servicechain_instance_id)
+                context, servicechain_instance_id)
             context.session.delete(instance_db)
 
     @log.log

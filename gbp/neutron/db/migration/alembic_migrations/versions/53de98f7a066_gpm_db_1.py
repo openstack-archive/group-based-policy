@@ -33,13 +33,14 @@ import sqlalchemy as sa
 def upgrade():
 
     op.create_table(
-        'gp_endpoint_group_subnet_associations',
-        sa.Column('endpoint_group_id', sa.String(length=36), nullable=False),
+        'gp_ptg_to_subnet_associations',
+        sa.Column('policy_target_group_id', sa.String(length=36),
+                  nullable=False),
         sa.Column('subnet_id', sa.String(length=36), nullable=False),
-        sa.ForeignKeyConstraint(['endpoint_group_id'],
-                                ['gp_endpoint_groups.id']),
+        sa.ForeignKeyConstraint(['policy_target_group_id'],
+                                ['gp_policy_target_groups.id']),
         sa.ForeignKeyConstraint(['subnet_id'], ['subnets.id']),
-        sa.PrimaryKeyConstraint('endpoint_group_id', 'subnet_id')
+        sa.PrimaryKeyConstraint('policy_target_group_id', 'subnet_id')
     )
 
     op.create_table(
@@ -52,12 +53,12 @@ def upgrade():
     )
 
     op.add_column(
-        'gp_endpoint_groups',
+        'gp_policy_target_groups',
         sa.Column('type', sa.String(length=15), nullable=True)
     )
 
     op.add_column(
-        'gp_endpoints',
+        'gp_policy_targets',
         sa.Column('type', sa.String(length=15), nullable=True)
     )
 
@@ -72,12 +73,12 @@ def upgrade():
     )
 
     op.add_column(
-        'gp_endpoints',
+        'gp_policy_targets',
         sa.Column('port_id', sa.String(length=36), nullable=True)
     )
-    op.create_unique_constraint(None, 'gp_endpoints', ['port_id'])
-    op.create_foreign_key('gp_endpoints_ibfk_2',
-                          source='gp_endpoints', referent='ports',
+    op.create_unique_constraint(None, 'gp_policy_targets', ['port_id'])
+    op.create_foreign_key('gp_policy_targets_ibfk_2',
+                          source='gp_policy_targets', referent='ports',
                           local_cols=['port_id'], remote_cols=['id'],
                           ondelete='SET NULL')
 
@@ -95,11 +96,12 @@ def downgrade():
 
     op.drop_constraint('gp_l2_policies_ibfk_2', 'gp_l2_policies', 'foreignkey')
     op.drop_column('gp_l2_policies', 'network_id')
-    op.drop_constraint('gp_endpoints_ibfk_2', 'gp_endpoints', 'foreignkey')
-    op.drop_column('gp_endpoints', 'port_id')
+    op.drop_constraint('gp_policy_targets_ibfk_2', 'gp_policy_targets',
+                       'foreignkey')
+    op.drop_column('gp_policy_targets', 'port_id')
     op.drop_column('gp_l3_policies', 'type')
     op.drop_column('gp_l2_policies', 'type')
-    op.drop_column('gp_endpoints', 'type')
-    op.drop_column('gp_endpoint_groups', 'type')
+    op.drop_column('gp_policy_targets', 'type')
+    op.drop_column('gp_policy_target_groups', 'type')
     op.drop_table('gp_l3_policy_router_associations')
-    op.drop_table('gp_endpoint_group_subnet_associations')
+    op.drop_table('gp_ptg_to_subnet_associations')

@@ -12,10 +12,10 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-from gbp.neutron.services.grouppolicy.drivers.oneconvergence import\
-                                                         nvsd_gbp_api
-from gbp.neutron.services.grouppolicy.drivers import resource_mapping\
-                                                        as res_map
+from gbp.neutron.services.grouppolicy.drivers import (
+    resource_mapping as res_map)
+from gbp.neutron.services.grouppolicy.drivers.oneconvergence import (
+    nvsd_gbp_api as api)
 
 from neutron.common import exceptions as n_exc
 from neutron.common import log
@@ -30,52 +30,51 @@ class NvsdGbpDriver(res_map.ResourceMappingDriver):
 
     This class inherits from ResourceMappingDriver and overrides the implicit
     Subnet creation for an EndPointGroup. One Convergence NVSD only supports
-    REDIRECT to an L2 Service at present and the Provider and Consumer EPGs
+    REDIRECT to an L2 Service at present and the Provider and Consumer PTGs
     have to be on the same network and subnet. Hence, One Convergence NVSD
     Group Policy Driver creates only one default L2 Policy for a tenant.
-    Further, the EPGs do not have a one-to-one mapping to a subnet, but rather
-    multiple EPGs are mapped to one subnet. One Convergence NVSD maps an EPG to
+    Further, the PTGs do not have a one-to-one mapping to a subnet, but rather
+    multiple PTGs are mapped to one subnet. One Convergence NVSD maps an EPG to
     a NVSD Port Group.
     """
     def __init__(self):
-        self.nvsd_api = nvsd_gbp_api.NVSDServiceApi()
+        self.nvsd_api = api.NVSDServiceApi()
 
     @log.log
-    def create_endpoint_postcommit(self, context):
-        super(NvsdGbpDriver, self).create_endpoint_postcommit(context)
+    def create_policy_target_postcommit(self, context):
+        super(NvsdGbpDriver, self).create_policy_target_postcommit(context)
         try:
             self.nvsd_api.create_endpoint(context._plugin_context,
                                           context.current)
         except Exception:
             with excutils.save_and_reraise_exception():
-                super(NvsdGbpDriver, self).delete_endpoint_postcommit(context)
+                super(NvsdGbpDriver,
+                      self).delete_policy_target_postcommit(context)
 
     @log.log
-    def update_endpoint_postcommit(self, context):
+    def update_policy_target_postcommit(self, context):
         self.nvsd_api.update_endpoint(context._plugin_context,
                                       context.current)
 
     @log.log
-    def delete_endpoint_postcommit(self, context):
+    def delete_policy_target_postcommit(self, context):
         self.nvsd_api.delete_endpoint(context._plugin_context,
                                       context.current['id'])
-        super(NvsdGbpDriver, self).delete_endpoint_postcommit(context)
+        super(NvsdGbpDriver, self).delete_policy_target_postcommit(context)
 
     @log.log
-    def create_endpoint_group_precommit(self, context):
-        #Reuse the previously created implicit L2 Policy for the tenant
+    def create_policy_target_group_precommit(self, context):
+        # Reuse the previously created implicit L2 Policy for the tenant
         if not context.current['l2_policy_id']:
             l2ps = context._plugin.get_l2_policies(
-                            context._plugin_context,
-                            filters=({'description':
-                                      ["Implicitly created L2 policy"],
-                                      "tenant_id": [
-                                            context.current['tenant_id']]}))
+                context._plugin_context,
+                filters=({'description': ["Implicitly created L2 policy"],
+                          "tenant_id": [context.current['tenant_id']]}))
             if l2ps:
                 context.set_l2_policy_id(l2ps[0]['id'])
 
     @log.log
-    def create_endpoint_group_postcommit(self, context):
+    def create_policy_target_group_postcommit(self, context):
         subnets = context.current['subnets']
         if subnets:
             l2p_id = context.current['l2_policy_id']
@@ -94,23 +93,25 @@ class NvsdGbpDriver(res_map.ResourceMappingDriver):
         self._handle_contracts(context)
 
     @log.log
-    def update_endpoint_group_postcommit(self, context):
-        super(NvsdGbpDriver, self).update_endpoint_group_postcommit(context)
+    def update_policy_target_group_postcommit(self, context):
+        super(NvsdGbpDriver,
+              self).update_policy_target_group_postcommit(context)
         self.nvsd_api.update_endpointgroup(context._plugin_context,
                                            context.current)
 
     @log.log
-    def delete_endpoint_group_precommit(self, context):
+    def delete_policy_target_group_precommit(self, context):
         l2p_id = context.current['l2_policy_id']
-        epgs = context._plugin.get_endpoint_groups(
-                context._plugin_context, filters=({'l2_policy_id': [l2p_id]}))
-        for epg in epgs:
-            if epg['id'] != context.current['id']:
+        ptgs = context._plugin.get_policy_target_groups(
+            context._plugin_context,
+            filters=({'l2_policy_id': [l2p_id]}))
+        for ptg in ptgs:
+            if ptg['id'] != context.current['id']:
                 context.current['l2_policy_id'] = None
                 return
 
     @log.log
-    def delete_endpoint_group_postcommit(self, context):
+    def delete_policy_target_group_postcommit(self, context):
         try:
             self._cleanup_redirect_action(context)
         except Exception as err:
@@ -122,7 +123,7 @@ class NvsdGbpDriver(res_map.ResourceMappingDriver):
             for subnet_id in context.current['subnets']:
                 self._cleanup_subnet(context, subnet_id, router_id)
         except Exception as err:
-            LOG.error(_("Cleanup of Endpoint group failed. "
+            LOG.error(_("Cleanup of Policy target group failed. "
                         "Error : %s"), err)
         self.nvsd_api.delete_endpointgroup(context._plugin_context,
                                            context.current['id'])
@@ -158,24 +159,25 @@ class NvsdGbpDriver(res_map.ResourceMappingDriver):
             pass
 
     def _use_implicit_subnet(self, context):
-        #One Convergence NVSD does not support REDIRECT to a different Subnet
-        #at present. So restricting to use same subnet for a given L2 Policy
-        epgs = context._plugin.get_endpoint_groups(context._plugin_context,
-                                                   filters=({'l2_policy_id':
-                                        [context.current['l2_policy_id']]}))
-        for epg in epgs:
-            if epg['subnets']:
-                context.add_subnet(epg['subnets'][0])
+        # One Convergence NVSD does not support REDIRECT to a different Subnet
+        # at present. So restricting to use same subnet for a given L2 Policy
+        ptgs = context._plugin.get_policy_target_groups(
+            context._plugin_context, filters=(
+                {'l2_policy_id': [context.current['l2_policy_id']]}))
+        for ptg in ptgs:
+            if ptg['subnets']:
+                context.add_subnet(ptg['subnets'][0])
                 return
-        #Create a new Subnet for first EPG using the L2 Policy
+        # Create a new Subnet for first PTG using the L2 Policy
         super(NvsdGbpDriver, self)._use_implicit_subnet(context)
 
     def _cleanup_subnet(self, context, subnet_id, router_id):
-        #Cleanup is performed only when the last EPG on subnet is removed
-        epgs = context._plugin.get_endpoint_groups(context._plugin_context)
-        for epg in epgs:
-            epg_subnets = epg['subnets']
-            if subnet_id in epg_subnets:
+        # Cleanup is performed only when the last PTG on subnet is removed
+        ptgs = context._plugin.get_policy_target_groups(
+            context._plugin_context)
+        for ptg in ptgs:
+            ptg_subnets = ptg['subnets']
+            if subnet_id in ptg_subnets:
                 return
         super(NvsdGbpDriver, self)._cleanup_subnet(context._plugin_context,
                                                    subnet_id, router_id)
