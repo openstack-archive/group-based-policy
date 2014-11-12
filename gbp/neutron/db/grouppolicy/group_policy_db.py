@@ -32,12 +32,12 @@ MAX_IPV4_SUBNET_PREFIX_LENGTH = 31
 MAX_IPV6_SUBNET_PREFIX_LENGTH = 127
 
 
-class Endpoint(model_base.BASEV2, models_v2.HasId, models_v2.HasTenant):
-    """Endpoint is the lowest unit of abstraction on which a policy is applied.
+class PolicyTarget(model_base.BASEV2, models_v2.HasId, models_v2.HasTenant):
+    """Lowest unit of abstraction on which a policy is applied.
 
-    This Endpoint is unrelated to the Endpoint terminology used in Keystone.
+    It is unrelated to the Policy Target terminology used in Keystone.
     """
-    __tablename__ = 'gp_endpoints'
+    __tablename__ = 'gp_policy_targets'
     type = sa.Column(sa.String(15))
     __mapper_args__ = {
         'polymorphic_on': type,
@@ -45,36 +45,40 @@ class Endpoint(model_base.BASEV2, models_v2.HasId, models_v2.HasTenant):
     }
     name = sa.Column(sa.String(50))
     description = sa.Column(sa.String(255))
-    endpoint_group_id = sa.Column(sa.String(36),
-                                  sa.ForeignKey('gp_endpoint_groups.id'),
-                                  nullable=True)
+    policy_target_group_id = sa.Column(sa.String(36),
+                                       sa.ForeignKey(
+                                           'gp_policy_target_groups.id'),
+                                       nullable=True)
 
 
-class EndpointGroupContractProvidingAssociation(model_base.BASEV2):
-    """Models  many to many providing relation between EPGs and Contracts."""
-    __tablename__ = 'gp_endpoint_group_contract_providing_associations'
-    contract_id = sa.Column(sa.String(36),
-                            sa.ForeignKey('gp_contracts.id'),
-                            primary_key=True)
-    endpoint_group_id = sa.Column(sa.String(36),
-                                  sa.ForeignKey('gp_endpoint_groups.id'),
-                                  primary_key=True)
+class PTGToPRSProvidingAssociation(model_base.BASEV2):
+    """Many to many providing relation between PTGs and Policy Rule Sets."""
+    __tablename__ = 'gp_ptg_to_prs_providing_associations'
+    policy_rule_set_id = sa.Column(sa.String(36),
+                                   sa.ForeignKey('gp_policy_rule_sets.id'),
+                                   primary_key=True)
+    policy_target_group_id = sa.Column(sa.String(36),
+                                       sa.ForeignKey(
+                                           'gp_policy_target_groups.id'),
+                                       primary_key=True)
 
 
-class EndpointGroupContractConsumingAssociation(model_base.BASEV2):
-    """Models many to many consuming relation between EPGs and Contracts."""
-    __tablename__ = 'gp_endpoint_group_contract_consuming_associations'
-    contract_id = sa.Column(sa.String(36),
-                            sa.ForeignKey('gp_contracts.id'),
-                            primary_key=True)
-    endpoint_group_id = sa.Column(sa.String(36),
-                                  sa.ForeignKey('gp_endpoint_groups.id'),
-                                  primary_key=True)
+class PTGToPRSConsumingAssociation(model_base.BASEV2):
+    """Many to many consuming relation between PTGs and Policy Rule Sets."""
+    __tablename__ = 'gp_ptg_to_prs_consuming_associations'
+    policy_rule_set_id = sa.Column(sa.String(36),
+                                   sa.ForeignKey('gp_policy_rule_sets.id'),
+                                   primary_key=True)
+    policy_target_group_id = sa.Column(sa.String(36),
+                                       sa.ForeignKey(
+                                           'gp_policy_target_groups.id'),
+                                       primary_key=True)
 
 
-class EndpointGroup(model_base.BASEV2, models_v2.HasId, models_v2.HasTenant):
-    """Represents an Endpoint Group that is a collection of endpoints."""
-    __tablename__ = 'gp_endpoint_groups'
+class PolicyTargetGroup(model_base.BASEV2, models_v2.HasId,
+                        models_v2.HasTenant):
+    """It is a collection of policy_targets."""
+    __tablename__ = 'gp_policy_target_groups'
     type = sa.Column(sa.String(15))
     __mapper_args__ = {
         'polymorphic_on': type,
@@ -82,23 +86,24 @@ class EndpointGroup(model_base.BASEV2, models_v2.HasId, models_v2.HasTenant):
     }
     name = sa.Column(sa.String(50))
     description = sa.Column(sa.String(255))
-    endpoints = orm.relationship(Endpoint, backref='endpoint_group')
+    policy_targets = orm.relationship(PolicyTarget,
+                                      backref='policy_target_group')
     l2_policy_id = sa.Column(sa.String(36),
                              sa.ForeignKey('gp_l2_policies.id'),
                              nullable=True)
     network_service_policy_id = sa.Column(
         sa.String(36), sa.ForeignKey('gp_network_service_policies.id'),
         nullable=True)
-    provided_contracts = orm.relationship(
-        EndpointGroupContractProvidingAssociation,
-        backref='providing_endpoint_group', cascade='all, delete-orphan')
-    consumed_contracts = orm.relationship(
-        EndpointGroupContractConsumingAssociation,
-        backref='consuming_endpoint_group', cascade='all, delete-orphan')
+    provided_policy_rule_sets = orm.relationship(
+        PTGToPRSProvidingAssociation,
+        backref='providing_policy_target_group', cascade='all, delete-orphan')
+    consumed_policy_rule_sets = orm.relationship(
+        PTGToPRSConsumingAssociation,
+        backref='consuming_policy_target_group', cascade='all, delete-orphan')
 
 
 class L2Policy(model_base.BASEV2, models_v2.HasId, models_v2.HasTenant):
-    """Represents a L2 Policy for a collection of endpoint_groups."""
+    """Represents a L2 Policy for a collection of policy_target_groups."""
     __tablename__ = 'gp_l2_policies'
     type = sa.Column(sa.String(15))
     __mapper_args__ = {
@@ -107,7 +112,8 @@ class L2Policy(model_base.BASEV2, models_v2.HasId, models_v2.HasTenant):
     }
     name = sa.Column(sa.String(50))
     description = sa.Column(sa.String(255))
-    endpoint_groups = orm.relationship(EndpointGroup, backref='l2_policy')
+    policy_target_groups = orm.relationship(PolicyTargetGroup,
+                                            backref='l2_policy')
     l3_policy_id = sa.Column(sa.String(36),
                              sa.ForeignKey('gp_l3_policies.id'),
                              nullable=True)
@@ -146,18 +152,18 @@ class NetworkServicePolicy(
     __tablename__ = 'gp_network_service_policies'
     name = sa.Column(sa.String(50))
     description = sa.Column(sa.String(255))
-    endpoint_groups = orm.relationship(EndpointGroup,
-                                       backref='network_service_policy')
-    network_service_params = orm.relationship(NetworkServiceParam,
-                                              backref='network_service_policy')
+    policy_target_groups = orm.relationship(PolicyTargetGroup,
+                                            backref='network_service_policy')
+    network_service_params = orm.relationship(
+        NetworkServiceParam, backref='network_service_policy')
 
 
-class ContractPolicyRuleAssociation(model_base.BASEV2):
-    """Models the many to many relation between Contract and Policy rules."""
-    __tablename__ = 'gp_contract_policy_rule_associations'
-    contract_id = sa.Column(sa.String(36),
-                            sa.ForeignKey('gp_contracts.id'),
-                            primary_key=True)
+class PRSToPRAssociation(model_base.BASEV2):
+    """Many to many relation between Policy Rule Set and Policy rules."""
+    __tablename__ = 'gp_policy_rule_set_policy_rule_associations'
+    policy_rule_set_id = sa.Column(sa.String(36),
+                                   sa.ForeignKey('gp_policy_rule_sets.id'),
+                                   primary_key=True)
     policy_rule_id = sa.Column(sa.String(36),
                                sa.ForeignKey('gp_policy_rules.id'),
                                primary_key=True)
@@ -225,27 +231,27 @@ class PolicyAction(model_base.BASEV2, models_v2.HasId, models_v2.HasTenant):
                                     cascade='all', backref='gp_policy_actions')
 
 
-class Contract(model_base.BASEV2, models_v2.HasTenant):
-    """Represents a Contract that is a collection of Policy rules."""
-    __tablename__ = 'gp_contracts'
+class PolicyRuleSet(model_base.BASEV2, models_v2.HasTenant):
+    """It is a collection of Policy rules."""
+    __tablename__ = 'gp_policy_rule_sets'
     id = sa.Column(sa.String(36), primary_key=True,
                    default=uuidutils.generate_uuid)
     name = sa.Column(sa.String(50))
     description = sa.Column(sa.String(255))
-    parent_id = sa.Column(sa.String(255), sa.ForeignKey('gp_contracts.id'),
+    parent_id = sa.Column(sa.String(255),
+                          sa.ForeignKey('gp_policy_rule_sets.id'),
                           nullable=True)
-    child_contracts = orm.relationship('Contract',
-                                       backref=orm.backref('parent',
-                                                           remote_side=[id]))
-    policy_rules = orm.relationship(ContractPolicyRuleAssociation,
-                                    backref='contract', lazy="joined",
+    child_policy_rule_sets = orm.relationship(
+        'PolicyRuleSet', backref=orm.backref('parent', remote_side=[id]))
+    policy_rules = orm.relationship(PRSToPRAssociation,
+                                    backref='policy_rule_set', lazy="joined",
                                     cascade='all, delete-orphan')
-    providing_endpoint_groups = orm.relationship(
-        EndpointGroupContractProvidingAssociation, backref='provided_contract',
-        lazy="joined", cascade='all')
-    consuming_endpoint_groups = orm.relationship(
-        EndpointGroupContractConsumingAssociation, backref='consumed_contract',
-        lazy="joined", cascade='all')
+    providing_policy_target_groups = orm.relationship(
+        PTGToPRSProvidingAssociation,
+        backref='provided_policy_rule_set', lazy="joined", cascade='all')
+    consuming_policy_target_groups = orm.relationship(
+        PTGToPRSConsumingAssociation,
+        backref='consumed_policy_rule_set', lazy="joined", cascade='all')
 
 
 class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
@@ -260,18 +266,20 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
     def __init__(self, *args, **kwargs):
         super(GroupPolicyDbPlugin, self).__init__(*args, **kwargs)
 
-    def _get_endpoint(self, context, endpoint_id):
+    def _get_policy_target(self, context, policy_target_id):
         try:
-            return self._get_by_id(context, Endpoint, endpoint_id)
+            return self._get_by_id(context, PolicyTarget, policy_target_id)
         except exc.NoResultFound:
-            raise gpolicy.EndpointNotFound(endpoint_id=endpoint_id)
+            raise gpolicy.PolicyTargetNotFound(
+                policy_target_id=policy_target_id)
 
-    def _get_endpoint_group(self, context, endpoint_group_id):
+    def _get_policy_target_group(self, context, policy_target_group_id):
         try:
-            return self._get_by_id(context, EndpointGroup, endpoint_group_id)
+            return self._get_by_id(
+                context, PolicyTargetGroup, policy_target_group_id)
         except exc.NoResultFound:
-            raise gpolicy.EndpointGroupNotFound(
-                endpoint_group_id=endpoint_group_id)
+            raise gpolicy.PolicyTargetGroupNotFound(
+                policy_target_group_id=policy_target_group_id)
 
     def _get_l2_policy(self, context, l2_policy_id):
         try:
@@ -283,8 +291,7 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
         try:
             return self._get_by_id(context, L3Policy, l3_policy_id)
         except exc.NoResultFound:
-            raise gpolicy.L3PolicyNotFound(l3_policy_id=
-                                           l3_policy_id)
+            raise gpolicy.L3PolicyNotFound(l3_policy_id=l3_policy_id)
 
     def _get_network_service_policy(self, context, network_service_policy_id):
         try:
@@ -299,16 +306,16 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
             return self._get_by_id(context, PolicyClassifier,
                                    policy_classifier_id)
         except exc.NoResultFound:
-            raise gpolicy.PolicyClassifierNotFound(policy_classifier_id=
-                                                   policy_classifier_id)
+            raise gpolicy.PolicyClassifierNotFound(
+                policy_classifier_id=policy_classifier_id)
 
     def _get_policy_action(self, context, policy_action_id):
         try:
             policy_action = self._get_by_id(context, PolicyAction,
                                             policy_action_id)
         except exc.NoResultFound:
-            raise gpolicy.PolicyActionNotFound(policy_action_id=
-                                               policy_action_id)
+            raise gpolicy.PolicyActionNotFound(
+                policy_action_id=policy_action_id)
         return policy_action
 
     def _get_policy_rule(self, context, policy_rule_id):
@@ -316,16 +323,18 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
             policy_rule = self._get_by_id(context, PolicyRule,
                                           policy_rule_id)
         except exc.NoResultFound:
-            raise gpolicy.PolicyRuleNotFound(policy_rule_id=
-                                             policy_rule_id)
+            raise gpolicy.PolicyRuleNotFound(
+                policy_rule_id=policy_rule_id)
         return policy_rule
 
-    def _get_contract(self, context, contract_id):
+    def _get_policy_rule_set(self, context, policy_rule_set_id):
         try:
-            contract = self._get_by_id(context, Contract, contract_id)
+            policy_rule_set = self._get_by_id(
+                context, PolicyRuleSet, policy_rule_set_id)
         except exc.NoResultFound:
-            raise gpolicy.ContractNotFound(contract_id=contract_id)
-        return contract
+            raise gpolicy.PolicyRuleSetNotFound(
+                policy_rule_set_id=policy_rule_set_id)
+        return policy_rule_set
 
     @staticmethod
     def _get_min_max_ports_from_range(port_range):
@@ -359,8 +368,8 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
                 if action_id not in actions_set:
                     # If we find an invalid action in the list we
                     # do not perform the update
-                    raise gpolicy.PolicyActionNotFound(policy_action_id=
-                                                       action_id)
+                    raise gpolicy.PolicyActionNotFound(
+                        policy_action_id=action_id)
             # New list of actions is valid so we will first reset the existing
             # list and then add each action in order.
             # Note that the list could be empty in which case we interpret
@@ -371,87 +380,93 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
                                                     policy_action_id=action_id)
                 pr_db.policy_actions.append(assoc)
 
-    def _validate_contract_list(self, context, contracts_id_list):
+    def _validate_policy_rule_set_list(
+        self, context, policy_rule_sets_id_list):
         with context.session.begin(subtransactions=True):
-            filters = {'id': [c_id for c_id in contracts_id_list]}
-            contracts_in_db = self._get_collection_query(
-                context, Contract, filters=filters)
-            existing_contract_ids = set(c_db['id'] for c_db in contracts_in_db)
-            for contract_id in contracts_id_list:
-                if contract_id not in existing_contract_ids:
-                    # If we find an invalid contract id in the list we
+            filters = {'id': [c_id for c_id in policy_rule_sets_id_list]}
+            policy_rule_sets_in_db = self._get_collection_query(
+                context, PolicyRuleSet, filters=filters)
+            existing_policy_rule_set_ids = set(
+                c_db['id'] for c_db in policy_rule_sets_in_db)
+            for policy_rule_set_id in policy_rule_sets_id_list:
+                if policy_rule_set_id not in existing_policy_rule_set_ids:
+                    # If we find an invalid policy_rule_set id in the list we
                     # dont process the entire list
-                    raise gpolicy.ContractNotFound(contract_id=contract_id)
-            return contracts_in_db
+                    raise gpolicy.PolicyRuleSetNotFound(
+                        policy_rule_set_id=policy_rule_set_id)
+            return policy_rule_sets_in_db
 
-    def _set_providers_or_consumers_for_endpoint_group(self, context, epg_db,
-                                                       contracts_dict,
-                                                       provider=True):
-        # TODO(Sumit): Check that the same contract ID does not belong to
-        # provider and consumer dicts
-        if not contracts_dict:
+    def _set_providers_or_consumers_for_policy_target_group(
+        self, context, ptg_db, policy_rule_sets_dict, provider=True):
+        # TODO(Sumit): Check that the same policy_rule_set ID does not belong
+        # to provider and consumer dicts
+        if not policy_rule_sets_dict:
             if provider:
-                epg_db.provided_contracts = []
+                ptg_db.provided_policy_rule_sets = []
                 return
             else:
-                epg_db.consumed_contracts = []
+                ptg_db.consumed_policy_rule_sets = []
                 return
         with context.session.begin(subtransactions=True):
-            contracts_id_list = contracts_dict.keys()
-            # We will first check if the new list of contracts is valid
-            self._validate_contract_list(context, contracts_id_list)
-            # New list of contracts is valid so we will first reset the
-            # existing list and then add each contract.
+            policy_rule_sets_id_list = policy_rule_sets_dict.keys()
+            # We will first check if the new list of policy_rule_sets is valid
+            self._validate_policy_rule_set_list(
+                context, policy_rule_sets_id_list)
+            # New list of policy_rule_sets is valid so we will first reset the
+            # existing list and then add each policy_rule_set.
             # Note that the list could be empty in which case we interpret
             # it as clearing existing rules.
             if provider:
-                epg_db.provided_contracts = []
+                ptg_db.provided_policy_rule_sets = []
             else:
-                epg_db.consumed_contracts = []
-            for contract_id in contracts_id_list:
+                ptg_db.consumed_policy_rule_sets = []
+            for policy_rule_set_id in policy_rule_sets_id_list:
                 if provider:
-                    assoc = EndpointGroupContractProvidingAssociation(
-                        endpoint_group_id=epg_db.id,
-                        contract_id=contract_id)
-                    epg_db.provided_contracts.append(assoc)
+                    assoc = PTGToPRSProvidingAssociation(
+                        policy_target_group_id=ptg_db.id,
+                        policy_rule_set_id=policy_rule_set_id)
+                    ptg_db.provided_policy_rule_sets.append(assoc)
                 else:
-                    assoc = EndpointGroupContractConsumingAssociation(
-                        endpoint_group_id=epg_db.id,
-                        contract_id=contract_id)
-                    epg_db.consumed_contracts.append(assoc)
+                    assoc = PTGToPRSConsumingAssociation(
+                        policy_target_group_id=ptg_db.id,
+                        policy_rule_set_id=policy_rule_set_id)
+                    ptg_db.consumed_policy_rule_sets.append(assoc)
 
-    def _set_children_for_contract(self, context, contract_db, child_id_list):
+    def _set_children_for_policy_rule_set(
+        self, context, policy_rule_set_db, child_id_list):
         if not child_id_list:
-            contract_db.child_contracts = []
+            policy_rule_set_db.child_policy_rule_sets = []
             return
-        if contract_db['parent_id']:
+        if policy_rule_set_db['parent_id']:
             # Only one hierarchy level allowed for now
-            raise gpolicy.ThreeLevelContractHierarchyNotSupported(
-                contract_id=contract_db['id'])
+            raise gpolicy.ThreeLevelPolicyRuleSetHierarchyNotSupported(
+                policy_rule_set_id=policy_rule_set_db['id'])
         with context.session.begin(subtransactions=True):
-            # We will first check if the new list of contracts is valid
+            # We will first check if the new list of policy_rule_sets is valid
 
-            contracts_in_db = self._validate_contract_list(
+            policy_rule_sets_in_db = self._validate_policy_rule_set_list(
                 context, child_id_list)
-            for child in contracts_in_db:
-                if (child['child_contracts'] or
-                        child['id'] == contract_db['id']):
-                    # Only one level contract relationship supported for now
-                    # No loops allowed
-                    raise gpolicy.BadContractRelationship(
-                        parent_id=contract_db['id'], child_id=child['id'])
-            # New list of child contracts is valid so we will first reset the
-            # existing list and then add each contract.
+            for child in policy_rule_sets_in_db:
+                if (child['child_policy_rule_sets'] or
+                        child['id'] == policy_rule_set_db['id']):
+                    # Only one level policy_rule_set relationship supported for
+                    # now. No loops allowed
+                    raise gpolicy.BadPolicyRuleSetRelationship(
+                        parent_id=policy_rule_set_db['id'],
+                        child_id=child['id'])
+            # New list of child policy_rule_sets is valid so we will first
+            # reset the existing list and then add each policy_rule_set.
             # Note that the list could be empty in which case we interpret
-            # it as clearing existing child contracts.
-            contract_db.child_contracts = []
-            for child in contracts_in_db:
-                contract_db.child_contracts.append(child)
+            # it as clearing existing child policy_rule_sets.
+            policy_rule_set_db.child_policy_rule_sets = []
+            for child in policy_rule_sets_in_db:
+                policy_rule_set_db.child_policy_rule_sets.append(child)
 
-    def _set_rules_for_contract(self, context, contract_db, rule_id_list):
-        ct_db = contract_db
+    def _set_rules_for_policy_rule_set(
+        self, context, policy_rule_set_db, rule_id_list):
+        prs_db = policy_rule_set_db
         if not rule_id_list:
-            ct_db.policy_rules = []
+            prs_db.policy_rules = []
             return
         with context.session.begin(subtransactions=True):
             # We will first check if the new list of rules is valid
@@ -468,39 +483,39 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
             # list and then add each rule in order.
             # Note that the list could be empty in which case we interpret
             # it as clearing existing rules.
-            ct_db.policy_rules = []
+            prs_db.policy_rules = []
             for rule_id in rule_id_list:
-                ct_rule_db = ContractPolicyRuleAssociation(
+                prs_rule_db = PRSToPRAssociation(
                     policy_rule_id=rule_id,
-                    contract_id=ct_db.id)
-                ct_db.policy_rules.append(ct_rule_db)
+                    policy_rule_set_id=prs_db.id)
+                prs_db.policy_rules.append(prs_rule_db)
 
-    def _process_contracts_for_epg(self, context, epg_db, epg):
-        if 'provided_contracts' in epg:
-            self._set_providers_or_consumers_for_endpoint_group(
-                context, epg_db, epg['provided_contracts'])
-            del epg['provided_contracts']
-        if 'consumed_contracts' in epg:
-            self._set_providers_or_consumers_for_endpoint_group(
-                context, epg_db, epg['consumed_contracts'], False)
-            del epg['consumed_contracts']
-        return epg
+    def _process_policy_rule_sets_for_ptg(self, context, ptg_db, ptg):
+        if 'provided_policy_rule_sets' in ptg:
+            self._set_providers_or_consumers_for_policy_target_group(
+                context, ptg_db, ptg['provided_policy_rule_sets'])
+            del ptg['provided_policy_rule_sets']
+        if 'consumed_policy_rule_sets' in ptg:
+            self._set_providers_or_consumers_for_policy_target_group(
+                context, ptg_db, ptg['consumed_policy_rule_sets'], False)
+            del ptg['consumed_policy_rule_sets']
+        return ptg
 
     def _set_l3_policy_for_l2_policy(self, context, l2p_id, l3p_id):
         with context.session.begin(subtransactions=True):
             l2p_db = self._get_l2_policy(context, l2p_id)
             l2p_db.l3_policy_id = l3p_id
 
-    def _set_l2_policy_for_endpoint_group(self, context, epg_id, l2p_id):
+    def _set_l2_policy_for_policy_target_group(self, context, ptg_id, l2p_id):
         with context.session.begin(subtransactions=True):
-            epg_db = self._get_endpoint_group(context, epg_id)
-            epg_db.l2_policy_id = l2p_id
+            ptg_db = self._get_policy_target_group(context, ptg_id)
+            ptg_db.l2_policy_id = l2p_id
 
-    def _set_network_service_policy_for_endpoint_group(
-        self, context, epg_id, nsp_id):
+    def _set_network_service_policy_for_policy_target_group(
+        self, context, ptg_id, nsp_id):
         with context.session.begin(subtransactions=True):
-            epg_db = self._get_endpoint_group(context, epg_id)
-            epg_db.network_service_policy_id = nsp_id
+            ptg_db = self._get_policy_target_group(context, ptg_id)
+            ptg_db.network_service_policy_id = nsp_id
 
     def _set_params_for_network_service_policy(
         self, context, network_service_policy_db, network_service_policy):
@@ -519,27 +534,29 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
                 nsp_db.network_service_params.append(param_db)
             del network_service_policy['network_service_params']
 
-    def _make_endpoint_dict(self, ep, fields=None):
-        res = {'id': ep['id'],
-               'tenant_id': ep['tenant_id'],
-               'name': ep['name'],
-               'description': ep['description'],
-               'endpoint_group_id': ep['endpoint_group_id']}
+    def _make_policy_target_dict(self, pt, fields=None):
+        res = {'id': pt['id'],
+               'tenant_id': pt['tenant_id'],
+               'name': pt['name'],
+               'description': pt['description'],
+               'policy_target_group_id': pt['policy_target_group_id']}
         return self._fields(res, fields)
 
-    def _make_endpoint_group_dict(self, epg, fields=None):
-        res = {'id': epg['id'],
-               'tenant_id': epg['tenant_id'],
-               'name': epg['name'],
-               'description': epg['description'],
-               'l2_policy_id': epg['l2_policy_id'],
-               'network_service_policy_id': epg['network_service_policy_id']}
-        res['endpoints'] = [ep['id']
-                            for ep in epg['endpoints']]
-        res['provided_contracts'] = [pc['contract_id']
-                                     for pc in epg['provided_contracts']]
-        res['consumed_contracts'] = [cc['contract_id']
-                                     for cc in epg['consumed_contracts']]
+    def _make_policy_target_group_dict(self, ptg, fields=None):
+        res = {'id': ptg['id'],
+               'tenant_id': ptg['tenant_id'],
+               'name': ptg['name'],
+               'description': ptg['description'],
+               'l2_policy_id': ptg['l2_policy_id'],
+               'network_service_policy_id': ptg['network_service_policy_id']}
+        res['policy_targets'] = [
+            pt['id'] for pt in ptg['policy_targets']]
+        res['provided_policy_rule_sets'] = (
+            [pc['policy_rule_set_id'] for pc in ptg[
+                'provided_policy_rule_sets']])
+        res['consumed_policy_rule_sets'] = (
+            [cc['policy_rule_set_id'] for cc in ptg[
+                'consumed_policy_rule_sets']])
         return self._fields(res, fields)
 
     def _make_l2_policy_dict(self, l2p, fields=None):
@@ -548,8 +565,8 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
                'name': l2p['name'],
                'description': l2p['description'],
                'l3_policy_id': l2p['l3_policy_id']}
-        res['endpoint_groups'] = [epg['id']
-                                  for epg in l2p['endpoint_groups']]
+        res['policy_target_groups'] = [
+            ptg['id'] for ptg in l2p['policy_target_groups']]
         return self._fields(res, fields)
 
     def _make_l3_policy_dict(self, l3p, fields=None):
@@ -570,8 +587,8 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
                'tenant_id': nsp['tenant_id'],
                'name': nsp['name'],
                'description': nsp['description']}
-        res['endpoint_groups'] = [epg['id']
-                                  for epg in nsp['endpoint_groups']]
+        res['policy_target_groups'] = [
+            ptg['id'] for ptg in nsp['policy_target_groups']]
         params = []
         for param in nsp['network_service_params']:
             params.append({
@@ -614,36 +631,36 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
                                  for pa in pr['policy_actions']]
         return self._fields(res, fields)
 
-    def _make_contract_dict(self, ct, fields=None):
-        res = {'id': ct['id'],
-               'tenant_id': ct['tenant_id'],
-               'name': ct['name'],
-               'description': ct['description']}
-        if ct['parent']:
-            res['parent_id'] = ct['parent']['id']
+    def _make_policy_rule_set_dict(self, prs, fields=None):
+        res = {'id': prs['id'],
+               'tenant_id': prs['tenant_id'],
+               'name': prs['name'],
+               'description': prs['description']}
+        if prs['parent']:
+            res['parent_id'] = prs['parent']['id']
         else:
             res['parent_id'] = None
         ctx = context.get_admin_context()
-        if 'child_contracts' in ct:
+        if 'child_policy_rule_sets' in prs:
             # They have been updated
-            res['child_contracts'] = [child_ct['id']
-                                      for child_ct in ct['child_contracts']]
+            res['child_policy_rule_sets'] = [
+                child_prs['id'] for child_prs in prs['child_policy_rule_sets']]
         else:
             with ctx.session.begin(subtransactions=True):
-                filters = {'parent_id': [ct['id']]}
-                child_contracts_in_db = self._get_collection_query(
-                    ctx, Contract, filters=filters)
-                res['child_contracts'] = [child_ct['id']
-                                          for child_ct in
-                                          child_contracts_in_db]
+                filters = {'parent_id': [prs['id']]}
+                child_prs_in_db = self._get_collection_query(
+                    ctx, PolicyRuleSet, filters=filters)
+                res['child_policy_rule_sets'] = [child_prs['id']
+                                                 for child_prs
+                                                 in child_prs_in_db]
 
         res['policy_rules'] = [pr['policy_rule_id']
-                               for pr in ct['policy_rules']]
+                               for pr in prs['policy_rules']]
         return self._fields(res, fields)
 
-    def _get_policy_rule_contracts(self, context, policy_rule_id):
-        return [x['contract_id'] for x in
-                context.session.query(ContractPolicyRuleAssociation).filter_by(
+    def _get_policy_rule_policy_rule_sets(self, context, policy_rule_id):
+        return [x['policy_rule_set_id'] for x in
+                context.session.query(PRSToPRAssociation).filter_by(
                     policy_rule_id=policy_rule_id)]
 
     @staticmethod
@@ -659,108 +676,108 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
         # than size of the ip_pool's subnet
 
     @log.log
-    def create_endpoint(self, context, endpoint):
-        ep = endpoint['endpoint']
-        tenant_id = self._get_tenant_id_for_create(context, ep)
+    def create_policy_target(self, context, policy_target):
+        pt = policy_target['policy_target']
+        tenant_id = self._get_tenant_id_for_create(context, pt)
         with context.session.begin(subtransactions=True):
-            ep_db = Endpoint(id=uuidutils.generate_uuid(),
-                             tenant_id=tenant_id,
-                             name=ep['name'],
-                             description=ep['description'],
-                             endpoint_group_id=ep['endpoint_group_id'])
-            context.session.add(ep_db)
-        return self._make_endpoint_dict(ep_db)
+            pt_db = PolicyTarget(
+                id=uuidutils.generate_uuid(), tenant_id=tenant_id,
+                name=pt['name'], description=pt['description'],
+                policy_target_group_id=pt['policy_target_group_id'])
+            context.session.add(pt_db)
+        return self._make_policy_target_dict(pt_db)
 
     @log.log
-    def update_endpoint(self, context, endpoint_id, endpoint):
-        ep = endpoint['endpoint']
+    def update_policy_target(self, context, policy_target_id, policy_target):
+        pt = policy_target['policy_target']
         with context.session.begin(subtransactions=True):
-            ep_db = self._get_endpoint(context, endpoint_id)
-            ep_db.update(ep)
-        return self._make_endpoint_dict(ep_db)
+            pt_db = self._get_policy_target(context, policy_target_id)
+            pt_db.update(pt)
+        return self._make_policy_target_dict(pt_db)
 
     @log.log
-    def delete_endpoint(self, context, endpoint_id):
+    def delete_policy_target(self, context, policy_target_id):
         with context.session.begin(subtransactions=True):
-            ep_db = self._get_endpoint(context, endpoint_id)
-            context.session.delete(ep_db)
+            pt_db = self._get_policy_target(context, policy_target_id)
+            context.session.delete(pt_db)
 
     @log.log
-    def get_endpoint(self, context, endpoint_id, fields=None):
-        ep = self._get_endpoint(context, endpoint_id)
-        return self._make_endpoint_dict(ep, fields)
+    def get_policy_target(self, context, policy_target_id, fields=None):
+        pt = self._get_policy_target(context, policy_target_id)
+        return self._make_policy_target_dict(pt, fields)
 
     @log.log
-    def get_endpoints(self, context, filters=None, fields=None,
-                      sorts=None, limit=None, marker=None,
-                      page_reverse=False):
-        marker_obj = self._get_marker_obj(context, 'endpoint', limit,
+    def get_policy_targets(self, context, filters=None, fields=None,
+                           sorts=None, limit=None, marker=None,
+                           page_reverse=False):
+        marker_obj = self._get_marker_obj(context, 'policy_target', limit,
                                           marker)
-        return self._get_collection(context, Endpoint,
-                                    self._make_endpoint_dict,
+        return self._get_collection(context, PolicyTarget,
+                                    self._make_policy_target_dict,
                                     filters=filters, fields=fields,
                                     sorts=sorts, limit=limit,
                                     marker_obj=marker_obj,
                                     page_reverse=page_reverse)
 
     @log.log
-    def get_endpoints_count(self, context, filters=None):
-        return self._get_collection_count(context, Endpoint,
+    def get_policy_targets_count(self, context, filters=None):
+        return self._get_collection_count(context, PolicyTarget,
                                           filters=filters)
 
     @log.log
-    def create_endpoint_group(self, context, endpoint_group):
-        epg = endpoint_group['endpoint_group']
-        tenant_id = self._get_tenant_id_for_create(context, epg)
+    def create_policy_target_group(self, context, policy_target_group):
+        ptg = policy_target_group['policy_target_group']
+        tenant_id = self._get_tenant_id_for_create(context, ptg)
         with context.session.begin(subtransactions=True):
-            epg_db = EndpointGroup(id=uuidutils.generate_uuid(),
-                                   tenant_id=tenant_id,
-                                   name=epg['name'],
-                                   description=epg['description'],
-                                   l2_policy_id=epg['l2_policy_id'],
-                                   network_service_policy_id=
-                                   epg['network_service_policy_id'])
-            context.session.add(epg_db)
-            self._process_contracts_for_epg(context, epg_db, epg)
-        return self._make_endpoint_group_dict(epg_db)
+            ptg_db = PolicyTargetGroup(
+                id=uuidutils.generate_uuid(), tenant_id=tenant_id,
+                name=ptg['name'], description=ptg['description'],
+                l2_policy_id=ptg['l2_policy_id'],
+                network_service_policy_id=ptg['network_service_policy_id'])
+            context.session.add(ptg_db)
+            self._process_policy_rule_sets_for_ptg(context, ptg_db, ptg)
+        return self._make_policy_target_group_dict(ptg_db)
 
     @log.log
-    def update_endpoint_group(self, context, endpoint_group_id,
-                              endpoint_group):
-        epg = endpoint_group['endpoint_group']
+    def update_policy_target_group(self, context, policy_target_group_id,
+                                   policy_target_group):
+        ptg = policy_target_group['policy_target_group']
         with context.session.begin(subtransactions=True):
-            epg_db = self._get_endpoint_group(context, endpoint_group_id)
-            epg = self._process_contracts_for_epg(context, epg_db, epg)
-            epg_db.update(epg)
-        return self._make_endpoint_group_dict(epg_db)
+            ptg_db = self._get_policy_target_group(
+                context, policy_target_group_id)
+            ptg = self._process_policy_rule_sets_for_ptg(context, ptg_db, ptg)
+            ptg_db.update(ptg)
+        return self._make_policy_target_group_dict(ptg_db)
 
     @log.log
-    def delete_endpoint_group(self, context, endpoint_group_id):
+    def delete_policy_target_group(self, context, policy_target_group_id):
         with context.session.begin(subtransactions=True):
-            epg_db = self._get_endpoint_group(context, endpoint_group_id)
-            context.session.delete(epg_db)
+            ptg_db = self._get_policy_target_group(
+                context, policy_target_group_id)
+            context.session.delete(ptg_db)
 
     @log.log
-    def get_endpoint_group(self, context, endpoint_group_id, fields=None):
-        epg = self._get_endpoint_group(context, endpoint_group_id)
-        return self._make_endpoint_group_dict(epg, fields)
+    def get_policy_target_group(self, context, policy_target_group_id,
+                                fields=None):
+        ptg = self._get_policy_target_group(context, policy_target_group_id)
+        return self._make_policy_target_group_dict(ptg, fields)
 
     @log.log
-    def get_endpoint_groups(self, context, filters=None, fields=None,
-                            sorts=None, limit=None, marker=None,
-                            page_reverse=False):
-        marker_obj = self._get_marker_obj(context, 'endpoint_group', limit,
-                                          marker)
-        return self._get_collection(context, EndpointGroup,
-                                    self._make_endpoint_group_dict,
+    def get_policy_target_groups(self, context, filters=None, fields=None,
+                                 sorts=None, limit=None, marker=None,
+                                 page_reverse=False):
+        marker_obj = self._get_marker_obj(
+            context, 'policy_target_group', limit, marker)
+        return self._get_collection(context, PolicyTargetGroup,
+                                    self._make_policy_target_group_dict,
                                     filters=filters, fields=fields,
                                     sorts=sorts, limit=limit,
                                     marker_obj=marker_obj,
                                     page_reverse=page_reverse)
 
     @log.log
-    def get_endpoint_groups_count(self, context, filters=None):
-        return self._get_collection_count(context, EndpointGroup,
+    def get_policy_target_groups_count(self, context, filters=None):
+        return self._get_collection_count(context, PolicyTargetGroup,
                                           filters=filters)
 
     @log.log
@@ -1090,55 +1107,56 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
                                           filters=filters)
 
     @log.log
-    def create_contract(self, context, contract):
-        ct = contract['contract']
-        tenant_id = self._get_tenant_id_for_create(context, ct)
+    def create_policy_rule_set(self, context, policy_rule_set):
+        prs = policy_rule_set['policy_rule_set']
+        tenant_id = self._get_tenant_id_for_create(context, prs)
         with context.session.begin(subtransactions=True):
-            ct_db = Contract(id=uuidutils.generate_uuid(),
-                             tenant_id=tenant_id,
-                             name=ct['name'],
-                             description=ct['description'])
-            context.session.add(ct_db)
-            self._set_rules_for_contract(context, ct_db,
-                                         ct['policy_rules'])
-            self._set_children_for_contract(context, ct_db,
-                                            ct['child_contracts'])
-        return self._make_contract_dict(ct_db)
+            prs_db = PolicyRuleSet(id=uuidutils.generate_uuid(),
+                                   tenant_id=tenant_id,
+                                   name=prs['name'],
+                                   description=prs['description'])
+            context.session.add(prs_db)
+            self._set_rules_for_policy_rule_set(context, prs_db,
+                                                prs['policy_rules'])
+            self._set_children_for_policy_rule_set(
+                context, prs_db, prs['child_policy_rule_sets'])
+        return self._make_policy_rule_set_dict(prs_db)
 
     @log.log
-    def update_contract(self, context, contract_id, contract):
-        ct = contract['contract']
+    def update_policy_rule_set(
+        self, context, policy_rule_set_id, policy_rule_set):
+        prs = policy_rule_set['policy_rule_set']
         with context.session.begin(subtransactions=True):
-            ct_db = self._get_contract(context, contract_id)
-            if 'policy_rules' in ct:
-                self._set_rules_for_contract(context, ct_db,
-                                             ct['policy_rules'])
-                del ct['policy_rules']
-            if 'child_contracts' in ct:
-                self._set_children_for_contract(context, ct_db,
-                                                ct['child_contracts'])
-                del ct['child_contracts']
-            ct_db.update(ct)
-        return self._make_contract_dict(ct_db)
+            prs_db = self._get_policy_rule_set(context, policy_rule_set_id)
+            if 'policy_rules' in prs:
+                self._set_rules_for_policy_rule_set(
+                    context, prs_db, prs['policy_rules'])
+                del prs['policy_rules']
+            if 'child_policy_rule_sets' in prs:
+                self._set_children_for_policy_rule_set(
+                    context, prs_db, prs['child_policy_rule_sets'])
+                del prs['child_policy_rule_sets']
+            prs_db.update(prs)
+        return self._make_policy_rule_set_dict(prs_db)
 
     @log.log
-    def delete_contract(self, context, contract_id):
+    def delete_policy_rule_set(self, context, policy_rule_set_id):
         with context.session.begin(subtransactions=True):
-            ct_db = self._get_contract(context, contract_id)
-            context.session.delete(ct_db)
+            prs_db = self._get_policy_rule_set(context, policy_rule_set_id)
+            context.session.delete(prs_db)
 
     @log.log
-    def get_contract(self, context, contract_id, fields=None):
-        ct = self._get_contract(context, contract_id)
-        return self._make_contract_dict(ct, fields)
+    def get_policy_rule_set(self, context, policy_rule_set_id, fields=None):
+        prs = self._get_policy_rule_set(context, policy_rule_set_id)
+        return self._make_policy_rule_set_dict(prs, fields)
 
     @log.log
-    def get_contracts(self, context, filters=None, fields=None):
-        return self._get_collection(context, Contract,
-                                    self._make_contract_dict,
+    def get_policy_rule_sets(self, context, filters=None, fields=None):
+        return self._get_collection(context, PolicyRuleSet,
+                                    self._make_policy_rule_set_dict,
                                     filters=filters, fields=fields)
 
     @log.log
-    def get_contracts_count(self, context, filters=None):
-        return self._get_collection_count(context, Contract,
+    def get_policy_rule_sets_count(self, context, filters=None):
+        return self._get_collection_count(context, PolicyRuleSet,
                                           filters=filters)

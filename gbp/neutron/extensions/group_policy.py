@@ -40,12 +40,13 @@ LOG = logging.getLogger(__name__)
 
 
 # Group Policy Exceptions
-class EndpointNotFound(nexc.NotFound):
-    message = _("Endpoint %(endpoint_id)s could not be found")
+class PolicyTargetNotFound(nexc.NotFound):
+    message = _("Policy Target %(policy_target_id)s could not be found")
 
 
-class EndpointGroupNotFound(nexc.NotFound):
-    message = _("EndpointGroup %(endpoint_group_id)s could not be found")
+class PolicyTargetGroupNotFound(nexc.NotFound):
+    message = _("Policy Target Group %(policy_target_group_id)s could not "
+                "be found")
 
 
 class L2PolicyNotFound(nexc.NotFound):
@@ -78,20 +79,20 @@ class PolicyRuleNotFound(nexc.NotFound):
     message = _("PolicyRule %(policy_rule_id)s could not be found")
 
 
-class ContractNotFound(nexc.NotFound):
-    message = _("Contract %(contract_id)s could not be found")
+class PolicyRuleSetNotFound(nexc.NotFound):
+    message = _("Policy Rule Set %(policy_rule_set_id)s could not be found")
 
 
-class BadContractRelationship(nexc.BadRequest):
-    message = _("Contract %(parent_id)s is an invalid parent for "
-                "%(child_id)s, make sure that child contract has no "
+class BadPolicyRuleSetRelationship(nexc.BadRequest):
+    message = _("Policy Rule Set %(parent_id)s is an invalid parent for "
+                "%(child_id)s, make sure that child policy_rule_set has no "
                 "children, or that you are not creating a relationship loop")
 
 
-class ThreeLevelContractHierarchyNotSupported(nexc.BadRequest):
-    message = _("Can't add children to contract %(contract_id)s "
-                "which already has a parent. Only one level of contract "
-                "hierarchy supported.")
+class ThreeLevelPolicyRuleSetHierarchyNotSupported(nexc.BadRequest):
+    message = _("Can't add children to policy_rule_set %(policy_rule_set_id)s "
+                "which already has a parent. Only one level "
+                "of policy_rule_set hierarchy supported.")
 
 
 class GroupPolicyInvalidPortValue(nexc.InvalidInput):
@@ -229,19 +230,19 @@ attr.validators['type:port_range'] = _validate_port_range
 attr.validators['type:network_service_params'] = _validate_network_svc_params
 
 
-ENDPOINTS = 'endpoints'
-ENDPOINT_GROUPS = 'endpoint_groups'
+POLICY_TARGETS = 'policy_targets'
+POLICY_TARGET_GROUPS = 'policy_target_groups'
 L2_POLICIES = 'l2_policies'
 L3_POLICIES = 'l3_policies'
 POLICY_CLASSIFIERS = 'policy_classifiers'
 POLICY_ACTIONS = 'policy_actions'
 POLICY_RULES = 'policy_rules'
-CONTRACTS = 'contracts'
+POLICY_RULE_SETS = 'policy_rule_sets'
 NETWORK_SERVICE_POLICIES = 'network_service_policies'
 
 
 RESOURCE_ATTRIBUTE_MAP = {
-    ENDPOINTS: {
+    POLICY_TARGETS: {
         'id': {'allow_post': False, 'allow_put': False,
                'validate': {'type:uuid': None}, 'is_visible': True,
                'primary_key': True},
@@ -254,11 +255,11 @@ RESOURCE_ATTRIBUTE_MAP = {
         'tenant_id': {'allow_post': True, 'allow_put': False,
                       'validate': {'type:string': None},
                       'required_by_policy': True, 'is_visible': True},
-        'endpoint_group_id': {'allow_post': True, 'allow_put': True,
-                              'validate': {'type:uuid_or_none': None},
-                              'required': True, 'is_visible': True},
+        'policy_target_group_id': {'allow_post': True, 'allow_put': True,
+                                   'validate': {'type:uuid_or_none': None},
+                                   'required': True, 'is_visible': True},
     },
-    ENDPOINT_GROUPS: {
+    POLICY_TARGET_GROUPS: {
         'id': {'allow_post': False, 'allow_put': False,
                'validate': {'type:uuid': None}, 'is_visible': True,
                'primary_key': True},
@@ -271,21 +272,23 @@ RESOURCE_ATTRIBUTE_MAP = {
         'tenant_id': {'allow_post': True, 'allow_put': False,
                       'validate': {'type:string': None},
                       'required_by_policy': True, 'is_visible': True},
-        'endpoints': {'allow_post': False, 'allow_put': False,
-                      'validate': {'type:uuid_list': None},
-                      'convert_to': attr.convert_none_to_empty_list,
-                      'default': None, 'is_visible': True},
+        'policy_targets': {'allow_post': False, 'allow_put': False,
+                           'validate': {'type:uuid_list': None},
+                           'convert_to': attr.convert_none_to_empty_list,
+                           'default': None, 'is_visible': True},
         'l2_policy_id': {'allow_post': True, 'allow_put': True,
                          'validate': {'type:uuid_or_none': None},
                          'default': None, 'is_visible': True},
-        'provided_contracts': {'allow_post': True, 'allow_put': True,
-                               'validate': {'type:dict_or_none': None},
-                               'convert_to': attr.convert_none_to_empty_dict,
-                               'default': None, 'is_visible': True},
-        'consumed_contracts': {'allow_post': True, 'allow_put': True,
-                               'validate': {'type:dict_or_none': None},
-                               'convert_to': attr.convert_none_to_empty_dict,
-                               'default': None, 'is_visible': True},
+        'provided_policy_rule_sets': {'allow_post': True, 'allow_put': True,
+                                      'validate': {'type:dict_or_none': None},
+                                      'convert_to':
+                                      attr.convert_none_to_empty_dict,
+                                      'default': None, 'is_visible': True},
+        'consumed_policy_rule_sets': {'allow_post': True, 'allow_put': True,
+                                      'validate': {'type:dict_or_none': None},
+                                      'convert_to':
+                                      attr.convert_none_to_empty_dict,
+                                      'default': None, 'is_visible': True},
         'network_service_policy_id': {'allow_post': True, 'allow_put': True,
                                       'validate': {'type:uuid_or_none': None},
                                       'default': None, 'is_visible': True},
@@ -303,10 +306,10 @@ RESOURCE_ATTRIBUTE_MAP = {
         'tenant_id': {'allow_post': True, 'allow_put': False,
                       'validate': {'type:string': None},
                       'required_by_policy': True, 'is_visible': True},
-        'endpoint_groups': {'allow_post': False, 'allow_put': False,
-                            'validate': {'type:uuid_list': None},
-                            'convert_to': attr.convert_none_to_empty_list,
-                            'default': None, 'is_visible': True},
+        'policy_target_groups': {'allow_post': False, 'allow_put': False,
+                                 'validate': {'type:uuid_list': None},
+                                 'convert_to': attr.convert_none_to_empty_list,
+                                 'default': None, 'is_visible': True},
         'l3_policy_id': {'allow_post': True, 'allow_put': True,
                          'validate': {'type:uuid_or_none': None},
                          'default': None, 'is_visible': True,
@@ -420,7 +423,7 @@ RESOURCE_ATTRIBUTE_MAP = {
                            'validate': {'type:uuid_list': None},
                            'convert_to': attr.convert_none_to_empty_list},
     },
-    CONTRACTS: {
+    POLICY_RULE_SETS: {
         'id': {'allow_post': False, 'allow_put': False,
                'validate': {'type:uuid': None},
                'is_visible': True,
@@ -439,10 +442,11 @@ RESOURCE_ATTRIBUTE_MAP = {
         'parent_id': {'allow_post': False, 'allow_put': False,
                       'validate': {'type:uuid': None},
                       'is_visible': True},
-        'child_contracts': {'allow_post': True, 'allow_put': True,
-                            'default': None, 'is_visible': True,
-                            'validate': {'type:uuid_list': None},
-                            'convert_to': attr.convert_none_to_empty_list},
+        'child_policy_rule_sets': {'allow_post': True, 'allow_put': True,
+                                   'default': None, 'is_visible': True,
+                                   'validate': {'type:uuid_list': None},
+                                   'convert_to':
+                                   attr.convert_none_to_empty_list},
         'policy_rules': {'allow_post': True, 'allow_put': True,
                          'default': None, 'validate': {'type:uuid_list': None},
                          'convert_to': attr.convert_none_to_empty_list,
@@ -461,10 +465,10 @@ RESOURCE_ATTRIBUTE_MAP = {
         'tenant_id': {'allow_post': True, 'allow_put': False,
                       'validate': {'type:string': None},
                       'required_by_policy': True, 'is_visible': True},
-        'endpoint_groups': {'allow_post': False, 'allow_put': False,
-                            'validate': {'type:uuid_list': None},
-                            'convert_to': attr.convert_none_to_empty_list,
-                            'default': None, 'is_visible': True},
+        'policy_target_groups': {'allow_post': False, 'allow_put': False,
+                                 'validate': {'type:uuid_list': None},
+                                 'convert_to': attr.convert_none_to_empty_list,
+                                 'default': None, 'is_visible': True},
         'network_service_params': {'allow_post': True, 'allow_put': False,
                                    'validate':
                                    {'type:network_service_params': None},
@@ -535,44 +539,45 @@ class GroupPolicyPluginBase(service_base.ServicePluginBase):
         return 'Group Policy plugin'
 
     @abc.abstractmethod
-    def get_endpoints(self, context, filters=None, fields=None):
+    def get_policy_targets(self, context, filters=None, fields=None):
         pass
 
     @abc.abstractmethod
-    def get_endpoint(self, context, endpoint_id, fields=None):
+    def get_policy_target(self, context, policy_target_id, fields=None):
         pass
 
     @abc.abstractmethod
-    def create_endpoint(self, context, endpoint):
+    def create_policy_target(self, context, policy_target):
         pass
 
     @abc.abstractmethod
-    def update_endpoint(self, context, endpoint_id, endpoint):
+    def update_policy_target(self, context, policy_target_id, policy_target):
         pass
 
     @abc.abstractmethod
-    def delete_endpoint(self, context, endpoint_id):
+    def delete_policy_target(self, context, policy_target_id):
         pass
 
     @abc.abstractmethod
-    def get_endpoint_groups(self, context, filters=None, fields=None):
+    def get_policy_target_groups(self, context, filters=None, fields=None):
         pass
 
     @abc.abstractmethod
-    def get_endpoint_group(self, context, endpoint_group_id, fields=None):
+    def get_policy_target_group(self, context, policy_target_group_id,
+                                fields=None):
         pass
 
     @abc.abstractmethod
-    def create_endpoint_group(self, context, endpoint_group):
+    def create_policy_target_group(self, context, policy_target_group):
         pass
 
     @abc.abstractmethod
-    def update_endpoint_group(self, context, endpoint_group_id,
-                              endpoint_group):
+    def update_policy_target_group(self, context, policy_target_group_id,
+                                   policy_target_group):
         pass
 
     @abc.abstractmethod
-    def delete_endpoint_group(self, context, endpoint_group_id):
+    def delete_policy_target_group(self, context, policy_target_group_id):
         pass
 
     @abc.abstractmethod
@@ -701,21 +706,22 @@ class GroupPolicyPluginBase(service_base.ServicePluginBase):
         pass
 
     @abc.abstractmethod
-    def create_contract(self, context, contract):
+    def create_policy_rule_set(self, context, policy_rule_set):
         pass
 
     @abc.abstractmethod
-    def update_contract(self, context, contract_id, contract):
+    def update_policy_rule_set(self, context, policy_rule_set_id,
+                               policy_rule_set):
         pass
 
     @abc.abstractmethod
-    def get_contracts(self, context, filters=None, fields=None):
+    def get_policy_rule_sets(self, context, filters=None, fields=None):
         pass
 
     @abc.abstractmethod
-    def get_contract(self, context, contract_id, fields=None):
+    def get_policy_rule_set(self, context, policy_rule_set_id, fields=None):
         pass
 
     @abc.abstractmethod
-    def delete_contract(self, context, contract_id):
+    def delete_policy_rule_set(self, context, policy_rule_set_id):
         pass

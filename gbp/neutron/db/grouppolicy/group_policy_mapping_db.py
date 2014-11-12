@@ -24,8 +24,8 @@ from gbp.neutron.db.grouppolicy import group_policy_db as gpdb
 LOG = logging.getLogger(__name__)
 
 
-class EndpointMapping(gpdb.Endpoint):
-    """Mapping of Endpoint to Neutron Port."""
+class PolicyTargetMapping(gpdb.PolicyTarget):
+    """Mapping of PolicyTarget to Neutron Port."""
     __table_args__ = {'extend_existing': True}
     __mapper_args__ = {'polymorphic_identity': 'mapping'}
     # REVISIT(ivar): Set null on delete is a temporary workaround until Nova
@@ -35,21 +35,21 @@ class EndpointMapping(gpdb.Endpoint):
                         nullable=True, unique=True)
 
 
-class EndpointGroupSubnetAssociation(model_base.BASEV2):
-    """Models the many to many relation between EndpointGroup and Subnets."""
-    __tablename__ = 'gp_endpoint_group_subnet_associations'
-    endpoint_group_id = sa.Column(sa.String(36),
-                                  sa.ForeignKey('gp_endpoint_groups.id'),
-                                  primary_key=True)
+class PTGToSubnetAssociation(model_base.BASEV2):
+    """Many to many relation between PolicyTargetGroup and Subnets."""
+    __tablename__ = 'gp_ptg_to_subnet_associations'
+    policy_target_group_id = sa.Column(
+        sa.String(36), sa.ForeignKey('gp_policy_target_groups.id'),
+        primary_key=True)
     subnet_id = sa.Column(sa.String(36), sa.ForeignKey('subnets.id'),
                           primary_key=True)
 
 
-class EndpointGroupMapping(gpdb.EndpointGroup):
-    """Mapping of EndpointGroup to set of Neutron Subnets."""
+class PolicyTargetGroupMapping(gpdb.PolicyTargetGroup):
+    """Mapping of PolicyTargetGroup to set of Neutron Subnets."""
     __table_args__ = {'extend_existing': True}
     __mapper_args__ = {'polymorphic_identity': 'mapping'}
-    subnets = orm.relationship(EndpointGroupSubnetAssociation,
+    subnets = orm.relationship(PTGToSubnetAssociation,
                                cascade='all', lazy="joined")
 
 
@@ -82,16 +82,16 @@ class GroupPolicyMappingDbPlugin(gpdb.GroupPolicyDbPlugin):
     """Group Policy Mapping interface implementation using SQLAlchemy models.
     """
 
-    def _make_endpoint_dict(self, ep, fields=None):
+    def _make_policy_target_dict(self, pt, fields=None):
         res = super(GroupPolicyMappingDbPlugin,
-                    self)._make_endpoint_dict(ep)
-        res['port_id'] = ep.port_id
+                    self)._make_policy_target_dict(pt)
+        res['port_id'] = pt.port_id
         return self._fields(res, fields)
 
-    def _make_endpoint_group_dict(self, epg, fields=None):
+    def _make_policy_target_group_dict(self, ptg, fields=None):
         res = super(GroupPolicyMappingDbPlugin,
-                    self)._make_endpoint_group_dict(epg)
-        res['subnets'] = [subnet.subnet_id for subnet in epg.subnets]
+                    self)._make_policy_target_group_dict(ptg)
+        res['subnets'] = [subnet.subnet_id for subnet in ptg.subnets]
         return self._fields(res, fields)
 
     def _make_l2_policy_dict(self, l2p, fields=None):
@@ -106,18 +106,18 @@ class GroupPolicyMappingDbPlugin(gpdb.GroupPolicyDbPlugin):
         res['routers'] = [router.router_id for router in l3p.routers]
         return self._fields(res, fields)
 
-    def _set_port_for_endpoint(self, context, ep_id, port_id):
+    def _set_port_for_policy_target(self, context, pt_id, port_id):
         with context.session.begin(subtransactions=True):
-            ep_db = self._get_endpoint(context, ep_id)
-            ep_db.port_id = port_id
+            pt_db = self._get_policy_target(context, pt_id)
+            pt_db.port_id = port_id
 
-    def _add_subnet_to_endpoint_group(self, context, epg_id, subnet_id):
+    def _add_subnet_to_policy_target_group(self, context, ptg_id, subnet_id):
         with context.session.begin(subtransactions=True):
-            epg_db = self._get_endpoint_group(context, epg_id)
-            assoc = EndpointGroupSubnetAssociation(endpoint_group_id=epg_id,
-                                                   subnet_id=subnet_id)
-            epg_db.subnets.append(assoc)
-        return [subnet.subnet_id for subnet in epg_db.subnets]
+            ptg_db = self._get_policy_target_group(context, ptg_id)
+            assoc = PTGToSubnetAssociation(policy_target_group_id=ptg_id,
+                                           subnet_id=subnet_id)
+            ptg_db.subnets.append(assoc)
+        return [subnet.subnet_id for subnet in ptg_db.subnets]
 
     def _set_network_for_l2_policy(self, context, l2p_id, network_id):
         with context.session.begin(subtransactions=True):
@@ -133,71 +133,73 @@ class GroupPolicyMappingDbPlugin(gpdb.GroupPolicyDbPlugin):
         return [router.router_id for router in l3p_db.routers]
 
     @log.log
-    def create_endpoint(self, context, endpoint):
-        ep = endpoint['endpoint']
-        tenant_id = self._get_tenant_id_for_create(context, ep)
+    def create_policy_target(self, context, policy_target):
+        pt = policy_target['policy_target']
+        tenant_id = self._get_tenant_id_for_create(context, pt)
         with context.session.begin(subtransactions=True):
-            ep_db = EndpointMapping(id=uuidutils.generate_uuid(),
-                                    tenant_id=tenant_id,
-                                    name=ep['name'],
-                                    description=ep['description'],
-                                    endpoint_group_id=
-                                    ep['endpoint_group_id'],
-                                    port_id=ep['port_id'])
-            context.session.add(ep_db)
-        return self._make_endpoint_dict(ep_db)
+            pt_db = PolicyTargetMapping(id=uuidutils.generate_uuid(),
+                                        tenant_id=tenant_id,
+                                        name=pt['name'],
+                                        description=pt['description'],
+                                        policy_target_group_id=
+                                        pt['policy_target_group_id'],
+                                        port_id=pt['port_id'])
+            context.session.add(pt_db)
+        return self._make_policy_target_dict(pt_db)
 
     @log.log
-    def create_endpoint_group(self, context, endpoint_group):
-        epg = endpoint_group['endpoint_group']
-        tenant_id = self._get_tenant_id_for_create(context, epg)
+    def create_policy_target_group(self, context, policy_target_group):
+        ptg = policy_target_group['policy_target_group']
+        tenant_id = self._get_tenant_id_for_create(context, ptg)
         with context.session.begin(subtransactions=True):
-            epg_db = EndpointGroupMapping(id=uuidutils.generate_uuid(),
-                                          tenant_id=tenant_id,
-                                          name=epg['name'],
-                                          description=epg['description'],
-                                          l2_policy_id=epg['l2_policy_id'],
-                                          network_service_policy_id=
-                                          epg['network_service_policy_id'])
-            context.session.add(epg_db)
-            if 'subnets' in epg:
-                for subnet in epg['subnets']:
-                    assoc = EndpointGroupSubnetAssociation(
-                        endpoint_group_id=epg_db.id,
+            ptg_db = PolicyTargetGroupMapping(id=uuidutils.generate_uuid(),
+                                              tenant_id=tenant_id,
+                                              name=ptg['name'],
+                                              description=ptg['description'],
+                                              l2_policy_id=ptg['l2_policy_id'],
+                                              network_service_policy_id=
+                                              ptg['network_service_policy_id'])
+            context.session.add(ptg_db)
+            if 'subnets' in ptg:
+                for subnet in ptg['subnets']:
+                    assoc = PTGToSubnetAssociation(
+                        policy_target_group_id=ptg_db.id,
                         subnet_id=subnet
                     )
-                    epg_db.subnets.append(assoc)
-            self._process_contracts_for_epg(context, epg_db, epg)
-        return self._make_endpoint_group_dict(epg_db)
+                    ptg_db.subnets.append(assoc)
+            self._process_policy_rule_sets_for_ptg(context, ptg_db, ptg)
+        return self._make_policy_target_group_dict(ptg_db)
 
     @log.log
-    def update_endpoint_group(self, context, endpoint_group_id,
-                              endpoint_group):
-        epg = endpoint_group['endpoint_group']
+    def update_policy_target_group(self, context, policy_target_group_id,
+                                   policy_target_group):
+        ptg = policy_target_group['policy_target_group']
         with context.session.begin(subtransactions=True):
-            epg_db = self._get_endpoint_group(context, endpoint_group_id)
-            self._process_contracts_for_epg(context, epg_db, epg)
-            if 'subnets' in epg:
+            ptg_db = self._get_policy_target_group(
+                context, policy_target_group_id)
+            self._process_policy_rule_sets_for_ptg(context, ptg_db, ptg)
+            if 'subnets' in ptg:
                 # Add/remove associations for changes in subnets.
-                new_subnets = set(epg['subnets'])
+                new_subnets = set(ptg['subnets'])
                 old_subnets = set(subnet.subnet_id
-                                  for subnet in epg_db.subnets)
+                                  for subnet in ptg_db.subnets)
                 for subnet in new_subnets - old_subnets:
-                    assoc = EndpointGroupSubnetAssociation(
-                        endpoint_group_id=endpoint_group_id, subnet_id=subnet)
-                    epg_db.subnets.append(assoc)
+                    assoc = PTGToSubnetAssociation(
+                        policy_target_group_id=policy_target_group_id,
+                        subnet_id=subnet)
+                    ptg_db.subnets.append(assoc)
                 for subnet in old_subnets - new_subnets:
-                    assoc = (context.session.
-                             query(EndpointGroupSubnetAssociation).
-                             filter_by(endpoint_group_id=endpoint_group_id,
-                                       subnet_id=subnet).
-                             one())
-                    epg_db.subnets.remove(assoc)
+                    assoc = (
+                        context.session.query(
+                            PTGToSubnetAssociation).filter_by(
+                                policy_target_group_id=policy_target_group_id,
+                                subnet_id=subnet).one())
+                    ptg_db.subnets.remove(assoc)
                     context.session.delete(assoc)
-                # Don't update epg_db.subnets with subnet IDs.
-                del epg['subnets']
-            epg_db.update(epg)
-        return self._make_endpoint_group_dict(epg_db)
+                # Don't update ptg_db.subnets with subnet IDs.
+                del ptg['subnets']
+            ptg_db.update(ptg)
+        return self._make_policy_target_group_dict(ptg_db)
 
     @log.log
     def create_l2_policy(self, context, l2_policy):
