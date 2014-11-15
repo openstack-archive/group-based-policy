@@ -126,11 +126,15 @@ class ImplicitPolicyDriver(api.PolicyDriver):
                   'name': context.current['name'],
                   'description': _("Implicitly created L2 policy"),
                   'l3_policy_id': None,
+                  'shared': context.current.get('shared', False),
                   'network_id': None}}
         l2p = context._plugin.create_l2_policy(context._plugin_context, attrs)
         l2p_id = l2p['id']
         self._mark_l2_policy_owned(context._plugin_context.session, l2p_id)
-        context.set_l2_policy_id(l2p_id)
+        context.current['l2_policy_id'] = l2p_id
+        context._plugin.update_endpoint_group(
+            context._plugin_context, context.current['id'],
+            {'endpoint_group': {'l2_policy_id': l2p_id}})
 
     def _cleanup_l2_policy(self, context, l2p_id):
         if self._l2_policy_is_owned(context._plugin_context.session, l2p_id):
@@ -152,13 +156,17 @@ class ImplicitPolicyDriver(api.PolicyDriver):
                       'description': _("Implicitly created L3 policy"),
                       'ip_version': self._default_ip_version,
                       'ip_pool': self._default_ip_pool,
+                      'shared': context.current.get('shared', False),
                       'subnet_prefix_length':
                       self._default_subnet_prefix_length}}
             l3p = context._plugin.create_l3_policy(context._plugin_context,
                                                    attrs)
             self._mark_l3_policy_owned(context._plugin_context.session,
                                        l3p['id'])
-        context.set_l3_policy_id(l3p['id'])
+        context.current['l3_policy_id'] = l3p['id']
+        context._plugin.update_l2_policy(
+            context._plugin_context, context.current['id'],
+            {'l2_policy': {'l3_policy_id': l3p['id']}})
 
     def _cleanup_l3_policy(self, context, l3p_id):
         if self._l3_policy_is_owned(context._plugin_context.session, l3p_id):

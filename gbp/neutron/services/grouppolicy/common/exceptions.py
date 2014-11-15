@@ -64,3 +64,29 @@ class NoSubnetAvailable(exceptions.ResourceExhausted, GroupPolicyException):
 
 class EndpointGroupInUse(GroupPolicyBadRequest):
     message = _("Endpoint Group %(endpoint_group)s is in use")
+
+
+class SharedResourceReferenceError(GroupPolicyBadRequest):
+    message = _("Shared resource of type %(res_type)s with id %(res_id)s "
+                "can't reference the non shared resource of type "
+                "%(ref_type)s with id %(ref_id)s")
+
+
+class InvalidSharedResource(GroupPolicyBadRequest):
+    message = _("Resource of type %(type)s cannot be shared by driver "
+                "%(driver)s")
+
+
+class NonSharedL2PolicyOnSharedL3PolicyNotSupported(GroupPolicyBadRequest):
+    message = _("Non shared L2 Policy can't reference a shared L3 Policy "
+                "of a different tenant")
+
+
+class NonSharedEndpointGroupOnSharedL2PolicyNotSupported(
+        GroupPolicyBadRequest):
+    message = _("Non shared Endpoint Group can't reference a shared L2 Policy "
+                "of a different tenant")
+
+
+class NonSharedNetworkOnSharedL2PolicyNotSupported(GroupPolicyBadRequest):
+    message = _("Non Shared Network can't be set for a shared L2 Policy")
