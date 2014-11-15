@@ -10,6 +10,7 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+from neutron.api.v2 import attributes as nattr
 from neutron.common import log
 from neutron.openstack.common import excutils
 from neutron.openstack.common import log as logging
@@ -41,6 +42,116 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
             aliases += self.extension_manager.extension_aliases()
             self._aliases = aliases
         return self._aliases
+
+    # Shared attribute validation rules:
+    # - A shared resource cannot use/link a non-shared resource
+    # - A shared resource cannot be reverted to non-shared if used/linked by
+    # other shared resources, or by any resource owned by any other tenant
+
+    # In the usage graph, specify which resource has to be checked to validate
+    # sharing policy conformity:
+    # usage_graph = {<to_check>: {<attribute>: <type>}, ...}
+    # <attribute> is the field on the <to_check> dictionary that can be used
+    # to retrieve the UUID/s of the specific object <type>
+
+    usage_graph = {'l3_policy': {},
+                   'l2_policy': {'l3_policy_id': 'l3_policy'},
+                   'policy_target_group': {
+                       'network_service_policy_id': 'network_service_policy',
+                       'l2_policy_id': 'l2_policy',
+                       'provided_policy_rule_sets': 'policy_rule_set',
+                       'consumed_policy_rule_sets': 'policy_rule_set'},
+                   'network_service_policy': {},
+                   'policy_rule': {
+                       'policy_classifier_id': 'policy_classifier',
+                       'policy_actions': 'policy_action'},
+                   'policy_action': {},
+                   'policy_classifier': {},
+                   'policy_rule_set': {
+                       'parent_id': 'policy_rule_set',
+                       'policy_rules': 'policy_rule'}}
+    _plurals = None
+
+    @property
+    def plurals(self):
+        if not self._plurals:
+            self._plurals = dict((nattr.PLURALS[k], k) for k in nattr.PLURALS)
+        return self._plurals
+
+    def _validate_shared_create(self, context, obj, identity):
+        if not obj.get('shared'):
+            return
+        links = self.usage_graph.get(identity, {})
+        for attr in links:
+            ids = obj[attr]
+            if ids:
+                if isinstance(ids, basestring):
+                    ids = [ids]
+                ref_type = links[attr]
+                linked_objects = getattr(
+                    self, 'get_%s' % self.plurals[ref_type])(
+                        context, filters={'id': ids})
+                for linked in linked_objects:
+                    if not linked.get('shared'):
+                        raise gp_exc.SharedResourceReferenceError(
+                            res_type=identity, res_id=obj['id'],
+                            ref_type=ref_type, ref_id=linked['id'])
+
+    def _validate_shared_update(self, context, original, updated, identity):
+        if updated.get('shared'):
+            # Even though the shared attribute may not be changed, the objects
+            # it is referring to might. For this reason we run the reference
+            # validation every time a shared resource is updated
+            # TODO(ivar): run only when relevant updates happen
+            self._validate_shared_create(context, updated, identity)
+        elif updated.get('shared') != original.get('shared'):
+            getattr(self, '_validate_%s_unshare' % identity)(context, updated)
+
+    def _check_shared_or_different_tenant(self, context, obj,
+                                          method, attr, value=None):
+        tenant_id = obj['tenant_id']
+        refs = method(context, filters={attr: value or [obj['id']]})
+        for ref in refs:
+            if ref.get('shared') or tenant_id != ref['tenant_id']:
+                raise gp_exc.InvalidSharedAttributeUpdate(id=obj['id'],
+                                                          rid=ref['id'])
+
+    def _validate_l3_policy_unshare(self, context, obj):
+        self._check_shared_or_different_tenant(
+            context, obj, self.get_l2_policies, 'l3_policy_id')
+
+    def _validate_l2_policy_unshare(self, context, obj):
+        self._check_shared_or_different_tenant(
+            context, obj, self.get_policy_target_groups, 'l2_policy_id')
+
+    def _validate_policy_target_group_unshare(self, context, obj):
+        self._check_shared_or_different_tenant(
+            context, obj, self.get_policy_targets, 'policy_target_group_id')
+
+    def _validate_network_service_policy_unshare(self, context, obj):
+        self._check_shared_or_different_tenant(
+            context, obj, self.get_policy_target_groups,
+            'network_service_policy_id')
+
+    def _validate_policy_rule_set_unshare(self, context, obj):
+        self._check_shared_or_different_tenant(
+            context, obj, self.get_policy_target_groups, 'id',
+            obj['providing_policy_target_groups'] +
+            obj['consuming_policy_target_groups'])
+
+    def _validate_policy_classifier_unshare(self, context, obj):
+        self._check_shared_or_different_tenant(
+            context, obj, self.get_policy_rules, 'policy_classifier_id')
+
+    def _validate_policy_rule_unshare(self, context, obj):
+        c_ids = self._get_policy_rule_policy_rule_sets(context, obj['id'])
+        self._check_shared_or_different_tenant(
+            context, obj, self.get_policy_rule_sets, 'id', c_ids)
+
+    def _validate_policy_action_unshare(self, context, obj):
+        r_ids = self._get_policy_action_rules(context, obj['id'])
+        self._check_shared_or_different_tenant(
+            context, obj, self.get_policy_rules, 'id', r_ids)
 
     def __init__(self):
         self.extension_manager = ext_manager.ExtensionManager()
@@ -145,6 +256,8 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
                                context, policy_target_group)
             self.extension_manager.process_create_policy_target_group(
                 session, policy_target_group, result)
+            self._validate_shared_create(context, result,
+                                         'policy_target_group')
             policy_context = p_context.PolicyTargetGroupContext(
                 self, context, result)
             self.policy_driver_manager.create_policy_target_group_precommit(
@@ -174,6 +287,9 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
                     context, policy_target_group_id, policy_target_group)
             self.extension_manager.process_update_policy_target_group(
                 session, policy_target_group, updated_policy_target_group)
+            self._validate_shared_update(context, original_policy_target_group,
+                                         updated_policy_target_group,
+                                         'policy_target_group')
             policy_context = p_context.PolicyTargetGroupContext(
                 self, context, updated_policy_target_group,
                 original_policy_target_group=original_policy_target_group)
@@ -240,6 +356,7 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
                            self).create_l2_policy(context, l2_policy)
             self.extension_manager.process_create_l2_policy(
                 session, l2_policy, result)
+            self._validate_shared_create(context, result, 'l2_policy')
             policy_context = p_context.L2PolicyContext(self, context, result)
             self.policy_driver_manager.create_l2_policy_precommit(
                 policy_context)
@@ -265,6 +382,8 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
                                           context, l2_policy_id, l2_policy)
             self.extension_manager.process_update_l2_policy(
                 session, l2_policy, updated_l2_policy)
+            self._validate_shared_update(context, original_l2_policy,
+                                         updated_l2_policy, 'l2_policy')
             policy_context = p_context.L2PolicyContext(
                 self, context, updated_l2_policy,
                 original_l2_policy=original_l2_policy)
@@ -324,6 +443,8 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
                                context, network_service_policy)
             self.extension_manager.process_create_network_service_policy(
                 session, network_service_policy, result)
+            self._validate_shared_create(context, result,
+                                         'network_service_policy')
             policy_context = p_context.NetworkServicePolicyContext(
                 self, context, result)
             pdm = self.policy_driver_manager
@@ -356,6 +477,9 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
             self.extension_manager.process_update_network_service_policy(
                 session, network_service_policy,
                 updated_network_service_policy)
+            self._validate_shared_update(
+                context, original_network_service_policy,
+                updated_network_service_policy, 'network_service_policy')
             policy_context = p_context.NetworkServicePolicyContext(
                 self, context, updated_network_service_policy,
                 original_network_service_policy=
@@ -421,6 +545,7 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
                            self).create_l3_policy(context, l3_policy)
             self.extension_manager.process_create_l3_policy(
                 session, l3_policy, result)
+            self._validate_shared_create(context, result, 'l3_policy')
             policy_context = p_context.L3PolicyContext(self, context,
                                                        result)
             self.policy_driver_manager.create_l3_policy_precommit(
@@ -447,6 +572,8 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
                     context, l3_policy_id, l3_policy)
             self.extension_manager.process_update_l3_policy(
                 session, l3_policy, updated_l3_policy)
+            self._validate_shared_update(context, original_l3_policy,
+                                         updated_l3_policy, 'l3_policy')
             policy_context = p_context.L3PolicyContext(
                 self, context, updated_l3_policy,
                 original_l3_policy=original_l3_policy)
@@ -511,6 +638,7 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
                     context, policy_classifier)
             self.extension_manager.process_create_policy_classifier(
                 session, policy_classifier, result)
+            self._validate_shared_create(context, result, 'policy_classifier')
             policy_context = p_context.PolicyClassifierContext(self, context,
                                                                result)
             self.policy_driver_manager.create_policy_classifier_precommit(
@@ -539,6 +667,9 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
                     context, id, policy_classifier)
             self.extension_manager.process_update_policy_classifier(
                 session, policy_classifier, updated_policy_classifier)
+            self._validate_shared_update(context, original_policy_classifier,
+                                         updated_policy_classifier,
+                                         'policy_classifier')
             policy_context = p_context.PolicyClassifierContext(
                 self, context, updated_policy_classifier,
                 original_policy_classifier=original_policy_classifier)
@@ -600,6 +731,7 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
                            self).create_policy_action(context, policy_action)
             self.extension_manager.process_create_policy_action(
                 session, policy_action, result)
+            self._validate_shared_create(context, result, 'policy_action')
             policy_context = p_context.PolicyActionContext(self, context,
                                                            result)
             self.policy_driver_manager.create_policy_action_precommit(
@@ -628,6 +760,9 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
                                                               policy_action)
             self.extension_manager.process_update_policy_action(
                 session, policy_action, updated_policy_action)
+            self._validate_shared_update(context, original_policy_action,
+                                         updated_policy_action,
+                                         'policy_action')
             policy_context = p_context.PolicyActionContext(
                 self, context, updated_policy_action,
                 original_policy_action=original_policy_action)
@@ -687,6 +822,7 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
                     context, policy_rule)
             self.extension_manager.process_create_policy_rule(
                 session, policy_rule, result)
+            self._validate_shared_create(context, result, 'policy_rule')
             policy_context = p_context.PolicyRuleContext(self, context,
                                                          result)
             self.policy_driver_manager.create_policy_rule_precommit(
@@ -715,6 +851,8 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
                     context, id, policy_rule)
             self.extension_manager.process_update_policy_rule(
                 session, policy_rule, updated_policy_rule)
+            self._validate_shared_update(context, original_policy_rule,
+                                         updated_policy_rule, 'policy_rule')
             policy_context = p_context.PolicyRuleContext(
                 self, context, updated_policy_rule,
                 original_policy_rule=original_policy_rule)
@@ -775,6 +913,7 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
                                context, policy_rule_set)
             self.extension_manager.process_create_policy_rule_set(
                 session, policy_rule_set, result)
+            self._validate_shared_create(context, result, 'policy_rule_set')
             policy_context = p_context.PolicyRuleSetContext(
                 self, context, result)
             self.policy_driver_manager.create_policy_rule_set_precommit(
@@ -803,6 +942,9 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
                     context, id, policy_rule_set)
             self.extension_manager.process_update_policy_rule_set(
                 session, policy_rule_set, updated_policy_rule_set)
+            self._validate_shared_update(context, original_policy_rule_set,
+                                         updated_policy_rule_set,
+                                         'policy_rule_set')
             policy_context = p_context.PolicyRuleSetContext(
                 self, context, updated_policy_rule_set,
                 original_policy_rule_set=original_policy_rule_set)
