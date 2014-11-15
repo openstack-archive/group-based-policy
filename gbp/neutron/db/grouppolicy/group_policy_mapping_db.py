@@ -158,7 +158,8 @@ class GroupPolicyMappingDbPlugin(gpdb.GroupPolicyDbPlugin):
                                               description=ptg['description'],
                                               l2_policy_id=ptg['l2_policy_id'],
                                               network_service_policy_id=
-                                              ptg['network_service_policy_id'])
+                                              ptg['network_service_policy_id'],
+                                              shared=ptg.get('shared', False))
             context.session.add(ptg_db)
             if 'subnets' in ptg:
                 for subnet in ptg['subnets']:
@@ -211,7 +212,8 @@ class GroupPolicyMappingDbPlugin(gpdb.GroupPolicyDbPlugin):
                                      name=l2p['name'],
                                      description=l2p['description'],
                                      l3_policy_id=l2p['l3_policy_id'],
-                                     network_id=l2p['network_id'])
+                                     network_id=l2p['network_id'],
+                                     shared=l2p.get('shared', False))
             context.session.add(l2p_db)
         return self._make_l2_policy_dict(l2p_db)
 
@@ -229,7 +231,8 @@ class GroupPolicyMappingDbPlugin(gpdb.GroupPolicyDbPlugin):
                                      ip_pool=l3p['ip_pool'],
                                      subnet_prefix_length=
                                      l3p['subnet_prefix_length'],
-                                     description=l3p['description'])
+                                     description=l3p['description'],
+                                     shared=l3p.get('shared', False))
             context.session.add(l3p_db)
             if 'routers' in l3p:
                 for router in l3p['routers']:

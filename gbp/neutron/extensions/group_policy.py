@@ -292,6 +292,10 @@ RESOURCE_ATTRIBUTE_MAP = {
         'network_service_policy_id': {'allow_post': True, 'allow_put': True,
                                       'validate': {'type:uuid_or_none': None},
                                       'default': None, 'is_visible': True},
+        attr.SHARED: {'allow_post': True, 'allow_put': True,
+                      'default': False, 'convert_to': attr.convert_to_boolean,
+                      'is_visible': True, 'required_by_policy': True,
+                      'enforce_policy': True},
     },
     L2_POLICIES: {
         'id': {'allow_post': False, 'allow_put': False,
@@ -314,6 +318,10 @@ RESOURCE_ATTRIBUTE_MAP = {
                          'validate': {'type:uuid_or_none': None},
                          'default': None, 'is_visible': True,
                          'required': True},
+        attr.SHARED: {'allow_post': True, 'allow_put': True,
+                      'default': False, 'convert_to': attr.convert_to_boolean,
+                      'is_visible': True, 'required_by_policy': True,
+                      'enforce_policy': True},
         # TODO(Sumit): uncomment when supported in data path
         # 'allow_broadcast': {'allow_post': True, 'allow_put': True,
         #                    'default': True, 'is_visible': True,
@@ -349,6 +357,10 @@ RESOURCE_ATTRIBUTE_MAP = {
                         'validate': {'type:uuid_list': None},
                         'convert_to': attr.convert_none_to_empty_list,
                         'default': None, 'is_visible': True},
+        attr.SHARED: {'allow_post': True, 'allow_put': True,
+                      'default': False, 'convert_to': attr.convert_to_boolean,
+                      'is_visible': True, 'required_by_policy': True,
+                      'enforce_policy': True},
     },
     POLICY_CLASSIFIERS: {
         'id': {'allow_post': False, 'allow_put': False,
@@ -375,6 +387,10 @@ RESOURCE_ATTRIBUTE_MAP = {
         'direction': {'allow_post': True, 'allow_put': True,
                       'validate': {'type:values': gp_supported_directions},
                       'default': None, 'is_visible': True},
+        attr.SHARED: {'allow_post': True, 'allow_put': True,
+                      'default': False, 'convert_to': attr.convert_to_boolean,
+                      'is_visible': True, 'required_by_policy': True,
+                      'enforce_policy': True},
     },
     POLICY_ACTIONS: {
         'id': {'allow_post': False, 'allow_put': False,
@@ -398,6 +414,10 @@ RESOURCE_ATTRIBUTE_MAP = {
         'action_value': {'allow_post': True, 'allow_put': True,
                          'validate': {'type:uuid_or_none': None},
                          'default': None, 'is_visible': True},
+        attr.SHARED: {'allow_post': True, 'allow_put': True,
+                      'default': False, 'convert_to': attr.convert_to_boolean,
+                      'is_visible': True, 'required_by_policy': True,
+                      'enforce_policy': True},
     },
     POLICY_RULES: {
         'id': {'allow_post': False, 'allow_put': False,
@@ -422,6 +442,10 @@ RESOURCE_ATTRIBUTE_MAP = {
                            'default': None, 'is_visible': True,
                            'validate': {'type:uuid_list': None},
                            'convert_to': attr.convert_none_to_empty_list},
+        attr.SHARED: {'allow_post': True, 'allow_put': True,
+                      'default': False, 'convert_to': attr.convert_to_boolean,
+                      'is_visible': True, 'required_by_policy': True,
+                      'enforce_policy': True},
     },
     POLICY_RULE_SETS: {
         'id': {'allow_post': False, 'allow_put': False,
@@ -451,6 +475,10 @@ RESOURCE_ATTRIBUTE_MAP = {
                          'default': None, 'validate': {'type:uuid_list': None},
                          'convert_to': attr.convert_none_to_empty_list,
                          'is_visible': True},
+        attr.SHARED: {'allow_post': True, 'allow_put': True,
+                      'default': False, 'convert_to': attr.convert_to_boolean,
+                      'is_visible': True, 'required_by_policy': True,
+                      'enforce_policy': True},
     },
     NETWORK_SERVICE_POLICIES: {
         'id': {'allow_post': False, 'allow_put': False,
@@ -473,6 +501,10 @@ RESOURCE_ATTRIBUTE_MAP = {
                                    'validate':
                                    {'type:network_service_params': None},
                                    'default': None, 'is_visible': True},
+        attr.SHARED: {'allow_post': True, 'allow_put': True,
+                      'default': False, 'convert_to': attr.convert_to_boolean,
+                      'is_visible': True, 'required_by_policy': True,
+                      'enforce_policy': True},
     },
 }
 
