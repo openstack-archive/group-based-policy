@@ -126,6 +126,36 @@ class ResourceMappingDriver(api.PolicyDriver):
         self._cached_agent_notifier = None
         self._nova_notifier = nova.Notifier()
 
+    def _reject_shared(self, object, type):
+        if object.get('shared'):
+            raise exc.InvalidSharedResource(type=type,
+                                            driver='resource_mapping')
+
+    def _reject_cross_tenant_ptg_l2p(self, context):
+        if context.current['l2_policy_id']:
+            l2p = context._plugin.get_l2_policy(
+                context._plugin_context, context.current['l2_policy_id'])
+            if l2p['tenant_id'] != context.current['tenant_id']:
+                raise (
+                    exc.
+                    CrossTenantPolicyTargetGroupL2PolicyNotSupported())
+
+    def _reject_cross_tenant_l2p_l3p(self, context):
+        # Can't create non shared L2p on a shared L3p
+        if context.current['l3_policy_id']:
+            l3p = context._plugin.get_l3_policy(
+                context._plugin_context,
+                context.current['l3_policy_id'])
+            if l3p['tenant_id'] != context.current['tenant_id']:
+                raise exc.CrossTenantL2PolicyL3PolicyNotSupported()
+
+    def _reject_non_shared_net_on_shared_l2p(self, context):
+        if context.current.get('shared') and context.current['network_id']:
+            net = self._core_plugin.get_network(
+                context._plugin_context, context.current['network_id'])
+            if not net.get('shared'):
+                raise exc.NonSharedNetworkOnSharedL2PolicyNotSupported()
+
     @log.log
     def create_policy_target_precommit(self, context):
         if not context.current['policy_target_group_id']:
@@ -190,7 +220,7 @@ class ResourceMappingDriver(api.PolicyDriver):
 
     @log.log
     def create_policy_target_group_precommit(self, context):
-        pass
+        self._reject_cross_tenant_ptg_l2p(context)
 
     @log.log
     def create_policy_target_group_postcommit(self, context):
@@ -267,6 +297,7 @@ class ResourceMappingDriver(api.PolicyDriver):
     def update_policy_target_group_precommit(self, context):
         if set(context.original['subnets']) - set(context.current['subnets']):
             raise exc.PolicyTargetGroupSubnetRemovalNotSupported()
+        self._reject_cross_tenant_ptg_l2p(context)
 
     @log.log
     def update_policy_target_group_postcommit(self, context):
@@ -347,7 +378,8 @@ class ResourceMappingDriver(api.PolicyDriver):
 
     @log.log
     def create_l2_policy_precommit(self, context):
-        pass
+        self._reject_cross_tenant_l2p_l3p(context)
+        self._reject_non_shared_net_on_shared_l2p(context)
 
     @log.log
     def create_l2_policy_postcommit(self, context):
@@ -356,7 +388,8 @@ class ResourceMappingDriver(api.PolicyDriver):
 
     @log.log
     def update_l2_policy_precommit(self, context):
-        pass
+        self._reject_cross_tenant_l2p_l3p(context)
+        self._reject_non_shared_net_on_shared_l2p(context)
 
     @log.log
     def update_l2_policy_postcommit(self, context):
@@ -490,7 +523,7 @@ class ResourceMappingDriver(api.PolicyDriver):
 
     @log.log
     def create_policy_rule_set_precommit(self, context):
-        pass
+        self._reject_shared(context.current, 'policy_rule_set')
 
     @log.log
     def create_policy_rule_set_postcommit(self, context):
@@ -508,7 +541,7 @@ class ResourceMappingDriver(api.PolicyDriver):
 
     @log.log
     def update_policy_rule_set_precommit(self, context):
-        pass
+        self._reject_shared(context.current, 'policy_rule_set')
 
     @log.log
     def update_policy_rule_set_postcommit(self, context):
@@ -560,7 +593,7 @@ class ResourceMappingDriver(api.PolicyDriver):
             ptg = context._plugin.get_policy_target_group(
                 context._plugin_context, ptg_id)
             subnet = ptg.get('subnets')[0]
-            self._cleanup_network_service_policy(self, context, subnet, ptg_id)
+            self._cleanup_network_service_policy(context, subnet, ptg_id)
 
     def _get_routerid_for_l2policy(self, context, l2p_id):
         l2p = context._plugin.get_l2_policy(context._plugin_context, l2p_id)
@@ -682,7 +715,7 @@ class ResourceMappingDriver(api.PolicyDriver):
         attrs = {'tenant_id': context.current['tenant_id'],
                  'name': 'l2p_' + context.current['name'],
                  'admin_state_up': True,
-                 'shared': False}
+                 'shared': context.current.get('shared', False)}
         network = self._create_network(context._plugin_context, attrs)
         network_id = network['id']
         self._mark_network_owned(context._plugin_context.session, network_id)
