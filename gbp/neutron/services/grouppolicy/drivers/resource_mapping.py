@@ -125,6 +125,38 @@ class ResourceMappingDriver(api.PolicyDriver):
         self._cached_agent_notifier = None
         self._nova_notifier = nova.Notifier()
 
+    def _reject_shared(self, object, type):
+        if object.get('shared'):
+            raise exc.InvalidSharedResource(type=type,
+                                            driver='resource_mapping')
+
+    def _reject_non_shared_epg(self, context):
+        if (not context.current.get('shared') and
+                context.current['l2_policy_id']):
+            l2p = context._plugin.get_l2_policy(
+                context._plugin_context, context.current['l2_policy_id'])
+            if (l2p.get('shared') and
+                    l2p['tenant_id'] != context.current['tenant_id']):
+                raise exc.NonSharedEndpointGroupOnSharedL2PolicyNotSupported()
+
+    def _reject_non_shared_l2p(self, context):
+        # Can't create non shared L2p on a shared L3p
+        if (not context.current.get('shared') and
+                context.current['l3_policy_id']):
+            l3p = context._plugin.get_l3_policy(
+                context._plugin_context,
+                context.current['l3_policy_id'])
+            if (l3p.get('shared') and
+                    l3p['tenant_id'] != context.current['tenant_id']):
+                raise exc.NonSharedL2PolicyOnSharedL3PolicyNotSupported()
+
+    def _reject_non_shared_net_on_shared_l2p(self, context):
+        if context.current.get('shared') and context.current['network_id']:
+            net = self._core_plugin.get_network(
+                context._plugin_context, context.current['network_id'])
+            if not net.get('shared'):
+                raise exc.NonSharedNetworkOnSharedL2PolicyNotSupported()
+
     @log.log
     def create_endpoint_precommit(self, context):
         if not context.current['endpoint_group_id']:
@@ -164,7 +196,7 @@ class ResourceMappingDriver(api.PolicyDriver):
 
     @log.log
     def create_endpoint_group_precommit(self, context):
-        pass
+        self._reject_non_shared_epg(context)
 
     @log.log
     def create_endpoint_group_postcommit(self, context):
@@ -242,6 +274,7 @@ class ResourceMappingDriver(api.PolicyDriver):
     def update_endpoint_group_precommit(self, context):
         if set(context.original['subnets']) - set(context.current['subnets']):
             raise exc.EndpointGroupSubnetRemovalNotSupported()
+        self._reject_non_shared_epg(context)
 
     @log.log
     def update_endpoint_group_postcommit(self, context):
@@ -311,7 +344,8 @@ class ResourceMappingDriver(api.PolicyDriver):
 
     @log.log
     def create_l2_policy_precommit(self, context):
-        pass
+        self._reject_non_shared_l2p(context)
+        self._reject_non_shared_net_on_shared_l2p(context)
 
     @log.log
     def create_l2_policy_postcommit(self, context):
@@ -320,7 +354,8 @@ class ResourceMappingDriver(api.PolicyDriver):
 
     @log.log
     def update_l2_policy_precommit(self, context):
-        pass
+        self._reject_non_shared_l2p(context)
+        self._reject_non_shared_net_on_shared_l2p(context)
 
     @log.log
     def update_l2_policy_postcommit(self, context):
@@ -454,7 +489,7 @@ class ResourceMappingDriver(api.PolicyDriver):
 
     @log.log
     def create_contract_precommit(self, context):
-        pass
+        self._reject_shared(context.current, 'contract')
 
     @log.log
     def create_contract_postcommit(self, context):
@@ -472,7 +507,7 @@ class ResourceMappingDriver(api.PolicyDriver):
 
     @log.log
     def update_contract_precommit(self, context):
-        pass
+        self._reject_shared(context.updated, 'contract')
 
     @log.log
     def update_contract_postcommit(self, context):
@@ -646,7 +681,7 @@ class ResourceMappingDriver(api.PolicyDriver):
         attrs = {'tenant_id': context.current['tenant_id'],
                  'name': 'l2p_' + context.current['name'],
                  'admin_state_up': True,
-                 'shared': False}
+                 'shared': context.current.get('shared', False)}
         network = self._create_network(context._plugin_context, attrs)
         network_id = network['id']
         self._mark_network_owned(context._plugin_context.session, network_id)
