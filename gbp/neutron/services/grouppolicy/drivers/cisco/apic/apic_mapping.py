@@ -44,7 +44,7 @@ class RedirectActionNotSupportedOnApicDriver(gpexc.GroupPolicyBadRequest):
 
 
 class PolicyRuleUpdateNotSupportedOnApicDriver(gpexc.GroupPolicyBadRequest):
-    message = _("Policy rule update is not supported on for APIC GBP"
+    message = _("Policy rule update is not supported on APIC GBP"
                 "driver.")
 
 
@@ -189,6 +189,9 @@ class ApicMappingDriver(api.ResourceMappingDriver):
             self.apic_manager.create_tenant_filter(policy_rule, owner=tenant,
                                                    **attrs)
 
+    def create_policy_rule_set_precommit(self, context):
+        pass
+
     def create_policy_rule_set_postcommit(self, context):
         # Create APIC contract
         tenant = self.name_mapper.tenant(context, context.current['tenant_id'])
@@ -207,6 +210,9 @@ class ApicMappingDriver(api.ResourceMappingDriver):
         super(ApicMappingDriver, self).create_policy_target_postcommit(context)
         self._manage_policy_target_port(
             context._plugin_context, context.current)
+
+    def create_policy_target_group_precommit(self, context):
+        pass
 
     def create_policy_target_group_postcommit(self, context):
         super(ApicMappingDriver, self).create_policy_target_group_postcommit(
@@ -229,6 +235,12 @@ class ApicMappingDriver(api.ResourceMappingDriver):
                 context.current['provided_policy_rule_sets'],
                 context.current['consumed_policy_rule_sets'], [], [],
                 transaction=trs)
+
+    def create_l2_policy_precommit(self, context):
+        self._reject_non_shared_net_on_shared_l2p(context)
+
+    def update_l2_policy_precommit(self, context):
+        self._reject_non_shared_net_on_shared_l2p(context)
 
     def create_l2_policy_postcommit(self, context):
         super(ApicMappingDriver, self).create_l2_policy_postcommit(context)
@@ -301,6 +313,9 @@ class ApicMappingDriver(api.ResourceMappingDriver):
 
         self.apic_manager.ensure_context_deleted(tenant, l3_policy)
 
+    def update_policy_target_precommit(self, context):
+        pass
+
     def update_policy_target_postcommit(self, context):
         # TODO(ivar): redo binding procedure if the EPG is modified,
         # not doable unless driver extension framework is in place
@@ -309,6 +324,10 @@ class ApicMappingDriver(api.ResourceMappingDriver):
     def update_policy_rule_precommit(self, context):
         # TODO(ivar): add support for action update on policy rules
         raise PolicyRuleUpdateNotSupportedOnApicDriver()
+
+    def update_policy_target_group_precommit(self, context):
+        if set(context.original['subnets']) - set(context.current['subnets']):
+            raise gpexc.PolicyTargetGroupSubnetRemovalNotSupported()
 
     def update_policy_target_group_postcommit(self, context):
         # TODO(ivar): refactor parent to avoid code duplication
