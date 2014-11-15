@@ -78,3 +78,33 @@ class InvalidPortForPTG(GroupPolicyBadRequest):
 class OverlappingIPPoolsInSameTenantNotAllowed(GroupPolicyBadRequest):
     message = _("IP Pool %(ip_pool)s overlaps with one of the existing L3P "
                 "for the same tenant %(overlapping_pools)s.")
+
+
+class SharedResourceReferenceError(GroupPolicyBadRequest):
+    message = _("Shared resource of type %(res_type)s with id %(res_id)s "
+                "can't reference the non shared resource of type "
+                "%(ref_type)s with id %(ref_id)s")
+
+
+class InvalidSharedResource(GroupPolicyBadRequest):
+    message = _("Resource of type %(type)s cannot be shared by driver "
+                "%(driver)s")
+
+
+class CrossTenantL2PolicyL3PolicyNotSupported(GroupPolicyBadRequest):
+    message = _("Cross tenancy not supported between L2Ps and L3Ps")
+
+
+class CrossTenantPolicyTargetGroupL2PolicyNotSupported(
+        GroupPolicyBadRequest):
+    message = _("Cross tenancy not supported between PTGs and L2Ps")
+
+
+class NonSharedNetworkOnSharedL2PolicyNotSupported(GroupPolicyBadRequest):
+    message = _("Non Shared Network can't be set for a shared L2 Policy")
+
+
+class InvalidSharedAttributeUpdate(GroupPolicyBadRequest):
+    message = _("Invalid shared attribute update. Shared resource %(id)s is"
+                "referenced by %(rid)s, which is either shared or owned by a "
+                "different tenant.")
