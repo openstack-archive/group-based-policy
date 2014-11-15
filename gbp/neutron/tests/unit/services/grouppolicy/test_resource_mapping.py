@@ -48,6 +48,33 @@ class ResourceMappingTestCase(
                                      group='group_policy')
         super(ResourceMappingTestCase, self).setUp(core_plugin=CORE_PLUGIN)
 
+    def test_shared_epg_create(self):
+        pass
+
+    def test_shared_epg_create_negative(self):
+        pass
+
+    def test_shared_l2_policy_create_negative(self):
+        pass
+
+    def test_shared_contract_create_negative(self):
+        pass
+
+    def test_shared_l2_policy_create(self):
+        pass
+
+    def test_shared_contract_create(self):
+        pass
+
+    def test_l2p_create_among_tenants(self):
+        pass
+
+    def test_epg_create_among_tenants(self):
+        pass
+
+    def test_complex_epg_create_among_tenant(self):
+        pass
+
 
 class TestEndpoint(ResourceMappingTestCase):
 
@@ -61,6 +88,16 @@ class TestEndpoint(ResourceMappingTestCase):
         ep_id = ep['endpoint']['id']
         port_id = ep['endpoint']['port_id']
         self.assertIsNotNone(port_id)
+
+        # Create endpoint in shared endpoint group
+        l3p = self.create_l3_policy(shared=True)
+        l2p = self.create_l2_policy(l3_policy_id=l3p['l3_policy']['id'],
+                                    shared=True)
+        s_epg = self.create_endpoint_group(name="s_epg", shared=True,
+                                           l2_policy_id=l2p['l2_policy']['id'])
+        s_epg_id = s_epg['endpoint_group']['id']
+        ep = self.create_endpoint(name="ep1", endpoint_group_id=s_epg_id)
+        self.assertIsNotNone(ep['endpoint']['port_id'])
 
         # TODO(rkukura): Verify implicit port belongs to endpoint
         # group's subnet.
@@ -125,14 +162,15 @@ class TestEndpoint(ResourceMappingTestCase):
 
 class TestEndpointGroup(ResourceMappingTestCase):
 
-    def test_implicit_subnet_lifecycle(self):
+    def _test_implicit_subnet_lifecycle(self, shared=False):
         # Use explicit L2 policy so network and subnet not deleted
         # with endpoint group.
-        l2p = self.create_l2_policy()
+        l2p = self.create_l2_policy(shared=shared)
         l2p_id = l2p['l2_policy']['id']
 
         # Create endpoint group with implicit subnet.
-        epg = self.create_endpoint_group(name="epg1", l2_policy_id=l2p_id)
+        epg = self.create_endpoint_group(name="epg1", l2_policy_id=l2p_id,
+                                         shared=shared)
         epg_id = epg['endpoint_group']['id']
         subnets = epg['endpoint_group']['subnets']
         self.assertIsNotNone(subnets)
@@ -153,6 +191,12 @@ class TestEndpointGroup(ResourceMappingTestCase):
 
         # TODO(rkukura): Verify implicit subnet was removed as router
         # interface.
+
+    def test_implicit_subnet_lifecycle(self):
+        self._test_implicit_subnet_lifecycle()
+
+    def test_implicit_subnet_lifecycle_shared(self):
+        self._test_implicit_subnet_lifecycle(True)
 
     def test_explicit_subnet_lifecycle(self):
         # Create L3 policy.
@@ -267,17 +311,30 @@ class TestEndpointGroup(ResourceMappingTestCase):
         self.assertNotEqual(subnet1['subnet']['cidr'],
                             subnet2['subnet']['cidr'])
 
+    def test_shared_epg_create_negative(self):
+        l2p = self.create_l2_policy(shared=True)
+        l2p_id = l2p['l2_policy']['id']
+        self.create_endpoint_group(name="epg1", tenant_id='other',
+                                   l2_policy_id=l2p_id,
+                                   shared=False, expected_res_status=400)
+
     # TODO(rkukura): Test ip_pool exhaustion.
 
 
 class TestL2Policy(ResourceMappingTestCase):
 
-    def test_implicit_network_lifecycle(self):
+    def _test_implicit_network_lifecycle(self, shared=False):
+        l3p = self.create_l3_policy(shared=shared)
         # Create L2 policy with implicit network.
-        l2p = self.create_l2_policy(name="l2p1")
+        l2p = self.create_l2_policy(name="l2p1",
+                                    l3_policy_id=l3p['l3_policy']['id'],
+                                    shared=shared)
         l2p_id = l2p['l2_policy']['id']
         network_id = l2p['l2_policy']['network_id']
         self.assertIsNotNone(network_id)
+        req = self.new_show_request('networks', network_id, fmt=self.fmt)
+        res = self.deserialize(self.fmt, req.get_response(self.api))
+        self.assertEqual(shared, res['network']['shared'])
 
         # Verify deleting L2 policy cleans up network.
         req = self.new_delete_request('l2_policies', l2p_id)
@@ -287,11 +344,12 @@ class TestL2Policy(ResourceMappingTestCase):
         res = req.get_response(self.api)
         self.assertEqual(res.status_int, webob.exc.HTTPNotFound.code)
 
-    def test_explicit_network_lifecycle(self):
+    def _test_explicit_network_lifecycle(self, shared=False):
         # Create L2 policy with explicit network.
-        with self.network() as network:
+        with self.network(shared=shared) as network:
             network_id = network['network']['id']
-            l2p = self.create_l2_policy(name="l2p1", network_id=network_id)
+            l2p = self.create_l2_policy(name="l2p1", network_id=network_id,
+                                        shared=shared)
             l2p_id = l2p['l2_policy']['id']
             self.assertEqual(network_id, l2p['l2_policy']['network_id'])
 
@@ -302,6 +360,28 @@ class TestL2Policy(ResourceMappingTestCase):
             req = self.new_show_request('networks', network_id, fmt=self.fmt)
             res = req.get_response(self.api)
             self.assertEqual(res.status_int, webob.exc.HTTPOk.code)
+
+    def test_implicit_network_lifecycle(self):
+        self._test_implicit_network_lifecycle()
+
+    def test_implicit_network_lifecycle_shared(self):
+        self._test_implicit_network_lifecycle(True)
+
+    def test_explicit_network_lifecycle(self):
+        self._test_explicit_network_lifecycle()
+
+    def test_explicit_network_lifecycle_shared(self):
+        self._test_explicit_network_lifecycle(True)
+
+    def test_shared_l2_policy_create_negative(self):
+        l3p = self.create_l3_policy(shared=True)
+        self.create_l2_policy(name="l2p1", tenant_id='other',
+                              l3_policy_id=l3p['l3_policy']['id'],
+                              shared=False, expected_res_status=400)
+        with self.network() as network:
+            network_id = network['network']['id']
+            self.create_l2_policy(name="l2p1", network_id=network_id,
+                                  shared=True, expected_res_status=400)
 
 
 class TestL3Policy(ResourceMappingTestCase):
@@ -604,3 +684,6 @@ class TestContract(ResourceMappingTestCase):
                                         consumer_epg_id)
                 res = req.get_response(self.ext_api)
                 self.assertEqual(res.status_int, webob.exc.HTTPNoContent.code)
+
+    def test_shared_contract_create_negative(self):
+        self.create_contract(shared=True, expected_res_status=400)

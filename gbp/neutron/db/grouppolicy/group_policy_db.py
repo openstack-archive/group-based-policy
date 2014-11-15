@@ -95,6 +95,7 @@ class EndpointGroup(model_base.BASEV2, models_v2.HasId, models_v2.HasTenant):
     consumed_contracts = orm.relationship(
         EndpointGroupContractConsumingAssociation,
         backref='consuming_endpoint_group', cascade='all, delete-orphan')
+    shared = sa.Column(sa.Boolean)
 
 
 class L2Policy(model_base.BASEV2, models_v2.HasId, models_v2.HasTenant):
@@ -111,6 +112,7 @@ class L2Policy(model_base.BASEV2, models_v2.HasId, models_v2.HasTenant):
     l3_policy_id = sa.Column(sa.String(36),
                              sa.ForeignKey('gp_l3_policies.id'),
                              nullable=True)
+    shared = sa.Column(sa.Boolean)
 
 
 class L3Policy(model_base.BASEV2, models_v2.HasId, models_v2.HasTenant):
@@ -127,6 +129,7 @@ class L3Policy(model_base.BASEV2, models_v2.HasId, models_v2.HasTenant):
     ip_pool = sa.Column(sa.String(64), nullable=False)
     subnet_prefix_length = sa.Column(sa.Integer, nullable=False)
     l2_policies = orm.relationship(L2Policy, backref='l3_policy')
+    shared = sa.Column(sa.Boolean)
 
 
 class NetworkServiceParam(model_base.BASEV2, models_v2.HasId):
@@ -150,6 +153,7 @@ class NetworkServicePolicy(
                                        backref='network_service_policy')
     network_service_params = orm.relationship(NetworkServiceParam,
                                               backref='network_service_policy')
+    shared = sa.Column(sa.Boolean)
 
 
 class ContractPolicyRuleAssociation(model_base.BASEV2):
@@ -188,6 +192,7 @@ class PolicyRule(model_base.BASEV2, models_v2.HasId, models_v2.HasTenant):
     policy_actions = orm.relationship(PolicyRuleActionAssociation,
                                       backref='gp_policy_rules',
                                       cascade='all', lazy="joined")
+    shared = sa.Column(sa.Boolean)
 
 
 class PolicyClassifier(model_base.BASEV2, models_v2.HasId,
@@ -207,6 +212,7 @@ class PolicyClassifier(model_base.BASEV2, models_v2.HasId,
                                   name='direction'))
     policy_rules = orm.relationship(PolicyRule,
                                     backref='gp_policy_classifiers')
+    shared = sa.Column(sa.Boolean)
 
 
 class PolicyAction(model_base.BASEV2, models_v2.HasId, models_v2.HasTenant):
@@ -223,6 +229,7 @@ class PolicyAction(model_base.BASEV2, models_v2.HasId, models_v2.HasTenant):
     action_value = sa.Column(sa.String(36), nullable=True)
     policy_rules = orm.relationship(PolicyRuleActionAssociation,
                                     cascade='all', backref='gp_policy_actions')
+    shared = sa.Column(sa.Boolean)
 
 
 class Contract(model_base.BASEV2, models_v2.HasTenant):
@@ -246,6 +253,7 @@ class Contract(model_base.BASEV2, models_v2.HasTenant):
     consuming_endpoint_groups = orm.relationship(
         EndpointGroupContractConsumingAssociation, backref='consumed_contract',
         lazy="joined", cascade='all')
+    shared = sa.Column(sa.Boolean)
 
 
 class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
@@ -533,7 +541,8 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
                'name': epg['name'],
                'description': epg['description'],
                'l2_policy_id': epg['l2_policy_id'],
-               'network_service_policy_id': epg['network_service_policy_id']}
+               'network_service_policy_id': epg['network_service_policy_id'],
+               'shared': epg.get('shared', False), }
         res['endpoints'] = [ep['id']
                             for ep in epg['endpoints']]
         res['provided_contracts'] = [pc['contract_id']
@@ -547,7 +556,8 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
                'tenant_id': l2p['tenant_id'],
                'name': l2p['name'],
                'description': l2p['description'],
-               'l3_policy_id': l2p['l3_policy_id']}
+               'l3_policy_id': l2p['l3_policy_id'],
+               'shared': l2p.get('shared', False), }
         res['endpoint_groups'] = [epg['id']
                                   for epg in l2p['endpoint_groups']]
         return self._fields(res, fields)
@@ -560,7 +570,8 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
                'ip_version': l3p['ip_version'],
                'ip_pool': l3p['ip_pool'],
                'subnet_prefix_length':
-               l3p['subnet_prefix_length']}
+               l3p['subnet_prefix_length'],
+               'shared': l3p.get('shared', False), }
         res['l2_policies'] = [l2p['id']
                               for l2p in l3p['l2_policies']]
         return self._fields(res, fields)
@@ -569,7 +580,8 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
         res = {'id': nsp['id'],
                'tenant_id': nsp['tenant_id'],
                'name': nsp['name'],
-               'description': nsp['description']}
+               'description': nsp['description'],
+               'shared': nsp.get('shared', False), }
         res['endpoint_groups'] = [epg['id']
                                   for epg in nsp['endpoint_groups']]
         params = []
@@ -591,7 +603,8 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
                'description': pc['description'],
                'protocol': pc['protocol'],
                'port_range': port_range,
-               'direction': pc['direction']}
+               'direction': pc['direction'],
+               'shared': pc.get('shared', False), }
         return self._fields(res, fields)
 
     def _make_policy_action_dict(self, pa, fields=None):
@@ -600,7 +613,8 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
                'name': pa['name'],
                'description': pa['description'],
                'action_type': pa['action_type'],
-               'action_value': pa['action_value']}
+               'action_value': pa['action_value'],
+               'shared': pa.get('shared', False), }
         return self._fields(res, fields)
 
     def _make_policy_rule_dict(self, pr, fields=None):
@@ -609,7 +623,8 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
                'name': pr['name'],
                'description': pr['description'],
                'enabled': pr['enabled'],
-               'policy_classifier_id': pr['policy_classifier_id']}
+               'policy_classifier_id': pr['policy_classifier_id'],
+               'shared': pr.get('shared', False), }
         res['policy_actions'] = [pa['policy_action_id']
                                  for pa in pr['policy_actions']]
         return self._fields(res, fields)
@@ -618,7 +633,8 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
         res = {'id': ct['id'],
                'tenant_id': ct['tenant_id'],
                'name': ct['name'],
-               'description': ct['description']}
+               'description': ct['description'],
+               'shared': ct.get('shared', False), }
         if ct['parent']:
             res['parent_id'] = ct['parent']['id']
         else:
@@ -719,7 +735,8 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
                                    description=epg['description'],
                                    l2_policy_id=epg['l2_policy_id'],
                                    network_service_policy_id=
-                                   epg['network_service_policy_id'])
+                                   epg['network_service_policy_id'],
+                                   shared=epg.get('shared', False))
             context.session.add(epg_db)
             self._process_contracts_for_epg(context, epg_db, epg)
         return self._make_endpoint_group_dict(epg_db)
@@ -771,7 +788,8 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
             l2p_db = L2Policy(id=uuidutils.generate_uuid(),
                               tenant_id=tenant_id, name=l2p['name'],
                               description=l2p['description'],
-                              l3_policy_id=l2p['l3_policy_id'])
+                              l3_policy_id=l2p['l3_policy_id'],
+                              shared=l2p.get('shared', False))
             context.session.add(l2p_db)
         return self._make_l2_policy_dict(l2p_db)
 
@@ -825,7 +843,8 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
                 description=l3p['description'],
                 ip_version=l3p['ip_version'],
                 ip_pool=l3p['ip_pool'],
-                subnet_prefix_length=l3p['subnet_prefix_length'])
+                subnet_prefix_length=l3p['subnet_prefix_length'],
+                shared=l3p.get('shared', False))
             context.session.add(l3p_db)
         return self._make_l3_policy_dict(l3p_db)
 
@@ -873,7 +892,8 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
             nsp_db = NetworkServicePolicy(id=uuidutils.generate_uuid(),
                                           tenant_id=tenant_id,
                                           name=nsp['name'],
-                                          description=nsp['description'])
+                                          description=nsp['description'],
+                                          shared=nsp.get('shared', False))
             context.session.add(nsp_db)
             self._set_params_for_network_service_policy(
                 context, nsp_db, nsp)
@@ -939,7 +959,8 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
                                      protocol=pc['protocol'],
                                      port_range_min=port_min,
                                      port_range_max=port_max,
-                                     direction=pc['direction'])
+                                     direction=pc['direction'],
+                                     shared=pc.get('shared', False))
             context.session.add(pc_db)
         return self._make_policy_classifier_dict(pc_db)
 
@@ -999,7 +1020,8 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
                                  name=pa['name'],
                                  description=pa['description'],
                                  action_type=pa['action_type'],
-                                 action_value=pa['action_value'])
+                                 action_value=pa['action_value'],
+                                 shared=pa.get('shared', False))
             context.session.add(pa_db)
         return self._make_policy_action_dict(pa_db)
 
@@ -1049,7 +1071,8 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
                                tenant_id=tenant_id, name=pr['name'],
                                description=pr['description'],
                                enabled=pr['enabled'],
-                               policy_classifier_id=pr['policy_classifier_id'])
+                               policy_classifier_id=pr['policy_classifier_id'],
+                               shared=pr.get('shared', False))
             context.session.add(pr_db)
             self._set_actions_for_rule(context, pr_db,
                                        pr['policy_actions'])
@@ -1097,7 +1120,8 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
             ct_db = Contract(id=uuidutils.generate_uuid(),
                              tenant_id=tenant_id,
                              name=ct['name'],
-                             description=ct['description'])
+                             description=ct['description'],
+                             shared=ct.get('shared', False))
             context.session.add(ct_db)
             self._set_rules_for_contract(context, ct_db,
                                          ct['policy_rules'])

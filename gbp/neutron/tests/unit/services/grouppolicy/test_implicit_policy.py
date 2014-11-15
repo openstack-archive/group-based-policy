@@ -29,9 +29,10 @@ class ImplicitPolicyTestCase(
 
 class TestImplicitL2Policy(ImplicitPolicyTestCase):
 
-    def test_impicit_lifecycle(self):
+    def _test_implicit_lifecycle(self, shared=False):
         # Create endpoint group with implicit L2 policy.
-        epg1 = self.create_endpoint_group()
+        epg1 = self.create_endpoint_group(shared=shared)
+        self.assertEqual(shared, epg1['endpoint_group']['shared'])
         epg1_id = epg1['endpoint_group']['id']
         l2p1_id = epg1['endpoint_group']['l2_policy_id']
         self.assertIsNotNone(l2p1_id)
@@ -42,6 +43,7 @@ class TestImplicitL2Policy(ImplicitPolicyTestCase):
         l2p1 = self.deserialize(self.fmt, req.get_response(self.ext_api))
         self.assertEqual(epg1['endpoint_group']['name'],
                          l2p1['l2_policy']['name'])
+        self.assertEqual(shared, l2p1['l2_policy']['shared'])
 
         # Create 2nd endpoint group with different implicit L2 policy.
         epg2 = self.create_endpoint_group()
@@ -67,6 +69,12 @@ class TestImplicitL2Policy(ImplicitPolicyTestCase):
         req = self.new_show_request('l2_policies', l2p2_id, fmt=self.fmt)
         res = req.get_response(self.ext_api)
         self.assertEqual(res.status_int, webob.exc.HTTPNotFound.code)
+
+    def test_impicit_lifecycle(self):
+        self._test_implicit_lifecycle()
+
+    def test_implicit_lifecycle_shared(self):
+        self._test_implicit_lifecycle(True)
 
     def test_explicit_lifecycle(self):
         # Create endpoint group with explicit L2 policy.
@@ -152,18 +160,20 @@ class TestImplicitL2Policy(ImplicitPolicyTestCase):
 
 class TestImplicitL3Policy(ImplicitPolicyTestCase):
 
-    def test_impicit_lifecycle(self):
+    def _test_implicit_lifecycle(self, shared=False):
         # Create L2 policy with implicit L3 policy.
-        l2p1 = self.create_l2_policy()
+        l2p1 = self.create_l2_policy(shared=shared)
         l2p1_id = l2p1['l2_policy']['id']
         l3p_id = l2p1['l2_policy']['l3_policy_id']
         self.assertIsNotNone(l3p_id)
+        self.assertEqual(shared, l2p1['l2_policy']['shared'])
         req = self.new_show_request('l2_policies', l2p1_id, fmt=self.fmt)
         res = self.deserialize(self.fmt, req.get_response(self.ext_api))
         self.assertEqual(l3p_id, res['l2_policy']['l3_policy_id'])
         req = self.new_show_request('l3_policies', l3p_id, fmt=self.fmt)
         l3p = self.deserialize(self.fmt, req.get_response(self.ext_api))
         self.assertEqual('default', l3p['l3_policy']['name'])
+        self.assertEqual(shared, l3p['l3_policy']['shared'])
 
         # Create 2nd L2 policy sharing implicit L3 policy.
         l2p2 = self.create_l2_policy()
@@ -185,6 +195,12 @@ class TestImplicitL3Policy(ImplicitPolicyTestCase):
         req = self.new_show_request('l3_policies', l3p_id, fmt=self.fmt)
         res = req.get_response(self.ext_api)
         self.assertEqual(res.status_int, webob.exc.HTTPNotFound.code)
+
+    def test_impicit_lifecycle(self):
+        self._test_implicit_lifecycle()
+
+    def test_implicit_lifecycle_shared(self):
+        self._test_implicit_lifecycle(True)
 
     def test_explicit_lifecycle(self):
         # Create L2 policy with explicit L3 policy.
