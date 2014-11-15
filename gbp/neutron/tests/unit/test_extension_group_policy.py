@@ -170,7 +170,7 @@ class GroupPolicyExtensionTestCase(test_api_v2_extension.ExtensionTestCase):
         return {'name': '', 'description': '', 'l2_policy_id': None,
                 'provided_policy_rule_sets': {},
                 'consumed_policy_rule_sets': {},
-                'network_service_policy_id': None}
+                'network_service_policy_id': None, 'shared': False}
 
     def _get_create_policy_target_group_attrs(self):
         return {'name': 'ptg1', 'tenant_id': _uuid(),
@@ -178,7 +178,8 @@ class GroupPolicyExtensionTestCase(test_api_v2_extension.ExtensionTestCase):
                 'l2_policy_id': _uuid(),
                 'provided_policy_rule_sets': {_uuid(): None},
                 'consumed_policy_rule_sets': {_uuid(): None},
-                'network_service_policy_id': _uuid()}
+                'network_service_policy_id': _uuid(),
+                'shared': False}
 
     def _get_update_policy_target_group_attrs(self):
         return {'name': 'new_name'}
@@ -273,11 +274,12 @@ class GroupPolicyExtensionTestCase(test_api_v2_extension.ExtensionTestCase):
         self.assertEqual(expected_value, res['l2_policy'])
 
     def _get_create_l2_policy_default_attrs(self):
-        return {'name': '', 'description': ''}
+        return {'name': '', 'description': '', 'shared': False}
 
     def _get_create_l2_policy_attrs(self):
         return {'name': 'l2p1', 'tenant_id': _uuid(),
-                'description': 'test L2 policy', 'l3_policy_id': _uuid()}
+                'description': 'test L2 policy', 'l3_policy_id': _uuid(),
+                'shared': False}
 
     def _get_update_l2_policy_attrs(self):
         return {'name': 'new_name'}
@@ -369,13 +371,14 @@ class GroupPolicyExtensionTestCase(test_api_v2_extension.ExtensionTestCase):
 
     def _get_create_l3_policy_default_attrs(self):
         return {'name': '', 'description': '', 'ip_version': 4,
-                'ip_pool': '10.0.0.0/8', 'subnet_prefix_length': 24}
+                'ip_pool': '10.0.0.0/8', 'subnet_prefix_length': 24,
+                'shared': False}
 
     def _get_create_l3_policy_attrs(self):
         return {'name': 'l3p1', 'tenant_id': _uuid(),
                 'description': 'test L3 policy', 'ip_version': 6,
                 'ip_pool': 'fd01:2345:6789::/48',
-                'subnet_prefix_length': 64}
+                'subnet_prefix_length': 64, 'shared': False}
 
     def _get_update_l3_policy_attrs(self):
         return {'name': 'new_name'}
@@ -471,14 +474,16 @@ class GroupPolicyExtensionTestCase(test_api_v2_extension.ExtensionTestCase):
         return {'name': '',
                 'description': '',
                 'action_type': 'allow',
-                'action_value': None}
+                'action_value': None,
+                'shared': False}
 
     def _get_create_policy_action_attrs(self):
         return {'name': 'pa1',
                 'tenant_id': _uuid(),
                 'description': 'test policy action',
                 'action_type': 'redirect',
-                'action_value': _uuid()}
+                'action_value': _uuid(),
+                'shared': False}
 
     def _get_update_policy_action_attrs(self):
         return {'name': 'new_name'}
@@ -582,7 +587,8 @@ class GroupPolicyExtensionTestCase(test_api_v2_extension.ExtensionTestCase):
                 'description': '',
                 'protocol': None,
                 'port_range': None,
-                'direction': None}
+                'direction': None,
+                'shared': False}
 
     def _get_create_policy_classifier_attrs(self):
         return {'name': 'pc1',
@@ -590,7 +596,8 @@ class GroupPolicyExtensionTestCase(test_api_v2_extension.ExtensionTestCase):
                 'tenant_id': _uuid(),
                 'protocol': 'tcp',
                 'port_range': '100:200',
-                'direction': 'in'}
+                'direction': 'in',
+                'shared': False}
 
     def _get_update_policy_classifier_attrs(self):
         return {'name': 'new_name'}
@@ -692,7 +699,8 @@ class GroupPolicyExtensionTestCase(test_api_v2_extension.ExtensionTestCase):
         return {'name': '',
                 'description': '',
                 'enabled': True,
-                'policy_actions': []}
+                'policy_actions': [],
+                'shared': False}
 
     def _get_create_policy_rule_attrs(self):
         return {'name': 'pr1',
@@ -700,7 +708,8 @@ class GroupPolicyExtensionTestCase(test_api_v2_extension.ExtensionTestCase):
                 'tenant_id': _uuid(),
                 'enabled': True,
                 'policy_classifier_id': _uuid(),
-                'policy_actions': [_uuid()]}
+                'policy_actions': [_uuid()],
+                'shared': False}
 
     def _get_update_policy_rule_attrs(self):
         return {'name': 'new_name'}
@@ -804,14 +813,16 @@ class GroupPolicyExtensionTestCase(test_api_v2_extension.ExtensionTestCase):
         return {'name': '',
                 'description': '',
                 'child_policy_rule_sets': [],
-                'policy_rules': []}
+                'policy_rules': [],
+                'shared': False}
 
     def _get_create_policy_rule_set_attrs(self):
         return {'name': 'policy_rule_set1',
                 'description': 'test policy_rule_set',
                 'tenant_id': _uuid(),
                 'child_policy_rule_sets': [_uuid()],
-                'policy_rules': [_uuid()]}
+                'policy_rules': [_uuid()],
+                'shared': False}
 
     def _get_update_policy_rule_set_attrs(self):
         return {'name': 'new_name'}
@@ -911,10 +922,11 @@ class GroupPolicyExtensionTestCase(test_api_v2_extension.ExtensionTestCase):
 
     def _get_create_network_service_policy_default_attrs(self):
         return {'name': '', 'description': '',
-                'network_service_params': []}
+                'network_service_params': [], 'shared': False}
 
     def _get_create_network_service_policy_attrs(self):
         return {'name': 'nsp1', 'tenant_id': _uuid(),
+                'shared': False,
                 'description': 'test Net Svc Policy',
                 'network_service_params': [{'type': 'ip_single', 'name': 'vip',
                                             'value': 'self_subnet'}]}
