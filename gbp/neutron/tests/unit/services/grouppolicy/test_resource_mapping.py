@@ -97,6 +97,40 @@ class TestEndpoint(ResourceMappingTestCase):
             res = req.get_response(self.api)
             self.assertEqual(res.status_int, webob.exc.HTTPOk.code)
 
+    def test_explicit_port_subnet_mismatches_epg_subnet_rejected(self):
+        epg1 = self.create_endpoint_group(name="epg1")
+        epg1_id = epg1['endpoint_group']['id']
+
+        # Create a subnet that is different from epg1 subnet (by
+        # creating a new L2 policy and subnet)
+        l2p = self.create_l2_policy(name="l2p1")
+        network_id = l2p['l2_policy']['network_id']
+        req = self.new_show_request('networks', network_id)
+        network = self.deserialize(self.fmt, req.get_response(self.api))
+        with self.subnet(network=network, cidr='10.10.1.0/24') as subnet:
+            with self.port(subnet=subnet) as port:
+                port_id = port['port']['id']
+
+                data = self.create_endpoint(name="ep1",
+                        endpoint_group_id=epg1_id,
+                        port_id=port_id,
+                        expected_res_status=webob.exc.HTTPBadRequest.code)
+
+                self.assertEqual('ExplicitPortSubnetMismatchesEPGSubnet',
+                         data['NeutronError']['type'])
+
+    def test_missing_explicit_port_epg_rejected(self):
+        epg1 = self.create_endpoint_group(name="epg1")
+        epg1_id = epg1['endpoint_group']['id']
+
+        port_id = uuidutils.generate_uuid()
+        data = self.create_endpoint(name="ep1",
+                        endpoint_group_id=epg1_id,
+                        port_id=port_id,
+                        expected_res_status=webob.exc.HTTPServerError.code)
+        self.assertEqual('HTTPInternalServerError',
+                         data['NeutronError']['type'])
+
     def test_missing_epg_rejected(self):
         data = self.create_endpoint(name="ep1",
                                     expected_res_status=
