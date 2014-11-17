@@ -53,6 +53,11 @@ class ExactlyOneActionPerRuleIsSupportedOnApicDriver(
     message = _("Exactly one action per rule is supported on APIC GBP driver.")
 
 
+class SharedAttributeUpdateNotSupportedOnApic(gpexc.GroupPolicyBadRequest):
+    message = _("Resource shared attribute update not supported on APIC "
+                "GBP driver for resource of type %(type)s")
+
+
 class ApicMappingDriver(api.ResourceMappingDriver):
     """Apic Mapping driver for Group Policy plugin.
 
@@ -127,7 +132,9 @@ class ApicMappingDriver(api.ResourceMappingDriver):
                 'network_type': network[pn.NETWORK_TYPE],
                 'l2_policy_id': ptg['l2_policy_id'],
                 'tenant_id': port['tenant_id'],
-                'host': port['binding:host_id']
+                'host': port['binding:host_id'],
+                'ptg_apic_tentant': (ptg['tenant_id'] if not ptg['shared'] else
+                                     apic_manager.TENANT_COMMON)
                 }
 
     def create_dhcp_policy_target_if_needed(self, plugin_context, port):
@@ -182,8 +189,7 @@ class ApicMappingDriver(api.ResourceMappingDriver):
             if port_min and port_max:
                 attrs['dToPort'] = port_max
                 attrs['dFromPort'] = port_min
-            tenant = self.name_mapper.tenant(context,
-                                             context.current['tenant_id'])
+            tenant = self._tenant_by_sharing_policy(context.current)
             policy_rule = self.name_mapper.policy_rule(context,
                                                        context.current['id'])
             self.apic_manager.create_tenant_filter(policy_rule, owner=tenant,
@@ -193,8 +199,8 @@ class ApicMappingDriver(api.ResourceMappingDriver):
         pass
 
     def create_policy_rule_set_postcommit(self, context):
-        # Create APIC contract
-        tenant = self.name_mapper.tenant(context, context.current['tenant_id'])
+        # Create APIC policy_rule_set
+        tenant = self._tenant_by_sharing_policy(context.current)
         contract = self.name_mapper.policy_rule_set(context,
                                                     context.current['id'])
         with self.apic_manager.apic.transaction(None) as trs:
@@ -217,14 +223,17 @@ class ApicMappingDriver(api.ResourceMappingDriver):
     def create_policy_target_group_postcommit(self, context):
         super(ApicMappingDriver, self).create_policy_target_group_postcommit(
             context)
-        tenant = self.name_mapper.tenant(context, context.current['tenant_id'])
+        tenant = self._tenant_by_sharing_policy(context.current)
         l2_policy = self.name_mapper.l2_policy(context,
                                                context.current['l2_policy_id'])
-        ptg = self.name_mapper.policy_target_group(context,
+        epg = self.name_mapper.policy_target_group(context,
                                                    context.current['id'])
-
+        l2_policy_object = context._plugin.get_l2_policy(
+            context._plugin_context, context.current['l2_policy_id'])
+        bd_owner = self._tenant_by_sharing_policy(l2_policy_object)
         with self.apic_manager.apic.transaction(None) as trs:
-            self.apic_manager.ensure_epg_created(tenant, ptg,
+            self.apic_manager.ensure_epg_created(tenant, epg,
+                                                 bd_owner=bd_owner,
                                                  bd_name=l2_policy)
             subnets = self._subnet_ids_to_objects(context._plugin_context,
                                                   context.current['subnets'])
@@ -241,27 +250,29 @@ class ApicMappingDriver(api.ResourceMappingDriver):
 
     def update_l2_policy_precommit(self, context):
         self._reject_non_shared_net_on_shared_l2p(context)
+        self._reject_shared_update(context, 'l2_policy')
 
     def create_l2_policy_postcommit(self, context):
         super(ApicMappingDriver, self).create_l2_policy_postcommit(context)
-        tenant = self.name_mapper.tenant(context, context.current['tenant_id'])
+        tenant = self._tenant_by_sharing_policy(context.current)
         l3_policy = self.name_mapper.l3_policy(context,
                                                context.current['l3_policy_id'])
         l2_policy = self.name_mapper.l2_policy(context, context.current['id'])
-
+        l3_policy_object = context._plugin.get_l3_policy(
+            context._plugin_context, context.current['l3_policy_id'])
+        ctx_owner = self._tenant_by_sharing_policy(l3_policy_object)
         self.apic_manager.ensure_bd_created_on_apic(tenant, l2_policy,
-                                                    ctx_owner=tenant,
+                                                    ctx_owner=ctx_owner,
                                                     ctx_name=l3_policy)
 
     def create_l3_policy_postcommit(self, context):
-        tenant = self.name_mapper.tenant(context, context.current['tenant_id'])
+        tenant = self._tenant_by_sharing_policy(context.current)
         l3_policy = self.name_mapper.l3_policy(context, context.current['id'])
-
         self.apic_manager.ensure_context_enforced(tenant, l3_policy)
 
     def delete_policy_rule_postcommit(self, context):
         # TODO(ivar): delete Contract subject entries to avoid reference leak
-        tenant = self.name_mapper.tenant(context, context.current['tenant_id'])
+        tenant = self._tenant_by_sharing_policy(context.current)
         policy_rule = self.name_mapper.policy_rule(context,
                                                    context.current['id'])
         self.apic_manager.delete_tenant_filter(policy_rule, owner=tenant)
@@ -271,11 +282,11 @@ class ApicMappingDriver(api.ResourceMappingDriver):
         pass
 
     def delete_policy_rule_set_postcommit(self, context):
-        # TODO(ivar): disassociate EPGs to avoid reference leak
-        tenant = self.name_mapper.tenant(context, context.current['tenant_id'])
-        policy_rule_set = self.name_mapper.policy_rule_set(
-            context, context.current['id'])
-        self.apic_manager.delete_contract(policy_rule_set, owner=tenant)
+        # TODO(ivar): disassociate PTGs to avoid reference leak
+        tenant = self._tenant_by_sharing_policy(context.current)
+        contract = self.name_mapper.policy_rule_set(context,
+                                                    context.current['id'])
+        self.apic_manager.delete_contract(contract, owner=tenant)
 
     def delete_policy_target_postcommit(self, context):
         port = self._core_plugin.get_port(context._plugin_context,
@@ -294,7 +305,7 @@ class ApicMappingDriver(api.ResourceMappingDriver):
                                      [], subnets)
         for subnet_id in context.current['subnets']:
             self._cleanup_subnet(context._plugin_context, subnet_id, None)
-        tenant = self.name_mapper.tenant(context, context.current['tenant_id'])
+        tenant = self._tenant_by_sharing_policy(context.current)
         ptg = self.name_mapper.policy_target_group(context,
                                                    context.current['id'])
 
@@ -302,22 +313,22 @@ class ApicMappingDriver(api.ResourceMappingDriver):
 
     def delete_l2_policy_postcommit(self, context):
         super(ApicMappingDriver, self).delete_l2_policy_postcommit(context)
-        tenant = self.name_mapper.tenant(context, context.current['tenant_id'])
+        tenant = self._tenant_by_sharing_policy(context.current)
         l2_policy = self.name_mapper.l2_policy(context, context.current['id'])
 
         self.apic_manager.delete_bd_on_apic(tenant, l2_policy)
 
     def delete_l3_policy_postcommit(self, context):
-        tenant = self.name_mapper.tenant(context, context.current['tenant_id'])
+        tenant = self._tenant_by_sharing_policy(context.current)
         l3_policy = self.name_mapper.l3_policy(context, context.current['id'])
 
         self.apic_manager.ensure_context_deleted(tenant, l3_policy)
 
-    def update_policy_target_precommit(self, context):
-        pass
+    def update_policy_rule_set_precommit(self, context):
+        self._reject_shared_update(context, 'policy_rule_set')
 
     def update_policy_target_postcommit(self, context):
-        # TODO(ivar): redo binding procedure if the EPG is modified,
+        # TODO(ivar): redo binding procedure if the PTG is modified,
         # not doable unless driver extension framework is in place
         pass
 
@@ -328,6 +339,7 @@ class ApicMappingDriver(api.ResourceMappingDriver):
     def update_policy_target_group_precommit(self, context):
         if set(context.original['subnets']) - set(context.current['subnets']):
             raise gpexc.PolicyTargetGroupSubnetRemovalNotSupported()
+        self._reject_shared_update(context, 'policy_target_group')
 
     def update_policy_target_group_postcommit(self, context):
         # TODO(ivar): refactor parent to avoid code duplication
@@ -372,6 +384,9 @@ class ApicMappingDriver(api.ResourceMappingDriver):
 
             self._manage_ptg_subnets(context._plugin_context, context.current,
                                      new_subnets, removed_subnets)
+
+    def update_l3_policy_precommit(self, context):
+        self._reject_shared_update(context, 'l3_policy')
 
     def process_subnet_changed(self, context, old, new):
         if old['gateway_ip'] != new['gateway_ip']:
@@ -418,30 +433,31 @@ class ApicMappingDriver(api.ResourceMappingDriver):
             transaction=None):
         # REVISIT(ivar): figure out what should be moved in apicapi instead
         if policy_rules:
-            tenant = self.name_mapper.tenant(context,
-                                             context.current['tenant_id'])
-            policy_rule_set = self.name_mapper.policy_rule_set(
-                context, context.current['id'])
+            tenant = self._tenant_by_sharing_policy(policy_rule_set)
+            contract = self.name_mapper.policy_rule_set(context,
+                                                 context.current['id'])
             in_dir = [g_const.GP_DIRECTION_BI, g_const.GP_DIRECTION_IN]
             out_dir = [g_const.GP_DIRECTION_BI, g_const.GP_DIRECTION_OUT]
             filters = {'id': policy_rules}
             for rule in context._plugin.get_policy_rules(
                     context._plugin_context, filters=filters):
                 policy_rule = self.name_mapper.policy_rule(context, rule['id'])
+                rule_owner = self._tenant_by_sharing_policy(rule)
                 classifier = context._plugin.get_policy_classifier(
                     context._plugin_context, rule['policy_classifier_id'])
                 with self.apic_manager.apic.transaction(transaction) as trs:
-                    mgr = self.apic_manager
                     if classifier['direction'] in in_dir:
-                        # Contract and subject are the same thing in this case
-                        mgr.manage_contract_subject_in_filter(
-                            policy_rule_set, policy_rule_set, policy_rule,
-                            owner=tenant, transaction=trs, unset=unset)
+                        # PRS and subject are the same thing in this case
+                        self.apic_manager.manage_contract_subject_in_filter(
+                            contract, contract, policy_rule, owner=tenant,
+                            transaction=trs, unset=unset,
+                            rule_owner=rule_owner)
                     if classifier['direction'] in out_dir:
-                        # Contract and subject are the same thing in this case
-                        mgr.manage_contract_subject_out_filter(
-                            policy_rule_set, policy_rule_set, policy_rule,
-                            owner=tenant, transaction=trs, unset=unset)
+                        # PRS and subject are the same thing in this case
+                        self.apic_manager.manage_contract_subject_out_filter(
+                            contract, contract, policy_rule, owner=tenant,
+                            transaction=trs, unset=unset,
+                            rule_owner=rule_owner)
 
     @lockutils.synchronized('apic-portlock')
     def _manage_policy_target_port(self, plugin_context, pt):
@@ -454,9 +470,10 @@ class ApicMappingDriver(api.ResourceMappingDriver):
                 # TODO(ivar): change APICAPI to not expect a resource context
                 plugin_context._plugin = self.gbp_plugin
                 plugin_context._plugin_context = plugin_context
-                tenant_id = self.name_mapper.tenant(plugin_context,
-                                                    port['tenant_id'])
-                ptg = self.name_mapper.policy_target_group(
+                ptg_object = self.gbp_plugin.get_policy_target_group(
+                    plugin_context, port_details['ptg_id'])
+                tenant_id = self._tenant_by_sharing_policy(ptg_object)
+                epg = self.name_mapper.policy_target_group(
                     plugin_context, port_details['ptg_id'])
                 bd = self.name_mapper.l2_policy(
                     plugin_context, port_details['l2_policy_id'])
@@ -464,7 +481,7 @@ class ApicMappingDriver(api.ResourceMappingDriver):
                 # Create a static path attachment for the host/epg/switchport
                 with self.apic_manager.apic.transaction() as trs:
                     self.apic_manager.ensure_path_created_for_port(
-                        tenant_id, ptg, port['binding:host_id'], seg,
+                        tenant_id, epg, port['binding:host_id'], seg,
                         bd_name=bd,
                         transaction=trs)
 
@@ -474,33 +491,39 @@ class ApicMappingDriver(api.ResourceMappingDriver):
         # TODO(ivar): change APICAPI to not expect a resource context
         plugin_context._plugin = self.gbp_plugin
         plugin_context._plugin_context = plugin_context
-        mapped_tenant = self.name_mapper.tenant(plugin_context,
-                                                ptg['tenant_id'])
+        mapped_tenant = self._tenant_by_sharing_policy(ptg)
         mapped_ptg = self.name_mapper.policy_target_group(plugin_context,
-                                                          ptg['id'])
+                                                     ptg['id'])
         provided = [added_provided, removed_provided]
         consumed = [added_consumed, removed_consumed]
         methods = [self.apic_manager.set_contract_for_epg,
                    self.apic_manager.unset_contract_for_epg]
         with self.apic_manager.apic.transaction(transaction) as trs:
             for x in xrange(len(provided)):
-                for c in provided[x]:
-                    c = self.name_mapper.policy_rule_set(plugin_context, c)
+                for c in self.gbp_plugin.get_policy_rule_sets(
+                        plugin_context, filters={'id': provided[x]}):
+                    c_owner = self._tenant_by_sharing_policy(c)
+                    c = self.name_mapper.policy_rule_set(plugin_context,
+                                                         c['id'])
                     methods[x](mapped_tenant, mapped_ptg, c, provider=True,
-                               transaction=trs)
+                               contract_owner=c_owner, transaction=trs)
             for x in xrange(len(consumed)):
-                for c in consumed[x]:
-                    c = self.name_mapper.policy_rule_set(plugin_context, c)
+                for c in self.gbp_plugin.get_policy_rule_sets(
+                        plugin_context, filters={'id': consumed[x]}):
+                    c_owner = self._tenant_by_sharing_policy(c)
+                    c = self.name_mapper.policy_rule_set(plugin_context,
+                                                         c['id'])
                     methods[x](mapped_tenant, mapped_ptg, c, provider=False,
-                               transaction=trs)
+                               contract_owner=c_owner, transaction=trs)
 
     def _manage_ptg_subnets(self, plugin_context, ptg, added_subnets,
                             removed_subnets, transaction=None):
         # TODO(ivar): change APICAPI to not expect a resource context
         plugin_context._plugin = self.gbp_plugin
         plugin_context._plugin_context = plugin_context
-        mapped_tenant = self.name_mapper.tenant(plugin_context,
-                                                ptg['tenant_id'])
+        l2_policy_object = self.gbp_plugin.get_l2_policy(
+            plugin_context, ptg['l2_policy_id'])
+        mapped_tenant = self._tenant_by_sharing_policy(l2_policy_object)
         mapped_l2p = self.name_mapper.l2_policy(plugin_context,
                                                 ptg['l2_policy_id'])
         subnets = [added_subnets, removed_subnets]
@@ -530,11 +553,12 @@ class ApicMappingDriver(api.ResourceMappingDriver):
             # TODO(ivar): change APICAPI to not expect a resource context
             context._plugin = self.gbp_plugin
             context._plugin_context = context
-            atenant_id = self.name_mapper.tenant(context,
-                                                 port_info['tenant_id'])
-            ptg = self.name_mapper.policy_target_group(context,
+            ptg_object = self.gbp_plugin.get_policy_target_group(
+                context, port_info['ptg_id'])
+            atenant_id = self._tenant_by_sharing_policy(ptg_object)
+            epg = self.name_mapper.policy_target_group(context,
                                                        port_info['ptg_id'])
-            self._delete_port_path(context, atenant_id, ptg, port_info)
+            self._delete_port_path(context, atenant_id, epg, port_info)
 
     def _get_default_security_group(self, context, ptg_id, tenant_id):
         # Default SG in APIC mapping is per tenant, and allows all the traffic
@@ -612,3 +636,13 @@ class ApicMappingDriver(api.ResourceMappingDriver):
         if ptg:
             db_utils = gpdb.GroupPolicyMappingDbPlugin()
             return db_utils._make_policy_target_group_dict(ptg)
+
+    def _reject_shared_update(self, context, type):
+        if context.original.get('shared') != context.current.get('shared'):
+            raise SharedAttributeUpdateNotSupportedOnApic(type=type)
+
+    def _tenant_by_sharing_policy(self, object):
+        if not object.get('shared'):
+            return self.name_mapper.tenant(None, object['tenant_id'])
+        else:
+            return apic_manager.TENANT_COMMON
