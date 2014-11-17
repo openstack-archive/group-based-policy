@@ -53,6 +53,11 @@ class ExactlyOneActionPerRuleIsSupportedOnApicDriver(
     message = _("Exactly one action per rule is supported on APIC GBP driver.")
 
 
+class SharedAttributeUpdateNotSupportedOnApic(gpexc.GroupPolicyBadRequest):
+    message = _("Resource shared attribute update not supported on APIC "
+                "GBP driver for resource of type %(type)s")
+
+
 class ApicMappingDriver(api.ResourceMappingDriver):
     """Apic Mapping driver for Group Policy plugin.
 
@@ -127,7 +132,9 @@ class ApicMappingDriver(api.ResourceMappingDriver):
                 'network_type': network[pn.NETWORK_TYPE],
                 'l2_policy_id': epg['l2_policy_id'],
                 'tenant_id': port['tenant_id'],
-                'host': port['binding:host_id']
+                'host': port['binding:host_id'],
+                'epg_apic_tentant': (epg['tenant_id'] if not epg['shared'] else
+                                     apic_manager.TENANT_COMMON)
                 }
 
     def create_dhcp_endpoint_if_needed(self, plugin_context, port):
@@ -181,8 +188,7 @@ class ApicMappingDriver(api.ResourceMappingDriver):
             if port_min and port_max:
                 attrs['dToPort'] = port_max
                 attrs['dFromPort'] = port_min
-            tenant = self.name_mapper.tenant(context,
-                                             context.current['tenant_id'])
+            tenant = self._tenant_by_sharing_policy(context.current)
             policy_rule = self.name_mapper.policy_rule(context,
                                                        context.current['id'])
             self.apic_manager.create_tenant_filter(policy_rule, owner=tenant,
@@ -193,7 +199,7 @@ class ApicMappingDriver(api.ResourceMappingDriver):
 
     def create_contract_postcommit(self, context):
         # Create APIC contract
-        tenant = self.name_mapper.tenant(context, context.current['tenant_id'])
+        tenant = self._tenant_by_sharing_policy(context.current)
         contract = self.name_mapper.contract(context, context.current['id'])
         with self.apic_manager.apic.transaction(None) as trs:
             self.apic_manager.create_contract(contract, owner=tenant,
@@ -214,13 +220,16 @@ class ApicMappingDriver(api.ResourceMappingDriver):
     def create_endpoint_group_postcommit(self, context):
         super(ApicMappingDriver, self).create_endpoint_group_postcommit(
             context)
-        tenant = self.name_mapper.tenant(context, context.current['tenant_id'])
+        tenant = self._tenant_by_sharing_policy(context.current)
         l2_policy = self.name_mapper.l2_policy(context,
                                                context.current['l2_policy_id'])
         epg = self.name_mapper.endpoint_group(context, context.current['id'])
-
+        l2_policy_object = context._plugin.get_l2_policy(
+            context._plugin_context, context.current['l2_policy_id'])
+        bd_owner = self._tenant_by_sharing_policy(l2_policy_object)
         with self.apic_manager.apic.transaction(None) as trs:
             self.apic_manager.ensure_epg_created(tenant, epg,
+                                                 bd_owner=bd_owner,
                                                  bd_name=l2_policy)
             subnets = self._subnet_ids_to_objects(context._plugin_context,
                                                   context.current['subnets'])
@@ -236,27 +245,29 @@ class ApicMappingDriver(api.ResourceMappingDriver):
 
     def update_l2_policy_precommit(self, context):
         self._reject_non_shared_net_on_shared_l2p(context)
+        self._reject_shared_update(context, 'l2_policy')
 
     def create_l2_policy_postcommit(self, context):
         super(ApicMappingDriver, self).create_l2_policy_postcommit(context)
-        tenant = self.name_mapper.tenant(context, context.current['tenant_id'])
+        tenant = self._tenant_by_sharing_policy(context.current)
         l3_policy = self.name_mapper.l3_policy(context,
                                                context.current['l3_policy_id'])
         l2_policy = self.name_mapper.l2_policy(context, context.current['id'])
-
+        l3_policy_object = context._plugin.get_l3_policy(
+            context._plugin_context, context.current['l3_policy_id'])
+        ctx_owner = self._tenant_by_sharing_policy(l3_policy_object)
         self.apic_manager.ensure_bd_created_on_apic(tenant, l2_policy,
-                                                    ctx_owner=tenant,
+                                                    ctx_owner=ctx_owner,
                                                     ctx_name=l3_policy)
 
     def create_l3_policy_postcommit(self, context):
-        tenant = self.name_mapper.tenant(context, context.current['tenant_id'])
+        tenant = self._tenant_by_sharing_policy(context.current)
         l3_policy = self.name_mapper.l3_policy(context, context.current['id'])
-
         self.apic_manager.ensure_context_enforced(tenant, l3_policy)
 
     def delete_policy_rule_postcommit(self, context):
         # TODO(ivar): delete Contract subject entries to avoid reference leak
-        tenant = self.name_mapper.tenant(context, context.current['tenant_id'])
+        tenant = self._tenant_by_sharing_policy(context.current)
         policy_rule = self.name_mapper.policy_rule(context,
                                                    context.current['id'])
         self.apic_manager.delete_tenant_filter(policy_rule, owner=tenant)
@@ -267,7 +278,7 @@ class ApicMappingDriver(api.ResourceMappingDriver):
 
     def delete_contract_postcommit(self, context):
         # TODO(ivar): disassociate EPGs to avoid reference leak
-        tenant = self.name_mapper.tenant(context, context.current['tenant_id'])
+        tenant = self._tenant_by_sharing_policy(context.current)
         contract = self.name_mapper.contract(context, context.current['id'])
         self.apic_manager.delete_contract(contract, owner=tenant)
 
@@ -288,26 +299,26 @@ class ApicMappingDriver(api.ResourceMappingDriver):
                                      [], subnets)
         for subnet_id in context.current['subnets']:
             self._cleanup_subnet(context._plugin_context, subnet_id, None)
-        tenant = self.name_mapper.tenant(context, context.current['tenant_id'])
+        tenant = self._tenant_by_sharing_policy(context.current)
         epg = self.name_mapper.endpoint_group(context, context.current['id'])
 
         self.apic_manager.delete_epg_for_network(tenant, epg)
 
     def delete_l2_policy_postcommit(self, context):
         super(ApicMappingDriver, self).delete_l2_policy_postcommit(context)
-        tenant = self.name_mapper.tenant(context, context.current['tenant_id'])
+        tenant = self._tenant_by_sharing_policy(context.current)
         l2_policy = self.name_mapper.l2_policy(context, context.current['id'])
 
         self.apic_manager.delete_bd_on_apic(tenant, l2_policy)
 
     def delete_l3_policy_postcommit(self, context):
-        tenant = self.name_mapper.tenant(context, context.current['tenant_id'])
+        tenant = self._tenant_by_sharing_policy(context.current)
         l3_policy = self.name_mapper.l3_policy(context, context.current['id'])
 
         self.apic_manager.ensure_context_deleted(tenant, l3_policy)
 
     def update_contract_precommit(self, context):
-        pass
+        self._reject_shared_update(context, 'contract')
 
     def update_endpoint_postcommit(self, context):
         # TODO(ivar): redo binding procedure if the EPG is modified,
@@ -321,6 +332,7 @@ class ApicMappingDriver(api.ResourceMappingDriver):
     def update_endpoint_group_precommit(self, context):
         if set(context.original['subnets']) - set(context.current['subnets']):
             raise gpexc.EndpointGroupSubnetRemovalNotSupported()
+        self._reject_shared_update(context, 'endpoint_group')
 
     def update_endpoint_group_postcommit(self, context):
         # TODO(ivar): refactor parent to avoid code duplication
@@ -357,6 +369,9 @@ class ApicMappingDriver(api.ResourceMappingDriver):
 
             self._manage_epg_subnets(context._plugin_context, context.current,
                                      new_subnets, removed_subnets)
+
+    def update_l3_policy_precommit(self, context):
+        self._reject_shared_update(context, 'l3_policy')
 
     def process_subnet_changed(self, context, old, new):
         if old['gateway_ip'] != new['gateway_ip']:
@@ -401,8 +416,7 @@ class ApicMappingDriver(api.ResourceMappingDriver):
                                unset=False, transaction=None):
         # REVISIT(ivar): figure out what should be moved in apicapi instead
         if policy_rules:
-            tenant = self.name_mapper.tenant(context,
-                                             context.current['tenant_id'])
+            tenant = self._tenant_by_sharing_policy(contract)
             contract = self.name_mapper.contract(context,
                                                  context.current['id'])
             in_dir = [g_const.GP_DIRECTION_BI, g_const.GP_DIRECTION_IN]
@@ -411,6 +425,7 @@ class ApicMappingDriver(api.ResourceMappingDriver):
             for rule in context._plugin.get_policy_rules(
                     context._plugin_context, filters=filters):
                 policy_rule = self.name_mapper.policy_rule(context, rule['id'])
+                rule_owner = self._tenant_by_sharing_policy(rule)
                 classifier = context._plugin.get_policy_classifier(
                     context._plugin_context, rule['policy_classifier_id'])
                 with self.apic_manager.apic.transaction(transaction) as trs:
@@ -418,12 +433,14 @@ class ApicMappingDriver(api.ResourceMappingDriver):
                         # Contract and subject are the same thing in this case
                         self.apic_manager.manage_contract_subject_in_filter(
                             contract, contract, policy_rule, owner=tenant,
-                            transaction=trs, unset=unset)
+                            transaction=trs, unset=unset,
+                            rule_owner=rule_owner)
                     if classifier['direction'] in out_dir:
                         # Contract and subject are the same thing in this case
                         self.apic_manager.manage_contract_subject_out_filter(
                             contract, contract, policy_rule, owner=tenant,
-                            transaction=trs, unset=unset)
+                            transaction=trs, unset=unset,
+                            rule_owner=rule_owner)
 
     @lockutils.synchronized('apic-portlock')
     def _manage_endpoint_port(self, plugin_context, ep):
@@ -436,8 +453,9 @@ class ApicMappingDriver(api.ResourceMappingDriver):
                 # TODO(ivar): change APICAPI to not expect a resource context
                 plugin_context._plugin = self.gbp_plugin
                 plugin_context._plugin_context = plugin_context
-                tenant_id = self.name_mapper.tenant(plugin_context,
-                                                    port['tenant_id'])
+                epg_object = self.gbp_plugin.get_endpoint_group(
+                    plugin_context, port_details['epg_id'])
+                tenant_id = self._tenant_by_sharing_policy(epg_object)
                 epg = self.name_mapper.endpoint_group(
                     plugin_context, port_details['epg_id'])
                 bd = self.name_mapper.l2_policy(
@@ -456,8 +474,7 @@ class ApicMappingDriver(api.ResourceMappingDriver):
         # TODO(ivar): change APICAPI to not expect a resource context
         plugin_context._plugin = self.gbp_plugin
         plugin_context._plugin_context = plugin_context
-        mapped_tenant = self.name_mapper.tenant(plugin_context,
-                                                epg['tenant_id'])
+        mapped_tenant = self._tenant_by_sharing_policy(epg)
         mapped_epg = self.name_mapper.endpoint_group(plugin_context,
                                                      epg['id'])
         provided = [added_provided, removed_provided]
@@ -466,23 +483,28 @@ class ApicMappingDriver(api.ResourceMappingDriver):
                    self.apic_manager.unset_contract_for_epg]
         with self.apic_manager.apic.transaction(transaction) as trs:
             for x in xrange(len(provided)):
-                for c in provided[x]:
-                    c = self.name_mapper.contract(plugin_context, c)
+                for c in self.gbp_plugin.get_contracts(
+                        plugin_context, filters={'id': provided[x]}):
+                    c_owner = self._tenant_by_sharing_policy(c)
+                    c = self.name_mapper.contract(plugin_context, c['id'])
                     methods[x](mapped_tenant, mapped_epg, c, provider=True,
-                               transaction=trs)
+                               contract_owner=c_owner, transaction=trs)
             for x in xrange(len(consumed)):
-                for c in consumed[x]:
-                    c = self.name_mapper.contract(plugin_context, c)
+                for c in self.gbp_plugin.get_contracts(
+                        plugin_context, filters={'id': consumed[x]}):
+                    c_owner = self._tenant_by_sharing_policy(c)
+                    c = self.name_mapper.contract(plugin_context, c['id'])
                     methods[x](mapped_tenant, mapped_epg, c, provider=False,
-                               transaction=trs)
+                               contract_owner=c_owner, transaction=trs)
 
     def _manage_epg_subnets(self, plugin_context, epg, added_subnets,
                             removed_subnets, transaction=None):
         # TODO(ivar): change APICAPI to not expect a resource context
         plugin_context._plugin = self.gbp_plugin
         plugin_context._plugin_context = plugin_context
-        mapped_tenant = self.name_mapper.tenant(plugin_context,
-                                                epg['tenant_id'])
+        l2_policy_object = self.gbp_plugin.get_l2_policy(
+            plugin_context, epg['l2_policy_id'])
+        mapped_tenant = self._tenant_by_sharing_policy(l2_policy_object)
         mapped_l2p = self.name_mapper.l2_policy(plugin_context,
                                                 epg['l2_policy_id'])
         subnets = [added_subnets, removed_subnets]
@@ -512,8 +534,9 @@ class ApicMappingDriver(api.ResourceMappingDriver):
             # TODO(ivar): change APICAPI to not expect a resource context
             context._plugin = self.gbp_plugin
             context._plugin_context = context
-            atenant_id = self.name_mapper.tenant(context,
-                                                 port_info['tenant_id'])
+            epg_object = self.gbp_plugin.get_endpoint_group(
+                context, port_info['epg_id'])
+            atenant_id = self._tenant_by_sharing_policy(epg_object)
             epg = self.name_mapper.endpoint_group(context, port_info['epg_id'])
             self._delete_port_path(context, atenant_id, epg, port_info)
 
@@ -595,3 +618,13 @@ class ApicMappingDriver(api.ResourceMappingDriver):
         if epg:
             db_utils = gpdb.GroupPolicyMappingDbPlugin()
             return db_utils._make_endpoint_group_dict(epg)
+
+    def _reject_shared_update(self, context, type):
+        if context.original.get('shared') != context.current.get('shared'):
+            raise SharedAttributeUpdateNotSupportedOnApic(type=type)
+
+    def _tenant_by_sharing_policy(self, object):
+        if not object.get('shared'):
+            return self.name_mapper.tenant(None, object['tenant_id'])
+        else:
+            return apic_manager.TENANT_COMMON
