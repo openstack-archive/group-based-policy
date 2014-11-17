@@ -64,3 +64,8 @@ class NoSubnetAvailable(exceptions.ResourceExhausted, GroupPolicyException):
 
 class EndpointGroupInUse(GroupPolicyBadRequest):
     message = _("Endpoint Group %(endpoint_group)s is in use")
+
+
+class ExplicitPortSubnetMismatchesEPGSubnet(GroupPolicyBadRequest):
+    message = _("Subnet %(port_subnet_id)s of port %(port_id)s is not"
+                " same as End Point Group: %(endpoint_group_id)s subnet")
