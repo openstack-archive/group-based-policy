@@ -97,6 +97,31 @@ class TestEndpoint(ResourceMappingTestCase):
             res = req.get_response(self.api)
             self.assertEqual(res.status_int, webob.exc.HTTPOk.code)
 
+    def test_explicit_port_subnet_mismatches_epg_subnet_rejected(self):
+        # Create endpoint groups epg2 and epg3.
+        epg2 = self.create_endpoint_group(name="epg2")
+        epg2_id = epg2['endpoint_group']['id']
+        subnet2_id = epg2['endpoint_group']['subnets'][0]
+        req = self.new_show_request('subnets', subnet2_id)
+
+        epg3 = self.create_endpoint_group(name="epg3")
+        subnet3_id = epg3['endpoint_group']['subnets'][0]
+        req = self.new_show_request('subnets', subnet3_id)
+        subnet = self.deserialize(self.fmt, req.get_response(self.api))
+
+        # Try creating epg2 endpoint with explicit port (port of epg3 subnet)
+        # Since subnet of explicit port is not same as epg2 subnet, we should
+        # see an exception
+        with self.port(subnet=subnet) as port:
+            port_id = port['port']['id']
+
+            data = self.create_endpoint(name="ep2", endpoint_group_id=epg2_id,
+                        port_id=port_id,
+                        expected_res_status=webob.exc.HTTPBadRequest.code)
+
+            self.assertEqual('ExplicitPortSubnetMismatchesEPGSubnet',
+                         data['NeutronError']['type'])
+
     def test_missing_epg_rejected(self):
         data = self.create_endpoint(name="ep1",
                                     expected_res_status=
