@@ -132,10 +132,32 @@ class ResourceMappingDriver(api.PolicyDriver):
 
     @log.log
     def create_endpoint_postcommit(self, context):
-        # TODO(rkukura): Validate explicit port belongs to subnet of
-        # EPG.
         if not context.current['port_id']:
             self._use_implicit_port(context)
+        else:
+            # Validate explicit port's subnet
+            # is same as the subnet of EPG.
+            port_id = context.current['port_id']
+            core_plugin = self._core_plugin
+            port = core_plugin.get_port(context._plugin_context, port_id)
+
+            port_subnet_id = None
+            fixed_ips = port['fixed_ips']
+            if fixed_ips:
+                port_subnet_id = fixed_ips[0]['subnet_id']
+
+            endpoint_group_id = context.current['endpoint_group_id']
+            epg = context._plugin.get_endpoint_group(context._plugin_context,
+                                                     endpoint_group_id)
+            for subnet in epg.get('subnets'):
+                if subnet == port_subnet_id:
+                    break
+            else:
+                raise exc.ExplicitPortSubnetMismatchesEPGSubnet(
+                                        port_id=port_id,
+                                        port_subnet_id=port_subnet_id,
+                                        endpoint_group_id=endpoint_group_id)
+
         self._assoc_epg_sg_to_ep(context, context.current['id'],
                                  context.current['endpoint_group_id'])
 
