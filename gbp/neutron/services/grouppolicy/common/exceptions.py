@@ -67,3 +67,8 @@ class NoSubnetAvailable(exceptions.ResourceExhausted, GroupPolicyException):
 
 class PolicyTargetGroupInUse(GroupPolicyBadRequest):
     message = _("Policy Target Group %(policy_target_group)s is in use")
+
+
+class ExplicitPortSubnetMismatchesPTGSubnet(GroupPolicyBadRequest):
+    message = _("Subnet %(port_subnet_id)s of port %(port_id)s is not "
+            "same as Policy Target Group %(policy_target_group_id)s subnet")

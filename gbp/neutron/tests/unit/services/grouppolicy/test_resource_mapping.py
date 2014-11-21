@@ -105,6 +105,44 @@ class TestPolicyTarget(ResourceMappingTestCase):
         self.assertEqual('PolicyTargetRequiresPolicyTargetGroup',
                          data['NeutronError']['type'])
 
+    def test_explicit_port_subnet_mismatches_ptg_subnet_rejected(self):
+        ptg1 = self.create_policy_target_group(name="ptg1")
+        ptg1_id = ptg1['policy_target_group']['id']
+
+        # Create a subnet that is different from ptg1 subnet (by
+        # creating a new L2 policy and subnet)
+        l2p = self.create_l2_policy(name="l2p1")
+        network_id = l2p['l2_policy']['network_id']
+        req = self.new_show_request('networks', network_id)
+        network = self.deserialize(self.fmt, req.get_response(self.api))
+        with self.subnet(network=network, cidr='10.10.1.0/24') as subnet:
+            with self.port(subnet=subnet) as port:
+                port_id = port['port']['id']
+
+                data = self.create_policy_target(name="ep1",
+                        policy_target_group_id=ptg1_id,
+                        port_id=port_id,
+                        expected_res_status=webob.exc.HTTPBadRequest.code)
+
+                self.assertEqual('ExplicitPortSubnetMismatchesPTGSubnet',
+                         data['NeutronError']['type'])
+
+    def test_missing_explicit_port_ptg_rejected(self):
+        ptg1 = self.create_policy_target_group(name="ptg1")
+        ptg1_id = ptg1['policy_target_group']['id']
+
+        port_id = uuidutils.generate_uuid()
+        data = self.create_policy_target(name="pt1",
+                        policy_target_group_id=ptg1_id,
+                        port_id=port_id,
+                        expected_res_status=webob.exc.HTTPServerError.code)
+
+        # TODO(krishna-sunitha): Need to change the below to the correct
+        # exception after
+        # https://bugs.launchpad.net/group-based-policy/+bug/1394000 is fixed
+        self.assertEqual('HTTPInternalServerError',
+                         data['NeutronError']['type'])
+
     def test_ptg_update_rejected(self):
         # Create two policy_target groups.
         ptg1 = self.create_policy_target_group(name="ptg1")
