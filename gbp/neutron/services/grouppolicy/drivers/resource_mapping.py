@@ -133,10 +133,35 @@ class ResourceMappingDriver(api.PolicyDriver):
 
     @log.log
     def create_policy_target_postcommit(self, context):
-        # TODO(rkukura): Validate explicit port belongs to subnet of
-        # PTG.
         if not context.current['port_id']:
             self._use_implicit_port(context)
+        else:
+            # Validate if explicit port's subnet
+            # is same as the subnet of PTG.
+            port_id = context.current['port_id']
+            core_plugin = self._core_plugin
+            port = core_plugin.get_port(context._plugin_context, port_id)
+
+            port_subnet_id = None
+            fixed_ips = port['fixed_ips']
+            if fixed_ips:
+                # TODO(krishna-sunitha): Check if there is a case when
+                # there is more than one fixed_ip?
+                port_subnet_id = fixed_ips[0]['subnet_id']
+
+            ptg_id = context.current['policy_target_group_id']
+            ptg = context._plugin.get_policy_target_group(
+                                    context._plugin_context,
+                                    ptg_id)
+            for subnet in ptg.get('subnets'):
+                if subnet == port_subnet_id:
+                    break
+            else:
+                raise exc.InvalidPortForPTG(port_id=port_id,
+                                    ptg_subnet_id=",".join(ptg.get('subnets')),
+                                    port_subnet_id=port_subnet_id,
+                                    policy_target_group_id=ptg_id)
+
         self._assoc_ptg_sg_to_pt(context, context.current['id'],
                                  context.current['policy_target_group_id'])
 
