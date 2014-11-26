@@ -85,9 +85,9 @@ class SimpleChainDriver(object):
         filters = {'servicechain_spec': [context.original['id']]}
         sc_instances = context._plugin.get_servicechain_instances(
             context._plugin_context, filters)
-        if sc_instances:
+        for sc_instance in sc_instances:
             self._update_servicechain_instance(context,
-                                               sc_instances[0],
+                                               sc_instance,
                                                context._sc_spec)
 
     @log.log
@@ -249,12 +249,13 @@ class SimpleChainDriver(object):
             context._plugin_context, filters)
 
     def _update_servicechain_instance(self, context, sc_instance, newspec):
-            self._delete_servicechain_instance_stacks(context._plugin_context,
-                                                      sc_instance['id'])
-            sc_node_ids = newspec.get('nodes')
-            self._create_servicechain_instance_stacks(context,
-                                                      sc_node_ids,
-                                                      sc_instance)
+        self._delete_servicechain_instance_stacks(context._plugin_context,
+                                                  sc_instance['id'])
+        sc_node_ids = newspec.get('nodes')
+        self._create_servicechain_instance_stacks(context,
+                                                  sc_node_ids,
+                                                  sc_instance,
+                                                  newspec)
 
     def _delete_chain_stacks_db(self, session, sc_instance_id):
         with session.begin(subtransactions=True):
