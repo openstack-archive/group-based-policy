@@ -415,8 +415,15 @@ class ResourceMappingDriver(api.PolicyDriver):
 
     @log.log
     def update_policy_classifier_postcommit(self, context):
-        # TODO(ivar): Should affect related SGs
-        pass
+        policy_rules = (context._plugin._get_policy_classifier(
+                context._plugin_context,
+                context.current['id'])['policy_rules'])
+        for policy_rule in policy_rules:
+            pr_id = policy_rule['id']
+            pr_sets = context._plugin._get_policy_rule_policy_rule_sets(
+                context._plugin_context, pr_id)
+            self._update_policy_rule_sg_rules(context, pr_sets,
+                policy_rule, None, context.original, context.current)
 
     @log.log
     def delete_policy_classifier_precommit(self, context):
@@ -465,8 +472,17 @@ class ResourceMappingDriver(api.PolicyDriver):
 
     @log.log
     def update_policy_rule_postcommit(self, context):
-        # TODO(ivar): Should affect related SGs
-        pass
+        old_classifier_id = context.original['policy_classifier_id']
+        new_classifier_id = context.current['policy_classifier_id']
+        old_action_set = set(context.current['policy_actions'])
+        new_action_set = set(context.original['policy_actions'])
+        if old_classifier_id != new_classifier_id or \
+                old_action_set != new_action_set:
+            policy_rule_sets =\
+                context._plugin._get_policy_rule_policy_rule_sets(
+                    context._plugin_context, context.current['id'])
+            self._update_policy_rule_sg_rules(context, policy_rule_sets,
+                    context.original, context.current)
 
     @log.log
     def delete_policy_rule_precommit(self, context):
@@ -752,6 +768,38 @@ class ResourceMappingDriver(api.PolicyDriver):
                         policy_rule_set_id=policy_rule_set_id).all())
         except sql_exc.NoResultFound:
             return None
+
+    # updates sg rules corresponding to a policy rule
+    def _update_policy_rule_sg_rules(self, context, policy_rule_sets,
+                                    old_policy_rule, new_policy_rule,
+                                    old_classifier=None, new_classifier=None):
+        """
+        for policy_rule_set_id in policy_rule_sets:
+            policy_rule_set = context._plugin.get_policy_rule_set(
+                context._plugin_context, policy_rule_set_id)
+        """
+        policy_rule_set_list = context._plugin.get_policy_rule_sets(
+                context._plugin_context, filters={'id': policy_rule_sets})
+        for policy_rule_set in policy_rule_set_list:
+            policy_rule_set_sg_mappings = self._get_policy_rule_set_sg_mapping(
+                context._plugin_context.session, policy_rule_set['id'])
+            ptg_mapping = self._get_policy_rule_set_ptg_mapping(
+                context, policy_rule_set)
+            cidr_mapping = self._get_ptg_cidrs_mapping(context, ptg_mapping)
+            if old_classifier:
+                self._add_or_remove_policy_rule_set_rule(
+                    context, old_policy_rule, policy_rule_set_sg_mappings,
+                    cidr_mapping, unset=True, classifier=old_classifier)
+                self._add_or_remove_policy_rule_set_rule(
+                    context, old_policy_rule, policy_rule_set_sg_mappings,
+                    cidr_mapping, classifier=new_classifier)
+            else:
+                self._add_or_remove_policy_rule_set_rule(
+                    context, old_policy_rule, policy_rule_set_sg_mappings,
+                    cidr_mapping, unset=True)
+                self._add_or_remove_policy_rule_set_rule(
+                    context, new_policy_rule, policy_rule_set_sg_mappings,
+                    cidr_mapping)
 
     def _set_policy_ipaddress_mapping(self, session, service_policy_id,
                                       policy_target_group, ipaddress):
@@ -1337,16 +1385,19 @@ class ResourceMappingDriver(api.PolicyDriver):
 
     def _add_or_remove_policy_rule_set_rule(self, context, policy_rule,
                                             policy_rule_set_sg_mappings,
-                                            cidr_mapping, unset=False):
+                                            cidr_mapping, unset=False,
+                                            classifier=None):
         in_out = [gconst.GP_DIRECTION_IN, gconst.GP_DIRECTION_OUT]
         prov_cons = [policy_rule_set_sg_mappings['provided_sg_id'],
                      policy_rule_set_sg_mappings['consumed_sg_id']]
         cidr_prov_cons = [cidr_mapping['providing_cidrs'],
                           cidr_mapping['consuming_cidrs']]
 
-        classifier_id = policy_rule['policy_classifier_id']
-        classifier = context._plugin.get_policy_classifier(
-            context._plugin_context, classifier_id)
+        if not classifier:
+            classifier_id = policy_rule['policy_classifier_id']
+            classifier = context._plugin.get_policy_classifier(
+                context._plugin_context, classifier_id)
+
         protocol = classifier['protocol']
         port_range = classifier['port_range']
 
