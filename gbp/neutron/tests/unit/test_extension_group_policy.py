@@ -37,6 +37,9 @@ POLICY_CLASSIFIERS_URI = GROUPPOLICY_URI + '/' + 'policy_classifiers'
 POLICY_ACTIONS_URI = GROUPPOLICY_URI + '/' + 'policy_actions'
 POLICY_RULE_SETS_URI = GROUPPOLICY_URI + '/' + 'policy_rule_sets'
 NET_SVC_POLICIES_URI = GROUPPOLICY_URI + '/' + 'network_service_policies'
+EAP_POLICIES_URI = GROUPPOLICY_URI + '/' + 'external_access_policies'
+EAS_POLICIES_URI = GROUPPOLICY_URI + '/' + 'external_access_segments'
+NP_POLICIES_URI = GROUPPOLICY_URI + '/' + 'nat_pools'
 
 
 class GroupPolicyExtensionTestCase(test_api_v2_extension.ExtensionTestCase):
@@ -46,7 +49,8 @@ class GroupPolicyExtensionTestCase(test_api_v2_extension.ExtensionTestCase):
         super(GroupPolicyExtensionTestCase, self).setUp()
         plural_mappings = {
             'l2_policy': 'l2_policies', 'l3_policy': 'l3_policies',
-            'network_service_policy': 'network_service_policies'}
+            'network_service_policy': 'network_service_policies',
+            'external_access_policy': 'external_access_policies'}
         self._setUpExtension(
             GP_PLUGIN_BASE_NAME, constants.GROUP_POLICY,
             gp.RESOURCE_ATTRIBUTE_MAP, gp.Group_policy, GROUPPOLICY_URI,
