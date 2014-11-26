@@ -461,12 +461,33 @@ class ResourceMappingDriver(api.PolicyDriver):
 
     @log.log
     def update_policy_rule_precommit(self, context):
-        pass
+        # REVISIT(ivar): This will be removed once navigability issue is
+        # solved (bug/1384397)
+        context._rmd_policy_rule_sets_temp = (
+            context._plugin._get_policy_rule_policy_rule_sets(
+                context._plugin_context, context.current['id']))
 
     @log.log
     def update_policy_rule_postcommit(self, context):
-        # TODO(ivar): Should affect related SGs
-        pass
+        """
+            TODO(s3wong): optimize - if the change is only on 'name' or
+            'description', no need to do all of the following
+            Remove context.original, add context.current
+        """
+        for policy_rule_set_id in context._rmd_policy_rule_sets_temp:
+            policy_rule_set = context._plugin.get_policy_rule_set(
+                context._plugin_context, policy_rule_set_id)
+            policy_rule_set_sg_mappings = self._get_policy_rule_set_sg_mapping(
+                context._plugin_context.session, policy_rule_set['id'])
+            ptg_mapping = self._get_policy_rule_set_ptg_mapping(
+                context, policy_rule_set)
+            cidr_mapping = self._get_ptg_cidrs_mapping(context, ptg_mapping)
+            self._add_or_remove_policy_rule_set_rule(
+                context, context.original, policy_rule_set_sg_mappings,
+                cidr_mapping, unset=True)
+            self._add_or_remove_policy_rule_set_rule(
+                context, context.current, policy_rule_set_sg_mappings,
+                cidr_mapping)
 
     @log.log
     def delete_policy_rule_precommit(self, context):
