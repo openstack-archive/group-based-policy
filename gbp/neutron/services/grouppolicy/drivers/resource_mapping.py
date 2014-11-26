@@ -465,8 +465,45 @@ class ResourceMappingDriver(api.PolicyDriver):
 
     @log.log
     def update_policy_rule_postcommit(self, context):
-        # TODO(ivar): Should affect related SGs
-        pass
+        """
+            TODO(s3wong): optimize - if the change is only on 'name' or
+            'description', no need to do all of the following
+            First lookup the corresponding SG rules targeted for
+            update, thus starts with context.original
+        """
+        policy_rule_id = context.original['id']
+        prs_set = (self._get_prs_policy_rule(context._plugin_context.session,
+                   policy_rule_id))
+
+        if not prs_set:
+            """
+                this is simply a policy rule that is created, but not yet
+                associated with any PRS, nothing needs to be done
+            """
+            return
+
+        """
+            First browse through the policy rules set asscociated with
+            this policy-rule
+            for each PRS, it is possible that the PRS is set, but not
+            associated with any policy target group (provided or consumed),
+            we ignore the PRS in this case
+            for each PTG associated with the PRS with this policy rule,
+            depends on direction, we may need to derive the CIDR field
+        """
+        for prs_id in prs_set:
+            prs_sg_mapping = self._get_policy_rule_set_sg_mapping(
+                context._plugin_context.session, prs_id)
+            policy_rule_set = context._plugin.get_policy_rule_set(
+                    context._plugin_context, prs_id)
+            ptg_mapping = self._get_policy_rule_set_ptg_mapping(
+                    context, policy_rule_set)
+            cidr_mapping = self._get_ptg_cidrs_mapping(context, ptg_mapping)
+            self._add_or_remove_policy_rule_set_rule(
+                context, context.original, prs_sg_mapping, cidr_mapping,
+                unset=True)
+            self._add_or_remove_policy_rule_set_rule(
+                context, context.current, prs_sg_mapping, cidr_mapping)
 
     @log.log
     def delete_policy_rule_precommit(self, context):
@@ -751,6 +788,15 @@ class ResourceMappingDriver(api.PolicyDriver):
                     gpdb.PTGToPRSConsumingAssociation).filter_by(
                         policy_rule_set_id=policy_rule_set_id).all())
         except sql_exc.NoResultFound:
+            return None
+
+   def _get_prs_policy_rule(self, session, policy_rule_id):
+       try:
+            with session.begin(subtransactions=True):
+                return (session.query(
+                    gpdb.PRSToPRAssociation).filter_by(
+                        policy_rule_id=policy_rule_id).all())
+       except sql_exc.NoResultFound:
             return None
 
     def _set_policy_ipaddress_mapping(self, session, service_policy_id,

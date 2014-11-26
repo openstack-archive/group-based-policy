@@ -673,6 +673,50 @@ class TestPolicyRuleSet(ResourceMappingTestCase):
         security_groups = port['port'][ext_sg.SECURITYGROUPS]
         self.assertEqual(len(security_groups), 3)
 
+    # Test update of policy rules
+    def _test_policy_rule_update(self):
+        classifier1 = self.create_policy_classifier(
+            name="class1", protocol="tcp", direction="bi", port_range="30:80")
+        classifier2 = self.create_policy_classifier(
+            name="class2", protocol="udp", direction="out", port_range="20:30")
+        classifier1_id = classifier1['policy_classifier']['id']
+        classifier2_id = classifier2['policy_classifier']['id']
+        action = self.create_policy_action(name="action1",
+                                           action_type=gconst.GP_ACTION_ALLOW)
+        action_id = action['policy_action']['id']
+        action_id_list = [action_id]
+        policy_rule = self.create_policy_rule(
+            name='pr1', policy_classifier_id=classifier1_id,
+            policy_actions=action_id_list)
+        policy_rule_id = policy_rule['policy_rule']['id']
+        policy_rule_list = [policy_rule]
+        policy_rule_set = self.create_policy_rule_set(
+            name="c1", policy_rules=policy_rule_list)
+        policy_rule_set_id = policy_rule_set['policy_rule_set']['id']
+        ptg = self.create_policy_target_group(
+            name="ptg1", provided_policy_rule_sets={policy_rule_set_id: None})
+        ptg_id = ptg['policy_target_group']['id']
+        pt = self.create_policy_target(
+            name="pt1", policy_target_group_id=ptg_id)
+        port_id = pt['policy_target']['port_id']
+        res = self.new_show_request('ports', port_id)
+        port = self.deserialize(self.fmt, res.get_response(self.api))
+        security_groups = port['port'][ext_sg.SECURITYGROUPS]
+        self.assertEqual(len(security_groups), 2)
+
+        # now updates the policy rule with new classifier
+        data = {'policy_rule':
+                {'policy_classifier_id': classifier2_id}}
+        req = self.new_update_request('policy_rules', data, policy_rule_id)
+        res = req.get_response(self.ext_api)
+        self.assertEqual(res.status_int, webob.exc.HTTPOk.code)
+        res = self.new_show_request('ports', port_id)
+        port = self.deserialize(self.fmt, res.get_response(self.api))
+        security_groups = port['port'][ext_sg.SECURITYGROUPS]
+        security_group = sg for sg in security_groups if sg['name'] != 'gbp_default'
+        udp_rules = [r for r in security_group if r['protocol'] == 'udp']
+        self.assertEqual(len(udp_rules), 1)
+
     def test_redirect_to_chain(self):
         classifier = self.create_policy_classifier(
             name="class1", protocol="tcp", direction="in", port_range="20:90")
