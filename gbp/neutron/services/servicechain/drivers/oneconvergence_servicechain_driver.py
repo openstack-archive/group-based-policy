@@ -44,13 +44,13 @@ class PendingServiceChainInsertions(object):
     """Encapsulates a ServiceChain Insertion Operation"""
 
     def __init__(self, context, node_stacks, chain_instance_id,
-                 provider_ptg, consumer_ptg, classifier):
+                 provider_ptg_id, consumer_ptg_id, classifier_id):
         self.context = context
         self.node_stacks = node_stacks
         self.chain_instance_id = chain_instance_id
-        self.provider_ptg = provider_ptg
-        self.consumer_ptg = consumer_ptg
-        self.classifier = classifier
+        self.provider_ptg_id = provider_ptg_id
+        self.consumer_ptg_id = consumer_ptg_id
+        self.classifier_id = classifier_id
 
 
 class OneconvergenceServiceChainDriver(simplechain_driver.SimpleChainDriver):
@@ -88,9 +88,9 @@ class OneconvergenceServiceChainDriver(simplechain_driver.SimpleChainDriver):
                                     thread_context,
                                     node_stacks,
                                     context.current['id'],
-                                    context.current['provider_ptg'],
-                                    context.current['consumer_ptg'],
-                                    context.current['classifier'])
+                                    context.current['provider_ptg_id'],
+                                    context.current['consumer_ptg_id'],
+                                    context.current['classifier_id'])
         eventlet.spawn_n(self._process_chain_processing, pendinginsertion)
 
     @log.log
@@ -124,12 +124,12 @@ class OneconvergenceServiceChainDriver(simplechain_driver.SimpleChainDriver):
                                              context.current['id'])
         thread_context = copy.copy(context._plugin_context)
         pendinginsertion = PendingServiceChainInsertions(
-                                             thread_context,
-                                             node_stacks,
-                                             context.current['id'],
-                                             context.current['provider_ptg'],
-                                             context.current['consumer_ptg'],
-                                             context.current['classifier'])
+                                           thread_context,
+                                           node_stacks,
+                                           context.current['id'],
+                                           context.current['provider_ptg_id'],
+                                           context.current['consumer_ptg_id'],
+                                           context.current['classifier_id'])
         eventlet.spawn_n(self._process_chain_processing, pendinginsertion)
 
     def _delete_chain_policy_map(self, session, sc_instance_id):
@@ -286,9 +286,9 @@ class OneconvergenceServiceChainDriver(simplechain_driver.SimpleChainDriver):
         nvsd_action_list = self._create_nvsd_services_action(context,
                                                              service_ids)
 
-        left_group = pending_chain.consumer_ptg
-        right_group = pending_chain.provider_ptg
-        classifier_id = pending_chain.classifier
+        left_group = pending_chain.consumer_ptg_id
+        right_group = pending_chain.provider_ptg_id
+        classifier_id = pending_chain.classifier_id
         if nvsd_action_list:
             policy_id = self.create_nvsd_policy(context, left_group,
                                                 right_group, classifier_id,
