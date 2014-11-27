@@ -11,9 +11,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import copy
 import webob.exc
 
 from neutron.api import extensions
+from neutron.api.v2 import attributes as nattr
 from neutron import context
 from neutron.openstack.common import importutils
 from neutron.openstack.common import uuidutils
@@ -158,6 +160,50 @@ class GroupPolicyDBTestBase(object):
                  'child_policy_rule_sets': child_policy_rule_sets,
                  'policy_rules': policy_rules}
 
+        return attrs
+
+    def _get_test_eap_attrs(self, name='eap_1', description='test eap',
+                            external_access_segments=None,
+                            provided_policy_rule_sets=None,
+                            consumed_policy_rule_sets=None):
+        pprs_ids = cprs_ids = eas_ids = []
+        if provided_policy_rule_sets:
+            pprs_ids = [pprs_id for pprs_id in provided_policy_rule_sets]
+        if consumed_policy_rule_sets:
+            cprs_ids = [cc_id for cc_id in consumed_policy_rule_sets]
+        if external_access_segments:
+            eas_ids = [eas_id for eas_id in external_access_segments]
+        attrs = {'name': name, 'description': description,
+                 'tenant_id': self._tenant_id,
+                 'external_access_segments': eas_ids,
+                 'provided_policy_rule_sets': pprs_ids,
+                 'consumed_policy_rule_sets': cprs_ids}
+        return attrs
+
+    def _get_test_eas_attrs(self, name='eas_1', description='test eas',
+                            ip_version=4, address_cidr='172.0.0.0/8',
+                            encap_type='vlan', encap_value=100,
+                            external_access_routes=None,
+                            port_address_translation=False,
+                            l3_policies=None):
+        ear = external_access_routes or []
+        l3_policies = l3_policies or {}
+        attrs = {'name': name, 'description': description,
+                 'ip_version': ip_version,
+                 'tenant_id': self._tenant_id, 'address_cidr': address_cidr,
+                 'encap_type': encap_type, 'encap_value': encap_value,
+                 'external_access_routes': ear,
+                 'port_address_translation': port_address_translation,
+                 'l3_policies': l3_policies}
+        return attrs
+
+    def _get_test_np_attrs(self, name='eas_1', description='test eas',
+                           ip_version=4, ip_pool='10.160.0.0/16',
+                           external_access_segment_id=None):
+        attrs = {'name': name, 'description': description,
+                 'ip_version': ip_version,
+                 'tenant_id': self._tenant_id, 'ip_pool': ip_pool,
+                 'external_access_segment_id': external_access_segment_id}
         return attrs
 
     def create_policy_target(self, policy_target_group_id=None,
@@ -358,6 +404,43 @@ class GroupPolicyDBTestBase(object):
 
         return prs
 
+    def _create_gbp_resource(self, type, expected_res_status, body):
+        plural = self._get_resource_plural(type)
+        data = {type: body}
+        req = self.new_create_request(plural, data, self.fmt)
+        res = req.get_response(self.ext_api)
+
+        if expected_res_status:
+            self.assertEqual(res.status_int, expected_res_status)
+        elif res.status_int >= webob.exc.HTTPClientError.code:
+            raise webob.exc.HTTPClientError(code=res.status_int)
+        prs = self.deserialize(self.fmt, res)
+        return prs
+
+    def create_external_access_policy(self, expected_res_status=None,
+                                      **kwargs):
+        defaults = {'name': 'ptg1', 'description': 'test ptg',
+                    'provided_policy_rule_sets': {},
+                    'consumed_policy_rule_sets': {},
+                    'tenant_id': self._tenant_id,
+                    'external_access_segments': []}
+        defaults.update(kwargs)
+        return self._create_gbp_resource(
+            'external_access_policy', expected_res_status, defaults)
+
+    def create_external_access_segment(self, expected_res_status=None,
+                                       **kwargs):
+        body = self._get_test_eas_attrs()
+        body.update(kwargs)
+        return self._create_gbp_resource(
+            'external_access_segment', expected_res_status, body)
+
+    def create_nat_pool(self, expected_res_status=None, **kwargs):
+        body = self._get_test_np_attrs()
+        body.update(kwargs)
+        return self._create_gbp_resource(
+            'nat_pool', expected_res_status, body)
+
 
 class GroupPolicyDBTestPlugin(gpdb.GroupPolicyDbPlugin):
 
@@ -379,7 +462,7 @@ class GroupPolicyDbTestCase(GroupPolicyDBTestBase,
         self.plugin = importutils.import_object(gp_plugin)
         if not service_plugins:
             service_plugins = {'gp_plugin_name': gp_plugin}
-
+        nattr.PLURALS['nat_pools'] = 'nat_pool'
         super(GroupPolicyDbTestCase, self).setUp(
             plugin=core_plugin, ext_mgr=ext_mgr,
             service_plugins=service_plugins
@@ -1080,3 +1163,167 @@ class TestGroupResources(GroupPolicyDbTestCase):
         req = self.new_update_request('policy_rule_sets', data, prs['id'])
         res = req.get_response(self.ext_api)
         self.assertEqual(res.status_int, webob.exc.HTTPBadRequest.code)
+
+    def _test_create_and_show(self, type, attrs, expected=None):
+        plural = self._get_resource_plural(type)
+        res = self._create_gbp_resource(type, None, attrs)
+        expected = expected or attrs
+        for k, v in expected.iteritems():
+            self.assertEqual(v, res[type][k])
+
+        req = self.new_show_request(plural, res[type]['id'], fmt=self.fmt)
+        res = self.deserialize(self.fmt, req.get_response(self.ext_api))
+        for k, v in expected.iteritems():
+            self.assertEqual(v, res[type][k])
+        self._test_show_resource(type, res[type]['id'], expected)
+
+    def test_create_and_show_eap(self):
+        eas = self.create_external_access_segment()['external_access_segment']
+        prs = self.create_policy_rule_set()['policy_rule_set']
+        attrs = {'external_access_segments': [eas['id']],
+                 'provided_policy_rule_sets': {prs['id']: None},
+                 'consumed_policy_rule_sets': {prs['id']: None}}
+        body = self._get_test_eap_attrs()
+        body.update(attrs)
+        expected = copy.deepcopy(body)
+        expected['provided_policy_rule_sets'] = [prs['id']]
+        expected['consumed_policy_rule_sets'] = [prs['id']]
+        self._test_create_and_show('external_access_policy', body,
+                                   expected=expected)
+
+    def test_create_and_show_eas(self):
+        route = {'destination': '0.0.0.0/0', 'nexthop': '172.0.0.1'}
+        l3p = self.create_l3_policy()['l3_policy']
+        l3p_dict = {l3p['id']: ['172.0.0.2', '172.0.0.3']}
+        attrs = self._get_test_eas_attrs(
+            external_access_routes=[route], l3_policies=l3p_dict)
+        self._test_create_and_show('external_access_segment', attrs)
+
+    def test_create_and_show_np(self):
+        eas = self.create_external_access_segment()['external_access_segment']
+        attrs = self._get_test_np_attrs(external_access_segment_id=eas['id'])
+        self._test_create_and_show('nat_pool', attrs)
+
+    def test_list_eap(self):
+        external_access_policies = [
+            self.create_external_access_policy(name='eap1', description='eap'),
+            self.create_external_access_policy(name='eap2', description='eap'),
+            self.create_external_access_policy(name='eap3', description='eap')]
+        self._test_list_resources('external_access_policy',
+                                  external_access_policies,
+                                  query_params='description=eap')
+
+    def test_list_eas(self):
+        external_access_segments = [
+            self.create_external_access_segment(name='eas1',
+                                                description='eas'),
+            self.create_external_access_segment(name='eas2',
+                                                description='eas'),
+            self.create_external_access_segment(name='eas3',
+                                                description='eas')]
+        self._test_list_resources('external_access_segment',
+                                  external_access_segments,
+                                  query_params='description=eas')
+
+    def test_update_external_access_policy(self):
+        name = 'new_eap'
+        description = 'new desc'
+        eas = self.create_external_access_segment()['external_access_segment']
+        prs = self.create_policy_rule_set()['policy_rule_set']
+        attrs = self._get_test_eap_attrs(
+            name=name, description=description,
+            external_access_segments=[eas['id']],
+            provided_policy_rule_sets={prs['id']: None},
+            consumed_policy_rule_sets={prs['id']: None})
+        eap = self.create_external_access_policy()['external_access_policy']
+        data = {'external_access_policy': {
+            'name': name, 'description': description,
+            'external_access_segments': [eas['id']],
+            'provided_policy_rule_sets': {prs['id']: None},
+            'consumed_policy_rule_sets': {prs['id']: None}}}
+
+        req = self.new_update_request('external_access_policies', data,
+                                      eap['id'])
+        res = self.deserialize(self.fmt, req.get_response(self.ext_api))
+        res = res['external_access_policy']
+        for k, v in attrs.iteritems():
+            self.assertEqual(v, res[k])
+
+        self._test_show_resource('external_access_policy', eap['id'], attrs)
+
+    def test_update_external_access_segment(self):
+        name = 'new_eas'
+        description = 'new desc'
+        route = {'destination': '0.0.0.0/0', 'nexthop': '172.0.0.1'}
+        l3p = self.create_l3_policy()['l3_policy']
+        l3p_dict = {l3p['id']: ['172.0.0.2', '172.0.0.3']}
+        attrs = self._get_test_eas_attrs(name=name, description=description,
+                                         external_access_routes=[route],
+                                         l3_policies=l3p_dict)
+        eas = self.create_external_access_segment()['external_access_segment']
+        data = {'external_access_segment': {
+            'name': name, 'description': description,
+            'external_access_routes': [route], 'l3_policies': l3p_dict}}
+
+        req = self.new_update_request('external_access_segments', data,
+                                      eas['id'])
+        res = self.deserialize(self.fmt, req.get_response(self.ext_api))
+        res = res['external_access_segment']
+        for k, v in attrs.iteritems():
+            self.assertEqual(res[k], v)
+
+        self._test_show_resource('external_access_segment', eas['id'], attrs)
+
+    def test_update_nat_pool(self):
+        name = 'new_np'
+        description = 'new desc'
+        eas = self.create_external_access_segment()['external_access_segment']
+
+        attrs = self._get_test_np_attrs(name=name, description=description,
+                                        external_access_segment_id=eas['id'])
+        np = self.create_nat_pool()['nat_pool']
+        data = {'nat_pool': {
+            'name': name, 'description': description,
+            'external_access_segment_id': eas['id']}}
+
+        req = self.new_update_request('nat_pools', data,
+                                      np['id'])
+        res = self.deserialize(self.fmt, req.get_response(self.ext_api))
+        res = res['nat_pool']
+        for k, v in attrs.iteritems():
+            self.assertEqual(v, res[k])
+
+        self._test_show_resource('nat_pool', np['id'], attrs)
+
+    def test_delete_eap(self):
+        ctx = context.get_admin_context()
+        eap = self.create_external_access_policy()
+        eap_id = eap['external_access_policy']['id']
+
+        req = self.new_delete_request('external_access_policies', eap_id)
+        res = req.get_response(self.ext_api)
+        self.assertEqual(res.status_int, webob.exc.HTTPNoContent.code)
+        self.assertRaises(gpolicy.ExternalAccessPolicyNotFound,
+                          self.plugin.get_external_access_policy, ctx, eap_id)
+
+    def test_delete_eas(self):
+        ctx = context.get_admin_context()
+        eap = self.create_external_access_segment()
+        eap_id = eap['external_access_segment']['id']
+
+        req = self.new_delete_request('external_access_segments', eap_id)
+        res = req.get_response(self.ext_api)
+        self.assertEqual(res.status_int, webob.exc.HTTPNoContent.code)
+        self.assertRaises(gpolicy.ExternalAccessSegmentNotFound,
+                          self.plugin.get_external_access_segment, ctx, eap_id)
+
+    def test_delete_np(self):
+        ctx = context.get_admin_context()
+        eap = self.create_nat_pool()
+        eap_id = eap['nat_pool']['id']
+
+        req = self.new_delete_request('nat_pools', eap_id)
+        res = req.get_response(self.ext_api)
+        self.assertEqual(res.status_int, webob.exc.HTTPNoContent.code)
+        self.assertRaises(gpolicy.NATPoolNotFound,
+                          self.plugin.get_nat_pool, ctx, eap_id)
