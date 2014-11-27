@@ -84,10 +84,12 @@ class GroupPolicyMappingDbTestCase(tgpdb.GroupPolicyDbTestCase,
     def _get_test_l3_policy_attrs(self, name='l3p1',
                                   description='test l3_policy',
                                   ip_version=4, ip_pool='10.0.0.0/8',
-                                  subnet_prefix_length=24, routers=None):
+                                  subnet_prefix_length=24, routers=None,
+                                  external_access_segments=None):
         attrs = (super(GroupPolicyMappingDbTestCase, self).
                  _get_test_l3_policy_attrs(name, description, ip_version,
-                                           ip_pool, subnet_prefix_length))
+                                           ip_pool, subnet_prefix_length,
+                                           external_access_segments))
         attrs.update({'routers': routers or []})
         return attrs
 

@@ -14,6 +14,8 @@ import sqlalchemy as sa
 from sqlalchemy import orm
 from sqlalchemy.orm import exc
 
+import netaddr as net
+from neutron.api.v2 import attributes as attr
 from neutron.common import log
 from neutron import context
 from neutron.db import common_db_mixin
@@ -30,6 +32,17 @@ from gbp.neutron.services.grouppolicy.common import constants as gp_constants
 LOG = logging.getLogger(__name__)
 MAX_IPV4_SUBNET_PREFIX_LENGTH = 31
 MAX_IPV6_SUBNET_PREFIX_LENGTH = 127
+
+
+class HasNameDescription(object):
+    name = sa.Column(sa.String(50))
+    description = sa.Column(sa.String(255))
+
+
+class BaseSharedGbpResource(models_v2.HasId, models_v2.HasTenant,
+                            HasNameDescription):
+    shared = sa.Column(sa.Boolean)
+    pass
 
 
 class PolicyTarget(model_base.BASEV2, models_v2.HasId, models_v2.HasTenant):
@@ -118,6 +131,21 @@ class L2Policy(model_base.BASEV2, models_v2.HasId, models_v2.HasTenant):
     shared = sa.Column(sa.Boolean)
 
 
+class EASToL3PAssociation(model_base.BASEV2):
+    """Many to many consuming relation between EASs and L3Ps."""
+    __tablename__ = 'gp_eas_to_l3p_associations'
+    __table_args__ = (
+        sa.UniqueConstraint('external_access_segment_id', 'allocated_address'),
+    )
+    l3_policy_id = sa.Column(sa.String(36), sa.ForeignKey('gp_l3_policies.id'),
+                             primary_key=True)
+    external_access_segment_id = sa.Column(
+        sa.String(36), sa.ForeignKey('gp_external_access_segments.id'),
+        primary_key=True)
+    allocated_address = sa.Column(sa.String(64), nullable=False,
+                                  primary_key=True)
+
+
 class L3Policy(model_base.BASEV2, models_v2.HasId, models_v2.HasTenant):
     """Represents a L3 Policy with a non-overlapping IP address space."""
     __tablename__ = 'gp_l3_policies'
@@ -133,6 +161,9 @@ class L3Policy(model_base.BASEV2, models_v2.HasId, models_v2.HasTenant):
     subnet_prefix_length = sa.Column(sa.Integer, nullable=False)
     l2_policies = orm.relationship(L2Policy, backref='l3_policy')
     shared = sa.Column(sa.Boolean)
+    external_access_segments = orm.relationship(
+        EASToL3PAssociation, backref='l3_policies',
+        cascade='all, delete-orphan')
 
 
 class NetworkServiceParam(model_base.BASEV2, models_v2.HasId):
@@ -235,6 +266,28 @@ class PolicyAction(model_base.BASEV2, models_v2.HasId, models_v2.HasTenant):
     shared = sa.Column(sa.Boolean)
 
 
+class EAPToPRSProvidingAssociation(model_base.BASEV2):
+    """Many to many providing relation between EAPs and Policy Rule Sets."""
+    __tablename__ = 'gp_eap_to_prs_providing_associations'
+    policy_rule_set_id = sa.Column(sa.String(36),
+                                   sa.ForeignKey('gp_policy_rule_sets.id'),
+                                   primary_key=True)
+    external_access_policy_id = sa.Column(
+        sa.String(36), sa.ForeignKey('gp_external_access_policies.id'),
+        primary_key=True)
+
+
+class EAPToPRSConsumingAssociation(model_base.BASEV2):
+    """Many to many consuming relation between EAPs and Policy Rule Sets."""
+    __tablename__ = 'gp_eap_to_prs_consuming_associations'
+    policy_rule_set_id = sa.Column(sa.String(36),
+                                   sa.ForeignKey('gp_policy_rule_sets.id'),
+                                   primary_key=True)
+    external_access_policy_id = sa.Column(
+        sa.String(36), sa.ForeignKey('gp_external_access_policies.id'),
+        primary_key=True)
+
+
 class PolicyRuleSet(model_base.BASEV2, models_v2.HasTenant):
     """It is a collection of Policy rules."""
     __tablename__ = 'gp_policy_rule_sets'
@@ -256,7 +309,72 @@ class PolicyRuleSet(model_base.BASEV2, models_v2.HasTenant):
     consuming_policy_target_groups = orm.relationship(
         PTGToPRSConsumingAssociation,
         backref='consumed_policy_rule_set', lazy="joined", cascade='all')
+    providing_external_access_policies = orm.relationship(
+        EAPToPRSProvidingAssociation,
+        backref='provided_policy_rule_set', lazy="joined", cascade='all')
+    consuming_external_access_policies = orm.relationship(
+        EAPToPRSConsumingAssociation,
+        backref='consumed_policy_rule_set', lazy="joined", cascade='all')
     shared = sa.Column(sa.Boolean)
+
+
+class NATPool(model_base.BASEV2, BaseSharedGbpResource):
+    __tablename__ = 'gp_nat_pools'
+    ip_version = sa.Column(sa.Integer, nullable=False)
+    ip_pool = sa.Column(sa.String(64), nullable=False)
+    external_access_segment_id = sa.Column(
+        sa.String(36), sa.ForeignKey('gp_external_access_segments.id'))
+
+
+class ExternalAccessRoute(model_base.BASEV2, models_v2.Route):
+    __tablename__ = 'gp_external_access_routes'
+    external_access_segment_id = sa.Column(
+        sa.String(36), sa.ForeignKey('gp_external_access_segments.id',
+                                     ondelete='CASCADE'),
+        primary_key=True)
+
+
+class EAPToEASAssociation(model_base.BASEV2):
+    """Many to many consuming relation between EASs and EAPs."""
+    __tablename__ = 'gp_eas_to_eap_associations'
+    external_access_policy_id = sa.Column(
+        sa.String(36), sa.ForeignKey('gp_external_access_policies.id'),
+        primary_key=True)
+    external_access_segment_id = sa.Column(
+        sa.String(36), sa.ForeignKey('gp_external_access_segments.id'),
+        primary_key=True)
+
+
+class ExternalAccessSegment(model_base.BASEV2, BaseSharedGbpResource):
+    __tablename__ = 'gp_external_access_segments'
+    ip_version = sa.Column(sa.Integer, nullable=False)
+    address_cidr = sa.Column(sa.String(64), nullable=False)
+    encap_type = sa.Column(sa.String(64), nullable=False)
+    encap_value = sa.Column(sa.Integer)
+    port_address_translation = sa.Column(sa.Boolean)
+    external_access_policies = orm.relationship(
+        EAPToEASAssociation, backref='external_access_segments',
+        cascade='all, delete-orphan')
+    l3_policies = orm.relation(
+        EASToL3PAssociation, backref='external_access_segments',
+        cascade='all, delete-orphan')
+    external_access_routes = orm.relationship(
+        ExternalAccessRoute, backref='external_access_segment')
+
+
+class ExternalAccessPolicy(model_base.BASEV2, BaseSharedGbpResource):
+    __tablename__ = 'gp_external_access_policies'
+    external_access_segments = orm.relationship(
+        EAPToEASAssociation,
+        backref='external_access_policies', cascade='all, delete-orphan')
+    provided_policy_rule_sets = orm.relationship(
+        EAPToPRSProvidingAssociation,
+        backref='providing_external_access_policies',
+        cascade='all, delete-orphan')
+    consumed_policy_rule_sets = orm.relationship(
+        EAPToPRSConsumingAssociation,
+        backref='consuming_external_access_policies',
+        cascade='all, delete-orphan')
 
 
 class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
@@ -270,6 +388,13 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
 
     def __init__(self, *args, **kwargs):
         super(GroupPolicyDbPlugin, self).__init__(*args, **kwargs)
+
+    def _find_gbp_resource(self, context, type, id, on_fail=None):
+        try:
+            return self._get_by_id(context, type, id)
+        except exc.NoResultFound:
+            if on_fail:
+                raise on_fail(id=id)
 
     def _get_policy_target(self, context, policy_target_id):
         try:
@@ -341,6 +466,22 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
                 policy_rule_set_id=policy_rule_set_id)
         return policy_rule_set
 
+    def _get_external_access_policy(self, context, external_access_policy_id):
+        return self._find_gbp_resource(
+            context, ExternalAccessPolicy, external_access_policy_id,
+            gpolicy.ExternalAccessPolicyNotFound)
+
+    def _get_external_access_segment(self, context,
+                                     external_access_segment_id):
+        return self._find_gbp_resource(
+            context, ExternalAccessSegment, external_access_segment_id,
+            gpolicy.ExternalAccessSegmentNotFound)
+
+    def _get_nat_pool(self, context, nat_pool_id):
+        return self._find_gbp_resource(
+            context, NATPool, nat_pool_id,
+            gpolicy.NATPoolNotFound)
+
     @staticmethod
     def _get_min_max_ports_from_range(port_range):
         if not port_range:
@@ -403,14 +544,31 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
 
     def _set_providers_or_consumers_for_policy_target_group(
             self, context, ptg_db, policy_rule_sets_dict, provider=True):
+        assoc_table = (PTGToPRSProvidingAssociation if provider else
+                       PTGToPRSConsumingAssociation)
+        self._set_providers_or_consumers_for_res(
+            context, 'policy_target_group', ptg_db, policy_rule_sets_dict,
+            assoc_table, provider=provider)
+
+    def _set_providers_or_consumers_for_eap(
+            self, context, eap_db, policy_rule_sets_dict, provider=True):
+        assoc_table = (EAPToPRSProvidingAssociation if provider else
+                       EAPToPRSConsumingAssociation)
+        self._set_providers_or_consumers_for_res(
+            context, 'external_access_policy', eap_db, policy_rule_sets_dict,
+            assoc_table, provider=provider)
+
+    def _set_providers_or_consumers_for_res(
+            self, context, type, db_res, policy_rule_sets_dict, assoc_table,
+            provider=True):
         # TODO(Sumit): Check that the same policy_rule_set ID does not belong
         # to provider and consumer dicts
         if not policy_rule_sets_dict:
             if provider:
-                ptg_db.provided_policy_rule_sets = []
+                db_res.provided_policy_rule_sets = []
                 return
             else:
-                ptg_db.consumed_policy_rule_sets = []
+                db_res.consumed_policy_rule_sets = []
                 return
         with context.session.begin(subtransactions=True):
             policy_rule_sets_id_list = policy_rule_sets_dict.keys()
@@ -422,20 +580,17 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
             # Note that the list could be empty in which case we interpret
             # it as clearing existing rules.
             if provider:
-                ptg_db.provided_policy_rule_sets = []
+                db_res.provided_policy_rule_sets = []
             else:
-                ptg_db.consumed_policy_rule_sets = []
+                db_res.consumed_policy_rule_sets = []
             for policy_rule_set_id in policy_rule_sets_id_list:
+                kwargs = {type + '_id': db_res.id,
+                          'policy_rule_set_id': policy_rule_set_id}
+                assoc = assoc_table(**kwargs)
                 if provider:
-                    assoc = PTGToPRSProvidingAssociation(
-                        policy_target_group_id=ptg_db.id,
-                        policy_rule_set_id=policy_rule_set_id)
-                    ptg_db.provided_policy_rule_sets.append(assoc)
+                    db_res.provided_policy_rule_sets.append(assoc)
                 else:
-                    assoc = PTGToPRSConsumingAssociation(
-                        policy_target_group_id=ptg_db.id,
-                        policy_rule_set_id=policy_rule_set_id)
-                    ptg_db.consumed_policy_rule_sets.append(assoc)
+                    db_res.consumed_policy_rule_sets.append(assoc)
 
     def _set_children_for_policy_rule_set(self, context,
                                           policy_rule_set_db, child_id_list):
@@ -495,16 +650,27 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
                     policy_rule_set_id=prs_db.id)
                 prs_db.policy_rules.append(prs_rule_db)
 
-    def _process_policy_rule_sets_for_ptg(self, context, ptg_db, ptg):
+    def _process_policy_rule_sets_for_ptg(self, context, db_res, ptg):
         if 'provided_policy_rule_sets' in ptg:
             self._set_providers_or_consumers_for_policy_target_group(
-                context, ptg_db, ptg['provided_policy_rule_sets'])
+                context, db_res, ptg['provided_policy_rule_sets'])
             del ptg['provided_policy_rule_sets']
         if 'consumed_policy_rule_sets' in ptg:
             self._set_providers_or_consumers_for_policy_target_group(
-                context, ptg_db, ptg['consumed_policy_rule_sets'], False)
+                context, db_res, ptg['consumed_policy_rule_sets'], False)
             del ptg['consumed_policy_rule_sets']
         return ptg
+
+    def _process_policy_rule_sets_for_eap(self, context, db_res, res):
+        if 'provided_policy_rule_sets' in res:
+            self._set_providers_or_consumers_for_eap(
+                context, db_res, res['provided_policy_rule_sets'])
+            del res['provided_policy_rule_sets']
+        if 'consumed_policy_rule_sets' in res:
+            self._set_providers_or_consumers_for_eap(
+                context, db_res, res['consumed_policy_rule_sets'], False)
+            del res['consumed_policy_rule_sets']
+        return res
 
     def _set_l3_policy_for_l2_policy(self, context, l2p_id, l3p_id):
         with context.session.begin(subtransactions=True):
@@ -538,6 +704,64 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
                     param_value=param['value'])
                 nsp_db.network_service_params.append(param_db)
             del network_service_policy['network_service_params']
+
+    def _set_eass_for_eap(self, context, eap_db, eas_id_list):
+        if not eas_id_list:
+            eap_db.external_access_segments = []
+            return
+        with context.session.begin(subtransactions=True):
+            filters = {'id': eas_id_list}
+            eaps_in_db = self._get_collection_query(
+                context, ExternalAccessSegment, filters=filters)
+            not_found = set(eas_id_list) - set(eap['id'] for eap in eaps_in_db)
+            if not_found:
+                raise gpolicy.ExternalAccessSegmentNotFound(
+                    id=not_found.pop())
+            eap_db.external_access_segments = []
+            for eap_id in eas_id_list:
+                assoc = EAPToEASAssociation(
+                    external_access_policy_id=eap_db.id,
+                    external_access_segment_id=eap_id)
+                eap_db.external_access_segments.append(assoc)
+
+    def _process_segment_ears(self, context, eas_db, eas):
+        if eas['external_access_routes'] is not attr.ATTR_NOT_SPECIFIED:
+            for rt in eas['external_access_routes']:
+                target = ExternalAccessRoute(
+                    external_access_segment_id=eas_db.id,
+                    destination=rt['destination'],
+                    nexthop=rt['nexthop'])
+                context.session.add(target)
+
+    def _set_eass_for_l3p(self, context, l3p_db, eas_dict):
+        if eas_dict is attr.ATTR_NOT_SPECIFIED:
+            return
+        if not eas_dict:
+            l3p_db.external_access_segments = []
+            return
+        with context.session.begin(subtransactions=True):
+            # Validate EASs exist
+            eas_set = set(eas_dict.keys())
+            filters = {'id': eas_set}
+            eas_in_db = self._get_collection_query(
+                context, ExternalAccessSegment, filters=filters)
+            not_found = eas_set - set(eas['id'] for eas in eas_in_db)
+            if not_found:
+                raise gpolicy.ExternalAccessSegmentNotFound(
+                    id=not_found.pop())
+            l3p_db.external_access_segments = []
+            for eas in eas_in_db:
+                # Create address allocation
+                subnet = net.IPNetwork(eas['address_cidr'])
+                for ip in eas_dict[eas['id']]:
+                    # Verify IP is correct
+                    if net.IPAddress(ip) not in subnet:
+                        raise gpolicy.InvalidL3PAddressOnExternalAccessSegment(
+                            ip=ip, subnet=str(subnet))
+                    assoc = EASToL3PAssociation(
+                        external_access_segment_id=eas['id'],
+                        l3_policy_id=l3p_db['id'], allocated_address=ip)
+                    l3p_db.external_access_segments.append(assoc)
 
     def _make_policy_target_dict(self, pt, fields=None):
         res = {'id': pt['id'],
@@ -588,6 +812,13 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
                'shared': l3p.get('shared', False), }
         res['l2_policies'] = [l2p['id']
                               for l2p in l3p['l2_policies']]
+        eas_dict = {}
+        for eas in l3p['external_access_segments']:
+            eas_id = eas['external_access_segment_id']
+            if eas_id not in eas_dict:
+                eas_dict[eas_id] = []
+            eas_dict[eas_id].append(eas['allocated_address'])
+        res['external_access_segments'] = eas_dict
         return self._fields(res, fields)
 
     def _make_network_service_policy_dict(self, nsp, fields=None):
@@ -676,6 +907,61 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
         res['consuming_policy_target_groups'] = [
             ptg['policy_target_group_id']
             for ptg in prs['consuming_policy_target_groups']]
+
+        res['providing_external_access_policies'] = [
+            ptg['external_access_policy_id']
+            for ptg in prs['providing_external_access_policies']]
+
+        res['consuming_external_access_policies'] = [
+            ptg['external_access_policy_id']
+            for ptg in prs['consuming_external_access_policies']]
+        return self._fields(res, fields)
+
+    def _make_external_access_segment_dict(self, eas, fields=None):
+        res = {'id': eas['id'],
+               'tenant_id': eas['tenant_id'],
+               'name': eas['name'],
+               'description': eas['description'],
+               'shared': eas.get('shared', False),
+               'ip_version': eas['ip_version'],
+               'address_cidr': eas['address_cidr'],
+               'encap_type': eas['encap_type'],
+               'encap_value': eas['encap_value'],
+               'port_address_translation': eas['port_address_translation']}
+        res['external_access_routes'] = [{'destination': er['destination'],
+                                         'nexthop': er['nexthop']}
+                                         for er in
+                                         eas['external_access_routes']]
+        res['l3_policies'] = [
+            l3p['l3_policy_id'] for l3p in eas['l3_policies']]
+        return self._fields(res, fields)
+
+    def _make_external_access_policy_dict(self, eap, fields=None):
+        res = {'id': eap['id'],
+               'tenant_id': eap['tenant_id'],
+               'name': eap['name'],
+               'description': eap['description'],
+               'shared': eap.get('shared', False), }
+        res['external_access_segments'] = [
+            eas['external_access_segment_id']
+            for eas in eap['external_access_segments']]
+        res['provided_policy_rule_sets'] = [
+            pprs['policy_rule_set_id'] for pprs in
+            eap['provided_policy_rule_sets']]
+        res['consumed_policy_rule_sets'] = [
+            cprs['policy_rule_set_id'] for cprs in
+            eap['consumed_policy_rule_sets']]
+        return self._fields(res, fields)
+
+    def _make_nat_pool_dict(self, np, fields=None):
+        res = {'id': np['id'],
+               'tenant_id': np['tenant_id'],
+               'name': np['name'],
+               'description': np['description'],
+               'shared': np.get('shared', False),
+               'ip_version': np['ip_version'],
+               'ip_pool': np['ip_pool'],
+               'external_access_segment_id': np['external_access_segment_id']}
         return self._fields(res, fields)
 
     def _get_policy_rule_policy_rule_sets(self, context, policy_rule_id):
@@ -687,6 +973,12 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
         return [x['policy_rule_id'] for x in
                 context.session.query(PolicyRuleActionAssociation).filter_by(
                     policy_action_id=policy_action_id)]
+
+    def _get_attribute(self, attrs, key):
+        value = attrs.get(key)
+        if value is attr.ATTR_NOT_SPECIFIED:
+            value = None
+        return value
 
     @staticmethod
     def validate_subnet_prefix_length(ip_version, new_prefix_length):
@@ -871,7 +1163,10 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
                 ip_pool=l3p['ip_pool'],
                 subnet_prefix_length=l3p['subnet_prefix_length'],
                 shared=l3p.get('shared', False))
-            context.session.add(l3p_db)
+            if 'external_access_segments' in l3p:
+                self._set_eass_for_l3p(context, l3p_db,
+                                       l3p['external_access_segments'])
+                context.session.add(l3p_db)
         return self._make_l3_policy_dict(l3p_db)
 
     @log.log
@@ -883,6 +1178,10 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
                 self.validate_subnet_prefix_length(
                     l3p_db.ip_version,
                     l3p['subnet_prefix_length'])
+            if 'external_access_segments' in l3p:
+                self._set_eass_for_l3p(context, l3p_db,
+                                       l3p['external_access_segments'])
+                del l3p['external_access_segments']
             l3p_db.update(l3p)
         return self._make_l3_policy_dict(l3p_db)
 
@@ -1193,3 +1492,161 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
     def get_policy_rule_sets_count(self, context, filters=None):
         return self._get_collection_count(context, PolicyRuleSet,
                                           filters=filters)
+
+    @log.log
+    def create_external_access_policy(self, context, external_access_policy):
+        eap = external_access_policy['external_access_policy']
+        tenant_id = self._get_tenant_id_for_create(context, eap)
+        with context.session.begin(subtransactions=True):
+            eap_db = ExternalAccessPolicy(
+                id=uuidutils.generate_uuid(), tenant_id=tenant_id,
+                name=eap['name'], description=eap['description'],
+                shared=eap.get('shared', False))
+            context.session.add(eap_db)
+            if 'external_access_segments' in eap:
+                self._set_eass_for_eap(context, eap_db,
+                                       eap['external_access_segments'])
+            self._process_policy_rule_sets_for_eap(context, eap_db, eap)
+        return self._make_external_access_policy_dict(eap_db)
+
+    @log.log
+    def update_external_access_policy(self, context, external_access_policy_id,
+                                      external_access_policy):
+        eap = external_access_policy['external_access_policy']
+        with context.session.begin(subtransactions=True):
+            eap_db = self._get_external_access_policy(
+                context, external_access_policy_id)
+            if 'external_access_segments' in eap:
+                self._set_eass_for_eap(context, eap_db,
+                                       eap['external_access_segments'])
+                del eap['external_access_segments']
+            self._process_policy_rule_sets_for_eap(context, eap_db, eap)
+            eap_db.update(eap)
+        return self._make_external_access_policy_dict(eap_db)
+
+    @log.log
+    def get_external_access_policies(self, context, filters=None, fields=None):
+        return self._get_collection(context, ExternalAccessPolicy,
+                                    self._make_external_access_policy_dict,
+                                    filters=filters, fields=fields)
+
+    @log.log
+    def get_external_access_policies_count(self, context, filters=None):
+        return self._get_collection_count(context, ExternalAccessPolicy,
+                                          filters=filters)
+
+    @log.log
+    def get_external_access_policy(self, context, external_access_policy_id,
+                                   fields=None):
+        eap = self._get_external_access_policy(
+            context, external_access_policy_id)
+        return self._make_external_access_policy_dict(eap, fields)
+
+    @log.log
+    def delete_external_access_policy(self, context,
+                                      external_access_policy_id):
+        with context.session.begin(subtransactions=True):
+            eap_db = self._get_external_access_policy(
+                context, external_access_policy_id)
+            context.session.delete(eap_db)
+
+    @log.log
+    def create_external_access_segment(self, context, external_access_segment):
+        eas = external_access_segment['external_access_segment']
+        tenant_id = self._get_tenant_id_for_create(context, eas)
+        with context.session.begin(subtransactions=True):
+            eas_db = ExternalAccessSegment(
+                id=uuidutils.generate_uuid(), tenant_id=tenant_id,
+                name=eas['name'], description=eas['description'],
+                shared=eas.get('shared', False), ip_version=eas['ip_version'],
+                address_cidr=eas['address_cidr'], encap_type=eas['encap_type'],
+                encap_value=self._get_attribute(eas, 'encap_value'),
+                port_address_translation=eas['port_address_translation'])
+            context.session.add(eas_db)
+            if 'external_access_routes' in eas:
+                self._process_segment_ears(context, eas_db, eas)
+        return self._make_external_access_segment_dict(eas_db)
+
+    @log.log
+    def update_external_access_segment(self, context,
+                                       external_access_segment_id,
+                                       external_access_segment):
+        eas = external_access_segment['external_access_segment']
+        with context.session.begin(subtransactions=True):
+            eas_db = self._get_external_access_segment(
+                context, external_access_segment_id)
+            if 'external_access_routes' in eas:
+                self._process_segment_ears(context, eas_db, eas)
+                del eas['external_access_routes']
+            eas_db.update(eas)
+        return self._make_external_access_segment_dict(eas_db)
+
+    @log.log
+    def get_external_access_segments(self, context, filters=None, fields=None):
+        return self._get_collection(context, ExternalAccessSegment,
+                                    self._make_external_access_segment_dict,
+                                    filters=filters, fields=fields)
+
+    @log.log
+    def get_external_access_segments_count(self, context, filters=None):
+        return self._get_collection_count(context, ExternalAccessSegment,
+                                          filters=filters)
+
+    @log.log
+    def get_external_access_segment(self, context, external_access_segment_id,
+                                    fields=None):
+        eas = self._get_external_access_segment(
+            context, external_access_segment_id)
+        return self._make_external_access_segment_dict(eas, fields)
+
+    @log.log
+    def delete_external_access_segment(self, context,
+                                       external_access_segment_id):
+        with context.session.begin(subtransactions=True):
+            eas_db = self._get_external_access_segment(
+                context, external_access_segment_id)
+            context.session.delete(eas_db)
+
+    @log.log
+    def create_nat_pool(self, context, nat_pool):
+        np = nat_pool['nat_pool']
+        tenant_id = self._get_tenant_id_for_create(context, np)
+        with context.session.begin(subtransactions=True):
+            np_db = NATPool(
+                id=uuidutils.generate_uuid(), tenant_id=tenant_id,
+                name=np['name'], description=np['description'],
+                shared=np.get('shared', False), ip_version=np['ip_version'],
+                ip_pool=np['ip_pool'],
+                external_access_segment_id=np['external_access_segment_id'])
+            context.session.add(np_db)
+        return self._make_nat_pool_dict(np_db)
+
+    @log.log
+    def update_nat_pool(self, context, nat_pool_id, nat_pool):
+        np = nat_pool['nat_pool']
+        with context.session.begin(subtransactions=True):
+            np_db = self._get_nat_pool(
+                context, nat_pool_id)
+            np_db.update(np)
+        return self._make_nat_pool_dict(np_db)
+
+    @log.log
+    def get_nat_pools(self, context, filters=None, fields=None):
+        return self._get_collection(context, NATPool,
+                                    self._make_nat_pool_dict,
+                                    filters=filters, fields=fields)
+
+    @log.log
+    def get_nat_pools_count(self, context, filters=None):
+        return self._get_collection_count(context, NATPool, filters=filters)
+
+    @log.log
+    def get_nat_pool(self, context, nat_pool_id, fields=None):
+        np = self._get_nat_pool(context, nat_pool_id)
+        return self._make_nat_pool_dict(np, fields)
+
+    @log.log
+    def delete_nat_pool(self, context, nat_pool_id):
+        with context.session.begin(subtransactions=True):
+            np_db = self._get_nat_pool(context, nat_pool_id)
+            context.session.delete(np_db)
