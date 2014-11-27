@@ -11,9 +11,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import copy
 import webob.exc
 
 from neutron.api import extensions
+from neutron.api.v2 import attributes as nattr
 from neutron import context
 from neutron.openstack.common import importutils
 from neutron.openstack.common import uuidutils
@@ -94,11 +96,14 @@ class GroupPolicyDBTestBase(object):
     def _get_test_l3_policy_attrs(self, name='l3p1',
                                   description='test l3_policy',
                                   ip_version=4, ip_pool='10.0.0.0/8',
-                                  subnet_prefix_length=24):
+                                  subnet_prefix_length=24,
+                                  external_segments=None):
+        external_segments = external_segments or {}
         attrs = {'name': name, 'description': description,
                  'tenant_id': self._tenant_id, 'ip_version': ip_version,
                  'ip_pool': ip_pool,
-                 'subnet_prefix_length': subnet_prefix_length}
+                 'subnet_prefix_length': subnet_prefix_length,
+                 'external_segments': external_segments}
 
         return attrs
 
@@ -158,6 +163,45 @@ class GroupPolicyDBTestBase(object):
                  'child_policy_rule_sets': child_policy_rule_sets,
                  'policy_rules': policy_rules}
 
+        return attrs
+
+    def _get_test_ep_attrs(self, name='ep_1', description='test ep',
+                           external_segments=None,
+                           provided_policy_rule_sets=None,
+                           consumed_policy_rule_sets=None):
+        pprs_ids = cprs_ids = es_ids = []
+        if provided_policy_rule_sets:
+            pprs_ids = [pprs_id for pprs_id in provided_policy_rule_sets]
+        if consumed_policy_rule_sets:
+            cprs_ids = [cc_id for cc_id in consumed_policy_rule_sets]
+        if external_segments:
+            es_ids = [es_id for es_id in external_segments]
+        attrs = {'name': name, 'description': description,
+                 'tenant_id': self._tenant_id,
+                 'external_segments': es_ids,
+                 'provided_policy_rule_sets': pprs_ids,
+                 'consumed_policy_rule_sets': cprs_ids}
+        return attrs
+
+    def _get_test_es_attrs(self, name='es_1', description='test es',
+                           ip_version=4, cidr='172.0.0.0/8',
+                           external_routes=None,
+                           port_address_translation=False):
+        ear = external_routes or []
+        attrs = {'name': name, 'description': description,
+                 'ip_version': ip_version,
+                 'tenant_id': self._tenant_id, 'cidr': cidr,
+                 'external_routes': ear,
+                 'port_address_translation': port_address_translation}
+        return attrs
+
+    def _get_test_np_attrs(self, name='es_1', description='test es',
+                           ip_version=4, ip_pool='10.160.0.0/16',
+                           external_segment_id=None):
+        attrs = {'name': name, 'description': description,
+                 'ip_version': ip_version,
+                 'tenant_id': self._tenant_id, 'ip_pool': ip_pool,
+                 'external_segment_id': external_segment_id}
         return attrs
 
     def create_policy_target(self, policy_target_group_id=None,
@@ -230,7 +274,7 @@ class GroupPolicyDBTestBase(object):
     def create_l3_policy(self, expected_res_status=None, **kwargs):
         defaults = {'name': 'l3p1', 'description': 'test l3_policy',
                     'ip_version': 4, 'ip_pool': '10.0.0.0/8',
-                    'subnet_prefix_length': 24}
+                    'subnet_prefix_length': 24, 'external_segments': {}}
         defaults.update(kwargs)
 
         data = {'l3_policy': {'tenant_id': self._tenant_id}}
@@ -358,6 +402,41 @@ class GroupPolicyDBTestBase(object):
 
         return prs
 
+    def _create_gbp_resource(self, type, expected_res_status, body):
+        plural = self._get_resource_plural(type)
+        data = {type: body}
+        req = self.new_create_request(plural, data, self.fmt)
+        res = req.get_response(self.ext_api)
+
+        if expected_res_status:
+            self.assertEqual(res.status_int, expected_res_status)
+        elif res.status_int >= webob.exc.HTTPClientError.code:
+            raise webob.exc.HTTPClientError(code=res.status_int)
+        prs = self.deserialize(self.fmt, res)
+        return prs
+
+    def create_external_policy(self, expected_res_status=None, **kwargs):
+        defaults = {'name': 'ptg1', 'description': 'test ptg',
+                    'provided_policy_rule_sets': {},
+                    'consumed_policy_rule_sets': {},
+                    'tenant_id': self._tenant_id,
+                    'external_segments': []}
+        defaults.update(kwargs)
+        return self._create_gbp_resource(
+            'external_policy', expected_res_status, defaults)
+
+    def create_external_segment(self, expected_res_status=None, **kwargs):
+        body = self._get_test_es_attrs()
+        body.update(kwargs)
+        return self._create_gbp_resource(
+            'external_segment', expected_res_status, body)
+
+    def create_nat_pool(self, expected_res_status=None, **kwargs):
+        body = self._get_test_np_attrs()
+        body.update(kwargs)
+        return self._create_gbp_resource(
+            'nat_pool', expected_res_status, body)
+
 
 class GroupPolicyDBTestPlugin(gpdb.GroupPolicyDbPlugin):
 
@@ -379,7 +458,7 @@ class GroupPolicyDbTestCase(GroupPolicyDBTestBase,
         self.plugin = importutils.import_object(gp_plugin)
         if not service_plugins:
             service_plugins = {'gp_plugin_name': gp_plugin}
-
+        nattr.PLURALS['nat_pools'] = 'nat_pool'
         super(GroupPolicyDbTestCase, self).setUp(
             plugin=core_plugin, ext_mgr=ext_mgr,
             service_plugins=service_plugins
@@ -594,19 +673,22 @@ class TestGroupResources(GroupPolicyDbTestCase):
                           ctx, l2p_id)
 
     def test_create_and_show_l3_policy(self):
-        attrs = self._get_test_l3_policy_attrs()
+        es = self.create_external_segment()['external_segment']
+        es_dict = {es['id']: ['172.0.0.2', '172.0.0.3']}
+        attrs = self._get_test_l3_policy_attrs(
+            external_segments=es_dict)
 
-        l3p = self.create_l3_policy()
+        l3p = self.create_l3_policy(external_segments=es_dict)
 
         for k, v in attrs.iteritems():
-            self.assertEqual(l3p['l3_policy'][k], v)
+            self.assertEqual(v, l3p['l3_policy'][k])
 
         req = self.new_show_request('l3_policies', l3p['l3_policy']['id'],
                                     fmt=self.fmt)
         res = self.deserialize(self.fmt, req.get_response(self.ext_api))
 
         for k, v in attrs.iteritems():
-            self.assertEqual(res['l3_policy'][k], v)
+            self.assertEqual(v, res['l3_policy'][k])
 
         self._test_show_resource('l3_policy', l3p['l3_policy']['id'], attrs)
 
@@ -630,13 +712,17 @@ class TestGroupResources(GroupPolicyDbTestCase):
         name = "new_l3_policy"
         description = 'new desc'
         prefix_length = 26
+        es = self.create_external_segment()['external_segment']
+        es_dict = {es['id']: ['172.0.0.2', '172.0.0.3']}
         attrs = self._get_test_l3_policy_attrs(
             name=name, description=description,
-            subnet_prefix_length=prefix_length)
+            subnet_prefix_length=prefix_length,
+            external_segments=es_dict)
 
         l3p = self.create_l3_policy()
         data = {'l3_policy': {'name': name, 'description': description,
-                              'subnet_prefix_length': prefix_length}}
+                              'subnet_prefix_length': prefix_length,
+                              'external_segments': es_dict}}
 
         req = self.new_update_request('l3_policies', data,
                                       l3p['l3_policy']['id'])
@@ -1080,3 +1166,158 @@ class TestGroupResources(GroupPolicyDbTestCase):
         req = self.new_update_request('policy_rule_sets', data, prs['id'])
         res = req.get_response(self.ext_api)
         self.assertEqual(res.status_int, webob.exc.HTTPBadRequest.code)
+
+    def _test_create_and_show(self, type, attrs, expected=None):
+        plural = self._get_resource_plural(type)
+        res = self._create_gbp_resource(type, None, attrs)
+        expected = expected or attrs
+        for k, v in expected.iteritems():
+            self.assertEqual(v, res[type][k])
+
+        req = self.new_show_request(plural, res[type]['id'], fmt=self.fmt)
+        res = self.deserialize(self.fmt, req.get_response(self.ext_api))
+        for k, v in expected.iteritems():
+            self.assertEqual(v, res[type][k])
+        self._test_show_resource(type, res[type]['id'], expected)
+
+    def test_create_and_show_ep(self):
+        es = self.create_external_segment()['external_segment']
+        prs = self.create_policy_rule_set()['policy_rule_set']
+        attrs = {'external_segments': [es['id']],
+                 'provided_policy_rule_sets': {prs['id']: None},
+                 'consumed_policy_rule_sets': {prs['id']: None}}
+        body = self._get_test_ep_attrs()
+        body.update(attrs)
+        expected = copy.deepcopy(body)
+        expected['provided_policy_rule_sets'] = [prs['id']]
+        expected['consumed_policy_rule_sets'] = [prs['id']]
+        self._test_create_and_show('external_policy', body,
+                                   expected=expected)
+
+    def test_create_and_show_es(self):
+        route = {'destination': '0.0.0.0/0', 'nexthop': '172.0.0.1'}
+        attrs = self._get_test_es_attrs(external_routes=[route])
+        self._test_create_and_show('external_segment', attrs)
+
+    def test_create_and_show_np(self):
+        es = self.create_external_segment()['external_segment']
+        attrs = self._get_test_np_attrs(external_segment_id=es['id'])
+        self._test_create_and_show('nat_pool', attrs)
+
+    def test_list_ep(self):
+        external_policies = [
+            self.create_external_policy(name='ep1', description='ep'),
+            self.create_external_policy(name='ep2', description='ep'),
+            self.create_external_policy(name='ep3', description='ep')]
+        self._test_list_resources('external_policy',
+                                  external_policies,
+                                  query_params='description=ep')
+
+    def test_list_es(self):
+        external_segments = [
+            self.create_external_segment(name='es1', description='es'),
+            self.create_external_segment(name='es2', description='es'),
+            self.create_external_segment(name='es3', description='es')]
+        self._test_list_resources('external_segment',
+                                  external_segments,
+                                  query_params='description=es')
+
+    def test_update_external_policy(self):
+        name = 'new_ep'
+        description = 'new desc'
+        es = self.create_external_segment()['external_segment']
+        prs = self.create_policy_rule_set()['policy_rule_set']
+        attrs = self._get_test_ep_attrs(
+            name=name, description=description,
+            external_segments=[es['id']],
+            provided_policy_rule_sets={prs['id']: None},
+            consumed_policy_rule_sets={prs['id']: None})
+        ep = self.create_external_policy()['external_policy']
+        data = {'external_policy': {
+            'name': name, 'description': description,
+            'external_segments': [es['id']],
+            'provided_policy_rule_sets': {prs['id']: None},
+            'consumed_policy_rule_sets': {prs['id']: None}}}
+
+        req = self.new_update_request('external_policies', data,
+                                      ep['id'])
+        res = self.deserialize(self.fmt, req.get_response(self.ext_api))
+        res = res['external_policy']
+        for k, v in attrs.iteritems():
+            self.assertEqual(v, res[k])
+
+        self._test_show_resource('external_policy', ep['id'], attrs)
+
+    def test_update_external_segment(self):
+        name = 'new_es'
+        description = 'new desc'
+        route = {'destination': '0.0.0.0/0', 'nexthop': '172.0.0.1'}
+        attrs = self._get_test_es_attrs(name=name, description=description,
+                                        external_routes=[route])
+        es = self.create_external_segment()['external_segment']
+        data = {'external_segment': {
+            'name': name, 'description': description,
+            'external_routes': [route]}}
+
+        req = self.new_update_request('external_segments', data,
+                                      es['id'])
+        res = self.deserialize(self.fmt, req.get_response(self.ext_api))
+        res = res['external_segment']
+        for k, v in attrs.iteritems():
+            self.assertEqual(res[k], v)
+
+        self._test_show_resource('external_segment', es['id'], attrs)
+
+    def test_update_nat_pool(self):
+        name = 'new_np'
+        description = 'new desc'
+        es = self.create_external_segment()['external_segment']
+
+        attrs = self._get_test_np_attrs(name=name, description=description,
+                                        external_segment_id=es['id'])
+        np = self.create_nat_pool()['nat_pool']
+        data = {'nat_pool': {
+            'name': name, 'description': description,
+            'external_segment_id': es['id']}}
+
+        req = self.new_update_request('nat_pools', data,
+                                      np['id'])
+        res = self.deserialize(self.fmt, req.get_response(self.ext_api))
+        res = res['nat_pool']
+        for k, v in attrs.iteritems():
+            self.assertEqual(v, res[k])
+
+        self._test_show_resource('nat_pool', np['id'], attrs)
+
+    def test_delete_ep(self):
+        ctx = context.get_admin_context()
+        ep = self.create_external_policy()
+        ep_id = ep['external_policy']['id']
+
+        req = self.new_delete_request('external_policies', ep_id)
+        res = req.get_response(self.ext_api)
+        self.assertEqual(res.status_int, webob.exc.HTTPNoContent.code)
+        self.assertRaises(gpolicy.ExternalPolicyNotFound,
+                          self.plugin.get_external_policy, ctx, ep_id)
+
+    def test_delete_es(self):
+        ctx = context.get_admin_context()
+        ep = self.create_external_segment()
+        ep_id = ep['external_segment']['id']
+
+        req = self.new_delete_request('external_segments', ep_id)
+        res = req.get_response(self.ext_api)
+        self.assertEqual(res.status_int, webob.exc.HTTPNoContent.code)
+        self.assertRaises(gpolicy.ExternalSegmentNotFound,
+                          self.plugin.get_external_segment, ctx, ep_id)
+
+    def test_delete_np(self):
+        ctx = context.get_admin_context()
+        ep = self.create_nat_pool()
+        ep_id = ep['nat_pool']['id']
+
+        req = self.new_delete_request('nat_pools', ep_id)
+        res = req.get_response(self.ext_api)
+        self.assertEqual(res.status_int, webob.exc.HTTPNoContent.code)
+        self.assertRaises(gpolicy.NATPoolNotFound,
+                          self.plugin.get_nat_pool, ctx, ep_id)
