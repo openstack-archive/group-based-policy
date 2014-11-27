@@ -14,6 +14,7 @@ import sqlalchemy as sa
 from sqlalchemy import orm
 from sqlalchemy.orm import exc
 
+from neutron.api.v2 import attributes as attr
 from neutron.common import log
 from neutron import context
 from neutron.db import common_db_mixin
@@ -30,6 +31,18 @@ from gbp.neutron.services.grouppolicy.common import constants as gp_constants
 LOG = logging.getLogger(__name__)
 MAX_IPV4_SUBNET_PREFIX_LENGTH = 31
 MAX_IPV6_SUBNET_PREFIX_LENGTH = 127
+ADDRESS_NOT_SPECIFIED = ''
+
+
+class HasNameDescription(object):
+    name = sa.Column(sa.String(50))
+    description = sa.Column(sa.String(255))
+
+
+class BaseSharedGbpResource(models_v2.HasId, models_v2.HasTenant,
+                            HasNameDescription):
+    shared = sa.Column(sa.Boolean)
+    pass
 
 
 class PolicyTarget(model_base.BASEV2, models_v2.HasId, models_v2.HasTenant):
@@ -118,6 +131,21 @@ class L2Policy(model_base.BASEV2, models_v2.HasId, models_v2.HasTenant):
     shared = sa.Column(sa.Boolean)
 
 
+class ESToL3PAssociation(model_base.BASEV2):
+    """Many to many consuming relation between ESs and L3Ps."""
+    __tablename__ = 'gp_es_to_l3p_associations'
+    __table_args__ = (
+        sa.UniqueConstraint('external_segment_id', 'allocated_address'),
+    )
+    l3_policy_id = sa.Column(sa.String(36), sa.ForeignKey('gp_l3_policies.id'),
+                             primary_key=True)
+    external_segment_id = sa.Column(
+        sa.String(36), sa.ForeignKey('gp_external_segments.id'),
+        primary_key=True)
+    allocated_address = sa.Column(sa.String(64), nullable=False,
+                                  primary_key=True)
+
+
 class L3Policy(model_base.BASEV2, models_v2.HasId, models_v2.HasTenant):
     """Represents a L3 Policy with a non-overlapping IP address space."""
     __tablename__ = 'gp_l3_policies'
@@ -133,6 +161,9 @@ class L3Policy(model_base.BASEV2, models_v2.HasId, models_v2.HasTenant):
     subnet_prefix_length = sa.Column(sa.Integer, nullable=False)
     l2_policies = orm.relationship(L2Policy, backref='l3_policy')
     shared = sa.Column(sa.Boolean)
+    external_segments = orm.relationship(
+        ESToL3PAssociation, backref='l3_policies',
+        cascade='all, delete-orphan')
 
 
 class NetworkServiceParam(model_base.BASEV2, models_v2.HasId):
@@ -235,6 +266,28 @@ class PolicyAction(model_base.BASEV2, models_v2.HasId, models_v2.HasTenant):
     shared = sa.Column(sa.Boolean)
 
 
+class EPToPRSProvidingAssociation(model_base.BASEV2):
+    """Many to many providing relation between EPs and Policy Rule Sets."""
+    __tablename__ = 'gp_ep_to_prs_providing_associations'
+    policy_rule_set_id = sa.Column(sa.String(36),
+                                   sa.ForeignKey('gp_policy_rule_sets.id'),
+                                   primary_key=True)
+    external_policy_id = sa.Column(
+        sa.String(36), sa.ForeignKey('gp_external_policies.id'),
+        primary_key=True)
+
+
+class EPToPRSConsumingAssociation(model_base.BASEV2):
+    """Many to many consuming relation between EPs and Policy Rule Sets."""
+    __tablename__ = 'gp_ep_to_prs_consuming_associations'
+    policy_rule_set_id = sa.Column(sa.String(36),
+                                   sa.ForeignKey('gp_policy_rule_sets.id'),
+                                   primary_key=True)
+    external_policy_id = sa.Column(
+        sa.String(36), sa.ForeignKey('gp_external_policies.id'),
+        primary_key=True)
+
+
 class PolicyRuleSet(model_base.BASEV2, models_v2.HasTenant):
     """It is a collection of Policy rules."""
     __tablename__ = 'gp_policy_rule_sets'
@@ -256,7 +309,79 @@ class PolicyRuleSet(model_base.BASEV2, models_v2.HasTenant):
     consuming_policy_target_groups = orm.relationship(
         PTGToPRSConsumingAssociation,
         backref='consumed_policy_rule_set', lazy="joined", cascade='all')
+    providing_external_policies = orm.relationship(
+        EPToPRSProvidingAssociation,
+        backref='provided_policy_rule_set', lazy="joined", cascade='all')
+    consuming_external_policies = orm.relationship(
+        EPToPRSConsumingAssociation,
+        backref='consumed_policy_rule_set', lazy="joined", cascade='all')
     shared = sa.Column(sa.Boolean)
+
+
+class NATPool(model_base.BASEV2, BaseSharedGbpResource):
+    __tablename__ = 'gp_nat_pools'
+    ip_version = sa.Column(sa.Integer, nullable=False)
+    ip_pool = sa.Column(sa.String(64), nullable=False)
+    external_segment_id = sa.Column(
+        sa.String(36), sa.ForeignKey('gp_external_segments.id'))
+
+
+class ExternalRoute(model_base.BASEV2):
+    __tablename__ = 'gp_external_routes'
+    external_segment_id = sa.Column(
+        sa.String(36), sa.ForeignKey('gp_external_segments.id',
+                                     ondelete='CASCADE'),
+        primary_key=True)
+    destination = sa.Column(sa.String(64), nullable=False, primary_key=True)
+    nexthop = sa.Column(sa.String(64), primary_key=True)
+
+
+class EPToESAssociation(model_base.BASEV2):
+    """Many to many consuming relation between ESs and EPs."""
+    __tablename__ = 'gp_es_to_ep_associations'
+    external_policy_id = sa.Column(
+        sa.String(36), sa.ForeignKey('gp_external_policies.id'),
+        primary_key=True)
+    external_segment_id = sa.Column(
+        sa.String(36), sa.ForeignKey('gp_external_segments.id'),
+        primary_key=True)
+
+
+class ExternalSegment(model_base.BASEV2, BaseSharedGbpResource):
+    __tablename__ = 'gp_external_segments'
+    type = sa.Column(sa.String(15))
+    __mapper_args__ = {
+        'polymorphic_on': type,
+        'polymorphic_identity': 'base'
+    }
+    ip_version = sa.Column(sa.Integer, nullable=False)
+    cidr = sa.Column(sa.String(64), nullable=False)
+    port_address_translation = sa.Column(sa.Boolean)
+    nat_pools = orm.relationship(NATPool, backref='external_segment')
+    external_policies = orm.relationship(
+        EPToESAssociation, backref='external_segments',
+        cascade='all, delete-orphan')
+    l3_policies = orm.relation(
+        ESToL3PAssociation, backref='external_segments',
+        cascade='all, delete-orphan')
+    external_routes = orm.relationship(
+        ExternalRoute, backref='external_segment',
+        cascade='all, delete-orphan')
+
+
+class ExternalPolicy(model_base.BASEV2, BaseSharedGbpResource):
+    __tablename__ = 'gp_external_policies'
+    external_segments = orm.relationship(
+        EPToESAssociation,
+        backref='external_policies', cascade='all, delete-orphan')
+    provided_policy_rule_sets = orm.relationship(
+        EPToPRSProvidingAssociation,
+        backref='providing_external_policies',
+        cascade='all, delete-orphan')
+    consumed_policy_rule_sets = orm.relationship(
+        EPToPRSConsumingAssociation,
+        backref='consuming_external_policies',
+        cascade='all, delete-orphan')
 
 
 class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
@@ -270,6 +395,13 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
 
     def __init__(self, *args, **kwargs):
         super(GroupPolicyDbPlugin, self).__init__(*args, **kwargs)
+
+    def _find_gbp_resource(self, context, type, id, on_fail=None):
+        try:
+            return self._get_by_id(context, type, id)
+        except exc.NoResultFound:
+            if on_fail:
+                raise on_fail(id=id)
 
     def _get_policy_target(self, context, policy_target_id):
         try:
@@ -341,6 +473,21 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
                 policy_rule_set_id=policy_rule_set_id)
         return policy_rule_set
 
+    def _get_external_policy(self, context, external_policy_id):
+        return self._find_gbp_resource(
+            context, ExternalPolicy, external_policy_id,
+            gpolicy.ExternalPolicyNotFound)
+
+    def _get_external_segment(self, context, external_segment_id):
+        return self._find_gbp_resource(
+            context, ExternalSegment, external_segment_id,
+            gpolicy.ExternalSegmentNotFound)
+
+    def _get_nat_pool(self, context, nat_pool_id):
+        return self._find_gbp_resource(
+            context, NATPool, nat_pool_id,
+            gpolicy.NATPoolNotFound)
+
     @staticmethod
     def _get_min_max_ports_from_range(port_range):
         if not port_range:
@@ -378,7 +525,7 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
             # New list of actions is valid so we will first reset the existing
             # list and then add each action in order.
             # Note that the list could be empty in which case we interpret
-            # it as clearing existing rules.
+            # it as clering existing rules.
             pr_db.policy_actions = []
             for action_id in action_id_list:
                 assoc = PolicyRuleActionAssociation(policy_rule_id=pr_db.id,
@@ -403,14 +550,31 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
 
     def _set_providers_or_consumers_for_policy_target_group(
             self, context, ptg_db, policy_rule_sets_dict, provider=True):
+        assoc_table = (PTGToPRSProvidingAssociation if provider else
+                       PTGToPRSConsumingAssociation)
+        self._set_providers_or_consumers_for_res(
+            context, 'policy_target_group', ptg_db, policy_rule_sets_dict,
+            assoc_table, provider=provider)
+
+    def _set_providers_or_consumers_for_ep(
+            self, context, ep_db, policy_rule_sets_dict, provider=True):
+        assoc_table = (EPToPRSProvidingAssociation if provider else
+                       EPToPRSConsumingAssociation)
+        self._set_providers_or_consumers_for_res(
+            context, 'external_policy', ep_db, policy_rule_sets_dict,
+            assoc_table, provider=provider)
+
+    def _set_providers_or_consumers_for_res(
+            self, context, type, db_res, policy_rule_sets_dict, assoc_table,
+            provider=True):
         # TODO(Sumit): Check that the same policy_rule_set ID does not belong
         # to provider and consumer dicts
         if not policy_rule_sets_dict:
             if provider:
-                ptg_db.provided_policy_rule_sets = []
+                db_res.provided_policy_rule_sets = []
                 return
             else:
-                ptg_db.consumed_policy_rule_sets = []
+                db_res.consumed_policy_rule_sets = []
                 return
         with context.session.begin(subtransactions=True):
             policy_rule_sets_id_list = policy_rule_sets_dict.keys()
@@ -420,22 +584,19 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
             # New list of policy_rule_sets is valid so we will first reset the
             # existing list and then add each policy_rule_set.
             # Note that the list could be empty in which case we interpret
-            # it as clearing existing rules.
+            # it as clering existing rules.
             if provider:
-                ptg_db.provided_policy_rule_sets = []
+                db_res.provided_policy_rule_sets = []
             else:
-                ptg_db.consumed_policy_rule_sets = []
+                db_res.consumed_policy_rule_sets = []
             for policy_rule_set_id in policy_rule_sets_id_list:
+                kwargs = {type + '_id': db_res.id,
+                          'policy_rule_set_id': policy_rule_set_id}
+                assoc = assoc_table(**kwargs)
                 if provider:
-                    assoc = PTGToPRSProvidingAssociation(
-                        policy_target_group_id=ptg_db.id,
-                        policy_rule_set_id=policy_rule_set_id)
-                    ptg_db.provided_policy_rule_sets.append(assoc)
+                    db_res.provided_policy_rule_sets.append(assoc)
                 else:
-                    assoc = PTGToPRSConsumingAssociation(
-                        policy_target_group_id=ptg_db.id,
-                        policy_rule_set_id=policy_rule_set_id)
-                    ptg_db.consumed_policy_rule_sets.append(assoc)
+                    db_res.consumed_policy_rule_sets.append(assoc)
 
     def _set_children_for_policy_rule_set(self, context,
                                           policy_rule_set_db, child_id_list):
@@ -462,7 +623,7 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
             # New list of child policy_rule_sets is valid so we will first
             # reset the existing list and then add each policy_rule_set.
             # Note that the list could be empty in which case we interpret
-            # it as clearing existing child policy_rule_sets.
+            # it as clering existing child policy_rule_sets.
             policy_rule_set_db.child_policy_rule_sets = []
             for child in policy_rule_sets_in_db:
                 policy_rule_set_db.child_policy_rule_sets.append(child)
@@ -487,7 +648,7 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
             # New list of rules is valid so we will first reset the existing
             # list and then add each rule in order.
             # Note that the list could be empty in which case we interpret
-            # it as clearing existing rules.
+            # it as clering existing rules.
             prs_db.policy_rules = []
             for rule_id in rule_id_list:
                 prs_rule_db = PRSToPRAssociation(
@@ -495,16 +656,27 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
                     policy_rule_set_id=prs_db.id)
                 prs_db.policy_rules.append(prs_rule_db)
 
-    def _process_policy_rule_sets_for_ptg(self, context, ptg_db, ptg):
+    def _process_policy_rule_sets_for_ptg(self, context, db_res, ptg):
         if 'provided_policy_rule_sets' in ptg:
             self._set_providers_or_consumers_for_policy_target_group(
-                context, ptg_db, ptg['provided_policy_rule_sets'])
+                context, db_res, ptg['provided_policy_rule_sets'])
             del ptg['provided_policy_rule_sets']
         if 'consumed_policy_rule_sets' in ptg:
             self._set_providers_or_consumers_for_policy_target_group(
-                context, ptg_db, ptg['consumed_policy_rule_sets'], False)
+                context, db_res, ptg['consumed_policy_rule_sets'], False)
             del ptg['consumed_policy_rule_sets']
         return ptg
+
+    def _process_policy_rule_sets_for_ep(self, context, db_res, res):
+        if 'provided_policy_rule_sets' in res:
+            self._set_providers_or_consumers_for_ep(
+                context, db_res, res['provided_policy_rule_sets'])
+            del res['provided_policy_rule_sets']
+        if 'consumed_policy_rule_sets' in res:
+            self._set_providers_or_consumers_for_ep(
+                context, db_res, res['consumed_policy_rule_sets'], False)
+            del res['consumed_policy_rule_sets']
+        return res
 
     def _set_l3_policy_for_l2_policy(self, context, l2p_id, l3p_id):
         with context.session.begin(subtransactions=True):
@@ -538,6 +710,67 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
                     param_value=param['value'])
                 nsp_db.network_service_params.append(param_db)
             del network_service_policy['network_service_params']
+
+    def _set_ess_for_ep(self, context, ep_db, es_id_list):
+        if not es_id_list:
+            ep_db.external_segments = []
+            return
+        with context.session.begin(subtransactions=True):
+            filters = {'id': es_id_list}
+            eps_in_db = self._get_collection_query(
+                context, ExternalSegment, filters=filters)
+            not_found = set(es_id_list) - set(ep['id'] for ep in eps_in_db)
+            if not_found:
+                raise gpolicy.ExternalSegmentNotFound(
+                    id=not_found.pop())
+            ep_db.external_segments = []
+            for ep_id in es_id_list:
+                assoc = EPToESAssociation(
+                    external_policy_id=ep_db.id,
+                    external_segment_id=ep_id)
+                ep_db.external_segments.append(assoc)
+
+    def _process_segment_ers(self, context, es_db, es):
+        if es['external_routes'] is not attr.ATTR_NOT_SPECIFIED:
+            es_db.external_routes = []
+            for rt in es['external_routes']:
+                target = ExternalRoute(
+                    external_segment_id=es_db.id,
+                    destination=rt['destination'],
+                    nexthop=rt['nexthop'] or ADDRESS_NOT_SPECIFIED)
+                es_db.external_routes.append(target)
+
+    def _set_ess_for_l3p(self, context, l3p_db, es_dict):
+        if es_dict is attr.ATTR_NOT_SPECIFIED:
+            return
+        if not es_dict:
+            l3p_db.external_segments = []
+            return
+        with context.session.begin(subtransactions=True):
+            # Validate ESs exist
+            es_set = set(es_dict.keys())
+            filters = {'id': es_set}
+            es_in_db = self._get_collection_query(
+                context, ExternalSegment, filters=filters)
+            not_found = es_set - set(es['id'] for es in es_in_db)
+            if not_found:
+                raise gpolicy.ExternalSegmentNotFound(
+                    id=not_found.pop())
+            l3p_db.external_segments = []
+            for es in es_in_db:
+                if not es_dict[es['id']]:
+                    assoc = ESToL3PAssociation(
+                        external_segment_id=es['id'],
+                        l3_policy_id=l3p_db['id'],
+                        allocated_address=ADDRESS_NOT_SPECIFIED)
+                    l3p_db.external_segments.append(assoc)
+                else:
+                    # Create address allocation
+                    for ip in es_dict[es['id']]:
+                        assoc = ESToL3PAssociation(
+                            external_segment_id=es['id'],
+                            l3_policy_id=l3p_db['id'], allocated_address=ip)
+                        l3p_db.external_segments.append(assoc)
 
     def _make_policy_target_dict(self, pt, fields=None):
         res = {'id': pt['id'],
@@ -588,6 +821,13 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
                'shared': l3p.get('shared', False), }
         res['l2_policies'] = [l2p['id']
                               for l2p in l3p['l2_policies']]
+        es_dict = {}
+        for es in l3p['external_segments']:
+            es_id = es['external_segment_id']
+            if es_id not in es_dict:
+                es_dict[es_id] = []
+            es_dict[es_id].append(es['allocated_address'])
+        res['external_segments'] = es_dict
         return self._fields(res, fields)
 
     def _make_network_service_policy_dict(self, nsp, fields=None):
@@ -676,6 +916,63 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
         res['consuming_policy_target_groups'] = [
             ptg['policy_target_group_id']
             for ptg in prs['consuming_policy_target_groups']]
+
+        res['providing_external_policies'] = [
+            ptg['external_policy_id']
+            for ptg in prs['providing_external_policies']]
+
+        res['consuming_external_policies'] = [
+            ptg['external_policy_id']
+            for ptg in prs['consuming_external_policies']]
+        return self._fields(res, fields)
+
+    def _make_external_segment_dict(self, es, fields=None):
+        res = {'id': es['id'],
+               'tenant_id': es['tenant_id'],
+               'name': es['name'],
+               'description': es['description'],
+               'shared': es.get('shared', False),
+               'ip_version': es['ip_version'],
+               'cidr': es['cidr'],
+               'port_address_translation': es['port_address_translation']}
+        res['external_routes'] = [{'destination': er['destination'],
+                                   'nexthop': er['nexthop']} for er in
+                                  es['external_routes']]
+        res['nat_pools'] = [np['id'] for np in es['nat_pools']]
+        res['external_policies'] = [
+            ep['external_policy_id']
+            for ep in es['external_policies']]
+
+        res['l3_policies'] = [
+            l3p['l3_policy_id'] for l3p in es['l3_policies']]
+        return self._fields(res, fields)
+
+    def _make_external_policy_dict(self, ep, fields=None):
+        res = {'id': ep['id'],
+               'tenant_id': ep['tenant_id'],
+               'name': ep['name'],
+               'description': ep['description'],
+               'shared': ep.get('shared', False), }
+        res['external_segments'] = [
+            es['external_segment_id']
+            for es in ep['external_segments']]
+        res['provided_policy_rule_sets'] = [
+            pprs['policy_rule_set_id'] for pprs in
+            ep['provided_policy_rule_sets']]
+        res['consumed_policy_rule_sets'] = [
+            cprs['policy_rule_set_id'] for cprs in
+            ep['consumed_policy_rule_sets']]
+        return self._fields(res, fields)
+
+    def _make_nat_pool_dict(self, np, fields=None):
+        res = {'id': np['id'],
+               'tenant_id': np['tenant_id'],
+               'name': np['name'],
+               'description': np['description'],
+               'shared': np.get('shared', False),
+               'ip_version': np['ip_version'],
+               'ip_pool': np['ip_pool'],
+               'external_segment_id': np['external_segment_id']}
         return self._fields(res, fields)
 
     def _get_policy_rule_policy_rule_sets(self, context, policy_rule_id):
@@ -687,6 +984,17 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
         return [x['policy_rule_id'] for x in
                 context.session.query(PolicyRuleActionAssociation).filter_by(
                     policy_action_id=policy_action_id)]
+
+    def _get_external_segment_external_policies(self, context, es_id):
+        return [x['external_policy_id'] for x in
+                context.session.query(EPToESAssociation).filter_by(
+                    external_segment_id=es_id)]
+
+    def _get_attribute(self, attrs, key):
+        value = attrs.get(key)
+        if value is attr.ATTR_NOT_SPECIFIED:
+            value = None
+        return value
 
     @staticmethod
     def validate_subnet_prefix_length(ip_version, new_prefix_length):
@@ -871,7 +1179,10 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
                 ip_pool=l3p['ip_pool'],
                 subnet_prefix_length=l3p['subnet_prefix_length'],
                 shared=l3p.get('shared', False))
-            context.session.add(l3p_db)
+            if 'external_segments' in l3p:
+                self._set_ess_for_l3p(context, l3p_db,
+                                      l3p['external_segments'])
+                context.session.add(l3p_db)
         return self._make_l3_policy_dict(l3p_db)
 
     @log.log
@@ -883,6 +1194,10 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
                 self.validate_subnet_prefix_length(
                     l3p_db.ip_version,
                     l3p['subnet_prefix_length'])
+            if 'external_segments' in l3p:
+                self._set_ess_for_l3p(context, l3p_db,
+                                      l3p['external_segments'])
+                del l3p['external_segments']
             l3p_db.update(l3p)
         return self._make_l3_policy_dict(l3p_db)
 
@@ -1193,3 +1508,155 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
     def get_policy_rule_sets_count(self, context, filters=None):
         return self._get_collection_count(context, PolicyRuleSet,
                                           filters=filters)
+
+    @log.log
+    def create_external_policy(self, context, external_policy):
+        ep = external_policy['external_policy']
+        tenant_id = self._get_tenant_id_for_create(context, ep)
+        with context.session.begin(subtransactions=True):
+            ep_db = ExternalPolicy(
+                id=uuidutils.generate_uuid(), tenant_id=tenant_id,
+                name=ep['name'], description=ep['description'],
+                shared=ep.get('shared', False))
+            context.session.add(ep_db)
+            if 'external_segments' in ep:
+                self._set_ess_for_ep(context, ep_db,
+                                     ep['external_segments'])
+            self._process_policy_rule_sets_for_ep(context, ep_db, ep)
+        return self._make_external_policy_dict(ep_db)
+
+    @log.log
+    def update_external_policy(self, context, external_policy_id,
+                               external_policy):
+        ep = external_policy['external_policy']
+        with context.session.begin(subtransactions=True):
+            ep_db = self._get_external_policy(
+                context, external_policy_id)
+            if 'external_segments' in ep:
+                self._set_ess_for_ep(context, ep_db,
+                                     ep['external_segments'])
+                del ep['external_segments']
+            self._process_policy_rule_sets_for_ep(context, ep_db, ep)
+            ep_db.update(ep)
+        return self._make_external_policy_dict(ep_db)
+
+    @log.log
+    def get_external_policies(self, context, filters=None, fields=None):
+        return self._get_collection(context, ExternalPolicy,
+                                    self._make_external_policy_dict,
+                                    filters=filters, fields=fields)
+
+    @log.log
+    def get_external_policies_count(self, context, filters=None):
+        return self._get_collection_count(context, ExternalPolicy,
+                                          filters=filters)
+
+    @log.log
+    def get_external_policy(self, context, external_policy_id, fields=None):
+        ep = self._get_external_policy(
+            context, external_policy_id)
+        return self._make_external_policy_dict(ep, fields)
+
+    @log.log
+    def delete_external_policy(self, context, external_policy_id):
+        with context.session.begin(subtransactions=True):
+            ep_db = self._get_external_policy(
+                context, external_policy_id)
+            context.session.delete(ep_db)
+
+    @log.log
+    def create_external_segment(self, context, external_segment):
+        es = external_segment['external_segment']
+        tenant_id = self._get_tenant_id_for_create(context, es)
+        with context.session.begin(subtransactions=True):
+            es_db = ExternalSegment(
+                id=uuidutils.generate_uuid(), tenant_id=tenant_id,
+                name=es['name'], description=es['description'],
+                shared=es.get('shared', False), ip_version=es['ip_version'],
+                cidr=es['cidr'],
+                port_address_translation=es['port_address_translation'])
+            context.session.add(es_db)
+            if 'external_routes' in es:
+                self._process_segment_ers(context, es_db, es)
+        return self._make_external_segment_dict(es_db)
+
+    @log.log
+    def update_external_segment(self, context, external_segment_id,
+                                external_segment):
+        es = external_segment['external_segment']
+        with context.session.begin(subtransactions=True):
+            es_db = self._get_external_segment(
+                context, external_segment_id)
+            if 'external_routes' in es:
+                self._process_segment_ers(context, es_db, es)
+                del es['external_routes']
+            es_db.update(es)
+        return self._make_external_segment_dict(es_db)
+
+    @log.log
+    def get_external_segments(self, context, filters=None, fields=None):
+        return self._get_collection(context, ExternalSegment,
+                                    self._make_external_segment_dict,
+                                    filters=filters, fields=fields)
+
+    @log.log
+    def get_external_segments_count(self, context, filters=None):
+        return self._get_collection_count(context, ExternalSegment,
+                                          filters=filters)
+
+    @log.log
+    def get_external_segment(self, context, external_segment_id, fields=None):
+        es = self._get_external_segment(
+            context, external_segment_id)
+        return self._make_external_segment_dict(es, fields)
+
+    @log.log
+    def delete_external_segment(self, context, external_segment_id):
+        with context.session.begin(subtransactions=True):
+            es_db = self._get_external_segment(
+                context, external_segment_id)
+            context.session.delete(es_db)
+
+    @log.log
+    def create_nat_pool(self, context, nat_pool):
+        np = nat_pool['nat_pool']
+        tenant_id = self._get_tenant_id_for_create(context, np)
+        with context.session.begin(subtransactions=True):
+            np_db = NATPool(
+                id=uuidutils.generate_uuid(), tenant_id=tenant_id,
+                name=np['name'], description=np['description'],
+                shared=np.get('shared', False), ip_version=np['ip_version'],
+                ip_pool=np['ip_pool'],
+                external_segment_id=np['external_segment_id'])
+            context.session.add(np_db)
+        return self._make_nat_pool_dict(np_db)
+
+    @log.log
+    def update_nat_pool(self, context, nat_pool_id, nat_pool):
+        np = nat_pool['nat_pool']
+        with context.session.begin(subtransactions=True):
+            np_db = self._get_nat_pool(
+                context, nat_pool_id)
+            np_db.update(np)
+        return self._make_nat_pool_dict(np_db)
+
+    @log.log
+    def get_nat_pools(self, context, filters=None, fields=None):
+        return self._get_collection(context, NATPool,
+                                    self._make_nat_pool_dict,
+                                    filters=filters, fields=fields)
+
+    @log.log
+    def get_nat_pools_count(self, context, filters=None):
+        return self._get_collection_count(context, NATPool, filters=filters)
+
+    @log.log
+    def get_nat_pool(self, context, nat_pool_id, fields=None):
+        np = self._get_nat_pool(context, nat_pool_id)
+        return self._make_nat_pool_dict(np, fields)
+
+    @log.log
+    def delete_nat_pool(self, context, nat_pool_id):
+        with context.session.begin(subtransactions=True):
+            np_db = self._get_nat_pool(context, nat_pool_id)
+            context.session.delete(np_db)
