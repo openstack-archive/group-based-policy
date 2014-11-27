@@ -13,6 +13,7 @@
 import copy
 
 import mock
+from neutron.api.v2 import attributes as attr
 from neutron.openstack.common import uuidutils
 from neutron.plugins.common import constants
 from neutron.tests import base
@@ -37,6 +38,13 @@ POLICY_CLASSIFIERS_URI = GROUPPOLICY_URI + '/' + 'policy_classifiers'
 POLICY_ACTIONS_URI = GROUPPOLICY_URI + '/' + 'policy_actions'
 POLICY_RULE_SETS_URI = GROUPPOLICY_URI + '/' + 'policy_rule_sets'
 NET_SVC_POLICIES_URI = GROUPPOLICY_URI + '/' + 'network_service_policies'
+EAP_POLICIES_URI = GROUPPOLICY_URI + '/' + 'external_policies'
+EAS_POLICIES_URI = GROUPPOLICY_URI + '/' + 'external_segments'
+NP_POLICIES_URI = GROUPPOLICY_URI + '/' + 'nat_pools'
+
+RES_TO_URI = {'external_policy': EAP_POLICIES_URI,
+              'external_segment': EAS_POLICIES_URI,
+              'nat_pool': NP_POLICIES_URI}
 
 
 class GroupPolicyExtensionTestCase(test_api_v2_extension.ExtensionTestCase):
@@ -46,7 +54,8 @@ class GroupPolicyExtensionTestCase(test_api_v2_extension.ExtensionTestCase):
         super(GroupPolicyExtensionTestCase, self).setUp()
         plural_mappings = {
             'l2_policy': 'l2_policies', 'l3_policy': 'l3_policies',
-            'network_service_policy': 'network_service_policies'}
+            'network_service_policy': 'network_service_policies',
+            'external_policy': 'external_policies'}
         self._setUpExtension(
             GP_PLUGIN_BASE_NAME, constants.GROUP_POLICY,
             gp.RESOURCE_ATTRIBUTE_MAP, gp.Group_policy, GROUPPOLICY_URI,
@@ -372,12 +381,13 @@ class GroupPolicyExtensionTestCase(test_api_v2_extension.ExtensionTestCase):
     def _get_create_l3_policy_default_attrs(self):
         return {'name': '', 'description': '', 'ip_version': 4,
                 'ip_pool': '10.0.0.0/8', 'subnet_prefix_length': 24,
-                'shared': False}
+                'external_segments': {}, 'shared': False}
 
     def _get_create_l3_policy_attrs(self):
         return {'name': 'l3p1', 'tenant_id': _uuid(),
                 'description': 'test L3 policy', 'ip_version': 6,
                 'ip_pool': 'fd01:2345:6789::/48',
+                'external_segments': {_uuid(): ['192.168.0.3']},
                 'subnet_prefix_length': 64, 'shared': False}
 
     def _get_update_l3_policy_attrs(self):
@@ -1016,6 +1026,213 @@ class GroupPolicyExtensionTestCase(test_api_v2_extension.ExtensionTestCase):
     def test_delete_network_service_policy(self):
         self._test_entity_delete('network_service_policy')
 
+    def _test_entity_create(self, entity, data, expected_value,
+                            default_data=None, non_specified=None):
+        default_data = default_data or data
+        create_method = getattr(self.instance, 'create_%s' % entity)
+        create_method.return_value = expected_value
+        res = self.api.post(_get_path(RES_TO_URI[entity], fmt=self.fmt),
+                            self.serialize(data),
+                            content_type='application/%s' % self.fmt)
+        default_data[entity].update(non_specified or {})
+        kwargs = {entity: default_data}
+        create_method.assert_called_once_with(
+            mock.ANY, **kwargs)
+        self.assertEqual(exc.HTTPCreated.code, res.status_int)
+        res = self.deserialize(res)
+        self.assertIn(entity, res)
+        self.assertEqual(expected_value, res[entity])
+
+    def _test_create_entity_with_defaults(self, entity, default_attrs,
+                                          non_specified=None):
+        entity_id = _uuid()
+        data = {entity: {'tenant_id': _uuid()}}
+        default_data = copy.copy(data)
+        default_data[entity].update(default_attrs)
+        expected_value = copy.deepcopy(default_data[entity])
+        expected_value['id'] = entity_id
+        self._test_entity_create(entity, data, expected_value, default_data,
+                                 non_specified)
+
+    def _test_create_entity_with_attrs(self, entity, attrs):
+        entity_id = _uuid()
+        data = {entity: attrs}
+        expected_value = copy.deepcopy(data[entity])
+        expected_value['id'] = entity_id
+        self._test_entity_create(entity, data, expected_value)
+
+    def _test_get_entity(self, entity, list=False):
+        entity_id = _uuid()
+        value = {'tenant_id': _uuid(), 'id': entity_id}
+        expected_value = value if not list else [value]
+
+        resource = entity if not list else self._plural_mappings.get(
+            entity, entity + 's')
+        list_method = getattr(self.instance, 'get_%s' % resource)
+        list_method.return_value = expected_value
+
+        kwargs = {'fmt': self.fmt}
+        if not list:
+            kwargs['id'] = entity_id
+        res = self.api.get(_get_path(RES_TO_URI[entity], **kwargs))
+
+        if list:
+            list_method.assert_called_once_with(mock.ANY, fields=mock.ANY,
+                                                filters=mock.ANY)
+        else:
+            list_method.assert_called_once_with(mock.ANY, entity_id,
+                                                fields=mock.ANY)
+        self.assertEqual(exc.HTTPOk.code, res.status_int)
+        res = self.deserialize(res)
+        self.assertIn(resource, res)
+        self.assertEqual(expected_value, res[resource])
+
+    def _test_update_entity(self, entity, attrs):
+        entity_id = _uuid()
+        update_data = {entity: attrs}
+        expected_value = {'tenant_id': _uuid(), 'id': entity_id}
+
+        update_method = getattr(self.instance, 'update_%s' % entity)
+        update_method.return_value = expected_value
+
+        res = self.api.put(_get_path(RES_TO_URI[entity], id=entity_id,
+                                     fmt=self.fmt),
+                           self.serialize(update_data))
+
+        kwargs = {entity: update_data}
+        update_method.assert_called_once_with(mock.ANY, entity_id, **kwargs)
+        self.assertEqual(exc.HTTPOk.code, res.status_int)
+        res = self.deserialize(res)
+        self.assertIn(entity, res)
+        self.assertEqual(expected_value, res[entity])
+
+    def _get_create_external_policy_default_attrs(self):
+        return {'name': '', 'description': '',
+                'external_segments': [],
+                'provided_policy_rule_sets': {},
+                'consumed_policy_rule_sets': {},
+                'shared': False}
+
+    def _get_create_external_policy_attrs(self):
+        return {'name': 'ep1', 'tenant_id': _uuid(),
+                'description': 'test ep',
+                'external_segments': [_uuid()],
+                'provided_policy_rule_sets': {_uuid(): None},
+                'consumed_policy_rule_sets': {_uuid(): None},
+                'shared': False}
+
+    def _get_update_external_policy_attrs(self):
+        return {'name': 'new_name'}
+
+    def test_create_external_policy_with_defaults(self):
+        default_attrs = self._get_create_external_policy_default_attrs()
+        self._test_create_entity_with_defaults('external_policy',
+                                               default_attrs)
+
+    def test_create_external_policy(self):
+        attrs = self._get_create_external_policy_attrs()
+        self._test_create_entity_with_attrs('external_policy', attrs)
+
+    def test_list_external_policies(self):
+        self._test_get_entity('external_policy', list=True)
+
+    def test_get_external_policy(self):
+        self._test_get_entity('external_policy')
+
+    def test_update_external_policy(self):
+        update_data = self._get_update_external_policy_attrs()
+        self._test_update_entity('external_policy', update_data)
+
+    def test_delete_external_policy_(self):
+        self._test_entity_delete('external_policy')
+
+    def _get_create_external_segment_non_specified_attrs(self):
+        return {'cidr': attr.ATTR_NOT_SPECIFIED}
+
+    def _get_create_external_segment_default_attrs(self):
+        return {'name': '', 'description': '',
+                'external_routes': [],
+                'ip_version': 4,
+                'port_address_translation': False,
+                'shared': False}
+
+    def _get_create_external_segment_attrs(self):
+        return {'name': 'es1', 'tenant_id': _uuid(),
+                'description': 'test ep',
+                'external_routes': [{'destination': '0.0.0.0/0',
+                                     'nexthop': '192.168.0.1'}],
+                'cidr': '192.168.0.0/24',
+                'ip_version': 4, 'port_address_translation': True,
+                'shared': False}
+
+    def _get_update_external_segment_attrs(self):
+        return {'name': 'new_name'}
+
+    def test_create_external_segment_with_defaults(self):
+        default_attrs = (
+            self._get_create_external_segment_default_attrs())
+        non_specified = (
+            self._get_create_external_segment_non_specified_attrs())
+        self._test_create_entity_with_defaults('external_segment',
+                                               default_attrs, non_specified)
+
+    def test_create_external_segment(self):
+        attrs = self._get_create_external_segment_attrs()
+        self._test_create_entity_with_attrs('external_segment', attrs)
+
+    def test_list_external_segments(self):
+        self._test_get_entity('external_segment', list=True)
+
+    def test_get_external_segment(self):
+        self._test_get_entity('external_segment')
+
+    def test_update_external_segment(self):
+        update_data = self._get_update_external_segment_attrs()
+        self._test_update_entity('external_segment', update_data)
+
+    def test_delete_external_segment_(self):
+        self._test_entity_delete('external_segment')
+
+    def _get_create_nat_pool_default_attrs(self):
+        return {'name': '', 'description': '',
+                'external_segment_id': None, 'ip_version': 4,
+                'ip_pool': '172.16.0.0/16',
+                'shared': False}
+
+    def _get_create_nat_pool_attrs(self):
+        return {'name': 'es1', 'tenant_id': _uuid(),
+                'description': 'test ep',
+                'ip_version': 4,
+                'ip_pool': '172.16.0.0/16',
+                'external_segment_id': _uuid(),
+                'shared': False}
+
+    def _get_update_nat_pool_attrs(self):
+        return {'name': 'new_name'}
+
+    def test_create_nat_pool_with_defaults(self):
+        default_attrs = (
+            self._get_create_nat_pool_default_attrs())
+        self._test_create_entity_with_defaults('nat_pool',
+                                               default_attrs)
+
+    def test_create_nat_pool(self):
+        attrs = self._get_create_nat_pool_attrs()
+        self._test_create_entity_with_attrs('nat_pool', attrs)
+
+    def test_list_nat_pools(self):
+        self._test_get_entity('nat_pool', list=True)
+
+    def test_get_nat_pool(self):
+        self._test_get_entity('nat_pool')
+
+    def test_update_nat_pool(self):
+        update_data = self._get_update_nat_pool_attrs()
+        self._test_update_entity('nat_pool', update_data)
+
+    def test_delete_nat_pool_(self):
+        self._test_entity_delete('nat_pool')
+
 
 class TestGroupPolicyAttributeConverters(base.BaseTestCase):
 
@@ -1129,3 +1346,24 @@ class TestGroupPolicyAttributeValidators(base.BaseTestCase):
         msg = gp._validate_network_svc_params(test_params)
         self.assertEqual(
             msg, "Network service param value 'subnet' is not supported")
+
+    def test_validate_external_dict(self):
+        self.assertIsNone(gp._validate_external_dict(None))
+        uuid = uuidutils.generate_uuid()
+        uuid_2 = uuidutils.generate_uuid()
+        correct = [{uuid: []}, {}, {uuid: ['192.168.1.1']},
+                   {uuid_2: ['192.168.0.1'], uuid: []}]
+        for x in correct:
+            self.assertIsNone(gp._validate_external_dict(x))
+
+        incorrect = 'not_a_dict'
+        self.assertEqual(gp._validate_external_dict(incorrect),
+                         "'%s' is not a dictionary" % incorrect)
+        not_a_uuid = 'not_a_uuid'
+        incorrect = {'not_a_uuid': []}
+        self.assertEqual(gp._validate_external_dict(incorrect),
+                         "'%s' is not a valid UUID" % not_a_uuid)
+        not_a_list = 'not_a_list'
+        incorrect = {uuid: not_a_list}
+        self.assertEqual(gp._validate_external_dict(incorrect),
+                         "'%s' is not a list" % not_a_list)
