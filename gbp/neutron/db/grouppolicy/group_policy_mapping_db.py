@@ -241,6 +241,9 @@ class GroupPolicyMappingDbPlugin(gpdb.GroupPolicyDbPlugin):
                         router_id=router
                     )
                     l3p_db.routers.append(assoc)
+            if 'external_segments' in l3p:
+                self._set_ess_for_l3p(context, l3p_db,
+                                      l3p['external_segments'])
         return self._make_l3_policy_dict(l3p_db)
 
     @log.log
@@ -269,5 +272,9 @@ class GroupPolicyMappingDbPlugin(gpdb.GroupPolicyDbPlugin):
                     context.session.delete(assoc)
                 # Don't update l3p_db.routers with router IDs.
                 del l3p['routers']
+            if 'external_segments' in l3p:
+                self._set_ess_for_l3p(context, l3p_db,
+                                      l3p['external_segments'])
+                del l3p['external_segments']
             l3p_db.update(l3p)
         return self._make_l3_policy_dict(l3p_db)
