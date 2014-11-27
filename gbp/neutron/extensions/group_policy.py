@@ -19,6 +19,7 @@ from neutron.api.v2 import attributes as attr
 from neutron.api.v2 import resource_helper
 from neutron.common import exceptions as nexc
 from neutron.openstack.common import log as logging
+from neutron.openstack.common import uuidutils
 from neutron.plugins.common import constants
 from neutron.services import service_base
 
@@ -81,6 +82,18 @@ class PolicyRuleNotFound(nexc.NotFound):
 
 class PolicyRuleSetNotFound(nexc.NotFound):
     message = _("Policy Rule Set %(policy_rule_set_id)s could not be found")
+
+
+class ExternalPolicyNotFound(nexc.NotFound):
+    message = _("External Policy %(id)s could not be found")
+
+
+class ExternalSegmentNotFound(nexc.NotFound):
+    message = _("External Segment %(id)s could not be found")
+
+
+class NATPoolNotFound(nexc.NotFound):
+    message = _("NAT Pool %(id)s could not be found")
 
 
 class BadPolicyRuleSetRelationship(nexc.BadRequest):
@@ -160,6 +173,13 @@ def convert_port_to_string(value):
         return str(value)
 
 
+def convert_to_int_if_needed(value):
+    if not value or value is attr.ATTR_NOT_SPECIFIED:
+        return value
+    else:
+        return attr.convert_to_int(value)
+
+
 def _validate_port_range(data, key_specs=None):
     if data is None:
         return
@@ -226,8 +246,58 @@ def _validate_network_svc_params(data, key_specs=None):
                 return msg
 
 
+def _validate_external_dict(data, key_specs=None):
+    if data is None:
+        return
+    if not isinstance(data, dict):
+        msg = _("'%s' is not a dictionary") % data
+        LOG.debug(msg)
+        return msg
+    for d in data:
+        if not uuidutils.is_uuid_like(d):
+            msg = _("'%s' is not a valid UUID") % d
+            LOG.debug(msg)
+            return msg
+        if not isinstance(data[d], list):
+            msg = _("'%s' is not a list") % data[d]
+            LOG.debug(msg)
+            return msg
+
+
+def _validate_gbproutes(data, valid_values=None):
+    # Shamelessly copied from Neutron, will pass even if nexthop is valid
+    if not isinstance(data, list):
+        msg = _("Invalid data format for hostroute: '%s'") % data
+        LOG.debug(msg)
+        return msg
+
+    expected_keys = ['destination', 'nexthop']
+    hostroutes = []
+    for hostroute in data:
+        msg = attr._verify_dict_keys(expected_keys, hostroute)
+        if msg:
+            LOG.debug(msg)
+            return msg
+        msg = attr._validate_subnet(hostroute['destination'])
+        if msg:
+            LOG.debug(msg)
+            return msg
+        if hostroute['nexthop'] is not None:
+            msg = attr._validate_ip_address(hostroute['nexthop'])
+        if msg:
+            LOG.debug(msg)
+            return msg
+        if hostroute in hostroutes:
+            msg = _("Duplicate hostroute '%s'") % hostroute
+            LOG.debug(msg)
+            return msg
+        hostroutes.append(hostroute)
+
+
 attr.validators['type:port_range'] = _validate_port_range
 attr.validators['type:network_service_params'] = _validate_network_svc_params
+attr.validators['type:external_dict'] = _validate_external_dict
+attr.validators['type:gbproutes'] = _validate_gbproutes
 
 
 POLICY_TARGETS = 'policy_targets'
@@ -239,7 +309,9 @@ POLICY_ACTIONS = 'policy_actions'
 POLICY_RULES = 'policy_rules'
 POLICY_RULE_SETS = 'policy_rule_sets'
 NETWORK_SERVICE_POLICIES = 'network_service_policies'
-
+EXTERNAL_POLICIES = 'external_policies'
+EXTERNAL_SEGMENTS = 'external_segments'
+NAT_POOLS = 'nat_pools'
 
 RESOURCE_ATTRIBUTE_MAP = {
     POLICY_TARGETS: {
@@ -361,6 +433,10 @@ RESOURCE_ATTRIBUTE_MAP = {
                       'default': False, 'convert_to': attr.convert_to_boolean,
                       'is_visible': True, 'required_by_policy': True,
                       'enforce_policy': True},
+        'external_segments': {
+            'allow_post': True, 'allow_put': True, 'default': None,
+            'validate': {'type:external_dict': None},
+            'convert_to': attr.convert_none_to_empty_dict, 'is_visible': True},
     },
     POLICY_CLASSIFIERS: {
         'id': {'allow_post': False, 'allow_put': False,
@@ -506,6 +582,109 @@ RESOURCE_ATTRIBUTE_MAP = {
                       'is_visible': True, 'required_by_policy': True,
                       'enforce_policy': True},
     },
+    EXTERNAL_POLICIES: {
+        'id': {'allow_post': False, 'allow_put': False,
+               'validate': {'type:uuid': None},
+               'is_visible': True, 'primary_key': True},
+        'name': {'allow_post': True, 'allow_put': True,
+                 'validate': {'type:string': None},
+                 'default': '', 'is_visible': True},
+        'description': {'allow_post': True, 'allow_put': True,
+                        'validate': {'type:string': None},
+                        'is_visible': True, 'default': ''},
+        'tenant_id': {'allow_post': True, 'allow_put': False,
+                      'validate': {'type:string': None},
+                      'required_by_policy': True, 'is_visible': True},
+        'external_segments': {
+            'allow_post': True, 'allow_put': True, 'default': None,
+            'validate': {'type:uuid_list': None},
+            'convert_to': attr.convert_none_to_empty_list, 'is_visible': True},
+        'provided_policy_rule_sets': {'allow_post': True, 'allow_put': True,
+                                      'validate': {'type:dict_or_none': None},
+                                      'convert_to':
+                                      attr.convert_none_to_empty_dict,
+                                      'default': None, 'is_visible': True},
+        'consumed_policy_rule_sets': {'allow_post': True, 'allow_put': True,
+                                      'validate': {'type:dict_or_none': None},
+                                      'convert_to':
+                                      attr.convert_none_to_empty_dict,
+                                      'default': None, 'is_visible': True},
+        attr.SHARED: {'allow_post': True, 'allow_put': True,
+                      'default': False, 'convert_to': attr.convert_to_boolean,
+                      'is_visible': True, 'required_by_policy': True,
+                      'enforce_policy': True},
+    },
+    EXTERNAL_SEGMENTS: {
+        'id': {'allow_post': False, 'allow_put': False,
+               'validate': {'type:uuid': None},
+               'is_visible': True, 'primary_key': True},
+        'name': {'allow_post': True, 'allow_put': True,
+                 'validate': {'type:string': None},
+                 'default': '', 'is_visible': True},
+        'description': {'allow_post': True, 'allow_put': True,
+                        'validate': {'type:string': None},
+                        'is_visible': True, 'default': ''},
+        'tenant_id': {'allow_post': True, 'allow_put': False,
+                      'validate': {'type:string': None},
+                      'required_by_policy': True, 'is_visible': True},
+        'ip_version': {'allow_post': True, 'allow_put': False,
+                       'convert_to': attr.convert_to_int,
+                       'validate': {'type:values': [4, 6]},
+                       'default': attr.ATTR_NOT_SPECIFIED, 'is_visible': True},
+        'cidr': {'allow_post': True, 'allow_put': False,
+                 'validate': {'type:subnet': None},
+                 'default': attr.ATTR_NOT_SPECIFIED, 'is_visible': True},
+        'external_policies': {
+            'allow_post': False, 'allow_put': False, 'default': None,
+            'validate': {'type:uuid_list': None},
+            'convert_to': attr.convert_none_to_empty_list, 'is_visible': True},
+        'external_routes': {
+            'allow_post': True, 'allow_put': True,
+            'default': attr.ATTR_NOT_SPECIFIED,
+            'validate': {'type:gbproutes': None},
+            'is_visible': True},
+        'l3_policies': {'allow_post': False, 'allow_put': False,
+                        'validate': {'type:uuid_list': None},
+                        'convert_to': attr.convert_none_to_empty_list,
+                        'default': None, 'is_visible': True},
+        'port_address_translation': {
+            'allow_post': True, 'allow_put': True,
+            'default': False, 'convert_to': attr.convert_to_boolean,
+            'is_visible': True, 'required_by_policy': True,
+            'enforce_policy': True},
+        attr.SHARED: {'allow_post': True, 'allow_put': True,
+                      'default': False, 'convert_to': attr.convert_to_boolean,
+                      'is_visible': True, 'required_by_policy': True,
+                      'enforce_policy': True},
+    },
+    NAT_POOLS: {
+        'id': {'allow_post': False, 'allow_put': False,
+               'validate': {'type:uuid': None},
+               'is_visible': True, 'primary_key': True},
+        'name': {'allow_post': True, 'allow_put': True,
+                 'validate': {'type:string': None},
+                 'default': '', 'is_visible': True},
+        'description': {'allow_post': True, 'allow_put': True,
+                        'validate': {'type:string': None},
+                        'is_visible': True, 'default': ''},
+        'tenant_id': {'allow_post': True, 'allow_put': False,
+                      'validate': {'type:string': None},
+                      'required_by_policy': True, 'is_visible': True},
+        'ip_version': {'allow_post': True, 'allow_put': False,
+                       'convert_to': attr.convert_to_int,
+                       'validate': {'type:values': [4, 6]},
+                       'default': 4, 'is_visible': True},
+        'ip_pool': {'allow_post': True, 'allow_put': False,
+                    'validate': {'type:subnet': None},
+                    'is_visible': True},
+        'external_segment_id': {'allow_post': True, 'allow_put': True,
+                                'validate': {'type:uuid_or_none': None},
+                                'is_visible': True, 'required': True},
+        attr.SHARED: {'allow_post': True, 'allow_put': True,
+                      'default': False, 'convert_to': attr.convert_to_boolean,
+                      'is_visible': True, 'required_by_policy': True,
+                      'enforce_policy': True},
+    }
 }
 
 
@@ -535,7 +714,8 @@ class Group_policy(extensions.ExtensionDescriptor):
     def get_resources(cls):
         special_mappings = {
             'l2_policies': 'l2_policy', 'l3_policies': 'l3_policy',
-            'network_service_policies': 'network_service_policy'}
+            'network_service_policies': 'network_service_policy',
+            'external_policies': 'external_policy'}
         plural_mappings = resource_helper.build_plural_mappings(
             special_mappings, RESOURCE_ATTRIBUTE_MAP)
         attr.PLURALS.update(plural_mappings)
@@ -756,4 +936,67 @@ class GroupPolicyPluginBase(service_base.ServicePluginBase):
 
     @abc.abstractmethod
     def delete_policy_rule_set(self, context, policy_rule_set_id):
+        pass
+
+    @abc.abstractmethod
+    def create_external_policy(self, context, external_policy):
+        pass
+
+    @abc.abstractmethod
+    def update_external_policy(self, context, external_policy_id,
+                               external_policy):
+        pass
+
+    @abc.abstractmethod
+    def get_external_policies(self, context, filters=None, fields=None):
+        pass
+
+    @abc.abstractmethod
+    def get_external_policy(self, context, external_policy_id,
+                            fields=None):
+        pass
+
+    @abc.abstractmethod
+    def delete_external_policy(self, context, external_policy_id):
+        pass
+
+    @abc.abstractmethod
+    def create_external_segment(self, context, external_segment):
+        pass
+
+    @abc.abstractmethod
+    def update_external_segment(self, context, external_segment_id,
+                                external_segment):
+        pass
+
+    @abc.abstractmethod
+    def get_external_segments(self, context, filters=None, fields=None):
+        pass
+
+    @abc.abstractmethod
+    def get_external_segment(self, context, external_segment_id, fields=None):
+        pass
+
+    @abc.abstractmethod
+    def delete_external_segment(self, context, external_segment_id):
+        pass
+
+    @abc.abstractmethod
+    def create_nat_pool(self, context, nat_pool):
+        pass
+
+    @abc.abstractmethod
+    def update_nat_pool(self, context, nat_pool_id, nat_pool):
+        pass
+
+    @abc.abstractmethod
+    def get_nat_pools(self, context, filters=None, fields=None):
+        pass
+
+    @abc.abstractmethod
+    def get_nat_pool(self, context, nat_pool_id, fields=None):
+        pass
+
+    @abc.abstractmethod
+    def delete_nat_pool(self, context, nat_pool_id):
         pass
