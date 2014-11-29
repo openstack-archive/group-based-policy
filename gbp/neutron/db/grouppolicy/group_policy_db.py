@@ -738,6 +738,7 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
                     external_segment_id=es_db.id,
                     destination=rt['destination'],
                     nexthop=rt['nexthop'] or ADDRESS_NOT_SPECIFIED)
+
                 es_db.external_routes.append(target)
 
     def _set_ess_for_l3p(self, context, l3p_db, es_dict):
@@ -1555,10 +1556,17 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
         return self._make_external_policy_dict(ep_db)
 
     @log.log
-    def get_external_policies(self, context, filters=None, fields=None):
+    def get_external_policies(self, context, filters=None, fields=None,
+                              sorts=None, limit=None, marker=None,
+                              page_reverse=False):
+        marker_obj = self._get_marker_obj(context, 'external_policy', limit,
+                                          marker)
         return self._get_collection(context, ExternalPolicy,
                                     self._make_external_policy_dict,
-                                    filters=filters, fields=fields)
+                                    filters=filters, fields=fields,
+                                    sorts=sorts, limit=limit,
+                                    marker_obj=marker_obj,
+                                    page_reverse=page_reverse)
 
     @log.log
     def get_external_policies_count(self, context, filters=None):
@@ -1608,10 +1616,17 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
         return self._make_external_segment_dict(es_db)
 
     @log.log
-    def get_external_segments(self, context, filters=None, fields=None):
+    def get_external_segments(self, context, filters=None, fields=None,
+                              sorts=None, limit=None, marker=None,
+                              page_reverse=False):
+        marker_obj = self._get_marker_obj(context, 'external_segment', limit,
+                                          marker)
         return self._get_collection(context, ExternalSegment,
                                     self._make_external_segment_dict,
-                                    filters=filters, fields=fields)
+                                    filters=filters, fields=fields,
+                                    sorts=sorts, limit=limit,
+                                    marker_obj=marker_obj,
+                                    page_reverse=page_reverse)
 
     @log.log
     def get_external_segments_count(self, context, filters=None):
@@ -1655,10 +1670,17 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
         return self._make_nat_pool_dict(np_db)
 
     @log.log
-    def get_nat_pools(self, context, filters=None, fields=None):
+    def get_nat_pools(self, context, filters=None, fields=None,
+                      sorts=None, limit=None, marker=None,
+                      page_reverse=False):
+        marker_obj = self._get_marker_obj(context, 'nat_pool', limit,
+                                          marker)
         return self._get_collection(context, NATPool,
                                     self._make_nat_pool_dict,
-                                    filters=filters, fields=fields)
+                                    filters=filters, fields=fields,
+                                    sorts=sorts, limit=limit,
+                                    marker_obj=marker_obj,
+                                    page_reverse=page_reverse)
 
     @log.log
     def get_nat_pools_count(self, context, filters=None):
