@@ -373,6 +373,55 @@ class ExtensionDriverTestCase(
         val = res['network_service_policy']['nsp_extension']
         self.assertEqual("def", val)
 
+    def test_es_attr(self):
+        self._test_attr('external_segment')
+
+    def test_ep_attr(self):
+        self._test_attr('external_policy')
+
+    def test_np_attr(self):
+        self._test_attr('nat_pool')
+
+    def _test_attr(self, type):
+        # Test create with default value.
+        acronim = _acronim(type)
+        plural = self._get_resource_plural(type)
+        obj = getattr(self, 'create_%s' % type)()
+        id = obj[type]['id']
+        val = obj[type][acronim + '_extension']
+        self.assertEqual("", val)
+        req = self.new_show_request(plural, id)
+        res = self.deserialize(self.fmt, req.get_response(self.ext_api))
+        val = res[type][acronim + '_extension']
+        self.assertEqual("", val)
+
+        # Test list.
+        res = self._list(plural)
+        val = res[plural][0][acronim + '_extension']
+        self.assertEqual("", val)
+
+        # Test create with explict value.
+        kwargs = {acronim + '_extension': "abc"}
+        obj = getattr(self, 'create_%s' % type)(**kwargs)
+        id = obj[type]['id']
+        val = obj[type][acronim + '_extension']
+        self.assertEqual("abc", val)
+        req = self.new_show_request(plural, id)
+        res = self.deserialize(self.fmt, req.get_response(self.ext_api))
+        val = res[type][acronim + '_extension']
+        self.assertEqual("abc", val)
+
+        # Test update.
+        data = {type: {acronim + '_extension': "def"}}
+        req = self.new_update_request(plural, data, id)
+        res = self.deserialize(self.fmt, req.get_response(self.ext_api))
+        val = res[type][acronim + '_extension']
+        self.assertEqual("def", val)
+        req = self.new_show_request(plural, id)
+        res = self.deserialize(self.fmt, req.get_response(self.ext_api))
+        val = res[type][acronim + '_extension']
+        self.assertEqual("def", val)
+
 
 class TestPolicyTargetExtension(model_base.BASEV2):
     __tablename__ = 'test_policy_target_extension'
@@ -452,6 +501,33 @@ class TestNetworkServicePolicyExtension(model_base.BASEV2):
                        sa.ForeignKey('gp_network_service_policies.id',
                                      ondelete="CASCADE"),
                        primary_key=True)
+    value = sa.Column(sa.String(64))
+
+
+class TestExternalSegmentExtension(model_base.BASEV2):
+    __tablename__ = 'test_external_segment_extension'
+    es_id = sa.Column(sa.String(36),
+                      sa.ForeignKey('gp_external_segments.id',
+                                    ondelete="CASCADE"),
+                      primary_key=True)
+    value = sa.Column(sa.String(64))
+
+
+class TestExternalPolicyExtension(model_base.BASEV2):
+    __tablename__ = 'test_external_policy_extension'
+    ep_id = sa.Column(sa.String(36),
+                      sa.ForeignKey('gp_external_policies.id',
+                                    ondelete="CASCADE"),
+                      primary_key=True)
+    value = sa.Column(sa.String(64))
+
+
+class TestNatPoolExtension(model_base.BASEV2):
+    __tablename__ = 'test_nat_pool_extension'
+    np_id = sa.Column(sa.String(36),
+                      sa.ForeignKey('gp_nat_pools.id',
+                                    ondelete="CASCADE"),
+                      primary_key=True)
     value = sa.Column(sa.String(64))
 
 
@@ -677,3 +753,67 @@ class TestExtensionDriver(api.ExtensionDriver):
                   filter_by(nsp_id=result['id']).
                   one())
         result['nsp_extension'] = record.value
+
+    def process_create_external_segment(self, session, data, result):
+        self._process_create(session, data, result, 'external_segment',
+                             TestExternalSegmentExtension)
+
+    def process_update_external_segment(self, session, data, result):
+        self._process_update(session, data, result, 'external_segment',
+                             TestExternalSegmentExtension)
+
+    def extend_external_segment_dict(self, session, result):
+        self._extend(session, result, 'external_segment',
+                     TestExternalSegmentExtension)
+
+    def process_create_external_policy(self, session, data, result):
+        self._process_create(session, data, result, 'external_policy',
+                             TestExternalPolicyExtension)
+
+    def process_update_external_policy(self, session, data, result):
+        self._process_update(session, data, result, 'external_policy',
+                             TestExternalPolicyExtension)
+
+    def extend_external_policy_dict(self, session, result):
+        self._extend(session, result, 'external_policy',
+                     TestExternalPolicyExtension)
+
+    def process_create_nat_pool(self, session, data, result):
+        self._process_create(session, data, result, 'nat_pool',
+                             TestNatPoolExtension)
+
+    def process_update_nat_pool(self, session, data, result):
+        self._process_update(session, data, result, 'nat_pool',
+                             TestNatPoolExtension)
+
+    def extend_nat_pool_dict(self, session, result):
+        self._extend(session, result, 'nat_pool', TestNatPoolExtension)
+
+    def _process_create(self, session, data, result, type, klass):
+        acronim = _acronim(type)
+        value = data[type][acronim + '_extension']
+        if not attributes.is_attr_set(value):
+            value = ''
+        kwargs = {acronim + '_id': result['id'], 'value': value}
+        record = klass(**kwargs)
+        session.add(record)
+        result[acronim + '_extension'] = value
+
+    def _process_update(self, session, data, result, type, klass):
+        acronim = _acronim(type)
+        kwargs = {acronim + '_id': result['id']}
+        record = session.query(klass).filter_by(**kwargs).one()
+        value = data[type].get(acronim + '_extension')
+        if value and value != record.value:
+            record.value = value
+        result[acronim + '_extension'] = record.value
+
+    def _extend(self, session, result, type, klass):
+        acronim = _acronim(type)
+        kwargs = {acronim + '_id': result['id']}
+        record = session.query(klass).filter_by(**kwargs).one()
+        result[acronim + '_extension'] = record.value
+
+
+def _acronim(type):
+    return ''.join([x[0] for x in type.split('_')])

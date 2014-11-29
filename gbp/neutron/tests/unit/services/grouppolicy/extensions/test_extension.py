@@ -80,6 +80,27 @@ EXTENDED_ATTRIBUTES_2_0 = {
                           'is_visible': True,
                           'enforce_policy': True},
     },
+    gp.EXTERNAL_SEGMENTS: {
+        'es_extension': {'allow_post': True,
+                         'allow_put': True,
+                         'default': attr.ATTR_NOT_SPECIFIED,
+                         'is_visible': True,
+                         'enforce_policy': True},
+    },
+    gp.EXTERNAL_POLICIES: {
+        'ep_extension': {'allow_post': True,
+                         'allow_put': True,
+                         'default': attr.ATTR_NOT_SPECIFIED,
+                         'is_visible': True,
+                         'enforce_policy': True},
+    },
+    gp.NAT_POOLS: {
+        'np_extension': {'allow_post': True,
+                         'allow_put': True,
+                         'default': attr.ATTR_NOT_SPECIFIED,
+                         'is_visible': True,
+                         'enforce_policy': True},
+    },
 }
 
 
