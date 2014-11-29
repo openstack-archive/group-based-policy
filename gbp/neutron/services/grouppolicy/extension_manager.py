@@ -1,17 +1,15 @@
-# Copyright (c) 2014 OpenStack Foundation
-# All Rights Reserved.
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
 #
-#    Licensed under the Apache License, Version 2.0 (the "License"); you may
-#    not use this file except in compliance with the License. You may obtain
-#    a copy of the License at
+#    http://www.apache.org/licenses/LICENSE-2.0
 #
-#         http://www.apache.org/licenses/LICENSE-2.0
-#
-#    Unless required by applicable law or agreed to in writing, software
-#    distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
-#    WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
-#    License for the specific language governing permissions and limitations
-#    under the License.
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or
+# implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
 
 from neutron.openstack.common import log
 from oslo.config import cfg
@@ -209,3 +207,48 @@ class ExtensionManager(stevedore.named.NamedExtensionManager):
         """Call all extension drivers to extend NSP dictionary."""
         for driver in self.ordered_ext_drivers:
             driver.obj.extend_network_service_policy_dict(session, result)
+
+    def process_create_external_segment(self, session, data, result):
+        """Call all extension drivers during EP creation."""
+        self._call_on_ext_drivers("process_create_external_segment",
+                                  session, data, result)
+
+    def process_update_external_segment(self, session, data, result):
+        """Call all extension drivers during EP update."""
+        self._call_on_ext_drivers("process_update_external_segment",
+                                  session, data, result)
+
+    def extend_external_segment_dict(self, session, result):
+        """Call all extension drivers to extend EP dictionary."""
+        for driver in self.ordered_ext_drivers:
+            driver.obj.extend_external_segment_dict(session, result)
+
+    def process_create_external_policy(self, session, data, result):
+        """Call all extension drivers during EP creation."""
+        self._call_on_ext_drivers("process_create_external_policy",
+                                  session, data, result)
+
+    def process_update_external_policy(self, session, data, result):
+        """Call all extension drivers during EP update."""
+        self._call_on_ext_drivers("process_update_external_policy",
+                                  session, data, result)
+
+    def extend_external_policy_dict(self, session, result):
+        """Call all extension drivers to extend EP dictionary."""
+        for driver in self.ordered_ext_drivers:
+            driver.obj.extend_external_policy_dict(session, result)
+
+    def process_create_nat_pool(self, session, data, result):
+        """Call all extension drivers during NP creation."""
+        self._call_on_ext_drivers("process_create_nat_pool",
+                                  session, data, result)
+
+    def process_update_nat_pool(self, session, data, result):
+        """Call all extension drivers during NP update."""
+        self._call_on_ext_drivers("process_update_nat_pool",
+                                  session, data, result)
+
+    def extend_nat_pool_dict(self, session, result):
+        """Call all extension drivers to extend NP dictionary."""
+        for driver in self.ordered_ext_drivers:
+            driver.obj.extend_nat_pool_dict(session, result)
