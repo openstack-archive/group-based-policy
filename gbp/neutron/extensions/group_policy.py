@@ -118,10 +118,6 @@ class GroupPolicyInvalidProtocol(nexc.InvalidInput):
                 "representation (0 to 255) are supported.")
 
 
-class InvalidL3PAddressOnExternalSegment(nexc.InvalidInput):
-    message = _("Address %(ip)s is not valid for subnet %(subnet)s")
-
-
 # Group Policy Values
 gp_supported_actions = [None, gp_constants.GP_ACTION_ALLOW,
                         gp_constants.GP_ACTION_REDIRECT]
