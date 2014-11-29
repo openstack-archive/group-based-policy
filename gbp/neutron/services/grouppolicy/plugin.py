@@ -10,6 +10,8 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+import netaddr
+
 from neutron.api.v2 import attributes as nattr
 from neutron.common import log
 from neutron.openstack.common import excutils
@@ -45,7 +47,8 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
     # <attribute> is the field on the <to_check> dictionary that can be used
     # to retrieve the UUID/s of the specific object <type>
 
-    usage_graph = {'l3_policy': {},
+    usage_graph = {'l3_policy': {'external_segments':
+                                 'external_segment'},
                    'l2_policy': {'l3_policy_id': 'l3_policy'},
                    'policy_target_group': {
                        'network_service_policy_id': 'network_service_policy',
@@ -61,6 +64,13 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
                    'policy_rule_set': {
                        'parent_id': 'policy_rule_set',
                        'policy_rules': 'policy_rule'},
+                   'external_segment': {},
+                   'external_policy': {
+                       'external_segments': 'external_segment',
+                       'provided_policy_rule_sets': 'policy_rule_set',
+                       'consumed_policy_rule_sets': 'policy_rule_set'},
+                   'nat_pool': {'external_segment_id':
+                                'external_segment'}
                    }
     _plurals = None
 
@@ -92,7 +102,7 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
     def _validate_shared_update(self, context, original, updated, identity):
         if updated.get('shared'):
             # Even though the shared attribute may not be changed, the objects
-            # it is referring to might. For this reason we run the reference
+            # it is referring to might. For this reson we run the reference
             # validation every time a shared resource is updated
             # TODO(ivar): run only when relevant updates happen
             self._validate_shared_create(context, updated, identity)
@@ -130,6 +140,10 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
             context, obj, self.get_policy_target_groups, 'id',
             obj['providing_policy_target_groups'] +
             obj['consuming_policy_target_groups'])
+        self._check_shared_or_different_tenant(
+            context, obj, self.get_external_policies, 'id',
+            obj['providing_external_policies'] +
+            obj['consuming_external_policies'])
 
     def _validate_policy_classifier_unshare(self, context, obj):
         self._check_shared_or_different_tenant(
@@ -144,6 +158,84 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
         r_ids = self._get_policy_action_rules(context, obj['id'])
         self._check_shared_or_different_tenant(
             context, obj, self.get_policy_rules, 'id', r_ids)
+
+    def _validate_external_segment_unshare(self, context, obj):
+        self._check_shared_or_different_tenant(
+            context, obj, self.get_l3_policies, 'id', obj['l3_policies'])
+        self._check_shared_or_different_tenant(
+            context, obj, self.get_external_policies, 'id',
+            obj['external_policies'])
+        self._check_shared_or_different_tenant(
+            context, obj, self.get_nat_pools, 'external_segment_id')
+
+    def _validate_external_policy_unshare(self, context, obj):
+        pass
+
+    def _validate_nat_pool_unshare(self, context, obj):
+        pass
+
+    def _validate_routes(self, context, current, original=None):
+        if original:
+            added = (set((x['destination'], x['nexthop']) for x in
+                         current['external_routes']) -
+                     set((x['destination'], x['nexthop']) for x in
+                         original['external_routes']))
+        else:
+            added = set((x['destination'], x['nexthop']) for x in
+                        current['external_routes'])
+        if added:
+            # Verify new ones don't overlap with the existing L3P
+            added_dest = set(x[0] for x in added)
+            # Remove default routes
+            added_dest.discard('0.0.0.0/0')
+            added_dest.discard('::/0')
+            added_ipset = netaddr.IPSet(added_dest)
+            if current['l3_policies']:
+                l3ps = self.get_l3_policies(
+                    context, filters={'id': current['l3_policies']})
+                for l3p in l3ps:
+                    if netaddr.IPSet([l3p['ip_pool']]) & added_ipset:
+                        raise gp_exc.ExternalRouteOverlapsWithL3PIpPool(
+                            destination=added_dest, l3p_id=l3p['id'],
+                            es_id=current['id'])
+            # Verify NH in ES pool
+            added_nexthop = netaddr.IPSet(x[1] for x in added)
+            es_subnet = netaddr.IPSet([current['address_cidr']])
+            if added_nexthop & es_subnet != added_nexthop:
+                raise gp_exc.ExternalRouteNextHopNotInExternalSegment(
+                    cidr=current['address_cidr'])
+
+    def _validate_l3p_es(self, context, current, original=None):
+        if original:
+            added = (set(current['external_segments'].keys()) -
+                     set(original['external_segments'].keys()))
+        else:
+            added = set(current['external_segments'].keys())
+        if added:
+            es_list = self.get_external_segments(context,
+                                                 filters={'id': added})
+            l3p_ipset = netaddr.IPSet([current['ip_pool']])
+            for es in es_list:
+                # Verify no route overlap
+                dest_set = set(x['destination'] for x in
+                               es['external_routes'])
+                dest_set.discard('0.0.0.0/0')
+                dest_set.discard('::/0')
+                if l3p_ipset & netaddr.IPSet(dest_set):
+                    raise gp_exc.ExternalRouteOverlapsWithL3PIpPool(
+                        destination=dest_set, l3p_id=current['id'],
+                        es_id=es['id'])
+                # Verify segment CIDR doesn't overlap with L3P's
+                if l3p_ipset & netaddr.IPSet([es['address_cidr']]):
+                    raise gp_exc.ExternalSegmentSubnetOverlapsWithL3PIpPool(
+                        subnet=es['address_cidr'], l3p_id=current['id'],
+                        es_id=current['id'])
+                # Verify allocated address correctly in subnet
+                for addr in current['external_segments'][es['id']]:
+                    if addr not in netaddr.IPNetwork(es['address_cidr']):
+                        raise gp_exc.InvalidL3PExternalIPAddress(
+                            ip=addr, es_id=es['id'], l3p_id=current['id'],
+                            es_cidr=es['address_cidr'])
 
     def __init__(self):
         self.policy_driver_manager = manager.PolicyDriverManager()
@@ -436,6 +528,7 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
             result = super(GroupPolicyPlugin,
                            self).create_l3_policy(context, l3_policy)
             self._validate_shared_create(context, result, 'l3_policy')
+            self._validate_l3p_es(context, result)
             policy_context = p_context.L3PolicyContext(self, context,
                                                        result)
             self.policy_driver_manager.create_l3_policy_precommit(
@@ -464,6 +557,8 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
                     context, l3_policy_id, l3_policy)
             self._validate_shared_update(context, original_l3_policy,
                                          updated_l3_policy, 'l3_policy')
+            self._validate_l3p_es(context, updated_l3_policy,
+                                  original_l3_policy)
             policy_context = p_context.L3PolicyContext(
                 self, context, updated_l3_policy,
                 original_l3_policy=original_l3_policy)
@@ -766,3 +861,219 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
                 LOG.error(_(
                     "policy_driver_manager.delete_policy_rule_set_postcommit "
                     "failed, deleting policy_rule_set '%s'"), id)
+
+    @log.log
+    def create_external_segment(self, context, external_segment):
+        session = context.session
+        with session.begin(subtransactions=True):
+            result = super(GroupPolicyPlugin,
+                           self).create_external_segment(context,
+                                                         external_segment)
+            self._validate_shared_create(context, result,
+                                         'external_segment')
+            self._validate_routes(context, result)
+            policy_context = p_context.ExternalSegmentContext(
+                self, context, result)
+            (self.policy_driver_manager.
+             create_external_segment_precommit(policy_context))
+
+        try:
+            (self.policy_driver_manager.
+             create_external_segment_postcommit(policy_context))
+        except gp_exc.GroupPolicyDriverError:
+            with excutils.save_and_reraise_exception():
+                LOG.error(_("create_external_segment_postcommit "
+                            "failed, deleting external_segment "
+                            "'%s'"), result['id'])
+                self.delete_external_segment(context, result['id'])
+
+        return result
+
+    @log.log
+    def update_external_segment(self, context, external_segment_id,
+                                external_segment):
+        session = context.session
+        with session.begin(subtransactions=True):
+            original_external_segment = super(
+                GroupPolicyPlugin, self).get_external_segment(
+                    context, external_segment_id)
+            updated_external_segment = super(
+                GroupPolicyPlugin, self).update_external_segment(
+                    context, external_segment_id,
+                    external_segment)
+            self._validate_shared_update(
+                context, original_external_segment,
+                updated_external_segment, 'external_segment')
+            self._validate_routes(context, updated_external_segment,
+                                  original_external_segment)
+            # TODO(ivar): Validate Routes' GW in es subnet
+            policy_context = p_context.ExternalSegmentContext(
+                self, context, updated_external_segment,
+                original_external_segment)
+            (self.policy_driver_manager.
+             update_external_segment_precommit(policy_context))
+
+        self.policy_driver_manager.update_external_segment_postcommit(
+            policy_context)
+        return updated_external_segment
+
+    @log.log
+    def delete_external_segment(self, context, external_segment_id,
+                                check_unused=False):
+        session = context.session
+        with session.begin(subtransactions=True):
+            es = self.get_external_segment(context, external_segment_id)
+            if check_unused and (es['l3_policies'] or es['nat_pools'] or
+                                 es['external_policies']):
+                return False
+            policy_context = p_context.ExternalSegmentContext(
+                self, context, es)
+            (self.policy_driver_manager.
+             delete_external_segment_precommit(policy_context))
+            super(GroupPolicyPlugin, self).delete_external_segment(
+                context, external_segment_id)
+
+        try:
+            (self.policy_driver_manager.
+             delete_external_segment_postcommit(policy_context))
+        except gp_exc.GroupPolicyDriverError:
+            with excutils.save_and_reraise_exception():
+                LOG.error(_("delete_external_segment_postcommit "
+                            "failed, deleting external_segment '%s'"),
+                          external_segment_id)
+        return True
+
+    @log.log
+    def create_external_policy(self, context, external_policy):
+        session = context.session
+        with session.begin(subtransactions=True):
+            result = super(GroupPolicyPlugin,
+                           self).create_external_policy(
+                               context, external_policy)
+            self._validate_shared_create(context, result,
+                                         'external_policy')
+            policy_context = p_context.ExternalPolicyContext(
+                self, context, result)
+            (self.policy_driver_manager.
+             create_external_policy_precommit(policy_context))
+
+        try:
+            (self.policy_driver_manager.
+             create_external_policy_postcommit(policy_context))
+        except gp_exc.GroupPolicyDriverError:
+            with excutils.save_and_reraise_exception():
+                LOG.error(_("create_external_policy_postcommit "
+                            "failed, deleting external_policy "
+                            "'%s'"), result['id'])
+                self.delete_external_policy(context, result['id'])
+
+        return result
+
+    @log.log
+    def update_external_policy(self, context, external_policy_id,
+                               external_policy):
+        session = context.session
+        with session.begin(subtransactions=True):
+            original_external_policy = super(
+                GroupPolicyPlugin, self).get_external_policy(
+                    context, external_policy_id)
+            updated_external_policy = super(
+                GroupPolicyPlugin, self).update_external_policy(
+                    context, external_policy_id,
+                    external_policy)
+            self._validate_shared_update(
+                context, original_external_policy,
+                updated_external_policy, 'external_policy')
+            policy_context = p_context.ExternalPolicyContext(
+                self, context, updated_external_policy,
+                original_external_policy)
+            (self.policy_driver_manager.
+             update_external_policy_precommit(policy_context))
+
+        self.policy_driver_manager.update_external_policy_postcommit(
+            policy_context)
+        return updated_external_policy
+
+    @log.log
+    def delete_external_policy(self, context, external_policy_id,
+                               check_unused=False):
+        session = context.session
+        with session.begin(subtransactions=True):
+            es = self.get_external_policy(context, external_policy_id)
+            policy_context = p_context.ExternalPolicyContext(
+                self, context, es)
+            (self.policy_driver_manager.
+             delete_external_policy_precommit(policy_context))
+            super(GroupPolicyPlugin, self).delete_external_policy(
+                context, external_policy_id)
+
+        try:
+            (self.policy_driver_manager.
+             delete_external_policy_postcommit(policy_context))
+        except gp_exc.GroupPolicyDriverError:
+            with excutils.save_and_reraise_exception():
+                LOG.error(_("delete_external_policy_postcommit "
+                            "failed, deleting external_policy '%s'"),
+                          external_policy_id)
+        return True
+
+    @log.log
+    def create_nat_pool(self, context, nat_pool):
+        session = context.session
+        with session.begin(subtransactions=True):
+            result = super(GroupPolicyPlugin, self).create_nat_pool(
+                context, nat_pool)
+            self._validate_shared_create(context, result, 'nat_pool')
+            policy_context = p_context.NatPoolContext(self, context, result)
+            (self.policy_driver_manager.
+             create_nat_pool_precommit(policy_context))
+
+        try:
+            (self.policy_driver_manager.
+             create_nat_pool_postcommit(policy_context))
+        except gp_exc.GroupPolicyDriverError:
+            with excutils.save_and_reraise_exception():
+                LOG.error(_("create_nat_pool_postcommit failed, deleting "
+                            "nat_pool '%s'"), result['id'])
+                self.delete_nat_pool(context, result['id'])
+
+        return result
+
+    @log.log
+    def update_nat_pool(self, context, nat_pool_id, nat_pool):
+        session = context.session
+        with session.begin(subtransactions=True):
+            original_nat_pool = super(
+                GroupPolicyPlugin, self).get_nat_pool(context, nat_pool_id)
+            updated_nat_pool = super(
+                GroupPolicyPlugin, self).update_nat_pool(context, nat_pool_id,
+                                                         nat_pool)
+            self._validate_shared_update(context, original_nat_pool,
+                                         updated_nat_pool, 'nat_pool')
+            policy_context = p_context.NatPoolContext(
+                self, context, updated_nat_pool, original_nat_pool)
+            (self.policy_driver_manager.
+             update_nat_pool_precommit(policy_context))
+
+        self.policy_driver_manager.update_nat_pool_postcommit(policy_context)
+        return updated_nat_pool
+
+    @log.log
+    def delete_nat_pool(self, context, nat_pool_id, check_unused=False):
+        session = context.session
+        with session.begin(subtransactions=True):
+            es = self.get_nat_pool(context, nat_pool_id)
+            policy_context = p_context.NatPoolContext(self, context, es)
+            (self.policy_driver_manager.delete_nat_pool_precommit(
+                policy_context))
+            super(GroupPolicyPlugin, self).delete_nat_pool(context,
+                                                           nat_pool_id)
+
+        try:
+            (self.policy_driver_manager.
+             delete_nat_pool_postcommit(policy_context))
+        except gp_exc.GroupPolicyDriverError:
+            with excutils.save_and_reraise_exception():
+                LOG.error(_("delete_nat_pool_postcommit failed, deleting "
+                            "nat_pool '%s'"), nat_pool_id)
+        return True
