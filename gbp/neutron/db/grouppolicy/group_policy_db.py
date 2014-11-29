@@ -14,7 +14,6 @@ import sqlalchemy as sa
 from sqlalchemy import orm
 from sqlalchemy.orm import exc
 
-import netaddr as net
 from neutron.api.v2 import attributes as attr
 from neutron.common import log
 from neutron import context
@@ -360,7 +359,8 @@ class ExternalSegment(model_base.BASEV2, BaseSharedGbpResource):
         ESToL3PAssociation, backref='external_segments',
         cascade='all, delete-orphan')
     external_routes = orm.relationship(
-        ExternalRoute, backref='external_segment')
+        ExternalRoute, backref='external_segment',
+        cascade='all, delete-orphan')
 
 
 class ExternalPolicy(model_base.BASEV2, BaseSharedGbpResource):
@@ -726,12 +726,13 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
 
     def _process_segment_ers(self, context, es_db, es):
         if es['external_routes'] is not attr.ATTR_NOT_SPECIFIED:
+            es_db.external_routes = []
             for rt in es['external_routes']:
                 target = ExternalRoute(
                     external_segment_id=es_db.id,
                     destination=rt['destination'],
                     nexthop=rt['nexthop'])
-                context.session.add(target)
+                es_db.external_routes.append(target)
 
     def _set_ess_for_l3p(self, context, l3p_db, es_dict):
         if es_dict is attr.ATTR_NOT_SPECIFIED:
@@ -752,12 +753,7 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
             l3p_db.external_segments = []
             for es in es_in_db:
                 # Create address allocation
-                subnet = net.IPNetwork(es['cidr'])
                 for ip in es_dict[es['id']]:
-                    # Verify IP is correct
-                    if net.IPAddress(ip) not in subnet:
-                        raise gpolicy.InvalidL3PAddressOnExternalSegment(
-                            ip=ip, subnet=str(subnet))
                     assoc = ESToL3PAssociation(
                         external_segment_id=es['id'],
                         l3_policy_id=l3p_db['id'], allocated_address=ip)
