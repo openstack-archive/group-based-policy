@@ -738,6 +738,7 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
                     external_segment_id=es_db.id,
                     destination=rt['destination'],
                     nexthop=rt['nexthop'] or ADDRESS_NOT_SPECIFIED)
+
                 es_db.external_routes.append(target)
 
     def _set_ess_for_l3p(self, context, l3p_db, es_dict):
