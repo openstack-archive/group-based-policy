@@ -103,3 +103,13 @@ class InvalidSharedAttributeUpdate(GroupPolicyBadRequest):
     message = _("Invalid shared attribute update. Shared resource %(id)s is"
                 "referenced by %(rid)s, which is either shared or owned by a "
                 "different tenant.")
+
+
+class ExternalRouteOverlapsWithL3PIpPool(GroupPolicyBadRequest):
+    message = _("Destination %(destination) for ES %(eas_id) overlaps with "
+                "L3P %(l3p_id).")
+
+
+class ExternalRouteNextHopNotInExternalSegment(GroupPolicyBadRequest):
+    message = _("One or more external routes' nexthop don't is not part of"
+                "subnet %(cidr)s.")
