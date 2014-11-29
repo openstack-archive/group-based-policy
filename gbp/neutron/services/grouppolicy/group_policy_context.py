@@ -20,6 +20,21 @@ class GroupPolicyContext(object):
         self._plugin_context = plugin_context
 
 
+class BaseResouceContext(GroupPolicyContext):
+    def __init__(self, plugin, plugin_context, resource, original=None):
+        super(BaseResouceContext, self).__init__(plugin, plugin_context)
+        self._resource = resource
+        self._original = original
+
+    @property
+    def current(self):
+        return self._resource
+
+    @property
+    def original(self):
+        return self._original
+
+
 class PolicyTargetContext(GroupPolicyContext, api.PolicyTargetContext):
 
     def __init__(self, plugin, plugin_context, policy_target,
@@ -211,3 +226,17 @@ class PolicyRuleSetContext(GroupPolicyContext, api.PolicyRuleSetContext):
     @property
     def original(self):
         return self._original_policy_rule_set
+
+
+class ExternalAccessSegmentContext(BaseResouceContext,
+                                   api.ExternalAccessSegmentContext):
+    pass
+
+
+class ExternalAccessPolicyContext(BaseResouceContext,
+                                  api.ExternalAccessPolicyContext):
+    pass
+
+
+class NatPoolContext(BaseResouceContext, api.NatPoolContext):
+    pass

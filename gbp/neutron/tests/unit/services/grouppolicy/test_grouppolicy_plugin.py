@@ -90,8 +90,20 @@ class GroupPolicyPluginTestCase(tgpmdb.GroupPolicyMappingDbTestCase):
         return self.create_policy_rule_set(policy_rules=[pr['id']],
                                     **kwargs)['policy_rule_set']
 
-    def _update_gbp_resource(self, id, type, plural, expected_res_status=None,
-                             **kwargs):
+    def _create_external_access_policy_on_shared(self, **kwargs):
+        eas = self.create_external_access_segment(shared=True)
+        return self.create_external_access_policy(
+            external_access_segments=[eas['external_access_segment']['id']],
+            **kwargs)['external_access_policy']
+
+    def _create_nat_pool_on_shared(self, **kwargs):
+        eas = self.create_external_access_segment(shared=True)
+        return self.create_nat_pool(
+            external_access_segment_id=eas['external_access_segment']['id'],
+            **kwargs)['nat_pool']
+
+    def _update_gbp_resource_full_response(
+            self, id, type, plural, expected_res_status=None, **kwargs):
         data = {type: kwargs}
         # Create PT with bound port
         req = self.new_update_request(plural, data, id, self.fmt)
@@ -101,10 +113,19 @@ class GroupPolicyPluginTestCase(tgpmdb.GroupPolicyMappingDbTestCase):
             self.assertEqual(res.status_int, expected_res_status)
         elif res.status_int >= webob.exc.HTTPClientError.code:
             raise webob.exc.HTTPClientError(code=res.status_int)
-        return self.deserialize(self.fmt, res).get(type)
+        return self.deserialize(self.fmt, res)
+
+    def _update_gbp_resource(self, id, type, plural, expected_res_status=None,
+                             **kwargs):
+        return self._update_gbp_resource_full_response(
+            id, type, plural, expected_res_status=expected_res_status,
+            **kwargs).get(type)
 
 
 class TestL3Policy(GroupPolicyPluginTestCase):
+
+    def _get_eas_dict(self, eas, addr=None):
+        return {eas['external_access_segment']['id']: addr or []}
 
     def test_shared_l3_policy_create(self):
         # Verify default is False
@@ -113,6 +134,30 @@ class TestL3Policy(GroupPolicyPluginTestCase):
         # Verify shared True created without errors
         l3p = self.create_l3_policy(shared=True)
         self.assertEqual(True, l3p['l3_policy']['shared'])
+
+    def test_shared_l3p_create_with_eas(self):
+        def combination(l3p, eas):
+            return {'l3p': l3p, 'eas': eas}
+        allowed = [combination(False, False), combination(True, True),
+                   combination(False, True)]
+        for shared in allowed:
+            eas = self.create_external_access_segment(
+                address_cidr='172.0.0.0/8', shared=shared['eas'])
+            eas_dict = self._get_eas_dict(eas, ['172.0.0.2', '172.0.0.3'])
+            l3p = self.create_l3_policy(
+                external_access_segments=eas_dict, shared=shared['l3p'],
+                expected_res_status=201)['l3_policy']
+            # Verify create successful
+            self.assertEqual(eas_dict, l3p['external_access_segments'])
+
+    def test_shared_l3p_create_with_eas_negative(self):
+        # Not allowed: Unshared EAS with shared L3P
+        eas = self.create_external_access_segment(address_cidr='172.0.0.0/8')
+        eas_dict = self._get_eas_dict(eas, ['172.0.0.2', '172.0.0.3'])
+        res = self.create_l3_policy(external_access_segments=eas_dict,
+                                    shared=True, expected_res_status=400)
+        self.assertEqual('SharedResourceReferenceError',
+                         res['NeutronError']['type'])
 
     def test_shared_l3_policy_update(self):
         l3p = self.create_l3_policy()['l3_policy']
@@ -124,6 +169,36 @@ class TestL3Policy(GroupPolicyPluginTestCase):
         self.create_l2_policy(l3_policy_id=l3p['id'])
         self._update_gbp_resource(l3p['id'], 'l3_policy', 'l3_policies',
                                   expected_res_status=200, shared=False)
+        eas = self.create_external_access_segment(address_cidr='172.0.0.0/8')
+        eas_dict = self._get_eas_dict(eas, ['172.0.0.2', '172.0.0.3'])
+        # Set EAS
+        l3p = self._update_gbp_resource(l3p['id'], 'l3_policy', 'l3_policies',
+                                        expected_res_status=200,
+                                        external_access_segments=eas_dict)
+        self.assertEqual(eas_dict, l3p['external_access_segments'])
+
+        # Share EAS
+        self._update_gbp_resource(
+            eas['external_access_segment']['id'], 'external_access_segment',
+            'external_access_segments', expected_res_status=200, shared=True)
+
+        # Verify sharing/unsharing successful
+        for shared in [True, False]:
+            self._update_gbp_resource(l3p['id'], 'l3_policy', 'l3_policies',
+                                      expected_res_status=200, shared=shared)
+
+        # Remove EAS
+        l3p = self._update_gbp_resource(l3p['id'], 'l3_policy', 'l3_policies',
+                                        expected_res_status=200,
+                                        external_access_segments={})
+        self.assertEqual({}, l3p['external_access_segments'])
+        # Verify EAS update with sharing successful
+        l3p = self._update_gbp_resource(l3p['id'], 'l3_policy', 'l3_policies',
+                                        expected_res_status=200,
+                                        external_access_segments=eas_dict,
+                                        shared=True)
+        # Verify EAS correctly set
+        self.assertEqual(eas_dict, l3p['external_access_segments'])
 
     def test_shared_l3_policy_update_negative(self):
         l3p = self.create_l3_policy(shared=True)['l3_policy']
@@ -139,6 +214,14 @@ class TestL3Policy(GroupPolicyPluginTestCase):
         # private resource
         self._update_gbp_resource(l3p['id'], 'l3_policy', 'l3_policies',
                                   expected_res_status=400, shared=False)
+
+        eas = self.create_external_access_segment(address_cidr='172.0.0.0/8')
+        eas_dict = self._get_eas_dict(eas, ['172.0.0.2', '172.0.0.3'])
+        res = self._update_gbp_resource_full_response(
+            l3p['id'], 'l3_policy', 'l3_policies', expected_res_status=400,
+            external_access_segments=eas_dict, shared=True)
+        self.assertEqual('SharedResourceReferenceError',
+                         res['NeutronError']['type'])
 
 
 class TestL2Policy(GroupPolicyPluginTestCase):
@@ -472,6 +555,155 @@ class TestPolicyTargetGroup(GroupPolicyPluginTestCase):
     def test_ptg_create_among_tenants(self):
         self._create_ptg_on_shared(tenant_id='other',
                                    expected_res_status=201)
+
+
+class TestExternalAccessSegment(GroupPolicyPluginTestCase):
+
+    def test_shared_eas_create(self):
+        # Verify default is False
+        eas = self.create_external_access_segment()
+        self.assertEqual(False, eas['external_access_segment']['shared'])
+        # Verify shared True created without errors
+        eas = self.create_external_access_segment(shared=True)
+        self.assertEqual(True, eas['external_access_segment']['shared'])
+
+    def test_shared_eas_update(self):
+        eas = self.create_external_access_segment()['external_access_segment']
+        for shared in [True, False]:
+            self._update_gbp_resource(
+                eas['id'], 'external_access_segment',
+                'external_access_segments', expected_res_status=200,
+                shared=shared)
+
+
+class TestExternalAccessPolicy(GroupPolicyPluginTestCase):
+
+    def test_shared_eap_create(self):
+        eas = self.create_external_access_segment(
+            shared=True)['external_access_segment']
+        easns = self.create_external_access_segment(
+        )['external_access_segment']
+
+        prs = self._create_policy_rule_set_on_shared(shared=True)
+        prsns = self._create_policy_rule_set_on_shared()
+
+        # Verify non-shared eap providing and consuming shared and non shared
+        # policy_rule_sets
+        eap = self.create_external_access_policy(
+            external_access_segments=[eas['id']], expected_res_status=201)
+        self.assertEqual(False, eap['external_access_policy']['shared'])
+        eap = self.create_external_access_policy(
+            external_access_segments=[eas['id']],
+            provided_policy_rule_sets={prs['id']: '', prsns['id']: ''},
+            consumed_policy_rule_sets={prs['id']: '', prsns['id']: ''},
+            expected_res_status=201)
+        self.assertEqual(False, eap['external_access_policy']['shared'])
+
+        # Verify shared True created without errors by providing/consuming
+        # shared policy_rule_sets
+        eap = self.create_external_access_policy(
+            external_access_segments=[eas['id']], shared=True,
+            expected_res_status=201)
+        self.assertEqual(True, eap['external_access_policy']['shared'])
+        eap = self.create_external_access_policy(
+            external_access_segments=[eas['id']],
+            provided_policy_rule_sets={prs['id']: ''},
+            consumed_policy_rule_sets={prs['id']: ''}, shared=True,
+            expected_res_status=201)
+        self.assertEqual(True, eap['external_access_policy']['shared'])
+
+        # Verify not shared created without error on not shared eas
+        self.create_external_access_policy(
+            external_access_segments=[easns['id']], expected_res_status=201)
+
+    def test_shared_eap_update(self):
+        eap = self._create_external_access_policy_on_shared()
+        self._update_gbp_resource(
+            eap['id'], 'external_access_policy', 'external_access_policies',
+            expected_res_status=200, shared=True)
+        self._update_gbp_resource(
+            eap['id'], 'external_access_policy', 'external_access_policies',
+            expected_res_status=200, shared=False)
+
+    def test_shared_eap_create_negative(self):
+        eas = self.create_external_access_segment()['external_access_segment']
+        prs = self._create_policy_rule_set_on_shared()
+        # Verify shared EAP fails on non-shared eas
+        res = self.create_external_access_policy(
+            external_access_segments=[eas['id']], shared=True,
+            expected_res_status=400)
+        self.assertEqual('SharedResourceReferenceError',
+                         res['NeutronError']['type'])
+        # Verify shared EAP fails to provide/consume non shared
+        # policy_rule_sets
+        res = self.create_external_access_policy(
+            shared=True, provided_policy_rule_sets={prs['id']: ''},
+            consumed_policy_rule_sets={prs['id']: ''},
+            expected_res_status=400)
+        self.assertEqual('SharedResourceReferenceError',
+                         res['NeutronError']['type'])
+
+    def test_shared_eap_update_negative(self):
+        eap = self._create_external_access_policy_on_shared(shared=True)
+        # Verify update to non shared EAS fails
+        eas = self.create_external_access_segment()['external_access_segment']
+        self._update_gbp_resource(
+            eap['id'], 'external_access_policy', 'external_access_policies',
+            expected_res_status=400, external_access_segments=[eas['id']])
+
+        # Verify update to non shared provided PRS fails
+        prs = self._create_policy_rule_set_on_shared()
+        self._update_gbp_resource(
+            eap['id'], 'external_access_policy', 'external_access_policies',
+            expected_res_status=400,
+            provided_policy_rule_sets={prs['id']: ''})
+        # Verify update to non shared consumed PRS fails
+        self._update_gbp_resource(
+            eap['id'], 'external_access_policy', 'external_access_policies',
+            expected_res_status=400,
+            consumed_policy_rule_sets={prs['id']: ''})
+
+
+class TestNatPool(GroupPolicyPluginTestCase):
+
+    def test_nat_pool_shared_create(self):
+        def combination(np, eas):
+            return {'np': np, 'eas': eas}
+        allowed = [combination(False, False), combination(True, True),
+                   combination(False, True)]
+        for shared in allowed:
+            eas = self.create_external_access_segment(
+                shared=shared['eas'])['external_access_segment']
+            self.create_nat_pool(external_access_segment_id=eas['id'],
+                                 shared=shared['np'], expected_res_status=201)
+
+    def test_nat_pool_shared_create_negative(self):
+        eas = self.create_external_access_segment(
+            shared=False)['external_access_segment']
+        res = self.create_nat_pool(external_access_segment_id=eas['id'],
+                                   shared=True, expected_res_status=400)
+        self.assertEqual('SharedResourceReferenceError',
+                         res['NeutronError']['type'])
+
+    def test_nat_pool_shared_update(self):
+        np = self.create_nat_pool(shared=False)['nat_pool']
+        for shared in [False, True]:
+            eas = self.create_external_access_segment(
+                shared=shared)['external_access_segment']
+            self._update_gbp_resource(
+                np['id'], 'nat_pool', 'nat_pools', expected_res_status=200,
+                external_access_segment_id=eas['id'])
+        np = self.create_nat_pool(shared=True)['nat_pool']
+        eas = self.create_external_access_segment(
+            shared=True)['external_access_segment']
+        # Verify shared NP on shared EAS
+        self._update_gbp_resource(
+            np['id'], 'nat_pool', 'nat_pools', expected_res_status=200,
+            external_access_segment_id=eas['id'])
+        # Verify unshare NP
+        self._update_gbp_resource(
+            np['id'], 'nat_pool', 'nat_pools', expected_res_status=200,
+            shared=False)
 
 
 class TestGroupPolicyPluginGroupResources(

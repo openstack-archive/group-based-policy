@@ -358,6 +358,102 @@ class PolicyRuleSetContext(object):
 
 
 @six.add_metaclass(abc.ABCMeta)
+class ExternalAccessSegmentContext(object):
+
+    """Context passed to policy engine for external_access_segment resource.
+
+    A ExternalAccessSegmentContext instance wraps an external_access_segment
+    resource.
+    It provides helper methods for accessing other relevant information.
+    Results from expensive operations are cached for convenient access.
+    """
+
+    @abc.abstractproperty
+    def current(self):
+        """Return the current state of the external_access_segment.
+
+        Return the current state of the external_access_segment, as defined by
+        GroupPolicyPlugin.create_external_access_segment.
+        """
+        pass
+
+    @abc.abstractproperty
+    def original(self):
+        """Return the original state of the external_access_segment.
+
+        Return the original state of the external_access_segment, prior to a
+        call to update_external_access_segment. Method is only valid within
+        calls to update_external_access_segment_precommit and
+        update_external_access_segment_postcommit.
+        """
+        pass
+
+
+@six.add_metaclass(abc.ABCMeta)
+class ExternalAccessPolicyContext(object):
+
+    """Context passed to policy engine for external_access_policy resource.
+
+    A ExternalAccessPolicyContext instance wraps an external_access_policy
+    resource.
+    It provides helper methods for accessing other relevant information.
+    Results from expensive operations are cached for convenient access.
+    """
+
+    @abc.abstractproperty
+    def current(self):
+        """Return the current state of the external_access_policy.
+
+        Return the current state of the external_access_policy, as defined by
+        GroupPolicyPlugin.create_external_access_policy.
+        """
+        pass
+
+    @abc.abstractproperty
+    def original(self):
+        """Return the original state of the external_access_policy.
+
+        Return the original state of the external_access_policy, prior to a
+        call to update_external_access_policy. Method is only valid within
+        calls to update_external_access_policy_precommit and
+        update_external_access_policy_postcommit.
+        """
+        pass
+
+
+@six.add_metaclass(abc.ABCMeta)
+class NatPoolContext(object):
+
+    """Context passed to policy engine for nat_pool resource.
+
+    A NatPoolContext instance wraps an nat_pool
+    resource.
+    It provides helper methods for accessing other relevant information.
+    Results from expensive operations are cached for convenient access.
+    """
+
+    @abc.abstractproperty
+    def current(self):
+        """Return the current state of the nat_pool.
+
+        Return the current state of the nat_pool, as defined by
+        GroupPolicyPlugin.create_nat_pool.
+        """
+        pass
+
+    @abc.abstractproperty
+    def original(self):
+        """Return the original state of the nat_pool.
+
+        Return the original state of the nat_pool, prior to a
+        call to update_nat_pool. Method is only valid within
+        calls to update_nat_pool_precommit and
+        update_nat_pool_postcommit.
+        """
+        pass
+
+
+@six.add_metaclass(abc.ABCMeta)
 class PolicyDriver(object):
     """Define stable abstract interface for Group Policy drivers.
 
@@ -839,6 +935,162 @@ class PolicyDriver(object):
 
         :param context: NetworkServicePolicyContext instance describing the
         current state of the NetworkServicePolicy, prior to the call to
+        delete it.
+        """
+        pass
+
+    def create_external_access_segment_precommit(self, context):
+        """Allocate resources for a new network service policy.
+
+        :param context: ExternalAccessSegmentContext instance describing the
+        new network service policy.
+        """
+        pass
+
+    def create_external_access_segment_postcommit(self, context):
+        """Create a network service policy.
+
+        :param context: ExternalAccessSegmentContext instance describing the
+        new network service policy.
+        """
+        pass
+
+    def update_external_access_segment_precommit(self, context):
+        """Update resources of a network service policy.
+
+        :param context: ExternalAccessSegmentContext instance describing the
+        new state of the ExternalAccessSegment, as well as the original state
+        prior to the update_external_access_segment call.
+        """
+        pass
+
+    def update_external_access_segment_postcommit(self, context):
+        """Update a network service policy.
+
+        :param context: ExternalAccessSegmentContext instance describing the
+        new state of the ExternalAccessSegment, as well as the original state
+        prior to the update_external_access_segment call.
+        """
+        pass
+
+    def delete_external_access_segment_precommit(self, context):
+        """Delete resources for a network service policy.
+
+        :param context: ExternalAccessSegmentContext instance describing the
+        current state of the ExternalAccessSegment, prior to the call to
+        delete it.
+        """
+        pass
+
+    def delete_external_access_segment_postcommit(self, context):
+        """Delete a network service policy.
+
+        :param context: ExternalAccessSegmentContext instance describing the
+        current state of the ExternalAccessSegment, prior to the call to
+        delete it.
+        """
+        pass
+
+    def create_external_access_policy_precommit(self, context):
+        """Allocate resources for a new network service policy.
+
+        :param context: ExternalAccessPolicyContext instance describing the
+        new network service policy.
+        """
+        pass
+
+    def create_external_access_policy_postcommit(self, context):
+        """Create a network service policy.
+
+        :param context: ExternalAccessPolicyContext instance describing the
+        new network service policy.
+        """
+        pass
+
+    def update_external_access_policy_precommit(self, context):
+        """Update resources of a network service policy.
+
+        :param context: ExternalAccessPolicyContext instance describing the
+        new state of the ExternalAccessPolicy, as well as the original state
+        prior to the update_external_access_policy call.
+        """
+        pass
+
+    def update_external_access_policy_postcommit(self, context):
+        """Update a network service policy.
+
+        :param context: ExternalAccessPolicyContext instance describing the
+        new state of the ExternalAccessPolicy, as well as the original state
+        prior to the update_external_access_policy call.
+        """
+        pass
+
+    def delete_external_access_policy_precommit(self, context):
+        """Delete resources for a network service policy.
+
+        :param context: ExternalAccessPolicyContext instance describing the
+        current state of the ExternalAccessPolicy, prior to the call to
+        delete it.
+        """
+        pass
+
+    def delete_external_access_policy_postcommit(self, context):
+        """Delete a network service policy.
+
+        :param context: ExternalAccessPolicyContext instance describing the
+        current state of the ExternalAccessPolicy, prior to the call to
+        delete it.
+        """
+        pass
+
+    def create_nat_pool_precommit(self, context):
+        """Allocate resources for a new network service policy.
+
+        :param context: NatPoolContext instance describing the
+        new network service policy.
+        """
+        pass
+
+    def create_nat_pool_postcommit(self, context):
+        """Create a network service policy.
+
+        :param context: NatPoolContext instance describing the
+        new network service policy.
+        """
+        pass
+
+    def update_nat_pool_precommit(self, context):
+        """Update resources of a network service policy.
+
+        :param context: NatPoolContext instance describing the
+        new state of the NatPool, as well as the original state
+        prior to the update_nat_pool call.
+        """
+        pass
+
+    def update_nat_pool_postcommit(self, context):
+        """Update a network service policy.
+
+        :param context: NatPoolContext instance describing the
+        new state of the NatPool, as well as the original state
+        prior to the update_nat_pool call.
+        """
+        pass
+
+    def delete_nat_pool_precommit(self, context):
+        """Delete resources for a network service policy.
+
+        :param context: NatPoolContext instance describing the
+        current state of the NatPool, prior to the call to
+        delete it.
+        """
+        pass
+
+    def delete_nat_pool_postcommit(self, context):
+        """Delete a network service policy.
+
+        :param context: NatPoolContext instance describing the
+        current state of the NatPool, prior to the call to
         delete it.
         """
         pass

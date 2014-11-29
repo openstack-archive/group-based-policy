@@ -45,7 +45,8 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
     # <attribute> is the field on the <to_check> dictionary that can be used
     # to retrieve the UUID/s of the specific object <type>
 
-    usage_graph = {'l3_policy': {},
+    usage_graph = {'l3_policy': {'external_access_segments':
+                                 'external_access_segment'},
                    'l2_policy': {'l3_policy_id': 'l3_policy'},
                    'policy_target_group': {
                        'network_service_policy_id': 'network_service_policy',
@@ -61,6 +62,13 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
                    'policy_rule_set': {
                        'parent_id': 'policy_rule_set',
                        'policy_rules': 'policy_rule'},
+                   'external_access_segment': {},
+                   'external_access_policy': {
+                       'external_access_segments': 'external_access_segment',
+                       'provided_policy_rule_sets': 'policy_rule_set',
+                       'consumed_policy_rule_sets': 'policy_rule_set'},
+                   'nat_pool': {'external_access_segment_id':
+                                'external_access_segment'}
                    }
     _plurals = None
 
@@ -130,6 +138,10 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
             context, obj, self.get_policy_target_groups, 'id',
             obj['providing_policy_target_groups'] +
             obj['consuming_policy_target_groups'])
+        self._check_shared_or_different_tenant(
+            context, obj, self.get_external_access_policies, 'id',
+            obj['providing_external_access_policies'] +
+            obj['consuming_external_access_policies'])
 
     def _validate_policy_classifier_unshare(self, context, obj):
         self._check_shared_or_different_tenant(
@@ -144,6 +156,21 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
         r_ids = self._get_policy_action_rules(context, obj['id'])
         self._check_shared_or_different_tenant(
             context, obj, self.get_policy_rules, 'id', r_ids)
+
+    def _validate_external_access_segment_unshare(self, context, obj):
+        self._check_shared_or_different_tenant(
+            context, obj, self.get_l3_policies, 'id', obj['l3_policies'])
+        self._check_shared_or_different_tenant(
+            context, obj, self.get_external_access_policies, 'id',
+            obj['external_access_policies'])
+        self._check_shared_or_different_tenant(
+            context, obj, self.get_nat_pools, 'external_access_segment_id')
+
+    def _validate_external_access_policy_unshare(self, context, obj):
+        pass
+
+    def _validate_nat_pool_unshare(self, context, obj):
+        pass
 
     def __init__(self):
         self.policy_driver_manager = manager.PolicyDriverManager()
@@ -766,3 +793,220 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
                 LOG.error(_(
                     "policy_driver_manager.delete_policy_rule_set_postcommit "
                     "failed, deleting policy_rule_set '%s'"), id)
+
+    @log.log
+    def create_external_access_segment(self, context, external_access_segment):
+        session = context.session
+        with session.begin(subtransactions=True):
+            result = super(GroupPolicyPlugin,
+                           self).create_external_access_segment(
+                               context, external_access_segment)
+            self._validate_shared_create(context, result,
+                                         'external_access_segment')
+            policy_context = p_context.ExternalAccessSegmentContext(
+                self, context, result)
+            (self.policy_driver_manager.
+             create_external_access_segment_precommit(policy_context))
+
+        try:
+            (self.policy_driver_manager.
+             create_external_access_segment_postcommit(policy_context))
+        except gp_exc.GroupPolicyDriverError:
+            with excutils.save_and_reraise_exception():
+                LOG.error(_("create_external_access_segment_postcommit "
+                            "failed, deleting external_access_segment "
+                            "'%s'"), result['id'])
+                self.delete_external_access_segment(context, result['id'])
+
+        return result
+
+    @log.log
+    def update_external_access_segment(self, context,
+                                       external_access_segment_id,
+                                       external_access_segment):
+        session = context.session
+        with session.begin(subtransactions=True):
+            original_external_access_segment = super(
+                GroupPolicyPlugin, self).get_external_access_segment(
+                    context, external_access_segment_id)
+            updated_external_access_segment = super(
+                GroupPolicyPlugin, self).update_external_access_segment(
+                    context, external_access_segment_id,
+                    external_access_segment)
+            self._validate_shared_update(
+                context, original_external_access_segment,
+                updated_external_access_segment, 'external_access_segment')
+            policy_context = p_context.ExternalAccessSegmentContext(
+                self, context, updated_external_access_segment,
+                original_external_access_segment)
+            (self.policy_driver_manager.
+             update_external_access_segment_precommit(policy_context))
+
+        self.policy_driver_manager.update_external_access_segment_postcommit(
+            policy_context)
+        return updated_external_access_segment
+
+    @log.log
+    def delete_external_access_segment(self, context,
+                                       external_access_segment_id,
+                                       check_unused=False):
+        session = context.session
+        with session.begin(subtransactions=True):
+            eas = self.get_external_access_segment(context,
+                                                   external_access_segment_id)
+            if check_unused and (eas['l3_policies'] or eas['nat_pools'] or
+                                 eas['external_access_policies']):
+                return False
+            policy_context = p_context.ExternalAccessSegmentContext(
+                self, context, eas)
+            (self.policy_driver_manager.
+             delete_external_access_segment_precommit(policy_context))
+            super(GroupPolicyPlugin, self).delete_external_access_segment(
+                context, external_access_segment_id)
+
+        try:
+            (self.policy_driver_manager.
+             delete_external_access_segment_postcommit(policy_context))
+        except gp_exc.GroupPolicyDriverError:
+            with excutils.save_and_reraise_exception():
+                LOG.error(_("delete_external_access_segment_postcommit "
+                            "failed, deleting external_access_segment '%s'"),
+                          external_access_segment_id)
+        return True
+
+    @log.log
+    def create_external_access_policy(self, context, external_access_policy):
+        session = context.session
+        with session.begin(subtransactions=True):
+            result = super(GroupPolicyPlugin,
+                           self).create_external_access_policy(
+                               context, external_access_policy)
+            self._validate_shared_create(context, result,
+                                         'external_access_policy')
+            policy_context = p_context.ExternalAccessPolicyContext(
+                self, context, result)
+            (self.policy_driver_manager.
+             create_external_access_policy_precommit(policy_context))
+
+        try:
+            (self.policy_driver_manager.
+             create_external_access_policy_postcommit(policy_context))
+        except gp_exc.GroupPolicyDriverError:
+            with excutils.save_and_reraise_exception():
+                LOG.error(_("create_external_access_policy_postcommit "
+                            "failed, deleting external_access_policy "
+                            "'%s'"), result['id'])
+                self.delete_external_access_policy(context, result['id'])
+
+        return result
+
+    @log.log
+    def update_external_access_policy(self, context,
+                                      external_access_policy_id,
+                                      external_access_policy):
+        session = context.session
+        with session.begin(subtransactions=True):
+            original_external_access_policy = super(
+                GroupPolicyPlugin, self).get_external_access_policy(
+                    context, external_access_policy_id)
+            updated_external_access_policy = super(
+                GroupPolicyPlugin, self).update_external_access_policy(
+                    context, external_access_policy_id,
+                    external_access_policy)
+            self._validate_shared_update(
+                context, original_external_access_policy,
+                updated_external_access_policy, 'external_access_policy')
+            policy_context = p_context.ExternalAccessPolicyContext(
+                self, context, updated_external_access_policy,
+                original_external_access_policy)
+            (self.policy_driver_manager.
+             update_external_access_policy_precommit(policy_context))
+
+        self.policy_driver_manager.update_external_access_policy_postcommit(
+            policy_context)
+        return updated_external_access_policy
+
+    @log.log
+    def delete_external_access_policy(self, context, external_access_policy_id,
+                                      check_unused=False):
+        session = context.session
+        with session.begin(subtransactions=True):
+            eas = self.get_external_access_policy(context,
+                                                  external_access_policy_id)
+            policy_context = p_context.ExternalAccessPolicyContext(
+                self, context, eas)
+            (self.policy_driver_manager.
+             delete_external_access_policy_precommit(policy_context))
+            super(GroupPolicyPlugin, self).delete_external_access_policy(
+                context, external_access_policy_id)
+
+        try:
+            (self.policy_driver_manager.
+             delete_external_access_policy_postcommit(policy_context))
+        except gp_exc.GroupPolicyDriverError:
+            with excutils.save_and_reraise_exception():
+                LOG.error(_("delete_external_access_policy_postcommit "
+                            "failed, deleting external_access_policy '%s'"),
+                          external_access_policy_id)
+        return True
+
+    @log.log
+    def create_nat_pool(self, context, nat_pool):
+        session = context.session
+        with session.begin(subtransactions=True):
+            result = super(GroupPolicyPlugin, self).create_nat_pool(
+                context, nat_pool)
+            self._validate_shared_create(context, result, 'nat_pool')
+            policy_context = p_context.NatPoolContext(self, context, result)
+            (self.policy_driver_manager.
+             create_nat_pool_precommit(policy_context))
+
+        try:
+            (self.policy_driver_manager.
+             create_nat_pool_postcommit(policy_context))
+        except gp_exc.GroupPolicyDriverError:
+            with excutils.save_and_reraise_exception():
+                LOG.error(_("create_nat_pool_postcommit failed, deleting "
+                            "nat_pool '%s'"), result['id'])
+                self.delete_nat_pool(context, result['id'])
+
+        return result
+
+    @log.log
+    def update_nat_pool(self, context, nat_pool_id, nat_pool):
+        session = context.session
+        with session.begin(subtransactions=True):
+            original_nat_pool = super(
+                GroupPolicyPlugin, self).get_nat_pool(context, nat_pool_id)
+            updated_nat_pool = super(
+                GroupPolicyPlugin, self).update_nat_pool(context, nat_pool_id,
+                                                         nat_pool)
+            self._validate_shared_update(context, original_nat_pool,
+                                         updated_nat_pool, 'nat_pool')
+            policy_context = p_context.NatPoolContext(
+                self, context, updated_nat_pool, original_nat_pool)
+            (self.policy_driver_manager.
+             update_nat_pool_precommit(policy_context))
+
+        self.policy_driver_manager.update_nat_pool_postcommit(policy_context)
+        return updated_nat_pool
+
+    @log.log
+    def delete_nat_pool(self, context, nat_pool_id, check_unused=False):
+        session = context.session
+        with session.begin(subtransactions=True):
+            eas = self.get_nat_pool(context, nat_pool_id)
+            policy_context = p_context.NatPoolContext(self, context, eas)
+            (self.policy_driver_manager.delete_nat_pool_precommit(
+                policy_context))
+            super(GroupPolicyPlugin, self).delete_nat_pool(context,
+                                                           nat_pool_id)
+
+        try:
+            (self.policy_driver_manager.
+             delete_nat_pool_postcommit(policy_context))
+        except gp_exc.GroupPolicyDriverError:
+            with excutils.save_and_reraise_exception():
+                LOG.error(_("delete_nat_pool_postcommit failed, deleting "
+                            "nat_pool '%s'"), nat_pool_id)
+        return True

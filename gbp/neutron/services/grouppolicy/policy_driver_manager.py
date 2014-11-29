@@ -310,3 +310,70 @@ class PolicyDriverManager(stevedore.named.NamedExtensionManager):
     def delete_policy_rule_set_postcommit(self, context):
         self._call_on_drivers("delete_policy_rule_set_postcommit", context,
                               continue_on_failure=True)
+
+    def create_external_access_segment_precommit(self, context):
+        self._call_on_drivers("create_external_access_segment_precommit",
+                              context)
+
+    def create_external_access_segment_postcommit(self, context):
+        self._call_on_drivers("create_external_access_segment_postcommit",
+                              context)
+
+    def update_external_access_segment_precommit(self, context):
+        self._call_on_drivers("update_external_access_segment_precommit",
+                              context)
+
+    def update_external_access_segment_postcommit(self, context):
+        self._call_on_drivers("update_external_access_segment_postcommit",
+                              context)
+
+    def delete_external_access_segment_precommit(self, context):
+        self._call_on_drivers("delete_external_access_segment_precommit",
+                              context)
+
+    def delete_external_access_segment_postcommit(self, context):
+        self._call_on_drivers("delete_external_access_segment_postcommit",
+                              context, continue_on_failure=True)
+
+    def create_external_access_policy_precommit(self, context):
+        self._call_on_drivers("create_external_access_policy_precommit",
+                              context)
+
+    def create_external_access_policy_postcommit(self, context):
+        self._call_on_drivers("create_external_access_policy_postcommit",
+                              context)
+
+    def update_external_access_policy_precommit(self, context):
+        self._call_on_drivers("update_external_access_policy_precommit",
+                              context)
+
+    def update_external_access_policy_postcommit(self, context):
+        self._call_on_drivers("update_external_access_policy_postcommit",
+                              context)
+
+    def delete_external_access_policy_precommit(self, context):
+        self._call_on_drivers("delete_external_access_policy_precommit",
+                              context)
+
+    def delete_external_access_policy_postcommit(self, context):
+        self._call_on_drivers("delete_external_access_policy_postcommit",
+                              context, continue_on_failure=True)
+
+    def create_nat_pool_precommit(self, context):
+        self._call_on_drivers("create_nat_pool_precommit", context)
+
+    def create_nat_pool_postcommit(self, context):
+        self._call_on_drivers("create_nat_pool_postcommit", context)
+
+    def update_nat_pool_precommit(self, context):
+        self._call_on_drivers("update_nat_pool_precommit", context)
+
+    def update_nat_pool_postcommit(self, context):
+        self._call_on_drivers("update_nat_pool_postcommit", context)
+
+    def delete_nat_pool_precommit(self, context):
+        self._call_on_drivers("delete_nat_pool_precommit", context)
+
+    def delete_nat_pool_postcommit(self, context):
+        self._call_on_drivers("delete_nat_pool_postcommit", context,
+                              continue_on_failure=True)
