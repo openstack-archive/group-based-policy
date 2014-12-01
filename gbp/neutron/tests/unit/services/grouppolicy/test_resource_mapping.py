@@ -498,6 +498,23 @@ class TestL3Policy(ResourceMappingTestCase):
             self.assertEqual('L3PolicyRoutersUpdateNotSupported',
                              data['NeutronError']['type'])
 
+    def test_overlapping_pools_per_tenant(self):
+        # Verify overlaps are ok on different tenant
+        ip_pool = '192.168.0.0/16'
+        self.create_l3_policy(ip_pool=ip_pool, tenant_id='Tweedledum',
+                              expected_res_status=201)
+        self.create_l3_policy(ip_pool=ip_pool, tenant_id='Tweedledee',
+                              expected_res_status=201)
+        # Verify overlap fails on same tenant
+        super_ip_pool = '192.160.0.0/8'
+        sub_ip_pool = '192.168.10.0/24'
+        for ip_pool in sub_ip_pool, super_ip_pool:
+            res = self.create_l3_policy(
+                ip_pool=ip_pool, tenant_id='Tweedledum',
+                expected_res_status=400)
+            self.assertEqual('OverlappingIPPoolsInSameTenantNotAllowed',
+                             res['NeutronError']['type'])
+
 
 class NotificationTest(ResourceMappingTestCase):
 

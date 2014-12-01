@@ -375,8 +375,17 @@ class ResourceMappingDriver(api.PolicyDriver):
 
     @log.log
     def create_l3_policy_precommit(self, context):
-        if len(context.current['routers']) > 1:
+        curr = context.current
+        if len(curr['routers']) > 1:
             raise exc.L3PolicyMultipleRoutersNotSupported()
+        # Validate non overlapping IPs in the same tenant
+        l3ps = context._plugin.get_l3_policies(
+            context._plugin_context, {'tenant_id': [curr['tenant_id']]})
+        subnets = [x['ip_pool'] for x in l3ps if x['id'] != curr['id']]
+        current_set = netaddr.IPSet(subnets)
+        if netaddr.IPSet([curr['ip_pool']]) & current_set:
+            raise exc.OverlappingIPPoolsInSameTenantNotAllowed(
+                ip_pool=curr['ip_pool'], overlapping_pools=subnets)
 
     @log.log
     def create_l3_policy_postcommit(self, context):
