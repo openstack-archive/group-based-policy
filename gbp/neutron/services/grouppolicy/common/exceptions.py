@@ -73,3 +73,8 @@ class InvalidPortForPTG(GroupPolicyBadRequest):
     message = _("Subnet %(port_subnet_id)s of port %(port_id)s does not "
             "match subnet %(ptg_subnet_id)s of Policy Target Group "
             "%(policy_target_group_id)s.")
+
+
+class OverlappingL3PPoolsInSameTenantNotAllowed(GroupPolicyBadRequest):
+    message = _("Subnet %(ip_pool)s overlaps with one of the existing L3P "
+                "for the same tenant %(subnets)s.")
