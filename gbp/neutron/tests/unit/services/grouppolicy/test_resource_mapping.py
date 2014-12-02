@@ -52,6 +52,9 @@ class ResourceMappingTestCase(
         config.cfg.CONF.set_override('policy_drivers',
                                      ['implicit_policy', 'resource_mapping'],
                                      group='group_policy')
+        config.cfg.CONF.set_override('servicechain_drivers',
+                                     ['dummy'],
+                                     group='servicechain')
         config.cfg.CONF.set_override('allow_overlapping_ips', True)
         super(ResourceMappingTestCase, self).setUp(core_plugin=CORE_PLUGIN)
         self.__plugin = manager.NeutronManager.get_plugin()
@@ -908,6 +911,87 @@ class TestPolicyRuleSet(ResourceMappingTestCase):
         self.assertEqual(res.status_int, webob.exc.HTTPNoContent.code)
         sc_node_list_req = self.new_list_request(SERVICECHAIN_INSTANCES)
         res = sc_node_list_req.get_response(self.ext_api)
+        sc_instances = self.deserialize(self.fmt, res)
+        self.assertEqual(len(sc_instances['servicechain_instances']), 0)
+
+    def test_action_spec_value_update(self):
+        data = {'servicechain_node': {'service_type': "LOADBALANCER",
+                                      'tenant_id': self._tenant_id,
+                                      'config': "{}"}}
+        scn_req = self.new_create_request(SERVICECHAIN_NODES, data, self.fmt)
+        node = self.deserialize(self.fmt, scn_req.get_response(self.ext_api))
+        scn_id = node['servicechain_node']['id']
+        data = {'servicechain_spec': {'tenant_id': self._tenant_id,
+                                      'nodes': [scn_id]}}
+        scs_req = self.new_create_request(SERVICECHAIN_SPECS, data, self.fmt)
+        spec = self.deserialize(self.fmt, scs_req.get_response(self.ext_api))
+        scs_id = spec['servicechain_spec']['id']
+        classifier = self.create_policy_classifier(
+            name="class1", protocol="tcp", direction="in", port_range="20:90")
+        classifier_id = classifier['policy_classifier']['id']
+        action = self.create_policy_action(
+            name="action1", action_type=gconst.GP_ACTION_REDIRECT,
+            action_value=scs_id)
+        action_id = action['policy_action']['id']
+        action_id_list = [action_id]
+        policy_rule = self.create_policy_rule(
+            name='pr1', policy_classifier_id=classifier_id,
+            policy_actions=action_id_list)
+        policy_rule_id = policy_rule['policy_rule']['id']
+        policy_rule_list = [policy_rule_id]
+        policy_rule_set = self.create_policy_rule_set(
+            name="c1", policy_rules=policy_rule_list)
+        policy_rule_set_id = policy_rule_set['policy_rule_set']['id']
+        provider_ptg = self.create_policy_target_group(
+            name="ptg1", provided_policy_rule_sets={policy_rule_set_id: None})
+        provider_ptg_id = provider_ptg['policy_target_group']['id']
+        consumer_ptg = self.create_policy_target_group(
+            name="ptg2",
+            consumed_policy_rule_sets={policy_rule_set_id: None})
+        consumer_ptg_id = consumer_ptg['policy_target_group']['id']
+        sc_instance_list_req = self.new_list_request(SERVICECHAIN_INSTANCES)
+        res = sc_instance_list_req.get_response(self.ext_api)
+        sc_instances = self.deserialize(self.fmt, res)
+        # We should have one service chain instance created now
+        self.assertEqual(len(sc_instances['servicechain_instances']), 1)
+        sc_instance = sc_instances['servicechain_instances'][0]
+        self.assertEqual(sc_instance['provider_ptg_id'], provider_ptg_id)
+        self.assertEqual(sc_instance['consumer_ptg_id'], consumer_ptg_id)
+        self.assertEqual(scs_id, sc_instance['servicechain_spec'])
+
+        data = {'servicechain_node': {'service_type': "FIREWALL",
+                                      'tenant_id': self._tenant_id,
+                                      'config': "{}"}}
+        scn_req = self.new_create_request(SERVICECHAIN_NODES, data, self.fmt)
+        new_node = self.deserialize(
+                    self.fmt, scn_req.get_response(self.ext_api))
+        new_scn_id = new_node['servicechain_node']['id']
+        data = {'servicechain_spec': {'tenant_id': self._tenant_id,
+                                      'nodes': [new_scn_id]}}
+        scs_req = self.new_create_request(SERVICECHAIN_SPECS, data, self.fmt)
+        new_spec = self.deserialize(
+                    self.fmt, scs_req.get_response(self.ext_api))
+        new_scs_id = new_spec['servicechain_spec']['id']
+        action = {'policy_action': {'action_value': new_scs_id}}
+        req = self.new_update_request('policy_actions', action, action_id)
+        action = self.deserialize(self.fmt,
+                                  req.get_response(self.ext_api))
+
+        sc_instance_list_req = self.new_list_request(SERVICECHAIN_INSTANCES)
+        res = sc_instance_list_req.get_response(self.ext_api)
+        new_sc_instances = self.deserialize(self.fmt, res)
+        # We should have one service chain instance created now
+        self.assertEqual(len(new_sc_instances['servicechain_instances']), 1)
+        new_sc_instance = new_sc_instances['servicechain_instances'][0]
+        self.assertEqual(sc_instance['id'], new_sc_instance['id'])
+        self.assertEqual(new_scs_id, new_sc_instance['servicechain_spec'])
+
+        req = self.new_delete_request(
+                'policy_target_groups', consumer_ptg_id)
+        res = req.get_response(self.ext_api)
+        self.assertEqual(res.status_int, webob.exc.HTTPNoContent.code)
+        sc_instance_list_req = self.new_list_request(SERVICECHAIN_INSTANCES)
+        res = sc_instance_list_req.get_response(self.ext_api)
         sc_instances = self.deserialize(self.fmt, res)
         self.assertEqual(len(sc_instances['servicechain_instances']), 0)
 
