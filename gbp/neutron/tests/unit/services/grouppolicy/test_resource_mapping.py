@@ -50,6 +50,9 @@ class ResourceMappingTestCase(
         config.cfg.CONF.set_override('policy_drivers',
                                      ['implicit_policy', 'resource_mapping'],
                                      group='group_policy')
+        config.cfg.CONF.set_override('servicechain_drivers',
+                                     ['dummy'],
+                                     group='servicechain')
         config.cfg.CONF.set_override('allow_overlapping_ips', True)
         super(ResourceMappingTestCase, self).setUp(core_plugin=CORE_PLUGIN)
 
@@ -692,42 +695,114 @@ class TestPolicyRuleSet(ResourceMappingTestCase):
         policy_rule_set_id = policy_rule_set['policy_rule_set']['id']
         self.create_policy_target_group(
             name="ptg1", provided_policy_rule_sets={policy_rule_set_id: None})
-        create_chain_instance = mock.patch.object(
-            servicechain_plugin.ServiceChainPlugin,
-            'create_servicechain_instance')
-        create_chain_instance = create_chain_instance.start()
-        chain_instance_id = uuidutils.generate_uuid()
-        create_chain_instance.return_value = {'id': chain_instance_id}
-        # TODO(Magesh):Add tests which verifies that provide/consumer PTGs
-        # are set correctly for the SCI
-        with mock.patch.object(
-                resource_mapping.ResourceMappingDriver,
-                '_set_rule_servicechain_instance_mapping') as set_rule:
-            with mock.patch.object(servicechain_db.ServiceChainDbPlugin,
-                                   'get_servicechain_spec') as sc_spec_get:
-                sc_spec_get.return_value = {'servicechain_spec': {}}
-                consumer_ptg = self.create_policy_target_group(
-                    name="ptg2",
-                    consumed_policy_rule_sets={policy_rule_set_id: None})
-                consumer_ptg_id = consumer_ptg['policy_target_group']['id']
-                set_rule.assert_called_once_with(mock.ANY, policy_rule_id,
-                                                 chain_instance_id)
-        with mock.patch.object(servicechain_plugin.ServiceChainPlugin,
-                               'delete_servicechain_instance'):
-            with mock.patch.object(
-                resource_mapping.ResourceMappingDriver,
-                '_get_rule_servicechain_mapping') as get_rule:
+
+        # We are mocking the whole service chain implementation
+        # No valid Service chain node or spec are created
+        with contextlib.nested(
+            mock.patch.object(resource_mapping.ResourceMappingDriver,
+                              '_set_rule_servicechain_instance_mapping'),
+            mock.patch.object(servicechain_db.ServiceChainDbPlugin,
+                              'get_servicechain_spec'),
+            mock.patch.object(servicechain_plugin.ServiceChainPlugin,
+                              'create_servicechain_instance')
+        ) as (set_rule, sc_spec_get, create_chain_instance):
+            sc_spec_get.return_value = {'servicechain_spec': {}}
+            consumer_ptg = self.create_policy_target_group(
+                name="ptg2",
+                consumed_policy_rule_sets={policy_rule_set_id: None})
+            consumer_ptg_id = consumer_ptg['policy_target_group']['id']
+            set_rule.assert_called_once_with(mock.ANY, policy_rule_id,
+                                             mock.ANY)
+            create_chain_instance.assert_called_once_with(mock.ANY, mock.ANY)
+        with contextlib.nested(
+            mock.patch.object(servicechain_plugin.ServiceChainPlugin,
+                              'delete_servicechain_instance'),
+            mock.patch.object(resource_mapping.ResourceMappingDriver,
+                              '_get_rule_servicechain_mapping'),
+            mock.patch.object(servicechain_db.ServiceChainDbPlugin,
+                              'get_servicechain_instance'),
+        ) as (delete_chain, _, _):
+            req = self.new_delete_request(
+                'policy_target_groups', consumer_ptg_id)
+            res = req.get_response(self.ext_api)
+            self.assertEqual(res.status_int, webob.exc.HTTPNoContent.code)
+            delete_chain.assert_called_once_with(mock.ANY, mock.ANY)
+
+    def test_action_spec_value_update(self):
+        classifier = self.create_policy_classifier(
+            name="class1", protocol="tcp", direction="in", port_range="20:90")
+        classifier_id = classifier['policy_classifier']['id']
+        action = self.create_policy_action(
+            name="action1", action_type=gconst.GP_ACTION_REDIRECT,
+            action_value=uuidutils.generate_uuid())
+        action_id = action['policy_action']['id']
+        action_id_list = [action_id]
+        policy_rule = self.create_policy_rule(
+            name='pr1', policy_classifier_id=classifier_id,
+            policy_actions=action_id_list)
+        policy_rule_id = policy_rule['policy_rule']['id']
+        policy_rule_list = [policy_rule_id]
+        policy_rule_set = self.create_policy_rule_set(
+            name="c1", policy_rules=policy_rule_list)
+        policy_rule_set_id = policy_rule_set['policy_rule_set']['id']
+        self.create_policy_target_group(
+            name="ptg1", provided_policy_rule_sets={policy_rule_set_id: None})
+
+        # We are mocking the whole service chain implementation. No valid
+        # Service chain node or spec are actually created. From RM driver
+        # testing point, only test if the service chain methods are called
+        with contextlib.nested(
+            mock.patch.object(resource_mapping.ResourceMappingDriver,
+                              '_set_rule_servicechain_instance_mapping'),
+            mock.patch.object(servicechain_db.ServiceChainDbPlugin,
+                              'get_servicechain_spec'),
+            mock.patch.object(servicechain_plugin.ServiceChainPlugin,
+                              'create_servicechain_instance'),
+            mock.patch.object(servicechain_plugin.ServiceChainPlugin,
+                              'update_servicechain_instance'),
+        ) as (set_rule, sc_spec_get, create_chain_instance, update_chain):
+            sc_spec_get.return_value = {'servicechain_spec': {}}
+            chain_instance_id = uuidutils.generate_uuid()
+            create_chain_instance.return_value = {'id': chain_instance_id}
+            consumer_ptg = self.create_policy_target_group(
+                name="ptg2",
+                consumed_policy_rule_sets={policy_rule_set_id: None})
+            consumer_ptg_id = consumer_ptg['policy_target_group']['id']
+            set_rule.assert_called_once_with(mock.ANY, policy_rule_id,
+                                             mock.ANY)
+            create_chain_instance.assert_called_once_with(mock.ANY, mock.ANY)
+
+            with contextlib.nested(
+                mock.patch.object(servicechain_db.ServiceChainDbPlugin,
+                              'get_servicechain_instance'),
+                mock.patch.object(resource_mapping.ResourceMappingDriver,
+                              '_get_rule_servicechain_mapping'),
+            ) as (get_servicechain_instance, get_rule):
+                get_servicechain_instance.return_value = {
+                                                'id': chain_instance_id}
                 r_sc_map = resource_mapping.RuleServiceChainInstanceMapping()
                 r_sc_map.rule_id = policy_rule_id
                 r_sc_map.servicechain_instance_id = chain_instance_id
                 get_rule.return_value = r_sc_map
-                get_chain_inst = mock.patch.object(
-                    servicechain_db.ServiceChainDbPlugin,
-                    'get_servicechain_instance')
-                get_chain_inst.start()
-                get_chain_inst.return_value = {
-                    "servicechain_instance": {'id': chain_instance_id}}
-                req = self.new_delete_request(
-                    'policy_target_groups', consumer_ptg_id)
-                res = req.get_response(self.ext_api)
-                self.assertEqual(res.status_int, webob.exc.HTTPNoContent.code)
+                action = {'policy_action': {
+                            'action_value': uuidutils.generate_uuid()}}
+                req = self.new_update_request(
+                            'policy_actions', action, action_id)
+                action = self.deserialize(self.fmt,
+                                          req.get_response(self.ext_api))
+                update_chain.assert_called_once_with(mock.ANY,
+                                                     chain_instance_id,
+                                                     mock.ANY)
+        with contextlib.nested(
+            mock.patch.object(servicechain_plugin.ServiceChainPlugin,
+                              'delete_servicechain_instance'),
+            mock.patch.object(resource_mapping.ResourceMappingDriver,
+                              '_get_rule_servicechain_mapping'),
+            mock.patch.object(servicechain_db.ServiceChainDbPlugin,
+                              'get_servicechain_instance'),
+        ) as (delete_chain, _, _):
+            req = self.new_delete_request(
+                'policy_target_groups', consumer_ptg_id)
+            res = req.get_response(self.ext_api)
+            self.assertEqual(res.status_int, webob.exc.HTTPNoContent.code)
+            delete_chain.assert_called_once_with(mock.ANY, mock.ANY)
