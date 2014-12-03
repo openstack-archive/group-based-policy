@@ -140,6 +140,12 @@ class L3PolicyContext(GroupPolicyContext, api.L3PolicyContext):
             self._plugin_context, self._l3_policy['id'], router_id)
         self._l3_policy['routers'] = routers
 
+    def set_external_fixed_ips(self, external_segment_id, ips):
+        self._l3_policy['external_segments'][external_segment_id] = ips
+        self._plugin._update_ess_for_l3p(self._plugin_context,
+                                         self._l3_policy['id'],
+                                         self._l3_policy['external_segments'])
+
 
 class NetworkServicePolicyContext(
     GroupPolicyContext, api.NetworkServicePolicyContext):
@@ -229,7 +235,11 @@ class PolicyRuleSetContext(GroupPolicyContext, api.PolicyRuleSetContext):
 
 
 class ExternalSegmentContext(BaseResouceContext, api.ExternalSegmentContext):
-    pass
+
+    def add_subnet(self, subnet_id):
+        self._plugin._set_subnet_to_es(self._plugin_context,
+                                       self.current['id'], subnet_id)
+        self.current['subnet_id'] = subnet_id
 
 
 class ExternalPolicyContext(BaseResouceContext, api.ExternalPolicyContext):

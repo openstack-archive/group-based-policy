@@ -35,6 +35,8 @@ class GroupPolicyMappingExtTestCase(tgp.GroupPolicyExtensionTestCase):
             gpm.EXTENDED_ATTRIBUTES_2_0[gp.L2_POLICIES])
         attr_map[gp.L3_POLICIES].update(
             gpm.EXTENDED_ATTRIBUTES_2_0[gp.L3_POLICIES])
+        attr_map[gp.EXTERNAL_SEGMENTS].update(
+            gpm.EXTENDED_ATTRIBUTES_2_0[gp.EXTERNAL_SEGMENTS])
         plural_mappings = {'l2_policy': 'l2_policies',
                            'l3_policy': 'l3_policies',
                            'network_service_policy':
@@ -108,4 +110,16 @@ class GroupPolicyMappingExtTestCase(tgp.GroupPolicyExtensionTestCase):
         attrs = (super(GroupPolicyMappingExtTestCase, self).
                  _get_update_l3_policy_attrs())
         attrs.update({'routers': [tgp._uuid(), tgp._uuid()]})
+        return attrs
+
+    def _get_create_external_segment_default_attrs(self):
+        attrs = (super(GroupPolicyMappingExtTestCase, self).
+                 _get_create_external_segment_default_attrs())
+        attrs.update({'subnet_id': None})
+        return attrs
+
+    def _get_create_external_segment_attrs(self):
+        attrs = (super(GroupPolicyMappingExtTestCase, self).
+                 _get_create_external_segment_attrs())
+        attrs.update({'subnet_id': tgp._uuid()})
         return attrs

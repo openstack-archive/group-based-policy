@@ -12,10 +12,14 @@
 # limitations under the License.
 
 import contextlib
+import itertools
+import netaddr
+
 import mock
 from neutron.api.rpc.agentnotifiers import dhcp_rpc_agent_api
 from neutron.common import constants as cst
 from neutron import context as nctx
+from neutron.extensions import external_net as external_net
 from neutron.extensions import securitygroup as ext_sg
 from neutron import manager
 from neutron.notifiers import nova
@@ -52,6 +56,58 @@ class ResourceMappingTestCase(
                                      group='group_policy')
         config.cfg.CONF.set_override('allow_overlapping_ips', True)
         super(ResourceMappingTestCase, self).setUp(core_plugin=CORE_PLUGIN)
+        res = mock.patch('neutron.db.l3_db.L3_NAT_dbonly_mixin.'
+                         '_check_router_needs_rescheduling').start()
+        res.return_value = None
+
+    def _create_network(self, fmt, name, admin_state_up, **kwargs):
+        """Override the routine for allowing the router:external attribute."""
+        # attributes containing a colon should be passed with
+        # a double underscore
+        new_args = dict(itertools.izip(map(lambda x: x.replace('__', ':'),
+                                           kwargs),
+                                       kwargs.values()))
+        arg_list = new_args.pop('arg_list', ()) + (external_net.EXTERNAL,)
+        return super(ResourceMappingTestCase, self)._create_network(
+            fmt, name, admin_state_up, arg_list=arg_list, **new_args)
+
+    def _get_sg_rule(self, **filters):
+        plugin = manager.NeutronManager.get_plugin()
+        context = nctx.get_admin_context()
+        return plugin.get_security_group_rules(
+            context, filters)
+
+    def _get_prs_mapping(self, prs_id):
+        ctx = nctx.get_admin_context()
+        return (resource_mapping.ResourceMappingDriver.
+                _get_policy_rule_set_sg_mapping(ctx.session, prs_id))
+
+    def _create_ssh_allow_rule(self):
+        return self._create_tcp_allow_rule('22:22')
+
+    def _create_http_allow_rule(self):
+        return self._create_tcp_allow_rule('80:80')
+
+    def _create_tcp_allow_rule(self, port_range):
+        action = self.create_policy_action(
+            action_type='allow')['policy_action']
+        classifier = self.create_policy_classifier(
+            protocol='TCP', port_range=port_range,
+            direction='bi')['policy_classifier']
+        return self.create_policy_rule(
+            policy_classifier_id=classifier['id'],
+            policy_actions=[action['id']])['policy_rule']
+
+    def _calculate_expected_external_cidrs(self, es, l3p_list):
+        external_ipset = netaddr.IPSet([x['destination']
+                                        for x in es['external_routes']])
+        if l3p_list:
+            result = external_ipset - netaddr.IPSet([x['ip_pool']
+                                                     for x in l3p_list])
+        else:
+            result = external_ipset
+
+        return set(str(x) for x in result.iter_cidrs())
 
 
 class TestPolicyTarget(ResourceMappingTestCase):
@@ -408,12 +464,6 @@ class TestPolicyTargetGroup(ResourceMappingTestCase):
                 self.assertIsNone(sg_rule[0]['port_range_max'])
                 self.assertIsNone(sg_rule[0]['port_range_min'])
 
-    def _get_sg_rule(self, **filters):
-        plugin = manager.NeutronManager.get_plugin()
-        context = nctx.get_admin_context()
-        return plugin.get_security_group_rules(
-            context, filters)
-
     def test_shared_ptg_create_negative(self):
         l2p = self.create_l2_policy(shared=True)
         l2p_id = l2p['l2_policy']['id']
@@ -579,6 +629,153 @@ class TestL3Policy(ResourceMappingTestCase):
                 expected_res_status=400)
             self.assertEqual('OverlappingIPPoolsInSameTenantNotAllowed',
                              res['NeutronError']['type'])
+
+    def test_create_l3p_es(self):
+        # Simple test to verify l3p created with 1-N ES
+        with contextlib.nested(
+                 self.network(router__external=True),
+                 self.network(router__external=True)) as (net1, net2):
+            with contextlib.nested(
+                    self.subnet(cidr='10.10.1.0/24', network=net1),
+                    self.subnet(cidr='10.10.2.0/24', network=net2)) as (
+                    sub1, sub2):
+                es1 = self.create_external_segment(
+                    subnet_id=sub1['subnet']['id'])['external_segment']
+                es2 = self.create_external_segment(
+                    subnet_id=sub2['subnet']['id'])['external_segment']
+                external_segments = {es1['id']: []}
+                l3p = self.create_l3_policy(
+                    ip_pool='192.168.0.0/16', expected_res_status=201,
+                    external_segments=external_segments)
+                req = self.new_delete_request('l3_policies',
+                                              l3p['l3_policy']['id'])
+                req.get_response(self.ext_api)
+                external_segments.update({es2['id']: []})
+                res = self.create_l3_policy(
+                    ip_pool='192.168.0.0/16', expected_res_status=400,
+                    external_segments=external_segments)
+                self.assertEqual('MultipleESPerL3PolicyNotSupported',
+                                 res['NeutronError']['type'])
+
+    def test_update_l3p_es(self):
+        # Simple test to verify l3p updated with 1-N ES
+        with contextlib.nested(
+                 self.network(router__external=True),
+                 self.network(router__external=True)) as (net1, net2):
+            with contextlib.nested(
+                    self.subnet(cidr='10.10.1.0/24', network=net1),
+                    self.subnet(cidr='10.10.2.0/24', network=net2)) as (
+                    sub1, sub2):
+                es1 = self.create_external_segment(
+                    subnet_id=sub1['subnet']['id'])['external_segment']
+                es2 = self.create_external_segment(
+                    subnet_id=sub2['subnet']['id'])['external_segment']
+                # None to es1, es1 to es2
+                l3p = self.create_l3_policy(
+                    ip_pool='192.168.0.0/16')['l3_policy']
+                for external_segments in [{es1['id']: []}, {es2['id']: []}]:
+                    self._update_gbp_resource(
+                        l3p['id'], 'l3_policy', 'l3_policies',
+                        expected_res_status=200,
+                        external_segments=external_segments)
+                # es2 to [es1, es2]
+                external_segments = {es2['id']: [], es1['id']: []}
+                res = self._update_gbp_resource_full_response(
+                    l3p['id'], 'l3_policy', 'l3_policies',
+                    expected_res_status=400,
+                    external_segments=external_segments)
+                self.assertEqual('MultipleESPerL3PolicyNotSupported',
+                                 res['NeutronError']['type'])
+
+    def test_es_router_plumbing(self):
+        with contextlib.nested(
+                 self.network(router__external=True),
+                 self.network(router__external=True)) as (net1, net2):
+            with contextlib.nested(
+                    self.subnet(cidr='10.10.1.0/24', network=net1),
+                    self.subnet(cidr='10.10.2.0/24', network=net2)) as (
+                    subnet1, subnet2):
+                subnet1 = subnet1['subnet']
+                subnet2 = subnet2['subnet']
+                es1 = self.create_external_segment(
+                    subnet_id=subnet1['id'])['external_segment']
+                es2 = self.create_external_segment(
+                    subnet_id=subnet2['id'])['external_segment']
+                es_dict = {es1['id']: ['10.10.1.3']}
+                l3p = self.create_l3_policy(
+                    ip_pool='192.168.0.0/16',
+                    external_segments=es_dict)['l3_policy']
+                req = self.new_show_request('routers', l3p['routers'][0],
+                                            fmt=self.fmt)
+                res = self.deserialize(self.fmt, req.get_response(
+                    self.ext_api))['router']
+                self.assertEqual(
+                    subnet1['network_id'],
+                    res['external_gateway_info']['network_id'])
+                # Verify auto assigned addresses propagated to L3P
+                es_dict = {es2['id']: []}
+                l3p = self._update_gbp_resource(
+                    l3p['id'], 'l3_policy', 'l3_policies',
+                    external_segments=es_dict, expected_res_status=200)
+                req = self.new_show_request('routers', l3p['routers'][0],
+                                            fmt=self.fmt)
+                res = self.deserialize(self.fmt, req.get_response(
+                    self.ext_api))['router']
+                self.assertEqual(
+                    subnet2['network_id'],
+                    res['external_gateway_info']['network_id'])
+                self.assertEqual(
+                    [x['ip_address'] for x in
+                     res['external_gateway_info']['external_fixed_ips']],
+                    l3p['external_segments'][es2['id']])
+                # Verify that the implicit assignment is persisted
+                req = self.new_show_request('l3_policies', l3p['id'],
+                                            fmt=self.fmt)
+                l3p = self.deserialize(self.fmt, req.get_response(
+                    self.ext_api))['l3_policy']
+                self.assertEqual(
+                    [x['ip_address'] for x in
+                     res['external_gateway_info']['external_fixed_ips']],
+                    l3p['external_segments'][es2['id']])
+
+    def test_es_routes(self):
+        routes1 = [{'destination': '0.0.0.0/0', 'nexthop': '10.10.1.1'},
+                   {'destination': '172.0.0.0/16', 'nexthop': '10.10.1.1'}]
+        routes2 = [{'destination': '0.0.0.0/0', 'nexthop': '10.10.2.1'},
+                   {'destination': '172.0.0.0/16', 'nexthop': '10.10.2.1'}]
+        with contextlib.nested(
+                 self.network(router__external=True),
+                 self.network(router__external=True)) as (net1, net2):
+            with contextlib.nested(
+                    self.subnet(cidr='10.10.1.0/24', network=net1),
+                    self.subnet(cidr='10.10.2.0/24', network=net2)) as (
+                    sub1, sub2):
+                es1 = self.create_external_segment(
+                    cidr='10.10.1.0/24',
+                    subnet_id=sub1['subnet']['id'],
+                    external_routes=routes1)['external_segment']
+                es2 = self.create_external_segment(
+                    cidr='10.10.2.0/24',
+                    subnet_id=sub2['subnet']['id'],
+                    external_routes=routes2)['external_segment']
+                es_dict = {es1['id']: []}
+                l3p = self.create_l3_policy(
+                    ip_pool='192.168.0.0/16', external_segments=es_dict,
+                    expected_res_status=201)['l3_policy']
+                req = self.new_show_request('routers', l3p['routers'][0],
+                                            fmt=self.fmt)
+                res = self.deserialize(self.fmt,
+                                       req.get_response(self.ext_api))
+                self.assertEqual(routes1, res['router']['routes'])
+                es_dict = {es2['id']: []}
+                self._update_gbp_resource(
+                    l3p['id'], 'l3_policy', 'l3_policies',
+                    external_segments=es_dict, expected_res_status=200)
+                req = self.new_show_request('routers', l3p['routers'][0],
+                                            fmt=self.fmt)
+                res = self.deserialize(self.fmt,
+                                       req.get_response(self.ext_api))
+                self.assertEqual(routes2, res['router']['routes'])
 
 
 class NotificationTest(ResourceMappingTestCase):
@@ -816,3 +1013,299 @@ class TestPolicyRuleSet(ResourceMappingTestCase):
 
     def test_shared_policy_rule_set_create_negative(self):
         self.create_policy_rule_set(shared=True, expected_res_status=400)
+
+    def test_external_rules_set(self):
+        # Define the routes
+        routes = [{'destination': '0.0.0.0/0', 'nexthop': None}]
+        pr = self._create_ssh_allow_rule()
+        prs = self.create_policy_rule_set(
+            policy_rules=[pr['id']])['policy_rule_set']
+        with self.network(router__external=True) as net:
+            with self.subnet(cidr='10.10.1.0/24', network=net) as sub:
+                es = self.create_external_segment(
+                    subnet_id=sub['subnet']['id'],
+                    external_routes=routes)['external_segment']
+                l3p = self.create_l3_policy(
+                    ip_pool='192.168.0.0/16',
+                    external_segments={es['id']: []})['l3_policy']
+                self.create_external_policy(
+                    external_segments=[es['id']],
+                    provided_policy_rule_sets={prs['id']: ''})
+                expected_cidrs = [str(x) for x in (
+                    netaddr.IPSet(['0.0.0.0/0']) -
+                    netaddr.IPSet([l3p['ip_pool']])).iter_cidrs()]
+                mapping = self._get_prs_mapping(prs['id'])
+                # Since EP provides, the consumed SG will have ingress rules
+                # based on the difference between the L3P and the external
+                # world
+                attrs = {'security_group_id': [mapping.consumed_sg_id],
+                         'direction': ['ingress'],
+                         'protocol': ['tcp'],
+                         'port_range_min': [22],
+                         'port_range_max': [22],
+                         'remote_ip_prefix': None}
+                for cidr in expected_cidrs:
+                    attrs['remote_ip_prefix'] = [cidr]
+                    self.assertTrue(self._get_sg_rule(**attrs))
+
+                # Add one rule to the PRS
+                pr2 = self._create_http_allow_rule()
+                self._update_gbp_resource(
+                    prs['id'], 'policy_rule_set', 'policy_rule_sets',
+                    expected_res_status=200,
+                    policy_rules=[pr['id'], pr2['id']])
+                # Verify new rules correctly set
+                attrs = {'security_group_id': [mapping.consumed_sg_id],
+                         'direction': ['ingress'],
+                         'protocol': ['tcp'],
+                         'port_range_min': [80],
+                         'port_range_max': [80],
+                         'remote_ip_prefix': None}
+                for cidr in expected_cidrs:
+                    attrs['remote_ip_prefix'] = [cidr]
+                    self.assertTrue(self._get_sg_rule(**attrs))
+                # Remove all the rules, verify that none exist any more
+                self._update_gbp_resource(prs['id'], 'policy_rule_set',
+                                          'policy_rule_sets',
+                                          expected_res_status=200,
+                                          policy_rules=[])
+                attrs = {'security_group_id': [mapping.consumed_sg_id],
+                         'direction': ['ingress'],
+                         'protocol': ['tcp'],
+                         'port_range_min': [80, 22],
+                         'port_range_max': [80, 22],
+                         'remote_ip_prefix': expected_cidrs}
+                self.assertFalse(self._get_sg_rule(**attrs))
+
+
+class TestExternalSegment(ResourceMappingTestCase):
+
+    def test_implicit_subnet_rejected(self):
+        res = self.create_external_segment(expected_res_status=400)
+        self.assertEqual('ImplicitSubnetNotSupported',
+                         res['NeutronError']['type'])
+
+    def test_explicit_subnet_lifecycle(self):
+
+        with self.network(router__external=True) as net:
+            with self.subnet(cidr='10.10.1.0/24', network=net) as sub:
+                es = self.create_external_segment(
+                    subnet_id=sub['subnet']['id'])['external_segment']
+                subnet_id = es['subnet_id']
+                self.assertIsNotNone(subnet_id)
+                res = self.new_show_request('subnets', subnet_id)
+                subnet = self.deserialize(self.fmt, res.get_response(self.api))
+
+                self.assertEqual(subnet['subnet']['cidr'], es['cidr'])
+                self.assertEqual(subnet['subnet']['ip_version'],
+                                 es['ip_version'])
+
+    def test_update(self):
+        with self.network(router__external=True) as net:
+            with self.subnet(cidr='10.10.1.0/24', network=net) as sub:
+                changes = {'port_address_translation': True}
+                es = self.create_external_segment(
+                    subnet_id=sub['subnet']['id'])['external_segment']
+                for k, v in changes.iteritems():
+                    res = self._update_gbp_resource_full_response(
+                        es['id'], 'external_segment',
+                        'external_segments', expected_res_status=400, **{k: v})
+                    self.assertEqual('InvalidAttributeUpdateForES',
+                                     res['NeutronError']['type'])
+                # Verify route updated correctly
+                route = {'destination': '0.0.0.0/0', 'nexthop': None}
+                self._update_gbp_resource(
+                    es['id'], 'external_segment', 'external_segments',
+                    expected_res_status=200, external_routes=[route])
+                pr = self._create_ssh_allow_rule()
+                prs = self.create_policy_rule_set(
+                    policy_rules=[pr['id']])['policy_rule_set']
+                l3p1 = self.create_l3_policy(
+                    ip_pool='192.168.0.0/16')['l3_policy']
+                l3p2 = self.create_l3_policy(
+                    ip_pool='192.128.0.0/16')['l3_policy']
+                self.create_external_policy(
+                    external_segments=[es['id']],
+                    provided_policy_rule_sets={prs['id']: ''})
+                expected_cidrs = self._calculate_expected_external_cidrs(
+                    es, [l3p1, l3p2])
+                mapping = self._get_prs_mapping(prs['id'])
+                attrs = {'security_group_id': [mapping.consumed_sg_id],
+                         'direction': ['ingress'],
+                         'protocol': ['tcp'],
+                         'port_range_min': [22],
+                         'port_range_max': [22],
+                         'remote_ip_prefix': None}
+                for cidr in expected_cidrs:
+                    attrs['remote_ip_prefix'] = [cidr]
+                    self.assertTrue(self._get_sg_rule(**attrs))
+                # Update the route and verify the SG rules changed
+                route = {'destination': '172.0.0.0/8', 'nexthop': None}
+                es = self._update_gbp_resource(
+                    es['id'], 'external_segment', 'external_segments',
+                    expected_res_status=200, external_routes=[route])
+
+                # Verify the old rules have been deleted
+                new_cidrs = self._calculate_expected_external_cidrs(
+                    es, [l3p1, l3p2])
+                removed = set(expected_cidrs) - set(new_cidrs)
+                for cidr in removed:
+                    attrs['remote_ip_prefix'] = [cidr]
+                    self.assertFalse(self._get_sg_rule(**attrs))
+
+                expected_cidrs = new_cidrs
+                # Verify new rules exist
+                for cidr in expected_cidrs:
+                    attrs['remote_ip_prefix'] = [cidr]
+                    self.assertTrue(self._get_sg_rule(**attrs))
+
+                # Creating a new L3P changes the definition of what's external
+                # and what is not
+                l3p3 = self.create_l3_policy(
+                    ip_pool='192.64.0.0/16')['l3_policy']
+                new_cidrs = self._calculate_expected_external_cidrs(es,
+                                                           [l3p1, l3p2, l3p3])
+
+                # Verify removed rules
+                removed = set(expected_cidrs) - set(new_cidrs)
+                for cidr in removed:
+                    attrs['remote_ip_prefix'] = [cidr]
+                    self.assertFalse(self._get_sg_rule(**attrs))
+
+                expected_cidrs = new_cidrs
+                # Verify new rules exist
+                for cidr in expected_cidrs:
+                    attrs['remote_ip_prefix'] = [cidr]
+                    self.assertTrue(self._get_sg_rule(**attrs))
+
+
+class TestExternalPolicy(ResourceMappingTestCase):
+
+    def test_create(self):
+        with self.network(router__external=True) as net:
+            with contextlib.nested(
+                    self.subnet(cidr='10.10.1.0/24', network=net),
+                    self.subnet(cidr='10.10.2.0/24', network=net)) as (
+                    sub1, sub2):
+                es1 = self.create_external_segment(
+                    subnet_id=sub1['subnet']['id'],
+                    shared=True)['external_segment']
+                es2 = self.create_external_segment(
+                    subnet_id=sub2['subnet']['id'])['external_segment']
+                # Shared Rejected
+                res = self.create_external_policy(
+                    expected_res_status=400, external_segments=[es1['id']],
+                    shared=True)
+                self.assertEqual('InvalidSharedResource',
+                                 res['NeutronError']['type'])
+                # Multiple ES reject
+                res = self.create_external_policy(
+                    expected_res_status=400,
+                    external_segments=[es1['id'], es2['id']])
+                self.assertEqual('MultipleESPerEPNotSupported',
+                                 res['NeutronError']['type'])
+                # No ES reject
+                res = self.create_external_policy(
+                    expected_res_status=400, external_segments=[])
+                self.assertEqual('ESIdRequiredWhenCreatingEP',
+                                 res['NeutronError']['type'])
+
+                # Multiple EP per tenant rejected
+                self.create_external_policy(external_segments=[es1['id']],
+                                            expected_res_status=201)
+                res = self.create_external_policy(
+                    expected_res_status=400, external_segments=[es2['id']])
+                self.assertEqual('OnlyOneEPPerTenantAllowed',
+                                 res['NeutronError']['type'])
+
+    def test_update(self):
+        with self.network(router__external=True) as net:
+            with contextlib.nested(
+                    self.subnet(cidr='10.10.1.0/24', network=net),
+                    self.subnet(cidr='10.10.2.0/24', network=net)) as (
+                    sub1, sub2):
+                route = {'destination': '172.0.0.0/8', 'nexthop': None}
+                es1 = self.create_external_segment(
+                    subnet_id=sub1['subnet']['id'],
+                    external_routes=[route])['external_segment']
+                es2 = self.create_external_segment(
+                    subnet_id=sub2['subnet']['id'])['external_segment']
+                ep = self.create_external_policy(
+                    external_segments=[es1['id']], expected_res_status=201)
+                ep = ep['external_policy']
+                # ES update rejectes
+                res = self._update_gbp_resource_full_response(
+                    ep['id'], 'external_policy', 'external_policies',
+                    external_segments=[es2['id']], expected_res_status=400)
+                self.assertEqual('ESUpdateNotSupportedForEP',
+                                 res['NeutronError']['type'])
+                # Rules changed when changing PRS
+                pr_ssh = self._create_ssh_allow_rule()
+                pr_http = self._create_http_allow_rule()
+
+                prs_ssh = self.create_policy_rule_set(
+                    policy_rules=[pr_ssh['id']])['policy_rule_set']
+                prs_http = self.create_policy_rule_set(
+                    policy_rules=[pr_http['id']])['policy_rule_set']
+
+                self._update_gbp_resource(
+                    ep['id'], 'external_policy', 'external_policies',
+                    provided_policy_rule_sets={prs_ssh['id']: ''},
+                    consumed_policy_rule_sets={prs_ssh['id']: ''},
+                    expected_res_status=200)
+
+                expected_cidrs = self._calculate_expected_external_cidrs(
+                    es1, [])
+                self.assertTrue(len(expected_cidrs) > 0)
+                mapping = self._get_prs_mapping(prs_ssh['id'])
+                ssh_attrs = {'security_group_id': None,
+                             'direction': ['ingress'],
+                             'protocol': ['tcp'],
+                             'port_range_min': [22],
+                             'port_range_max': [22],
+                             'remote_ip_prefix': None}
+                for sg in [mapping.consumed_sg_id, mapping.provided_sg_id]:
+                    for cidr in expected_cidrs:
+                        ssh_attrs['security_group_id'] = [sg]
+                        ssh_attrs['remote_ip_prefix'] = [cidr]
+                        self.assertTrue(self._get_sg_rule(**ssh_attrs))
+
+                # Now swap the contract
+                self._update_gbp_resource(
+                    ep['id'], 'external_policy', 'external_policies',
+                    provided_policy_rule_sets={prs_http['id']: ''},
+                    consumed_policy_rule_sets={prs_http['id']: ''},
+                    expected_res_status=200)
+
+                # SSH rules removed
+                for sg in [mapping.consumed_sg_id, mapping.provided_sg_id]:
+                    for cidr in expected_cidrs:
+                        ssh_attrs['security_group_id'] = [sg]
+                        ssh_attrs['remote_ip_prefix'] = [cidr]
+                        self.assertFalse(self._get_sg_rule(**ssh_attrs))
+
+                # HTTP Added
+                mapping = self._get_prs_mapping(prs_http['id'])
+                http_attrs = {'security_group_id': None,
+                              'direction': ['ingress'],
+                              'protocol': ['tcp'],
+                              'port_range_min': [80],
+                              'port_range_max': [80],
+                              'remote_ip_prefix': None}
+                for sg in [mapping.consumed_sg_id, mapping.provided_sg_id]:
+                    for cidr in expected_cidrs:
+                        http_attrs['security_group_id'] = [sg]
+                        http_attrs['remote_ip_prefix'] = [cidr]
+                        self.assertTrue(self._get_sg_rule(**http_attrs))
+
+                # All removed
+                self._update_gbp_resource(
+                    ep['id'], 'external_policy', 'external_policies',
+                    provided_policy_rule_sets={},
+                    consumed_policy_rule_sets={},
+                    expected_res_status=200)
+                for sg in [mapping.consumed_sg_id, mapping.provided_sg_id]:
+                    for cidr in expected_cidrs:
+                        ssh_attrs['security_group_id'] = [sg]
+                        ssh_attrs['remote_ip_prefix'] = [cidr]
+                        self.assertFalse(self._get_sg_rule(**http_attrs))
