@@ -388,6 +388,17 @@ class ExternalSegmentContext(object):
         """
         pass
 
+    @abc.abstractmethod
+    def add_subnet(self, subnet_id):
+        """Add the subnet to the external_segment.
+
+        :param subnet_id: Subnet to which external_segment is mapped.
+
+        Add a neutron subnet to the set of routers to which the
+        external_segment is mapped.
+        """
+        pass
+
 
 @six.add_metaclass(abc.ABCMeta)
 class ExternalPolicyContext(object):
