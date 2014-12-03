@@ -78,6 +78,14 @@ class L3PolicyMapping(gpdb.L3Policy):
                                cascade='all', lazy="joined")
 
 
+class ExternalSegmentMapping(gpdb.ExternalSegment):
+    """Mapping of L2Policy to Neutron Network."""
+    __table_args__ = {'extend_existing': True}
+    __mapper_args__ = {'polymorphic_identity': 'mapping'}
+    subnet_id = sa.Column(sa.String(36), sa.ForeignKey('subnets.id'),
+                          nullable=True, unique=True)
+
+
 class GroupPolicyMappingDbPlugin(gpdb.GroupPolicyDbPlugin):
     """Group Policy Mapping interface implementation using SQLAlchemy models.
     """
@@ -106,6 +114,12 @@ class GroupPolicyMappingDbPlugin(gpdb.GroupPolicyDbPlugin):
         res['routers'] = [router.router_id for router in l3p.routers]
         return self._fields(res, fields)
 
+    def _make_external_segment_dict(self, es, fields=None):
+        res = super(GroupPolicyMappingDbPlugin,
+                    self)._make_external_segment_dict(es)
+        res['subnet_id'] = es.subnet_id
+        return self._fields(res, fields)
+
     def _set_port_for_policy_target(self, context, pt_id, port_id):
         with context.session.begin(subtransactions=True):
             pt_db = self._get_policy_target(context, pt_id)
@@ -131,6 +145,16 @@ class GroupPolicyMappingDbPlugin(gpdb.GroupPolicyDbPlugin):
                                               router_id=router_id)
             l3p_db.routers.append(assoc)
         return [router.router_id for router in l3p_db.routers]
+
+    def _set_subnet_to_es(self, context, es_id, subnet_id):
+        with context.session.begin(subtransactions=True):
+            es_db = self._get_external_segment(context, es_id)
+            es_db.subnet_id = subnet_id
+
+    def _update_ess_for_l3p(self, context, l3p_id, ess):
+        with context.session.begin(subtransactions=True):
+            l3p_db = self._get_l3_policy(context, l3p_id)
+            self._set_ess_for_l3p(context, l3p_db, ess)
 
     @log.log
     def create_policy_target(self, context, policy_target):
@@ -233,7 +257,6 @@ class GroupPolicyMappingDbPlugin(gpdb.GroupPolicyDbPlugin):
                                      l3p['subnet_prefix_length'],
                                      description=l3p['description'],
                                      shared=l3p.get('shared', False))
-            context.session.add(l3p_db)
             if 'routers' in l3p:
                 for router in l3p['routers']:
                     assoc = L3PolicyRouterAssociation(
@@ -244,6 +267,7 @@ class GroupPolicyMappingDbPlugin(gpdb.GroupPolicyDbPlugin):
             if 'external_segments' in l3p:
                 self._set_ess_for_l3p(context, l3p_db,
                                       l3p['external_segments'])
+            context.session.add(l3p_db)
         return self._make_l3_policy_dict(l3p_db)
 
     @log.log
@@ -278,3 +302,20 @@ class GroupPolicyMappingDbPlugin(gpdb.GroupPolicyDbPlugin):
                 del l3p['external_segments']
             l3p_db.update(l3p)
         return self._make_l3_policy_dict(l3p_db)
+
+    @log.log
+    def create_external_segment(self, context, external_segment):
+        es = external_segment['external_segment']
+        tenant_id = self._get_tenant_id_for_create(context, es)
+        with context.session.begin(subtransactions=True):
+            es_db = ExternalSegmentMapping(
+                id=uuidutils.generate_uuid(), tenant_id=tenant_id,
+                name=es['name'], description=es['description'],
+                shared=es.get('shared', False), ip_version=es['ip_version'],
+                cidr=es['cidr'],
+                port_address_translation=es['port_address_translation'],
+                subnet_id=es['subnet_id'])
+            context.session.add(es_db)
+            if 'external_routes' in es:
+                self._process_segment_ers(context, es_db, es)
+        return self._make_external_segment_dict(es_db)
