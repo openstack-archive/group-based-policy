@@ -17,6 +17,7 @@ from neutron.api.v2 import attributes
 from neutron.common import constants as const
 from neutron.common import exceptions as n_exc
 from neutron.common import log
+from neutron import context as n_context
 from neutron.db import model_base
 from neutron.db import models_v2
 from neutron.extensions import securitygroup as ext_sg
@@ -337,7 +338,7 @@ class ResourceMappingDriver(api.PolicyDriver):
         # the policy rules, then assoicate SGs to ports
         if new_provided_policy_rule_sets or new_consumed_policy_rule_sets:
             subnets = context.current['subnets']
-            self._assoc_sg_to_ptg(context, subnets,
+            self._set_sg_rules_for_subnets(context, subnets,
                                   new_provided_policy_rule_sets,
                                   new_consumed_policy_rule_sets)
             self._update_sgs_on_ptg(context, ptg_id,
@@ -419,20 +420,46 @@ class ResourceMappingDriver(api.PolicyDriver):
         if netaddr.IPSet([curr['ip_pool']]) & current_set:
             raise exc.OverlappingIPPoolsInSameTenantNotAllowed(
                 ip_pool=curr['ip_pool'], overlapping_pools=subnets)
+        # In Neutron, one external gateway per router is allowed. Therefore
+        # we have to limit the number of ES per L3P to 1
+        if len(context.current['external_segments']) > 1:
+            raise exc.MultipleESPerL3PolicyNotSupported()
 
     @log.log
     def create_l3_policy_postcommit(self, context):
         if not context.current['routers']:
             self._use_implicit_router(context)
+        l3p = context.current
+        if l3p['external_segments']:
+            self._plug_router_to_external_segment(
+                context, l3p['external_segments'])
+            self._set_l3p_routes(context)
+        self._process_new_l3p_ip_pool(context, context.current['ip_pool'])
 
     @log.log
     def update_l3_policy_precommit(self, context):
         if context.current['routers'] != context.original['routers']:
             raise exc.L3PolicyRoutersUpdateNotSupported()
+        if len(context.current['external_segments']) > 1:
+            raise exc.MultipleESPerL3PolicyNotSupported()
 
     @log.log
     def update_l3_policy_postcommit(self, context):
-        pass
+        new, old = context.current, context.original
+        if new['external_segments'] != old['external_segments']:
+            added = (set(new['external_segments'].keys()) -
+                     set(old['external_segments'].keys()))
+            removed = (set(old['external_segments'].keys()) -
+                       set(new['external_segments'].keys()))
+            if removed:
+                self._unplug_router_from_external_segment(
+                    context, dict((x, old['external_segments'][x])
+                                  for x in removed))
+            if added:
+                self._plug_router_to_external_segment(
+                    context, dict((x, new['external_segments'][x])
+                                  for x in added))
+            self._set_l3p_routes(context)
 
     @log.log
     def delete_l3_policy_precommit(self, context):
@@ -442,6 +469,7 @@ class ResourceMappingDriver(api.PolicyDriver):
     def delete_l3_policy_postcommit(self, context):
         for router_id in context.current['routers']:
             self._cleanup_router(context._plugin_context, router_id)
+        self._process_remove_l3p_ip_pool(context, context.current['ip_pool'])
 
     @log.log
     def create_policy_classifier_precommit(self, context):
@@ -623,6 +651,156 @@ class ResourceMappingDriver(api.PolicyDriver):
             subnet = ptg.get('subnets')[0]
             self._cleanup_network_service_policy(context, subnet, ptg_id)
 
+    def create_external_segment_precommit(self, context):
+        if context.current['subnet_id']:
+            subnet = self._core_plugin.get_subnet(context._plugin_context,
+                                                  context.current['subnet_id'])
+            network = self._core_plugin.get_network(context._plugin_context,
+                                                    subnet['network_id'])
+            if not network['router:external']:
+                raise exc.InvalidSubnetForES(sub_id=subnet['id'],
+                                             net_id=network['id'])
+            db_es = context._plugin._get_external_segment(
+                context._plugin_context, context.current['id'])
+            db_es.cidr = subnet['cidr']
+            db_es.ip_version = subnet['ip_version']
+            context.current['cidr'] = db_es.cidr
+            context.current['ip_version'] = db_es.ip_version
+        else:
+            raise exc.ImplicitSubnetNotSupported()
+
+    def create_external_segment_postcommit(self, context):
+        pass
+
+    def update_external_segment_precommit(self, context):
+        invalid = ['port_address_translation']
+        for attr in invalid:
+            if context.current[attr] != context.original[attr]:
+                raise exc.InvalidAttributeUpdateForES(attribute=attr)
+
+    def update_external_segment_postcommit(self, context):
+        # REVISIT(ivar): concurrency issues
+        if (context.current['external_routes'] !=
+                context.original['external_routes']):
+            # Update SG rules for each EP
+            # Get all the EP using this ES
+            ep_ids = context._plugin._get_external_segment_external_policies(
+                context._plugin_context, context.current['id'])
+            # Process their routes
+            old_cidrs = [x['destination']
+                         for x in context.original['external_routes']]
+            old_cidrs = self._process_external_cidrs(context, old_cidrs)
+            new_cidrs = [x['destination']
+                         for x in context.current['external_routes']]
+            new_cidrs = self._process_external_cidrs(context, new_cidrs)
+            # Recompute PRS rules
+            self._recompute_external_policy_rules(context, ep_ids,
+                                                  new_cidrs, old_cidrs)
+            old_routes = set((x['destination'], x['nexthop'])
+                             for x in context.original['external_routes'])
+            new_routes = set((x['destination'], x['nexthop'])
+                             for x in context.current['external_routes'])
+            # Set the correct list of routes for each L3P
+            self._recompute_l3_policy_routes(context, new_routes, old_routes)
+
+    def delete_external_segment_precommit(self, context):
+        pass
+
+    def delete_external_segment_postcommit(self, context):
+        pass
+
+    def create_external_policy_precommit(self, context):
+        self._reject_shared(context.current, 'external_policy')
+        # REVISIT(ivar): For security reasons, only one ES allowed per EP.
+        # see bug #1398156
+        if len(context.current['external_segments']) > 1:
+            raise exc.MultipleESPerEPNotSupported()
+        # REVISIT(ivar): Remove when ES update is supported for EP
+        if not context.current['external_segments']:
+            raise exc.ESIdRequiredWhenCreatingEP()
+        # REVISIT(ivar): bug #1398156 only one EP is allowed per tenant
+        ep_number = context._plugin.get_external_policies_count(
+            context._plugin_context,
+            filters={'tenant_id': [context.current['tenant_id']]})
+        if ep_number - 1:
+            raise exc.OnlyOneEPPerTenantAllowed()
+
+    def create_external_policy_postcommit(self, context):
+        # Only *North to South* rules are actually effective.
+        # The rules will be calculated as the symmetric difference between
+        # the union of all the Tenant's L3P supernets and the union of all the
+        # ES routes.
+        ep = context.current
+        if ep['external_segments']:
+            if (ep['provided_policy_rule_sets'] or
+                    ep['consumed_policy_rule_sets']):
+                # Get the full processed list of external CIDRs
+                cidr_list = self._get_processed_ep_cidr_list(context, ep)
+                # set the rules on the proper SGs
+                self._set_sg_rules_for_cidrs(
+                    context, cidr_list, ep['provided_policy_rule_sets'],
+                    ep['consumed_policy_rule_sets'])
+
+    def update_external_policy_precommit(self, context):
+        if (context.current['external_segments'] !=
+                context.original['external_segments']):
+            raise exc.ESUpdateNotSupportedForEP()
+
+    def update_external_policy_postcommit(self, context):
+        # REVISIT(ivar): Concurrency issue, the cidr_list could be different
+        # in the time from adding new PRS to removing old ones. The consequence
+        # is that the rules added/removed could be completely wrong.
+        prov_cons = {'provided_policy_rule_sets': [],
+                     'consumed_policy_rule_sets': []}
+        cidr_list = None
+        # Removed PRS
+        for attr in prov_cons:
+            orig_policy_rule_sets = context.original[attr]
+            curr_policy_rule_sets = context.current[attr]
+            prov_cons[attr] = list(set(orig_policy_rule_sets) -
+                                   set(curr_policy_rule_sets))
+        if any(prov_cons.values()):
+            cidr_list = self._get_processed_ep_cidr_list(
+                context, context.current)
+            self._unset_sg_rules_for_cidrs(
+                context, cidr_list, prov_cons['provided_policy_rule_sets'],
+                prov_cons['consumed_policy_rule_sets'])
+
+        # Added PRS
+        for attr in prov_cons:
+            orig_policy_rule_sets = context.original[attr]
+            curr_policy_rule_sets = context.current[attr]
+            prov_cons[attr] = list(set(curr_policy_rule_sets) -
+                                   set(orig_policy_rule_sets))
+
+        if any(prov_cons.values()):
+            cidr_list = cidr_list or self._get_processed_ep_cidr_list(
+                context, context.current)
+            self._set_sg_rules_for_cidrs(
+                context, cidr_list, prov_cons['provided_policy_rule_sets'],
+                prov_cons['consumed_policy_rule_sets'])
+        # REVISIT(ivar): manage redirect action
+
+    def delete_external_policy_precommit(self, context):
+        pass
+
+    def delete_external_policy_postcommit(self, context):
+        if (context.current['provided_policy_rule_sets'] or
+                context.current['consumed_policy_rule_sets']):
+            # REVISIT(ivar): concurrency issue, ES may not exist anymore
+            cidr_list = self._get_processed_ep_cidr_list(
+                context, context.current)
+            self._unset_sg_rules_for_cidrs(
+                context, cidr_list,
+                context.current['provided_policy_rule_sets'],
+                context.current['consumed_policy_rule_sets'])
+            # REVISIT(ivar): manage redirect action
+
+    def create_nat_pool_precommit(self, context):
+        # No FIP supported right now
+        # REVISIT(ivar): ignore or reject?
+        pass
+
     def _get_routerid_for_l2policy(self, context, l2p_id):
         l2p = context._plugin.get_l2_policy(context._plugin_context, l2p_id)
         l3p_id = l2p['l3_policy_id']
@@ -655,11 +833,48 @@ class ResourceMappingDriver(api.PolicyDriver):
         if self._port_is_owned(plugin_context.session, port_id):
             self._delete_port(plugin_context, port_id)
 
+    def _plug_router_to_external_segment(self, context, es_dict):
+        es_list = context._plugin.get_external_segments(
+            context._plugin_context, filters={'id': es_dict.keys()})
+        if context.current['routers']:
+            router_id = context.current['routers'][0]
+            for es in es_list:
+                subnet = self._core_plugin.get_subnet(context._plugin_context,
+                                                      es['subnet_id'])
+                interface_info = {
+                    'network_id': subnet['network_id'],
+                    'enable_snat': es['port_address_translation'],
+                    'external_fixed_ips': [
+                        {'subnet_id': es['subnet_id'],
+                         'ip_address': x} for x in es_dict[es['id']]]
+                    if es_dict[es['id']] else
+                    attributes.ATTR_NOT_SPECIFIED}
+                router = self._add_router_gw_interface(
+                    context._plugin_context, router_id, interface_info)
+                if not es_dict[es['id']][0]:
+                    # Update L3P assigned address
+                    efi = router['external_gateway_info']['external_fixed_ips']
+                    assigned_ips = [x['ip_address'] for x in efi
+                                    if x['subnet_id'] == es['subnet_id']]
+                    context.set_external_fixed_ips(es['id'], assigned_ips)
+
+    def _unplug_router_from_external_segment(self, context, es_ids):
+        es_list = context._plugin.get_external_segments(
+            context._plugin_context, filters={'id': es_ids})
+        if context.current['routers']:
+            router_id = context.current['routers'][0]
+            for es in es_list:
+                subnet = self._core_plugin.get_subnet(context._plugin_context,
+                                                      es['subnet_id'])
+                interface_info = {'network_id': subnet['network_id']}
+                self._remove_router_gw_interface(context._plugin_context,
+                                                 router_id, interface_info)
+
     def _use_implicit_subnet(self, context):
         # REVISIT(rkukura): This is a temporary allocation algorithm
         # that depends on an exception being raised when the subnet
         # being created is already in use. A DB allocation table for
-        # the pool of subnets, or at least a more efficient way to
+        # the pool of subnets, or at lest a more efficient way to
         # test if a subnet is in-use, may be needed.
         l2p_id = context.current['l2_policy_id']
         l2p = context._plugin.get_l2_policy(context._plugin_context, l2p_id)
@@ -739,15 +954,20 @@ class ResourceMappingDriver(api.PolicyDriver):
         if self._subnet_is_owned(plugin_context.session, subnet_id):
             self._delete_subnet(plugin_context, subnet_id)
 
-    def _use_implicit_network(self, context):
+    def _create_implicit_network(self, context, **kwargs):
         attrs = {'tenant_id': context.current['tenant_id'],
-                 'name': 'l2p_' + context.current['name'],
-                 'admin_state_up': True,
+                 'name': context.current['name'], 'admin_state_up': True,
                  'shared': context.current.get('shared', False)}
+        attrs.update(**kwargs)
         network = self._create_network(context._plugin_context, attrs)
         network_id = network['id']
         self._mark_network_owned(context._plugin_context.session, network_id)
-        context.set_network_id(network_id)
+        return network
+
+    def _use_implicit_network(self, context):
+        network = self._create_implicit_network(
+            context, name='l2p_' + context.current['name'])
+        context.set_network_id(network['id'])
 
     def _cleanup_network(self, plugin_context, network_id):
         if self._network_is_owned(plugin_context.session, network_id):
@@ -792,8 +1012,9 @@ class ResourceMappingDriver(api.PolicyDriver):
             policy_rule_sets = (
                 consumed_policy_rule_sets + provided_policy_rule_sets)
             self._handle_redirect_action(context, policy_rule_sets)
-        self._assoc_sg_to_ptg(context, subnets, provided_policy_rule_sets,
-                              consumed_policy_rule_sets)
+        self._set_sg_rules_for_subnets(context, subnets,
+                                       provided_policy_rule_sets,
+                                       consumed_policy_rule_sets)
         self._update_sgs_on_ptg(context, ptg_id, provided_policy_rule_sets,
                                 consumed_policy_rule_sets, "ASSOCIATE")
 
@@ -816,11 +1037,6 @@ class ResourceMappingDriver(api.PolicyDriver):
     def _update_policy_rule_sg_rules(self, context, policy_rule_sets,
                                     old_policy_rule, new_policy_rule,
                                     old_classifier=None, new_classifier=None):
-        """
-        for policy_rule_set_id in policy_rule_sets:
-            policy_rule_set = context._plugin.get_policy_rule_set(
-                context._plugin_context, policy_rule_set_id)
-        """
         policy_rule_set_list = context._plugin.get_policy_rule_sets(
                 context._plugin_context, filters={'id': policy_rule_sets})
         for policy_rule_set in policy_rule_set_list:
@@ -980,6 +1196,10 @@ class ResourceMappingDriver(api.PolicyDriver):
         return self._create_resource(self._l3_plugin, plugin_context, 'router',
                                      attrs)
 
+    def _update_router(self, plugin_context, router_id, attrs):
+        return self._update_resource(self._l3_plugin, plugin_context, 'router',
+                                     router_id, attrs)
+
     def _add_router_interface(self, plugin_context, router_id, interface_info):
         self._l3_plugin.add_router_interface(plugin_context,
                                              router_id, interface_info)
@@ -988,6 +1208,17 @@ class ResourceMappingDriver(api.PolicyDriver):
                                  interface_info):
         self._l3_plugin.remove_router_interface(plugin_context, router_id,
                                                 interface_info)
+
+    def _add_router_gw_interface(self, plugin_context, router_id, gw_info):
+        return self._l3_plugin.update_router(
+            plugin_context, router_id,
+            {'router': {'external_gateway_info': gw_info}})
+
+    def _remove_router_gw_interface(self, plugin_context, router_id,
+                                    interface_info):
+        self._l3_plugin.update_router(
+            plugin_context, router_id,
+            {'router': {'external_gateway_info': None}})
 
     def _delete_router(self, plugin_context, router_id):
         self._delete_resource(self._l3_plugin, plugin_context, 'router',
@@ -1257,7 +1488,8 @@ class ResourceMappingDriver(api.PolicyDriver):
                 consumed_sg_id=consumed_sg_id, provided_sg_id=provided_sg_id)
             session.add(mapping)
 
-    def _get_policy_rule_set_sg_mapping(self, session, policy_rule_set_id):
+    @staticmethod
+    def _get_policy_rule_set_sg_mapping(session, policy_rule_set_id):
         with session.begin(subtransactions=True):
             return (session.query(PolicyRuleSetSGsMapping).
                     filter_by(policy_rule_set_id=policy_rule_set_id).one())
@@ -1377,8 +1609,9 @@ class ResourceMappingDriver(api.PolicyDriver):
                 self._disassoc_sgs_from_pt(context, pt_id, sg_list)
 
     # context should be PTG
-    def _assoc_sg_to_ptg(self, context, subnets, provided_policy_rule_sets,
-                         consumed_policy_rule_sets):
+    def _set_sg_rules_for_subnets(
+            self, context, subnets, provided_policy_rule_sets,
+            consumed_policy_rule_sets):
         if not provided_policy_rule_sets and not consumed_policy_rule_sets:
             return
 
@@ -1388,10 +1621,30 @@ class ResourceMappingDriver(api.PolicyDriver):
                                                   subnet_id)
             cidr = subnet['cidr']
             cidr_list.append(cidr)
+        self._set_sg_rules_for_cidrs(context, cidr_list,
+                                     provided_policy_rule_sets,
+                                     consumed_policy_rule_sets)
 
+    def _set_sg_rules_for_cidrs(self, context, cidr_list,
+                                provided_policy_rule_sets,
+                                consumed_policy_rule_sets):
+        self._set_or_unset_rules_for_cidrs(
+            context, cidr_list, provided_policy_rule_sets,
+            consumed_policy_rule_sets)
+
+    def _unset_sg_rules_for_cidrs(self, context, cidr_list,
+                                  provided_policy_rule_sets,
+                                  consumed_policy_rule_sets):
+        self._set_or_unset_rules_for_cidrs(
+            context, cidr_list, provided_policy_rule_sets,
+            consumed_policy_rule_sets, unset=True)
+
+    def _set_or_unset_rules_for_cidrs(self, context, cidr_list,
+                                      provided_policy_rule_sets,
+                                      consumed_policy_rule_sets, unset=False):
         prov_cons = ['providing_cidrs', 'consuming_cidrs']
         for pos, policy_rule_sets in enumerate(
-            [provided_policy_rule_sets, consumed_policy_rule_sets]):
+                [provided_policy_rule_sets, consumed_policy_rule_sets]):
             for policy_rule_set_id in policy_rule_sets:
                 policy_rule_set = context._plugin.get_policy_rule_set(
                     context._plugin_context, policy_rule_set_id)
@@ -1406,7 +1659,7 @@ class ResourceMappingDriver(api.PolicyDriver):
                         context._plugin_context, policy_rule_id)
                     self._add_or_remove_policy_rule_set_rule(
                         context, policy_rule, policy_rule_set_sg_mappings,
-                        cidr_mapping)
+                        cidr_mapping, unset=unset)
 
     def _manage_policy_rule_set_rules(self, context, policy_rule_set,
                                       policy_rules, unset=False):
@@ -1415,6 +1668,18 @@ class ResourceMappingDriver(api.PolicyDriver):
         policy_rule_set = context._plugin.get_policy_rule_set(
             context._plugin_context, policy_rule_set['id'])
         cidr_mapping = self._get_ptg_cidrs_mapping(context, policy_rule_set)
+        providing_eps = policy_rule_set['providing_external_policies']
+        providing_eps = context._plugin.get_external_policies(
+            context._plugin_context, filters={'id': providing_eps})
+        for ep in providing_eps:
+            cidr_mapping['providing_cidrs'].extend(
+                self._get_processed_ep_cidr_list(context, ep))
+        consuming_eps = policy_rule_set['consuming_external_policies']
+        consuming_eps = context._plugin.get_external_policies(
+            context._plugin_context, filters={'id': consuming_eps})
+        for ep in consuming_eps:
+            cidr_mapping['consuming_cidrs'].extend(
+                self._get_processed_ep_cidr_list(context, ep))
         for policy_rule_id in policy_rules:
             policy_rule = context._plugin.get_policy_rule(
                 context._plugin_context, policy_rule_id)
@@ -1553,3 +1818,109 @@ class ResourceMappingDriver(api.PolicyDriver):
         with session.begin(subtransactions=True):
             return (session.query(RuleServiceChainInstanceMapping).
                     filter_by(rule_id=rule_id).first())
+
+    def _get_ep_cidr_list(self, context, ep):
+        es_list = context._plugin.get_external_segments(
+            context._plugin_context,
+            filters={'id': ep['external_segments']})
+        cidr_list = []
+        for es in es_list:
+            cidr_list += [x['destination'] for x in es['external_routes']]
+        return cidr_list
+
+    def _process_external_cidrs(self, context, cidrs, exclude=None):
+        # Get all the tenant's L3P
+        exclude = exclude or []
+        l3ps = context._plugin.get_l3_policies(
+            context._plugin_context,
+            filters={'tenant_id': [context.current['tenant_id']]})
+
+        ip_pool_list = [x['ip_pool'] for x in l3ps if
+                        x['ip_pool'] not in exclude]
+        l3p_set = netaddr.IPSet(ip_pool_list)
+        return [str(x) for x in (netaddr.IPSet(cidrs) - l3p_set).iter_cidrs()]
+
+    def _get_processed_ep_cidr_list(self, context, ep):
+        cidr_list = self._get_ep_cidr_list(context, ep)
+        return self._process_external_cidrs(context, cidr_list)
+
+    def _recompute_external_policy_rules(self, context, ep_ids, new_cidrs,
+                                         old_cidrs):
+        # the EPs could belong to different tenants, need admin context
+        admin_context = n_context.get_admin_context()
+        ep_list = context._plugin.get_external_policies(admin_context,
+                                                        filters={'id': ep_ids})
+        for ep in ep_list:
+            self._refresh_ep_cidrs_rules(context, ep, new_cidrs, old_cidrs)
+
+    def _recompute_l3_policy_routes(self, context, new_routes, old_routes):
+        # the L3Ps could belong to different tenants, need admin context
+        admin_context = n_context.get_admin_context()
+        added_routes = new_routes - old_routes
+        removed_routes = old_routes - new_routes
+        l3ps = context._plugin.get_l3_policies(
+            admin_context, filters={'id': context.current['l3_policies']})
+        for l3p in l3ps:
+            router = self._l3_plugin.get_routes(
+                admin_context, l3p['router_id'])
+            current_routes = set((x['destination'], x['nexthop']) for x in
+                                 router['routes'])
+            current_routes = (current_routes - removed_routes |
+                              added_routes)
+            current_routes = [{'destination': x[0], 'nexthop': x[1]} for x
+                              in current_routes if x[1]]
+            self._update_router(admin_context, l3p['router_id'],
+                                {'routes': current_routes})
+
+    def _refresh_ep_cidrs_rules(self, context, ep, new_cidrs, old_cidrs):
+        # REVISIT(ivar): calculate cidrs delta to minimize disruption
+        # Unset old rules
+        self._unset_sg_rules_for_cidrs(
+            context, old_cidrs, ep['provided_policy_rule_sets'],
+            ep['consumed_policy_rule_sets'])
+        # Set new rules
+        self._set_sg_rules_for_cidrs(
+            context, new_cidrs, ep['provided_policy_rule_sets'],
+            ep['consumed_policy_rule_sets'])
+
+    def _process_new_l3p_ip_pool(self, context, ip_pool):
+        # Get all the EP for this tenant
+        ep_list = context._plugin.get_external_policies(
+            context._plugin_context,
+            filters={'tenant_id': context.current['tenant_id']})
+        for ep in ep_list:
+            # Remove rules before the new ip_pool came
+            cidr_list = self._get_ep_cidr_list(context, ep)
+            old_cidrs = self._process_external_cidrs(context, cidr_list,
+                                                     exclude=[ip_pool])
+            new_cidrs = [str(x) for x in
+                         (netaddr.IPSet(old_cidrs) -
+                          netaddr.IPSet([ip_pool])).iter_cidrs()]
+            self._refresh_ep_cidrs_rules(context, ep, new_cidrs, old_cidrs)
+
+    def _process_remove_l3p_ip_pool(self, context, ip_pool):
+        # Get all the EP for this tenant
+        ep_list = context._plugin.get_external_policies(
+            context._plugin_context,
+            filters={'tenant_id': context.current['tenant_id']})
+        for ep in ep_list:
+            # Cidrs before the ip_pool removal
+            cidr_list = self._get_ep_cidr_list(context, ep)
+            new_cidrs = self._process_external_cidrs(context, cidr_list,
+                                                     exclude=[ip_pool])
+            # Cidrs after the ip_pool removal
+            old_cidrs = [str(x) for x in
+                         (netaddr.IPSet(new_cidrs) |
+                          netaddr.IPSet([ip_pool])).iter_cidrs()]
+            self._refresh_ep_cidrs_rules(context, ep, new_cidrs, old_cidrs)
+
+    def _set_l3p_routes(self, context, es_ids=None):
+        es_ids = es_ids or context.current['external_segments'].keys()
+        es_list = context._plugin.get_external_segments(
+            context._plugin_context, filters={'id': es_ids})
+        routes = []
+        for es in es_list:
+            routes += es['external_routes']
+        self._update_router(context._plugin_context,
+                            context.current['routers'][0],
+                            {'routes': [x for x in routes if x['nexthop']]})
