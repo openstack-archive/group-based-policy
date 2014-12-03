@@ -60,9 +60,9 @@ def upgrade(active_plugins=None, options=None):
         sa.Column('description', sa.String(length=255), nullable=True),
         sa.Column('config_param_values', sa.String(length=4096),
                   nullable=True),
-        sa.Column('provider_ptg', sa.String(length=36), nullable=True),
-        sa.Column('consumer_ptg', sa.String(length=36), nullable=True),
-        sa.Column('classifier', sa.String(length=36), nullable=True),
+        sa.Column('provider_ptg_id', sa.String(length=36), nullable=True),
+        sa.Column('consumer_ptg_id', sa.String(length=36), nullable=True),
+        sa.Column('classifier_id', sa.String(length=36), nullable=True),
         sa.Column('servicechain_spec', sa.String(length=36), nullable=True),
         # FixMe(Magesh) Deletes the instances table itself !!!
         # sa.ForeignKeyConstraint(['provider_ptg'],
