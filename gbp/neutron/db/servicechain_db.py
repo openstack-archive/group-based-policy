@@ -62,14 +62,14 @@ class ServiceChainInstance(model_base.BASEV2, models_v2.HasId,
     config_param_values = sa.Column(sa.String(4096))
     servicechain_spec = sa.Column(
         sa.String(36), sa.ForeignKey('sc_specs.id'), nullable=True)
-    provider_ptg = sa.Column(sa.String(36),
+    provider_ptg_id = sa.Column(sa.String(36),
                              # FixMe(Magesh) Deletes the instances table itself
                              # sa.ForeignKey('gp_policy_target_groups.id'),
                              nullable=True)
-    consumer_ptg = sa.Column(sa.String(36),
+    consumer_ptg_id = sa.Column(sa.String(36),
                              # sa.ForeignKey('gp_policy_target_groups.id'),
                              nullable=True)
-    classifier = sa.Column(sa.String(36),
+    classifier_id = sa.Column(sa.String(36),
                            # sa.ForeignKey('gp_policy_classifiers.id'),
                            nullable=True)
 
@@ -145,9 +145,9 @@ class ServiceChainDbPlugin(schain.ServiceChainPluginBase,
                'description': instance['description'],
                'config_param_values': instance['config_param_values'],
                'servicechain_spec': instance['servicechain_spec'],
-               'provider_ptg': instance['provider_ptg'],
-               'consumer_ptg': instance['consumer_ptg'],
-               'classifier': instance['classifier']}
+               'provider_ptg_id': instance['provider_ptg_id'],
+               'consumer_ptg_id': instance['consumer_ptg_id'],
+               'classifier_id': instance['classifier_id']}
         return self._fields(res, fields)
 
     @staticmethod
@@ -321,9 +321,9 @@ class ServiceChainDbPlugin(schain.ServiceChainPluginBase,
                 description=instance['description'],
                 config_param_values=instance['config_param_values'],
                 servicechain_spec=instance['servicechain_spec'],
-                provider_ptg=instance['provider_ptg'],
-                consumer_ptg=instance['consumer_ptg'],
-                classifier=instance['classifier'])
+                provider_ptg_id=instance['provider_ptg_id'],
+                consumer_ptg_id=instance['consumer_ptg_id'],
+                classifier_id=instance['classifier_id'])
             context.session.add(instance_db)
         return self._make_sc_instance_dict(instance_db)
 

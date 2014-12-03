@@ -83,16 +83,16 @@ class ServiceChainDBTestBase(object):
                                               description='test sci',
                                               config_param_values="{}",
                                               servicechain_spec=None,
-                                              provider_ptg=None,
-                                              consumer_ptg=None,
-                                              classifier=None):
+                                              provider_ptg_id=None,
+                                              consumer_ptg_id=None,
+                                              classifier_id=None):
         attrs = {'name': name, 'description': description,
                  'tenant_id': self._tenant_id,
                  'config_param_values': config_param_values,
                  'servicechain_spec': servicechain_spec,
-                 'provider_ptg': provider_ptg,
-                 'consumer_ptg': consumer_ptg,
-                 'classifier': classifier}
+                 'provider_ptg_id': provider_ptg_id,
+                 'consumer_ptg_id': consumer_ptg_id,
+                 'classifier_id': classifier_id}
 
         return attrs
 
@@ -142,9 +142,9 @@ class ServiceChainDBTestBase(object):
 
     def create_servicechain_instance(self, servicechain_spec=None,
                                      config_param_values="{}",
-                                     provider_ptg=None,
-                                     consumer_ptg=None,
-                                     classifier=None,
+                                     provider_ptg_id=None,
+                                     consumer_ptg_id=None,
+                                     classifier_id=None,
                                      expected_res_status=None, **kwargs):
         defaults = {'name': 'sci1', 'description': 'test sci'}
         defaults.update(kwargs)
@@ -152,9 +152,9 @@ class ServiceChainDBTestBase(object):
                 {'config_param_values': config_param_values,
                  'servicechain_spec': servicechain_spec,
                  'tenant_id': self._tenant_id,
-                 'provider_ptg': provider_ptg,
-                 'consumer_ptg': consumer_ptg,
-                 'classifier': classifier}}
+                 'provider_ptg_id': provider_ptg_id,
+                 'consumer_ptg_id': consumer_ptg_id,
+                 'classifier_id': classifier_id}}
         data['servicechain_instance'].update(defaults)
 
         sci_req = self.new_create_request('servicechain_instances',
@@ -331,13 +331,17 @@ class TestServiceChainResources(ServiceChainDbTestCase):
         classifier_id = uuidutils.generate_uuid()
         config_param_values = "{}"
         attrs = self._get_test_servicechain_instance_attrs(
-            servicechain_spec=scs_id, provider_ptg=policy_target_group_id,
-            consumer_ptg=policy_target_group_id, classifier=classifier_id,
+            servicechain_spec=scs_id,
+            provider_ptg_id=policy_target_group_id,
+            consumer_ptg_id=policy_target_group_id,
+            classifier_id=classifier_id,
             config_param_values=config_param_values)
 
         sci = self.create_servicechain_instance(
-            servicechain_spec=scs_id, provider_ptg=policy_target_group_id,
-            consumer_ptg=policy_target_group_id, classifier=classifier_id,
+            servicechain_spec=scs_id,
+            provider_ptg_id=policy_target_group_id,
+            consumer_ptg_id=policy_target_group_id,
+            classifier_id=classifier_id,
             config_param_values=config_param_values)
         for k, v in attrs.iteritems():
             self.assertEqual(sci['servicechain_instance'][k], v)
@@ -363,17 +367,18 @@ class TestServiceChainResources(ServiceChainDbTestCase):
         description = 'new desc'
         config_param_values = "{}"
         scs_id = self.create_servicechain_spec()['servicechain_spec']['id']
-        provider_ptg = uuidutils.generate_uuid()
-        consumer_ptg = uuidutils.generate_uuid()
-        classifier = uuidutils.generate_uuid()
+        provider_ptg_id = uuidutils.generate_uuid()
+        consumer_ptg_id = uuidutils.generate_uuid()
+        classifier_id = uuidutils.generate_uuid()
         attrs = self._get_test_servicechain_instance_attrs(
             name=name, description=description, servicechain_spec=scs_id,
-            provider_ptg=provider_ptg, consumer_ptg=consumer_ptg,
-            classifier=classifier, config_param_values=config_param_values)
+            provider_ptg_id=provider_ptg_id, consumer_ptg_id=consumer_ptg_id,
+            classifier_id=classifier_id,
+            config_param_values=config_param_values)
 
         sci = self.create_servicechain_instance(
-            servicechain_spec=scs_id, provider_ptg=provider_ptg,
-            consumer_ptg=consumer_ptg, classifier=classifier,
+            servicechain_spec=scs_id, provider_ptg_id=provider_ptg_id,
+            consumer_ptg_id=consumer_ptg_id, classifier_id=classifier_id,
             config_param_values=config_param_values)
         data = {'servicechain_instance': {'name': name,
                                           'description': description,

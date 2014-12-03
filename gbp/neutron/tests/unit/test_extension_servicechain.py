@@ -306,9 +306,9 @@ class ServiceChainExtensionTestCase(test_api_v2_extension.ExtensionTestCase):
             'name': 'servicechaininstance1',
             'servicechain_spec': _uuid(),
             'tenant_id': _uuid(),
-            'provider_ptg': _uuid(),
-            'consumer_ptg': _uuid(),
-            'classifier': _uuid(),
+            'provider_ptg_id': _uuid(),
+            'consumer_ptg_id': _uuid(),
+            'classifier_id': _uuid(),
             'config_param_values': "{}",
             'description': 'test servicechain instance'
         }
@@ -325,9 +325,9 @@ class ServiceChainExtensionTestCase(test_api_v2_extension.ExtensionTestCase):
             'servicechain_instance': {
                 'servicechain_spec': _uuid(),
                 'tenant_id': _uuid(),
-                'provider_ptg': _uuid(),
-                'consumer_ptg': _uuid(),
-                'classifier': _uuid()
+                'provider_ptg_id': _uuid(),
+                'consumer_ptg_id': _uuid(),
+                'classifier_id': _uuid()
             }
         }
         default_attrs = self._get_create_servicechain_instance_default_attrs()

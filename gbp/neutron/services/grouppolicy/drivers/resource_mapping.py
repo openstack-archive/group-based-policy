@@ -990,12 +990,12 @@ class ResourceMappingDriver(api.PolicyDriver):
             return ip_address
 
     def _create_servicechain_instance(self, context, servicechain_spec,
-                                      provider_ptg, consumer_ptg,
+                                      provider_ptg_id, consumer_ptg_id,
                                       classifier_id, config_params=None):
         config_param_values = {}
 
         ptg = context._plugin.get_policy_target_group(
-            context._plugin_context, provider_ptg)
+            context._plugin_context, provider_ptg_id)
         network_service_policy_id = ptg.get("network_service_policy_id")
         if network_service_policy_id:
             nsp = context._plugin.get_network_service_policy(
@@ -1006,7 +1006,7 @@ class ResourceMappingDriver(api.PolicyDriver):
             if param_type == "ip_single":
                 key = service_params[0].get("name")
                 servicepolicy_ptg_ip_map = self._get_service_policy_ipaddress(
-                    context, provider_ptg)
+                    context, provider_ptg_id)
                 servicepolicy_ip = servicepolicy_ptg_ip_map.get("ipaddress")
                 config_param_values[key] = servicepolicy_ip
 
@@ -1014,9 +1014,9 @@ class ResourceMappingDriver(api.PolicyDriver):
                  'name': 'gbp_' + context.current['name'],
                  'description': "",
                  'servicechain_spec': servicechain_spec,
-                 'provider_ptg': provider_ptg,
-                 'consumer_ptg': consumer_ptg,
-                 'classifier': classifier_id,
+                 'provider_ptg_id': provider_ptg_id,
+                 'consumer_ptg_id': consumer_ptg_id,
+                 'classifier_id': classifier_id,
                  'config_param_values': jsonutils.dumps(config_param_values)}
         return self._create_resource(self._servicechain_plugin,
                                      context._plugin_context,
