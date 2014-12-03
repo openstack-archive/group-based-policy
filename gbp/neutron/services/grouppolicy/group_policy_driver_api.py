@@ -204,6 +204,15 @@ class L3PolicyContext(object):
         """
         pass
 
+    @abc.abstractmethod
+    def set_external_fixed_ips(self, external_segment_id, ips):
+        """Add the external_fixed_ips to the l3_policy.
+
+        :param external_segment_id: ES to which l3_policy is mapped.
+        :param ips: IPs assigned for that ES.
+        """
+        pass
+
 
 @six.add_metaclass(abc.ABCMeta)
 class NetworkServicePolicyContext(object):
@@ -385,6 +394,17 @@ class ExternalSegmentContext(object):
         call to update_external_segment. Method is only valid within
         calls to update_external_segment_precommit and
         update_external_segment_postcommit.
+        """
+        pass
+
+    @abc.abstractmethod
+    def add_subnet(self, subnet_id):
+        """Add the subnet to the external_segment.
+
+        :param subnet_id: Subnet to which external_segment is mapped.
+
+        Add a neutron subnet to the set of routers to which the
+        external_segment is mapped.
         """
         pass
 
