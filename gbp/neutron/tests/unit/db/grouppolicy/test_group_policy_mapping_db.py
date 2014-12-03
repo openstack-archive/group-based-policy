@@ -213,3 +213,18 @@ class TestMappedGroupResourceAttrs(GroupPolicyMappingDbTestCase):
             req = self.new_delete_request('l3_policies', l3p_id)
             res = req.get_response(self.ext_api)
             self.assertEqual(res.status_int, webob.exc.HTTPNoContent.code)
+
+    def test_create_delete_es_with_subnet(self):
+        with self.subnet(cidr='10.10.1.0/24') as subnet:
+            subnet_id = subnet['subnet']['id']
+            es = self.create_external_segment(subnet_id=subnet_id,
+                                              expected_res_status=201)
+            self.assertEqual(subnet_id, es['external_segment']['subnet_id'])
+            es_id = es['external_segment']['id']
+            req = self.new_show_request('external_segments', es_id,
+                                        fmt=self.fmt)
+            res = self.deserialize(self.fmt, req.get_response(self.ext_api))
+            self.assertEqual(subnet_id, res['external_segment']['subnet_id'])
+            req = self.new_delete_request('external_segments', es_id)
+            res = req.get_response(self.ext_api)
+            self.assertEqual(res.status_int, webob.exc.HTTPNoContent.code)
