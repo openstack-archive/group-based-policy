@@ -128,3 +128,38 @@ class ExternalRouteNextHopNotInExternalSegment(GroupPolicyBadRequest):
 class InvalidL3PExternalIPAddress(GroupPolicyBadRequest):
     message = _("Address %(ip)s allocated for l3p %(l3p_id)s on segment "
                 "%(es_id)s doesn't belong to the segment subnet %(es_cidr)s")
+
+
+class InvalidAttributeUpdateForES(GroupPolicyBadRequest):
+    message = _("Attribute %(attribute)s cannot be updated for External "
+                "Segment.")
+
+
+class MultipleESPerEPNotSupported(GroupPolicyBadRequest):
+    message = _("Multiple External Segments per External Policy is not "
+                "supported.")
+
+
+class ESIdRequiredWhenCreatingEP(GroupPolicyBadRequest):
+    message = _("External Segment ID is required when creating ExternalPolicy")
+
+
+class ESUpdateNotSupportedForEP(GroupPolicyBadRequest):
+    message = _("Cannot update external_segment_id for External Policy.")
+
+
+class MultipleESPerL3PolicyNotSupported(GroupPolicyBadRequest):
+    message = _("Only one External Segment per L3 Policy supported.")
+
+
+class InvalidSubnetForES(GroupPolicyBadRequest):
+    message = _("External Segment subnet %(sub_id)s is not part of an "
+                "external network %(net_id)s.")
+
+
+class OnlyOneEPPerTenantAllowed(GroupPolicyBadRequest):
+    message = _("Only one External Policy per Tenant is allowed.")
+
+
+class ImplicitSubnetNotSupported(GroupPolicyBadRequest):
+    message = _("RMD doesn't support implicit external subnet creation.")
