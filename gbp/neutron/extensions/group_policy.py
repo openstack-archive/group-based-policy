@@ -264,9 +264,40 @@ def _validate_external_dict(data, key_specs=None):
             return msg
 
 
+def _validate_gbproutes(data, valid_values=None):
+    # Shamelessly copied from Neutron, will pass even if nexthop is valid
+    if not isinstance(data, list):
+        msg = _("Invalid data format for hostroute: '%s'") % data
+        LOG.debug(msg)
+        return msg
+
+    expected_keys = ['destination', 'nexthop']
+    hostroutes = []
+    for hostroute in data:
+        msg = attr._verify_dict_keys(expected_keys, hostroute)
+        if msg:
+            LOG.debug(msg)
+            return msg
+        msg = attr._validate_subnet(hostroute['destination'])
+        if msg:
+            LOG.debug(msg)
+            return msg
+        if hostroute['nexthop'] is not None:
+            msg = attr._validate_ip_address(hostroute['nexthop'])
+        if msg:
+            LOG.debug(msg)
+            return msg
+        if hostroute in hostroutes:
+            msg = _("Duplicate hostroute '%s'") % hostroute
+            LOG.debug(msg)
+            return msg
+        hostroutes.append(hostroute)
+
+
 attr.validators['type:port_range'] = _validate_port_range
 attr.validators['type:network_service_params'] = _validate_network_svc_params
 attr.validators['type:external_dict'] = _validate_external_dict
+attr.validators['type:gbproutes'] = _validate_gbproutes
 
 
 POLICY_TARGETS = 'policy_targets'
@@ -620,7 +651,7 @@ RESOURCE_ATTRIBUTE_MAP = {
         'external_routes': {
             'allow_post': True, 'allow_put': True,
             'default': attr.ATTR_NOT_SPECIFIED,
-            'validate': {'type:hostroutes': None},
+            'validate': {'type:gbproutes': None},
             'is_visible': True},
         'l3_policies': {'allow_post': False, 'allow_put': False,
                         'validate': {'type:uuid_list': None},

@@ -31,6 +31,7 @@ from gbp.neutron.services.grouppolicy.common import constants as gp_constants
 LOG = logging.getLogger(__name__)
 MAX_IPV4_SUBNET_PREFIX_LENGTH = 31
 MAX_IPV6_SUBNET_PREFIX_LENGTH = 127
+ADDRESS_NOT_SPECIFIED = ''
 
 
 class HasNameDescription(object):
@@ -325,12 +326,14 @@ class NATPool(model_base.BASEV2, BaseSharedGbpResource):
         sa.String(36), sa.ForeignKey('gp_external_segments.id'))
 
 
-class ExternalRoute(model_base.BASEV2, models_v2.Route):
+class ExternalRoute(model_base.BASEV2):
     __tablename__ = 'gp_external_routes'
     external_segment_id = sa.Column(
         sa.String(36), sa.ForeignKey('gp_external_segments.id',
                                      ondelete='CASCADE'),
         primary_key=True)
+    destination = sa.Column(sa.String(64), nullable=False, primary_key=True)
+    nexthop = sa.Column(sa.String(64), primary_key=True)
 
 
 class EPToESAssociation(model_base.BASEV2):
@@ -346,9 +349,14 @@ class EPToESAssociation(model_base.BASEV2):
 
 class ExternalSegment(model_base.BASEV2, BaseSharedGbpResource):
     __tablename__ = 'gp_external_segments'
+    type = sa.Column(sa.String(15))
+    __mapper_args__ = {
+        'polymorphic_on': type,
+        'polymorphic_identity': 'base'
+    }
     ip_version = sa.Column(sa.Integer, nullable=False)
     cidr = sa.Column(sa.String(64), nullable=False)
-    encap_type = sa.Column(sa.String(64), nullable=False)
+    encap_type = sa.Column(sa.String(64))
     encap_value = sa.Column(sa.Integer)
     port_address_translation = sa.Column(sa.Boolean)
     nat_pools = orm.relationship(NATPool, backref='external_segment')
@@ -731,7 +739,7 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
                 target = ExternalRoute(
                     external_segment_id=es_db.id,
                     destination=rt['destination'],
-                    nexthop=rt['nexthop'])
+                    nexthop=rt['nexthop'] or ADDRESS_NOT_SPECIFIED)
                 es_db.external_routes.append(target)
 
     def _set_ess_for_l3p(self, context, l3p_db, es_dict):
@@ -752,12 +760,19 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
                     id=not_found.pop())
             l3p_db.external_segments = []
             for es in es_in_db:
-                # Create address allocation
-                for ip in es_dict[es['id']]:
+                if not es_dict[es['id']]:
                     assoc = ESToL3PAssociation(
                         external_segment_id=es['id'],
-                        l3_policy_id=l3p_db['id'], allocated_address=ip)
+                        l3_policy_id=l3p_db['id'],
+                        allocated_address=ADDRESS_NOT_SPECIFIED)
                     l3p_db.external_segments.append(assoc)
+                else:
+                    # Create address allocation
+                    for ip in es_dict[es['id']]:
+                        assoc = ESToL3PAssociation(
+                            external_segment_id=es['id'],
+                            l3_policy_id=l3p_db['id'], allocated_address=ip)
+                        l3p_db.external_segments.append(assoc)
 
     def _make_policy_target_dict(self, pt, fields=None):
         res = {'id': pt['id'],
@@ -973,6 +988,11 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
         return [x['policy_rule_id'] for x in
                 context.session.query(PolicyRuleActionAssociation).filter_by(
                     policy_action_id=policy_action_id)]
+
+    def _get_external_segment_external_policies(self, context, es_id):
+        return [x['external_policy_id'] for x in
+                context.session.query(EPToESAssociation).filter_by(
+                    external_segment_id=es_id)]
 
     def _get_attribute(self, attrs, key):
         value = attrs.get(key)

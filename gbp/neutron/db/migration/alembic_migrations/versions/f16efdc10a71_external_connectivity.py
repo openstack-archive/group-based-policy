@@ -38,7 +38,7 @@ def upgrade():
         sa.Column('shared', sa.Boolean),
         sa.Column('ip_version', sa.Integer, nullable=False),
         sa.Column('cidr', sa.String(64), nullable=False),
-        sa.Column('encap_type', sa.String(64), nullable=False),
+        sa.Column('encap_type', sa.String(64)),
         sa.Column('encap_value', sa.Integer),
         sa.Column('port_address_translation', sa.Boolean),
         sa.PrimaryKeyConstraint('id'))
@@ -97,14 +97,15 @@ def upgrade():
 
     op.create_table(
         'gp_external_routes',
-        sa.Column('destination', sa.String(64), nullable=False),
-        sa.Column('nexthop', sa.String(64), nullable=False),
+        sa.Column('destination', sa.String(64)),
+        sa.Column('nexthop', sa.String(64)),
         sa.Column('external_segment_id', sa.String(length=36),
                   nullable=True),
         sa.ForeignKeyConstraint(['external_segment_id'],
                                 ['gp_external_segments.id'],
                                 ondelete='CASCADE'),
-        sa.PrimaryKeyConstraint('destination', 'nexthop'))
+        sa.PrimaryKeyConstraint('external_segment_id',
+                                'destination', 'nexthop'))
 
     op.create_table(
         'gp_nat_pools',

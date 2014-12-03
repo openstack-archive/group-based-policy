@@ -229,7 +229,10 @@ class PolicyRuleSetContext(GroupPolicyContext, api.PolicyRuleSetContext):
 
 
 class ExternalSegmentContext(BaseResouceContext, api.ExternalSegmentContext):
-    pass
+
+    def add_subnet(self, subnet_id):
+        self._plugin._set_subnet_to_es(self._plugin_context,
+                                       self.current['id'], subnet_id)
 
 
 class ExternalPolicyContext(BaseResouceContext, api.ExternalPolicyContext):

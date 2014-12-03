@@ -38,12 +38,12 @@ POLICY_CLASSIFIERS_URI = GROUPPOLICY_URI + '/' + 'policy_classifiers'
 POLICY_ACTIONS_URI = GROUPPOLICY_URI + '/' + 'policy_actions'
 POLICY_RULE_SETS_URI = GROUPPOLICY_URI + '/' + 'policy_rule_sets'
 NET_SVC_POLICIES_URI = GROUPPOLICY_URI + '/' + 'network_service_policies'
-EAP_POLICIES_URI = GROUPPOLICY_URI + '/' + 'external_policies'
-EAS_POLICIES_URI = GROUPPOLICY_URI + '/' + 'external_segments'
+EP_POLICIES_URI = GROUPPOLICY_URI + '/' + 'external_policies'
+ES_POLICIES_URI = GROUPPOLICY_URI + '/' + 'external_segments'
 NP_POLICIES_URI = GROUPPOLICY_URI + '/' + 'nat_pools'
 
-RES_TO_URI = {'external_policy': EAP_POLICIES_URI,
-              'external_segment': EAS_POLICIES_URI,
+RES_TO_URI = {'external_policy': EP_POLICIES_URI,
+              'external_segment': ES_POLICIES_URI,
               'nat_pool': NP_POLICIES_URI}
 
 

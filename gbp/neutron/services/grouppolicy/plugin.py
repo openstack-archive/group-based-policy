@@ -17,6 +17,7 @@ from neutron.common import log
 from neutron.openstack.common import excutils
 from neutron.openstack.common import log as logging
 
+from gbp.neutron.db.grouppolicy import group_policy_db as gdb
 from gbp.neutron.db.grouppolicy import group_policy_mapping_db
 from gbp.neutron.services.grouppolicy.common import exceptions as gp_exc
 from gbp.neutron.services.grouppolicy import group_policy_context as p_context
@@ -199,7 +200,7 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
                             destination=added_dest, l3p_id=l3p['id'],
                             es_id=current['id'])
             # Verify NH in ES pool
-            added_nexthop = netaddr.IPSet(x[1] for x in added)
+            added_nexthop = netaddr.IPSet(x[1] for x in added if x[1])
             es_subnet = netaddr.IPSet([current['cidr']])
             if added_nexthop & es_subnet != added_nexthop:
                 raise gp_exc.ExternalRouteNextHopNotInExternalSegment(
@@ -232,10 +233,11 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
                         es_id=current['id'])
                 # Verify allocated address correctly in subnet
                 for addr in current['external_segments'][es['id']]:
-                    if addr not in netaddr.IPNetwork(es['cidr']):
-                        raise gp_exc.InvalidL3PExternalIPAddress(
-                            ip=addr, es_id=es['id'], l3p_id=current['id'],
-                            es_cidr=es['cidr'])
+                    if addr != gdb.ADDRESS_NOT_SPECIFIED:
+                        if addr not in netaddr.IPNetwork(es['cidr']):
+                            raise gp_exc.InvalidL3PExternalIPAddress(
+                                ip=addr, es_id=es['id'], l3p_id=current['id'],
+                                es_cidr=es['cidr'])
 
     def __init__(self):
         self.policy_driver_manager = manager.PolicyDriverManager()
