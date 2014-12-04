@@ -465,15 +465,16 @@ class ResourceMappingDriver(api.PolicyDriver):
                      set(old['external_segments'].keys()))
             removed = (set(old['external_segments'].keys()) -
                        set(new['external_segments'].keys()))
-            if removed:
-                self._unplug_router_from_external_segment(
-                    context, dict((x, old['external_segments'][x])
-                                  for x in removed))
-            if added:
-                self._plug_router_to_external_segment(
-                    context, dict((x, new['external_segments'][x])
-                                  for x in added))
-            self._set_l3p_routes(context)
+            if context.current['routers']:
+                if removed:
+                    self._unplug_router_from_external_segment(
+                        context, dict((x, old['external_segments'][x])
+                                      for x in removed))
+                if added:
+                    self._plug_router_to_external_segment(
+                        context, dict((x, new['external_segments'][x])
+                                      for x in added))
+                self._set_l3p_routes(context)
 
     @log.log
     def delete_l3_policy_precommit(self, context):
@@ -865,7 +866,7 @@ class ResourceMappingDriver(api.PolicyDriver):
                     attributes.ATTR_NOT_SPECIFIED}
                 router = self._add_router_gw_interface(
                     context._plugin_context, router_id, interface_info)
-                if not es_dict[es['id']][0]:
+                if not es_dict[es['id']] or not es_dict[es['id']][0]:
                     # Update L3P assigned address
                     efi = router['external_gateway_info']['external_fixed_ips']
                     assigned_ips = [x['ip_address'] for x in efi

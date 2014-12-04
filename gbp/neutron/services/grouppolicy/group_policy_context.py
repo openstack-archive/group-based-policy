@@ -146,6 +146,13 @@ class L3PolicyContext(GroupPolicyContext, api.L3PolicyContext):
                                          self._l3_policy['id'],
                                          self._l3_policy['external_segments'])
 
+    def set_external_segment(self, external_segment_id):
+        external_segments = {external_segment_id: []}
+        self.current['external_segments'] = external_segments
+        self._plugin.update_l3_policy(
+            self._plugin_context, self.current['id'],
+            {'l3_policy': {'external_segments': external_segments}})
+
 
 class NetworkServicePolicyContext(
     GroupPolicyContext, api.NetworkServicePolicyContext):
@@ -243,7 +250,13 @@ class ExternalSegmentContext(BaseResouceContext, api.ExternalSegmentContext):
 
 
 class ExternalPolicyContext(BaseResouceContext, api.ExternalPolicyContext):
-    pass
+
+    def set_external_segment(self, external_segment_id):
+        external_segmets = [external_segment_id]
+        self.current['external_segments'] = external_segmets
+        self._plugin.update_external_policy(
+            self._plugin_context, self.current['id'],
+            {'external_policy': {'external_segments': external_segmets}})
 
 
 class NatPoolContext(BaseResouceContext, api.NatPoolContext):
