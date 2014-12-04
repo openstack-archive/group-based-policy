@@ -213,6 +213,14 @@ class L3PolicyContext(object):
         """
         pass
 
+    @abc.abstractmethod
+    def set_external_segment(self, external_segment_id):
+        """Add the external_segment to the l3_policy.
+
+        :param external_segment_id: ES to which l3_policy is mapped.
+        """
+        pass
+
 
 @six.add_metaclass(abc.ABCMeta)
 class NetworkServicePolicyContext(object):
@@ -437,6 +445,14 @@ class ExternalPolicyContext(object):
         call to update_external_policy. Method is only valid within
         calls to update_external_policy_precommit and
         update_external_policy_postcommit.
+        """
+        pass
+
+    @abc.abstractmethod
+    def set_external_segment(self, external_segment_id):
+        """Add the external_segment to the external_policy.
+
+        :param external_segment_id: ES to which external_policy is mapped.
         """
         pass
 
