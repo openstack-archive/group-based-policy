@@ -130,7 +130,7 @@ class TestPolicyTarget(ResourceMappingTestCase):
         self.assertIsNotNone(port_id)
 
         # Create policy_target in shared policy_target group
-        l3p = self.create_l3_policy(shared=True)
+        l3p = self.create_l3_policy(shared=True, ip_pool='11.0.0.0/8')
         l2p = self.create_l2_policy(l3_policy_id=l3p['l3_policy']['id'],
                                     shared=True)
         s_ptg = self.create_policy_target_group(name="s_ptg", shared=True,
@@ -440,7 +440,7 @@ class TestPolicyTargetGroup(ResourceMappingTestCase):
                                     fmt=self.fmt)
         network = self.deserialize(self.fmt,
                                    req.get_response(self.api))
-        with self.subnet(network=network, cidr='9.8.7.0/5') as subnet2:
+        with self.subnet(network=network, cidr='192.168.0.0/24') as subnet2:
             # Add subnet
             subnet2 = subnet2['subnet']
             subnets = [subnet1['id'], subnet2['id']]
