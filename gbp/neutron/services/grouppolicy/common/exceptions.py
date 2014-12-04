@@ -163,3 +163,8 @@ class OnlyOneEPPerTenantAllowed(GroupPolicyBadRequest):
 
 class ImplicitSubnetNotSupported(GroupPolicyBadRequest):
     message = _("RMD doesn't support implicit external subnet creation.")
+
+
+class DefaultExternalSegmentAlreadyExists(GroupPolicyBadRequest):
+    message = _("Default External Segment with name %(es_name)s already "
+                "exists and is visible for this tenant")
