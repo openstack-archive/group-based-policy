@@ -17,6 +17,7 @@ from neutron.common import log
 from neutron.db import model_base
 from neutron.openstack.common import log as logging
 
+from gbp.neutron.services.grouppolicy.common import exceptions as exc
 from gbp.neutron.services.grouppolicy import group_policy_driver_api as api
 
 
@@ -40,6 +41,13 @@ opts = [
                help=_("Subnet prefix length for implicitly created default L3 "
                       "polices, controlling size of subnets allocated for "
                       "policy target groups.")),
+
+    cfg.StrOpt('default_external_segment_name',
+               default='default',
+               help=_("Name of default External Segment. This will be used "
+                      "whenever a new EP/L3P is created without a referenced "
+                      "External Segment. Set to None if a completely "
+                      "explicit workflow is preferred.")),
 ]
 
 cfg.CONF.register_opts(opts, "group_policy_implicit_policy")
@@ -82,6 +90,8 @@ class ImplicitPolicyDriver(api.PolicyDriver):
         self._default_ip_pool = gpip.default_ip_pool
         self._default_subnet_prefix_length = gpip.default_subnet_prefix_length
 
+        self._default_es_name = gpip.default_external_segment_name
+
     @log.log
     def create_policy_target_group_postcommit(self, context):
         if not context.current['l2_policy_id']:
@@ -119,6 +129,43 @@ class ImplicitPolicyDriver(api.PolicyDriver):
     def delete_l2_policy_postcommit(self, context):
         l3p_id = context.current['l3_policy_id']
         self._cleanup_l3_policy(context, l3p_id)
+
+    @log.log
+    def create_external_segment_precommit(self, context):
+        # REVISIT(ivar): find a better way to retrieve the default ES
+        if self._default_es_name == context.current['name']:
+            filters = {'name': [self._default_es_name]}
+            ess = context._plugin.get_external_segments(
+                context._plugin_context, filters)
+            if [x for x in ess if x['id'] != context.current['id']]:
+                raise exc.DefaultExternalSegmentAlreadyExists(
+                    es_name=self._default_es_name)
+
+    @log.log
+    def create_external_policy_postcommit(self, context):
+        if not context.current['external_segments']:
+            self._use_implicit_external_segment(context)
+
+    @log.log
+    def update_external_policy_postcommit(self, context):
+        old_es_ids = set(context.original['external_segments'])
+        new_es_ids = set(context.current['external_segments'])
+        added = new_es_ids - old_es_ids
+        if not added:
+            self._use_implicit_external_segment(context)
+
+    @log.log
+    def create_l3_policy_postcommit(self, context):
+        if not context.current['external_segments']:
+            self._use_implicit_external_segment(context)
+
+    @log.log
+    def update_l3_policy_postcommit(self, context):
+        old_es_ids = set(context.original['external_segments'].keys())
+        new_es_ids = set(context.current['external_segments'].keys())
+        added = new_es_ids - old_es_ids
+        if not added:
+            self._use_implicit_external_segment(context)
 
     def _use_implicit_l2_policy(self, context):
         attrs = {'l2_policy':
@@ -167,6 +214,26 @@ class ImplicitPolicyDriver(api.PolicyDriver):
         context._plugin.update_l2_policy(
             context._plugin_context, context.current['id'],
             {'l2_policy': {'l3_policy_id': l3p['id']}})
+
+    def _use_implicit_external_segment(self, context):
+        if not self._default_es_name:
+            return
+
+        filter = {'name': [self._default_es_name]}
+        ess = context._plugin.get_external_segments(context._plugin_context,
+                                                    filter)
+        # Multiple default ES may exist, this can happen when a per-tenant
+        # default ES gets his shared attribute flipped. Always prefer the
+        # specific tenant's ES if any.
+        for es in ess:
+            if es['tenant_id'] == context.current['tenant_id']:
+                default = es
+                break
+        else:
+            default = ess and ess[0]
+        if default:
+            # Set default ES
+            context.set_external_segment(default['id'])
 
     def _cleanup_l3_policy(self, context, l3p_id):
         if self._l3_policy_is_owned(context._plugin_context.session, l3p_id):
