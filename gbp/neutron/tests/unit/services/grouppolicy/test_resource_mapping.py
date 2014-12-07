@@ -52,6 +52,11 @@ class ResourceMappingTestCase(
                                      group='group_policy')
         config.cfg.CONF.set_override('allow_overlapping_ips', True)
         super(ResourceMappingTestCase, self).setUp(core_plugin=CORE_PLUGIN)
+        self.__plugin = manager.NeutronManager.get_plugin()
+        self.__context = nctx.get_admin_context()
+
+    def get_plugin_context(self):
+        return self.__plugin, self.__context
 
 
 class TestPolicyTarget(ResourceMappingTestCase):
@@ -558,6 +563,10 @@ class NotificationTest(ResourceMappingTestCase):
 # properly # created and shared, and that it has the right content.
 class TestPolicyRuleSet(ResourceMappingTestCase):
 
+    def _get_sg(self, sg_id):
+        plugin, context = self.get_plugin_context()
+        return plugin.get_security_group(context, sg_id)
+
     def test_policy_rule_set_creation(self):
         # Create policy_rule_sets
         classifier = self.create_policy_classifier(
@@ -689,6 +698,99 @@ class TestPolicyRuleSet(ResourceMappingTestCase):
         port = self.deserialize(self.fmt, res.get_response(self.api))
         security_groups = port['port'][ext_sg.SECURITYGROUPS]
         self.assertEqual(len(security_groups), 3)
+
+    # Test update of policy rules
+    def test_policy_rule_update(self):
+        classifier1 = self.create_policy_classifier(
+            name="class1", protocol="tcp", direction="bi", port_range="50:100")
+        classifier2 = self.create_policy_classifier(
+            name="class2", protocol="udp", direction="out",
+            port_range="30:100")
+        classifier1_id = classifier1['policy_classifier']['id']
+        classifier2_id = classifier2['policy_classifier']['id']
+        action = self.create_policy_action(name="action1",
+                                           action_type=gconst.GP_ACTION_ALLOW)
+        action_id = action['policy_action']['id']
+        action_id_list = [action_id]
+        policy_rule = self.create_policy_rule(
+            name='pr1', policy_classifier_id=classifier1_id,
+            policy_actions=action_id_list)
+        policy_rule_id = policy_rule['policy_rule']['id']
+        policy_rule_list = [policy_rule_id]
+        policy_rule_set = self.create_policy_rule_set(
+            name="c1", policy_rules=policy_rule_list)
+        policy_rule_set_id = policy_rule_set['policy_rule_set']['id']
+        ptg = self.create_policy_target_group(
+            name="ptg1", provided_policy_rule_sets={policy_rule_set_id: None})
+        ptg_id = ptg['policy_target_group']['id']
+        pt = self.create_policy_target(
+            name="pt1", policy_target_group_id=ptg_id)
+
+        # now updates the policy rule with new classifier
+        data = {'policy_rule':
+                {'policy_classifier_id': classifier2_id}}
+        req = self.new_update_request('policy_rules', data, policy_rule_id)
+        res = req.get_response(self.ext_api)
+        self.assertEqual(res.status_int, webob.exc.HTTPOk.code)
+        port_id = pt['policy_target']['port_id']
+        res = self.new_show_request('ports', port_id)
+        port = self.deserialize(self.fmt, res.get_response(self.api))
+        security_groups = port['port']['security_groups']
+        udp_rules = []
+        for sgid in security_groups:
+            sg = self._get_sg(sgid)
+            sg_rules = sg['security_group_rules']
+            udp_rules.extend([r for r in sg_rules if r['protocol'] == 'udp'])
+
+        self.assertEqual(len(udp_rules), 1)
+        udp_rule = udp_rules[0]
+        self.assertEqual(udp_rule['port_range_min'], 30)
+        self.assertEqual(udp_rule['port_range_max'], 100)
+
+    # Test update of policy classifier
+    def test_policy_classifier_update(self):
+        classifier = self.create_policy_classifier(
+            name="class1", protocol="tcp", direction="bi", port_range="30:100")
+        classifier_id = classifier['policy_classifier']['id']
+        action = self.create_policy_action(name="action1",
+                                           action_type=gconst.GP_ACTION_ALLOW)
+        action_id = action['policy_action']['id']
+        action_id_list = [action_id]
+        policy_rule = self.create_policy_rule(
+            name='pr1', policy_classifier_id=classifier_id,
+            policy_actions=action_id_list)
+        policy_rule_id = policy_rule['policy_rule']['id']
+        policy_rule_list = [policy_rule_id]
+        policy_rule_set = self.create_policy_rule_set(
+            name="c1", policy_rules=policy_rule_list)
+        policy_rule_set_id = policy_rule_set['policy_rule_set']['id']
+        ptg = self.create_policy_target_group(
+            name="ptg1", provided_policy_rule_sets={policy_rule_set_id: None})
+        ptg_id = ptg['policy_target_group']['id']
+        pt = self.create_policy_target(
+            name="pt1", policy_target_group_id=ptg_id)
+
+        # now updates the policy classifier with new protocol field
+        data = {'policy_classifier':
+                {'protocol': 'udp', 'port_range': '50:150'}}
+        req = self.new_update_request('policy_classifiers', data,
+            classifier_id)
+        res = req.get_response(self.ext_api)
+        self.assertEqual(res.status_int, webob.exc.HTTPOk.code)
+        port_id = pt['policy_target']['port_id']
+        res = self.new_show_request('ports', port_id)
+        port = self.deserialize(self.fmt, res.get_response(self.api))
+        security_groups = port['port']['security_groups']
+        udp_rules = []
+        for sgid in security_groups:
+            sg = self._get_sg(sgid)
+            sg_rules = sg['security_group_rules']
+            udp_rules.extend([r for r in sg_rules if r['protocol'] == 'udp'])
+
+        self.assertEqual(len(udp_rules), 1)
+        udp_rule = udp_rules[0]
+        self.assertEqual(udp_rule['port_range_min'], 50)
+        self.assertEqual(udp_rule['port_range_max'], 150)
 
     def test_redirect_to_chain(self):
         classifier = self.create_policy_classifier(
