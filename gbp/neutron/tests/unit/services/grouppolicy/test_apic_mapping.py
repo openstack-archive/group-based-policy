@@ -15,10 +15,12 @@ import copy
 import sys
 
 import mock
+import netaddr
 from neutron.common import rpc as n_rpc
 from neutron import context
 from neutron.tests.unit.ml2.drivers.cisco.apic import (
     test_cisco_apic_common as mocked)
+import webob.exc
 
 sys.modules["apicapi"] = mock.Mock()
 
@@ -32,6 +34,7 @@ APIC_CONTRACT = 'contract'
 APIC_ENDPOINT_GROUP = 'policy_target_group'
 APIC_POLICY_RULE = 'policy_rule'
 
+APIC_EXTERNAL_RID = '1.0.0.1'
 CORE_PLUGIN = 'neutron.plugins.ml2.plugin.Ml2Plugin'
 
 
@@ -72,12 +75,36 @@ class ApicMappingTestCase(
         self.driver.name_mapper.policy_rule = echo
         self.driver.name_mapper.app_profile.return_value = mocked.APIC_AP
         self.driver.name_mapper.policy_target_group = echo
-        self.driver.apic_manager = mock.Mock(name_mapper=mock.Mock())
+        self.driver.name_mapper.external_policy = echo
+        self.driver.name_mapper.external_segment = echo
+        self.driver.apic_manager = mock.Mock(name_mapper=mock.Mock(),
+                                             ext_net_dict={})
         self.driver.apic_manager.apic.transaction = self.fake_transaction
 
     def _get_object(self, type, id, api):
         req = self.new_show_request(type, id, self.fmt)
         return self.deserialize(self.fmt, req.get_response(api))
+
+    def _build_external_dict(self, name, cidr_exposed):
+        return {name: {
+                'switch': mocked.APIC_EXT_SWITCH,
+                'port': mocked.APIC_EXT_MODULE + '/' + mocked.APIC_EXT_PORT,
+                'encap': mocked.APIC_EXT_ENCAP,
+                'router_id': APIC_EXTERNAL_RID,
+                'cidr_exposed': cidr_exposed,
+                'gateway_ip': str(netaddr.IPNetwork(cidr_exposed)[1])}}
+
+    def _mock_external_dict(self, data):
+        self.driver.apic_manager.ext_net_dict = {}
+        for x in data:
+            self.driver.apic_manager.ext_net_dict.update(
+                self._build_external_dict(x[0], x[1]))
+
+    def _check_call_list(self, expected, observed):
+        for call in expected:
+            self.assertTrue(call in observed)
+            observed.remove(call)
+        self.assertFalse(len(observed))
 
 
 class TestPolicyTarget(ApicMappingTestCase):
@@ -330,6 +357,248 @@ class TestL3Policy(ApicMappingTestCase):
         mgr.ensure_context_deleted.assert_called_once_with(
             l3p['tenant_id'], l3p['id'])
 
+    def test_one_l3_policy_per_es(self):
+        # Verify 2 L3P created on same ES fails
+        es = self.create_external_segment(
+            cidr='192.168.0.0/24')['external_segment']
+        self.create_l3_policy(external_segments={es['id']: ['192.168.0.1']},
+                              expected_res_status=201)
+        res = self.create_l3_policy(
+            external_segments={es['id']: ['192.168.0.2']},
+            expected_res_status=400)
+        self.assertEqual('OnlyOneL3PolicyIsAllowedPerExternalSegment',
+                         res['NeutronError']['type'])
+        # Verify existing L3P updated to use used ES fails
+        sneaky_l3p = self.create_l3_policy()['l3_policy']
+        res = self._update_gbp_resource_full_response(
+            sneaky_l3p['id'], 'l3_policy', 'l3_policies',
+            expected_res_status=400,
+            external_segments={es['id']: ['192.168.0.3']})
+        self.assertEqual('OnlyOneL3PolicyIsAllowedPerExternalSegment',
+                         res['NeutronError']['type'])
+
+    def test_one_l3_policy_ip_on_es(self):
+        # Verify L3P created with more than 1 IP on ES fails
+        es = self.create_external_segment(
+            cidr='192.168.0.0/24')['external_segment']
+        res = self.create_l3_policy(
+            external_segments={es['id']: ['192.168.0.2', '192.168.0.3']},
+            expected_res_status=400)
+        self.assertEqual('OnlyOneAddressIsAllowedPerExternalSegment',
+                         res['NeutronError']['type'])
+        # Verify L3P updated to more than 1 IP on ES fails
+        sneaky_l3p = self.create_l3_policy(
+            external_segments={es['id']: ['192.168.0.2']},
+            expected_res_status=201)['l3_policy']
+        res = self._update_gbp_resource_full_response(
+            sneaky_l3p['id'], 'l3_policy', 'l3_policies',
+            expected_res_status=400,
+            external_segments={es['id']: ['192.168.0.2', '192.168.0.3']})
+        self.assertEqual('OnlyOneAddressIsAllowedPerExternalSegment',
+                         res['NeutronError']['type'])
+
+    def test_l3p_plugged_to_es_at_creation(self):
+        # Verify L3P is correctly plugged to ES on APIC during create
+        self._mock_external_dict([('supported', '192.168.0.2/24')])
+        es = self.create_external_segment(
+            name='supported', cidr='192.168.0.0/24',
+            external_routes=[{'destination': '0.0.0.0/0',
+                              'nexthop': '192.168.0.254'},
+                             {'destination': '128.0.0.0/16',
+                              'nexthop': None}])['external_segment']
+
+        # Create with explicit address
+        l3p = self.create_l3_policy(
+            external_segments={es['id']: ['192.168.0.3']},
+            expected_res_status=201)['l3_policy']
+
+        mgr = self.driver.apic_manager
+        mgr.ensure_external_routed_network_created.assert_called_once_with(
+            es['id'], owner=es['tenant_id'], context=l3p['id'],
+            transaction=mock.ANY)
+        mgr.ensure_logical_node_profile_created.assert_called_once_with(
+            es['id'], mocked.APIC_EXT_SWITCH, mocked.APIC_EXT_MODULE,
+            mocked.APIC_EXT_PORT, mocked.APIC_EXT_ENCAP, '192.168.0.3',
+            owner=es['tenant_id'], router_id=APIC_EXTERNAL_RID,
+            transaction=mock.ANY)
+
+        expected_route_calls = [
+            mock.call(es['id'], mocked.APIC_EXT_SWITCH, '192.168.0.254',
+                      owner=es['tenant_id'], subnet='0.0.0.0/0',
+                      transaction=mock.ANY),
+            mock.call(es['id'], mocked.APIC_EXT_SWITCH, '192.168.0.1',
+                      owner=es['tenant_id'], subnet='128.0.0.0/16',
+                      transaction=mock.ANY)]
+        self._check_call_list(expected_route_calls,
+                              mgr.ensure_static_route_created.call_args_list)
+
+    def test_l3p_plugged_to_es_at_update(self):
+        # Verify L3P is correctly plugged to ES on APIC during update
+        self._mock_external_dict([('supported', '192.168.0.2/24')])
+        es = self.create_external_segment(
+            name='supported', cidr='192.168.0.0/24',
+            external_routes=[{'destination': '0.0.0.0/0',
+                              'nexthop': '192.168.0.254'},
+                             {'destination': '128.0.0.0/16',
+                              'nexthop': None}])['external_segment']
+
+        # Create with explicit address
+        l3p = self.create_l3_policy(expected_res_status=201)['l3_policy']
+        l3p = self._update_gbp_resource(
+            l3p['id'], 'l3_policy', 'l3_policies', expected_res_status=200,
+            external_segments={es['id']: ['192.168.0.3']})
+
+        mgr = self.driver.apic_manager
+        mgr.ensure_external_routed_network_created.assert_called_once_with(
+            es['id'], owner=es['tenant_id'], context=l3p['id'],
+            transaction=mock.ANY)
+        mgr.ensure_logical_node_profile_created.assert_called_once_with(
+            es['id'], mocked.APIC_EXT_SWITCH, mocked.APIC_EXT_MODULE,
+            mocked.APIC_EXT_PORT, mocked.APIC_EXT_ENCAP, '192.168.0.3',
+            owner=es['tenant_id'], router_id=APIC_EXTERNAL_RID,
+            transaction=mock.ANY)
+
+        expected_route_calls = [
+            mock.call(es['id'], mocked.APIC_EXT_SWITCH, '192.168.0.254',
+                      owner=es['tenant_id'], subnet='0.0.0.0/0',
+                      transaction=mock.ANY),
+            mock.call(es['id'], mocked.APIC_EXT_SWITCH, '192.168.0.1',
+                      owner=es['tenant_id'], subnet='128.0.0.0/16',
+                      transaction=mock.ANY)]
+        self._check_call_list(expected_route_calls,
+                              mgr.ensure_static_route_created.call_args_list)
+
+    def test_l3p_unplugged_from_es_on_delete(self):
+        self._mock_external_dict([('supported1', '192.168.0.2/24'),
+                                 ('supported2', '192.168.1.2/24')])
+        es1 = self.create_external_segment(
+            name='supported1', cidr='192.168.0.0/24',
+            external_routes=[{'destination': '0.0.0.0/0',
+                              'nexthop': '192.168.0.254'},
+                             {'destination': '128.0.0.0/16',
+                              'nexthop': None}])['external_segment']
+        es2 = self.create_external_segment(
+            name='supported2', cidr='192.168.1.0/24')['external_segment']
+
+        l3p = self.create_l3_policy(
+            external_segments={es1['id']: ['192.168.0.3']},
+            expected_res_status=201)['l3_policy']
+        req = self.new_delete_request('l3_policies', l3p['id'], self.fmt)
+        res = req.get_response(self.ext_api)
+        self.assertEqual(res.status_int, webob.exc.HTTPNoContent.code)
+        mgr = self.driver.apic_manager
+        mgr.delete_external_routed_network.assert_called_once_with(
+            es1['id'], owner=es1['tenant_id'])
+
+        mgr.delete_external_routed_network.reset_mock()
+        # Verify correct deletion for 2 ESs
+        l3p = self.create_l3_policy(
+            external_segments={es1['id']: ['192.168.0.3'],
+                               es2['id']: ['192.168.1.3']},
+            expected_res_status=201)['l3_policy']
+        req = self.new_delete_request('l3_policies', l3p['id'], self.fmt)
+        res = req.get_response(self.ext_api)
+        self.assertEqual(res.status_int, webob.exc.HTTPNoContent.code)
+
+        expected_delete_calls = [
+            mock.call(es1['id'], owner=es1['tenant_id']),
+            mock.call(es2['id'], owner=es2['tenant_id'])]
+        self._check_call_list(
+            expected_delete_calls,
+            mgr.delete_external_routed_network.call_args_list)
+
+    def test_l3p_unplugged_from_es_on_update(self):
+        self._mock_external_dict([('supported1', '192.168.0.2/24'),
+                                 ('supported2', '192.168.1.2/24')])
+        es1 = self.create_external_segment(
+            name='supported1', cidr='192.168.0.0/24',
+            external_routes=[{'destination': '0.0.0.0/0',
+                              'nexthop': '192.168.0.254'},
+                             {'destination': '128.0.0.0/16',
+                              'nexthop': None}])['external_segment']
+        es2 = self.create_external_segment(
+            name='supported2', cidr='192.168.1.0/24')['external_segment']
+        l3p = self.create_l3_policy(
+            external_segments={es1['id']: ['192.168.0.3']},
+            expected_res_status=201)['l3_policy']
+        mgr = self.driver.apic_manager
+        mgr.ensure_external_routed_network_created.reset_mock()
+        mgr.ensure_logical_node_profile_created.reset_mock()
+        mgr.ensure_static_route_created.reset_mock()
+
+        l3p = self._update_gbp_resource(
+            l3p['id'], 'l3_policy', 'l3_policies', expected_res_status=200,
+            external_segments={es2['id']: ['192.168.1.3']})
+
+        mgr.delete_external_routed_network.assert_called_once_with(
+            es1['id'], owner=es1['tenant_id'])
+        mgr.ensure_external_routed_network_created.assert_called_once_with(
+            es2['id'], owner=es2['tenant_id'], context=l3p['id'],
+            transaction=mock.ANY)
+        mgr.ensure_logical_node_profile_created.assert_called_once_with(
+            es2['id'], mocked.APIC_EXT_SWITCH, mocked.APIC_EXT_MODULE,
+            mocked.APIC_EXT_PORT, mocked.APIC_EXT_ENCAP, '192.168.1.3',
+            owner=es2['tenant_id'], router_id=APIC_EXTERNAL_RID,
+            transaction=mock.ANY)
+        self.assertFalse(mgr.ensure_static_route_created.called)
+
+        mgr.delete_external_routed_network.reset_mock()
+        self._update_gbp_resource(
+            l3p['id'], 'l3_policy', 'l3_policies', expected_res_status=200,
+            external_segments={es1['id']: ['192.168.0.3'],
+                               es2['id']: ['192.168.1.3']})
+        self._update_gbp_resource(
+            l3p['id'], 'l3_policy', 'l3_policies', expected_res_status=200,
+            external_segments={})
+        expected_delete_calls = [
+            mock.call(es1['id'], owner=es1['tenant_id']),
+            mock.call(es2['id'], owner=es2['tenant_id'])]
+        self._check_call_list(
+            expected_delete_calls,
+            mgr.delete_external_routed_network.call_args_list)
+
+    def test_verify_unsupported_es_noop(self):
+        # Verify L3P is correctly plugged to ES on APIC during update
+        self._mock_external_dict([('supported', '192.168.0.2/24')])
+        es = self.create_external_segment(
+            name='unsupported', cidr='192.168.0.0/24')['external_segment']
+        self.create_l3_policy(
+            external_segments={es['id']: ['192.168.0.3']},
+            expected_res_status=201)
+
+        mgr = self.driver.apic_manager
+        self.assertFalse(mgr.ensure_external_routed_network_created.called)
+        self.assertFalse(mgr.ensure_logical_node_profile_created.called)
+        self.assertFalse(mgr.ensure_static_route_created.called)
+
+    def test_cidr_exposd(self):
+        # Verify "cidr_exposed" configuration is assigned to L3P when no
+        # explicit address is configured
+        self._mock_external_dict([('supported1', '192.168.0.2/24'),
+                                  ('supported2', '192.168.1.2/24')])
+        es1 = self.create_external_segment(
+            name='supported1', cidr='192.168.0.0/24')['external_segment']
+        es2 = self.create_external_segment(
+            name='supported2', cidr='192.168.1.0/24')['external_segment']
+        l3p = self.create_l3_policy(
+            external_segments={es1['id']: []},
+            expected_res_status=201)['l3_policy']
+        self.assertEqual(['192.168.0.2'], l3p['external_segments'][es1['id']])
+
+        l3p = self._update_gbp_resource(l3p['id'], 'l3_policy', 'l3_policies',
+                                        expected_res_status=200,
+                                        external_segments={es1['id']: [],
+                                                           es2['id']: []})
+        self.assertEqual(['192.168.0.2'], l3p['external_segments'][es1['id']])
+        self.assertEqual(['192.168.1.2'], l3p['external_segments'][es2['id']])
+
+        # Address IP changed
+        l3p = self._update_gbp_resource(
+            l3p['id'], 'l3_policy', 'l3_policies', expected_res_status=200,
+            external_segments={es1['id']: ['192.168.0.3'], es2['id']: []})
+        self.assertEqual(['192.168.0.3'], l3p['external_segments'][es1['id']])
+        self.assertEqual(['192.168.1.2'], l3p['external_segments'][es2['id']])
+
 
 class TestPolicyRuleSet(ApicMappingTestCase):
 
@@ -484,3 +753,183 @@ class TestPolicyRule(ApicMappingTestCase):
             action_type='allow')['policy_action']
         return self.create_policy_rule(
             cls['id'], policy_actions=[action['id']])['policy_rule']
+
+
+class TestExternalSegment(ApicMappingTestCase):
+
+    def test_pat_rejected(self):
+        self._mock_external_dict([('supported', '192.168.0.2/24')])
+        # Verify Rejected on create
+        res = self.create_external_segment(
+            name='supported', port_address_translation=True,
+            expected_res_status=400)
+        self.assertEqual('PATNotSupportedByApicDriver',
+                         res['NeutronError']['type'])
+
+        # Verify Rejected on Update
+        es = self.create_external_segment(
+            name='supported', expected_res_status=201,
+            port_address_translation=False)['external_segment']
+        res = self._update_gbp_resource_full_response(
+            es['id'], 'external_segment', 'external_segments',
+            expected_res_status=400, port_address_translation=True)
+        self.assertEqual('PATNotSupportedByApicDriver',
+                         res['NeutronError']['type'])
+
+    def test_create(self):
+        self._mock_external_dict([('supported', '192.168.0.2/24')])
+        self.create_external_segment(name='supported', expected_res_status=201)
+        self.create_external_segment(name='unsupport', expected_res_status=201)
+
+    def test_update_unsupported_noop(self):
+        self._mock_external_dict([('supported', '192.168.0.2/24')])
+        es = self.create_external_segment(
+            name='unsupport', cidr = '192.168.0.0/24',
+            external_routes=[{'destination': '0.0.0.0/0',
+                              'nexthop': '192.168.0.254'},
+                             {'destination': '128.0.0.0/16',
+                              'nexthop': None}],
+            expected_res_status=201)['external_segment']
+
+        self._update_gbp_resource(es['id'], 'external_segment',
+                                  'external_segments', expected_res_status=200,
+                                  external_routes=[])
+
+        mgr = self.driver.apic_manager
+        self.assertFalse(mgr.ensure_static_route_deleted.called)
+        self.assertFalse(mgr.ensure_external_epg_routes_deleted.called)
+        self.assertFalse(mgr.ensure_static_route_created.called)
+        self.assertFalse(mgr.ensure_external_epg_created.called)
+        self.assertFalse(mgr.ensure_next_hop_deleted.called)
+
+    def test_route_update_remove(self):
+        # Verify routes are updated correctly
+        self._mock_external_dict([('supported', '192.168.0.2/24')])
+        es = self.create_external_segment(
+            name='supported', cidr = '192.168.0.0/24',
+            external_routes=[{'destination': '0.0.0.0/0',
+                              'nexthop': '192.168.0.254'},
+                             {'destination': '128.0.0.0/16',
+                              'nexthop': None}],
+            expected_res_status=201)['external_segment']
+
+        # Attach 3 external policies
+        f = self.create_external_policy
+        eps = [f(external_segments=[es['id']],
+                 expected_res_status=201)['external_policy']
+               for x in xrange(3)]
+        mgr = self.driver.apic_manager
+        mgr.ensure_external_epg_created.reset_mock()
+        # Remove route completely
+        self._update_gbp_resource(es['id'], 'external_segment',
+                                  'external_segments', expected_res_status=200,
+                                  external_routes=[
+                                      {'destination': '0.0.0.0/0',
+                                       'nexthop': '192.168.0.254'}])
+        mgr = self.driver.apic_manager
+        mgr.ensure_static_route_deleted.assert_called_with(
+            es['id'], mocked.APIC_EXT_SWITCH, '128.0.0.0/16',
+            owner=es['tenant_id'], transaction=mock.ANY)
+        expected_delete_calls = []
+        for ep in eps:
+            expected_delete_calls.append(
+                mock.call(es['id'], subnets=['128.0.0.0/16'],
+                          external_epg=ep['id'], owner=es['tenant_id'],
+                          transaction=mock.ANY))
+        self._check_call_list(
+            expected_delete_calls,
+            mgr.ensure_external_epg_routes_deleted.call_args_list)
+        self.assertFalse(mgr.ensure_static_route_created.called)
+        self.assertFalse(mgr.ensure_external_epg_created.called)
+        self.assertFalse(mgr.ensure_next_hop_deleted.called)
+
+        # Remove nexthop only
+        mgr.ensure_static_route_deleted.reset_mock()
+        mgr.ensure_external_epg_routes_deleted.reset_mock()
+
+        self._update_gbp_resource(es['id'], 'external_segment',
+                                  'external_segments', expected_res_status=200,
+                                  external_routes=[
+                                      {'destination': '0.0.0.0/0',
+                                       'nexthop': None}])
+        mgr.ensure_next_hop_deleted.assert_called_with(
+            es['id'], mocked.APIC_EXT_SWITCH, '0.0.0.0/0', '192.168.0.254',
+            owner=es['tenant_id'], transaction=mock.ANY)
+        # Being the new nexthop 'None', the default one is used
+        mgr.ensure_static_route_created.assert_called_with(
+            es['id'], mocked.APIC_EXT_SWITCH, '192.168.0.1',
+            subnet='0.0.0.0/0', owner=es['tenant_id'], transaction=mock.ANY)
+
+        expected_delete_calls = []
+        for ep in eps:
+            expected_delete_calls.append(
+                mock.call(es['id'], subnet='0.0.0.0/0', external_epg=ep['id'],
+                          owner=es['tenant_id'], transaction=mock.ANY))
+        self._check_call_list(expected_delete_calls,
+                              mgr.ensure_external_epg_created.call_args_list)
+
+        self.assertFalse(mgr.ensure_static_route_deleted.called)
+        self.assertFalse(mgr.ensure_external_epg_routes_deleted.called)
+
+    def test_route_update_add(self):
+        # Verify routes are updated correctly
+        self._mock_external_dict([('supported', '192.168.0.2/24')])
+        es = self.create_external_segment(
+            name='supported', cidr='192.168.0.0/24',
+            external_routes=[], expected_res_status=201)['external_segment']
+
+        # Attach 3 external policies
+        f = self.create_external_policy
+        eps = [f(external_segments=[es['id']],
+                 expected_res_status=201)['external_policy']
+               for x in xrange(3)]
+        mgr = self.driver.apic_manager
+        mgr.ensure_external_epg_created.reset_mock()
+        self._update_gbp_resource(es['id'], 'external_segment',
+                                  'external_segments', expected_res_status=200,
+                                  external_routes=[
+                                      {'destination': '128.0.0.0/16',
+                                       'nexthop': '192.168.0.254'}])
+
+        mgr.ensure_static_route_created.assert_called_with(
+            es['id'], mocked.APIC_EXT_SWITCH, '192.168.0.254',
+            subnet='128.0.0.0/16', owner=es['tenant_id'], transaction=mock.ANY)
+
+        expected_delete_calls = []
+        for ep in eps:
+            expected_delete_calls.append(
+                mock.call(es['id'], subnet='128.0.0.0/16',
+                          external_epg=ep['id'], owner=es['tenant_id'],
+                          transaction=mock.ANY))
+        self._check_call_list(expected_delete_calls,
+                              mgr.ensure_external_epg_created.call_args_list)
+        self.assertFalse(mgr.ensure_static_route_deleted.called)
+        self.assertFalse(mgr.ensure_external_epg_routes_deleted.called)
+        self.assertFalse(mgr.ensure_next_hop_deleted.called)
+
+        mgr.ensure_static_route_created.reset_mock()
+        mgr.ensure_external_epg_created.reset_mock()
+
+        # Verify Route added with default gateway
+        self._update_gbp_resource(es['id'], 'external_segment',
+                                  'external_segments', expected_res_status=200,
+                                  external_routes=[
+                                      {'destination': '128.0.0.0/16',
+                                       'nexthop': '192.168.0.254'},
+                                      {'destination': '0.0.0.0/0',
+                                       'nexthop': None}])
+
+        mgr.ensure_static_route_created.assert_called_with(
+            es['id'], mocked.APIC_EXT_SWITCH, '192.168.0.1',
+            subnet='0.0.0.0/0', owner=es['tenant_id'], transaction=mock.ANY)
+        expected_delete_calls = []
+        for ep in eps:
+            expected_delete_calls.append(
+                mock.call(es['id'], subnet='0.0.0.0/0',
+                          external_epg=ep['id'], owner=es['tenant_id'],
+                          transaction=mock.ANY))
+        self._check_call_list(expected_delete_calls,
+                              mgr.ensure_external_epg_created.call_args_list)
+        self.assertFalse(mgr.ensure_static_route_deleted.called)
+        self.assertFalse(mgr.ensure_external_epg_routes_deleted.called)
+        self.assertFalse(mgr.ensure_next_hop_deleted.called)
