@@ -653,6 +653,12 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
 
         res['policy_rules'] = [pr['policy_rule_id']
                                for pr in prs['policy_rules']]
+        res['providing_policy_target_groups'] = [
+            ptg['policy_target_group_id']
+            for ptg in prs['providing_policy_target_groups']]
+        res['consuming_policy_target_groups'] = [
+            ptg['policy_target_group_id']
+            for ptg in prs['consuming_policy_target_groups']]
         return self._fields(res, fields)
 
     def _get_policy_rule_policy_rule_sets(self, context, policy_rule_id):

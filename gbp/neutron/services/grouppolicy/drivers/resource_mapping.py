@@ -508,9 +508,8 @@ class ResourceMappingDriver(api.PolicyDriver):
                 context._plugin_context, policy_rule_set_id)
             policy_rule_set_sg_mappings = self._get_policy_rule_set_sg_mapping(
                 context._plugin_context.session, policy_rule_set['id'])
-            ptg_mapping = self._get_policy_rule_set_ptg_mapping(
+            cidr_mapping = self._get_ptg_cidrs_mapping(
                 context, policy_rule_set)
-            cidr_mapping = self._get_ptg_cidrs_mapping(context, ptg_mapping)
             self._add_or_remove_policy_rule_set_rule(
                 context, context.current, policy_rule_set_sg_mappings,
                 cidr_mapping, unset=True)
@@ -561,18 +560,14 @@ class ResourceMappingDriver(api.PolicyDriver):
             context._plugin_context.session, context.current['id'])
         context._rmd_sg_list_temp = [mapping['provided_sg_id'],
                                      mapping['consumed_sg_id']]
-        policy_rule_set = context._plugin._get_policy_rule_set(
-            context._plugin_context, context.current['id'])
-        context._rmd_ptg_mapping_temp = self._get_policy_rule_set_ptg_mapping(
-            context, policy_rule_set)
 
     @log.log
     def delete_policy_rule_set_postcommit(self, context):
         # Disassociate SGs
         sg_list = context._rmd_sg_list_temp
-
-        ptg_mapping = context._rmd_ptg_mapping_temp
-        for ptgs in ptg_mapping.values():
+        ptg_mapping = [context.current['providing_policy_target_groups'],
+                       context.current['consuming_policy_target_groups']]
+        for ptgs in ptg_mapping:
             for ptg in ptgs:
                 policy_target_list = ptg['policy_targets']
                 for pt_id in policy_target_list:
@@ -792,9 +787,8 @@ class ResourceMappingDriver(api.PolicyDriver):
         for policy_rule_set in policy_rule_set_list:
             policy_rule_set_sg_mappings = self._get_policy_rule_set_sg_mapping(
                 context._plugin_context.session, policy_rule_set['id'])
-            ptg_mapping = self._get_policy_rule_set_ptg_mapping(
+            cidr_mapping = self._get_ptg_cidrs_mapping(
                 context, policy_rule_set)
-            cidr_mapping = self._get_ptg_cidrs_mapping(context, ptg_mapping)
             if old_classifier:
                 self._add_or_remove_policy_rule_set_rule(
                     context, old_policy_rule, policy_rule_set_sg_mappings,
@@ -1379,11 +1373,9 @@ class ResourceMappingDriver(api.PolicyDriver):
                                       policy_rules, unset=False):
         policy_rule_set_sg_mappings = self._get_policy_rule_set_sg_mapping(
             context._plugin_context.session, policy_rule_set['id'])
-        policy_rule_set = context._plugin._get_policy_rule_set(
+        policy_rule_set = context._plugin.get_policy_rule_set(
             context._plugin_context, policy_rule_set['id'])
-        ptg_mapping = self._get_policy_rule_set_ptg_mapping(
-            context, policy_rule_set)
-        cidr_mapping = self._get_ptg_cidrs_mapping(context, ptg_mapping)
+        cidr_mapping = self._get_ptg_cidrs_mapping(context, policy_rule_set)
         for policy_rule_id in policy_rules:
             policy_rule = context._plugin.get_policy_rule(
                 context._plugin_context, policy_rule_id)
@@ -1486,19 +1478,6 @@ class ResourceMappingDriver(api.PolicyDriver):
         if sg_id:
             self._delete_sg(plugin_context, sg_id)
 
-    def _get_policy_rule_set_ptg_mapping(self, context, policy_rule_set):
-        # REVISIT(ivar): This will be removed once navigability issue is
-        # solved (bug/1384398)
-        return {
-            'providing_ptgs': self._get_ptgs_by_id(
-                context,
-                [x['policy_target_group_id'] for x in policy_rule_set.get(
-                    'providing_policy_target_groups', [])]),
-            'consuming_ptgs': self._get_ptgs_by_id(
-                context,
-                [x['policy_target_group_id'] for x in policy_rule_set.get(
-                    'consuming_policy_target_groups', [])])}
-
     def _get_ptgs_by_id(self, context, ids):
         if ids:
             filters = {'id': ids}
@@ -1509,17 +1488,19 @@ class ResourceMappingDriver(api.PolicyDriver):
 
     def _get_ptg_cidrs(self, context, ptgs):
         cidrs = []
+        ptgs = context._plugin.get_policy_target_groups(
+            context._plugin_context, filters={'id': ptgs})
         for ptg in ptgs:
             cidrs.extend([self._core_plugin.get_subnet(
                 context._plugin_context, x)['cidr'] for x in ptg['subnets']])
         return cidrs
 
-    def _get_ptg_cidrs_mapping(self, context, ptg_mapping):
+    def _get_ptg_cidrs_mapping(self, context, policy_rule_set):
         return {
             'providing_cidrs': self._get_ptg_cidrs(
-                context, ptg_mapping['providing_ptgs']),
+                context, policy_rule_set['providing_policy_target_groups']),
             'consuming_cidrs': self._get_ptg_cidrs(
-                context, ptg_mapping['consuming_ptgs'])}
+                context, policy_rule_set['consuming_policy_target_groups'])}
 
     def _set_rule_servicechain_instance_mapping(self, session, rule_id,
                                                 servicechain_instance_id):
