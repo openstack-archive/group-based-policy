@@ -31,13 +31,13 @@ MAX_IPV6_SUBNET_PREFIX_LENGTH = 127
 
 
 class SpecNodeAssociation(model_base.BASEV2):
-    """Models  many to many providing relation between Specs and Nodes."""
+    """Models one to many providing relation between Specs and Nodes."""
     __tablename__ = 'sc_spec_node_associations'
     servicechain_spec = sa.Column(
         sa.String(36), sa.ForeignKey('sc_specs.id'), primary_key=True)
     node_id = sa.Column(sa.String(36),
                         sa.ForeignKey('sc_nodes.id'),
-                        primary_key=True)
+                        primary_key=False)
 
 
 class ServiceChainNode(model_base.BASEV2, models_v2.HasId,

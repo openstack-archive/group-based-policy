@@ -140,6 +140,33 @@ class ServiceChainDBTestBase(object):
 
         return scs
 
+    def test_create_servicechain_specs_same_node(self):
+        template1 = '{"key1":"value1"}'
+        scn = self.create_servicechain_node(config=template1)
+        scn_id = scn['servicechain_node']['id']
+        spec1 = {"servicechain_spec": {'name': 'scs1',
+                                       'tenant_id': self._tenant_id,
+                                       'nodes': [scn_id]}}
+        spec_req = self.new_create_request('servicechain_specs',
+                                           spec1,
+                                           self.fmt)
+        spec_res = spec_req.get_response(self.ext_api)
+        self.assertEqual(spec_res.status_int, webob.exc.HTTPCreated.code)
+        res = self.deserialize(self.fmt, spec_res)
+        self.assertIn('servicechain_spec', res)
+        self.assertEqual([scn_id], res['servicechain_spec']['nodes'])
+        spec2 = {"servicechain_spec": {'name': 'scs2',
+                                       'tenant_id': self._tenant_id,
+                                       'nodes': [scn_id]}}
+        spec_req = self.new_create_request('servicechain_specs',
+                                           spec2,
+                                           self.fmt)
+        spec_res = spec_req.get_response(self.ext_api)
+        self.assertEqual(spec_res.status_int, webob.exc.HTTPCreated.code)
+        res = self.deserialize(self.fmt, spec_res)
+        self.assertIn('servicechain_spec', res)
+        self.assertEqual([scn_id], res['servicechain_spec']['nodes'])
+
     def create_servicechain_instance(self, servicechain_spec=None,
                                      config_param_values="{}",
                                      provider_ptg_id=None,
