@@ -89,16 +89,22 @@ class PolicyRuleSetSGsMapping(model_base.BASEV2):
                                sa.ForeignKey('securitygroups.id'))
 
 
-class RuleServiceChainInstanceMapping(model_base.BASEV2):
-    """Policy Rule to ServiceChainInstance mapping DB."""
+class PtgServiceChainInstanceMapping(model_base.BASEV2):
+    """Policy Target Group to ServiceChainInstance mapping DB."""
 
-    __tablename__ = 'gpm_rule_servicechain_mapping'
-    rule_id = sa.Column(sa.String(36),
-                        sa.ForeignKey('gp_policy_rules.id'),
-                        nullable=False, primary_key=True)
+    __tablename__ = 'gpm_ptgs_servicechain_mapping'
+    provider_ptg_id = sa.Column(sa.String(36),
+                                sa.ForeignKey('gp_policy_target_groups.id',
+                                              ondelete='CASCADE'),
+                                nullable=False)
+    consumer_ptg_id = sa.Column(sa.String(36),
+                                sa.ForeignKey('gp_policy_target_groups.id',
+                                              ondelete='CASCADE'),
+                                nullable=False)
     servicechain_instance_id = sa.Column(sa.String(36),
                                          sa.ForeignKey('sc_instances.id',
-                                                       ondelete='CASCADE'))
+                                                       ondelete='CASCADE'),
+                                         primary_key=True)
 
 
 class ServicePolicyPTGIpAddressMapping(model_base.BASEV2):
@@ -362,7 +368,15 @@ class ResourceMappingDriver(api.PolicyDriver):
 
     @log.log
     def delete_policy_target_group_precommit(self, context):
-        pass
+        provider_ptg_chain_map = self._get_ptg_servicechain_mapping(
+                                            context._plugin_context.session,
+                                            context.current['id'],
+                                            None)
+        consumer_ptg_chain_map = self._get_ptg_servicechain_mapping(
+                                            context._plugin_context.session,
+                                            None,
+                                            context.current['id'],)
+        context.ptg_chain_map = provider_ptg_chain_map + consumer_ptg_chain_map
 
     @log.log
     def delete_policy_target_group_postcommit(self, context):
@@ -883,10 +897,6 @@ class ResourceMappingDriver(api.PolicyDriver):
             policy_rule_set = context._plugin.get_policy_rule_set(
                 context._plugin_context, policy_rule_set_id)
             for rule_id in policy_rule_set.get('policy_rules'):
-                rule_chain_map = self._get_rule_servicechain_mapping(
-                    context._plugin_context.session, rule_id)
-                if rule_chain_map:
-                    break  # Only one redirect action per rule
                 policy_rule = context._plugin.get_policy_rule(
                     context._plugin_context, rule_id)
                 classifier_id = policy_rule.get("policy_classifier_id")
@@ -896,46 +906,29 @@ class ResourceMappingDriver(api.PolicyDriver):
                     if policy_action['action_type'].upper() == "REDIRECT":
                         for ptg_consuming_prs in (
                             ptgs_consuming_policy_rule_set):
+                            ptg_chain_map = self._get_ptg_servicechain_mapping(
+                                    context._plugin_context.session,
+                                    ptg_providing_prs.policy_target_group_id,
+                                    ptg_consuming_prs.policy_target_group_id)
+                            if ptg_chain_map:
+                                break  # one chain between a pair of PTGs
                             sc_instance = self._create_servicechain_instance(
                                 context, policy_action.get("action_value"),
                                 ptg_providing_prs.policy_target_group_id,
                                 ptg_consuming_prs.policy_target_group_id,
                                 classifier_id)
                             chain_instance_id = sc_instance['id']
-                            self._set_rule_servicechain_instance_mapping(
+                            self._set_ptg_servicechain_instance_mapping(
                                 context._plugin_context.session,
-                                rule_id, chain_instance_id)
+                                ptg_providing_prs.policy_target_group_id,
+                                ptg_consuming_prs.policy_target_group_id,
+                                chain_instance_id)
                             break
 
     def _cleanup_redirect_action(self, context):
-        consumed_policy_rule_sets = context.current[
-            'consumed_policy_rule_sets']
-        provided_policy_rule_sets = context.current[
-            'provided_policy_rule_sets']
-        if not provided_policy_rule_sets and not consumed_policy_rule_sets:
-            return
-        policy_rule_sets = provided_policy_rule_sets + (
-            consumed_policy_rule_sets)
-        for policy_rule_set_id in policy_rule_sets:
-            ptgs_consuming_policy_rule_set = (
-                self._get_ptgs_consuming_policy_rule_set(
-                    context._plugin_context._session, policy_rule_set_id))
-            ptg_providing_policy_rule_set = (
-                self._get_ptgs_providing_policy_rule_set(
-                    context._plugin_context._session, policy_rule_set_id))
-            # Delete the ServiceChain Instance when we do not have either
-            # the Provider or the consumer PTGs
-            if not ptgs_consuming_policy_rule_set or (
-                not ptg_providing_policy_rule_set):
-                policy_rule_set = context._plugin.get_policy_rule_set(
-                    context._plugin_context, policy_rule_set_id)
-                for rule_id in policy_rule_set.get('policy_rules'):
-                    chain_id_map = self._get_rule_servicechain_mapping(
-                        context._plugin_context.session, rule_id)
-                    if chain_id_map:
-                        self._delete_servicechain_instance(
-                            context, chain_id_map.servicechain_instance_id)
-                        break  # Only one redirect action per rule
+        for ptg_chain in context.ptg_chain_map:
+            self._delete_servicechain_instance(
+                            context, ptg_chain.servicechain_instance_id)
 
     # The following methods perform the necessary subset of
     # functionality from neutron.api.v2.base.Controller.
@@ -1541,15 +1534,22 @@ class ResourceMappingDriver(api.PolicyDriver):
             'consuming_cidrs': self._get_ptg_cidrs(
                 context, policy_rule_set['consuming_policy_target_groups'])}
 
-    def _set_rule_servicechain_instance_mapping(self, session, rule_id,
-                                                servicechain_instance_id):
+    def _set_ptg_servicechain_instance_mapping(self, session, provider_ptg_id,
+                                               consumer_ptg_id,
+                                               servicechain_instance_id):
         with session.begin(subtransactions=True):
-            mapping = RuleServiceChainInstanceMapping(
-                rule_id=rule_id,
+            mapping = PtgServiceChainInstanceMapping(
+                provider_ptg_id=provider_ptg_id,
+                consumer_ptg_id=consumer_ptg_id,
                 servicechain_instance_id=servicechain_instance_id)
             session.add(mapping)
 
-    def _get_rule_servicechain_mapping(self, session, rule_id):
+    def _get_ptg_servicechain_mapping(self, session, provider_ptg_id,
+                                      consumer_ptg_id):
         with session.begin(subtransactions=True):
-            return (session.query(RuleServiceChainInstanceMapping).
-                    filter_by(rule_id=rule_id).first())
+            query = session.query(PtgServiceChainInstanceMapping)
+            if provider_ptg_id:
+                query = query.filter_by(provider_ptg_id=provider_ptg_id)
+            if consumer_ptg_id:
+                query = query.filter_by(consumer_ptg_id=consumer_ptg_id)
+            return query.all()

@@ -27,9 +27,11 @@ import webob.exc
 from gbp.neutron.db import servicechain_db
 from gbp.neutron.services.grouppolicy.common import constants as gconst
 from gbp.neutron.services.grouppolicy import config
-from gbp.neutron.services.grouppolicy.drivers import resource_mapping
-from gbp.neutron.services.servicechain import servicechain_plugin
 from gbp.neutron.tests.unit.services.grouppolicy import test_grouppolicy_plugin
+
+SERVICECHAIN_NODES = 'servicechain/servicechain_nodes'
+SERVICECHAIN_SPECS = 'servicechain/servicechain_specs'
+SERVICECHAIN_INSTANCES = 'servicechain/servicechain_instances'
 
 
 class NoL3NatSGTestPlugin(
@@ -858,12 +860,23 @@ class TestPolicyRuleSet(ResourceMappingTestCase):
         self.assertEqual(udp_rule['port_range_max'], 150)
 
     def test_redirect_to_chain(self):
+        data = {'servicechain_node': {'service_type': "LOADBALANCER",
+                                      'tenant_id': self._tenant_id,
+                                      'config': "{}"}}
+        scn_req = self.new_create_request(SERVICECHAIN_NODES, data, self.fmt)
+        node = self.deserialize(self.fmt, scn_req.get_response(self.ext_api))
+        scn_id = node['servicechain_node']['id']
+        data = {'servicechain_spec': {'tenant_id': self._tenant_id,
+                                      'nodes': [scn_id]}}
+        scs_req = self.new_create_request(SERVICECHAIN_SPECS, data, self.fmt)
+        spec = self.deserialize(self.fmt, scs_req.get_response(self.ext_api))
+        scs_id = spec['servicechain_spec']['id']
         classifier = self.create_policy_classifier(
             name="class1", protocol="tcp", direction="in", port_range="20:90")
         classifier_id = classifier['policy_classifier']['id']
         action = self.create_policy_action(
             name="action1", action_type=gconst.GP_ACTION_REDIRECT,
-            action_value=uuidutils.generate_uuid())
+            action_value=scs_id)
         action_id = action['policy_action']['id']
         action_id_list = [action_id]
         policy_rule = self.create_policy_rule(
@@ -874,47 +887,29 @@ class TestPolicyRuleSet(ResourceMappingTestCase):
         policy_rule_set = self.create_policy_rule_set(
             name="c1", policy_rules=policy_rule_list)
         policy_rule_set_id = policy_rule_set['policy_rule_set']['id']
-        self.create_policy_target_group(
+        provider_ptg = self.create_policy_target_group(
             name="ptg1", provided_policy_rule_sets={policy_rule_set_id: None})
-        create_chain_instance = mock.patch.object(
-            servicechain_plugin.ServiceChainPlugin,
-            'create_servicechain_instance')
-        create_chain_instance = create_chain_instance.start()
-        chain_instance_id = uuidutils.generate_uuid()
-        create_chain_instance.return_value = {'id': chain_instance_id}
-        # TODO(Magesh):Add tests which verifies that provide/consumer PTGs
-        # are set correctly for the SCI
-        with mock.patch.object(
-                resource_mapping.ResourceMappingDriver,
-                '_set_rule_servicechain_instance_mapping') as set_rule:
-            with mock.patch.object(servicechain_db.ServiceChainDbPlugin,
-                                   'get_servicechain_spec') as sc_spec_get:
-                sc_spec_get.return_value = {'servicechain_spec': {}}
-                consumer_ptg = self.create_policy_target_group(
-                    name="ptg2",
-                    consumed_policy_rule_sets={policy_rule_set_id: None})
-                consumer_ptg_id = consumer_ptg['policy_target_group']['id']
-                set_rule.assert_called_once_with(mock.ANY, policy_rule_id,
-                                                 chain_instance_id)
-        with mock.patch.object(servicechain_plugin.ServiceChainPlugin,
-                               'delete_servicechain_instance'):
-            with mock.patch.object(
-                resource_mapping.ResourceMappingDriver,
-                '_get_rule_servicechain_mapping') as get_rule:
-                r_sc_map = resource_mapping.RuleServiceChainInstanceMapping()
-                r_sc_map.rule_id = policy_rule_id
-                r_sc_map.servicechain_instance_id = chain_instance_id
-                get_rule.return_value = r_sc_map
-                get_chain_inst = mock.patch.object(
-                    servicechain_db.ServiceChainDbPlugin,
-                    'get_servicechain_instance')
-                get_chain_inst.start()
-                get_chain_inst.return_value = {
-                    "servicechain_instance": {'id': chain_instance_id}}
-                req = self.new_delete_request(
-                    'policy_target_groups', consumer_ptg_id)
-                res = req.get_response(self.ext_api)
-                self.assertEqual(res.status_int, webob.exc.HTTPNoContent.code)
+        provider_ptg_id = provider_ptg['policy_target_group']['id']
+        consumer_ptg = self.create_policy_target_group(
+            name="ptg2",
+            consumed_policy_rule_sets={policy_rule_set_id: None})
+        consumer_ptg_id = consumer_ptg['policy_target_group']['id']
+        sc_node_list_req = self.new_list_request(SERVICECHAIN_INSTANCES)
+        res = sc_node_list_req.get_response(self.ext_api)
+        sc_instances = self.deserialize(self.fmt, res)
+        # We should have one service chain instance created now
+        self.assertEqual(len(sc_instances['servicechain_instances']), 1)
+        sc_instance = sc_instances['servicechain_instances'][0]
+        self.assertEqual(sc_instance['provider_ptg_id'], provider_ptg_id)
+        self.assertEqual(sc_instance['consumer_ptg_id'], consumer_ptg_id)
+        req = self.new_delete_request(
+            'policy_target_groups', consumer_ptg_id)
+        res = req.get_response(self.ext_api)
+        self.assertEqual(res.status_int, webob.exc.HTTPNoContent.code)
+        sc_node_list_req = self.new_list_request(SERVICECHAIN_INSTANCES)
+        res = sc_node_list_req.get_response(self.ext_api)
+        sc_instances = self.deserialize(self.fmt, res)
+        self.assertEqual(len(sc_instances['servicechain_instances']), 0)
 
     def test_shared_policy_rule_set_create_negative(self):
         self.create_policy_rule_set(shared=True, expected_res_status=400)

@@ -13,7 +13,7 @@
 #    under the License.
 #
 
-"""gbp_rule_servicechain_mapping
+"""gbp_ptgs_servicechain_mapping
 
 Revision ID: 6d76bcf836a7
 Revises: 43443f15fa3f
@@ -31,16 +31,22 @@ import sqlalchemy as sa
 
 def upgrade(active_plugins=None, options=None):
     op.create_table(
-        'gpm_rule_servicechain_mapping',
-        sa.Column('rule_id', sa.String(length=36), nullable=False),
+        'gpm_ptgs_servicechain_mapping',
+        sa.Column('provider_ptg_id', sa.String(length=36), nullable=False),
+        sa.Column('consumer_ptg_id', sa.String(length=36), nullable=False),
         sa.Column('servicechain_instance_id', sa.String(length=36)),
-        sa.ForeignKeyConstraint(['rule_id'], ['gp_policy_rules.id']),
+        sa.ForeignKeyConstraint(['provider_ptg_id'],
+                                ['gp_policy_target_groups.id'],
+                                ondelete='CASCADE'),
+        sa.ForeignKeyConstraint(['consumer_ptg_id'],
+                                ['gp_policy_target_groups.id'],
+                                ondelete='CASCADE'),
         sa.ForeignKeyConstraint(['servicechain_instance_id'],
                                 ['sc_instances.id'],
                                 ondelete='CASCADE'),
-        sa.PrimaryKeyConstraint('rule_id')
+        sa.PrimaryKeyConstraint('servicechain_instance_id')
     )
 
 
 def downgrade(active_plugins=None, options=None):
-    op.drop_table('gpm_rule_servicechain_mapping')
+    op.drop_table('gpm_ptgs_servicechain_mapping')
