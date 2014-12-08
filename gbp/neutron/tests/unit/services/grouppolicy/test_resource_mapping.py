@@ -809,8 +809,9 @@ class TestPolicyRuleSet(ResourceMappingTestCase):
         policy_rule_set = self.create_policy_rule_set(
             name="c1", policy_rules=policy_rule_list)
         policy_rule_set_id = policy_rule_set['policy_rule_set']['id']
-        self.create_policy_target_group(
+        provider_ptg = self.create_policy_target_group(
             name="ptg1", provided_policy_rule_sets={policy_rule_set_id: None})
+        provider_ptg_id = provider_ptg['policy_target_group']['id']
         create_chain_instance = mock.patch.object(
             servicechain_plugin.ServiceChainPlugin,
             'create_servicechain_instance')
@@ -821,7 +822,7 @@ class TestPolicyRuleSet(ResourceMappingTestCase):
         # are set correctly for the SCI
         with mock.patch.object(
                 resource_mapping.ResourceMappingDriver,
-                '_set_rule_servicechain_instance_mapping') as set_rule:
+                '_set_ptg_servicechain_instance_mapping') as set_ptg_chain_map:
             with mock.patch.object(servicechain_db.ServiceChainDbPlugin,
                                    'get_servicechain_spec') as sc_spec_get:
                 sc_spec_get.return_value = {'servicechain_spec': {}}
@@ -829,17 +830,20 @@ class TestPolicyRuleSet(ResourceMappingTestCase):
                     name="ptg2",
                     consumed_policy_rule_sets={policy_rule_set_id: None})
                 consumer_ptg_id = consumer_ptg['policy_target_group']['id']
-                set_rule.assert_called_once_with(mock.ANY, policy_rule_id,
-                                                 chain_instance_id)
+                set_ptg_chain_map.assert_called_once_with(
+                        mock.ANY, provider_ptg_id,
+                        consumer_ptg_id, chain_instance_id)
         with mock.patch.object(servicechain_plugin.ServiceChainPlugin,
                                'delete_servicechain_instance'):
             with mock.patch.object(
                 resource_mapping.ResourceMappingDriver,
-                '_get_rule_servicechain_mapping') as get_rule:
-                r_sc_map = resource_mapping.RuleServiceChainInstanceMapping()
-                r_sc_map.rule_id = policy_rule_id
-                r_sc_map.servicechain_instance_id = chain_instance_id
-                get_rule.return_value = r_sc_map
+                '_get_ptg_servicechain_mapping') as get_ptg_chain_map:
+                ptg_chain_map = (
+                        resource_mapping.PtgServiceChainInstanceMapping())
+                ptg_chain_map.provider_ptg_id = provider_ptg_id
+                ptg_chain_map.consumer_ptg_id = consumer_ptg_id
+                ptg_chain_map.servicechain_instance_id = chain_instance_id
+                get_ptg_chain_map.return_value = [ptg_chain_map]
                 get_chain_inst = mock.patch.object(
                     servicechain_db.ServiceChainDbPlugin,
                     'get_servicechain_instance')
