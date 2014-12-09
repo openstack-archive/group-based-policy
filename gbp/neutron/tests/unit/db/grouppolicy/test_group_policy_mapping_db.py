@@ -50,49 +50,6 @@ class GroupPolicyMappingDbTestCase(tgpdb.GroupPolicyDbTestCase,
             service_plugins=service_plugins
         )
 
-    def _get_test_policy_target_attrs(self, name='pt1',
-                                      description='test pt',
-                                      policy_target_group_id=None,
-                                      port_id=None):
-        attrs = (super(GroupPolicyMappingDbTestCase, self).
-                 _get_test_policy_target_attrs(name, description,
-                                               policy_target_group_id))
-        attrs.update({'port_id': port_id})
-        return attrs
-
-    def _get_test_policy_target_group_attrs(self, name='ptg1',
-                                            description='test ptg',
-                                            l2_policy_id=None,
-                                            provided_policy_rule_sets=None,
-                                            consumed_policy_rule_sets=None,
-                                            subnets=None):
-        attrs = (super(GroupPolicyMappingDbTestCase, self).
-                 _get_test_policy_target_group_attrs(
-                     name, description, l2_policy_id,
-                     provided_policy_rule_sets, consumed_policy_rule_sets))
-        attrs.update({'subnets': subnets or []})
-        return attrs
-
-    def _get_test_l2_policy_attrs(self, name='l2p1',
-                                  description='test l2_policy',
-                                  l3_policy_id=None, network_id=None):
-        attrs = (super(GroupPolicyMappingDbTestCase, self).
-                 _get_test_l2_policy_attrs(name, description, l3_policy_id))
-        attrs.update({'network_id': network_id})
-        return attrs
-
-    def _get_test_l3_policy_attrs(self, name='l3p1',
-                                  description='test l3_policy',
-                                  ip_version=4, ip_pool='10.0.0.0/8',
-                                  subnet_prefix_length=24, routers=None,
-                                  external_segments=None):
-        attrs = (super(GroupPolicyMappingDbTestCase, self).
-                 _get_test_l3_policy_attrs(name, description, ip_version,
-                                           ip_pool, subnet_prefix_length,
-                                           external_segments))
-        attrs.update({'routers': routers or []})
-        return attrs
-
 
 class TestMappedGroupResources(GroupPolicyMappingDbTestCase,
                                tgpdb.TestGroupResources):

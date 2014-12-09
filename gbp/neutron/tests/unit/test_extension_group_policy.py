@@ -11,6 +11,7 @@
 #  under the License.
 
 import copy
+import re
 
 import mock
 from neutron.openstack.common import uuidutils
@@ -21,6 +22,7 @@ from neutron.tests.unit import test_api_v2_extension
 from webob import exc
 
 from gbp.neutron.extensions import group_policy as gp
+from gbp.neutron.tests.unit import common as cm
 
 _uuid = uuidutils.generate_uuid
 _get_path = test_api_v2._get_path
@@ -61,6 +63,18 @@ class GroupPolicyExtensionTestCase(test_api_v2_extension.ExtensionTestCase):
             plural_mappings=plural_mappings)
         self.instance = self.plugin.return_value
 
+    def __getattr__(self, item):
+        # Verify is an update of a proper GBP object
+        def _is_gbp_resource(plural):
+            return plural in gp.RESOURCE_ATTRIBUTE_MAP
+        # Update Method
+        if re.match("^get_(create|update).+(default|)_attrs$", item):
+            resource = re.sub("^get_(create|update)_", "", item)
+            resource = re.sub("(_default|)_attrs$", "", resource)
+            if _is_gbp_resource(cm.get_resource_plural(resource)):
+                return getattr(cm, item)
+        raise AttributeError
+
     def _test_create_policy_target(self, data, expected_value,
                                    default_data=None):
         if not default_data:
@@ -76,21 +90,11 @@ class GroupPolicyExtensionTestCase(test_api_v2_extension.ExtensionTestCase):
         self.assertIn('policy_target', res)
         self.assertEqual(expected_value, res['policy_target'])
 
-    def _get_create_policy_target_default_attrs(self):
-        return {'name': '', 'description': ''}
-
-    def _get_create_policy_target_attrs(self):
-        return {'name': 'ep1', 'policy_target_group_id': _uuid(),
-                'tenant_id': _uuid(), 'description': 'test policy_target'}
-
-    def _get_update_policy_target_attrs(self):
-        return {'name': 'new_name'}
-
     def test_create_policy_target_with_defaults(self):
         policy_target_id = _uuid()
         data = {'policy_target': {'policy_target_group_id': _uuid(),
                                   'tenant_id': _uuid()}}
-        default_attrs = self._get_create_policy_target_default_attrs()
+        default_attrs = self.get_create_policy_target_default_attrs()
         default_data = copy.copy(data)
         default_data['policy_target'].update(default_attrs)
         expected_value = dict(default_data['policy_target'])
@@ -100,7 +104,7 @@ class GroupPolicyExtensionTestCase(test_api_v2_extension.ExtensionTestCase):
 
     def test_create_policy_target(self):
         policy_target_id = _uuid()
-        data = {'policy_target': self._get_create_policy_target_attrs()}
+        data = {'policy_target': self.get_create_policy_target_attrs()}
         expected_value = dict(data['policy_target'])
         expected_value['id'] = policy_target_id
 
@@ -139,7 +143,7 @@ class GroupPolicyExtensionTestCase(test_api_v2_extension.ExtensionTestCase):
 
     def test_update_policy_target(self):
         policy_target_id = _uuid()
-        update_data = {'policy_target': self._get_update_policy_target_attrs()}
+        update_data = {'policy_target': self.get_update_policy_target_attrs()}
         expected_value = {'tenant_id': _uuid(), 'id': policy_target_id}
 
         self.instance.update_policy_target.return_value = expected_value
@@ -174,28 +178,10 @@ class GroupPolicyExtensionTestCase(test_api_v2_extension.ExtensionTestCase):
         self.assertIn('policy_target_group', res)
         self.assertEqual(expected_value, res['policy_target_group'])
 
-    def _get_create_policy_target_group_default_attrs(self):
-        return {'name': '', 'description': '', 'l2_policy_id': None,
-                'provided_policy_rule_sets': {},
-                'consumed_policy_rule_sets': {},
-                'network_service_policy_id': None, 'shared': False}
-
-    def _get_create_policy_target_group_attrs(self):
-        return {'name': 'ptg1', 'tenant_id': _uuid(),
-                'description': 'test policy_target group',
-                'l2_policy_id': _uuid(),
-                'provided_policy_rule_sets': {_uuid(): None},
-                'consumed_policy_rule_sets': {_uuid(): None},
-                'network_service_policy_id': _uuid(),
-                'shared': False}
-
-    def _get_update_policy_target_group_attrs(self):
-        return {'name': 'new_name'}
-
     def test_create_policy_target_group_with_defaults(self):
         policy_target_group_id = _uuid()
         data = {'policy_target_group': {'tenant_id': _uuid()}}
-        default_attrs = self._get_create_policy_target_group_default_attrs()
+        default_attrs = self.get_create_policy_target_group_default_attrs()
         default_data = copy.copy(data)
         default_data['policy_target_group'].update(default_attrs)
         expected_value = copy.deepcopy(default_data['policy_target_group'])
@@ -207,7 +193,7 @@ class GroupPolicyExtensionTestCase(test_api_v2_extension.ExtensionTestCase):
     def test_create_policy_target_group(self):
         policy_target_group_id = _uuid()
         data = {'policy_target_group':
-                self._get_create_policy_target_group_attrs()}
+                self.get_create_policy_target_group_attrs()}
         expected_value = copy.deepcopy(data['policy_target_group'])
         expected_value['id'] = policy_target_group_id
 
@@ -248,7 +234,7 @@ class GroupPolicyExtensionTestCase(test_api_v2_extension.ExtensionTestCase):
     def test_update_policy_target_group(self):
         policy_target_group_id = _uuid()
         update_data = {'policy_target_group':
-                       self._get_update_policy_target_group_attrs()}
+                       self.get_update_policy_target_group_attrs()}
         expected_value = {'tenant_id': _uuid(), 'id': policy_target_group_id}
 
         self.instance.update_policy_target_group.return_value = expected_value
@@ -281,21 +267,10 @@ class GroupPolicyExtensionTestCase(test_api_v2_extension.ExtensionTestCase):
         self.assertIn('l2_policy', res)
         self.assertEqual(expected_value, res['l2_policy'])
 
-    def _get_create_l2_policy_default_attrs(self):
-        return {'name': '', 'description': '', 'shared': False}
-
-    def _get_create_l2_policy_attrs(self):
-        return {'name': 'l2p1', 'tenant_id': _uuid(),
-                'description': 'test L2 policy', 'l3_policy_id': _uuid(),
-                'shared': False}
-
-    def _get_update_l2_policy_attrs(self):
-        return {'name': 'new_name'}
-
     def test_create_l2_policy_with_defaults(self):
         l2_policy_id = _uuid()
         data = {'l2_policy': {'tenant_id': _uuid(), 'l3_policy_id': _uuid()}}
-        default_attrs = self._get_create_l2_policy_default_attrs()
+        default_attrs = self.get_create_l2_policy_default_attrs()
         default_data = copy.copy(data)
         default_data['l2_policy'].update(default_attrs)
         expected_value = dict(default_data['l2_policy'])
@@ -305,7 +280,7 @@ class GroupPolicyExtensionTestCase(test_api_v2_extension.ExtensionTestCase):
 
     def test_create_l2_policy(self):
         l2_policy_id = _uuid()
-        data = {'l2_policy': self._get_create_l2_policy_attrs()}
+        data = {'l2_policy': self.get_create_l2_policy_attrs()}
         expected_value = dict(data['l2_policy'])
         expected_value['id'] = l2_policy_id
 
@@ -344,7 +319,7 @@ class GroupPolicyExtensionTestCase(test_api_v2_extension.ExtensionTestCase):
 
     def test_update_l2_policy(self):
         l2_policy_id = _uuid()
-        update_data = {'l2_policy': self._get_update_l2_policy_attrs()}
+        update_data = {'l2_policy': self.get_update_l2_policy_attrs()}
         expected_value = {'tenant_id': _uuid(), 'id': l2_policy_id}
 
         self.instance.update_l2_policy.return_value = expected_value
@@ -377,25 +352,10 @@ class GroupPolicyExtensionTestCase(test_api_v2_extension.ExtensionTestCase):
         self.assertIn('l3_policy', res)
         self.assertEqual(res['l3_policy'], expected_value)
 
-    def _get_create_l3_policy_default_attrs(self):
-        return {'name': '', 'description': '', 'ip_version': 4,
-                'ip_pool': '10.0.0.0/8', 'subnet_prefix_length': 24,
-                'external_segments': {}, 'shared': False}
-
-    def _get_create_l3_policy_attrs(self):
-        return {'name': 'l3p1', 'tenant_id': _uuid(),
-                'description': 'test L3 policy', 'ip_version': 6,
-                'ip_pool': 'fd01:2345:6789::/48',
-                'external_segments': {_uuid(): ['192.168.0.3']},
-                'subnet_prefix_length': 64, 'shared': False}
-
-    def _get_update_l3_policy_attrs(self):
-        return {'name': 'new_name'}
-
     def test_create_l3_policy_with_defaults(self):
         l3_policy_id = _uuid()
         data = {'l3_policy': {'tenant_id': _uuid()}}
-        default_attrs = self._get_create_l3_policy_default_attrs()
+        default_attrs = self.get_create_l3_policy_default_attrs()
         default_data = copy.copy(data)
         default_data['l3_policy'].update(default_attrs)
         expected_value = dict(default_data['l3_policy'])
@@ -405,7 +365,7 @@ class GroupPolicyExtensionTestCase(test_api_v2_extension.ExtensionTestCase):
 
     def test_create_l3_policy(self):
         l3_policy_id = _uuid()
-        data = {'l3_policy': self._get_create_l3_policy_attrs()}
+        data = {'l3_policy': self.get_create_l3_policy_attrs()}
         expected_value = dict(data['l3_policy'])
         expected_value.update({'id': l3_policy_id})
 
@@ -444,7 +404,7 @@ class GroupPolicyExtensionTestCase(test_api_v2_extension.ExtensionTestCase):
 
     def test_update_l3_policy(self):
         l3_policy_id = _uuid()
-        update_data = {'l3_policy': self._get_update_l3_policy_attrs()}
+        update_data = {'l3_policy': self.get_update_l3_policy_attrs()}
         expected_value = {'tenant_id': _uuid(), 'id': l3_policy_id}
 
         self.instance.update_l3_policy.return_value = expected_value
@@ -479,28 +439,10 @@ class GroupPolicyExtensionTestCase(test_api_v2_extension.ExtensionTestCase):
         self.assertIn('policy_action', res)
         self.assertEqual(expected_value, res['policy_action'])
 
-    def _get_create_policy_action_default_attrs(self):
-        return {'name': '',
-                'description': '',
-                'action_type': 'allow',
-                'action_value': None,
-                'shared': False}
-
-    def _get_create_policy_action_attrs(self):
-        return {'name': 'pa1',
-                'tenant_id': _uuid(),
-                'description': 'test policy action',
-                'action_type': 'redirect',
-                'action_value': _uuid(),
-                'shared': False}
-
-    def _get_update_policy_action_attrs(self):
-        return {'name': 'new_name'}
-
     def test_create_policy_action_with_defaults(self):
         policy_action_id = _uuid()
         data = {'policy_action': {'tenant_id': _uuid()}}
-        default_attrs = self._get_create_policy_action_default_attrs()
+        default_attrs = self.get_create_policy_action_default_attrs()
         default_data = copy.copy(data)
         default_data['policy_action'].update(default_attrs)
         expected_value = dict(default_data['policy_action'])
@@ -510,7 +452,7 @@ class GroupPolicyExtensionTestCase(test_api_v2_extension.ExtensionTestCase):
 
     def test_create_policy_action(self):
         policy_action_id = _uuid()
-        data = {'policy_action': self._get_create_policy_action_attrs()}
+        data = {'policy_action': self.get_create_policy_action_attrs()}
         expected_value = dict(data['policy_action'])
         expected_value['id'] = policy_action_id
 
@@ -553,7 +495,7 @@ class GroupPolicyExtensionTestCase(test_api_v2_extension.ExtensionTestCase):
     def test_update_policy_action(self):
         policy_action_id = _uuid()
         update_data = {'policy_action':
-                       self._get_update_policy_action_attrs()}
+                       self.get_update_policy_action_attrs()}
         expected_value = {'tenant_id': _uuid(),
                           'id': policy_action_id}
 
@@ -591,30 +533,10 @@ class GroupPolicyExtensionTestCase(test_api_v2_extension.ExtensionTestCase):
         self.assertIn('policy_classifier', res)
         self.assertEqual(expected_value, res['policy_classifier'])
 
-    def _get_create_policy_classifier_default_attrs(self):
-        return {'name': '',
-                'description': '',
-                'protocol': None,
-                'port_range': None,
-                'direction': None,
-                'shared': False}
-
-    def _get_create_policy_classifier_attrs(self):
-        return {'name': 'pc1',
-                'description': 'test policy classifier',
-                'tenant_id': _uuid(),
-                'protocol': 'tcp',
-                'port_range': '100:200',
-                'direction': 'in',
-                'shared': False}
-
-    def _get_update_policy_classifier_attrs(self):
-        return {'name': 'new_name'}
-
     def test_create_policy_classifier_with_defaults(self):
         policy_classifier_id = _uuid()
         data = {'policy_classifier': {'tenant_id': _uuid()}}
-        default_attrs = self._get_create_policy_classifier_default_attrs()
+        default_attrs = self.get_create_policy_classifier_default_attrs()
         default_data = copy.copy(data)
         default_data['policy_classifier'].update(default_attrs)
         expected_value = dict(default_data['policy_classifier'])
@@ -625,7 +547,7 @@ class GroupPolicyExtensionTestCase(test_api_v2_extension.ExtensionTestCase):
     def test_create_policy_classifier(self):
         policy_classifier_id = _uuid()
         data = {'policy_classifier':
-                self._get_create_policy_classifier_attrs()}
+                self.get_create_policy_classifier_attrs()}
         expected_value = dict(data['policy_classifier'])
         expected_value['id'] = policy_classifier_id
 
@@ -666,7 +588,7 @@ class GroupPolicyExtensionTestCase(test_api_v2_extension.ExtensionTestCase):
     def test_update_policy_classifier(self):
         policy_classifier_id = _uuid()
         update_data = {'policy_classifier':
-                       self._get_update_policy_classifier_attrs()}
+                       self.get_update_policy_classifier_attrs()}
         expected_value = {'tenant_id': _uuid(),
                           'id': policy_classifier_id}
 
@@ -704,30 +626,11 @@ class GroupPolicyExtensionTestCase(test_api_v2_extension.ExtensionTestCase):
         self.assertIn('policy_rule', res)
         self.assertEqual(expected_value, res['policy_rule'])
 
-    def _get_create_policy_rule_default_attrs(self):
-        return {'name': '',
-                'description': '',
-                'enabled': True,
-                'policy_actions': [],
-                'shared': False}
-
-    def _get_create_policy_rule_attrs(self):
-        return {'name': 'pr1',
-                'description': 'test policy rule',
-                'tenant_id': _uuid(),
-                'enabled': True,
-                'policy_classifier_id': _uuid(),
-                'policy_actions': [_uuid()],
-                'shared': False}
-
-    def _get_update_policy_rule_attrs(self):
-        return {'name': 'new_name'}
-
     def test_create_policy_rule_with_defaults(self):
         policy_rule_id = _uuid()
         data = {'policy_rule': {'tenant_id': _uuid(), 'policy_classifier_id':
                                 _uuid()}}
-        default_attrs = self._get_create_policy_rule_default_attrs()
+        default_attrs = self.get_create_policy_rule_default_attrs()
         default_data = copy.copy(data)
         default_data['policy_rule'].update(default_attrs)
         expected_value = dict(default_data['policy_rule'])
@@ -738,7 +641,7 @@ class GroupPolicyExtensionTestCase(test_api_v2_extension.ExtensionTestCase):
     def test_create_policy_rule(self):
         policy_rule_id = _uuid()
         data = {'policy_rule':
-                self._get_create_policy_rule_attrs()}
+                self.get_create_policy_rule_attrs()}
         expected_value = dict(data['policy_rule'])
         expected_value['id'] = policy_rule_id
 
@@ -780,7 +683,7 @@ class GroupPolicyExtensionTestCase(test_api_v2_extension.ExtensionTestCase):
     def test_update_policy_rule(self):
         policy_rule_id = _uuid()
         update_data = {'policy_rule':
-                       self._get_update_policy_rule_attrs()}
+                       self.get_update_policy_rule_attrs()}
         expected_value = {'tenant_id': _uuid(),
                           'id': policy_rule_id}
 
@@ -818,28 +721,10 @@ class GroupPolicyExtensionTestCase(test_api_v2_extension.ExtensionTestCase):
         self.assertIn('policy_rule_set', res)
         self.assertEqual(expected_value, res['policy_rule_set'])
 
-    def _get_create_policy_rule_set_default_attrs(self):
-        return {'name': '',
-                'description': '',
-                'child_policy_rule_sets': [],
-                'policy_rules': [],
-                'shared': False}
-
-    def _get_create_policy_rule_set_attrs(self):
-        return {'name': 'policy_rule_set1',
-                'description': 'test policy_rule_set',
-                'tenant_id': _uuid(),
-                'child_policy_rule_sets': [_uuid()],
-                'policy_rules': [_uuid()],
-                'shared': False}
-
-    def _get_update_policy_rule_set_attrs(self):
-        return {'name': 'new_name'}
-
     def test_create_policy_rule_set_with_defaults(self):
         policy_rule_set_id = _uuid()
         data = {'policy_rule_set': {'tenant_id': _uuid()}}
-        default_attrs = self._get_create_policy_rule_set_default_attrs()
+        default_attrs = self.get_create_policy_rule_set_default_attrs()
         default_data = copy.copy(data)
         default_data['policy_rule_set'].update(default_attrs)
         expected_value = dict(default_data['policy_rule_set'])
@@ -850,7 +735,7 @@ class GroupPolicyExtensionTestCase(test_api_v2_extension.ExtensionTestCase):
     def test_create_policy_rule_set(self):
         policy_rule_set_id = _uuid()
         data = {'policy_rule_set':
-                self._get_create_policy_rule_set_attrs()}
+                self.get_create_policy_rule_set_attrs()}
         expected_value = dict(data['policy_rule_set'])
         expected_value['id'] = policy_rule_set_id
 
@@ -891,7 +776,7 @@ class GroupPolicyExtensionTestCase(test_api_v2_extension.ExtensionTestCase):
     def test_update_policy_rule_set(self):
         policy_rule_set_id = _uuid()
         update_data = {'policy_rule_set':
-                       self._get_update_policy_rule_set_attrs()}
+                       self.get_update_policy_rule_set_attrs()}
         expected_value = {'tenant_id': _uuid(),
                           'id': policy_rule_set_id}
 
@@ -929,24 +814,10 @@ class GroupPolicyExtensionTestCase(test_api_v2_extension.ExtensionTestCase):
         self.assertIn('network_service_policy', res)
         self.assertEqual(expected_value, res['network_service_policy'])
 
-    def _get_create_network_service_policy_default_attrs(self):
-        return {'name': '', 'description': '',
-                'network_service_params': [], 'shared': False}
-
-    def _get_create_network_service_policy_attrs(self):
-        return {'name': 'nsp1', 'tenant_id': _uuid(),
-                'shared': False,
-                'description': 'test Net Svc Policy',
-                'network_service_params': [{'type': 'ip_single', 'name': 'vip',
-                                            'value': 'self_subnet'}]}
-
-    def _get_update_network_service_policy_attrs(self):
-        return {'name': 'new_name'}
-
     def test_create_network_service_policy_with_defaults(self):
         network_service_policy_id = _uuid()
         data = {'network_service_policy': {'tenant_id': _uuid()}}
-        default_attrs = self._get_create_network_service_policy_default_attrs()
+        default_attrs = self.get_create_network_service_policy_default_attrs()
         default_data = copy.copy(data)
         default_data['network_service_policy'].update(default_attrs)
         expected_value = dict(default_data['network_service_policy'])
@@ -958,7 +829,7 @@ class GroupPolicyExtensionTestCase(test_api_v2_extension.ExtensionTestCase):
     def test_create_network_service_policy(self):
         network_service_policy_id = _uuid()
         data = {'network_service_policy':
-                self._get_create_network_service_policy_attrs()}
+                self.get_create_network_service_policy_attrs()}
         expected_value = copy.deepcopy(data['network_service_policy'])
         expected_value['id'] = network_service_policy_id
 
@@ -1002,7 +873,7 @@ class GroupPolicyExtensionTestCase(test_api_v2_extension.ExtensionTestCase):
     def test_update_network_service_policy(self):
         network_service_policy_id = _uuid()
         update_data = {'network_service_policy':
-                       self._get_update_network_service_policy_attrs()}
+                       self.get_update_network_service_policy_attrs()}
         expected_value = {'tenant_id': _uuid(),
                           'id': network_service_policy_id}
 
@@ -1105,31 +976,13 @@ class GroupPolicyExtensionTestCase(test_api_v2_extension.ExtensionTestCase):
         self.assertIn(entity, res)
         self.assertEqual(expected_value, res[entity])
 
-    def _get_create_external_policy_default_attrs(self):
-        return {'name': '', 'description': '',
-                'external_segments': [],
-                'provided_policy_rule_sets': {},
-                'consumed_policy_rule_sets': {},
-                'shared': False}
-
-    def _get_create_external_policy_attrs(self):
-        return {'name': 'ep1', 'tenant_id': _uuid(),
-                'description': 'test ep',
-                'external_segments': [_uuid()],
-                'provided_policy_rule_sets': {_uuid(): None},
-                'consumed_policy_rule_sets': {_uuid(): None},
-                'shared': False}
-
-    def _get_update_external_policy_attrs(self):
-        return {'name': 'new_name'}
-
     def test_create_external_policy_with_defaults(self):
-        default_attrs = self._get_create_external_policy_default_attrs()
+        default_attrs = self.get_create_external_policy_default_attrs()
         self._test_create_entity_with_defaults('external_policy',
                                                default_attrs)
 
     def test_create_external_policy(self):
-        attrs = self._get_create_external_policy_attrs()
+        attrs = self.get_create_external_policy_attrs()
         self._test_create_entity_with_attrs('external_policy', attrs)
 
     def test_list_external_policies(self):
@@ -1139,40 +992,20 @@ class GroupPolicyExtensionTestCase(test_api_v2_extension.ExtensionTestCase):
         self._test_get_entity('external_policy')
 
     def test_update_external_policy(self):
-        update_data = self._get_update_external_policy_attrs()
+        update_data = self.get_update_external_policy_attrs()
         self._test_update_entity('external_policy', update_data)
 
     def test_delete_external_policy_(self):
         self._test_entity_delete('external_policy')
 
-    def _get_create_external_segment_default_attrs(self):
-        return {'name': '', 'description': '',
-                'external_routes': [],
-                'ip_version': 4,
-                'cidr': '172.16.0.0/12',
-                'port_address_translation': False,
-                'shared': False}
-
-    def _get_create_external_segment_attrs(self):
-        return {'name': 'es1', 'tenant_id': _uuid(),
-                'description': 'test ep',
-                'external_routes': [{'destination': '0.0.0.0/0',
-                                     'nexthop': '192.168.0.1'}],
-                'cidr': '192.168.0.0/24',
-                'ip_version': 4, 'port_address_translation': True,
-                'shared': False}
-
-    def _get_update_external_segment_attrs(self):
-        return {'name': 'new_name'}
-
     def test_create_external_segment_with_defaults(self):
         default_attrs = (
-            self._get_create_external_segment_default_attrs())
+            self.get_create_external_segment_default_attrs())
         self._test_create_entity_with_defaults('external_segment',
                                                default_attrs)
 
     def test_create_external_segment(self):
-        attrs = self._get_create_external_segment_attrs()
+        attrs = self.get_create_external_segment_attrs()
         self._test_create_entity_with_attrs('external_segment', attrs)
 
     def test_list_external_segments(self):
@@ -1182,37 +1015,20 @@ class GroupPolicyExtensionTestCase(test_api_v2_extension.ExtensionTestCase):
         self._test_get_entity('external_segment')
 
     def test_update_external_segment(self):
-        update_data = self._get_update_external_segment_attrs()
+        update_data = self.get_update_external_segment_attrs()
         self._test_update_entity('external_segment', update_data)
 
     def test_delete_external_segment_(self):
         self._test_entity_delete('external_segment')
 
-    def _get_create_nat_pool_default_attrs(self):
-        return {'name': '', 'description': '',
-                'external_segment_id': None, 'ip_version': 4,
-                'ip_pool': '172.16.0.0/16',
-                'shared': False}
-
-    def _get_create_nat_pool_attrs(self):
-        return {'name': 'es1', 'tenant_id': _uuid(),
-                'description': 'test ep',
-                'ip_version': 4,
-                'ip_pool': '172.16.0.0/16',
-                'external_segment_id': _uuid(),
-                'shared': False}
-
-    def _get_update_nat_pool_attrs(self):
-        return {'name': 'new_name'}
-
     def test_create_nat_pool_with_defaults(self):
         default_attrs = (
-            self._get_create_nat_pool_default_attrs())
+            self.get_create_nat_pool_default_attrs())
         self._test_create_entity_with_defaults('nat_pool',
                                                default_attrs)
 
     def test_create_nat_pool(self):
-        attrs = self._get_create_nat_pool_attrs()
+        attrs = self.get_create_nat_pool_attrs()
         self._test_create_entity_with_attrs('nat_pool', attrs)
 
     def test_list_nat_pools(self):
@@ -1222,7 +1038,7 @@ class GroupPolicyExtensionTestCase(test_api_v2_extension.ExtensionTestCase):
         self._test_get_entity('nat_pool')
 
     def test_update_nat_pool(self):
-        update_data = self._get_update_nat_pool_attrs()
+        update_data = self.get_update_nat_pool_attrs()
         self._test_update_entity('nat_pool', update_data)
 
     def test_delete_nat_pool_(self):

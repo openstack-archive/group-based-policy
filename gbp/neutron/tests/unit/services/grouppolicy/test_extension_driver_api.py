@@ -18,6 +18,7 @@ from neutron.db import model_base
 
 from gbp.neutron.services.grouppolicy import config
 from gbp.neutron.services.grouppolicy import group_policy_driver_api as api
+from gbp.neutron.tests.unit import common as cm
 from gbp.neutron.tests.unit.services.grouppolicy import extensions as test_ext
 from gbp.neutron.tests.unit.services.grouppolicy import test_grouppolicy_plugin
 
@@ -385,7 +386,7 @@ class ExtensionDriverTestCase(
     def _test_attr(self, type):
         # Test create with default value.
         acronim = _acronim(type)
-        plural = self._get_resource_plural(type)
+        plural = cm.get_resource_plural(type)
         obj = getattr(self, 'create_%s' % type)()
         id = obj[type]['id']
         val = obj[type][acronim + '_extension']

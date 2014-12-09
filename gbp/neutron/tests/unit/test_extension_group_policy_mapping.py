@@ -14,6 +14,7 @@ from neutron.plugins.common import constants
 
 from gbp.neutron.extensions import group_policy as gp
 from gbp.neutron.extensions import group_policy_mapping as gpm
+from gbp.neutron.tests.unit import common as cm
 from gbp.neutron.tests.unit import test_extension_group_policy as tgp
 
 
@@ -52,74 +53,62 @@ class GroupPolicyMappingExtTestCase(tgp.GroupPolicyExtensionTestCase):
     def _restore_gp_attr_map(self):
         gp.RESOURCE_ATTRIBUTE_MAP = self._saved_gp_attr_map
 
-    def _get_create_policy_target_default_attrs(self):
-        attrs = (super(GroupPolicyMappingExtTestCase, self).
-                 _get_create_policy_target_default_attrs())
+    def get_create_policy_target_default_attrs(self):
+        attrs = cm.get_create_policy_target_default_attrs()
         attrs.update({'port_id': None})
         return attrs
 
-    def _get_create_policy_target_attrs(self):
-        attrs = (super(GroupPolicyMappingExtTestCase, self).
-                 _get_create_policy_target_attrs())
+    def get_create_policy_target_attrs(self):
+        attrs = cm.get_create_policy_target_attrs()
         attrs.update({'port_id': tgp._uuid()})
         return attrs
 
-    def _get_create_policy_target_group_default_attrs(self):
-        attrs = (super(GroupPolicyMappingExtTestCase, self).
-                 _get_create_policy_target_group_default_attrs())
+    def get_create_policy_target_group_default_attrs(self):
+        attrs = cm.get_create_policy_target_group_default_attrs()
         attrs.update({'subnets': []})
         return attrs
 
-    def _get_create_policy_target_group_attrs(self):
-        attrs = (super(GroupPolicyMappingExtTestCase, self).
-                 _get_create_policy_target_group_attrs())
+    def get_create_policy_target_group_attrs(self):
+        attrs = cm.get_create_policy_target_group_attrs()
         attrs.update({'subnets': [tgp._uuid()]})
         return attrs
 
-    def _get_update_policy_target_group_attrs(self):
-        attrs = (super(GroupPolicyMappingExtTestCase, self).
-                 _get_update_policy_target_group_attrs())
+    def get_update_policy_target_group_attrs(self):
+        attrs = cm.get_update_policy_target_group_attrs()
         attrs.update({'subnets': [tgp._uuid()]})
         return attrs
 
-    def _get_create_l2_policy_default_attrs(self):
-        attrs = (super(GroupPolicyMappingExtTestCase, self).
-                 _get_create_l2_policy_default_attrs())
+    def get_create_l2_policy_default_attrs(self):
+        attrs = cm.get_create_l2_policy_default_attrs()
         attrs.update({'network_id': None})
         return attrs
 
-    def _get_create_l2_policy_attrs(self):
-        attrs = (super(GroupPolicyMappingExtTestCase, self).
-                 _get_create_l2_policy_attrs())
+    def get_create_l2_policy_attrs(self):
+        attrs = cm.get_create_l2_policy_attrs()
         attrs.update({'network_id': tgp._uuid()})
         return attrs
 
-    def _get_create_l3_policy_default_attrs(self):
-        attrs = (super(GroupPolicyMappingExtTestCase, self).
-                 _get_create_l3_policy_default_attrs())
+    def get_create_l3_policy_default_attrs(self):
+        attrs = cm.get_create_l3_policy_default_attrs()
         attrs.update({'routers': []})
         return attrs
 
-    def _get_create_l3_policy_attrs(self):
-        attrs = (super(GroupPolicyMappingExtTestCase, self).
-                 _get_create_l3_policy_attrs())
+    def get_create_l3_policy_attrs(self):
+        attrs = cm.get_create_l3_policy_attrs()
         attrs.update({'routers': [tgp._uuid(), tgp._uuid()]})
         return attrs
 
-    def _get_update_l3_policy_attrs(self):
-        attrs = (super(GroupPolicyMappingExtTestCase, self).
-                 _get_update_l3_policy_attrs())
+    def get_update_l3_policy_attrs(self):
+        attrs = cm.get_update_l3_policy_attrs()
         attrs.update({'routers': [tgp._uuid(), tgp._uuid()]})
         return attrs
 
-    def _get_create_external_segment_default_attrs(self):
-        attrs = (super(GroupPolicyMappingExtTestCase, self).
-                 _get_create_external_segment_default_attrs())
+    def get_create_external_segment_default_attrs(self):
+        attrs = cm.get_create_external_segment_default_attrs()
         attrs.update({'subnet_id': None})
         return attrs
 
-    def _get_create_external_segment_attrs(self):
-        attrs = (super(GroupPolicyMappingExtTestCase, self).
-                 _get_create_external_segment_attrs())
+    def get_create_external_segment_attrs(self):
+        attrs = cm.get_create_external_segment_attrs()
         attrs.update({'subnet_id': tgp._uuid()})
         return attrs
