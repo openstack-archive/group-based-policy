@@ -40,6 +40,29 @@ class GroupPolicyDBTestBase(object):
 
     fmt = JSON_FORMAT
 
+    def __getattr__(self, item):
+        # Verify is an update of a proper GBP object
+        def _is_gbp_resource(plural):
+            return plural in gpolicy.RESOURCE_ATTRIBUTE_MAP
+        # Update Method
+        if item.startswith('update_'):
+            resource = item[len('update_'):]
+            plural = self._get_resource_plural(resource)
+            if _is_gbp_resource(plural):
+                def update_wrapper(id, **kwargs):
+                    return self._update_gbp_resource(id, resource, **kwargs)
+                return update_wrapper
+        # Show Method
+        if item.startswith('show_'):
+            resource = item[len('show_'):]
+            plural = self._get_resource_plural(resource)
+            if _is_gbp_resource(plural):
+                def update_wrapper(id):
+                    return self._show_gbp_resource(id, plural)
+                return update_wrapper
+
+        raise AttributeError
+
     def _get_resource_plural(self, resource):
         if resource.endswith('y'):
             resource_plural = resource.replace('y', 'ies')
@@ -203,6 +226,24 @@ class GroupPolicyDBTestBase(object):
                  'tenant_id': self._tenant_id, 'ip_pool': ip_pool,
                  'external_segment_id': external_segment_id}
         return attrs
+
+    def _update_gbp_resource(
+            self, id, type, expected_res_status=None, **kwargs):
+        plural = self._get_resource_plural(type)
+        data = {type: kwargs}
+        # Create PT with bound port
+        req = self.new_update_request(plural, data, id, self.fmt)
+        res = req.get_response(self.ext_api)
+
+        if expected_res_status:
+            self.assertEqual(res.status_int, expected_res_status)
+        elif res.status_int >= webob.exc.HTTPClientError.code:
+            raise webob.exc.HTTPClientError(code=res.status_int)
+        return self.deserialize(self.fmt, res)
+
+    def _show_gbp_resource(self, id, plural):
+        req = self.new_show_request(plural, id, fmt=self.fmt)
+        return self.deserialize(self.fmt, req.get_response(self.ext_api))
 
     def create_policy_target(self, policy_target_group_id=None,
                              expected_res_status=None, **kwargs):
