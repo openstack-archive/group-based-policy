@@ -1096,15 +1096,15 @@ class ResourceMappingDriver(api.PolicyDriver):
             return
         spec = self._servicechain_plugin._get_servicechain_spec(
                     context._plugin_context, context.original['action_value'])
-        servicechain_instances = spec.instances
-        for servicechain_instance in servicechain_instances:
-            sc_instance_update = {
-                        'servicechain_spec': context.current['action_value']}
-            self._update_resource(self._servicechain_plugin,
-                                  context._plugin_context,
-                                  'servicechain_instance',
-                                  servicechain_instance['id'],
-                                  sc_instance_update)
+        for servicechain_instance in spec.instances:
+            sc_instance_update_req = {
+                    'servicechain_specs': [context.current['action_value']]}
+            self._update_resource(
+                        self._servicechain_plugin,
+                        context._plugin_context,
+                        'servicechain_instance',
+                        servicechain_instance.servicechain_instance_id,
+                        sc_instance_update_req)
 
     def _get_rule_ids_for_actions(self, context, action_id):
         policy_rule_qry = context.session.query(
@@ -1112,10 +1112,11 @@ class ResourceMappingDriver(api.PolicyDriver):
         policy_rule_qry.filter_by(policy_action_id=action_id)
         return policy_rule_qry.all()
 
-    def _handle_redirect_action(self, context, policy_rule_sets):
-        for policy_rule_set_id in policy_rule_sets:
-            policy_rule_set = context._plugin.get_policy_rule_set(
-                                context._plugin_context, policy_rule_set_id)
+    def _handle_redirect_action(self, context, policy_rule_set_ids):
+        policy_rule_sets = context._plugin.get_policy_rule_sets(
+                                    context._plugin_context,
+                                    filters={'id': policy_rule_set_ids})
+        for policy_rule_set in policy_rule_sets:
             ptgs_consuming_policy_rule_set = policy_rule_set[
                                             'consuming_policy_target_groups']
             ptg_providing_prs = policy_rule_set[
@@ -1123,41 +1124,117 @@ class ResourceMappingDriver(api.PolicyDriver):
 
             # Create the ServiceChain Instance when we have both Provider and
             # consumer PTGs. If Labels are available, they have to be applied
-            # here. For now we support a single provider
             if not ptgs_consuming_policy_rule_set or (
                 not ptg_providing_prs):
                 continue
 
-            for rule_id in policy_rule_set.get('policy_rules'):
-                policy_rule = context._plugin.get_policy_rule(
-                    context._plugin_context, rule_id)
+            parent_classifier_id = None
+            parent_spec_id = None
+            if policy_rule_set['parent_id']:
+                parent = context._plugin.get_policy_rule_set(
+                    context._plugin_context, policy_rule_set['parent_id'])
+                policy_rules = context._plugin.get_policy_rules(
+                                    context._plugin_context,
+                                    filters={'id': parent['policy_rules']})
+                for policy_rule in policy_rules:
+                    policy_actions = context._plugin.get_policy_actions(
+                        context._plugin_context,
+                        filters={'id': policy_rule["policy_actions"],
+                                 'action_type': [gconst.GP_ACTION_REDIRECT]})
+                    for policy_action in policy_actions:
+                        parent_classifier_id = policy_rule.get(
+                                                    "policy_classifier_id")
+                        parent_spec_id = policy_action.get("action_value")
+                        break  # One Redirect action per Policy rule set
+
+            policy_rules = context._plugin.get_policy_rules(
+                    context._plugin_context,
+                    filters={'id': policy_rule_set['policy_rules']})
+            for policy_rule in policy_rules:
                 classifier_id = policy_rule.get("policy_classifier_id")
-                for action_id in policy_rule.get("policy_actions"):
-                    policy_action = context._plugin.get_policy_action(
-                        context._plugin_context, action_id)
-                    if policy_action['action_type'].upper() == "REDIRECT":
-                        for ptg_consuming_prs in (
-                            ptgs_consuming_policy_rule_set):
-                            ptg_chain_map = self._get_ptg_servicechain_mapping(
-                                    context._plugin_context.session,
-                                    ptg_providing_prs[0],
-                                    ptg_consuming_prs)
-                            if ptg_chain_map:
-                                break  # one chain between a pair of PTGs
-                            sc_instance = self._create_servicechain_instance(
-                                context, policy_action.get("action_value"),
-                                # REVISIT(Magesh): Handle multiple providing
-                                # policy rule set bug/1387527
-                                ptg_providing_prs[0],
-                                ptg_consuming_prs,
-                                classifier_id)
-                            chain_instance_id = sc_instance['id']
-                            self._set_ptg_servicechain_instance_mapping(
+                if parent_classifier_id:
+                    protocol, port_range, direction = (
+                        self._get_classifier_intersection(
+                            context, parent_classifier_id, classifier_id))
+                else:
+                    classifier = context._plugin.get_policy_classifier(
+                            context._plugin_context, classifier_id)
+                    protocol = classifier['protocol']
+                    port_range = classifier['port_range']
+                    direction = classifier['direction']
+                policy_actions = context._plugin.get_policy_actions(
+                        context._plugin_context,
+                        filters={'id': policy_rule.get("policy_actions"),
+                                 'action_type': [gconst.GP_ACTION_REDIRECT]})
+                for policy_action in policy_actions:
+                    for ptg_consuming_prs in (
+                        ptgs_consuming_policy_rule_set):
+                        ptg_chain_map = self._get_ptg_servicechain_mapping(
                                 context._plugin_context.session,
                                 ptg_providing_prs[0],
-                                ptg_consuming_prs,
-                                chain_instance_id)
-                            break
+                                ptg_consuming_prs)
+                        if ptg_chain_map:
+                            break  # one chain between a pair of PTGs
+                        sc_instance = self._create_servicechain_instance(
+                            context, policy_action.get("action_value"),
+                            parent_spec_id, ptg_providing_prs[0],
+                            ptg_consuming_prs, protocol, port_range, direction)
+                        self._set_ptg_servicechain_instance_mapping(
+                            context._plugin_context.session,
+                            ptg_providing_prs[0], ptg_consuming_prs,
+                            sc_instance['id'])
+                        break
+
+    def _get_classifier_intersection(self, context, parent_classifier_id,
+                                     child_classifier_id):
+        parent_classifier = context._plugin.get_policy_classifier(
+                    context._plugin_context, parent_classifier_id)
+        child_classifier = context._plugin.get_policy_classifier(
+                    context._plugin_context, child_classifier_id)
+        protocol = (parent_classifier['protocol'] if
+                    parent_classifier['protocol'] ==
+                    child_classifier['protocol'] else None)
+
+        if child_classifier['direction'] == 'bi':
+            direction = parent_classifier['direction']
+        elif parent_classifier['direction'] == 'bi':
+            direction = child_classifier['direction']
+        elif child_classifier['direction'] == parent_classifier['direction']:
+            direction = parent_classifier['direction']
+        else:
+            direction = None
+
+        if protocol and direction:
+            parent_port_lower, parent_port_upper = self._get_port_range(
+                                            parent_classifier['port_range'])
+            child_port_lower, child_port_upper = self._get_port_range(
+                                            child_classifier['port_range'])
+            port_range_lower = str(self._get_common_lower_port_range(
+                                    parent_port_lower, child_port_lower))
+            port_range_upper = str(self._get_common_upper_port_range(
+                                    parent_port_upper, child_port_upper))
+            if port_range_lower > port_range_upper:
+                port_range = None
+            else:
+                port_range = port_range_lower + ":" + port_range_upper
+        else:
+            port_range = None
+        return (protocol, port_range, direction)
+
+    def _get_common_lower_port_range(self, parent_port, child_port):
+        return max(parent_port, child_port)
+
+    def _get_common_upper_port_range(self, parent_port, child_port):
+        return min(parent_port, child_port)
+
+    def _get_port_range(self, port_range):
+        if port_range is None:
+            return (0, 0)
+        port_range = str(port_range)
+        ports = port_range.split(':', 1)
+        lower_range = int(ports[0])
+        upper_range = int(ports[0]) if len(ports) == 1 else int(ports[1])
+        return (lower_range, upper_range)
 
     def _cleanup_redirect_action(self, context):
         for ptg_chain in context.ptg_chain_map:
@@ -1313,10 +1390,14 @@ class ResourceMappingDriver(api.PolicyDriver):
             return ip_address
 
     def _create_servicechain_instance(self, context, servicechain_spec,
+                                      parent_servicechain_spec,
                                       provider_ptg_id, consumer_ptg_id,
-                                      classifier_id, config_params=None):
+                                      protocol, port_range, direction,
+                                      config_params=None):
+        sc_spec = [servicechain_spec]
+        if parent_servicechain_spec:
+            sc_spec.insert(0, parent_servicechain_spec)
         config_param_values = {}
-
         ptg = context._plugin.get_policy_target_group(
             context._plugin_context, provider_ptg_id)
         network_service_policy_id = ptg.get("network_service_policy_id")
@@ -1336,10 +1417,12 @@ class ResourceMappingDriver(api.PolicyDriver):
         attrs = {'tenant_id': context.current['tenant_id'],
                  'name': 'gbp_' + context.current['name'],
                  'description': "",
-                 'servicechain_spec': servicechain_spec,
+                 'servicechain_specs': sc_spec,
                  'provider_ptg_id': provider_ptg_id,
                  'consumer_ptg_id': consumer_ptg_id,
-                 'classifier_id': classifier_id,
+                 'protocol': protocol,
+                 'port_range': port_range,
+                 'direction': direction,
                  'config_param_values': jsonutils.dumps(config_param_values)}
         return self._create_resource(self._servicechain_plugin,
                                      context._plugin_context,

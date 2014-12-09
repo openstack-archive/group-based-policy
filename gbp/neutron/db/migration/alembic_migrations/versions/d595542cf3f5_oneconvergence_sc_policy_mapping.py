@@ -37,8 +37,11 @@ def upgrade(active_plugins=None, options=None):
                     sa.Column('policy_id',
                               sa.String(length=36),
                               nullable=True),
-                    sa.PrimaryKeyConstraint('instance_id'),
-                    sa.PrimaryKeyConstraint('policy_id'))
+                    sa.Column('classifier_id',
+                              sa.String(length=36),
+                              nullable=True),
+                    sa.PrimaryKeyConstraint('instance_id', 'policy_id',
+                                            'classifier_id'))
 
     op.create_table('nvsd_sc_instance_vip_eps',
                     sa.Column('instance_id',
