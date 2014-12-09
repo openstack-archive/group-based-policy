@@ -82,17 +82,21 @@ class ServiceChainDBTestBase(object):
     def _get_test_servicechain_instance_attrs(self, name='sci1',
                                               description='test sci',
                                               config_param_values="{}",
-                                              servicechain_spec=None,
+                                              servicechain_spec=[],
                                               provider_ptg_id=None,
                                               consumer_ptg_id=None,
-                                              classifier_id=None):
+                                              protocol=None,
+                                              port_range=None,
+                                              direction=None):
         attrs = {'name': name, 'description': description,
                  'tenant_id': self._tenant_id,
                  'config_param_values': config_param_values,
                  'servicechain_spec': servicechain_spec,
                  'provider_ptg_id': provider_ptg_id,
                  'consumer_ptg_id': consumer_ptg_id,
-                 'classifier_id': classifier_id}
+                 'protocol': protocol,
+                 'port_range': port_range,
+                 'direction': direction}
 
         return attrs
 
@@ -140,11 +144,13 @@ class ServiceChainDBTestBase(object):
 
         return scs
 
-    def create_servicechain_instance(self, servicechain_spec=None,
+    def create_servicechain_instance(self, servicechain_spec=[],
                                      config_param_values="{}",
                                      provider_ptg_id=None,
                                      consumer_ptg_id=None,
-                                     classifier_id=None,
+                                     protocol=None,
+                                     port_range=None,
+                                     direction=None,
                                      expected_res_status=None, **kwargs):
         defaults = {'name': 'sci1', 'description': 'test sci'}
         defaults.update(kwargs)
@@ -154,7 +160,9 @@ class ServiceChainDBTestBase(object):
                  'tenant_id': self._tenant_id,
                  'provider_ptg_id': provider_ptg_id,
                  'consumer_ptg_id': consumer_ptg_id,
-                 'classifier_id': classifier_id}}
+                 'protocol': protocol,
+                 'port_range': port_range,
+                 'direction': direction}}
         data['servicechain_instance'].update(defaults)
 
         sci_req = self.new_create_request('servicechain_instances',
@@ -328,20 +336,26 @@ class TestServiceChainResources(ServiceChainDbTestCase):
     def test_create_and_show_servicechain_instance(self):
         scs_id = self.create_servicechain_spec()['servicechain_spec']['id']
         policy_target_group_id = uuidutils.generate_uuid()
-        classifier_id = uuidutils.generate_uuid()
+        protocol = "TCP"
+        port_range = '80'
+        direction = 'bi'
         config_param_values = "{}"
         attrs = self._get_test_servicechain_instance_attrs(
-            servicechain_spec=scs_id,
+            servicechain_spec=[scs_id],
             provider_ptg_id=policy_target_group_id,
             consumer_ptg_id=policy_target_group_id,
-            classifier_id=classifier_id,
+            protocol=protocol,
+            port_range=port_range,
+            direction=direction,
             config_param_values=config_param_values)
 
         sci = self.create_servicechain_instance(
-            servicechain_spec=scs_id,
+            servicechain_spec=[scs_id],
             provider_ptg_id=policy_target_group_id,
             consumer_ptg_id=policy_target_group_id,
-            classifier_id=classifier_id,
+            protocol=protocol,
+            port_range=port_range,
+            direction=direction,
             config_param_values=config_param_values)
         for k, v in attrs.iteritems():
             self.assertEqual(sci['servicechain_instance'][k], v)
@@ -369,20 +383,25 @@ class TestServiceChainResources(ServiceChainDbTestCase):
         scs_id = self.create_servicechain_spec()['servicechain_spec']['id']
         provider_ptg_id = uuidutils.generate_uuid()
         consumer_ptg_id = uuidutils.generate_uuid()
-        classifier_id = uuidutils.generate_uuid()
+        protocol = "TCP"
+        port_range = '80'
+        direction = 'bi'
         attrs = self._get_test_servicechain_instance_attrs(
-            name=name, description=description, servicechain_spec=scs_id,
+            name=name, description=description, servicechain_spec=[scs_id],
             provider_ptg_id=provider_ptg_id, consumer_ptg_id=consumer_ptg_id,
-            classifier_id=classifier_id,
+            protocol=protocol,
+            port_range=port_range,
+            direction=direction,
             config_param_values=config_param_values)
 
         sci = self.create_servicechain_instance(
-            servicechain_spec=scs_id, provider_ptg_id=provider_ptg_id,
-            consumer_ptg_id=consumer_ptg_id, classifier_id=classifier_id,
+            servicechain_spec=[scs_id], provider_ptg_id=provider_ptg_id,
+            consumer_ptg_id=consumer_ptg_id, protocol=protocol,
+            port_range=port_range, direction=direction,
             config_param_values=config_param_values)
         data = {'servicechain_instance': {'name': name,
                                           'description': description,
-                                          'servicechain_spec': scs_id}}
+                                          'servicechain_spec': [scs_id]}}
         req = self.new_update_request('servicechain_instances', data,
                                       sci['servicechain_instance']['id'])
         res = self.deserialize(self.fmt, req.get_response(self.ext_api))
