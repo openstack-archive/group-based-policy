@@ -160,7 +160,7 @@ def convert_port_to_string(value):
         return str(value)
 
 
-def _validate_port_range(data, key_specs=None):
+def _validate_gbp_port_range(data, key_specs=None):
     if data is None:
         return
     data = str(data)
@@ -226,7 +226,7 @@ def _validate_network_svc_params(data, key_specs=None):
                 return msg
 
 
-attr.validators['type:port_range'] = _validate_port_range
+attr.validators['type:gbp_port_range'] = _validate_gbp_port_range
 attr.validators['type:network_service_params'] = _validate_network_svc_params
 
 
@@ -381,7 +381,7 @@ RESOURCE_ATTRIBUTE_MAP = {
                      'convert_to': convert_protocol,
                      'validate': {'type:values': gp_supported_protocols}},
         'port_range': {'allow_post': True, 'allow_put': True,
-                       'validate': {'type:port_range': None},
+                       'validate': {'type:gbp_port_range': None},
                        'convert_to': convert_port_to_string,
                        'default': None, 'is_visible': True},
         'direction': {'allow_post': True, 'allow_put': True,
