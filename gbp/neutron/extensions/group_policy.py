@@ -160,7 +160,7 @@ def convert_port_to_string(value):
         return str(value)
 
 
-def _validate_port_range(data, key_specs=None):
+def gbp_port_range(data, key_specs=None):
     if data is None:
         return
     data = str(data)
@@ -226,7 +226,7 @@ def _validate_network_svc_params(data, key_specs=None):
                 return msg
 
 
-attr.validators['type:port_range'] = _validate_port_range
+attr.validators['type:port_range'] = gbp_port_range
 attr.validators['type:network_service_params'] = _validate_network_svc_params
 
 

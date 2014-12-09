@@ -1055,41 +1055,41 @@ class TestGroupPolicyAttributeConverters(base.BaseTestCase):
 class TestGroupPolicyAttributeValidators(base.BaseTestCase):
 
     def test_validate_port_range(self):
-        self.assertIsNone(gp._validate_port_range(None))
-        self.assertIsNone(gp._validate_port_range('10'))
-        self.assertIsNone(gp._validate_port_range(10))
-        self.assertEqual(gp._validate_port_range(-1),
+        self.assertIsNone(gp.gbp_port_range(None))
+        self.assertIsNone(gp.gbp_port_range('10'))
+        self.assertIsNone(gp.gbp_port_range(10))
+        self.assertEqual(gp.gbp_port_range(-1),
                          "Invalid port '-1', valid range 0 < port < 65536")
-        self.assertEqual(gp._validate_port_range('66000'),
+        self.assertEqual(gp.gbp_port_range('66000'),
                          "Invalid port '66000', valid range 0 < port < 65536")
-        self.assertIsNone(gp._validate_port_range('10:20'))
-        self.assertIsNone(gp._validate_port_range('1:65535'))
-        self.assertEqual(gp._validate_port_range('0:65535'),
+        self.assertIsNone(gp.gbp_port_range('10:20'))
+        self.assertIsNone(gp.gbp_port_range('1:65535'))
+        self.assertEqual(gp.gbp_port_range('0:65535'),
                          "Invalid port '0', valid range 0 < port < 65536")
-        self.assertEqual(gp._validate_port_range('1:65536'),
+        self.assertEqual(gp.gbp_port_range('1:65536'),
                          "Invalid port '65536', valid range 0 < port < 65536")
-        msg = gp._validate_port_range('abc:efg')
+        msg = gp.gbp_port_range('abc:efg')
         self.assertEqual(msg, "Port value 'abc' is not a valid number")
-        msg = gp._validate_port_range('1:efg')
+        msg = gp.gbp_port_range('1:efg')
         self.assertEqual(msg, "Port value 'efg' is not a valid number")
-        msg = gp._validate_port_range('-1:10')
+        msg = gp.gbp_port_range('-1:10')
         self.assertEqual(msg,
                          "Invalid port '-1', valid range 0 < port < 65536")
-        msg = gp._validate_port_range('66000:10')
+        msg = gp.gbp_port_range('66000:10')
         self.assertEqual(msg,
                          "Invalid port '66000', valid range 0 < port < 65536")
-        msg = gp._validate_port_range('10:66000')
+        msg = gp.gbp_port_range('10:66000')
         self.assertEqual(msg,
                          "Invalid port '66000', valid range 0 < port < 65536")
-        msg = gp._validate_port_range('1:-10')
+        msg = gp.gbp_port_range('1:-10')
         self.assertEqual(msg,
                          "Invalid port '-10', valid range 0 < port < 65536")
-        msg = gp._validate_port_range('1:2:3')
+        msg = gp.gbp_port_range('1:2:3')
         self.assertEqual(msg, "Port value '2:3' is not a valid number")
-        msg = gp._validate_port_range('3:2')
+        msg = gp.gbp_port_range('3:2')
         self.assertEqual(
             msg, "Invalid port range: 3:2, valid range 0 < port1 < port2")
-        msg = gp._validate_port_range('2:2')
+        msg = gp.gbp_port_range('2:2')
         self.assertEqual(
             msg, "Invalid port range: 2:2, valid range 0 < port1 < port2")
 
