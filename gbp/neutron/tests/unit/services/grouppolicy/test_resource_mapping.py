@@ -1428,7 +1428,7 @@ class TestPolicyRuleSet(ResourceMappingTestCase):
         sc_instance = sc_instances['servicechain_instances'][0]
         self.assertEqual(sc_instance['provider_ptg_id'], provider_ptg_id)
         self.assertEqual(sc_instance['consumer_ptg_id'], consumer_ptg_id)
-        self.assertEqual(scs_id, sc_instance['servicechain_spec'])
+        self.assertEqual([scs_id], sc_instance['servicechain_specs'])
 
         data = {'servicechain_node': {'service_type': "FIREWALL",
                                       'tenant_id': self._tenant_id,
@@ -1455,7 +1455,8 @@ class TestPolicyRuleSet(ResourceMappingTestCase):
         self.assertEqual(len(new_sc_instances['servicechain_instances']), 1)
         new_sc_instance = new_sc_instances['servicechain_instances'][0]
         self.assertEqual(sc_instance['id'], new_sc_instance['id'])
-        self.assertEqual(new_scs_id, new_sc_instance['servicechain_spec'])
+        self.assertEqual([new_scs_id], new_sc_instance['servicechain_specs'])
+
         req = self.new_delete_request(
                 'policy_target_groups', consumer_ptg_id)
         res = req.get_response(self.ext_api)
@@ -1478,6 +1479,7 @@ class TestPolicyRuleSet(ResourceMappingTestCase):
         scs_req = self.new_create_request(SERVICECHAIN_SPECS, data, self.fmt)
         spec = self.deserialize(self.fmt, scs_req.get_response(self.ext_api))
         scs_id = spec['servicechain_spec']['id']
+
         classifier = self.create_policy_classifier(
             name="class1", protocol="tcp", direction="in", port_range="20:90")
         classifier_id = classifier['policy_classifier']['id']
@@ -1566,6 +1568,99 @@ class TestPolicyRuleSet(ResourceMappingTestCase):
         res = sc_instance_list_req.get_response(self.ext_api)
         sc_instances = self.deserialize(self.fmt, res)
         # No more service chain instances when all the providers are deleted
+        self.assertEqual(len(sc_instances['servicechain_instances']), 0)
+
+    def test_hierarchial_redirect(self):
+        data = {'servicechain_node': {'service_type': "LOADBALANCER",
+                                      'tenant_id': self._tenant_id,
+                                      'config': "{}"}}
+        scn_req = self.new_create_request(SERVICECHAIN_NODES, data, self.fmt)
+        node = self.deserialize(self.fmt, scn_req.get_response(self.ext_api))
+        scn_id = node['servicechain_node']['id']
+        data = {'servicechain_spec': {'tenant_id': self._tenant_id,
+                                      'nodes': [scn_id]}}
+        scs_req = self.new_create_request(SERVICECHAIN_SPECS, data, self.fmt)
+        spec = self.deserialize(self.fmt, scs_req.get_response(self.ext_api))
+        scs_id = spec['servicechain_spec']['id']
+        classifier1 = self.create_policy_classifier(
+            name="class1", protocol="tcp", direction="in", port_range="20:90")
+        classifier1_id = classifier1['policy_classifier']['id']
+        classifier2 = self.create_policy_classifier(
+                name="class1", protocol="tcp", direction="in", port_range="80")
+        classifier2_id = classifier2['policy_classifier']['id']
+        action = self.create_policy_action(
+            name="action1", action_type=gconst.GP_ACTION_REDIRECT,
+            action_value=scs_id)
+        action_id = action['policy_action']['id']
+        policy_rule1 = self.create_policy_rule(
+            name='pr1', policy_classifier_id=classifier1_id,
+            policy_actions=[action_id])
+        policy_rule1_id = policy_rule1['policy_rule']['id']
+        policy_rule2 = self.create_policy_rule(
+            name='pr2', policy_classifier_id=classifier2_id,
+            policy_actions=[action_id])
+        policy_rule2_id = policy_rule2['policy_rule']['id']
+        policy_rule_set = self.create_policy_rule_set(
+            name="prs", policy_rules=[policy_rule1_id, policy_rule2_id])
+        policy_rule_set_id = policy_rule_set['policy_rule_set']['id']
+
+        data = {'servicechain_node': {'service_type': "FIREWALL",
+                                      'tenant_id': self._tenant_id,
+                                      'config': "{}"}}
+        parent_scn_req = self.new_create_request(SERVICECHAIN_NODES,
+                                                 data, self.fmt)
+        parent_sc_node = self.deserialize(
+                self.fmt, parent_scn_req.get_response(self.ext_api))
+        parent_scn_id = parent_sc_node['servicechain_node']['id']
+        data = {'servicechain_spec': {'tenant_id': self._tenant_id,
+                                      'nodes': [parent_scn_id]}}
+        parent_scs_req = self.new_create_request(
+                        SERVICECHAIN_SPECS, data, self.fmt)
+        parent_spec = self.deserialize(
+                        self.fmt, parent_scs_req.get_response(self.ext_api))
+        parent_scs_id = parent_spec['servicechain_spec']['id']
+
+        parent_action = self.create_policy_action(
+            name="action2", action_type=gconst.GP_ACTION_REDIRECT,
+            action_value=parent_scs_id)
+        parent_action_id = parent_action['policy_action']['id']
+        parent_policy_rule = self.create_policy_rule(
+            name='pr1', policy_classifier_id=classifier2_id,
+            policy_actions=[parent_action_id])
+        parent_policy_rule_id = parent_policy_rule['policy_rule']['id']
+
+        self.create_policy_rule_set(
+            name="c1", policy_rules=[parent_policy_rule_id],
+            child_policy_rule_sets=[policy_rule_set_id])
+
+        provider_ptg = self.create_policy_target_group(
+            name="ptg1", provided_policy_rule_sets={policy_rule_set_id: None})
+        provider_ptg_id = provider_ptg['policy_target_group']['id']
+        consumer_ptg = self.create_policy_target_group(
+            name="ptg2",
+            consumed_policy_rule_sets={policy_rule_set_id: None})
+        consumer_ptg_id = consumer_ptg['policy_target_group']['id']
+        sc_node_list_req = self.new_list_request(SERVICECHAIN_INSTANCES)
+        res = sc_node_list_req.get_response(self.ext_api)
+        sc_instances = self.deserialize(self.fmt, res)
+        # We should have one service chain instance created now
+        self.assertEqual(len(sc_instances['servicechain_instances']), 1)
+        sc_instance = sc_instances['servicechain_instances'][0]
+        self.assertEqual(sc_instance['provider_ptg_id'], provider_ptg_id)
+        self.assertEqual(sc_instance['consumer_ptg_id'], consumer_ptg_id)
+        self.assertEqual(sc_instance['classifier_id'], classifier2_id)
+        #REVISIT(Magesh): List api retrieves in different order
+        #Functionally create/update is working fine
+        #self.assertEqual(sc_instance['servicechain_spec'],
+        #                 [parent_scs_id, scs_id])
+
+        req = self.new_delete_request(
+            'policy_target_groups', consumer_ptg_id)
+        res = req.get_response(self.ext_api)
+        self.assertEqual(res.status_int, webob.exc.HTTPNoContent.code)
+        sc_node_list_req = self.new_list_request(SERVICECHAIN_INSTANCES)
+        res = sc_node_list_req.get_response(self.ext_api)
+        sc_instances = self.deserialize(self.fmt, res)
         self.assertEqual(len(sc_instances['servicechain_instances']), 0)
 
     def test_shared_policy_rule_set_create_negative(self):
