@@ -63,7 +63,9 @@ def upgrade(active_plugins=None, options=None):
         sa.Column('provider_ptg_id', sa.String(length=36), nullable=True),
         sa.Column('consumer_ptg_id', sa.String(length=36), nullable=True),
         sa.Column('classifier_id', sa.String(length=36), nullable=True),
-        sa.Column('servicechain_spec', sa.String(length=36), nullable=True),
+        sa.Column('protocol', sa.String(length=24), nullable=True),
+        sa.Column('port_range', sa.String(length=12), nullable=True),
+        sa.Column('direction', sa.String(length=5), nullable=True),
         # FixMe(Magesh) Deletes the instances table itself !!!
         # sa.ForeignKeyConstraint(['provider_ptg'],
         #                         ['gp_policy_target_groups.id'],
@@ -71,9 +73,6 @@ def upgrade(active_plugins=None, options=None):
         # sa.ForeignKeyConstraint(['consumer_ptg'],
         #                         ['gp_policy_target_groups.id'],
         #                         ondelete='CASCADE'),
-        # sa.ForeignKeyConstraint(['classifier'], ['gp_policy_classifiers.id'],
-        #                        ondelete='CASCADE'),
-        sa.ForeignKeyConstraint(['servicechain_spec'], ['sc_specs.id']),
         sa.PrimaryKeyConstraint('id')
     )
 

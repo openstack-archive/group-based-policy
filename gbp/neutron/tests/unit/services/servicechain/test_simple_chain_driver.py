@@ -47,10 +47,10 @@ class TestServiceChainInstance(SimpleChainDriverTestCase):
                                         'id': uuidutils.generate_uuid()}}
             sc_instance = self.create_servicechain_instance(
                                         name="sc_instance_1",
-                                        servicechain_spec=sc_spec_id)
+                                        servicechain_spec=[sc_spec_id])
             self.assertEqual(
                 sc_instance['servicechain_instance']['servicechain_spec'],
-                sc_spec_id)
+                [sc_spec_id])
             stack_create.assert_called_once_with(mock.ANY, mock.ANY, mock.ANY)
 
     def test_chain_instance_delete(self):
@@ -66,10 +66,10 @@ class TestServiceChainInstance(SimpleChainDriverTestCase):
                                         'id': uuidutils.generate_uuid()}}
             sc_instance = self.create_servicechain_instance(
                                         name="sc_instance_1",
-                                        servicechain_spec=sc_spec_id)
+                                        servicechain_spec=[sc_spec_id])
             self.assertEqual(
                 sc_instance['servicechain_instance']['servicechain_spec'],
-                sc_spec_id)
+                [sc_spec_id])
             with mock.patch.object(simplechain_driver.HeatClient,
                                    'delete'):
                 req = self.new_delete_request(
