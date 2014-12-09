@@ -106,12 +106,13 @@ class SimpleChainDriver(object):
     @log.log
     def create_servicechain_instance_postcommit(self, context):
         sc_instance = context.current
-        sc_spec_id = sc_instance.get('servicechain_spec')
-        sc_spec = context._plugin.get_servicechain_spec(
-            context._plugin_context, sc_spec_id)
-        sc_node_ids = sc_spec.get('nodes')
-        self._create_servicechain_instance_stacks(context, sc_node_ids,
-                                                  sc_instance, sc_spec)
+        sc_spec_ids = sc_instance.get('servicechain_spec')
+        for sc_spec_id in sc_spec_ids:
+            sc_spec = context._plugin.get_servicechain_spec(
+                context._plugin_context, sc_spec_id)
+            sc_node_ids = sc_spec.get('nodes')
+            self._create_servicechain_instance_stacks(context, sc_node_ids,
+                                                      sc_instance, sc_spec)
 
     @log.log
     def update_servicechain_instance_precommit(self, context):
@@ -119,13 +120,14 @@ class SimpleChainDriver(object):
 
     @log.log
     def update_servicechain_instance_postcommit(self, context):
-        original_spec_id = context.original.get('servicechain_spec')
-        new_spec_id = context.current.get('servicechain_spec')
-        if original_spec_id != new_spec_id:
-            newspec = context._plugin.get_servicechain_spec(
-                context._plugin_context, new_spec_id)
-            self._update_servicechain_instance(context, context.current,
-                                               newspec)
+        original_spec_ids = context.original.get('servicechain_spec')
+        new_spec_ids = context.current.get('servicechain_spec')
+        if set(original_spec_ids) != set(new_spec_ids):
+            for new_spec_id in new_spec_ids:
+                newspec = context._plugin.get_servicechain_spec(
+                    context._plugin_context, new_spec_id)
+                self._update_servicechain_instance(context, context.current,
+                                                   newspec)
 
     @log.log
     def delete_servicechain_instance_precommit(self, context):
