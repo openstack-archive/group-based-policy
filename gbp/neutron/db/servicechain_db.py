@@ -24,6 +24,7 @@ from neutron.openstack.common import log as logging
 from neutron.openstack.common import uuidutils
 
 from gbp.neutron.extensions import servicechain as schain
+from gbp.neutron.services.grouppolicy.common import constants as gp_constants
 
 LOG = logging.getLogger(__name__)
 MAX_IPV4_SUBNET_PREFIX_LENGTH = 31
@@ -33,11 +34,21 @@ MAX_IPV6_SUBNET_PREFIX_LENGTH = 127
 class SpecNodeAssociation(model_base.BASEV2):
     """Models one to many providing relation between Specs and Nodes."""
     __tablename__ = 'sc_spec_node_associations'
-    servicechain_spec = sa.Column(
+    servicechain_spec_id = sa.Column(
         sa.String(36), sa.ForeignKey('sc_specs.id'), primary_key=True)
     node_id = sa.Column(sa.String(36),
                         sa.ForeignKey('sc_nodes.id'),
-                        primary_key=False)
+                        primary_key=True)
+
+
+class InstanceSpecAssociation(model_base.BASEV2):
+    """Models  one to many providing relation between Instance and Specs."""
+    __tablename__ = 'sc_instance_spec_mappings'
+    servicechain_instance_id = sa.Column(
+        sa.String(36), sa.ForeignKey('sc_instances.id'), primary_key=True)
+    servicechain_spec_id = sa.Column(sa.String(36),
+                                     sa.ForeignKey('sc_specs.id'),
+                                     primary_key=True)
 
 
 class ServiceChainNode(model_base.BASEV2, models_v2.HasId,
@@ -60,18 +71,22 @@ class ServiceChainInstance(model_base.BASEV2, models_v2.HasId,
     name = sa.Column(sa.String(50))
     description = sa.Column(sa.String(255))
     config_param_values = sa.Column(sa.String(4096))
-    servicechain_spec = sa.Column(
-        sa.String(36), sa.ForeignKey('sc_specs.id'), nullable=True)
+    specs = orm.relationship(InstanceSpecAssociation,
+                             backref='instances',
+                             cascade='all,delete, delete-orphan')
     provider_ptg_id = sa.Column(sa.String(36),
-                             # FixMe(Magesh) Deletes the instances table itself
+                             # FixMe(Magesh) Issue with cascade on Delete
                              # sa.ForeignKey('gp_policy_target_groups.id'),
                              nullable=True)
     consumer_ptg_id = sa.Column(sa.String(36),
                              # sa.ForeignKey('gp_policy_target_groups.id'),
                              nullable=True)
-    classifier_id = sa.Column(sa.String(36),
-                           # sa.ForeignKey('gp_policy_classifiers.id'),
-                           nullable=True)
+    protocol = sa.Column(sa.String(24))  # Name or number
+    port_range = sa.Column(sa.String(12))  # 65535:65535
+    direction = sa.Column(sa.Enum(gp_constants.GP_DIRECTION_IN,
+                                  gp_constants.GP_DIRECTION_OUT,
+                                  gp_constants.GP_DIRECTION_BI,
+                                  name='direction'))
 
 
 class ServiceChainSpec(model_base.BASEV2, models_v2.HasId,
@@ -85,8 +100,9 @@ class ServiceChainSpec(model_base.BASEV2, models_v2.HasId,
         SpecNodeAssociation,
         backref='specs', cascade='all, delete, delete-orphan')
     config_param_names = sa.Column(sa.String(4096))
-    instances = orm.relationship(ServiceChainInstance,
-                                 backref="specs")
+    instances = orm.relationship(InstanceSpecAssociation,
+                                 backref="specs",
+                                 cascade='all, delete, delete-orphan')
 
 
 class ServiceChainDbPlugin(schain.ServiceChainPluginBase,
@@ -144,10 +160,13 @@ class ServiceChainDbPlugin(schain.ServiceChainPluginBase,
                'name': instance['name'],
                'description': instance['description'],
                'config_param_values': instance['config_param_values'],
-               'servicechain_spec': instance['servicechain_spec'],
                'provider_ptg_id': instance['provider_ptg_id'],
                'consumer_ptg_id': instance['consumer_ptg_id'],
-               'classifier_id': instance['classifier_id']}
+               'protocol': instance['protocol'],
+               'port_range': instance['port_range'],
+               'direction': instance['direction']}
+        res['servicechain_specs'] = [sc_spec['servicechain_spec_id']
+                                    for sc_spec in instance['specs']]
         return self._fields(res, fields)
 
     @staticmethod
@@ -251,9 +270,38 @@ class ServiceChainDbPlugin(schain.ServiceChainPluginBase,
                         config_param_names.extend(config_params.keys())
                         spec_db.config_param_names = str(config_param_names)
 
-                assoc = SpecNodeAssociation(servicechain_spec=spec_db.id,
+                assoc = SpecNodeAssociation(servicechain_spec_id=spec_db.id,
                                             node_id=node_id)
                 spec_db.nodes.append(assoc)
+
+    def _process_specs_for_instance(self, context, instance_db, instance):
+        if 'servicechain_specs' in instance:
+            self._set_specs_for_instance(context, instance_db,
+                                         instance['servicechain_specs'])
+            del instance['servicechain_specs']
+        return instance
+
+    def _set_specs_for_instance(self, context, instance_db, spec_id_list):
+        if not spec_id_list:
+            instance_db.spec_ids = []
+            return
+        with context.session.begin(subtransactions=True):
+            filters = {'id': spec_id_list}
+            specs_in_db = self._get_collection_query(context, ServiceChainSpec,
+                                                     filters=filters)
+            specs_list = set(spec_db['id'] for spec_db in specs_in_db)
+            for spec_id in spec_id_list:
+                if spec_id not in specs_list:
+                    # Do not update if spec ID is invalid
+                    raise schain.ServiceChainSpecNotFound(sc_spec_id=spec_id)
+            # Reset the existing list and then add each spec in order. The list
+            # could be empty in which case we clear the existing specs.
+            instance_db.specs = []
+            for spec_id in spec_id_list:
+                assoc = InstanceSpecAssociation(
+                                    servicechain_instance_id=instance_db.id,
+                                    servicechain_spec_id=spec_id)
+                instance_db.specs.append(assoc)
 
     @log.log
     def create_servicechain_spec(self, context, servicechain_spec):
@@ -320,10 +368,12 @@ class ServiceChainDbPlugin(schain.ServiceChainPluginBase,
                 tenant_id=tenant_id, name=instance['name'],
                 description=instance['description'],
                 config_param_values=instance['config_param_values'],
-                servicechain_spec=instance['servicechain_spec'],
                 provider_ptg_id=instance['provider_ptg_id'],
                 consumer_ptg_id=instance['consumer_ptg_id'],
-                classifier_id=instance['classifier_id'])
+                protocol=instance['protocol'],
+                port_range=instance['port_range'],
+                direction=instance['direction'])
+            self._process_specs_for_instance(context, instance_db, instance)
             context.session.add(instance_db)
         return self._make_sc_instance_dict(instance_db)
 
@@ -334,6 +384,8 @@ class ServiceChainDbPlugin(schain.ServiceChainPluginBase,
         with context.session.begin(subtransactions=True):
             instance_db = self._get_servicechain_instance(
                 context, servicechain_instance_id)
+            instance = self._process_specs_for_instance(context, instance_db,
+                                                        instance)
             instance_db.update(instance)
         return self._make_sc_instance_dict(instance_db)
 

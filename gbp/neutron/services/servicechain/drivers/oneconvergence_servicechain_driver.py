@@ -96,8 +96,8 @@ class OneconvergenceServiceChainDriver(simplechain_driver.SimpleChainDriver):
     @log.log
     def update_servicechain_instance_postcommit(self, context):
         original_spec_id = context._original_sc_instance.get(
-                                                    'servicechain_spec')
-        new_spec_id = context._sc_instance.get('servicechain_spec')
+                                                    'servicechain_specs')
+        new_spec_id = context._sc_instance.get('servicechain_specs')
         if original_spec_id != new_spec_id:
             newspec = context._plugin.get_servicechain_spec(
                                     context._plugin_context, new_spec_id)
