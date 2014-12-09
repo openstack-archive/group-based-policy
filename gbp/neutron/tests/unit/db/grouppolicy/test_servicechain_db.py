@@ -82,14 +82,14 @@ class ServiceChainDBTestBase(object):
     def _get_test_servicechain_instance_attrs(self, name='sci1',
                                               description='test sci',
                                               config_param_values="{}",
-                                              servicechain_spec=None,
+                                              servicechain_specs=[],
                                               provider_ptg_id=None,
                                               consumer_ptg_id=None,
                                               classifier_id=None):
         attrs = {'name': name, 'description': description,
                  'tenant_id': self._tenant_id,
                  'config_param_values': config_param_values,
-                 'servicechain_spec': servicechain_spec,
+                 'servicechain_specs': servicechain_specs,
                  'provider_ptg_id': provider_ptg_id,
                  'consumer_ptg_id': consumer_ptg_id,
                  'classifier_id': classifier_id}
@@ -167,7 +167,7 @@ class ServiceChainDBTestBase(object):
         self.assertIn('servicechain_spec', res)
         self.assertEqual([scn_id], res['servicechain_spec']['nodes'])
 
-    def create_servicechain_instance(self, servicechain_spec=None,
+    def create_servicechain_instance(self, servicechain_specs=[],
                                      config_param_values="{}",
                                      provider_ptg_id=None,
                                      consumer_ptg_id=None,
@@ -177,7 +177,7 @@ class ServiceChainDBTestBase(object):
         defaults.update(kwargs)
         data = {'servicechain_instance':
                 {'config_param_values': config_param_values,
-                 'servicechain_spec': servicechain_spec,
+                 'servicechain_specs': servicechain_specs,
                  'tenant_id': self._tenant_id,
                  'provider_ptg_id': provider_ptg_id,
                  'consumer_ptg_id': consumer_ptg_id,
@@ -371,14 +371,14 @@ class TestServiceChainResources(ServiceChainDbTestCase):
         classifier_id = uuidutils.generate_uuid()
         config_param_values = "{}"
         attrs = self._get_test_servicechain_instance_attrs(
-            servicechain_spec=scs_id,
+            servicechain_specs=[scs_id],
             provider_ptg_id=policy_target_group_id,
             consumer_ptg_id=policy_target_group_id,
             classifier_id=classifier_id,
             config_param_values=config_param_values)
 
         sci = self.create_servicechain_instance(
-            servicechain_spec=scs_id,
+            servicechain_specs=[scs_id],
             provider_ptg_id=policy_target_group_id,
             consumer_ptg_id=policy_target_group_id,
             classifier_id=classifier_id,
@@ -411,18 +411,18 @@ class TestServiceChainResources(ServiceChainDbTestCase):
         consumer_ptg_id = uuidutils.generate_uuid()
         classifier_id = uuidutils.generate_uuid()
         attrs = self._get_test_servicechain_instance_attrs(
-            name=name, description=description, servicechain_spec=scs_id,
+            name=name, description=description, servicechain_specs=[scs_id],
             provider_ptg_id=provider_ptg_id, consumer_ptg_id=consumer_ptg_id,
             classifier_id=classifier_id,
             config_param_values=config_param_values)
 
         sci = self.create_servicechain_instance(
-            servicechain_spec=scs_id, provider_ptg_id=provider_ptg_id,
+            servicechain_specs=[scs_id], provider_ptg_id=provider_ptg_id,
             consumer_ptg_id=consumer_ptg_id, classifier_id=classifier_id,
             config_param_values=config_param_values)
         data = {'servicechain_instance': {'name': name,
                                           'description': description,
-                                          'servicechain_spec': scs_id}}
+                                          'servicechain_specs': [scs_id]}}
         req = self.new_update_request('servicechain_instances', data,
                                       sci['servicechain_instance']['id'])
         res = self.deserialize(self.fmt, req.get_response(self.ext_api))

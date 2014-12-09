@@ -109,14 +109,15 @@ class OneconvergenceServiceChainDriver(simplechain_driver.SimpleChainDriver):
 
     @log.log
     def update_servicechain_instance_postcommit(self, context):
-        original_spec_id = context._original_sc_instance.get(
-                                                    'servicechain_spec')
-        new_spec_id = context._sc_instance.get('servicechain_spec')
-        if original_spec_id != new_spec_id:
-            newspec = context._plugin.get_servicechain_spec(
-                                    context._plugin_context, new_spec_id)
-            self._update_servicechain_instance(context, context._sc_instance,
-                                               newspec)
+        original_spec_ids = context._original_sc_instance.get(
+                                                    'servicechain_specs')
+        new_spec_ids = context._sc_instance.get('servicechain_specs')
+        if set(original_spec_ids) != set(new_spec_ids):
+            for new_spec_id in new_spec_ids:
+                newspec = context._plugin.get_servicechain_spec(
+                    context._plugin_context, new_spec_id)
+                self._update_servicechain_instance(context, context.current,
+                                                   newspec)
 
     @log.log
     def delete_servicechain_instance_postcommit(self, context):
@@ -208,12 +209,13 @@ class OneconvergenceServiceChainDriver(simplechain_driver.SimpleChainDriver):
 
     def _create_servicechain_instance_postcommit(self, context):
         sc_instance = context.current
-        sc_spec_id = sc_instance.get('servicechain_spec')
-        sc_spec = context._plugin.get_servicechain_spec(
-            context._plugin_context, sc_spec_id)
-        sc_node_ids = sc_spec.get('nodes')
-        self._create_servicechain_instance_stacks(context, sc_node_ids,
-                                                  sc_instance, sc_spec)
+        sc_spec_ids = sc_instance.get('servicechain_specs')
+        for sc_spec_id in sc_spec_ids:
+            sc_spec = context._plugin.get_servicechain_spec(
+                context._plugin_context, sc_spec_id)
+            sc_node_ids = sc_spec.get('nodes')
+            self._create_servicechain_instance_stacks(context, sc_node_ids,
+                                                      sc_instance, sc_spec)
 
     def _create_port(self, plugin_context, attrs):
         return self._create_resource(self._core_plugin, plugin_context, 'port',
@@ -418,8 +420,7 @@ class OneconvergenceServiceChainDriver(simplechain_driver.SimpleChainDriver):
         return service_ids
 
     def create_nvsd_action(self, context, action_body):
-        return self.nvsd_api.create_policy_action(context,
-                                             action_body)
+        return self.nvsd_api.create_policy_action(context, action_body)
 
     def _create_nvsd_services_action(self, context, service_ids):
         nvsd_action_list = []
@@ -447,7 +448,7 @@ class OneconvergenceServiceChainDriver(simplechain_driver.SimpleChainDriver):
                                'tenant_id': context.tenant,
                                'user_id': context.user,
                                "action_value": service_id}
-        #Supporting only one TAP in a chain
+        # Supporting only one TAP in a chain
         if copy_action:
             action = self.create_nvsd_action(context, copy_action)
             nvsd_action_list.append(action['id'])
@@ -465,12 +466,12 @@ class OneconvergenceServiceChainDriver(simplechain_driver.SimpleChainDriver):
         if status == self.CREATE_IN_PROGRESS:
             return False
         elif status == self.CREATE_FAILED:
-            #TODO(Magesh): Status has to be added to ServiceChainInstance
-            #Update the Status to ERROR  at this point
+            # TODO(Magesh): Status has to be added to ServiceChainInstance
+            # Update the Status to ERROR  at this point
             return True
 
-        #Services are created by now. Determine Service IDs an setup
-        #Traffic Steering.
+        # Services are created by now. Determine Service IDs an setup
+        # Traffic Steering.
         service_ids = self._fetch_serviceids_from_stack(context, node_stacks,
                                                         chain_instance_id)
         nvsd_action_list = self._create_nvsd_services_action(context,
@@ -483,11 +484,10 @@ class OneconvergenceServiceChainDriver(simplechain_driver.SimpleChainDriver):
             policy_id = self.create_nvsd_policy(context, left_group,
                                                 right_group, classifier_id,
                                                 nvsd_action_list)
-            #TODO(Magesh): Need to store actions and rules also, because
-            #cleanup will be missed if policy create failed
-            self._add_chain_policy_map(context.session,
-                                       chain_instance_id,
-                                       policy_id)
+            # TODO(Magesh): Need to store actions and rules also, because
+            # cleanup will be missed if policy create failed
+            self._add_chain_policy_map(context.session, chain_instance_id,
+                                       policy_id, classifier_id)
         return True
 
 
