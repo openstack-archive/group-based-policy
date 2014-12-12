@@ -69,7 +69,8 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
                    'policy_classifier': {},
                    'policy_rule_set': {
                        'parent_id': 'policy_rule_set',
-                       'policy_rules': 'policy_rule'}}
+                       'policy_rules': 'policy_rule'},
+                   }
     _plurals = None
 
     @property
