@@ -1111,16 +1111,15 @@ class ResourceMappingDriver(api.PolicyDriver):
         for policy_rule_set_id in policy_rule_sets:
             policy_rule_set = context._plugin.get_policy_rule_set(
                                 context._plugin_context, policy_rule_set_id)
-            ptgs_consuming_policy_rule_set = policy_rule_set[
+            ptgs_consuming_prs = policy_rule_set[
                                             'consuming_policy_target_groups']
-            ptg_providing_prs = policy_rule_set[
+            ptgs_providing_prs = policy_rule_set[
                                             'providing_policy_target_groups']
 
             # Create the ServiceChain Instance when we have both Provider and
             # consumer PTGs. If Labels are available, they have to be applied
             # here. For now we support a single provider
-            if not ptgs_consuming_policy_rule_set or (
-                not ptg_providing_prs):
+            if not ptgs_consuming_prs or not ptgs_providing_prs:
                 continue
 
             for rule_id in policy_rule_set.get('policy_rules'):
@@ -1131,28 +1130,30 @@ class ResourceMappingDriver(api.PolicyDriver):
                     policy_action = context._plugin.get_policy_action(
                         context._plugin_context, action_id)
                     if policy_action['action_type'].upper() == "REDIRECT":
-                        for ptg_consuming_prs in (
-                            ptgs_consuming_policy_rule_set):
-                            ptg_chain_map = self._get_ptg_servicechain_mapping(
+                        for ptg_consuming_prs in ptgs_consuming_prs:
+                            for ptg_providing_prs in ptgs_providing_prs:
+                                ptg_chain_map = (
+                                        self._get_ptg_servicechain_mapping(
+                                            context._plugin_context.session,
+                                            ptg_providing_prs,
+                                            ptg_consuming_prs))
+                                # REVISIT(Magesh): There may be concurrency
+                                # issues here.
+                                if ptg_chain_map:
+                                    continue  # one chain between pair of PTGs
+                                sc_instance = (
+                                    self._create_servicechain_instance(
+                                        context,
+                                        policy_action.get("action_value"),
+                                        ptg_providing_prs,
+                                        ptg_consuming_prs,
+                                        classifier_id))
+                                chain_instance_id = sc_instance['id']
+                                self._set_ptg_servicechain_instance_mapping(
                                     context._plugin_context.session,
-                                    ptg_providing_prs[0],
-                                    ptg_consuming_prs)
-                            if ptg_chain_map:
-                                break  # one chain between a pair of PTGs
-                            sc_instance = self._create_servicechain_instance(
-                                context, policy_action.get("action_value"),
-                                # REVISIT(Magesh): Handle multiple providing
-                                # policy rule set bug/1387527
-                                ptg_providing_prs[0],
-                                ptg_consuming_prs,
-                                classifier_id)
-                            chain_instance_id = sc_instance['id']
-                            self._set_ptg_servicechain_instance_mapping(
-                                context._plugin_context.session,
-                                ptg_providing_prs[0],
-                                ptg_consuming_prs,
-                                chain_instance_id)
-                            break
+                                    ptg_providing_prs,
+                                    ptg_consuming_prs,
+                                    chain_instance_id)
 
     def _cleanup_redirect_action(self, context):
         for ptg_chain in context.ptg_chain_map:
