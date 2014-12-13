@@ -1183,7 +1183,6 @@ class TestPolicyRuleSet(ResourceMappingTestCase):
         new_sc_instance = new_sc_instances['servicechain_instances'][0]
         self.assertEqual(sc_instance['id'], new_sc_instance['id'])
         self.assertEqual(new_scs_id, new_sc_instance['servicechain_spec'])
-
         req = self.new_delete_request(
                 'policy_target_groups', consumer_ptg_id)
         res = req.get_response(self.ext_api)
@@ -1191,6 +1190,103 @@ class TestPolicyRuleSet(ResourceMappingTestCase):
         sc_instance_list_req = self.new_list_request(SERVICECHAIN_INSTANCES)
         res = sc_instance_list_req.get_response(self.ext_api)
         sc_instances = self.deserialize(self.fmt, res)
+        self.assertEqual(len(sc_instances['servicechain_instances']), 0)
+
+    def test_redirect_multiple_ptgs_single_prs(self):
+        data = {'servicechain_node': {'service_type': "LOADBALANCER",
+                                      'tenant_id': self._tenant_id,
+                                      'config': "{}"}}
+        scn_req = self.new_create_request(SERVICECHAIN_NODES, data, self.fmt)
+        node = self.deserialize(self.fmt, scn_req.get_response(self.ext_api))
+        scn_id = node['servicechain_node']['id']
+        data = {'servicechain_spec': {'tenant_id': self._tenant_id,
+                                      'nodes': [scn_id]}}
+        scs_req = self.new_create_request(SERVICECHAIN_SPECS, data, self.fmt)
+        spec = self.deserialize(self.fmt, scs_req.get_response(self.ext_api))
+        scs_id = spec['servicechain_spec']['id']
+        classifier = self.create_policy_classifier(
+            name="class1", protocol="tcp", direction="in", port_range="20:90")
+        classifier_id = classifier['policy_classifier']['id']
+        action = self.create_policy_action(
+            name="action1", action_type=gconst.GP_ACTION_REDIRECT,
+            action_value=scs_id)
+        action_id = action['policy_action']['id']
+        action_id_list = [action_id]
+        policy_rule = self.create_policy_rule(
+            name='pr1', policy_classifier_id=classifier_id,
+            policy_actions=action_id_list)
+        policy_rule_id = policy_rule['policy_rule']['id']
+        policy_rule_list = [policy_rule_id]
+        policy_rule_set = self.create_policy_rule_set(
+            name="c1", policy_rules=policy_rule_list)
+        policy_rule_set_id = policy_rule_set['policy_rule_set']['id']
+
+        #Create 2 provider and 2 consumer PTGs
+        provider_ptg1 = self.create_policy_target_group(
+            name="p_ptg1",
+            provided_policy_rule_sets={policy_rule_set_id: None})
+        provider_ptg1_id = provider_ptg1['policy_target_group']['id']
+        consumer_ptg1 = self.create_policy_target_group(
+            name="c_ptg1",
+            consumed_policy_rule_sets={policy_rule_set_id: None})
+        consumer_ptg1_id = consumer_ptg1['policy_target_group']['id']
+
+        provider_ptg2 = self.create_policy_target_group(
+            name="p_ptg2",
+            provided_policy_rule_sets={policy_rule_set_id: None})
+        provider_ptg2_id = provider_ptg2['policy_target_group']['id']
+        self.create_policy_target_group(
+            name="c_ptg2",
+            consumed_policy_rule_sets={policy_rule_set_id: None})
+
+        sc_instance_list_req = self.new_list_request(SERVICECHAIN_INSTANCES)
+        res = sc_instance_list_req.get_response(self.ext_api)
+        sc_instances = self.deserialize(self.fmt, res)
+        # We should have 4 service chain instances created now
+        self.assertEqual(len(sc_instances['servicechain_instances']), 4)
+        sc_instances = sc_instances['servicechain_instances']
+        sc_instances_provider_ptg_ids = set()
+        sc_instances_consumer_ptg_ids = set()
+        for sc_instance in sc_instances:
+            sc_instances_provider_ptg_ids.add(sc_instance['provider_ptg_id'])
+            sc_instances_consumer_ptg_ids.add(sc_instance['consumer_ptg_id'])
+        self.assertEqual(len(sc_instances_provider_ptg_ids), 2)
+        self.assertEqual(len(sc_instances_consumer_ptg_ids), 2)
+
+        # Deleting one group should end up deleting the two service chain
+        # Instances associated to it
+        req = self.new_delete_request(
+            'policy_target_groups', consumer_ptg1_id)
+        res = req.get_response(self.ext_api)
+        self.assertEqual(res.status_int, webob.exc.HTTPNoContent.code)
+        sc_instance_list_req = self.new_list_request(SERVICECHAIN_INSTANCES)
+        res = sc_instance_list_req.get_response(self.ext_api)
+        sc_instances = self.deserialize(self.fmt, res)
+        self.assertEqual(len(sc_instances['servicechain_instances']), 2)
+        sc_instances = sc_instances['servicechain_instances']
+        for sc_instance in sc_instances:
+            self.assertNotEqual(sc_instance['consumer_ptg_id'],
+                                consumer_ptg1_id)
+
+        req = self.new_delete_request(
+            'policy_target_groups', provider_ptg1_id)
+        res = req.get_response(self.ext_api)
+        self.assertEqual(res.status_int, webob.exc.HTTPNoContent.code)
+        sc_instance_list_req = self.new_list_request(SERVICECHAIN_INSTANCES)
+        res = sc_instance_list_req.get_response(self.ext_api)
+        sc_instances = self.deserialize(self.fmt, res)
+        self.assertEqual(len(sc_instances['servicechain_instances']), 1)
+        sc_instance = sc_instances['servicechain_instances'][0]
+        self.assertNotEqual(sc_instance['provider_ptg_id'], provider_ptg1_id)
+
+        req = self.new_delete_request(
+            'policy_target_groups', provider_ptg2_id)
+        res = req.get_response(self.ext_api)
+        self.assertEqual(res.status_int, webob.exc.HTTPNoContent.code)
+        sc_instance_list_req = self.new_list_request(SERVICECHAIN_INSTANCES)
+        res = sc_instance_list_req.get_response(self.ext_api)
+        sc_instances = self.deserialize(self.fmt, res)
+        # No more service chain instances when all the providers are deleted
         self.assertEqual(len(sc_instances['servicechain_instances']), 0)
 
     def test_shared_policy_rule_set_create_negative(self):
