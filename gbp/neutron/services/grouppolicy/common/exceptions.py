@@ -38,6 +38,12 @@ class GroupPolicyBadRequest(exceptions.BadRequest, GroupPolicyException):
     pass
 
 
+class GroupPolicyNotSupportedError(GroupPolicyBadRequest):
+    message = _("Operation %(method_name)s for resource "
+                "%(resource_name)s is not supported by this "
+                "deployment.")
+
+
 class PolicyTargetRequiresPolicyTargetGroup(GroupPolicyBadRequest):
     message = _("An policy target group was not specified when "
                 "creating policy_target.")
