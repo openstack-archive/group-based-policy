@@ -181,6 +181,29 @@ class TestPolicyTarget(ResourceMappingTestCase):
             res = req.get_response(self.api)
             self.assertEqual(res.status_int, webob.exc.HTTPOk.code)
 
+    def test_explicit_port_deleted(self):
+        # Create policy_target group.
+        ptg = self.create_policy_target_group(name="ptg1")
+        ptg_id = ptg['policy_target_group']['id']
+        subnet_id = ptg['policy_target_group']['subnets'][0]
+        req = self.new_show_request('subnets', subnet_id)
+        subnet = self.deserialize(self.fmt, req.get_response(self.api))
+
+        # Create policy_target with explicit port.
+        with self.port(subnet=subnet) as port:
+            port_id = port['port']['id']
+            pt = self.create_policy_target(
+                name="pt1", policy_target_group_id=ptg_id, port_id=port_id)
+            pt_id = pt['policy_target']['id']
+
+            req = self.new_delete_request('ports', port_id)
+            res = req.get_response(self.api)
+            self.assertEqual(res.status_int, webob.exc.HTTPNoContent.code)
+            # Verify deleting policy_target does not cleanup port.
+            req = self.new_delete_request('policy_targets', pt_id)
+            res = req.get_response(self.ext_api)
+            self.assertEqual(res.status_int, webob.exc.HTTPNoContent.code)
+
     def test_missing_ptg_rejected(self):
         data = self.create_policy_target(
             name="pt1", expected_res_status=webob.exc.HTTPBadRequest.code)

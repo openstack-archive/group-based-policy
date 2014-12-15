@@ -845,7 +845,10 @@ class ResourceMappingDriver(api.PolicyDriver):
 
     def _cleanup_port(self, plugin_context, port_id):
         if self._port_is_owned(plugin_context.session, port_id):
-            self._delete_port(plugin_context, port_id)
+            try:
+                self._delete_port(plugin_context, port_id)
+            except n_exc.PortNotFound:
+                LOG.warn(_("Port %s is missing") % port_id)
 
     def _plug_router_to_external_segment(self, context, es_dict):
         es_list = context._plugin.get_external_segments(
@@ -1553,11 +1556,14 @@ class ResourceMappingDriver(api.PolicyDriver):
         self._disassoc_sgs_from_port(context._plugin_context, port_id, sg_list)
 
     def _disassoc_sgs_from_port(self, plugin_context, port_id, sg_list):
-        port = self._core_plugin.get_port(plugin_context, port_id)
-        cur_sg_list = port[ext_sg.SECURITYGROUPS]
-        new_sg_list = list(set(cur_sg_list) - set(sg_list))
-        port[ext_sg.SECURITYGROUPS] = new_sg_list
-        self._update_port(plugin_context, port_id, port)
+        try:
+            port = self._core_plugin.get_port(plugin_context, port_id)
+            cur_sg_list = port[ext_sg.SECURITYGROUPS]
+            new_sg_list = list(set(cur_sg_list) - set(sg_list))
+            port[ext_sg.SECURITYGROUPS] = new_sg_list
+            self._update_port(plugin_context, port_id, port)
+        except n_exc.PortNotFound:
+            LOG.warn(_("Port %s is missing") % port_id)
 
     def _generate_list_of_sg_from_ptg(self, context, ptg_id):
         ptg = context._plugin.get_policy_target_group(
