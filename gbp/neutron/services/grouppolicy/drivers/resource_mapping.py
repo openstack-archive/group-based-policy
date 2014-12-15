@@ -227,11 +227,10 @@ class ResourceMappingDriver(api.PolicyDriver):
     @log.log
     def create_policy_target_group_precommit(self, context):
         self._reject_cross_tenant_ptg_l2p(context)
+        self._validate_ptg_subnets(context)
 
     @log.log
     def create_policy_target_group_postcommit(self, context):
-        # TODO(rkukura): Validate explicit subnet belongs to L2P's
-        # network.
         subnets = context.current['subnets']
         if subnets:
             l2p_id = context.current['l2_policy_id']
@@ -303,6 +302,9 @@ class ResourceMappingDriver(api.PolicyDriver):
     def update_policy_target_group_precommit(self, context):
         if set(context.original['subnets']) - set(context.current['subnets']):
             raise exc.PolicyTargetGroupSubnetRemovalNotSupported()
+        new_subnets = list(set(context.current['subnets']) -
+                           set(context.original['subnets']))
+        self._validate_ptg_subnets(context, new_subnets)
         self._reject_cross_tenant_ptg_l2p(context)
 
     @log.log
@@ -1938,3 +1940,19 @@ class ResourceMappingDriver(api.PolicyDriver):
         self._update_router(context._plugin_context,
                             context.current['routers'][0],
                             {'routes': [x for x in routes if x['nexthop']]})
+
+    def _validate_ptg_subnets(self, context, subnets=None):
+        if subnets or context.current['subnets']:
+            l2p_id = context.current['l2_policy_id']
+            l2p = context._plugin.get_l2_policy(context._plugin_context,
+                                                l2p_id)
+            # Validate explicit subnet belongs to L2P's network
+            network_id = l2p['network_id']
+            network = self._core_plugin.get_network(context._plugin_context,
+                                                    network_id)
+            for subnet_id in subnets or context.current['subnets']:
+                if subnet_id not in network['subnets']:
+                    raise exc.InvalidSubnetForPTG(subnet_id=subnet_id,
+                                                  network_id=network_id,
+                                                  l2p_id=l2p['id'],
+                                                  ptg_id=context.current['id'])

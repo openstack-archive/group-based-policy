@@ -374,6 +374,30 @@ class TestPolicyTargetGroup(ResourceMappingTestCase):
             res = req.get_response(self.ext_api)
             self.assertEqual(res.status_int, webob.exc.HTTPOk.code)
 
+    def test_add_subnet_negative(self):
+        # Create L2P
+        l2p = self.create_l2_policy()['l2_policy']
+
+        with self.network() as net:
+            with self.subnet(network=net) as sub:
+                # Asserted just for clarity
+                self.assertNotEqual(net['network']['id'], l2p['network_id'])
+                res = self.create_policy_target_group(
+                    l2_policy_id=l2p['id'], subnets=[sub['subnet']['id']],
+                    expected_res_status=400)
+                self.assertEqual('InvalidSubnetForPTG',
+                                 res['NeutronError']['type'])
+                # Create valid PTG
+                ptg = self.create_policy_target_group(
+                    l2_policy_id=l2p['id'],
+                    expected_res_status=201)['policy_target_group']
+                res = self._update_gbp_resource_full_response(
+                    ptg['id'], 'policy_target_group', 'policy_target_groups',
+                    expected_res_status=400,
+                    subnets=ptg['subnets'] + [sub['subnet']['id']])
+                self.assertEqual('InvalidSubnetForPTG',
+                                 res['NeutronError']['type'])
+
     def test_remove_subnet_rejected(self):
         # Create L3 policy.
         l3p = self.create_l3_policy(name="l3p1", ip_pool='10.0.0.0/8')
