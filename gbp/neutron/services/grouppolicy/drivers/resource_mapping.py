@@ -28,7 +28,6 @@ from neutron.openstack.common import log as logging
 from neutron.plugins.common import constants as pconst
 from oslo.config import cfg
 import sqlalchemy as sa
-from sqlalchemy.orm import exc as sql_exc
 
 from gbp.neutron.db.grouppolicy import group_policy_db as gpdb
 from gbp.neutron.db import servicechain_db  # noqa
@@ -1033,21 +1032,6 @@ class ResourceMappingDriver(api.PolicyDriver):
         self._update_sgs_on_ptg(context, ptg_id, provided_policy_rule_sets,
                                 consumed_policy_rule_sets, "ASSOCIATE")
 
-    def _get_ptgs_providing_policy_rule_set(self, session, policy_rule_set_id):
-        with session.begin(subtransactions=True):
-            return (session.query(
-                gpdb.PTGToPRSProvidingAssociation).filter_by(
-                    policy_rule_set_id=policy_rule_set_id).first())
-
-    def _get_ptgs_consuming_policy_rule_set(self, session, policy_rule_set_id):
-        try:
-            with session.begin(subtransactions=True):
-                return (session.query(
-                    gpdb.PTGToPRSConsumingAssociation).filter_by(
-                        policy_rule_set_id=policy_rule_set_id).all())
-        except sql_exc.NoResultFound:
-            return None
-
     # updates sg rules corresponding to a policy rule
     def _update_policy_rule_sg_rules(self, context, policy_rule_sets,
                                     old_policy_rule, new_policy_rule,
@@ -1120,12 +1104,12 @@ class ResourceMappingDriver(api.PolicyDriver):
 
     def _handle_redirect_action(self, context, policy_rule_sets):
         for policy_rule_set_id in policy_rule_sets:
-            ptgs_consuming_policy_rule_set = (
-                self._get_ptgs_consuming_policy_rule_set(
-                    context._plugin_context._session, policy_rule_set_id))
-            ptg_providing_prs = (
-                self._get_ptgs_providing_policy_rule_set(
-                    context._plugin_context._session, policy_rule_set_id))
+            policy_rule_set = context._plugin.get_policy_rule_set(
+                                context._plugin_context, policy_rule_set_id)
+            ptgs_consuming_policy_rule_set = policy_rule_set[
+                                            'consuming_policy_target_groups']
+            ptg_providing_prs = policy_rule_set[
+                                            'providing_policy_target_groups']
 
             # Create the ServiceChain Instance when we have both Provider and
             # consumer PTGs. If Labels are available, they have to be applied
@@ -1134,8 +1118,6 @@ class ResourceMappingDriver(api.PolicyDriver):
                 not ptg_providing_prs):
                 continue
 
-            policy_rule_set = context._plugin.get_policy_rule_set(
-                context._plugin_context, policy_rule_set_id)
             for rule_id in policy_rule_set.get('policy_rules'):
                 policy_rule = context._plugin.get_policy_rule(
                     context._plugin_context, rule_id)
@@ -1148,20 +1130,22 @@ class ResourceMappingDriver(api.PolicyDriver):
                             ptgs_consuming_policy_rule_set):
                             ptg_chain_map = self._get_ptg_servicechain_mapping(
                                     context._plugin_context.session,
-                                    ptg_providing_prs.policy_target_group_id,
-                                    ptg_consuming_prs.policy_target_group_id)
+                                    ptg_providing_prs[0],
+                                    ptg_consuming_prs)
                             if ptg_chain_map:
                                 break  # one chain between a pair of PTGs
                             sc_instance = self._create_servicechain_instance(
                                 context, policy_action.get("action_value"),
-                                ptg_providing_prs.policy_target_group_id,
-                                ptg_consuming_prs.policy_target_group_id,
+                                # REVISIT(Magesh): Handle multiple providing
+                                # policy rule set bug/1387527
+                                ptg_providing_prs[0],
+                                ptg_consuming_prs,
                                 classifier_id)
                             chain_instance_id = sc_instance['id']
                             self._set_ptg_servicechain_instance_mapping(
                                 context._plugin_context.session,
-                                ptg_providing_prs.policy_target_group_id,
-                                ptg_consuming_prs.policy_target_group_id,
+                                ptg_providing_prs[0],
+                                ptg_consuming_prs,
                                 chain_instance_id)
                             break
 
