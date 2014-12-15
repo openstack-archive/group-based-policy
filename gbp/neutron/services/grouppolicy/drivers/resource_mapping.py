@@ -539,7 +539,7 @@ class ResourceMappingDriver(api.PolicyDriver):
     @log.log
     def update_policy_action_postcommit(self, context):
         # TODO(ivar): Should affect related SGs
-        pass
+        self._handle_redirect_spec_id_update(context)
 
     @log.log
     def delete_policy_action_precommit(self, context):
@@ -1094,6 +1094,29 @@ class ResourceMappingDriver(api.PolicyDriver):
                     policy_target_group=policy_target_group).first()
             for ip_map in mappings:
                 session.delete(ip_map)
+
+    def _handle_redirect_spec_id_update(self, context):
+        if (context.current['action_type'] != gconst.GP_ACTION_REDIRECT
+            or context.current['action_value'] ==
+            context.original['action_value']):
+            return
+        spec = self._servicechain_plugin._get_servicechain_spec(
+                    context._plugin_context, context.original['action_value'])
+        servicechain_instances = spec.instances
+        for servicechain_instance in servicechain_instances:
+            sc_instance_update = {
+                        'servicechain_spec': context.current['action_value']}
+            self._update_resource(self._servicechain_plugin,
+                                  context._plugin_context,
+                                  'servicechain_instance',
+                                  servicechain_instance['id'],
+                                  sc_instance_update)
+
+    def _get_rule_ids_for_actions(self, context, action_id):
+        policy_rule_qry = context.session.query(
+                            gpdb.PolicyRuleActionAssociation.policy_rule_id)
+        policy_rule_qry.filter_by(policy_action_id=action_id)
+        return policy_rule_qry.all()
 
     def _handle_redirect_action(self, context, policy_rule_sets):
         for policy_rule_set_id in policy_rule_sets:

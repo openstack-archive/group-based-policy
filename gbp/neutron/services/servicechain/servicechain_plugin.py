@@ -63,8 +63,7 @@ class ServiceChainPlugin(servicechain_db.ServiceChainDbPlugin):
                                  servicechain_node):
         session = context.session
         with session.begin(subtransactions=True):
-            original_sc_node = super(ServiceChainPlugin,
-                                     self).get_servicechain_node(
+            original_sc_node = self.get_servicechain_node(
                                          context, servicechain_node_id)
             updated_sc_node = super(ServiceChainPlugin,
                                     self).update_servicechain_node(
@@ -130,8 +129,7 @@ class ServiceChainPlugin(servicechain_db.ServiceChainDbPlugin):
                                  servicechain_spec):
         session = context.session
         with session.begin(subtransactions=True):
-            original_sc_spec = super(ServiceChainPlugin,
-                                     self).get_servicechain_spec(
+            original_sc_spec = self.get_servicechain_spec(
                                          context, servicechain_spec_id)
             updated_sc_spec = super(ServiceChainPlugin,
                                     self).update_servicechain_spec(
@@ -200,8 +198,7 @@ class ServiceChainPlugin(servicechain_db.ServiceChainDbPlugin):
                                      servicechain_instance):
         session = context.session
         with session.begin(subtransactions=True):
-            original_sc_instance = super(ServiceChainPlugin,
-                                     self).get_servicechain_instance(
+            original_sc_instance = self.get_servicechain_instance(
                                          context, servicechain_instance_id)
             updated_sc_instance = super(ServiceChainPlugin,
                                     self).update_servicechain_instance(
