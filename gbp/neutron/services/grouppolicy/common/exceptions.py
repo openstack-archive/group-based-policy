@@ -75,6 +75,12 @@ class InvalidPortForPTG(GroupPolicyBadRequest):
             "%(policy_target_group_id)s.")
 
 
+class InvalidSubnetForPTG(GroupPolicyBadRequest):
+    message = _("Subnet %(subnet_id)s does not belong to network "
+                "%(network_id)s associated with L2P %(l2p_id)s for PTG "
+                "%(ptg_id)s.")
+
+
 class OverlappingIPPoolsInSameTenantNotAllowed(GroupPolicyBadRequest):
     message = _("IP Pool %(ip_pool)s overlaps with one of the existing L3P "
                 "for the same tenant %(overlapping_pools)s.")
