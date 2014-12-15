@@ -231,13 +231,20 @@ class ResourceMappingDriver(api.PolicyDriver):
 
     @log.log
     def create_policy_target_group_postcommit(self, context):
-        # TODO(rkukura): Validate explicit subnet belongs to L2P's
-        # network.
         subnets = context.current['subnets']
         if subnets:
             l2p_id = context.current['l2_policy_id']
             l2p = context._plugin.get_l2_policy(context._plugin_context,
                                                 l2p_id)
+            # Validate explicit subnet belongs to L2P's network
+            network_id = l2p['network_id']
+            network = self._core_plugin.get_network(context._plugin_context,
+                                                    network_id)
+            for subnet_id in subnets:
+                if subnet_id not in network['subnets']:
+                    raise exc.InvalidSubnetForPTG(subnet_id=subnet_id,
+                                                 network_id=network_id)
+
             l3p_id = l2p['l3_policy_id']
             l3p = context._plugin.get_l3_policy(context._plugin_context,
                                                 l3p_id)
