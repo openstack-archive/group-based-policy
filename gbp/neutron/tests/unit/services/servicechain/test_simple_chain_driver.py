@@ -15,6 +15,7 @@ import contextlib
 import mock
 from neutron.openstack.common import jsonutils
 from neutron.openstack.common import uuidutils
+from neutron.plugins.common import constants
 import webob
 
 from gbp.neutron.services.servicechain import config
@@ -35,6 +36,20 @@ class SimpleChainDriverTestCase(
 
 
 class TestServiceChainInstance(SimpleChainDriverTestCase):
+
+    def test_invalid_service_type_rejected(self):
+        res = self.create_servicechain_node(
+                    service_type="test", config='{}',
+                    expected_res_status=500)
+        self.assertEqual('InvalidServiceType',
+                         res['NeutronError']['type'])
+
+    def test_chain_node_create_success(self):
+        res = self.create_servicechain_node(
+                    service_type=constants.FIREWALL, config='{}',
+                    expected_res_status=201)
+        self.assertEqual(constants.FIREWALL,
+                         res['servicechain_node']['service_type'])
 
     def test_chain_spec_update(self):
         template1 = '{"key1":"value1"}'
