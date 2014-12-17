@@ -686,24 +686,43 @@ class TestPolicyTargetGroup(ResourceMappingTestCase):
                 'CrossTenantPolicyTargetGroupL2PolicyNotSupported',
                 res['NeutronError']['type'])
 
-    def test_cross_tenant_prs_fails(self):
+    def _test_cross_tenant_prs_fails(self, admin=False):
+        status = {False: 404, True: 400}
         prs = self.create_policy_rule_set(tenant_id='admin_tenant',
+                                          is_admin_context=admin,
                                           expected_res_status=201)
         res = self.create_policy_target_group(
+            is_admin_context=admin,
             provided_policy_rule_sets={prs['policy_rule_set']['id']: ''},
-            tenant_id='anothertenant', expected_res_status=404)
-        self.assertEqual(
-            'PolicyRuleSetNotFound', res['NeutronError']['type'])
+            tenant_id='anothertenant', expected_res_status=status[admin])
+        if not admin:
+            self.assertEqual(
+                'PolicyRuleSetNotFound', res['NeutronError']['type'])
+        else:
+            self.assertEqual(
+                'InvalidCrossTenantReference', res['NeutronError']['type'])
 
         # Verify Update
         ptg = self.create_policy_target_group(
+            is_admin_context=admin,
             tenant_id='anothertenant', expected_res_status=201)
         res = self.update_policy_target_group(
-            ptg['policy_target_group']['id'], tenant_id='anothertenant',
+            ptg['policy_target_group']['id'], is_admin_context=admin,
+            tenant_id='anothertenant',
             provided_policy_rule_sets={prs['policy_rule_set']['id']: ''},
-            expected_res_status=404)
-        self.assertEqual(
-            'PolicyRuleSetNotFound', res['NeutronError']['type'])
+            expected_res_status=status[admin])
+        if not admin:
+            self.assertEqual(
+                'PolicyRuleSetNotFound', res['NeutronError']['type'])
+        else:
+            self.assertEqual(
+                'InvalidCrossTenantReference', res['NeutronError']['type'])
+
+    def test_cross_tenant_prs_fails(self):
+        self._test_cross_tenant_prs_fails()
+
+    def test_cross_tenant_prs_fails_admin(self):
+        self._test_cross_tenant_prs_fails(admin=True)
 
     # TODO(rkukura): Test ip_pool exhaustion.
 

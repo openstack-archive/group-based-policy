@@ -91,10 +91,7 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
         return self._plurals
 
     def _validate_shared_create(self, context, obj, identity):
-        # Need admin context to check sharing constraints
-        context = context.elevated()
-        if not obj.get('shared'):
-            return
+        # REVISIT(ivar): only validated new references
         links = self.usage_graph.get(identity, {})
         for attr in links:
             ids = obj[attr]
@@ -107,20 +104,25 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
                         context, filters={'id': ids})
                 for linked in linked_objects:
                     if not linked.get('shared'):
-                        raise gp_exc.SharedResourceReferenceError(
-                            res_type=identity, res_id=obj['id'],
-                            ref_type=ref_type, ref_id=linked['id'])
+                        if obj.get('shared'):
+                            raise gp_exc.SharedResourceReferenceError(
+                                res_type=identity, res_id=obj['id'],
+                                ref_type=ref_type, ref_id=linked['id'])
+                        if obj.get('tenant_id') != linked.get('tenant_id'):
+                            raise gp_exc.InvalidCrossTenantReference(
+                                res_type=identity, res_id=obj['id'],
+                                ref_type=ref_type, ref_id=linked['id'])
 
     def _validate_shared_update(self, context, original, updated, identity):
         # Need admin context to check sharing constraints
-        context = context.elevated()
-        if updated.get('shared'):
-            # Even though the shared attribute may not be changed, the objects
-            # it is referring to might. For this reson we run the reference
-            # validation every time a shared resource is updated
-            # TODO(ivar): run only when relevant updates happen
-            self._validate_shared_create(context, updated, identity)
-        elif updated.get('shared') != original.get('shared'):
+
+        # Even though the shared attribute may not be changed, the objects
+        # it is referring to might. For this reson we run the reference
+        # validation every time a shared resource is updated
+        # TODO(ivar): run only when relevant updates happen
+        self._validate_shared_create(context, updated, identity)
+        if updated.get('shared') != original.get('shared'):
+            context = context.elevated()
             getattr(self, '_validate_%s_unshare' % identity)(context, updated)
 
     def _check_shared_or_different_tenant(self, context, obj,
