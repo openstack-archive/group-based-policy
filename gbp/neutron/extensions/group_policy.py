@@ -41,6 +41,11 @@ LOG = logging.getLogger(__name__)
 
 
 # Group Policy Exceptions
+class GbpResourceNotFound(nexc.NotFound):
+    message = _("Group Policy resource %(identity)s with id %(id)s could not "
+                "be found")
+
+
 class PolicyTargetNotFound(nexc.NotFound):
     message = _("Policy Target %(policy_target_id)s could not be found")
 

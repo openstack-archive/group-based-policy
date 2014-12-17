@@ -746,6 +746,49 @@ class TestNatPool(GroupPolicyPluginTestCase):
             np['id'], expected_res_status=200, shared=False)
 
 
+class TestPolicyTarget(GroupPolicyPluginTestCase):
+
+    def _test_cross_tenant_fails(self, is_admin=False):
+        status = {False: 404, True: 400}
+        ptg = self.create_policy_target_group(
+            expected_res_status=201, tenant_id='tenant',
+            is_admin_context=is_admin)['policy_target_group']
+        # Create EP on a different tenant
+        res = self.create_policy_target(
+            expected_res_status=status[is_admin], tenant_id='another',
+            is_admin_context=is_admin, policy_target_group_id=ptg['id'])
+        if not is_admin:
+            self.assertEqual(
+                'GbpResourceNotFound', res['NeutronError']['type'])
+        else:
+            self.assertEqual(
+                'InvalidCrossTenantReference', res['NeutronError']['type'])
+
+        # Create EP without PTG
+        pt = self.create_policy_target(
+            expected_res_status=201, tenant_id='another',
+            is_admin_context=is_admin)['policy_target']
+
+        # Update PT fails
+        res = self.update_policy_target(pt['id'],
+                                        expected_res_status=status[is_admin],
+                                        tenant_id='another',
+                                        policy_target_group_id=ptg['id'],
+                                        is_admin_context=is_admin)
+        if not is_admin:
+            self.assertEqual(
+                'GbpResourceNotFound', res['NeutronError']['type'])
+        else:
+            self.assertEqual(
+                'InvalidCrossTenantReference', res['NeutronError']['type'])
+
+    def test_cross_tenant_fails(self):
+        self._test_cross_tenant_fails()
+
+    def test_cross_tenant_fails_admin(self):
+        self._test_cross_tenant_fails(True)
+
+
 class TestGroupPolicyPluginGroupResources(
         GroupPolicyPluginTestCase, tgpdb.TestGroupResources):
 

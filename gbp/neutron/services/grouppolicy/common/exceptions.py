@@ -180,3 +180,9 @@ class ImplicitSubnetNotSupported(GroupPolicyBadRequest):
 class DefaultExternalSegmentAlreadyExists(GroupPolicyBadRequest):
     message = _("Default External Segment with name %(es_name)s already "
                 "exists and is visible for this tenant")
+
+
+class InvalidCrossTenantReference(GroupPolicyBadRequest):
+    message = _("Not supported cross tenant reference: object "
+                "%(res_type)s:%(res_id)s can't link %(ref_type)s:%(ref_id)s "
+                "unless it's shared.")
