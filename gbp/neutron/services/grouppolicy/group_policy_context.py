@@ -75,6 +75,10 @@ class PolicyTargetGroupContext(GroupPolicyContext,
         return self._original_policy_target_group
 
     def set_l2_policy_id(self, l2_policy_id):
+        self._plugin._validate_shared_create(
+                    self._plugin_context,
+                    self._policy_target_group,
+                    'policy_target_group')
         self._plugin._set_l2_policy_for_policy_target_group(
             self._plugin_context, self._policy_target_group['id'],
             l2_policy_id)
@@ -109,6 +113,10 @@ class L2PolicyContext(GroupPolicyContext, api.L2PolicyContext):
         return self._original_l2_policy
 
     def set_l3_policy_id(self, l3_policy_id):
+        self._plugin._validate_shared_create(
+                    self._plugin_context,
+                    self._l2_policy,
+                    'l2_policy')
         self._plugin._set_l3_policy_for_l2_policy(
             self._plugin_context, self._l2_policy['id'], l3_policy_id)
         self._l2_policy['l3_policy_id'] = l3_policy_id
