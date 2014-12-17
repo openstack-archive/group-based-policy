@@ -27,3 +27,8 @@ class ServiceChainException(exceptions.NeutronException):
 
 class ServiceChainDeploymentError(ServiceChainException):
     message = _("Deployment not configured properly. See logs for details.")
+
+
+class InvalidServiceType(ServiceChainException):
+    message = _("The reference service chain driver only supports the services"
+                " Loadbalancer and Firewall services in the chain")

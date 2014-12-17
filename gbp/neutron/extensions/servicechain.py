@@ -61,10 +61,6 @@ class PortNotFound(nexc.NotFound):
     message = _("Port %(port_id)s could not be found")
 
 
-# Service chain API supported Values
-sc_supported_type = [constants.LOADBALANCER, constants.FIREWALL]
-
-
 def _validate_str_list(data, valid_values=None):
     if not isinstance(data, list):
         msg = _("'%s' is not a list") % data
@@ -104,7 +100,7 @@ RESOURCE_ATTRIBUTE_MAP = {
                       'validate': {'type:string': None},
                       'required_by_policy': True, 'is_visible': True},
         'service_type': {'allow_post': True, 'allow_put': False,
-                         'validate': {'type:values': sc_supported_type},
+                         'validate': {'type:string': None},
                          'required': True, 'is_visible': True},
         'config': {'allow_post': True, 'allow_put': False,
                    'validate': {'type:string': None},
