@@ -27,6 +27,9 @@ from gbp.neutron.services.servicechain.common import exceptions as exc
 
 LOG = logging.getLogger(__name__)
 
+# Service chain API supported Values
+sc_supported_type = [pconst.LOADBALANCER, pconst.FIREWALL]
+
 
 class ServiceChainInstanceStack(model_base.BASEV2):
     """ServiceChainInstance stacks owned by the servicechain driver."""
@@ -46,7 +49,8 @@ class SimpleChainDriver(object):
 
     @log.log
     def create_servicechain_node_precommit(self, context):
-        pass
+        if context.current['service_type'] not in sc_supported_type:
+            raise exc.InvalidServiceTypeForReferenceDriver()
 
     @log.log
     def create_servicechain_node_postcommit(self, context):
