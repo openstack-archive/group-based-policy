@@ -36,6 +36,9 @@ SERVICE_CONTROLLER_OPTIONS = [
     cfg.StrOpt('request_timeout',
                help=_('One Convergence NVSD Service Controller API '
                       'request timeout')),
+    cfg.StrOpt('api_version',
+               default='1.0',
+               help=_('One Convergence NVSD Service Controller API Version')),
 ]
 
 cfg.CONF.register_opts(SERVICE_CONTROLLER_OPTIONS, "NVSD_SERVICE_CONTROLLER")
@@ -90,6 +93,8 @@ class NVSDServiceController(object):
         """Issue a request to NVSD Service Controller."""
 
         headers = {"Content-Type": content_type}
+        api_version = "/v" + cfg.CONF.NVSD_SERVICE_CONTROLLER.api_version
+        uri = api_version + uri
         if context.is_admin:
             uri = uri + ADMIN_URL
         if filters.get('tenant_id'):
