@@ -47,7 +47,7 @@ def upgrade():
         sa.Column('param_name', sa.String(length=50), nullable=False),
         sa.Column('param_value', sa.String(length=50), nullable=False),
         sa.Column('network_service_policy_id', sa.String(length=36),
-                  nullable=False),
+                  nullable=True),
         sa.ForeignKeyConstraint(['network_service_policy_id'],
                                 ['gp_network_service_policies.id'],
                                 ondelete='CASCADE'),

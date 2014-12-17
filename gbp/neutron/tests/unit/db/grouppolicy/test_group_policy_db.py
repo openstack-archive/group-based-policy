@@ -817,6 +817,20 @@ class TestGroupResources(GroupPolicyDbTestCase):
                           self.plugin.get_network_service_policy,
                           ctx, nsp_id)
 
+    def test_delete_network_service_policy_with_params(self):
+        ctx = context.get_admin_context()
+        params = [{'type': 'ip_single', 'name': 'vip', 'value': 'self_subnet'}]
+
+        nsp = self.create_network_service_policy(network_service_params=params)
+        nsp_id = nsp['network_service_policy']['id']
+
+        req = self.new_delete_request('network_service_policies', nsp_id)
+        res = req.get_response(self.ext_api)
+        self.assertEqual(webob.exc.HTTPNoContent.code, res.status_int)
+        self.assertRaises(gpolicy.NetworkServicePolicyNotFound,
+                          self.plugin.get_network_service_policy,
+                          ctx, nsp_id)
+
     def test_create_and_show_policy_classifier(self):
         name = "pc1"
         attrs = self._get_test_policy_classifier_attrs(name=name)

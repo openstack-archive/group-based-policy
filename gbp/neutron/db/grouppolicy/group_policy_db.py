@@ -186,7 +186,8 @@ class NetworkServicePolicy(
     policy_target_groups = orm.relationship(PolicyTargetGroup,
                                             backref='network_service_policy')
     network_service_params = orm.relationship(
-        NetworkServiceParam, backref='network_service_policy')
+        NetworkServiceParam, backref='network_service_policy',
+        cascade='all, delete-orphan')
     shared = sa.Column(sa.Boolean)
 
 
