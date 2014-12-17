@@ -101,6 +101,8 @@ class NvsdGbpDriver(res_map.ResourceMappingDriver):
 
     @log.log
     def delete_policy_target_group_precommit(self, context):
+        super(NvsdGbpDriver,
+              self).delete_policy_target_group_precommit(context)
         l2p_id = context.current['l2_policy_id']
         ptgs = context._plugin.get_policy_target_groups(
             context._plugin_context,
