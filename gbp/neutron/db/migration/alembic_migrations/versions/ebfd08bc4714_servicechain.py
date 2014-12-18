@@ -83,7 +83,7 @@ def upgrade(active_plugins=None, options=None):
         sa.Column('node_id', sa.String(length=36), nullable=False),
         sa.ForeignKeyConstraint(['servicechain_spec'], ['sc_specs.id']),
         sa.ForeignKeyConstraint(['node_id'], ['sc_nodes.id']),
-        sa.PrimaryKeyConstraint('servicechain_spec')
+        sa.PrimaryKeyConstraint('servicechain_spec', 'node_id')
     )
 
 

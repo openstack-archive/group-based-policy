@@ -313,6 +313,19 @@ class TestServiceChainResources(ServiceChainDbTestCase):
                                  scs['servicechain_spec']['id'],
                                  attrs)
 
+    def test_create_spec_multiple_nodes(self):
+        name = "scs1"
+        scn1 = self.create_servicechain_node()
+        scn1_id = scn1['servicechain_node']['id']
+        scn2 = self.create_servicechain_node()
+        scn2_id = scn2['servicechain_node']['id']
+        attrs = self._get_test_servicechain_spec_attrs(
+                            name, nodes=[scn1_id, scn2_id])
+        scs = self.create_servicechain_spec(
+                            name=name, nodes=[scn1_id, scn2_id])
+        for k, v in attrs.iteritems():
+            self.assertEqual(scs['servicechain_spec'][k], v)
+
     def test_list_servicechain_specs(self):
         scs = [self.create_servicechain_spec(name='scs1', description='scs'),
                self.create_servicechain_spec(name='scs2', description='scs'),
