@@ -166,37 +166,15 @@ class ResourceMappingDriver(api.PolicyDriver):
     def create_policy_target_precommit(self, context):
         if not context.current['policy_target_group_id']:
             raise exc.PolicyTargetRequiresPolicyTargetGroup()
+        if context.current['port_id']:
+            # Validate if explicit port's subnet
+            # is same as the subnet of PTG.
+            self._validate_pt_port_subnets(context)
 
     @log.log
     def create_policy_target_postcommit(self, context):
         if not context.current['port_id']:
             self._use_implicit_port(context)
-        else:
-            # Validate if explicit port's subnet
-            # is same as the subnet of PTG.
-            port_id = context.current['port_id']
-            core_plugin = self._core_plugin
-            port = core_plugin.get_port(context._plugin_context, port_id)
-
-            port_subnet_id = None
-            fixed_ips = port['fixed_ips']
-            if fixed_ips:
-                # TODO(krishna-sunitha): Check if there is a case when
-                # there is more than one fixed_ip?
-                port_subnet_id = fixed_ips[0]['subnet_id']
-
-            ptg_id = context.current['policy_target_group_id']
-            ptg = context._plugin.get_policy_target_group(
-                                    context._plugin_context,
-                                    ptg_id)
-            for subnet in ptg.get('subnets'):
-                if subnet == port_subnet_id:
-                    break
-            else:
-                raise exc.InvalidPortForPTG(port_id=port_id,
-                                    ptg_subnet_id=",".join(ptg.get('subnets')),
-                                    port_subnet_id=port_subnet_id,
-                                    policy_target_group_id=ptg_id)
 
         self._assoc_ptg_sg_to_pt(context, context.current['id'],
                                  context.current['policy_target_group_id'])
@@ -306,6 +284,7 @@ class ResourceMappingDriver(api.PolicyDriver):
                            set(context.original['subnets']))
         self._validate_ptg_subnets(context, new_subnets)
         self._reject_cross_tenant_ptg_l2p(context)
+        self._validate_ptg_subnets(context, context.current['subnets'])
 
     @log.log
     def update_policy_target_group_postcommit(self, context):
@@ -398,6 +377,20 @@ class ResourceMappingDriver(api.PolicyDriver):
     def create_l2_policy_precommit(self, context):
         self._reject_cross_tenant_l2p_l3p(context)
         self._reject_non_shared_net_on_shared_l2p(context)
+        # Validate if the explicit network belongs to the
+        # tenant.
+        # Are routers shared across tenants ??
+        # How to check if admin and if admin can access all networks ??
+        if context.current['network_id']:
+            network_id = context.current['network_id']
+            network = self._core_plugin.get_network(context._plugin_context,
+                                                    network_id)
+            tenant_id_of_explicit_network = network['tenant_id']
+            if tenant_id_of_explicit_network != context.current['tenant_id']:
+                raise exc.InvalidNetworkTenantOwnership(
+                    msg="Error while creating L2 Policy",
+                    network_id=context.current['network_id'],
+                    tenant_id=context.current['tenant_id'])
 
     @log.log
     def create_l2_policy_postcommit(self, context):
@@ -439,6 +432,22 @@ class ResourceMappingDriver(api.PolicyDriver):
         # we have to limit the number of ES per L3P to 1
         if len(context.current['external_segments']) > 1:
             raise exc.MultipleESPerL3PolicyNotSupported()
+        # Validate if the explicit router(s) belong to the
+        # tenant.
+        # Are routers shared across tenants ??
+        # How to check if admin and if admin can access all routers ??
+        for router_id in context.current['routers']:
+            router = self._l3_plugin.get_router(context._plugin_context,
+                                                router_id)
+            tenant_id_of_explicit_router = router['tenant_id']
+            if tenant_id_of_explicit_router != context.current['tenant_id']:
+                # pass
+                # As soon as I enable this, i get bunch of failures
+                # in TestL3Policy etc.,. Pls suggest.
+                raise exc.InvalidRouterTenantOwnership(
+                    msg="Error while creating L3 Policy",
+                    router_id=router_id,
+                    tenant_id=context.current['tenant_id'])
 
     @log.log
     def create_l3_policy_postcommit(self, context):
@@ -1956,3 +1965,30 @@ class ResourceMappingDriver(api.PolicyDriver):
                                                   network_id=network_id,
                                                   l2p_id=l2p['id'],
                                                   ptg_id=context.current['id'])
+
+    def _validate_pt_port_subnets(self, context, subnets=None):
+        # Validate if explicit port's subnet
+        # is same as the subnet of PTG.
+        port_id = context.current['port_id']
+        core_plugin = self._core_plugin
+        port = core_plugin.get_port(context._plugin_context, port_id)
+
+        port_subnet_id = None
+        fixed_ips = port['fixed_ips']
+        if fixed_ips:
+            # TODO(krishna-sunitha): Check if there is a case when KK
+            # there is more than one fixed_ip?
+            port_subnet_id = fixed_ips[0]['subnet_id']
+
+        ptg_id = context.current['policy_target_group_id']
+        ptg = context._plugin.get_policy_target_group(
+                                context._plugin_context,
+                                ptg_id)
+        for subnet in ptg.get('subnets') or subnets:
+            if subnet == port_subnet_id:
+                break
+        else:
+            raise exc.InvalidPortForPTG(port_id=port_id,
+                                ptg_subnet_id=",".join(ptg.get('subnets')),
+                                port_subnet_id=port_subnet_id,
+                                policy_target_group_id=ptg_id)

@@ -180,3 +180,13 @@ class ImplicitSubnetNotSupported(GroupPolicyBadRequest):
 class DefaultExternalSegmentAlreadyExists(GroupPolicyBadRequest):
     message = _("Default External Segment with name %(es_name)s already "
                 "exists and is visible for this tenant")
+
+
+class InvalidNetworkTenantOwnership(GroupPolicyBadRequest):
+    message = _("%(msg)s : Network id %(network_id)s doesn't belong to "
+                " the tenant id %(tenant_id)s.")
+
+
+class InvalidRouterTenantOwnership(GroupPolicyBadRequest):
+    message = _("%(msg)s : Router id %(router_id)s does not belong to the "
+                " tenant id %(tenant_id)s.")
