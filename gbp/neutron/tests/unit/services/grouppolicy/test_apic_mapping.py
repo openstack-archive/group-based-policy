@@ -129,7 +129,8 @@ class TestPolicyTarget(ApicMappingTestCase):
         subnet = self._get_object('subnets', ptg['subnets'][0], self.api)
         with self.port(subnet=subnet) as port:
             self._bind_port_to_host(port['port']['id'], 'h1')
-            self.create_policy_target(ptg['id'], port_id=port['port']['id'])
+            self.create_policy_target(policy_target_group_id=ptg['id'],
+                                      port_id=port['port']['id'])
             mgr = self.driver.apic_manager
             self.assertEqual(mgr.ensure_path_created_for_port.call_count, 1)
 
@@ -152,7 +153,7 @@ class TestPolicyTarget(ApicMappingTestCase):
         with self.port(subnet=subnet) as port:
             self._bind_port_to_host(port['port']['id'], 'h1')
             pt = self.create_policy_target(
-                ptg['id'], port_id=port['port']['id'])
+                policy_target_group_id=ptg['id'], port_id=port['port']['id'])
             self.new_delete_request(
                 'policy_targets', pt['policy_target']['id'],
                 self.fmt).get_response(self.ext_api)
@@ -165,7 +166,8 @@ class TestPolicyTarget(ApicMappingTestCase):
         with self.port(subnet=subnet) as port:
             # Create EP with bound port
             port = self._bind_port_to_host(port['port']['id'], 'h1')
-            self.create_policy_target(ptg['id'], port_id=port['port']['id'])
+            self.create_policy_target(policy_target_group_id=ptg['id'],
+                                      port_id=port['port']['id'])
 
             # Change port binding and notify driver
             port_up = self._bind_port_to_host(port['port']['id'], 'h2')
@@ -469,9 +471,8 @@ class TestL3Policy(ApicMappingTestCase):
                          res['NeutronError']['type'])
         # Verify existing L3P updated to use used ES fails
         sneaky_l3p = self.create_l3_policy()['l3_policy']
-        res = self._update_gbp_resource_full_response(
-            sneaky_l3p['id'], 'l3_policy', 'l3_policies',
-            expected_res_status=400,
+        res = self.update_l3_policy(
+            sneaky_l3p['id'], expected_res_status=400,
             external_segments={es['id']: ['192.168.0.3']})
         self.assertEqual('OnlyOneL3PolicyIsAllowedPerExternalSegment',
                          res['NeutronError']['type'])
@@ -495,9 +496,8 @@ class TestL3Policy(ApicMappingTestCase):
         sneaky_l3p = self.create_l3_policy(
             external_segments={es['id']: ['192.168.0.2']},
             expected_res_status=201)['l3_policy']
-        res = self._update_gbp_resource_full_response(
-            sneaky_l3p['id'], 'l3_policy', 'l3_policies',
-            expected_res_status=400,
+        res = self.update_l3_policy(
+            sneaky_l3p['id'], expected_res_status=400,
             external_segments={es['id']: ['192.168.0.2', '192.168.0.3']})
         self.assertEqual('OnlyOneAddressIsAllowedPerExternalSegment',
                          res['NeutronError']['type'])
@@ -571,9 +571,9 @@ class TestL3Policy(ApicMappingTestCase):
             expected_res_status=201,
             tenant_id=es['tenant_id'] if not shared_es else 'another_tenant',
             shared=shared_l3p)['l3_policy']
-        l3p = self._update_gbp_resource(
-            l3p['id'], 'l3_policy', 'l3_policies', expected_res_status=200,
-            external_segments={es['id']: ['192.168.0.3']})
+        l3p = self.update_l3_policy(
+            l3p['id'], tenant_id=l3p['tenant_id'], expected_res_status=200,
+            external_segments={es['id']: ['192.168.0.3']})['l3_policy']
 
         mgr = self.driver.apic_manager
         owner = self.common_tenant if shared_es else es['tenant_id']
@@ -693,9 +693,9 @@ class TestL3Policy(ApicMappingTestCase):
         mgr.ensure_logical_node_profile_created.reset_mock()
         mgr.ensure_static_route_created.reset_mock()
 
-        l3p = self._update_gbp_resource(
-            l3p['id'], 'l3_policy', 'l3_policies', expected_res_status=200,
-            external_segments={es2['id']: ['192.168.1.3']})
+        l3p = self.update_l3_policy(
+            l3p['id'], tenant_id=l3p['tenant_id'], expected_res_status=200,
+            external_segments={es2['id']: ['192.168.1.3']})['l3_policy']
 
         mgr.delete_external_routed_network.assert_called_once_with(
             es1['id'], owner=owner)
@@ -710,13 +710,13 @@ class TestL3Policy(ApicMappingTestCase):
         self.assertFalse(mgr.ensure_static_route_created.called)
 
         mgr.delete_external_routed_network.reset_mock()
-        self._update_gbp_resource(
-            l3p['id'], 'l3_policy', 'l3_policies', expected_res_status=200,
+        self.update_l3_policy(
+            l3p['id'], expected_res_status=200, tenant_id=l3p['tenant_id'],
             external_segments={es1['id']: ['192.168.0.3'],
                                es2['id']: ['192.168.1.3']})
-        self._update_gbp_resource(
-            l3p['id'], 'l3_policy', 'l3_policies', expected_res_status=200,
-            external_segments={})
+        self.update_l3_policy(
+            l3p['id'], tenant_id=l3p['tenant_id'],
+            expected_res_status=200, external_segments={})
         expected_delete_calls = [
             mock.call(es1['id'], owner=owner),
             mock.call(es2['id'], owner=owner)]
@@ -766,17 +766,17 @@ class TestL3Policy(ApicMappingTestCase):
             expected_res_status=201)['l3_policy']
         self.assertEqual(['192.168.0.2'], l3p['external_segments'][es1['id']])
 
-        l3p = self._update_gbp_resource(l3p['id'], 'l3_policy', 'l3_policies',
-                                        expected_res_status=200,
-                                        external_segments={es1['id']: [],
-                                                           es2['id']: []})
+        l3p = self.update_l3_policy(
+            l3p['id'], expected_res_status=200,
+            external_segments={es1['id']: [], es2['id']: []})['l3_policy']
         self.assertEqual(['192.168.0.2'], l3p['external_segments'][es1['id']])
         self.assertEqual(['192.168.1.2'], l3p['external_segments'][es2['id']])
 
         # Address IP changed
-        l3p = self._update_gbp_resource(
-            l3p['id'], 'l3_policy', 'l3_policies', expected_res_status=200,
-            external_segments={es1['id']: ['192.168.0.3'], es2['id']: []})
+        l3p = self.update_l3_policy(
+            l3p['id'], expected_res_status=200,
+            external_segments={es1['id']: ['192.168.0.3'],
+                               es2['id']: []})['l3_policy']
         self.assertEqual(['192.168.0.3'], l3p['external_segments'][es1['id']])
         self.assertEqual(['192.168.1.2'], l3p['external_segments'][es2['id']])
 
@@ -927,7 +927,8 @@ class TestPolicyRuleSet(ApicMappingTestCase):
         rules = []
         for classifier in cls:
             rules.append(self.create_policy_rule(
-                classifier['id'], policy_actions=[a1['id']],
+                policy_classifier_id=classifier['id'],
+                policy_actions=[a1['id']],
                 shared=shared)['policy_rule'])
         return rules
 
@@ -955,7 +956,8 @@ class TestPolicyRule(ApicMappingTestCase):
 
         cls = self.create_policy_classifier(direction='in', protocol='udp',
                                             port_range=80)['policy_classifier']
-        self.create_policy_rule(cls['id'], expected_res_status=400,
+        self.create_policy_rule(policy_classifier_id=cls['id'],
+                                expected_res_status=400,
                                 policy_actions=actions)
 
     def _test_policy_rule_deleted_on_apic(self, shared=False):
@@ -983,7 +985,7 @@ class TestPolicyRule(ApicMappingTestCase):
         action = self.create_policy_action(
             action_type='allow', shared=shared)['policy_action']
         return self.create_policy_rule(
-            cls['id'], policy_actions=[action['id']],
+            policy_classifier_id=cls['id'], policy_actions=[action['id']],
             shared=shared)['policy_rule']
 
 
@@ -1002,9 +1004,8 @@ class TestExternalSegment(ApicMappingTestCase):
         es = self.create_external_segment(
             name='supported', expected_res_status=201,
             port_address_translation=False)['external_segment']
-        res = self._update_gbp_resource_full_response(
-            es['id'], 'external_segment', 'external_segments',
-            expected_res_status=400, port_address_translation=True)
+        res = self.update_external_segment(
+            es['id'], expected_res_status=400, port_address_translation=True)
         self.assertEqual('PATNotSupportedByApicDriver',
                          res['NeutronError']['type'])
 
@@ -1029,9 +1030,8 @@ class TestExternalSegment(ApicMappingTestCase):
                               'nexthop': None}],
             expected_res_status=201)['external_segment']
 
-        self._update_gbp_resource(es['id'], 'external_segment',
-                                  'external_segments', expected_res_status=200,
-                                  external_routes=[])
+        self.update_external_segment(es['id'], expected_res_status=200,
+                                     external_routes=[])
 
         mgr = self.driver.apic_manager
         self.assertFalse(mgr.ensure_static_route_deleted.called)
@@ -1061,11 +1061,10 @@ class TestExternalSegment(ApicMappingTestCase):
         owner = es['tenant_id'] if not shared_es else self.common_tenant
         mgr.ensure_external_epg_created.reset_mock()
         # Remove route completely
-        self._update_gbp_resource(es['id'], 'external_segment',
-                                  'external_segments', expected_res_status=200,
-                                  external_routes=[
-                                      {'destination': '0.0.0.0/0',
-                                       'nexthop': '192.168.0.254'}])
+        self.update_external_segment(es['id'], expected_res_status=200,
+                                     external_routes=[
+                                         {'destination': '0.0.0.0/0',
+                                          'nexthop': '192.168.0.254'}])
         mgr = self.driver.apic_manager
         mgr.ensure_static_route_deleted.assert_called_with(
             es['id'], mocked.APIC_EXT_SWITCH, '128.0.0.0/16',
@@ -1087,11 +1086,10 @@ class TestExternalSegment(ApicMappingTestCase):
         mgr.ensure_static_route_deleted.reset_mock()
         mgr.ensure_external_epg_routes_deleted.reset_mock()
 
-        self._update_gbp_resource(es['id'], 'external_segment',
-                                  'external_segments', expected_res_status=200,
-                                  external_routes=[
-                                      {'destination': '0.0.0.0/0',
-                                       'nexthop': None}])
+        self.update_external_segment(es['id'], expected_res_status=200,
+                                     external_routes=[
+                                         {'destination': '0.0.0.0/0',
+                                          'nexthop': None}])
         mgr.ensure_next_hop_deleted.assert_called_with(
             es['id'], mocked.APIC_EXT_SWITCH, '0.0.0.0/0', '192.168.0.254',
             owner=owner, transaction=mock.ANY)
@@ -1138,11 +1136,10 @@ class TestExternalSegment(ApicMappingTestCase):
         mgr = self.driver.apic_manager
         mgr.ensure_external_epg_created.reset_mock()
         owner = es['tenant_id'] if not shared_es else self.common_tenant
-        self._update_gbp_resource(es['id'], 'external_segment',
-                                  'external_segments', expected_res_status=200,
-                                  external_routes=[
-                                      {'destination': '128.0.0.0/16',
-                                       'nexthop': '192.168.0.254'}])
+        self.update_external_segment(es['id'], expected_res_status=200,
+                                     external_routes=[
+                                         {'destination': '128.0.0.0/16',
+                                          'nexthop': '192.168.0.254'}])
 
         mgr.ensure_static_route_created.assert_called_with(
             es['id'], mocked.APIC_EXT_SWITCH, '192.168.0.254',
@@ -1164,13 +1161,12 @@ class TestExternalSegment(ApicMappingTestCase):
         mgr.ensure_external_epg_created.reset_mock()
 
         # Verify Route added with default gateway
-        self._update_gbp_resource(es['id'], 'external_segment',
-                                  'external_segments', expected_res_status=200,
-                                  external_routes=[
-                                      {'destination': '128.0.0.0/16',
-                                       'nexthop': '192.168.0.254'},
-                                      {'destination': '0.0.0.0/0',
-                                       'nexthop': None}])
+        self.update_external_segment(es['id'], expected_res_status=200,
+                                     external_routes=[
+                                         {'destination': '128.0.0.0/16',
+                                          'nexthop': '192.168.0.254'},
+                                         {'destination': '0.0.0.0/0',
+                                          'nexthop': None}])
 
         mgr.ensure_static_route_created.assert_called_with(
             es['id'], mocked.APIC_EXT_SWITCH, '192.168.0.1',
@@ -1278,10 +1274,9 @@ class TestExternalPolicy(ApicMappingTestCase):
         ep = self.create_external_policy(
             tenant_id=es_list[0]['tenant_id'] if not shared_es else 'another',
             shared=shared_ep, expected_res_status=201)['external_policy']
-        ep = self._update_gbp_resource(
-            ep['id'], 'external_policy', 'external_policies',
-            expected_res_status=200,
-            external_segments=[x['id'] for x in es_list])
+        ep = self.update_external_policy(
+            ep['id'], expected_res_status=200, tenant_id=ep['tenant_id'],
+            external_segments=[x['id'] for x in es_list])['external_policy']
         mgr = self.driver.apic_manager
         owner = (es_list[0]['tenant_id'] if not shared_es
                  else self.common_tenant)
@@ -1293,9 +1288,9 @@ class TestExternalPolicy(ApicMappingTestCase):
         self._check_call_list(expected_create_calls,
                               mgr.ensure_external_epg_created.call_args_list)
 
-        ep = self._update_gbp_resource(
-            ep['id'], 'external_policy', 'external_policies',
-            expected_res_status=200, external_segments=[])
+        ep = self.update_external_policy(
+            ep['id'], expected_res_status=200, tenant_id=ep['tenant_id'],
+            external_segments=[])['external_policy']
         mgr = self.driver.apic_manager
         expected_create_calls = []
         for es in es_list:
@@ -1316,10 +1311,6 @@ class TestExternalPolicy(ApicMappingTestCase):
         self._test_update_no_prs(shared_ep=False, shared_es=False)
 
     def _test_create_with_prs(self, shared_es, shared_ep, shared_prs):
-        prov = self._create_policy_rule_set_on_shared(
-            shared=shared_prs)
-        cons = self._create_policy_rule_set_on_shared(
-            shared=shared_prs)
         self._mock_external_dict([('supported', '192.168.0.2/24')])
         es_list = [
             self.create_external_segment(
@@ -1329,6 +1320,14 @@ class TestExternalPolicy(ApicMappingTestCase):
                     'destination': '128.0.0.0/16',
                     'nexthop': '192.168.0.254'}])['external_segment']
             for x in range(3)]
+        prov = self._create_policy_rule_set_on_shared(
+            shared=shared_prs,
+            tenant_id=es_list[0]['tenant_id'] if not (
+                shared_es | shared_prs) else 'another')
+        cons = self._create_policy_rule_set_on_shared(
+            shared=shared_prs,
+            tenant_id=es_list[0]['tenant_id'] if not (
+                shared_es | shared_prs) else 'another')
         ep = self.create_external_policy(
             provided_policy_rule_sets={prov['id']: ''},
             consumed_policy_rule_sets={cons['id']: ''}, shared=shared_ep,
@@ -1374,10 +1373,6 @@ class TestExternalPolicy(ApicMappingTestCase):
                                    shared_prs=True)
 
     def _test_update_add_prs(self, shared_es, shared_ep, shared_prs):
-        prov = self._create_policy_rule_set_on_shared(
-            shared=shared_prs)
-        cons = self._create_policy_rule_set_on_shared(
-            shared=shared_prs)
         self._mock_external_dict([('supported', '192.168.0.2/24')])
         es_list = [
             self.create_external_segment(
@@ -1387,15 +1382,20 @@ class TestExternalPolicy(ApicMappingTestCase):
                     'destination': '128.0.0.0/16',
                     'nexthop': '192.168.0.254'}])['external_segment']
             for x in range(3)]
+        prov = self._create_policy_rule_set_on_shared(
+            shared=shared_prs, tenant_id=es_list[0]['tenant_id'] if not (
+                shared_es | shared_prs) else 'another')
+        cons = self._create_policy_rule_set_on_shared(
+            shared=shared_prs, tenant_id=es_list[0]['tenant_id'] if not (
+                shared_es | shared_prs) else 'another')
         ep = self.create_external_policy(
             external_segments=[x['id'] for x in es_list], shared=shared_ep,
             tenant_id=es_list[0]['tenant_id'] if not shared_es else 'another',
             expected_res_status=201)['external_policy']
-        ep = self._update_gbp_resource(
-            ep['id'], 'external_policy', 'external_policies',
-            expected_res_status=200,
+        ep = self.update_external_policy(
+            ep['id'], expected_res_status=200, tenant_id=ep['tenant_id'],
             provided_policy_rule_sets={prov['id']: ''},
-            consumed_policy_rule_sets={cons['id']: ''})
+            consumed_policy_rule_sets={cons['id']: ''})['external_policy']
         mgr = self.driver.apic_manager
         owner = (es_list[0]['tenant_id'] if not shared_es
                  else self.common_tenant)
@@ -1410,10 +1410,10 @@ class TestExternalPolicy(ApicMappingTestCase):
         self._check_call_list(expected_calls,
                               mgr.set_contract_for_external_epg.call_args_list)
 
-        ep = self._update_gbp_resource(
-            ep['id'], 'external_policy', 'external_policies',
-            expected_res_status=200, provided_policy_rule_sets={},
-            consumed_policy_rule_sets={})
+        ep = self.update_external_policy(
+            ep['id'], expected_res_status=200, provided_policy_rule_sets={},
+            consumed_policy_rule_sets={},
+            tenant_id=ep['tenant_id'])['external_policy']
         expected_calls = []
         for es in es_list:
             expected_calls.append(

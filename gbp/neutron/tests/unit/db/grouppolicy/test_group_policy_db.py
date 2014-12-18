@@ -22,10 +22,12 @@ from neutron.openstack.common import uuidutils
 from neutron.plugins.common import constants
 from neutron.tests.unit import test_db_plugin
 from neutron.tests.unit import test_extensions
+from oslo.config import cfg
 
 from gbp.neutron.db.grouppolicy import group_policy_db as gpdb
 import gbp.neutron.extensions
 from gbp.neutron.extensions import group_policy as gpolicy
+from gbp.neutron.tests.unit import common as cm
 
 
 JSON_FORMAT = 'json'
@@ -40,18 +42,41 @@ class GroupPolicyDBTestBase(object):
 
     fmt = JSON_FORMAT
 
-    def _get_resource_plural(self, resource):
-        if resource.endswith('y'):
-            resource_plural = resource.replace('y', 'ies')
-        else:
-            resource_plural = resource + 's'
+    def __getattr__(self, item):
+        # Verify is an update of a proper GBP object
+        def _is_gbp_resource(plural):
+            return plural in gpolicy.RESOURCE_ATTRIBUTE_MAP
+        # Update Method
+        if item.startswith('update_'):
+            resource = item[len('update_'):]
+            plural = cm.get_resource_plural(resource)
+            if _is_gbp_resource(plural):
+                def update_wrapper(id, **kwargs):
+                    return self._update_gbp_resource(id, resource, **kwargs)
+                return update_wrapper
+        # Show Method
+        if item.startswith('show_'):
+            resource = item[len('show_'):]
+            plural = cm.get_resource_plural(resource)
+            if _is_gbp_resource(plural):
+                def show_wrapper(id):
+                    return self._show_gbp_resource(id, plural)
+                return show_wrapper
+        # Create Method
+        if item.startswith('create_'):
+            resource = item[len('create_'):]
+            plural = cm.get_resource_plural(resource)
+            if _is_gbp_resource(plural):
+                def create_wrapper(**kwargs):
+                    return self._create_gbp_resource(resource, **kwargs)
+                return create_wrapper
 
-        return resource_plural
+        raise AttributeError
 
     def _test_list_resources(self, resource, items,
                              neutron_context=None,
                              query_params=None):
-        resource_plural = self._get_resource_plural(resource)
+        resource_plural = cm.get_resource_plural(resource)
 
         res = self._list(resource_plural,
                          neutron_context=neutron_context,
@@ -60,382 +85,54 @@ class GroupPolicyDBTestBase(object):
         self.assertEqual(sorted([i['id'] for i in res[resource_plural]]),
                          sorted([i[resource]['id'] for i in items]))
 
-    def _get_test_policy_target_attrs(
-        self, name='pt1', description='test pt', policy_target_group_id=None):
-        attrs = {'name': name, 'description': description,
-                 'policy_target_group_id': policy_target_group_id,
-                 'tenant_id': self._tenant_id}
-
-        return attrs
-
-    def _get_test_policy_target_group_attrs(self, name='ptg1',
-                                            description='test ptg',
-                                            l2_policy_id=None,
-                                            provided_policy_rule_sets=None,
-                                            consumed_policy_rule_sets=None):
-        pprs_ids = cprs_ids = []
-        if provided_policy_rule_sets:
-            pprs_ids = [pprs_id for pprs_id in provided_policy_rule_sets]
-        if consumed_policy_rule_sets:
-            cprs_ids = [cc_id for cc_id in consumed_policy_rule_sets]
-        attrs = {'name': name, 'description': description,
-                 'tenant_id': self._tenant_id, 'l2_policy_id': l2_policy_id,
-                 'provided_policy_rule_sets': pprs_ids,
-                 'consumed_policy_rule_sets': cprs_ids}
-
-        return attrs
-
-    def _get_test_l2_policy_attrs(self, name='l2p1',
-                                  description='test l2_policy',
-                                  l3_policy_id=None):
-        attrs = {'name': name, 'description': description,
-                 'tenant_id': self._tenant_id, 'l3_policy_id': l3_policy_id}
-
-        return attrs
-
-    def _get_test_l3_policy_attrs(self, name='l3p1',
-                                  description='test l3_policy',
-                                  ip_version=4, ip_pool='10.0.0.0/8',
-                                  subnet_prefix_length=24,
-                                  external_segments=None):
-        external_segments = external_segments or {}
-        attrs = {'name': name, 'description': description,
-                 'tenant_id': self._tenant_id, 'ip_version': ip_version,
-                 'ip_pool': ip_pool,
-                 'subnet_prefix_length': subnet_prefix_length,
-                 'external_segments': external_segments}
-
-        return attrs
-
-    def _get_test_network_service_policy_attrs(
-        self, name='nsp1', description='test network_service_policy',
-        network_service_policy_id=None, network_service_params=None):
-        if not network_service_params:
-            network_service_params = []
-        attrs = {'name': name, 'description': description,
-                 'tenant_id': self._tenant_id,
-                 'network_service_params': network_service_params}
-
-        return attrs
-
-    def _get_test_policy_classifier_attrs(self, name='pc1',
-                                          description='test pc',
-                                          protocol=None, port_range=None,
-                                          direction=None):
-        attrs = {'name': name, 'description': description,
-                 'protocol': protocol, 'port_range': port_range,
-                 'direction': direction, 'tenant_id': self._tenant_id}
-
-        return attrs
-
-    def _get_test_policy_action_attrs(self, name='pa1',
-                                      description='test pa',
-                                      action_type='allow',
-                                      action_value=None):
-        attrs = {'name': name, 'description': description,
-                 'action_type': action_type, 'action_value': action_value,
-                 'tenant_id': self._tenant_id}
-
-        return attrs
-
-    def _get_test_policy_rule_attrs(self, policy_classifier_id, name='pr1',
-                                    description='test pr', policy_actions=None,
-                                    enabled=True):
-        if not policy_actions:
-            policy_actions = []
-        attrs = {'name': name, 'description': description,
-                 'tenant_id': self._tenant_id,
-                 'policy_classifier_id': policy_classifier_id,
-                 'policy_actions': policy_actions, 'enabled': enabled}
-
-        return attrs
-
-    def _get_test_prs_attrs(self, name='policy_rule_set1',
-                            description='test policy_rule_set',
-                            child_policy_rule_sets=None,
-                            policy_rules=None):
-        if not child_policy_rule_sets:
-            child_policy_rule_sets = []
-        if not policy_rules:
-            policy_rules = []
-        attrs = {'name': name, 'description': description,
-                 'tenant_id': self._tenant_id,
-                 'child_policy_rule_sets': child_policy_rule_sets,
-                 'policy_rules': policy_rules}
-
-        return attrs
-
-    def _get_test_ep_attrs(self, name='ep_1', description='test ep',
-                           external_segments=None,
-                           provided_policy_rule_sets=None,
-                           consumed_policy_rule_sets=None):
-        pprs_ids = cprs_ids = es_ids = []
-        if provided_policy_rule_sets:
-            pprs_ids = [pprs_id for pprs_id in provided_policy_rule_sets]
-        if consumed_policy_rule_sets:
-            cprs_ids = [cc_id for cc_id in consumed_policy_rule_sets]
-        if external_segments:
-            es_ids = [es_id for es_id in external_segments]
-        attrs = {'name': name, 'description': description,
-                 'tenant_id': self._tenant_id,
-                 'external_segments': es_ids,
-                 'provided_policy_rule_sets': pprs_ids,
-                 'consumed_policy_rule_sets': cprs_ids}
-        return attrs
-
-    def _get_test_es_attrs(self, name='es_1', description='test es',
-                           ip_version=4, cidr='172.0.0.0/8',
-                           external_routes=None,
-                           port_address_translation=False):
-        ear = external_routes or []
-        attrs = {'name': name, 'description': description,
-                 'ip_version': ip_version,
-                 'tenant_id': self._tenant_id, 'cidr': cidr,
-                 'external_routes': ear,
-                 'port_address_translation': port_address_translation}
-        return attrs
-
-    def _get_test_np_attrs(self, name='es_1', description='test es',
-                           ip_version=4, ip_pool='10.160.0.0/16',
-                           external_segment_id=None):
-        attrs = {'name': name, 'description': description,
-                 'ip_version': ip_version,
-                 'tenant_id': self._tenant_id, 'ip_pool': ip_pool,
-                 'external_segment_id': external_segment_id}
-        return attrs
-
-    def create_policy_target(self, policy_target_group_id=None,
-                             expected_res_status=None, **kwargs):
-        defaults = {'name': 'pt1', 'description': 'test pt'}
+    def _create_gbp_resource(self, type, expected_res_status=None,
+                             is_admin_context=False, **kwargs):
+        plural = cm.get_resource_plural(type)
+        defaults = getattr(cm,
+                           'get_create_%s_default_attrs' % type)()
         defaults.update(kwargs)
 
-        data = {'policy_target':
-                {'policy_target_group_id': policy_target_group_id,
-                 'tenant_id': self._tenant_id}}
-        data['policy_target'].update(defaults)
+        data = {type: {'tenant_id': self._tenant_id}}
+        data[type].update(defaults)
 
-        pt_req = self.new_create_request('policy_targets', data, self.fmt)
-        pt_res = pt_req.get_response(self.ext_api)
-
-        if expected_res_status:
-            self.assertEqual(pt_res.status_int, expected_res_status)
-        elif pt_res.status_int >= webob.exc.HTTPClientError.code:
-            raise webob.exc.HTTPClientError(code=pt_res.status_int)
-
-        pt = self.deserialize(self.fmt, pt_res)
-
-        return pt
-
-    def create_policy_target_group(self, l2_policy_id=None,
-                                   expected_res_status=None, **kwargs):
-        defaults = {'name': 'ptg1', 'description': 'test ptg',
-                    'provided_policy_rule_sets': {},
-                    'consumed_policy_rule_sets': {}}
-        defaults.update(kwargs)
-
-        data = {'policy_target_group': {'tenant_id': self._tenant_id,
-                                        'l2_policy_id': l2_policy_id}}
-        data['policy_target_group'].update(defaults)
-
-        ptg_req = self.new_create_request(
-            'policy_target_groups', data, self.fmt)
-        ptg_res = ptg_req.get_response(self.ext_api)
-
-        if expected_res_status:
-            self.assertEqual(ptg_res.status_int, expected_res_status)
-        elif ptg_res.status_int >= webob.exc.HTTPClientError.code:
-            raise webob.exc.HTTPClientError(code=ptg_res.status_int)
-
-        ptg = self.deserialize(self.fmt, ptg_res)
-
-        return ptg
-
-    def create_l2_policy(self, l3_policy_id=None, expected_res_status=None,
-                         **kwargs):
-        defaults = {'name': 'l2p1', 'description': 'test l2_policy'}
-        defaults.update(kwargs)
-
-        data = {'l2_policy': {'l3_policy_id': l3_policy_id,
-                              'tenant_id': self._tenant_id}}
-        data['l2_policy'].update(defaults)
-
-        l2p_req = self.new_create_request('l2_policies', data, self.fmt)
-        l2p_res = l2p_req.get_response(self.ext_api)
-
-        if expected_res_status:
-            self.assertEqual(l2p_res.status_int, expected_res_status)
-        elif l2p_res.status_int >= webob.exc.HTTPClientError.code:
-            raise webob.exc.HTTPClientError(code=l2p_res.status_int)
-
-        l2p = self.deserialize(self.fmt, l2p_res)
-
-        return l2p
-
-    def create_l3_policy(self, expected_res_status=None, **kwargs):
-        defaults = {'name': 'l3p1', 'description': 'test l3_policy',
-                    'ip_version': 4, 'ip_pool': '10.0.0.0/8',
-                    'subnet_prefix_length': 24, 'external_segments': {}}
-        defaults.update(kwargs)
-
-        data = {'l3_policy': {'tenant_id': self._tenant_id}}
-        data['l3_policy'].update(defaults)
-
-        l3p_req = self.new_create_request('l3_policies', data, self.fmt)
-        l3p_res = l3p_req.get_response(self.ext_api)
-
-        if expected_res_status:
-            self.assertEqual(l3p_res.status_int, expected_res_status)
-        elif l3p_res.status_int >= webob.exc.HTTPClientError.code:
-            raise webob.exc.HTTPClientError(code=l3p_res.status_int)
-
-        l3p = self.deserialize(self.fmt, l3p_res)
-
-        return l3p
-
-    def create_network_service_policy(
-        self, expected_res_status=None, **kwargs):
-        defaults = {'name': 'nsp1',
-                    'description': 'test network_service_policy',
-                    'network_service_params': []}
-        defaults.update(kwargs)
-
-        data = {'network_service_policy': {'tenant_id': self._tenant_id}}
-        data['network_service_policy'].update(defaults)
-
-        nsp_req = self.new_create_request('network_service_policies',
-                                          data, self.fmt)
-        nsp_res = nsp_req.get_response(self.ext_api)
-
-        if expected_res_status:
-            self.assertEqual(expected_res_status, nsp_res.status_int)
-        elif nsp_res.status_int >= webob.exc.HTTPClientError.code:
-            raise webob.exc.HTTPClientError(code=nsp_res.status_int)
-
-        nsp = self.deserialize(self.fmt, nsp_res)
-
-        return nsp
-
-    def create_policy_classifier(self, expected_res_status=None, **kwargs):
-        defaults = {'name': 'pc1', 'description': 'test pc', 'protocol': None,
-                    'port_range': None, 'direction': None}
-        defaults.update(kwargs)
-        kwargs = defaults
-
-        data = {'policy_classifier': {'tenant_id': self._tenant_id}}
-        data['policy_classifier'].update(kwargs)
-
-        pc_req = self.new_create_request('policy_classifiers', data, self.fmt)
-        pc_res = pc_req.get_response(self.ext_api)
-
-        if expected_res_status:
-            self.assertEqual(pc_res.status_int, expected_res_status)
-        elif pc_res.status_int >= webob.exc.HTTPClientError.code:
-            raise webob.exc.HTTPClientError(code=pc_res.status_int)
-
-        pc = self.deserialize(self.fmt, pc_res)
-
-        return pc
-
-    def create_policy_action(self, expected_res_status=None, **kwargs):
-        defaults = {'name': 'pa1', 'description': 'test pa',
-                    'action_type': 'allow', 'action_value': None}
-        defaults.update(kwargs)
-        kwargs = defaults
-
-        data = {'policy_action': {'tenant_id': self._tenant_id}}
-        data['policy_action'].update(kwargs)
-
-        pa_req = self.new_create_request('policy_actions', data, self.fmt)
-        pa_res = pa_req.get_response(self.ext_api)
-
-        if expected_res_status:
-            self.assertEqual(pa_res.status_int, expected_res_status)
-        elif pa_res.status_int >= webob.exc.HTTPClientError.code:
-            raise webob.exc.HTTPClientError(code=pa_res.status_int)
-
-        pa = self.deserialize(self.fmt, pa_res)
-
-        return pa
-
-    def create_policy_rule(self, policy_classifier_id,
-                           expected_res_status=None, **kwargs):
-        defaults = {'name': 'pr1', 'description': 'test pr',
-                    'policy_classifier_id': policy_classifier_id,
-                    'policy_actions': None, 'enabled': True}
-        defaults.update(kwargs)
-        kwargs = defaults
-
-        data = {'policy_rule': {'tenant_id': self._tenant_id}}
-        data['policy_rule'].update(kwargs)
-
-        pr_req = self.new_create_request('policy_rules', data, self.fmt)
-        pr_res = pr_req.get_response(self.ext_api)
-
-        if expected_res_status:
-            self.assertEqual(pr_res.status_int, expected_res_status)
-        elif pr_res.status_int >= webob.exc.HTTPClientError.code:
-            raise webob.exc.HTTPClientError(code=pr_res.status_int)
-
-        pr = self.deserialize(self.fmt, pr_res)
-
-        return pr
-
-    def create_policy_rule_set(self, expected_res_status=None, **kwargs):
-        defaults = {'name': 'policy_rule_set1',
-                    'description': 'test policy_rule_set',
-                    'child_policy_rule_sets': [], 'policy_rules': []}
-        defaults.update(kwargs)
-        kwargs = defaults
-
-        data = {'policy_rule_set': {'tenant_id': self._tenant_id}}
-        data['policy_rule_set'].update(kwargs)
-
-        prs_req = self.new_create_request('policy_rule_sets', data, self.fmt)
-        prs_res = prs_req.get_response(self.ext_api)
-
-        if expected_res_status:
-            self.assertEqual(prs_res.status_int, expected_res_status)
-        elif prs_res.status_int >= webob.exc.HTTPClientError.code:
-            raise webob.exc.HTTPClientError(code=prs_res.status_int)
-
-        prs = self.deserialize(self.fmt, prs_res)
-
-        return prs
-
-    def _create_gbp_resource(self, type, expected_res_status, body):
-        plural = self._get_resource_plural(type)
-        data = {type: body}
         req = self.new_create_request(plural, data, self.fmt)
+        req.environ['neutron.context'] = context.Context(
+            '', kwargs.get('tenant_id', self._tenant_id) if not
+            is_admin_context else self._tenant_id, is_admin_context)
         res = req.get_response(self.ext_api)
 
         if expected_res_status:
             self.assertEqual(res.status_int, expected_res_status)
         elif res.status_int >= webob.exc.HTTPClientError.code:
             raise webob.exc.HTTPClientError(code=res.status_int)
-        prs = self.deserialize(self.fmt, res)
-        return prs
 
-    def create_external_policy(self, expected_res_status=None, **kwargs):
-        defaults = {'name': 'ptg1', 'description': 'test ptg',
-                    'provided_policy_rule_sets': {},
-                    'consumed_policy_rule_sets': {},
-                    'tenant_id': self._tenant_id,
-                    'external_segments': []}
-        defaults.update(kwargs)
-        return self._create_gbp_resource(
-            'external_policy', expected_res_status, defaults)
+        return self.deserialize(self.fmt, res)
 
-    def create_external_segment(self, expected_res_status=None, **kwargs):
-        body = self._get_test_es_attrs()
-        body.update(kwargs)
-        return self._create_gbp_resource(
-            'external_segment', expected_res_status, body)
+    def _update_gbp_resource(
+            self, id, type, expected_res_status=None, is_admin_context=False,
+            **kwargs):
+        plural = cm.get_resource_plural(type)
+        data = {type: kwargs}
+        tenant_id = kwargs.pop('tenant_id', self._tenant_id)
+        # Create PT with bound port
+        req = self.new_update_request(plural, data, id, self.fmt)
+        req.environ['neutron.context'] = context.Context(
+            '', tenant_id if not is_admin_context else self._tenant_id,
+            is_admin_context)
+        res = req.get_response(self.ext_api)
 
-    def create_nat_pool(self, expected_res_status=None, **kwargs):
-        body = self._get_test_np_attrs()
-        body.update(kwargs)
-        return self._create_gbp_resource(
-            'nat_pool', expected_res_status, body)
+        if expected_res_status:
+            self.assertEqual(res.status_int, expected_res_status)
+        elif res.status_int >= webob.exc.HTTPClientError.code:
+            raise webob.exc.HTTPClientError(code=res.status_int)
+        return self.deserialize(self.fmt, res)
+
+    def _show_gbp_resource(self, id, plural, is_admin_context=False,
+                           tenant_id=None):
+        req = self.new_show_request(plural, id, fmt=self.fmt)
+        req.environ['neutron.context'] = context.Context(
+            '', tenant_id or self._tenant_id, is_admin_context)
+        return self.deserialize(self.fmt, req.get_response(self.ext_api))
 
 
 class GroupPolicyDBTestPlugin(gpdb.GroupPolicyDbPlugin):
@@ -467,12 +164,13 @@ class GroupPolicyDbTestCase(GroupPolicyDBTestBase,
         if not ext_mgr:
             ext_mgr = extensions.PluginAwareExtensionManager.get_instance()
             self.ext_api = test_extensions.setup_extensions_middleware(ext_mgr)
+        cfg.CONF.set_override('policy_file', 'test-policy.json')
 
 
 class TestGroupResources(GroupPolicyDbTestCase):
 
     def _test_show_resource(self, resource, resource_id, attrs):
-        resource_plural = self._get_resource_plural(resource)
+        resource_plural = cm.get_resource_plural(resource)
         req = self.new_show_request(resource_plural, resource_id,
                                     fmt=self.fmt)
         res = self.deserialize(self.fmt,
@@ -483,7 +181,7 @@ class TestGroupResources(GroupPolicyDbTestCase):
 
     def test_create_and_show_policy_target(self):
         ptg_id = self.create_policy_target_group()['policy_target_group']['id']
-        attrs = self._get_test_policy_target_attrs(
+        attrs = cm.get_create_policy_target_default_attrs(
             policy_target_group_id=ptg_id)
 
         pt = self.create_policy_target(policy_target_group_id=ptg_id)
@@ -511,8 +209,8 @@ class TestGroupResources(GroupPolicyDbTestCase):
     def test_update_policy_target(self):
         name = 'new_policy_target'
         description = 'new desc'
-        attrs = self._get_test_policy_target_attrs(name=name,
-                                                   description=description)
+        attrs = cm.get_create_policy_target_default_attrs(name=name,
+                                                  description=description)
 
         pt = self.create_policy_target()
 
@@ -552,8 +250,8 @@ class TestGroupResources(GroupPolicyDbTestCase):
             self.create_policy_rule_set()['policy_rule_set']['id'])
         consumed_prs_id = (
             self.create_policy_rule_set()['policy_rule_set']['id'])
-        attrs = self._get_test_policy_target_group_attrs(
-            name, l2_policy_id=l2p_id,
+        attrs = cm.get_create_policy_target_group_default_attrs(
+            name=name, l2_policy_id=l2p_id,
             provided_policy_rule_sets=[provided_prs_id],
             consumed_policy_rule_sets=[consumed_prs_id])
 
@@ -581,7 +279,7 @@ class TestGroupResources(GroupPolicyDbTestCase):
         description = 'new desc'
         l3p_id = self.create_l3_policy()['l3_policy']['id']
         l2p_id = self.create_l2_policy(l3_policy_id=l3p_id)['l2_policy']['id']
-        attrs = self._get_test_policy_target_group_attrs(
+        attrs = cm.get_create_policy_target_group_default_attrs(
             name=name, description=description, l2_policy_id=l2p_id)
         ct1_id = self.create_policy_rule_set(
             name='policy_rule_set1')['policy_rule_set']['id']
@@ -625,7 +323,7 @@ class TestGroupResources(GroupPolicyDbTestCase):
 
     def test_create_and_show_l2_policy(self):
         l3p_id = self.create_l3_policy()['l3_policy']['id']
-        attrs = self._get_test_l2_policy_attrs(l3_policy_id=l3p_id)
+        attrs = cm.get_create_l2_policy_default_attrs(l3_policy_id=l3p_id)
 
         l2p = self.create_l2_policy(l3_policy_id=l3p_id)
         for k, v in attrs.iteritems():
@@ -644,7 +342,7 @@ class TestGroupResources(GroupPolicyDbTestCase):
         name = "new_l2_policy"
         description = 'new desc'
         l3p_id = self.create_l3_policy()['l3_policy']['id']
-        attrs = self._get_test_l2_policy_attrs(name=name,
+        attrs = cm.get_create_l2_policy_default_attrs(name=name,
                                                description=description,
                                                l3_policy_id=l3p_id)
 
@@ -674,8 +372,8 @@ class TestGroupResources(GroupPolicyDbTestCase):
 
     def test_create_and_show_l3_policy(self):
         es = self.create_external_segment()['external_segment']
-        es_dict = {es['id']: ['172.0.0.2', '172.0.0.3']}
-        attrs = self._get_test_l3_policy_attrs(
+        es_dict = {es['id']: ['172.16.0.2', '172.16.0.3']}
+        attrs = cm.get_create_l3_policy_default_attrs(
             external_segments=es_dict)
 
         l3p = self.create_l3_policy(external_segments=es_dict)
@@ -713,8 +411,8 @@ class TestGroupResources(GroupPolicyDbTestCase):
         description = 'new desc'
         prefix_length = 26
         es = self.create_external_segment()['external_segment']
-        es_dict = {es['id']: ['172.0.0.2', '172.0.0.3']}
-        attrs = self._get_test_l3_policy_attrs(
+        es_dict = {es['id']: ['172.16.0.2', '172.16.0.3']}
+        attrs = cm.get_create_l3_policy_default_attrs(
             name=name, description=description,
             subnet_prefix_length=prefix_length,
             external_segments=es_dict)
@@ -766,7 +464,7 @@ class TestGroupResources(GroupPolicyDbTestCase):
 
     def test_create_and_show_network_service_policy(self):
         params = [{'type': 'ip_single', 'name': 'vip', 'value': 'self_subnet'}]
-        attrs = self._get_test_network_service_policy_attrs(
+        attrs = cm.get_create_network_service_policy_default_attrs(
             network_service_params=params)
 
         nsp = self.create_network_service_policy(network_service_params=params)
@@ -788,7 +486,7 @@ class TestGroupResources(GroupPolicyDbTestCase):
     def test_update_network_service_policy(self):
         name = "new_network_service_policy"
         description = 'new desc'
-        attrs = self._get_test_network_service_policy_attrs(
+        attrs = cm.get_create_network_service_policy_default_attrs(
             name=name, description=description)
 
         nsp = self.create_network_service_policy()
@@ -833,7 +531,7 @@ class TestGroupResources(GroupPolicyDbTestCase):
 
     def test_create_and_show_policy_classifier(self):
         name = "pc1"
-        attrs = self._get_test_policy_classifier_attrs(name=name)
+        attrs = cm.get_create_policy_classifier_default_attrs(name=name)
 
         pc = self.create_policy_classifier(name=name)
 
@@ -865,7 +563,7 @@ class TestGroupResources(GroupPolicyDbTestCase):
         protocol = 'tcp'
         port_range = '100:200'
         direction = 'in'
-        attrs = self._get_test_policy_classifier_attrs(
+        attrs = cm.get_create_policy_classifier_default_attrs(
             name=name, description=description, protocol=protocol,
             port_range=port_range, direction=direction)
 
@@ -898,7 +596,7 @@ class TestGroupResources(GroupPolicyDbTestCase):
 
     def test_create_and_show_policy_action(self):
         name = "pa1"
-        attrs = self._get_test_policy_action_attrs(name=name)
+        attrs = cm.get_create_policy_action_default_attrs(name=name)
 
         pa = self.create_policy_action(name=name)
 
@@ -928,7 +626,7 @@ class TestGroupResources(GroupPolicyDbTestCase):
         name = "new_policy_action"
         description = 'new desc'
         action_value = _uuid()
-        attrs = self._get_test_policy_action_attrs(
+        attrs = cm.get_create_policy_action_default_attrs(
             name=name, description=description, action_value=action_value)
 
         pa = self.create_policy_action()
@@ -961,7 +659,7 @@ class TestGroupResources(GroupPolicyDbTestCase):
         name = "pr1"
         pc = self.create_policy_classifier()
         pc_id = pc['policy_classifier']['id']
-        attrs = self._get_test_policy_rule_attrs(
+        attrs = cm.get_create_policy_rule_default_attrs(
             name=name, policy_classifier_id=pc_id)
 
         pr = self.create_policy_rule(
@@ -1002,7 +700,7 @@ class TestGroupResources(GroupPolicyDbTestCase):
         pc_id = pc['policy_classifier']['id']
         pa = self.create_policy_action()
         pa_id = pa['policy_action']['id']
-        attrs = self._get_test_policy_rule_attrs(
+        attrs = cm.get_create_policy_rule_default_attrs(
             name=name, description=description, policy_classifier_id=pc_id,
             policy_actions=[pa_id], enabled=enabled)
 
@@ -1036,7 +734,7 @@ class TestGroupResources(GroupPolicyDbTestCase):
 
     def test_create_and_show_policy_rule_set(self):
         name = "policy_rule_set1"
-        attrs = self._get_test_prs_attrs(name=name)
+        attrs = cm.get_create_policy_rule_set_default_attrs(name=name)
 
         prs = self.create_policy_rule_set(name=name)
 
@@ -1067,7 +765,7 @@ class TestGroupResources(GroupPolicyDbTestCase):
         child_policy_rule_sets = sorted(
             [self.create_policy_rule_set()['policy_rule_set']['id'],
              self.create_policy_rule_set()['policy_rule_set']['id']])
-        attrs = self._get_test_prs_attrs(
+        attrs = cm.get_create_policy_rule_set_default_attrs(
             policy_rules=policy_rules,
             child_policy_rule_sets=child_policy_rule_sets)
         prs = self.create_policy_rule_set(
@@ -1126,7 +824,7 @@ class TestGroupResources(GroupPolicyDbTestCase):
             self.create_policy_rule_set()['policy_rule_set']['id']]
         policy_rules = [self.create_policy_rule(
             policy_classifier_id=pc_id)['policy_rule']['id']]
-        attrs = self._get_test_prs_attrs(
+        attrs = cm.get_create_policy_rule_set_default_attrs(
             name=name, description=description, policy_rules=policy_rules,
             child_policy_rule_sets=child_policy_rule_sets)
         data = {'policy_rule_set':
@@ -1182,8 +880,8 @@ class TestGroupResources(GroupPolicyDbTestCase):
         self.assertEqual(res.status_int, webob.exc.HTTPBadRequest.code)
 
     def _test_create_and_show(self, type, attrs, expected=None):
-        plural = self._get_resource_plural(type)
-        res = self._create_gbp_resource(type, None, attrs)
+        plural = cm.get_resource_plural(type)
+        res = self._create_gbp_resource(type, None, False, **attrs)
         expected = expected or attrs
         for k, v in expected.iteritems():
             self.assertEqual(v, res[type][k])
@@ -1200,7 +898,7 @@ class TestGroupResources(GroupPolicyDbTestCase):
         attrs = {'external_segments': [es['id']],
                  'provided_policy_rule_sets': {prs['id']: None},
                  'consumed_policy_rule_sets': {prs['id']: None}}
-        body = self._get_test_ep_attrs()
+        body = cm.get_create_external_policy_default_attrs()
         body.update(attrs)
         expected = copy.deepcopy(body)
         expected['provided_policy_rule_sets'] = [prs['id']]
@@ -1209,13 +907,15 @@ class TestGroupResources(GroupPolicyDbTestCase):
                                    expected=expected)
 
     def test_create_and_show_es(self):
-        route = {'destination': '0.0.0.0/0', 'nexthop': '172.0.0.1'}
-        attrs = self._get_test_es_attrs(external_routes=[route])
+        route = {'destination': '0.0.0.0/0', 'nexthop': '172.16.0.1'}
+        attrs = cm.get_create_external_segment_default_attrs(
+            external_routes=[route])
         self._test_create_and_show('external_segment', attrs)
 
     def test_create_and_show_np(self):
         es = self.create_external_segment()['external_segment']
-        attrs = self._get_test_np_attrs(external_segment_id=es['id'])
+        attrs = cm.get_create_nat_pool_default_attrs(
+            external_segment_id=es['id'])
         self._test_create_and_show('nat_pool', attrs)
 
     def test_list_ep(self):
@@ -1241,33 +941,31 @@ class TestGroupResources(GroupPolicyDbTestCase):
         description = 'new desc'
         es = self.create_external_segment()['external_segment']
         prs = self.create_policy_rule_set()['policy_rule_set']
-        attrs = self._get_test_ep_attrs(
+        cm.get_create_external_policy_default_attrs(
             name=name, description=description,
             external_segments=[es['id']],
             provided_policy_rule_sets={prs['id']: None},
             consumed_policy_rule_sets={prs['id']: None})
         ep = self.create_external_policy()['external_policy']
         data = {'external_policy': {
-            'name': name, 'description': description,
-            'external_segments': [es['id']],
-            'provided_policy_rule_sets': {prs['id']: None},
-            'consumed_policy_rule_sets': {prs['id']: None}}}
+            'name': name, 'description': description}}
 
         req = self.new_update_request('external_policies', data,
                                       ep['id'])
         res = self.deserialize(self.fmt, req.get_response(self.ext_api))
         res = res['external_policy']
-        for k, v in attrs.iteritems():
+        for k, v in data['external_policy'].iteritems():
             self.assertEqual(v, res[k])
 
-        self._test_show_resource('external_policy', ep['id'], attrs)
+        self._test_show_resource('external_policy', ep['id'],
+                                 data['external_policy'])
 
     def test_update_external_segment(self):
         name = 'new_es'
         description = 'new desc'
-        route = {'destination': '0.0.0.0/0', 'nexthop': '172.0.0.1'}
-        attrs = self._get_test_es_attrs(name=name, description=description,
-                                        external_routes=[route])
+        route = {'destination': '0.0.0.0/0', 'nexthop': '172.16.0.1'}
+        attrs = cm.get_create_external_segment_default_attrs(
+            name=name, description=description, external_routes=[route])
         es = self.create_external_segment()['external_segment']
         data = {'external_segment': {
             'name': name, 'description': description,
@@ -1287,8 +985,8 @@ class TestGroupResources(GroupPolicyDbTestCase):
         description = 'new desc'
         es = self.create_external_segment()['external_segment']
 
-        attrs = self._get_test_np_attrs(name=name, description=description,
-                                        external_segment_id=es['id'])
+        attrs = cm.get_create_nat_pool_default_attrs(
+            name=name, description=description, external_segment_id=es['id'])
         np = self.create_nat_pool()['nat_pool']
         data = {'nat_pool': {
             'name': name, 'description': description,

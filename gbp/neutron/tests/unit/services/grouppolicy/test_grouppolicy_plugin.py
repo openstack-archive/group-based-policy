@@ -14,7 +14,6 @@
 import mock
 from neutron import context
 from oslo.config import cfg
-import webob
 
 import gbp.neutron.tests.unit.db.grouppolicy.test_group_policy_db as tgpdb
 import gbp.neutron.tests.unit.db.grouppolicy.test_group_policy_mapping_db as \
@@ -73,7 +72,7 @@ class GroupPolicyPluginTestCase(tgpmdb.GroupPolicyMappingDbTestCase):
     def _create_ptg_on_shared(self, **kwargs):
         l2p = self._create_l2_policy_on_shared(shared=True)
         return self.create_policy_target_group(l2_policy_id=l2p['id'],
-                                          **kwargs)
+                                               **kwargs)
 
     def _create_rule_on_shared(self, **kwargs):
         pa = self.create_policy_action(action_type='allow',
@@ -83,12 +82,13 @@ class GroupPolicyPluginTestCase(tgpmdb.GroupPolicyMappingDbTestCase):
                                            shared=True,
                                            **cl_attr)['policy_classifier']
         return self.create_policy_rule(
-            pc['id'], policy_actions=[pa['id']], **kwargs)['policy_rule']
+            policy_classifier_id=pc['id'],
+            policy_actions=[pa['id']], **kwargs)['policy_rule']
 
     def _create_policy_rule_set_on_shared(self, **kwargs):
         pr = self._create_rule_on_shared(shared=True)
         return self.create_policy_rule_set(policy_rules=[pr['id']],
-                                    **kwargs)['policy_rule_set']
+                                           **kwargs)['policy_rule_set']
 
     def _create_external_policy_on_shared(self, **kwargs):
         es = self.create_external_segment(shared=True)
@@ -101,25 +101,6 @@ class GroupPolicyPluginTestCase(tgpmdb.GroupPolicyMappingDbTestCase):
         return self.create_nat_pool(
             external_segment_id=es['external_segment']['id'],
             **kwargs)['nat_pool']
-
-    def _update_gbp_resource_full_response(
-            self, id, type, plural, expected_res_status=None, **kwargs):
-        data = {type: kwargs}
-        # Create PT with bound port
-        req = self.new_update_request(plural, data, id, self.fmt)
-        res = req.get_response(self.ext_api)
-
-        if expected_res_status:
-            self.assertEqual(res.status_int, expected_res_status)
-        elif res.status_int >= webob.exc.HTTPClientError.code:
-            raise webob.exc.HTTPClientError(code=res.status_int)
-        return self.deserialize(self.fmt, res)
-
-    def _update_gbp_resource(self, id, type, plural, expected_res_status=None,
-                             **kwargs):
-        return self._update_gbp_resource_full_response(
-            id, type, plural, expected_res_status=expected_res_status,
-            **kwargs).get(type)
 
 
 class TestL3Policy(GroupPolicyPluginTestCase):
@@ -155,48 +136,43 @@ class TestL3Policy(GroupPolicyPluginTestCase):
         es = self.create_external_segment(cidr='172.0.0.0/8')
         es_dict = self._get_es_dict(es, ['172.0.0.2', '172.0.0.3'])
         res = self.create_l3_policy(external_segments=es_dict,
-                                    shared=True, expected_res_status=400)
+                                    shared=True,
+                                    expected_res_status=400)
         self.assertEqual('SharedResourceReferenceError',
                          res['NeutronError']['type'])
 
     def test_shared_l3_policy_update(self):
         l3p = self.create_l3_policy()['l3_policy']
         # Accept share if nothing referenced
-        self._update_gbp_resource(l3p['id'], 'l3_policy', 'l3_policies',
-                                  expected_res_status=200, shared=True)
+        self.update_l3_policy(l3p['id'], expected_res_status=200, shared=True)
 
         # Verify unshare when referenced by private L2P
         self.create_l2_policy(l3_policy_id=l3p['id'])
-        self._update_gbp_resource(l3p['id'], 'l3_policy', 'l3_policies',
-                                  expected_res_status=200, shared=False)
+        self.update_l3_policy(l3p['id'], expected_res_status=200, shared=False)
         es = self.create_external_segment(cidr='172.0.0.0/8')
         es_dict = self._get_es_dict(es, ['172.0.0.2', '172.0.0.3'])
         # Set ES
-        l3p = self._update_gbp_resource(l3p['id'], 'l3_policy', 'l3_policies',
-                                        expected_res_status=200,
-                                        external_segments=es_dict)
+        l3p = self.update_l3_policy(l3p['id'], expected_res_status=200,
+                                    external_segments=es_dict)['l3_policy']
         self.assertEqual(es_dict, l3p['external_segments'])
 
         # Share ES
-        self._update_gbp_resource(
-            es['external_segment']['id'], 'external_segment',
-            'external_segments', expected_res_status=200, shared=True)
+        self.update_external_segment(
+            es['external_segment']['id'], expected_res_status=200, shared=True)
 
         # Verify sharing/unsharing successful
         for shared in [True, False]:
-            self._update_gbp_resource(l3p['id'], 'l3_policy', 'l3_policies',
-                                      expected_res_status=200, shared=shared)
+            self.update_l3_policy(l3p['id'],
+                                  expected_res_status=200, shared=shared)
 
         # Remove ES
-        l3p = self._update_gbp_resource(l3p['id'], 'l3_policy', 'l3_policies',
-                                        expected_res_status=200,
-                                        external_segments={})
+        l3p = self.update_l3_policy(l3p['id'], expected_res_status=200,
+                                    external_segments={})['l3_policy']
         self.assertEqual({}, l3p['external_segments'])
         # Verify ES update with sharing successful
-        l3p = self._update_gbp_resource(l3p['id'], 'l3_policy', 'l3_policies',
-                                        expected_res_status=200,
-                                        external_segments=es_dict,
-                                        shared=True)
+        l3p = self.update_l3_policy(
+            l3p['id'], expected_res_status=200, external_segments=es_dict,
+            shared=True)['l3_policy']
         # Verify ES correctly set
         self.assertEqual(es_dict, l3p['external_segments'])
 
@@ -204,21 +180,19 @@ class TestL3Policy(GroupPolicyPluginTestCase):
         l3p = self.create_l3_policy(shared=True)['l3_policy']
         self.create_l2_policy(l3_policy_id=l3p['id'], shared=True)
         # Unshare not possible when reference by shared resource
-        self._update_gbp_resource(l3p['id'], 'l3_policy', 'l3_policies',
-                                  expected_res_status=400, shared=False)
+        self.update_l3_policy(l3p['id'], expected_res_status=400, shared=False)
 
         l3p = self.create_l3_policy(shared=True)['l3_policy']
         self.create_l2_policy(l3_policy_id=l3p['id'], shared=False,
                               tenant_id='other')
         # Unshare not possible when referenced by other tenant's
         # private resource
-        self._update_gbp_resource(l3p['id'], 'l3_policy', 'l3_policies',
-                                  expected_res_status=400, shared=False)
+        self.update_l3_policy(l3p['id'], expected_res_status=400, shared=False)
 
         es = self.create_external_segment(cidr='172.0.0.0/8')
         es_dict = self._get_es_dict(es, ['172.0.0.2', '172.0.0.3'])
-        res = self._update_gbp_resource_full_response(
-            l3p['id'], 'l3_policy', 'l3_policies', expected_res_status=400,
+        res = self.update_l3_policy(
+            l3p['id'], expected_res_status=400,
             external_segments=es_dict, shared=True)
         self.assertEqual('SharedResourceReferenceError',
                          res['NeutronError']['type'])
@@ -255,26 +229,23 @@ class TestL3Policy(GroupPolicyPluginTestCase):
         # Overlapping pool
         l3p = self.create_l3_policy(ip_pool='172.1.1.0/20')['l3_policy']
         attrs = {'external_segments': {es['id']: ['172.1.1.2']}}
-        res = self._update_gbp_resource_full_response(
-            l3p['id'], 'l3_policy', 'l3_policies', expected_res_status=400,
-            **attrs)
+        res = self.update_l3_policy(
+            l3p['id'], expected_res_status=400, **attrs)
         self.assertEqual('ExternalSegmentSubnetOverlapsWithL3PIpPool',
                          res['NeutronError']['type'])
 
         # Overlapping route
         l3p = self.create_l3_policy(ip_pool='10.160.1.0/24')['l3_policy']
-        res = self._update_gbp_resource_full_response(
-            l3p['id'], 'l3_policy', 'l3_policies', expected_res_status=400,
-            **attrs)
+        res = self.update_l3_policy(
+            l3p['id'], expected_res_status=400, **attrs)
         self.assertEqual('ExternalRouteOverlapsWithL3PIpPool',
                          res['NeutronError']['type'])
 
         # Allocated address not in pool
         l3p = self.create_l3_policy(ip_pool='192.168.0.0/24')['l3_policy']
         attrs = {'external_segments': {es['id']: ['172.1.2.2']}}
-        res = self._update_gbp_resource_full_response(
-            l3p['id'], 'l3_policy', 'l3_policies', expected_res_status=400,
-            **attrs)
+        res = self.update_l3_policy(
+            l3p['id'], expected_res_status=400, **attrs)
         self.assertEqual('InvalidL3PExternalIPAddress',
                          res['NeutronError']['type'])
 
@@ -292,19 +263,18 @@ class TestL2Policy(GroupPolicyPluginTestCase):
 
     def test_shared_l2_policy_update(self):
         l2p = self._create_l2_policy_on_shared()
-        self._update_gbp_resource(l2p['id'], 'l2_policy', 'l2_policies',
-                                  expected_res_status=200, shared=True)
+        self.update_l2_policy(l2p['id'], expected_res_status=200, shared=True)
 
         self.create_policy_target_group(l2_policy_id=l2p['id'])
-        self._update_gbp_resource(l2p['id'], 'l2_policy', 'l2_policies',
-                                  expected_res_status=200, shared=False)
+        self.update_l2_policy(l2p['id'], expected_res_status=200, shared=False)
 
         # Verify l2p can be moved across shared l3p
-        l2p = self._create_l2_policy_on_shared(shared=True)
-        l3p = self.create_l3_policy(shared=True)['l3_policy']
-        self._update_gbp_resource(l2p['id'], 'l2_policy', 'l2_policies',
-                                  expected_res_status=200,
-                                  l3_policy_id=l3p['id'])
+        l2p = self._create_l2_policy_on_shared(
+            shared=True)
+        l3p = self.create_l3_policy(
+            shared=True)['l3_policy']
+        self.update_l2_policy(l2p['id'], expected_res_status=200,
+                              l3_policy_id=l3p['id'])
 
     def test_shared_l2_policy_create_negative(self):
         l3p = self.create_l3_policy()['l3_policy']
@@ -314,21 +284,18 @@ class TestL2Policy(GroupPolicyPluginTestCase):
         # Verify shared L2p can't be moved to a non shared L3p
         l2p = self._create_l2_policy_on_shared(shared=True)
         l3p = self.create_l3_policy()['l3_policy']
-        self._update_gbp_resource(l2p['id'], 'l2_policy', 'l2_policies',
-                                  expected_res_status=400,
-                                  l3_policy_id=l3p['id'])
+        self.update_l2_policy(l2p['id'], expected_res_status=400,
+                              l3_policy_id=l3p['id'])
 
     def test_shared_l2_policy_update_negative(self):
         l2p = self._create_l2_policy_on_shared(shared=True)
         self.create_policy_target_group(l2_policy_id=l2p['id'], shared=True)
-        self._update_gbp_resource(l2p['id'], 'l2_policy', 'l2_policies',
-                                  expected_res_status=400, shared=False)
+        self.update_l2_policy(l2p['id'], expected_res_status=400, shared=False)
 
         l2p = self._create_l2_policy_on_shared(shared=True)
-        self.create_policy_target_group(l2_policy_id=l2p['id'], shared=False,
-                                   tenant_id='other')
-        self._update_gbp_resource(l2p['id'], 'l2_policy', 'l2_policies',
-                                  expected_res_status=400, shared=False)
+        self.create_policy_target_group(
+            l2_policy_id=l2p['id'], shared=False, tenant_id='other')
+        self.update_l2_policy(l2p['id'], expected_res_status=400, shared=False)
 
     def test_l2p_create_among_tenants(self):
         # L2P on shared L3P:
@@ -350,15 +317,13 @@ class TestPolicyRuleSet(GroupPolicyPluginTestCase):
 
     def test_shared_policy_rule_set_update(self):
         prs = self._create_policy_rule_set_on_shared()
-        self._update_gbp_resource(prs['id'], 'policy_rule_set',
-                                  'policy_rule_sets',
-                                  expected_res_status=200, shared=True)
+        self.update_policy_rule_set(prs['id'],
+                                    expected_res_status=200, shared=True)
 
         self.create_policy_target_group(
             provided_policy_rule_sets={prs['id']: None})
-        self._update_gbp_resource(prs['id'], 'policy_rule_set',
-                                  'policy_rule_sets',
-                                  expected_res_status=200, shared=False)
+        self.update_policy_rule_set(
+            prs['id'], expected_res_status=200, shared=False)
 
     def test_shared_policy_rule_set_create_negative(self):
         # Verify shared policy_rule_set fails with non shared rules
@@ -372,23 +337,19 @@ class TestPolicyRuleSet(GroupPolicyPluginTestCase):
         prs = self._create_policy_rule_set_on_shared(shared=True)
         self.create_policy_target_group(
             provided_policy_rule_sets={prs['id']: None}, shared=True)
-        self._update_gbp_resource(prs['id'], 'policy_rule_set',
-                                  'policy_rule_sets',
-                                  expected_res_status=400, shared=False)
+        self.update_policy_rule_set(
+            prs['id'], expected_res_status=400, shared=False)
 
         prs = self._create_policy_rule_set_on_shared(shared=True)
         self.create_policy_target_group(
             provided_policy_rule_sets={prs['id']: None},
             shared=False, tenant_id='other')
-        self._update_gbp_resource(prs['id'], 'policy_rule_set',
-                                  'policy_rule_sets',
-                                  expected_res_status=400, shared=False)
+        self.update_policy_rule_set(
+            prs['id'], expected_res_status=400, shared=False)
         # Verify non shared rules can't be set on non shared prs
         nsr = self._create_rule_on_shared()
-        self._update_gbp_resource(prs['id'], 'policy_rule_set',
-                                  'policy_rule_sets',
-                                  expected_res_status=400,
-                                  policy_rules=[nsr['id']])
+        self.update_policy_rule_set(prs['id'], expected_res_status=400,
+                                    policy_rules=[nsr['id']])
 
     def test_policy_rule_set_create_among_tenants(self):
         self._create_policy_rule_set_on_shared(tenant_id='other',
@@ -409,12 +370,11 @@ class TestPolicyRule(GroupPolicyPluginTestCase):
 
     def test_shared_rule_update(self):
         pr = self._create_rule_on_shared()
-        self._update_gbp_resource(pr['id'], 'policy_rule', 'policy_rules',
-                                  expected_res_status=200, shared=True)
+        self.update_policy_rule(pr['id'], expected_res_status=200, shared=True)
 
         self.create_policy_rule_set(policy_rules=[pr['id']])
-        self._update_gbp_resource(pr['id'], 'policy_rule', 'policy_rules',
-                                  expected_res_status=200, shared=False)
+        self.update_policy_rule(
+            pr['id'], expected_res_status=200, shared=False)
 
     def test_shared_rule_create_negative(self):
         # Verify shared rule fails with non shared classifier
@@ -423,26 +383,29 @@ class TestPolicyRule(GroupPolicyPluginTestCase):
         pcns = self.create_policy_classifier(
             direction='in', **cl_attr)['policy_classifier']
         pc = self.create_policy_classifier(
-            direction='in', shared=True, **cl_attr)['policy_classifier']
+            direction='in', shared=True,
+            **cl_attr)['policy_classifier']
         self.create_policy_rule(
-            pcns['id'], expected_res_status=400, shared=True)
+            policy_classifier_id=pcns['id'], expected_res_status=400,
+            shared=True)
 
         #Verify shared rule fails with non shared action
         self.create_policy_rule(
-            pc['id'], policy_actions=[pans['id']],
+            policy_classifier_id=pc['id'], policy_actions=[pans['id']],
             expected_res_status=400, shared=True)
 
     def test_shared_rule_update_negative(self):
         pr = self._create_rule_on_shared(shared=True)
-        self.create_policy_rule_set(policy_rules=[pr['id']], shared=True)
-        self._update_gbp_resource(pr['id'], 'policy_rule', 'policy_rules',
-                                  expected_res_status=400, shared=False)
+        self.create_policy_rule_set(policy_rules=[pr['id']], shared=True,
+                                    tenant_id='another')
+        self.update_policy_rule(pr['id'],
+                                expected_res_status=400, shared=False)
 
         pr = self._create_rule_on_shared(shared=True)
         self.create_policy_rule_set(policy_rules=[pr['id']], shared=False,
-                             tenant_id='other')
-        self._update_gbp_resource(pr['id'], 'policy_rule', 'policy_rules',
-                                  expected_res_status=400, shared=False)
+                                    tenant_id='other')
+        self.update_policy_rule(pr['id'],
+                                expected_res_status=400, shared=False)
 
     def test_rule_create_among_tenants(self):
         self._create_rule_on_shared(tenant_id='other',
@@ -454,34 +417,31 @@ class TestPolicyClassifier(GroupPolicyPluginTestCase):
         cl_attr = {'protocol': 'tcp', 'port_range': 80}
         pc = self.create_policy_classifier(**cl_attr)['policy_classifier']
         pa = self.create_policy_action(action_type='allow')['policy_action']
-        self._update_gbp_resource(pc['id'], 'policy_classifier',
-                                  'policy_classifiers',
-                                  expected_res_status=200, shared=True)
+        self.update_policy_classifier(
+            pc['id'], expected_res_status=200, shared=True)
 
         self.create_policy_rule(policy_classifier_id=pc['id'],
                                 policy_actions=[pa['id']])
-        self._update_gbp_resource(pc['id'], 'policy_classifier',
-                                  'policy_classifiers',
-                                  expected_res_status=200, shared=False)
+        self.update_policy_classifier(pc['id'],
+                                      expected_res_status=200, shared=False)
 
     def test_shared_policy_classifier_update_negative(self):
         cl_attr = {'protocol': 'tcp', 'port_range': 80}
         pc = self.create_policy_classifier(shared=True,
                                            **cl_attr)['policy_classifier']
-        pa = self.create_policy_action(action_type='allow',
-                                       shared=True)['policy_action']
-        self.create_policy_rule(policy_classifier_id=pc['id'],
-                                policy_actions=[pa['id']], shared=True)
-        self._update_gbp_resource(pc['id'], 'policy_classifier',
-                                  'policy_classifiers',
-                                  expected_res_status=400, shared=False)
+        pa = self.create_policy_action(
+            action_type='allow', shared=True)['policy_action']
+        self.create_policy_rule(
+            policy_classifier_id=pc['id'], policy_actions=[pa['id']],
+            shared=True)
+        self.update_policy_classifier(pc['id'],
+                                      expected_res_status=400, shared=False)
 
         self.create_policy_rule(policy_classifier_id=pc['id'],
                                 policy_actions=[pa['id']], shared=False,
                                 tenant_id='other')
-        self._update_gbp_resource(pc['id'], 'policy_classifier',
-                                  'policy_classifiers',
-                                  expected_res_status=400, shared=False)
+        self.update_policy_classifier(pc['id'],
+                                      expected_res_status=400, shared=False)
 
 
 class TestPolicyTargetGroup(GroupPolicyPluginTestCase):
@@ -495,10 +455,12 @@ class TestPolicyTargetGroup(GroupPolicyPluginTestCase):
         self.assertEqual(res.status_int, 400)
 
     def test_shared_ptg_create(self):
-        l2p = self._create_l2_policy_on_shared(shared=True)
+        l2p = self._create_l2_policy_on_shared(
+            shared=True)
         l2pns = self._create_l2_policy_on_shared()
 
-        prs = self._create_policy_rule_set_on_shared(shared=True)
+        prs = self._create_policy_rule_set_on_shared(
+            shared=True)
         ctns = self._create_policy_rule_set_on_shared()
 
         nsp = self.create_network_service_policy(
@@ -542,14 +504,12 @@ class TestPolicyTargetGroup(GroupPolicyPluginTestCase):
 
     def test_shared_ptg_update(self):
         ptg = self._create_ptg_on_shared()['policy_target_group']
-        self._update_gbp_resource(
-            ptg['id'], 'policy_target_group', 'policy_target_groups',
-            expected_res_status=200, shared=True)
+        self.update_policy_target_group(
+            ptg['id'], expected_res_status=200, shared=True)
 
         self.create_policy_target(policy_target_group_id=ptg['id'])
-        self._update_gbp_resource(
-            ptg['id'], 'policy_target_group', 'policy_target_groups',
-            expected_res_status=200, shared=False)
+        self.update_policy_target_group(
+            ptg['id'], expected_res_status=200, shared=False)
 
     def test_shared_ptg_create_negative(self):
         l2pns = self._create_l2_policy_on_shared()
@@ -561,45 +521,46 @@ class TestPolicyTargetGroup(GroupPolicyPluginTestCase):
         # Verify shared PTG fails to provide/consume non shared
         # policy_rule_sets
         self._create_ptg_on_shared(
-            shared=True, provided_policy_rule_sets={ctns['id']: ''},
+            shared=True,
+            provided_policy_rule_sets={ctns['id']: ''},
             consumed_policy_rule_sets={ctns['id']: ''},
             expected_res_status=400)
 
     def test_shared_ptg_update_negative(self):
-        ptg = self._create_ptg_on_shared(shared=True)['policy_target_group']
+        ptg = self._create_ptg_on_shared(
+            shared=True)['policy_target_group']
         self.create_policy_target(policy_target_group_id=ptg['id'],
                                   tenant_id='other')
-        self._update_gbp_resource(
-            ptg['id'], 'policy_target_group', 'policy_target_groups',
-            expected_res_status=400, shared=False)
+        self.update_policy_target_group(
+            ptg['id'], expected_res_status=400, shared=False)
 
         # Verify update to non shared L2p fails
         l2p = self.create_l2_policy()['l2_policy']
-        self._update_gbp_resource(
-            ptg['id'], 'policy_target_group', 'policy_target_groups',
-            expected_res_status=400, l2_policy_id=l2p['id'])
+        self.update_policy_target_group(
+            ptg['id'], expected_res_status=400,
+            l2_policy_id=l2p['id'])
 
         # Verify update to non shared NSP fails
         nsp = self.create_network_service_policy()['network_service_policy']
-        self._update_gbp_resource(
-            ptg['id'], 'policy_target_group', 'policy_target_groups',
-            expected_res_status=400, network_service_policy_id=nsp['id'])
+        self.update_policy_target_group(
+            ptg['id'], expected_res_status=400,
+            network_service_policy_id=nsp['id'])
 
         # Verify update to non shared provided PRS fails
         pts = self._create_policy_rule_set_on_shared()
-        self._update_gbp_resource(
-            ptg['id'], 'policy_target_group', 'policy_target_groups',
-            expected_res_status=400,
+        self.update_policy_target_group(
+            ptg['id'], expected_res_status=400,
             provided_policy_rule_sets={pts['id']: ''})
         # Verify update to non shared consumed PRS fails
-        self._update_gbp_resource(
-            ptg['id'], 'policy_target_group', 'policy_target_groups',
-            expected_res_status=400,
+        self.update_policy_target_group(
+            ptg['id'], expected_res_status=400,
             consumed_policy_rule_sets={pts['id']: ''})
 
     def test_complex_ptg_create_among_tenant(self):
-        ctp = self._create_policy_rule_set_on_shared(shared=True)
-        ctc = self._create_policy_rule_set_on_shared(shared=True)
+        ctp = self._create_policy_rule_set_on_shared(
+            shared=True)
+        ctc = self._create_policy_rule_set_on_shared(
+            shared=True)
         nsp = self.create_network_service_policy(
             shared=True)['network_service_policy']
         self._create_ptg_on_shared(
@@ -625,9 +586,8 @@ class TestExternalSegment(GroupPolicyPluginTestCase):
     def test_shared_es_update(self):
         es = self.create_external_segment()['external_segment']
         for shared in [True, False]:
-            self._update_gbp_resource(
-                es['id'], 'external_segment',
-                'external_segments', expected_res_status=200,
+            self.update_external_segment(
+                es['id'], expected_res_status=200,
                 shared=shared)
 
     def test_create_routes(self):
@@ -653,9 +613,8 @@ class TestExternalSegment(GroupPolicyPluginTestCase):
         # Verify refused because overlapping with L3P
         attrs = {'external_routes': [{'destination': '192.168.2.0/0',
                                      'nexthop': '172.1.1.1'}]}
-        res = self._update_gbp_resource_full_response(
-            es['id'], 'external_segment', 'external_segments',
-            expected_res_status=400, **attrs)
+        res = self.update_external_segment(
+            es['id'], expected_res_status=400, **attrs)
         self.assertEqual('ExternalRouteOverlapsWithL3PIpPool',
                          res['NeutronError']['type'])
 
@@ -702,12 +661,10 @@ class TestExternalPolicy(GroupPolicyPluginTestCase):
 
     def test_shared_ep_update(self):
         ep = self._create_external_policy_on_shared()
-        self._update_gbp_resource(
-            ep['id'], 'external_policy', 'external_policies',
-            expected_res_status=200, shared=True)
-        self._update_gbp_resource(
-            ep['id'], 'external_policy', 'external_policies',
-            expected_res_status=200, shared=False)
+        self.update_external_policy(
+            ep['id'], expected_res_status=200, shared=True)
+        self.update_external_policy(
+            ep['id'], expected_res_status=200, shared=False)
 
     def test_shared_ep_create_negative(self):
         es = self.create_external_segment()['external_segment']
@@ -721,7 +678,8 @@ class TestExternalPolicy(GroupPolicyPluginTestCase):
         # Verify shared EP fails to provide/consume non shared
         # policy_rule_sets
         res = self.create_external_policy(
-            shared=True, provided_policy_rule_sets={prs['id']: ''},
+            shared=True,
+            provided_policy_rule_sets={prs['id']: ''},
             consumed_policy_rule_sets={prs['id']: ''},
             expected_res_status=400)
         self.assertEqual('SharedResourceReferenceError',
@@ -731,20 +689,17 @@ class TestExternalPolicy(GroupPolicyPluginTestCase):
         ep = self._create_external_policy_on_shared(shared=True)
         # Verify update to non shared ES fails
         es = self.create_external_segment()['external_segment']
-        self._update_gbp_resource(
-            ep['id'], 'external_policy', 'external_policies',
-            expected_res_status=400, external_segments=[es['id']])
+        self.update_external_policy(
+            ep['id'], expected_res_status=400, external_segments=[es['id']])
 
         # Verify update to non shared provided PRS fails
         prs = self._create_policy_rule_set_on_shared()
-        self._update_gbp_resource(
-            ep['id'], 'external_policy', 'external_policies',
-            expected_res_status=400,
+        self.update_external_policy(
+            ep['id'], expected_res_status=400,
             provided_policy_rule_sets={prs['id']: ''})
         # Verify update to non shared consumed PRS fails
-        self._update_gbp_resource(
-            ep['id'], 'external_policy', 'external_policies',
-            expected_res_status=400,
+        self.update_external_policy(
+            ep['id'], expected_res_status=400,
             consumed_policy_rule_sets={prs['id']: ''})
 
 
@@ -758,14 +713,16 @@ class TestNatPool(GroupPolicyPluginTestCase):
         for shared in allowed:
             es = self.create_external_segment(
                 shared=shared['es'])['external_segment']
-            self.create_nat_pool(external_segment_id=es['id'],
-                                 shared=shared['np'], expected_res_status=201)
+            self.create_nat_pool(
+                external_segment_id=es['id'], shared=shared['np'],
+                expected_res_status=201)
 
     def test_nat_pool_shared_create_negative(self):
         es = self.create_external_segment(
             shared=False)['external_segment']
-        res = self.create_nat_pool(external_segment_id=es['id'],
-                                   shared=True, expected_res_status=400)
+        res = self.create_nat_pool(
+            external_segment_id=es['id'], shared=True,
+            expected_res_status=400)
         self.assertEqual('SharedResourceReferenceError',
                          res['NeutronError']['type'])
 
@@ -774,20 +731,19 @@ class TestNatPool(GroupPolicyPluginTestCase):
         for shared in [False, True]:
             es = self.create_external_segment(
                 shared=shared)['external_segment']
-            self._update_gbp_resource(
-                np['id'], 'nat_pool', 'nat_pools', expected_res_status=200,
+            self.update_nat_pool(
+                np['id'], expected_res_status=200,
                 external_segment_id=es['id'])
         np = self.create_nat_pool(shared=True)['nat_pool']
         es = self.create_external_segment(
             shared=True)['external_segment']
         # Verify shared NP on shared ES
-        self._update_gbp_resource(
-            np['id'], 'nat_pool', 'nat_pools', expected_res_status=200,
+        self.update_nat_pool(
+            np['id'], expected_res_status=200,
             external_segment_id=es['id'])
         # Verify unshare NP
-        self._update_gbp_resource(
-            np['id'], 'nat_pool', 'nat_pools', expected_res_status=200,
-            shared=False)
+        self.update_nat_pool(
+            np['id'], expected_res_status=200, shared=False)
 
 
 class TestGroupPolicyPluginGroupResources(

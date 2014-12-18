@@ -7,57 +7,35 @@
     "gbp_shared": "field:policy_target_groups:shared=True",
 
     "create_policy_target_group": "",
-    "create_policy_target_group:shared": "rule:admin_only",
     "get_policy_target_group": "rule:admin_or_owner or rule:gbp_shared",
-    "update_policy_target_group:shared": "rule:admin_only",
 
     "create_l2_policy": "",
-    "create_l2_policy:shared": "rule:admin_only",
     "get_l2_policy": "rule:admin_or_owner or rule:gbp_shared",
-    "update_l2_policy:shared": "rule:admin_only",
 
     "create_l3_policy": "",
-    "create_l3_policy:shared": "rule:admin_only",
     "get_l3_policy": "rule:admin_or_owner or rule:gbp_shared",
-    "update_l3_policy:shared": "rule:admin_only",
 
     "create_policy_classifier": "",
-    "create_policy_classifier:shared": "rule:admin_only",
     "get_policy_classifier": "rule:admin_or_owner or rule:gbp_shared",
-    "update_policy_classifier:shared": "rule:admin_only",
 
     "create_policy_action": "",
-    "create_policy_action:shared": "rule:admin_only",
     "get_policy_action": "rule:admin_or_owner or rule:gbp_shared",
-    "update_policy_action:shared": "rule:admin_only",
 
     "create_policy_rule": "",
-    "create_policy_rule:shared": "rule:admin_only",
     "get_policy_rule": "rule:admin_or_owner or rule:gbp_shared",
-    "update_policy_rule:shared": "rule:admin_only",
 
     "create_policy_rule_set": "",
-    "create_policy_rule_set:shared": "rule:admin_only",
     "get_policy_rule_set": "rule:admin_or_owner or rule:gbp_shared",
-    "update_policy_rule_set:shared": "rule:admin_only",
 
     "create_network_service_policy": "",
-    "create_network_service_policy:shared": "rule:admin_only",
     "get_network_service_policy": "rule:admin_or_owner or rule:gbp_shared",
-    "update_network_service_policy:shared": "rule:admin_only",
 
     "create_external_segment": "",
-    "create_external_segment:shared": "rule:admin_only",
     "get_external_segment": "rule:admin_or_owner or rule:gbp_shared",
-    "update_external_segment:shared": "rule:admin_only",
 
     "create_external_policy": "",
-    "create_external_policy:shared": "rule:admin_only",
     "get_external_policy": "rule:admin_or_owner or rule:gbp_shared",
-    "update_external_policy:shared": "rule:admin_only",
 
     "create_nat_pool": "",
-    "create_nat_pool:shared": "rule:admin_only",
-    "get_nat_pool": "rule:admin_or_owner or rule:gbp_shared",
-    "update_nat_pool:shared": "rule:admin_only"
+    "get_nat_pool": "rule:admin_or_owner or rule:gbp_shared"
 }

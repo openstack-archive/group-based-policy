@@ -360,6 +360,9 @@ class ResourceMappingDriver(api.PolicyDriver):
             self._update_sgs_on_ptg(context, ptg_id,
                                     removed_provided_prs,
                                     removed_consumed_prs, "DISASSOCIATE")
+            subnets = context.original['subnets']
+            self._unset_sg_rules_for_subnets(
+                context, subnets, removed_provided_prs, removed_consumed_prs)
         # Deal with new added subnets for default SG
         # Subnet removal not possible for now
         new_subnets = list(set(context.current['subnets']) -
@@ -509,7 +512,7 @@ class ResourceMappingDriver(api.PolicyDriver):
             pr_sets = context._plugin._get_policy_rule_policy_rule_sets(
                 context._plugin_context, pr_id)
             self._update_policy_rule_sg_rules(context, pr_sets,
-                policy_rule, None, context.original, context.current)
+                policy_rule, context.original, context.current)
 
     @log.log
     def delete_policy_classifier_precommit(self, context):
@@ -568,13 +571,17 @@ class ResourceMappingDriver(api.PolicyDriver):
         new_classifier_id = context.current['policy_classifier_id']
         old_action_set = set(context.current['policy_actions'])
         new_action_set = set(context.original['policy_actions'])
-        if old_classifier_id != new_classifier_id or \
-                old_action_set != new_action_set:
-            policy_rule_sets =\
+        if (old_classifier_id != new_classifier_id or
+                old_action_set != new_action_set):
+            policy_rule_sets = (
                 context._plugin._get_policy_rule_policy_rule_sets(
-                    context._plugin_context, context.current['id'])
-            self._update_policy_rule_sg_rules(context, policy_rule_sets,
-                    context.original, context.current)
+                    context._plugin_context, context.current['id']))
+            for prs in context._plugin.get_policy_rule_sets(
+                    context._plugin_context, filters={'id': policy_rule_sets}):
+                self._remove_policy_rule_set_rules(context, prs,
+                                                   [context.original])
+                self._apply_policy_rule_set_rules(context, prs,
+                                                  [context.current])
 
     @log.log
     def delete_policy_rule_precommit(self, context):
@@ -586,16 +593,10 @@ class ResourceMappingDriver(api.PolicyDriver):
 
     @log.log
     def delete_policy_rule_postcommit(self, context):
-        for policy_rule_set_id in context._rmd_policy_rule_sets_temp:
-            policy_rule_set = context._plugin.get_policy_rule_set(
-                context._plugin_context, policy_rule_set_id)
-            policy_rule_set_sg_mappings = self._get_policy_rule_set_sg_mapping(
-                context._plugin_context.session, policy_rule_set['id'])
-            cidr_mapping = self._get_ptg_cidrs_mapping(
-                context, policy_rule_set)
-            self._add_or_remove_policy_rule_set_rule(
-                context, context.current, policy_rule_set_sg_mappings,
-                cidr_mapping, unset=True)
+        for prs in context._plugin.get_policy_rule_sets(
+                context._plugin_context,
+                filters={'id': context.current['policy_rule_sets']}):
+            self._remove_policy_rule_set_rules(context, prs, [context.current])
 
     @log.log
     def create_policy_rule_set_precommit(self, context):
@@ -612,8 +613,10 @@ class ResourceMappingDriver(api.PolicyDriver):
         self._set_policy_rule_set_sg_mapping(
             context._plugin_context.session, policy_rule_set_id,
             consumed_sg_id, provided_sg_id)
-        self._apply_policy_rule_set_rules(
-            context, context.current, context.current['policy_rules'])
+        rules = context._plugin.get_policy_rules(
+            context._plugin_context,
+            {'id': context.current['policy_rules']})
+        self._apply_policy_rule_set_rules(context, context.current, rules)
 
     @log.log
     def update_policy_rule_set_precommit(self, context):
@@ -624,8 +627,10 @@ class ResourceMappingDriver(api.PolicyDriver):
         # Update policy_rule_set rules
         old_rules = set(context.original['policy_rules'])
         new_rules = set(context.current['policy_rules'])
-        to_add = new_rules - old_rules
-        to_remove = old_rules - new_rules
+        to_add = context._plugin.get_policy_rules(
+            context._plugin_context, {'id': new_rules - old_rules})
+        to_remove = context._plugin.get_policy_rules(
+            context._plugin_context, {'id': old_rules - new_rules})
         self._remove_policy_rule_set_rules(context, context.current, to_remove)
         self._apply_policy_rule_set_rules(context, context.current, to_add)
         # Update children contraint
@@ -1012,7 +1017,14 @@ class ResourceMappingDriver(api.PolicyDriver):
                  'name': sg_name_prefix + '_' + context.current['name'],
                  'description': '',
                  'security_group_rules': ''}
-        return self._create_sg(context._plugin_context, attrs)
+        sg = self._create_sg(context._plugin_context, attrs)
+        # Cleanup default rules
+        for rule in self._core_plugin.get_security_group_rules(
+                context._plugin_context,
+                filters={'security_group_id': [sg['id']]}):
+            self._core_plugin.delete_security_group_rule(
+                context._plugin_context, rule['id'])
+        return sg
 
     def _handle_policy_rule_sets(self, context):
         # This method handles policy_rule_set => SG mapping
@@ -1039,29 +1051,22 @@ class ResourceMappingDriver(api.PolicyDriver):
 
     # updates sg rules corresponding to a policy rule
     def _update_policy_rule_sg_rules(self, context, policy_rule_sets,
-                                    old_policy_rule, new_policy_rule,
-                                    old_classifier=None, new_classifier=None):
+                                     policy_rule, old_classifier=None,
+                                     new_classifier=None):
         policy_rule_set_list = context._plugin.get_policy_rule_sets(
                 context._plugin_context, filters={'id': policy_rule_sets})
         for policy_rule_set in policy_rule_set_list:
             policy_rule_set_sg_mappings = self._get_policy_rule_set_sg_mapping(
                 context._plugin_context.session, policy_rule_set['id'])
-            cidr_mapping = self._get_ptg_cidrs_mapping(
+            cidr_mapping = self._get_cidrs_mapping(
                 context, policy_rule_set)
-            if old_classifier:
-                self._add_or_remove_policy_rule_set_rule(
-                    context, old_policy_rule, policy_rule_set_sg_mappings,
-                    cidr_mapping, unset=True, classifier=old_classifier)
-                self._add_or_remove_policy_rule_set_rule(
-                    context, old_policy_rule, policy_rule_set_sg_mappings,
-                    cidr_mapping, classifier=new_classifier)
-            else:
-                self._add_or_remove_policy_rule_set_rule(
-                    context, old_policy_rule, policy_rule_set_sg_mappings,
-                    cidr_mapping, unset=True)
-                self._add_or_remove_policy_rule_set_rule(
-                    context, new_policy_rule, policy_rule_set_sg_mappings,
-                    cidr_mapping)
+            self._add_or_remove_policy_rule_set_rule(
+                context, policy_rule, policy_rule_set_sg_mappings,
+                cidr_mapping, unset=True, unset_egress=True,
+                classifier=old_classifier)
+            self._add_or_remove_policy_rule_set_rule(
+                context, policy_rule, policy_rule_set_sg_mappings,
+                cidr_mapping, classifier=new_classifier)
 
     def _set_policy_ipaddress_mapping(self, session, service_policy_id,
                                       policy_target_group, ipaddress):
@@ -1617,10 +1622,9 @@ class ResourceMappingDriver(api.PolicyDriver):
             else:
                 self._disassoc_sgs_from_pt(context, pt_id, sg_list)
 
-    # context should be PTG
-    def _set_sg_rules_for_subnets(
+    def _set_or_unset_rules_for_subnets(
             self, context, subnets, provided_policy_rule_sets,
-            consumed_policy_rule_sets):
+            consumed_policy_rule_sets, unset=False):
         if not provided_policy_rule_sets and not consumed_policy_rule_sets:
             return
 
@@ -1630,9 +1634,24 @@ class ResourceMappingDriver(api.PolicyDriver):
                                                   subnet_id)
             cidr = subnet['cidr']
             cidr_list.append(cidr)
-        self._set_sg_rules_for_cidrs(context, cidr_list,
-                                     provided_policy_rule_sets,
-                                     consumed_policy_rule_sets)
+        self._set_or_unset_rules_for_cidrs(
+            context, cidr_list, provided_policy_rule_sets,
+            consumed_policy_rule_sets, unset=unset)
+
+    # context should be PTG
+    def _set_sg_rules_for_subnets(
+            self, context, subnets, provided_policy_rule_sets,
+            consumed_policy_rule_sets):
+        self._set_or_unset_rules_for_subnets(
+            context, subnets, provided_policy_rule_sets,
+            consumed_policy_rule_sets)
+
+    def _unset_sg_rules_for_subnets(
+            self, context, subnets, provided_policy_rule_sets,
+            consumed_policy_rule_sets):
+        self._set_or_unset_rules_for_subnets(
+            context, subnets, provided_policy_rule_sets,
+            consumed_policy_rule_sets, unset=True)
 
     def _set_sg_rules_for_cidrs(self, context, cidr_list,
                                 provided_policy_rule_sets,
@@ -1671,35 +1690,22 @@ class ResourceMappingDriver(api.PolicyDriver):
                         cidr_mapping, unset=unset)
 
     def _manage_policy_rule_set_rules(self, context, policy_rule_set,
-                                      policy_rules, unset=False):
+                                      policy_rules, unset=False,
+                                      unset_egress=False):
         policy_rule_set_sg_mappings = self._get_policy_rule_set_sg_mapping(
             context._plugin_context.session, policy_rule_set['id'])
         policy_rule_set = context._plugin.get_policy_rule_set(
             context._plugin_context, policy_rule_set['id'])
-        cidr_mapping = self._get_ptg_cidrs_mapping(context, policy_rule_set)
-        providing_eps = policy_rule_set['providing_external_policies']
-        providing_eps = context._plugin.get_external_policies(
-            context._plugin_context, filters={'id': providing_eps})
-        for ep in providing_eps:
-            cidr_mapping['providing_cidrs'].extend(
-                self._get_processed_ep_cidr_list(context, ep))
-        consuming_eps = policy_rule_set['consuming_external_policies']
-        consuming_eps = context._plugin.get_external_policies(
-            context._plugin_context, filters={'id': consuming_eps})
-        for ep in consuming_eps:
-            cidr_mapping['consuming_cidrs'].extend(
-                self._get_processed_ep_cidr_list(context, ep))
-        for policy_rule_id in policy_rules:
-            policy_rule = context._plugin.get_policy_rule(
-                context._plugin_context, policy_rule_id)
-
+        cidr_mapping = self._get_cidrs_mapping(context, policy_rule_set)
+        for policy_rule in policy_rules:
             self._add_or_remove_policy_rule_set_rule(
                 context, policy_rule, policy_rule_set_sg_mappings,
-                cidr_mapping, unset=unset)
+                cidr_mapping, unset=unset, unset_egress=unset_egress)
 
     def _add_or_remove_policy_rule_set_rule(self, context, policy_rule,
                                             policy_rule_set_sg_mappings,
                                             cidr_mapping, unset=False,
+                                            unset_egress=False,
                                             classifier=None):
         in_out = [gconst.GP_DIRECTION_IN, gconst.GP_DIRECTION_OUT]
         prov_cons = [policy_rule_set_sg_mappings['provided_sg_id'],
@@ -1723,15 +1729,17 @@ class ResourceMappingDriver(api.PolicyDriver):
                                           cidr, unset=unset)
             if classifier['direction'] in [gconst.GP_DIRECTION_BI,
                                            in_out[pos - 1]]:
+                # TODO(ivar): IPv6 support
                 self._sg_egress_rule(context, sg, protocol, port_range,
-                                     '0.0.0.0/0', unset=unset)
+                                     '0.0.0.0/0', unset=unset_egress)
 
     def _apply_policy_rule_set_rules(self, context, policy_rule_set,
                                      policy_rules):
         if policy_rule_set['parent_id']:
             parent = context._plugin.get_policy_rule_set(
                 context._plugin_context, policy_rule_set['parent_id'])
-            policy_rules = policy_rules & set(parent['policy_rules'])
+            policy_rules = [x for x in policy_rules
+                            if x['if'] in set(parent['policy_rules'])]
         # Don't add rules unallowed by the parent
         self._manage_policy_rule_set_rules(
             context, policy_rule_set, policy_rules)
@@ -1739,7 +1747,8 @@ class ResourceMappingDriver(api.PolicyDriver):
     def _remove_policy_rule_set_rules(self, context, policy_rule_set,
                                       policy_rules):
         self._manage_policy_rule_set_rules(
-            context, policy_rule_set, policy_rules, unset=True)
+            context, policy_rule_set, policy_rules, unset=True,
+            unset_egress=True)
 
     def _recompute_policy_rule_sets(self, context, children):
         # Rules in child but not in parent shall be removed
@@ -1752,9 +1761,13 @@ class ResourceMappingDriver(api.PolicyDriver):
                 parent = context._plugin.get_policy_rule_set(
                     context._plugin_context, child['parent_id'])
                 parent_rules = set(parent['policy_rules'])
-                self._remove_policy_rule_set_rules(
-                    context, child, child_rules - parent_rules)
+                delta_rules = context._plugin.get_policy_rules(
+                    context._plugin_context,
+                    filters={'id': child_rules - parent_rules})
+                self._remove_policy_rule_set_rules(context, child, delta_rules)
             # Old parent may have filtered some rules, need to add them again
+            child_rules = context._plugin.get_policy_rules(
+                context._plugin_context, filters={'id': child_rules})
             self._apply_policy_rule_set_rules(context, child, child_rules)
 
     def _get_default_security_group(self, plugin_context, ptg_id,
@@ -1808,12 +1821,26 @@ class ResourceMappingDriver(api.PolicyDriver):
                 context._plugin_context, x)['cidr'] for x in ptg['subnets']])
         return cidrs
 
-    def _get_ptg_cidrs_mapping(self, context, policy_rule_set):
+    def _get_ep_cidrs(self, context, eps):
+        cidrs = []
+        eps = context._plugin.get_external_policies(
+            context._plugin_context, filters={'id': eps})
+        for ep in eps:
+            cidrs.extend(self._get_processed_ep_cidr_list(context, ep))
+        return cidrs
+
+    def _get_cidrs_mapping(self, context, policy_rule_set):
+        providing_eps = policy_rule_set['providing_external_policies']
+        consuming_eps = policy_rule_set['consuming_external_policies']
+        providing_ptgs = policy_rule_set['providing_policy_target_groups']
+        consuming_ptgs = policy_rule_set['consuming_policy_target_groups']
         return {
             'providing_cidrs': self._get_ptg_cidrs(
-                context, policy_rule_set['providing_policy_target_groups']),
+                context, providing_ptgs) + self._get_ep_cidrs(context,
+                                                              providing_eps),
             'consuming_cidrs': self._get_ptg_cidrs(
-                context, policy_rule_set['consuming_policy_target_groups'])}
+                context, consuming_ptgs) + self._get_ep_cidrs(context,
+                                                              consuming_eps)}
 
     def _set_ptg_servicechain_instance_mapping(self, session, provider_ptg_id,
                                                consumer_ptg_id,
@@ -1937,7 +1964,10 @@ class ResourceMappingDriver(api.PolicyDriver):
         routes = []
         for es in es_list:
             routes += es['external_routes']
-        self._update_router(context._plugin_context,
+        # NOTE(ivar): the context needs to be elevated because the external
+        # gateway port is created by Neutron without any tenant_id! Which makes
+        # it visible only from an admin context.
+        self._update_router(context._plugin_context.elevated(),
                             context.current['routers'][0],
                             {'routes': [x for x in routes if x['nexthop']]})
 

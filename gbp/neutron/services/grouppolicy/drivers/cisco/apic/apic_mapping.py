@@ -224,9 +224,11 @@ class ApicMappingDriver(api.ResourceMappingDriver):
         with self.apic_manager.apic.transaction(None) as trs:
             self.apic_manager.create_contract(
                 contract, owner=tenant, transaction=trs)
+            rules = self.gbp_plugin.get_policy_rules(
+                context._plugin_context,
+                {'id': context.current['policy_rules']})
             self._apply_policy_rule_set_rules(
-                context, context.current, context.current['policy_rules'],
-                transaction=trs)
+                context, context.current, rules, transaction=trs)
 
     def create_policy_target_postcommit(self, context):
         # The path needs to be created at bind time, this will be taken
@@ -655,9 +657,7 @@ class ApicMappingDriver(api.ResourceMappingDriver):
                                                  context.current['id'])
             in_dir = [g_const.GP_DIRECTION_BI, g_const.GP_DIRECTION_IN]
             out_dir = [g_const.GP_DIRECTION_BI, g_const.GP_DIRECTION_OUT]
-            filters = {'id': policy_rules}
-            for rule in context._plugin.get_policy_rules(
-                    context._plugin_context, filters=filters):
+            for rule in policy_rules:
                 policy_rule = self.name_mapper.policy_rule(context, rule['id'])
                 rule_owner = self._tenant_by_sharing_policy(rule)
                 classifier = context._plugin.get_policy_classifier(

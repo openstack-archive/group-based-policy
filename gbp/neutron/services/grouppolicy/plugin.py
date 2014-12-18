@@ -91,6 +91,8 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
         return self._plurals
 
     def _validate_shared_create(self, context, obj, identity):
+        # Need admin context to check sharing constraints
+        context = context.elevated()
         if not obj.get('shared'):
             return
         links = self.usage_graph.get(identity, {})
@@ -110,6 +112,8 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
                             ref_type=ref_type, ref_id=linked['id'])
 
     def _validate_shared_update(self, context, original, updated, identity):
+        # Need admin context to check sharing constraints
+        context = context.elevated()
         if updated.get('shared'):
             # Even though the shared attribute may not be changed, the objects
             # it is referring to might. For this reson we run the reference
