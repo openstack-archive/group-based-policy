@@ -40,6 +40,19 @@ def upgrade(active_plugins=None, options=None):
                     sa.PrimaryKeyConstraint('instance_id'),
                     sa.PrimaryKeyConstraint('policy_id'))
 
+    op.create_table('nvsd_sc_instance_vip_eps',
+                    sa.Column('instance_id',
+                              sa.String(length=36),
+                              nullable=False),
+                    sa.Column('vip_port',
+                              sa.String(length=36),
+                              nullable=True),
+                    sa.Column('nvsd_ep_id',
+                              sa.String(length=36),
+                              nullable=True),
+                    sa.PrimaryKeyConstraint('instance_id'))
+
 
 def downgrade(active_plugins=None, options=None):
+    op.drop_table('nvsd_sc_instance_vip_eps')
     op.drop_table('nvsd_sc_instance_policies')

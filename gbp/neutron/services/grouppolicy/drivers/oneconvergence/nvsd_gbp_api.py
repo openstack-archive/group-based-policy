@@ -312,7 +312,7 @@ class NVSDServiceApi(object):
     def create_endpoint(self, context, endpoint):
         body = copy.deepcopy(endpoint)
         body.update({'connectivity_portgroup_id':
-                     endpoint.get('endpoint_group_id')})
+                     endpoint.get('policy_target_group_id')})
 
         tenant_id = context.tenant_id
         uri = (NVSD_ENDPOINT + "?tenant_id=%s&user_id=%s" %
@@ -326,7 +326,7 @@ class NVSDServiceApi(object):
         endpoint_id = endpoint.get('id')
         body = copy.deepcopy(endpoint)
         body.update({'connectivity_portgroup_id':
-                     endpoint.get('endpoint_group_id')})
+                     endpoint.get('policy_target_group_id')})
 
         uri = (NVSD_ENDPOINT + "/%s?tenant_id=%s&user_id=%s" %
                (endpoint_id, tenant_id, context.user))
