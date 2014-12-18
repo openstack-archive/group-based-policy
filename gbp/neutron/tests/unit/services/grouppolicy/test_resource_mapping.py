@@ -589,6 +589,17 @@ class TestL2Policy(ResourceMappingTestCase):
     def test_explicit_network_lifecycle_shared(self):
         self._test_explicit_network_lifecycle(True)
 
+    def test_create_l2p_using_different_tenant_network_rejected(self):
+        with self.network(tenant_id='tenant1') as net1:
+            network_id = net1['network']['id']
+            res = self.create_l2_policy(name="l2p1",
+                                        tenant_id='tenant2',
+                                        network_id=network_id,
+                                        expected_res_status=
+                                        webob.exc.HTTPBadRequest.code)
+            self.assertEqual('InvalidNetworkTenantOwnership',
+                             res['NeutronError']['type'])
+
     def test_shared_l2_policy_create_negative(self):
         l3p = self.create_l3_policy(shared=True)
         for shared in [True, False]:
@@ -834,6 +845,17 @@ class TestL3Policy(ResourceMappingTestCase):
                 res = self.deserialize(self.fmt,
                                        req.get_response(self.ext_api))
                 self.assertEqual(routes2, res['router']['routes'])
+
+    def test_create_l3p_using_different_tenant_router_rejected(self):
+        pass
+        # with self.router(tenant_id='tenant1') as router:
+        #     router_id = router['router']['id']
+        #     res = self.create_l3_policy(name="l3p1",
+        #                                 tenant_id='tenant2',
+        #                                 routers=[router_id],
+        #                                 expected_res_status=201)
+        #     self.assertEqual('InvalidRouterTenantOwnership',
+        #                      res['NeutronError']['type'])
 
 
 class NotificationTest(ResourceMappingTestCase):
