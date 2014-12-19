@@ -527,6 +527,10 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
             # list and then add each action in order.
             # Note that the list could be empty in which case we interpret
             # it as clering existing rules.
+            for pr_action_assoc in context.session.query(
+                PolicyRuleActionAssociation).filter_by(
+                    policy_rule_id=pr_db.id):
+                    context.session.delete(pr_action_assoc)
             pr_db.policy_actions = []
             for action_id in action_id_list:
                 assoc = PolicyRuleActionAssociation(policy_rule_id=pr_db.id,
