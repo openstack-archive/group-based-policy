@@ -228,8 +228,8 @@ class TestGroupResources(GroupPolicyDbTestCase):
     def test_update_policy_target(self):
         name = 'new_policy_target'
         description = 'new desc'
-        attrs = cm.get_create_policy_target_default_attrs(name=name,
-                                                  description=description)
+        attrs = cm.get_create_policy_target_default_attrs(
+            name=name, description=description)
 
         pt = self.create_policy_target()
 
@@ -361,9 +361,8 @@ class TestGroupResources(GroupPolicyDbTestCase):
         name = "new_l2_policy"
         description = 'new desc'
         l3p_id = self.create_l3_policy()['l3_policy']['id']
-        attrs = cm.get_create_l2_policy_default_attrs(name=name,
-                                               description=description,
-                                               l3_policy_id=l3p_id)
+        attrs = cm.get_create_l2_policy_default_attrs(
+            name=name, description=description, l3_policy_id=l3p_id)
 
         l2p = self.create_l2_policy()
         data = {'l2_policy': {'name': name, 'description': description,
@@ -613,6 +612,16 @@ class TestGroupResources(GroupPolicyDbTestCase):
         self.assertRaises(gpolicy.PolicyClassifierNotFound,
                           self.plugin.get_policy_classifier, ctx, pc_id)
 
+    def test_delete_policy_classifier_in_use(self):
+        ctx = context.get_admin_context()
+        pc = self.create_policy_classifier()
+        pc_id = pc['policy_classifier']['id']
+        pr = self.create_policy_rule(policy_classifier_id=pc_id)
+        pr_id = pr['policy_rule']['id']
+        self.create_policy_rule_set(policy_rules=[pr_id])
+        self.assertRaises(gpolicy.PolicyClassifierInUse,
+                          self.plugin.delete_policy_classifier, ctx, pc_id)
+
     def test_create_and_show_policy_action(self):
         name = "pa1"
         attrs = cm.get_create_policy_action_default_attrs(name=name)
@@ -673,6 +682,17 @@ class TestGroupResources(GroupPolicyDbTestCase):
         self.assertEqual(res.status_int, webob.exc.HTTPNoContent.code)
         self.assertRaises(gpolicy.PolicyActionNotFound,
                           self.plugin.get_policy_action, ctx, pa_id)
+
+    def test_delete_policy_action_in_use(self):
+        ctx = context.get_admin_context()
+        pc = self.create_policy_classifier()
+        pc_id = pc['policy_classifier']['id']
+        pa = self.create_policy_action()
+        pa_id = pa['policy_action']['id']
+        self.create_policy_rule(policy_classifier_id=pc_id,
+                                policy_actions=[pa_id])
+        self.assertRaises(gpolicy.PolicyActionInUse,
+                          self.plugin.delete_policy_action, ctx, pa_id)
 
     def test_create_and_show_policy_rule(self):
         name = "pr1"
@@ -750,6 +770,16 @@ class TestGroupResources(GroupPolicyDbTestCase):
         self.assertEqual(res.status_int, webob.exc.HTTPNoContent.code)
         self.assertRaises(gpolicy.PolicyRuleNotFound,
                           self.plugin.get_policy_rule, ctx, pr_id)
+
+    def test_delete_policy_rule_in_use(self):
+        ctx = context.get_admin_context()
+        pc = self.create_policy_classifier()
+        pc_id = pc['policy_classifier']['id']
+        pr = self.create_policy_rule(policy_classifier_id=pc_id)
+        pr_id = pr['policy_rule']['id']
+        self.create_policy_rule_set(policy_rules=[pr_id])
+        self.assertRaises(gpolicy.PolicyRuleInUse,
+                          self.plugin.delete_policy_rule, ctx, pr_id)
 
     def test_create_and_show_policy_rule_set(self):
         name = "policy_rule_set1"
@@ -871,6 +901,32 @@ class TestGroupResources(GroupPolicyDbTestCase):
         self.assertEqual(res.status_int, webob.exc.HTTPNoContent.code)
         self.assertRaises(gpolicy.PolicyRuleSetNotFound,
                           self.plugin.get_policy_rule_set, ctx, prs_id)
+
+    def test_delete_policy_rule_set_in_use(self):
+        ctx = context.get_admin_context()
+        l3p = self.create_l3_policy()
+        l3p_id = l3p['l3_policy']['id']
+
+        l2p = self.create_l2_policy(l3_policy_id=l3p_id)
+        l2p_id = l2p['l2_policy']['id']
+
+        provided_prs_id = (
+            self.create_policy_rule_set()['policy_rule_set']['id'])
+        consumed_prs_id = (
+            self.create_policy_rule_set()['policy_rule_set']['id'])
+
+        self.create_policy_target_group(
+            l2_policy_id=l2p_id,
+            provided_policy_rule_sets={provided_prs_id: None},
+            consumed_policy_rule_sets={consumed_prs_id: None})
+
+        self.assertRaises(gpolicy.PolicyRuleSetInUse,
+                          self.plugin.delete_policy_rule_set, ctx,
+                          provided_prs_id)
+
+        self.assertRaises(gpolicy.PolicyRuleSetInUse,
+                          self.plugin.delete_policy_rule_set, ctx,
+                          consumed_prs_id)
 
     def test_prs_one_hierarchy_children(self):
         child = self.create_policy_rule_set()['policy_rule_set']

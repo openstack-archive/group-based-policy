@@ -1720,17 +1720,25 @@ class TestPolicyRuleSet(ResourceMappingTestCase):
 
         self._verify_prs_rules(prs['id'])
 
-        self.create_policy_target_group(
+        provider_ptg = self.create_policy_target_group(
             provided_policy_rule_sets={prs['id']: None},
-            expected_res_status=201)
-        self.create_policy_target_group(
+            expected_res_status=201)['policy_target_group']
+        consumer_ptg = self.create_policy_target_group(
             consumed_policy_rule_sets={prs['id']: None},
-            expected_res_status=201)
+            expected_res_status=201)['policy_target_group']
         self._verify_prs_rules(prs['id'])
 
+        # Deleting a policy rule is allowed only when it is no longer in use
+        self.delete_policy_target_group(
+            provider_ptg['id'],
+            expected_res_status=webob.exc.HTTPNoContent.code)
+        self.delete_policy_target_group(
+            consumer_ptg['id'],
+            expected_res_status=webob.exc.HTTPNoContent.code)
+        self.delete_policy_rule_set(
+            prs['id'], expected_res_status=webob.exc.HTTPNoContent.code)
         self.delete_policy_rule(
             pr['id'], expected_res_status=webob.exc.HTTPNoContent.code)
-        self._verify_prs_rules(prs['id'])
 
 
 class TestExternalSegment(ResourceMappingTestCase):
