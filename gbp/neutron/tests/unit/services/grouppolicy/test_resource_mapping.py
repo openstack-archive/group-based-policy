@@ -798,6 +798,17 @@ class TestL2Policy(ResourceMappingTestCase):
     def test_explicit_network_lifecycle_shared(self):
         self._test_explicit_network_lifecycle(True)
 
+    def test_create_l2p_using_different_tenant_network_rejected(self):
+        with self.network(tenant_id='tenant1') as net1:
+            network_id = net1['network']['id']
+            res = self.create_l2_policy(name="l2p1",
+                                        network_id=network_id,
+                                        tenant_id='tenant2',
+                                        expected_res_status=
+                                        webob.exc.HTTPBadRequest.code)
+            self.assertEqual('InvalidNetworkAccess',
+                             res['NeutronError']['type'])
+
     def test_shared_l2_policy_create_negative(self):
         l3p = self.create_l3_policy(shared=True)
         for shared in [True, False]:
@@ -838,9 +849,10 @@ class TestL3Policy(ResourceMappingTestCase):
 
     def test_explicit_router_lifecycle(self):
         # Create L3 policy with explicit router.
-        with self.router() as router:
+        with self.router(tenant_id='tenant1') as router:
             router_id = router['router']['id']
-            l3p = self.create_l3_policy(name="l3p1", routers=[router_id])
+            l3p = self.create_l3_policy(name="l3p1", tenant_id='tenant1',
+                                        routers=[router_id])
             l3p_id = l3p['l3_policy']['id']
             routers = l3p['l3_policy']['routers']
             self.assertIsNotNone(routers)
@@ -1042,6 +1054,16 @@ class TestL3Policy(ResourceMappingTestCase):
                 res = self.deserialize(self.fmt,
                                        req.get_response(self.ext_api))
                 self.assertEqual(routes2, res['router']['routes'])
+
+    def test_create_l3p_using_different_tenant_router_rejected(self):
+        with contextlib.nested(self.router()) as router1:
+            router1_id = router1[0]['router']['id']
+            res = self.create_l3_policy(name="l3p1",
+                                        tenant_id='tenant2',
+                                        routers=[router1_id],
+                                        expected_res_status=400)
+            self.assertEqual('InvalidRouterAccess',
+                             res['NeutronError']['type'])
 
 
 class NotificationTest(ResourceMappingTestCase):
