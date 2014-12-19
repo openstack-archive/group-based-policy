@@ -300,8 +300,22 @@ class ResourceMappingDriver(api.PolicyDriver):
 
     @log.log
     def update_policy_target_group_precommit(self, context):
+        # REVISIT(rkukura): We could potentially allow updates to
+        # l2_policy_id when no policy targets exist. This would
+        # involve removing each old subnet from the l3_policy's
+        # router, deleting each old subnet, creating a new subnet on
+        # the new l2_policy's network, and adding that subnet to the
+        # l3_policy's router in postcommit. Its also possible that new
+        # subnet[s] would be provided explicitly as part of the
+        # update.
+        old_l2p = context.original['l2_policy_id']
+        new_l2p = context.current['l2_policy_id']
+        if old_l2p and old_l2p != new_l2p:
+            raise exc.L2PolicyUpdateOfPolicyTargetGroupNotSupported()
+
         if set(context.original['subnets']) - set(context.current['subnets']):
             raise exc.PolicyTargetGroupSubnetRemovalNotSupported()
+
         new_subnets = list(set(context.current['subnets']) -
                            set(context.original['subnets']))
         self._validate_ptg_subnets(context, new_subnets)
