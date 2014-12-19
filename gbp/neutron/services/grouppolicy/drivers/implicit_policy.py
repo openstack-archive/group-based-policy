@@ -178,10 +178,7 @@ class ImplicitPolicyDriver(api.PolicyDriver):
         l2p = context._plugin.create_l2_policy(context._plugin_context, attrs)
         l2p_id = l2p['id']
         self._mark_l2_policy_owned(context._plugin_context.session, l2p_id)
-        context.current['l2_policy_id'] = l2p_id
-        context._plugin.update_policy_target_group(
-            context._plugin_context, context.current['id'],
-            {'policy_target_group': {'l2_policy_id': l2p_id}})
+        context.set_l2_policy_id(l2p_id)
 
     def _cleanup_l2_policy(self, context, l2p_id):
         if self._l2_policy_is_owned(context._plugin_context.session, l2p_id):
@@ -211,9 +208,7 @@ class ImplicitPolicyDriver(api.PolicyDriver):
             self._mark_l3_policy_owned(context._plugin_context.session,
                                        l3p['id'])
         context.current['l3_policy_id'] = l3p['id']
-        context._plugin.update_l2_policy(
-            context._plugin_context, context.current['id'],
-            {'l2_policy': {'l3_policy_id': l3p['id']}})
+        context.set_l3_policy_id(l3p['id'])
 
     def _use_implicit_external_segment(self, context):
         if not self._default_es_name:
