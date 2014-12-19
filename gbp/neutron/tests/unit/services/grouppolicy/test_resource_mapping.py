@@ -705,6 +705,25 @@ class TestPolicyTargetGroup(ResourceMappingTestCase):
         self.assertEqual(
             'PolicyRuleSetNotFound', res['NeutronError']['type'])
 
+    def test_l2p_update_rejected(self):
+        # Create two l2 policies.
+        l2p1 = self.create_l2_policy(name="l2p1")
+        l2p1_id = l2p1['l2_policy']['id']
+        l2p2 = self.create_l2_policy(name="l2p2")
+        l2p2_id = l2p2['l2_policy']['id']
+
+        # Create policy target group.
+        ptg = self.create_policy_target_group(name="ptg1",
+                                              l2_policy_id=l2p1_id)
+        ptg_id = ptg['policy_target_group']['id']
+
+        # Verify updating l2_policy rejected.
+        data = {'policy_target_group': {'l2_policy_id': l2p2_id}}
+        req = self.new_update_request('policy_target_groups', data, ptg_id)
+        data = self.deserialize(self.fmt, req.get_response(self.ext_api))
+        self.assertEqual('L2PolicyUpdateOfPolicyTargetGroupNotSupported',
+                         data['NeutronError']['type'])
+
     # TODO(rkukura): Test ip_pool exhaustion.
 
 
