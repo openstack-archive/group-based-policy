@@ -25,5 +25,15 @@ class ServiceChainException(exceptions.NeutronException):
     pass
 
 
+class ServiceChainBadRequest(exceptions.BadRequest, ServiceChainException):
+    """Base for servicechain driver bad request exceptions returned to user."""
+    pass
+
+
 class ServiceChainDeploymentError(ServiceChainException):
     message = _("Deployment not configured properly. See logs for details.")
+
+
+class InvalidServiceTypeForReferenceDriver(ServiceChainBadRequest):
+    message = _("The reference service chain driver only supports the services"
+                " Loadbalancer and Firewall services in a Service Chain Spec")
