@@ -227,6 +227,9 @@ class PolicyRule(model_base.BASEV2, models_v2.HasId, models_v2.HasTenant):
     policy_actions = orm.relationship(PolicyRuleActionAssociation,
                                       backref='gp_policy_rules',
                                       cascade='all', lazy="joined")
+    policy_rule_sets = orm.relationship(PRSToPRAssociation,
+                                        backref='policy_rule', lazy="joined",
+                                        cascade='all, delete-orphan')
     shared = sa.Column(sa.Boolean)
 
 
@@ -861,6 +864,8 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
                'port_range': port_range,
                'direction': pc['direction'],
                'shared': pc.get('shared', False), }
+        res['policy_rules'] = [pr['id']
+                               for pr in pc['policy_rules']]
         return self._fields(res, fields)
 
     def _make_policy_action_dict(self, pa, fields=None):
@@ -883,6 +888,8 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
                'shared': pr.get('shared', False), }
         res['policy_actions'] = [pa['policy_action_id']
                                  for pa in pr['policy_actions']]
+        res['policy_rule_sets'] = [prs['policy_rule_set_id'] for prs in
+                                   pr['policy_rule_sets']]
         return self._fields(res, fields)
 
     def _make_policy_rule_set_dict(self, prs, fields=None):
