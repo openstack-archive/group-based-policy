@@ -26,6 +26,11 @@ from neutron.plugins.common import constants
 LOG = logging.getLogger(__name__)
 
 
+class ExternalSegmentNotSupportedOnOdlDriver(gpexc.GroupPolicyBadRequest):
+    message = _("External Segment currently not supported on ODL GBP "
+                "driver.")
+
+
 class UpdateL3PolicyNotSupportedOnOdlDriver(gpexc.GroupPolicyBadRequest):
     message = _("Update L3 Policy currently not supported on ODL GBP "
                 "driver.")
@@ -157,6 +162,33 @@ class OdlMappingDriver(api.ResourceMappingDriver):
         #                                            port['tenant_id'])
         # data = {'port': {'security_groups': [sg_id]}}
         # self._core_plugin.update_port(plugin_context, port['id'], data)
+
+    def create_external_segment_precommit(self, context):
+        raise ExternalSegmentNotSupportedOnOdlDriver()
+
+    def update_external_segment_precommit(self, context):
+        raise ExternalSegmentNotSupportedOnOdlDriver()
+
+    def delete_external_segment_precommit(self, context):
+        raise ExternalSegmentNotSupportedOnOdlDriver()
+
+    def create_external_policy_precommit(self, context):
+        raise ExternalSegmentNotSupportedOnOdlDriver()
+
+    def update_external_policy_precommit(self, context):
+        raise ExternalSegmentNotSupportedOnOdlDriver()
+
+    def delete_external_policy_precommit(self, context):
+        raise ExternalSegmentNotSupportedOnOdlDriver()
+
+    def create_nat_pool_precommit(self, context):
+        raise ExternalSegmentNotSupportedOnOdlDriver()
+
+    def update_nat_pool_precommit(self, context):
+        raise ExternalSegmentNotSupportedOnOdlDriver()
+
+    def delete_nat_pool_precommit(self, context):
+        raise ExternalSegmentNotSupportedOnOdlDriver()
 
     def create_policy_target_postcommit(self, context):
         super(OdlMappingDriver, self).create_policy_target_postcommit(context)
