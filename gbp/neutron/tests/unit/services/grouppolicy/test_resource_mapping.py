@@ -153,6 +153,18 @@ class ResourceMappingTestCase(
                          query_params='tenant_id=' + ptg['tenant_id'])
         return res['l3_policies']
 
+    def _get_prs_enforced_rules(self, prs):
+        # Filter with parent if needed
+        if prs['parent_id']:
+            parent = self.show_policy_rule_set(
+                prs['parent_id'])['policy_rule_set']
+            return [self.show_policy_rule(x)['policy_rule']
+                    for x in prs['policy_rules']
+                    if x in parent['policy_rules']]
+        else:
+            return [self.show_policy_rule(x)['policy_rule']
+                    for x in prs['policy_rules']]
+
     def _generate_expected_sg_rules(self, prs):
         """Returns a list of expected provider sg rules given a PTG."""
         # Get all the needed cidrs:
@@ -191,11 +203,7 @@ class ResourceMappingTestCase(
         # Egress rules are always generic (to 0.0.0.0/0)
         # Igress rules are filtered by subnet
         # Only allow rules are verified
-        prules = [self.show_policy_rule(x)['policy_rule']
-                  for x in prs['policy_rules']]
-        if len(prs['policy_rules']):
-            self.assertTrue(len(prules))
-
+        prules = self._get_prs_enforced_rules(prs)
         expected_rules = []
         in_bi = [gconst.GP_DIRECTION_IN, gconst.GP_DIRECTION_BI]
         out_bi = [gconst.GP_DIRECTION_OUT, gconst.GP_DIRECTION_BI]
@@ -252,12 +260,12 @@ class ResourceMappingTestCase(
 
     def _verify_prs_rules(self, prs):
         # Refresh prs
-        expected = self._generate_expected_sg_rules(prs)
         mapping = self._get_prs_mapping(prs)
         existing = [
             x for x in self._get_sg_rule(
                 security_group_id=[mapping.provided_sg_id,
                                    mapping.consumed_sg_id])]
+        expected = self._generate_expected_sg_rules(prs)
         for rule in expected:
             # Verify the rule exists
             r = self._get_sg_rule(**rule)
@@ -1327,10 +1335,6 @@ class TestPolicyRuleSet(ResourceMappingTestCase):
             sg_rules = sg['security_group_rules']
             udp_rules.extend([r for r in sg_rules if r['protocol'] == 'udp'])
 
-        self.assertEqual(len(udp_rules), 1)
-        udp_rule = udp_rules[0]
-        self.assertEqual(udp_rule['port_range_min'], 50)
-        self.assertEqual(udp_rule['port_range_max'], 150)
         self._verify_prs_rules(policy_rule_set_id)
 
     def test_redirect_to_chain(self):
@@ -1607,6 +1611,126 @@ class TestPolicyRuleSet(ResourceMappingTestCase):
                 self.assertTrue(len(current_rules) > 0)
                 for rule in current_rules:
                     self.assertFalse(self._get_sg_rule(**rule))
+
+    def test_hierarchical_prs(self):
+        pr1 = self._create_ssh_allow_rule()
+        pr2 = self._create_http_allow_rule()
+
+        child = self.create_policy_rule_set(
+            expected_res_status=201,
+            policy_rules=[pr1['id'], pr2['id']])['policy_rule_set']
+
+        parent = self.create_policy_rule_set(
+            expected_res_status=201, policy_rules=[pr1['id']],
+            child_policy_rule_sets=[child['id']])['policy_rule_set']
+
+        self.create_policy_target_group(
+            provided_policy_rule_sets={child['id']: None})
+
+        self.create_policy_target_group(
+            consumed_policy_rule_sets={child['id']: None})
+
+        # Verify all the rules are correctly set
+        self._verify_prs_rules(child['id'])
+
+        # Add rule to parent
+        self.update_policy_rule_set(parent['id'], expected_res_status=200,
+                                    policy_rules=[pr1['id'], pr2['id']])
+        self._verify_prs_rules(child['id'])
+
+        # Remove rule from parent
+        self.update_policy_rule_set(parent['id'], expected_res_status=200,
+                                    policy_rules=[])
+        self._verify_prs_rules(child['id'])
+
+        # Change rule classifier
+        pr3 = self._create_tcp_allow_rule('443')
+        self.update_policy_rule_set(parent['id'], expected_res_status=200,
+                                    policy_rules=[pr1['id']])
+        self.update_policy_rule(
+            pr1['id'], expected_res_status=200,
+            policy_classifier_id=pr3['policy_classifier_id'])
+        self._verify_prs_rules(child['id'])
+
+        # Swap parent
+        self.update_policy_rule_set(parent['id'], expected_res_status=200,
+                                    child_policy_rule_sets=[])
+        self._verify_prs_rules(child['id'])
+
+        self.create_policy_rule_set(
+            expected_res_status=201, policy_rules=[pr1['id'], pr2['id']],
+            child_policy_rule_sets=[child['id']])['policy_rule_set']
+
+        self._verify_prs_rules(child['id'])
+
+        # TODO(ivar): Test that redirect is allowed too
+
+    def test_update_policy_classifier(self):
+        pr = self._create_http_allow_rule()
+        prs = self.create_policy_rule_set(
+            policy_rules=[pr['id']],
+            expected_res_status=201)['policy_rule_set']
+
+        self._verify_prs_rules(prs['id'])
+
+        self.create_policy_target_group(
+            provided_policy_rule_sets={prs['id']: None},
+            expected_res_status=201)
+        self.create_policy_target_group(
+            consumed_policy_rule_sets={prs['id']: None},
+            expected_res_status=201)
+        self._verify_prs_rules(prs['id'])
+
+        self.update_policy_classifier(
+            pr['policy_classifier_id'], expected_res_status=200,
+            port_range=8080)
+        self._verify_prs_rules(prs['id'])
+
+    def test_update_policy_classifier_hier(self):
+        pr = self._create_http_allow_rule()
+        prs = self.create_policy_rule_set(
+            policy_rules=[pr['id']],
+            expected_res_status=201)['policy_rule_set']
+
+        self.create_policy_rule_set(
+            policy_rules=[pr['id']], child_policy_rule_sets=[prs['id']],
+            expected_res_status=201)
+
+        self._verify_prs_rules(prs['id'])
+
+        self.create_policy_target_group(
+            provided_policy_rule_sets={prs['id']: None},
+            expected_res_status=201)
+        self.create_policy_target_group(
+            consumed_policy_rule_sets={prs['id']: None},
+            expected_res_status=201)
+        self._verify_prs_rules(prs['id'])
+
+        self.update_policy_classifier(
+            pr['policy_classifier_id'], expected_res_status=200,
+            port_range=8080)
+        self._verify_prs_rules(prs['id'])
+
+    def test_delete_policy_rule(self):
+        pr = self._create_http_allow_rule()
+        pr2 = self._create_ssh_allow_rule()
+        prs = self.create_policy_rule_set(
+            policy_rules=[pr['id'], pr2['id']],
+            expected_res_status=201)['policy_rule_set']
+
+        self._verify_prs_rules(prs['id'])
+
+        self.create_policy_target_group(
+            provided_policy_rule_sets={prs['id']: None},
+            expected_res_status=201)
+        self.create_policy_target_group(
+            consumed_policy_rule_sets={prs['id']: None},
+            expected_res_status=201)
+        self._verify_prs_rules(prs['id'])
+
+        self.delete_policy_rule(
+            pr['id'], expected_res_status=webob.exc.HTTPNoContent.code)
+        self._verify_prs_rules(prs['id'])
 
 
 class TestExternalSegment(ResourceMappingTestCase):

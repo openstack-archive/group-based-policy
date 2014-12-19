@@ -59,8 +59,8 @@ class GroupPolicyDBTestBase(object):
             resource = item[len('show_'):]
             plural = cm.get_resource_plural(resource)
             if _is_gbp_resource(plural):
-                def show_wrapper(id):
-                    return self._show_gbp_resource(id, plural)
+                def show_wrapper(id, **kwargs):
+                    return self._show_gbp_resource(id, plural, **kwargs)
                 return show_wrapper
         # Create Method
         if item.startswith('create_'):
@@ -70,6 +70,14 @@ class GroupPolicyDBTestBase(object):
                 def create_wrapper(**kwargs):
                     return self._create_gbp_resource(resource, **kwargs)
                 return create_wrapper
+        # Delete Method
+        if item.startswith('delete_'):
+            resource = item[len('delete_'):]
+            plural = cm.get_resource_plural(resource)
+            if _is_gbp_resource(plural):
+                def delete_wrapper(id, **kwargs):
+                    return self._delete_gbp_resource(id, plural, **kwargs)
+                return delete_wrapper
 
         raise AttributeError
 
@@ -133,6 +141,17 @@ class GroupPolicyDBTestBase(object):
         req.environ['neutron.context'] = context.Context(
             '', tenant_id or self._tenant_id, is_admin_context)
         return self.deserialize(self.fmt, req.get_response(self.ext_api))
+
+    def _delete_gbp_resource(self, id, plural, is_admin_context=False,
+                             expected_res_status=None, tenant_id=None):
+        req = self.new_delete_request(plural, id)
+        req.environ['neutron.context'] = context.Context(
+            '', tenant_id or self._tenant_id, is_admin_context)
+        res = req.get_response(self.ext_api)
+        if expected_res_status:
+            self.assertEqual(res.status_int, expected_res_status)
+        elif res.status_int >= webob.exc.HTTPClientError.code:
+            raise webob.exc.HTTPClientError(code=res.status_int)
 
 
 class GroupPolicyDBTestPlugin(gpdb.GroupPolicyDbPlugin):
