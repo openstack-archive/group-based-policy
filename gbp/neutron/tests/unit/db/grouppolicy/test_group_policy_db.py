@@ -738,6 +738,27 @@ class TestGroupResources(GroupPolicyDbTestCase):
         self._test_show_resource('policy_rule',
                                  pr['policy_rule']['id'], attrs)
 
+    def test_update_policy_rule_replace_policy_action(self):
+        pc = self.create_policy_classifier()
+        pc_id = pc['policy_classifier']['id']
+        pa1_id = self.create_policy_action()['policy_action']['id']
+        pa2_id = self.create_policy_action()['policy_action']['id']
+        pr = self.create_policy_rule(policy_classifier_id=pc_id,
+                                     policy_actions=[pa1_id, pa2_id])
+        npa1_id = self.create_policy_action()['policy_action']['id']
+        npa2_id = self.create_policy_action()['policy_action']['id']
+        attrs = cm.get_create_policy_rule_default_attrs(
+            policy_actions=[npa1_id, npa2_id])
+
+        data = {'policy_rule': {'policy_actions': [npa1_id, npa2_id]}}
+
+        req = self.new_update_request('policy_rules', data,
+                                      pr['policy_rule']['id'])
+        res = self.deserialize(self.fmt, req.get_response(self.ext_api))
+
+        for k, v in attrs.iteritems():
+            self.assertEqual(res['policy_rule'][k], v)
+
     def test_delete_policy_rule(self):
         ctx = context.get_admin_context()
         pc = self.create_policy_classifier()
