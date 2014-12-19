@@ -190,3 +190,13 @@ class InvalidCrossTenantReference(GroupPolicyBadRequest):
     message = _("Not supported cross tenant reference: object "
                 "%(res_type)s:%(res_id)s can't link %(ref_type)s:%(ref_id)s "
                 "unless it's shared.")
+
+
+class InvalidNetworkAccess(GroupPolicyBadRequest):
+    message = _("%(msg)s : Network id %(network_id)s doesn't belong to "
+                " the tenant id %(tenant_id)s.")
+
+
+class InvalidRouterAccess(GroupPolicyBadRequest):
+    message = _("%(msg)s : Router id %(router_id)s does not belong to the "
+                " tenant id %(tenant_id)s.")
