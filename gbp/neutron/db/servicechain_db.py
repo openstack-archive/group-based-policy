@@ -37,7 +37,7 @@ class SpecNodeAssociation(model_base.BASEV2):
         sa.String(36), sa.ForeignKey('sc_specs.id'), primary_key=True)
     node_id = sa.Column(sa.String(36),
                         sa.ForeignKey('sc_nodes.id'),
-                        primary_key=False)
+                        primary_key=True)
 
 
 class ServiceChainNode(model_base.BASEV2, models_v2.HasId,
