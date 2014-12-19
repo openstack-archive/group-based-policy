@@ -861,6 +861,8 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
                'port_range': port_range,
                'direction': pc['direction'],
                'shared': pc.get('shared', False), }
+        res['policy_rules'] = [pr['id']
+                               for pr in pc['policy_rules']]
         return self._fields(res, fields)
 
     def _make_policy_action_dict(self, pa, fields=None):
