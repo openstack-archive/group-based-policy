@@ -77,16 +77,36 @@ class PolicyClassifierNotFound(nexc.NotFound):
     message = _("PolicyClassifier %(policy_classifier_id)s could not be found")
 
 
+class PolicyClassifierInUse(nexc.InUse):
+    message = _("Unable to complete operation, PolicyClassifier "
+                "%(policy_classifier_id)s is in use")
+
+
 class PolicyActionNotFound(nexc.NotFound):
     message = _("PolicyAction %(policy_action_id)s could not be found")
+
+
+class PolicyActionInUse(nexc.InUse):
+    message = _("Unable to complete operation, PolicyAction "
+                "%(policy_action_id)s is in use")
 
 
 class PolicyRuleNotFound(nexc.NotFound):
     message = _("PolicyRule %(policy_rule_id)s could not be found")
 
 
+class PolicyRuleInUse(nexc.InUse):
+    message = _("Unable to complete operation, PolicyRule %(policy_rule_id)s "
+                "is in use")
+
+
 class PolicyRuleSetNotFound(nexc.NotFound):
     message = _("Policy Rule Set %(policy_rule_set_id)s could not be found")
+
+
+class PolicyRuleSetInUse(nexc.InUse):
+    message = _("Unable to complete operation, PolicyRuleSet "
+                "%(policy_rule_set_id)s is in use")
 
 
 class ExternalPolicyNotFound(nexc.NotFound):
