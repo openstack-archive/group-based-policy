@@ -19,6 +19,7 @@ from neutron.openstack.common import log as logging
 
 from gbp.neutron.db.grouppolicy import group_policy_db as gdb
 from gbp.neutron.db.grouppolicy import group_policy_mapping_db
+from gbp.neutron.extensions import group_policy as gpex
 from gbp.neutron.services.grouppolicy.common import exceptions as gp_exc
 from gbp.neutron.services.grouppolicy import extension_manager as ext_manager
 from gbp.neutron.services.grouppolicy import group_policy_context as p_context
@@ -80,7 +81,9 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
                        'provided_policy_rule_sets': 'policy_rule_set',
                        'consumed_policy_rule_sets': 'policy_rule_set'},
                    'nat_pool': {'external_segment_id':
-                                'external_segment'}
+                                'external_segment'},
+                   'policy_target': {'policy_target_group_id':
+                                     'policy_target_group'}
                    }
     _plurals = None
 
@@ -91,10 +94,7 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
         return self._plurals
 
     def _validate_shared_create(self, context, obj, identity):
-        # Need admin context to check sharing constraints
-        context = context.elevated()
-        if not obj.get('shared'):
-            return
+        # REVISIT(ivar): only validate new references
         links = self.usage_graph.get(identity, {})
         for attr in links:
             ids = obj[attr]
@@ -105,22 +105,34 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
                 linked_objects = getattr(
                     self, 'get_%s' % self.plurals[ref_type])(
                         context, filters={'id': ids})
+                link_ids = set()
                 for linked in linked_objects:
+                    link_ids.add(linked['id'])
                     if not linked.get('shared'):
-                        raise gp_exc.SharedResourceReferenceError(
-                            res_type=identity, res_id=obj['id'],
-                            ref_type=ref_type, ref_id=linked['id'])
+                        if obj.get('shared'):
+                            raise gp_exc.SharedResourceReferenceError(
+                                res_type=identity, res_id=obj['id'],
+                                ref_type=ref_type, ref_id=linked['id'])
+                        if obj.get('tenant_id') != linked.get('tenant_id'):
+                            raise gp_exc.InvalidCrossTenantReference(
+                                res_type=identity, res_id=obj['id'],
+                                ref_type=ref_type, ref_id=linked['id'])
+                # Check for missing references
+                missing = set(ids) - link_ids
+                if missing:
+                    raise gpex.GbpResourceNotFound(identity=ref_type,
+                                                   id=str(missing))
 
     def _validate_shared_update(self, context, original, updated, identity):
         # Need admin context to check sharing constraints
-        context = context.elevated()
-        if updated.get('shared'):
-            # Even though the shared attribute may not be changed, the objects
-            # it is referring to might. For this reson we run the reference
-            # validation every time a shared resource is updated
-            # TODO(ivar): run only when relevant updates happen
-            self._validate_shared_create(context, updated, identity)
-        elif updated.get('shared') != original.get('shared'):
+
+        # Even though the shared attribute may not be changed, the objects
+        # it is referring to might. For this reson we run the reference
+        # validation every time a shared resource is updated
+        # TODO(ivar): run only when relevant updates happen
+        self._validate_shared_create(context, updated, identity)
+        if updated.get('shared') != original.get('shared'):
+            context = context.elevated()
             getattr(self, '_validate_%s_unshare' % identity)(context, updated)
 
     def _check_shared_or_different_tenant(self, context, obj,
@@ -267,6 +279,7 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
                            self).create_policy_target(context, policy_target)
             self.extension_manager.process_create_policy_target(
                 session, policy_target, result)
+            self._validate_shared_create(context, result, 'policy_target')
             policy_context = p_context.PolicyTargetContext(self, context,
                                                            result)
             self.policy_driver_manager.create_policy_target_precommit(
@@ -295,6 +308,9 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
                     context, policy_target_id, policy_target)
             self.extension_manager.process_update_policy_target(
                 session, policy_target, updated_policy_target)
+            self._validate_shared_update(context, original_policy_target,
+                                         updated_policy_target,
+                                         'policy_target')
             policy_context = p_context.PolicyTargetContext(
                 self, context, updated_policy_target,
                 original_policy_target=original_policy_target)
