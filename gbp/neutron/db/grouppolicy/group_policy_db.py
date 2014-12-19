@@ -977,10 +977,27 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
                'external_segment_id': np['external_segment_id']}
         return self._fields(res, fields)
 
+    def _get_ptgs_for_providing_policy_rule_set(self, context,
+                                                policy_rule_set_id):
+        return [x['policy_target_group_id'] for x in
+                context.session.query(PTGToPRSProvidingAssociation).filter_by(
+                    policy_rule_set_id=policy_rule_set_id)]
+
+    def _get_ptgs_for_consuming_policy_rule_set(self, context,
+                                                policy_rule_set_id):
+        return [x['policy_target_group_id'] for x in
+                context.session.query(PTGToPRSConsumingAssociation).filter_by(
+                    policy_rule_set_id=policy_rule_set_id)]
+
     def _get_policy_rule_policy_rule_sets(self, context, policy_rule_id):
         return [x['policy_rule_set_id'] for x in
                 context.session.query(PRSToPRAssociation).filter_by(
                     policy_rule_id=policy_rule_id)]
+
+    def _get_policy_classifier_rules(self, context, policy_classifier_id):
+        return [x['id'] for x in
+                context.session.query(PolicyRule).filter_by(
+                    policy_classifier_id=policy_classifier_id)]
 
     def _get_policy_action_rules(self, context, policy_action_id):
         return [x['policy_rule_id'] for x in
@@ -1327,6 +1344,11 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
     def delete_policy_classifier(self, context, policy_classifier_id):
         with context.session.begin(subtransactions=True):
             pc_db = self._get_policy_classifier(context, policy_classifier_id)
+            pc_ids = self._get_policy_classifier_rules(context,
+                                                       policy_classifier_id)
+            if pc_ids:
+                raise gpolicy.PolicyClassifierInUse(
+                    policy_classifier_id=policy_classifier_id)
             context.session.delete(pc_db)
 
     @log.log
@@ -1380,6 +1402,10 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
     def delete_policy_action(self, context, policy_action_id):
         with context.session.begin(subtransactions=True):
             pa_db = self._get_policy_action(context, policy_action_id)
+            pa_ids = self._get_policy_action_rules(context, policy_action_id)
+            if pa_ids:
+                raise gpolicy.PolicyActionInUse(
+                    policy_action_id=policy_action_id)
             context.session.delete(pa_db)
 
     @log.log
@@ -1437,6 +1463,10 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
     def delete_policy_rule(self, context, policy_rule_id):
         with context.session.begin(subtransactions=True):
             pr_db = self._get_policy_rule(context, policy_rule_id)
+            prs_ids = self._get_policy_rule_policy_rule_sets(context,
+                                                             policy_rule_id)
+            if prs_ids:
+                raise gpolicy.PolicyRuleInUse(policy_rule_id=policy_rule_id)
             context.session.delete(pr_db)
 
     @log.log
@@ -1500,6 +1530,13 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
     def delete_policy_rule_set(self, context, policy_rule_set_id):
         with context.session.begin(subtransactions=True):
             prs_db = self._get_policy_rule_set(context, policy_rule_set_id)
+            prs_ids = self._get_ptgs_for_providing_policy_rule_set(
+                context, policy_rule_set_id) or (
+                    self._get_ptgs_for_consuming_policy_rule_set(
+                        context, policy_rule_set_id))
+            if prs_ids:
+                raise gpolicy.PolicyRuleSetInUse(policy_rule_set_id=
+                                                 policy_rule_set_id)
             context.session.delete(prs_db)
 
     @log.log
