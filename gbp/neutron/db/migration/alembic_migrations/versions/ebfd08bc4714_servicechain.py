@@ -63,27 +63,25 @@ def upgrade(active_plugins=None, options=None):
         sa.Column('provider_ptg_id', sa.String(length=36), nullable=True),
         sa.Column('consumer_ptg_id', sa.String(length=36), nullable=True),
         sa.Column('classifier_id', sa.String(length=36), nullable=True),
-        sa.Column('servicechain_spec', sa.String(length=36), nullable=True),
-        # FixMe(Magesh) Deletes the instances table itself !!!
-        # sa.ForeignKeyConstraint(['provider_ptg'],
+        # FixMe(Magesh) If cascade on delete is used, we lose this info !!!
+        # sa.ForeignKeyConstraint(['provider_ptg_id'],
         #                         ['gp_policy_target_groups.id'],
         #                         ondelete='CASCADE'),
-        # sa.ForeignKeyConstraint(['consumer_ptg'],
+        # sa.ForeignKeyConstraint(['consumer_ptg_id'],
         #                         ['gp_policy_target_groups.id'],
         #                         ondelete='CASCADE'),
-        # sa.ForeignKeyConstraint(['classifier'], ['gp_policy_classifiers.id'],
-        #                        ondelete='CASCADE'),
-        sa.ForeignKeyConstraint(['servicechain_spec'], ['sc_specs.id']),
         sa.PrimaryKeyConstraint('id')
     )
 
     op.create_table(
         'sc_spec_node_associations',
-        sa.Column('servicechain_spec', sa.String(length=36), nullable=False),
+        sa.Column('servicechain_spec_id',
+                  sa.String(length=36),
+                  nullable=False),
         sa.Column('node_id', sa.String(length=36), nullable=False),
-        sa.ForeignKeyConstraint(['servicechain_spec'], ['sc_specs.id']),
+        sa.ForeignKeyConstraint(['servicechain_spec_id'], ['sc_specs.id']),
         sa.ForeignKeyConstraint(['node_id'], ['sc_nodes.id']),
-        sa.PrimaryKeyConstraint('servicechain_spec', 'node_id')
+        sa.PrimaryKeyConstraint('servicechain_spec_id', 'node_id')
     )
 
 

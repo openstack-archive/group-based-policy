@@ -304,7 +304,7 @@ class ServiceChainExtensionTestCase(test_api_v2_extension.ExtensionTestCase):
     def _get_create_servicechain_instance_attrs(self):
         return {
             'name': 'servicechaininstance1',
-            'servicechain_spec': _uuid(),
+            'servicechain_specs': [_uuid()],
             'tenant_id': _uuid(),
             'provider_ptg_id': _uuid(),
             'consumer_ptg_id': _uuid(),
@@ -316,18 +316,18 @@ class ServiceChainExtensionTestCase(test_api_v2_extension.ExtensionTestCase):
     def _get_update_servicechain_instance_attrs(self):
         return {
             'name': 'new_name',
-            'servicechain_spec': _uuid()
+            'servicechain_specs': [_uuid()]
         }
 
     def test_create_servicechain_instance_with_defaults(self):
         servicechain_instance_id = _uuid()
         data = {
             'servicechain_instance': {
-                'servicechain_spec': _uuid(),
+                'servicechain_specs': [_uuid()],
                 'tenant_id': _uuid(),
                 'provider_ptg_id': _uuid(),
                 'consumer_ptg_id': _uuid(),
-                'classifier_id': _uuid()
+                'classifier_id': _uuid(),
             }
         }
         default_attrs = self._get_create_servicechain_instance_default_attrs()
