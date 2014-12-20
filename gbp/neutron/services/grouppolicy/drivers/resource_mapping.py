@@ -162,41 +162,68 @@ class ResourceMappingDriver(api.PolicyDriver):
             if not net.get('shared'):
                 raise exc.NonSharedNetworkOnSharedL2PolicyNotSupported()
 
+    def _reject_invalid_network_access(self, context):
+        # Validate if the explicit network belongs to the tenant.
+        # Are networks shared across tenants ??
+        # How to check if admin and if admin can access all networks ??
+        if context.current['network_id']:
+            network_id = context.current['network_id']
+            plugin_context = context._plugin_context
+            network = None
+            try:
+                network = self._core_plugin.get_network(plugin_context,
+                                                        network_id)
+            except n_exc.NetworkNotFound:
+                raise exc.InvalidNetworkAccess(
+                    msg="Can't access other tenants networks",
+                    network_id=context.current['network_id'],
+                    tenant_id=context.current['tenant_id'])
+
+            if network:
+                tenant_id_of_explicit_net = network['tenant_id']
+                if tenant_id_of_explicit_net != context.current['tenant_id']:
+                    raise exc.InvalidNetworkAccess(
+                        msg="Can't access other tenants networks",
+                        network_id=context.current['network_id'],
+                        tenant_id=context.current['tenant_id'])
+
+    def _reject_invalid_router_access(self, context):
+        # Validate if the explicit router(s) belong to the tenant.
+        # Are routers shared across tenants ??
+        # How to check if admin and if admin can access all routers ??
+        for router_id in context.current['routers']:
+            router = None
+            try:
+                router = self._l3_plugin.get_router(context._plugin_context,
+                                                    router_id)
+            except n_exc.NotFound:
+                raise exc.InvalidRouterAccess(
+                    msg="Can't access other tenants router",
+                    router_id=router_id,
+                    tenant_id=context.current['tenant_id'])
+
+            if router:
+                tenant_id_of_explicit_router = router['tenant_id']
+                curr_tenant_id = context.current['tenant_id']
+                if tenant_id_of_explicit_router != curr_tenant_id:
+                    raise exc.InvalidRouterAccess(
+                        msg="Can't access other tenants router",
+                        router_id=router_id,
+                        tenant_id=context.current['tenant_id'])
+
     @log.log
     def create_policy_target_precommit(self, context):
         if not context.current['policy_target_group_id']:
             raise exc.PolicyTargetRequiresPolicyTargetGroup()
+        if context.current['port_id']:
+            # Validate if explicit port's subnet
+            # is same as the subnet of PTG.
+            self._validate_pt_port_subnets(context)
 
     @log.log
     def create_policy_target_postcommit(self, context):
         if not context.current['port_id']:
             self._use_implicit_port(context)
-        else:
-            # Validate if explicit port's subnet
-            # is same as the subnet of PTG.
-            port_id = context.current['port_id']
-            core_plugin = self._core_plugin
-            port = core_plugin.get_port(context._plugin_context, port_id)
-
-            port_subnet_id = None
-            fixed_ips = port['fixed_ips']
-            if fixed_ips:
-                # TODO(krishna-sunitha): Check if there is a case when
-                # there is more than one fixed_ip?
-                port_subnet_id = fixed_ips[0]['subnet_id']
-
-            ptg_id = context.current['policy_target_group_id']
-            ptg = context._plugin.get_policy_target_group(
-                                    context._plugin_context,
-                                    ptg_id)
-            for subnet in ptg.get('subnets'):
-                if subnet == port_subnet_id:
-                    break
-            else:
-                raise exc.InvalidPortForPTG(port_id=port_id,
-                                    ptg_subnet_id=",".join(ptg.get('subnets')),
-                                    port_subnet_id=port_subnet_id,
-                                    policy_target_group_id=ptg_id)
 
         self._assoc_ptg_sg_to_pt(context, context.current['id'],
                                  context.current['policy_target_group_id'])
@@ -320,6 +347,7 @@ class ResourceMappingDriver(api.PolicyDriver):
                            set(context.original['subnets']))
         self._validate_ptg_subnets(context, new_subnets)
         self._reject_cross_tenant_ptg_l2p(context)
+        self._validate_ptg_subnets(context, context.current['subnets'])
 
     @log.log
     def update_policy_target_group_postcommit(self, context):
@@ -415,6 +443,7 @@ class ResourceMappingDriver(api.PolicyDriver):
     def create_l2_policy_precommit(self, context):
         self._reject_cross_tenant_l2p_l3p(context)
         self._reject_non_shared_net_on_shared_l2p(context)
+        self._reject_invalid_network_access(context)
 
     @log.log
     def create_l2_policy_postcommit(self, context):
@@ -456,6 +485,7 @@ class ResourceMappingDriver(api.PolicyDriver):
         # we have to limit the number of ES per L3P to 1
         if len(context.current['external_segments']) > 1:
             raise exc.MultipleESPerL3PolicyNotSupported()
+        self._reject_invalid_router_access(context)
 
     @log.log
     def create_l3_policy_postcommit(self, context):
@@ -474,6 +504,9 @@ class ResourceMappingDriver(api.PolicyDriver):
             raise exc.L3PolicyRoutersUpdateNotSupported()
         if len(context.current['external_segments']) > 1:
             raise exc.MultipleESPerL3PolicyNotSupported()
+        # Currently there is no support for router update in l3p update.
+        # Added this check just in case it is supported in future.
+        self._reject_invalid_router_access(context)
 
     @log.log
     def update_l3_policy_postcommit(self, context):
@@ -2026,3 +2059,30 @@ class ResourceMappingDriver(api.PolicyDriver):
         else:
             return context._plugin.get_policy_rules(
                 context._plugin_context, {'id': set(subset)})
+
+    def _validate_pt_port_subnets(self, context, subnets=None):
+        # Validate if explicit port's subnet
+        # is same as the subnet of PTG.
+        port_id = context.current['port_id']
+        core_plugin = self._core_plugin
+        port = core_plugin.get_port(context._plugin_context, port_id)
+
+        port_subnet_id = None
+        fixed_ips = port['fixed_ips']
+        if fixed_ips:
+            # TODO(krishna-sunitha): Check if there is a case when
+            # there is more than one fixed_ip?
+            port_subnet_id = fixed_ips[0]['subnet_id']
+
+        ptg_id = context.current['policy_target_group_id']
+        ptg = context._plugin.get_policy_target_group(
+                                context._plugin_context,
+                                ptg_id)
+        for subnet in ptg.get('subnets') or subnets:
+            if subnet == port_subnet_id:
+                break
+        else:
+            raise exc.InvalidPortForPTG(port_id=port_id,
+                                ptg_subnet_id=",".join(ptg.get('subnets')),
+                                port_subnet_id=port_subnet_id,
+                                policy_target_group_id=ptg_id)
