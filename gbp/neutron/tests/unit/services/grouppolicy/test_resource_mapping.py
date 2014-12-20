@@ -1686,7 +1686,7 @@ class TestPolicyRuleSet(ResourceMappingTestCase):
             port_range=8080)
         self._verify_prs_rules(prs['id'])
 
-    def test_hierarchical_update_policy_classifier(self):
+    def _test_hierarchical_update_policy_classifier(self):
         pr = self._create_http_allow_rule()
         prs = self.create_policy_rule_set(
             policy_rules=[pr['id']],
