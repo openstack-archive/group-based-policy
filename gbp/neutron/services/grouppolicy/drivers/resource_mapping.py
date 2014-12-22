@@ -211,6 +211,28 @@ class ResourceMappingDriver(api.PolicyDriver):
                         router_id=router_id,
                         tenant_id=context.current['tenant_id'])
 
+    def _reject_multiple_redirects_in_rule(self, context):
+        policy_actions = context._plugin.get_policy_actions(
+                context._plugin_context,
+                filters={'id': context.current['policy_actions'],
+                         'action_type': [gconst.GP_ACTION_REDIRECT]})
+        if len(policy_actions) > 1:
+            raise exc.MultipleRedirectActionsNotSupportedForRule()
+
+    def _reject_multiple_redirects_in_prs(self, context):
+        policy_rules = context._plugin.get_policy_rules(
+                context._plugin_context,
+                filters={'id': context.current['policy_rules']})
+        redirect_actions_list = []
+        for policy_rule in policy_rules:
+            policy_actions = context._plugin.get_policy_actions(
+                    context._plugin_context,
+                    filters={'id': policy_rule['policy_actions'],
+                             'action_type': [gconst.GP_ACTION_REDIRECT]})
+            redirect_actions_list.extend(policy_actions)
+        if len(redirect_actions_list) > 1:
+            raise exc.MultipleRedirectActionsNotSupportedForPRS()
+
     @log.log
     def create_policy_target_precommit(self, context):
         if not context.current['policy_target_group_id']:
@@ -605,7 +627,7 @@ class ResourceMappingDriver(api.PolicyDriver):
 
     @log.log
     def create_policy_rule_precommit(self, context):
-        pass
+        self._reject_multiple_redirects_in_rule(context)
 
     @log.log
     def create_policy_rule_postcommit(self, context):
@@ -613,7 +635,7 @@ class ResourceMappingDriver(api.PolicyDriver):
 
     @log.log
     def update_policy_rule_precommit(self, context):
-        pass
+        self._reject_multiple_redirects_in_rule(context)
 
     @log.log
     def update_policy_rule_postcommit(self, context):
@@ -651,6 +673,7 @@ class ResourceMappingDriver(api.PolicyDriver):
     @log.log
     def create_policy_rule_set_precommit(self, context):
         self._reject_shared(context.current, 'policy_rule_set')
+        self._reject_multiple_redirects_in_prs(context)
 
     @log.log
     def create_policy_rule_set_postcommit(self, context):
@@ -674,6 +697,7 @@ class ResourceMappingDriver(api.PolicyDriver):
     @log.log
     def update_policy_rule_set_precommit(self, context):
         self._reject_shared(context.current, 'policy_rule_set')
+        self._reject_multiple_redirects_in_prs(context)
 
     @log.log
     def update_policy_rule_set_postcommit(self, context):
@@ -1198,12 +1222,11 @@ class ResourceMappingDriver(api.PolicyDriver):
                         context._plugin_context,
                         filters={'id': policy_rule["policy_actions"],
                                  'action_type': [gconst.GP_ACTION_REDIRECT]})
-                    for policy_action in policy_actions:
+                    if policy_actions:
+                        parent_spec_id = policy_actions[0].get("action_value")
                         parent_classifier_id = policy_rule.get(
                                                     "policy_classifier_id")
-                        parent_spec_id = policy_action.get("action_value")
-                        break  # One Redirect action per Policy rule set
-
+                        break  # only one redirect action is supported
             policy_rules = context._plugin.get_policy_rules(
                     context._plugin_context,
                     filters={'id': policy_rule_set['policy_rules']})

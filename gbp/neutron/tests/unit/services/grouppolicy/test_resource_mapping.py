@@ -1620,27 +1620,20 @@ class TestPolicyRuleSet(ResourceMappingTestCase):
         scs_req = self.new_create_request(SERVICECHAIN_SPECS, data, self.fmt)
         spec = self.deserialize(self.fmt, scs_req.get_response(self.ext_api))
         scs_id = spec['servicechain_spec']['id']
-        classifier1 = self.create_policy_classifier(
-            name="class1", protocol="tcp", direction="in", port_range="20:90")
-        classifier1_id = classifier1['policy_classifier']['id']
-        classifier2 = self.create_policy_classifier(
+        classifier = self.create_policy_classifier(
                 name="class1", protocol="tcp", direction="in", port_range="80")
-        classifier2_id = classifier2['policy_classifier']['id']
+        classifier_id = classifier['policy_classifier']['id']
         action = self.create_policy_action(
             name="action1", action_type=gconst.GP_ACTION_REDIRECT,
             action_value=scs_id)
         action_id = action['policy_action']['id']
-        policy_rule1 = self.create_policy_rule(
-            name='pr1', policy_classifier_id=classifier1_id,
+        policy_rule = self.create_policy_rule(
+            name='pr1', policy_classifier_id=classifier_id,
             policy_actions=[action_id])
-        policy_rule1_id = policy_rule1['policy_rule']['id']
-        policy_rule2 = self.create_policy_rule(
-            name='pr2', policy_classifier_id=classifier2_id,
-            policy_actions=[action_id])
-        policy_rule2_id = policy_rule2['policy_rule']['id']
-        policy_rule_set = self.create_policy_rule_set(
-            name="prs", policy_rules=[policy_rule1_id, policy_rule2_id])
-        policy_rule_set_id = policy_rule_set['policy_rule_set']['id']
+        policy_rule_id = policy_rule['policy_rule']['id']
+        child_prs = self.create_policy_rule_set(
+            name="prs", policy_rules=[policy_rule_id])
+        child_prs_id = child_prs['policy_rule_set']['id']
 
         data = {'servicechain_node': {'service_type': "FIREWALL",
                                       'tenant_id': self._tenant_id,
@@ -1663,20 +1656,20 @@ class TestPolicyRuleSet(ResourceMappingTestCase):
             action_value=parent_scs_id)
         parent_action_id = parent_action['policy_action']['id']
         parent_policy_rule = self.create_policy_rule(
-            name='pr1', policy_classifier_id=classifier2_id,
+            name='pr1', policy_classifier_id=classifier_id,
             policy_actions=[parent_action_id])
         parent_policy_rule_id = parent_policy_rule['policy_rule']['id']
 
         self.create_policy_rule_set(
             name="c1", policy_rules=[parent_policy_rule_id],
-            child_policy_rule_sets=[policy_rule_set_id])
+            child_policy_rule_sets=[child_prs_id])
 
         provider_ptg = self.create_policy_target_group(
-            name="ptg1", provided_policy_rule_sets={policy_rule_set_id: None})
+            name="ptg1", provided_policy_rule_sets={child_prs_id: None})
         provider_ptg_id = provider_ptg['policy_target_group']['id']
         consumer_ptg = self.create_policy_target_group(
             name="ptg2",
-            consumed_policy_rule_sets={policy_rule_set_id: None})
+            consumed_policy_rule_sets={child_prs_id: None})
         consumer_ptg_id = consumer_ptg['policy_target_group']['id']
         sc_node_list_req = self.new_list_request(SERVICECHAIN_INSTANCES)
         res = sc_node_list_req.get_response(self.ext_api)
@@ -1686,7 +1679,7 @@ class TestPolicyRuleSet(ResourceMappingTestCase):
         sc_instance = sc_instances['servicechain_instances'][0]
         self.assertEqual(sc_instance['provider_ptg_id'], provider_ptg_id)
         self.assertEqual(sc_instance['consumer_ptg_id'], consumer_ptg_id)
-        self.assertEqual(sc_instance['classifier_id'], classifier2_id)
+        self.assertEqual(sc_instance['classifier_id'], classifier_id)
         #REVISIT(Magesh): List api retrieves in different order
         #Functionally create/update is working fine
         #self.assertEqual(sc_instance['servicechain_spec'],
@@ -1903,6 +1896,28 @@ class TestPolicyRuleSet(ResourceMappingTestCase):
             prs['id'], expected_res_status=webob.exc.HTTPNoContent.code)
         self.delete_policy_rule(
             pr['id'], expected_res_status=webob.exc.HTTPNoContent.code)
+
+    def test_shared_create_multiple_redirect_rules_ptg(self):
+        action1 = self.create_policy_action(
+            action_type='redirect')['policy_action']
+        action2 = self.create_policy_action(
+            action_type='redirect')['policy_action']
+        classifier = self.create_policy_classifier(
+            protocol='TCP', port_range="22",
+            direction='bi')['policy_classifier']
+
+        pr1 = self.create_policy_rule(
+            policy_classifier_id=classifier['id'],
+            policy_actions=[action1['id']])['policy_rule']
+        pr2 = self.create_policy_rule(
+            policy_classifier_id=classifier['id'],
+            policy_actions=[action2['id']])['policy_rule']
+
+        res = self.create_policy_rule_set(
+            policy_rules=[pr1['id'], pr2['id']],
+            expected_res_status=400)
+        self.assertEqual('MultipleRedirectActionsNotSupportedForPRS',
+                         res['NeutronError']['type'])
 
 
 class TestExternalSegment(ResourceMappingTestCase):
@@ -2136,3 +2151,22 @@ class TestPolicyAction(ResourceMappingTestCase):
                                             action_value=uuid)
             self.assertEqual('InvalidSharedResource',
                              res['NeutronError']['type'])
+
+
+class TestPolicyRule(ResourceMappingTestCase):
+
+    def test_shared_create_multiple_redirect_actions_rule(self):
+        action1 = self.create_policy_action(
+            action_type='redirect')['policy_action']
+        action2 = self.create_policy_action(
+            action_type='redirect')['policy_action']
+        classifier = self.create_policy_classifier(
+            protocol='TCP', port_range="22",
+            direction='bi')['policy_classifier']
+
+        res = self.create_policy_rule(
+            expected_res_status=400,
+            policy_classifier_id=classifier['id'],
+            policy_actions=[action1['id'], action2['id']])
+        self.assertEqual('MultipleRedirectActionsNotSupportedForRule',
+                         res['NeutronError']['type'])

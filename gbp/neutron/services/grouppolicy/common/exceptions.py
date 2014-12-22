@@ -200,3 +200,13 @@ class InvalidNetworkAccess(GroupPolicyBadRequest):
 class InvalidRouterAccess(GroupPolicyBadRequest):
     message = _("%(msg)s : Router id %(router_id)s does not belong to the "
                 " tenant id %(tenant_id)s.")
+
+
+class MultipleRedirectActionsNotSupportedForRule(GroupPolicyBadRequest):
+    message = _("Resource Mapping Driver does not support multiple redirect "
+                "actions in a Policy Rule.")
+
+
+class MultipleRedirectActionsNotSupportedForPRS(GroupPolicyBadRequest):
+    message = _("Resource Mapping Driver does not support multiple redirect "
+                "actions in a Policy Rule Set.")
