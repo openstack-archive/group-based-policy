@@ -422,9 +422,19 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
         with session.begin(subtransactions=True):
             policy_target_group = self.get_policy_target_group(
                 context, policy_target_group_id)
-            if policy_target_group['policy_targets']:
-                raise gp_exc.PolicyTargetGroupInUse(
-                    policy_target_group=policy_target_group_id)
+            pt_ids = policy_target_group['policy_targets']
+            for pt_id in pt_ids:
+                pt = self.get_policy_target(context, pt_id)
+                if pt['port_id']:
+                    raise gp_exc.PolicyTargetGroupInUse(
+                        policy_target_group=policy_target_group_id)
+            for pt_id in pt_ids:
+                # We will allow PTG deletion if all PTs are unused.
+                # We could have cleaned these opportunistically in
+                # the previous loop, but we will keep it simple,
+                # such that either all unused PTs are deleted
+                # or nothing is.
+                self.delete_policy_target(context, pt_id)
             policy_context = p_context.PolicyTargetGroupContext(
                 self, context, policy_target_group)
             self.policy_driver_manager.delete_policy_target_group_precommit(

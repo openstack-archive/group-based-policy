@@ -12,9 +12,12 @@
 # limitations under the License.
 
 import mock
+import webob.exc
+
 from neutron import context
 from oslo.config import cfg
 
+from gbp.neutron.extensions import group_policy as gpolicy
 import gbp.neutron.tests.unit.db.grouppolicy.test_group_policy_db as tgpdb
 import gbp.neutron.tests.unit.db.grouppolicy.test_group_policy_mapping_db as \
     tgpmdb
@@ -446,13 +449,27 @@ class TestPolicyClassifier(GroupPolicyPluginTestCase):
 
 class TestPolicyTargetGroup(GroupPolicyPluginTestCase):
 
-    def test_delete_fails_on_used_ptg(self):
+    def test_delete_ptg_with_unused_pt(self):
+        ctx = context.get_admin_context()
         ptg = self.create_policy_target_group()['policy_target_group']
         self.create_policy_target(policy_target_group_id=ptg['id'])
         req = self.new_delete_request('policy_target_groups', ptg['id'],
                                       self.fmt)
         res = req.get_response(self.ext_api)
-        self.assertEqual(res.status_int, 400)
+        self.assertEqual(res.status_int, webob.exc.HTTPNoContent.code)
+        self.assertRaises(gpolicy.PolicyTargetGroupNotFound,
+                          self.plugin.get_policy_target_group, ctx, ptg['id'])
+
+    def test_delete_fails_on_used_ptg(self):
+        with self.port() as port:
+            port_id = port['port']['id']
+            ptg = self.create_policy_target_group()['policy_target_group']
+            self.create_policy_target(policy_target_group_id=ptg['id'],
+                                      port_id=port_id)
+            req = self.new_delete_request('policy_target_groups', ptg['id'],
+                                          self.fmt)
+            res = req.get_response(self.ext_api)
+            self.assertEqual(res.status_int, 400)
 
     def test_shared_ptg_create(self):
         l2p = self._create_l2_policy_on_shared(
