@@ -579,12 +579,15 @@ class ResourceMappingDriver(api.PolicyDriver):
         policy_rules = context._plugin.get_policy_rules(
             context._plugin_context,
             filters={'id': policy_rules})
+        policy_rulesets_to_update = []
         for policy_rule in policy_rules:
             pr_id = policy_rule['id']
             pr_sets = context._plugin._get_policy_rule_policy_rule_sets(
                 context._plugin_context, pr_id)
+            policy_rulesets_to_update.extend(pr_sets)
             self._update_policy_rule_sg_rules(context, pr_sets,
                 policy_rule, context.original, context.current)
+        self._handle_redirect_action(context, policy_rulesets_to_update)
 
     @log.log
     def delete_policy_classifier_precommit(self, context):
@@ -1194,6 +1197,12 @@ class ResourceMappingDriver(api.PolicyDriver):
         policy_rule_qry.filter_by(policy_action_id=action_id)
         return policy_rule_qry.all()
 
+    # This method is invoked from both PTG create and classifier update
+    # TODO(Magesh): Handle classifier updates gracefully by invoking service
+    # chain instance update. This requires having an extra mapping between PRS
+    # and service chain instance, navigating though parent-child PRS and also
+    # changes in service chain implementation as no resources is directly
+    # getting updated in service chain instance
     def _handle_redirect_action(self, context, policy_rule_set_ids):
         policy_rule_sets = context._plugin.get_policy_rule_sets(
                                     context._plugin_context,
@@ -1249,8 +1258,10 @@ class ResourceMappingDriver(api.PolicyDriver):
                                             ptg_consuming_prs))
                             # REVISIT(Magesh): There may be concurrency
                             # issues here.
-                            if ptg_chain_map:
-                                continue  # one chain between pair of PTGs
+                            for ptg_chain in ptg_chain_map:
+                                self._delete_servicechain_instance(
+                                    context,
+                                    ptg_chain.servicechain_instance_id)
                             sc_instance = self._create_servicechain_instance(
                                 context, policy_action.get("action_value"),
                                 parent_spec_id, ptg_providing_prs,
