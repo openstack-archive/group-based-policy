@@ -110,7 +110,7 @@ function run_tests {
     if [ "$testropts" = "" ] && [ "$testrargs" = "" ]; then
       # Default to running all tests if specific test is not
       # provided.
-      testrargs="discover ./gbp/"
+      testrargs="discover ./gbpservice/"
     fi
     ${wrapper} python -m testtools.run $testropts $testrargs
 
@@ -130,7 +130,7 @@ function run_tests {
   set +e
   testrargs=`echo "$testrargs" | sed -e's/^\s*\(.*\)\s*$/\1/'`
   TESTRTESTS="$TESTRTESTS --testr-args='--subunit $testropts $testrargs'"
-  OS_TEST_PATH=`echo $testrargs|grep -o 'gbp\.tests[^[:space:]:]*\+'|tr . /`
+  OS_TEST_PATH=`echo $testrargs|grep -o 'gbpservice\.tests[^[:space:]:]*\+'|tr . /`
   if [ -d "$OS_TEST_PATH" ]; then
       wrapper="OS_TEST_PATH=$OS_TEST_PATH $wrapper"
   elif [ -d "$(dirname $OS_TEST_PATH)" ]; then
@@ -147,7 +147,7 @@ function run_tests {
     echo "Generating coverage report in covhtml/"
     # Don't compute coverage for common code, which is tested elsewhere
     ${wrapper} coverage combine
-    ${wrapper} coverage html --include='gbp/*' --omit='gbp/openstack/common/*' -d covhtml -i
+    ${wrapper} coverage html --include='gbpservice/*' --omit='gbpservice/openstack/common/*' -d covhtml -i
   fi
 
   return $RESULT
