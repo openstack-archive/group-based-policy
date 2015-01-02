@@ -11,6 +11,8 @@
 #    under the License.
 
 import ast
+import time
+
 from heatclient import client as heat_client
 from neutron.common import log
 from neutron.db import model_base
@@ -248,7 +250,31 @@ class SimpleChainDriver(object):
         heatclient = HeatClient(context)
         for stack in stack_ids:
             heatclient.delete(stack.stack_id)
+        for stack in stack_ids:
+            self._wait_for_stack_delete(heatclient, stack.stack_id)
         self._delete_chain_stacks_db(context.session, instance_id)
+
+    # Wait for the heat stack to be deleted for a maximum of 15 seconds
+    # we check the status every 3 seconds and call sleep again
+    # This is required because cleanup of subnet fails when the stack created
+    # some ports on the subnet and the resource delete is not completed by
+    # the time subnet delete is triggered by Resource Mapping driver
+    def _wait_for_stack_delete(self, heatclient, stack_id):
+        pending_wait_loops = 5
+        while True:
+            try:
+                stack = heatclient.get(stack_id)
+            except Exception:
+                return
+            else:
+                if stack.stack_status == 'DELETE_COMPLETE':
+                    return
+                time.sleep(3)
+                pending_wait_loops = pending_wait_loops - 1
+                if pending_wait_loops == 0:
+                    return
+                else:
+                    continue
 
     def _get_instance_by_spec_id(self, context, spec_id):
         filters = {'servicechain_spec': [spec_id]}
@@ -332,5 +358,8 @@ class HeatClient:
         fields['parameters'] = parameters
         return self.stacks.create(**fields)
 
-    def delete(self, id):
-        return self.stacks.delete(id)
+    def delete(self, stack_id):
+        return self.stacks.delete(stack_id)
+
+    def get(self, stack_id):
+        return self.stacks.get(stack_id)

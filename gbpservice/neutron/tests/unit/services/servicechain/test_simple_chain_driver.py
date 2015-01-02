@@ -25,6 +25,11 @@ from gbpservice.neutron.tests.unit.services.servicechain import \
                                     test_servicechain_plugin
 
 
+class MockStackObject(object):
+    def __init__(self, status):
+        self.stack_status = status
+
+
 class SimpleChainDriverTestCase(
         test_servicechain_plugin.ServiceChainPluginTestCase):
 
@@ -163,3 +168,59 @@ class TestServiceChainInstance(SimpleChainDriverTestCase):
                                     sc_instance['servicechain_instance']['id'])
                 res = req.get_response(self.ext_api)
                 self.assertEqual(res.status_int, webob.exc.HTTPNoContent.code)
+
+    def test_wait_stack_delete_for_instance_delete(self):
+        name = "scs1"
+        scn = self.create_servicechain_node()
+        scn_id = scn['servicechain_node']['id']
+        scs = self.create_servicechain_spec(name=name, nodes=[scn_id])
+        sc_spec_id = scs['servicechain_spec']['id']
+
+        with mock.patch.object(simplechain_driver.HeatClient,
+                               'create') as stack_create:
+            stack_create.return_value = {'stack': {
+                                        'id': uuidutils.generate_uuid()}}
+            sc_instance = self.create_servicechain_instance(
+                                        name="sc_instance_1",
+                                        servicechain_specs=[sc_spec_id])
+            self.assertEqual(
+                sc_instance['servicechain_instance']['servicechain_specs'],
+                [sc_spec_id])
+
+            # Verify that as part of delete service chain instance we call
+            # get method for heat stack 5 times before giving up if the state
+            # does not become DELETE_COMPLETE
+            with contextlib.nested(
+                mock.patch.object(simplechain_driver.HeatClient, 'delete'),
+                mock.patch.object(simplechain_driver.HeatClient, 'get')) as (
+                                                    stack_delete, stack_get):
+                stack_get.return_value = MockStackObject('PENDING_DELETE')
+                req = self.new_delete_request(
+                                    'servicechain_instances',
+                                    sc_instance['servicechain_instance']['id'])
+                res = req.get_response(self.ext_api)
+                self.assertEqual(res.status_int, webob.exc.HTTPNoContent.code)
+                stack_delete.assert_called_once_with(mock.ANY)
+                self.assertEqual(stack_get.call_count, 5)
+
+            # Create and delete another service chain instance and verify that
+            # we call get method for heat stack only once if the stack state
+            # is DELETE_COMPLETE
+            sc_instance = self.create_servicechain_instance(
+                                        name="sc_instance_1",
+                                        servicechain_specs=[sc_spec_id])
+            self.assertEqual(
+                sc_instance['servicechain_instance']['servicechain_specs'],
+                [sc_spec_id])
+            with contextlib.nested(
+                mock.patch.object(simplechain_driver.HeatClient, 'delete'),
+                mock.patch.object(simplechain_driver.HeatClient, 'get')) as (
+                                                    stack_delete, stack_get):
+                stack_get.return_value = MockStackObject('DELETE_COMPLETE')
+                req = self.new_delete_request(
+                                    'servicechain_instances',
+                                    sc_instance['servicechain_instance']['id'])
+                res = req.get_response(self.ext_api)
+                self.assertEqual(res.status_int, webob.exc.HTTPNoContent.code)
+                stack_delete.assert_called_once_with(mock.ANY)
+                self.assertEqual(stack_get.call_count, 1)
