@@ -372,6 +372,30 @@ class ResourceMappingDriver(api.PolicyDriver):
         self._reject_cross_tenant_ptg_l2p(context)
         self._validate_ptg_subnets(context, context.current['subnets'])
 
+        #Update service chain instance when any ruleset is changed
+        orig_provided_policy_rule_sets = context.original[
+            'provided_policy_rule_sets']
+        curr_provided_policy_rule_sets = context.current[
+            'provided_policy_rule_sets']
+        orig_consumed_policy_rule_sets = context.original[
+            'consumed_policy_rule_sets']
+        curr_consumed_policy_rule_sets = context.current[
+            'consumed_policy_rule_sets']
+        if (set(orig_provided_policy_rule_sets) !=
+            set(curr_provided_policy_rule_sets)
+            or set(orig_consumed_policy_rule_sets) !=
+            set(curr_consumed_policy_rule_sets)):
+            provider_ptg_chain_map = self._get_ptg_servicechain_mapping(
+                                            context._plugin_context.session,
+                                            context.current['id'],
+                                            None)
+            consumer_ptg_chain_map = self._get_ptg_servicechain_mapping(
+                                            context._plugin_context.session,
+                                            None,
+                                            context.current['id'],)
+            context.ptg_chain_map = (provider_ptg_chain_map +
+                                     consumer_ptg_chain_map)
+
     @log.log
     def update_policy_target_group_postcommit(self, context):
         # Three conditions where SG association needs to be changed
@@ -406,6 +430,33 @@ class ResourceMappingDriver(api.PolicyDriver):
         new_consumed_policy_rule_sets = list(
             set(curr_consumed_policy_rule_sets) - set(
                 orig_consumed_policy_rule_sets))
+
+        old_nsp = context.original.get("network_service_policy_id")
+        new_nsp = context.current.get("network_service_policy_id")
+        if old_nsp != new_nsp:
+            if old_nsp:
+                self._cleanup_network_service_policy(
+                                        context,
+                                        context.current['subnets'][0],
+                                        context.current['id'])
+            if new_nsp:
+                self._handle_network_service_policy(context)
+
+        # Delete old servicechain instance and create new one in case of update
+        if (set(orig_provided_policy_rule_sets) !=
+            set(curr_provided_policy_rule_sets)
+            or set(orig_consumed_policy_rule_sets) !=
+            set(curr_consumed_policy_rule_sets)):
+            self._cleanup_redirect_action(context)
+            consumed_policy_rule_sets = (
+                            context.current['consumed_policy_rule_sets'])
+            provided_policy_rule_sets = (
+                            context.current['provided_policy_rule_sets'])
+            if provided_policy_rule_sets or consumed_policy_rule_sets:
+                policy_rule_sets = (consumed_policy_rule_sets +
+                                    provided_policy_rule_sets)
+                self._handle_redirect_action(context, policy_rule_sets)
+
         # if PTG associated policy_rule_sets are updated, we need to update
         # the policy rules, then assoicate SGs to ports
         if new_provided_policy_rule_sets or new_consumed_policy_rule_sets:
@@ -658,6 +709,7 @@ class ResourceMappingDriver(api.PolicyDriver):
                                                    [context.original])
                 self._apply_policy_rule_set_rules(context, prs,
                                                   [context.current])
+            self._handle_redirect_action(context, policy_rule_sets)
 
     @log.log
     def delete_policy_rule_precommit(self, context):
@@ -722,6 +774,7 @@ class ResourceMappingDriver(api.PolicyDriver):
             to_recompute = (set(context.original['child_policy_rule_sets']) &
                             set(context.current['child_policy_rule_sets']))
             self._recompute_policy_rule_sets(context, to_recompute)
+        self._handle_redirect_action(context, [context.current['id']])
 
     @log.log
     def delete_policy_rule_set_precommit(self, context):
