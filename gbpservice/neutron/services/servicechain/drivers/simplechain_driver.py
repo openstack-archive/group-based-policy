@@ -11,6 +11,8 @@
 #    under the License.
 
 import ast
+import time
+
 from heatclient import client as heat_client
 from neutron.common import log
 from neutron.db import model_base
@@ -27,8 +29,23 @@ from gbpservice.neutron.services.servicechain.common import exceptions as exc
 
 LOG = logging.getLogger(__name__)
 
+service_chain_opts = [
+    cfg.IntOpt('stack_delete_retries',
+               default=5,
+               help=_("Number of attempts to retry for stack deletion")),
+    cfg.IntOpt('stack_delete_retry_wait',
+               default=3,
+               help=_("Wait time between two successive stack delete "
+                      "retries")),
+]
+
+
+cfg.CONF.register_opts(service_chain_opts, "servicechain")
+
 # Service chain API supported Values
 sc_supported_type = [pconst.LOADBALANCER, pconst.FIREWALL]
+STACK_DELETE_RETRIES = cfg.CONF.servicechain.stack_delete_retries
+STACK_DELETE_RETRY_WAIT = cfg.CONF.servicechain.stack_delete_retry_wait
 
 
 class ServiceChainInstanceStack(model_base.BASEV2):
@@ -248,7 +265,43 @@ class SimpleChainDriver(object):
         heatclient = HeatClient(context)
         for stack in stack_ids:
             heatclient.delete(stack.stack_id)
+        for stack in stack_ids:
+            self._wait_for_stack_delete(heatclient, stack.stack_id)
         self._delete_chain_stacks_db(context.session, instance_id)
+
+    # Wait for the heat stack to be deleted for a maximum of 15 seconds
+    # we check the status every 3 seconds and call sleep again
+    # This is required because cleanup of subnet fails when the stack created
+    # some ports on the subnet and the resource delete is not completed by
+    # the time subnet delete is triggered by Resource Mapping driver
+    def _wait_for_stack_delete(self, heatclient, stack_id):
+        stack_delete_retries = STACK_DELETE_RETRIES
+        while True:
+            try:
+                stack = heatclient.get(stack_id)
+                if stack.stack_status == 'DELETE_COMPLETE':
+                    return
+                elif stack.stack_status == 'ERROR':
+                    heatclient.delete(stack_id)
+            except Exception:
+                LOG.exception(_("Service Chain Instance cleanup may not have "
+                                "happened because Heat API request failed "
+                                "while waiting for the stack %(stack)s to be "
+                                "deleted"), {'stack': stack_id})
+                return
+            else:
+                time.sleep(STACK_DELETE_RETRY_WAIT)
+                stack_delete_retries = stack_delete_retries - 1
+                if stack_delete_retries == 0:
+                    LOG.warn(_("Resource cleanup for service chain instance is"
+                               " not completed within %(wait)s seconds as "
+                               "deletion of Stack %(stack)s is not completed"),
+                             {'wait': (STACK_DELETE_RETRIES *
+                                       STACK_DELETE_RETRY_WAIT),
+                              'stack': stack_id})
+                    return
+                else:
+                    continue
 
     def _get_instance_by_spec_id(self, context, spec_id):
         filters = {'servicechain_spec': [spec_id]}
@@ -332,5 +385,8 @@ class HeatClient:
         fields['parameters'] = parameters
         return self.stacks.create(**fields)
 
-    def delete(self, id):
-        return self.stacks.delete(id)
+    def delete(self, stack_id):
+        return self.stacks.delete(stack_id)
+
+    def get(self, stack_id):
+        return self.stacks.get(stack_id)
