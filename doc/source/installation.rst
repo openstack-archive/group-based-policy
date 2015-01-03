@@ -4,9 +4,9 @@ Installation
 
 At the command line::
 
-    $ pip install group-based-policy
+    $ pip install gbpservice
 
 Or, if you have virtualenvwrapper installed::
 
-    $ mkvirtualenv group-based-policy
-    $ pip install group-based-policy
+    $ mkvirtualenv gbpservice
+    $ pip install gbpservice
