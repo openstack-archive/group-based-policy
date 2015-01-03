@@ -502,6 +502,12 @@ class ResourceMappingDriver(api.PolicyDriver):
                                              context.current['subnets'][0],
                                              context.current['id'])
         self._cleanup_redirect_action(context)
+        # Cleanup SGs
+        self._unset_sg_rules_for_subnets(
+            context, context.current['subnets'],
+            context.current['provided_policy_rule_sets'],
+            context.current['consumed_policy_rule_sets'])
+
         l2p_id = context.current['l2_policy_id']
         router_id = self._get_routerid_for_l2policy(context, l2p_id)
         for subnet_id in context.current['subnets']:
