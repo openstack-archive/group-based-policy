@@ -98,10 +98,11 @@ class ResourceMappingTestCase(test_plugin.GroupPolicyPluginTestCase):
         return self.deserialize(self.fmt, req.get_response(self.api))
 
     def _get_sg_rule(self, **filters):
-        plugin = manager.NeutronManager.get_plugin()
-        context = nctx.get_admin_context()
-        return plugin.get_security_group_rules(
-            context, filters)
+        res = self._list(
+            'security-group-rules',
+            query_params='&'.join(
+                ['%s=%s' % (k, v) for k, v in filters.iteritems()]))
+        return res['security_group_rules']
 
     def _get_prs_mapping(self, prs_id):
         ctx = nctx.get_admin_context()
@@ -255,39 +256,39 @@ class ResourceMappingTestCase(test_plugin.GroupPolicyPluginTestCase):
                 if classifier['direction'] in in_bi:
                     # If direction IN/BI, consumer cidrs go into provider SG
                     for cidr in consumers:
-                        attrs = {'security_group_id': [provided_sg],
-                                 'direction': ['ingress'],
-                                 'protocol': [protocol],
-                                 'port_range_min': [port_min],
-                                 'port_range_max': [port_max],
-                                 'remote_ip_prefix': [cidr]}
+                        attrs = {'security_group_id': provided_sg,
+                                 'direction': 'ingress',
+                                 'protocol': protocol,
+                                 'port_range_min': port_min,
+                                 'port_range_max': port_max,
+                                 'remote_ip_prefix': cidr}
                         expected_rules.append(attrs)
                     # And consumer SG have egress allowed
                     # TODO(ivar): IPv6 support
-                    attrs = {'security_group_id': [consumed_sg],
-                             'direction': ['egress'],
-                             'protocol': [protocol],
-                             'port_range_min': [port_min],
-                             'port_range_max': [port_max],
-                             'remote_ip_prefix': ['0.0.0.0/0']}
+                    attrs = {'security_group_id': consumed_sg,
+                             'direction': 'egress',
+                             'protocol': protocol,
+                             'port_range_min': port_min,
+                             'port_range_max': port_max,
+                             'remote_ip_prefix': '0.0.0.0/0'}
                     expected_rules.append(attrs)
                 if classifier['direction'] in out_bi:
                     # If direction OUT/BI, provider CIDRs go into consumer SG
                     for cidr in providers:
-                        attrs = {'security_group_id': [consumed_sg],
-                                 'direction': ['ingress'],
-                                 'protocol': [protocol],
-                                 'port_range_min': [port_min],
-                                 'port_range_max': [port_max],
-                                 'remote_ip_prefix': [cidr]}
+                        attrs = {'security_group_id': consumed_sg,
+                                 'direction': 'ingress',
+                                 'protocol': protocol,
+                                 'port_range_min': port_min,
+                                 'port_range_max': port_max,
+                                 'remote_ip_prefix': cidr}
                         expected_rules.append(attrs)
                     # And provider SG have egress allowed
-                    attrs = {'security_group_id': [provided_sg],
-                             'direction': ['egress'],
-                             'protocol': [protocol],
-                             'port_range_min': [port_min],
-                             'port_range_max': [port_max],
-                             'remote_ip_prefix': ['0.0.0.0/0']}
+                    attrs = {'security_group_id': provided_sg,
+                             'direction': 'egress',
+                             'protocol': protocol,
+                             'port_range_min': port_min,
+                             'port_range_max': port_max,
+                             'remote_ip_prefix': '0.0.0.0/0'}
                     expected_rules.append(attrs)
         return expected_rules
 
@@ -296,8 +297,9 @@ class ResourceMappingTestCase(test_plugin.GroupPolicyPluginTestCase):
         mapping = self._get_prs_mapping(prs)
         existing = [
             x for x in self._get_sg_rule(
-                security_group_id=[mapping.provided_sg_id,
-                                   mapping.consumed_sg_id])]
+                security_group_id=mapping.provided_sg_id)]
+        existing.extend(x for x in self._get_sg_rule(
+            security_group_id=mapping.consumed_sg_id))
         expected = self._generate_expected_sg_rules(prs)
         for rule in expected:
             # Verify the rule exists
@@ -663,11 +665,11 @@ class TestPolicyTargetGroup(ResourceMappingTestCase):
 
         # Verify Port's SG has all the right rules
         # Allow all ingress traffic from same ptg subnet
-        filters = {'tenant_id': [ptg['tenant_id']],
-                   'security_group_id': [port['security_groups'][0]],
-                   'ethertype': [ip_v[subnet['ip_version']]],
-                   'remote_ip_prefix': [subnet['cidr']],
-                   'direction': ['ingress']}
+        filters = {'tenant_id': ptg['tenant_id'],
+                   'security_group_id': port['security_groups'][0],
+                   'ethertype': ip_v[subnet['ip_version']],
+                   'remote_ip_prefix': subnet['cidr'],
+                   'direction': 'ingress'}
         sg_rule = self._get_sg_rule(**filters)
         self.assertTrue(len(sg_rule) == 1)
         self.assertIsNone(sg_rule[0]['protocol'])
@@ -704,11 +706,11 @@ class TestPolicyTargetGroup(ResourceMappingTestCase):
             ip_v = {4: cst.IPv4, 6: cst.IPv6}
             # Verify all the expected rules are set
             for subnet in [subnet1, subnet2]:
-                filters = {'tenant_id': [ptg['tenant_id']],
-                           'security_group_id': [port['security_groups'][0]],
-                           'ethertype': [ip_v[subnet['ip_version']]],
-                           'remote_ip_prefix': [subnet['cidr']],
-                           'direction': ['ingress']}
+                filters = {'tenant_id': ptg['tenant_id'],
+                           'security_group_id': port['security_groups'][0],
+                           'ethertype': ip_v[subnet['ip_version']],
+                           'remote_ip_prefix': subnet['cidr'],
+                           'direction': 'ingress'}
                 sg_rule = self._get_sg_rule(**filters)
                 self.assertTrue(len(sg_rule) == 1)
                 self.assertIsNone(sg_rule[0]['protocol'])
@@ -2152,7 +2154,7 @@ class TestPolicyRuleSet(ResourceMappingTestCase):
             port_range=8080)
         self._verify_prs_rules(prs['id'])
 
-    def _test_hierarchical_update_policy_classifier(self):
+    def test_hierarchical_update_policy_classifier(self):
         pr = self._create_http_allow_rule()
         prs = self.create_policy_rule_set(
             policy_rules=[pr['id']],
@@ -2426,14 +2428,14 @@ class TestExternalSegment(ResourceMappingTestCase):
                 # Not using _verify_prs_rules here because it's testing that
                 # some specific delta rules are applied/removed instead of
                 # the whole PRS state.
-                attrs = {'security_group_id': [mapping.consumed_sg_id],
-                         'direction': ['ingress'],
-                         'protocol': ['tcp'],
-                         'port_range_min': [22],
-                         'port_range_max': [22],
+                attrs = {'security_group_id': mapping.consumed_sg_id,
+                         'direction': 'ingress',
+                         'protocol': 'tcp',
+                         'port_range_min': 22,
+                         'port_range_max': 22,
                          'remote_ip_prefix': None}
                 for cidr in expected_cidrs:
-                    attrs['remote_ip_prefix'] = [cidr]
+                    attrs['remote_ip_prefix'] = cidr
                     self.assertTrue(self._get_sg_rule(**attrs))
                 self._verify_prs_rules(prs['id'])
                 # Update the route and verify the SG rules changed
@@ -2447,13 +2449,13 @@ class TestExternalSegment(ResourceMappingTestCase):
                     es, [l3p1, l3p2])
                 removed = set(expected_cidrs) - set(new_cidrs)
                 for cidr in removed:
-                    attrs['remote_ip_prefix'] = [cidr]
+                    attrs['remote_ip_prefix'] = cidr
                     self.assertFalse(self._get_sg_rule(**attrs))
 
                 expected_cidrs = new_cidrs
                 # Verify new rules exist
                 for cidr in expected_cidrs:
-                    attrs['remote_ip_prefix'] = [cidr]
+                    attrs['remote_ip_prefix'] = cidr
                     self.assertTrue(self._get_sg_rule(**attrs))
 
                 # Creating a new L3P changes the definition of what's external
@@ -2466,13 +2468,13 @@ class TestExternalSegment(ResourceMappingTestCase):
                 # Verify removed rules
                 removed = set(expected_cidrs) - set(new_cidrs)
                 for cidr in removed:
-                    attrs['remote_ip_prefix'] = [cidr]
+                    attrs['remote_ip_prefix'] = cidr
                     self.assertFalse(self._get_sg_rule(**attrs))
 
                 expected_cidrs = new_cidrs
                 # Verify new rules exist
                 for cidr in expected_cidrs:
-                    attrs['remote_ip_prefix'] = [cidr]
+                    attrs['remote_ip_prefix'] = cidr
                     self.assertTrue(self._get_sg_rule(**attrs))
 
     def test_implicit_es(self):
@@ -2599,8 +2601,8 @@ class TestExternalPolicy(ResourceMappingTestCase):
 
                 # SSH rules removed
                 for rule in current_ssh_rules:
-                    if not (rule['direction'] == ['egress']
-                            and rule['remote_ip_prefix'] == ['0.0.0.0/0']):
+                    if not (rule['direction'] == 'egress'
+                            and rule['remote_ip_prefix'] == '0.0.0.0/0'):
                         self.assertFalse(self._get_sg_rule(**rule))
 
                 # HTTP Added
@@ -2611,8 +2613,8 @@ class TestExternalPolicy(ResourceMappingTestCase):
                     ep['id'], provided_policy_rule_sets={},
                     consumed_policy_rule_sets={}, expected_res_status=200)
                 for rule in current_http_rules:
-                    if not (rule['direction'] == ['egress']
-                            and rule['remote_ip_prefix'] == ['0.0.0.0/0']):
+                    if not (rule['direction'] == 'egress'
+                            and rule['remote_ip_prefix'] == '0.0.0.0/0'):
                         self.assertFalse(self._get_sg_rule(**rule))
 
 
