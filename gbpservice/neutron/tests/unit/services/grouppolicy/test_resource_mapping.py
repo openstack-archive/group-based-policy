@@ -2049,6 +2049,19 @@ class TestPolicyRuleSet(ResourceMappingTestCase):
         self.assertEqual('MultipleRedirectActionsNotSupportedForPRS',
                          res['NeutronError']['type'])
 
+    def test_ptg_deleted(self):
+        pr1 = self._create_ssh_allow_rule()
+        pr2 = self._create_http_allow_rule()
+
+        prs = self.create_policy_rule_set(
+            expected_res_status=201,
+            policy_rules=[pr1['id'], pr2['id']])['policy_rule_set']
+        ptg = self.create_policy_target_group(
+            expected_res_status=201, provided_policy_rule_sets={prs['id']: ''},
+            consumed_policy_rule_sets={prs['id']: ''})['policy_target_group']
+        self.delete_policy_target_group(ptg['id'])
+        self._verify_prs_rules(prs['id'])
+
 
 class TestExternalSegment(ResourceMappingTestCase):
 
