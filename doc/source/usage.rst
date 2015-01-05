@@ -122,7 +122,7 @@ L3 Policy                 Router
 Note that the above is one way to do the Neutron mapping, but one can design a custom mapping and implement it in a "resource mapping" policy driver.
 
 
-8. A GBP Example - Simple Multi-Tier App
+8. GBP Example - A Simple Multi-Tier App
 ========================================
 
 Here is an example of how to create a simple policy using GBP.  This policy creates two groups and Policy Rule Set between them.
@@ -157,18 +157,18 @@ Step 1 creates a rule set describing a policy for a set of web servers. The rule
    gbp group-create client-1
    gbp group-create client-2
    # RuleSet Association
-   gbp group-update client-1 --consumed-rulesets "web-ruleset=scope"
-   gbp group-update client-2 --consumed-rulesets "web-ruleset=scope"
-   gbp group-update web --provided-rulesets "web-ruleset=scope"
+   gbp group-update client-1 --consumed-policy-rule-sets "web-ruleset=scope"
+   gbp group-update client-2 --consumed-policy-rule-sets "web-ruleset=scope"
+   gbp group-update web --provided-rule-sets "web-ruleset=scope"
 
 Step 2 creates the groups and attached the appropriate rule sets. Rule sets describe a bidirectional set of rules. However, the API is designed to allow a group to “provide” a rule set describing its behavior, and other groups to “consume” that rule set to connect to it. The model intends for groups to provide rule sets that describe their behavior, which other groups can then choose to access.
 
 3. Create Group Members::
 
-     # Create members as needed
-     gbp member-create --group web web-1
-     gbp member-create --group client-1 client-1-1
-     gbp member-create --group client-2 client-2-1
+   # Create Policy-targets(members) as needed
+   gbp policy-target-create --policy-target-group web web-1
+   gbp policy-target-create --policy-target-group client-1 client-1-1
+   gbp policy-target-create --policy-target-group client-2 client-2-1
 
 Step 3 creates a number of members within each group. Each member inherits all the properties of the group to specify its connectivity and security requirements.
 
