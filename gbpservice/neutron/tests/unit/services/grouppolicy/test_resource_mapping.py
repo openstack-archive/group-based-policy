@@ -1824,6 +1824,151 @@ class TestPolicyRuleSet(ResourceMappingTestCase):
         sc_instances = self.deserialize(self.fmt, res)
         self.assertEqual(len(sc_instances['servicechain_instances']), 0)
 
+    def test_enforce_parent_redirect_after_ptg_create(self):
+        scs_id = self._create_servicechain_spec()
+        _, classifier_id, policy_rule_id = self._create_tcp_redirect_rule(
+                                                            "20:90", scs_id)
+
+        child_prs = self.create_policy_rule_set(
+            name="prs", policy_rules=[policy_rule_id])
+        child_prs_id = child_prs['policy_rule_set']['id']
+
+        self._verify_prs_rules(child_prs_id)
+
+        provider_ptg = self.create_policy_target_group(
+            name="ptg1", provided_policy_rule_sets={child_prs_id: None})
+        provider_ptg_id = provider_ptg['policy_target_group']['id']
+        consumer_ptg = self.create_policy_target_group(
+            name="ptg2",
+            consumed_policy_rule_sets={child_prs_id: None})
+        consumer_ptg_id = consumer_ptg['policy_target_group']['id']
+
+        self._verify_prs_rules(child_prs_id)
+        sc_node_list_req = self.new_list_request(SERVICECHAIN_INSTANCES)
+        res = sc_node_list_req.get_response(self.ext_api)
+        sc_instances = self.deserialize(self.fmt, res)
+        # We should have one service chain instance created now
+        self.assertEqual(len(sc_instances['servicechain_instances']), 1)
+        sc_instance = sc_instances['servicechain_instances'][0]
+        self.assertEqual(sc_instance['provider_ptg_id'], provider_ptg_id)
+        self.assertEqual(sc_instance['consumer_ptg_id'], consumer_ptg_id)
+        self.assertEqual(sc_instance['classifier_id'], classifier_id)
+        self.assertEqual(len(sc_instance['servicechain_specs']), 1)
+
+        parent_scs_id = self._create_servicechain_spec(node_types='FIREWALL')
+        parent_action = self.create_policy_action(
+            name="action2", action_type=gconst.GP_ACTION_REDIRECT,
+            action_value=parent_scs_id)
+        parent_action_id = parent_action['policy_action']['id']
+        parent_policy_rule = self.create_policy_rule(
+            name='pr1', policy_classifier_id=classifier_id,
+            policy_actions=[parent_action_id])
+        parent_policy_rule_id = parent_policy_rule['policy_rule']['id']
+
+        self.create_policy_rule_set(
+            name="c1", policy_rules=[parent_policy_rule_id],
+            child_policy_rule_sets=[child_prs_id])
+
+        self._verify_prs_rules(child_prs_id)
+        sc_node_list_req = self.new_list_request(SERVICECHAIN_INSTANCES)
+        res = sc_node_list_req.get_response(self.ext_api)
+        sc_instances = self.deserialize(self.fmt, res)
+        # We should have a new service chain instance created now from both
+        # parent and child specs
+        self.assertEqual(len(sc_instances['servicechain_instances']), 1)
+        sc_instance = sc_instances['servicechain_instances'][0]
+        self.assertEqual(sc_instance['provider_ptg_id'], provider_ptg_id)
+        self.assertEqual(sc_instance['consumer_ptg_id'], consumer_ptg_id)
+        self.assertEqual(sc_instance['classifier_id'], classifier_id)
+        self.assertEqual(len(sc_instance['servicechain_specs']), 2)
+        #REVISIT(Magesh): List api retrieves in Sorted order
+        #Functionally create/update is working fine on devstack
+        #self.assertEqual(sc_instance['servicechain_specs'],
+        #                 [parent_scs_id, scs_id])
+
+        req = self.new_delete_request(
+            'policy_target_groups', consumer_ptg_id)
+        res = req.get_response(self.ext_api)
+        self.assertEqual(res.status_int, webob.exc.HTTPNoContent.code)
+        sc_node_list_req = self.new_list_request(SERVICECHAIN_INSTANCES)
+        res = sc_node_list_req.get_response(self.ext_api)
+        sc_instances = self.deserialize(self.fmt, res)
+        self.assertEqual(len(sc_instances['servicechain_instances']), 0)
+
+    def test_parent_ruleset_update_for_redirect(self):
+        scs_id = self._create_servicechain_spec()
+        _, classifier_id, policy_rule_id = self._create_tcp_redirect_rule(
+                                                            "20:90", scs_id)
+
+        child_prs = self.create_policy_rule_set(
+            name="prs", policy_rules=[policy_rule_id])
+        child_prs_id = child_prs['policy_rule_set']['id']
+
+        self._verify_prs_rules(child_prs_id)
+
+        parent_scs_id = self._create_servicechain_spec(node_types='FIREWALL')
+        parent_action = self.create_policy_action(
+            name="action2", action_type=gconst.GP_ACTION_REDIRECT,
+            action_value=parent_scs_id)
+        parent_action_id = parent_action['policy_action']['id']
+        parent_policy_rule = self.create_policy_rule(
+            name='pr1', policy_classifier_id=classifier_id,
+            policy_actions=[parent_action_id])
+        parent_policy_rule_id = parent_policy_rule['policy_rule']['id']
+
+        parent_prs = self.create_policy_rule_set(
+            name="c1", policy_rules=[parent_policy_rule_id])
+        parent_prs_id = parent_prs['policy_rule_set']['id']
+
+        provider_ptg = self.create_policy_target_group(
+            name="ptg1", provided_policy_rule_sets={child_prs_id: None})
+        provider_ptg_id = provider_ptg['policy_target_group']['id']
+        consumer_ptg = self.create_policy_target_group(
+            name="ptg2",
+            consumed_policy_rule_sets={child_prs_id: None})
+        consumer_ptg_id = consumer_ptg['policy_target_group']['id']
+
+        self._verify_prs_rules(child_prs_id)
+        sc_node_list_req = self.new_list_request(SERVICECHAIN_INSTANCES)
+        res = sc_node_list_req.get_response(self.ext_api)
+        sc_instances = self.deserialize(self.fmt, res)
+        # We should have one service chain instance created now
+        self.assertEqual(len(sc_instances['servicechain_instances']), 1)
+        sc_instance = sc_instances['servicechain_instances'][0]
+        self.assertEqual(sc_instance['provider_ptg_id'], provider_ptg_id)
+        self.assertEqual(sc_instance['consumer_ptg_id'], consumer_ptg_id)
+        self.assertEqual(sc_instance['classifier_id'], classifier_id)
+        self.assertEqual(len(sc_instance['servicechain_specs']), 1)
+
+        self.update_policy_rule_set(parent_prs_id, expected_res_status=200,
+                                    child_policy_rule_sets=[child_prs_id])
+
+        self._verify_prs_rules(child_prs_id)
+        sc_node_list_req = self.new_list_request(SERVICECHAIN_INSTANCES)
+        res = sc_node_list_req.get_response(self.ext_api)
+        sc_instances = self.deserialize(self.fmt, res)
+        # We should have a new service chain instance created now from both
+        # parent and child specs
+        self.assertEqual(len(sc_instances['servicechain_instances']), 1)
+        sc_instance = sc_instances['servicechain_instances'][0]
+        self.assertEqual(sc_instance['provider_ptg_id'], provider_ptg_id)
+        self.assertEqual(sc_instance['consumer_ptg_id'], consumer_ptg_id)
+        self.assertEqual(sc_instance['classifier_id'], classifier_id)
+        self.assertEqual(len(sc_instance['servicechain_specs']), 2)
+        #REVISIT(Magesh): List api retrieves in sorted order in UTs
+        #Functionally create/update is working fine on devstack
+        #self.assertEqual(sc_instance['servicechain_specs'],
+        #                 [parent_scs_id, scs_id])
+
+        req = self.new_delete_request(
+            'policy_target_groups', consumer_ptg_id)
+        res = req.get_response(self.ext_api)
+        self.assertEqual(res.status_int, webob.exc.HTTPNoContent.code)
+        sc_node_list_req = self.new_list_request(SERVICECHAIN_INSTANCES)
+        res = sc_node_list_req.get_response(self.ext_api)
+        sc_instances = self.deserialize(self.fmt, res)
+        self.assertEqual(len(sc_instances['servicechain_instances']), 0)
+
     def test_shared_policy_rule_set_create_negative(self):
         self.create_policy_rule_set(shared=True,
                                     expected_res_status=400)
