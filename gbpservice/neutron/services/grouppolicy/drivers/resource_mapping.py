@@ -752,6 +752,8 @@ class ResourceMappingDriver(api.PolicyDriver):
         if context.current['child_policy_rule_sets']:
             self._recompute_policy_rule_sets(
                 context, context.current['child_policy_rule_sets'])
+            self._handle_redirect_action(
+                    context, context.current['child_policy_rule_sets'])
 
     @log.log
     def update_policy_rule_set_precommit(self, context):
@@ -777,7 +779,17 @@ class ResourceMappingDriver(api.PolicyDriver):
             to_recompute = (set(context.original['child_policy_rule_sets']) &
                             set(context.current['child_policy_rule_sets']))
             self._recompute_policy_rule_sets(context, to_recompute)
+        # Handle any Redirects from the current Policy Rule Set
         self._handle_redirect_action(context, [context.current['id']])
+        # Handle Update/Delete of Redirects for any child Rule Sets
+        if (set(context.original['child_policy_rule_sets']) !=
+            set(context.current['child_policy_rule_sets'])):
+            if context.original['child_policy_rule_sets']:
+                self._handle_redirect_action(
+                    context, context.original['child_policy_rule_sets'])
+            if context.current['child_policy_rule_sets']:
+                self._handle_redirect_action(
+                    context, context.current['child_policy_rule_sets'])
 
     @log.log
     def delete_policy_rule_set_precommit(self, context):
@@ -800,6 +812,9 @@ class ResourceMappingDriver(api.PolicyDriver):
         # Delete SGs
         for sg in sg_list:
             self._delete_sg(context._plugin_context, sg)
+        if context.current['child_policy_rule_sets']:
+            self._handle_redirect_action(
+                context, context.current['child_policy_rule_sets'])
 
     @log.log
     def delete_network_service_policy_postcommit(self, context):
