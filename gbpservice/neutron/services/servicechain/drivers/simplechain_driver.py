@@ -234,7 +234,7 @@ class SimpleChainDriver(object):
         for key in config_param_names or []:
             if "PoolMemberIP" in key:
                 value = (member_ips[member_count]
-                         if len(member_ips) >= member_count else '0')
+                         if len(member_ips) > member_count else '0')
                 member_count = member_count + 1
                 config_param_values[key] = value
             elif key == "Subnet":
@@ -289,7 +289,7 @@ class SimpleChainDriver(object):
                 stack = heatclient.get(stack_id)
                 if stack.stack_status == 'DELETE_COMPLETE':
                     return
-                elif stack.stack_status == 'ERROR':
+                elif stack.stack_status == 'DELETE_FAILED':
                     heatclient.delete(stack_id)
             except Exception:
                 LOG.exception(_("Service Chain Instance cleanup may not have "
