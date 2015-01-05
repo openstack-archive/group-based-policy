@@ -204,14 +204,22 @@ class SimpleChainDriver(object):
         # eg: Type: OS::Neutron::PoolMember
         # Variable number of pool members is not handled yet. We may have to
         # dynamically modify the template json to achieve that
+        member_ips = []
         provider_ptg_id = sc_instance.get("provider_ptg_id")
+        # If we have the key "PoolMemberIP*" in template input parameters,
+        # fetch the list of IPs of all PTs in the PTG
         for key in config_param_names or []:
-            if key == "PoolMemberIPs":
-                value = self._get_member_ips(context, provider_ptg_id)
-                # TODO(Magesh):Return one value for now
-                if value:
-                    value = value[0]
-                    config_param_values[key] = value
+            if "PoolMemberIP" in key:
+                member_ips = self._get_member_ips(context, provider_ptg_id)
+                break
+
+        member_count = 0
+        for key in config_param_names or []:
+            if "PoolMemberIP" in key:
+                value = (member_ips[member_count]
+                         if len(member_ips) >= member_count else '0')
+                member_count = member_count + 1
+                config_param_values[key] = value
             elif key == "Subnet":
                 value = self._get_ptg_subnet(context, provider_ptg_id)
                 config_param_values[key] = value
