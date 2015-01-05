@@ -14,6 +14,7 @@ import netaddr
 
 from apicapi import apic_manager
 from keystoneclient.v2_0 import client as keyclient
+from neutron.common import exceptions as n_exc
 from neutron.extensions import providernet as pn
 from neutron.extensions import securitygroup as ext_sg
 from neutron import manager
@@ -324,8 +325,13 @@ class ApicMappingDriver(api.ResourceMappingDriver):
         self.apic_manager.delete_contract(contract, owner=tenant)
 
     def delete_policy_target_postcommit(self, context):
-        port = self._core_plugin.get_port(context._plugin_context,
-                                          context.current['port_id'])
+        try:
+            port = self._core_plugin.get_port(context._plugin_context,
+                                              context.current['port_id'])
+        except n_exc.PortNotFound:
+            LOG.warn(_("Port %s is missing") % context.current['port_id'])
+            return
+
         if port['binding:host_id']:
             self.process_path_deletion(context._plugin_context, port,
                                        policy_target=context.current)

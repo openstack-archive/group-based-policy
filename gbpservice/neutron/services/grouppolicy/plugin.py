@@ -342,7 +342,7 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
         except gp_exc.GroupPolicyDriverError:
             with excutils.save_and_reraise_exception():
                 LOG.error(_("delete_policy_target_postcommit "
-                            "failed, deleting policy_rule_set '%s'"),
+                            "failed, deleting policy_target '%s'"),
                           policy_target_id)
 
     def get_policy_target(self, context, policy_target_id, fields=None):

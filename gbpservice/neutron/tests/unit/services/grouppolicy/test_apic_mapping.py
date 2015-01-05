@@ -163,6 +163,19 @@ class TestPolicyTarget(ApicMappingTestCase):
             mgr = self.driver.apic_manager
             self.assertEqual(mgr.ensure_path_deleted_for_port.call_count, 1)
 
+    def test_policy_target_delete_no_port(self):
+        ptg = self.create_policy_target_group()['policy_target_group']
+        subnet = self._get_object('subnets', ptg['subnets'][0], self.api)
+        with self.port(subnet=subnet) as port:
+            self._bind_port_to_host(port['port']['id'], 'h1')
+            pt = self.create_policy_target(
+                policy_target_group_id=ptg['id'], port_id=port['port']['id'])
+            res = self.new_delete_request('ports', port['port']['id'],
+                                          self.fmt).get_response(self.api)
+            self.assertEqual(res.status_int, webob.exc.HTTPNoContent.code)
+            self.delete_policy_target(pt['policy_target']['id'],
+                                      expected_res_status=204)
+
     def test_policy_target_port_deleted_on_apic_host_to_host(self):
         ptg = self.create_policy_target_group()['policy_target_group']
         subnet = self._get_object('subnets', ptg['subnets'][0], self.api)
