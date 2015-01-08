@@ -14,18 +14,48 @@
 #    under the License.
 
 from neutron.common import constants as n_constants
+from neutron.extensions import portbindings
 from neutron.openstack.common import log
 from neutron.plugins.ml2 import driver_api as api
+from neutron.plugins.ml2.drivers import mech_agent
 
+from gbpservice.common import constants as gbpcst
 from gbpservice.neutron.services.grouppolicy.drivers.cisco.apic import (
     apic_mapping as amap)
 
 LOG = log.getLogger(__name__)
 
 
-class APICMechanismGBPDriver(api.MechanismDriver):
+class APICMechanismGBPDriver(mech_agent.SimpleAgentMechanismDriverBase):
+
+    def __init__(self):
+        vif_details = {portbindings.CAP_PORT_FILTER: False,
+                       portbindings.OVS_HYBRID_PLUG: False}
+        super(APICMechanismGBPDriver, self).__init__(
+            gbpcst.AGENT_TYPE_APIC_OVS,
+            portbindings.VIF_TYPE_OVS,
+            vif_details)
+
+    def check_segment_for_agent(self, segment, agent):
+        mappings = agent['configurations'].get('bridge_mappings', {})
+        tunnel_types = agent['configurations'].get('tunnel_types', [])
+        LOG.debug(_("Checking segment: %(segment)s "
+                    "for mappings: %(mappings)s "
+                    "with tunnel_types: %(tunnel_types)s"),
+                  {'segment': segment, 'mappings': mappings,
+                   'tunnel_types': tunnel_types})
+        network_type = segment[api.NETWORK_TYPE]
+        if network_type == 'local':
+            return True
+        elif network_type in tunnel_types:
+            return True
+        elif network_type in ['flat', 'vlan']:
+            return segment[api.PHYSICAL_NETWORK] in mappings
+        else:
+            return False
 
     def initialize(self):
+        super(APICMechanismGBPDriver, self).initialize()
         self._apic_gbp = None
 
     @property
