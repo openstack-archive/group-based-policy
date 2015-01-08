@@ -14,7 +14,9 @@ import netaddr
 
 from apicapi import apic_manager
 from keystoneclient.v2_0 import client as keyclient
+from neutron.common import constants as n_constants
 from neutron.common import exceptions as n_exc
+from neutron.common import rpc as n_rpc
 from neutron.extensions import providernet as pn
 from neutron.extensions import securitygroup as ext_sg
 from neutron import manager
@@ -25,6 +27,7 @@ from neutron.plugins.ml2.drivers.cisco.apic import config
 from neutron.plugins.ml2 import models
 from oslo.config import cfg
 
+from gbpservice.neutron.api.rpc.handlers import gbp_rpc
 from gbpservice.neutron.db.grouppolicy import group_policy_mapping_db as gpdb
 from gbpservice.neutron.services.grouppolicy.common import constants as g_const
 from gbpservice.neutron.services.grouppolicy.common import exceptions as gpexc
@@ -113,10 +116,19 @@ class ApicMappingDriver(api.ResourceMappingDriver):
 
     def initialize(self):
         super(ApicMappingDriver, self).initialize()
+        self._setup_rpc_listeners()
         self.apic_manager = ApicMappingDriver.get_apic_manager()
         self.name_mapper = self.apic_manager.apic_mapper
         self._gbp_plugin = None
         ApicMappingDriver.me = self
+
+    def _setup_rpc_listeners(self):
+        self.endpoints = [gbp_rpc.GBPServerRpcCallback(self)]
+        self.topic = gbp_rpc.TOPIC_GBP
+        self.conn = n_rpc.create_connection(new=True)
+        self.conn.create_consumer(self.topic, self.endpoints,
+                                  fanout=False)
+        return self.conn.consume_in_threads()
 
     @property
     def gbp_plugin(self):
@@ -145,6 +157,12 @@ class ApicMappingDriver(api.ResourceMappingDriver):
                 context, pt['policy_target_group_id'])
             network = self._l2p_id_to_network(context, ptg['l2_policy_id'])
 
+        context._plugin = self.gbp_plugin
+        context._plugin_context = context
+
+        def is_port_promiscuous(port):
+            return port['device_owner'] == n_constants.DEVICE_OWNER_DHCP
+
         return {'port_id': port_id,
                 'mac_address': port['mac_address'],
                 'ptg_id': ptg['id'],
@@ -153,9 +171,12 @@ class ApicMappingDriver(api.ResourceMappingDriver):
                 'l2_policy_id': ptg['l2_policy_id'],
                 'tenant_id': port['tenant_id'],
                 'host': port['binding:host_id'],
-                'ptg_apic_tentant': (ptg['tenant_id'] if not ptg['shared'] else
-                                     apic_manager.TENANT_COMMON)
-                }
+                'ptg_apic_tentant': str(
+                    self.name_mapper.tenant(context, ptg['tenant_id'])
+                    if not ptg['shared'] else apic_manager.TENANT_COMMON),
+                'endpoint_group_name': str(
+                    self.name_mapper.policy_target_group(context, ptg['id'])),
+                'promiscuous_mode': is_port_promiscuous(port)}
 
     def create_dhcp_policy_target_if_needed(self, plugin_context, port):
         session = plugin_context.session
