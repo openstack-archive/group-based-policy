@@ -26,6 +26,7 @@ from neutron.tests.unit.ml2 import test_ml2_plugin
 from oslo.config import cfg
 
 sys.modules["apicapi"] = mock.Mock()
+sys.modules["opflexagent"] = mock.Mock()
 
 from gbpservice.neutron.services.grouppolicy import config
 from gbpservice.neutron.services.grouppolicy.drivers.cisco.apic import (
@@ -72,10 +73,15 @@ class ApicMappingTestCase(
         amap.ApicMappingDriver.get_apic_manager = mock.Mock()
         self.set_up_mocks()
         ml2_opts = {
-            'mechanism_drivers': ['openvswitch', 'apic_gbp'],
+            'mechanism_drivers': ['apic_gbp'],
         }
         for opt, val in ml2_opts.items():
                 cfg.CONF.set_override(opt, val, 'ml2')
+        mock.patch('gbpservice.neutron.services.grouppolicy.drivers.cisco.'
+                   'apic.apic_mapping.ApicMappingDriver._setup_rpc').start()
+        host_agents = mock.patch('neutron.plugins.ml2.driver_context.'
+                                 'PortContext.host_agents').start()
+        host_agents.return_value = [{'configurations': {}, 'alive': True}]
         super(ApicMappingTestCase, self).setUp(
             core_plugin=test_ml2_plugin.PLUGIN_NAME)
 
@@ -94,6 +100,7 @@ class ApicMappingTestCase(
         self.driver.apic_manager = mock.Mock(name_mapper=mock.Mock(),
                                              ext_net_dict={})
         self.driver.apic_manager.apic.transaction = self.fake_transaction
+        self.driver.notifier = mock.Mock()
         amap.apic_manager.TENANT_COMMON = 'common'
         self.common_tenant = amap.apic_manager.TENANT_COMMON
 
@@ -186,16 +193,14 @@ class TestPolicyTarget(ApicMappingTestCase):
                                       port_id=port['port']['id'])
 
             # Change port binding and notify driver
-            port_up = self._bind_port_to_host(port['port']['id'], 'h2')
-            self.driver.process_port_changed(context.get_admin_context(),
-                                             port['port'], port_up['port'])
+            self._bind_port_to_host(port['port']['id'], 'h2')
 
             mgr = self.driver.apic_manager
-            # Path created 2 times plus 1 for DHCP
+            # Path created 2 times, no dhcp agents configured
             self.assertEqual(mgr.ensure_path_created_for_port.call_count,
-                             3)
+                             2)
             # Path deleted 1 time
-            self.assertEqual(mgr.ensure_path_deleted_for_port.call_count, 2)
+            self.assertEqual(mgr.ensure_path_deleted_for_port.call_count, 1)
 
     def test_policy_target_port_not_deleted(self):
         # Create 2 EP same PTG same host bound
@@ -221,6 +226,57 @@ class TestPolicyTarget(ApicMappingTestCase):
         req = self.new_update_request('ports', data, port_id,
                                       self.fmt)
         return self.deserialize(self.fmt, req.get_response(self.api))
+
+    def test_create_policy_target_notification_no_apic_network(self):
+        ptg = self.create_policy_target_group()['policy_target_group']
+        subnet = self._get_object('subnets', ptg['subnets'][0], self.api)
+        with self.port(subnet=subnet) as port:
+            # Create EP with bound port
+            port = self._bind_port_to_host(port['port']['id'], 'h1')
+            self.create_policy_target(policy_target_group_id=ptg['id'],
+                                      port_id=port['port']['id'])
+            # Agent not notified since network type is not apic
+            self.assertFalse(self.driver.notifier.port_update.called)
+        self.driver.notifier.port_update.reset_mock()
+        with self.port(subnet=subnet) as port:
+            # Create EP with *not* bound port
+            self.create_policy_target(policy_target_group_id=ptg['id'],
+                                      port_id=port['port']['id'])
+            self.assertFalse(self.driver.notifier.port_update.called)
+
+    def test_delete_policy_target_notification_no_apic_network(self):
+        ptg = self.create_policy_target_group(
+            name="ptg1")['policy_target_group']
+        pt1 = self.create_policy_target(
+            policy_target_group_id=ptg['id'])['policy_target']
+        self._bind_port_to_host(pt1['port_id'], 'h1')
+        # Implicit port will be deleted with the PT
+        self.delete_policy_target(pt1['id'], expected_res_status=204)
+        # No notification needed
+        self.assertFalse(self.driver.notifier.port_update.called)
+        self.driver.notifier.port_update.reset_mock()
+        subnet = self._get_object('subnets', ptg['subnets'][0], self.api)
+        with self.port(subnet=subnet) as port:
+            # Create EP with bound port
+            port = self._bind_port_to_host(port['port']['id'], 'h1')
+            pt1 = self.create_policy_target(
+                policy_target_group_id=ptg['id'],
+                port_id=port['port']['id'])['policy_target']
+            # Explicit port won't be deleted with PT
+            self.delete_policy_target(pt1['id'], expected_res_status=204)
+            # Issue notification for the agent
+            self.assertFalse(self.driver.notifier.port_update.called)
+
+    def test_get_gbp_details(self):
+        ptg = self.create_policy_target_group(
+            name="ptg1")['policy_target_group']
+        pt1 = self.create_policy_target(
+            policy_target_group_id=ptg['id'])['policy_target']
+        self._bind_port_to_host(pt1['port_id'], 'h1')
+        mapping = self.driver.get_gbp_details(context.get_admin_context(),
+            device='tap%s' % pt1['port_id'], host='h1')
+        self.assertEqual(pt1['port_id'], mapping['port_id'])
+        self.assertEqual(ptg['id'], mapping['ptg_id'])
 
 
 class TestPolicyTargetGroup(ApicMappingTestCase):
