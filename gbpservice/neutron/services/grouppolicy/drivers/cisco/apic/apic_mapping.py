@@ -14,22 +14,29 @@ import netaddr
 
 from apicapi import apic_manager
 from keystoneclient.v2_0 import client as keyclient
+from neutron.common import constants as n_constants
 from neutron.common import exceptions as n_exc
-from neutron.extensions import providernet as pn
+from neutron.common import rpc as n_rpc
+from neutron.common import topics
+from neutron.extensions import portbindings
 from neutron.extensions import securitygroup as ext_sg
 from neutron import manager
 from neutron.openstack.common import lockutils
 from neutron.openstack.common import log as logging
+from neutron.plugins.ml2 import driver_api
 from neutron.plugins.ml2.drivers.cisco.apic import apic_model
 from neutron.plugins.ml2.drivers.cisco.apic import config
 from neutron.plugins.ml2 import models
 from oslo.config import cfg
 
+from gbpservice.common import constants as gbpcst
+from gbpservice.neutron.api.rpc.handlers import gbp_rpc
 from gbpservice.neutron.db.grouppolicy import group_policy_mapping_db as gpdb
 from gbpservice.neutron.services.grouppolicy.common import constants as g_const
 from gbpservice.neutron.services.grouppolicy.common import exceptions as gpexc
-from gbpservice.neutron.services.grouppolicy.drivers import (
-    resource_mapping as api)
+from gbpservice.neutron.services.grouppolicy.drivers.cisco.apic import rpc
+from gbpservice.neutron.services.grouppolicy.drivers import \
+    resource_mapping as api
 
 LOG = logging.getLogger(__name__)
 
@@ -113,10 +120,23 @@ class ApicMappingDriver(api.ResourceMappingDriver):
 
     def initialize(self):
         super(ApicMappingDriver, self).initialize()
+        self._setup_rpc_listeners()
+        self._setup_rpc()
         self.apic_manager = ApicMappingDriver.get_apic_manager()
         self.name_mapper = self.apic_manager.apic_mapper
         self._gbp_plugin = None
         ApicMappingDriver.me = self
+
+    def _setup_rpc_listeners(self):
+        self.endpoints = [gbp_rpc.GBPServerRpcCallback(self)]
+        self.topic = gbp_rpc.TOPIC_GBP
+        self.conn = n_rpc.create_connection(new=True)
+        self.conn.create_consumer(self.topic, self.endpoints,
+                                  fanout=False)
+        return self.conn.consume_in_threads()
+
+    def _setup_rpc(self):
+        self.notifier = rpc.AgentNotifierApi(topics.AGENT)
 
     @property
     def gbp_plugin(self):
@@ -129,33 +149,52 @@ class ApicMappingDriver(api.ResourceMappingDriver):
     def get_initialized_instance():
         return ApicMappingDriver.me
 
-    def get_gbp_details(self, context, **kwargs):
-        port_id = (kwargs.get('port_id') or
+    def get_gbp_details(self, context, port_id=None, **kwargs):
+        port_id = (port_id or
                    self._core_plugin._device_to_port_id(kwargs['device']))
-        port = self._core_plugin.get_port(context, port_id)
+        plugin = manager.NeutronManager.get_plugin()
+        port_context = plugin.get_bound_port_context(context, port_id,
+                                                     kwargs.get('host'))
+        if not port_context:
+            LOG.warning(_("Device %(device)s requested by agent "
+                          "%(agent_id)s not found in database"),
+                        {'device': port_id,
+                         'agent_id': kwargs.get('agent_id')})
+            return {'device': kwargs.get('device') or port_id}
+        port = port_context.current
         # retrieve PTG and network from a given Port
         if not kwargs.get('policy_target'):
-            ptg, network = self._port_to_ptg_network(context, port,
-                                                     kwargs['host'])
+            ptg = self._port_id_to_ptg(context, port['id'])
             if not ptg:
                 return
         else:
             pt = kwargs['policy_target']
             ptg = self.gbp_plugin.get_policy_target_group(
                 context, pt['policy_target_group_id'])
-            network = self._l2p_id_to_network(context, ptg['l2_policy_id'])
 
-        return {'port_id': port_id,
+        context._plugin = self.gbp_plugin
+        context._plugin_context = context
+
+        def is_port_promiscuous(port):
+            return port['device_owner'] == n_constants.DEVICE_OWNER_DHCP
+
+        segment = port_context.bound_segment or {}
+        return {'device': kwargs.get('device'),
+                'port_id': port_id,
                 'mac_address': port['mac_address'],
                 'ptg_id': ptg['id'],
-                'segmentation_id': network[pn.SEGMENTATION_ID],
-                'network_type': network[pn.NETWORK_TYPE],
+                'segment': segment,
+                'segmentation_id': segment.get('segmentation_id'),
+                'network_type': segment.get('network_type'),
                 'l2_policy_id': ptg['l2_policy_id'],
                 'tenant_id': port['tenant_id'],
                 'host': port['binding:host_id'],
-                'ptg_apic_tentant': (ptg['tenant_id'] if not ptg['shared'] else
-                                     apic_manager.TENANT_COMMON)
-                }
+                'ptg_apic_tentant': str(
+                    self.name_mapper.tenant(context, ptg['tenant_id'])
+                    if not ptg['shared'] else apic_manager.TENANT_COMMON),
+                'endpoint_group_name': str(
+                    self.name_mapper.policy_target_group(context, ptg['id'])),
+                'promiscuous_mode': is_port_promiscuous(port)}
 
     def create_dhcp_policy_target_if_needed(self, plugin_context, port):
         session = plugin_context.session
@@ -236,8 +275,14 @@ class ApicMappingDriver(api.ResourceMappingDriver):
         # The path needs to be created at bind time, this will be taken
         # care by the GBP ML2 apic driver.
         super(ApicMappingDriver, self).create_policy_target_postcommit(context)
-        self._manage_policy_target_port(
-            context._plugin_context, context.current)
+        port = self._core_plugin.get_port(context._plugin_context,
+                                          context.current['port_id'])
+        if self._is_apic_network_type(context._plugin_context, port):
+            # Notify update for bound ports
+            self._notify_port_update(context._plugin_context, port['id'])
+        else:
+            # for non 'apic' network types, the APIC needs to be configured
+            self._manage_policy_target_port(context._plugin_context, port)
 
     def create_policy_target_group_precommit(self, context):
         pass
@@ -337,6 +382,9 @@ class ApicMappingDriver(api.ResourceMappingDriver):
                                        policy_target=context.current)
         # Delete Neutron's port
         super(ApicMappingDriver, self).delete_policy_target_postcommit(context)
+        # Notify the agent. If the port has been deleted by the parent method
+        # the notification will not be done
+        self._notify_port_update(context._plugin_context, port['id'])
 
     def delete_policy_target_group_postcommit(self, context):
         if context.current['subnets']:
@@ -627,15 +675,18 @@ class ApicMappingDriver(api.ResourceMappingDriver):
         if old['binding:host_id'] != new['binding:host_id']:
             pt = self._port_id_to_pt(context, new['id'])
             if pt:
-                if old['binding:host_id']:
-                    self.process_path_deletion(context, old)
-                self._manage_policy_target_port(context, pt)
+                # Delete old path and create new one
+                self.process_path_deletion(context, old)
+                if not self._is_apic_network_type(context, new):
+                    self._manage_policy_target_port(context, new)
 
     def process_path_deletion(self, context, port, policy_target=None):
-        port_details = self.get_gbp_details(
-            context, port_id=port['id'], host=port['binding:host_id'],
-            policy_target=policy_target)
-        self._delete_path_if_last(context, port_details)
+        if port[portbindings.HOST_ID]:
+            port_details = self.get_gbp_details(
+                context, port_id=port['id'], host=port['binding:host_id'],
+                policy_target=policy_target)
+            if port_details['segment']:
+                self._delete_path_if_last(context, port_details)
 
     def _apply_policy_rule_set_rules(
             self, context, policy_rule_set, policy_rules, transaction=None):
@@ -684,8 +735,7 @@ class ApicMappingDriver(api.ResourceMappingDriver):
                             rule_owner=rule_owner)
 
     @lockutils.synchronized('apic-portlock')
-    def _manage_policy_target_port(self, plugin_context, pt):
-        port = self._core_plugin.get_port(plugin_context, pt['port_id'])
+    def _manage_policy_target_port(self, plugin_context, port):
         if port.get('binding:host_id'):
             port_details = self.get_gbp_details(
                 plugin_context, port_id=port['id'],
@@ -791,7 +841,7 @@ class ApicMappingDriver(api.ResourceMappingDriver):
         return plugin_context.session.query(
             models.PortBinding).filter_by(
                 host=port_info['host'],
-                segment=port_info['segmentation_id']).filter(
+                segment=port_info['segment']['id']).filter(
                     models.PortBinding.port_id != port_info['port_id']).count()
 
     @lockutils.synchronized('apic-portlock')
@@ -1019,3 +1069,26 @@ class ApicMappingDriver(api.ResourceMappingDriver):
             return self.name_mapper.tenant(None, object['tenant_id'])
         else:
             return apic_manager.TENANT_COMMON
+
+    def _notify_port_update(self, plugin_context, port_id):
+        try:
+            port = self._core_plugin.get_port(plugin_context, port_id)
+            if (port and port.get(portbindings.HOST_ID) and
+                    self._is_apic_network_type(plugin_context, port)):
+                self.notifier.port_update(plugin_context, port)
+        except n_exc.PortNotFound:
+            # Notification not needed
+            pass
+
+    def _get_port_context(self, context, port):
+        return self._core_plugin.get_bound_port_context(
+            context, port['id'], port[portbindings.HOST_ID])
+
+    def _get_port_network_type(self, context, port):
+        port_context = self._get_port_context(context, port)
+        if port_context.host:
+            return port_context.bound_segment[driver_api.NETWORK_TYPE]
+
+    def _is_apic_network_type(self, context, port):
+        return (self._get_port_network_type(context, port) ==
+                gbpcst.TYPE_APIC)

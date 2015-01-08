@@ -14,18 +14,42 @@
 #    under the License.
 
 from neutron.common import constants as n_constants
+from neutron.extensions import portbindings
 from neutron.openstack.common import log
 from neutron.plugins.ml2 import driver_api as api
+from neutron.plugins.ml2.drivers import mech_agent
 
+from gbpservice.common import constants as gbpcst
 from gbpservice.neutron.services.grouppolicy.drivers.cisco.apic import (
     apic_mapping as amap)
 
 LOG = log.getLogger(__name__)
 
 
-class APICMechanismGBPDriver(api.MechanismDriver):
+class APICMechanismGBPDriver(mech_agent.SimpleAgentMechanismDriverBase):
+
+    def __init__(self):
+        vif_details = {portbindings.CAP_PORT_FILTER: False,
+                       portbindings.OVS_HYBRID_PLUG: False}
+        super(APICMechanismGBPDriver, self).__init__(
+            gbpcst.AGENT_TYPE_APIC_OVS,
+            portbindings.VIF_TYPE_OVS,
+            vif_details)
+
+    def check_segment_for_agent(self, segment, agent):
+        mappings = agent['configurations'].get('apic_networks', [])
+        LOG.debug(_("Checking segment: %(segment)s "
+                    "for physical network: %(mappings)s "),
+                  {'segment': segment, 'mappings': mappings})
+        network_type = segment[api.NETWORK_TYPE]
+        if network_type == gbpcst.TYPE_APIC:
+            return (mappings is None or
+                    segment[api.PHYSICAL_NETWORK] in mappings)
+        else:
+            return False
 
     def initialize(self):
+        super(APICMechanismGBPDriver, self).initialize()
         self._apic_gbp = None
 
     @property
