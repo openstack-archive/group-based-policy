@@ -334,6 +334,34 @@ class TestServiceChainResources(ServiceChainDbTestCase):
         self._test_list_resources('servicechain_spec', scs,
                                   query_params='description=scs')
 
+    def test_node_ordering_list_servicechain_specs(self):
+        scn1_id = self.create_servicechain_node()['servicechain_node']['id']
+        scn2_id = self.create_servicechain_node()['servicechain_node']['id']
+        nodes_list = [scn1_id, scn2_id]
+        scs = self.create_servicechain_spec(name='scs1',
+                                            nodes=nodes_list)
+        self.assertEqual(scs['servicechain_spec']['nodes'], nodes_list)
+        res = self._list('servicechain_specs')
+        self.assertEqual(len(res['servicechain_specs']), 1)
+        self.assertEqual(res['servicechain_specs'][0]['nodes'],
+                         nodes_list)
+
+        # Delete the service chain spec and create another with nodes in
+        # reverse order and verify that that proper ordering is maintained
+        req = self.new_delete_request('servicechain_specs',
+                                      scs['servicechain_spec']['id'])
+        res = req.get_response(self.ext_api)
+        self.assertEqual(res.status_int, webob.exc.HTTPNoContent.code)
+
+        nodes_list.reverse()
+        scs = self.create_servicechain_spec(name='scs1',
+                                            nodes=nodes_list)
+        self.assertEqual(scs['servicechain_spec']['nodes'], nodes_list)
+        res = self._list('servicechain_specs')
+        self.assertEqual(len(res['servicechain_specs']), 1)
+        self.assertEqual(res['servicechain_specs'][0]['nodes'],
+                         nodes_list)
+
     def test_update_servicechain_spec(self):
         name = "new_servicechain_spec1"
         description = 'new desc'
@@ -402,6 +430,36 @@ class TestServiceChainResources(ServiceChainDbTestCase):
         self._test_list_resources('servicechain_instance',
                                   servicechain_instances,
                                   query_params='description=sci')
+
+    def test_spec_ordering_list_servicechain_instances(self):
+        scs1_id = self.create_servicechain_spec()['servicechain_spec']['id']
+        scs2_id = self.create_servicechain_spec()['servicechain_spec']['id']
+        specs_list = [scs1_id, scs2_id]
+        sci = self.create_servicechain_instance(name='sci1',
+                                                servicechain_specs=specs_list)
+        self.assertEqual(sci['servicechain_instance']['servicechain_specs'],
+                         specs_list)
+        res = self._list('servicechain_instances')
+        self.assertEqual(len(res['servicechain_instances']), 1)
+        result_instance = res['servicechain_instances'][0]
+        self.assertEqual(result_instance['servicechain_specs'], specs_list)
+
+        # Delete the service chain instance and create another with specs in
+        # reverse order and verify that that proper ordering is maintained
+        req = self.new_delete_request('servicechain_instances',
+                                      sci['servicechain_instance']['id'])
+        res = req.get_response(self.ext_api)
+        self.assertEqual(res.status_int, webob.exc.HTTPNoContent.code)
+
+        specs_list.reverse()
+        sci = self.create_servicechain_instance(name='sci1',
+                                                servicechain_specs=specs_list)
+        self.assertEqual(sci['servicechain_instance']['servicechain_specs'],
+                         specs_list)
+        res = self._list('servicechain_instances')
+        self.assertEqual(len(res['servicechain_instances']), 1)
+        result_instance = res['servicechain_instances'][0]
+        self.assertEqual(result_instance['servicechain_specs'], specs_list)
 
     def test_update_servicechain_instance(self):
         name = "new_servicechain_instance"

@@ -12,6 +12,7 @@
 
 import ast
 import sqlalchemy as sa
+from sqlalchemy.ext.orderinglist import ordering_list
 from sqlalchemy import orm
 from sqlalchemy.orm import exc
 
@@ -38,6 +39,7 @@ class SpecNodeAssociation(model_base.BASEV2):
     node_id = sa.Column(sa.String(36),
                         sa.ForeignKey('sc_nodes.id'),
                         primary_key=True)
+    position = sa.Column(sa.Integer)
 
 
 class InstanceSpecAssociation(model_base.BASEV2):
@@ -48,6 +50,7 @@ class InstanceSpecAssociation(model_base.BASEV2):
     servicechain_spec_id = sa.Column(sa.String(36),
                                      sa.ForeignKey('sc_specs.id'),
                                      primary_key=True)
+    position = sa.Column(sa.Integer)
 
 
 class ServiceChainNode(model_base.BASEV2, models_v2.HasId,
@@ -70,9 +73,12 @@ class ServiceChainInstance(model_base.BASEV2, models_v2.HasId,
     name = sa.Column(sa.String(50))
     description = sa.Column(sa.String(255))
     config_param_values = sa.Column(sa.String(4096))
-    specs = orm.relationship(InstanceSpecAssociation,
-                             backref='instances',
-                             cascade='all,delete, delete-orphan')
+    specs = orm.relationship(
+        InstanceSpecAssociation,
+        backref='instances',
+        cascade='all,delete, delete-orphan',
+        order_by='InstanceSpecAssociation.position',
+        collection_class=ordering_list('position', count_from=1))
     provider_ptg_id = sa.Column(sa.String(36),
                              # FixMe(Magesh) Issue with cascade on Delete
                              # sa.ForeignKey('gp_policy_target_groups.id'),
@@ -94,7 +100,9 @@ class ServiceChainSpec(model_base.BASEV2, models_v2.HasId,
     description = sa.Column(sa.String(255))
     nodes = orm.relationship(
         SpecNodeAssociation,
-        backref='specs', cascade='all, delete, delete-orphan')
+        backref='specs', cascade='all, delete, delete-orphan',
+        order_by='SpecNodeAssociation.position',
+        collection_class=ordering_list('position', count_from=1))
     config_param_names = sa.Column(sa.String(4096))
     instances = orm.relationship(InstanceSpecAssociation,
                                  backref="specs",
