@@ -1423,11 +1423,7 @@ class TestPolicyRuleSet(ResourceMappingTestCase):
                                       consumer_ptg_id, scs_id_list):
         self.assertEqual(sc_instance['provider_ptg_id'], provider_ptg_id)
         self.assertEqual(sc_instance['consumer_ptg_id'], consumer_ptg_id)
-        # REVISIT(Magesh): List api for chain instance retrieves specs in
-        # different order. Functionally the order is fine on create/update
-        # and verified on devstack.
-        self.assertEqual(set(scs_id_list),
-                         set(sc_instance['servicechain_specs']))
+        self.assertEqual(scs_id_list, sc_instance['servicechain_specs'])
 
     def test_redirect_to_chain(self):
         scs_id = self._create_servicechain_spec()
@@ -1814,10 +1810,8 @@ class TestPolicyRuleSet(ResourceMappingTestCase):
         self.assertEqual(sc_instance['provider_ptg_id'], provider_ptg_id)
         self.assertEqual(sc_instance['consumer_ptg_id'], consumer_ptg_id)
         self.assertEqual(sc_instance['classifier_id'], classifier_id)
-        #REVISIT(Magesh): List api retrieves in different order
-        #Functionally create/update is working fine
-        #self.assertEqual(sc_instance['servicechain_spec'],
-        #                 [parent_scs_id, scs_id])
+        self.assertEqual(sc_instance['servicechain_specs'],
+                         [parent_scs_id, scs_id])
 
         req = self.new_delete_request(
             'policy_target_groups', consumer_ptg_id)
