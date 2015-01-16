@@ -78,6 +78,10 @@ class OneconvergenceServiceChainDriver(simplechain_driver.SimpleChainDriver):
         self.nvsd_api = napi.NVSDServiceApi()
 
     @log.log
+    def create_servicechain_node_precommit(self, context):
+        pass
+
+    @log.log
     def create_servicechain_spec_precommit(self, context):
         super(OneconvergenceServiceChainDriver,
               self).create_servicechain_spec_precommit(context)
@@ -303,9 +307,11 @@ class OneconvergenceServiceChainDriver(simplechain_driver.SimpleChainDriver):
 
     def _delete_chain_policy_map(self, session, sc_instance_id):
         with session.begin(subtransactions=True):
-            policy_id = session.query(ServiceChainInstancePolicyMap).filter_by(
-                                            instance_id=sc_instance_id).first()
-            session.delete(policy_id)
+            chain_policy_map = session.query(
+                                    ServiceChainInstancePolicyMap).filter_by(
+                                    instance_id=sc_instance_id).first()
+            if chain_policy_map:
+                session.delete(chain_policy_map)
 
     def _add_chain_policy_map(self, session, sc_instance_id, policy_id):
         with session.begin(subtransactions=True):
@@ -323,10 +329,11 @@ class OneconvergenceServiceChainDriver(simplechain_driver.SimpleChainDriver):
 
     def _delete_chain_nvsd_ep_map(self, session, sc_instance_id):
         with session.begin(subtransactions=True):
-            nvsd_ep_id = session.query(ServiceChainInstanceVipEPMap).filter_by(
-                                        instance_id=sc_instance_id).first()
-            if nvsd_ep_id:
-                session.delete(nvsd_ep_id)
+            chain_nvsd_ep_map = session.query(
+                                    ServiceChainInstanceVipEPMap).filter_by(
+                                    instance_id=sc_instance_id).first()
+            if chain_nvsd_ep_map:
+                session.delete(chain_nvsd_ep_map)
 
     def _add_chain_nvsd_vip_ep_map(self, session, sc_instance_id, nvsd_ep_id,
                                    port_id):
@@ -486,8 +493,8 @@ class OneconvergenceServiceChainDriver(simplechain_driver.SimpleChainDriver):
                                                 nvsd_action_list)
             # TODO(Magesh): Need to store actions and rules also, because
             # cleanup will be missed if policy create failed
-            self._add_chain_policy_map(context.session, chain_instance_id,
-                                       policy_id, classifier_id)
+            self._add_chain_policy_map(
+                    context.session, chain_instance_id, policy_id)
         return True
 
 

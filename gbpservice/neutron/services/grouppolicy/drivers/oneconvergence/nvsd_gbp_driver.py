@@ -64,6 +64,8 @@ class NvsdGbpDriver(res_map.ResourceMappingDriver):
 
     @log.log
     def create_policy_target_group_precommit(self, context):
+        super(NvsdGbpDriver, self).create_policy_target_group_precommit(
+                                                                    context)
         # Reuse the previously created implicit L2 Policy for the tenant
         if not context.current['l2_policy_id']:
             l2ps = context._plugin.get_l2_policies(
@@ -90,7 +92,12 @@ class NvsdGbpDriver(res_map.ResourceMappingDriver):
             self._use_implicit_subnet(context)
         self.nvsd_api.create_endpointgroup(context._plugin_context,
                                            context.current)
+        self._handle_network_service_policy(context)
         self._handle_policy_rule_sets(context)
+        self._update_default_security_group(context._plugin_context,
+                                            context.current['id'],
+                                            context.current['tenant_id'],
+                                            context.current['subnets'])
 
     @log.log
     def update_policy_target_group_postcommit(self, context):
@@ -115,7 +122,15 @@ class NvsdGbpDriver(res_map.ResourceMappingDriver):
     @log.log
     def delete_policy_target_group_postcommit(self, context):
         try:
+            self._cleanup_network_service_policy(context,
+                                             context.current['subnets'][0],
+                                             context.current['id'])
             self._cleanup_redirect_action(context)
+            # Cleanup SGs
+            self._unset_sg_rules_for_subnets(
+                context, context.current['subnets'],
+                context.current['provided_policy_rule_sets'],
+                context.current['consumed_policy_rule_sets'])
         except Exception as err:
             LOG.error(_("Cleanup of Redirect Action failed. "
                         "Error : %s"), err)
@@ -124,6 +139,9 @@ class NvsdGbpDriver(res_map.ResourceMappingDriver):
             router_id = self._get_routerid_for_l2policy(context, l2p_id)
             for subnet_id in context.current['subnets']:
                 self._cleanup_subnet(context, subnet_id, router_id)
+            self._delete_default_security_group(
+                context._plugin_context, context.current['id'],
+                context.current['tenant_id'])
         except Exception as err:
             LOG.error(_("Cleanup of Policy target group failed. "
                         "Error : %s"), err)
@@ -136,15 +154,17 @@ class NvsdGbpDriver(res_map.ResourceMappingDriver):
 
     @log.log
     def delete_l2_policy_postcommit(self, context):
-        pass
+        super(NvsdGbpDriver, self).delete_l2_policy_postcommit(context)
 
     @log.log
     def create_policy_classifier_postcommit(self, context):
+        super(NvsdGbpDriver, self).create_policy_classifier_postcommit(context)
         self.nvsd_api.create_policy_classifier(context._plugin_context,
                                                context.current)
 
     @log.log
     def update_policy_classifier_postcommit(self, context):
+        super(NvsdGbpDriver, self).update_policy_classifier_postcommit(context)
         self.nvsd_api.update_policy_classifier(context._plugin_context,
                                                context.current)
 
@@ -152,11 +172,13 @@ class NvsdGbpDriver(res_map.ResourceMappingDriver):
     def delete_policy_classifier_postcommit(self, context):
         self.nvsd_api.delete_policy_classifier(context._plugin_context,
                                                context.current['id'])
+        super(NvsdGbpDriver, self).delete_policy_classifier_postcommit(context)
 
     def _use_explicit_subnet(self, context, subnet_id, router_id):
         interface_info = {'subnet_id': subnet_id}
         try:
-            self._add_router_interface(context, router_id, interface_info)
+            self._add_router_interface(context._plugin_context, router_id,
+                                       interface_info)
         except n_exc.BadRequest:
             pass
 
