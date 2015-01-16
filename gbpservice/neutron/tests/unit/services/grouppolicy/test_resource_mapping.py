@@ -56,9 +56,11 @@ CORE_PLUGIN = ('gbpservice.neutron.tests.unit.services.grouppolicy.'
 
 class ResourceMappingTestCase(test_plugin.GroupPolicyPluginTestCase):
 
-    def setUp(self):
+    def setUp(self, policy_drivers=[]):
+        if not policy_drivers:
+            policy_drivers = ['implicit_policy', 'resource_mapping']
         config.cfg.CONF.set_override('policy_drivers',
-                                     ['implicit_policy', 'resource_mapping'],
+                                     policy_drivers,
                                      group='group_policy')
         sc_cfg.cfg.CONF.set_override('servicechain_drivers',
                                      ['dummy'],
