@@ -81,18 +81,21 @@ class ApicMappingTestCase(
 
         self.driver = amap.ApicMappingDriver.get_initialized_instance()
         amap.ApicMappingDriver.get_base_synchronizer = mock.Mock()
-        self.driver.name_mapper = mock.Mock()
-        self.driver.name_mapper.tenant = echo
-        self.driver.name_mapper.l2_policy = echo
-        self.driver.name_mapper.l3_policy = echo
-        self.driver.name_mapper.policy_rule_set = echo
-        self.driver.name_mapper.policy_rule = echo
-        self.driver.name_mapper.app_profile.return_value = mocked.APIC_AP
-        self.driver.name_mapper.policy_target_group = echo
-        self.driver.name_mapper.external_policy = echo
-        self.driver.name_mapper.external_segment = echo
-        self.driver.apic_manager = mock.Mock(name_mapper=mock.Mock(),
+        self.driver.apic_manager = mock.Mock(apic_mapper=mock.Mock(),
                                              ext_net_dict={})
+        mgr = self.driver.apic_manager
+        mgr.apic_mapper.tenant = echo
+        mgr.apic_mapper.l2_policy = echo
+        mgr.apic_mapper.l3_policy = echo
+        mgr.apic_mapper.policy_rule_set = echo
+        mgr.apic_mapper.policy_rule = echo
+        mgr.apic_mapper.app_profile.return_value = mocked.APIC_AP
+        mgr.apic_mapper.policy_target_group = echo
+        mgr.apic_mapper.external_policy = echo
+        mgr.apic_mapper.external_segment = echo
+        mgr.apic_mapper.is_valid_name_type.return_value = True
+        self.driver.name_mapper = amap.ApicNameManager(mgr)
+
         self.driver.apic_manager.apic.transaction = self.fake_transaction
         amap.apic_manager.TENANT_COMMON = 'common'
         self.common_tenant = amap.apic_manager.TENANT_COMMON
