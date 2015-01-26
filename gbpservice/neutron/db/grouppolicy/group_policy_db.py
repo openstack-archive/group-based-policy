@@ -1438,7 +1438,7 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
                                     marker_obj=marker_obj,
                                     page_reverse=page_reverse)
 
-    @log.log
+    @staticmethod
     def get_policy_actions_count(self, context, filters=None):
         return self._get_collection_count(context, PolicyAction,
                                           filters=filters)

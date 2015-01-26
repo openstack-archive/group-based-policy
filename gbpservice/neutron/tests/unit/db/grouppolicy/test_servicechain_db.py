@@ -206,6 +206,9 @@ class ServiceChainDBTestPlugin(svcchain_db.ServiceChainDbPlugin):
 DB_GP_PLUGIN_KLASS = (ServiceChainDBTestPlugin.__module__ + '.' +
                       ServiceChainDBTestPlugin.__name__)
 
+GP_PLUGIN_KLASS = (
+    "gbpservice.neutron.services.grouppolicy.plugin.GroupPolicyPlugin")
+
 
 class ServiceChainDbTestCase(ServiceChainDBTestBase,
                              test_db_plugin.NeutronDbPluginV2TestCase):
@@ -218,7 +221,8 @@ class ServiceChainDbTestCase(ServiceChainDBTestBase,
             sc_plugin = DB_GP_PLUGIN_KLASS
         self.plugin = importutils.import_object(sc_plugin)
         if not service_plugins:
-            service_plugins = {'sc_plugin_name': sc_plugin}
+            service_plugins = {'gp_plugin_name': GP_PLUGIN_KLASS,
+                               'sc_plugin_name': sc_plugin}
 
         super(ServiceChainDbTestCase, self).setUp(
             plugin=core_plugin, ext_mgr=ext_mgr,
@@ -290,9 +294,20 @@ class TestServiceChainResources(ServiceChainDbTestCase):
         scn = self.create_servicechain_node()
         scn_id = scn['servicechain_node']['id']
 
+        scs = self.create_servicechain_spec(nodes=[scn_id])
+        scs_id = scs['servicechain_spec']['id']
+
+        # Deleting Service Chain Node in use by a Spec should fail
+        self.assertRaises(service_chain.ServiceChainNodeInUse,
+                          self.plugin.delete_servicechain_node, ctx, scn_id)
+
+        req = self.new_delete_request('servicechain_specs', scs_id)
+        res = req.get_response(self.ext_api)
+        self.assertEqual(res.status_int, webob.exc.HTTPNoContent.code)
+
+        # After deleting the Service Chain Spec, node delete should succeed
         req = self.new_delete_request('servicechain_nodes', scn_id)
         res = req.get_response(self.ext_api)
-
         self.assertEqual(res.status_int, webob.exc.HTTPNoContent.code)
         self.assertRaises(service_chain.ServiceChainNodeNotFound,
                           self.plugin.get_servicechain_node,
@@ -388,6 +403,46 @@ class TestServiceChainResources(ServiceChainDbTestCase):
         scs = self.create_servicechain_spec()
         scs_id = scs['servicechain_spec']['id']
 
+        req = self.new_delete_request('servicechain_specs', scs_id)
+        res = req.get_response(self.ext_api)
+        self.assertEqual(res.status_int, webob.exc.HTTPNoContent.code)
+        self.assertRaises(service_chain.ServiceChainSpecNotFound,
+                          self.plugin.get_servicechain_spec, ctx, scs_id)
+
+    def test_delete_spec_in_use_by_policy_action_rejected(self):
+        ctx = context.get_admin_context()
+        scs_id = self.create_servicechain_spec()['servicechain_spec']['id']
+        data = {'policy_action': {'action_type': 'redirect',
+                                  'tenant_id': self._tenant_id,
+                                  'action_value': scs_id}}
+        pa_req = self.new_create_request('grouppolicy/policy_actions',
+                                         data, self.fmt)
+        res = pa_req.get_response(self.ext_api)
+        if res.status_int >= webob.exc.HTTPClientError.code:
+            raise webob.exc.HTTPClientError(code=res.status_int)
+
+        self.assertRaises(service_chain.ServiceChainSpecInUse,
+                          self.plugin.delete_servicechain_spec, ctx, scs_id)
+
+    def test_delete_spec_in_use_by_instance_rejected(self):
+        ctx = context.get_admin_context()
+        scs_id = self.create_servicechain_spec()['servicechain_spec']['id']
+
+        sci = self.create_servicechain_instance(servicechain_specs=[scs_id])
+        sci_id = sci['servicechain_instance']['id']
+
+        # Deleting the Spec used by Instance should not be allowed
+        self.assertRaises(service_chain.ServiceChainSpecInUse,
+                          self.plugin.delete_servicechain_spec, ctx, scs_id)
+
+        req = self.new_delete_request('servicechain_instances', sci_id)
+        res = req.get_response(self.ext_api)
+        self.assertEqual(res.status_int, webob.exc.HTTPNoContent.code)
+        self.assertRaises(service_chain.ServiceChainInstanceNotFound,
+                          self.plugin.get_servicechain_instance,
+                          ctx, sci_id)
+
+        # Deleting the spec should succeed after the instance is deleted
         req = self.new_delete_request('servicechain_specs', scs_id)
         res = req.get_response(self.ext_api)
         self.assertEqual(res.status_int, webob.exc.HTTPNoContent.code)

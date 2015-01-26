@@ -24,6 +24,7 @@ from neutron.openstack.common import jsonutils
 from neutron.openstack.common import log as logging
 from neutron.openstack.common import uuidutils
 
+from gbpservice.neutron.db.grouppolicy import group_policy_db as gpdb
 from gbpservice.neutron.extensions import servicechain as schain
 
 LOG = logging.getLogger(__name__)
@@ -205,6 +206,9 @@ class ServiceChainDbPlugin(schain.ServiceChainPluginBase,
         with context.session.begin(subtransactions=True):
             node_db = self._get_servicechain_node(context,
                                                   servicechain_node_id)
+            if node_db.specs:
+                raise schain.ServiceChainNodeInUse(
+                                    node_id=servicechain_node_id)
             context.session.delete(node_db)
 
     @log.log
@@ -331,9 +335,15 @@ class ServiceChainDbPlugin(schain.ServiceChainPluginBase,
 
     @log.log
     def delete_servicechain_spec(self, context, spec_id):
+        ref_count = gpdb.GroupPolicyDbPlugin.get_policy_actions_count(
+                        self, context, filters={"action_value": [spec_id]})
+        if ref_count != 0:
+            raise schain.ServiceChainSpecInUse(spec_id=spec_id)
         with context.session.begin(subtransactions=True):
             spec_db = self._get_servicechain_spec(context,
                                                   spec_id)
+            if spec_db.instances:
+                raise schain.ServiceChainSpecInUse(spec_id=spec_id)
             context.session.delete(spec_db)
 
     @log.log
