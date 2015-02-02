@@ -16,6 +16,7 @@ from sqlalchemy.ext.orderinglist import ordering_list
 from sqlalchemy import orm
 from sqlalchemy.orm import exc
 
+from heatclient.common import template_format
 from neutron.common import log
 from neutron.db import common_db_mixin
 from neutron.db import model_base
@@ -193,6 +194,9 @@ class ServiceChainDbPlugin(schain.ServiceChainPluginBase,
     @log.log
     def create_servicechain_node(self, context, servicechain_node):
         node = servicechain_node['servicechain_node']
+        cfg = node['config']
+        if cfg:
+            node['config'] = jsonutils.dumps(template_format.parse(cfg))
         tenant_id = self._get_tenant_id_for_create(context, node)
         with context.session.begin(subtransactions=True):
             node_db = ServiceChainNode(id=uuidutils.generate_uuid(),
