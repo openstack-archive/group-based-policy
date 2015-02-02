@@ -38,6 +38,10 @@ service_chain_opts = [
                default=3,
                help=_("Wait time between two successive stack delete "
                       "retries")),
+    cfg.StrOpt('pool_member_tag',
+               default='Pool Member',
+               help=_("Policy Targets created for the LB Pool Members should "
+                      "have this tag in their description")),
 ]
 
 
@@ -47,6 +51,7 @@ cfg.CONF.register_opts(service_chain_opts, "servicechain")
 sc_supported_type = [pconst.LOADBALANCER, pconst.FIREWALL]
 STACK_DELETE_RETRIES = cfg.CONF.servicechain.stack_delete_retries
 STACK_DELETE_RETRY_WAIT = cfg.CONF.servicechain.stack_delete_retry_wait
+POOL_MEMBER_TAG = cfg.CONF.servicechain.pool_member_tag
 
 
 class ServiceChainInstanceStack(model_base.BASEV2):
@@ -188,14 +193,16 @@ class SimpleChainDriver(object):
         member_addresses = []
         for pt_id in pt_ids:
             pt = self._get_pt(context, pt_id)
-            port_id = pt.get("port_id")
-            port = self._get_port(context, port_id)
-            ipAddress = port.get('fixed_ips')[0].get("ip_address")
-            member_addresses.append(ipAddress)
+            if POOL_MEMBER_TAG in pt['description']:
+                port_id = pt.get("port_id")
+                if port_id:
+                    port = self._get_port(context, port_id)
+                    ipAddress = port.get('fixed_ips')[0].get("ip_address")
+                    member_addresses.append(ipAddress)
         return member_addresses
 
     def _fetch_template_and_params(self, context, sc_instance,
-                                   sc_spec, sc_node):
+                                   sc_spec, sc_node, order):
         stack_template = sc_node.get('config')
         # TODO(magesh):Raise an exception ??
         if not stack_template:
@@ -252,12 +259,13 @@ class SimpleChainDriver(object):
     def _create_servicechain_instance_stacks(self, context, sc_node_ids,
                                              sc_instance, sc_spec):
         heatclient = HeatClient(context._plugin_context)
+        order = 1
         for sc_node_id in sc_node_ids:
             sc_node = context._plugin.get_servicechain_node(
                 context._plugin_context, sc_node_id)
 
             stack_template, stack_params = self._fetch_template_and_params(
-                context, sc_instance, sc_spec, sc_node)
+                context, sc_instance, sc_spec, sc_node, order)
 
             stack_name = ("stack_" + sc_instance['name'] + sc_node['name'] +
                           sc_node['id'][:5])
@@ -267,6 +275,7 @@ class SimpleChainDriver(object):
             self._insert_chain_stack_db(
                 context._plugin_context.session, sc_instance['id'],
                 stack['stack']['id'])
+            order += 1
 
     def _delete_servicechain_instance_stacks(self, context, instance_id):
         stack_ids = self._get_chain_stacks(context.session, instance_id)

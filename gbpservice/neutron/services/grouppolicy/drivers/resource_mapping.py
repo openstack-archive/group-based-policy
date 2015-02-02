@@ -1000,11 +1000,21 @@ class ResourceMappingDriver(api.PolicyDriver):
         l2p = context._plugin.get_l2_policy(context._plugin_context, l2p_id)
         sg_id = self._get_default_security_group(
             context._plugin_context, ptg_id, context.current['tenant_id'])
+
+        # REVISIT(Sumit): logic for  more than 1 subnet associated with a PTG
+        fixed_ips = attributes.ATTR_NOT_SPECIFIED
+        if len(ptg['subnets']) == 1:
+            #Exactly one subnet associated, so choose that.
+            #This prevents assignment of any other subnet not associated
+            #with this PTG, but associated with the same network.
+            #Else if 0 or more than one subnet associated, let IPAM decide.
+            fixed_ips = [{'subnet_id': ptg['subnets'][0]}]
+
         attrs = {'tenant_id': context.current['tenant_id'],
                  'name': 'pt_' + context.current['name'],
                  'network_id': l2p['network_id'],
                  'mac_address': attributes.ATTR_NOT_SPECIFIED,
-                 'fixed_ips': attributes.ATTR_NOT_SPECIFIED,
+                 'fixed_ips': fixed_ips,
                  'device_id': '',
                  'device_owner': '',
                  'security_groups': [sg_id] if sg_id else None,
