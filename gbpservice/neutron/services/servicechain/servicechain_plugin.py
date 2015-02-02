@@ -10,8 +10,10 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+from heatclient.common import template_format
 from neutron.common import log
 from neutron.openstack.common import excutils
+from neutron.openstack.common import jsonutils
 from neutron.openstack.common import log as logging
 
 import gbpservice.neutron.db.servicechain_db as servicechain_db
@@ -39,6 +41,10 @@ class ServiceChainPlugin(servicechain_db.ServiceChainDbPlugin):
 
     @log.log
     def create_servicechain_node(self, context, servicechain_node):
+        cfg = servicechain_node['servicechain_node']['config']
+        if cfg: 
+            tpl = jsonutils.dumps(template_format.parse(cfg))
+            servicechain_node['servicechain_node']['config'] = tpl
         session = context.session
         with session.begin(subtransactions=True):
             result = super(ServiceChainPlugin, self).create_servicechain_node(
