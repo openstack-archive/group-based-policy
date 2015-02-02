@@ -194,7 +194,7 @@ class SimpleChainDriver(object):
         return member_addresses
 
     def _fetch_template_and_params(self, context, sc_instance,
-                                   sc_spec, sc_node):
+                                   sc_spec, sc_node, order):
         stack_template = sc_node.get('config')
         # TODO(magesh):Raise an exception ??
         if not stack_template:
@@ -251,12 +251,13 @@ class SimpleChainDriver(object):
     def _create_servicechain_instance_stacks(self, context, sc_node_ids,
                                              sc_instance, sc_spec):
         heatclient = HeatClient(context._plugin_context)
+        order = 1
         for sc_node_id in sc_node_ids:
             sc_node = context._plugin.get_servicechain_node(
                 context._plugin_context, sc_node_id)
 
             stack_template, stack_params = self._fetch_template_and_params(
-                context, sc_instance, sc_spec, sc_node)
+                context, sc_instance, sc_spec, sc_node, order)
 
             stack = heatclient.create(
                 "stack_" + sc_instance['name'] + sc_node['name']
@@ -267,6 +268,7 @@ class SimpleChainDriver(object):
             self._insert_chain_stack_db(
                 context._plugin_context.session, sc_instance['id'],
                 stack['stack']['id'])
+            order += 1
 
     def _delete_servicechain_instance_stacks(self, context, instance_id):
         stack_ids = self._get_chain_stacks(context.session, instance_id)
