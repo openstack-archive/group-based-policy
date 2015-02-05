@@ -17,7 +17,7 @@ from neutron.common import log
 from neutron.openstack.common import excutils
 from neutron.openstack.common import log as logging
 
-from gbpservice.neutron.db.grouppolicy import group_policy_db as gdb
+from gbpservice.neutron.db.grouppolicy import group_policy_db as gpdb
 from gbpservice.neutron.db.grouppolicy import group_policy_mapping_db
 from gbpservice.neutron.extensions import group_policy as gpex
 from gbpservice.neutron.services.grouppolicy import (
@@ -261,7 +261,7 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
                         es_id=current['id'])
                 # Verify allocated address correctly in subnet
                 for addr in current['external_segments'][es['id']]:
-                    if addr != gdb.ADDRESS_NOT_SPECIFIED:
+                    if addr != gpdb.ADDRESS_NOT_SPECIFIED:
                         if addr not in netaddr.IPNetwork(es['cidr']):
                             raise gp_exc.InvalidL3PExternalIPAddress(
                                 ip=addr, es_id=es['id'], l3p_id=current['id'],
