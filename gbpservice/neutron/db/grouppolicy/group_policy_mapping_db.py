@@ -246,7 +246,8 @@ class GroupPolicyMappingDbPlugin(gpdb.GroupPolicyDbPlugin):
         l3p = l3_policy['l3_policy']
         tenant_id = self._get_tenant_id_for_create(context, l3p)
         self.validate_subnet_prefix_length(l3p['ip_version'],
-                                           l3p['subnet_prefix_length'])
+                                           l3p['subnet_prefix_length'],
+                                           l3p.get('ip_pool', None))
         with context.session.begin(subtransactions=True):
             l3p_db = L3PolicyMapping(id=uuidutils.generate_uuid(),
                                      tenant_id=tenant_id,
@@ -277,7 +278,8 @@ class GroupPolicyMappingDbPlugin(gpdb.GroupPolicyDbPlugin):
             l3p_db = self._get_l3_policy(context, l3_policy_id)
             if 'subnet_prefix_length' in l3p:
                 self.validate_subnet_prefix_length(l3p_db.ip_version,
-                                                   l3p['subnet_prefix_length'])
+                                                   l3p['subnet_prefix_length'],
+                                                   l3p.get('ip_pool', None))
             if 'routers' in l3p:
                 # Add/remove associations for changes in routers.
                 new_routers = set(l3p['routers'])

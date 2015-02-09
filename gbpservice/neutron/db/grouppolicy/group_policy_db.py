@@ -10,6 +10,8 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+import netaddr
+
 import sqlalchemy as sa
 from sqlalchemy import orm
 from sqlalchemy.orm import exc
@@ -1028,7 +1030,8 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
         return value
 
     @staticmethod
-    def validate_subnet_prefix_length(ip_version, new_prefix_length):
+    def validate_subnet_prefix_length(ip_version, new_prefix_length,
+                                      ip_pool=None):
         if (new_prefix_length < 2) or (
             ip_version == 4 and (
                 new_prefix_length > MAX_IPV4_SUBNET_PREFIX_LENGTH)) or (
@@ -1036,8 +1039,14 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
                         new_prefix_length > MAX_IPV6_SUBNET_PREFIX_LENGTH)):
             raise gpolicy.InvalidDefaultSubnetPrefixLength(
                 length=new_prefix_length, protocol=ip_version)
-        # TODO(Sumit): Check that subnet_prefix_length is smaller
-        # than size of the ip_pool's subnet
+
+        if ip_pool is not None:
+            # Check if subnet_prefix_length is smaller
+            # than size of the ip_pool's subnet.
+            ip_pool_prefix_length = netaddr.IPNetwork(ip_pool).prefixlen
+            if(ip_pool_prefix_length > new_prefix_length):
+                raise gpolicy.SubnetPrefixLengthExceedsIpPool(
+                    ip_pool=ip_pool, subnet_size=new_prefix_length)
 
     @log.log
     def create_policy_target(self, context, policy_target):
@@ -1200,7 +1209,8 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
         l3p = l3_policy['l3_policy']
         tenant_id = self._get_tenant_id_for_create(context, l3p)
         self.validate_subnet_prefix_length(
-            l3p['ip_version'], l3p['subnet_prefix_length'])
+            l3p['ip_version'], l3p['subnet_prefix_length'],
+            l3p.get('ip_pool', None))
         with context.session.begin(subtransactions=True):
             l3p_db = L3Policy(
                 id=uuidutils.generate_uuid(),
@@ -1224,7 +1234,8 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
             if 'subnet_prefix_length' in l3p:
                 self.validate_subnet_prefix_length(
                     l3p_db.ip_version,
-                    l3p['subnet_prefix_length'])
+                    l3p['subnet_prefix_length'],
+                    l3p.get('ip_pool', None))
             if 'external_segments' in l3p:
                 self._set_ess_for_l3p(context, l3p_db,
                                       l3p['external_segments'])
