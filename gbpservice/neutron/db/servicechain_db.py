@@ -20,11 +20,14 @@ from neutron.common import log
 from neutron.db import common_db_mixin
 from neutron.db import model_base
 from neutron.db import models_v2
+from neutron import manager
 from neutron.openstack.common import jsonutils
 from neutron.openstack.common import log as logging
 from neutron.openstack.common import uuidutils
+from neutron.plugins.common import constants as pconst
 
 from gbpservice.neutron.extensions import servicechain as schain
+from gbpservice.neutron.services.servicechain.common import exceptions as s_exc
 
 LOG = logging.getLogger(__name__)
 MAX_IPV4_SUBNET_PREFIX_LENGTH = 31
@@ -121,6 +124,17 @@ class ServiceChainDbPlugin(schain.ServiceChainPluginBase,
     def __init__(self, *args, **kwargs):
         super(ServiceChainDbPlugin, self).__init__(*args, **kwargs)
 
+    @property
+    def _grouppolicy_plugin(self):
+        # REVISIT(Magesh): Need initialization method after all
+        # plugins are loaded to grab and store plugin.
+        plugins = manager.NeutronManager.get_service_plugins()
+        grouppolicy_plugin = plugins.get(pconst.GROUP_POLICY)
+        if not grouppolicy_plugin:
+            LOG.error(_("No Grouppolicy service plugin found."))
+            raise s_exc.ServiceChainDeploymentError()
+        return grouppolicy_plugin
+
     def _get_servicechain_node(self, context, node_id):
         try:
             return self._get_by_id(context, ServiceChainNode, node_id)
@@ -205,6 +219,9 @@ class ServiceChainDbPlugin(schain.ServiceChainPluginBase,
         with context.session.begin(subtransactions=True):
             node_db = self._get_servicechain_node(context,
                                                   servicechain_node_id)
+            if node_db.specs:
+                raise schain.ServiceChainNodeInUse(
+                                    node_id=servicechain_node_id)
             context.session.delete(node_db)
 
     @log.log
@@ -331,9 +348,15 @@ class ServiceChainDbPlugin(schain.ServiceChainPluginBase,
 
     @log.log
     def delete_servicechain_spec(self, context, spec_id):
+        policy_actions = self._grouppolicy_plugin.get_policy_actions(
+                                context, filters={"action_value": [spec_id]})
+        if policy_actions:
+            raise schain.ServiceChainSpecInUse(spec_id=spec_id)
         with context.session.begin(subtransactions=True):
             spec_db = self._get_servicechain_spec(context,
                                                   spec_id)
+            if spec_db.instances:
+                raise schain.ServiceChainSpecInUse(spec_id=spec_id)
             context.session.delete(spec_db)
 
     @log.log
