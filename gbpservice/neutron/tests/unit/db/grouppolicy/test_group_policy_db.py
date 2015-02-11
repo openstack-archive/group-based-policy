@@ -389,6 +389,14 @@ class TestGroupResources(GroupPolicyDbTestCase):
         self.assertRaises(gpolicy.L2PolicyNotFound, self.plugin.get_l2_policy,
                           ctx, l2p_id)
 
+    def test_delete_l2_policy_in_use(self):
+        ctx = context.get_admin_context()
+        l2p = self.create_l2_policy()
+        l2p_id = l2p['l2_policy']['id']
+        self.create_policy_target_group(l2_policy_id=l2p_id)
+        self.assertRaises(gpolicy.L2PolicyInUse,
+                          self.plugin.delete_l2_policy, ctx, l2p_id)
+
     def test_create_and_show_l3_policy(self):
         es = self.create_external_segment()['external_segment']
         es_dict = {es['id']: ['172.16.0.2', '172.16.0.3']}
@@ -489,6 +497,14 @@ class TestGroupResources(GroupPolicyDbTestCase):
         self.assertEqual(res.status_int, webob.exc.HTTPNoContent.code)
         self.assertRaises(gpolicy.L3PolicyNotFound, self.plugin.get_l3_policy,
                           ctx, l3p_id)
+
+    def test_delete_l3_policy_in_use(self):
+        ctx = context.get_admin_context()
+        l3p = self.create_l3_policy()
+        l3p_id = l3p['l3_policy']['id']
+        self.create_l2_policy(l3_policy_id=l3p_id)
+        self.assertRaises(gpolicy.L3PolicyInUse,
+                          self.plugin.delete_l3_policy, ctx, l3p_id)
 
     def test_create_and_show_network_service_policy(self):
         params = [{'type': 'ip_single', 'name': 'vip', 'value': 'self_subnet'}]
