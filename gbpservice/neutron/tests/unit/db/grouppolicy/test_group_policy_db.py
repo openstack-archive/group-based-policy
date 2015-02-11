@@ -389,6 +389,14 @@ class TestGroupResources(GroupPolicyDbTestCase):
         self.assertRaises(gpolicy.L2PolicyNotFound, self.plugin.get_l2_policy,
                           ctx, l2p_id)
 
+    def test_delete_l2_policy_in_use(self):
+        ctx = context.get_admin_context()
+        l2p = self.create_l2_policy()
+        l2p_id = l2p['l2_policy']['id']
+        self.create_policy_target_group(l2_policy_id=l2p_id)
+        self.assertRaises(gpolicy.L2PolicyInUse,
+                          self.plugin.delete_l2_policy, ctx, l2p_id)
+
     def test_create_and_show_l3_policy(self):
         es = self.create_external_segment()['external_segment']
         es_dict = {es['id']: ['172.16.0.2', '172.16.0.3']}

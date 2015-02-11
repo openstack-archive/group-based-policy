@@ -1179,6 +1179,8 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
     def delete_l2_policy(self, context, l2_policy_id):
         with context.session.begin(subtransactions=True):
             l2p_db = self._get_l2_policy(context, l2_policy_id)
+            if l2p_db.policy_target_groups:
+                raise gpolicy.L2PolicyInUse(l2_policy_id=l2_policy_id)
             context.session.delete(l2p_db)
 
     @log.log

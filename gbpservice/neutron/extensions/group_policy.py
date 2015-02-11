@@ -60,6 +60,11 @@ class L2PolicyNotFound(nexc.NotFound):
     message = _("L2Policy %(l2_policy_id)s could not be found")
 
 
+class L2PolicyInUse(nexc.InUse):
+    message = _("Unable to complete operation, L2Policy %(l2_policy_id)s is "
+                "in use")
+
+
 class L3PolicyNotFound(nexc.NotFound):
     message = _("L3Policy %(l3_policy_id)s could not be found")
 
