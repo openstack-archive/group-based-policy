@@ -1128,6 +1128,17 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
         with context.session.begin(subtransactions=True):
             ptg_db = self._get_policy_target_group(
                 context, policy_target_group_id)
+            # REVISIT(rkukura): An exception should be raised here if
+            # the PTG is referenced by any PTs, but code added to
+            # GroupPolicyPlugin.delete_policy_target_group() in
+            # https://review.openstack.org/#/c/144214/ handles this
+            # based on whether the PTs referencing it have ports. Note
+            # that the ports are only removed from the PTs due to
+            # https://bugs.launchpad.net/nova/+bug/1158684. Once that
+            # bug is fixed, Nova will no longer be deleting the ports,
+            # we'll need some way to delete the PTs from Horizon, and
+            # then we might as well check for in-use EPGs here as with
+            # other resources.
             context.session.delete(ptg_db)
 
     @log.log
@@ -1179,6 +1190,8 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
     def delete_l2_policy(self, context, l2_policy_id):
         with context.session.begin(subtransactions=True):
             l2p_db = self._get_l2_policy(context, l2_policy_id)
+            if l2p_db.policy_target_groups:
+                raise gpolicy.L2PolicyInUse(l2_policy_id=l2_policy_id)
             context.session.delete(l2p_db)
 
     @log.log
@@ -1247,6 +1260,8 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
     def delete_l3_policy(self, context, l3_policy_id):
         with context.session.begin(subtransactions=True):
             l3p_db = self._get_l3_policy(context, l3_policy_id)
+            if l3p_db.l2_policies:
+                raise gpolicy.L3PolicyInUse(l3_policy_id=l3_policy_id)
             context.session.delete(l3p_db)
 
     @log.log
