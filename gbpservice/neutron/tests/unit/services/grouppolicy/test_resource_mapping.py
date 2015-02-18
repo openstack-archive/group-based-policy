@@ -13,9 +13,10 @@
 
 import contextlib
 import itertools
-import netaddr
-
 import mock
+import netaddr
+import webob.exc
+
 from neutron.api.rpc.agentnotifiers import dhcp_rpc_agent_api
 from neutron.common import constants as cst
 from neutron import context as nctx
@@ -27,7 +28,6 @@ from neutron.openstack.common import uuidutils
 from neutron.plugins.common import constants as pconst
 from neutron.tests.unit import test_extension_security_group
 from neutron.tests.unit import test_l3_plugin
-import webob.exc
 
 from gbpservice.neutron.db.grouppolicy import group_policy_db as gpdb
 from gbpservice.neutron.db import servicechain_db
@@ -36,8 +36,13 @@ from gbpservice.neutron.services.grouppolicy import config
 from gbpservice.neutron.services.grouppolicy.drivers import resource_mapping
 from gbpservice.neutron.services.servicechain import config as sc_cfg
 from gbpservice.neutron.tests.unit.services.grouppolicy import (
+    mock_neutronv2_api as mock_neutron)
+from gbpservice.neutron.tests.unit.services.grouppolicy import (
     test_grouppolicy_plugin as test_plugin)
 
+
+CORE_PLUGIN = ('gbpservice.neutron.tests.unit.services.grouppolicy.'
+               'test_resource_mapping.NoL3NatSGTestPlugin')
 SERVICECHAIN_NODES = 'servicechain/servicechain_nodes'
 SERVICECHAIN_SPECS = 'servicechain/servicechain_specs'
 SERVICECHAIN_INSTANCES = 'servicechain/servicechain_instances'
@@ -46,15 +51,11 @@ SERVICECHAIN_INSTANCES = 'servicechain/servicechain_instances'
 class NoL3NatSGTestPlugin(
         test_l3_plugin.TestNoL3NatPlugin,
         test_extension_security_group.SecurityGroupTestPlugin):
-
     supported_extension_aliases = ["external-net", "security-group"]
 
 
-CORE_PLUGIN = ('gbpservice.neutron.tests.unit.services.grouppolicy.'
-               'test_resource_mapping.NoL3NatSGTestPlugin')
-
-
-class ResourceMappingTestCase(test_plugin.GroupPolicyPluginTestCase):
+class ResourceMappingTestCase(test_plugin.GroupPolicyPluginTestCase,
+                              mock_neutron.Neutronv2MockMixin):
 
     def setUp(self, policy_drivers=None):
         policy_drivers = policy_drivers or ['implicit_policy',
@@ -74,6 +75,7 @@ class ResourceMappingTestCase(test_plugin.GroupPolicyPluginTestCase):
         self._context = nctx.get_admin_context()
         plugins = manager.NeutronManager.get_service_plugins()
         self._gbp_plugin = plugins.get(pconst.GROUP_POLICY)
+        self._setUp_mock()
 
     def get_plugin_context(self):
         return self._plugin, self._context
@@ -2725,4 +2727,4 @@ class TestNetworkServicePolicy(ResourceMappingTestCase):
         subnet = self._show_subnet(ptg_subnet_id)['subnet']
         allocation_pool_after_nsp_cleanup = subnet['allocation_pools']
         self.assertEqual(
-                initial_allocation_pool, allocation_pool_after_nsp_cleanup)
+            initial_allocation_pool, allocation_pool_after_nsp_cleanup)
