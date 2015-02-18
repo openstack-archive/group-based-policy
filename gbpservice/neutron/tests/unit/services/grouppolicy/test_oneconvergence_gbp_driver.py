@@ -18,6 +18,8 @@ import mock
 from gbpservice.neutron.services.grouppolicy.drivers.oneconvergence import (
     nvsd_gbp_api as api)
 from gbpservice.neutron.tests.unit.services.grouppolicy import (
+    mock_neutronv2_api as mock_neutron)
+from gbpservice.neutron.tests.unit.services.grouppolicy import (
     test_resource_mapping as test_resource_mapping)
 
 
@@ -67,6 +69,7 @@ class TestPolicyTarget(OneConvergenceGBPDriverTestCase,
                        test_resource_mapping.TestPolicyTarget):
 
     # Functionality tests and api results are covered by the base class tests
+    @mock_neutron.meta_mock
     def test_oneconvergence_controller_api_invoked(self):
         with contextlib.nested(
                 mock.patch.object(MockNVSDApiClient, 'create_endpoint'),
@@ -90,6 +93,7 @@ class TestPolicyTarget(OneConvergenceGBPDriverTestCase,
 class TestPolicyTargetGroup(OneConvergenceGBPDriverTestCase,
                             test_resource_mapping.TestPolicyTargetGroup):
 
+    @mock_neutron.meta_mock
     def test_subnet_allocation(self):
         ptg1 = self.create_policy_target_group(name="ptg1")
         subnet1 = ptg1['policy_target_group']['subnets']
@@ -97,6 +101,7 @@ class TestPolicyTargetGroup(OneConvergenceGBPDriverTestCase,
         subnet2 = ptg2['policy_target_group']['subnets']
         self.assertEqual(subnet1, subnet2)
 
+    @mock_neutron.meta_mock
     def test_no_extra_subnets_created(self):
         count = len(self._get_all_subnets())
         self.create_policy_target_group()
@@ -109,6 +114,7 @@ class TestPolicyTargetGroup(OneConvergenceGBPDriverTestCase,
         # One Convergence driver shares the same implicit subnet
         pass
 
+    @mock_neutron.meta_mock
     def test_oneconvergence_controller_api_invoked(self):
         with contextlib.nested(
                 mock.patch.object(MockNVSDApiClient, 'create_endpointgroup'),
