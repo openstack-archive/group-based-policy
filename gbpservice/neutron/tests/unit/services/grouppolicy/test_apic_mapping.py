@@ -31,6 +31,8 @@ from gbpservice.neutron.services.grouppolicy import config
 from gbpservice.neutron.services.grouppolicy.drivers.cisco.apic import (
     apic_mapping as amap)
 from gbpservice.neutron.tests.unit.services.grouppolicy import (
+    mock_neutronv2_api as mock_neutron)
+from gbpservice.neutron.tests.unit.services.grouppolicy import (
     test_grouppolicy_plugin as test_plugin)
 
 APIC_L2_POLICY = 'l2_policy'
@@ -127,6 +129,7 @@ class ApicMappingTestCase(
 
 class TestPolicyTarget(ApicMappingTestCase):
 
+    @mock_neutron.meta_mock
     def test_policy_target_created_on_apic(self):
         ptg = self.create_policy_target_group()['policy_target_group']
         subnet = self._get_object('subnets', ptg['subnets'][0], self.api)
@@ -137,6 +140,7 @@ class TestPolicyTarget(ApicMappingTestCase):
             mgr = self.driver.apic_manager
             self.assertEqual(mgr.ensure_path_created_for_port.call_count, 1)
 
+    @mock_neutron.meta_mock
     def test_policy_target_port_update_on_apic_none_to_host(self):
         ptg = self.create_policy_target_group(
             name="ptg1")['policy_target_group']
@@ -150,6 +154,7 @@ class TestPolicyTarget(ApicMappingTestCase):
         mgr = self.driver.apic_manager
         self.assertEqual(mgr.ensure_path_created_for_port.call_count, 2)
 
+    @mock_neutron.meta_mock
     def test_policy_target_port_deleted_on_apic(self):
         ptg = self.create_policy_target_group()['policy_target_group']
         subnet = self._get_object('subnets', ptg['subnets'][0], self.api)
@@ -163,6 +168,7 @@ class TestPolicyTarget(ApicMappingTestCase):
             mgr = self.driver.apic_manager
             self.assertEqual(mgr.ensure_path_deleted_for_port.call_count, 1)
 
+    @mock_neutron.meta_mock
     def test_policy_target_delete_no_port(self):
         ptg = self.create_policy_target_group()['policy_target_group']
         subnet = self._get_object('subnets', ptg['subnets'][0], self.api)
@@ -176,6 +182,7 @@ class TestPolicyTarget(ApicMappingTestCase):
             self.delete_policy_target(pt['policy_target']['id'],
                                       expected_res_status=204)
 
+    @mock_neutron.meta_mock
     def test_policy_target_port_deleted_on_apic_host_to_host(self):
         ptg = self.create_policy_target_group()['policy_target_group']
         subnet = self._get_object('subnets', ptg['subnets'][0], self.api)
@@ -197,6 +204,7 @@ class TestPolicyTarget(ApicMappingTestCase):
             # Path deleted 1 time
             self.assertEqual(mgr.ensure_path_deleted_for_port.call_count, 2)
 
+    @mock_neutron.meta_mock
     def test_policy_target_port_not_deleted(self):
         # Create 2 EP same PTG same host bound
         ptg = self.create_policy_target_group(
@@ -234,9 +242,11 @@ class TestPolicyTargetGroup(ApicMappingTestCase):
             tenant, ptg['id'], bd_name=ptg['l2_policy_id'],
             bd_owner=tenant)
 
+    @mock_neutron.meta_mock
     def test_policy_target_group_created_on_apic(self):
         self._test_policy_target_group_created_on_apic()
 
+    @mock_neutron.meta_mock
     def test_policy_target_group_created_on_apic_shared(self):
         self._test_policy_target_group_created_on_apic(shared=True)
 
@@ -293,27 +303,35 @@ class TestPolicyTargetGroup(ApicMappingTestCase):
             contract_owner=ct_owner,
             transaction='transaction', provider=provider)
 
+    @mock_neutron.meta_mock
     def test_ptg_policy_rule_set_provider_created(self):
         self._test_ptg_policy_rule_set_created()
 
+    @mock_neutron.meta_mock
     def test_ptg_policy_rule_set_provider_updated(self):
         self._test_ptg_policy_rule_set_updated()
 
+    @mock_neutron.meta_mock
     def test_ptg_policy_rule_set_consumer_created(self):
         self._test_ptg_policy_rule_set_created(False)
 
+    @mock_neutron.meta_mock
     def test_ptg_policy_rule_set_consumer_updated(self):
         self._test_ptg_policy_rule_set_updated(False)
 
+    @mock_neutron.meta_mock
     def test_ptg_policy_rule_set_provider_created_shared(self):
         self._test_ptg_policy_rule_set_created(shared=True)
 
+    @mock_neutron.meta_mock
     def test_ptg_policy_rule_set_provider_updated_shared(self):
         self._test_ptg_policy_rule_set_updated(shared=True)
 
+    @mock_neutron.meta_mock
     def test_ptg_policy_rule_set_consumer_created_shared(self):
         self._test_ptg_policy_rule_set_created(False, shared=True)
 
+    @mock_neutron.meta_mock
     def test_ptg_policy_rule_set_consumer_updated_shared(self):
         self._test_ptg_policy_rule_set_updated(False, shared=True)
 
@@ -328,9 +346,11 @@ class TestPolicyTargetGroup(ApicMappingTestCase):
         mgr.delete_epg_for_network.assert_called_once_with(
             tenant, ptg['id'])
 
+    @mock_neutron.meta_mock
     def test_policy_target_group_deleted_on_apic(self):
         self._test_policy_target_group_deleted_on_apic()
 
+    @mock_neutron.meta_mock
     def test_policy_target_group_deleted_on_apic_shared(self):
         self._test_policy_target_group_deleted_on_apic(shared=True)
 
@@ -344,9 +364,11 @@ class TestPolicyTargetGroup(ApicMappingTestCase):
             tenant, ptg['l2_policy_id'], '10.0.0.1/24',
             transaction='transaction')
 
+    @mock_neutron.meta_mock
     def test_policy_target_group_subnet_created_on_apic(self):
         self._test_policy_target_group_subnet_created_on_apic()
 
+    @mock_neutron.meta_mock
     def test_policy_target_group_subnet_created_on_apic_shared(self):
         self._test_policy_target_group_subnet_created_on_apic(shared=True)
 
@@ -368,9 +390,11 @@ class TestPolicyTargetGroup(ApicMappingTestCase):
                 tenant, ptg['l2_policy_id'], '10.0.1.1/24',
                 transaction='transaction')
 
+    @mock_neutron.meta_mock
     def test_policy_target_group_subnet_added(self):
         self._test_policy_target_group_subnet_added()
 
+    @mock_neutron.meta_mock
     def test_policy_target_group_subnet_added_shared(self):
         self._test_policy_target_group_subnet_added(shared=True)
 
@@ -392,9 +416,11 @@ class TestPolicyTargetGroup(ApicMappingTestCase):
             tenant, ptg['l2_policy_id'], '10.0.0.1/24',
             transaction='transaction')
 
+    @mock_neutron.meta_mock
     def test_process_subnet_update(self):
         self._test_process_subnet_update()
 
+    @mock_neutron.meta_mock
     def test_process_subnet_update_shared(self):
         self._test_process_subnet_update(shared=True)
 
@@ -420,9 +446,11 @@ class TestL2Policy(ApicMappingTestCase):
         mgr.ensure_bd_created_on_apic.assert_called_once_with(
             tenant, l2p['id'], ctx_owner=tenant, ctx_name=l2p['l3_policy_id'])
 
+    @mock_neutron.meta_mock
     def test_l2_policy_created_on_apic(self):
         self._test_l2_policy_created_on_apic()
 
+    @mock_neutron.meta_mock
     def test_l2_policy_created_on_apic_shared(self):
         self._test_l2_policy_created_on_apic(shared=True)
 
@@ -435,9 +463,11 @@ class TestL2Policy(ApicMappingTestCase):
         mgr.delete_bd_on_apic.assert_called_once_with(
             tenant, l2p['id'])
 
+    @mock_neutron.meta_mock
     def test_l2_policy_deleted_on_apic(self):
         self._test_l2_policy_deleted_on_apic()
 
+    @mock_neutron.meta_mock
     def test_l2_policy_deleted_on_apic_shared(self):
         self._test_l2_policy_deleted_on_apic(shared=True)
 
