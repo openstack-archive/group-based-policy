@@ -10,8 +10,16 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-import netaddr
 
+import netaddr
+import sqlalchemy as sa
+
+from gbpservice.network.neutronv2 import api as nc_api
+from gbpservice.neutron.db.grouppolicy import group_policy_db as gpdb
+from gbpservice.neutron.services.grouppolicy import (
+    group_policy_driver_api as api)
+from gbpservice.neutron.services.grouppolicy.common import constants as gconst
+from gbpservice.neutron.services.grouppolicy.common import exceptions as exc
 from neutron.api.rpc.agentnotifiers import dhcp_rpc_agent_api
 from neutron.api.v2 import attributes
 from neutron.common import constants as const
@@ -26,18 +34,12 @@ from neutron.notifiers import nova
 from neutron.openstack.common import jsonutils
 from neutron.openstack.common import log as logging
 from neutron.plugins.common import constants as pconst
+from neutronclient.common import exceptions as nc_exc
 from oslo.config import cfg
-import sqlalchemy as sa
-
-from gbpservice.neutron.db.grouppolicy import group_policy_db as gpdb
-from gbpservice.neutron.db import servicechain_db  # noqa
-from gbpservice.neutron.services.grouppolicy import (
-    group_policy_driver_api as api)
-from gbpservice.neutron.services.grouppolicy.common import constants as gconst
-from gbpservice.neutron.services.grouppolicy.common import exceptions as exc
 
 
 LOG = logging.getLogger(__name__)
+MESSAGE_SG_RULE_EXISTS = "Security group rule already exists."
 
 
 class OwnedPort(model_base.BASEV2):
@@ -132,6 +134,7 @@ class ResourceMappingDriver(api.PolicyDriver):
     def initialize(self):
         self._cached_agent_notifier = None
         self._nova_notifier = nova.Notifier()
+        self._neutron = nc_api.API()
 
     def _reject_shared(self, object, type):
         if object.get('shared'):
@@ -158,8 +161,8 @@ class ResourceMappingDriver(api.PolicyDriver):
 
     def _reject_non_shared_net_on_shared_l2p(self, context):
         if context.current.get('shared') and context.current['network_id']:
-            net = self._core_plugin.get_network(
-                context._plugin_context, context.current['network_id'])
+            net = self._get_network(context._plugin_context,
+                                    context.current['network_id'])
             if not net.get('shared'):
                 raise exc.NonSharedNetworkOnSharedL2PolicyNotSupported()
 
@@ -172,9 +175,14 @@ class ResourceMappingDriver(api.PolicyDriver):
             plugin_context = context._plugin_context
             network = None
             try:
-                network = self._core_plugin.get_network(plugin_context,
-                                                        network_id)
+                network = self._get_network(plugin_context, network_id)
+            except nc_exc.NetworkNotFoundClient:
+                raise exc.InvalidNetworkAccess(
+                    msg="Can't access other tenants networks",
+                    network_id=context.current['network_id'],
+                    tenant_id=context.current['tenant_id'])
             except n_exc.NetworkNotFound:
+                # REVISIT(yi): still need to process neutron exception for UT
                 raise exc.InvalidNetworkAccess(
                     msg="Can't access other tenants networks",
                     network_id=context.current['network_id'],
@@ -195,9 +203,14 @@ class ResourceMappingDriver(api.PolicyDriver):
         for router_id in context.current['routers']:
             router = None
             try:
-                router = self._l3_plugin.get_router(context._plugin_context,
-                                                    router_id)
+                router = self._get_router(context._plugin_context, router_id)
+            except nc_exc.NotFound:
+                raise exc.InvalidRouterAccess(
+                    msg="Can't access other tenants router",
+                    router_id=router_id,
+                    tenant_id=context.current['tenant_id'])
             except n_exc.NotFound:
+                # REVISIT(yi): still need to process neutron exception for UT
                 raise exc.InvalidRouterAccess(
                     msg="Can't access other tenants router",
                     router_id=router_id,
@@ -811,7 +824,7 @@ class ResourceMappingDriver(api.PolicyDriver):
                     self._disassoc_sgs_from_pt(context, pt_id, sg_list)
         # Delete SGs
         for sg in sg_list:
-            self._delete_sg(context._plugin_context, sg)
+            self._delete_security_group(context._plugin_context, sg)
         if context.current['child_policy_rule_sets']:
             self._handle_redirect_action(
                 context, context.current['child_policy_rule_sets'])
@@ -826,10 +839,10 @@ class ResourceMappingDriver(api.PolicyDriver):
 
     def create_external_segment_precommit(self, context):
         if context.current['subnet_id']:
-            subnet = self._core_plugin.get_subnet(context._plugin_context,
-                                                  context.current['subnet_id'])
-            network = self._core_plugin.get_network(context._plugin_context,
-                                                    subnet['network_id'])
+            subnet = self._get_subnet(context._plugin_context,
+                                      context.current['subnet_id'])
+            network = self._get_network(context._plugin_context,
+                                        subnet['network_id'])
             if not network['router:external']:
                 raise exc.InvalidSubnetForES(sub_id=subnet['id'],
                                              net_id=network['id'])
@@ -1006,8 +1019,12 @@ class ResourceMappingDriver(api.PolicyDriver):
         if self._port_is_owned(plugin_context.session, port_id):
             try:
                 self._delete_port(plugin_context, port_id)
-            except n_exc.PortNotFound:
+            except nc_exc.PortNotFoundClient:
                 LOG.warn(_("Port %s is missing") % port_id)
+            except n_exc.PortNotFound:
+                # REVISIT(yi): still need to process neutron exception for UT
+                LOG.warn(_("Port %s is missing") % port_id)
+
 
     def _plug_router_to_external_segment(self, context, es_dict):
         es_list = context._plugin.get_external_segments(
@@ -1015,8 +1032,8 @@ class ResourceMappingDriver(api.PolicyDriver):
         if context.current['routers']:
             router_id = context.current['routers'][0]
             for es in es_list:
-                subnet = self._core_plugin.get_subnet(context._plugin_context,
-                                                      es['subnet_id'])
+                subnet = self._get_subnet(context._plugin_context,
+                                          es['subnet_id'])
                 interface_info = {
                     'network_id': subnet['network_id'],
                     'enable_snat': es['port_address_translation'],
@@ -1040,8 +1057,8 @@ class ResourceMappingDriver(api.PolicyDriver):
         if context.current['routers']:
             router_id = context.current['routers'][0]
             for es in es_list:
-                subnet = self._core_plugin.get_subnet(context._plugin_context,
-                                                      es['subnet_id'])
+                subnet = self._get_subnet(context._plugin_context,
+                                          es['subnet_id'])
                 interface_info = {'network_id': subnet['network_id']}
                 self._remove_router_gw_interface(context._plugin_context,
                                                  router_id, interface_info)
@@ -1066,8 +1083,8 @@ class ResourceMappingDriver(api.PolicyDriver):
         subnets = []
         for ptg in ptgs:
             subnets.extend(ptg['subnets'])
-        subnets = self._core_plugin.get_subnets(context._plugin_context,
-                                                filters={'id': subnets})
+        subnets = self._get_subnets(context._plugin_context,
+                                    filters={'id': subnets})
         for cidr in pool.subnet(l3p['subnet_prefix_length']):
             if not self._validate_subnet_overlap_for_l3p(subnets,
                                                          cidr.__str__()):
@@ -1095,18 +1112,28 @@ class ResourceMappingDriver(api.PolicyDriver):
                         context._plugin_context.session, subnet_id)
                     context.add_subnet(subnet_id)
                     return
-                except n_exc.InvalidInput:
+                except nc_exc.BadRequest:
                     # This exception is not expected. We catch this
                     # here so that it isn't caught below and handled
                     # as if the CIDR is already in use.
                     LOG.exception(_("adding subnet to router failed"))
                     self._delete_subnet(context._plugin_context, subnet['id'])
                     raise exc.GroupPolicyInternalError()
-            except n_exc.BadRequest:
+                except n_exc.InvalidInput:
+                    # REVISIT(yi): still need to process neutron exception
+                    # for UT
+                    LOG.exception(_("adding subnet to router failed"))
+                    self._delete_subnet(context._plugin_context, subnet['id'])
+                    raise exc.GroupPolicyInternalError()
+            except nc_exc.BadRequest:
                 # This is expected (CIDR overlap) until we have a
                 # proper subnet allocation algorithm. We ignore the
                 # exception and repeat with the next CIDR.
                 pass
+            except n_exc.BadRequest:
+                # REVISIT(yi): still need to process neutron exception for UT
+                pass
+
         raise exc.NoSubnetAvailable()
 
     def _validate_subnet_overlap_for_l3p(self, subnets, subnet_cidr):
@@ -1167,14 +1194,15 @@ class ResourceMappingDriver(api.PolicyDriver):
         # This method sets up the attributes of security group
         attrs = {'tenant_id': context.current['tenant_id'],
                  'name': sg_name_prefix + '_' + context.current['name'],
-                 'description': '',
-                 'security_group_rules': ''}
-        sg = self._create_sg(context._plugin_context, attrs)
+                 'description': ''}
+        # TODO(yi): remove this as rules are not allowed when creating sg
+        #         'security_group_rules': ''}
+        sg = self._create_security_group(context._plugin_context, attrs)
         # Cleanup default rules
-        for rule in self._core_plugin.get_security_group_rules(
+        for rule in self._get_security_group_rules(
                 context._plugin_context,
                 filters={'security_group_id': [sg['id']]}):
-            self._core_plugin.delete_security_group_rule(
+            self._delete_security_group_rule(
                 context._plugin_context, rule['id'])
         return sg
 
@@ -1346,113 +1374,153 @@ class ResourceMappingDriver(api.PolicyDriver):
     def _cleanup_redirect_action(self, context):
         for ptg_chain in context.ptg_chain_map:
             self._delete_servicechain_instance(
-                            context, ptg_chain.servicechain_instance_id)
-
-    # The following methods perform the necessary subset of
-    # functionality from neutron.api.v2.base.Controller.
-    #
-    # REVISIT(rkukura): Can we just use the WSGI Controller?  Using
-    # neutronclient is also a possibility, but presents significant
-    # issues to unit testing as well as overhead and failure modes.
+                context, ptg_chain.servicechain_instance_id)
 
     def _create_port(self, plugin_context, attrs):
-        return self._create_resource(self._core_plugin, plugin_context, 'port',
-                                     attrs)
+        return self._create_neutron_resource(plugin_context, 'port', attrs)
+
+    def _get_port(self, plugin_context, port_id):
+        return self._get_neutron_resource(plugin_context, 'port', port_id)
 
     def _update_port(self, plugin_context, port_id, attrs):
-        return self._update_resource(self._core_plugin, plugin_context, 'port',
-                                     port_id, attrs)
+        return self._update_neutron_resource(
+            plugin_context, 'port', port_id, attrs)
 
     def _delete_port(self, plugin_context, port_id):
-        self._delete_resource(self._core_plugin,
-                              plugin_context, 'port', port_id)
+        self._delete_neutron_resource(plugin_context, 'port', port_id)
 
     def _create_subnet(self, plugin_context, attrs):
-        return self._create_resource(self._core_plugin, plugin_context,
-                                     'subnet', attrs)
+        return self._create_neutron_resource(plugin_context, 'subnet', attrs)
+
+    def _get_subnet(self, plugin_context, subnet_id):
+        return self._get_neutron_resource(plugin_context, 'subnet', subnet_id)
+
+    def _get_subnets(self, plugin_context, filters={}):
+        return self._get_neutron_resources(plugin_context, 'subnet', filters)
 
     def _update_subnet(self, plugin_context, subnet_id, attrs):
-        return self._update_resource(self._core_plugin, plugin_context,
-                                     'subnet', subnet_id, attrs)
+        return self._update_neutron_resource(
+            plugin_context, 'subnet', subnet_id, attrs)
 
     def _delete_subnet(self, plugin_context, subnet_id):
-        self._delete_resource(self._core_plugin, plugin_context, 'subnet',
-                              subnet_id)
+        self._delete_neutron_resource(plugin_context, 'subnet', subnet_id)
 
     def _create_network(self, plugin_context, attrs):
-        return self._create_resource(self._core_plugin, plugin_context,
-                                     'network', attrs)
+        return self._create_neutron_resource(plugin_context, 'network', attrs)
+
+    def _get_network(self, plugin_context, network_id):
+        return self._get_neutron_resource(
+            plugin_context, 'network', network_id)
 
     def _delete_network(self, plugin_context, network_id):
-        self._delete_resource(self._core_plugin, plugin_context,
-                              'network', network_id)
+        self._delete_neutron_resource(plugin_context, 'network', network_id)
 
     def _create_router(self, plugin_context, attrs):
-        return self._create_resource(self._l3_plugin, plugin_context, 'router',
-                                     attrs)
+        return self._create_neutron_resource(plugin_context, 'router', attrs)
+
+    def _get_router(self, plugin_context, router_id):
+        return self._get_neutron_resource(plugin_context, 'router', router_id)
 
     def _update_router(self, plugin_context, router_id, attrs):
-        return self._update_resource(self._l3_plugin, plugin_context, 'router',
-                                     router_id, attrs)
+        return self._update_neutron_resource(
+            plugin_context, 'router', router_id, attrs)
+
+    def _delete_router(self, plugin_context, router_id):
+        self._delete_neutron_resource(plugin_context, 'router', router_id)
 
     def _add_router_interface(self, plugin_context, router_id, interface_info):
-        self._l3_plugin.add_router_interface(plugin_context,
-                                             router_id, interface_info)
+        self._neutron.add_router_interface(plugin_context,
+                                           router_id, interface_info)
 
     def _remove_router_interface(self, plugin_context, router_id,
                                  interface_info):
-        self._l3_plugin.remove_router_interface(plugin_context, router_id,
-                                                interface_info)
+        self._neutron.remove_router_interface(plugin_context, router_id,
+                                              interface_info)
 
     def _add_router_gw_interface(self, plugin_context, router_id, gw_info):
-        return self._l3_plugin.update_router(
+        return self._update_router(
             plugin_context, router_id,
-            {'router': {'external_gateway_info': gw_info}})
+            {'external_gateway_info': gw_info})
 
     def _remove_router_gw_interface(self, plugin_context, router_id,
                                     interface_info):
-        self._l3_plugin.update_router(
+        # TODO(yi): the logic is wrong. should do a - operation and
+        # update the router with the rest of the GW interfaces
+        self._update_router(
             plugin_context, router_id,
-            {'router': {'external_gateway_info': None}})
+            {'external_gateway_info': None})
 
-    def _delete_router(self, plugin_context, router_id):
-        self._delete_resource(self._l3_plugin, plugin_context, 'router',
-                              router_id)
+    def _create_security_group(self, plugin_context, attrs):
+        return self._create_neutron_resource(plugin_context,
+                                             'security_group',
+                                             attrs)
 
-    def _create_sg(self, plugin_context, attrs):
-        return self._create_resource(self._core_plugin, plugin_context,
-                                     'security_group', attrs)
+    def _get_security_group(self, plugin_context, sg_id):
+        return self._get_neutron_resource(plugin_context,
+                                          'security_group',
+                                          sg_id)
 
-    def _update_sg(self, plugin_context, sg_id, attrs):
-        return self._update_resouce(self._core_plugin, plugin_context,
-                                    'security_group', sg_id, attrs)
+    def _get_security_groups(self, plugin_context, filters={}):
+        return self._get_neutron_resources(plugin_context,
+                                           'security_group',
+                                           filters)
 
-    def _delete_sg(self, plugin_context, sg_id):
-        self._delete_resource(self._core_plugin, plugin_context,
-                              'security_group', sg_id)
+    def _update_security_group(self, plugin_context, sg_id, attrs):
+        return self._update_neutron_resource(plugin_context,
+                                             'security_group',
+                                             sg_id,
+                                             attrs)
 
-    def _create_sg_rule(self, plugin_context, attrs):
+    def _delete_security_group(self, plugin_context, sg_id):
+        self._delete_neutron_resource(plugin_context,
+                                      'security_group',
+                                      sg_id)
+
+    def _create_security_group_rule(self, plugin_context, attrs):
         try:
-            return self._create_resource(self._core_plugin, plugin_context,
-                                         'security_group_rule', attrs)
+            return self._create_neutron_resource(plugin_context,
+                                                 'security_group_rule',
+                                                 attrs)
+        # except ext_sg.SecurityGroupRuleExists as ex:
+        #     LOG.warn(_('Security Group already exists %s'), ex.message)
+        #     return
+        except nc_exc.Conflict as ex:
+            if MESSAGE_SG_RULE_EXISTS in ex.message:
+                LOG.warn(_('Security Group already exists: %s'), ex.message)
+                return
+            else:
+                raise
         except ext_sg.SecurityGroupRuleExists as ex:
-            LOG.warn(_('Security Group already exists %s'), ex.message)
+            # REVISIT(yi): still need to process neutron exception for UT
+            LOG.warn(_('Security Group already exists: %s'), ex.message)
             return
 
-    def _update_sg_rule(self, plugin_context, sg_rule_id, attrs):
-        return self._update_resource(self._core_plugin, plugin_context,
-                                     'security_group_rule', sg_rule_id,
-                                     attrs)
 
-    def _delete_sg_rule(self, plugin_context, sg_rule_id):
-        self._delete_resource(self._core_plugin, plugin_context,
-                              'security_group_rule', sg_rule_id)
+    def _get_security_group_rule(self, plugin_context, sg_rule_id):
+        return self._get_neutron_resource(plugin_context,
+                                          'security_group_rule',
+                                          sg_rule_id)
+
+    def _get_security_group_rules(self, plugin_context, filters={}):
+        return self._get_neutron_resources(plugin_context,
+                                           'security_group_rule',
+                                           filters)
+
+    def _update_security_group_rule(self, plugin_context, sg_rule_id, attrs):
+        return self._update_neutron_resource(plugin_context,
+                                             'security_group_rule',
+                                             sg_rule_id,
+                                             attrs)
+
+    def _delete_security_group_rule(self, plugin_context, sg_rule_id):
+        self._delete_neutron_resource(plugin_context,
+                                      'security_group_rule',
+                                      sg_rule_id)
 
     def _restore_ip_to_allocation_pool(self, context, subnet_id, ip_address):
         # TODO(Magesh):Pass subnets and loop on subnets. Better to add logic
         # to Merge the pools together after Fragmentation
-        subnet = self._core_plugin.get_subnet(context._plugin_context,
-                                              subnet_id)
+        subnet = self._get_subnet(context._plugin_context, subnet_id)
         allocation_pools = subnet['allocation_pools']
         for allocation_pool in allocation_pools:
             pool_end_ip = allocation_pool.get('end')
@@ -1472,8 +1540,8 @@ class ResourceMappingDriver(api.PolicyDriver):
 
     def _remove_ip_from_allocation_pool(self, context, subnet_id, ip_address):
         # TODO(Magesh):Pass subnets and loop on subnets
-        subnet = self._core_plugin.get_subnet(context._plugin_context,
-                                              subnet_id)
+        subnet = self._get_subnet(context._plugin_context,
+                                  subnet_id)
         allocation_pools = subnet['allocation_pools']
         for allocation_pool in reversed(allocation_pools):
             if ip_address == allocation_pool.get('end'):
@@ -1496,9 +1564,12 @@ class ResourceMappingDriver(api.PolicyDriver):
             ip_address = ip_range['last_ip']
             return ip_address
 
-    def _create_servicechain_instance(self, context, servicechain_spec,
+    def _create_servicechain_instance(self,
+                                      context,
+                                      servicechain_spec,
                                       parent_servicechain_spec,
-                                      provider_ptg_id, consumer_ptg_id,
+                                      provider_ptg_id,
+                                      consumer_ptg_id,
                                       classifier_id,
                                       config_params=None):
         sc_spec = [servicechain_spec]
@@ -1531,7 +1602,8 @@ class ResourceMappingDriver(api.PolicyDriver):
                  'config_param_values': jsonutils.dumps(config_param_values)}
         return self._create_resource(self._servicechain_plugin,
                                      context._plugin_context,
-                                     'servicechain_instance', attrs)
+                                     'servicechain_instance',
+                                     attrs)
 
     def _delete_servicechain_instance(self, context, servicechain_instance_id):
         self._delete_resource(self._servicechain_plugin,
@@ -1543,6 +1615,8 @@ class ResourceMappingDriver(api.PolicyDriver):
         # REVISIT(rkukura): Do create.start notification?
         # REVISIT(rkukura): Check authorization?
         # REVISIT(rkukura): Do quota?
+        #
+        # REVISIT(yi): Keep this after refactoring for other plugins?
         action = 'create_' + resource
         obj_creator = getattr(plugin, action)
         obj = obj_creator(context, {resource: attrs})
@@ -1596,6 +1670,67 @@ class ResourceMappingDriver(api.PolicyDriver):
         obj = obj_getter(context, filters)
         return obj
 
+    def _create_neutron_resource(self, context, resource, attrs):
+        # There are certain attributes are not specified
+        # Need to remove them before creating the resource
+        unspecified = []
+        for attr in attrs:
+            if attrs[attr] == attributes.ATTR_NOT_SPECIFIED:
+                unspecified.append(attr)
+        for attr in unspecified:
+            del attrs[attr]
+
+        action = 'create_' + resource
+        obj_creator = getattr(self._neutron, action)
+        obj = obj_creator(context, {resource: attrs})
+        self._nova_notifier.send_network_change(action, {}, {resource: obj})
+        # REVISIT(yi): Do create.end notification?
+        if cfg.CONF.dhcp_agent_notification:
+            self._dhcp_agent_notifier.notify(context,
+                                             {resource: obj},
+                                             resource + '.create.end')
+        return obj
+
+    def _get_neutron_resource(self, context, resource, resource_id):
+        obj_getter = getattr(self._neutron, 'show_' + resource)
+        obj = obj_getter(context, resource_id)
+        return obj
+
+    def _get_neutron_resources(self, context, resource, filters={}):
+        obj_getter = getattr(self._neutron, 'list_' + resource + 's')
+        obj = obj_getter(context, filters)
+        return obj
+
+    def _update_neutron_resource(self, context, resource, resource_id, attrs):
+        # REVISIT(yi): Do update.start notification?
+        # REVISIT(yi): Check authorization?
+        orig_obj = self._get_neutron_resource(context, resource, resource_id)
+        action = 'update_' + resource
+        obj_updater = getattr(self._neutron, action)
+        obj = obj_updater(context, resource_id, {resource: attrs})
+        self._nova_notifier.send_network_change(action, orig_obj,
+                                                {resource: obj})
+        # REVISIT(yi): Do update.end notification?
+        if cfg.CONF.dhcp_agent_notification:
+            self._dhcp_agent_notifier.notify(context,
+                                             {resource: obj},
+                                             resource + '.update.end')
+        return obj
+
+    def _delete_neutron_resource(self, context, resource, resource_id):
+        # REVISIT(yi): Do delete.start notification?
+        # REVISIT(yi): Check authorization?
+        obj = self._get_neutron_resource(context, resource, resource_id)
+        action = 'delete_' + resource
+        obj_deleter = getattr(self._neutron, action)
+        obj_deleter(context, resource_id)
+        self._nova_notifier.send_network_change(action, {}, {resource: obj})
+        # REVISIT(rkukura): Do delete.end notification?
+        if cfg.CONF.dhcp_agent_notification:
+            self._dhcp_agent_notifier.notify(context,
+                                             {resource: obj},
+                                             resource + '.delete.end')
+
     @property
     def _core_plugin(self):
         # REVISIT(rkukura): Need initialization method after all
@@ -1604,8 +1739,7 @@ class ResourceMappingDriver(api.PolicyDriver):
 
     @property
     def _l3_plugin(self):
-        # REVISIT(rkukura): Need initialization method after all
-        # plugins are loaded to grab and store plugin.
+        # REVISIT(Yi): Do we need this after refactoring? Remove it?
         plugins = manager.NeutronManager.get_service_plugins()
         l3_plugin = plugins.get(pconst.L3_ROUTER_NAT)
         if not l3_plugin:
@@ -1717,12 +1851,12 @@ class ResourceMappingDriver(api.PolicyDriver):
                 value = attrs[key]
                 if value:
                     filters[key] = [value]
-            rule = self._core_plugin.get_security_group_rules(
+            rule = self._get_security_group_rules(
                 plugin_context, filters)
             if rule:
-                self._delete_sg_rule(plugin_context, rule[0]['id'])
+                self._delete_security_group_rule(plugin_context, rule[0]['id'])
         else:
-            return self._create_sg_rule(plugin_context, attrs)
+            return self._create_security_group_rule(plugin_context, attrs)
 
     def _sg_ingress_rule(self, context, sg_id, protocol, port_range, cidr,
                          unset=False):
@@ -1739,11 +1873,11 @@ class ResourceMappingDriver(api.PolicyDriver):
     def _assoc_sgs_to_pt(self, context, pt_id, sg_list):
         pt = context._plugin.get_policy_target(context._plugin_context, pt_id)
         port_id = pt['port_id']
-        port = self._core_plugin.get_port(context._plugin_context, port_id)
+        port = self._get_port(context._plugin_context, port_id)
         cur_sg_list = port[ext_sg.SECURITYGROUPS]
         new_sg_list = cur_sg_list + sg_list
-        port[ext_sg.SECURITYGROUPS] = new_sg_list
-        self._update_port(context._plugin_context, port_id, port)
+        updated_port = dict([(ext_sg.SECURITYGROUPS, new_sg_list)])
+        self._update_port(context._plugin_context, port_id, updated_port)
 
     def _disassoc_sgs_from_pt(self, context, pt_id, sg_list):
         pt = context._plugin.get_policy_target(context._plugin_context, pt_id)
@@ -1752,13 +1886,21 @@ class ResourceMappingDriver(api.PolicyDriver):
 
     def _disassoc_sgs_from_port(self, plugin_context, port_id, sg_list):
         try:
-            port = self._core_plugin.get_port(plugin_context, port_id)
+            port = self._get_port(plugin_context, port_id)
             cur_sg_list = port[ext_sg.SECURITYGROUPS]
             new_sg_list = list(set(cur_sg_list) - set(sg_list))
-            port[ext_sg.SECURITYGROUPS] = new_sg_list
-            self._update_port(plugin_context, port_id, port)
+            port_update = dict([(ext_sg.SECURITYGROUPS, new_sg_list)])
+            self._update_port(plugin_context, port_id, port_update)
+        except nc_exc.NeutronClientException as e:
+            if e.status_code == 404:
+                LOG.warn(_("Port %s is missing") % port_id)
+            else:
+                raise
         except n_exc.PortNotFound:
+            # REVISIT(yi): still need to process neutron exception for UT
             LOG.warn(_("Port %s is missing") % port_id)
+
+
 
     def _generate_list_of_sg_from_ptg(self, context, ptg_id):
         ptg = context._plugin.get_policy_target_group(
@@ -1818,8 +1960,7 @@ class ResourceMappingDriver(api.PolicyDriver):
 
         cidr_list = []
         for subnet_id in subnets:
-            subnet = self._core_plugin.get_subnet(context._plugin_context,
-                                                  subnet_id)
+            subnet = self._get_subnet(context._plugin_context, subnet_id)
             cidr = subnet['cidr']
             cidr_list.append(cidr)
         self._set_or_unset_rules_for_cidrs(
@@ -1973,7 +2114,7 @@ class ResourceMappingDriver(api.PolicyDriver):
                                     tenant_id):
         port_name = 'gbp_%s' % ptg_id
         filters = {'name': [port_name], 'tenant_id': [tenant_id]}
-        default_group = self._core_plugin.get_security_groups(
+        default_group = self._get_security_groups(
             plugin_context, filters)
         return default_group[0]['id'] if default_group else None
 
@@ -1987,9 +2128,9 @@ class ResourceMappingDriver(api.PolicyDriver):
             port_name = 'gbp_%s' % ptg_id
             attrs = {'name': port_name, 'tenant_id': tenant_id,
                      'description': 'default'}
-            sg_id = self._create_sg(plugin_context, attrs)['id']
+            sg_id = self._create_security_group(plugin_context, attrs)['id']
 
-        for subnet in self._core_plugin.get_subnets(
+        for subnet in self._get_subnets(
                 plugin_context, filters={'id': subnets or []}):
             self._sg_rule(plugin_context, tenant_id, sg_id,
                           'ingress', cidr=subnet['cidr'],
@@ -2001,7 +2142,7 @@ class ResourceMappingDriver(api.PolicyDriver):
         sg_id = self._get_default_security_group(plugin_context, ptg_id,
                                                  tenant_id)
         if sg_id:
-            self._delete_sg(plugin_context, sg_id)
+            self._delete_security_group(plugin_context, sg_id)
 
     def _get_ptgs_by_id(self, context, ids):
         if ids:
@@ -2016,7 +2157,7 @@ class ResourceMappingDriver(api.PolicyDriver):
         ptgs = context._plugin.get_policy_target_groups(
             context._plugin_context, filters={'id': ptgs})
         for ptg in ptgs:
-            cidrs.extend([self._core_plugin.get_subnet(
+            cidrs.extend([self._get_subnet(
                 context._plugin_context, x)['cidr'] for x in ptg['subnets']])
         return cidrs
 
@@ -2103,7 +2244,7 @@ class ResourceMappingDriver(api.PolicyDriver):
         l3ps = context._plugin.get_l3_policies(
             admin_context, filters={'id': context.current['l3_policies']})
         for l3p in l3ps:
-            router = self._l3_plugin.get_routes(
+            router = self._get_router(
                 admin_context, l3p['router_id'])
             current_routes = set((x['destination'], x['nexthop']) for x in
                                  router['routes'])
@@ -2177,8 +2318,7 @@ class ResourceMappingDriver(api.PolicyDriver):
                                                 l2p_id)
             # Validate explicit subnet belongs to L2P's network
             network_id = l2p['network_id']
-            network = self._core_plugin.get_network(context._plugin_context,
-                                                    network_id)
+            network = self._get_network(context._plugin_context, network_id)
             for subnet_id in subnets or context.current['subnets']:
                 if subnet_id not in network['subnets']:
                     raise exc.InvalidSubnetForPTG(subnet_id=subnet_id,
@@ -2213,8 +2353,7 @@ class ResourceMappingDriver(api.PolicyDriver):
         # Validate if explicit port's subnet
         # is same as the subnet of PTG.
         port_id = context.current['port_id']
-        core_plugin = self._core_plugin
-        port = core_plugin.get_port(context._plugin_context, port_id)
+        port = self._get_port(context._plugin_context, port_id)
 
         port_subnet_id = None
         fixed_ips = port['fixed_ips']
