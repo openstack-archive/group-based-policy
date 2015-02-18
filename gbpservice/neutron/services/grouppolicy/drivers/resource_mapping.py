@@ -11,11 +11,12 @@
 #    under the License.
 
 import netaddr
+import sqlalchemy as sa
+import webob.exc
 
 from neutron.api.rpc.agentnotifiers import dhcp_rpc_agent_api
 from neutron.api.v2 import attributes
 from neutron.common import constants as const
-from neutron.common import exceptions as n_exc
 from neutron.common import log
 from neutron import context as n_context
 from neutron.db import model_base
@@ -26,18 +27,22 @@ from neutron.notifiers import nova
 from neutron.openstack.common import jsonutils
 from neutron.openstack.common import log as logging
 from neutron.plugins.common import constants as pconst
+from neutronclient.common import exceptions as nc_exc
 from oslo.config import cfg
-import sqlalchemy as sa
 
+from gbpservice.network.neutronv2 import api as nc_api
 from gbpservice.neutron.db.grouppolicy import group_policy_db as gpdb
 from gbpservice.neutron.db import servicechain_db  # noqa
 from gbpservice.neutron.services.grouppolicy import (
     group_policy_driver_api as api)
 from gbpservice.neutron.services.grouppolicy.common import constants as gconst
 from gbpservice.neutron.services.grouppolicy.common import exceptions as exc
+from gbpservice.neutron.services.grouppolicy.drivers import (
+    neutron_api_mixin as mixin)
 
 
 LOG = logging.getLogger(__name__)
+MESSAGE_SG_RULE_EXISTS = "Security group rule already exists."
 
 
 class OwnedPort(model_base.BASEV2):
@@ -121,7 +126,8 @@ class ServicePolicyPTGIpAddressMapping(model_base.BASEV2):
     ipaddress = sa.Column(sa.String(36))
 
 
-class ResourceMappingDriver(api.PolicyDriver):
+class ResourceMappingDriver(api.PolicyDriver,
+                            mixin.NeutronAPIMixin):
     """Resource Mapping driver for Group Policy plugin.
 
     This driver implements group policy semantics by mapping group
@@ -132,6 +138,7 @@ class ResourceMappingDriver(api.PolicyDriver):
     def initialize(self):
         self._cached_agent_notifier = None
         self._nova_notifier = nova.Notifier()
+        self._neutron = nc_api.API()
 
     def _reject_shared(self, object, type):
         if object.get('shared'):
@@ -158,7 +165,7 @@ class ResourceMappingDriver(api.PolicyDriver):
 
     def _reject_non_shared_net_on_shared_l2p(self, context):
         if context.current.get('shared') and context.current['network_id']:
-            net = self._core_plugin.get_network(
+            net = self._get_network(
                 context._plugin_context, context.current['network_id'])
             if not net.get('shared'):
                 raise exc.NonSharedNetworkOnSharedL2PolicyNotSupported()
@@ -172,13 +179,21 @@ class ResourceMappingDriver(api.PolicyDriver):
             plugin_context = context._plugin_context
             network = None
             try:
-                network = self._core_plugin.get_network(plugin_context,
-                                                        network_id)
-            except n_exc.NetworkNotFound:
+                network = self._get_network(plugin_context, network_id)
+            except nc_exc.NetworkNotFoundClient:
                 raise exc.InvalidNetworkAccess(
                     msg="Can't access other tenants networks",
                     network_id=context.current['network_id'],
                     tenant_id=context.current['tenant_id'])
+            except webob.exc.HTTPClientError as ex:
+                # catch the exception in UT when patched with WSGI
+                if ex.code == 404 and 'network' in ex.detail:
+                    raise exc.InvalidNetworkAccess(
+                        msg="Can't access other tenants networks",
+                        network_id=context.current['network_id'],
+                        tenant_id=context.current['tenant_id'])
+                else:
+                    raise
 
             if network:
                 tenant_id_of_explicit_net = network['tenant_id']
@@ -195,13 +210,21 @@ class ResourceMappingDriver(api.PolicyDriver):
         for router_id in context.current['routers']:
             router = None
             try:
-                router = self._l3_plugin.get_router(context._plugin_context,
-                                                    router_id)
-            except n_exc.NotFound:
+                router = self._get_router(context._plugin_context, router_id)
+            except nc_exc.NotFound:
                 raise exc.InvalidRouterAccess(
                     msg="Can't access other tenants router",
                     router_id=router_id,
                     tenant_id=context.current['tenant_id'])
+            except webob.exc.HTTPClientError as ex:
+                # catch the exception in UT when patched with WSGI
+                if ex.code == 404 and 'router' in ex.detail:
+                    raise exc.InvalidRouterAccess(
+                        msg="Can't access other tenants router",
+                        router_id=router_id,
+                        tenant_id=context.current['tenant_id'])
+                else:
+                    raise
 
             if router:
                 tenant_id_of_explicit_router = router['tenant_id']
@@ -267,12 +290,13 @@ class ResourceMappingDriver(api.PolicyDriver):
 
     @log.log
     def delete_policy_target_postcommit(self, context):
-        sg_list = self._generate_list_of_sg_from_ptg(
-            context, context.current['policy_target_group_id'])
-        self._disassoc_sgs_from_port(context._plugin_context,
-                                     context.current['port_id'], sg_list)
         port_id = context.current['port_id']
-        self._cleanup_port(context._plugin_context, port_id)
+        if port_id:
+            sg_list = self._generate_list_of_sg_from_ptg(
+                context, context.current['policy_target_group_id'])
+            self._disassoc_sgs_from_port(
+                context._plugin_context, port_id, sg_list)
+            self._cleanup_port(context._plugin_context, port_id)
 
     @log.log
     def create_policy_target_group_precommit(self, context):
@@ -826,10 +850,10 @@ class ResourceMappingDriver(api.PolicyDriver):
 
     def create_external_segment_precommit(self, context):
         if context.current['subnet_id']:
-            subnet = self._core_plugin.get_subnet(context._plugin_context,
-                                                  context.current['subnet_id'])
-            network = self._core_plugin.get_network(context._plugin_context,
-                                                    subnet['network_id'])
+            subnet = self._get_subnet(context._plugin_context,
+                                      context.current['subnet_id'])
+            network = self._get_network(context._plugin_context,
+                                        subnet['network_id'])
             if not network['router:external']:
                 raise exc.InvalidSubnetForES(sub_id=subnet['id'],
                                              net_id=network['id'])
@@ -1019,8 +1043,14 @@ class ResourceMappingDriver(api.PolicyDriver):
         if self._port_is_owned(plugin_context.session, port_id):
             try:
                 self._delete_port(plugin_context, port_id)
-            except n_exc.PortNotFound:
+            except nc_exc.PortNotFoundClient:
                 LOG.warn(_("Port %s is missing") % port_id)
+            except webob.exc.HTTPClientError as ex:
+                # catch the exception in UT when patched with WSGI
+                if ex.code == 404 and 'port' in ex.detail:
+                    LOG.warn(_("Port %s is missing") % port_id)
+                else:
+                    raise
 
     def _plug_router_to_external_segment(self, context, es_dict):
         es_list = context._plugin.get_external_segments(
@@ -1028,8 +1058,8 @@ class ResourceMappingDriver(api.PolicyDriver):
         if context.current['routers']:
             router_id = context.current['routers'][0]
             for es in es_list:
-                subnet = self._core_plugin.get_subnet(context._plugin_context,
-                                                      es['subnet_id'])
+                subnet = self._get_subnet(context._plugin_context,
+                                          es['subnet_id'])
                 interface_info = {
                     'network_id': subnet['network_id'],
                     'enable_snat': es['port_address_translation'],
@@ -1053,8 +1083,8 @@ class ResourceMappingDriver(api.PolicyDriver):
         if context.current['routers']:
             router_id = context.current['routers'][0]
             for es in es_list:
-                subnet = self._core_plugin.get_subnet(context._plugin_context,
-                                                      es['subnet_id'])
+                subnet = self._get_subnet(context._plugin_context,
+                                          es['subnet_id'])
                 interface_info = {'network_id': subnet['network_id']}
                 self._remove_router_gw_interface(context._plugin_context,
                                                  router_id, interface_info)
@@ -1079,8 +1109,8 @@ class ResourceMappingDriver(api.PolicyDriver):
         subnets = []
         for ptg in ptgs:
             subnets.extend(ptg['subnets'])
-        subnets = self._core_plugin.get_subnets(context._plugin_context,
-                                                filters={'id': subnets})
+        subnets = self._get_subnets(context._plugin_context,
+                                    filters={'id': subnets})
         for cidr in pool.subnet(l3p['subnet_prefix_length']):
             if not self._validate_subnet_overlap_for_l3p(subnets,
                                                          cidr.__str__()):
@@ -1108,18 +1138,27 @@ class ResourceMappingDriver(api.PolicyDriver):
                         context._plugin_context.session, subnet_id)
                     context.add_subnet(subnet_id)
                     return
-                except n_exc.InvalidInput:
+                except nc_exc.BadRequest:
                     # This exception is not expected. We catch this
                     # here so that it isn't caught below and handled
                     # as if the CIDR is already in use.
                     LOG.exception(_("adding subnet to router failed"))
                     self._delete_subnet(context._plugin_context, subnet['id'])
                     raise exc.GroupPolicyInternalError()
-            except n_exc.BadRequest:
+                except webob.exc.HTTPClientError:
+                    # catch the exception in UT when patched with WSGI
+                    LOG.exception(_("adding subnet to router failed"))
+                    self._delete_subnet(context._plugin_context, subnet['id'])
+                    raise exc.GroupPolicyInternalError()
+            except nc_exc.BadRequest:
                 # This is expected (CIDR overlap) until we have a
                 # proper subnet allocation algorithm. We ignore the
                 # exception and repeat with the next CIDR.
                 pass
+            except webob.exc.HTTPClientError:
+                # catch the exception in UT when patched with WSGI
+                pass
+
         raise exc.NoSubnetAvailable()
 
     def _validate_subnet_overlap_for_l3p(self, subnets, subnet_cidr):
@@ -1184,10 +1223,10 @@ class ResourceMappingDriver(api.PolicyDriver):
                  'security_group_rules': ''}
         sg = self._create_sg(context._plugin_context, attrs)
         # Cleanup default rules
-        for rule in self._core_plugin.get_security_group_rules(
+        for rule in self._get_sg_rules(
                 context._plugin_context,
                 filters={'security_group_id': [sg['id']]}):
-            self._core_plugin.delete_security_group_rule(
+            self._delete_sg_rule(
                 context._plugin_context, rule['id'])
         return sg
 
@@ -1359,113 +1398,12 @@ class ResourceMappingDriver(api.PolicyDriver):
     def _cleanup_redirect_action(self, context):
         for ptg_chain in context.ptg_chain_map:
             self._delete_servicechain_instance(
-                            context, ptg_chain.servicechain_instance_id)
-
-    # The following methods perform the necessary subset of
-    # functionality from neutron.api.v2.base.Controller.
-    #
-    # REVISIT(rkukura): Can we just use the WSGI Controller?  Using
-    # neutronclient is also a possibility, but presents significant
-    # issues to unit testing as well as overhead and failure modes.
-
-    def _create_port(self, plugin_context, attrs):
-        return self._create_resource(self._core_plugin, plugin_context, 'port',
-                                     attrs)
-
-    def _update_port(self, plugin_context, port_id, attrs):
-        return self._update_resource(self._core_plugin, plugin_context, 'port',
-                                     port_id, attrs)
-
-    def _delete_port(self, plugin_context, port_id):
-        self._delete_resource(self._core_plugin,
-                              plugin_context, 'port', port_id)
-
-    def _create_subnet(self, plugin_context, attrs):
-        return self._create_resource(self._core_plugin, plugin_context,
-                                     'subnet', attrs)
-
-    def _update_subnet(self, plugin_context, subnet_id, attrs):
-        return self._update_resource(self._core_plugin, plugin_context,
-                                     'subnet', subnet_id, attrs)
-
-    def _delete_subnet(self, plugin_context, subnet_id):
-        self._delete_resource(self._core_plugin, plugin_context, 'subnet',
-                              subnet_id)
-
-    def _create_network(self, plugin_context, attrs):
-        return self._create_resource(self._core_plugin, plugin_context,
-                                     'network', attrs)
-
-    def _delete_network(self, plugin_context, network_id):
-        self._delete_resource(self._core_plugin, plugin_context,
-                              'network', network_id)
-
-    def _create_router(self, plugin_context, attrs):
-        return self._create_resource(self._l3_plugin, plugin_context, 'router',
-                                     attrs)
-
-    def _update_router(self, plugin_context, router_id, attrs):
-        return self._update_resource(self._l3_plugin, plugin_context, 'router',
-                                     router_id, attrs)
-
-    def _add_router_interface(self, plugin_context, router_id, interface_info):
-        self._l3_plugin.add_router_interface(plugin_context,
-                                             router_id, interface_info)
-
-    def _remove_router_interface(self, plugin_context, router_id,
-                                 interface_info):
-        self._l3_plugin.remove_router_interface(plugin_context, router_id,
-                                                interface_info)
-
-    def _add_router_gw_interface(self, plugin_context, router_id, gw_info):
-        return self._l3_plugin.update_router(
-            plugin_context, router_id,
-            {'router': {'external_gateway_info': gw_info}})
-
-    def _remove_router_gw_interface(self, plugin_context, router_id,
-                                    interface_info):
-        self._l3_plugin.update_router(
-            plugin_context, router_id,
-            {'router': {'external_gateway_info': None}})
-
-    def _delete_router(self, plugin_context, router_id):
-        self._delete_resource(self._l3_plugin, plugin_context, 'router',
-                              router_id)
-
-    def _create_sg(self, plugin_context, attrs):
-        return self._create_resource(self._core_plugin, plugin_context,
-                                     'security_group', attrs)
-
-    def _update_sg(self, plugin_context, sg_id, attrs):
-        return self._update_resouce(self._core_plugin, plugin_context,
-                                    'security_group', sg_id, attrs)
-
-    def _delete_sg(self, plugin_context, sg_id):
-        self._delete_resource(self._core_plugin, plugin_context,
-                              'security_group', sg_id)
-
-    def _create_sg_rule(self, plugin_context, attrs):
-        try:
-            return self._create_resource(self._core_plugin, plugin_context,
-                                         'security_group_rule', attrs)
-        except ext_sg.SecurityGroupRuleExists as ex:
-            LOG.warn(_('Security Group already exists %s'), ex.message)
-            return
-
-    def _update_sg_rule(self, plugin_context, sg_rule_id, attrs):
-        return self._update_resource(self._core_plugin, plugin_context,
-                                     'security_group_rule', sg_rule_id,
-                                     attrs)
-
-    def _delete_sg_rule(self, plugin_context, sg_rule_id):
-        self._delete_resource(self._core_plugin, plugin_context,
-                              'security_group_rule', sg_rule_id)
+                context, ptg_chain.servicechain_instance_id)
 
     def _restore_ip_to_allocation_pool(self, context, subnet_id, ip_address):
         # TODO(Magesh):Pass subnets and loop on subnets. Better to add logic
         # to Merge the pools together after Fragmentation
-        subnet = self._core_plugin.get_subnet(context._plugin_context,
-                                              subnet_id)
+        subnet = self._get_subnet(context._plugin_context, subnet_id)
         allocation_pools = subnet['allocation_pools']
         for allocation_pool in allocation_pools:
             pool_end_ip = allocation_pool.get('end')
@@ -1485,8 +1423,7 @@ class ResourceMappingDriver(api.PolicyDriver):
 
     def _remove_ip_from_allocation_pool(self, context, subnet_id, ip_address):
         # TODO(Magesh):Pass subnets and loop on subnets
-        subnet = self._core_plugin.get_subnet(context._plugin_context,
-                                              subnet_id)
+        subnet = self._get_subnet(context._plugin_context, subnet_id)
         allocation_pools = subnet['allocation_pools']
         for allocation_pool in reversed(allocation_pools):
             if ip_address == allocation_pool.get('end'):
@@ -1730,12 +1667,26 @@ class ResourceMappingDriver(api.PolicyDriver):
                 value = attrs[key]
                 if value:
                     filters[key] = [value]
-            rule = self._core_plugin.get_security_group_rules(
+            rule = self._get_sg_rules(
                 plugin_context, filters)
             if rule:
                 self._delete_sg_rule(plugin_context, rule[0]['id'])
         else:
-            return self._create_sg_rule(plugin_context, attrs)
+            try:
+                return self._create_sg_rule(plugin_context, attrs)
+            except nc_exc.Conflict as ex:
+                if MESSAGE_SG_RULE_EXISTS in ex.message:
+                    LOG.warn(_('Security Group already exists'))
+                    return
+                else:
+                    raise
+            except webob.exc.HTTPClientError as ex:
+                # catch the exception in UT when patched with WSGI
+                if ex.code == 409 and 'security_group_rule' in ex.detail:
+                    LOG.warn(_('Security Group already exists'))
+                    return
+                else:
+                    raise
 
     def _sg_ingress_rule(self, context, sg_id, protocol, port_range, cidr,
                          unset=False):
@@ -1752,7 +1703,7 @@ class ResourceMappingDriver(api.PolicyDriver):
     def _assoc_sgs_to_pt(self, context, pt_id, sg_list):
         pt = context._plugin.get_policy_target(context._plugin_context, pt_id)
         port_id = pt['port_id']
-        port = self._core_plugin.get_port(context._plugin_context, port_id)
+        port = self._get_port(context._plugin_context, port_id)
         cur_sg_list = port[ext_sg.SECURITYGROUPS]
         new_sg_list = cur_sg_list + sg_list
         port[ext_sg.SECURITYGROUPS] = new_sg_list
@@ -1765,13 +1716,19 @@ class ResourceMappingDriver(api.PolicyDriver):
 
     def _disassoc_sgs_from_port(self, plugin_context, port_id, sg_list):
         try:
-            port = self._core_plugin.get_port(plugin_context, port_id)
+            port = self._get_port(plugin_context, port_id)
             cur_sg_list = port[ext_sg.SECURITYGROUPS]
             new_sg_list = list(set(cur_sg_list) - set(sg_list))
             port[ext_sg.SECURITYGROUPS] = new_sg_list
             self._update_port(plugin_context, port_id, port)
-        except n_exc.PortNotFound:
+        except nc_exc.PortNotFoundClient:
             LOG.warn(_("Port %s is missing") % port_id)
+        except webob.exc.HTTPClientError as ex:
+            # catch the exception in UT when patched with WSGI
+            if ex.code == 404 and 'port' in ex.detail:
+                LOG.warn(_("Port %s is missing") % port_id)
+            else:
+                raise
 
     def _generate_list_of_sg_from_ptg(self, context, ptg_id):
         ptg = context._plugin.get_policy_target_group(
@@ -1831,8 +1788,7 @@ class ResourceMappingDriver(api.PolicyDriver):
 
         cidr_list = []
         for subnet_id in subnets:
-            subnet = self._core_plugin.get_subnet(context._plugin_context,
-                                                  subnet_id)
+            subnet = self._get_subnet(context._plugin_context, subnet_id)
             cidr = subnet['cidr']
             cidr_list.append(cidr)
         self._set_or_unset_rules_for_cidrs(
@@ -1986,7 +1942,7 @@ class ResourceMappingDriver(api.PolicyDriver):
                                     tenant_id):
         port_name = 'gbp_%s' % ptg_id
         filters = {'name': [port_name], 'tenant_id': [tenant_id]}
-        default_group = self._core_plugin.get_security_groups(
+        default_group = self._get_sgs(
             plugin_context, filters)
         return default_group[0]['id'] if default_group else None
 
@@ -2002,7 +1958,7 @@ class ResourceMappingDriver(api.PolicyDriver):
                      'description': 'default'}
             sg_id = self._create_sg(plugin_context, attrs)['id']
 
-        for subnet in self._core_plugin.get_subnets(
+        for subnet in self._get_subnets(
                 plugin_context, filters={'id': subnets or []}):
             self._sg_rule(plugin_context, tenant_id, sg_id,
                           'ingress', cidr=subnet['cidr'],
@@ -2029,7 +1985,7 @@ class ResourceMappingDriver(api.PolicyDriver):
         ptgs = context._plugin.get_policy_target_groups(
             context._plugin_context, filters={'id': ptgs})
         for ptg in ptgs:
-            cidrs.extend([self._core_plugin.get_subnet(
+            cidrs.extend([self._get_subnet(
                 context._plugin_context, x)['cidr'] for x in ptg['subnets']])
         return cidrs
 
@@ -2116,7 +2072,7 @@ class ResourceMappingDriver(api.PolicyDriver):
         l3ps = context._plugin.get_l3_policies(
             admin_context, filters={'id': context.current['l3_policies']})
         for l3p in l3ps:
-            router = self._l3_plugin.get_routes(
+            router = self._get_router(
                 admin_context, l3p['router_id'])
             current_routes = set((x['destination'], x['nexthop']) for x in
                                  router['routes'])
@@ -2190,8 +2146,7 @@ class ResourceMappingDriver(api.PolicyDriver):
                                                 l2p_id)
             # Validate explicit subnet belongs to L2P's network
             network_id = l2p['network_id']
-            network = self._core_plugin.get_network(context._plugin_context,
-                                                    network_id)
+            network = self._get_network(context._plugin_context, network_id)
             for subnet_id in subnets or context.current['subnets']:
                 if subnet_id not in network['subnets']:
                     raise exc.InvalidSubnetForPTG(subnet_id=subnet_id,
@@ -2226,8 +2181,7 @@ class ResourceMappingDriver(api.PolicyDriver):
         # Validate if explicit port's subnet
         # is same as the subnet of PTG.
         port_id = context.current['port_id']
-        core_plugin = self._core_plugin
-        port = core_plugin.get_port(context._plugin_context, port_id)
+        port = self._get_port(context._plugin_context, port_id)
 
         port_subnet_id = None
         fixed_ips = port['fixed_ips']
