@@ -31,6 +31,8 @@ from gbpservice.neutron.services.grouppolicy import config
 from gbpservice.neutron.services.grouppolicy.drivers.cisco.apic import (
     apic_mapping as amap)
 from gbpservice.neutron.tests.unit.services.grouppolicy import (
+    mock_neutronv2_api as mock_neutron)
+from gbpservice.neutron.tests.unit.services.grouppolicy import (
     test_grouppolicy_plugin as test_plugin)
 
 APIC_L2_POLICY = 'l2_policy'
@@ -62,7 +64,8 @@ class MockCallRecorder(mock.Mock):
 
 class ApicMappingTestCase(
         test_plugin.GroupPolicyPluginTestCase,
-        mocked.ControllerMixin, mocked.ConfigMixin):
+        mocked.ControllerMixin, mocked.ConfigMixin,
+        mock_neutron.Neutronv2MockMixin):
 
     def setUp(self):
         config.cfg.CONF.set_override('policy_drivers',
@@ -96,6 +99,7 @@ class ApicMappingTestCase(
         self.driver.apic_manager.apic.transaction = self.fake_transaction
         amap.apic_manager.TENANT_COMMON = 'common'
         self.common_tenant = amap.apic_manager.TENANT_COMMON
+        self._setUp_mock()
 
     def _get_object(self, type, id, api):
         req = self.new_show_request(type, id, self.fmt)
