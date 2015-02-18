@@ -13,9 +13,10 @@
 
 import contextlib
 import itertools
-import netaddr
-
 import mock
+import netaddr
+import webob.exc
+
 from neutron.api.rpc.agentnotifiers import dhcp_rpc_agent_api
 from neutron.common import constants as cst
 from neutron import context as nctx
@@ -23,11 +24,11 @@ from neutron.extensions import external_net as external_net
 from neutron.extensions import securitygroup as ext_sg
 from neutron import manager
 from neutron.notifiers import nova
+from neutron.openstack.common import log as logging
 from neutron.openstack.common import uuidutils
 from neutron.plugins.common import constants as pconst
 from neutron.tests.unit import test_extension_security_group
 from neutron.tests.unit import test_l3_plugin
-import webob.exc
 
 from gbpservice.neutron.db.grouppolicy import group_policy_db as gpdb
 from gbpservice.neutron.db import servicechain_db
@@ -37,6 +38,25 @@ from gbpservice.neutron.services.grouppolicy.drivers import resource_mapping
 from gbpservice.neutron.services.servicechain import config as sc_cfg
 from gbpservice.neutron.tests.unit.services.grouppolicy import (
     test_grouppolicy_plugin as test_plugin)
+from gbpservice.neutron.tests.unit.services.grouppolicy import (
+    mock_neutronv2_api as mock_neutron)
+
+
+CORE_PLUGIN = ('gbpservice.neutron.tests.unit.services.grouppolicy.'
+               'test_resource_mapping.NoL3NatSGTestPlugin')
+
+LOG = logging.getLogger(__name__)
+
+# Based on the resource types, Neutron REST API calls need to be patched to
+# different neutron-plugins,
+PLUGIN_MAP = {
+    'network': '_core_plugin',
+    'subnet': '_core_plugin',
+    'port': '_core_plugin',
+    'security_group': '_core_plugin',
+    'security_group_rule': '_core_plugin',
+    'router': '_l3_plugin',
+}
 
 SERVICECHAIN_NODES = 'servicechain/servicechain_nodes'
 SERVICECHAIN_SPECS = 'servicechain/servicechain_specs'
@@ -46,12 +66,7 @@ SERVICECHAIN_INSTANCES = 'servicechain/servicechain_instances'
 class NoL3NatSGTestPlugin(
         test_l3_plugin.TestNoL3NatPlugin,
         test_extension_security_group.SecurityGroupTestPlugin):
-
     supported_extension_aliases = ["external-net", "security-group"]
-
-
-CORE_PLUGIN = ('gbpservice.neutron.tests.unit.services.grouppolicy.'
-               'test_resource_mapping.NoL3NatSGTestPlugin')
 
 
 class ResourceMappingTestCase(test_plugin.GroupPolicyPluginTestCase):
@@ -308,6 +323,7 @@ class ResourceMappingTestCase(test_plugin.GroupPolicyPluginTestCase):
 
 class TestPolicyTarget(ResourceMappingTestCase):
 
+    @mock_neutron.meta_mock
     def test_implicit_port_lifecycle(self):
         # Create policy_target group.
         ptg = self.create_policy_target_group(name="ptg1")
@@ -343,6 +359,7 @@ class TestPolicyTarget(ResourceMappingTestCase):
         res = req.get_response(self.api)
         self.assertEqual(res.status_int, webob.exc.HTTPNotFound.code)
 
+    @mock_neutron.meta_mock
     def test_explicit_port_lifecycle(self):
         # Create policy_target group.
         ptg = self.create_policy_target_group(name="ptg1")
@@ -367,6 +384,7 @@ class TestPolicyTarget(ResourceMappingTestCase):
             res = req.get_response(self.api)
             self.assertEqual(res.status_int, webob.exc.HTTPOk.code)
 
+    @mock_neutron.meta_mock
     def test_explicit_port_deleted(self):
         # Create policy_target group.
         ptg = self.create_policy_target_group(name="ptg1")
@@ -390,6 +408,7 @@ class TestPolicyTarget(ResourceMappingTestCase):
             res = req.get_response(self.ext_api)
             self.assertEqual(res.status_int, webob.exc.HTTPNoContent.code)
 
+    @mock_neutron.meta_mock
     def test_missing_ptg_rejected(self):
         data = self.create_policy_target(
             policy_target_group_id=None,
@@ -397,6 +416,7 @@ class TestPolicyTarget(ResourceMappingTestCase):
         self.assertEqual('PolicyTargetRequiresPolicyTargetGroup',
                          data['NeutronError']['type'])
 
+    @mock_neutron.meta_mock
     def test_explicit_port_subnet_mismatches_ptg_subnet_rejected(self):
         ptg1 = self.create_policy_target_group(name="ptg1")
         ptg1_id = ptg1['policy_target_group']['id']
@@ -419,6 +439,7 @@ class TestPolicyTarget(ResourceMappingTestCase):
                 self.assertEqual('InvalidPortForPTG',
                          data['NeutronError']['type'])
 
+    @mock_neutron.meta_mock
     def test_missing_explicit_port_ptg_rejected(self):
         ptg1 = self.create_policy_target_group(name="ptg1")
         ptg1_id = ptg1['policy_target_group']['id']
@@ -435,6 +456,7 @@ class TestPolicyTarget(ResourceMappingTestCase):
         self.assertEqual('HTTPInternalServerError',
                          data['NeutronError']['type'])
 
+    @mock_neutron.meta_mock
     def test_ptg_update_rejected(self):
         # Create two policy_target groups.
         ptg1 = self.create_policy_target_group(name="ptg1")
@@ -457,6 +479,7 @@ class TestPolicyTarget(ResourceMappingTestCase):
 
 class TestPolicyTargetGroup(ResourceMappingTestCase):
 
+    @mock_neutron.meta_mock
     def _test_implicit_subnet_lifecycle(self, shared=False):
         # Use explicit L2 policy so network and subnet not deleted
         # with policy_target group.
@@ -488,12 +511,15 @@ class TestPolicyTargetGroup(ResourceMappingTestCase):
         # TODO(rkukura): Verify implicit subnet was removed as router
         # interface.
 
+    @mock_neutron.meta_mock
     def test_implicit_subnet_lifecycle(self):
         self._test_implicit_subnet_lifecycle()
 
+    @mock_neutron.meta_mock
     def test_implicit_subnet_lifecycle_shared(self):
         self._test_implicit_subnet_lifecycle(True)
 
+    @mock_neutron.meta_mock
     def test_explicit_subnet_lifecycle(self):
         # Create L3 policy.
         l3p = self.create_l3_policy(name="l3p1", ip_pool='10.0.0.0/8')
@@ -531,6 +557,7 @@ class TestPolicyTargetGroup(ResourceMappingTestCase):
             # TODO(rkukura): Verify explicit subnet was removed as
             # router interface.
 
+    @mock_neutron.meta_mock
     def test_add_subnet(self):
         # Create L3 policy.
         l3p = self.create_l3_policy(name="l3p1", ip_pool='10.0.0.0/8')
@@ -562,6 +589,7 @@ class TestPolicyTargetGroup(ResourceMappingTestCase):
             res = req.get_response(self.ext_api)
             self.assertEqual(res.status_int, webob.exc.HTTPOk.code)
 
+    @mock_neutron.meta_mock
     def test_add_subnet_negative(self):
         # Create L2P
         l2p = self.create_l2_policy()['l2_policy']
@@ -585,6 +613,7 @@ class TestPolicyTargetGroup(ResourceMappingTestCase):
                 self.assertEqual('InvalidSubnetForPTG',
                                  res['NeutronError']['type'])
 
+    @mock_neutron.meta_mock
     def test_remove_subnet_rejected(self):
         # Create L3 policy.
         l3p = self.create_l3_policy(name="l3p1", ip_pool='10.0.0.0/8')
@@ -616,6 +645,7 @@ class TestPolicyTargetGroup(ResourceMappingTestCase):
             self.assertEqual('PolicyTargetGroupSubnetRemovalNotSupported',
                              data['NeutronError']['type'])
 
+    @mock_neutron.meta_mock
     def test_subnet_allocation(self):
         ptg1 = self.create_policy_target_group(name="ptg1")
         subnets = ptg1['policy_target_group']['subnets']
@@ -630,6 +660,7 @@ class TestPolicyTargetGroup(ResourceMappingTestCase):
         self.assertNotEqual(subnet1['subnet']['cidr'],
                             subnet2['subnet']['cidr'])
 
+    @mock_neutron.meta_mock
     def test_no_extra_subnets_created(self):
         count = len(self._get_all_subnets())
         self.create_policy_target_group()
@@ -637,11 +668,13 @@ class TestPolicyTargetGroup(ResourceMappingTestCase):
         new_count = len(self._get_all_subnets())
         self.assertEqual(count + 2, new_count)
 
+    @mock_neutron.meta_mock
     def _get_all_subnets(self):
         req = self.new_list_request('subnets', fmt=self.fmt)
         return self.deserialize(self.fmt,
                                 req.get_response(self.api))['subnets']
 
+    @mock_neutron.meta_mock
     def test_default_security_group_allows_intra_ptg(self):
         # Create PTG and retrieve subnet
         ptg = self.create_policy_target_group()['policy_target_group']
@@ -670,6 +703,7 @@ class TestPolicyTargetGroup(ResourceMappingTestCase):
         self.assertIsNone(sg_rule[0]['port_range_max'])
         self.assertIsNone(sg_rule[0]['port_range_min'])
 
+    @mock_neutron.meta_mock
     def test_default_security_group_allows_intra_ptg_update(self):
         # Create ptg and retrieve subnet and network
         ptg = self.create_policy_target_group()['policy_target_group']
@@ -711,6 +745,7 @@ class TestPolicyTargetGroup(ResourceMappingTestCase):
                 self.assertIsNone(sg_rule[0]['port_range_max'])
                 self.assertIsNone(sg_rule[0]['port_range_min'])
 
+    @mock_neutron.meta_mock
     def test_shared_ptg_create_negative(self):
         l2p = self.create_l2_policy(shared=True)
         l2p_id = l2p['l2_policy']['id']
@@ -755,12 +790,15 @@ class TestPolicyTargetGroup(ResourceMappingTestCase):
             self.assertEqual(
                 'InvalidCrossTenantReference', res['NeutronError']['type'])
 
+    @mock_neutron.meta_mock
     def test_cross_tenant_prs_fails(self):
         self._test_cross_tenant_prs_fails()
 
+    @mock_neutron.meta_mock
     def test_cross_tenant_prs_fails_admin(self):
         self._test_cross_tenant_prs_fails(admin=True)
 
+    @mock_neutron.meta_mock
     def test_l2p_update_rejected(self):
         # Create two l2 policies.
         l2p1 = self.create_l2_policy(name="l2p1")
@@ -785,6 +823,7 @@ class TestPolicyTargetGroup(ResourceMappingTestCase):
 
 class TestL2Policy(ResourceMappingTestCase):
 
+    @mock_neutron.meta_mock
     def _test_implicit_network_lifecycle(self, shared=False):
         l3p = self.create_l3_policy(shared=shared)
         # Create L2 policy with implicit network.
@@ -806,6 +845,7 @@ class TestL2Policy(ResourceMappingTestCase):
         res = req.get_response(self.api)
         self.assertEqual(res.status_int, webob.exc.HTTPNotFound.code)
 
+    @mock_neutron.meta_mock
     def _test_explicit_network_lifecycle(self, shared=False):
         # Create L2 policy with explicit network.
         with self.network(shared=shared) as network:
@@ -823,18 +863,23 @@ class TestL2Policy(ResourceMappingTestCase):
             res = req.get_response(self.api)
             self.assertEqual(res.status_int, webob.exc.HTTPOk.code)
 
+    @mock_neutron.meta_mock
     def test_implicit_network_lifecycle(self):
         self._test_implicit_network_lifecycle()
 
+    @mock_neutron.meta_mock
     def test_implicit_network_lifecycle_shared(self):
         self._test_implicit_network_lifecycle(True)
 
+    @mock_neutron.meta_mock
     def test_explicit_network_lifecycle(self):
         self._test_explicit_network_lifecycle()
 
+    @mock_neutron.meta_mock
     def test_explicit_network_lifecycle_shared(self):
         self._test_explicit_network_lifecycle(True)
 
+    @mock_neutron.meta_mock
     def test_create_l2p_using_different_tenant_network_rejected(self):
         with self.network(tenant_id='tenant1') as net1:
             network_id = net1['network']['id']
@@ -846,6 +891,7 @@ class TestL2Policy(ResourceMappingTestCase):
             self.assertEqual('InvalidNetworkAccess',
                              res['NeutronError']['type'])
 
+    @mock_neutron.meta_mock
     def test_shared_l2_policy_create_negative(self):
         l3p = self.create_l3_policy(shared=True)
         for shared in [True, False]:
@@ -867,6 +913,7 @@ class TestL2Policy(ResourceMappingTestCase):
 
 class TestL3Policy(ResourceMappingTestCase):
 
+    @mock_neutron.meta_mock
     def test_implicit_router_lifecycle(self):
         # Create L3 policy with implicit router.
         l3p = self.create_l3_policy(name="l3p1")
@@ -884,6 +931,7 @@ class TestL3Policy(ResourceMappingTestCase):
         res = req.get_response(self.ext_api)
         self.assertEqual(res.status_int, webob.exc.HTTPNotFound.code)
 
+    @mock_neutron.meta_mock
     def test_explicit_router_lifecycle(self):
         # Create L3 policy with explicit router.
         with self.router(tenant_id='tenant1') as router:
@@ -904,6 +952,7 @@ class TestL3Policy(ResourceMappingTestCase):
             res = req.get_response(self.ext_api)
             self.assertEqual(res.status_int, webob.exc.HTTPOk.code)
 
+    @mock_neutron.meta_mock
     def test_multiple_routers_rejected(self):
         # Verify update l3 policy with explicit router rejected.
         with contextlib.nested(self.router(),
@@ -917,6 +966,7 @@ class TestL3Policy(ResourceMappingTestCase):
             self.assertEqual('L3PolicyMultipleRoutersNotSupported',
                              data['NeutronError']['type'])
 
+    @mock_neutron.meta_mock
     def test_router_update_rejected(self):
         # Create L3 policy with implicit router.
         l3p = self.create_l3_policy(name="l3p1")
@@ -931,6 +981,7 @@ class TestL3Policy(ResourceMappingTestCase):
             self.assertEqual('L3PolicyRoutersUpdateNotSupported',
                              data['NeutronError']['type'])
 
+    @mock_neutron.meta_mock
     def test_overlapping_pools_per_tenant(self):
         # Verify overlaps are ok on different tenant
         ip_pool = '192.168.0.0/16'
@@ -948,6 +999,7 @@ class TestL3Policy(ResourceMappingTestCase):
             self.assertEqual('OverlappingIPPoolsInSameTenantNotAllowed',
                              res['NeutronError']['type'])
 
+    @mock_neutron.meta_mock
     def test_create_l3p_es(self):
         # Simple test to verify l3p created with 1-N ES
         with contextlib.nested(
@@ -975,6 +1027,7 @@ class TestL3Policy(ResourceMappingTestCase):
                 self.assertEqual('MultipleESPerL3PolicyNotSupported',
                                  res['NeutronError']['type'])
 
+    @mock_neutron.meta_mock
     def test_update_l3p_es(self):
         # Simple test to verify l3p updated with 1-N ES
         with contextlib.nested(
@@ -1003,6 +1056,7 @@ class TestL3Policy(ResourceMappingTestCase):
                 self.assertEqual('MultipleESPerL3PolicyNotSupported',
                                  res['NeutronError']['type'])
 
+    @mock_neutron.meta_mock
     def test_es_router_plumbing(self):
         with contextlib.nested(
                  self.network(router__external=True),
@@ -1054,6 +1108,7 @@ class TestL3Policy(ResourceMappingTestCase):
                      res['external_gateway_info']['external_fixed_ips']],
                     l3p['external_segments'][es2['id']])
 
+    @mock_neutron.meta_mock
     def test_es_routes(self):
         routes1 = [{'destination': '0.0.0.0/0', 'nexthop': '10.10.1.1'},
                    {'destination': '172.0.0.0/16', 'nexthop': '10.10.1.1'}]
@@ -1092,6 +1147,7 @@ class TestL3Policy(ResourceMappingTestCase):
                                        req.get_response(self.ext_api))
                 self.assertEqual(routes2, res['router']['routes'])
 
+    @mock_neutron.meta_mock
     def test_create_l3p_using_different_tenant_router_rejected(self):
         with contextlib.nested(self.router()) as router1:
             router1_id = router1[0]['router']['id']
@@ -1105,6 +1161,7 @@ class TestL3Policy(ResourceMappingTestCase):
 
 class NotificationTest(ResourceMappingTestCase):
 
+    @mock_neutron.meta_mock
     def test_dhcp_notifier(self):
         with mock.patch.object(dhcp_rpc_agent_api.DhcpAgentNotifyAPI,
                                'notify') as dhcp_notifier:
@@ -1124,6 +1181,7 @@ class NotificationTest(ResourceMappingTestCase):
             dhcp_notifier.assert_any_call(mock.ANY, mock.ANY,
                                           "port.create.end")
 
+    @mock_neutron.meta_mock
     def test_nova_notifier(self):
         with mock.patch.object(nova.Notifier,
                                'send_network_change') as nova_notifier:
@@ -1149,6 +1207,7 @@ class TestPolicyRuleSet(ResourceMappingTestCase):
         plugin, context = self.get_plugin_context()
         return plugin.get_security_group(context, sg_id)
 
+    @mock_neutron.meta_mock
     def test_policy_rule_set_creation(self):
         # Create policy_rule_sets
         classifier = self.create_policy_classifier(
@@ -1183,6 +1242,7 @@ class TestPolicyRuleSet(ResourceMappingTestCase):
 
     # TODO(ivar): we also need to verify that those security groups have the
     # right rules
+    @mock_neutron.meta_mock
     def test_consumed_policy_rule_set(self):
         classifier = self.create_policy_classifier(
             name="class1", protocol="tcp", direction="in", port_range="20:90")
@@ -1216,6 +1276,7 @@ class TestPolicyRuleSet(ResourceMappingTestCase):
         self._verify_prs_rules(policy_rule_set_id)
 
     # Test update and delete of PTG, how it affects SG mapping
+    @mock_neutron.meta_mock
     def test_policy_target_group_update(self):
         # create two policy_rule_sets: bind one to an PTG, update with
         # adding another one (increase SG count on PT on PTG)
@@ -1298,6 +1359,7 @@ class TestPolicyRuleSet(ResourceMappingTestCase):
         self._verify_prs_rules(policy_rule_set2_id)
 
     # Test update of policy rules
+    @mock_neutron.meta_mock
     def test_policy_rule_update(self):
         classifier1 = self.create_policy_classifier(
             name="class1", protocol="tcp", direction="bi", port_range="50:100")
@@ -1347,6 +1409,7 @@ class TestPolicyRuleSet(ResourceMappingTestCase):
         self._verify_prs_rules(policy_rule_set_id)
 
     # Test update of policy classifier
+    @mock_neutron.meta_mock
     def test_policy_classifier_update(self):
         classifier = self.create_policy_classifier(
             name="class1", protocol="tcp", direction="bi", port_range="30:100")
@@ -1427,6 +1490,7 @@ class TestPolicyRuleSet(ResourceMappingTestCase):
         self.assertEqual(sc_instance['consumer_ptg_id'], consumer_ptg_id)
         self.assertEqual(scs_id_list, sc_instance['servicechain_specs'])
 
+    @mock_neutron.meta_mock
     def test_redirect_to_chain(self):
         scs_id = self._create_servicechain_spec()
         _, _, policy_rule_id = self._create_tcp_redirect_rule(
@@ -1458,6 +1522,7 @@ class TestPolicyRuleSet(ResourceMappingTestCase):
         sc_instances = self.deserialize(self.fmt, res)
         self.assertEqual(len(sc_instances['servicechain_instances']), 0)
 
+    @mock_neutron.meta_mock
     def test_update_ptg_with_redirect_prs(self):
         scs_id = self._create_servicechain_spec()
         _, _, policy_rule_id = self._create_tcp_redirect_rule(
@@ -1510,6 +1575,7 @@ class TestPolicyRuleSet(ResourceMappingTestCase):
         sc_instances = self.deserialize(self.fmt, res)
         self.assertEqual(len(sc_instances['servicechain_instances']), 0)
 
+    @mock_neutron.meta_mock
     def test_action_spec_value_update(self):
         scs_id = self._create_servicechain_spec()
         action_id, _, policy_rule_id = self._create_tcp_redirect_rule(
@@ -1569,6 +1635,7 @@ class TestPolicyRuleSet(ResourceMappingTestCase):
         sc_instances = self.deserialize(self.fmt, res)
         self.assertEqual(len(sc_instances['servicechain_instances']), 0)
 
+    @mock_neutron.meta_mock
     def test_classifier_update_to_chain(self):
         scs_id = self._create_servicechain_spec()
         _, classifier_id, policy_rule_id = self._create_tcp_redirect_rule(
@@ -1618,6 +1685,7 @@ class TestPolicyRuleSet(ResourceMappingTestCase):
         sc_instances = self.deserialize(self.fmt, res)
         self.assertEqual(len(sc_instances['servicechain_instances']), 0)
 
+    @mock_neutron.meta_mock
     def test_rule_update_updates_chain(self):
         scs_id = self._create_servicechain_spec()
         _, _, policy_rule_id = self._create_tcp_redirect_rule("20:90", scs_id)
@@ -1671,6 +1739,7 @@ class TestPolicyRuleSet(ResourceMappingTestCase):
         sc_instances = self.deserialize(self.fmt, res)
         self.assertEqual(len(sc_instances['servicechain_instances']), 0)
 
+    @mock_neutron.meta_mock
     def test_redirect_multiple_ptgs_single_prs(self):
         scs_id = self._create_servicechain_spec()
         _, _, policy_rule_id = self._create_tcp_redirect_rule(
@@ -1755,6 +1824,7 @@ class TestPolicyRuleSet(ResourceMappingTestCase):
         # No more service chain instances when all the providers are deleted
         self.assertEqual(len(sc_instances['servicechain_instances']), 0)
 
+    @mock_neutron.meta_mock
     def test_hierarchial_redirect(self):
         scs_id = self._create_servicechain_spec()
         _, classifier_id, policy_rule_id = self._create_tcp_redirect_rule(
@@ -1824,6 +1894,7 @@ class TestPolicyRuleSet(ResourceMappingTestCase):
         sc_instances = self.deserialize(self.fmt, res)
         self.assertEqual(len(sc_instances['servicechain_instances']), 0)
 
+    @mock_neutron.meta_mock
     def test_enforce_parent_redirect_after_ptg_create(self):
         scs_id = self._create_servicechain_spec()
         _, classifier_id, policy_rule_id = self._create_tcp_redirect_rule(
@@ -1904,6 +1975,7 @@ class TestPolicyRuleSet(ResourceMappingTestCase):
         sc_instances = self.deserialize(self.fmt, res)
         self.assertEqual(len(sc_instances['servicechain_instances']), 0)
 
+    @mock_neutron.meta_mock
     def test_parent_ruleset_update_for_redirect(self):
         scs_id = self._create_servicechain_spec()
         _, classifier_id, policy_rule_id = self._create_tcp_redirect_rule(
@@ -1971,10 +2043,12 @@ class TestPolicyRuleSet(ResourceMappingTestCase):
         sc_instances = self.deserialize(self.fmt, res)
         self.assertEqual(len(sc_instances['servicechain_instances']), 0)
 
+    @mock_neutron.meta_mock
     def test_shared_policy_rule_set_create_negative(self):
         self.create_policy_rule_set(shared=True,
                                     expected_res_status=400)
 
+    @mock_neutron.meta_mock
     def test_external_rules_set(self):
         # Define the routes
         routes = [{'destination': '0.0.0.0/0', 'nexthop': None}]
@@ -2011,6 +2085,7 @@ class TestPolicyRuleSet(ResourceMappingTestCase):
                 for rule in current_rules:
                     self.assertFalse(self._get_sg_rule(**rule))
 
+    @mock_neutron.meta_mock
     def test_hierarchical_prs(self):
         pr1 = self._create_ssh_allow_rule()
         pr2 = self._create_http_allow_rule()
@@ -2064,6 +2139,7 @@ class TestPolicyRuleSet(ResourceMappingTestCase):
 
         # TODO(ivar): Test that redirect is allowed too
 
+    @mock_neutron.meta_mock
     def test_update_policy_classifier(self):
         pr = self._create_http_allow_rule()
         prs = self.create_policy_rule_set(
@@ -2145,6 +2221,7 @@ class TestPolicyRuleSet(ResourceMappingTestCase):
             port_range=8080)
         self._verify_prs_rules(prs['id'])
 
+    @mock_neutron.meta_mock
     def test_delete_policy_rule(self):
         pr = self._create_http_allow_rule()
         pr2 = self._create_ssh_allow_rule()
@@ -2174,6 +2251,7 @@ class TestPolicyRuleSet(ResourceMappingTestCase):
         self.delete_policy_rule(
             pr['id'], expected_res_status=webob.exc.HTTPNoContent.code)
 
+    @mock_neutron.meta_mock
     def test_shared_create_multiple_redirect_rules_ptg(self):
         action1 = self.create_policy_action(
             action_type='redirect')['policy_action']
@@ -2196,6 +2274,7 @@ class TestPolicyRuleSet(ResourceMappingTestCase):
         self.assertEqual('MultipleRedirectActionsNotSupportedForPRS',
                          res['NeutronError']['type'])
 
+    @mock_neutron.meta_mock
     def test_ptg_deleted(self):
         pr1 = self._create_ssh_allow_rule()
         pr2 = self._create_http_allow_rule()
@@ -2212,11 +2291,13 @@ class TestPolicyRuleSet(ResourceMappingTestCase):
 
 class TestExternalSegment(ResourceMappingTestCase):
 
+    @mock_neutron.meta_mock
     def test_implicit_subnet_rejected(self):
         res = self.create_external_segment(expected_res_status=400)
         self.assertEqual('ImplicitSubnetNotSupported',
                          res['NeutronError']['type'])
 
+    @mock_neutron.meta_mock
     def test_explicit_subnet_lifecycle(self):
 
         with self.network(router__external=True) as net:
@@ -2232,6 +2313,7 @@ class TestExternalSegment(ResourceMappingTestCase):
                 self.assertEqual(subnet['subnet']['ip_version'],
                                  es['ip_version'])
 
+    @mock_neutron.meta_mock
     def test_update(self):
         with self.network(router__external=True) as net:
             with self.subnet(cidr='10.10.1.0/24', network=net) as sub:
@@ -2314,6 +2396,7 @@ class TestExternalSegment(ResourceMappingTestCase):
                     attrs['remote_ip_prefix'] = [cidr]
                     self.assertTrue(self._get_sg_rule(**attrs))
 
+    @mock_neutron.meta_mock
     def test_implicit_es(self):
         with self.network(router__external=True) as net:
             with self.subnet(cidr='192.168.0.0/24', network=net) as sub:
@@ -2326,6 +2409,7 @@ class TestExternalSegment(ResourceMappingTestCase):
 
 class TestExternalPolicy(ResourceMappingTestCase):
 
+    @mock_neutron.meta_mock
     def test_create(self):
         with self.network(router__external=True) as net:
             with contextlib.nested(
@@ -2363,6 +2447,7 @@ class TestExternalPolicy(ResourceMappingTestCase):
                 self.assertEqual('OnlyOneEPPerTenantAllowed',
                                  res['NeutronError']['type'])
 
+    @mock_neutron.meta_mock
     def test_update(self):
         with self.network(router__external=True) as net:
             with contextlib.nested(
@@ -2431,6 +2516,7 @@ class TestExternalPolicy(ResourceMappingTestCase):
 
 class TestPolicyAction(ResourceMappingTestCase):
 
+    @mock_neutron.meta_mock
     def test_shared_create_reject_non_shared_spec(self):
         with mock.patch.object(servicechain_db.ServiceChainDbPlugin,
                                'get_servicechain_specs') as sc_spec_get:
@@ -2445,6 +2531,7 @@ class TestPolicyAction(ResourceMappingTestCase):
 
 class TestPolicyRule(ResourceMappingTestCase):
 
+    @mock_neutron.meta_mock
     def test_shared_create_multiple_redirect_actions_rule(self):
         action1 = self.create_policy_action(
             action_type='redirect')['policy_action']
