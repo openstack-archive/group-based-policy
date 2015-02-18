@@ -5,6 +5,7 @@
     "regular_user": "",
     "default": "rule:admin_or_owner",
     "gbp_shared": "field:policy_target_groups:shared=True",
+    "neutron_shared": "field:networks:shared=True",
 
     "create_policy_target_group": "",
     "get_policy_target_group": "rule:admin_or_owner or rule:gbp_shared",
@@ -37,5 +38,11 @@
     "get_external_policy": "rule:admin_or_owner or rule:gbp_shared",
 
     "create_nat_pool": "",
-    "get_nat_pool": "rule:admin_or_owner or rule:gbp_shared"
+    "get_nat_pool": "rule:admin_or_owner or rule:gbp_shared",
+
+    "create_network": "",
+    "get_network": "rule:admin_or_owner or rule:neutron_shared",
+
+    "create_subnet": "",
+    "get_subnet": "rule:admin_or_owner or rule:neutron_shared"
 }
