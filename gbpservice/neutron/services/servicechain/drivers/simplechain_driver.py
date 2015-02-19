@@ -14,6 +14,7 @@ import ast
 import time
 
 from heatclient import client as heat_client
+from heatclient import exc as heatException
 from neutron.common import log
 from neutron.db import model_base
 from neutron import manager
@@ -394,7 +395,11 @@ class HeatClient:
         return self.stacks.create(**fields)
 
     def delete(self, stack_id):
-        return self.stacks.delete(stack_id)
+        try:
+            self.stacks.delete(stack_id)
+        except heatException.HTTPNotFound:
+            LOG.warn(_("Stack %(stack)s created by service chain driver is "
+                       "not found at cleanup"), {'stack': stack_id})
 
     def get(self, stack_id):
         return self.stacks.get(stack_id)

@@ -12,6 +12,7 @@
 # limitations under the License.
 
 import contextlib
+import heatclient
 import mock
 from neutron.openstack.common import jsonutils
 from neutron.openstack.common import uuidutils
@@ -31,6 +32,22 @@ STACK_DELETE_RETRY_WAIT = 3
 class MockStackObject(object):
     def __init__(self, status):
         self.stack_status = status
+
+
+class MockHeatClientFunctions(object):
+    def delete(self, stack_id):
+        raise heatclient.exc.HTTPNotFound()
+
+    def create(self, **fields):
+        return {'stack': {'id': uuidutils.generate_uuid()}}
+
+    def get(self, stack_id):
+        return MockStackObject('DELETE_COMPLETE')
+
+
+class MockHeatClient(object):
+    def __init__(self, api_version, endpoint, **kwargs):
+        self.stacks = MockHeatClientFunctions()
 
 
 class SimpleChainDriverTestCase(
@@ -233,3 +250,21 @@ class TestServiceChainInstance(SimpleChainDriverTestCase):
                 self.assertEqual(res.status_int, webob.exc.HTTPNoContent.code)
                 stack_delete.assert_called_once_with(mock.ANY)
                 self.assertEqual(stack_get.call_count, 1)
+
+    def test_stack_not_found_ignored(self):
+        name = "scs1"
+        scn = self.create_servicechain_node()
+        scn_id = scn['servicechain_node']['id']
+        scs = self.create_servicechain_spec(name=name, nodes=[scn_id])
+        sc_spec_id = scs['servicechain_spec']['id']
+
+        mock.patch(heatclient.__name__ + ".client.Client",
+                   new=MockHeatClient).start()
+        sc_instance = self.create_servicechain_instance(
+                                    name="sc_instance_1",
+                                    servicechain_specs=[sc_spec_id])
+        req = self.new_delete_request(
+                            'servicechain_instances',
+                            sc_instance['servicechain_instance']['id'])
+        res = req.get_response(self.ext_api)
+        self.assertEqual(webob.exc.HTTPNoContent.code, res.status_int)
