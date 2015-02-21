@@ -310,15 +310,9 @@ class ResourceMappingDriver(api.PolicyDriver):
 
         nsp = context._plugin.get_network_service_policy(
             context._plugin_context, network_service_policy_id)
-        nsp_params = nsp.get("network_service_params")
-        if not nsp_params:
+        if not nsp.get("network_service_params"):
             return
 
-        # RM Driver only supports one parameter of type ip_single and value
-        # self_subnet right now. Handle the other cases when we have usecase
-        if (len(nsp_params) > 1 or nsp_params[0].get("type") != "ip_single"
-            or nsp_params[0].get("value") != "self_subnet"):
-            return
         # TODO(Magesh):Handle concurrency issues
         free_ip = self._get_last_free_ip(context._plugin_context,
                                          context.current['subnets'])
@@ -340,11 +334,14 @@ class ResourceMappingDriver(api.PolicyDriver):
             context._plugin_context.session, policy_target_group)
         return ipaddress
 
-    def _cleanup_network_service_policy(self, context, subnet, ptg_id):
-        ipaddress = self._get_ptg_policy_ipaddress_mapping(
-            context._plugin_context.session, ptg_id)
+    def _cleanup_network_service_policy(self, context, subnet, ptg_id,
+                                        ipaddress=None):
+        if not ipaddress:
+            ipaddress = self._get_ptg_policy_ipaddress_mapping(
+                context._plugin_context.session, ptg_id)
         if ipaddress:
-            self._restore_ip_to_allocation_pool(context, subnet, ipaddress)
+            self._restore_ip_to_allocation_pool(
+                context, subnet, ipaddress.ipaddress)
             self._delete_policy_ipaddress_mapping(
                 context._plugin_context.session, ptg_id)
 
@@ -486,6 +483,8 @@ class ResourceMappingDriver(api.PolicyDriver):
 
     @log.log
     def delete_policy_target_group_precommit(self, context):
+        context.nsp_cleanup_ipaddress = self._get_ptg_policy_ipaddress_mapping(
+            context._plugin_context.session, context.current['id'])
         provider_ptg_chain_map = self._get_ptg_servicechain_mapping(
                                             context._plugin_context.session,
                                             context.current['id'],
@@ -500,7 +499,8 @@ class ResourceMappingDriver(api.PolicyDriver):
     def delete_policy_target_group_postcommit(self, context):
         self._cleanup_network_service_policy(context,
                                              context.current['subnets'][0],
-                                             context.current['id'])
+                                             context.current['id'],
+                                             context.nsp_cleanup_ipaddress)
         self._cleanup_redirect_action(context)
         # Cleanup SGs
         self._unset_sg_rules_for_subnets(
@@ -817,12 +817,8 @@ class ResourceMappingDriver(api.PolicyDriver):
                 context, context.current['child_policy_rule_sets'])
 
     @log.log
-    def delete_network_service_policy_postcommit(self, context):
-        for ptg_id in context.current.get("policy_target_groups"):
-            ptg = context._plugin.get_policy_target_group(
-                context._plugin_context, ptg_id)
-            subnet = ptg.get('subnets')[0]
-            self._cleanup_network_service_policy(context, subnet, ptg_id)
+    def create_network_service_policy_precommit(self, context):
+        self._validate_nsp_parameters(context)
 
     def create_external_segment_precommit(self, context):
         if context.current['subnet_id']:
@@ -973,6 +969,19 @@ class ResourceMappingDriver(api.PolicyDriver):
         # No FIP supported right now
         # REVISIT(ivar): ignore or reject?
         pass
+
+    def _validate_nsp_parameters(self, context):
+        # RM Driver only supports one parameter of type ip_single and value
+        # self_subnet right now. Handle the other cases when we have usecase
+        nsp = context.current
+        nsp_params = nsp.get("network_service_params")
+        if nsp_params and (len(nsp_params) > 1 or
+                           (nsp_params[0].get("type") != "ip_single" or
+                            nsp_params[0].get("value") != "self_subnet")):
+            raise exc.InvalidNetworkServiceParameters()
+
+    def update_network_service_policy_precommit(self, context):
+        self._validate_nsp_parameters(context)
 
     def _get_routerid_for_l2policy(self, context, l2p_id):
         l2p = context._plugin.get_l2_policy(context._plugin_context, l2p_id)
@@ -1240,11 +1249,11 @@ class ResourceMappingDriver(api.PolicyDriver):
 
     def _delete_policy_ipaddress_mapping(self, session, policy_target_group):
         with session.begin(subtransactions=True):
-            mappings = session.query(
+            ip_mapping = session.query(
                 ServicePolicyPTGIpAddressMapping).filter_by(
                     policy_target_group=policy_target_group).first()
-            for ip_map in mappings:
-                session.delete(ip_map)
+            if ip_mapping:
+                session.delete(ip_mapping)
 
     def _handle_redirect_spec_id_update(self, context):
         if (context.current['action_type'] != gconst.GP_ACTION_REDIRECT
