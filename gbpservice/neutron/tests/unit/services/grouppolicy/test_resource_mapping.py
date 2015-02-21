@@ -87,6 +87,10 @@ class ResourceMappingTestCase(test_plugin.GroupPolicyPluginTestCase):
         return super(ResourceMappingTestCase, self)._create_network(
             fmt, name, admin_state_up, arg_list=arg_list, **new_args)
 
+    def _show_subnet(self, id):
+        req = self.new_show_request('subnets', id, fmt=self.fmt)
+        return self.deserialize(self.fmt, req.get_response(self.api))
+
     def _get_sg_rule(self, **filters):
         plugin = manager.NeutronManager.get_plugin()
         context = nctx.get_admin_context()
@@ -2458,3 +2462,88 @@ class TestPolicyRule(ResourceMappingTestCase):
             policy_actions=[action1['id'], action2['id']])
         self.assertEqual('MultipleRedirectActionsNotSupportedForRule',
                          res['NeutronError']['type'])
+
+
+class TestNetworkServicePolicy(ResourceMappingTestCase):
+
+    def test_create_nsp_multiple_ptgs(self):
+        nsp = self.create_network_service_policy(
+                    network_service_params=[
+                            {"type": "ip_single", "value": "self_subnet",
+                             "name": "vip"}],
+                    expected_res_status=webob.exc.HTTPCreated.code)[
+                                                    'network_service_policy']
+        # Create two PTGs that use this NSP
+        ptg1 = self.create_policy_target_group(
+                    network_service_policy_id=nsp['id'],
+                    expected_res_status=webob.exc.HTTPCreated.code)[
+                                                        'policy_target_group']
+        ptg2 = self.create_policy_target_group(
+                    network_service_policy_id=nsp['id'],
+                    expected_res_status=webob.exc.HTTPCreated.code)[
+                                                        'policy_target_group']
+        # Update the PTGs and unset the NSP used
+        self.update_policy_target_group(
+                    ptg1['id'],
+                    network_service_policy_id=None,
+                    expected_res_status=webob.exc.HTTPOk.code)
+        self.update_policy_target_group(
+                    ptg2['id'],
+                    network_service_policy_id=None,
+                    expected_res_status=webob.exc.HTTPOk.code)
+
+    def test_unsupported_nsp_parameters_rejected(self):
+        self.create_network_service_policy(
+            network_service_params=[
+                {"type": "ip_pool", "value": "self_subnet", "name": "vip"}],
+            expected_res_status=webob.exc.HTTPBadRequest.code)
+        self.create_network_service_policy(
+            network_service_params=[
+                {"type": "ip_pool", "value": "external_subnet",
+                 "name": "vip"}],
+            expected_res_status=webob.exc.HTTPBadRequest.code)
+        self.create_network_service_policy(
+            network_service_params=[
+                {"type": "ip_single", "value": "self_subnet", "name": "vip"},
+                {"type": "ip_single", "value": "self_subnet", "name": "vip"}],
+            expected_res_status=webob.exc.HTTPBadRequest.code)
+
+    def test_nsp_cleanup_on_unset(self):
+        ptg = self.create_policy_target_group(
+                    expected_res_status=webob.exc.HTTPCreated.code)[
+                                                        'policy_target_group']
+        ptg_subnet_id = ptg['subnets'][0]
+        subnet = self._show_subnet(ptg_subnet_id)['subnet']
+        initial_allocation_pool = subnet['allocation_pools']
+        nsp = self.create_network_service_policy(
+                    network_service_params=[
+                            {"type": "ip_single", "value": "self_subnet",
+                             "name": "vip"}],
+                    expected_res_status=webob.exc.HTTPCreated.code)[
+                                                    'network_service_policy']
+
+        # Update PTG, associating a NSP with it and verify that an IP is
+        # reserved from the PTG subnet allocation pool
+        self.update_policy_target_group(
+                    ptg['id'],
+                    network_service_policy_id=nsp['id'],
+                    expected_res_status=webob.exc.HTTPOk.code)
+        subnet = self._show_subnet(ptg_subnet_id)['subnet']
+        allocation_pool_after_nsp = subnet['allocation_pools']
+        self.assertEqual(
+                netaddr.IPAddress(initial_allocation_pool[0].get('start')),
+                netaddr.IPAddress(allocation_pool_after_nsp[0].get('start')))
+        self.assertEqual(
+                netaddr.IPAddress(initial_allocation_pool[0].get('end')),
+                netaddr.IPAddress(allocation_pool_after_nsp[0].get('end')) + 1)
+
+        # Update the PTGs and unset the NSP used and verify that the IP is
+        # restored to the PTG subnet allocation pool
+        self.update_policy_target_group(
+                    ptg['id'],
+                    network_service_policy_id=None,
+                    expected_res_status=webob.exc.HTTPOk.code)
+        subnet = self._show_subnet(ptg_subnet_id)['subnet']
+        allocation_pool_after_nsp_cleanup = subnet['allocation_pools']
+        self.assertEqual(
+                initial_allocation_pool, allocation_pool_after_nsp_cleanup)
