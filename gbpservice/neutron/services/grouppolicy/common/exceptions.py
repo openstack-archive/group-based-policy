@@ -210,3 +210,8 @@ class MultipleRedirectActionsNotSupportedForRule(GroupPolicyBadRequest):
 class MultipleRedirectActionsNotSupportedForPRS(GroupPolicyBadRequest):
     message = _("Resource Mapping Driver does not support multiple redirect "
                 "actions in a Policy Rule Set.")
+
+
+class InvalidNetworkServiceParameters(GroupPolicyBadRequest):
+    message = _("Resource Mapping Driver only supports type ip_single and "
+                "value self_subnet in Network Service Parameters")
