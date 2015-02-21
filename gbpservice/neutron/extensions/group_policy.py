@@ -74,6 +74,11 @@ class L3PolicyInUse(nexc.InUse):
                 "in use")
 
 
+class NetworkServicePolicyInUse(nexc.InUse):
+    message = _("Unable to complete operation, NetworkServicePolicy "
+                "%(network_service_policy_id)s is in use")
+
+
 class NetworkServicePolicyNotFound(nexc.NotFound):
     message = _("NetworkServicePolicy %(network_service_policy_id)s "
                 "could not be found")
