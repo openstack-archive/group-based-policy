@@ -344,7 +344,8 @@ class ResourceMappingDriver(api.PolicyDriver):
         ipaddress = self._get_ptg_policy_ipaddress_mapping(
             context._plugin_context.session, ptg_id)
         if ipaddress:
-            self._restore_ip_to_allocation_pool(context, subnet, ipaddress)
+            self._restore_ip_to_allocation_pool(
+                context, subnet, ipaddress.ipaddress)
             self._delete_policy_ipaddress_mapping(
                 context._plugin_context.session, ptg_id)
 
@@ -1240,11 +1241,10 @@ class ResourceMappingDriver(api.PolicyDriver):
 
     def _delete_policy_ipaddress_mapping(self, session, policy_target_group):
         with session.begin(subtransactions=True):
-            mappings = session.query(
+            ip_mapping = session.query(
                 ServicePolicyPTGIpAddressMapping).filter_by(
                     policy_target_group=policy_target_group).first()
-            for ip_map in mappings:
-                session.delete(ip_map)
+            session.delete(ip_mapping)
 
     def _handle_redirect_spec_id_update(self, context):
         if (context.current['action_type'] != gconst.GP_ACTION_REDIRECT

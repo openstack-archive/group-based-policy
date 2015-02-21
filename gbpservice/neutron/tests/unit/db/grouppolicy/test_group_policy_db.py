@@ -286,6 +286,62 @@ class TestGroupResources(GroupPolicyDbTestCase):
         self._test_show_resource(
             'policy_target_group', ptg['policy_target_group']['id'], attrs)
 
+    def test_create_associate_nsp_with_ptgs(self):
+        params = [{'type': 'ip_single', 'name': 'vip', 'value': 'self_subnet'}]
+        attrs = cm.get_create_network_service_policy_default_attrs(
+            network_service_params=params)
+
+        nsp = self.create_network_service_policy(network_service_params=params)
+        for k, v in attrs.iteritems():
+            self.assertEqual(nsp['network_service_policy'][k], v)
+
+        self._test_show_resource('network_service_policy',
+                                 nsp['network_service_policy']['id'], attrs)
+
+        # Create two PTGs that use this NSP
+        name1 = "ptg1"
+        provided_prs_id = (
+            self.create_policy_rule_set()['policy_rule_set']['id'])
+        consumed_prs_id = (
+            self.create_policy_rule_set()['policy_rule_set']['id'])
+        attrs = cm.get_create_policy_target_group_default_attrs(
+            name=name1,
+            network_service_policy_id=nsp['network_service_policy']['id'],
+            provided_policy_rule_sets=[provided_prs_id],
+            consumed_policy_rule_sets=[consumed_prs_id])
+
+        ptg1 = self.create_policy_target_group(
+            name=name1,
+            network_service_policy_id=nsp['network_service_policy']['id'],
+            provided_policy_rule_sets={provided_prs_id: None},
+            consumed_policy_rule_sets={consumed_prs_id: None})
+        for k, v in attrs.iteritems():
+            self.assertEqual(ptg1['policy_target_group'][k], v)
+        self._test_show_resource(
+            'policy_target_group', ptg1['policy_target_group']['id'], attrs)
+
+        name2 = "ptg2"
+        attrs.update(name=name2)
+        ptg2 = self.create_policy_target_group(
+            name=name2,
+            network_service_policy_id=nsp['network_service_policy']['id'],
+            provided_policy_rule_sets={provided_prs_id: None},
+            consumed_policy_rule_sets={consumed_prs_id: None})
+        for k, v in attrs.iteritems():
+            self.assertEqual(ptg2['policy_target_group'][k], v)
+        self._test_show_resource(
+            'policy_target_group', ptg2['policy_target_group']['id'], attrs)
+
+        # Update the PTG and unset the NSP used
+        data = {'policy_target_group': {
+                            'name': name1, 'network_service_policy_id': None}}
+        req = self.new_update_request(
+            'policy_target_groups', data, ptg1['policy_target_group']['id'])
+        res = self.deserialize(self.fmt, req.get_response(self.ext_api))
+
+        self.assertEqual(
+            res['policy_target_group']['network_service_policy_id'], None)
+
     def test_list_policy_target_groups(self):
         ptgs = (
             [self.create_policy_target_group(name='ptg1', description='ptg'),

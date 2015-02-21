@@ -2460,3 +2460,32 @@ class TestPolicyRule(ResourceMappingTestCase):
             policy_actions=[action1['id'], action2['id']])
         self.assertEqual('MultipleRedirectActionsNotSupportedForRule',
                          res['NeutronError']['type'])
+
+
+class TestNetworkServicePolicy(ResourceMappingTestCase):
+
+    def test_create_nsp_multiple_ptgs(self):
+        nsp = self.create_network_service_policy(
+                    network_service_params=[
+                            {"type": "ip_single", "value": "self_subnet",
+                             "name": "vip"}],
+                    expected_res_status=webob.exc.HTTPCreated.code)[
+                                                    'network_service_policy']
+        # Create two PTGs that use this NSP
+        ptg1 = self.create_policy_target_group(
+                    network_service_policy_id=nsp['id'],
+                    expected_res_status=webob.exc.HTTPCreated.code)[
+                                                        'policy_target_group']
+        ptg2 = self.create_policy_target_group(
+                    network_service_policy_id=nsp['id'],
+                    expected_res_status=webob.exc.HTTPCreated.code)[
+                                                        'policy_target_group']
+        # Update the PTGs and unset the NSP used
+        self.update_policy_target_group(
+                    ptg1['id'],
+                    network_service_policy_id=None,
+                    expected_res_status=webob.exc.HTTPOk.code)
+        self.update_policy_target_group(
+                    ptg2['id'],
+                    network_service_policy_id=None,
+                    expected_res_status=webob.exc.HTTPOk.code)
