@@ -426,6 +426,22 @@ class TestGroupResources(GroupPolicyDbTestCase):
         self.assertRaises(gpolicy.InvalidDefaultSubnetPrefixLength,
                           self.plugin.create_l3_policy, ctx, data)
 
+    def test_create_l3_policy_with_invalid_ippool(self):
+        ctx = context.get_admin_context()
+        data = {'l3_policy': {'name': 'l3p1', 'ip_version': 4,
+                              'description': '', 'ip_pool': '0.0.0.0/0',
+                              'subnet_prefix_length': 26}}
+
+        self.assertRaises(gpolicy.InvalidIpPool,
+                          self.plugin.create_l3_policy, ctx, data)
+
+        data = {'l3_policy': {'name': 'l3p1', 'ip_version': 4,
+                              'description': '', 'ip_pool': '1.2.3.0/31',
+                              'subnet_prefix_length': 30}}
+
+        self.assertRaises(gpolicy.InvalidIpPool,
+                          self.plugin.create_l3_policy, ctx, data)
+
     def test_create_l3_policy_with_ip_pool_more_than_subnet_mask(self):
         ctx = context.get_admin_context()
         data = {'l3_policy': {'name': 'l3p1', 'ip_version': 4,
