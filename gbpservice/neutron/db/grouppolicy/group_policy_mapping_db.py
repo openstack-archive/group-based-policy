@@ -244,6 +244,7 @@ class GroupPolicyMappingDbPlugin(gpdb.GroupPolicyDbPlugin):
     @log.log
     def create_l3_policy(self, context, l3_policy):
         l3p = l3_policy['l3_policy']
+        self.validate_ip_pool(l3p.get('ip_pool', None), l3p['ip_version'])
         tenant_id = self._get_tenant_id_for_create(context, l3p)
         self.validate_subnet_prefix_length(l3p['ip_version'],
                                            l3p['subnet_prefix_length'],
