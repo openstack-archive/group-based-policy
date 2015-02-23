@@ -1030,6 +1030,14 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
         return value
 
     @staticmethod
+    def validate_ippool(ip_pool):
+        attr._validate_subnet(ip_pool)
+        ip_net = netaddr.IPNetwork(ip_pool)
+        if (ip_net.size <= 1 or ip_net.prefixlen == 0):
+            raise gpolicy.InvalidIpPool(ip_pool=ip_pool, size=ip_net.size,
+                                        prefixlen=ip_net.prefixlen)
+
+    @staticmethod
     def validate_subnet_prefix_length(ip_version, new_prefix_length,
                                       ip_pool=None):
         if (new_prefix_length < 2) or (
@@ -1221,6 +1229,7 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
     def create_l3_policy(self, context, l3_policy):
         l3p = l3_policy['l3_policy']
         tenant_id = self._get_tenant_id_for_create(context, l3p)
+        self.validate_ippool(l3p.get('ip_pool', None))
         self.validate_subnet_prefix_length(
             l3p['ip_version'], l3p['subnet_prefix_length'],
             l3p.get('ip_pool', None))
