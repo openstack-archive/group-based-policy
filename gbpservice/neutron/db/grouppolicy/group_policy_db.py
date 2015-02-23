@@ -1030,6 +1030,22 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
         return value
 
     @staticmethod
+    def validate_ip_pool(ip_pool, ip_version):
+        attr._validate_subnet(ip_pool)
+        ip_net = netaddr.IPNetwork(ip_pool, version=int(ip_version))
+        #ip_net = netaddr.IPNetwork(ip_pool)
+        if (ip_net.size <= 3):
+            err_msg = "Too few available IPs in the pool."
+            raise gpolicy.InvalidIpPoolSize(ip_pool=ip_pool, err_msg=err_msg,
+                                        size=ip_net.size)
+
+        if (ip_net.prefixlen == 0):
+            err_msg = "Prefix length of 0 is invalid."
+            raise gpolicy.InvalidIpPoolPrefixLength(ip_pool=ip_pool,
+                                        err_msg=err_msg,
+                                        prefixlen=ip_net.prefixlen)
+
+    @staticmethod
     def validate_subnet_prefix_length(ip_version, new_prefix_length,
                                       ip_pool=None):
         if (new_prefix_length < 2) or (
@@ -1221,6 +1237,7 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
     def create_l3_policy(self, context, l3_policy):
         l3p = l3_policy['l3_policy']
         tenant_id = self._get_tenant_id_for_create(context, l3p)
+        self.validate_ip_pool(l3p.get('ip_pool', None), l3p['ip_version'])
         self.validate_subnet_prefix_length(
             l3p['ip_version'], l3p['subnet_prefix_length'],
             l3p.get('ip_pool', None))
