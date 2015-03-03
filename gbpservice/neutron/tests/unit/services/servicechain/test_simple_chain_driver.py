@@ -75,6 +75,19 @@ class TestServiceChainInstance(SimpleChainDriverTestCase):
         self.assertEqual('InvalidServiceTypeForReferenceDriver',
                          res['NeutronError']['type'])
 
+    def test_invalid_node_definition_rejected(self):
+        node_config = {"heat_template_version": "2013-05-23",
+                       "parameters": {
+                            "dest_ip": {
+                                "type": "string",
+                                "description": "Destination ip"}}}
+        res = self.create_servicechain_node(
+                    service_type=constants.FIREWALL,
+                    config=jsonutils.dumps(node_config),
+                    expected_res_status=webob.exc.HTTPBadRequest.code)
+        self.assertEqual('InvalidServiceConfigParameterError',
+                         res['NeutronError']['type'])
+
     def test_chain_node_create_success(self):
         res = self.create_servicechain_node(
                     service_type=constants.FIREWALL, config='{}',

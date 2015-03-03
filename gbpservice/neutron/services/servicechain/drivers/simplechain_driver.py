@@ -63,12 +63,28 @@ class SimpleChainDriver(object):
 
     @log.log
     def initialize(self):
-        pass
+        self.supported_service_parameters = ["poolmemberips", "subnet",
+                                             "vip_ip"]
 
     @log.log
     def create_servicechain_node_precommit(self, context):
         if context.current['service_type'] not in sc_supported_type:
             raise exc.InvalidServiceTypeForReferenceDriver()
+
+        # Validate the Parameters section of the Node definition. If there is
+        # some unsupported parameter, raise an error
+        config_json = jsonutils.loads(context.current['config'])
+        parameters_key = [x for x in config_json if "parameters" in x.lower()]
+        if parameters_key:
+            parameters_key = parameters_key[0]
+            config_params = config_json.get(parameters_key).keys()
+            unsupported_config_params = [x for x in config_params if
+                                         x.lower() not in
+                                         self.supported_service_parameters]
+            for key in unsupported_config_params:
+                if not config_json[parameters_key][key].get('Default'):
+                    raise exc.InvalidServiceConfigParameterError(
+                        driver="Reference Service Chain driver", type=key)
 
     @log.log
     def create_servicechain_node_postcommit(self, context):
@@ -227,18 +243,18 @@ class SimpleChainDriver(object):
         # If we have the key "PoolMemberIP*" in template input parameters,
         # fetch the list of IPs of all PTs in the PTG
         for key in config_param_names or []:
-            if "PoolMemberIP" in key:
+            if "poolmemberip" in key.lower():
                 member_ips = self._get_member_ips(context, provider_ptg_id)
                 break
 
         member_count = 0
         for key in config_param_names or []:
-            if "PoolMemberIP" in key:
+            if "poolmemberip" in key.lower():
                 value = (member_ips[member_count]
                          if len(member_ips) > member_count else '0')
                 member_count = member_count + 1
                 config_param_values[key] = value
-            elif key == "Subnet":
+            elif key.lower() == "subnet":
                 value = self._get_ptg_subnet(context, provider_ptg_id)
                 config_param_values[key] = value
         node_params = (stack_template.get('Parameters')
