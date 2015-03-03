@@ -49,6 +49,16 @@ class ServiceChainInstanceNotFound(nexc.NotFound):
     message = _("ServiceChainInstance %(sc_instance_id)s could not be found")
 
 
+class ServiceChainNodeInUse(nexc.InUse):
+    message = _("Unable to complete operation, ServiceChainNode "
+                "%(node_id)s is in use")
+
+
+class ServiceChainSpecInUse(nexc.InUse):
+    message = _("Unable to complete operation, ServiceChainSpec "
+                "%(spec_id)s is in use")
+
+
 class ServiceTypeNotFound(nexc.NotFound):
     message = _("ServiceType %(service_type_id) could not be found")
 
