@@ -158,6 +158,8 @@ class TestServiceChainInstance(SimpleChainDriverTestCase):
         scs = self.create_servicechain_spec(name=name, nodes=[scn_id])
         sc_spec_id = scs['servicechain_spec']['id']
 
+        expected_stack_name = ("stack_" + "sc_instance_1" +
+                               scn['servicechain_node']['name'] + scn_id[:5])
         with mock.patch.object(simplechain_driver.HeatClient,
                                'create') as stack_create:
             stack_create.return_value = {'stack': {
@@ -168,7 +170,8 @@ class TestServiceChainInstance(SimpleChainDriverTestCase):
             self.assertEqual(
                 sc_instance['servicechain_instance']['servicechain_specs'],
                 [sc_spec_id])
-            stack_create.assert_called_once_with(mock.ANY, mock.ANY, mock.ANY)
+            stack_create.assert_called_once_with(
+                                    expected_stack_name, mock.ANY, mock.ANY)
 
     def test_chain_instance_delete(self):
         name = "scs1"
