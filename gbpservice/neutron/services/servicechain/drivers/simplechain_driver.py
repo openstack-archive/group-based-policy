@@ -259,11 +259,10 @@ class SimpleChainDriver(object):
             stack_template, stack_params = self._fetch_template_and_params(
                 context, sc_instance, sc_spec, sc_node)
 
+            stack_name = ("stack_" + sc_instance['name'] + sc_node['name'] +
+                          sc_node['id'][:5])
             stack = heatclient.create(
-                "stack_" + sc_instance['name'] + sc_node['name']
-                + sc_node['id'][:5],
-                stack_template,
-                stack_params)
+                stack_name.replace(" ", ""), stack_template, stack_params)
 
             self._insert_chain_stack_db(
                 context._plugin_context.session, sc_instance['id'],
