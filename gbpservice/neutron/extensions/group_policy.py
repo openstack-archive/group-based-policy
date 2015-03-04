@@ -89,6 +89,16 @@ class SubnetPrefixLengthExceedsIpPool(nexc.InvalidInput):
                 "than subnet mask %(subnet_size)s")
 
 
+class InvalidIpPoolSize(nexc.InvalidInput):
+    message = _("IP pool %(ip_pool)s is invalid:%(err_msg)s"
+                "Pool size=%(size)s")
+
+
+class InvalidIpPoolPrefixLength(nexc.InvalidInput):
+    message = _("IP pool %(ip_pool)s is invalid:%(err_msg)s"
+                "Prefix Length=%(prefixlen)s")
+
+
 class PolicyClassifierNotFound(nexc.NotFound):
     message = _("PolicyClassifier %(policy_classifier_id)s could not be found")
 
