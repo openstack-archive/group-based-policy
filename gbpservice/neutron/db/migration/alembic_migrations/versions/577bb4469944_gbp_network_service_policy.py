@@ -58,13 +58,11 @@ def upgrade():
         sa.Column('network_service_policy_id',
                   sa.String(length=36), nullable=True))
 
-    op.create_unique_constraint(None, 'gp_policy_target_groups',
-                                ['network_service_policy_id'])
     op.create_foreign_key('gp_policy_target_groups_ibfk_nsp',
                           source='gp_policy_target_groups',
                           referent='gp_network_service_policies',
                           local_cols=['network_service_policy_id'],
-                          remote_cols=['id'], ondelete='CASCADE')
+                          remote_cols=['id'])
 
 
 def downgrade():
