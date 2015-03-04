@@ -864,6 +864,24 @@ class TestL2Policy(ResourceMappingTestCase):
             self.assertEqual('NonSharedNetworkOnSharedL2PolicyNotSupported',
                              res['NeutronError']['type'])
 
+    def test_l3p_update_rejected(self):
+        # Create two l3 policies.
+        l3p1 = self.create_l3_policy(name="l3p1", ip_pool='10.0.0.0/16')
+        l3p1_id = l3p1['l3_policy']['id']
+        l3p2 = self.create_l3_policy(name="l3p2", ip_pool='10.1.0.0/16')
+        l3p2_id = l3p2['l3_policy']['id']
+
+        # Create l2 policy.
+        l2p = self.create_l2_policy(name="l2p1", l3_policy_id=l3p1_id)
+        l2p_id = l2p['l2_policy']['id']
+
+        # Verify updating l3_policy rejected.
+        data = {'l2_policy': {'l3_policy_id': l3p2_id}}
+        req = self.new_update_request('l2_policies', data, l2p_id)
+        data = self.deserialize(self.fmt, req.get_response(self.ext_api))
+        self.assertEqual('L3PolicyUpdateOfL2PolicyNotSupported',
+                         data['NeutronError']['type'])
+
 
 class TestL3Policy(ResourceMappingTestCase):
 

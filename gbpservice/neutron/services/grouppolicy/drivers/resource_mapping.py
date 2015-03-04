@@ -529,6 +529,9 @@ class ResourceMappingDriver(api.PolicyDriver):
 
     @log.log
     def update_l2_policy_precommit(self, context):
+        if (context.current['l3_policy_id'] !=
+            context.original['l3_policy_id']):
+            raise exc.L3PolicyUpdateOfL2PolicyNotSupported()
         self._reject_cross_tenant_l2p_l3p(context)
         self._reject_non_shared_net_on_shared_l2p(context)
 
