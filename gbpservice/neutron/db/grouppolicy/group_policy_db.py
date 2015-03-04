@@ -1332,6 +1332,9 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
         with context.session.begin(subtransactions=True):
             nsp_db = self._get_network_service_policy(
                 context, network_service_policy_id)
+            if nsp_db.policy_target_groups:
+                raise gpolicy.NetworkServicePolicyInUse(
+                        network_service_policy_id=network_service_policy_id)
             context.session.delete(nsp_db)
 
     @log.log
