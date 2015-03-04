@@ -63,6 +63,10 @@ class L2PolicyUpdateOfPolicyTargetGroupNotSupported(GroupPolicyBadRequest):
     message = _("Updating L2 policy of policy target group is not supported.")
 
 
+class L3PolicyUpdateOfL2PolicyNotSupported(GroupPolicyBadRequest):
+    message = _("Updating L3 policy of L2 policy is not supported.")
+
+
 class L3PolicyMultipleRoutersNotSupported(GroupPolicyBadRequest):
     message = _("L3 policy does not support multiple routers.")
 
