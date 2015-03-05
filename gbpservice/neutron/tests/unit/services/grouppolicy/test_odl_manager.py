@@ -80,9 +80,9 @@ CONTRACT = {
 URL_BASE = ("http://%(host)s:%(port)s/restconf" %
             {'host': HOST, 'port': PORT})
 URL_REG_EP = (URL_BASE +
-              '/operations/openstack-endpoint:register-endpoint')
+              '/operations/endpoint:register-endpoint')
 URL_UNREG_EP = (URL_BASE +
-                '/operations/openstack-endpoint:unregister-endpoint')
+                '/operations/endpoint:unregister-endpoint')
 URL_TENANT = (URL_BASE +
               '/config/policy:tenants/policy:tenant/%s' %
               TENANT_ID)

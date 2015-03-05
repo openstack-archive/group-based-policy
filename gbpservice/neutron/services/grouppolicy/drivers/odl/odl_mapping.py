@@ -200,7 +200,7 @@ class OdlMappingDriver(api.ResourceMappingDriver):
             "l2-context": pt['l2ctx_id'],
             "l3-address": pt['l3_list'],
             "mac-address": pt['mac_address'],
-            "neutron-port-id": pt['neutron_port_id'],
+            "port-name": pt['neutron_port_id'],
             "tenant": pt['tenant_id']
         }
         self.odl_manager.register_endpoints([ep])
