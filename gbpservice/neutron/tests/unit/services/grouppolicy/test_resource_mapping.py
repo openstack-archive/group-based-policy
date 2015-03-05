@@ -968,6 +968,30 @@ class TestL3Policy(ResourceMappingTestCase):
             self.assertEqual('OverlappingIPPoolsInSameTenantNotAllowed',
                              res['NeutronError']['type'])
 
+    def test_implicit_creation_failure(self):
+        # Create non-default L3Policy that uses the default IP pool.
+        self.create_l3_policy(name="l3p1")
+
+        # Create L2Policy that needs implicit L3Policy. Creation of
+        # L3Policy should fail due to default IP pool already being
+        # used, causing creation of L2Policy to fail. Make sure we get
+        # the original exception.
+        #
+        # REVISIT(rkukura): Overlapping pools per tenant might
+        # eventually be allowed, which would break this test. Rather
+        # than depending on this exception being raised, we could
+        # instead patch the RMD's create_l3_policy_postcommit to raise
+        # an exception. This approach could also be applied to other
+        # resource types, and could be moved to the IPD's test cases
+        # where it belongs. See bug 1432791.
+        res = self.create_l2_policy(name="l2p", expected_res_status=400)
+        self.assertEqual('OverlappingIPPoolsInSameTenantNotAllowed',
+                         res['NeutronError']['type'])
+
+        # Verify L2Policy was not created.
+        self.assertFalse(self._list('l2_policies',
+                                    query_params='name=l2p')['l2_policies'])
+
     def test_create_l3p_es(self):
         # Simple test to verify l3p created with 1-N ES
         with contextlib.nested(
