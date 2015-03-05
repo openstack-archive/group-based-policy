@@ -538,7 +538,7 @@ class PolicyTargetTestCase(OdlMappingTestCase):
                 }
             ],
             "mac-address": PORT_MAC,
-            "neutron-port-id": NEUTRON_PORT_ID,
+            "port-name": NEUTRON_PORT_ID,
             "tenant": TENANT_UUID
         }
 
