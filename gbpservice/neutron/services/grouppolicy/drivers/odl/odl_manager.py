@@ -74,11 +74,11 @@ class OdlManager(object):
         )
         self._reg_ep_url = (
             self._base_url +
-            '/operations/openstack-endpoint:register-endpoint'
+            '/operations/endpoint:register-endpoint'
         )
         self._unreg_ep_url = (
             self._base_url +
-            '/operations/openstack-endpoint:unregister-endpoint'
+            '/operations/endpoint:unregister-endpoint'
         )
         self._policy_url = (
             self._base_url +
