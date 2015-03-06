@@ -105,6 +105,10 @@ class TestPolicyTargetGroup(OneConvergenceGBPDriverTestCase,
         # One Convergence driver shares the same implicit subnet
         self.assertEqual(count + 1, new_count)
 
+    def test_ip_pool_exhaustion(self):
+        # One Convergence driver shares the same implicit subnet
+        pass
+
     def test_oneconvergence_controller_api_invoked(self):
         with contextlib.nested(
                 mock.patch.object(MockNVSDApiClient, 'create_endpointgroup'),
