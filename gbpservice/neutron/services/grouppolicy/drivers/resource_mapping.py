@@ -334,14 +334,15 @@ class ResourceMappingDriver(api.PolicyDriver):
             context._plugin_context.session, policy_target_group)
         return ipaddress
 
-    def _cleanup_network_service_policy(self, context, subnet, ptg_id,
+    def _cleanup_network_service_policy(self, context, subnets, ptg_id,
                                         ipaddress=None):
         if not ipaddress:
             ipaddress = self._get_ptg_policy_ipaddress_mapping(
                 context._plugin_context.session, ptg_id)
-        if ipaddress:
+        if ipaddress and subnets:
+            # TODO(rkukura): Loop on subnets?
             self._restore_ip_to_allocation_pool(
-                context, subnet, ipaddress.ipaddress)
+                context, subnets[0], ipaddress.ipaddress)
             self._delete_policy_ipaddress_mapping(
                 context._plugin_context.session, ptg_id)
 
@@ -434,7 +435,7 @@ class ResourceMappingDriver(api.PolicyDriver):
             if old_nsp:
                 self._cleanup_network_service_policy(
                                         context,
-                                        context.current['subnets'][0],
+                                        context.current['subnets'],
                                         context.current['id'])
             if new_nsp:
                 self._handle_network_service_policy(context)
@@ -498,7 +499,7 @@ class ResourceMappingDriver(api.PolicyDriver):
     @log.log
     def delete_policy_target_group_postcommit(self, context):
         self._cleanup_network_service_policy(context,
-                                             context.current['subnets'][0],
+                                             context.current['subnets'],
                                              context.current['id'],
                                              context.nsp_cleanup_ipaddress)
         self._cleanup_redirect_action(context)
