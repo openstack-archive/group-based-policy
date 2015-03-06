@@ -782,7 +782,28 @@ class TestPolicyTargetGroup(ResourceMappingTestCase):
         self.assertEqual('L2PolicyUpdateOfPolicyTargetGroupNotSupported',
                          data['NeutronError']['type'])
 
-    # TODO(rkukura): Test ip_pool exhaustion.
+    def test_ip_pool_exhaustion(self):
+        # Create L3P with only a single subnet in pool, and an L2P
+        # using this L3P.
+        l3p = self.create_l3_policy(name="l3p", ip_pool="10.0.0.0/24",
+                                    subnet_prefix_length=24)
+        l3p_id = l3p['l3_policy']['id']
+        l2p = self.create_l2_policy(name="l2p", l3_policy_id=l3p_id)
+        l2p_id = l2p['l2_policy']['id']
+
+        # Create PTG, which will be allocated this subnet.
+        self.create_policy_target_group(name="ptg1", l2_policy_id=l2p_id)
+
+        # Create 2nd PTG, which should fail due to subnet exhaustion.
+        res = self.create_policy_target_group(name="ptg2", l2_policy_id=l2p_id,
+                                              expected_res_status=503)
+        self.assertEqual('NoSubnetAvailable',
+                         res['NeutronError']['type'])
+
+        # Verify 2nd PTG was not created.
+        self.assertFalse(self._list('policy_target_groups',
+                                    query_params='name=ptg2')
+                         ['policy_target_groups'])
 
 
 class TestL2Policy(ResourceMappingTestCase):
