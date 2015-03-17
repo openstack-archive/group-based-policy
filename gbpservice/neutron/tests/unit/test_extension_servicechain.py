@@ -66,7 +66,8 @@ class ServiceChainExtensionTestCase(test_api_v2_extension.ExtensionTestCase):
         return {
             'name': '',
             'description': '',
-            'config': ''
+            'config': '',
+            'shared': False
         }
 
     def _get_create_servicechain_node_attrs(self):
@@ -75,7 +76,8 @@ class ServiceChainExtensionTestCase(test_api_v2_extension.ExtensionTestCase):
             'service_type': 'FIREWALL',
             'tenant_id': _uuid(),
             'description': 'test servicechain node',
-            'config': 'test_config'
+            'config': 'test_config',
+            'shared': True
         }
 
     def _get_update_servicechain_node_attrs(self):
@@ -185,7 +187,8 @@ class ServiceChainExtensionTestCase(test_api_v2_extension.ExtensionTestCase):
         return {
             'name': '',
             'description': '',
-            'nodes': []
+            'nodes': [],
+            'shared': False,
         }
 
     def _get_create_servicechain_spec_attrs(self):
@@ -193,7 +196,8 @@ class ServiceChainExtensionTestCase(test_api_v2_extension.ExtensionTestCase):
             'name': 'servicechainspec1',
             'nodes': [_uuid(), _uuid()],
             'tenant_id': _uuid(),
-            'description': 'test servicechain spec'
+            'description': 'test servicechain spec',
+            'shared': True
         }
 
     def _get_update_servicechain_spec_attrs(self):
