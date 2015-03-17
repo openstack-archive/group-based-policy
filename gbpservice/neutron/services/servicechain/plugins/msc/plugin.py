@@ -19,11 +19,13 @@ from gbpservice.neutron.services.servicechain.plugins.msc import (
     context as servicechain_context)
 from gbpservice.neutron.services.servicechain.plugins.msc import (
     driver_manager as manager)
+from gbpservice.neutron.services.servicechain.plugins import sharing
 
 LOG = logging.getLogger(__name__)
 
 
-class ServiceChainPlugin(servicechain_db.ServiceChainDbPlugin):
+class ServiceChainPlugin(servicechain_db.ServiceChainDbPlugin,
+                         sharing.SharingMixin):
 
     """Implementation of the Service Chain Plugin.
 
@@ -41,6 +43,7 @@ class ServiceChainPlugin(servicechain_db.ServiceChainDbPlugin):
         with session.begin(subtransactions=True):
             result = super(ServiceChainPlugin, self).create_servicechain_node(
                 context, servicechain_node)
+            self._validate_shared_create(context, result, 'servicechain_node')
             sc_context = servicechain_context.ServiceChainNodeContext(
                 self, context, result)
             self.driver_manager.create_servicechain_node_precommit(
@@ -69,6 +72,8 @@ class ServiceChainPlugin(servicechain_db.ServiceChainDbPlugin):
                                     self).update_servicechain_node(
                                         context, servicechain_node_id,
                                         servicechain_node)
+            self._validate_shared_update(context, original_sc_node,
+                                         updated_sc_node, 'servicechain_node')
             sc_context = servicechain_context.ServiceChainNodeContext(
                 self, context, updated_sc_node,
                 original_sc_node=original_sc_node)
@@ -106,6 +111,7 @@ class ServiceChainPlugin(servicechain_db.ServiceChainDbPlugin):
         with session.begin(subtransactions=True):
             result = super(ServiceChainPlugin, self).create_servicechain_spec(
                 context, servicechain_spec)
+            self._validate_shared_create(context, result, 'servicechain_spec')
             sc_context = servicechain_context.ServiceChainSpecContext(
                 self, context, result)
             self.driver_manager.create_servicechain_spec_precommit(
@@ -133,6 +139,8 @@ class ServiceChainPlugin(servicechain_db.ServiceChainDbPlugin):
                                     self).update_servicechain_spec(
                                         context, servicechain_spec_id,
                                         servicechain_spec)
+            self._validate_shared_update(context, original_sc_spec,
+                                         updated_sc_spec, 'servicechain_spec')
             sc_context = servicechain_context.ServiceChainSpecContext(
                 self, context, updated_sc_spec,
                 original_sc_spec=original_sc_spec)
