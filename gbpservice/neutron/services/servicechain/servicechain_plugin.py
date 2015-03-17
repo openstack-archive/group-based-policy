@@ -10,11 +10,16 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+from neutron.api.v2 import attributes as nattr
 from neutron.common import log
+from neutron import manager as n_manager
+from neutron.plugins.common import constants as pconst
 from oslo_log import log as logging
 from oslo_utils import excutils
 
 import gbpservice.neutron.db.servicechain_db as servicechain_db
+from gbpservice.neutron.services.grouppolicy.common import exceptions as gp_exc
+from gbpservice.neutron.services.grouppolicy import plugin as gbp_plugin
 from gbpservice.neutron.services.servicechain import (
     driver_manager as manager)
 from gbpservice.neutron.services.servicechain import (
@@ -31,6 +36,51 @@ class ServiceChainPlugin(servicechain_db.ServiceChainDbPlugin):
     """
     supported_extension_aliases = ["servicechain"]
 
+    usage_graph = {'servicechain_spec': {'nodes':
+                                         'servicechain_node'},
+                   'servicechain_node': {},
+                   'servicechain_instance': {}}
+    _plurals = None
+
+    @property
+    def plurals(self):
+        if not self._plurals:
+            self._plurals = dict((nattr.PLURALS[k], k) for k in nattr.PLURALS)
+        return self._plurals
+
+    @property
+    def gbp_plugin(self):
+        # REVISIT(rkukura): Need initialization method after all
+        # plugins are loaded to grab and store plugin.
+        plugins = n_manager.NeutronManager.get_service_plugins()
+        gbp_plugin = plugins.get(pconst.GROUP_POLICY)
+        if not gbp_plugin:
+            LOG.error(_("No group policy service plugin found."))
+            raise gp_exc.GroupPolicyDeploymentError()
+        return gbp_plugin
+
+    def _validate_shared_create(self, context, obj, identity):
+        return gbp_plugin.GroupPolicyPlugin._validate_shared_create(
+            self, context, obj, identity)
+
+    def _validate_shared_update(self, context, original, updated, identity):
+        self._validate_shared_create(context, updated, identity)
+        if updated.get('shared') != original.get('shared'):
+            context = context.elevated()
+            getattr(self, '_validate_%s_unshare' % identity)(context, updated)
+
+    def _validate_servicechain_node_unshare(self, context, obj):
+        # Verify not pointed by shared SCS
+        gbp_plugin.GroupPolicyPlugin._check_shared_or_different_tenant(
+            context, obj, self.get_servicechain_specs, 'id',
+            obj['servicechain_specs'])
+
+    def _validate_servicechain_spec_unshare(self, context, obj):
+        # Verify not pointed by shared policy actions
+        gbp_plugin.GroupPolicyPlugin._check_shared_or_different_tenant(
+            context, obj, self.gbp_plugin.get_policy_actions, 'action_value',
+            [obj['id']])
+
     def __init__(self):
         self.driver_manager = manager.DriverManager()
         super(ServiceChainPlugin, self).__init__()
@@ -42,6 +92,7 @@ class ServiceChainPlugin(servicechain_db.ServiceChainDbPlugin):
         with session.begin(subtransactions=True):
             result = super(ServiceChainPlugin, self).create_servicechain_node(
                 context, servicechain_node)
+            self._validate_shared_create(context, result, 'servicechain_node')
             sc_context = servicechain_context.ServiceChainNodeContext(
                 self, context, result)
             self.driver_manager.create_servicechain_node_precommit(
@@ -70,6 +121,8 @@ class ServiceChainPlugin(servicechain_db.ServiceChainDbPlugin):
                                     self).update_servicechain_node(
                                         context, servicechain_node_id,
                                         servicechain_node)
+            self._validate_shared_update(context, original_sc_node,
+                                         updated_sc_node, 'servicechain_node')
             sc_context = servicechain_context.ServiceChainNodeContext(
                 self, context, updated_sc_node,
                 original_sc_node=original_sc_node)
@@ -107,6 +160,7 @@ class ServiceChainPlugin(servicechain_db.ServiceChainDbPlugin):
         with session.begin(subtransactions=True):
             result = super(ServiceChainPlugin, self).create_servicechain_spec(
                 context, servicechain_spec)
+            self._validate_shared_create(context, result, 'servicechain_spec')
             sc_context = servicechain_context.ServiceChainSpecContext(
                 self, context, result)
             self.driver_manager.create_servicechain_spec_precommit(
@@ -134,6 +188,8 @@ class ServiceChainPlugin(servicechain_db.ServiceChainDbPlugin):
                                     self).update_servicechain_spec(
                                         context, servicechain_spec_id,
                                         servicechain_spec)
+            self._validate_shared_update(context, original_sc_spec,
+                                         updated_sc_spec, 'servicechain_spec')
             sc_context = servicechain_context.ServiceChainSpecContext(
                 self, context, updated_sc_spec,
                 original_sc_spec=original_sc_spec)
