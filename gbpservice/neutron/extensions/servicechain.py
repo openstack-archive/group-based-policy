@@ -115,6 +115,10 @@ RESOURCE_ATTRIBUTE_MAP = {
         'config': {'allow_post': True, 'allow_put': False,
                    'validate': {'type:string': None},
                    'required': True, 'is_visible': True},
+        attr.SHARED: {'allow_post': True, 'allow_put': True,
+                      'default': False, 'convert_to': attr.convert_to_boolean,
+                      'is_visible': True, 'required_by_policy': True,
+                      'enforce_policy': True},
     },
     SERVICECHAIN_SPECS: {
         'id': {'allow_post': False, 'allow_put': False,
@@ -137,6 +141,10 @@ RESOURCE_ATTRIBUTE_MAP = {
         'config_param_names': {'allow_post': False, 'allow_put': False,
                                'validate': {'type:string_list': None},
                                'default': [], 'is_visible': True},
+        attr.SHARED: {'allow_post': True, 'allow_put': True,
+                      'default': False, 'convert_to': attr.convert_to_boolean,
+                      'is_visible': True, 'required_by_policy': True,
+                      'enforce_policy': True},
     },
     SERVICECHAIN_INSTANCES: {
         'id': {'allow_post': False, 'allow_put': False,
