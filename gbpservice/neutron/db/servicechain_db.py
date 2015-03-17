@@ -68,6 +68,7 @@ class ServiceChainNode(model_base.BASEV2, models_v2.HasId,
     specs = orm.relationship(SpecNodeAssociation,
                              backref="nodes",
                              cascade='all, delete, delete-orphan')
+    shared = sa.Column(sa.Boolean)
 
 
 class ServiceChainInstance(model_base.BASEV2, models_v2.HasId,
@@ -111,6 +112,7 @@ class ServiceChainSpec(model_base.BASEV2, models_v2.HasId,
     instances = orm.relationship(InstanceSpecAssociation,
                                  backref="specs",
                                  cascade='all, delete, delete-orphan')
+    shared = sa.Column(sa.Boolean)
 
 
 class ServiceChainDbPlugin(schain.ServiceChainPluginBase,
@@ -161,7 +163,10 @@ class ServiceChainDbPlugin(schain.ServiceChainPluginBase,
                'name': sc_node['name'],
                'description': sc_node['description'],
                'service_type': sc_node['service_type'],
-               'config': sc_node['config']}
+               'config': sc_node['config'],
+               'shared': sc_node['shared']}
+        res['servicechain_specs'] = [sc_spec['servicechain_spec_id']
+                                     for sc_spec in sc_node['specs']]
         return self._fields(res, fields)
 
     def _make_sc_spec_dict(self, spec, fields=None):
@@ -169,7 +174,8 @@ class ServiceChainDbPlugin(schain.ServiceChainPluginBase,
                'tenant_id': spec['tenant_id'],
                'name': spec['name'],
                'description': spec['description'],
-               'config_param_names': spec.get('config_param_names')}
+               'config_param_names': spec.get('config_param_names'),
+               'shared': spec['shared']}
         res['nodes'] = [sc_node['node_id'] for sc_node in spec['nodes']]
         return self._fields(res, fields)
 
@@ -201,7 +207,8 @@ class ServiceChainDbPlugin(schain.ServiceChainPluginBase,
                                        name=node['name'],
                                        description=node['description'],
                                        service_type=node['service_type'],
-                                       config=node['config'])
+                                       config=node['config'],
+                                       shared=node['shared'])
             context.session.add(node_db)
         return self._make_sc_node_dict(node_db)
 
@@ -331,7 +338,8 @@ class ServiceChainDbPlugin(schain.ServiceChainPluginBase,
             spec_db = ServiceChainSpec(id=uuidutils.generate_uuid(),
                                        tenant_id=tenant_id,
                                        name=spec['name'],
-                                       description=spec['description'])
+                                       description=spec['description'],
+                                       shared=spec['shared'])
             self._process_nodes_for_spec(context, spec_db, spec)
             context.session.add(spec_db)
         return self._make_sc_spec_dict(spec_db)
