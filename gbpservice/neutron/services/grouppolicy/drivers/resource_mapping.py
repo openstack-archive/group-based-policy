@@ -98,10 +98,8 @@ class PtgServiceChainInstanceMapping(model_base.BASEV2):
                                 sa.ForeignKey('gp_policy_target_groups.id',
                                               ondelete='CASCADE'),
                                 nullable=False)
-    consumer_ptg_id = sa.Column(sa.String(36),
-                                sa.ForeignKey('gp_policy_target_groups.id',
-                                              ondelete='CASCADE'),
-                                nullable=False)
+    # Consumer PTG could be an External Policy
+    consumer_ptg_id = sa.Column(sa.String(36), nullable=False)
     servicechain_instance_id = sa.Column(sa.String(36),
                                          sa.ForeignKey('sc_instances.id',
                                                        ondelete='CASCADE'),
@@ -888,14 +886,11 @@ class ResourceMappingDriver(api.PolicyDriver):
         # see bug #1398156
         if len(context.current['external_segments']) > 1:
             raise exc.MultipleESPerEPNotSupported()
-        # REVISIT(ivar): Remove when ES update is supported for EP
-        if not context.current['external_segments']:
-            raise exc.ESIdRequiredWhenCreatingEP()
         # REVISIT(ivar): bug #1398156 only one EP is allowed per tenant
         ep_number = context._plugin.get_external_policies_count(
             context._plugin_context,
             filters={'tenant_id': [context.current['tenant_id']]})
-        if ep_number - 1:
+        if ep_number > 1:
             raise exc.OnlyOneEPPerTenantAllowed()
 
     def create_external_policy_postcommit(self, context):
@@ -903,6 +898,9 @@ class ResourceMappingDriver(api.PolicyDriver):
         # The rules will be calculated as the symmetric difference between
         # the union of all the Tenant's L3P supernets and the union of all the
         # ES routes.
+        # REVISIT(ivar): Remove when ES update is supported for EP
+        if not context.current['external_segments']:
+            raise exc.ESIdRequiredWhenCreatingEP()
         ep = context.current
         if ep['external_segments']:
             if (ep['provided_policy_rule_sets'] or
@@ -913,11 +911,24 @@ class ResourceMappingDriver(api.PolicyDriver):
                 self._set_sg_rules_for_cidrs(
                     context, cidr_list, ep['provided_policy_rule_sets'],
                     ep['consumed_policy_rule_sets'])
+            if ep['consumed_policy_rule_sets']:
+                self._handle_redirect_action(context,
+                                             ep['consumed_policy_rule_sets'])
 
     def update_external_policy_precommit(self, context):
-        if (context.current['external_segments'] !=
-                context.original['external_segments']):
-            raise exc.ESUpdateNotSupportedForEP()
+        if context.original['external_segments']:
+            if (set(context.current['external_segments']) !=
+                    set(context.original['external_segments'])):
+                raise exc.ESUpdateNotSupportedForEP()
+        provider_ptg_chain_map = self._get_ptg_servicechain_mapping(
+                                            context._plugin_context.session,
+                                            context.current['id'],
+                                            None)
+        consumer_ptg_chain_map = self._get_ptg_servicechain_mapping(
+                                            context._plugin_context.session,
+                                            None,
+                                            context.current['id'],)
+        context.ptg_chain_map = provider_ptg_chain_map + consumer_ptg_chain_map
 
     def update_external_policy_postcommit(self, context):
         # REVISIT(ivar): Concurrency issue, the cidr_list could be different
@@ -939,6 +950,9 @@ class ResourceMappingDriver(api.PolicyDriver):
                 context, cidr_list, prov_cons['provided_policy_rule_sets'],
                 prov_cons['consumed_policy_rule_sets'])
 
+        if prov_cons['consumed_policy_rule_sets']:
+            self._cleanup_redirect_action(context)
+
         # Added PRS
         for attr in prov_cons:
             orig_policy_rule_sets = context.original[attr]
@@ -952,10 +966,21 @@ class ResourceMappingDriver(api.PolicyDriver):
             self._set_sg_rules_for_cidrs(
                 context, cidr_list, prov_cons['provided_policy_rule_sets'],
                 prov_cons['consumed_policy_rule_sets'])
-        # REVISIT(ivar): manage redirect action
+
+        if prov_cons['consumed_policy_rule_sets']:
+            self._handle_redirect_action(
+                context, prov_cons['consumed_policy_rule_sets'])
 
     def delete_external_policy_precommit(self, context):
-        pass
+        provider_ptg_chain_map = self._get_ptg_servicechain_mapping(
+                                            context._plugin_context.session,
+                                            context.current['id'],
+                                            None)
+        consumer_ptg_chain_map = self._get_ptg_servicechain_mapping(
+                                            context._plugin_context.session,
+                                            None,
+                                            context.current['id'],)
+        context.ptg_chain_map = provider_ptg_chain_map + consumer_ptg_chain_map
 
     def delete_external_policy_postcommit(self, context):
         if (context.current['provided_policy_rule_sets'] or
@@ -967,7 +992,7 @@ class ResourceMappingDriver(api.PolicyDriver):
                 context, cidr_list,
                 context.current['provided_policy_rule_sets'],
                 context.current['consumed_policy_rule_sets'])
-            # REVISIT(ivar): manage redirect action
+        self._cleanup_redirect_action(context)
 
     def create_nat_pool_precommit(self, context):
         # No FIP supported right now
@@ -1293,8 +1318,9 @@ class ResourceMappingDriver(api.PolicyDriver):
                                     context._plugin_context,
                                     filters={'id': policy_rule_set_ids})
         for policy_rule_set in policy_rule_sets:
-            ptgs_consuming_prs = policy_rule_set[
-                                            'consuming_policy_target_groups']
+            ptgs_consuming_prs = (
+                policy_rule_set['consuming_policy_target_groups'] +
+                policy_rule_set['consuming_external_policies'])
             ptgs_providing_prs = policy_rule_set[
                                             'providing_policy_target_groups']
 
