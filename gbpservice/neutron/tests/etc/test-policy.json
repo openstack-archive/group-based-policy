@@ -1,6 +1,7 @@
 {
-    "context_is_admin":  "role:admin",
+    "context_is_admin":  "role:admin or user_name:neutron",
     "admin_or_owner": "rule:context_is_admin or tenant_id:%(tenant_id)s",
+    "context_is_advsvc":  "role:advsvc",
     "admin_only": "rule:context_is_admin",
     "regular_user": "",
     "default": "rule:admin_or_owner",
@@ -20,59 +21,37 @@
     "shared_scs": "field:servicechain_specs:shared=True",
 
     "create_policy_target_group": "",
-    "create_policy_target_group:shared": "rule:admin_only",
     "get_policy_target_group": "rule:admin_or_owner or rule:shared_ptg",
-    "update_policy_target_group:shared": "rule:admin_only",
 
     "create_l2_policy": "",
-    "create_l2_policy:shared": "rule:admin_only",
     "get_l2_policy": "rule:admin_or_owner or rule:shared_l2p",
-    "update_l2_policy:shared": "rule:admin_only",
 
     "create_l3_policy": "",
-    "create_l3_policy:shared": "rule:admin_only",
     "get_l3_policy": "rule:admin_or_owner or rule:shared_l3p",
-    "update_l3_policy:shared": "rule:admin_only",
 
     "create_policy_classifier": "",
-    "create_policy_classifier:shared": "rule:admin_only",
     "get_policy_classifier": "rule:admin_or_owner or rule:shared_pc",
-    "update_policy_classifier:shared": "rule:admin_only",
 
     "create_policy_action": "",
-    "create_policy_action:shared": "rule:admin_only",
     "get_policy_action": "rule:admin_or_owner or rule:shared_pa",
-    "update_policy_action:shared": "rule:admin_only",
 
     "create_policy_rule": "",
-    "create_policy_rule:shared": "rule:admin_only",
     "get_policy_rule": "rule:admin_or_owner or rule:shared_pr",
-    "update_policy_rule:shared": "rule:admin_only",
 
     "create_policy_rule_set": "",
-    "create_policy_rule_set:shared": "rule:admin_only",
     "get_policy_rule_set": "rule:admin_or_owner or rule:shared_prs",
-    "update_policy_rule_set:shared": "rule:admin_only",
 
     "create_network_service_policy": "",
-    "create_network_service_policy:shared": "rule:admin_only",
     "get_network_service_policy": "rule:admin_or_owner or rule:shared_nsp",
-    "update_network_service_policy:shared": "rule:admin_only",
 
     "create_external_segment": "",
-    "create_external_segment:shared": "rule:admin_only",
     "get_external_segment": "rule:admin_or_owner or rule:shared_es",
-    "update_external_segment:shared": "rule:admin_only",
 
     "create_external_policy": "",
-    "create_external_policy:shared": "rule:admin_only",
     "get_external_policy": "rule:admin_or_owner or rule:shared_ep",
-    "update_external_policy:shared": "rule:admin_only",
 
     "create_nat_pool": "",
-    "create_nat_pool:shared": "rule:admin_only",
     "get_nat_pool": "rule:admin_or_owner or rule:shared_np",
-    "update_nat_pool:shared": "rule:admin_only",
 
     "create_servicechain_node": "",
     "create_servicechain_node:shared": "rule:admin_only",
