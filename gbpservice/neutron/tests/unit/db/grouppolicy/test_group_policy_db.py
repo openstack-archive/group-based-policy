@@ -135,12 +135,18 @@ class GroupPolicyDBTestBase(object):
             raise webob.exc.HTTPClientError(code=res.status_int)
         return self.deserialize(self.fmt, res)
 
-    def _show_gbp_resource(self, id, plural, is_admin_context=False,
-                           tenant_id=None):
+    def _show_gbp_resource(self, id, plural, expected_res_status=None,
+                           is_admin_context=False, tenant_id=None):
         req = self.new_show_request(plural, id, fmt=self.fmt)
         req.environ['neutron.context'] = context.Context(
             '', tenant_id or self._tenant_id, is_admin_context)
-        return self.deserialize(self.fmt, req.get_response(self.ext_api))
+        res = req.get_response(self.ext_api)
+
+        if expected_res_status:
+            self.assertEqual(res.status_int, expected_res_status)
+        elif res.status_int >= webob.exc.HTTPClientError.code:
+            raise webob.exc.HTTPClientError(code=res.status_int)
+        return self.deserialize(self.fmt, res)
 
     def _delete_gbp_resource(self, id, plural, is_admin_context=False,
                              expected_res_status=None, tenant_id=None):

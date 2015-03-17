@@ -56,9 +56,9 @@ CORE_PLUGIN = ('gbpservice.neutron.tests.unit.services.grouppolicy.'
 
 class ResourceMappingTestCase(test_plugin.GroupPolicyPluginTestCase):
 
-    def setUp(self, policy_drivers=[]):
-        if not policy_drivers:
-            policy_drivers = ['implicit_policy', 'resource_mapping']
+    def setUp(self, policy_drivers=None):
+        policy_drivers = policy_drivers or ['implicit_policy',
+                                            'resource_mapping']
         config.cfg.CONF.set_override('policy_drivers',
                                      policy_drivers,
                                      group='group_policy')
@@ -214,13 +214,9 @@ class ResourceMappingTestCase(test_plugin.GroupPolicyPluginTestCase):
 
         providing_ep_cidrs = self._get_cidrs_from_ep(
             prs['providing_external_policies'], l3p_cidrs)
-        if len(prs['providing_external_policies']):
-            self.assertTrue(len(providing_ep_cidrs))
 
         consuming_ep_cidrs = self._get_cidrs_from_ep(
             prs['consuming_external_policies'], l3p_cidrs)
-        if len(prs['consuming_external_policies']):
-            self.assertTrue(len(consuming_ep_cidrs))
 
         consumers = consuming_ep_cidrs | consuming_ptg_cidrs
         providers = providing_ptg_cidrs | providing_ep_cidrs
@@ -1822,7 +1818,7 @@ class TestPolicyRuleSet(ResourceMappingTestCase):
         # No more service chain instances when all the providers are deleted
         self.assertEqual(len(sc_instances['servicechain_instances']), 0)
 
-    def test_hierarchial_redirect(self):
+    def test_hierarchical_redirect(self):
         scs_id = self._create_servicechain_spec()
         _, classifier_id, policy_rule_id = self._create_tcp_redirect_rule(
                                                             "20:90", scs_id)
@@ -2276,6 +2272,105 @@ class TestPolicyRuleSet(ResourceMappingTestCase):
         self.delete_policy_target_group(ptg['id'])
         self._verify_prs_rules(prs['id'])
 
+    def _test_redirect_to_ep(self, provider=False):
+        scs_id = self._create_servicechain_spec()
+        _, _, policy_rule_id = self._create_tcp_redirect_rule(
+                                                "20:90", scs_id)
+
+        policy_rule_set = self.create_policy_rule_set(
+            name="c1", policy_rules=[policy_rule_id])
+        policy_rule_set_id = policy_rule_set['policy_rule_set']['id']
+        prov_cons = {False: 'consumed_policy_rule_sets',
+                     True: 'provided_policy_rule_sets'}
+        with self.network(router__external=True, shared=True) as net:
+            with self.subnet(cidr='192.168.0.0/24', network=net) as sub:
+                self.create_external_segment(
+                    shared=True,
+                    tenant_id='admin', name="default",
+                    subnet_id=sub['subnet']['id'])['external_segment']
+                ep = self.create_external_policy(
+                    **{prov_cons[provider]: {policy_rule_set_id: ''}})
+                ptg = self.create_policy_target_group(
+                    **{prov_cons[not provider]: {policy_rule_set_id: ''}})
+
+                self._verify_prs_rules(policy_rule_set_id)
+                sc_node_list_req = self.new_list_request(
+                    SERVICECHAIN_INSTANCES)
+                res = sc_node_list_req.get_response(self.ext_api)
+                sc_instances = self.deserialize(self.fmt, res)
+                # We should have one service chain instance created now
+                self.assertEqual(
+                    1, len(sc_instances['servicechain_instances']))
+                sc_instance = sc_instances['servicechain_instances'][0]
+                ids = {True: ptg['policy_target_group']['id'],
+                       False: ep['external_policy']['id']}
+                self._assert_proper_chain_instance(
+                    sc_instance, ids[not provider], ids[provider], [scs_id])
+
+                # Verify that PTG delete cleans up the chain instances
+                req = self.new_delete_request(
+                    'external_policies', ep['external_policy']['id'])
+                res = req.get_response(self.ext_api)
+                self.assertEqual(res.status_int, webob.exc.HTTPNoContent.code)
+                sc_node_list_req = self.new_list_request(
+                    SERVICECHAIN_INSTANCES)
+                res = sc_node_list_req.get_response(self.ext_api)
+                sc_instances = self.deserialize(self.fmt, res)
+                self.assertEqual(
+                    0, len(sc_instances['servicechain_instances']))
+
+    def test_redirect_to_ep_cons(self):
+        self._test_redirect_to_ep()
+
+    def test_redirect_to_ep_prov(self):
+        self._test_redirect_to_ep(True)
+
+    def test_redirect_to_ep_update(self):
+        scs_id = self._create_servicechain_spec()
+        _, _, policy_rule_id = self._create_tcp_redirect_rule(
+                                                "20:90", scs_id)
+
+        policy_rule_set = self.create_policy_rule_set(
+            name="c1", policy_rules=[policy_rule_id])
+        policy_rule_set_id = policy_rule_set['policy_rule_set']['id']
+
+        with self.network(router__external=True, shared=True) as net:
+            with self.subnet(cidr='192.168.0.0/24', network=net) as sub:
+                self.create_external_segment(
+                    shared=True,
+                    tenant_id='admin', name="default",
+                    subnet_id=sub['subnet']['id'])['external_segment']
+
+                ep = self.create_external_policy()
+                provider = self.create_policy_target_group(
+                    provided_policy_rule_sets={policy_rule_set_id: ''})
+
+                self.update_external_policy(
+                    ep['external_policy']['id'],
+                    consumed_policy_rule_sets={policy_rule_set_id: ''})
+                self._verify_prs_rules(policy_rule_set_id)
+                sc_node_list_req = self.new_list_request(
+                    SERVICECHAIN_INSTANCES)
+                res = sc_node_list_req.get_response(self.ext_api)
+                sc_instances = self.deserialize(self.fmt, res)
+                # We should have one service chain instance created now
+                self.assertEqual(
+                    1, len(sc_instances['servicechain_instances']))
+                sc_instance = sc_instances['servicechain_instances'][0]
+                self._assert_proper_chain_instance(
+                    sc_instance, provider['policy_target_group']['id'],
+                    ep['external_policy']['id'], [scs_id])
+
+                self.update_external_policy(
+                    ep['external_policy']['id'],
+                    consumed_policy_rule_sets={})
+                sc_node_list_req = self.new_list_request(
+                    SERVICECHAIN_INSTANCES)
+                res = sc_node_list_req.get_response(self.ext_api)
+                sc_instances = self.deserialize(self.fmt, res)
+                self.assertEqual(
+                    0, len(sc_instances['servicechain_instances']))
+
 
 class TestExternalSegment(ResourceMappingTestCase):
 
@@ -2389,6 +2484,32 @@ class TestExternalSegment(ResourceMappingTestCase):
                     subnet_id=sub['subnet']['id'])['external_segment']
                 l3p = self.create_l3_policy()['l3_policy']
                 self.assertEqual(es['id'], l3p['external_segments'].keys()[0])
+
+                ep = self.create_external_policy()['external_policy']
+                self.assertEqual(es['id'], ep['external_segments'][0])
+
+                prs = self.create_policy_rule_set()['policy_rule_set']
+                ep = self.update_external_policy(
+                    ep['id'], provided_policy_rule_sets={prs['id']: ''},
+                    expected_res_status=200)
+
+    def test_implicit_es_shared(self):
+        with self.network(router__external=True, shared=True) as net:
+            with self.subnet(cidr='192.168.0.0/24', network=net) as sub:
+                es = self.create_external_segment(
+                    shared=True,
+                    tenant_id='admin', name="default",
+                    subnet_id=sub['subnet']['id'])['external_segment']
+                l3p = self.create_l3_policy()['l3_policy']
+                self.assertEqual(es['id'], l3p['external_segments'].keys()[0])
+
+                ep = self.create_external_policy()['external_policy']
+                self.assertEqual(es['id'], ep['external_segments'][0])
+
+                prs = self.create_policy_rule_set()['policy_rule_set']
+                ep = self.update_external_policy(
+                    ep['id'], provided_policy_rule_sets={prs['id']: ''},
+                    expected_res_status=200)
 
 
 class TestExternalPolicy(ResourceMappingTestCase):
