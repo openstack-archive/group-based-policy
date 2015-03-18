@@ -18,18 +18,19 @@ from neutron.common import exceptions as n_exc
 from neutron.extensions import providernet as pn
 from neutron.extensions import securitygroup as ext_sg
 from neutron import manager
-from neutron.openstack.common import lockutils
-from neutron.openstack.common import log as logging
 from neutron.plugins.ml2.drivers.cisco.apic import apic_model
 from neutron.plugins.ml2.drivers.cisco.apic import config
 from neutron.plugins.ml2 import models
-from oslo.config import cfg
+from oslo_concurrency import lockutils
+from oslo_config import cfg
+from oslo_log import log as logging
 
 from gbpservice.neutron.db.grouppolicy import group_policy_mapping_db as gpdb
 from gbpservice.neutron.services.grouppolicy.common import constants as g_const
 from gbpservice.neutron.services.grouppolicy.common import exceptions as gpexc
 from gbpservice.neutron.services.grouppolicy.drivers import (
     resource_mapping as api)
+
 
 LOG = logging.getLogger(__name__)
 
@@ -116,7 +117,6 @@ class ApicMappingDriver(api.ResourceMappingDriver):
         self.apic_manager = ApicMappingDriver.get_apic_manager()
         self.name_mapper = self.apic_manager.apic_mapper
         self._gbp_plugin = None
-        ApicMappingDriver.me = self
 
     @property
     def gbp_plugin(self):
@@ -124,10 +124,6 @@ class ApicMappingDriver(api.ResourceMappingDriver):
             self._gbp_plugin = (manager.NeutronManager.get_service_plugins()
                                 .get("GROUP_POLICY"))
         return self._gbp_plugin
-
-    @staticmethod
-    def get_initialized_instance():
-        return ApicMappingDriver.me
 
     def get_gbp_details(self, context, **kwargs):
         port_id = (kwargs.get('port_id') or
@@ -789,10 +785,13 @@ class ApicMappingDriver(api.ResourceMappingDriver):
 
     def _get_active_path_count(self, plugin_context, port_info):
         return plugin_context.session.query(
-            models.PortBinding).filter_by(
-                host=port_info['host'],
-                segment=port_info['segmentation_id']).filter(
-                    models.PortBinding.port_id != port_info['port_id']).count()
+            models.PortBindingLevel).join(models.NetworkSegment).filter(
+                models.PortBindingLevel.host ==
+                port_info['host']).filter(
+                    models.NetworkSegment.segmentation_id ==
+                    port_info['segmentation_id']).filter(
+                        models.PortBindingLevel.port_id !=
+                        port_info['port_id']).count()
 
     @lockutils.synchronized('apic-portlock')
     def _delete_port_path(self, context, atenant_id, ptg, port_info):

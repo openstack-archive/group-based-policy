@@ -10,12 +10,11 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-from oslo.config import cfg
-import sqlalchemy as sa
-
 from neutron.common import log
 from neutron.db import model_base
-from neutron.openstack.common import log as logging
+from oslo_config import cfg
+from oslo_log import log as logging
+import sqlalchemy as sa
 
 from gbpservice.neutron.services.grouppolicy import (
     group_policy_driver_api as api)
