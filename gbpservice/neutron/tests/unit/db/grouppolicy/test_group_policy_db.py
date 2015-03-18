@@ -17,12 +17,12 @@ import webob.exc
 from neutron.api import extensions
 from neutron.api.v2 import attributes as nattr
 from neutron import context
-from neutron.openstack.common import importutils
 from neutron.openstack.common import uuidutils
 from neutron.plugins.common import constants
 from neutron.tests.unit import test_db_plugin
 from neutron.tests.unit import test_extensions
-from oslo.config import cfg
+from oslo_config import cfg
+from oslo_utils import importutils
 
 from gbpservice.neutron.db.grouppolicy import group_policy_db as gpdb
 import gbpservice.neutron.extensions

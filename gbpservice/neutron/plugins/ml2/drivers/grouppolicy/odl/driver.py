@@ -13,9 +13,9 @@
 from gbpservice.neutron.services.grouppolicy.drivers.odl import odl_mapping
 from neutron.common import constants as n_constants
 from neutron.extensions import portbindings
-from neutron.openstack.common import log
 from neutron.plugins.common import constants
 from neutron.plugins.ml2 import driver_api as api
+from oslo_log import log as log
 
 LOG = log.getLogger(__name__)
 

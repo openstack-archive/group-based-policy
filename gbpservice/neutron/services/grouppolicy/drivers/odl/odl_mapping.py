@@ -14,8 +14,8 @@ import uuid
 
 from neutron import manager
 from neutron.openstack.common import lockutils  # noqa
-from neutron.openstack.common import log as logging
 from neutron.plugins.common import constants
+from oslo_log import log as logging
 
 from gbpservice.neutron.db.grouppolicy import group_policy_mapping_db as gpdb
 from gbpservice.neutron.services.grouppolicy.common import constants as g_const

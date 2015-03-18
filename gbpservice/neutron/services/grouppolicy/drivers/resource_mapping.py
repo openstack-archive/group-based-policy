@@ -23,10 +23,10 @@ from neutron.db import models_v2
 from neutron.extensions import securitygroup as ext_sg
 from neutron import manager
 from neutron.notifiers import nova
-from neutron.openstack.common import jsonutils
-from neutron.openstack.common import log as logging
 from neutron.plugins.common import constants as pconst
-from oslo.config import cfg
+from oslo_config import cfg
+from oslo_log import log as logging
+from oslo_serialization import jsonutils
 import sqlalchemy as sa
 
 from gbpservice.neutron.db.grouppolicy import group_policy_db as gpdb

@@ -15,11 +15,11 @@ import webob.exc
 
 from neutron.api import extensions
 from neutron import context
-from neutron.openstack.common import importutils
 from neutron.openstack.common import uuidutils
 from neutron.plugins.common import constants
 from neutron.tests.unit import test_db_plugin
 from neutron.tests.unit import test_extensions
+from oslo_utils import importutils
 
 from gbpservice.neutron.db import servicechain_db as svcchain_db
 import gbpservice.neutron.extensions
