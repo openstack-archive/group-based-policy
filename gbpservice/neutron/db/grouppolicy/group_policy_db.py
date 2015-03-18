@@ -22,9 +22,9 @@ from neutron import context
 from neutron.db import common_db_mixin
 from neutron.db import model_base
 from neutron.db import models_v2
-from neutron.openstack.common import log as logging
 from neutron.openstack.common import uuidutils
 from neutron.plugins.common import constants
+from oslo_log import log as logging
 
 from gbpservice.neutron.extensions import group_policy as gpolicy
 from gbpservice.neutron.services.grouppolicy.common import (

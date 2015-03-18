@@ -14,8 +14,8 @@
 #    under the License.
 
 from neutron.common import constants as n_constants
-from neutron.openstack.common import log
 from neutron.plugins.ml2 import driver_api as api
+from oslo_log import log
 
 from gbpservice.neutron.services.grouppolicy.drivers.cisco.apic import (
     apic_mapping as amap)

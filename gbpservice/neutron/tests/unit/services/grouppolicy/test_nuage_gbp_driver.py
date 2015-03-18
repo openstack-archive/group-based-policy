@@ -14,8 +14,7 @@
 
 import mock
 from neutron.tests.unit.ml2 import test_ml2_plugin
-from neutron.tests.unit.nuage import fake_nuageclient
-from oslo.config import cfg
+from oslo_config import cfg
 
 from gbpservice.neutron.services.grouppolicy import config
 from gbpservice.neutron.services.grouppolicy.drivers.nuage import (
@@ -34,7 +33,11 @@ FAKE_AUTH_RESOURCE = '/auth'
 FAKE_ORGANIZATION = 'fake_org'
 
 
-class FakeNuageGBPClient(fake_nuageclient.FakeNuageClient):
+class FakeNuageGBPClient(object):
+
+    def __init__(self, server, base_uri, serverssl,
+                 serverauth, auth_resource, organization):
+        pass
 
     def create_ptg_postcommit(self, context, application):
         pass
