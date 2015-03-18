@@ -15,7 +15,7 @@
 import mock
 from neutron.tests.unit.ml2 import test_ml2_plugin
 from neutron.tests.unit.nuage import fake_nuageclient
-from oslo.config import cfg
+from oslo_config import cfg
 
 from gbpservice.neutron.services.grouppolicy import config
 from gbpservice.neutron.services.grouppolicy.drivers.nuage import (

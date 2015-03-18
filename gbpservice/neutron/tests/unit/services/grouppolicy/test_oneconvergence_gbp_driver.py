@@ -80,11 +80,11 @@ class TestPolicyTarget(OneConvergenceGBPDriverTestCase,
             pt = self.create_policy_target(name="pt1",
                                            policy_target_group_id=ptg_id)
             pt_id = pt['policy_target']['id']
-            create_ep.assertCalledOnceWith(mock.ANY, pt)
+            create_ep.assert_called_once_with(mock.ANY, pt)
             pt = self.update_policy_target(pt_id, name="new_pt")
-            update_ep.assertCalledOnceWith(mock.ANY, pt)
+            update_ep.assert_called_once_with(mock.ANY, pt)
             self.delete_policy_target(pt_id)
-            delete_ep.assertCalledOnceWith(mock.ANY, pt_id)
+            delete_ep.assert_called_once_with(mock.ANY, pt_id)
 
 
 class TestPolicyTargetGroup(OneConvergenceGBPDriverTestCase,
@@ -111,13 +111,13 @@ class TestPolicyTargetGroup(OneConvergenceGBPDriverTestCase,
                 mock.patch.object(MockNVSDApiClient, 'update_endpointgroup'),
                 mock.patch.object(MockNVSDApiClient, 'delete_endpointgroup')
         ) as (create_epg, update_epg, delete_epg):
-            ptg = self.create_policy_target_group(name="ptg1")
-            ptg_id = ptg['policy_target_group']['id']
-            create_epg.assertCalledOnceWith(mock.ANY, ptg)
-            ptg = self.update_policy_target_group(ptg_id, name="new_ptg")
-            update_epg.assertCalledOnceWith(mock.ANY, ptg)
-            self.delete_policy_target_group(ptg_id)
-            delete_epg.assertCalledOnceWith(mock.ANY, ptg_id)
+            ptg = self.create_policy_target_group(name="ptg1")[
+                                            'policy_target_group']
+            create_epg.assert_called_once_with(mock.ANY, ptg)
+            ptg = self.update_policy_target_group(ptg['id'], name="new_ptg")
+            update_epg.assert_called_once_with(mock.ANY, ptg)
+            self.delete_policy_target_group(ptg['id'])
+            delete_epg.assert_called_once_with(mock.ANY, ptg['id'])
 
 
 class TestPolicyClassifier(OneConvergenceGBPDriverTestCase):
@@ -132,13 +132,14 @@ class TestPolicyClassifier(OneConvergenceGBPDriverTestCase):
                         MockNVSDApiClient, 'delete_policy_classifier')
         ) as (create_classifier, update_classifier, delete_classifier):
             classifier = self.create_policy_classifier(name="classifier1")
-            classifier_id = classifier['policy_classifier']['id']
-            create_classifier.assertCalledOnceWith(mock.ANY, classifier)
+            classifier = classifier['policy_classifier']
+            create_classifier.assert_called_once_with(mock.ANY, classifier)
             classifier = self.update_policy_classifier(
-                                        classifier_id, name="new_classifier")
-            update_classifier.assertCalledOnceWith(mock.ANY, classifier)
-            self.delete_policy_classifier(classifier_id)
-            delete_classifier.assertCalledOnceWith(mock.ANY, classifier_id)
+                                    classifier['id'], name="new_classifier")
+            update_classifier.assert_called_once_with(mock.ANY, classifier)
+            self.delete_policy_classifier(classifier['id'])
+            delete_classifier.assert_called_once_with(
+                                    mock.ANY, classifier['id'])
 
 
 class TestL2Policy(OneConvergenceGBPDriverTestCase,

@@ -18,12 +18,12 @@ from neutron.common import exceptions as n_exc
 from neutron.extensions import providernet as pn
 from neutron.extensions import securitygroup as ext_sg
 from neutron import manager
-from neutron.openstack.common import lockutils
-from neutron.openstack.common import log as logging
 from neutron.plugins.ml2.drivers.cisco.apic import apic_model
 from neutron.plugins.ml2.drivers.cisco.apic import config
 from neutron.plugins.ml2 import models
-from oslo.config import cfg
+from oslo_concurrency import lockutils
+from oslo_config import cfg
+from oslo_log import log as logging
 
 from gbpservice.neutron.db.grouppolicy import group_policy_mapping_db as gpdb
 from gbpservice.neutron.services.grouppolicy.common import constants as g_const
