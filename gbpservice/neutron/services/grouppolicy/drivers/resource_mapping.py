@@ -23,10 +23,10 @@ from neutron.db import models_v2
 from neutron.extensions import securitygroup as ext_sg
 from neutron import manager
 from neutron.notifiers import nova
-from neutron.openstack.common import jsonutils
-from neutron.openstack.common import log as logging
 from neutron.plugins.common import constants as pconst
-from oslo.config import cfg
+from oslo_config import cfg
+from oslo_log import log as logging
+from oslo_serialization import jsonutils
 import sqlalchemy as sa
 
 from gbpservice.neutron.db.grouppolicy import group_policy_db as gpdb
@@ -1029,14 +1029,16 @@ class ResourceMappingDriver(api.PolicyDriver):
             for es in es_list:
                 subnet = self._core_plugin.get_subnet(context._plugin_context,
                                                       es['subnet_id'])
+                external_fixed_ips = [
+                        {'subnet_id': es['subnet_id'],
+                         'ip_address': x} for x in es_dict[es['id']]
+                                      ] if es_dict[es['id']] else None
                 interface_info = {
                     'network_id': subnet['network_id'],
-                    'enable_snat': es['port_address_translation'],
-                    'external_fixed_ips': [
-                        {'subnet_id': es['subnet_id'],
-                         'ip_address': x} for x in es_dict[es['id']]]
-                    if es_dict[es['id']] else
-                    attributes.ATTR_NOT_SPECIFIED}
+                    'enable_snat': es['port_address_translation']}
+                if external_fixed_ips:
+                    interface_info.update(
+                            {'external_fixed_ips': external_fixed_ips})
                 router = self._add_router_gw_interface(
                     context._plugin_context, router_id, interface_info)
                 if not es_dict[es['id']] or not es_dict[es['id']][0]:
