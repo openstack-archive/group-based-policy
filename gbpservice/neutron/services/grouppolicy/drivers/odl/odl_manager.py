@@ -12,9 +12,9 @@
 
 import requests
 
-from neutron.openstack.common import log as logging
-from oslo.config import cfg
-from oslo.serialization import jsonutils
+from oslo_config import cfg
+from oslo_log import log as logging
+from oslo_serialization import jsonutils
 from requests import auth
 
 LOG = logging.getLogger(__name__)
