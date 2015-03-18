@@ -14,7 +14,7 @@
 import contextlib
 import webob.exc
 
-from neutron.tests.unit import test_l3_plugin
+from neutron.tests.unit.extensions import test_l3
 from neutron.tests.unit import testlib_api
 
 from gbpservice.neutron.db.grouppolicy import group_policy_mapping_db as gpmdb
@@ -37,7 +37,7 @@ SC_PLUGIN_KLASS = (
 
 
 class GroupPolicyMappingDbTestCase(tgpdb.GroupPolicyDbTestCase,
-                                   test_l3_plugin.L3NatTestCaseMixin):
+                                   test_l3.L3NatTestCaseMixin):
 
     def setUp(self, core_plugin=None, gp_plugin=None, service_plugins=None):
         testlib_api.SqlTestCase._TABLES_ESTABLISHED = False

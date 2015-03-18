@@ -13,15 +13,14 @@
 #    under the License.
 
 import mock
-from neutron.tests.unit.ml2 import test_ml2_plugin
-from neutron.tests.unit.nuage import fake_nuageclient
-from oslo.config import cfg
+from neutron.tests.unit.plugins.ml2 import test_plugin
+from oslo_config import cfg
 
 from gbpservice.neutron.services.grouppolicy import config
 from gbpservice.neutron.services.grouppolicy.drivers.nuage import (
     driver as nuage_driver)
 from gbpservice.neutron.tests.unit.services.grouppolicy import (
-    test_grouppolicy_plugin as test_plugin)
+    test_grouppolicy_plugin as test_gp_plugin)
 
 FAKE_GBP_APP = 'ut_gbp_app'
 FAKE_DEFAULT_ENT = 'default'
@@ -34,7 +33,11 @@ FAKE_AUTH_RESOURCE = '/auth'
 FAKE_ORGANIZATION = 'fake_org'
 
 
-class FakeNuageGBPClient(fake_nuageclient.FakeNuageClient):
+class FakeNuageGBPClient(object):
+
+    def __init__(self, server, base_uri, serverssl,
+                 serverauth, auth_resource, organization):
+        pass
 
     def create_ptg_postcommit(self, context, application):
         pass
@@ -57,7 +60,7 @@ class FakeNuageGBPClient(fake_nuageclient.FakeNuageClient):
         pass
 
 
-class NuageGBPDriverTestCase(test_plugin.GroupPolicyPluginTestCase):
+class NuageGBPDriverTestCase(test_gp_plugin.GroupPolicyPluginTestCase):
 
     def setUp(self):
         config.cfg.CONF.set_override('policy_drivers',
@@ -88,7 +91,7 @@ class NuageGBPDriverTestCase(test_plugin.GroupPolicyPluginTestCase):
         with mock.patch.object(nuage_driver.NuageGBPDriver,
                                'nuageclient_init', new=mock_nuageclient_init):
             super(NuageGBPDriverTestCase, self).setUp(
-                core_plugin=test_ml2_plugin.PLUGIN_NAME)
+                core_plugin=test_plugin.PLUGIN_NAME)
 
 
 class TestPolicyTargetGroup(NuageGBPDriverTestCase):

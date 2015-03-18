@@ -12,20 +12,20 @@
 
 import abc
 
-import six
-
 from neutron.api import extensions
 from neutron.api.v2 import attributes as attr
 from neutron.api.v2 import resource_helper
 from neutron.common import exceptions as nexc
-from neutron.openstack.common import log as logging
 from neutron.openstack.common import uuidutils
 from neutron.plugins.common import constants
 from neutron.services import service_base
+from oslo_log import log as logging
+import six
 
 import gbpservice.neutron.extensions
 from gbpservice.neutron.services.grouppolicy.common import (
     constants as gp_constants)
+
 
 # The code below is a monkey patch of key Neutron's modules. This is needed for
 # the GBP service to be loaded correctly. GBP extensions' path is added
@@ -36,7 +36,6 @@ constants.GROUP_POLICY = "GROUP_POLICY"
 constants.COMMON_PREFIXES["GROUP_POLICY"] = "/grouppolicy"
 constants.EXT_TO_SERVICE_MAPPING['gp'] = constants.GROUP_POLICY
 constants.ALLOWED_SERVICES.append(constants.GROUP_POLICY)
-
 
 LOG = logging.getLogger(__name__)
 

@@ -11,20 +11,18 @@
 #    under the License.
 
 import netaddr
-
-import sqlalchemy as sa
-from sqlalchemy import orm
-from sqlalchemy.orm import exc
-
 from neutron.api.v2 import attributes as attr
 from neutron.common import log
 from neutron import context
 from neutron.db import common_db_mixin
 from neutron.db import model_base
 from neutron.db import models_v2
-from neutron.openstack.common import log as logging
 from neutron.openstack.common import uuidutils
 from neutron.plugins.common import constants
+from oslo_log import log as logging
+import sqlalchemy as sa
+from sqlalchemy import orm
+from sqlalchemy.orm import exc
 
 from gbpservice.neutron.extensions import group_policy as gpolicy
 from gbpservice.neutron.services.grouppolicy.common import (

@@ -13,9 +13,6 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-
-from gbpservice.neutron.db.grouppolicy import group_policy_db  # noqa
-from gbpservice.neutron.db.grouppolicy import group_policy_mapping_db  # noqa
 from neutron.db import model_base
 
 

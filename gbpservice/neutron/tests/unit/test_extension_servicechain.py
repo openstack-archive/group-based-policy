@@ -13,17 +13,17 @@
 import copy
 
 import mock
-from webob import exc
-
 from neutron.openstack.common import uuidutils
 from neutron.plugins.common import constants
-from neutron.tests.unit import test_api_v2
-from neutron.tests.unit import test_api_v2_extension
+from neutron.tests.unit.api.v2 import test_base
+from neutron.tests.unit.extensions import base as test_extensions_base
+from webob import exc
 
 from gbpservice.neutron.extensions import servicechain
 
+
 _uuid = uuidutils.generate_uuid
-_get_path = test_api_v2._get_path
+_get_path = test_base._get_path
 SERVICE_CHAIN_PLUGIN_BASE_NAME = (
     servicechain.ServiceChainPluginBase.__module__ + '.' +
     servicechain.ServiceChainPluginBase.__name__)
@@ -33,7 +33,7 @@ SERVICECHAIN_SPECS_URI = SERVICECHAIN_URI + '/' + 'servicechain_specs'
 SERVICECHAIN_INSTANCES_URI = SERVICECHAIN_URI + '/' + 'servicechain_instances'
 
 
-class ServiceChainExtensionTestCase(test_api_v2_extension.ExtensionTestCase):
+class ServiceChainExtensionTestCase(test_extensions_base.ExtensionTestCase):
     fmt = 'json'
 
     def setUp(self):
