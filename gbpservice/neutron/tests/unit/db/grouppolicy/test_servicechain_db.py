@@ -15,14 +15,13 @@ import webob.exc
 
 from neutron.api import extensions
 from neutron import context
-from neutron.openstack.common import importutils
 from neutron.openstack.common import uuidutils
 from neutron.plugins.common import constants
-from neutron.tests.unit import test_db_plugin
-from neutron.tests.unit import test_extensions
+from neutron.tests.unit.api import test_extensions
+from neutron.tests.unit.db import test_db_base_plugin_v2
+from oslo_utils import importutils
 
 from gbpservice.neutron.db import servicechain_db as svcchain_db
-import gbpservice.neutron.extensions
 from gbpservice.neutron.extensions import servicechain as service_chain
 
 JSON_FORMAT = 'json'
@@ -211,15 +210,12 @@ GP_PLUGIN_KLASS = (
 
 
 class ServiceChainDbTestCase(ServiceChainDBTestBase,
-                             test_db_plugin.NeutronDbPluginV2TestCase):
+                             test_db_base_plugin_v2.NeutronDbPluginV2TestCase):
 
     def setUp(self, core_plugin=None, sc_plugin=None, service_plugins=None,
               ext_mgr=None):
-        extensions.append_api_extensions_path(
-            gbpservice.neutron.extensions.__path__)
         if not sc_plugin:
             sc_plugin = DB_GP_PLUGIN_KLASS
-        self.plugin = importutils.import_object(sc_plugin)
         if not service_plugins:
             service_plugins = {'gp_plugin_name': GP_PLUGIN_KLASS,
                                'sc_plugin_name': sc_plugin}
@@ -228,7 +224,7 @@ class ServiceChainDbTestCase(ServiceChainDBTestBase,
             plugin=core_plugin, ext_mgr=ext_mgr,
             service_plugins=service_plugins
         )
-
+        self.plugin = importutils.import_object(sc_plugin)
         if not ext_mgr:
             ext_mgr = extensions.PluginAwareExtensionManager.get_instance()
             self.ext_api = test_extensions.setup_extensions_middleware(ext_mgr)

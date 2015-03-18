@@ -6,7 +6,7 @@ TOP_DIR=$BASE/new/devstack
 cd $TOP_DIR
 sudo git remote add group-policy http://github.com/group-policy/devstack
 sudo git fetch group-policy
-sudo git checkout -t group-policy/kilo-gate
+sudo git checkout -t group-policy/kilo-gbp-openstack-master-gate
 #sudo cp devstack-vm-gate.sh $BASE/new/devstack-gate/devstack-vm-gate.sh
 
 CONTRIB_DIR="$BASE/new/group-based-policy/gbpservice/tests/contrib"
@@ -27,7 +27,6 @@ sed -e "s+\$BASE_PATH+$BASE/new/group-based-policy/.tox/dsvm-functional+" \
     $FUNC_FILTER | sudo tee /etc/neutron/rootwrap.d/functional.filters > /dev/null
 
 # Use devstack functions to install mysql and psql servers
-source $TOP_DIR/lib/config
 source $TOP_DIR/stackrc
 source $TOP_DIR/lib/database
 disable_service postgresql

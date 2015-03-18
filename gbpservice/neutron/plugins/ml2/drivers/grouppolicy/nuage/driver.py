@@ -14,9 +14,11 @@
 
 
 from neutron.plugins.ml2 import driver_api as api
-from neutron.plugins.nuage.common import constants as nuage_const
 
 from gbpservice.neutron.services.grouppolicy.drivers.nuage import driver
+
+
+NOVA_PORT_OWNER_PREF = 'compute:'
 
 
 class NuageMechanismGBPDriver(api.MechanismDriver):
@@ -33,7 +35,7 @@ class NuageMechanismGBPDriver(api.MechanismDriver):
 
     def update_port_postcommit(self, context):
         port = context.current
-        port_prefix = nuage_const.NOVA_PORT_OWNER_PREF
+        port_prefix = NOVA_PORT_OWNER_PREF
         # Check two things prior to proceeding with
         # talking to backend.
         # 1) binding has happened successfully.

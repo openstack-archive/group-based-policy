@@ -37,6 +37,8 @@ $prep_func
 # Run tests
 echo "Running group-based-policy dsvm-functional test suite"
 set +e
+# Temporary workaround for subunit not getting installed in tox environment
+sudo pip uninstall python-subunit -y
 sudo -H -u $owner tox -e dsvm-functional
 testr_exit_code=$?
 set -e

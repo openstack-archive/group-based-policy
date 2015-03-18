@@ -21,9 +21,9 @@ from gbpservice.neutron.services.grouppolicy.drivers.odl import odl_mapping
 from gbpservice.neutron.services.grouppolicy.drivers import resource_mapping
 from gbpservice.neutron.services.grouppolicy import plugin as g_plugin
 from gbpservice.neutron.tests.unit.services.grouppolicy import (
-    test_grouppolicy_plugin as test_plugin)
+    test_grouppolicy_plugin as test_gp_plugin)
 from neutron.plugins.ml2 import plugin as ml2_plugin
-from neutron.tests.unit.ml2 import test_ml2_plugin
+from neutron.tests.unit.plugins.ml2 import test_plugin
 
 TENANT_ID = 'aaaabbbbccccaaaabbbbccccaaaabbbb'
 TENANT_UUID = 'aaaabbbb-cccc-aaaa-bbbb-ccccaaaabbbb'
@@ -218,7 +218,7 @@ class FakeGBPPlugin(object):
 
 
 class OdlMappingTestCase(
-        test_plugin.GroupPolicyPluginTestCase):
+        test_gp_plugin.GroupPolicyPluginTestCase):
     """ Base test case for ODL mapping driver testing
 
     Set up the common testing environment
@@ -229,7 +229,7 @@ class OdlMappingTestCase(
                                      ['implicit_policy', 'odl'],
                                      group='group_policy')
         super(OdlMappingTestCase, self).setUp(
-            core_plugin=test_ml2_plugin.PLUGIN_NAME)
+            core_plugin=test_plugin.PLUGIN_NAME)
 
         self.fake_core_plugin = FakeCorePlugin()
         self.fake_gbp_plugin = FakeGBPPlugin()
