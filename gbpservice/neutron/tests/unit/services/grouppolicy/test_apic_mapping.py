@@ -20,10 +20,13 @@ import webob.exc
 
 from neutron.common import rpc as n_rpc
 from neutron import context
+from neutron.db import api as db_api
+from neutron.db import model_base
+from neutron import manager
 from neutron.tests.unit.ml2.drivers.cisco.apic import (
     test_cisco_apic_common as mocked)
 from neutron.tests.unit.ml2 import test_ml2_plugin
-from oslo.config import cfg
+from oslo_config import cfg
 
 sys.modules["apicapi"] = mock.Mock()
 
@@ -40,6 +43,10 @@ APIC_POLICY_TARGET_GROUP = 'policy_target_group'
 APIC_POLICY_RULE = 'policy_rule'
 
 APIC_EXTERNAL_RID = '1.0.0.1'
+
+AGENT_TYPE = 'Open vSwitch agent'
+AGENT_CONF = {'alive': True, 'binary': 'somebinary',
+              'topic': 'sometopic', 'agent_type': AGENT_TYPE}
 
 
 def echo(context, string):
@@ -78,8 +85,13 @@ class ApicMappingTestCase(
                 cfg.CONF.set_override(opt, val, 'ml2')
         super(ApicMappingTestCase, self).setUp(
             core_plugin=test_ml2_plugin.PLUGIN_NAME)
-
-        self.driver = amap.ApicMappingDriver.get_initialized_instance()
+        engine = db_api.get_engine()
+        model_base.BASEV2.metadata.create_all(engine)
+        plugin = manager.NeutronManager.get_plugin()
+        plugin.remove_networks_from_down_agents = mock.Mock()
+        plugin.is_agent_down = mock.Mock(return_value=False)
+        self.driver = manager.NeutronManager.get_service_plugins()[
+            'GROUP_POLICY'].policy_driver_manager.policy_drivers['apic'].obj
         amap.ApicMappingDriver.get_base_synchronizer = mock.Mock()
         self.driver.name_mapper = mock.Mock()
         self.driver.name_mapper.tenant = echo
@@ -216,6 +228,11 @@ class TestPolicyTarget(ApicMappingTestCase):
         self.assertEqual(mgr.ensure_path_deleted_for_port.call_count, 0)
 
     def _bind_port_to_host(self, port_id, host):
+        plugin = manager.NeutronManager.get_plugin()
+        ctx = context.get_admin_context()
+        agent = {'host': host}
+        agent.update(AGENT_CONF)
+        plugin.create_or_update_agent(ctx, agent)
         data = {'port': {'binding:host_id': host}}
         # Create EP with bound port
         req = self.new_update_request('ports', data, port_id,

@@ -11,7 +11,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from oslo.config import cfg
+from neutron.db import api as db_api
+from neutron.db import model_base
+from oslo_config import cfg
 import webob.exc
 
 from gbpservice.neutron.tests.unit.services.grouppolicy import (
@@ -25,6 +27,8 @@ class ImplicitPolicyTestCase(
         cfg.CONF.set_override('policy_drivers', ['implicit_policy'],
                               group='group_policy')
         super(ImplicitPolicyTestCase, self).setUp()
+        engine = db_api.get_engine()
+        model_base.BASEV2.metadata.create_all(engine)
 
 
 class TestImplicitL2Policy(ImplicitPolicyTestCase):
@@ -310,10 +314,10 @@ class TestImplicitExternalSegment(ImplicitPolicyTestCase):
 
     def setUp(self):
         self._default_es_name = 'default'
+        super(TestImplicitExternalSegment, self).setUp()
         cfg.CONF.set_override(
             'default_external_segment_name', self._default_es_name,
             group='group_policy_implicit_policy')
-        super(TestImplicitExternalSegment, self).setUp()
 
     def _create_default_es(self, **kwargs):
         return self.create_external_segment(name=self._default_es_name,
