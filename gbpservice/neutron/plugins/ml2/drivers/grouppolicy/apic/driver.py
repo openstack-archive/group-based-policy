@@ -14,8 +14,9 @@
 #    under the License.
 
 from neutron.common import constants as n_constants
-from neutron.openstack.common import log
+from neutron import manager
 from neutron.plugins.ml2 import driver_api as api
+from oslo_log import log
 
 from gbpservice.neutron.services.grouppolicy.drivers.cisco.apic import (
     apic_mapping as amap)
@@ -31,8 +32,9 @@ class APICMechanismGBPDriver(api.MechanismDriver):
     @property
     def apic_gbp(self):
         if not self._apic_gbp:
-            self._apic_gbp = (amap.ApicMappingDriver.
-                              get_initialized_instance())
+            self._apic_gbp = manager.NeutronManager.get_service_plugins()[
+                'GROUP_POLICY'].policy_driver_manager.policy_drivers[
+                'apic'].obj
         return self._apic_gbp
 
     def create_port_postcommit(self, context):

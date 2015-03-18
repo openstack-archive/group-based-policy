@@ -12,7 +12,7 @@
 
 import sqlalchemy as sa
 
-from neutron.api import extensions
+#from neutron.api import extensions
 from neutron.api.v2 import attributes
 from neutron.db import model_base
 
@@ -20,8 +20,8 @@ from gbpservice.neutron.services.grouppolicy import (
     group_policy_driver_api as api)
 from gbpservice.neutron.services.grouppolicy import config
 from gbpservice.neutron.tests.unit import common as cm
-from gbpservice.neutron.tests.unit.services.grouppolicy import (
-    extensions as test_ext)
+#from gbpservice.neutron.tests.unit.services.grouppolicy import (
+#    extensions as test_ext)
 from gbpservice.neutron.tests.unit.services.grouppolicy import (
     test_grouppolicy_plugin as test_plugin)
 
@@ -542,7 +542,8 @@ class TestExtensionDriver(api.ExtensionDriver):
         # self.network_extension = 'Test_Network_Extension'
         # self.subnet_extension = 'Test_Subnet_Extension'
         # self.port_extension = 'Test_Port_Extension'
-        extensions.append_api_extensions_path(test_ext.__path__)
+        #extensions.append_api_extensions_path(test_ext.__path__)
+        pass
 
     @property
     def extension_alias(self):
