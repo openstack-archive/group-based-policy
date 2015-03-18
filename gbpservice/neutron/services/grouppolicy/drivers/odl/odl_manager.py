@@ -11,13 +11,15 @@
 #    under the License.
 
 import requests
-
-from neutron.openstack.common import log as logging
-from oslo.config import cfg
-from oslo.serialization import jsonutils
 from requests import auth
 
+from oslo_config import cfg
+from oslo_log import log as logging
+from oslo_serialization import jsonutils
+
+
 LOG = logging.getLogger(__name__)
+
 cfg.CONF.import_opt(
     'odl_username',
     'gbpservice.neutron.services.grouppolicy.drivers.odl.config',

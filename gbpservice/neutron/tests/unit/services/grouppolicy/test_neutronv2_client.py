@@ -12,15 +12,16 @@
 #
 
 import contextlib
-import mock
-import unittest
 
-from gbpservice.network.neutronv2 import client as neutronclient
+import mock
+from neutron import context
+from neutron.tests.unit import test_db_plugin
 from neutronclient.common import exceptions
 from neutronclient.v2_0 import client
-from oslo.config import cfg
+from oslo_config import cfg
 
-from neutron import context
+from gbpservice.network.neutronv2 import client as neutronclient
+
 
 CONF = cfg.CONF
 
@@ -31,7 +32,7 @@ CONF = cfg.CONF
 NEUTRON_CLIENT_EXCEPTION = Exception
 
 
-class TestNeutronClient(unittest.TestCase):
+class TestNeutronClient(test_db_plugin.NeutronDbPluginV2TestCase):
 
     def setUp(self):
         super(TestNeutronClient, self).setUp()

@@ -14,8 +14,6 @@
 #    under the License.
 
 
-from gbpservice.neutron.db.grouppolicy import group_policy_db  # noqa
-from gbpservice.neutron.db.grouppolicy import group_policy_mapping_db  # noqa
 from neutron.db import model_base
 
 
