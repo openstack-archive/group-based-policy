@@ -14,14 +14,14 @@
 
 import mock
 from neutron.tests.unit.ml2 import test_ml2_plugin
-from neutron.tests.unit.nuage import fake_nuageclient
-from oslo.config import cfg
+from oslo_config import cfg
 
 from gbpservice.neutron.services.grouppolicy import config
 from gbpservice.neutron.services.grouppolicy.drivers.nuage import (
     driver as nuage_driver)
 from gbpservice.neutron.tests.unit.services.grouppolicy import (
     test_grouppolicy_plugin as test_plugin)
+from gbpservice.neutron.tests.unit.services.grouppolicy import fake_nuageclient
 
 FAKE_GBP_APP = 'ut_gbp_app'
 FAKE_DEFAULT_ENT = 'default'

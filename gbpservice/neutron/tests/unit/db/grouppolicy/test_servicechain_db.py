@@ -15,11 +15,11 @@ import webob.exc
 
 from neutron.api import extensions
 from neutron import context
-from neutron.openstack.common import importutils
 from neutron.openstack.common import uuidutils
 from neutron.plugins.common import constants
 from neutron.tests.unit import test_db_plugin
 from neutron.tests.unit import test_extensions
+from oslo_utils import importutils
 
 from gbpservice.neutron.db import servicechain_db as svcchain_db
 import gbpservice.neutron.extensions
@@ -215,8 +215,8 @@ class ServiceChainDbTestCase(ServiceChainDBTestBase,
 
     def setUp(self, core_plugin=None, sc_plugin=None, service_plugins=None,
               ext_mgr=None):
-        extensions.append_api_extensions_path(
-            gbpservice.neutron.extensions.__path__)
+        #extensions.append_api_extensions_path(
+        #    gbpservice.neutron.extensions.__path__)
         if not sc_plugin:
             sc_plugin = DB_GP_PLUGIN_KLASS
         self.plugin = importutils.import_object(sc_plugin)

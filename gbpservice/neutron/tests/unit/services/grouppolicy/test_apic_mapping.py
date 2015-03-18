@@ -23,7 +23,7 @@ from neutron import context
 from neutron.tests.unit.ml2.drivers.cisco.apic import (
     test_cisco_apic_common as mocked)
 from neutron.tests.unit.ml2 import test_ml2_plugin
-from oslo.config import cfg
+from oslo_config import cfg
 
 sys.modules["apicapi"] = mock.Mock()
 
