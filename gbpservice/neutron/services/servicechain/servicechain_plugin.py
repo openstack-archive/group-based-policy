@@ -12,7 +12,7 @@
 
 from neutron.common import log
 from neutron.openstack.common import excutils
-from neutron.openstack.common import log as logging
+from oslo_log import log as logging
 
 import gbpservice.neutron.db.servicechain_db as servicechain_db
 from gbpservice.neutron.services.servicechain import (

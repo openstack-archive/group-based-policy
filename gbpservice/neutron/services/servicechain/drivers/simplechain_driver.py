@@ -19,9 +19,9 @@ from neutron.common import log
 from neutron.db import model_base
 from neutron import manager
 from neutron.openstack.common import jsonutils
-from neutron.openstack.common import log as logging
 from neutron.plugins.common import constants as pconst
 from oslo.config import cfg
+from oslo_log import log as logging
 import sqlalchemy as sa
 
 

@@ -19,8 +19,8 @@ from neutron.api.v2 import attributes
 from neutron.common import log
 from neutron.db import model_base
 from neutron.openstack.common import jsonutils
-from neutron.openstack.common import log as logging
 from oslo.config import cfg
+from oslo_log import log as logging
 import sqlalchemy as sa
 
 from gbpservice.neutron.services.grouppolicy.drivers.oneconvergence import (
