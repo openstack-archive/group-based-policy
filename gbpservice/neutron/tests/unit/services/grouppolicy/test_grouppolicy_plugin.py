@@ -15,7 +15,7 @@ import mock
 import webob.exc
 
 from neutron import context
-from oslo.config import cfg
+from oslo_config import cfg
 
 from gbpservice.neutron.extensions import group_policy as gpolicy
 from gbpservice.neutron.tests.unit.db.grouppolicy import (

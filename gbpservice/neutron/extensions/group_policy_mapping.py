@@ -10,9 +10,14 @@
 #  License for the specific language governing permissions and limitations
 #  under the License.
 
+from neutron.api import extensions
 from neutron.api.v2 import attributes as attr
 
+import gbpservice.neutron.extensions
 from gbpservice.neutron.extensions import group_policy as gp
+
+
+extensions.append_api_extensions_path(gbpservice.neutron.extensions.__path__)
 
 
 # Extended attributes for Group Policy resource to map to Neutron constructs

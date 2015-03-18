@@ -10,9 +10,9 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+import os
 import sqlalchemy as sa
 
-from neutron.api import extensions
 from neutron.api.v2 import attributes
 from neutron.db import model_base
 
@@ -35,6 +35,9 @@ class ExtensionDriverTestCase(
         config.cfg.CONF.set_override('extension_drivers',
                                      self._extension_drivers,
                                      group='group_policy')
+        config.cfg.CONF.set_override(
+            'api_extensions_path',
+            os.path.dirname(os.path.abspath(test_ext.__file__)))
         super(ExtensionDriverTestCase, self).setUp()
 
     def test_pt_attr(self):
@@ -542,7 +545,8 @@ class TestExtensionDriver(api.ExtensionDriver):
         # self.network_extension = 'Test_Network_Extension'
         # self.subnet_extension = 'Test_Subnet_Extension'
         # self.port_extension = 'Test_Port_Extension'
-        extensions.append_api_extensions_path(test_ext.__path__)
+        #extensions.append_api_extensions_path(test_ext.__path__)
+        pass
 
     @property
     def extension_alias(self):
