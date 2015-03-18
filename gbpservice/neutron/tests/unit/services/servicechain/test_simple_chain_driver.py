@@ -12,11 +12,12 @@
 # limitations under the License.
 
 import contextlib
+
 import heatclient
 import mock
-from neutron.openstack.common import jsonutils
 from neutron.openstack.common import uuidutils
 from neutron.plugins.common import constants
+from oslo_serialization import jsonutils
 import webob
 
 from gbpservice.neutron.services.servicechain import config
