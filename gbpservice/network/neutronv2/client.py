@@ -11,10 +11,10 @@
 #    under the License.
 #
 
-from neutron.openstack.common import lockutils
 from neutronclient.common import exceptions as neutron_client_exc
 from neutronclient.v2_0 import client as clientv20
-from oslo.config import cfg
+from oslo_concurrency import lockutils
+from oslo_config import cfg
 
 
 neutron_opts = [
