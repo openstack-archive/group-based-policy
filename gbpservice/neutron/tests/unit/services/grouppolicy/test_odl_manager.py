@@ -17,7 +17,7 @@ import unittest
 
 from gbpservice.neutron.services.grouppolicy import config
 from gbpservice.neutron.services.grouppolicy.drivers.odl import odl_manager
-from oslo.serialization import jsonutils
+from oslo_serialization import jsonutils
 
 
 HOST = 'fake_host'
