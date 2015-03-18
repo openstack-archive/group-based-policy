@@ -12,15 +12,16 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+from neutron.common import exceptions as n_exc
+from neutron.common import log
+from oslo_log import log as logging
+from oslo_utils import excutils
+
 from gbpservice.neutron.services.grouppolicy.drivers import (
     resource_mapping as res_map)
 from gbpservice.neutron.services.grouppolicy.drivers.oneconvergence import (
     nvsd_gbp_api as api)
 
-from neutron.common import exceptions as n_exc
-from neutron.common import log
-from neutron.openstack.common import excutils
-from neutron.openstack.common import log as logging
 
 LOG = logging.getLogger(__name__)
 

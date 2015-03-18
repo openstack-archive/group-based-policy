@@ -11,23 +11,24 @@
 #    under the License.
 
 import ast
-import sqlalchemy as sa
-from sqlalchemy.ext.orderinglist import ordering_list
-from sqlalchemy import orm
-from sqlalchemy.orm import exc
 
 from neutron.common import log
 from neutron.db import common_db_mixin
 from neutron.db import model_base
 from neutron.db import models_v2
 from neutron import manager
-from neutron.openstack.common import jsonutils
-from neutron.openstack.common import log as logging
 from neutron.openstack.common import uuidutils
 from neutron.plugins.common import constants as pconst
+from oslo_log import log as logging
+from oslo_serialization import jsonutils
+import sqlalchemy as sa
+from sqlalchemy.ext.orderinglist import ordering_list
+from sqlalchemy import orm
+from sqlalchemy.orm import exc
 
 from gbpservice.neutron.extensions import servicechain as schain
 from gbpservice.neutron.services.servicechain.common import exceptions as s_exc
+
 
 LOG = logging.getLogger(__name__)
 MAX_IPV4_SUBNET_PREFIX_LENGTH = 31

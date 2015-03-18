@@ -17,15 +17,13 @@ import webob.exc
 from neutron.api import extensions
 from neutron.api.v2 import attributes as nattr
 from neutron import context
-from neutron.openstack.common import importutils
 from neutron.openstack.common import uuidutils
 from neutron.plugins.common import constants
 from neutron.tests.unit import test_db_plugin
 from neutron.tests.unit import test_extensions
-from oslo.config import cfg
+from oslo_utils import importutils
 
 from gbpservice.neutron.db.grouppolicy import group_policy_db as gpdb
-import gbpservice.neutron.extensions
 from gbpservice.neutron.extensions import group_policy as gpolicy
 from gbpservice.neutron.tests.unit import common as cm
 
@@ -174,11 +172,8 @@ class GroupPolicyDbTestCase(GroupPolicyDBTestBase,
 
     def setUp(self, core_plugin=None, gp_plugin=None, service_plugins=None,
               ext_mgr=None):
-        extensions.append_api_extensions_path(
-            gbpservice.neutron.extensions.__path__)
         if not gp_plugin:
             gp_plugin = DB_GP_PLUGIN_KLASS
-        self.plugin = importutils.import_object(gp_plugin)
         if not service_plugins:
             service_plugins = {'gp_plugin_name': gp_plugin}
         nattr.PLURALS['nat_pools'] = 'nat_pool'
@@ -186,11 +181,10 @@ class GroupPolicyDbTestCase(GroupPolicyDBTestBase,
             plugin=core_plugin, ext_mgr=ext_mgr,
             service_plugins=service_plugins
         )
-
+        self.plugin = importutils.import_object(gp_plugin)
         if not ext_mgr:
             ext_mgr = extensions.PluginAwareExtensionManager.get_instance()
             self.ext_api = test_extensions.setup_extensions_middleware(ext_mgr)
-        cfg.CONF.set_override('policy_file', 'test-policy.json')
 
 
 class TestGroupResources(GroupPolicyDbTestCase):
