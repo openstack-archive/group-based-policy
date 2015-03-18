@@ -18,10 +18,10 @@ from neutron.api import extensions
 from neutron.api.v2 import attributes as attr
 from neutron.api.v2 import resource_helper
 from neutron.common import exceptions as nexc
-from neutron.openstack.common import log as logging
 from neutron.openstack.common import uuidutils
 from neutron.plugins.common import constants
 from neutron.services import service_base
+from oslo_log import log as logging
 
 import gbpservice.neutron.extensions
 from gbpservice.neutron.services.grouppolicy.common import (

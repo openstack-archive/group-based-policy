@@ -14,8 +14,8 @@ import netaddr
 
 from neutron.api.v2 import attributes as nattr
 from neutron.common import log
-from neutron.openstack.common import excutils
-from neutron.openstack.common import log as logging
+from oslo_log import log as logging
+from oslo_utils import excutils
 
 from gbpservice.neutron.db.grouppolicy import group_policy_db as gpdb
 from gbpservice.neutron.db.grouppolicy import group_policy_mapping_db
