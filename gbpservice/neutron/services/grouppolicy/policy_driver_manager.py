@@ -10,10 +10,9 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-from neutron.openstack.common import log
-from oslo.config import cfg
+from oslo_config import cfg
+from oslo_log import log
 import stevedore
-
 
 from gbpservice.neutron.services.grouppolicy.common import exceptions as gp_exc
 

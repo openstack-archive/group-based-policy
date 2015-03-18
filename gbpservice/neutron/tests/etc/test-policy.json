@@ -1,0 +1,52 @@
+{
+    "context_is_admin":  "role:admin or user_name:neutron",
+    "admin_or_owner": "rule:context_is_admin or tenant_id:%(tenant_id)s",
+    "context_is_advsvc":  "role:advsvc",
+    "admin_only": "rule:context_is_admin",
+    "regular_user": "",
+    "default": "rule:admin_or_owner",
+    "gbp_shared": "field:policy_target_groups:shared=True",
+
+    "create_policy_target_group": "",
+    "get_policy_target_group": "rule:admin_or_owner or rule:gbp_shared",
+
+	"gbp_l2p_shared": "field:l2_policies:shared=True",
+    "create_l2_policy": "",
+    "get_l2_policy": "rule:admin_or_owner or rule:gbp_l2p_shared",
+
+	"gbp_l3p_shared": "field:l3_policies:shared=True",
+    "create_l3_policy": "",
+    "get_l3_policy": "rule:admin_or_owner or rule:gbp_l3p_shared",
+
+	"gbp_policy_classifier_shared": "field:policy_classifiers:shared=True",
+    "create_policy_classifier": "",
+    "get_policy_classifier": "rule:admin_or_owner or rule:gbp_policy_classifier_shared",
+
+	"gbp_policy_action_shared": "field:policy_actions:shared=True",
+    "create_policy_action": "",
+    "get_policy_action": "rule:admin_or_owner or rule:gbp_policy_action_shared",
+
+	"gbp_policy_rule_shared": "field:policy_rules:shared=True",
+    "create_policy_rule": "",
+    "get_policy_rule": "rule:admin_or_owner or rule:gbp_policy_rule_shared",
+
+	"gbp_policy_rule_set_shared": "field:policy_rule_sets:shared=True",
+    "create_policy_rule_set": "",
+    "get_policy_rule_set": "rule:admin_or_owner or rule:gbp_policy_rule_set_shared",
+
+	"gbp_nsp_shared": "field:network_service_policies:shared=True",
+    "create_network_service_policy": "",
+    "get_network_service_policy": "rule:admin_or_owner or rule:gbp_nsp_shared",
+
+	"gbp_external_segment_shared": "field:external_segments:shared=True",
+    "create_external_segment": "",
+    "get_external_segment": "rule:admin_or_owner or rule:gbp_external_segment_shared",
+
+	"gbp_external_policy_shared": "field:external_policies:shared=True",
+    "create_external_policy": "",
+    "get_external_policy": "rule:admin_or_owner or rule:gbp_external_policy_shared",
+
+	"gbp_nat_pool_shared": "field:nat_pools:shared=True",
+    "create_nat_pool": "",
+    "get_nat_pool": "rule:admin_or_owner or rule:gbp_nat_pool_shared"
+}

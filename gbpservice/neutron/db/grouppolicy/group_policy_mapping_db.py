@@ -10,13 +10,12 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-import sqlalchemy as sa
-from sqlalchemy import orm
-
 from neutron.common import log
 from neutron.db import model_base
-from neutron.openstack.common import log as logging
 from neutron.openstack.common import uuidutils
+from oslo_log import log as logging
+import sqlalchemy as sa
+from sqlalchemy import orm
 
 from gbpservice.neutron.db.grouppolicy import group_policy_db as gpdb
 

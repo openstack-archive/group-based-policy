@@ -12,26 +12,29 @@
 # limitations under the License.
 
 import copy
+import os
 import webob.exc
 
 from neutron.api import extensions
 from neutron.api.v2 import attributes as nattr
 from neutron import context
-from neutron.openstack.common import importutils
 from neutron.openstack.common import uuidutils
 from neutron.plugins.common import constants
-from neutron.tests.unit import test_db_plugin
-from neutron.tests.unit import test_extensions
-from oslo.config import cfg
+from neutron.tests.unit.api import test_extensions
+from neutron.tests.unit.db import test_db_base_plugin_v2
+from oslo_config import cfg
+from oslo_utils import importutils
 
 from gbpservice.neutron.db.grouppolicy import group_policy_db as gpdb
-import gbpservice.neutron.extensions
 from gbpservice.neutron.extensions import group_policy as gpolicy
+import gbpservice.neutron.tests
 from gbpservice.neutron.tests.unit import common as cm
 
 
 JSON_FORMAT = 'json'
 _uuid = uuidutils.generate_uuid
+TESTDIR = os.path.dirname(os.path.abspath(gbpservice.neutron.tests.__file__))
+ETCDIR = os.path.join(TESTDIR, 'etc')
 
 
 class GroupPolicyDBTestBase(object):
@@ -170,15 +173,12 @@ DB_GP_PLUGIN_KLASS = (GroupPolicyDBTestPlugin.__module__ + '.' +
 
 
 class GroupPolicyDbTestCase(GroupPolicyDBTestBase,
-                            test_db_plugin.NeutronDbPluginV2TestCase):
+                            test_db_base_plugin_v2.NeutronDbPluginV2TestCase):
 
     def setUp(self, core_plugin=None, gp_plugin=None, service_plugins=None,
               ext_mgr=None):
-        extensions.append_api_extensions_path(
-            gbpservice.neutron.extensions.__path__)
         if not gp_plugin:
             gp_plugin = DB_GP_PLUGIN_KLASS
-        self.plugin = importutils.import_object(gp_plugin)
         if not service_plugins:
             service_plugins = {'gp_plugin_name': gp_plugin}
         nattr.PLURALS['nat_pools'] = 'nat_pool'
@@ -186,12 +186,12 @@ class GroupPolicyDbTestCase(GroupPolicyDBTestBase,
             plugin=core_plugin, ext_mgr=ext_mgr,
             service_plugins=service_plugins
         )
-
+        self.plugin = importutils.import_object(gp_plugin)
         if not ext_mgr:
             ext_mgr = extensions.PluginAwareExtensionManager.get_instance()
             self.ext_api = test_extensions.setup_extensions_middleware(ext_mgr)
-        cfg.CONF.set_override('policy_file', 'test-policy.json')
-
+        test_policy_file = ETCDIR + "/test-policy.json"
+        cfg.CONF.set_override('policy_file', test_policy_file)
 
 class TestGroupResources(GroupPolicyDbTestCase):
 
