@@ -18,12 +18,11 @@ from heatclient import exc as heatException
 from neutron.common import log
 from neutron.db import model_base
 from neutron import manager
-from neutron.openstack.common import jsonutils
-from neutron.openstack.common import log as logging
 from neutron.plugins.common import constants as pconst
-from oslo.config import cfg
+from oslo_config import cfg
+from oslo_log import log as logging
+from oslo_serialization import jsonutils
 import sqlalchemy as sa
-
 
 from gbpservice.neutron.services.servicechain.common import exceptions as exc
 

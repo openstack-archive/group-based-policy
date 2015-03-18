@@ -19,14 +19,16 @@ import mock
 from neutron.api.rpc.agentnotifiers import dhcp_rpc_agent_api
 from neutron.common import constants as cst
 from neutron import context as nctx
+from neutron.db import api as db_api
+from neutron.db import model_base
 from neutron.extensions import external_net as external_net
 from neutron.extensions import securitygroup as ext_sg
 from neutron import manager
 from neutron.notifiers import nova
 from neutron.openstack.common import uuidutils
 from neutron.plugins.common import constants as pconst
-from neutron.tests.unit import test_extension_security_group
-from neutron.tests.unit import test_l3_plugin
+from neutron.tests.unit.extensions import test_l3
+from neutron.tests.unit.extensions import test_securitygroup
 import webob.exc
 
 from gbpservice.neutron.db.grouppolicy import group_policy_db as gpdb
@@ -44,8 +46,8 @@ SERVICECHAIN_INSTANCES = 'servicechain/servicechain_instances'
 
 
 class NoL3NatSGTestPlugin(
-        test_l3_plugin.TestNoL3NatPlugin,
-        test_extension_security_group.SecurityGroupTestPlugin):
+        test_l3.TestNoL3NatPlugin,
+        test_securitygroup.SecurityGroupTestPlugin):
 
     supported_extension_aliases = ["external-net", "security-group"]
 
@@ -67,6 +69,8 @@ class ResourceMappingTestCase(test_plugin.GroupPolicyPluginTestCase):
                                      group='servicechain')
         config.cfg.CONF.set_override('allow_overlapping_ips', True)
         super(ResourceMappingTestCase, self).setUp(core_plugin=CORE_PLUGIN)
+        engine = db_api.get_engine()
+        model_base.BASEV2.metadata.create_all(engine)
         res = mock.patch('neutron.db.l3_db.L3_NAT_dbonly_mixin.'
                          '_check_router_needs_rescheduling').start()
         res.return_value = None
@@ -2285,7 +2289,8 @@ class TestPolicyRuleSet(ResourceMappingTestCase):
             with self.subnet(cidr='192.168.0.0/24', network=net) as sub:
                 self.create_external_segment(
                     shared=True,
-                    tenant_id='admin', name="default",
+                    tenant_id='admin',
+                    name="default",
                     subnet_id=sub['subnet']['id'])['external_segment']
 
                 ep = self.create_external_policy(
@@ -2331,7 +2336,8 @@ class TestPolicyRuleSet(ResourceMappingTestCase):
             with self.subnet(cidr='192.168.0.0/24', network=net) as sub:
                 self.create_external_segment(
                     shared=True,
-                    tenant_id='admin', name="default",
+                    tenant_id='admin',
+                    name="default",
                     subnet_id=sub['subnet']['id'])['external_segment']
 
                 ep = self.create_external_policy()

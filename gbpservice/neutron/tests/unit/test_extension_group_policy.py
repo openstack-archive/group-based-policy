@@ -17,15 +17,15 @@ import mock
 from neutron.openstack.common import uuidutils
 from neutron.plugins.common import constants
 from neutron.tests import base
-from neutron.tests.unit import test_api_v2
-from neutron.tests.unit import test_api_v2_extension
+from neutron.tests.unit.api.v2 import test_base
+from neutron.tests.unit.extensions import base as test_extensions_base
 from webob import exc
 
 from gbpservice.neutron.extensions import group_policy as gp
 from gbpservice.neutron.tests.unit import common as cm
 
 _uuid = uuidutils.generate_uuid
-_get_path = test_api_v2._get_path
+_get_path = test_base._get_path
 GP_PLUGIN_BASE_NAME = (
     gp.GroupPolicyPluginBase.__module__ + '.' +
     gp.GroupPolicyPluginBase.__name__)
@@ -48,7 +48,7 @@ RES_TO_URI = {'external_policy': EP_POLICIES_URI,
               'nat_pool': NP_POLICIES_URI}
 
 
-class GroupPolicyExtensionTestCase(test_api_v2_extension.ExtensionTestCase):
+class GroupPolicyExtensionTestCase(test_extensions_base.ExtensionTestCase):
     fmt = 'json'
 
     def setUp(self):
