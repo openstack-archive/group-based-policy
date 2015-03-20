@@ -160,6 +160,17 @@ class TestPolicyRuleSet(OneConvergenceGBPDriverTestCase,
     pass
 
 
+class TestServiceChain(OneConvergenceGBPDriverTestCase,
+                       test_resource_mapping.TestServiceChain):
+    pass
+
+
+class TestServiceChainAdminOwner(
+        OneConvergenceGBPDriverTestCase,
+        test_resource_mapping.TestServiceChainAdminOwner):
+    pass
+
+
 class TestPolicyAction(OneConvergenceGBPDriverTestCase,
                        test_resource_mapping.TestPolicyAction):
     pass
