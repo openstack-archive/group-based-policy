@@ -121,6 +121,19 @@ class ServicePolicyPTGIpAddressMapping(model_base.BASEV2):
     ipaddress = sa.Column(sa.String(36))
 
 
+class PolicyTargetFloatingIPMapping(model_base.BASEV2):
+    """Mapping of PolicyTarget to Floating IP."""
+    __tablename__ = 'gp_pt_floatingip_mappings'
+    policy_target_id = sa.Column(
+        sa.String(36), sa.ForeignKey('gp_policy_targets.id',
+                                     ondelete='CASCADE'),
+        nullable=False, primary_key=True)
+    floatingip_id = sa.Column(sa.String(36),
+                              sa.ForeignKey('floatingips.id',
+                                            ondelete='CASCADE'),
+                              nullable=True)
+
+
 class ResourceMappingDriver(api.PolicyDriver):
     """Resource Mapping driver for Group Policy plugin.
 
@@ -247,9 +260,68 @@ class ResourceMappingDriver(api.PolicyDriver):
     def create_policy_target_postcommit(self, context):
         if not context.current['port_id']:
             self._use_implicit_port(context)
-
         self._assoc_ptg_sg_to_pt(context, context.current['id'],
                                  context.current['policy_target_group_id'])
+        self._associate_fip_to_pt(context)
+
+    def _associate_fip_to_pt(self, context):
+        ptg_id = context.current['policy_target_group_id']
+        ptg = context._plugin.get_policy_target_group(
+            context._plugin_context, ptg_id)
+        network_service_policy_id = ptg.get(
+            "network_service_policy_id")
+        if not network_service_policy_id:
+            return
+
+        nsp = context._plugin.get_network_service_policy(
+            context._plugin_context, network_service_policy_id)
+        nsp_params = nsp.get("network_service_params")
+        if not nsp_params:
+            return
+
+        if nsp_params[0]["type"] == "ip_pool" and nsp_params[0]["value"] == "nat_pool":
+            l2p = context._plugin.get_l2_policy(context._plugin_context,
+                                                ptg['l2_policy_id'])
+            l3p = context._plugin.get_l3_policy(context._plugin_context,
+                                                l2p['l3_policy_id'])
+            external_segments = l3p.get('external_segments')
+            if not external_segments:
+                return
+            external_segments = external_segments.keys()
+            external_segments = external_segments[0] #only one es supported
+            es = context._plugin.get_external_segment(context._plugin_context,
+                                                      external_segments)
+            ext_sub = self._core_plugin.get_subnet(context._plugin_context,
+                                                   es['subnet_id'])
+            ext_net_id = ext_sub['network_id']
+            nat_pools = es['nat_pools']
+            if not nat_pools:
+                return
+            # REVISIT(Magesh): This is a very crude method of floating ip
+            # allocation. It looks best to just let Neutron allocate a FIP
+            # from the external subnet(external segment) rather than RMD
+            # managing the FIP pool. Does is really make sense to use
+            # nat_pool this way for the reference driver ??
+            for nat_pool in nat_pools:
+                nat_pool = context._plugin.get_nat_pool(context._plugin_context,
+                                                        nat_pool)
+                ip_pool = nat_pool['ip_pool']
+                ip_range = netaddr.IPNetwork(ip_pool)
+                for ip in ip_range:
+                    try:
+                        fip_id = self._create_floatingip(
+                            context, ext_net_id, context.current['port_id'],
+                            floating_ip_address=str(ip))
+                        self._set_pt_floating_ip_mapping(
+                            context._plugin_context.session,
+                            context.current['id'],
+                            fip_id)
+                    except Exception:
+                        # TODO(Magesh): catch FIP in use exception and
+                        # invalid floating ip excpetions 
+                        continue
+                    else:
+                        return
 
     @log.log
     def update_policy_target_precommit(self, context):
@@ -263,7 +335,9 @@ class ResourceMappingDriver(api.PolicyDriver):
 
     @log.log
     def delete_policy_target_precommit(self, context):
-        pass
+        context.fip = self._get_pt_floating_ip_mapping(
+                    context._plugin_context.session,
+                    context.current['id'])
 
     @log.log
     def delete_policy_target_postcommit(self, context):
@@ -272,6 +346,12 @@ class ResourceMappingDriver(api.PolicyDriver):
         self._disassoc_sgs_from_port(context._plugin_context,
                                      context.current['port_id'], sg_list)
         port_id = context.current['port_id']
+        if context.fip:
+            self._delete_fip(context._plugin_context,
+                             context.fip.floatingip_id)
+            self._delete_pt_floating_ip_mapping(
+                    context._plugin_context.session,
+                    context.current['id'])
         self._cleanup_port(context._plugin_context, port_id)
 
     @log.log
@@ -310,24 +390,26 @@ class ResourceMappingDriver(api.PolicyDriver):
 
         nsp = context._plugin.get_network_service_policy(
             context._plugin_context, network_service_policy_id)
-        if not nsp.get("network_service_params"):
+        nsp_params = nsp.get("network_service_params")
+        if not nsp_params:
             return
 
-        # TODO(Magesh):Handle concurrency issues
-        free_ip = self._get_last_free_ip(context._plugin_context,
-                                         context.current['subnets'])
-        if not free_ip:
-            LOG.error(_("Reserving IP Addresses failed for Network Service "
-                        "Policy. No more IP Addresses on subnet"))
-            return
-        # TODO(Magesh):Fetch subnet from PTG to which NSP is attached
-        self._remove_ip_from_allocation_pool(context,
-                                             context.current['subnets'][0],
-                                             free_ip)
-        self._set_policy_ipaddress_mapping(context._plugin_context.session,
-                                           network_service_policy_id,
-                                           context.current['id'],
-                                           free_ip)
+        if nsp_params[0]["type"] == "ip_single" and nsp_params[0]["value"] == "self_subnet":
+            # TODO(Magesh):Handle concurrency issues
+            free_ip = self._get_last_free_ip(context._plugin_context,
+                                             context.current['subnets'])
+            if not free_ip:
+                LOG.error(_("Reserving IP Addresses failed for Network Service "
+                            "Policy. No more IP Addresses on subnet"))
+                return
+            # TODO(Magesh):Fetch subnet from PTG to which NSP is attached
+            self._remove_ip_from_allocation_pool(context,
+                                                 context.current['subnets'][0],
+                                                 free_ip)
+            self._set_policy_ipaddress_mapping(context._plugin_context.session,
+                                               network_service_policy_id,
+                                               context.current['id'],
+                                               free_ip)
 
     def _get_service_policy_ipaddress(self, context, policy_target_group):
         ipaddress = self._get_ptg_policy_ipaddress_mapping(
@@ -979,8 +1061,8 @@ class ResourceMappingDriver(api.PolicyDriver):
         nsp = context.current
         nsp_params = nsp.get("network_service_params")
         if nsp_params and (len(nsp_params) > 1 or
-                           (nsp_params[0].get("type") != "ip_single" or
-                            nsp_params[0].get("value") != "self_subnet")):
+                           (nsp_params[0].get("type") not in ["ip_single", "ip_pool"] or
+                            nsp_params[0].get("value") not in ["self_subnet", "nat_pool"])):
             raise exc.InvalidNetworkServiceParameters()
 
     def update_network_service_policy_precommit(self, context):
@@ -1029,14 +1111,16 @@ class ResourceMappingDriver(api.PolicyDriver):
             for es in es_list:
                 subnet = self._core_plugin.get_subnet(context._plugin_context,
                                                       es['subnet_id'])
+                external_fixed_ips = [
+                        {'subnet_id': es['subnet_id'],
+                         'ip_address': x} for x in es_dict[es['id']]
+                                      ] if es_dict[es['id']] else None
                 interface_info = {
                     'network_id': subnet['network_id'],
-                    'enable_snat': es['port_address_translation'],
-                    'external_fixed_ips': [
-                        {'subnet_id': es['subnet_id'],
-                         'ip_address': x} for x in es_dict[es['id']]]
-                    if es_dict[es['id']] else
-                    attributes.ATTR_NOT_SPECIFIED}
+                    'enable_snat': es['port_address_translation']}
+                if external_fixed_ips:
+                    interface_info.update(
+                            {'external_fixed_ips': external_fixed_ips})
                 router = self._add_router_gw_interface(
                     context._plugin_context, router_id, interface_info)
                 if not es_dict[es['id']] or not es_dict[es['id']][0]:
@@ -1258,6 +1342,25 @@ class ResourceMappingDriver(api.PolicyDriver):
             if ip_mapping:
                 session.delete(ip_mapping)
 
+    def _set_pt_floating_ip_mapping(self, session, policy_target_id, fip_id):
+        with session.begin(subtransactions=True):
+            mapping = PolicyTargetFloatingIPMapping(
+                policy_target_id=policy_target_id, floatingip_id=fip_id)
+            session.add(mapping)
+
+    def _get_pt_floating_ip_mapping(self, session, policy_target_id):
+        with session.begin(subtransactions=True):
+            return (session.query(PolicyTargetFloatingIPMapping).
+                    filter_by(policy_target_id=policy_target_id).first())
+
+    def _delete_pt_floating_ip_mapping(self, session, policy_target_id):
+        with session.begin(subtransactions=True):
+            fip_mapping = session.query(
+                PolicyTargetFloatingIPMapping).filter_by(
+                    policy_target_id=policy_target_id).first()
+            if fip_mapping:
+                session.delete(fip_mapping)
+
     def _handle_redirect_spec_id_update(self, context):
         if (context.current['action_type'] != gconst.GP_ACTION_REDIRECT
             or context.current['action_value'] ==
@@ -1460,6 +1563,18 @@ class ResourceMappingDriver(api.PolicyDriver):
         self._delete_resource(self._core_plugin, plugin_context,
                               'security_group_rule', sg_rule_id)
 
+    def _delete_fip(self, plugin_context, fip_id):
+        self._delete_resource(self._l3_plugin, plugin_context,
+                              'floatingip', fip_id)
+
+    def _create_fip(self, plugin_context, attrs):
+        return self._create_resource(self._l3_plugin, plugin_context,
+                                     'floatingip', attrs)
+
+    def _update_fip(self, plugin_context, fip_id, attrs):
+        return self._update_resource(self._l3_plugin, plugin_context,
+                                     'floatingip', fip_id, attrs)
+
     def _restore_ip_to_allocation_pool(self, context, subnet_id, ip_address):
         # TODO(Magesh):Pass subnets and loop on subnets. Better to add logic
         # to Merge the pools together after Fragmentation
@@ -1550,6 +1665,17 @@ class ResourceMappingDriver(api.PolicyDriver):
                               context._plugin_context,
                               'servicechain_instance',
                               servicechain_instance_id)
+
+    def _create_floatingip(self, context, ext_net_id, internal_port_id,
+                           fixed_ip=attributes.ATTR_NOT_SPECIFIED,
+                           floating_ip_address=attributes.ATTR_NOT_SPECIFIED):
+        attrs = {'tenant_id': context.current['tenant_id'],
+                 'floating_network_id': ext_net_id,
+                 'port_id': internal_port_id,
+                 #'fixed_ip_address': fixed_ip,
+                 'floating_ip_address': floating_ip_address}
+        fip = self._create_fip(context._plugin_context, attrs)
+        return fip['id']
 
     def _create_resource(self, plugin, context, resource, attrs):
         # REVISIT(rkukura): Do create.start notification?

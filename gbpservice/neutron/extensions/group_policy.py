@@ -191,7 +191,8 @@ gp_network_service_param_keys = [
     gp_constants.GP_NETWORK_SVC_PARAM_VALUE]
 gp_network_service_param_values = [
     gp_constants.GP_NETWORK_SVC_PARAM_VALUE_EXTERNAL_SUBNET,
-    gp_constants.GP_NETWORK_SVC_PARAM_VALUE_SELF_SUBNET]
+    gp_constants.GP_NETWORK_SVC_PARAM_VALUE_SELF_SUBNET,
+    gp_constants.GP_NETWORK_SVC_PARAM_VALUE_NAT_POOL]
 
 
 # Group Policy input value conversion and validation functions
@@ -707,6 +708,10 @@ RESOURCE_ATTRIBUTE_MAP = {
             'default': False, 'convert_to': attr.convert_to_boolean,
             'is_visible': True, 'required_by_policy': True,
             'enforce_policy': True},
+        'nat_pools': {
+            'allow_post': False, 'allow_put': False,
+            'default': [],
+            'is_visible': True},
         attr.SHARED: {'allow_post': True, 'allow_put': True,
                       'default': False, 'convert_to': attr.convert_to_boolean,
                       'is_visible': True, 'required_by_policy': True,
