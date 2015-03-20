@@ -55,21 +55,14 @@
     "get_nat_pool": "rule:admin_or_owner or rule:shared_np",
 
     "create_servicechain_node": "",
-    "create_servicechain_node:shared": "rule:admin_only",
     "get_servicechain_node": "rule:admin_or_owner or rule:shared_scn",
-    "update_servicechain_node:shared": "rule:admin_only",
 
     "create_servicechain_spec": "",
-    "create_servicechain_spec:shared": "rule:admin_only",
     "get_servicechain_spec": "rule:admin_or_owner or rule:shared_scs",
-    "update_servicechain_spec:shared": "rule:admin_only",
 
     "create_servicechain_instance": "",
     "get_servicechain_instance": "rule:admin_or_owner",
-    "update_servicechain_instance:shared": "rule:admin_only",
 
     "create_service_profile": "",
-    "create_service_profile:shared": "rule:admin_only",
-    "get_service_profile": "rule:admin_or_owner or rule:shared_sp",
-    "update_service_profile:shared": "rule:admin_only"
+    "get_service_profile": "rule:admin_or_owner or rule:shared_sp"
 }
