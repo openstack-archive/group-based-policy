@@ -13,19 +13,11 @@
 
 import webob.exc
 
-from neutron.api import extensions
 from neutron import context
-from neutron.db import api as db_api
-from neutron.db import model_base
 from neutron.openstack.common import uuidutils
 from neutron.plugins.common import constants
-from neutron.tests.unit.api import test_extensions
-from neutron.tests.unit.db import test_db_base_plugin_v2
 from oslo_config import cfg
-from oslo_utils import importutils
 
-from gbpservice.neutron.db import servicechain_db as svcchain_db
-from gbpservice.neutron.extensions import group_policy as gpolicy
 from gbpservice.neutron.extensions import servicechain as service_chain
 from gbpservice.neutron.tests.unit import common as cm
 from gbpservice.neutron.tests.unit.db.grouppolicy import test_group_policy_db
@@ -33,135 +25,20 @@ from gbpservice.neutron.tests.unit.db.grouppolicy import test_group_policy_db
 JSON_FORMAT = 'json'
 
 
-class ServiceChainDBTestBase(test_group_policy_db.ApiManagerMixin):
-    resource_prefix_map = dict(
-        (k, constants.COMMON_PREFIXES[constants.SERVICECHAIN])
-        for k in service_chain.RESOURCE_ATTRIBUTE_MAP.keys())
-    resource_prefix_map.update(dict(
-        (k, constants.COMMON_PREFIXES[constants.GROUP_POLICY])
-        for k in gpolicy.RESOURCE_ATTRIBUTE_MAP.keys()
-    ))
-
-    fmt = JSON_FORMAT
-
-    def __getattr__(self, item):
-        # Verify is an update of a proper GBP object
-
-        def _is_sc_resource(plural):
-            return plural in service_chain.RESOURCE_ATTRIBUTE_MAP
-
-        def _is_gbp_resource(plural):
-            return plural in gpolicy.RESOURCE_ATTRIBUTE_MAP
-
-        def _is_valid_resource(plural):
-            return _is_gbp_resource(plural) or _is_sc_resource(plural)
-        # Update Method
-        if item.startswith('update_'):
-            resource = item[len('update_'):]
-            plural = cm.get_resource_plural(resource)
-            if _is_valid_resource(plural):
-                def update_wrapper(id, **kwargs):
-                    return self._update_resource(id, resource, **kwargs)
-                return update_wrapper
-        # Show Method
-        if item.startswith('show_'):
-            resource = item[len('show_'):]
-            plural = cm.get_resource_plural(resource)
-            if _is_valid_resource(plural):
-                def show_wrapper(id, **kwargs):
-                    return self._show_resource(id, plural, **kwargs)
-                return show_wrapper
-        # Create Method
-        if item.startswith('create_'):
-            resource = item[len('create_'):]
-            plural = cm.get_resource_plural(resource)
-            if _is_valid_resource(plural):
-                def create_wrapper(**kwargs):
-                    return self._create_resource(resource, **kwargs)
-                return create_wrapper
-        # Delete Method
-        if item.startswith('delete_'):
-            resource = item[len('delete_'):]
-            plural = cm.get_resource_plural(resource)
-            if _is_valid_resource(plural):
-                def delete_wrapper(id, **kwargs):
-                    return self._delete_resource(id, plural, **kwargs)
-                return delete_wrapper
-
-        raise AttributeError
-
-    def _get_resource_plural(self, resource):
-        if resource.endswith('y'):
-            resource_plural = resource.replace('y', 'ies')
-        else:
-            resource_plural = resource + 's'
-
-        return resource_plural
-
-    def _test_list_resources(self, resource, items,
-                             neutron_context=None,
-                             query_params=None):
-        resource_plural = self._get_resource_plural(resource)
-
-        res = self._list(resource_plural,
-                         neutron_context=neutron_context,
-                         query_params=query_params)
-        params = query_params.split('&')
-        params = dict((x.split('=')[0], x.split('=')[1].split(','))
-                      for x in params)
-        count = getattr(self.plugin, 'get_%s_count' % resource_plural)(
-            neutron_context or context.get_admin_context(), params)
-        self.assertEqual(len(res[resource_plural]), count)
-        resource = resource.replace('-', '_')
-        self.assertEqual(sorted([i['id'] for i in res[resource_plural]]),
-                         sorted([i[resource]['id'] for i in items]))
-
-    def _create_profiled_servicechain_node(
-            self, service_type=constants.LOADBALANCER, shared_profile=False,
-            profile_tenant_id=None, **kwargs):
-        prof = self.create_service_profile(
-            service_type=service_type,
-            shared=shared_profile,
-            tenant_id=profile_tenant_id or self._tenant_id)['service_profile']
-        return self.create_servicechain_node(
-            service_profile_id=prof['id'], **kwargs)
-
-
-class ServiceChainDBTestPlugin(svcchain_db.ServiceChainDbPlugin):
-
-        supported_extension_aliases = ['servicechain']
-
-
-DB_GP_PLUGIN_KLASS = (ServiceChainDBTestPlugin.__module__ + '.' +
-                      ServiceChainDBTestPlugin.__name__)
-
 GP_PLUGIN_KLASS = (
     "gbpservice.neutron.services.grouppolicy.plugin.GroupPolicyPlugin")
 
 
-class ServiceChainDbTestCase(ServiceChainDBTestBase,
-                             test_db_base_plugin_v2.NeutronDbPluginV2TestCase):
+class ServiceChainDbTestCase(test_group_policy_db.GroupPolicyDbTestCase):
 
     def setUp(self, core_plugin=None, sc_plugin=None, service_plugins=None,
               ext_mgr=None, gp_plugin=None):
-        if not sc_plugin:
-            sc_plugin = DB_GP_PLUGIN_KLASS
-        if not service_plugins:
-            service_plugins = {
-                'l3_plugin_name': 'router',
-                'gp_plugin_name': gp_plugin or GP_PLUGIN_KLASS,
-                'sc_plugin_name': sc_plugin}
 
         super(ServiceChainDbTestCase, self).setUp(
-            plugin=core_plugin, ext_mgr=ext_mgr,
-            service_plugins=service_plugins
-        )
-        self.plugin = importutils.import_object(sc_plugin)
-        if not ext_mgr:
-            ext_mgr = extensions.PluginAwareExtensionManager.get_instance()
-            self.ext_api = test_extensions.setup_extensions_middleware(ext_mgr)
-        engine = db_api.get_engine()
-        model_base.BASEV2.metadata.create_all(engine)
+            gp_plugin=gp_plugin or GP_PLUGIN_KLASS, core_plugin=core_plugin,
+            sc_plugin=sc_plugin, service_plugins=service_plugins,
+            ext_mgr=ext_mgr)
+        self.plugin = self._sc_plugin
 
 
 class TestServiceChainResources(ServiceChainDbTestCase):
