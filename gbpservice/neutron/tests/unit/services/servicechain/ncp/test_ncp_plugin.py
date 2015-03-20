@@ -45,6 +45,7 @@ CORE_PLUGIN = ('gbpservice.neutron.tests.unit.services.grouppolicy.'
 GP_PLUGIN_KLASS = (
     "gbpservice.neutron.services.grouppolicy.plugin.GroupPolicyPlugin"
 )
+CHAIN_TENANT_ID = 'sci_owner'
 
 
 class NodeCompositionPluginTestCase(
@@ -465,6 +466,9 @@ class AgnosticChainPlumberTestCase(NodeCompositionPluginTestCase):
         self.driver.get_plumbing_info = mock.Mock()
         self.driver.get_plumbing_info.return_value = {}
 
+    def _assert_service_target_tenant(self, policy_target, provider):
+        self.assertEqual(provider['tenant_id'], policy_target['tenant_id'])
+
     def _create_simple_chain(self):
         node = self._create_profiled_servicechain_node()['servicechain_node']
         spec = self.create_servicechain_spec(
@@ -502,9 +506,11 @@ class AgnosticChainPlumberTestCase(NodeCompositionPluginTestCase):
         for target in targets:
             self.assertEqual(node['id'], target.servicechain_node_id)
             pt = self.show_policy_target(
-                target.policy_target_id)['policy_target']
+                target.policy_target_id,
+                is_admin_context=True)['policy_target']
             self.assertEqual(prov_cons[target.relationship]['id'],
                              pt['policy_target_group_id'])
+            self._assert_service_target_tenant(pt, provider)
             self.assertNotEqual(old_relationship, target.relationship)
             old_relationship = target.relationship
 
@@ -515,7 +521,8 @@ class AgnosticChainPlumberTestCase(NodeCompositionPluginTestCase):
         self.assertEqual(0, len(new_targets))
         for target in targets:
             self.show_policy_target(
-                target.policy_target_id, expected_res_status=404)
+                target.policy_target_id, is_admin_context=True,
+                expected_res_status=404)
 
     def test_pt_override(self):
         context = n_context.get_admin_context()
@@ -526,7 +533,8 @@ class AgnosticChainPlumberTestCase(NodeCompositionPluginTestCase):
         targets = model.get_service_targets(context.session)
         self.assertEqual(1, len(targets))
         pt = self.show_policy_target(
-            targets[0].policy_target_id)['policy_target']
+            targets[0].policy_target_id,
+            is_admin_context=True)['policy_target']
         self.assertEqual(test_name, pt['name'])
 
     def test_ptg_delete(self):
@@ -545,3 +553,14 @@ class AgnosticChainPlumberTestCase(NodeCompositionPluginTestCase):
                                         expected_res_status=200)
         self.delete_policy_target_group(provider['id'],
                                         expected_res_status=204)
+
+
+class AgnosticChainPlumberAdminOwner(AgnosticChainPlumberTestCase):
+
+    def setUp(self):
+        cfg.CONF.set_override('chain_tenant_id', CHAIN_TENANT_ID,
+                              'resource_mapping')
+        super(AgnosticChainPlumberAdminOwner, self).setUp()
+
+    def _assert_service_target_tenant(self, policy_target, provider):
+        self.assertEqual(CHAIN_TENANT_ID, policy_target['tenant_id'])
