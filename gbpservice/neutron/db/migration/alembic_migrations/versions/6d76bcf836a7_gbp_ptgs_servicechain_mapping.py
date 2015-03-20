@@ -32,6 +32,7 @@ import sqlalchemy as sa
 def upgrade(active_plugins=None, options=None):
     op.create_table(
         'gpm_ptgs_servicechain_mapping',
+        sa.Column('tenant_id', sa.String(length=255), nullable=True),
         sa.Column('provider_ptg_id', sa.String(length=36), nullable=False),
         sa.Column('consumer_ptg_id', sa.String(length=36), nullable=False),
         sa.Column('servicechain_instance_id', sa.String(length=36)),
