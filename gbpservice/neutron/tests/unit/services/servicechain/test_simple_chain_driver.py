@@ -65,6 +65,10 @@ class SimpleChainDriverTestCase(
                                      STACK_DELETE_RETRY_WAIT,
                                      group='simplechain')
         super(SimpleChainDriverTestCase, self).setUp()
+        key_client = mock.patch(
+            'gbpservice.neutron.services.servicechain.plugins.msc.drivers.'
+            'simplechain_driver.HeatClient._get_auth_token').start()
+        key_client.return_value = 'mysplendidtoken'
 
 
 class TestServiceChainInstance(SimpleChainDriverTestCase):

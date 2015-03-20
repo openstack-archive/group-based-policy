@@ -47,6 +47,7 @@ CORE_PLUGIN = ('gbpservice.neutron.tests.unit.services.grouppolicy.'
 GP_PLUGIN_KLASS = (
     "gbpservice.neutron.services.grouppolicy.plugin.GroupPolicyPlugin"
 )
+CHAIN_TENANT_ID = 'sci_owner'
 
 
 class NodeCompositionPluginTestCase(
@@ -601,7 +602,7 @@ class NodeCompositionPluginTestCase(
         self.create_policy_target_group(
             provided_policy_rule_sets={prs['id']: ''})
         self.create_policy_target_group(
-            consumed_policy_rule_sets={prs['id']: ''})['policy_target_group']
+            consumed_policy_rule_sets={prs['id']: ''})
         instances = self._list('servicechain_instances')[
             'servicechain_instances']
         self.assertEqual(1, len(instances))
@@ -680,6 +681,9 @@ class AgnosticChainPlumberTestCase(NodeCompositionPluginTestCase):
         self.driver.get_plumbing_info = mock.Mock()
         self.driver.get_plumbing_info.return_value = {}
 
+    def _assert_service_target_tenant(self, policy_target, provider):
+        self.assertEqual(provider['tenant_id'], policy_target['tenant_id'])
+
     def _create_simple_chain(self):
         node = self._create_profiled_servicechain_node(
             service_type="LOADBALANCER",
@@ -719,9 +723,11 @@ class AgnosticChainPlumberTestCase(NodeCompositionPluginTestCase):
         for target in targets:
             self.assertEqual(node['id'], target.servicechain_node_id)
             pt = self.show_policy_target(
-                target.policy_target_id)['policy_target']
+                target.policy_target_id,
+                is_admin_context=True)['policy_target']
             self.assertEqual(prov_cons[target.relationship]['id'],
                              pt['policy_target_group_id'])
+            self._assert_service_target_tenant(pt, provider)
             self.assertNotEqual(old_relationship, target.relationship)
             old_relationship = target.relationship
 
@@ -732,7 +738,8 @@ class AgnosticChainPlumberTestCase(NodeCompositionPluginTestCase):
         self.assertEqual(0, len(new_targets))
         for target in targets:
             self.show_policy_target(
-                target.policy_target_id, expected_res_status=404)
+                target.policy_target_id, is_admin_context=True,
+                expected_res_status=404)
 
     def test_pt_override(self):
         context = n_context.get_admin_context()
@@ -743,7 +750,8 @@ class AgnosticChainPlumberTestCase(NodeCompositionPluginTestCase):
         targets = model.get_service_targets(context.session)
         self.assertEqual(1, len(targets))
         pt = self.show_policy_target(
-            targets[0].policy_target_id)['policy_target']
+            targets[0].policy_target_id,
+            is_admin_context=True)['policy_target']
         self.assertEqual(test_name, pt['name'])
 
     def test_ptg_delete(self):
@@ -840,3 +848,29 @@ class TestQuotasForServiceChain(test_base.ServiceChainPluginTestCase):
         self.assertRaises(webob.exc.HTTPClientError,
                           self.create_policy_target_group,
                           consumed_policy_rule_sets={prs['id']: ''})
+
+
+class AgnosticChainPlumberAdminOwner(AgnosticChainPlumberTestCase):
+
+    def setUp(self):
+        mock.patch('gbpservice.neutron.services.grouppolicy.drivers.'
+                   'resource_mapping.ResourceMappingDriver.'
+                   'chain_tenant_keystone_client').start()
+        res = mock.patch('gbpservice.neutron.services.grouppolicy.drivers.'
+                         'resource_mapping.ResourceMappingDriver.'
+                         'chain_tenant_id').start()
+        res.return_value = CHAIN_TENANT_ID
+        super(AgnosticChainPlumberAdminOwner, self).setUp()
+
+    def _assert_service_target_tenant(self, policy_target, provider):
+        self.assertEqual(CHAIN_TENANT_ID, policy_target['tenant_id'])
+
+    def test_update_service_chain(self):
+        # This directly updates the SCI, which requires the right tenant to be
+        # done
+        pass
+
+    def test_instance_update(self):
+        # This directly updates the SCI, which requires the right tenant to be
+        # done
+        pass
