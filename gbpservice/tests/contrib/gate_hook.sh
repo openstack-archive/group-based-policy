@@ -6,7 +6,7 @@ TOP_DIR=$BASE/new/devstack
 cd $TOP_DIR
 sudo git remote add group-policy http://github.com/group-policy/devstack
 sudo git fetch group-policy
-sudo git checkout -t group-policy/kilo-gbp-openstack-master-gate
+sudo git checkout -t group-policy/test-gbp-fip-exercise-on-master-gate
 
 CONTRIB_DIR="$BASE/new/group-based-policy/gbpservice/tests/contrib"
 
