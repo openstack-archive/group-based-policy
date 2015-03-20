@@ -34,12 +34,10 @@ from gbpservice.neutron.services.grouppolicy.common import (
 # The code below is a monkey patch of key Neutron's modules. This is needed for
 # the GBP service to be loaded correctly. GBP extensions' path is added
 # to Neutron's so that it's found at extension scanning time.
-
 extensions.append_api_extensions_path(gbpservice.neutron.extensions.__path__)
 constants.GROUP_POLICY = "GROUP_POLICY"
 constants.COMMON_PREFIXES["GROUP_POLICY"] = "/grouppolicy"
 constants.EXT_TO_SERVICE_MAPPING['gp'] = constants.GROUP_POLICY
-
 
 LOG = logging.getLogger(__name__)
 
