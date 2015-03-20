@@ -65,8 +65,6 @@ class NvsdGbpDriver(res_map.ResourceMappingDriver):
 
     @log.log
     def create_policy_target_group_precommit(self, context):
-        super(NvsdGbpDriver, self).create_policy_target_group_precommit(
-                                                                    context)
         # Reuse the previously created implicit L2 Policy for the tenant
         if not context.current['l2_policy_id']:
             l2ps = context._plugin.get_l2_policies(
@@ -75,6 +73,8 @@ class NvsdGbpDriver(res_map.ResourceMappingDriver):
                           "tenant_id": [context.current['tenant_id']]}))
             if l2ps:
                 context.set_l2_policy_id(l2ps[0]['id'])
+        super(NvsdGbpDriver, self).create_policy_target_group_precommit(
+                                                                    context)
 
     @log.log
     def create_policy_target_group_postcommit(self, context):
@@ -124,8 +124,9 @@ class NvsdGbpDriver(res_map.ResourceMappingDriver):
     def delete_policy_target_group_postcommit(self, context):
         try:
             self._cleanup_network_service_policy(context,
-                                             context.current['subnets'][0],
-                                             context.current['id'])
+                                                 context.current,
+                                                 context.nsp_cleanup_ipaddress,
+                                                 context.nsp_cleanup_fips)
             self._cleanup_redirect_action(context)
             # Cleanup SGs
             self._unset_sg_rules_for_subnets(
