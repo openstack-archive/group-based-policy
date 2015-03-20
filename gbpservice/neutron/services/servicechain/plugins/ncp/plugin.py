@@ -253,7 +253,9 @@ class NodeCompositionPlugin(servicechain_db.ServiceChainDbPlugin,
         self._update_chains_pt_modified(context, policy_target, 'removed')
 
     def _update_chains_pt_modified(self, context, policy_target, action):
-        scis = self._get_instances_from_policy_target(context, policy_target)
+        admin_context = utils.admin_context(context)
+        scis = self._get_instances_from_policy_target(
+            admin_context, policy_target)
 
         for sci in scis:
             updaters = self._get_scheduled_drivers(context, sci, 'update')
@@ -267,6 +269,7 @@ class NodeCompositionPlugin(servicechain_db.ServiceChainDbPlugin,
                                 "failed, %s"), ex.message)
 
     def _get_instance_nodes(self, context, instance):
+        context = utils.admin_context(context)
         if not instance['servicechain_specs']:
             return []
         specs = self.get_servicechain_spec(
@@ -274,6 +277,7 @@ class NodeCompositionPlugin(servicechain_db.ServiceChainDbPlugin,
         return self.get_servicechain_nodes(context, {'id': specs['nodes']})
 
     def _get_node_instances(self, context, node):
+        context = utils.admin_context(context)
         specs = self.get_servicechain_specs(
             context, {'id': node['servicechain_specs']})
         result = []
