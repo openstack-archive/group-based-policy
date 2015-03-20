@@ -131,7 +131,7 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
                 for linked in linked_objects:
                     link_ids.add(linked['id'])
                     GroupPolicyPlugin._verify_sharing_consistency(
-                        obj, linked, identity, ref_type)
+                        obj, linked, identity, ref_type, context.is_admin)
                 # Check for missing references
                 missing = set(ids) - link_ids
                 if missing:
@@ -288,20 +288,22 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
                 spec = self.servicechain_plugin.get_servicechain_spec(
                     context, action['action_value'])
                 GroupPolicyPlugin._verify_sharing_consistency(
-                    action, spec, 'polocy_action', 'servicechain_spec')
+                    action, spec, 'policy_action', 'servicechain_spec',
+                    context.is_admin)
 
     @staticmethod
     def _verify_sharing_consistency(primary, reference, primary_type,
-                                    reference_type):
+                                    reference_type, is_admin):
         if not reference.get('shared'):
             if primary.get('shared'):
                 raise gp_exc.SharedResourceReferenceError(
                     res_type=primary_type, res_id=primary['id'],
                     ref_type=reference_type, ref_id=reference['id'])
-            if primary.get('tenant_id') != reference.get('tenant_id'):
-                raise gp_exc.InvalidCrossTenantReference(
-                    res_type=primary_type, res_id=primary['id'],
-                    ref_type=reference_type, ref_id=reference['id'])
+            if not is_admin:
+                if primary.get('tenant_id') != reference.get('tenant_id'):
+                    raise gp_exc.InvalidCrossTenantReference(
+                        res_type=primary_type, res_id=primary['id'],
+                        ref_type=reference_type, ref_id=reference['id'])
 
     def __init__(self):
         self.extension_manager = ext_manager.ExtensionManager()
@@ -484,7 +486,8 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
             policy_target_group = self.get_policy_target_group(
                 context, policy_target_group_id)
             pt_ids = policy_target_group['policy_targets']
-            for pt in self.get_policy_targets(context, {'id': pt_ids}):
+            for pt in self.get_policy_targets(context.elevated(),
+                                              {'id': pt_ids}):
                 if pt['port_id'] and self._is_port_bound(pt['port_id']) or (
                         self._is_service_target(context, pt['id'])):
                     raise gp_exc.PolicyTargetGroupInUse(

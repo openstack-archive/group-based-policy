@@ -195,6 +195,7 @@ class TestMappedGroupResourceAttrs(GroupPolicyMappingDbTestCase):
                 ports = [port1['port']['id'], port2['port']['id']]
                 pts = [self.create_policy_target(port_id=ports[0]),
                        self.create_policy_target(port_id=ports[1])]
+                self._test_list_resources('policy_target', pts)
                 self._test_list_resources('policy_target', [pts[0]],
                                           query_params='port_id=' + ports[0])
 
@@ -206,8 +207,10 @@ class TestMappedGroupResourceAttrs(GroupPolicyMappingDbTestCase):
                 l2_policies = [self.create_l2_policy(network_id=networks[0]),
                                self.create_l2_policy(network_id=networks[1])]
                 self._test_list_resources(
-                                'l2_policy', [l2_policies[0]],
-                                query_params='network_id=' + networks[0])
+                    'l2_policy', l2_policies)
+                self._test_list_resources(
+                    'l2_policy', [l2_policies[0]],
+                    query_params='network_id=' + networks[0])
 
     def test_list_es(self):
         with self.subnet(cidr='10.10.1.0/24') as subnet1:
@@ -217,5 +220,7 @@ class TestMappedGroupResourceAttrs(GroupPolicyMappingDbTestCase):
                             self.create_external_segment(subnet_id=subnets[0]),
                             self.create_external_segment(subnet_id=subnets[1])]
                 self._test_list_resources(
-                            'external_segment', [external_segments[0]],
-                            query_params='subnet_id=' + subnets[0])
+                    'external_segment', external_segments)
+                self._test_list_resources(
+                    'external_segment', [external_segments[0]],
+                    query_params='subnet_id=' + subnets[0])

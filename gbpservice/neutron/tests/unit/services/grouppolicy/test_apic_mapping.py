@@ -149,16 +149,6 @@ class ApicMappingTestCase(
             self.driver.apic_manager.ext_net_dict.update(
                 self._build_external_dict(x[0], x[1]))
 
-    def _check_call_list(self, expected, observed):
-        for call in expected:
-            self.assertTrue(call in observed,
-                            msg='Call not found, expected:\n%s\nobserved:'
-                                '\n%s' % (str(call), str(observed)))
-            observed.remove(call)
-        self.assertFalse(
-            len(observed),
-            msg='There are more calls than expected: %s' % str(observed))
-
     def _create_simple_policy_rule(self, direction='bi', protocol='tcp',
                                    port_range=80, shared=False,
                                    action_type='allow', action_value=None):

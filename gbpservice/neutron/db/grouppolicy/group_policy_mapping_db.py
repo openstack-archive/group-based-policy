@@ -236,6 +236,11 @@ class GroupPolicyMappingDbPlugin(gpdb.GroupPolicyDbPlugin):
         return self._make_policy_target_dict(pt_db)
 
     @log.log
+    def get_policy_targets_count(self, context, filters=None):
+        return self._get_collection_count(context, PolicyTargetMapping,
+                                          filters=filters)
+
+    @log.log
     def get_policy_targets(self, context, filters=None, fields=None,
                            sorts=None, limit=None, marker=None,
                            page_reverse=False):
@@ -333,6 +338,11 @@ class GroupPolicyMappingDbPlugin(gpdb.GroupPolicyDbPlugin):
                                     page_reverse=page_reverse)
 
     @log.log
+    def get_l2_policies_count(self, context, filters=None):
+        return self._get_collection_count(context, L2PolicyMapping,
+                                          filters=filters)
+
+    @log.log
     def create_l3_policy(self, context, l3_policy):
         l3p = l3_policy['l3_policy']
         self.validate_ip_pool(l3p.get('ip_pool', None), l3p['ip_version'])
@@ -426,6 +436,10 @@ class GroupPolicyMappingDbPlugin(gpdb.GroupPolicyDbPlugin):
                                     sorts=sorts, limit=limit,
                                     marker_obj=marker_obj,
                                     page_reverse=page_reverse)
+
+    def get_external_segments_count(self, context, filters=None):
+        return self._get_collection_count(context, ExternalSegmentMapping,
+                                          filters=filters)
 
     @log.log
     def create_nat_pool(self, context, nat_pool):

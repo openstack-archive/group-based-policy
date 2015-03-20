@@ -854,8 +854,8 @@ class TestNatPool(GroupPolicyPluginTestCase):
 
 class TestPolicyTarget(GroupPolicyPluginTestCase):
 
-    def _test_cross_tenant_fails(self, is_admin=False):
-        status = {False: 404, True: 400}
+    def _test_cross_tenant(self, is_admin=False):
+        status = {False: 404, True: 201}
         ptg = self.create_policy_target_group(
             expected_res_status=201, tenant_id='tenant',
             is_admin_context=is_admin)['policy_target_group']
@@ -866,9 +866,6 @@ class TestPolicyTarget(GroupPolicyPluginTestCase):
         if not is_admin:
             self.assertEqual(
                 'GbpResourceNotFound', res['NeutronError']['type'])
-        else:
-            self.assertEqual(
-                'InvalidCrossTenantReference', res['NeutronError']['type'])
 
         # Create EP without PTG
         pt = self.create_policy_target(
@@ -876,28 +873,25 @@ class TestPolicyTarget(GroupPolicyPluginTestCase):
             is_admin_context=is_admin)['policy_target']
 
         # Update PT fails
-        res = self.update_policy_target(pt['id'],
-                                        expected_res_status=status[is_admin],
-                                        tenant_id='another',
-                                        policy_target_group_id=ptg['id'],
-                                        is_admin_context=is_admin)
+        res = self.update_policy_target(
+            pt['id'], tenant_id='another', policy_target_group_id=ptg['id'],
+            expected_res_status=status[is_admin] if not is_admin else 200,
+            is_admin_context=is_admin)
+
         if not is_admin:
             self.assertEqual(
                 'GbpResourceNotFound', res['NeutronError']['type'])
-        else:
-            self.assertEqual(
-                'InvalidCrossTenantReference', res['NeutronError']['type'])
 
     def test_cross_tenant_fails(self):
-        self._test_cross_tenant_fails()
+        self._test_cross_tenant()
 
-    def test_cross_tenant_fails_admin(self):
-        self._test_cross_tenant_fails(True)
+    def test_cross_tenant_admin(self):
+        self._test_cross_tenant(True)
 
 
 class TestPolicyAction(GroupPolicyPluginTestCase):
 
-    def test_redirect_value_fails(self):
+    def test_redirect_value(self):
         scs_id = self._create_servicechain_spec(
             node_types=['FIREWALL_TRANSPARENT'])
         res = self.create_policy_action(action_type='redirect',
@@ -914,9 +908,7 @@ class TestPolicyAction(GroupPolicyPluginTestCase):
 
         res = self.create_policy_action(
             action_type='redirect', action_value=scs_id, tenant_id='different',
-            expected_res_status=400, is_admin_context=True)
-        self.assertEqual(
-            'InvalidCrossTenantReference', res['NeutronError']['type'])
+            expected_res_status=201, is_admin_context=True)
 
         res = self.create_policy_action(
             action_type='redirect', action_value=scs_id,
@@ -930,7 +922,7 @@ class TestPolicyAction(GroupPolicyPluginTestCase):
             node_types=['FIREWALL_TRANSPARENT'], shared=True)
         self.create_policy_action(
             action_type='redirect', action_value=scs_id, shared=True,
-            expected_res_status=201)['policy_action']
+            expected_res_status=201)
         data = {'servicechain_spec': {'shared': False}}
         scs_req = self.new_update_request(
             SERVICECHAIN_SPECS, data, scs_id, self.fmt)

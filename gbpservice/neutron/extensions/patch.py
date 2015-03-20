@@ -14,6 +14,8 @@ from neutron.api.v2 import attributes
 from neutron.common import exceptions as n_exc
 from neutron.db import l3_db
 from neutron.db import l3_dvr_db
+from neutron.db import securitygroups_db
+from neutron.extensions import securitygroup as ext_sg
 from neutron.openstack.common import log as logging
 
 LOG = logging.getLogger(__name__)
@@ -226,3 +228,35 @@ def get_assoc_data(self, context, fip, floating_network_id):
 
 
 l3_db.L3_NAT_dbonly_mixin.get_assoc_data = get_assoc_data
+
+
+# REVISIT(ivar): Neutron adds a tenant filter on SG lookup for a given port,
+# this breaks our service chain plumbing model so for now we should monkey
+# patch the specific method. A follow up with the Neutron team is needed to
+# figure out the reason for this and how to proceed for future releases.
+def _get_security_groups_on_port(self, context, port):
+    """Check that all security groups on port belong to tenant.
+
+    :returns: all security groups IDs on port belonging to tenant.
+    """
+    p = port['port']
+    if not attributes.is_attr_set(p.get(ext_sg.SECURITYGROUPS)):
+        return
+    if p.get('device_owner') and p['device_owner'].startswith('network:'):
+        return
+
+    port_sg = p.get(ext_sg.SECURITYGROUPS, [])
+    filters = {'id': port_sg}
+    valid_groups = set(g['id'] for g in
+                       self.get_security_groups(context, fields=['id'],
+                                                filters=filters))
+
+    requested_groups = set(port_sg)
+    port_sg_missing = requested_groups - valid_groups
+    if port_sg_missing:
+        raise ext_sg.SecurityGroupNotFound(id=str(port_sg_missing[0]))
+
+    return requested_groups
+
+securitygroups_db.SecurityGroupDbMixin._get_security_groups_on_port = (
+    _get_security_groups_on_port)
