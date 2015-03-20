@@ -6,7 +6,7 @@ TOP_DIR=$BASE/new/devstack
 cd $TOP_DIR
 sudo git remote add group-policy http://github.com/group-policy/devstack
 sudo git fetch group-policy
-sudo git checkout -t group-policy/stable/juno-gbp-gate
+sudo git checkout -t group-policy/test-fip-exercices-juno-gate
 
 CONTRIB_DIR="$BASE/new/group-based-policy/gbpservice/tests/contrib"
 
