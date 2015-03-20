@@ -52,6 +52,7 @@ class NoL3NatSGTestPlugin(
 
 CORE_PLUGIN = ('gbpservice.neutron.tests.unit.services.grouppolicy.'
                'test_resource_mapping.NoL3NatSGTestPlugin')
+CHAIN_TENANT_ID = 'chain_tenant_id'
 
 
 class ResourceMappingTestCase(test_plugin.GroupPolicyPluginTestCase):
@@ -65,6 +66,9 @@ class ResourceMappingTestCase(test_plugin.GroupPolicyPluginTestCase):
         sc_cfg.cfg.CONF.set_override('servicechain_drivers',
                                      ['dummy'],
                                      group='servicechain')
+        sc_cfg.cfg.CONF.set_override('chain_tenant_id',
+                                     'chain_tenant_id',
+                                     group='resource_mapping')
         config.cfg.CONF.set_override('allow_overlapping_ips', True)
         super(ResourceMappingTestCase, self).setUp(core_plugin=CORE_PLUGIN)
         res = mock.patch('neutron.db.l3_db.L3_NAT_dbonly_mixin.'
@@ -1489,10 +1493,12 @@ class TestPolicyRuleSet(ResourceMappingTestCase):
         return (provider_ptg_id, consumer_ptg_id)
 
     def _assert_proper_chain_instance(self, sc_instance, provider_ptg_id,
-                                      consumer_ptg_id, scs_id_list):
+                                      consumer_ptg_id, scs_id_list,
+                                      provider_tenant_id=None):
         self.assertEqual(sc_instance['provider_ptg_id'], provider_ptg_id)
         self.assertEqual(sc_instance['consumer_ptg_id'], consumer_ptg_id)
         self.assertEqual(scs_id_list, sc_instance['servicechain_specs'])
+        self.assertEqual(sc_instance['tenant_id'], CHAIN_TENANT_ID)
 
     def test_redirect_to_chain(self):
         scs_id = self._create_servicechain_spec()
