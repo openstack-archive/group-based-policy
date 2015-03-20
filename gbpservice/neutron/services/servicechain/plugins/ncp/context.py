@@ -10,10 +10,10 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-from neutron import context as n_context
 from neutron import manager
 from neutron.plugins.common import constants as pconst
 
+from gbpservice.common import utils
 from gbpservice.neutron.services.servicechain.plugins.ncp import model
 
 
@@ -23,29 +23,26 @@ def get_gbp_plugin():
 
 def get_node_driver_context(sc_plugin, context, sc_instance,
                             current_node, original_node=None,
-                            service_targets=None):
+                            management_group=None, service_targets=None):
+    admin_context = utils.admin_context(context)
     specs = sc_plugin.get_servicechain_specs(
-        context, filters={'id': sc_instance['servicechain_specs']})
+        admin_context, filters={'id': sc_instance['servicechain_specs']})
     position = _calculate_node_position(specs, current_node['id'])
     provider, _ = _get_ptg_or_ep(
-        context, sc_instance['provider_ptg_id'])
+        admin_context, sc_instance['provider_ptg_id'])
     consumer, is_consumer_external = _get_ptg_or_ep(
-        context, sc_instance['consumer_ptg_id'])
+        admin_context, sc_instance['consumer_ptg_id'])
     management, _ = _get_ptg_or_ep(context, sc_instance['management_ptg_id'])
     classifier = get_gbp_plugin().get_policy_classifier(
-        context, sc_instance['classifier_id'])
-
-    current_profile = (current_node['service_profile_id'] and
-                       sc_plugin.get_service_profile(
-                            context, current_node['service_profile_id']))
-    original_profile = (original_node and original_node['service_profile_id']
-                        and sc_plugin.get_service_profile(
-                            context,
-                            original_node['service_profile_id']))
-
+        admin_context, sc_instance['classifier_id'])
+    current_profile = sc_plugin.get_service_profile(
+        admin_context, current_node['service_profile_id'])
+    original_profile = sc_plugin.get_service_profile(
+        admin_context,
+        original_node['service_profile_id']) if original_node else None
     if not service_targets:
         service_targets = model.get_service_targets(
-            context.session, servicechain_instance_id=sc_instance['id'],
+            admin_context.session, servicechain_instance_id=sc_instance['id'],
             position=position, servicechain_node_id=current_node['id'])
 
     return NodeDriverContext(sc_plugin=sc_plugin,
@@ -150,7 +147,7 @@ class NodeDriverContext(object):
     @property
     def admin_context(self):
         if not self._admin_context:
-            self._admin_context = n_context.get_admin_context()
+            self._admin_context = utils.admin_context(self.plugin_context)
         return self._admin_context
 
     @property

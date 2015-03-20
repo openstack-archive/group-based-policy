@@ -12,7 +12,9 @@
 
 import contextlib
 
+from neutron import context as n_ctx
 from neutron.openstack.common import log as logging
+from oslo.config import cfg
 from oslo.utils import importutils
 from stevedore import driver
 
@@ -44,6 +46,12 @@ def load_plugin(namespace, plugin):
     return plugin_class()
 
 
+def admin_context(context):
+    admin_context = n_ctx.get_admin_context()
+    admin_context._session = context.session
+    return admin_context
+
+
 class DictClass(dict):
 
     def __getattr__(self, item):
@@ -51,3 +59,20 @@ class DictClass(dict):
 
     __setattr__ = dict.__setattr__
     __delattr__ = dict.__delattr__
+
+
+def get_keystone_creds():
+    keystone_conf = cfg.CONF.keystone_authtoken
+    user = keystone_conf.admin_user
+    pw = keystone_conf.admin_password
+    tenant = keystone_conf.admin_tenant_name
+    if keystone_conf.get('auth_uri'):
+        auth_url = keystone_conf.auth_uri.rstrip('/')
+        if not auth_url.endswith('/v2.0'):
+            auth_url += '/v2.0'
+    else:
+        auth_url = ('%s://%s:%s/v2.0' % (
+            keystone_conf.auth_protocol,
+            keystone_conf.auth_host,
+            keystone_conf.auth_port))
+    return user, pw, tenant, auth_url + '/'

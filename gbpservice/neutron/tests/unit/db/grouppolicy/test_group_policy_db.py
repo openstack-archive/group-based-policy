@@ -16,8 +16,9 @@ import os
 import webob.exc
 
 from neutron.api import extensions
-from neutron.api.v2 import attributes as nattr
 from neutron import context
+from neutron.db import api as db_api
+from neutron.db import model_base
 from neutron import manager
 from neutron.openstack.common import importutils
 from neutron.openstack.common import uuidutils
@@ -27,8 +28,10 @@ from neutron.tests.unit import test_extensions
 from oslo.config import cfg
 
 from gbpservice.neutron.db.grouppolicy import group_policy_db as gpdb
-import gbpservice.neutron.extensions
+from gbpservice.neutron.db import servicechain_db as svcchain_db
 from gbpservice.neutron.extensions import group_policy as gpolicy
+from gbpservice.neutron.extensions import servicechain as service_chain
+import gbpservice.neutron.tests
 from gbpservice.neutron.tests.unit import common as cm
 
 
@@ -36,6 +39,7 @@ JSON_FORMAT = 'json'
 _uuid = uuidutils.generate_uuid
 TESTDIR = os.path.dirname(os.path.abspath(gbpservice.neutron.tests.__file__))
 ETCDIR = os.path.join(TESTDIR, 'etc')
+CHAIN_TENANT_ID = 'chain_owner'
 
 
 class ApiManagerMixin(object):
@@ -123,21 +127,31 @@ class ApiManagerMixin(object):
 
 class GroupPolicyDBTestBase(ApiManagerMixin):
     resource_prefix_map = dict(
+        (k, constants.COMMON_PREFIXES[constants.SERVICECHAIN])
+        for k in service_chain.RESOURCE_ATTRIBUTE_MAP.keys())
+    resource_prefix_map.update(dict(
         (k, constants.COMMON_PREFIXES[constants.GROUP_POLICY])
         for k in gpolicy.RESOURCE_ATTRIBUTE_MAP.keys()
-    )
+    ))
 
     fmt = JSON_FORMAT
 
     def __getattr__(self, item):
         # Verify is an update of a proper GBP object
+
+        def _is_sc_resource(plural):
+            return plural in service_chain.RESOURCE_ATTRIBUTE_MAP
+
         def _is_gbp_resource(plural):
             return plural in gpolicy.RESOURCE_ATTRIBUTE_MAP
+
+        def _is_valid_resource(plural):
+            return _is_gbp_resource(plural) or _is_sc_resource(plural)
         # Update Method
         if item.startswith('update_'):
             resource = item[len('update_'):]
             plural = cm.get_resource_plural(resource)
-            if _is_gbp_resource(plural):
+            if _is_valid_resource(plural):
                 def update_wrapper(id, **kwargs):
                     return self._update_resource(id, resource, **kwargs)
                 return update_wrapper
@@ -145,7 +159,7 @@ class GroupPolicyDBTestBase(ApiManagerMixin):
         if item.startswith('show_'):
             resource = item[len('show_'):]
             plural = cm.get_resource_plural(resource)
-            if _is_gbp_resource(plural):
+            if _is_valid_resource(plural):
                 def show_wrapper(id, **kwargs):
                     return self._show_resource(id, plural, **kwargs)
                 return show_wrapper
@@ -153,7 +167,7 @@ class GroupPolicyDBTestBase(ApiManagerMixin):
         if item.startswith('create_'):
             resource = item[len('create_'):]
             plural = cm.get_resource_plural(resource)
-            if _is_gbp_resource(plural):
+            if _is_valid_resource(plural):
                 def create_wrapper(**kwargs):
                     return self._create_resource(resource, **kwargs)
                 return create_wrapper
@@ -161,12 +175,50 @@ class GroupPolicyDBTestBase(ApiManagerMixin):
         if item.startswith('delete_'):
             resource = item[len('delete_'):]
             plural = cm.get_resource_plural(resource)
-            if _is_gbp_resource(plural):
+            if _is_valid_resource(plural):
                 def delete_wrapper(id, **kwargs):
                     return self._delete_resource(id, plural, **kwargs)
                 return delete_wrapper
 
         raise AttributeError
+
+    def _get_resource_plural(self, resource):
+        if resource.endswith('y'):
+            resource_plural = resource.replace('y', 'ies')
+        else:
+            resource_plural = resource + 's'
+
+        return resource_plural
+
+    def _test_list_resources(self, resource, items,
+                             neutron_context=None,
+                             query_params=None):
+        resource_plural = self._get_resource_plural(resource)
+
+        res = self._list(resource_plural,
+                         neutron_context=neutron_context,
+                         query_params=query_params)
+        params = None
+        if query_params:
+            params = query_params.split('&')
+            params = dict((x.split('=')[0], x.split('=')[1].split(','))
+                          for x in params)
+        count = getattr(self.plugin, 'get_%s_count' % resource_plural)(
+            neutron_context or context.get_admin_context(), params)
+        self.assertEqual(len(res[resource_plural]), count)
+        resource = resource.replace('-', '_')
+        self.assertEqual(sorted([i['id'] for i in res[resource_plural]]),
+                         sorted([i[resource]['id'] for i in items]))
+
+    def _create_profiled_servicechain_node(
+            self, service_type=constants.LOADBALANCER, shared_profile=False,
+            profile_tenant_id=None, **kwargs):
+        prof = self.create_service_profile(
+            service_type=service_type,
+            shared=shared_profile,
+            tenant_id=profile_tenant_id or self._tenant_id)['service_profile']
+        return self.create_servicechain_node(
+            service_profile_id=prof['id'], **kwargs)
 
 
 class GroupPolicyDBTestPlugin(gpdb.GroupPolicyDbPlugin):
@@ -178,29 +230,42 @@ DB_GP_PLUGIN_KLASS = (GroupPolicyDBTestPlugin.__module__ + '.' +
                       GroupPolicyDBTestPlugin.__name__)
 
 
+class ServiceChainDBTestPlugin(svcchain_db.ServiceChainDbPlugin):
+
+        supported_extension_aliases = ['servicechain']
+
+
+DB_SC_PLUGIN_KLASS = (ServiceChainDBTestPlugin.__module__ + '.' +
+                      ServiceChainDBTestPlugin.__name__)
+
+
 class GroupPolicyDbTestCase(GroupPolicyDBTestBase,
                             test_db_plugin.NeutronDbPluginV2TestCase):
 
-    def setUp(self, core_plugin=None, gp_plugin=None, service_plugins=None,
-              ext_mgr=None):
-        extensions.append_api_extensions_path(
-            gbpservice.neutron.extensions.__path__)
-        if not gp_plugin:
-            gp_plugin = DB_GP_PLUGIN_KLASS
-        self.plugin = importutils.import_object(gp_plugin)
+    def setUp(self, core_plugin=None, sc_plugin=None, service_plugins=None,
+              ext_mgr=None, gp_plugin=None):
+        sc_plugin = sc_plugin or DB_SC_PLUGIN_KLASS
+        gp_plugin = gp_plugin or DB_GP_PLUGIN_KLASS
+
         if not service_plugins:
-            service_plugins = {'gp_plugin_name': gp_plugin}
-        nattr.PLURALS['nat_pools'] = 'nat_pool'
+            service_plugins = {
+                'l3_plugin_name': 'router',
+                'gp_plugin_name': gp_plugin,
+                'sc_plugin_name': sc_plugin}
+
+        test_policy_file = ETCDIR + "/test-policy.json"
+        cfg.CONF.set_override('policy_file', test_policy_file)
         super(GroupPolicyDbTestCase, self).setUp(
             plugin=core_plugin, ext_mgr=ext_mgr,
             service_plugins=service_plugins
         )
-
+        self.plugin = importutils.import_object(gp_plugin)
+        self._sc_plugin = importutils.import_object(sc_plugin)
         if not ext_mgr:
             ext_mgr = extensions.PluginAwareExtensionManager.get_instance()
             self.ext_api = test_extensions.setup_extensions_middleware(ext_mgr)
-        test_policy_file = ETCDIR + "/test-policy.json"
-        cfg.CONF.set_override('policy_file', test_policy_file)
+        engine = db_api.get_engine()
+        model_base.BASEV2.metadata.create_all(engine)
 
         plugins = manager.NeutronManager.get_service_plugins()
         self._gbp_plugin = plugins.get(constants.GROUP_POLICY)

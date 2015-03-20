@@ -15,6 +15,7 @@ import time
 
 from heatclient import client as heat_client
 from heatclient import exc as heat_exc
+from keystoneclient.v2_0 import client as keyclient
 from neutron.common import log
 from neutron.db import model_base
 from neutron import manager
@@ -417,11 +418,16 @@ class HeatClient:
 
     def __init__(self, context, password=None):
         api_version = "1"
-        endpoint = "%s/%s" % (cfg.CONF.simplechain.heat_uri, context.tenant)
+        self.tenant = context.tenant
+
+        self._keystone = None
+        endpoint = "%s/%s" % (cfg.CONF.simplechain.heat_uri, self.tenant)
         kwargs = {
-            'token': context.auth_token,
+            'token': self._get_auth_token(self.tenant),
             'username': context.user_name,
-            'password': password
+            'password': password,
+            'cacert': cfg.CONF.simplechain.heat_ca_certificates_file,
+            'insecure': cfg.CONF.simplechain.heat_api_insecure
         }
         self.client = heat_client.Client(api_version, endpoint, **kwargs)
         self.stacks = self.client.stacks
@@ -446,3 +452,25 @@ class HeatClient:
 
     def get(self, stack_id):
         return self.stacks.get(stack_id)
+
+    @property
+    def keystone(self):
+        if not self._keystone:
+            keystone_conf = cfg.CONF.keystone_authtoken
+            if keystone_conf.get('auth_uri'):
+                auth_url = keystone_conf.auth_uri
+            else:
+                auth_url = ('%s://%s:%s/v2.0/' % (
+                    keystone_conf.auth_protocol,
+                    keystone_conf.auth_host,
+                    keystone_conf.auth_port))
+            user = (keystone_conf.get('admin_user') or keystone_conf.username)
+            pw = (keystone_conf.get('admin_password') or
+                  keystone_conf.password)
+            self._keystone = keyclient.Client(
+                username=user, password=pw, auth_url=auth_url,
+                tenant_id=self.tenant)
+        return self._keystone
+
+    def _get_auth_token(self, tenant):
+        return self.keystone.get_token(tenant)
