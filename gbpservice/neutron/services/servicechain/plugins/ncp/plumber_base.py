@@ -132,7 +132,8 @@ class NodePlumberBase(object):
                     'description': TARGET_DESCRIPTION % (relationship,
                                                          node['id'],
                                                          instance['id']),
-                    'name': '', 'port_id': None}
+                    'name': '', 'port_id': None,
+                    'tenant_id': group['tenant_id']}
             data.update(target)
             pt = gbp_plugin.create_policy_target(context,
                                                  {'policy_target': data},

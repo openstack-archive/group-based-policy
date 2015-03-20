@@ -41,6 +41,14 @@ from gbpservice.neutron.services.grouppolicy.common import exceptions as exc
 
 LOG = logging.getLogger(__name__)
 
+group_policy_opts = [
+    cfg.StrOpt('chain_tenant_id',
+               help=_("ID of the Tenant that will own the service chain"
+                      "instances for this driver."))
+]
+
+cfg.CONF.register_opts(group_policy_opts, "resource_mapping")
+
 
 class OwnedPort(model_base.BASEV2):
     """A Port owned by the resource_mapping driver."""
@@ -92,7 +100,7 @@ class PolicyRuleSetSGsMapping(model_base.BASEV2):
                                sa.ForeignKey('securitygroups.id'))
 
 
-class PtgServiceChainInstanceMapping(model_base.BASEV2):
+class PtgServiceChainInstanceMapping(model_base.BASEV2, models_v2.HasTenant):
     """Policy Target Group to ServiceChainInstance mapping DB."""
 
     __tablename__ = 'gpm_ptgs_servicechain_mapping'
@@ -165,6 +173,11 @@ class ResourceMappingDriver(api.PolicyDriver):
     def initialize(self):
         self._cached_agent_notifier = None
         self._nova_notifier = nova.Notifier()
+        self.chain_owner = cfg.CONF.resource_mapping.chain_tenant_id
+        if not self.chain_owner:
+            LOG.error(_('chain_tenant_id gonfig in resource_mapping group '
+                        'is required by RMD.'))
+            raise exc.GroupPolicyDeploymentError()
 
     def _reject_shared(self, object, type):
         if object.get('shared'):
@@ -467,7 +480,6 @@ class ResourceMappingDriver(api.PolicyDriver):
             "network_service_policy_id")
         if not network_service_policy_id:
             return
-
         nsp = context._plugin.get_network_service_policy(
             context._plugin_context, network_service_policy_id)
         nsp_params = nsp.get("network_service_params")
@@ -1657,12 +1669,16 @@ class ResourceMappingDriver(api.PolicyDriver):
         for servicechain_instance in spec.instances:
             sc_instance_update_req = {
                     'servicechain_specs': [context.current['action_value']]}
-            self._update_resource(
-                        self._servicechain_plugin,
-                        context._plugin_context,
-                        'servicechain_instance',
-                        servicechain_instance.servicechain_instance_id,
-                        sc_instance_update_req)
+            cmap = self._get_ptg_servicechain_mapping(
+                context._plugin_context.session,
+                servicechain_instance_id=servicechain_instance.
+                servicechain_instance_id)
+            if cmap:
+                ctx = self._get_chain_admin_context(cmap[0].tenant_id)
+                self._update_resource(
+                    self._servicechain_plugin, ctx, 'servicechain_instance',
+                    servicechain_instance.servicechain_instance_id,
+                    sc_instance_update_req)
 
     def _get_rule_ids_for_actions(self, context, action_id):
         policy_rule_qry = context.session.query(
@@ -1734,21 +1750,16 @@ class ResourceMappingDriver(api.PolicyDriver):
                             # issues here.
                             for ptg_chain in ptg_chain_map:
                                 self._delete_servicechain_instance(
-                                    context,
-                                    ptg_chain.servicechain_instance_id)
-                            sc_instance = self._create_servicechain_instance(
+                                    context, ptg_chain)
+                            self._create_servicechain_instance(
                                 context, policy_action.get("action_value"),
                                 parent_spec_id, ptg_providing_prs,
-                                ptg_consuming_prs, classifier_id)
-                            self._set_ptg_servicechain_instance_mapping(
-                                context._plugin_context.session,
-                                ptg_providing_prs, ptg_consuming_prs,
-                                sc_instance['id'])
+                                ptg_consuming_prs, classifier_id,
+                                policy_rule_set)
 
     def _cleanup_redirect_action(self, context):
         for ptg_chain in context.ptg_chain_map:
-            self._delete_servicechain_instance(
-                            context, ptg_chain.servicechain_instance_id)
+            self._delete_servicechain_instance(context, ptg_chain)
 
     # The following methods perform the necessary subset of
     # functionality from neutron.api.v2.base.Controller.
@@ -1924,18 +1935,28 @@ class ResourceMappingDriver(api.PolicyDriver):
     def _create_servicechain_instance(self, context, servicechain_spec,
                                       parent_servicechain_spec,
                                       provider_ptg_id, consumer_ptg_id,
-                                      classifier_id,
+                                      classifier_id, policy_rule_set,
                                       config_params=None):
         sc_spec = [servicechain_spec]
         if parent_servicechain_spec:
             sc_spec.insert(0, parent_servicechain_spec)
         config_param_values = {}
-        ptg = context._plugin.get_policy_target_group(
-            context._plugin_context, provider_ptg_id)
-        network_service_policy_id = ptg.get("network_service_policy_id")
+        p_ctx = self._get_chain_admin_context()
+        session = context._plugin_context.session
+        provider_ptg = context._plugin.get_policy_target_group(
+            p_ctx, provider_ptg_id)
+        if consumer_ptg_id:
+            try:
+                consumer_ptg = context._plugin.get_policy_target_group(
+                    p_ctx, consumer_ptg_id)
+            except gp_ext.PolicyTargetGroupNotFound:
+                consumer_ptg = context._plugin.get_external_policy(
+                    p_ctx, consumer_ptg_id)
+        network_service_policy_id = provider_ptg.get(
+            "network_service_policy_id")
         if network_service_policy_id:
             nsp = context._plugin.get_network_service_policy(
-                context._plugin_context, network_service_policy_id)
+                p_ctx, network_service_policy_id)
             service_params = nsp.get("network_service_params")
             for service_parameter in service_params:
                 param_type = service_parameter.get("type")
@@ -1944,7 +1965,7 @@ class ResourceMappingDriver(api.PolicyDriver):
                     key = service_parameter.get("name")
                     servicepolicy_ptg_ip_map = (
                         self._get_ptg_policy_ipaddress_mapping(
-                            context._plugin_context.session, provider_ptg_id))
+                            session, provider_ptg_id))
                     servicepolicy_ip = servicepolicy_ptg_ip_map.get(
                                                         "ipaddress")
                     config_param_values[key] = servicepolicy_ip
@@ -1958,23 +1979,28 @@ class ResourceMappingDriver(api.PolicyDriver):
                     for fip_map in fip_maps:
                         servicepolicy_fip_ids.append(fip_map.floatingip_id)
                     config_param_values[key] = servicepolicy_fip_ids
-        attrs = {'tenant_id': context.current['tenant_id'],
-                 'name': 'gbp_' + ptg['name'],
+        name = 'gbp_%s_%s_%s' % (policy_rule_set['name'], provider_ptg['name'],
+                                 consumer_ptg['name'] if consumer_ptg else '')
+
+        attrs = {'tenant_id': p_ctx.tenant,
+                 'name': name,
                  'description': "",
                  'servicechain_specs': sc_spec,
                  'provider_ptg_id': provider_ptg_id,
                  'consumer_ptg_id': consumer_ptg_id,
                  'classifier_id': classifier_id,
                  'config_param_values': jsonutils.dumps(config_param_values)}
-        return self._create_resource(self._servicechain_plugin,
-                                     context._plugin_context,
-                                     'servicechain_instance', attrs)
+        sc_instance = self._create_resource(self._servicechain_plugin, p_ctx,
+                                            'servicechain_instance', attrs)
+        self._set_ptg_servicechain_instance_mapping(
+            session, provider_ptg_id, consumer_ptg_id, sc_instance['id'],
+            p_ctx.tenant)
 
-    def _delete_servicechain_instance(self, context, servicechain_instance_id):
-        self._delete_resource(self._servicechain_plugin,
-                              context._plugin_context,
+    def _delete_servicechain_instance(self, context, ptg_chain_map):
+        p_ctx = self._get_chain_admin_context(ptg_chain_map.tenant_id)
+        self._delete_resource(self._servicechain_plugin, p_ctx,
                               'servicechain_instance',
-                              servicechain_instance_id)
+                              ptg_chain_map.servicechain_instance_id)
 
     # Do Not Pass floating_ip_address to this method until after Kilo Release
     def _create_floatingip(self, context, ext_net_id, internal_port_id=None,
@@ -2506,22 +2532,30 @@ class ResourceMappingDriver(api.PolicyDriver):
 
     def _set_ptg_servicechain_instance_mapping(self, session, provider_ptg_id,
                                                consumer_ptg_id,
-                                               servicechain_instance_id):
+                                               servicechain_instance_id,
+                                               provider_tenant_id):
         with session.begin(subtransactions=True):
             mapping = PtgServiceChainInstanceMapping(
                 provider_ptg_id=provider_ptg_id,
                 consumer_ptg_id=consumer_ptg_id,
-                servicechain_instance_id=servicechain_instance_id)
+                servicechain_instance_id=servicechain_instance_id,
+                tenant_id=provider_tenant_id)
             session.add(mapping)
 
-    def _get_ptg_servicechain_mapping(self, session, provider_ptg_id,
-                                      consumer_ptg_id):
+    def _get_ptg_servicechain_mapping(self, session, provider_ptg_id=None,
+                                      consumer_ptg_id=None, tenant_id=None,
+                                      servicechain_instance_id=None):
         with session.begin(subtransactions=True):
             query = session.query(PtgServiceChainInstanceMapping)
             if provider_ptg_id:
                 query = query.filter_by(provider_ptg_id=provider_ptg_id)
             if consumer_ptg_id:
                 query = query.filter_by(consumer_ptg_id=consumer_ptg_id)
+            if tenant_id:
+                query = query.filter_by(consumer_ptg_id=tenant_id)
+            if servicechain_instance_id:
+                query = query.filter_by(
+                    servicechain_instance_id=servicechain_instance_id)
             return query.all()
 
     def _get_ep_cidr_list(self, context, ep):
@@ -2701,3 +2735,8 @@ class ResourceMappingDriver(api.PolicyDriver):
                                 ptg_subnet_id=",".join(ptg.get('subnets')),
                                 port_subnet_id=port_subnet_id,
                                 policy_target_group_id=ptg_id)
+
+    def _get_chain_admin_context(self, tenant_id=None):
+        ctx = n_context.get_admin_context()
+        ctx.tenant_id = tenant_id or self.chain_owner
+        return ctx

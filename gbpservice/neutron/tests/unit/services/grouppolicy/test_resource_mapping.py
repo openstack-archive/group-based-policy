@@ -38,6 +38,8 @@ from gbpservice.neutron.services.grouppolicy import config
 from gbpservice.neutron.services.grouppolicy.drivers import resource_mapping
 from gbpservice.neutron.services.servicechain.plugins.msc import (
     config as sc_cfg)
+from gbpservice.neutron.tests.unit.db.grouppolicy import (
+    test_group_policy_db as test_db)
 from gbpservice.neutron.tests.unit.services.grouppolicy import (
     test_grouppolicy_plugin as test_plugin)
 
@@ -1527,6 +1529,7 @@ class TestPolicyRuleSet(ResourceMappingTestCase):
         self.assertEqual(sc_instance['provider_ptg_id'], provider_ptg_id)
         self.assertEqual(sc_instance['consumer_ptg_id'], consumer_ptg_id)
         self.assertEqual(scs_id_list, sc_instance['servicechain_specs'])
+        self.assertEqual(sc_instance['tenant_id'], test_db.CHAIN_TENANT_ID)
 
     def test_redirect_to_chain(self):
         scs_id = self._create_servicechain_spec()
