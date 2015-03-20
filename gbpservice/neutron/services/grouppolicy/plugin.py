@@ -288,7 +288,7 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
                 spec = self.servicechain_plugin.get_servicechain_spec(
                     context, action['action_value'])
                 GroupPolicyPlugin._verify_sharing_consistency(
-                    action, spec, 'polocy_action', 'servicechain_spec')
+                    action, spec, 'policy_action', 'servicechain_spec')
 
     @staticmethod
     def _verify_sharing_consistency(primary, reference, primary_type,
