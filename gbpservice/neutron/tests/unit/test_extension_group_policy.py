@@ -1129,7 +1129,7 @@ class TestGroupPolicyAttributeValidators(base.BaseTestCase):
                        'value': 'self_subnet'}]
         self.assertIsNone(gp._validate_network_svc_params(test_params))
         test_params = [{'type': 'ip_pool', 'name': 'vip_internal',
-                       'value': 'external_subnet'},
+                       'value': 'nat_pool'},
                        {'type': 'string', 'name': 'abc', 'value': 'xyz'}]
         self.assertIsNone(gp._validate_network_svc_params(test_params))
 
