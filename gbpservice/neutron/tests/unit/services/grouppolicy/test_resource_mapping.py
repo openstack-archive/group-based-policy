@@ -309,6 +309,11 @@ class ResourceMappingTestCase(test_plugin.GroupPolicyPluginTestCase):
                         "Some rules still exist:\n%s" % str(existing))
         return expected
 
+    def _get_nsp_ptg_fip_mapping(self, ptg_id):
+        ctx = nctx.get_admin_context()
+        return (resource_mapping.ResourceMappingDriver.
+                _get_ptg_policy_fip_mapping(ctx.session, ptg_id))
+
 
 class TestPolicyTarget(ResourceMappingTestCase):
 
@@ -2732,3 +2737,99 @@ class TestNetworkServicePolicy(ResourceMappingTestCase):
         allocation_pool_after_nsp_cleanup = subnet['allocation_pools']
         self.assertEqual(
                 initial_allocation_pool, allocation_pool_after_nsp_cleanup)
+
+    def test_create_nsp_ip_pool_multiple_ptgs(self):
+        routes = [{'destination': '0.0.0.0/0', 'nexthop': None}]
+        with self.network(router__external=True) as net:
+            with self.subnet(cidr='192.168.0.0/24', network=net) as sub:
+                self.create_external_segment(
+                    name="default",
+                    subnet_id=sub['subnet']['id'],
+                    external_routes=routes,
+                    expected_res_status=webob.exc.HTTPCreated.code)
+                nsp = self.create_network_service_policy(
+                        network_service_params=[
+                                    {"type": "ip_pool", "value": "nat_pool",
+                                     "name": "external_access"}],
+                        expected_res_status=webob.exc.HTTPCreated.code)[
+                                                    'network_service_policy']
+                # Create two PTGs that use this NSP
+                ptg1 = self.create_policy_target_group(
+                            network_service_policy_id=nsp['id'],
+                            expected_res_status=webob.exc.HTTPCreated.code)[
+                                                        'policy_target_group']
+                ptg2 = self.create_policy_target_group(
+                            network_service_policy_id=nsp['id'],
+                            expected_res_status=webob.exc.HTTPCreated.code)[
+                                                        'policy_target_group']
+                pt = self.create_policy_target(
+                        name="pt1", policy_target_group_id=ptg1['id'])
+                port_id = pt['policy_target']['port_id']
+                req = self.new_show_request('ports', port_id, fmt=self.fmt)
+                port = self.deserialize(self.fmt,
+                                        req.get_response(self.api))['port']
+
+                res = self._list('floatingips')['floatingips']
+                self.assertEqual(1, len(res))
+                self.assertEqual(res[0]['fixed_ip_address'],
+                                 port['fixed_ips'][0]['ip_address'])
+
+                pt2 = self.create_policy_target(
+                        name="pt2", policy_target_group_id=ptg1['id'])
+                port2_id = pt2['policy_target']['port_id']
+                req = self.new_show_request('ports', port2_id, fmt=self.fmt)
+                port = self.deserialize(self.fmt,
+                                        req.get_response(self.api))['port']
+
+                res = self._list('floatingips')['floatingips']
+                self.assertEqual(2, len(res))
+
+                # Update the PTGs and unset the NSP used
+                # TODO(Magesh): Remove the floating IPs here
+                self.update_policy_target_group(
+                            ptg1['id'],
+                            network_service_policy_id=None,
+                            expected_res_status=webob.exc.HTTPOk.code)
+                self.update_policy_target_group(
+                            ptg2['id'],
+                            network_service_policy_id=None,
+                            expected_res_status=webob.exc.HTTPOk.code)
+
+    def test_nsp_fip_single(self):
+        routes = [{'destination': '0.0.0.0/0', 'nexthop': None}]
+        with self.network(router__external=True) as net:
+            with self.subnet(cidr='192.168.0.0/24', network=net) as sub:
+                self.create_external_segment(
+                    name="default",
+                    subnet_id=sub['subnet']['id'],
+                    external_routes=routes,
+                    expected_res_status=webob.exc.HTTPCreated.code)
+                ptg = self.create_policy_target_group(
+                            expected_res_status=webob.exc.HTTPCreated.code)[
+                                                        'policy_target_group']
+                nsp = self.create_network_service_policy(
+                            network_service_params=[
+                                    {"type": "ip_single", "value": "nat_pool",
+                                     "name": "vip"}],
+                            expected_res_status=webob.exc.HTTPCreated.code)[
+                                                    'network_service_policy']
+
+                # Update PTG, associating a NSP with it and verify that a FIP
+                # is allocated
+                self.update_policy_target_group(
+                            ptg['id'],
+                            network_service_policy_id=nsp['id'],
+                            expected_res_status=webob.exc.HTTPOk.code)
+                mapping = self._get_nsp_ptg_fip_mapping(ptg['id'])
+                self.assertIsNotNone(mapping)
+                self.assertEqual(mapping.service_policy_id, nsp['id'])
+                self.assertIsNotNone(mapping.fip_id)
+
+                # Update the PTGs and unset the NSP used and verify that the IP
+                # is restored to the PTG subnet allocation pool
+                self.update_policy_target_group(
+                            ptg['id'],
+                            network_service_policy_id=None,
+                            expected_res_status=webob.exc.HTTPOk.code)
+                mapping = self._get_nsp_ptg_fip_mapping(ptg['id'])
+                self.assertIsNone(mapping)
