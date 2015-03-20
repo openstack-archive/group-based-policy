@@ -12,6 +12,7 @@
 
 import contextlib
 
+from neutron import context as n_ctx
 from oslo_log import log as logging
 from oslo_utils import importutils
 from stevedore import driver
@@ -42,6 +43,12 @@ def load_plugin(namespace, plugin):
             LOG.exception(_("Error loading plugin by class, %s"), e2)
             raise ImportError(_("Plugin not found."))
     return plugin_class()
+
+
+def admin_context(context):
+    admin_context = n_ctx.get_admin_context()
+    admin_context._session = context.session
+    return admin_context
 
 
 class DictClass(dict):
