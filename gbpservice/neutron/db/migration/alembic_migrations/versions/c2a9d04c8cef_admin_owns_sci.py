@@ -1,3 +1,5 @@
+# Copyright 2014 OpenStack Foundation
+#
 #    Licensed under the Apache License, Version 2.0 (the "License"); you may
 #    not use this file except in compliance with the License. You may obtain
 #    a copy of the License at
@@ -9,18 +11,30 @@
 #    WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 #    License for the specific language governing permissions and limitations
 #    under the License.
+#
 
-from oslo_config import cfg
+"""Admin owns SCI (admin_owns_sci)
+
+Revision ID: c2a9d04c8cef
+
+"""
+
+# revision identifiers, used by Alembic.
+revision = 'c2a9d04c8cef'
+down_revision = '2f3834ea746b'
 
 
-service_chain_opts = [
-    cfg.ListOpt('servicechain_drivers',
-                default=['dummy'],
-                help=_("An ordered list of service chain drivers "
-                       "entrypoints to be loaded from the "
-                       "gbpservice.neutron.servicechain.servicechain_drivers "
-                       "namespace."))
-]
+from alembic import op
+import sqlalchemy as sa
 
 
-cfg.CONF.register_opts(service_chain_opts, "servicechain")
+def upgrade():
+
+    op.add_column(
+        'gpm_ptgs_servicechain_mapping',
+        sa.Column('tenant_id', sa.String(length=255), nullable=True)
+    )
+
+
+def downgrade():
+    op.drop_column('gpm_ptgs_servicechain_mapping', 'tenant_id')
