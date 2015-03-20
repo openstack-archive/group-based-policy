@@ -218,4 +218,5 @@ class MultipleRedirectActionsNotSupportedForPRS(GroupPolicyBadRequest):
 
 class InvalidNetworkServiceParameters(GroupPolicyBadRequest):
     message = _("Resource Mapping Driver currently supports only one "
-                "parameter of type: ip_single and value: self_subnet")
+                "parameter of type: ip_single and value: self_subnet, or "
+                "one parameter of type ip_pool and value nat_pool")
