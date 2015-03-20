@@ -218,4 +218,35 @@ class MultipleRedirectActionsNotSupportedForPRS(GroupPolicyBadRequest):
 
 class InvalidNetworkServiceParameters(GroupPolicyBadRequest):
     message = _("Resource Mapping Driver currently supports only one "
-                "parameter of type: ip_single and value: self_subnet")
+                "parameter of type: ip_single and value: self_subnet, or "
+                "one parameter of type ip_pool and value nat_pool")
+
+
+class ESSubnetRequiredForNatPool(GroupPolicyBadRequest):
+    message = _("Resource Mapping Driver requires an External Segment which "
+                "has an external subnet specified to create a Nat Pool")
+
+
+class InvalidESSubnetCidrForNatPool(GroupPolicyBadRequest):
+    message = _("Resource Mapping Driver requires an External Segment which "
+                "maps to ip pool value specified in the nat pool")
+
+
+class NSPRequiresES(GroupPolicyBadRequest):
+    message = _("Resource Mapping Driver requires an External Segment in "
+                "l3policy to associate a NSP with value nat_pool to a PTG")
+
+
+class NSPRequiresNatPool(GroupPolicyBadRequest):
+    message = _("Resource Mapping Driver requires an External Segment in "
+                "l3policy which has nat_pool associated for associating a NSP "
+                "with value nat_pool to a PTG")
+
+
+class L3PEsinUseByNSP(exceptions.InUse, GroupPolicyException):
+    message = _("The External Segment in L3Policy cannot be updated because "
+                "it is in use by Network Service Policy")
+
+
+class NatPoolinUseByNSP(exceptions.InUse, GroupPolicyException):
+    message = _("The Nat Pool is in use by Network Service Policy")

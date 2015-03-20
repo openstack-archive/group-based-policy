@@ -314,6 +314,14 @@ class ResourceMappingTestCase(test_plugin.GroupPolicyPluginTestCase):
                         "Some rules still exist:\n%s" % str(existing))
         return expected
 
+    def _get_nsp_ptg_fip_mapping(self, ptg_id):
+        ctx = nctx.get_admin_context()
+        with ctx.session.begin(subtransactions=True):
+            return (ctx.session.query(
+                        resource_mapping.ServicePolicyPTGFipMapping).
+                    filter_by(policy_target_group_id=ptg_id).
+                    all())
+
 
 class TestPolicyTarget(ResourceMappingTestCase):
 
@@ -2776,3 +2784,327 @@ class TestNetworkServicePolicy(ResourceMappingTestCase):
         allocation_pool_after_nsp_cleanup = subnet['allocation_pools']
         self.assertEqual(
                 initial_allocation_pool, allocation_pool_after_nsp_cleanup)
+
+    def test_create_nsp_ip_pool_multiple_ptgs(self):
+        routes = [{'destination': '0.0.0.0/0', 'nexthop': None}]
+        with self.network(router__external=True) as net:
+            with self.subnet(cidr='192.168.0.0/24', network=net) as sub:
+                es = self.create_external_segment(
+                    name="default",
+                    subnet_id=sub['subnet']['id'],
+                    external_routes=routes,
+                    expected_res_status=webob.exc.HTTPCreated.code)
+                es = es['external_segment']
+                self.create_nat_pool(
+                    external_segment_id=es['id'],
+                    ip_version=4,
+                    ip_pool='192.168.0.0/24',
+                    expected_res_status=webob.exc.HTTPCreated.code)
+                nsp = self.create_network_service_policy(
+                        network_service_params=[
+                                    {"type": "ip_pool", "value": "nat_pool",
+                                     "name": "external_access"}],
+                        expected_res_status=webob.exc.HTTPCreated.code)[
+                                                    'network_service_policy']
+                # Create two PTGs that use this NSP
+                ptg1 = self.create_policy_target_group(
+                            network_service_policy_id=nsp['id'],
+                            expected_res_status=webob.exc.HTTPCreated.code)[
+                                                        'policy_target_group']
+                ptg2 = self.create_policy_target_group(
+                            network_service_policy_id=nsp['id'],
+                            expected_res_status=webob.exc.HTTPCreated.code)[
+                                                        'policy_target_group']
+                pt = self.create_policy_target(
+                        name="pt1", policy_target_group_id=ptg1['id'])
+                port_id = pt['policy_target']['port_id']
+                req = self.new_show_request('ports', port_id, fmt=self.fmt)
+                port = self.deserialize(self.fmt,
+                                        req.get_response(self.api))['port']
+
+                res = self._list('floatingips')['floatingips']
+                self.assertEqual(1, len(res))
+                self.assertEqual(res[0]['fixed_ip_address'],
+                                 port['fixed_ips'][0]['ip_address'])
+
+                pt2 = self.create_policy_target(
+                        name="pt2", policy_target_group_id=ptg1['id'])
+                port2_id = pt2['policy_target']['port_id']
+                req = self.new_show_request('ports', port2_id, fmt=self.fmt)
+                port = self.deserialize(self.fmt,
+                                        req.get_response(self.api))['port']
+
+                res = self._list('floatingips')['floatingips']
+                self.assertEqual(2, len(res))
+
+                # Update the PTGs and unset the NSP used
+                # TODO(Magesh): Remove the floating IPs here
+                self.update_policy_target_group(
+                            ptg1['id'],
+                            network_service_policy_id=None,
+                            expected_res_status=webob.exc.HTTPOk.code)
+                self.update_policy_target_group(
+                            ptg2['id'],
+                            network_service_policy_id=None,
+                            expected_res_status=webob.exc.HTTPOk.code)
+
+    def test_nsp_fip_single(self):
+        routes = [{'destination': '0.0.0.0/0', 'nexthop': None}]
+        with self.network(router__external=True) as net:
+            with self.subnet(cidr='192.168.0.0/24', network=net) as sub:
+                es = self.create_external_segment(
+                    name="default",
+                    subnet_id=sub['subnet']['id'],
+                    external_routes=routes,
+                    expected_res_status=webob.exc.HTTPCreated.code)
+                es = es['external_segment']
+                self.create_nat_pool(
+                    external_segment_id=es['id'],
+                    ip_version=4,
+                    ip_pool='192.168.0.0/24',
+                    expected_res_status=webob.exc.HTTPCreated.code)
+                ptg = self.create_policy_target_group(
+                            expected_res_status=webob.exc.HTTPCreated.code)[
+                                                        'policy_target_group']
+                nsp = self.create_network_service_policy(
+                            network_service_params=[
+                                    {"type": "ip_single", "value": "nat_pool",
+                                     "name": "vip"}],
+                            expected_res_status=webob.exc.HTTPCreated.code)[
+                                                    'network_service_policy']
+
+                # Update PTG, associating a NSP with it and verify that a FIP
+                # is allocated
+                self.update_policy_target_group(
+                            ptg['id'],
+                            network_service_policy_id=nsp['id'],
+                            expected_res_status=webob.exc.HTTPOk.code)
+                mapping = self._get_nsp_ptg_fip_mapping(ptg['id'])
+                self.assertNotEqual([], mapping)
+                self.assertEqual(mapping[0].service_policy_id, nsp['id'])
+                self.assertIsNotNone(mapping[0].fip_id)
+
+                # Update the PTGs and unset the NSP used and verify that the IP
+                # is restored to the PTG subnet allocation pool
+                self.update_policy_target_group(
+                            ptg['id'],
+                            network_service_policy_id=None,
+                            expected_res_status=webob.exc.HTTPOk.code)
+                mapping = self._get_nsp_ptg_fip_mapping(ptg['id'])
+                self.assertEqual([], mapping)
+
+    def test_nsp_rejected_without_nat_pool(self):
+        routes = [{'destination': '0.0.0.0/0', 'nexthop': None}]
+        with self.network(router__external=True) as net:
+            with self.subnet(cidr='192.168.0.0/24', network=net) as sub:
+                self.create_external_segment(
+                    name="default",
+                    subnet_id=sub['subnet']['id'],
+                    external_routes=routes,
+                    expected_res_status=webob.exc.HTTPCreated.code)
+                ptg = self.create_policy_target_group(
+                            expected_res_status=webob.exc.HTTPCreated.code)[
+                                                        'policy_target_group']
+                nsp = self.create_network_service_policy(
+                            network_service_params=[
+                                    {"type": "ip_single", "value": "nat_pool",
+                                     "name": "vip"}],
+                            expected_res_status=webob.exc.HTTPCreated.code)[
+                                                    'network_service_policy']
+                data = self.create_policy_target_group(
+                    network_service_policy_id=nsp['id'],
+                    expected_res_status=webob.exc.HTTPBadRequest.code)
+                self.assertEqual('NSPRequiresNatPool',
+                                 data['NeutronError']['type'])
+                self.update_policy_target_group(
+                            ptg['id'],
+                            network_service_policy_id=nsp['id'],
+                            expected_res_status=webob.exc.HTTPBadRequest.code)
+                self.assertEqual('NSPRequiresNatPool',
+                                 data['NeutronError']['type'])
+
+    def test_reject_nsp_without_es(self):
+        nsp = self.create_network_service_policy(
+                    network_service_params=[
+                            {"type": "ip_pool", "value": "nat_pool",
+                             "name": "test"}],
+                    expected_res_status=webob.exc.HTTPCreated.code)[
+                                                    'network_service_policy']
+        # create PTG with NSP fails when ES is not present
+        data = self.create_policy_target_group(
+                    network_service_policy_id=nsp['id'],
+                    expected_res_status=webob.exc.HTTPBadRequest.code)
+        self.assertEqual('NSPRequiresES',
+                         data['NeutronError']['type'])
+        ptg = self.create_policy_target_group(
+                    expected_res_status=webob.exc.HTTPCreated.code)[
+                                                        'policy_target_group']
+        # update PTG with NSP fails when ES is not present
+        data = self.update_policy_target_group(
+                    ptg['id'],
+                    network_service_policy_id=nsp['id'],
+                    expected_res_status=webob.exc.HTTPBadRequest.code)
+        self.assertEqual('NSPRequiresES',
+                         data['NeutronError']['type'])
+
+    def test_reject_l3p_update_with_es(self):
+        nsp = self.create_network_service_policy(
+                    network_service_params=[
+                            {"type": "ip_pool", "value": "nat_pool",
+                             "name": "test"}],
+                    expected_res_status=webob.exc.HTTPCreated.code)[
+                                                    'network_service_policy']
+        with self.network(router__external=True) as net1:
+            with self.network(router__external=True) as net2:
+                with self.subnet(cidr='192.168.1.0/24', network=net1) as sub1:
+                    with self.subnet(
+                            cidr='192.168.2.0/24', network=net2) as sub2:
+                        es1 = self.create_external_segment(
+                            name="default",
+                            subnet_id=sub1['subnet']['id'])['external_segment']
+                        es2 = self.create_external_segment(
+                            subnet_id=sub2['subnet']['id'])['external_segment']
+                        self.create_nat_pool(
+                            external_segment_id=es1['id'],
+                            ip_version=4,
+                            ip_pool='192.168.1.0/24',
+                            expected_res_status=webob.exc.HTTPCreated.code)
+                        self.create_policy_target_group(
+                            network_service_policy_id=nsp['id'],
+                            expected_res_status=webob.exc.HTTPCreated.code)[
+                                                        'policy_target_group']
+                        self.create_policy_target_group(
+                            expected_res_status=webob.exc.HTTPCreated.code)[
+                                                        'policy_target_group']
+                        req = self.new_list_request('l3_policies',
+                                                    fmt=self.fmt)
+                        l3ps = self.deserialize(self.fmt,
+                                        req.get_response(self.ext_api))[
+                                                            'l3_policies']
+                        res = self.update_l3_policy(
+                            l3ps[0]['id'], expected_res_status=409,
+                            external_segments={es2['id']: []})
+                        self.assertEqual('L3PEsinUseByNSP',
+                                         res['NeutronError']['type'])
+
+    def test_nsp_delete_nat_pool_rejected(self):
+        routes = [{'destination': '0.0.0.0/0', 'nexthop': None}]
+        with self.network(router__external=True) as net:
+            with self.subnet(cidr='192.168.0.0/24', network=net) as sub:
+                es = self.create_external_segment(
+                    name="default",
+                    subnet_id=sub['subnet']['id'],
+                    external_routes=routes,
+                    expected_res_status=webob.exc.HTTPCreated.code)
+                es = es['external_segment']
+                nat_pool = self.create_nat_pool(
+                    external_segment_id=es['id'],
+                    ip_version=4,
+                    ip_pool='192.168.0.0/24',
+                    expected_res_status=webob.exc.HTTPCreated.code)['nat_pool']
+                self.create_network_service_policy(
+                            network_service_params=[
+                                    {"type": "ip_single", "value": "nat_pool",
+                                     "name": "vip"}],
+                            expected_res_status=webob.exc.HTTPCreated.code)[
+                                                    'network_service_policy']
+                self.create_policy_target_group(
+                            expected_res_status=webob.exc.HTTPCreated.code)[
+                                                        'policy_target_group']
+                req = self.new_delete_request('nat_pools', nat_pool['id'])
+                res = req.get_response(self.ext_api)
+                self.assertEqual(res.status_int, webob.exc.HTTPNoContent.code)
+
+    def test_update_nsp_nat_pool_after_pt_create(self):
+        routes = [{'destination': '0.0.0.0/0', 'nexthop': None}]
+        with self.network(router__external=True) as net:
+            with self.subnet(cidr='192.168.0.0/24', network=net) as sub:
+                es = self.create_external_segment(
+                    name="default",
+                    subnet_id=sub['subnet']['id'],
+                    external_routes=routes,
+                    expected_res_status=webob.exc.HTTPCreated.code)
+                es = es['external_segment']
+                self.create_nat_pool(
+                    external_segment_id=es['id'],
+                    ip_version=4,
+                    ip_pool='192.168.0.0/24',
+                    expected_res_status=webob.exc.HTTPCreated.code)
+                nsp = self.create_network_service_policy(
+                        network_service_params=[
+                                    {"type": "ip_pool", "value": "nat_pool",
+                                     "name": "external_access"}],
+                        expected_res_status=webob.exc.HTTPCreated.code)[
+                                                    'network_service_policy']
+                # Create a PTG and PTs and then associate the NSP
+                ptg1 = self.create_policy_target_group(
+                            expected_res_status=webob.exc.HTTPCreated.code)[
+                                                        'policy_target_group']
+                pt = self.create_policy_target(
+                        name="pt1", policy_target_group_id=ptg1['id'])
+                port_id = pt['policy_target']['port_id']
+
+                pt2 = self.create_policy_target(
+                        name="pt2", policy_target_group_id=ptg1['id'])
+                port2_id = pt2['policy_target']['port_id']
+
+                res = self._list('floatingips')['floatingips']
+                self.assertEqual(0, len(res))
+
+                self.update_policy_target_group(
+                            ptg1['id'],
+                            network_service_policy_id=nsp['id'],
+                            expected_res_status=webob.exc.HTTPOk.code)
+                res = self._list('floatingips')['floatingips']
+                self.assertEqual(2, len(res))
+                req = self.new_show_request('ports', port_id, fmt=self.fmt)
+                port1 = self.deserialize(self.fmt,
+                                         req.get_response(self.api))['port']
+                req = self.new_show_request('ports', port2_id, fmt=self.fmt)
+                port2 = self.deserialize(self.fmt,
+                                         req.get_response(self.api))['port']
+                port_fixed_ips = [port1['fixed_ips'][0]['ip_address'],
+                                  port2['fixed_ips'][0]['ip_address']]
+                fip_fixed_ips = [res[0]['fixed_ip_address'],
+                                 res[1]['fixed_ip_address']]
+                self.assertEqual(set(port_fixed_ips), set(fip_fixed_ips))
+                self.update_policy_target_group(
+                            ptg1['id'],
+                            network_service_policy_id=None,
+                            expected_res_status=webob.exc.HTTPOk.code)
+                res = self._list('floatingips')['floatingips']
+                self.assertEqual(0, len(res))
+
+
+class TestNatPool(ResourceMappingTestCase):
+
+    def _test_create_rejected_for_pool_mismatch(self, shared=False):
+        routes = [{'destination': '0.0.0.0/0', 'nexthop': None}]
+        with self.network(router__external=True) as net:
+            with self.subnet(cidr='192.168.0.0/24', network=net) as sub:
+                es = self.create_external_segment(
+                    name="default",
+                    subnet_id=sub['subnet']['id'],
+                    external_routes=routes,
+                    expected_res_status=webob.exc.HTTPCreated.code)
+                es = es['external_segment']
+                result = self.create_nat_pool(
+                    external_segment_id=es['id'],
+                    ip_version=4,
+                    ip_pool='192.168.1.0/24',
+                    expected_res_status=webob.exc.HTTPBadRequest.code)
+                self.assertEqual('InvalidESSubnetCidrForNatPool',
+                                 result['NeutronError']['type'])
+
+    def _test_create_rejected_for_es_without_subnet(self, shared=False):
+        es = self.create_external_segment(
+            name="default",
+            expected_res_status=webob.exc.HTTPCreated.code)
+        es = es['external_segment']
+        result = self.create_nat_pool(
+            external_segment_id=es['id'],
+            ip_version=4,
+            ip_pool='192.168.1.0/24',
+            expected_res_status=webob.exc.HTTPBadRequest.code)
+        self.assertEqual('ESSubnetRequiredForNatPool',
+                         result['NeutronError']['type'])
