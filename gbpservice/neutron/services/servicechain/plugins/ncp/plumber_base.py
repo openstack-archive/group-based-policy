@@ -113,8 +113,8 @@ class NodePlumberBase(object):
 
         for pt in pts:
             try:
-                gbp_plugin.delete_policy_target(context, pt.policy_target_id,
-                                                notify_sc=False)
+                gbp_plugin.delete_policy_target(
+                    context.elevated(), pt.policy_target_id, notify_sc=False)
             except group_policy.PolicyTargetNotFound as ex:
                 LOG.debug(ex.message)
 
@@ -132,9 +132,10 @@ class NodePlumberBase(object):
                     'description': TARGET_DESCRIPTION % (relationship,
                                                          node['id'],
                                                          instance['id']),
-                    'name': '', 'port_id': None}
+                    'name': '', 'port_id': None,
+                    'tenant_id': group['tenant_id']}
             data.update(target)
-            pt = gbp_plugin.create_policy_target(context,
+            pt = gbp_plugin.create_policy_target(context.elevated(),
                                                  {'policy_target': data},
                                                  notify_sc=False)
             model.set_service_target(part_context, pt['id'], relationship)
