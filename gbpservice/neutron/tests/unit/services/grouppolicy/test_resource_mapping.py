@@ -29,6 +29,7 @@ from neutron.plugins.common import constants as pconst
 from neutron.tests.unit.extensions import test_l3
 from neutron.tests.unit.extensions import test_securitygroup
 from neutron.tests.unit.plugins.ml2 import test_plugin as n_test_plugin
+from oslo_config import cfg
 import webob.exc
 
 from gbpservice.neutron.db.grouppolicy import group_policy_db as gpdb
@@ -46,6 +47,7 @@ SERVICE_PROFILES = 'servicechain/service_profiles'
 SERVICECHAIN_NODES = 'servicechain/servicechain_nodes'
 SERVICECHAIN_SPECS = 'servicechain/servicechain_specs'
 SERVICECHAIN_INSTANCES = 'servicechain/servicechain_instances'
+CHAIN_TENANT_ID = 'chain_owner'
 
 
 class NoL3NatSGTestPlugin(
@@ -354,6 +356,17 @@ class ResourceMappingTestCase(test_plugin.GroupPolicyPluginTestCase):
         spec = self.deserialize(self.fmt, scs_req.get_response(self.ext_api))
         scs_id = spec['servicechain_spec']['id']
         return scs_id
+
+    def _create_provider_consumer_ptgs(self, prs_id=None):
+        policy_rule_set_dict = {prs_id: None} if prs_id else {}
+        provider_ptg = self.create_policy_target_group(
+            name="ptg1", provided_policy_rule_sets=policy_rule_set_dict)
+        provider_ptg_id = provider_ptg['policy_target_group']['id']
+        consumer_ptg = self.create_policy_target_group(
+            name="ptg2",
+            consumed_policy_rule_sets=policy_rule_set_dict)
+        consumer_ptg_id = consumer_ptg['policy_target_group']['id']
+        return (provider_ptg_id, consumer_ptg_id)
 
 
 class TestPolicyTarget(ResourceMappingTestCase):
@@ -928,8 +941,8 @@ class TestPolicyTargetGroup(ResourceMappingTestCase):
                 'CrossTenantPolicyTargetGroupL2PolicyNotSupported',
                 res['NeutronError']['type'])
 
-    def _test_cross_tenant_prs_fails(self, admin=False):
-        status = {False: 404, True: 400}
+    def _test_cross_tenant_prs(self, admin=False):
+        status = {False: 404, True: 201}
         prs = self.create_policy_rule_set(tenant_id='admin_tenant',
                                           is_admin_context=admin,
                                           expected_res_status=201)
@@ -940,9 +953,6 @@ class TestPolicyTargetGroup(ResourceMappingTestCase):
         if not admin:
             self.assertEqual(
                 'PolicyRuleSetNotFound', res['NeutronError']['type'])
-        else:
-            self.assertEqual(
-                'InvalidCrossTenantReference', res['NeutronError']['type'])
 
         # Verify Update
         ptg = self.create_policy_target_group(
@@ -952,19 +962,16 @@ class TestPolicyTargetGroup(ResourceMappingTestCase):
             ptg['policy_target_group']['id'], is_admin_context=admin,
             tenant_id='anothertenant',
             provided_policy_rule_sets={prs['policy_rule_set']['id']: ''},
-            expected_res_status=status[admin])
+            expected_res_status=status[admin] if not admin else 200)
         if not admin:
             self.assertEqual(
                 'PolicyRuleSetNotFound', res['NeutronError']['type'])
-        else:
-            self.assertEqual(
-                'InvalidCrossTenantReference', res['NeutronError']['type'])
 
     def test_cross_tenant_prs_fails(self):
-        self._test_cross_tenant_prs_fails()
+        self._test_cross_tenant_prs()
 
-    def test_cross_tenant_prs_fails_admin(self):
-        self._test_cross_tenant_prs_fails(admin=True)
+    def test_cross_tenant_prs_admin(self):
+        self._test_cross_tenant_prs(admin=True)
 
     def test_l2p_update_rejected(self):
         # Create two l2 policies.
@@ -1887,49 +1894,241 @@ class TestPolicyRuleSet(ResourceMappingTestCase):
 
         self._verify_ptg_delete_cleanup_chain(consumer_ptg_id)
 
-    # REVISIT(Magesh): Enable this UT when we run the GBP UTs against NCP
-    '''
-    def test_classifier_update_to_chain(self):
-        scs_id = self._create_servicechain_spec()
-        _, classifier_id, policy_rule_id = self._create_tcp_redirect_rule(
-                                                            "20:90", scs_id)
+    def test_shared_policy_rule_set_create_negative(self):
+        self.create_policy_rule_set(shared=True,
+                                    expected_res_status=400)
 
-        policy_rule_set = self.create_policy_rule_set(
-            name="c1", policy_rules=[policy_rule_id])
-        policy_rule_set_id = policy_rule_set['policy_rule_set']['id']
-        self._verify_prs_rules(policy_rule_set_id)
-        provider_ptg_id, consumer_ptg_id = self._create_provider_consumer_ptgs(
-                                                            policy_rule_set_id)
+    def test_external_rules_set(self):
+        # Define the routes
+        routes = [{'destination': '0.0.0.0/0', 'nexthop': None}]
+        pr = self._create_ssh_allow_rule()
+        prs = self.create_policy_rule_set(
+            policy_rules=[pr['id']])['policy_rule_set']
+        with self.network(router__external=True) as net:
+            with self.subnet(cidr='10.10.1.0/24', network=net) as sub:
+                es = self.create_external_segment(
+                    subnet_id=sub['subnet']['id'],
+                    external_routes=routes)['external_segment']
+                self.create_l3_policy(
+                    ip_pool='192.168.0.0/16',
+                    external_segments={es['id']: []})
+                self.create_external_policy(
+                    external_segments=[es['id']],
+                    provided_policy_rule_sets={prs['id']: ''})
+                # Since EP provides, the consumed SG will have ingress rules
+                # based on the difference between the L3P and the external
+                # world
+                self._verify_prs_rules(prs['id'])
 
-        self._verify_prs_rules(policy_rule_set_id)
-        sc_instances = self._list(SERVICECHAIN_INSTANCES)
-        # We should have one service chain instance created now
-        self.assertEqual(len(sc_instances['servicechain_instances']), 1)
-        sc_instance = sc_instances['servicechain_instances'][0]
-        self._assert_proper_chain_instance(sc_instance, provider_ptg_id,
-                                           consumer_ptg_id, [scs_id])
+                # Add one rule to the PRS
+                pr2 = self._create_http_allow_rule()
+                self.update_policy_rule_set(prs['id'], expected_res_status=200,
+                                            policy_rules=[pr['id'], pr2['id']])
+                # Verify new rules correctly set
+                current_rules = self._verify_prs_rules(prs['id'])
 
-        with mock.patch.object(
-                ncp_plugin.NodeCompositionPlugin,
-                'notify_chain_parameters_updated') as notify_chain_update:
+                # Remove all the rules, verify that none exist any more
+                self.update_policy_rule_set(
+                    prs['id'], expected_res_status=200, policy_rules=[])
+                self.assertTrue(len(current_rules) > 0)
+                for rule in current_rules:
+                    self.assertFalse(self._get_sg_rule(**rule))
 
-            # Update classifier and verify instance is updated
-            classifier = {'policy_classifier': {'port_range': "80"}}
-            req = self.new_update_request('policy_classifiers',
-                                          classifier, classifier_id)
-            classifier = self.deserialize(self.fmt,
-                                          req.get_response(self.ext_api))
+    def test_hierarchical_prs(self):
+        pr1 = self._create_ssh_allow_rule()
+        pr2 = self._create_http_allow_rule()
 
-            notify_chain_update.assert_called_once_with(
-                mock.ANY, sc_instance['id'])
-            self._verify_prs_rules(policy_rule_set_id)
-            sc_instances = self._list(SERVICECHAIN_INSTANCES)
-            self.assertEqual(len(sc_instances['servicechain_instances']), 1)
-            sc_instance_updated = sc_instances['servicechain_instances'][0]
-            self.assertEqual(sc_instance, sc_instance_updated)
+        child = self.create_policy_rule_set(
+            expected_res_status=201,
+            policy_rules=[pr1['id'], pr2['id']])['policy_rule_set']
 
-        self._verify_ptg_delete_cleanup_chain(consumer_ptg_id)
-    '''
+        parent = self.create_policy_rule_set(
+            expected_res_status=201, policy_rules=[pr1['id']],
+            child_policy_rule_sets=[child['id']])['policy_rule_set']
+
+        self.create_policy_target_group(
+            provided_policy_rule_sets={child['id']: None})
+
+        self.create_policy_target_group(
+            consumed_policy_rule_sets={child['id']: None})
+
+        # Verify all the rules are correctly set
+        self._verify_prs_rules(child['id'])
+
+        # Add rule to parent
+        self.update_policy_rule_set(parent['id'], expected_res_status=200,
+                                    policy_rules=[pr1['id'], pr2['id']])
+        self._verify_prs_rules(child['id'])
+
+        # Remove rule from parent
+        self.update_policy_rule_set(parent['id'], expected_res_status=200,
+                                    policy_rules=[])
+        self._verify_prs_rules(child['id'])
+
+        # Change rule classifier
+        pr3 = self._create_tcp_allow_rule('443')
+        self.update_policy_rule_set(parent['id'], expected_res_status=200,
+                                    policy_rules=[pr1['id']])
+        self.update_policy_rule(
+            pr1['id'], expected_res_status=200,
+            policy_classifier_id=pr3['policy_classifier_id'])
+        self._verify_prs_rules(child['id'])
+
+        # Swap parent
+        self.update_policy_rule_set(parent['id'], expected_res_status=200,
+                                    child_policy_rule_sets=[])
+        self._verify_prs_rules(child['id'])
+
+        self.create_policy_rule_set(
+            expected_res_status=201, policy_rules=[pr1['id'], pr2['id']],
+            child_policy_rule_sets=[child['id']])
+
+        self._verify_prs_rules(child['id'])
+
+        # TODO(ivar): Test that redirect is allowed too
+
+    def test_update_policy_classifier(self):
+        pr = self._create_http_allow_rule()
+        prs = self.create_policy_rule_set(
+            policy_rules=[pr['id']],
+            expected_res_status=201)['policy_rule_set']
+
+        self.create_policy_target_group(
+            provided_policy_rule_sets={prs['id']: None},
+            expected_res_status=201)
+        self.create_policy_target_group(
+            consumed_policy_rule_sets={prs['id']: None},
+            expected_res_status=201)
+        self._verify_prs_rules(prs['id'])
+
+        self.update_policy_classifier(
+            pr['policy_classifier_id'], expected_res_status=200,
+            port_range=8080)
+        self._verify_prs_rules(prs['id'])
+
+    def _test_hierarchical_update_policy_classifier(self):
+        pr = self._create_http_allow_rule()
+        prs = self.create_policy_rule_set(
+            policy_rules=[pr['id']],
+            expected_res_status=201)['policy_rule_set']
+
+        self.create_policy_rule_set(
+            policy_rules=[pr['id']], child_policy_rule_sets=[prs['id']],
+            expected_res_status=201)
+
+        self._verify_prs_rules(prs['id'])
+
+        self.create_policy_target_group(
+            provided_policy_rule_sets={prs['id']: None},
+            expected_res_status=201)
+        self.create_policy_target_group(
+            consumed_policy_rule_sets={prs['id']: None},
+            expected_res_status=201)
+        self._verify_prs_rules(prs['id'])
+
+        self.update_policy_classifier(
+            pr['policy_classifier_id'], expected_res_status=200,
+            port_range=8080)
+        self._verify_prs_rules(prs['id'])
+
+    def _update_same_classifier_multiple_rules(self):
+        action = self.create_policy_action(
+            action_type='allow')['policy_action']
+        classifier = self.create_policy_classifier(
+            protocol='TCP', port_range="22",
+            direction='bi')['policy_classifier']
+
+        pr1 = self.create_policy_rule(
+            policy_classifier_id=classifier['id'],
+            policy_actions=[action['id']])['policy_rule']
+        pr2 = self.create_policy_rule(
+            policy_classifier_id=classifier['id'],
+            policy_actions=[action['id']])['policy_rule']
+
+        prs = self.create_policy_rule_set(
+            policy_rules=[pr1['id']],
+            expected_res_status=201)['policy_rule_set']
+        self.create_policy_rule_set(
+            policy_rules=[pr2['id']], child_policy_rule_sets=[prs['id']],
+            expected_res_status=201)
+        self._verify_prs_rules(prs['id'])
+
+        self.create_policy_target_group(
+            provided_policy_rule_sets={prs['id']: None},
+            expected_res_status=201)
+        self.create_policy_target_group(
+            consumed_policy_rule_sets={prs['id']: None},
+            expected_res_status=201)
+        self._verify_prs_rules(prs['id'])
+
+        self.update_policy_classifier(
+            pr1['policy_classifier_id'], expected_res_status=200,
+            port_range=8080)
+        self._verify_prs_rules(prs['id'])
+
+    def test_delete_policy_rule(self):
+        pr = self._create_http_allow_rule()
+        pr2 = self._create_ssh_allow_rule()
+        prs = self.create_policy_rule_set(
+            policy_rules=[pr['id'], pr2['id']],
+            expected_res_status=201)['policy_rule_set']
+
+        self._verify_prs_rules(prs['id'])
+
+        provider_ptg = self.create_policy_target_group(
+            provided_policy_rule_sets={prs['id']: None},
+            expected_res_status=201)['policy_target_group']
+        consumer_ptg = self.create_policy_target_group(
+            consumed_policy_rule_sets={prs['id']: None},
+            expected_res_status=201)['policy_target_group']
+        self._verify_prs_rules(prs['id'])
+
+        # Deleting a policy rule is allowed only when it is no longer in use
+        self.delete_policy_target_group(
+            provider_ptg['id'],
+            expected_res_status=webob.exc.HTTPNoContent.code)
+        self.delete_policy_target_group(
+            consumer_ptg['id'],
+            expected_res_status=webob.exc.HTTPNoContent.code)
+        self.delete_policy_rule_set(
+            prs['id'], expected_res_status=webob.exc.HTTPNoContent.code)
+        self.delete_policy_rule(
+            pr['id'], expected_res_status=webob.exc.HTTPNoContent.code)
+
+    def test_shared_create_multiple_redirect_rules_ptg(self):
+        action1 = self.create_policy_action(
+            action_type='redirect')['policy_action']
+        action2 = self.create_policy_action(
+            action_type='redirect')['policy_action']
+        classifier = self.create_policy_classifier(
+            protocol='TCP', port_range="22",
+            direction='bi')['policy_classifier']
+
+        pr1 = self.create_policy_rule(
+            policy_classifier_id=classifier['id'],
+            policy_actions=[action1['id']])['policy_rule']
+        pr2 = self.create_policy_rule(
+            policy_classifier_id=classifier['id'],
+            policy_actions=[action2['id']])['policy_rule']
+
+        res = self.create_policy_rule_set(
+            policy_rules=[pr1['id'], pr2['id']],
+            expected_res_status=400)
+        self.assertEqual('MultipleRedirectActionsNotSupportedForPRS',
+                         res['NeutronError']['type'])
+
+    def test_ptg_deleted(self):
+        pr1 = self._create_ssh_allow_rule()
+        pr2 = self._create_http_allow_rule()
+
+        prs = self.create_policy_rule_set(
+            expected_res_status=201,
+            policy_rules=[pr1['id'], pr2['id']])['policy_rule_set']
+        ptg = self.create_policy_target_group(
+            expected_res_status=201, provided_policy_rule_sets={prs['id']: ''},
+            consumed_policy_rule_sets={prs['id']: ''})['policy_target_group']
+        self.delete_policy_target_group(ptg['id'])
+        self._verify_prs_rules(prs['id'])
 
     def test_rule_update_updates_chain(self):
         scs_id = self._create_servicechain_spec()
@@ -2397,244 +2596,6 @@ class TestPolicyRuleSet(ResourceMappingTestCase):
 
         self._verify_ptg_delete_cleanup_chain(consumer_ptg_id)
 
-    def test_shared_policy_rule_set_create_negative(self):
-        self.create_policy_rule_set(shared=True,
-                                    expected_res_status=400)
-
-    def test_external_rules_set(self):
-        # Define the routes
-        routes = [{'destination': '0.0.0.0/0', 'nexthop': None}]
-        pr = self._create_ssh_allow_rule()
-        prs = self.create_policy_rule_set(
-            policy_rules=[pr['id']])['policy_rule_set']
-        with self.network(router__external=True) as net:
-            with self.subnet(cidr='10.10.1.0/24', network=net) as sub:
-                es = self.create_external_segment(
-                    subnet_id=sub['subnet']['id'],
-                    external_routes=routes)['external_segment']
-                self.create_l3_policy(
-                    ip_pool='192.168.0.0/16',
-                    external_segments={es['id']: []})
-                self.create_external_policy(
-                    external_segments=[es['id']],
-                    provided_policy_rule_sets={prs['id']: ''})
-                # Since EP provides, the consumed SG will have ingress rules
-                # based on the difference between the L3P and the external
-                # world
-                self._verify_prs_rules(prs['id'])
-
-                # Add one rule to the PRS
-                pr2 = self._create_http_allow_rule()
-                self.update_policy_rule_set(prs['id'], expected_res_status=200,
-                                            policy_rules=[pr['id'], pr2['id']])
-                # Verify new rules correctly set
-                current_rules = self._verify_prs_rules(prs['id'])
-
-                # Remove all the rules, verify that none exist any more
-                self.update_policy_rule_set(
-                    prs['id'], expected_res_status=200, policy_rules=[])
-                self.assertTrue(len(current_rules) > 0)
-                for rule in current_rules:
-                    self.assertFalse(self._get_sg_rule(**rule))
-
-    def test_hierarchical_prs(self):
-        pr1 = self._create_ssh_allow_rule()
-        pr2 = self._create_http_allow_rule()
-
-        child = self.create_policy_rule_set(
-            expected_res_status=201,
-            policy_rules=[pr1['id'], pr2['id']])['policy_rule_set']
-
-        parent = self.create_policy_rule_set(
-            expected_res_status=201, policy_rules=[pr1['id']],
-            child_policy_rule_sets=[child['id']])['policy_rule_set']
-
-        self.create_policy_target_group(
-            provided_policy_rule_sets={child['id']: None})
-
-        self.create_policy_target_group(
-            consumed_policy_rule_sets={child['id']: None})
-
-        # Verify all the rules are correctly set
-        self._verify_prs_rules(child['id'])
-
-        # Add rule to parent
-        self.update_policy_rule_set(parent['id'], expected_res_status=200,
-                                    policy_rules=[pr1['id'], pr2['id']])
-        self._verify_prs_rules(child['id'])
-
-        # Remove rule from parent
-        self.update_policy_rule_set(parent['id'], expected_res_status=200,
-                                    policy_rules=[])
-        self._verify_prs_rules(child['id'])
-
-        # Change rule classifier
-        pr3 = self._create_tcp_allow_rule('443')
-        self.update_policy_rule_set(parent['id'], expected_res_status=200,
-                                    policy_rules=[pr1['id']])
-        self.update_policy_rule(
-            pr1['id'], expected_res_status=200,
-            policy_classifier_id=pr3['policy_classifier_id'])
-        self._verify_prs_rules(child['id'])
-
-        # Swap parent
-        self.update_policy_rule_set(parent['id'], expected_res_status=200,
-                                    child_policy_rule_sets=[])
-        self._verify_prs_rules(child['id'])
-
-        self.create_policy_rule_set(
-            expected_res_status=201, policy_rules=[pr1['id'], pr2['id']],
-            child_policy_rule_sets=[child['id']])['policy_rule_set']
-
-        self._verify_prs_rules(child['id'])
-
-        # TODO(ivar): Test that redirect is allowed too
-
-    def test_update_policy_classifier(self):
-        pr = self._create_http_allow_rule()
-        prs = self.create_policy_rule_set(
-            policy_rules=[pr['id']],
-            expected_res_status=201)['policy_rule_set']
-
-        self._verify_prs_rules(prs['id'])
-
-        self.create_policy_target_group(
-            provided_policy_rule_sets={prs['id']: None},
-            expected_res_status=201)
-        self.create_policy_target_group(
-            consumed_policy_rule_sets={prs['id']: None},
-            expected_res_status=201)
-        self._verify_prs_rules(prs['id'])
-
-        self.update_policy_classifier(
-            pr['policy_classifier_id'], expected_res_status=200,
-            port_range=8080)
-        self._verify_prs_rules(prs['id'])
-
-    def _test_hierarchical_update_policy_classifier(self):
-        pr = self._create_http_allow_rule()
-        prs = self.create_policy_rule_set(
-            policy_rules=[pr['id']],
-            expected_res_status=201)['policy_rule_set']
-
-        self.create_policy_rule_set(
-            policy_rules=[pr['id']], child_policy_rule_sets=[prs['id']],
-            expected_res_status=201)
-
-        self._verify_prs_rules(prs['id'])
-
-        self.create_policy_target_group(
-            provided_policy_rule_sets={prs['id']: None},
-            expected_res_status=201)
-        self.create_policy_target_group(
-            consumed_policy_rule_sets={prs['id']: None},
-            expected_res_status=201)
-        self._verify_prs_rules(prs['id'])
-
-        self.update_policy_classifier(
-            pr['policy_classifier_id'], expected_res_status=200,
-            port_range=8080)
-        self._verify_prs_rules(prs['id'])
-
-    def _update_same_classifier_multiple_rules(self):
-        action = self.create_policy_action(
-            action_type='allow')['policy_action']
-        classifier = self.create_policy_classifier(
-            protocol='TCP', port_range="22",
-            direction='bi')['policy_classifier']
-
-        pr1 = self.create_policy_rule(
-            policy_classifier_id=classifier['id'],
-            policy_actions=[action['id']])['policy_rule']
-        pr2 = self.create_policy_rule(
-            policy_classifier_id=classifier['id'],
-            policy_actions=[action['id']])['policy_rule']
-
-        prs = self.create_policy_rule_set(
-            policy_rules=[pr1['id']],
-            expected_res_status=201)['policy_rule_set']
-        self.create_policy_rule_set(
-            policy_rules=[pr2['id']], child_policy_rule_sets=[prs['id']],
-            expected_res_status=201)
-        self._verify_prs_rules(prs['id'])
-
-        self.create_policy_target_group(
-            provided_policy_rule_sets={prs['id']: None},
-            expected_res_status=201)
-        self.create_policy_target_group(
-            consumed_policy_rule_sets={prs['id']: None},
-            expected_res_status=201)
-        self._verify_prs_rules(prs['id'])
-
-        self.update_policy_classifier(
-            pr1['policy_classifier_id'], expected_res_status=200,
-            port_range=8080)
-        self._verify_prs_rules(prs['id'])
-
-    def test_delete_policy_rule(self):
-        pr = self._create_http_allow_rule()
-        pr2 = self._create_ssh_allow_rule()
-        prs = self.create_policy_rule_set(
-            policy_rules=[pr['id'], pr2['id']],
-            expected_res_status=201)['policy_rule_set']
-
-        self._verify_prs_rules(prs['id'])
-
-        provider_ptg = self.create_policy_target_group(
-            provided_policy_rule_sets={prs['id']: None},
-            expected_res_status=201)['policy_target_group']
-        consumer_ptg = self.create_policy_target_group(
-            consumed_policy_rule_sets={prs['id']: None},
-            expected_res_status=201)['policy_target_group']
-        self._verify_prs_rules(prs['id'])
-
-        # Deleting a policy rule is allowed only when it is no longer in use
-        self.delete_policy_target_group(
-            provider_ptg['id'],
-            expected_res_status=webob.exc.HTTPNoContent.code)
-        self.delete_policy_target_group(
-            consumer_ptg['id'],
-            expected_res_status=webob.exc.HTTPNoContent.code)
-        self.delete_policy_rule_set(
-            prs['id'], expected_res_status=webob.exc.HTTPNoContent.code)
-        self.delete_policy_rule(
-            pr['id'], expected_res_status=webob.exc.HTTPNoContent.code)
-
-    def test_shared_create_multiple_redirect_rules_ptg(self):
-        action1 = self.create_policy_action(
-            action_type='redirect')['policy_action']
-        action2 = self.create_policy_action(
-            action_type='redirect')['policy_action']
-        classifier = self.create_policy_classifier(
-            protocol='TCP', port_range="22",
-            direction='bi')['policy_classifier']
-
-        pr1 = self.create_policy_rule(
-            policy_classifier_id=classifier['id'],
-            policy_actions=[action1['id']])['policy_rule']
-        pr2 = self.create_policy_rule(
-            policy_classifier_id=classifier['id'],
-            policy_actions=[action2['id']])['policy_rule']
-
-        res = self.create_policy_rule_set(
-            policy_rules=[pr1['id'], pr2['id']],
-            expected_res_status=400)
-        self.assertEqual('MultipleRedirectActionsNotSupportedForPRS',
-                         res['NeutronError']['type'])
-
-    def test_ptg_deleted(self):
-        pr1 = self._create_ssh_allow_rule()
-        pr2 = self._create_http_allow_rule()
-
-        prs = self.create_policy_rule_set(
-            expected_res_status=201,
-            policy_rules=[pr1['id'], pr2['id']])['policy_rule_set']
-        ptg = self.create_policy_target_group(
-            expected_res_status=201, provided_policy_rule_sets={prs['id']: ''},
-            consumed_policy_rule_sets={prs['id']: ''})['policy_target_group']
-        self.delete_policy_target_group(ptg['id'])
-        self._verify_prs_rules(prs['id'])
-
     def test_redirect_to_ep(self):
         scs_id = self._create_servicechain_spec()
         _, _, policy_rule_id = self._create_tcp_redirect_rule(
@@ -2647,10 +2608,8 @@ class TestPolicyRuleSet(ResourceMappingTestCase):
         with self.network(router__external=True, shared=True) as net:
             with self.subnet(cidr='192.168.0.0/24', network=net) as sub:
                 self.create_external_segment(
-                    shared=True,
-                    tenant_id='admin',
-                    name="default",
-                    subnet_id=sub['subnet']['id'])['external_segment']
+                    shared=True, tenant_id='admin', name="default",
+                    subnet_id=sub['subnet']['id'])
 
                 ep = self.create_external_policy(
                     consumed_policy_rule_sets={policy_rule_set_id: ''})
@@ -2694,10 +2653,8 @@ class TestPolicyRuleSet(ResourceMappingTestCase):
         with self.network(router__external=True, shared=True) as net:
             with self.subnet(cidr='192.168.0.0/24', network=net) as sub:
                 self.create_external_segment(
-                    shared=True,
-                    tenant_id='admin',
-                    name="default",
-                    subnet_id=sub['subnet']['id'])['external_segment']
+                    shared=True, tenant_id='admin', name="default",
+                    subnet_id=sub['subnet']['id'])
 
                 ep = self.create_external_policy()
                 provider = self.create_policy_target_group(
@@ -2728,6 +2685,220 @@ class TestPolicyRuleSet(ResourceMappingTestCase):
                 sc_instances = self.deserialize(self.fmt, res)
                 self.assertEqual(
                     0, len(sc_instances['servicechain_instances']))
+
+
+class TestServiceChain(ResourceMappingTestCase):
+
+    def _assert_proper_chain_instance(self, sc_instance, provider_ptg_id,
+                                      consumer_ptg_id, scs_id_list):
+        self.assertEqual(sc_instance['provider_ptg_id'], provider_ptg_id)
+        self.assertEqual(sc_instance['consumer_ptg_id'], consumer_ptg_id)
+        self.assertEqual(scs_id_list, sc_instance['servicechain_specs'])
+        provider = self.show_policy_target_group(
+            provider_ptg_id)['policy_target_group']
+        self.assertEqual(sc_instance['tenant_id'], provider['tenant_id'])
+
+    def test_redirect_to_chain(self):
+        scs_id = self._create_servicechain_spec()
+        _, _, policy_rule_id = self._create_tcp_redirect_rule(
+                                                "20:90", scs_id)
+
+        policy_rule_set = self.create_policy_rule_set(
+            name="c1", policy_rules=[policy_rule_id])
+        policy_rule_set_id = policy_rule_set['policy_rule_set']['id']
+        provider_ptg_id, consumer_ptg_id = self._create_provider_consumer_ptgs(
+                                                            policy_rule_set_id)
+
+        self._verify_prs_rules(policy_rule_set_id)
+        sc_node_list_req = self.new_list_request(SERVICECHAIN_INSTANCES)
+        res = sc_node_list_req.get_response(self.ext_api)
+        sc_instances = self.deserialize(self.fmt, res)
+        # We should have one service chain instance created now
+        self.assertEqual(len(sc_instances['servicechain_instances']), 1)
+        sc_instance = sc_instances['servicechain_instances'][0]
+        self._assert_proper_chain_instance(sc_instance, provider_ptg_id,
+                                           consumer_ptg_id, [scs_id])
+
+        # Verify that PTG delete cleans up the chain instances
+        req = self.new_delete_request(
+            'policy_target_groups', consumer_ptg_id)
+        res = req.get_response(self.ext_api)
+        self.assertEqual(res.status_int, webob.exc.HTTPNoContent.code)
+        sc_node_list_req = self.new_list_request(SERVICECHAIN_INSTANCES)
+        res = sc_node_list_req.get_response(self.ext_api)
+        sc_instances = self.deserialize(self.fmt, res)
+        self.assertEqual(len(sc_instances['servicechain_instances']), 0)
+
+    def test_update_ptg_with_redirect_prs(self):
+        scs_id = self._create_servicechain_spec()
+        _, _, policy_rule_id = self._create_tcp_redirect_rule(
+                                                "20:90", scs_id)
+
+        policy_rule_set = self.create_policy_rule_set(
+            name="c1", policy_rules=[policy_rule_id])
+        policy_rule_set_id = policy_rule_set['policy_rule_set']['id']
+        self._verify_prs_rules(policy_rule_set_id)
+        provider_ptg, consumer_ptg = self._create_provider_consumer_ptgs()
+
+        self._verify_prs_rules(policy_rule_set_id)
+        # No service chain instances until we have provider and consumer prs
+        sc_node_list_req = self.new_list_request(SERVICECHAIN_INSTANCES)
+        res = sc_node_list_req.get_response(self.ext_api)
+        sc_instances = self.deserialize(self.fmt, res)
+        self.assertEqual(len(sc_instances['servicechain_instances']), 0)
+
+        # We should have one service chain instance created when PTGs are
+        # updated with provided and consumed prs
+        self.update_policy_target_group(
+                            provider_ptg,
+                            provided_policy_rule_sets={policy_rule_set_id: ''},
+                            consumed_policy_rule_sets={},
+                            expected_res_status=200)
+        self.update_policy_target_group(
+                            consumer_ptg,
+                            provided_policy_rule_sets={},
+                            consumed_policy_rule_sets={policy_rule_set_id: ''},
+                            expected_res_status=200)
+
+        self._verify_prs_rules(policy_rule_set_id)
+        sc_node_list_req = self.new_list_request(SERVICECHAIN_INSTANCES)
+        res = sc_node_list_req.get_response(self.ext_api)
+        sc_instances = self.deserialize(self.fmt, res)
+        self.assertEqual(len(sc_instances['servicechain_instances']), 1)
+        sc_instance = sc_instances['servicechain_instances'][0]
+        self._assert_proper_chain_instance(sc_instance, provider_ptg,
+                                           consumer_ptg, [scs_id])
+
+        # Verify that PTG update removing prs cleansup the chain instances
+        self.update_policy_target_group(
+                            provider_ptg,
+                            provided_policy_rule_sets={},
+                            consumed_policy_rule_sets={},
+                            expected_res_status=200)
+        self._verify_prs_rules(policy_rule_set_id)
+        sc_node_list_req = self.new_list_request(SERVICECHAIN_INSTANCES)
+        res = sc_node_list_req.get_response(self.ext_api)
+        sc_instances = self.deserialize(self.fmt, res)
+        self.assertEqual(len(sc_instances['servicechain_instances']), 0)
+
+    def test_action_spec_value_update(self):
+        scs_id = self._create_servicechain_spec()
+        action_id, _, policy_rule_id = self._create_tcp_redirect_rule(
+                                                        "20:90", scs_id)
+
+        policy_rule_set = self.create_policy_rule_set(
+            name="c1", policy_rules=[policy_rule_id])
+        policy_rule_set_id = policy_rule_set['policy_rule_set']['id']
+        self._verify_prs_rules(policy_rule_set_id)
+        provider_ptg_id, consumer_ptg_id = self._create_provider_consumer_ptgs(
+                                                            policy_rule_set_id)
+
+        self._verify_prs_rules(policy_rule_set_id)
+        sc_instance_list_req = self.new_list_request(SERVICECHAIN_INSTANCES)
+        res = sc_instance_list_req.get_response(self.ext_api)
+        sc_instances = self.deserialize(self.fmt, res)
+        # We should have one service chain instance created now
+        self.assertEqual(len(sc_instances['servicechain_instances']), 1)
+        sc_instance = sc_instances['servicechain_instances'][0]
+        self._assert_proper_chain_instance(sc_instance, provider_ptg_id,
+                                           consumer_ptg_id, [scs_id])
+
+        data = {'service_profile': {'service_type': "FIREWALL",
+                                    'tenant_id': self._tenant_id}}
+        service_profile = self.new_create_request(SERVICE_PROFILES,
+                                                  data, self.fmt)
+        service_profile = self.deserialize(
+            self.fmt, service_profile.get_response(self.ext_api))
+        sp_id = service_profile['service_profile']['id']
+        data = {'servicechain_node': {'service_profile_id': sp_id,
+                                      'tenant_id': self._tenant_id,
+                                      'config': "{}"}}
+        scn_req = self.new_create_request(SERVICECHAIN_NODES, data, self.fmt)
+        new_node = self.deserialize(
+            self.fmt, scn_req.get_response(self.ext_api))
+        new_scn_id = new_node['servicechain_node']['id']
+        data = {'servicechain_spec': {'tenant_id': self._tenant_id,
+                                      'nodes': [new_scn_id]}}
+        scs_req = self.new_create_request(SERVICECHAIN_SPECS, data, self.fmt)
+        new_spec = self.deserialize(
+                    self.fmt, scs_req.get_response(self.ext_api))
+        new_scs_id = new_spec['servicechain_spec']['id']
+        action = {'policy_action': {'action_value': new_scs_id}}
+        req = self.new_update_request('policy_actions', action, action_id)
+        action = self.deserialize(self.fmt,
+                                  req.get_response(self.ext_api))
+
+        self._verify_prs_rules(policy_rule_set_id)
+        sc_instance_list_req = self.new_list_request(SERVICECHAIN_INSTANCES)
+        res = sc_instance_list_req.get_response(self.ext_api)
+        new_sc_instances = self.deserialize(self.fmt, res)
+        # We should have one service chain instance created now
+        self.assertEqual(len(new_sc_instances['servicechain_instances']), 1)
+        new_sc_instance = new_sc_instances['servicechain_instances'][0]
+        self.assertEqual(sc_instance['id'], new_sc_instance['id'])
+        self.assertEqual([new_scs_id], new_sc_instance['servicechain_specs'])
+
+        req = self.new_delete_request(
+                'policy_target_groups', consumer_ptg_id)
+        res = req.get_response(self.ext_api)
+        self.assertEqual(res.status_int, webob.exc.HTTPNoContent.code)
+        sc_instance_list_req = self.new_list_request(SERVICECHAIN_INSTANCES)
+        res = sc_instance_list_req.get_response(self.ext_api)
+        sc_instances = self.deserialize(self.fmt, res)
+        self.assertEqual(len(sc_instances['servicechain_instances']), 0)
+
+    # REVISIT(Magesh): Enable this UT when we run the GBP UTs against NCP
+    '''
+    def test_classifier_update_to_chain(self):
+        scs_id = self._create_servicechain_spec()
+        _, classifier_id, policy_rule_id = self._create_tcp_redirect_rule(
+                                                            "20:90", scs_id)
+        policy_rule_set = self.create_policy_rule_set(
+            name="c1", policy_rules=[policy_rule_id])
+        policy_rule_set_id = policy_rule_set['policy_rule_set']['id']
+        self._verify_prs_rules(policy_rule_set_id)
+        provider_ptg_id, consumer_ptg_id = self._create_provider_consumer_ptgs(
+                                                            policy_rule_set_id)
+        self._verify_prs_rules(policy_rule_set_id)
+        sc_instances = self._list(SERVICECHAIN_INSTANCES)
+        # We should have one service chain instance created now
+        self.assertEqual(len(sc_instances['servicechain_instances']), 1)
+        sc_instance = sc_instances['servicechain_instances'][0]
+        self._assert_proper_chain_instance(sc_instance, provider_ptg_id,
+                                           consumer_ptg_id, [scs_id])
+        with mock.patch.object(
+                ncp_plugin.NodeCompositionPlugin,
+                'notify_chain_parameters_updated') as notify_chain_update:
+            # Update classifier and verify instance is updated
+            classifier = {'policy_classifier': {'port_range': "80"}}
+            req = self.new_update_request('policy_classifiers',
+                                          classifier, classifier_id)
+            classifier = self.deserialize(self.fmt,
+                                          req.get_response(self.ext_api))
+            notify_chain_update.assert_called_once_with(
+                mock.ANY, sc_instance['id'])
+            self._verify_prs_rules(policy_rule_set_id)
+            sc_instances = self._list(SERVICECHAIN_INSTANCES)
+            self.assertEqual(len(sc_instances['servicechain_instances']), 1)
+            sc_instance_updated = sc_instances['servicechain_instances'][0]
+            self.assertEqual(sc_instance, sc_instance_updated)
+        self._verify_ptg_delete_cleanup_chain(consumer_ptg_id)
+    '''
+
+
+class TestServiceChainAdminOwner(TestServiceChain):
+
+    def setUp(self, **kwargs):
+        cfg.CONF.set_override('chain_tenant_id', CHAIN_TENANT_ID,
+                              'resource_mapping')
+        super(TestServiceChainAdminOwner, self).setUp(**kwargs)
+
+    def _assert_proper_chain_instance(self, sc_instance, provider_ptg_id,
+                                      consumer_ptg_id, scs_id_list):
+        self.assertEqual(sc_instance['provider_ptg_id'], provider_ptg_id)
+        self.assertEqual(sc_instance['consumer_ptg_id'], consumer_ptg_id)
+        self.assertEqual(scs_id_list, sc_instance['servicechain_specs'])
+        self.assertEqual(sc_instance['tenant_id'], CHAIN_TENANT_ID)
 
 
 class TestExternalSegment(ResourceMappingTestCase):
