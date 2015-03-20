@@ -1356,6 +1356,11 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
                                     page_reverse=page_reverse)
 
     @log.log
+    def get_l3_policies_count(self, context, filters=None):
+        return self._get_collection_count(context, L3Policy,
+                                          filters=filters)
+
+    @log.log
     def create_network_service_policy(self, context, network_service_policy):
         nsp = network_service_policy['network_service_policy']
         tenant_id = self._get_tenant_id_for_create(context, nsp)
