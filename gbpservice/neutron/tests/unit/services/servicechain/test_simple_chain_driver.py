@@ -59,11 +59,15 @@ class SimpleChainDriverTestCase(
                                      group='servicechain')
         config.cfg.CONF.set_override('stack_delete_retries',
                                      STACK_DELETE_RETRIES,
-                                     group='servicechain')
+                                     group='simplechain')
         config.cfg.CONF.set_override('stack_delete_retry_wait',
                                      STACK_DELETE_RETRY_WAIT,
-                                     group='servicechain')
+                                     group='simplechain')
         super(SimpleChainDriverTestCase, self).setUp()
+        key_client = mock.patch(
+            'gbpservice.neutron.services.servicechain.drivers.'
+            'simplechain_driver.HeatClient._get_auth_token').start()
+        key_client.return_value = 'mysplendidtoken'
 
 
 class TestServiceChainInstance(SimpleChainDriverTestCase):
@@ -111,9 +115,8 @@ class TestServiceChainInstance(SimpleChainDriverTestCase):
             sc_instance1 = self.create_servicechain_instance(
                                         name=instance1_name,
                                         servicechain_specs=[sc_spec_id])
-            self.assertEqual(
-                sc_instance1['servicechain_instance']['servicechain_specs'],
-                [sc_spec_id])
+            self.assertEqual([sc_spec_id],
+                sc_instance1['servicechain_instance']['servicechain_specs'])
             stack_name = "stack_" + instance1_name + scn1_name + scn_id[:5]
             expected_create_calls.append(
                         mock.call(stack_name, jsonutils.loads(template1), {}))
@@ -122,9 +125,8 @@ class TestServiceChainInstance(SimpleChainDriverTestCase):
             sc_instance2 = self.create_servicechain_instance(
                                         name=instance2_name,
                                         servicechain_specs=[sc_spec_id])
-            self.assertEqual(
-                sc_instance2['servicechain_instance']['servicechain_specs'],
-                [sc_spec_id])
+            self.assertEqual([sc_spec_id],
+                sc_instance2['servicechain_instance']['servicechain_specs'])
             stack_name = "stack_" + instance2_name + scn1_name + scn_id[:5]
             expected_create_calls.append(
                         mock.call(stack_name, jsonutils.loads(template1), {}))
@@ -135,7 +137,7 @@ class TestServiceChainInstance(SimpleChainDriverTestCase):
             req = self.new_update_request(
                         'servicechain_specs', new_spec, sc_spec_id)
             res = req.get_response(self.ext_api)
-            self.assertEqual(res.status_int, webob.exc.HTTPOk.code)
+            self.assertEqual(webob.exc.HTTPOk.code, res.status_int)
             # The two existing stacks will be deleted and two new stacks
             # will be created
             expected_delete_calls.append(mock.call(stack1['stack']['id']))
@@ -168,8 +170,8 @@ class TestServiceChainInstance(SimpleChainDriverTestCase):
                                         name="sc_instance_1",
                                         servicechain_specs=[sc_spec_id])
             self.assertEqual(
-                sc_instance['servicechain_instance']['servicechain_specs'],
-                [sc_spec_id])
+                [sc_spec_id],
+                sc_instance['servicechain_instance']['servicechain_specs'])
             stack_create.assert_called_once_with(
                                     expected_stack_name, mock.ANY, mock.ANY)
 
@@ -187,16 +189,15 @@ class TestServiceChainInstance(SimpleChainDriverTestCase):
             sc_instance = self.create_servicechain_instance(
                                         name="sc_instance_1",
                                         servicechain_specs=[sc_spec_id])
-            self.assertEqual(
-                sc_instance['servicechain_instance']['servicechain_specs'],
-                [sc_spec_id])
+            self.assertEqual([sc_spec_id],
+                sc_instance['servicechain_instance']['servicechain_specs'])
             with mock.patch.object(simplechain_driver.HeatClient,
                                    'delete'):
                 req = self.new_delete_request(
                                     'servicechain_instances',
                                     sc_instance['servicechain_instance']['id'])
                 res = req.get_response(self.ext_api)
-                self.assertEqual(res.status_int, webob.exc.HTTPNoContent.code)
+                self.assertEqual(webob.exc.HTTPNoContent.code, res.status_int)
 
     def test_wait_stack_delete_for_instance_delete(self):
         name = "scs1"
@@ -212,9 +213,8 @@ class TestServiceChainInstance(SimpleChainDriverTestCase):
             sc_instance = self.create_servicechain_instance(
                                         name="sc_instance_1",
                                         servicechain_specs=[sc_spec_id])
-            self.assertEqual(
-                sc_instance['servicechain_instance']['servicechain_specs'],
-                [sc_spec_id])
+            self.assertEqual([sc_spec_id],
+                sc_instance['servicechain_instance']['servicechain_specs'])
 
             # Verify that as part of delete service chain instance we call
             # get method for heat stack 5 times before giving up if the state
@@ -228,9 +228,9 @@ class TestServiceChainInstance(SimpleChainDriverTestCase):
                                     'servicechain_instances',
                                     sc_instance['servicechain_instance']['id'])
                 res = req.get_response(self.ext_api)
-                self.assertEqual(res.status_int, webob.exc.HTTPNoContent.code)
+                self.assertEqual(webob.exc.HTTPNoContent.code, res.status_int)
                 stack_delete.assert_called_once_with(mock.ANY)
-                self.assertEqual(stack_get.call_count, STACK_DELETE_RETRIES)
+                self.assertEqual(STACK_DELETE_RETRIES, stack_get.call_count)
 
             # Create and delete another service chain instance and verify that
             # we call get method for heat stack only once if the stack state
@@ -238,9 +238,8 @@ class TestServiceChainInstance(SimpleChainDriverTestCase):
             sc_instance = self.create_servicechain_instance(
                                         name="sc_instance_1",
                                         servicechain_specs=[sc_spec_id])
-            self.assertEqual(
-                sc_instance['servicechain_instance']['servicechain_specs'],
-                [sc_spec_id])
+            self.assertEqual([sc_spec_id],
+                sc_instance['servicechain_instance']['servicechain_specs'])
             with contextlib.nested(
                 mock.patch.object(simplechain_driver.HeatClient, 'delete'),
                 mock.patch.object(simplechain_driver.HeatClient, 'get')) as (
@@ -250,9 +249,9 @@ class TestServiceChainInstance(SimpleChainDriverTestCase):
                                     'servicechain_instances',
                                     sc_instance['servicechain_instance']['id'])
                 res = req.get_response(self.ext_api)
-                self.assertEqual(res.status_int, webob.exc.HTTPNoContent.code)
+                self.assertEqual(webob.exc.HTTPNoContent.code, res.status_int)
                 stack_delete.assert_called_once_with(mock.ANY)
-                self.assertEqual(stack_get.call_count, 1)
+                self.assertEqual(1, stack_get.call_count)
 
     def test_stack_not_found_ignored(self):
         name = "scs1"
