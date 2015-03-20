@@ -13,6 +13,8 @@
 import netaddr
 import operator
 
+from keystoneclient import exceptions as k_exceptions
+from keystoneclient.v2_0 import client as k_client
 from neutron.api.v2 import attributes
 from neutron.common import constants as const
 from neutron.common import exceptions as n_exc
@@ -25,6 +27,7 @@ from neutron.extensions import securitygroup as ext_sg
 from neutron.openstack.common import jsonutils
 from neutron.openstack.common import log as logging
 from oslo.config import cfg
+from oslo.utils import excutils
 import sqlalchemy as sa
 
 from gbpservice.common import utils
@@ -40,6 +43,24 @@ from gbpservice.neutron.services.grouppolicy.common import exceptions as exc
 
 LOG = logging.getLogger(__name__)
 DEFAULT_SG_PREFIX = 'gbp_%s'
+
+group_policy_opts = [
+    cfg.StrOpt('chain_owner_user',
+               help=_("Chain owner username. If set, will be used in "
+                      "place of the Neutron service admin for retrieving "
+                      "tenant owner information through Keystone."),
+               default=''),
+    cfg.StrOpt('chain_owner_password',
+               help=_("Chain owner password."), default='',
+               secret=True),
+    cfg.StrOpt('chain_owner_tenant_name',
+               help=_("Name of the Tenant that will own the service chain "
+                      "instances for this driver. Leave empty for provider "
+                      "owned chains."), default=''),
+
+]
+
+cfg.CONF.register_opts(group_policy_opts, "resource_mapping")
 
 
 opts = [
@@ -102,7 +123,7 @@ class PolicyRuleSetSGsMapping(model_base.BASEV2):
                                sa.ForeignKey('securitygroups.id'))
 
 
-class PtgServiceChainInstanceMapping(model_base.BASEV2):
+class PtgServiceChainInstanceMapping(model_base.BASEV2, models_v2.HasTenant):
     """Policy Target Group to ServiceChainInstance mapping DB."""
 
     __tablename__ = 'gpm_ptgs_servicechain_mapping'
@@ -174,6 +195,41 @@ class ResourceMappingDriver(api.PolicyDriver, local_api.LocalAPI):
     @log.log
     def initialize(self):
         self._cached_agent_notifier = None
+        self.chain_owner = ResourceMappingDriver.chain_tenant_id(reraise=True)
+
+    @staticmethod
+    def chain_tenant_id(reraise=False):
+        keystone = ResourceMappingDriver.chain_tenant_keystone_client()
+        if keystone:
+            tenant = cfg.CONF.resource_mapping.chain_owner_tenant_name
+            try:
+                # Can it be retrieved directly, without a further keystone
+                # call?
+                tenant = keystone.tenants.find(name=tenant)
+                return tenant.id
+            except k_exceptions.NotFound:
+                with excutils.save_and_reraise_exception(reraise=reraise):
+                    LOG.error(_('No tenant with name %s exists.'), tenant)
+            except k_exceptions.NoUniqueMatch:
+                with excutils.save_and_reraise_exception(reraise=reraise):
+                    LOG.error(_('Multiple tenants matches found for %s'),
+                              tenant)
+
+    @staticmethod
+    def chain_tenant_keystone_client():
+        chain_user = cfg.CONF.resource_mapping.chain_owner_user
+        user, pwd, tenant, auth_url = utils.get_keystone_creds()
+        user = (chain_user or user)
+        pwd = (cfg.CONF.resource_mapping.chain_owner_password or
+               (pwd if not chain_user else ''))
+
+        # Tenant must be configured in the resource_mapping section, provider
+        # owner will be used otherwise.
+        tenant = cfg.CONF.resource_mapping.chain_owner_tenant_name
+
+        if tenant:
+            return k_client.Client(username=user, password=pwd,
+                                   auth_url=auth_url)
 
     def _reject_shared(self, object, type):
         if object.get('shared'):
@@ -513,7 +569,6 @@ class ResourceMappingDriver(api.PolicyDriver, local_api.LocalAPI):
             "network_service_policy_id")
         if not network_service_policy_id:
             return
-
         nsp = context._plugin.get_network_service_policy(
             context._plugin_context, network_service_policy_id)
         nsp_params = nsp.get("network_service_params")
@@ -940,11 +995,16 @@ class ResourceMappingDriver(api.PolicyDriver, local_api.LocalAPI):
             context.original['direction'] != context.current['direction']):
             sc_instances = (
                 self._servicechain_plugin.get_servicechain_instances(
-                    context._plugin_context,
+                    context._plugin_context.elevated(),
                     filters={'classifier_id': [context.current['id']]}))
             for sc_instance in sc_instances:
+                cmap = self._get_ptg_servicechain_mapping(
+                    context._plugin_context.session,
+                    servicechain_instance_id=sc_instance['id'])
+                ctx = self._get_chain_admin_context(context._plugin_context,
+                                                    cmap[0].tenant_id)
                 self._servicechain_plugin.notify_chain_parameters_updated(
-                    context._plugin_context, sc_instance['id'])
+                    ctx, sc_instance['id'])
 
     @log.log
     def delete_policy_classifier_precommit(self, context):
@@ -1864,10 +1924,11 @@ class ResourceMappingDriver(api.PolicyDriver, local_api.LocalAPI):
                          x == context.original['action_value'] else
                          x for x in old_specs]
             self._update_servicechain_instance(
-                context, servicechain_instance.servicechain_instance_id,
+                context._plugin_context,
+                servicechain_instance.servicechain_instance_id,
                 sc_specs=new_specs)
 
-    def _update_servicechain_instance(self, context, sc_instance_id,
+    def _update_servicechain_instance(self, plugin_context, sc_instance_id,
                                       classifier_id=None, sc_specs=None):
         sc_instance_update_data = {}
         if sc_specs:
@@ -1875,7 +1936,9 @@ class ResourceMappingDriver(api.PolicyDriver, local_api.LocalAPI):
         if classifier_id:
             sc_instance_update_data.update({'classifier_id': classifier_id})
         super(ResourceMappingDriver, self)._update_servicechain_instance(
-            context._plugin_context, sc_instance_id, sc_instance_update_data)
+            self._get_chain_admin_context(
+                plugin_context, instance_id=sc_instance_id),
+            sc_instance_id, sc_instance_update_data)
 
     def _get_rule_ids_for_actions(self, context, action_id):
         policy_rule_qry = context.session.query(
@@ -1948,42 +2011,42 @@ class ResourceMappingDriver(api.PolicyDriver, local_api.LocalAPI):
                             context, ptg_providing_prs, ptg_consuming_prs,
                             spec_id,
                             parent_spec_id, classifier_id,
-                            hierarchial_classifier_mismatch)
+                            hierarchial_classifier_mismatch, policy_rule_set)
 
     def _create_or_update_chain(self, context, provider, consumer, spec_id,
                                 parent_spec_id, classifier_id,
-                                hierarchial_classifier_mismatch):
+                                hierarchial_classifier_mismatch, prs_id):
         ptg_chain_map = self._get_ptg_servicechain_mapping(
             context._plugin_context.session, provider, consumer)
         if ptg_chain_map:
             if hierarchial_classifier_mismatch or not spec_id:
-                self._delete_servicechain_instance(
+                ctx = self._get_chain_admin_context(
                     context._plugin_context,
-                    ptg_chain_map[0].servicechain_instance_id)
+                    tenant_id=ptg_chain_map[0].tenant_id)
+                self._delete_servicechain_instance(
+                    ctx, ptg_chain_map[0].servicechain_instance_id)
             else:
                 sc_specs = [spec_id]
                 if parent_spec_id:
                     sc_specs.insert(0, parent_spec_id)
                 # One Chain between a unique pair of provider and consumer
+
                 self._update_servicechain_instance(
-                        context,
+                        context._plugin_context,
                         ptg_chain_map[0].servicechain_instance_id,
                         classifier_id=classifier_id,
                         sc_specs=sc_specs)
         elif spec_id and not hierarchial_classifier_mismatch:
-            sc_instance = self._create_servicechain_instance(
-                context, spec_id,
-                parent_spec_id, provider,
-                consumer, classifier_id)
-            self._set_ptg_servicechain_instance_mapping(
-                context._plugin_context.session,
-                provider, consumer,
-                sc_instance['id'])
+            self._create_servicechain_instance(context, spec_id,
+                                               parent_spec_id, provider,
+                                               consumer, classifier_id, prs_id)
 
     def _cleanup_redirect_action(self, context):
         for ptg_chain in context.ptg_chain_map:
+            ctx = self._get_chain_admin_context(context._plugin_context,
+                                                tenant_id=ptg_chain.tenant_id)
             self._delete_servicechain_instance(
-                context._plugin_context, ptg_chain.servicechain_instance_id)
+                ctx, ptg_chain.servicechain_instance_id)
 
     def _restore_ip_to_allocation_pool(self, context, subnet_id, ip_address):
         # TODO(Magesh):Pass subnets and loop on subnets. Better to add logic
@@ -2035,18 +2098,30 @@ class ResourceMappingDriver(api.PolicyDriver, local_api.LocalAPI):
     def _create_servicechain_instance(self, context, servicechain_spec,
                                       parent_servicechain_spec,
                                       provider_ptg_id, consumer_ptg_id,
-                                      classifier_id,
+                                      classifier_id, policy_rule_set,
                                       config_params=None):
         sc_spec = [servicechain_spec]
         if parent_servicechain_spec:
             sc_spec.insert(0, parent_servicechain_spec)
         config_param_values = {}
-        ptg = context._plugin.get_policy_target_group(
-            context._plugin_context, provider_ptg_id)
-        network_service_policy_id = ptg.get("network_service_policy_id")
+        provider_ptg = context._plugin.get_policy_target_group(
+            utils.admin_context(context._plugin_context), provider_ptg_id)
+        p_ctx = self._get_chain_admin_context(
+            context._plugin_context,
+            provider_tenant_id=provider_ptg['tenant_id'])
+        session = context._plugin_context.session
+        if consumer_ptg_id:
+            try:
+                consumer_ptg = context._plugin.get_policy_target_group(
+                    p_ctx, consumer_ptg_id)
+            except gp_ext.PolicyTargetGroupNotFound:
+                consumer_ptg = context._plugin.get_external_policy(
+                    p_ctx, consumer_ptg_id)
+        network_service_policy_id = provider_ptg.get(
+            "network_service_policy_id")
         if network_service_policy_id:
             nsp = context._plugin.get_network_service_policy(
-                context._plugin_context, network_service_policy_id)
+                p_ctx, network_service_policy_id)
             service_params = nsp.get("network_service_params")
             for service_parameter in service_params:
                 param_type = service_parameter.get("type")
@@ -2055,7 +2130,7 @@ class ResourceMappingDriver(api.PolicyDriver, local_api.LocalAPI):
                     key = service_parameter.get("name")
                     servicepolicy_ptg_ip_map = (
                         self._get_ptg_policy_ipaddress_mapping(
-                            context._plugin_context.session, provider_ptg_id))
+                            session, provider_ptg_id))
                     servicepolicy_ip = servicepolicy_ptg_ip_map.get(
                                                         "ipaddress")
                     config_param_values[key] = servicepolicy_ip
@@ -2069,8 +2144,11 @@ class ResourceMappingDriver(api.PolicyDriver, local_api.LocalAPI):
                     for fip_map in fip_maps:
                         servicepolicy_fip_ids.append(fip_map.floatingip_id)
                     config_param_values[key] = servicepolicy_fip_ids
-        attrs = {'tenant_id': context.current['tenant_id'],
-                 'name': 'gbp_' + ptg['name'],
+        name = 'gbp_%s_%s_%s' % (policy_rule_set['name'], provider_ptg['name'],
+                                 consumer_ptg['name'] if consumer_ptg else '')
+
+        attrs = {'tenant_id': p_ctx.tenant,
+                 'name': name,
                  'description': "",
                  'servicechain_specs': sc_spec,
                  'provider_ptg_id': provider_ptg_id,
@@ -2078,9 +2156,13 @@ class ResourceMappingDriver(api.PolicyDriver, local_api.LocalAPI):
                  'management_ptg_id': None,
                  'classifier_id': classifier_id,
                  'config_param_values': jsonutils.dumps(config_param_values)}
-        return super(
+        sc_instance = super(
             ResourceMappingDriver, self)._create_servicechain_instance(
-            context._plugin_context, attrs)
+                p_ctx, attrs)
+        self._set_ptg_servicechain_instance_mapping(
+            session, provider_ptg_id, consumer_ptg_id, sc_instance['id'],
+            p_ctx.tenant)
+        return sc_instance
 
     # Do Not Pass floating_ip_address to this method until after Kilo Release
     def _create_floatingip(self, plugin_context, tenant_id, ext_net_id,
@@ -2549,27 +2631,36 @@ class ResourceMappingDriver(api.PolicyDriver, local_api.LocalAPI):
 
     def _set_ptg_servicechain_instance_mapping(self, session, provider_ptg_id,
                                                consumer_ptg_id,
-                                               servicechain_instance_id):
+                                               servicechain_instance_id,
+                                               provider_tenant_id):
         with session.begin(subtransactions=True):
             mapping = PtgServiceChainInstanceMapping(
                 provider_ptg_id=provider_ptg_id,
                 consumer_ptg_id=consumer_ptg_id,
-                servicechain_instance_id=servicechain_instance_id)
+                servicechain_instance_id=servicechain_instance_id,
+                tenant_id=provider_tenant_id)
             session.add(mapping)
 
-    def _get_ptg_servicechain_mapping(self, session, provider_ptg_id,
-                                      consumer_ptg_id):
+    def _get_ptg_servicechain_mapping(self, session, provider_ptg_id=None,
+                                      consumer_ptg_id=None, tenant_id=None,
+                                      servicechain_instance_id=None):
         with session.begin(subtransactions=True):
             query = session.query(PtgServiceChainInstanceMapping)
             if provider_ptg_id:
                 query = query.filter_by(provider_ptg_id=provider_ptg_id)
             if consumer_ptg_id:
                 query = query.filter_by(consumer_ptg_id=consumer_ptg_id)
+            if servicechain_instance_id:
+                query = query.filter_by(
+                    servicechain_instance_id=servicechain_instance_id)
+            if tenant_id:
+                query = query.filter_by(consumer_ptg_id=tenant_id)
             all = query.all()
             return [utils.DictClass([('provider_ptg_id', x.provider_ptg_id),
                                      ('consumer_ptg_id', x.consumer_ptg_id),
                                      ('servicechain_instance_id',
-                                      x.servicechain_instance_id)])
+                                      x.servicechain_instance_id),
+                                     ('tenant_id', x.tenant_id)])
                     for x in all]
 
     def _get_ep_cidr_list(self, context, ep):
@@ -2746,3 +2837,25 @@ class ResourceMappingDriver(api.PolicyDriver, local_api.LocalAPI):
                                 ptg_subnet_id=",".join(ptg.get('subnets')),
                                 port_subnet_id=port_subnet_id,
                                 policy_target_group_id=ptg_id)
+
+    def _get_chain_admin_context(self, plugin_context, tenant_id=None,
+                                 provider_tenant_id=None, instance_id=None):
+        ctx = plugin_context.elevated()
+        # REVISIT(Ivar): Any particular implication when a provider owned PT
+        # exist in the consumer PTG? Especially when the consumer PTG belongs
+        # to another tenant? We may want to consider a strong convention
+        # for reference plumbers to absolutely avoid this kind of inter tenant
+        # object creation when the owner is the provider (in which case, the
+        # context can as well be a normal context without admin capabilities).
+        ctx.tenant_id = None
+        if instance_id:
+            cmap = self._get_ptg_servicechain_mapping(
+                ctx.session, servicechain_instance_id=instance_id)
+            if cmap:
+                ctx.tenant_id = cmap[0].tenant_id
+        if not ctx.tenant_id:
+            ctx.tenant_id = tenant_id or self.chain_owner or provider_tenant_id
+        if self.chain_owner == ctx.tenant_id:
+            ctx.auth_token = self.chain_tenant_keystone_client().get_token(
+                self.chain_owner)
+        return ctx
