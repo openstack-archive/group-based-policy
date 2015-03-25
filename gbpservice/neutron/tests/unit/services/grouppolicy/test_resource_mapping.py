@@ -57,7 +57,7 @@ CHAIN_TENANT_ID = 'chain_tenant_id'
 
 class ResourceMappingTestCase(test_plugin.GroupPolicyPluginTestCase):
 
-    def setUp(self, policy_drivers=[]):
+    def setUp(self, policy_drivers=None, core_plugin=CORE_PLUGIN):
         if not policy_drivers:
             policy_drivers = ['implicit_policy', 'resource_mapping']
         config.cfg.CONF.set_override('policy_drivers',
@@ -70,7 +70,7 @@ class ResourceMappingTestCase(test_plugin.GroupPolicyPluginTestCase):
                                      'chain_tenant_id',
                                      group='resource_mapping')
         config.cfg.CONF.set_override('allow_overlapping_ips', True)
-        super(ResourceMappingTestCase, self).setUp(core_plugin=CORE_PLUGIN)
+        super(ResourceMappingTestCase, self).setUp(core_plugin=core_plugin)
         res = mock.patch('neutron.db.l3_db.L3_NAT_dbonly_mixin.'
                          '_check_router_needs_rescheduling').start()
         res.return_value = None
@@ -312,6 +312,28 @@ class ResourceMappingTestCase(test_plugin.GroupPolicyPluginTestCase):
         self.assertTrue(len(existing) == 0,
                         "Some rules still exist:\n%s" % str(existing))
         return expected
+
+    def _create_servicechain_node(self, node_type="LOADBALANCER"):
+        data = {'servicechain_node': {'service_type': node_type,
+                                      'tenant_id': self._tenant_id,
+                                      'config': "{}"}}
+        scn_req = self.new_create_request(SERVICECHAIN_NODES, data, self.fmt)
+        node = self.deserialize(self.fmt, scn_req.get_response(self.ext_api))
+        scn_id = node['servicechain_node']['id']
+        return scn_id
+
+    def _create_servicechain_spec(self, node_types=[]):
+        if not node_types:
+            node_types = ['LOADBALANCER']
+        node_ids = []
+        for node_type in node_types:
+            node_ids.append(self._create_servicechain_node(node_type))
+        data = {'servicechain_spec': {'tenant_id': self._tenant_id,
+                                      'nodes': node_ids}}
+        scs_req = self.new_create_request(SERVICECHAIN_SPECS, data, self.fmt)
+        spec = self.deserialize(self.fmt, scs_req.get_response(self.ext_api))
+        scs_id = spec['servicechain_spec']['id']
+        return scs_id
 
 
 class TestPolicyTarget(ResourceMappingTestCase):
@@ -1458,28 +1480,6 @@ class TestPolicyRuleSet(ResourceMappingTestCase):
             udp_rules.extend([r for r in sg_rules if r['protocol'] == 'udp'])
 
         self._verify_prs_rules(policy_rule_set_id)
-
-    def _create_servicechain_node(self, node_type="LOADBALANCER"):
-        data = {'servicechain_node': {'service_type': node_type,
-                                      'tenant_id': self._tenant_id,
-                                      'config': "{}"}}
-        scn_req = self.new_create_request(SERVICECHAIN_NODES, data, self.fmt)
-        node = self.deserialize(self.fmt, scn_req.get_response(self.ext_api))
-        scn_id = node['servicechain_node']['id']
-        return scn_id
-
-    def _create_servicechain_spec(self, node_types=[]):
-        if not node_types:
-            node_types = ['LOADBALANCER']
-        node_ids = []
-        for node_type in node_types:
-            node_ids.append(self._create_servicechain_node(node_type))
-        data = {'servicechain_spec': {'tenant_id': self._tenant_id,
-                                      'nodes': node_ids}}
-        scs_req = self.new_create_request(SERVICECHAIN_SPECS, data, self.fmt)
-        spec = self.deserialize(self.fmt, scs_req.get_response(self.ext_api))
-        scs_id = spec['servicechain_spec']['id']
-        return scs_id
 
     def _create_provider_consumer_ptgs(self, prs_id=None):
         policy_rule_set_dict = {prs_id: None} if prs_id else {}

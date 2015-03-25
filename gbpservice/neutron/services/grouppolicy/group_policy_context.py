@@ -96,6 +96,10 @@ class PolicyTargetGroupContext(GroupPolicyContext,
             self._plugin_context, self._policy_target_group['id'], subnet_id)
         self._policy_target_group['subnets'] = subnets
 
+    def add_subnets(self, subnet_ids):
+        for subnet_id in subnet_ids:
+            self.add_subnet(subnet_id)
+
 
 class L2PolicyContext(GroupPolicyContext, api.L2PolicyContext):
 
