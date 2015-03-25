@@ -881,6 +881,8 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
                'action_type': pa['action_type'],
                'action_value': pa['action_value'],
                'shared': pa.get('shared', False), }
+        res['policy_rules'] = [pr['policy_rule_id'] for
+                               pr in pa['policy_rules']]
         return self._fields(res, fields)
 
     def _make_policy_rule_dict(self, pr, fields=None):
