@@ -20,3 +20,5 @@ requests-mock>=0.5.1  # Apache-2.0
 testrepository>=0.0.18
 testtools>=0.9.36,!=1.2.0
 WebTest>=2.0
+
+-e git+https://github.com/noironetworks/python-opflex-agent.git#egg=opflexagent
