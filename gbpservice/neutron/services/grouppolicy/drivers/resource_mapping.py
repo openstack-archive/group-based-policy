@@ -1097,6 +1097,7 @@ class ResourceMappingDriver(api.PolicyDriver):
                          'dns_nameservers': attributes.ATTR_NOT_SPECIFIED,
                          'host_routes': attributes.ATTR_NOT_SPECIFIED}
                 # modified by hyungsok@cisco.com  using pre-created subnet with same naming conventions
+                subnet = None
                 t_subnets = self._core_plugin.get_subnets(context._plugin_context)
                 for t_subs in t_subnets:
                     if t_subs['name'] == attrs['name'] and t_subs['tenant_id'] == attrs['tenant_id'] and t_subs['network_id'] == attrs['network_id'] :
