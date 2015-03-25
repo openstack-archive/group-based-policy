@@ -1388,11 +1388,15 @@ class ResourceMappingDriver(api.PolicyDriver):
                             for ptg_chain in ptg_chain_map:
                                 self._delete_servicechain_instance(
                                     context, ptg_chain)
-                            self._create_servicechain_instance(
+                            sc_instance = self._create_servicechain_instance(
                                 context, policy_action.get("action_value"),
                                 parent_spec_id, ptg_providing_prs,
                                 ptg_consuming_prs, classifier_id,
                                 policy_rule_set)
+                            self._set_ptg_servicechain_instance_mapping(
+                                context._plugin_context.session,
+                                ptg_providing_prs, ptg_consuming_prs,
+                                sc_instance['id'], sc_instance['tenant_id'])
 
     def _cleanup_redirect_action(self, context):
         for ptg_chain in context.ptg_chain_map:
@@ -1559,6 +1563,7 @@ class ResourceMappingDriver(api.PolicyDriver):
         session = context._plugin_context.session
         provider_ptg = context._plugin.get_policy_target_group(
             p_ctx, provider_ptg_id)
+        consumer_ptg = None
         if consumer_ptg_id:
             try:
                 consumer_ptg = context._plugin.get_policy_target_group(
@@ -1591,11 +1596,8 @@ class ResourceMappingDriver(api.PolicyDriver):
                  'consumer_ptg_id': consumer_ptg_id,
                  'classifier_id': classifier_id,
                  'config_param_values': jsonutils.dumps(config_param_values)}
-        sc_instance = self._create_resource(self._servicechain_plugin, p_ctx,
-                                            'servicechain_instance', attrs)
-        self._set_ptg_servicechain_instance_mapping(
-            session, provider_ptg_id, consumer_ptg_id, sc_instance['id'],
-            p_ctx.tenant)
+        return self._create_resource(self._servicechain_plugin, p_ctx,
+                                    'servicechain_instance', attrs)
 
     def _delete_servicechain_instance(self, context, ptg_chain_map):
         p_ctx = self._get_chain_admin_context(ptg_chain_map.tenant_id)
