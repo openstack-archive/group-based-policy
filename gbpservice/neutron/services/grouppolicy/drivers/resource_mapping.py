@@ -1096,8 +1096,16 @@ class ResourceMappingDriver(api.PolicyDriver):
                          'allocation_pools': attributes.ATTR_NOT_SPECIFIED,
                          'dns_nameservers': attributes.ATTR_NOT_SPECIFIED,
                          'host_routes': attributes.ATTR_NOT_SPECIFIED}
-                subnet = self._create_subnet(context._plugin_context, attrs)
+                # modified by hyungsok@cisco.com  using pre-created subnet with same naming conventions
+                t_subnets = self._core_plugin.get_subnets(context._plugin_context)
+                for t_subs in t_subnets:
+                    if t_subs['name'] == attrs['name'] and t_subs['tenant_id'] == attrs['tenant_id'] and t_subs['network_id'] == attrs['network_id'] :
+                        subnet = t_subs
+                        break;
+                if not subnet :
+                    subnet = self._create_subnet(context._plugin_context, attrs)
                 subnet_id = subnet['id']
+                # endof modification 
                 try:
                     if l3p['routers']:
                         router_id = l3p['routers'][0]
