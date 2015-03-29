@@ -174,6 +174,7 @@ class ServiceChainPlugin(servicechain_db.ServiceChainDbPlugin,
 
     @log.log
     def create_servicechain_instance(self, context, servicechain_instance):
+        # TODO(igordcard) create a new PortChain
         session = context.session
         with session.begin(subtransactions=True):
             result = super(ServiceChainPlugin,
