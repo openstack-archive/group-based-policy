@@ -25,8 +25,9 @@ from oslo.config import cfg
 import sqlalchemy as sa
 
 
+from gbpservice.neutron.services.servicechain import (
+    servicechain_driver_api as api)
 from gbpservice.neutron.services.servicechain.common import exceptions as exc
-
 
 LOG = logging.getLogger(__name__)
 
@@ -59,7 +60,7 @@ class ServiceChainInstanceStack(model_base.BASEV2):
                          nullable=False, primary_key=True)
 
 
-class SimpleChainDriver(object):
+class SimpleChainDriver(api.ServiceChainDriver):
 
     @log.log
     def initialize(self):

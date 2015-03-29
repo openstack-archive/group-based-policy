@@ -10,6 +10,9 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+from gbpservice.neutron.services.servicechain import (
+    servicechain_driver_api as api)
+
 
 class ServiceChainContext(object):
     """ServiceChain context base class."""
@@ -18,7 +21,8 @@ class ServiceChainContext(object):
         self._plugin_context = plugin_context
 
 
-class ServiceChainNodeContext(ServiceChainContext):
+class ServiceChainNodeContext(ServiceChainContext,
+                              api.ServiceChainNodeContext):
 
     def __init__(self, plugin, plugin_context, sc_node,
                  original_sc_node=None):
@@ -35,7 +39,8 @@ class ServiceChainNodeContext(ServiceChainContext):
         return self._original_sc_node
 
 
-class ServiceChainSpecContext(ServiceChainContext):
+class ServiceChainSpecContext(ServiceChainContext,
+                              api.ServiceChainSpecContext):
 
     def __init__(self, plugin, plugin_context, sc_spec,
                  original_sc_spec=None):
@@ -52,7 +57,8 @@ class ServiceChainSpecContext(ServiceChainContext):
         return self._original_sc_spec
 
 
-class ServiceChainInstanceContext(ServiceChainContext):
+class ServiceChainInstanceContext(ServiceChainContext,
+                                  api.ServiceChainInstanceContext):
 
     def __init__(self, plugin, plugin_context, sc_instance,
                  original_sc_instance=None):

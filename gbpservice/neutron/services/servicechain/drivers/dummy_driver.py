@@ -1,4 +1,4 @@
-#    Licensed under the Apache License, Version 2.0 (the "License"); you may
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
 #    not use this file except in compliance with the License. You may obtain
 #    a copy of the License at
 #
@@ -12,9 +12,11 @@
 
 from neutron.common import log
 
+from gbpservice.neutron.services.servicechain import (
+    servicechain_driver_api as api)
 
-class NoopDriver(object):
 
+class NoopDriver(api.ServiceChainDriver):
     @log.log
     def initialize(self):
         pass
