@@ -2272,7 +2272,7 @@ class TestPolicyRuleSet(ResourceMappingTestCase):
         self.delete_policy_target_group(ptg['id'])
         self._verify_prs_rules(prs['id'])
 
-    def test_redirect_to_ep(self):
+    def _test_redirect_to_ep(self, provider=False):
         scs_id = self._create_servicechain_spec()
         _, _, policy_rule_id = self._create_tcp_redirect_rule(
                                                 "20:90", scs_id)
@@ -2280,18 +2280,18 @@ class TestPolicyRuleSet(ResourceMappingTestCase):
         policy_rule_set = self.create_policy_rule_set(
             name="c1", policy_rules=[policy_rule_id])
         policy_rule_set_id = policy_rule_set['policy_rule_set']['id']
-
+        prov_cons = {False: 'consumed_policy_rule_sets',
+                     True: 'provided_policy_rule_sets'}
         with self.network(router__external=True, shared=True) as net:
             with self.subnet(cidr='192.168.0.0/24', network=net) as sub:
                 self.create_external_segment(
                     shared=True,
                     tenant_id='admin', name="default",
                     subnet_id=sub['subnet']['id'])['external_segment']
-
                 ep = self.create_external_policy(
-                    consumed_policy_rule_sets={policy_rule_set_id: ''})
-                provider = self.create_policy_target_group(
-                    provided_policy_rule_sets={policy_rule_set_id: ''})
+                    **{prov_cons[provider]: {policy_rule_set_id: ''}})
+                ptg = self.create_policy_target_group(
+                    **{prov_cons[not provider]: {policy_rule_set_id: ''}})
 
                 self._verify_prs_rules(policy_rule_set_id)
                 sc_node_list_req = self.new_list_request(
@@ -2302,9 +2302,10 @@ class TestPolicyRuleSet(ResourceMappingTestCase):
                 self.assertEqual(
                     1, len(sc_instances['servicechain_instances']))
                 sc_instance = sc_instances['servicechain_instances'][0]
+                ids = {True: ptg['policy_target_group']['id'],
+                       False: ep['external_policy']['id']}
                 self._assert_proper_chain_instance(
-                    sc_instance, provider['policy_target_group']['id'],
-                    ep['external_policy']['id'], [scs_id])
+                    sc_instance, ids[not provider], ids[provider], [scs_id])
 
                 # Verify that PTG delete cleans up the chain instances
                 req = self.new_delete_request(
@@ -2317,6 +2318,12 @@ class TestPolicyRuleSet(ResourceMappingTestCase):
                 sc_instances = self.deserialize(self.fmt, res)
                 self.assertEqual(
                     0, len(sc_instances['servicechain_instances']))
+
+    def test_redirect_to_ep_cons(self):
+        self._test_redirect_to_ep()
+
+    def test_redirect_to_ep_prov(self):
+        self._test_redirect_to_ep(True)
 
     def test_redirect_to_ep_update(self):
         scs_id = self._create_servicechain_spec()

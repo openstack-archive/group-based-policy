@@ -31,6 +31,7 @@ import sqlalchemy as sa
 
 from gbpservice.neutron.db.grouppolicy import group_policy_db as gpdb
 from gbpservice.neutron.db import servicechain_db  # noqa
+from gbpservice.neutron.extensions import group_policy as gp_ext
 from gbpservice.neutron.services.grouppolicy import (
     group_policy_driver_api as api)
 from gbpservice.neutron.services.grouppolicy.common import constants as gconst
@@ -94,10 +95,8 @@ class PtgServiceChainInstanceMapping(model_base.BASEV2):
     """Policy Target Group to ServiceChainInstance mapping DB."""
 
     __tablename__ = 'gpm_ptgs_servicechain_mapping'
-    provider_ptg_id = sa.Column(sa.String(36),
-                                sa.ForeignKey('gp_policy_target_groups.id',
-                                              ondelete='CASCADE'),
-                                nullable=False)
+    # Provider PTG could be an External Policy
+    provider_ptg_id = sa.Column(sa.String(36), nullable=False)
     # Consumer PTG could be an External Policy
     consumer_ptg_id = sa.Column(sa.String(36), nullable=False)
     servicechain_instance_id = sa.Column(sa.String(36),
@@ -911,9 +910,9 @@ class ResourceMappingDriver(api.PolicyDriver):
                 self._set_sg_rules_for_cidrs(
                     context, cidr_list, ep['provided_policy_rule_sets'],
                     ep['consumed_policy_rule_sets'])
-            if ep['consumed_policy_rule_sets']:
                 self._handle_redirect_action(context,
-                                             ep['consumed_policy_rule_sets'])
+                                             ep['consumed_policy_rule_sets'] +
+                                             ep['provided_policy_rule_sets'])
 
     def update_external_policy_precommit(self, context):
         if context.original['external_segments']:
@@ -950,7 +949,8 @@ class ResourceMappingDriver(api.PolicyDriver):
                 context, cidr_list, prov_cons['provided_policy_rule_sets'],
                 prov_cons['consumed_policy_rule_sets'])
 
-        if prov_cons['consumed_policy_rule_sets']:
+        if (prov_cons['consumed_policy_rule_sets'] or
+                prov_cons['provided_policy_rule_sets']):
             self._cleanup_redirect_action(context)
 
         # Added PRS
@@ -967,9 +967,11 @@ class ResourceMappingDriver(api.PolicyDriver):
                 context, cidr_list, prov_cons['provided_policy_rule_sets'],
                 prov_cons['consumed_policy_rule_sets'])
 
-        if prov_cons['consumed_policy_rule_sets']:
+        if (prov_cons['consumed_policy_rule_sets'] or
+                prov_cons['provided_policy_rule_sets']):
             self._handle_redirect_action(
-                context, prov_cons['consumed_policy_rule_sets'])
+                context, prov_cons['consumed_policy_rule_sets'] +
+                prov_cons['provided_policy_rule_sets'])
 
     def delete_external_policy_precommit(self, context):
         provider_ptg_chain_map = self._get_ptg_servicechain_mapping(
@@ -1321,8 +1323,9 @@ class ResourceMappingDriver(api.PolicyDriver):
             ptgs_consuming_prs = (
                 policy_rule_set['consuming_policy_target_groups'] +
                 policy_rule_set['consuming_external_policies'])
-            ptgs_providing_prs = policy_rule_set[
-                                            'providing_policy_target_groups']
+            ptgs_providing_prs = (
+                policy_rule_set['providing_policy_target_groups'] +
+                policy_rule_set['providing_external_policies'])
 
             # Create the ServiceChain Instance when we have both Provider and
             # consumer PTGs. If Labels are available, they have to be applied
@@ -1544,9 +1547,14 @@ class ResourceMappingDriver(api.PolicyDriver):
         if parent_servicechain_spec:
             sc_spec.insert(0, parent_servicechain_spec)
         config_param_values = {}
-        ptg = context._plugin.get_policy_target_group(
-            context._plugin_context, provider_ptg_id)
+        try:
+            ptg = context._plugin.get_policy_target_group(
+                context._plugin_context, provider_ptg_id)
+        except gp_ext.PolicyTargetGroupNotFound:
+            ptg = context._plugin.get_external_policy(
+                context._plugin_context, provider_ptg_id)
         network_service_policy_id = ptg.get("network_service_policy_id")
+        # REVISIT(ivar): EP to support Network Service Policies
         if network_service_policy_id:
             nsp = context._plugin.get_network_service_policy(
                 context._plugin_context, network_service_policy_id)
