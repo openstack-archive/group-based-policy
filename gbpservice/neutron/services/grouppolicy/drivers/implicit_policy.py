@@ -151,8 +151,7 @@ class ImplicitPolicyDriver(api.PolicyDriver):
     def update_external_policy_postcommit(self, context):
         old_es_ids = set(context.original['external_segments'])
         new_es_ids = set(context.current['external_segments'])
-        added = new_es_ids - old_es_ids
-        if not added:
+        if old_es_ids != new_es_ids and not new_es_ids:
             self._use_implicit_external_segment(context)
 
     @log.log
@@ -164,8 +163,7 @@ class ImplicitPolicyDriver(api.PolicyDriver):
     def update_l3_policy_postcommit(self, context):
         old_es_ids = set(context.original['external_segments'].keys())
         new_es_ids = set(context.current['external_segments'].keys())
-        added = new_es_ids - old_es_ids
-        if not added:
+        if old_es_ids != new_es_ids and not new_es_ids:
             self._use_implicit_external_segment(context)
 
     def _use_implicit_l2_policy(self, context):
