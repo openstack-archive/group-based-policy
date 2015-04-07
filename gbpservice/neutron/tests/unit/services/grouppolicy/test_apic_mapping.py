@@ -107,6 +107,7 @@ class ApicMappingTestCase(
         self.driver.apic_manager = mock.Mock(name_mapper=mock.Mock(),
                                              ext_net_dict={})
         self.driver.apic_manager.apic.transaction = self.fake_transaction
+        self.driver.apic_manager.ext_net_dict = {}
         amap.apic_manager.TENANT_COMMON = 'common'
         self.common_tenant = amap.apic_manager.TENANT_COMMON
 
@@ -1480,3 +1481,21 @@ class TestExternalPolicy(ApicMappingTestCase):
     def test_update_add_prs_5(self):
         self._test_update_add_prs(shared_es=False, shared_ep=False,
                                   shared_prs=True)
+
+    def test_update_add_prs_unsupported(self):
+        self._mock_external_dict([('supported', '192.168.0.2/24')])
+        es = self.create_external_segment(
+            name='unsupported', cidr='192.168.0.0/24', expected_res_status=201,
+            external_routes=[{'destination': '128.0.0.0/16',
+                              'nexthop': '192.168.0.254'}])['external_segment']
+        prov = self._create_policy_rule_set_on_shared()
+        cons = self._create_policy_rule_set_on_shared()
+        ep = self.create_external_policy(
+            external_segments=[es['id']],
+            expected_res_status=201)['external_policy']
+        self.update_external_policy(
+            ep['id'], expected_res_status=200, tenant_id=ep['tenant_id'],
+            provided_policy_rule_sets={prov['id']: ''},
+            consumed_policy_rule_sets={cons['id']: ''})['external_policy']
+        mgr = self.driver.apic_manager
+        self.assertFalse(mgr.set_contract_for_external_epg.called)

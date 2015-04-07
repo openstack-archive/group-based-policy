@@ -33,6 +33,8 @@ from gbpservice.neutron.services.grouppolicy.drivers import (
 
 
 LOG = logging.getLogger(__name__)
+UNMANAGED_SEGMENT = _("External Segment %s is not managed by APIC mapping "
+                      "driver.")
 
 
 class L2PolicyMultiplePolicyTargetGroupNotSupportedOnApicDriver(
@@ -478,15 +480,13 @@ class ApicMappingDriver(api.ResourceMappingDriver):
             context.current['cidr'] = db_es.cidr
             context.current['ip_version'] = db_es.ip_version
         else:
-            LOG.warn(_("External Segment %s is not managed by APIC mapping "
-                       "driver.") % context.current['id'])
+            LOG.warn(UNMANAGED_SEGMENT % context.current['id'])
 
     def create_external_segment_postcommit(self, context):
         external_info = self.apic_manager.ext_net_dict.get(
             context.current['name'])
         if not external_info:
-            LOG.warn(_("External Segment %s is not managed by APIC mapping "
-                       "driver.") % context.current['id'])
+            LOG.warn(UNMANAGED_SEGMENT % context.current['id'])
 
     def update_external_segment_precommit(self, context):
         if context.current['port_address_translation']:
@@ -496,8 +496,7 @@ class ApicMappingDriver(api.ResourceMappingDriver):
         ext_info = self.apic_manager.ext_net_dict.get(
             context.current['name'])
         if not ext_info:
-            LOG.warn(_("External Segment %s is not managed by APIC mapping "
-                       "driver.") % context.current['id'])
+            LOG.warn(UNMANAGED_SEGMENT % context.current['id'])
             return
         if (context.current['external_routes'] !=
                 context.original['external_routes']):
@@ -598,9 +597,10 @@ class ApicMappingDriver(api.ResourceMappingDriver):
             context._plugin_context,
             filters={'id': delta_segments})
         for es in new_ess:
-            self._manage_ep_policy_rule_sets(
-                context._plugin_context, es, context.current, added_p_prs,
-                added_c_prs, removed_p_prs, removed_c_prs)
+            if es['name'] in self.apic_manager.ext_net_dict:
+                self._manage_ep_policy_rule_sets(
+                    context._plugin_context, es, context.current, added_p_prs,
+                    added_c_prs, removed_p_prs, removed_c_prs)
 
     def delete_external_policy_precommit(self, context):
         pass
@@ -893,9 +893,7 @@ class ApicMappingDriver(api.ResourceMappingDriver):
         external_segments = context.current['external_segments']
         ext_info = self.apic_manager.ext_net_dict.get(es['name'])
         if not ext_info:
-            LOG.warn(
-                _("External Segment %s is not managed by APIC mapping "
-                  "driver.") % es['id'])
+            LOG.warn(UNMANAGED_SEGMENT % es['id'])
             return
         ip = external_segments[es['id']]
         ip = ip[0] if (ip and ip[0]) else ext_info.get('cidr_exposed',
@@ -952,8 +950,7 @@ class ApicMappingDriver(api.ResourceMappingDriver):
             for es in added_ess:
                 ext_info = self.apic_manager.ext_net_dict.get(es['name'])
                 if not ext_info:
-                    LOG.warn(_("External Segment %s is not managed by APIC "
-                             "mapping driver.") % es['id'])
+                    LOG.warn(UNMANAGED_SEGMENT % es['id'])
                     continue
                 es_name = self.name_mapper.external_segment(context, es['id'])
                 es_tenant = self._tenant_by_sharing_policy(es)
@@ -979,8 +976,7 @@ class ApicMappingDriver(api.ResourceMappingDriver):
             for es in added_ess:
                 ext_info = self.apic_manager.ext_net_dict.get(es['name'])
                 if not ext_info:
-                    LOG.warn(_("External Segment %s is not managed by APIC "
-                             "mapping driver.") % es['id'])
+                    LOG.warn(UNMANAGED_SEGMENT % es['id'])
                     continue
                 es_name = self.name_mapper.external_segment(context, es['id'])
                 es_tenant = self._tenant_by_sharing_policy(es)
