@@ -26,7 +26,7 @@ down_revision = '1bf7555fa01a'
 
 
 from alembic import op
-from neutron.plugins.common import constants
+from neutron.common import constants
 import sqlalchemy as sa
 
 from gbpservice.neutron.services.grouppolicy.common import (
@@ -40,8 +40,9 @@ def upgrade(active_plugins=None, options=None):
         sa.Column('tenant_id', sa.String(length=255), nullable=True),
         sa.Column('name', sa.String(length=50), nullable=True),
         sa.Column('description', sa.String(length=255), nullable=True),
-        sa.Column('protocol', sa.Enum(constants.TCP, constants.UDP,
-                                      constants.ICMP,
+        sa.Column('protocol', sa.Enum(constants.PROTO_NAME_TCP,
+                                      constants.PROTO_NAME_UDP,
+                                      constants.PROTO_NAME_ICMP,
                                       name="protocol_type"),
                   nullable=True),
         sa.Column('port_range_min', sa.Integer),
