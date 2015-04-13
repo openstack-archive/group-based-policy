@@ -13,7 +13,7 @@
 import uuid
 
 from neutron import manager
-from neutron.plugins.common import constants
+from neutron.common import constants
 from oslo_concurrency import lockutils  # noqa
 from oslo_log import log as logging
 
@@ -494,7 +494,7 @@ class OdlMappingDriver(api.ResourceMappingDriver):
 
     def _make_odl_classifiers(self, stack_classifier):
         classifiers = []
-        if stack_classifier['protocol'] == constants.ICMP:
+        if stack_classifier['protocol'] == constants.PROTO_NAME_ICMP:
             direction = stack_classifier['direction']
             if direction == 'bi':
                 direction = "bidirectional"
@@ -555,7 +555,7 @@ class OdlMappingDriver(api.ResourceMappingDriver):
     def delete_policy_classifier_postcommit(self, context):
         tenant_id = uuid.UUID(context.current['tenant_id']).urn[9:]
 
-        if context.current['protocol'] == constants.ICMP:
+        if context.current['protocol'] == constants.PROTO_NAME_ICMP:
             # fill in classifier instance data
             classifier_instance = {
                 "name": context.current['name']
