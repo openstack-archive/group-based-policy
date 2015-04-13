@@ -15,6 +15,7 @@ import abc
 from neutron.api import extensions
 from neutron.api.v2 import attributes as attr
 from neutron.api.v2 import resource_helper
+from neutron.common import constants as n_constants
 from neutron.common import exceptions as nexc
 from neutron.openstack.common import uuidutils
 from neutron.plugins.common import constants
@@ -179,7 +180,9 @@ gp_supported_actions = [None, gp_constants.GP_ACTION_ALLOW,
 gp_supported_directions = [None, gp_constants.GP_DIRECTION_IN,
                            gp_constants.GP_DIRECTION_OUT,
                            gp_constants.GP_DIRECTION_BI]
-gp_supported_protocols = [None, constants.TCP, constants.UDP, constants.ICMP]
+gp_supported_protocols = [None, n_constants.PROTO_NAME_TCP,
+                          n_constants.PROTO_NAME_UDP,
+                          n_constants.PROTO_NAME_ICMP]
 gp_network_service_param_types = [
     gp_constants.GP_NETWORK_SVC_PARAM_TYPE_IP_SINGLE,
     gp_constants.GP_NETWORK_SVC_PARAM_TYPE_IP_POOL,

@@ -14,6 +14,7 @@ import copy
 import re
 
 import mock
+from neutron.common import constants as n_consts
 from neutron.openstack.common import uuidutils
 from neutron.plugins.common import constants
 from neutron.tests import base
@@ -1060,12 +1061,14 @@ class TestGroupPolicyAttributeConverters(base.BaseTestCase):
         self.assertEqual(gp.convert_port_to_string(''), '')
 
     def test_convert_protocol_check_valid_protocols(self):
-        self.assertEqual(gp.convert_protocol('tcp'), constants.TCP)
-        self.assertEqual(gp.convert_protocol('TCP'), constants.TCP)
-        self.assertEqual(gp.convert_protocol('udp'), constants.UDP)
-        self.assertEqual(gp.convert_protocol('UDP'), constants.UDP)
-        self.assertEqual(gp.convert_protocol('icmp'), constants.ICMP)
-        self.assertEqual(gp.convert_protocol('ICMP'), constants.ICMP)
+        self.assertEqual(gp.convert_protocol('tcp'), n_consts.PROTO_NAME_TCP)
+        self.assertEqual(gp.convert_protocol('TCP'), n_consts.PROTO_NAME_TCP)
+        self.assertEqual(gp.convert_protocol('udp'), n_consts.PROTO_NAME_UDP)
+        self.assertEqual(gp.convert_protocol('UDP'), n_consts.PROTO_NAME_UDP)
+        self.assertEqual(gp.convert_protocol('icmp'),
+                         n_consts.PROTO_NAME_ICMP)
+        self.assertEqual(gp.convert_protocol('ICMP'),
+                         n_consts.PROTO_NAME_ICMP)
 
     def test_convert_protocol_check_invalid_protocols(self):
         self.assertRaises(gp.GroupPolicyInvalidProtocol,
