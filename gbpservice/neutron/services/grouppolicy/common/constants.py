@@ -27,3 +27,7 @@ GP_NETWORK_SVC_PARAM_TYPE_STRING = 'string'
 
 GP_NETWORK_SVC_PARAM_VALUE_EXTERNAL_SUBNET = 'external_subnet'
 GP_NETWORK_SVC_PARAM_VALUE_SELF_SUBNET = 'self_subnet'
+
+TCP = "tcp"
+UDP = "udp"
+ICMP = "icmp"

@@ -179,7 +179,8 @@ gp_supported_actions = [None, gp_constants.GP_ACTION_ALLOW,
 gp_supported_directions = [None, gp_constants.GP_DIRECTION_IN,
                            gp_constants.GP_DIRECTION_OUT,
                            gp_constants.GP_DIRECTION_BI]
-gp_supported_protocols = [None, constants.TCP, constants.UDP, constants.ICMP]
+gp_supported_protocols = [None, gp_constants.TCP, gp_constants.UDP,
+                          gp_constants.ICMP]
 gp_network_service_param_types = [
     gp_constants.GP_NETWORK_SVC_PARAM_TYPE_IP_SINGLE,
     gp_constants.GP_NETWORK_SVC_PARAM_TYPE_IP_POOL,

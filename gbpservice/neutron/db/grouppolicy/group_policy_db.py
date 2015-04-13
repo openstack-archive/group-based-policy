@@ -18,7 +18,6 @@ from neutron.db import common_db_mixin
 from neutron.db import model_base
 from neutron.db import models_v2
 from neutron.openstack.common import uuidutils
-from neutron.plugins.common import constants
 from oslo_log import log as logging
 import sqlalchemy as sa
 from sqlalchemy import orm
@@ -240,8 +239,8 @@ class PolicyClassifier(model_base.BASEV2, models_v2.HasId,
     __tablename__ = 'gp_policy_classifiers'
     name = sa.Column(sa.String(50))
     description = sa.Column(sa.String(255))
-    protocol = sa.Column(sa.Enum(constants.TCP, constants.UDP, constants.ICMP,
-                                 name="protocol_type"),
+    protocol = sa.Column(sa.Enum(gp_constants.TCP, gp_constants.UDP,
+                                 gp_constants.ICMP, name="protocol_type"),
                          nullable=True)
     port_range_min = sa.Column(sa.Integer)
     port_range_max = sa.Column(sa.Integer)
