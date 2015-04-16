@@ -5,6 +5,7 @@ set -xe
 GBP_DIR="$BASE/new/group-based-policy"
 TEMPEST_DIR="$BASE/new/tempest"
 SCRIPTS_DIR="/usr/local/jenkins/slave_scripts"
+LOGS_DIR="$BASE/new/logs"
 
 function generate_testr_results {
     # Give job user rights to access tox logs
@@ -24,9 +25,21 @@ function dsvm_functional_prep_func {
     :
 }
 
+exercises_exit_code=$(grep -cim1 "FAILED gbp*" $LOGS_DIR/stack.sh.log)
 
 owner=stack
 prep_func="dsvm_functional_prep_func"
+
+# Run tests
+echo "Running gbpfunc test suite"
+set +e
+cd $BASE/new/devstack
+source openrc demo demo
+cd $BASE/new
+sudo git clone https://github.com/noironetworks/devstack -b jishnub/testsuites gbpfunctests
+cd gbpfunctests/testcases/testcases_func
+gbpfunc_exit_code=$(python suite_run.py -s func)
+set -e
 
 # Set owner permissions according to job's requirements.
 cd $GBP_DIR
@@ -48,7 +61,7 @@ generate_testr_results
 
 # Prepare the log files for Jenkins to upload
 set +e
-cd $BASE/new/logs
+cd $LOGS_DIR
 for f in $(find . -name "*.log.2*"); do
     sudo mv $f ${f/.log.*/.txt}
 done
@@ -56,4 +69,4 @@ sudo gzip -9fk `find . -maxdepth 1 \! -type l -name "*.txt" | xargs ls -d`
 mv *.gz /opt/stack/logs/
 set -e
 
-exit $testr_exit_code
+exit $(($exercises_exit_code+$gbpfunc_exit_code+$testr_exit_code))
