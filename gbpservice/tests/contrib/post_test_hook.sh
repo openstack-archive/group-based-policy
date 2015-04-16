@@ -28,6 +28,18 @@ function dsvm_functional_prep_func {
 owner=stack
 prep_func="dsvm_functional_prep_func"
 
+# Run tests
+echo "Running gbpfunc test suite"
+set +e
+cd $BASE/new/devstack
+source openrc
+cd $BASE/new
+sudo git clone https://github.com/noironetworks/devstack -b jishnub/testsuites gbpfunctests
+#cd /usr/local/lib/python2.7/dist-packages/gbpfunctests/
+cd gbpfunctests/testcases/testcases_func
+sudo python suite_run.py -s func
+set -e
+
 # Set owner permissions according to job's requirements.
 cd $GBP_DIR
 sudo chown -R $owner:stack $GBP_DIR
