@@ -37,6 +37,11 @@ $prep_func
 # Run tests
 echo "Running group-based-policy dsvm-functional test suite"
 set +e
+cd $BASE/new/devstack
+source openrc admin admin
+cd /usr/local/lib/python2.7/dist-packages/gbpfunctests/
+sudo python suite_run.py -s func
+
 # Temporary workaround for subunit not getting installed in tox environment
 sudo pip uninstall python-subunit -y
 sudo -H -u $owner tox -e dsvm-functional

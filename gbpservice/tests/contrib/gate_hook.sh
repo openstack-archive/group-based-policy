@@ -17,6 +17,7 @@ source $TOP_DIR/functions-common
 sudo pip install httplib2
 install_package openvswitch-switch
 pip_install -e /opt/stack/new/group-based-policy
+sudo pip install gbpfunctests
 $TOP_DIR/stack.sh
 
 # Add a rootwrap filter to support test-only
