@@ -25,7 +25,8 @@ import sqlalchemy as sa
 
 from gbpservice.neutron.services.grouppolicy.drivers.oneconvergence import (
     nvsd_gbp_api as napi)
-from gbpservice.neutron.services.servicechain.drivers import simplechain_driver
+from gbpservice.neutron.services.servicechain.plugins.msc.drivers import (
+    simplechain_driver as simplechain_driver)
 
 
 eventlet.monkey_patch()

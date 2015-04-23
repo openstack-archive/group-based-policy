@@ -19,9 +19,10 @@ from gbpservice.neutron.services.servicechain.common import (
 
 
 LOG = log.getLogger(__name__)
-cfg.CONF.import_opt('servicechain_drivers',
-                    'gbpservice.neutron.services.servicechain.config',
-                    group='servicechain')
+cfg.CONF.import_opt(
+    'servicechain_drivers',
+    'gbpservice.neutron.services.servicechain.plugins.msc.config',
+    group='servicechain')
 
 
 class DriverManager(stevedore.named.NamedExtensionManager):

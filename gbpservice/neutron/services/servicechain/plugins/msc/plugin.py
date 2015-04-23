@@ -15,10 +15,10 @@ from neutron.openstack.common import excutils
 from neutron.openstack.common import log as logging
 
 import gbpservice.neutron.db.servicechain_db as servicechain_db
-from gbpservice.neutron.services.servicechain import (
+from gbpservice.neutron.services.servicechain.plugins.msc import (
+    context as servicechain_context)
+from gbpservice.neutron.services.servicechain.plugins.msc import (
     driver_manager as manager)
-from gbpservice.neutron.services.servicechain import (
-    servicechain_context as servicechain_context)
 
 LOG = logging.getLogger(__name__)
 
