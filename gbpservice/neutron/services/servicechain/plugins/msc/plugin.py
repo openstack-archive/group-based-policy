@@ -15,10 +15,10 @@ from oslo_log import log as logging
 from oslo_utils import excutils
 
 import gbpservice.neutron.db.servicechain_db as servicechain_db
-from gbpservice.neutron.services.servicechain import (
+from gbpservice.neutron.services.servicechain.plugins.msc import (
+    context as servicechain_context)
+from gbpservice.neutron.services.servicechain.plugins.msc import (
     driver_manager as manager)
-from gbpservice.neutron.services.servicechain import (
-    servicechain_context as servicechain_context)
 
 
 LOG = logging.getLogger(__name__)
