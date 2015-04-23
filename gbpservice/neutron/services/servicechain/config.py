@@ -19,11 +19,7 @@ service_chain_opts = [
                 help=_("An ordered list of service chain drivers "
                        "entrypoints to be loaded from the "
                        "gbpservice.neutron.servicechain.servicechain_drivers "
-                       "namespace.")),
-    cfg.StrOpt('heat_uri',
-               default='http://localhost:8004/v1',
-               help=_("Heat server address to create services "
-                      "specified in the service chain.")),
+                       "namespace."))
 ]
 
 
