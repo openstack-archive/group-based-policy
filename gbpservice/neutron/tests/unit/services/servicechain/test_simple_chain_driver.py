@@ -20,11 +20,12 @@ from neutron.plugins.common import constants
 from oslo_serialization import jsonutils
 import webob
 
-from gbpservice.neutron.services.servicechain import config
-import gbpservice.neutron.services.servicechain.drivers.simplechain_driver as\
-                                                simplechain_driver
-from gbpservice.neutron.tests.unit.services.servicechain import \
-                                    test_servicechain_plugin
+from gbpservice.neutron.services.servicechain.plugins.msc import config
+from gbpservice.neutron.services.servicechain.plugins.msc.drivers import (
+    simplechain_driver as simplechain_driver)
+from gbpservice.neutron.tests.unit.services.servicechain import (
+    test_servicechain_plugin as test_servicechain_plugin)
+
 
 STACK_DELETE_RETRIES = 5
 STACK_DELETE_RETRY_WAIT = 3

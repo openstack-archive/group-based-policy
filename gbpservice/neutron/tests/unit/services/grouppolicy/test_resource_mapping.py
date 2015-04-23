@@ -13,9 +13,9 @@
 
 import contextlib
 import itertools
-import netaddr
 
 import mock
+import netaddr
 from neutron.api.rpc.agentnotifiers import dhcp_rpc_agent_api
 from neutron.common import constants as cst
 from neutron import context as nctx
@@ -36,9 +36,11 @@ from gbpservice.neutron.db import servicechain_db
 from gbpservice.neutron.services.grouppolicy.common import constants as gconst
 from gbpservice.neutron.services.grouppolicy import config
 from gbpservice.neutron.services.grouppolicy.drivers import resource_mapping
-from gbpservice.neutron.services.servicechain import config as sc_cfg
+from gbpservice.neutron.services.servicechain.plugins.msc import (
+    config as sc_cfg)
 from gbpservice.neutron.tests.unit.services.grouppolicy import (
     test_grouppolicy_plugin as test_plugin)
+
 
 SERVICECHAIN_NODES = 'servicechain/servicechain_nodes'
 SERVICECHAIN_SPECS = 'servicechain/servicechain_specs'
