@@ -16,13 +16,13 @@ from oslo.config import cfg
 from gbpservice.neutron.tests.unit.db.grouppolicy import (
     test_servicechain_db as test_servicechain_db)
 
-cfg.CONF.import_opt('servicechain_drivers',
-                    'gbpservice.neutron.services.servicechain.config',
-                    group='servicechain')
+cfg.CONF.import_opt(
+    'servicechain_drivers',
+    'gbpservice.neutron.services.servicechain.plugins.msc.config',
+    group='servicechain')
 SC_PLUGIN_KLASS = (
-    "gbpservice.neutron.services.servicechain.servicechain_plugin."
-    "ServiceChainPlugin"
-)
+    "gbpservice.neutron.services.servicechain.plugins.msc.plugin."
+    "ServiceChainPlugin")
 
 
 class ServiceChainPluginTestCase(test_servicechain_db.ServiceChainDbTestCase):
