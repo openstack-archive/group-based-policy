@@ -1,0 +1,10 @@
+Verified+2: Jenkins
+Code-Review+2: Sumit Naiksatam <sumitnaiksatam@gmail.com>
+Code-Review+1: Yapeng Wu <yapengwu@gmail.com>
+Code-Review+2: Ivar Lazzaro <ivarlazzaro@gmail.com>
+Workflow+1: Ivar Lazzaro <ivarlazzaro@gmail.com>
+Submitted-by: Jenkins
+Submitted-at: Fri, 24 Apr 2015 22:42:02 +0000
+Reviewed-on: https://review.openstack.org/174432
+Project: stackforge/group-based-policy
+Branch: refs/heads/feature/refactor
