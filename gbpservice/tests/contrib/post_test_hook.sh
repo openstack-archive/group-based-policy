@@ -45,4 +45,13 @@ set -e
 
 # Collect and parse results
 generate_testr_results
+
+# Prepare the log files for Jeknins to uploaded
+cd $BASE/new/logs
+for f in $(find . -name "*.log"); do
+    sudo mv $f ${f/.log.*/.txt}
+done
+sudo gzip -9fk `find . -maxdepth 1 \! -type l -name "*.txt" | xargs ls -d`
+mv *.gz /opt/stack/logs/
+
 exit $testr_exit_code
