@@ -43,4 +43,15 @@ set -e
 
 # Collect and parse results
 generate_testr_results
+
+# Prepare the log files for Jenkins to upload
+set +e
+cd $BASE/new/logs
+for f in $(find . -name "*.log.2*"); do
+    sudo mv $f ${f/.log.*/.txt}
+done
+sudo gzip -9fk `find . -maxdepth 1 \! -type l -name "*.txt" | xargs ls -d`
+mv *.gz /opt/stack/logs/
+set -e
+
 exit $testr_exit_code
