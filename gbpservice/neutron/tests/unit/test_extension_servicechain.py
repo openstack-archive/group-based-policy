@@ -20,6 +20,7 @@ from neutron.tests.unit.extensions import base as test_extensions_base
 from webob import exc
 
 from gbpservice.neutron.extensions import servicechain
+from gbpservice.neutron.tests.unit import common as cm
 
 
 _uuid = uuidutils.generate_uuid
@@ -63,28 +64,6 @@ class ServiceChainExtensionTestCase(test_extensions_base.ExtensionTestCase):
         self.assertIn('servicechain_node', res)
         self.assertEqual(expected_value, res['servicechain_node'])
 
-    def _get_create_servicechain_node_default_attrs(self):
-        return {
-            'name': '',
-            'description': '',
-            'config': ''
-        }
-
-    def _get_create_servicechain_node_attrs(self):
-        return {
-            'name': 'servicechain1',
-            'service_profile_id': _uuid(),
-            'tenant_id': _uuid(),
-            'description': 'test servicechain node',
-            'config': 'test_config',
-            'service_type': None,
-        }
-
-    def _get_update_servicechain_node_attrs(self):
-        return {
-            'name': 'new_name',
-        }
-
     def test_create_servicechain_node_with_defaults(self):
         servicechain_node_id = _uuid()
         data = {
@@ -95,7 +74,7 @@ class ServiceChainExtensionTestCase(test_extensions_base.ExtensionTestCase):
                 'service_type': None,
             }
         }
-        default_attrs = self._get_create_servicechain_node_default_attrs()
+        default_attrs = cm.get_create_servicechain_node_default_attrs()
         default_data = copy.copy(data)
         default_data['servicechain_node'].update(default_attrs)
         expected_value = dict(default_data['servicechain_node'])
@@ -106,7 +85,7 @@ class ServiceChainExtensionTestCase(test_extensions_base.ExtensionTestCase):
     def test_create_servicechain_node(self):
         servicechain_node_id = _uuid()
         data = {
-            'servicechain_node': self._get_create_servicechain_node_attrs()
+            'servicechain_node': cm.get_create_servicechain_node_attrs()
         }
         expected_value = dict(data['servicechain_node'])
         expected_value['id'] = servicechain_node_id
@@ -147,7 +126,7 @@ class ServiceChainExtensionTestCase(test_extensions_base.ExtensionTestCase):
     def test_update_servicechain_node(self):
         servicechain_node_id = _uuid()
         update_data = {
-            'servicechain_node': self._get_update_servicechain_node_attrs()
+            'servicechain_node': cm.get_update_servicechain_node_attrs()
         }
         expected_value = {'tenant_id': _uuid(), 'id': servicechain_node_id}
         self.instance.update_servicechain_node.return_value = expected_value
@@ -184,27 +163,6 @@ class ServiceChainExtensionTestCase(test_extensions_base.ExtensionTestCase):
         self.assertIn('servicechain_spec', res)
         self.assertEqual(expected_value, res['servicechain_spec'])
 
-    def _get_create_servicechain_spec_default_attrs(self):
-        return {
-            'name': '',
-            'description': '',
-            'nodes': []
-        }
-
-    def _get_create_servicechain_spec_attrs(self):
-        return {
-            'name': 'servicechainspec1',
-            'nodes': [_uuid(), _uuid()],
-            'tenant_id': _uuid(),
-            'description': 'test servicechain spec'
-        }
-
-    def _get_update_servicechain_spec_attrs(self):
-        return {
-            'name': 'new_name',
-            'nodes': [_uuid()]
-        }
-
     def test_create_servicechain_spec_with_defaults(self):
         servicechain_spec_id = _uuid()
         data = {
@@ -212,7 +170,7 @@ class ServiceChainExtensionTestCase(test_extensions_base.ExtensionTestCase):
                 'nodes': [_uuid(), _uuid()], 'tenant_id': _uuid()
             }
         }
-        default_attrs = self._get_create_servicechain_spec_default_attrs()
+        default_attrs = cm.get_create_servicechain_spec_default_attrs()
         default_data = copy.copy(data)
         default_data['servicechain_spec'].update(default_attrs)
         expected_value = dict(default_data['servicechain_spec'])
@@ -223,7 +181,7 @@ class ServiceChainExtensionTestCase(test_extensions_base.ExtensionTestCase):
     def test_create_servicechain_spec(self):
         servicechain_spec_id = _uuid()
         data = {
-            'servicechain_spec': self._get_create_servicechain_spec_attrs()
+            'servicechain_spec': cm.get_create_servicechain_spec_attrs()
         }
         expected_value = dict(data['servicechain_spec'])
         expected_value['id'] = servicechain_spec_id
@@ -263,7 +221,7 @@ class ServiceChainExtensionTestCase(test_extensions_base.ExtensionTestCase):
     def test_update_servicechain_spec(self):
         servicechain_spec_id = _uuid()
         update_data = {
-            'servicechain_spec': self._get_update_servicechain_spec_attrs()
+            'servicechain_spec': cm.get_update_servicechain_spec_attrs()
         }
         expected_value = {'tenant_id': _uuid(), 'id': servicechain_spec_id}
         self.instance.update_servicechain_spec.return_value = expected_value
@@ -301,27 +259,6 @@ class ServiceChainExtensionTestCase(test_extensions_base.ExtensionTestCase):
         self.assertIn('servicechain_instance', res)
         self.assertEqual(expected_value, res['servicechain_instance'])
 
-    def _get_create_servicechain_instance_default_attrs(self):
-        return {'name': '', 'description': '', 'config_param_values': "{}"}
-
-    def _get_create_servicechain_instance_attrs(self):
-        return {
-            'name': 'servicechaininstance1',
-            'servicechain_specs': [_uuid()],
-            'tenant_id': _uuid(),
-            'provider_ptg_id': _uuid(),
-            'consumer_ptg_id': _uuid(),
-            'classifier_id': _uuid(),
-            'config_param_values': "{}",
-            'description': 'test servicechain instance'
-        }
-
-    def _get_update_servicechain_instance_attrs(self):
-        return {
-            'name': 'new_name',
-            'servicechain_specs': [_uuid()]
-        }
-
     def test_create_servicechain_instance_with_defaults(self):
         servicechain_instance_id = _uuid()
         data = {
@@ -333,7 +270,7 @@ class ServiceChainExtensionTestCase(test_extensions_base.ExtensionTestCase):
                 'classifier_id': _uuid(),
             }
         }
-        default_attrs = self._get_create_servicechain_instance_default_attrs()
+        default_attrs = cm.get_create_servicechain_instance_default_attrs()
         default_data = copy.copy(data)
         default_data['servicechain_instance'].update(default_attrs)
         expected_value = dict(default_data['servicechain_instance'])
@@ -345,7 +282,7 @@ class ServiceChainExtensionTestCase(test_extensions_base.ExtensionTestCase):
     def test_create_servicechain_instance(self):
         servicechain_instance_id = _uuid()
         data = {'servicechain_instance':
-                self._get_create_servicechain_instance_attrs()}
+                cm.get_create_servicechain_instance_attrs()}
         expected_value = dict(data['servicechain_instance'])
         expected_value['id'] = servicechain_instance_id
 
@@ -385,7 +322,7 @@ class ServiceChainExtensionTestCase(test_extensions_base.ExtensionTestCase):
     def test_update_servicechain_instance(self):
         servicechain_instance_id = _uuid()
         update_data = {'servicechain_instance':
-                       self._get_update_servicechain_instance_attrs()}
+                       cm.get_update_servicechain_instance_attrs()}
         expected_value = {'tenant_id': _uuid(), 'id': servicechain_instance_id}
         self.instance.update_servicechain_instance.return_value = (
             expected_value)
