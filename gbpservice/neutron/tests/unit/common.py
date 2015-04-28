@@ -293,6 +293,7 @@ def get_update_nat_pool_attrs():
     return {'name': 'new_name'}
 
 
+# Service Chain
 @gbp_attributes
 def get_create_service_profile_default_attrs():
     return {'name': '', 'description': ''}
@@ -311,6 +312,92 @@ def get_create_service_profile_attrs():
 def get_update_service_profile_attrs():
     return {
         'name': 'new_name',
+    }
+
+
+@gbp_attributes
+def get_create_servicechain_node_default_attrs():
+    return {
+        'name': '',
+        'description': '',
+        'config': '',
+        'service_type': None,
+        'shared': False,
+    }
+
+
+@gbp_attributes
+def get_create_servicechain_node_attrs():
+    return {
+        'name': 'servicechain1',
+        'service_profile_id': _uuid(),
+        'tenant_id': _uuid(),
+        'description': 'test servicechain node',
+        'config': 'test_config',
+        'service_type': None,
+        'shared': True,
+    }
+
+
+@gbp_attributes
+def get_update_servicechain_node_attrs():
+        return {
+            'name': 'new_name',
+        }
+
+
+@gbp_attributes
+def get_create_servicechain_spec_default_attrs():
+    return {
+        'name': '',
+        'description': '',
+        'nodes': [],
+        'shared': False,
+    }
+
+
+@gbp_attributes
+def get_create_servicechain_spec_attrs():
+    return {
+        'name': 'servicechainspec1',
+        'nodes': [_uuid(), _uuid()],
+        'tenant_id': _uuid(),
+        'description': 'test servicechain spec',
+        'shared': True,
+    }
+
+
+@gbp_attributes
+def get_update_servicechain_spec_attrs():
+    return {
+        'name': 'new_name',
+        'nodes': [_uuid()]
+    }
+
+
+@gbp_attributes
+def get_create_servicechain_instance_default_attrs():
+    return {'name': '', 'description': '', 'config_param_values': "{}"}
+
+
+@gbp_attributes
+def get_create_servicechain_instance_attrs():
+    return {
+        'name': 'servicechaininstance1',
+        'servicechain_specs': [_uuid()],
+        'tenant_id': _uuid(),
+        'provider_ptg_id': _uuid(),
+        'consumer_ptg_id': _uuid(),
+        'classifier_id': _uuid(),
+        'config_param_values': "{}",
+        'description': 'test servicechain instance'
+    }
+
+
+def get_update_servicechain_instance_attrs():
+    return {
+        'name': 'new_name',
+        'servicechain_specs': [_uuid()]
     }
 
 
