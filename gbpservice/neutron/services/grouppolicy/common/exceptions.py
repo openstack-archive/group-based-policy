@@ -83,10 +83,16 @@ class PolicyTargetGroupInUse(GroupPolicyBadRequest):
     message = _("Policy Target Group %(policy_target_group)s is in use")
 
 
+class PolicyTargetGroupChained(GroupPolicyBadRequest):
+    message = _("Policy Target Group %(policy_target_group)s is participating "
+                "a service chain. Please disassociate any PRS before deleting "
+                "it.")
+
+
 class InvalidPortForPTG(GroupPolicyBadRequest):
     message = _("Subnet %(port_subnet_id)s of port %(port_id)s does not "
-            "match subnet %(ptg_subnet_id)s of Policy Target Group "
-            "%(policy_target_group_id)s.")
+                "match subnet %(ptg_subnet_id)s of Policy Target Group "
+                "%(policy_target_group_id)s.")
 
 
 class InvalidSubnetForPTG(GroupPolicyBadRequest):

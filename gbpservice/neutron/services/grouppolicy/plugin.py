@@ -460,6 +460,9 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
             policy_target_group = self.get_policy_target_group(
                 context, policy_target_group_id)
             pt_ids = policy_target_group['policy_targets']
+            if self._is_ptg_chained(context, policy_target_group_id):
+                raise gp_exc.PolicyTargetGroupChained(
+                    policy_target_group=policy_target_group_id)
             for pt in self.get_policy_targets(context, {'id': pt_ids}):
                 if pt['port_id']:
                     if self._is_port_bound(pt['port_id']):
@@ -1452,3 +1455,10 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
         port = n_manager.NeutronManager.get_plugin().get_port(context, port_id)
         return (port.get('binding:vif_type') not in not_bound) and port.get(
             'binding:host_id') and (port['device_owner'] or port['device_id'])
+
+    def _is_ptg_chained(self, context, ptg_id):
+        return bool(
+            self.servicechain_plugin.get_servicechain_instances(
+                context, filters={'provider_ptg_id': [ptg_id]}) or
+            self.servicechain_plugin.get_servicechain_instances(
+                context, filters={'consumer_ptg_id': [ptg_id]}))

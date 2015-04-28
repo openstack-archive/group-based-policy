@@ -37,52 +37,7 @@ TESTDIR = os.path.dirname(os.path.abspath(gbpservice.neutron.tests.__file__))
 ETCDIR = os.path.join(TESTDIR, 'etc')
 
 
-class GroupPolicyDBTestBase(object):
-    resource_prefix_map = dict(
-        (k, constants.COMMON_PREFIXES[constants.GROUP_POLICY])
-        for k in gpolicy.RESOURCE_ATTRIBUTE_MAP.keys()
-    )
-
-    fmt = JSON_FORMAT
-
-    def __getattr__(self, item):
-        # Verify is an update of a proper GBP object
-        def _is_gbp_resource(plural):
-            return plural in gpolicy.RESOURCE_ATTRIBUTE_MAP
-        # Update Method
-        if item.startswith('update_'):
-            resource = item[len('update_'):]
-            plural = cm.get_resource_plural(resource)
-            if _is_gbp_resource(plural):
-                def update_wrapper(id, **kwargs):
-                    return self._update_gbp_resource(id, resource, **kwargs)
-                return update_wrapper
-        # Show Method
-        if item.startswith('show_'):
-            resource = item[len('show_'):]
-            plural = cm.get_resource_plural(resource)
-            if _is_gbp_resource(plural):
-                def show_wrapper(id, **kwargs):
-                    return self._show_gbp_resource(id, plural, **kwargs)
-                return show_wrapper
-        # Create Method
-        if item.startswith('create_'):
-            resource = item[len('create_'):]
-            plural = cm.get_resource_plural(resource)
-            if _is_gbp_resource(plural):
-                def create_wrapper(**kwargs):
-                    return self._create_gbp_resource(resource, **kwargs)
-                return create_wrapper
-        # Delete Method
-        if item.startswith('delete_'):
-            resource = item[len('delete_'):]
-            plural = cm.get_resource_plural(resource)
-            if _is_gbp_resource(plural):
-                def delete_wrapper(id, **kwargs):
-                    return self._delete_gbp_resource(id, plural, **kwargs)
-                return delete_wrapper
-
-        raise AttributeError
+class ApiManagerMixin(object):
 
     def _test_list_resources(self, resource, items,
                              neutron_context=None,
@@ -96,8 +51,8 @@ class GroupPolicyDBTestBase(object):
         self.assertEqual(sorted([i['id'] for i in res[resource_plural]]),
                          sorted([i[resource]['id'] for i in items]))
 
-    def _create_gbp_resource(self, type, expected_res_status=None,
-                             is_admin_context=False, **kwargs):
+    def _create_resource(self, type, expected_res_status=None,
+                         is_admin_context=False, **kwargs):
         plural = cm.get_resource_plural(type)
         defaults = getattr(cm,
                            'get_create_%s_default_attrs' % type)()
@@ -119,7 +74,7 @@ class GroupPolicyDBTestBase(object):
 
         return self.deserialize(self.fmt, res)
 
-    def _update_gbp_resource(
+    def _update_resource(
             self, id, type, expected_res_status=None, is_admin_context=False,
             **kwargs):
         plural = cm.get_resource_plural(type)
@@ -138,8 +93,8 @@ class GroupPolicyDBTestBase(object):
             raise webob.exc.HTTPClientError(code=res.status_int)
         return self.deserialize(self.fmt, res)
 
-    def _show_gbp_resource(self, id, plural, expected_res_status=None,
-                           is_admin_context=False, tenant_id=None):
+    def _show_resource(self, id, plural, expected_res_status=None,
+                       is_admin_context=False, tenant_id=None):
         req = self.new_show_request(plural, id, fmt=self.fmt)
         req.environ['neutron.context'] = context.Context(
             '', tenant_id or self._tenant_id, is_admin_context)
@@ -151,8 +106,8 @@ class GroupPolicyDBTestBase(object):
             raise webob.exc.HTTPClientError(code=res.status_int)
         return self.deserialize(self.fmt, res)
 
-    def _delete_gbp_resource(self, id, plural, is_admin_context=False,
-                             expected_res_status=None, tenant_id=None):
+    def _delete_resource(self, id, plural, is_admin_context=False,
+                         expected_res_status=None, tenant_id=None):
         req = self.new_delete_request(plural, id)
         req.environ['neutron.context'] = context.Context(
             '', tenant_id or self._tenant_id, is_admin_context)
@@ -161,6 +116,56 @@ class GroupPolicyDBTestBase(object):
             self.assertEqual(res.status_int, expected_res_status)
         elif res.status_int >= webob.exc.HTTPClientError.code:
             raise webob.exc.HTTPClientError(code=res.status_int)
+        if res.status_int != 204:
+            return self.deserialize(self.fmt, res)
+
+
+class GroupPolicyDBTestBase(ApiManagerMixin):
+    resource_prefix_map = dict(
+        (k, constants.COMMON_PREFIXES[constants.GROUP_POLICY])
+        for k in gpolicy.RESOURCE_ATTRIBUTE_MAP.keys()
+    )
+
+    fmt = JSON_FORMAT
+
+    def __getattr__(self, item):
+        # Verify is an update of a proper GBP object
+        def _is_gbp_resource(plural):
+            return plural in gpolicy.RESOURCE_ATTRIBUTE_MAP
+        # Update Method
+        if item.startswith('update_'):
+            resource = item[len('update_'):]
+            plural = cm.get_resource_plural(resource)
+            if _is_gbp_resource(plural):
+                def update_wrapper(id, **kwargs):
+                    return self._update_resource(id, resource, **kwargs)
+                return update_wrapper
+        # Show Method
+        if item.startswith('show_'):
+            resource = item[len('show_'):]
+            plural = cm.get_resource_plural(resource)
+            if _is_gbp_resource(plural):
+                def show_wrapper(id, **kwargs):
+                    return self._show_resource(id, plural, **kwargs)
+                return show_wrapper
+        # Create Method
+        if item.startswith('create_'):
+            resource = item[len('create_'):]
+            plural = cm.get_resource_plural(resource)
+            if _is_gbp_resource(plural):
+                def create_wrapper(**kwargs):
+                    return self._create_resource(resource, **kwargs)
+                return create_wrapper
+        # Delete Method
+        if item.startswith('delete_'):
+            resource = item[len('delete_'):]
+            plural = cm.get_resource_plural(resource)
+            if _is_gbp_resource(plural):
+                def delete_wrapper(id, **kwargs):
+                    return self._delete_resource(id, plural, **kwargs)
+                return delete_wrapper
+
+        raise AttributeError
 
 
 class GroupPolicyDBTestPlugin(gpdb.GroupPolicyDbPlugin):
@@ -1115,7 +1120,7 @@ class TestGroupResources(GroupPolicyDbTestCase):
 
     def _test_create_and_show(self, type, attrs, expected=None):
         plural = cm.get_resource_plural(type)
-        res = self._create_gbp_resource(type, None, False, **attrs)
+        res = self._create_resource(type, None, False, **attrs)
         expected = expected or attrs
         for k, v in expected.iteritems():
             self.assertEqual(v, res[type][k])
