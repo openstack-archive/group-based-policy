@@ -1263,8 +1263,7 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
             if 'subnet_prefix_length' in l3p:
                 self.validate_subnet_prefix_length(
                     l3p_db.ip_version,
-                    l3p['subnet_prefix_length'],
-                    l3p.get('ip_pool', None))
+                    l3p['subnet_prefix_length'], l3p_db.ip_pool)
             if 'external_segments' in l3p:
                 self._set_ess_for_l3p(context, l3p_db,
                                       l3p['external_segments'])
