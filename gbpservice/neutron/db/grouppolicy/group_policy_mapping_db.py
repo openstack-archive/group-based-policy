@@ -279,7 +279,7 @@ class GroupPolicyMappingDbPlugin(gpdb.GroupPolicyDbPlugin):
             if 'subnet_prefix_length' in l3p:
                 self.validate_subnet_prefix_length(l3p_db.ip_version,
                                                    l3p['subnet_prefix_length'],
-                                                   l3p.get('ip_pool', None))
+                                                   l3p_db.ip_pool)
             if 'routers' in l3p:
                 # Add/remove associations for changes in routers.
                 new_routers = set(l3p['routers'])
