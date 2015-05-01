@@ -30,7 +30,8 @@ from gbpservice.neutron.services.grouppolicy.common import constants as g_const
 from gbpservice.neutron.services.grouppolicy.common import exceptions as gpexc
 from gbpservice.neutron.services.grouppolicy.drivers import (
     resource_mapping as api)
-
+from gbpservice.neutron.services.grouppolicy.drivers.sg_managers import (
+    dummy_manager as sg_manager)
 
 LOG = logging.getLogger(__name__)
 
@@ -117,6 +118,8 @@ class ApicMappingDriver(api.ResourceMappingDriver):
         self.apic_manager = ApicMappingDriver.get_apic_manager()
         self.name_mapper = self.apic_manager.apic_mapper
         self._gbp_plugin = None
+        self._sg_manager = sg_manager.DummyManager()
+        self._sg_manager.initialize(self)
 
     @property
     def gbp_plugin(self):
@@ -371,6 +374,36 @@ class ApicMappingDriver(api.ResourceMappingDriver):
 
     def update_policy_rule_set_precommit(self, context):
         self._reject_shared_update(context, 'policy_rule_set')
+
+    def update_policy_rule_set_postcommit(self, context):
+        # Update policy_rule_set rules
+        old_rules = set(context.original['policy_rules'])
+        new_rules = set(context.current['policy_rules'])
+        to_add = context._plugin.get_policy_rules(
+            context._plugin_context, {'id': new_rules - old_rules})
+        to_remove = context._plugin.get_policy_rules(
+            context._plugin_context, {'id': old_rules - new_rules})
+        self._remove_policy_rule_set_rules(context, context.current, to_remove)
+        self._apply_policy_rule_set_rules(context, context.current, to_add)
+        # Update children contraint
+        to_recompute = (set(context.original['child_policy_rule_sets']) ^
+                        set(context.current['child_policy_rule_sets']))
+        self._recompute_policy_rule_sets(context, to_recompute)
+        if to_add or to_remove:
+            to_recompute = (set(context.original['child_policy_rule_sets']) &
+                            set(context.current['child_policy_rule_sets']))
+            self._recompute_policy_rule_sets(context, to_recompute)
+        # Handle any Redirects from the current Policy Rule Set
+        self._handle_redirect_action(context, [context.current['id']])
+        # Handle Update/Delete of Redirects for any child Rule Sets
+        if (set(context.original['child_policy_rule_sets']) !=
+            set(context.current['child_policy_rule_sets'])):
+            if context.original['child_policy_rule_sets']:
+                self._handle_redirect_action(
+                    context, context.original['child_policy_rule_sets'])
+            if context.current['child_policy_rule_sets']:
+                self._handle_redirect_action(
+                    context, context.current['child_policy_rule_sets'])
 
     def update_policy_target_postcommit(self, context):
         # TODO(ivar): redo binding procedure if the PTG is modified,
@@ -822,8 +855,9 @@ class ApicMappingDriver(api.ResourceMappingDriver):
             ret = self._create_sg(context, attrs)
             for ethertype in ext_sg.sg_supported_ethertypes:
                 for direction in ['ingress', 'egress']:
-                    self._sg_rule(context, tenant_id, ret['id'], direction,
-                                  ethertype=ethertype)
+                    self._sg_manager._sg_rule(
+                        context, tenant_id, ret['id'], direction,
+                        ethertype=ethertype)
             return ret['id']
         else:
             return default_group[0]['id']
@@ -1017,3 +1051,36 @@ class ApicMappingDriver(api.ResourceMappingDriver):
             return self.name_mapper.tenant(None, object['tenant_id'])
         else:
             return apic_manager.TENANT_COMMON
+
+    def _recompute_policy_rule_sets(self, context, children):
+        # Rules in child but not in parent shall be removed
+        # Child rules will be set after being filtered by the parent
+        for child in children:
+            child = context._plugin.get_policy_rule_set(
+                context._plugin_context, child)
+            child_rule_ids = set(child['policy_rules'])
+            if child['parent_id']:
+                parent = context._plugin.get_policy_rule_set(
+                    context._plugin_context, child['parent_id'])
+                parent_policy_rules = context._plugin.get_policy_rules(
+                                        context._plugin_context,
+                                        filters={'id': parent['policy_rules']})
+                child_rules = context._plugin.get_policy_rules(
+                                        context._plugin_context,
+                                        filters={'id': child['policy_rules']})
+                parent_classifier_ids = [x['policy_classifier_id']
+                                     for x in parent_policy_rules]
+                delta_rules = [x['id'] for x in child_rules
+                               if x['policy_classifier_id']
+                               not in set(parent_classifier_ids)]
+                delta_rules = context._plugin.get_policy_rules(
+                                context._plugin_context, {'id': delta_rules})
+                self._remove_policy_rule_set_rules(context, child, delta_rules)
+            # Old parent may have filtered some rules, need to add them again.
+            # Being the l3p_id not specified, this will affect all the SGs
+            # associated with the child.
+            child_rules = context._plugin.get_policy_rules(
+                context._plugin_context, filters={'id': child_rule_ids})
+            cidr_mapping = self._get_cidrs_mapping(context, child)
+            self._apply_policy_rule_set_rules(context, child, child_rules,
+                                              cidr_mapping)
