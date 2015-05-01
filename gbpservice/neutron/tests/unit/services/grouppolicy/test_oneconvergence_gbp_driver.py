@@ -1,5 +1,3 @@
-# Copyright 2014 Alcatel-Lucent USA Inc.
-#
 #    Licensed under the Apache License, Version 2.0 (the "License"); you may
 #    not use this file except in compliance with the License. You may obtain
 #    a copy of the License at
@@ -13,7 +11,9 @@
 #    under the License.
 
 import mock
+from neutron import manager
 
+from gbpservice.neutron.services.grouppolicy.common import exceptions as gexc
 from gbpservice.neutron.services.grouppolicy.drivers.oneconvergence import (
     nvsd_gbp_api as api)
 from gbpservice.neutron.tests.unit.services.grouppolicy import (
@@ -164,7 +164,29 @@ class TestL2Policy(OneConvergenceGBPDriverTestCase,
 
 class TestL3Policy(OneConvergenceGBPDriverTestCase,
                    test_resource_mapping.TestL3Policy):
-    pass
+
+    def test_implicit_creation_failure(self):
+        # Create non-default L3Policy that uses the default IP pool.
+        self.create_l3_policy(name="l3p1")
+
+        # Create L2Policy that needs implicit L3Policy. Creation of
+        # L3Policy should fail due to default IP pool already being
+        # used, causing creation of L2Policy to fail. Make sure we get
+        # the original exception.
+
+        def mock_method(*args, **kwargs):
+            raise gexc.GroupPolicyBadRequest(resource='l3p', msg='')
+
+        driver = manager.NeutronManager.get_service_plugins()[
+            'GROUP_POLICY'].policy_driver_manager.policy_drivers[
+            'oneconvergence_gbp_driver'].obj
+        driver.create_l3_policy_precommit = mock_method
+        res = self.create_l2_policy(name="l2p", expected_res_status=400)
+        self.assertEqual('GroupPolicyBadRequest', res['NeutronError']['type'])
+
+        # Verify L2Policy was not created.
+        self.assertFalse(self._list('l2_policies',
+                                    query_params='name=l2p')['l2_policies'])
 
 
 class TestPolicyRuleSet(OneConvergenceGBPDriverTestCase,

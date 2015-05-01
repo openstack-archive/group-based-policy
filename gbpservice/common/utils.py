@@ -17,20 +17,29 @@ from stevedore import driver
 LOG = logging.getLogger(__name__)
 
 
-def load_plugin(namespace, plugin):
+def load_driver(namespace, driver_name):
     try:
-        # Try to resolve plugin by name
-        mgr = driver.DriverManager(namespace, plugin)
-        plugin_class = mgr.driver
+        # Try to resolve driver by name
+        mgr = driver.DriverManager(namespace, driver_name)
+        driver_class = mgr.driver
     except RuntimeError as e1:
         # fallback to class name
         try:
-            plugin_class = importutils.import_class(plugin)
+            driver_class = importutils.import_class(driver_name)
         except ImportError as e2:
-            LOG.exception(_("Error loading plugin by name, %s"), e1)
-            LOG.exception(_("Error loading plugin by class, %s"), e2)
-            raise ImportError(_("Plugin not found."))
-    return plugin_class()
+            LOG.exception(_("Error loading driver by name, %s"), e1)
+            LOG.exception(_("Error loading driver by class, %s"), e2)
+            raise ImportError(_("Driver not found."))
+    return driver_class()
+
+
+def get_resource_plural(resource):
+    if resource.endswith('y'):
+        resource_plural = resource.replace('y', 'ies')
+    else:
+        resource_plural = resource + 's'
+
+    return resource_plural
 
 
 class DictClass(dict):
