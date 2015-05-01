@@ -16,6 +16,7 @@ from neutron.api import extensions
 from neutron.api.v2 import attributes as attr
 from neutron.api.v2 import resource_helper
 from neutron.common import constants as n_constants
+from neutron.common import config  # noqa
 from neutron.common import exceptions as nexc
 from neutron.openstack.common import uuidutils
 from neutron.plugins.common import constants
