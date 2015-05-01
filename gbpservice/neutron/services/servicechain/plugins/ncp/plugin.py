@@ -42,7 +42,7 @@ class NodeCompositionPlugin(servicechain_db.ServiceChainDbPlugin,
         self.driver_manager = manager.NodeDriverManager()
         super(NodeCompositionPlugin, self).__init__()
         self.driver_manager.initialize()
-        self.plumber = utils.load_plugin(
+        self.plumber = utils.load_driver(
             PLUMBER_NAMESPACE, cfg.CONF.node_composition_plugin.node_plumber)
         self.plumber.initialize()
 
