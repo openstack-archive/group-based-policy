@@ -95,11 +95,6 @@ class InvalidSubnetForPTG(GroupPolicyBadRequest):
                 "%(ptg_id)s.")
 
 
-class OverlappingIPPoolsInSameTenantNotAllowed(GroupPolicyBadRequest):
-    message = _("IP Pool %(ip_pool)s overlaps with one of the existing L3P "
-                "for the same tenant %(overlapping_pools)s.")
-
-
 class SharedResourceReferenceError(GroupPolicyBadRequest):
     message = _("Shared resource of type %(res_type)s with id %(res_id)s "
                 "can't reference the non shared resource of type "
