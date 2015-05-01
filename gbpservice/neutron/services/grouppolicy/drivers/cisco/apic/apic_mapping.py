@@ -372,6 +372,36 @@ class ApicMappingDriver(api.ResourceMappingDriver):
     def update_policy_rule_set_precommit(self, context):
         self._reject_shared_update(context, 'policy_rule_set')
 
+    def update_policy_rule_set_postcommit(self, context):
+        # Update policy_rule_set rules
+        old_rules = set(context.original['policy_rules'])
+        new_rules = set(context.current['policy_rules'])
+        to_add = context._plugin.get_policy_rules(
+            context._plugin_context, {'id': new_rules - old_rules})
+        to_remove = context._plugin.get_policy_rules(
+            context._plugin_context, {'id': old_rules - new_rules})
+        self._remove_policy_rule_set_rules(context, context.current, to_remove)
+        self._apply_policy_rule_set_rules(context, context.current, to_add)
+        # Update children contraint
+        to_recompute = (set(context.original['child_policy_rule_sets']) ^
+                        set(context.current['child_policy_rule_sets']))
+        self._sg_manager._recompute_policy_rule_sets(context, to_recompute)
+        if to_add or to_remove:
+            to_recompute = (set(context.original['child_policy_rule_sets']) &
+                            set(context.current['child_policy_rule_sets']))
+            self._sg_manager._recompute_policy_rule_sets(context, to_recompute)
+        # Handle any Redirects from the current Policy Rule Set
+        self._handle_redirect_action(context, [context.current['id']])
+        # Handle Update/Delete of Redirects for any child Rule Sets
+        if (set(context.original['child_policy_rule_sets']) !=
+            set(context.current['child_policy_rule_sets'])):
+            if context.original['child_policy_rule_sets']:
+                self._handle_redirect_action(
+                    context, context.original['child_policy_rule_sets'])
+            if context.current['child_policy_rule_sets']:
+                self._handle_redirect_action(
+                    context, context.current['child_policy_rule_sets'])
+
     def update_policy_target_postcommit(self, context):
         # TODO(ivar): redo binding procedure if the PTG is modified,
         # not doable unless driver extension framework is in place
@@ -822,8 +852,9 @@ class ApicMappingDriver(api.ResourceMappingDriver):
             ret = self._create_sg(context, attrs)
             for ethertype in ext_sg.sg_supported_ethertypes:
                 for direction in ['ingress', 'egress']:
-                    self._sg_rule(context, tenant_id, ret['id'], direction,
-                                  ethertype=ethertype)
+                    self._sg_manager._sg_rule(
+                        context, tenant_id, ret['id'], direction,
+                        ethertype=ethertype)
             return ret['id']
         else:
             return default_group[0]['id']
