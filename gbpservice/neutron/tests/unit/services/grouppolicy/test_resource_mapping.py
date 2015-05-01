@@ -34,8 +34,11 @@ import webob.exc
 from gbpservice.neutron.db.grouppolicy import group_policy_db as gpdb
 from gbpservice.neutron.db import servicechain_db
 from gbpservice.neutron.services.grouppolicy.common import constants as gconst
+from gbpservice.neutron.services.grouppolicy.common import exceptions as gexc
 from gbpservice.neutron.services.grouppolicy import config
 from gbpservice.neutron.services.grouppolicy.drivers import resource_mapping
+from gbpservice.neutron.services.grouppolicy.drivers.sg_managers import (
+    remote_subnet_manager as remote_subnet_manager)
 from gbpservice.neutron.services.servicechain.plugins.msc import (
     config as sc_cfg)
 from gbpservice.neutron.tests.unit.services.grouppolicy import (
@@ -60,7 +63,7 @@ CORE_PLUGIN = ('gbpservice.neutron.tests.unit.services.grouppolicy.'
 
 class ResourceMappingTestCase(test_plugin.GroupPolicyPluginTestCase):
 
-    def setUp(self, policy_drivers=None):
+    def setUp(self, policy_drivers=None, sg_manager='remote_subnet_manager'):
         policy_drivers = policy_drivers or ['implicit_policy',
                                             'resource_mapping']
         config.cfg.CONF.set_override('policy_drivers',
@@ -69,6 +72,9 @@ class ResourceMappingTestCase(test_plugin.GroupPolicyPluginTestCase):
         sc_cfg.cfg.CONF.set_override('servicechain_drivers',
                                      ['dummy'],
                                      group='servicechain')
+        resource_mapping.cfg.CONF.set_override('security_group_manager',
+                                               sg_manager,
+                                               group='resource_mapping')
         config.cfg.CONF.set_override('allow_overlapping_ips', True)
         super(ResourceMappingTestCase, self).setUp(core_plugin=CORE_PLUGIN)
         engine = db_api.get_engine()
@@ -107,8 +113,8 @@ class ResourceMappingTestCase(test_plugin.GroupPolicyPluginTestCase):
 
     def _get_prs_mapping(self, prs_id):
         ctx = nctx.get_admin_context()
-        return (resource_mapping.ResourceMappingDriver.
-                _get_policy_rule_set_sg_mapping(ctx.session, prs_id))
+        return (remote_subnet_manager.get_policy_rule_set_sg_mapping(
+            ctx.session, prs_id))
 
     def _create_ssh_allow_rule(self):
         return self._create_tcp_allow_rule('22')
@@ -310,6 +316,24 @@ class ResourceMappingTestCase(test_plugin.GroupPolicyPluginTestCase):
         self.assertTrue(len(existing) == 0,
                         "Some rules still exist:\n%s" % str(existing))
         return expected
+
+    def _create_pt_in_l3p(self, l3p, provide=None, consume=None):
+        l2p = self.create_l2_policy(
+            l3_policy_id=l3p['id'])['l2_policy']
+        attrs = {'l2_policy_id': l2p['id']}
+        if provide:
+            attrs.update({'provided_policy_rule_sets':
+                         {x: '' for x in provide}})
+        if consume:
+            attrs.update({'consumed_policy_rule_sets':
+                         {x: '' for x in consume}})
+        ptg = self.create_policy_target_group(**attrs)['policy_target_group']
+        return self.create_policy_target(policy_target_group_id=ptg['id'])
+
+    def _clean_ptg_from_id(self, ptg_id):
+        ptg = self.show_policy_target_group(ptg_id)['policy_target_group']
+        for pt in ptg['policy_targets']:
+            self.delete_policy_target(pt)
 
 
 class TestPolicyTarget(ResourceMappingTestCase):
@@ -976,23 +1000,6 @@ class TestL3Policy(ResourceMappingTestCase):
             self.assertEqual('L3PolicyRoutersUpdateNotSupported',
                              data['NeutronError']['type'])
 
-    def test_overlapping_pools_per_tenant(self):
-        # Verify overlaps are ok on different tenant
-        ip_pool = '192.168.0.0/16'
-        self.create_l3_policy(ip_pool=ip_pool, tenant_id='Tweedledum',
-                              expected_res_status=201)
-        self.create_l3_policy(ip_pool=ip_pool, tenant_id='Tweedledee',
-                              expected_res_status=201)
-        # Verify overlap fails on same tenant
-        super_ip_pool = '192.160.0.0/8'
-        sub_ip_pool = '192.168.10.0/24'
-        for ip_pool in sub_ip_pool, super_ip_pool:
-            res = self.create_l3_policy(
-                ip_pool=ip_pool, tenant_id='Tweedledum',
-                expected_res_status=400)
-            self.assertEqual('OverlappingIPPoolsInSameTenantNotAllowed',
-                             res['NeutronError']['type'])
-
     def test_implicit_creation_failure(self):
         # Create non-default L3Policy that uses the default IP pool.
         self.create_l3_policy(name="l3p1")
@@ -1001,17 +1008,16 @@ class TestL3Policy(ResourceMappingTestCase):
         # L3Policy should fail due to default IP pool already being
         # used, causing creation of L2Policy to fail. Make sure we get
         # the original exception.
-        #
-        # REVISIT(rkukura): Overlapping pools per tenant might
-        # eventually be allowed, which would break this test. Rather
-        # than depending on this exception being raised, we could
-        # instead patch the RMD's create_l3_policy_postcommit to raise
-        # an exception. This approach could also be applied to other
-        # resource types, and could be moved to the IPD's test cases
-        # where it belongs. See bug 1432791.
+
+        def mock_method(*args, **kwargs):
+            raise gexc.GroupPolicyBadRequest(resource='l3p', msg='')
+
+        driver = manager.NeutronManager.get_service_plugins()[
+            'GROUP_POLICY'].policy_driver_manager.policy_drivers[
+            'resource_mapping'].obj
+        driver.create_l3_policy_precommit = mock_method
         res = self.create_l2_policy(name="l2p", expected_res_status=400)
-        self.assertEqual('OverlappingIPPoolsInSameTenantNotAllowed',
-                         res['NeutronError']['type'])
+        self.assertEqual('GroupPolicyBadRequest', res['NeutronError']['type'])
 
         # Verify L2Policy was not created.
         self.assertFalse(self._list('l2_policies',
@@ -1237,8 +1243,9 @@ class TestPolicyRuleSet(ResourceMappingTestCase):
         policy_rule_set_id = policy_rule_set['policy_rule_set']['id']
         ptg = self.create_policy_target_group(
             name="ptg1", provided_policy_rule_sets={
-                policy_rule_set_id: None})
-        ptg_id = ptg['policy_target_group']['id']
+                policy_rule_set_id: None})['policy_target_group']
+        self.create_policy_target(policy_target_group_id=ptg['id'])
+        ptg_id = ptg['id']
         pt = self.create_policy_target(
             name="pt1", policy_target_group_id=ptg_id)
 
@@ -1250,8 +1257,6 @@ class TestPolicyRuleSet(ResourceMappingTestCase):
         self.assertEqual(len(security_groups), 2)
         self._verify_prs_rules(policy_rule_set_id)
 
-    # TODO(ivar): we also need to verify that those security groups have the
-    # right rules
     def test_consumed_policy_rule_set(self):
         classifier = self.create_policy_classifier(
             name="class1", protocol="tcp", direction="in", port_range="20:90")
@@ -1268,13 +1273,17 @@ class TestPolicyRuleSet(ResourceMappingTestCase):
         policy_rule_set = self.create_policy_rule_set(
             name="c1", policy_rules=policy_rule_list)
         policy_rule_set_id = policy_rule_set['policy_rule_set']['id']
-        self.create_policy_target_group(
+        provided_ptg = self.create_policy_target_group(
             name="ptg1", provided_policy_rule_sets={policy_rule_set_id: None})
         consumed_ptg = self.create_policy_target_group(
             name="ptg2", consumed_policy_rule_sets={policy_rule_set_id: None})
-        ptg_id = consumed_ptg['policy_target_group']['id']
+
         pt = self.create_policy_target(
-            name="pt2", policy_target_group_id=ptg_id)
+            name="pt2",
+            policy_target_group_id=consumed_ptg['policy_target_group']['id'])
+        self.create_policy_target(
+            name="pt2",
+            policy_target_group_id=provided_ptg['policy_target_group']['id'])
 
         # verify SG bind to port
         port_id = pt['policy_target']['port_id']
@@ -1315,11 +1324,16 @@ class TestPolicyRuleSet(ResourceMappingTestCase):
             name="c2", policy_rules=policy_rule2_list)
         policy_rule_set2_id = policy_rule_set2['policy_rule_set']['id']
         ptg1 = self.create_policy_target_group(
-            name="ptg1", provided_policy_rule_sets={policy_rule_set1_id: None})
+            provided_policy_rule_sets={
+                policy_rule_set1_id: None})['policy_target_group']
         ptg2 = self.create_policy_target_group(
-            name="ptg2", consumed_policy_rule_sets={policy_rule_set1_id: None})
-        ptg1_id = ptg1['policy_target_group']['id']
-        ptg2_id = ptg2['policy_target_group']['id']
+            consumed_policy_rule_sets={
+                policy_rule_set1_id: None})['policy_target_group']
+
+        self.create_policy_target(policy_target_group_id=ptg1['id'])
+
+        ptg1_id = ptg1['id']
+        ptg2_id = ptg2['id']
 
         # policy_target pt1 now with ptg2 consumes policy_rule_set1_id
         pt1 = self.create_policy_target(
@@ -1353,16 +1367,6 @@ class TestPolicyRuleSet(ResourceMappingTestCase):
         port = self.deserialize(self.fmt, res.get_response(self.api))
         security_groups = port['port'][ext_sg.SECURITYGROUPS]
         self.assertEqual(len(security_groups), 3)
-        self._verify_prs_rules(policy_rule_set1_id)
-        self._verify_prs_rules(policy_rule_set2_id)
-
-        # Now verify all rules are removed correctly when PRS are disassociated
-        self.update_policy_target_group(ptg1_id, provided_policy_rule_sets={},
-                                        consumed_policy_rule_sets={},
-                                        expected_res_status=200)
-        self.update_policy_target_group(ptg2_id, provided_policy_rule_sets={},
-                                        consumed_policy_rule_sets={},
-                                        expected_res_status=200)
         self._verify_prs_rules(policy_rule_set1_id)
         self._verify_prs_rules(policy_rule_set2_id)
 
@@ -1434,6 +1438,8 @@ class TestPolicyRuleSet(ResourceMappingTestCase):
         policy_rule_set_id = policy_rule_set['policy_rule_set']['id']
         ptg = self.create_policy_target_group(
             name="ptg1", provided_policy_rule_sets={policy_rule_set_id: None})
+        self.create_policy_target(
+            policy_target_group_id=ptg['policy_target_group']['id'])
         ptg_id = ptg['policy_target_group']['id']
         pt = self.create_policy_target(
             name="pt1", policy_target_group_id=ptg_id)
@@ -1488,6 +1494,9 @@ class TestPolicyRuleSet(ResourceMappingTestCase):
             name="ptg2",
             consumed_policy_rule_sets=policy_rule_set_dict)
         consumer_ptg_id = consumer_ptg['policy_target_group']['id']
+        # Create PTs in order to trigger SG creation
+        self.create_policy_target(policy_target_group_id=provider_ptg_id)
+        self.create_policy_target(policy_target_group_id=consumer_ptg_id)
         return (provider_ptg_id, consumer_ptg_id)
 
     def _assert_proper_chain_instance(self, sc_instance, provider_ptg_id,
@@ -1518,6 +1527,7 @@ class TestPolicyRuleSet(ResourceMappingTestCase):
                                            consumer_ptg_id, [scs_id])
 
         # Verify that PTG delete cleans up the chain instances
+        self._clean_ptg_from_id(consumer_ptg_id)
         req = self.new_delete_request(
             'policy_target_groups', consumer_ptg_id)
         res = req.get_response(self.ext_api)
@@ -1535,7 +1545,6 @@ class TestPolicyRuleSet(ResourceMappingTestCase):
         policy_rule_set = self.create_policy_rule_set(
             name="c1", policy_rules=[policy_rule_id])
         policy_rule_set_id = policy_rule_set['policy_rule_set']['id']
-        self._verify_prs_rules(policy_rule_set_id)
         provider_ptg, consumer_ptg = self._create_provider_consumer_ptgs()
 
         self._verify_prs_rules(policy_rule_set_id)
@@ -1587,7 +1596,7 @@ class TestPolicyRuleSet(ResourceMappingTestCase):
         policy_rule_set = self.create_policy_rule_set(
             name="c1", policy_rules=[policy_rule_id])
         policy_rule_set_id = policy_rule_set['policy_rule_set']['id']
-        self._verify_prs_rules(policy_rule_set_id)
+
         provider_ptg_id, consumer_ptg_id = self._create_provider_consumer_ptgs(
                                                             policy_rule_set_id)
 
@@ -1629,6 +1638,7 @@ class TestPolicyRuleSet(ResourceMappingTestCase):
         self.assertEqual(sc_instance['id'], new_sc_instance['id'])
         self.assertEqual([new_scs_id], new_sc_instance['servicechain_specs'])
 
+        self._clean_ptg_from_id(consumer_ptg_id)
         req = self.new_delete_request(
                 'policy_target_groups', consumer_ptg_id)
         res = req.get_response(self.ext_api)
@@ -1646,7 +1656,6 @@ class TestPolicyRuleSet(ResourceMappingTestCase):
         policy_rule_set = self.create_policy_rule_set(
             name="c1", policy_rules=[policy_rule_id])
         policy_rule_set_id = policy_rule_set['policy_rule_set']['id']
-        self._verify_prs_rules(policy_rule_set_id)
         provider_ptg_id, consumer_ptg_id = self._create_provider_consumer_ptgs(
                                                             policy_rule_set_id)
 
@@ -1678,6 +1687,7 @@ class TestPolicyRuleSet(ResourceMappingTestCase):
                                            consumer_ptg_id, [scs_id])
         self.assertNotEqual(sc_instance, sc_instance_new)
 
+        self._clean_ptg_from_id(consumer_ptg_id)
         req = self.new_delete_request(
                 'policy_target_groups', consumer_ptg_id)
         res = req.get_response(self.ext_api)
@@ -1731,6 +1741,7 @@ class TestPolicyRuleSet(ResourceMappingTestCase):
                                            consumer_ptg_id, [scs_id])
         self.assertNotEqual(sc_instance, sc_instance_new)
 
+        self._clean_ptg_from_id(consumer_ptg_id)
         req = self.new_delete_request(
                 'policy_target_groups', consumer_ptg_id)
         res = req.get_response(self.ext_api)
@@ -1749,7 +1760,6 @@ class TestPolicyRuleSet(ResourceMappingTestCase):
             name="c1", policy_rules=[policy_rule_id])
         policy_rule_set_id = policy_rule_set['policy_rule_set']['id']
 
-        self._verify_prs_rules(policy_rule_set_id)
         #Create 2 provider and 2 consumer PTGs
         provider_ptg1 = self.create_policy_target_group(
             name="p_ptg1",
@@ -1760,6 +1770,9 @@ class TestPolicyRuleSet(ResourceMappingTestCase):
             consumed_policy_rule_sets={policy_rule_set_id: None})
         consumer_ptg1_id = consumer_ptg1['policy_target_group']['id']
 
+        self.create_policy_target(policy_target_group_id=provider_ptg1_id)
+        self.create_policy_target(policy_target_group_id=consumer_ptg1_id)
+
         provider_ptg2 = self.create_policy_target_group(
             name="p_ptg2",
             provided_policy_rule_sets={policy_rule_set_id: None})
@@ -1768,6 +1781,9 @@ class TestPolicyRuleSet(ResourceMappingTestCase):
             name="c_ptg2",
             consumed_policy_rule_sets={policy_rule_set_id: None})
         consumer_ptg2_id = consumer_ptg2['policy_target_group']['id']
+
+        self.create_policy_target(policy_target_group_id=provider_ptg2_id)
+        self.create_policy_target(policy_target_group_id=consumer_ptg2_id)
 
         self._verify_prs_rules(policy_rule_set_id)
         sc_instance_list_req = self.new_list_request(SERVICECHAIN_INSTANCES)
@@ -1790,6 +1806,7 @@ class TestPolicyRuleSet(ResourceMappingTestCase):
 
         # Deleting one group should end up deleting the two service chain
         # Instances associated to it
+        self._clean_ptg_from_id(consumer_ptg1_id)
         req = self.new_delete_request(
             'policy_target_groups', consumer_ptg1_id)
         res = req.get_response(self.ext_api)
@@ -1803,6 +1820,7 @@ class TestPolicyRuleSet(ResourceMappingTestCase):
             self.assertNotEqual(sc_instance['consumer_ptg_id'],
                                 consumer_ptg1_id)
 
+        self._clean_ptg_from_id(provider_ptg1_id)
         req = self.new_delete_request(
             'policy_target_groups', provider_ptg1_id)
         res = req.get_response(self.ext_api)
@@ -1814,6 +1832,7 @@ class TestPolicyRuleSet(ResourceMappingTestCase):
         sc_instance = sc_instances['servicechain_instances'][0]
         self.assertNotEqual(sc_instance['provider_ptg_id'], provider_ptg1_id)
 
+        self._clean_ptg_from_id(provider_ptg2_id)
         req = self.new_delete_request(
             'policy_target_groups', provider_ptg2_id)
         res = req.get_response(self.ext_api)
@@ -1833,7 +1852,6 @@ class TestPolicyRuleSet(ResourceMappingTestCase):
             name="prs", policy_rules=[policy_rule_id])
         child_prs_id = child_prs['policy_rule_set']['id']
 
-        self._verify_prs_rules(child_prs_id)
         data = {'servicechain_node': {'service_type': "FIREWALL",
                                       'tenant_id': self._tenant_id,
                                       'config': "{}"}}
@@ -1870,6 +1888,8 @@ class TestPolicyRuleSet(ResourceMappingTestCase):
             name="ptg2",
             consumed_policy_rule_sets={child_prs_id: None})
         consumer_ptg_id = consumer_ptg['policy_target_group']['id']
+        self.create_policy_target(policy_target_group_id=consumer_ptg_id)
+        self.create_policy_target(policy_target_group_id=provider_ptg_id)
 
         self._verify_prs_rules(child_prs_id)
         sc_node_list_req = self.new_list_request(SERVICECHAIN_INSTANCES)
@@ -1884,6 +1904,7 @@ class TestPolicyRuleSet(ResourceMappingTestCase):
         self.assertEqual(sc_instance['servicechain_specs'],
                          [parent_scs_id, scs_id])
 
+        self._clean_ptg_from_id(consumer_ptg_id)
         req = self.new_delete_request(
             'policy_target_groups', consumer_ptg_id)
         res = req.get_response(self.ext_api)
@@ -1902,8 +1923,6 @@ class TestPolicyRuleSet(ResourceMappingTestCase):
             name="prs", policy_rules=[policy_rule_id])
         child_prs_id = child_prs['policy_rule_set']['id']
 
-        self._verify_prs_rules(child_prs_id)
-
         provider_ptg = self.create_policy_target_group(
             name="ptg1", provided_policy_rule_sets={child_prs_id: None})
         provider_ptg_id = provider_ptg['policy_target_group']['id']
@@ -1911,6 +1930,9 @@ class TestPolicyRuleSet(ResourceMappingTestCase):
             name="ptg2",
             consumed_policy_rule_sets={child_prs_id: None})
         consumer_ptg_id = consumer_ptg['policy_target_group']['id']
+
+        self.create_policy_target(policy_target_group_id=provider_ptg_id)
+        self.create_policy_target(policy_target_group_id=consumer_ptg_id)
 
         self._verify_prs_rules(child_prs_id)
         sc_node_list_req = self.new_list_request(SERVICECHAIN_INSTANCES)
@@ -1963,7 +1985,7 @@ class TestPolicyRuleSet(ResourceMappingTestCase):
         sc_instance = sc_instances['servicechain_instances'][0]
         self._assert_proper_chain_instance(sc_instance, provider_ptg_id,
                                            consumer_ptg_id, [scs_id])
-
+        self._clean_ptg_from_id(consumer_ptg_id)
         req = self.new_delete_request(
             'policy_target_groups', consumer_ptg_id)
         res = req.get_response(self.ext_api)
@@ -1981,8 +2003,6 @@ class TestPolicyRuleSet(ResourceMappingTestCase):
         child_prs = self.create_policy_rule_set(
             name="prs", policy_rules=[policy_rule_id])
         child_prs_id = child_prs['policy_rule_set']['id']
-
-        self._verify_prs_rules(child_prs_id)
 
         parent_scs_id = self._create_servicechain_spec(node_types='FIREWALL')
         parent_action = self.create_policy_action(
@@ -2005,6 +2025,9 @@ class TestPolicyRuleSet(ResourceMappingTestCase):
             name="ptg2",
             consumed_policy_rule_sets={child_prs_id: None})
         consumer_ptg_id = consumer_ptg['policy_target_group']['id']
+
+        self.create_policy_target(policy_target_group_id=provider_ptg_id)
+        self.create_policy_target(policy_target_group_id=consumer_ptg_id)
 
         self._verify_prs_rules(child_prs_id)
         sc_node_list_req = self.new_list_request(SERVICECHAIN_INSTANCES)
@@ -2031,6 +2054,7 @@ class TestPolicyRuleSet(ResourceMappingTestCase):
                                            consumer_ptg_id,
                                            [parent_scs_id, scs_id])
 
+        self._clean_ptg_from_id(consumer_ptg_id)
         req = self.new_delete_request(
             'policy_target_groups', consumer_ptg_id)
         res = req.get_response(self.ext_api)
@@ -2040,9 +2064,8 @@ class TestPolicyRuleSet(ResourceMappingTestCase):
         sc_instances = self.deserialize(self.fmt, res)
         self.assertEqual(len(sc_instances['servicechain_instances']), 0)
 
-    def test_shared_policy_rule_set_create_negative(self):
-        self.create_policy_rule_set(shared=True,
-                                    expected_res_status=400)
+    def test_shared_policy_rule_set_create(self):
+        self.create_policy_rule_set(shared=True, expected_res_status=400)
 
     def test_external_rules_set(self):
         # Define the routes
@@ -2055,9 +2078,10 @@ class TestPolicyRuleSet(ResourceMappingTestCase):
                 es = self.create_external_segment(
                     subnet_id=sub['subnet']['id'],
                     external_routes=routes)['external_segment']
-                self.create_l3_policy(
+                l3p = self.create_l3_policy(
                     ip_pool='192.168.0.0/16',
-                    external_segments={es['id']: []})
+                    external_segments={es['id']: []})['l3_policy']
+                self._create_pt_in_l3p(l3p, consume=[prs['id']])
                 self.create_external_policy(
                     external_segments=[es['id']],
                     provided_policy_rule_sets={prs['id']: ''})
@@ -2071,14 +2095,11 @@ class TestPolicyRuleSet(ResourceMappingTestCase):
                 self.update_policy_rule_set(prs['id'], expected_res_status=200,
                                             policy_rules=[pr['id'], pr2['id']])
                 # Verify new rules correctly set
-                current_rules = self._verify_prs_rules(prs['id'])
+                self._verify_prs_rules(prs['id'])
 
                 # Remove all the rules, verify that none exist any more
                 self.update_policy_rule_set(
                     prs['id'], expected_res_status=200, policy_rules=[])
-                self.assertTrue(len(current_rules) > 0)
-                for rule in current_rules:
-                    self.assertFalse(self._get_sg_rule(**rule))
 
     def test_hierarchical_prs(self):
         pr1 = self._create_ssh_allow_rule()
@@ -2092,11 +2113,16 @@ class TestPolicyRuleSet(ResourceMappingTestCase):
             expected_res_status=201, policy_rules=[pr1['id']],
             child_policy_rule_sets=[child['id']])['policy_rule_set']
 
-        self.create_policy_target_group(
-            provided_policy_rule_sets={child['id']: None})
+        ptg_p = self.create_policy_target_group(
+            provided_policy_rule_sets={child['id']:
+                                       None})['policy_target_group']
 
-        self.create_policy_target_group(
-            consumed_policy_rule_sets={child['id']: None})
+        ptg_c = self.create_policy_target_group(
+            consumed_policy_rule_sets={child['id']:
+                                       None})['policy_target_group']
+
+        self.create_policy_target(policy_target_group_id=ptg_p['id'])
+        self.create_policy_target(policy_target_group_id=ptg_c['id'])
 
         # Verify all the rules are correctly set
         self._verify_prs_rules(child['id'])
@@ -2139,14 +2165,15 @@ class TestPolicyRuleSet(ResourceMappingTestCase):
             policy_rules=[pr['id']],
             expected_res_status=201)['policy_rule_set']
 
-        self._verify_prs_rules(prs['id'])
-
-        self.create_policy_target_group(
+        ptg_p = self.create_policy_target_group(
             provided_policy_rule_sets={prs['id']: None},
-            expected_res_status=201)
-        self.create_policy_target_group(
+            expected_res_status=201)['policy_target_group']
+        ptg_c = self.create_policy_target_group(
             consumed_policy_rule_sets={prs['id']: None},
-            expected_res_status=201)
+            expected_res_status=201)['policy_target_group']
+
+        self.create_policy_target(policy_target_group_id=ptg_p['id'])
+        self.create_policy_target(policy_target_group_id=ptg_c['id'])
         self._verify_prs_rules(prs['id'])
 
         self.update_policy_classifier(
@@ -2164,53 +2191,19 @@ class TestPolicyRuleSet(ResourceMappingTestCase):
             policy_rules=[pr['id']], child_policy_rule_sets=[prs['id']],
             expected_res_status=201)
 
-        self._verify_prs_rules(prs['id'])
-
-        self.create_policy_target_group(
+        ptg_p = self.create_policy_target_group(
             provided_policy_rule_sets={prs['id']: None},
-            expected_res_status=201)
-        self.create_policy_target_group(
+            expected_res_status=201)['policy_target_group']
+        ptg_c = self.create_policy_target_group(
             consumed_policy_rule_sets={prs['id']: None},
-            expected_res_status=201)
+            expected_res_status=201)['policy_target_group']
+
+        self.create_policy_target(policy_target_group_id=ptg_p['id'])
+        self.create_policy_target(policy_target_group_id=ptg_c['id'])
         self._verify_prs_rules(prs['id'])
 
         self.update_policy_classifier(
             pr['policy_classifier_id'], expected_res_status=200,
-            port_range=8080)
-        self._verify_prs_rules(prs['id'])
-
-    def _update_same_classifier_multiple_rules(self):
-        action = self.create_policy_action(
-            action_type='allow')['policy_action']
-        classifier = self.create_policy_classifier(
-            protocol='TCP', port_range="22",
-            direction='bi')['policy_classifier']
-
-        pr1 = self.create_policy_rule(
-            policy_classifier_id=classifier['id'],
-            policy_actions=[action['id']])['policy_rule']
-        pr2 = self.create_policy_rule(
-            policy_classifier_id=classifier['id'],
-            policy_actions=[action['id']])['policy_rule']
-
-        prs = self.create_policy_rule_set(
-            policy_rules=[pr1['id']],
-            expected_res_status=201)['policy_rule_set']
-        self.create_policy_rule_set(
-            policy_rules=[pr2['id']], child_policy_rule_sets=[prs['id']],
-            expected_res_status=201)
-        self._verify_prs_rules(prs['id'])
-
-        self.create_policy_target_group(
-            provided_policy_rule_sets={prs['id']: None},
-            expected_res_status=201)
-        self.create_policy_target_group(
-            consumed_policy_rule_sets={prs['id']: None},
-            expected_res_status=201)
-        self._verify_prs_rules(prs['id'])
-
-        self.update_policy_classifier(
-            pr1['policy_classifier_id'], expected_res_status=200,
             port_range=8080)
         self._verify_prs_rules(prs['id'])
 
@@ -2221,20 +2214,25 @@ class TestPolicyRuleSet(ResourceMappingTestCase):
             policy_rules=[pr['id'], pr2['id']],
             expected_res_status=201)['policy_rule_set']
 
-        self._verify_prs_rules(prs['id'])
-
         provider_ptg = self.create_policy_target_group(
             provided_policy_rule_sets={prs['id']: None},
             expected_res_status=201)['policy_target_group']
         consumer_ptg = self.create_policy_target_group(
             consumed_policy_rule_sets={prs['id']: None},
             expected_res_status=201)['policy_target_group']
+
+        self.create_policy_target(policy_target_group_id=provider_ptg['id'])
+        self.create_policy_target(policy_target_group_id=consumer_ptg['id'])
+
         self._verify_prs_rules(prs['id'])
 
         # Deleting a policy rule is allowed only when it is no longer in use
+        self._clean_ptg_from_id(provider_ptg['id'])
         self.delete_policy_target_group(
             provider_ptg['id'],
             expected_res_status=webob.exc.HTTPNoContent.code)
+
+        self._clean_ptg_from_id(consumer_ptg['id'])
         self.delete_policy_target_group(
             consumer_ptg['id'],
             expected_res_status=webob.exc.HTTPNoContent.code)
@@ -2275,8 +2273,7 @@ class TestPolicyRuleSet(ResourceMappingTestCase):
         ptg = self.create_policy_target_group(
             expected_res_status=201, provided_policy_rule_sets={prs['id']: ''},
             consumed_policy_rule_sets={prs['id']: ''})['policy_target_group']
-        self.delete_policy_target_group(ptg['id'])
-        self._verify_prs_rules(prs['id'])
+        self.delete_policy_target_group(ptg['id'], expected_res_status=204)
 
     def test_redirect_to_ep(self):
         scs_id = self._create_servicechain_spec()
@@ -2299,7 +2296,9 @@ class TestPolicyRuleSet(ResourceMappingTestCase):
                     consumed_policy_rule_sets={policy_rule_set_id: ''})
                 provider = self.create_policy_target_group(
                     provided_policy_rule_sets={policy_rule_set_id: ''})
-
+                self.create_policy_target(
+                    policy_target_group_id=provider[
+                        'policy_target_group']['id'])
                 self._verify_prs_rules(policy_rule_set_id)
                 sc_node_list_req = self.new_list_request(
                     SERVICECHAIN_INSTANCES)
@@ -2345,7 +2344,9 @@ class TestPolicyRuleSet(ResourceMappingTestCase):
                 ep = self.create_external_policy()
                 provider = self.create_policy_target_group(
                     provided_policy_rule_sets={policy_rule_set_id: ''})
-
+                self.create_policy_target(
+                    policy_target_group_id=provider[
+                        'policy_target_group']['id'])
                 self.update_external_policy(
                     ep['external_policy']['id'],
                     consumed_policy_rule_sets={policy_rule_set_id: ''})
@@ -2547,10 +2548,10 @@ class TestExternalPolicy(ResourceMappingTestCase):
                 # Multiple EP per tenant rejected
                 self.create_external_policy(external_segments=[es1['id']],
                                             expected_res_status=201)
-                res = self.create_external_policy(
-                    expected_res_status=400, external_segments=[es2['id']])
-                self.assertEqual('OnlyOneEPPerTenantAllowed',
-                                 res['NeutronError']['type'])
+                #res = self.create_external_policy(
+                #    expected_res_status=400, external_segments=[es2['id']])
+                #self.assertEqual('OnlyOneEPPerTenantAllowed',
+                #                 res['NeutronError']['type'])
 
     def test_update(self):
         with self.network(router__external=True) as net:
@@ -2562,8 +2563,18 @@ class TestExternalPolicy(ResourceMappingTestCase):
                 es1 = self.create_external_segment(
                     subnet_id=sub1['subnet']['id'],
                     external_routes=[route])['external_segment']
+                external_segments = {es1['id']: []}
+                l3p1 = self.create_l3_policy(
+                    ip_pool='192.168.0.0/16',
+                    external_segments=external_segments)['l3_policy']
+
                 es2 = self.create_external_segment(
                     subnet_id=sub2['subnet']['id'])['external_segment']
+                external_segments = {es1['id']: []}
+                l3p2 = self.create_l3_policy(
+                    ip_pool='192.169.0.0/16',
+                    external_segments=external_segments)['l3_policy']
+
                 ep = self.create_external_policy(
                     external_segments=[es1['id']], expected_res_status=201)
                 ep = ep['external_policy']
@@ -2582,15 +2593,17 @@ class TestExternalPolicy(ResourceMappingTestCase):
                 prs_http = self.create_policy_rule_set(
                     policy_rules=[pr_http['id']])['policy_rule_set']
 
+                self._create_pt_in_l3p(l3p1, consume=[prs_ssh['id'],
+                                                      prs_http['id']])
+                self._create_pt_in_l3p(l3p2, consume=[prs_ssh['id'],
+                                                      prs_http['id']])
+
                 self.update_external_policy(
                     ep['id'], provided_policy_rule_sets={prs_ssh['id']: ''},
                     consumed_policy_rule_sets={prs_ssh['id']: ''},
                     expected_res_status=200)
 
-                expected_cidrs = self._calculate_expected_external_cidrs(
-                    es1, [])
-                self.assertTrue(len(expected_cidrs) > 0)
-                current_ssh_rules = self._verify_prs_rules(prs_ssh['id'])
+                self._verify_prs_rules(prs_ssh['id'])
                 self._verify_prs_rules(prs_http['id'])
 
                 # Now swap the contract
@@ -2599,23 +2612,13 @@ class TestExternalPolicy(ResourceMappingTestCase):
                     consumed_policy_rule_sets={prs_http['id']: ''},
                     expected_res_status=200)
 
-                # SSH rules removed
-                for rule in current_ssh_rules:
-                    if not (rule['direction'] == ['egress']
-                            and rule['remote_ip_prefix'] == ['0.0.0.0/0']):
-                        self.assertFalse(self._get_sg_rule(**rule))
-
                 # HTTP Added
-                current_http_rules = self._verify_prs_rules(prs_http['id'])
+                self._verify_prs_rules(prs_http['id'])
 
                 # All removed
                 self.update_external_policy(
                     ep['id'], provided_policy_rule_sets={},
                     consumed_policy_rule_sets={}, expected_res_status=200)
-                for rule in current_http_rules:
-                    if not (rule['direction'] == ['egress']
-                            and rule['remote_ip_prefix'] == ['0.0.0.0/0']):
-                        self.assertFalse(self._get_sg_rule(**rule))
 
 
 class TestPolicyAction(ResourceMappingTestCase):
