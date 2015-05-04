@@ -104,6 +104,13 @@ class GbpAndChainTestMixin(test_group_policy_db.ApiManagerMixin):
 
         raise AttributeError
 
+    def _create_profiled_servicechain_node(
+            self, service_type=constants.LOADBALANCER, **kwargs):
+        prof = self.create_service_profile(
+            service_type=service_type)['service_profile']
+        return self.create_servicechain_node(
+            service_profile_id=prof['id'], **kwargs)
+
 
 class TestGroupPolicyPluginGroupResources(base.TestServiceChainResources):
 
@@ -155,7 +162,7 @@ class TestNccPluginContext(NodeCentricChainPluginTestCase):
     def test_context_attributes(self):
         # Verify Context attributes for simple config
         plugin_context = n_context.get_admin_context()
-        node = self.create_servicechain_node(
+        node = self._create_profiled_servicechain_node(
             service_type="TYPE", config='{}')['servicechain_node']
         spec = self.create_servicechain_spec(
             nodes=[node['id']])['servicechain_spec']
@@ -189,12 +196,12 @@ class TestNccPluginContext(NodeCentricChainPluginTestCase):
 
     def test_context_relevant_specs(self):
         plugin_context = n_context.get_admin_context()
-        node_used = self.create_servicechain_node(
+        node_used = self._create_profiled_servicechain_node(
             service_type="TYPE", config='{}')['servicechain_node']
         spec_used = self.create_servicechain_spec(
             nodes=[node_used['id']])['servicechain_spec']
 
-        node_unused = self.create_servicechain_node(
+        node_unused = self._create_profiled_servicechain_node(
             service_type="TYPE", config='{}')['servicechain_node']
         spec_unused = self.create_servicechain_spec(
             nodes=[node_unused['id']])['servicechain_spec']
