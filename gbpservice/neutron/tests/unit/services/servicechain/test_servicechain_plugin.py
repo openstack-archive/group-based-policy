@@ -37,4 +37,95 @@ class ServiceChainPluginTestCase(test_servicechain_db.ServiceChainDbTestCase):
 class TestGroupPolicyPluginGroupResources(
                     ServiceChainPluginTestCase,
                     test_servicechain_db.TestServiceChainResources):
-    pass
+
+    def test_spec_shared(self):
+        # Shared spec can only point shared nodes
+        node = self._create_profiled_servicechain_node(
+            'LOADBALANCER', shared=True, shared_profile=True,
+            profile_tenant_id='admin', tenant_id='admin')['servicechain_node']
+        self.create_servicechain_spec(nodes=[node['id']], shared=True,
+                                      expected_res_status=201)
+        self.create_servicechain_spec(nodes=[node['id']], shared=False,
+                                      tenant_id='admin',
+                                      expected_res_status=201)
+
+        node = self._create_profiled_servicechain_node(
+            'LOADBALANCER', shared=False, profile_tenant_id='nonadmin',
+            tenant_id='nonadmin')['servicechain_node']
+        self.create_servicechain_spec(nodes=[node['id']], shared=True,
+                                      expected_res_status=400)
+        self.create_servicechain_spec(nodes=[node['id']], shared=True,
+                                      tenant_id='nonadmin',
+                                      expected_res_status=400)
+        self.create_servicechain_spec(nodes=[node['id']], shared=False,
+                                      tenant_id='nonadmin',
+                                      expected_res_status=201)
+
+    def test_node_shared(self):
+        # Shared node can only point shared profile
+        prof = self.create_service_profile(
+            service_type='LOADBALANCER', shared=True,
+            tenant_id='admin')['service_profile']
+        to_update = self.create_servicechain_node(
+            service_profile_id=prof['id'], shared=True,
+            expected_res_status=201)['servicechain_node']
+        self.create_servicechain_node(
+            service_profile_id=prof['id'], shared=False, tenant_id='admin',
+            expected_res_status=201)
+
+        prof = self.create_service_profile(
+            service_type='LOADBALANCER', shared=False,
+            tenant_id='admin')['service_profile']
+        self.create_servicechain_node(
+            service_profile_id=prof['id'], shared=True,
+            expected_res_status=400)
+        self.create_servicechain_node(
+            service_profile_id=prof['id'], shared=True,
+            tenant_id='admin', expected_res_status=400)
+        self.create_servicechain_node(
+            service_profile_id=prof['id'], shared=False,
+            tenant_id='admin', expected_res_status=201)
+
+        self.create_servicechain_spec(nodes=[to_update['id']], shared=True,
+                                      tenant_id='nonadmin',
+                                      expected_res_status=201)
+
+        data = {'servicechain_node': {'shared': False}}
+        req = self.new_update_request('servicechain_nodes', data,
+                                      to_update['id'])
+        res = req.get_response(self.ext_api)
+        self.assertEqual(400, res.status_int)
+        res = self.deserialize(self.fmt, res)
+        self.assertEqual('InvalidSharedAttributeUpdate',
+                         res['NeutronError']['type'])
+
+    def test_profile_shared(self):
+        prof = self.create_service_profile(
+            service_type='LOADBALANCER', shared=True,
+            tenant_id='admin')['service_profile']
+        self.create_servicechain_node(
+            service_profile_id=prof['id'], shared=True,
+            expected_res_status=201)
+
+        data = {'service_profile': {'shared': False}}
+        req = self.new_update_request('service_profiles', data,
+                                      prof['id'])
+        res = req.get_response(self.ext_api)
+        self.assertEqual(400, res.status_int)
+        res = self.deserialize(self.fmt, res)
+        self.assertEqual('InvalidSharedAttributeUpdate',
+                         res['NeutronError']['type'])
+
+        prof = self.create_service_profile(
+            service_type='LOADBALANCER', shared=False)['service_profile']
+        self.create_servicechain_node(
+            service_profile_id=prof['id'], shared=False,
+            expected_res_status=201)
+
+        data = {'service_profile': {'shared': True}}
+        req = self.new_update_request('service_profiles', data,
+                                      prof['id'])
+        res = req.get_response(self.ext_api)
+        self.assertEqual(200, res.status_int)
+        res = self.deserialize(self.fmt, res)
+        self.assertTrue(res['service_profile']['shared'])

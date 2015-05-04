@@ -18,6 +18,7 @@
     "shared_nsp": "field:network_service_policies:shared=True",
     "shared_scn": "field:servicechain_nodes:shared=True",
     "shared_scs": "field:servicechain_specs:shared=True",
+    "shared_sp": "field:service_profiles:shared=True",
 
     "create_policy_target_group": "",
     "create_policy_target_group:shared": "rule:admin_only",
@@ -86,5 +87,10 @@
 
     "create_servicechain_instance": "",
     "get_servicechain_instance": "rule:admin_or_owner",
-    "update_servicechain_instance:shared": "rule:admin_only"
+    "update_servicechain_instance:shared": "rule:admin_only",
+
+    "create_service_profile": "",
+    "create_service_profile:shared": "rule:admin_only",
+    "get_service_profile": "rule:admin_or_owner or rule:shared_sp",
+    "update_service_profile:shared": "rule:admin_only"
 }
