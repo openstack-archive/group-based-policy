@@ -15,6 +15,8 @@ import webob.exc
 
 from neutron.api import extensions
 from neutron import context
+from neutron.db import api as db_api
+from neutron.db import model_base
 from neutron.openstack.common import uuidutils
 from neutron.plugins.common import constants
 from neutron.tests.unit.api import test_extensions
@@ -23,6 +25,7 @@ from oslo_utils import importutils
 
 from gbpservice.neutron.db import servicechain_db as svcchain_db
 from gbpservice.neutron.extensions import servicechain as service_chain
+from gbpservice.neutron.services.servicechain.common import constants as sccon
 
 JSON_FORMAT = 'json'
 
@@ -55,12 +58,24 @@ class ServiceChainDBTestBase(object):
         self.assertEqual(sorted([i['id'] for i in res[resource_plural]]),
                          sorted([i[resource]['id'] for i in items]))
 
-    def _get_test_servicechain_node_attrs(self, name='scn1',
-                                          description='test scn',
-                                          service_type=constants.FIREWALL,
-                                          config="{}", shared=False):
+    def _get_test_service_profile_attrs(
+            self, name='sp1', description='test sp',
+            service_type=constants.LOADBALANCER, vendor='',
+            insertion_mode=sccon.INSERTION_MODE_L3, service_flavor=''):
         attrs = {'name': name, 'description': description,
                  'service_type': service_type,
+                 'vendor': vendor, 'insertion_mode': insertion_mode,
+                 'service_flavor': service_flavor,
+                 'tenant_id': self._tenant_id}
+
+        return attrs
+
+    def _get_test_servicechain_node_attrs(self, name='scn1',
+                                          description='test scn',
+                                          service_profile_id=None,
+                                          config="{}", shared=False):
+        attrs = {'name': name, 'description': description,
+                 'service_profile_id': service_profile_id,
                  'config': config,
                  'tenant_id': self._tenant_id,
                  'shared': shared}
@@ -96,13 +111,38 @@ class ServiceChainDBTestBase(object):
 
         return attrs
 
-    def create_servicechain_node(self, service_type=constants.FIREWALL,
+    def create_service_profile(self, service_type=constants.FIREWALL,
+                               insertion_mode=sccon.INSERTION_MODE_L3,
+                               vendor='', service_flavor='',
+                               expected_res_status=None, **kwargs):
+        defaults = {'name': 'sp1', 'description': 'test sp'}
+        defaults.update(kwargs)
+        data = {'service_profile': {'service_type': service_type,
+                                    'service_flavor': service_flavor,
+                                    'tenant_id': self._tenant_id,
+                                    'insertion_mode': insertion_mode,
+                                    'vendor': vendor}}
+        data['service_profile'].update(defaults)
+
+        scn_req = self.new_create_request('service_profiles', data, self.fmt)
+        scn_res = scn_req.get_response(self.ext_api)
+
+        if expected_res_status:
+            self.assertEqual(scn_res.status_int, expected_res_status)
+        elif scn_res.status_int >= webob.exc.HTTPClientError.code:
+            raise webob.exc.HTTPClientError(code=scn_res.status_int)
+
+        scn = self.deserialize(self.fmt, scn_res)
+
+        return scn
+
+    def create_servicechain_node(self, service_profile_id=None,
                                  config="{}", expected_res_status=None,
                                  **kwargs):
         defaults = {'name': 'scn1', 'description': 'test scn', 'shared': False}
         defaults.update(kwargs)
 
-        data = {'servicechain_node': {'service_type': service_type,
+        data = {'servicechain_node': {'service_profile_id': service_profile_id,
                                       'tenant_id': self._tenant_id,
                                       'config': config}}
         data['servicechain_node'].update(defaults)
@@ -142,7 +182,9 @@ class ServiceChainDBTestBase(object):
 
     def test_create_servicechain_specs_same_node(self):
         template1 = '{"key1":"value1"}'
-        scn = self.create_servicechain_node(config=template1)
+        sp = self.create_service_profile()['service_profile']
+        scn = self.create_servicechain_node(
+            config=template1, service_profile_id=sp['id'])
         scn_id = scn['servicechain_node']['id']
         spec1 = {"servicechain_spec": {'name': 'scs1',
                                        'tenant_id': self._tenant_id,
@@ -198,6 +240,13 @@ class ServiceChainDBTestBase(object):
 
         return sci
 
+    def _create_profiled_servicechain_node(
+            self, service_type=constants.LOADBALANCER, **kwargs):
+        prof = self.create_service_profile(
+            service_type=service_type)['service_profile']
+        return self.create_servicechain_node(
+            service_profile_id=prof['id'], **kwargs)
+
 
 class ServiceChainDBTestPlugin(svcchain_db.ServiceChainDbPlugin):
 
@@ -230,6 +279,8 @@ class ServiceChainDbTestCase(ServiceChainDBTestBase,
         if not ext_mgr:
             ext_mgr = extensions.PluginAwareExtensionManager.get_instance()
             self.ext_api = test_extensions.setup_extensions_middleware(ext_mgr)
+        engine = db_api.get_engine()
+        model_base.BASEV2.metadata.create_all(engine)
 
 
 class TestServiceChainResources(ServiceChainDbTestCase):
@@ -245,11 +296,14 @@ class TestServiceChainResources(ServiceChainDbTestCase):
             self.assertEqual(v, res[resource][k])
 
     def test_create_and_show_servicechain_node(self):
+        profile = self.create_service_profile()
         attrs = self._get_test_servicechain_node_attrs(
-            service_type=constants.LOADBALANCER)
+            service_profile_id=profile['service_profile']['id'],
+            config="config1")
 
         scn = self.create_servicechain_node(
-            service_type=constants.LOADBALANCER)
+            service_profile_id=profile['service_profile']['id'],
+            config="config1")
 
         for k, v in attrs.iteritems():
             self.assertEqual(v, scn['servicechain_node'][k])
@@ -259,19 +313,26 @@ class TestServiceChainResources(ServiceChainDbTestCase):
                                  attrs)
 
     def test_list_servicechain_nodes(self):
-        scns = [self.create_servicechain_node(name='scn1', description='scn'),
-                self.create_servicechain_node(name='scn2', description='scn'),
-                self.create_servicechain_node(name='scn3', description='scn')]
+        scns = [
+            self._create_profiled_servicechain_node(name='scn1',
+                                                    description='scn'),
+            self._create_profiled_servicechain_node(name='scn2',
+                                                    description='scn'),
+            self._create_profiled_servicechain_node(name='scn3',
+                                                    description='scn')]
         self._test_list_resources('servicechain_node', scns,
                                   query_params='description=scn')
 
     def test_update_servicechain_node(self):
         name = 'new_servicechain_node'
         description = 'new desc'
-        attrs = self._get_test_servicechain_node_attrs(name=name,
-                                                       description=description)
+        profile = self.create_service_profile()
+        attrs = self._get_test_servicechain_node_attrs(
+            name=name, description=description,
+            service_profile_id=profile['service_profile']['id'])
 
-        scn = self.create_servicechain_node()
+        scn = self.create_servicechain_node(
+            service_profile_id=profile['service_profile']['id'])
 
         data = {'servicechain_node': {'name': name,
                                       'description': description}}
@@ -289,7 +350,7 @@ class TestServiceChainResources(ServiceChainDbTestCase):
     def test_delete_servicechain_node(self):
         ctx = context.get_admin_context()
 
-        scn = self.create_servicechain_node()
+        scn = self._create_profiled_servicechain_node()
         scn_id = scn['servicechain_node']['id']
 
         scs = self.create_servicechain_spec(nodes=[scn_id])
@@ -313,7 +374,7 @@ class TestServiceChainResources(ServiceChainDbTestCase):
 
     def test_create_and_show_servicechain_spec(self):
         name = "scs1"
-        scn = self.create_servicechain_node()
+        scn = self._create_profiled_servicechain_node()
         scn_id = scn['servicechain_node']['id']
 
         attrs = self._get_test_servicechain_spec_attrs(name, nodes=[scn_id])
@@ -329,9 +390,9 @@ class TestServiceChainResources(ServiceChainDbTestCase):
 
     def test_create_spec_multiple_nodes(self):
         name = "scs1"
-        scn1 = self.create_servicechain_node()
+        scn1 = self._create_profiled_servicechain_node()
         scn1_id = scn1['servicechain_node']['id']
-        scn2 = self.create_servicechain_node()
+        scn2 = self._create_profiled_servicechain_node()
         scn2_id = scn2['servicechain_node']['id']
         attrs = self._get_test_servicechain_spec_attrs(
                             name, nodes=[scn1_id, scn2_id])
@@ -348,8 +409,10 @@ class TestServiceChainResources(ServiceChainDbTestCase):
                                   query_params='description=scs')
 
     def test_node_ordering_list_servicechain_specs(self):
-        scn1_id = self.create_servicechain_node()['servicechain_node']['id']
-        scn2_id = self.create_servicechain_node()['servicechain_node']['id']
+        scn1_id = self._create_profiled_servicechain_node()[
+            'servicechain_node']['id']
+        scn2_id = self._create_profiled_servicechain_node()[
+            'servicechain_node']['id']
         nodes_list = [scn1_id, scn2_id]
         scs = self.create_servicechain_spec(name='scs1',
                                             nodes=nodes_list)
@@ -376,7 +439,8 @@ class TestServiceChainResources(ServiceChainDbTestCase):
     def test_update_servicechain_spec(self):
         name = "new_servicechain_spec1"
         description = 'new desc'
-        scn_id = self.create_servicechain_node()['servicechain_node']['id']
+        scn_id = self._create_profiled_servicechain_node()[
+            'servicechain_node']['id']
         attrs = self._get_test_servicechain_spec_attrs(name=name,
                                                        description=description,
                                                        nodes=[scn_id])
@@ -558,3 +622,69 @@ class TestServiceChainResources(ServiceChainDbTestCase):
         self.assertRaises(service_chain.ServiceChainInstanceNotFound,
                           self.plugin.get_servicechain_instance,
                           ctx, sci_id)
+
+    def test_create_and_show_service_profile(self):
+        attrs = self._get_test_service_profile_attrs(
+            service_type=constants.FIREWALL, vendor="vendor1")
+
+        scn = self.create_service_profile(
+            service_type=constants.FIREWALL, vendor="vendor1")
+
+        for k, v in attrs.iteritems():
+            self.assertEqual(scn['service_profile'][k], v)
+
+        self._test_show_resource('service_profile',
+                                 scn['service_profile']['id'], attrs)
+
+    def test_list_service_profile(self):
+        scns = [self.create_service_profile(name='sp1', description='sp'),
+                self.create_service_profile(name='sp2', description='sp'),
+                self.create_service_profile(name='sp3', description='sp')]
+        self._test_list_resources('service_profile', scns,
+                                  query_params='description=sp')
+
+    def test_update_service_profile(self):
+        name = 'new_service_profile'
+        description = 'new desc'
+        attrs = self._get_test_service_profile_attrs(
+            name=name, description=description,
+            service_type=constants.FIREWALL)
+
+        scn = self.create_service_profile()
+
+        data = {'service_profile': {'name': name,
+                                    'description': description}}
+        req = self.new_update_request('service_profiles', data,
+                                      scn['service_profile']['id'])
+        res = self.deserialize(self.fmt, req.get_response(self.ext_api))
+
+        for k, v in attrs.iteritems():
+            self.assertEqual(res['service_profile'][k], v)
+
+        self._test_show_resource('service_profile',
+                                 scn['service_profile']['id'], attrs)
+
+    def test_delete_service_profile(self):
+        ctx = context.get_admin_context()
+
+        sp = self.create_service_profile()
+        sp_id = sp['service_profile']['id']
+
+        scn = self.create_servicechain_node(service_profile_id=sp_id)
+        scn_id = scn['servicechain_node']['id']
+
+        # Deleting Service Chain Node in use by a Spec should fail
+        self.assertRaises(service_chain.ServiceProfileInUse,
+                          self.plugin.delete_service_profile, ctx, sp_id)
+
+        req = self.new_delete_request('servicechain_nodes', scn_id)
+        res = req.get_response(self.ext_api)
+        self.assertEqual(res.status_int, webob.exc.HTTPNoContent.code)
+
+        # After deleting the Service Chain Spec, node delete should succeed
+        req = self.new_delete_request('service_profiles', sp_id)
+        res = req.get_response(self.ext_api)
+        self.assertEqual(res.status_int, webob.exc.HTTPNoContent.code)
+        self.assertRaises(service_chain.ServiceProfileNotFound,
+                          self.plugin.get_service_profile,
+                          ctx, sp_id)
