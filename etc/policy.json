@@ -59,5 +59,10 @@
     "create_nat_pool": "",
     "create_nat_pool:shared": "rule:admin_only",
     "get_nat_pool": "rule:admin_or_owner or rule:gbp_shared",
-    "update_nat_pool:shared": "rule:admin_only"
+    "update_nat_pool:shared": "rule:admin_only",
+
+    "create_service_profile": "",
+    "create_service_profile:shared": "rule:admin_only",
+    "get_service_profile": "rule:admin_or_owner or rule:gbp_shared",
+    "update_service_profile:shared": "rule:admin_only"
 }
