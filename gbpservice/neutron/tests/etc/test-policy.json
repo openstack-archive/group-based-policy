@@ -48,5 +48,9 @@
 
 	"gbp_nat_pool_shared": "field:nat_pools:shared=True",
     "create_nat_pool": "",
-    "get_nat_pool": "rule:admin_or_owner or rule:gbp_nat_pool_shared"
+    "get_nat_pool": "rule:admin_or_owner or rule:gbp_nat_pool_shared",
+
+    "gbp_service_profile_shared": "field:service_profiles:shared=True",
+    "create_service_profile": "",
+    "get_service_profile": "rule:admin_or_owner or rule:gbp_nat_pool_shared"
 }

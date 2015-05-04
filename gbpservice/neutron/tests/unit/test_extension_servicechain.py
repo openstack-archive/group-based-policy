@@ -31,6 +31,7 @@ SERVICECHAIN_URI = 'servicechain'
 SERVICECHAIN_NODES_URI = SERVICECHAIN_URI + '/' + 'servicechain_nodes'
 SERVICECHAIN_SPECS_URI = SERVICECHAIN_URI + '/' + 'servicechain_specs'
 SERVICECHAIN_INSTANCES_URI = SERVICECHAIN_URI + '/' + 'servicechain_instances'
+SERVICE_PROFILE_URI = SERVICECHAIN_URI + '/' + 'service_profiles'
 
 
 class ServiceChainExtensionTestCase(test_extensions_base.ExtensionTestCase):
@@ -72,7 +73,7 @@ class ServiceChainExtensionTestCase(test_extensions_base.ExtensionTestCase):
     def _get_create_servicechain_node_attrs(self):
         return {
             'name': 'servicechain1',
-            'service_type': 'FIREWALL',
+            'service_profile_id': _uuid(),
             'tenant_id': _uuid(),
             'description': 'test servicechain node',
             'config': 'test_config'
@@ -87,7 +88,7 @@ class ServiceChainExtensionTestCase(test_extensions_base.ExtensionTestCase):
         servicechain_node_id = _uuid()
         data = {
             'servicechain_node': {
-                'service_type': 'FIREWALL',
+                'service_profile_id': _uuid(),
                 'tenant_id': _uuid(),
                 'config': 'test_config'
             }
