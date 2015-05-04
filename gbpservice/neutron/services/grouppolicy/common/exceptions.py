@@ -125,7 +125,7 @@ class NonSharedNetworkOnSharedL2PolicyNotSupported(GroupPolicyBadRequest):
 
 
 class InvalidSharedAttributeUpdate(GroupPolicyBadRequest):
-    message = _("Invalid shared attribute update. Shared resource %(id)s is"
+    message = _("Invalid shared attribute update. Shared resource %(id)s is "
                 "referenced by %(rid)s, which is either shared or owned by a "
                 "different tenant.")
 
