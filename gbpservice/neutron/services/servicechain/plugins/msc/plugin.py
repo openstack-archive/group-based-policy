@@ -239,3 +239,72 @@ class ServiceChainPlugin(servicechain_db.ServiceChainDbPlugin,
             LOG.exception(_("delete_servicechain_instance_postcommit failed "
                             "for servicechain_instance %s"),
                           servicechain_instance_id)
+
+    @log.log
+    def create_service_profile(self, context, service_profile):
+        session = context.session
+        with session.begin(subtransactions=True):
+            result = super(ServiceChainPlugin,
+                           self).create_service_profile(
+                               context, service_profile)
+            self._validate_shared_create(context, result, 'service_profile')
+            sc_context = servicechain_context.ServiceProfileContext(
+                self, context, result)
+            self.driver_manager.create_service_profile_precommit(
+                sc_context)
+
+        try:
+            self.driver_manager.create_service_profile_postcommit(
+                sc_context)
+        except Exception:
+            with excutils.save_and_reraise_exception():
+                LOG.error(_(
+                    "driver_manager.create_service_profile_postcommit "
+                    "failed, deleting service_profile %s"),
+                          result['id'])
+                self.delete_service_profile(context, result['id'])
+
+        return result
+
+    @log.log
+    def update_service_profile(self, context, service_profile_id,
+                               service_profile):
+        session = context.session
+        with session.begin(subtransactions=True):
+            original_profile = self.get_service_profile(
+                context, service_profile_id)
+            updated_profile = super(ServiceChainPlugin,
+                                    self).update_service_profile(
+                context, service_profile_id, service_profile)
+            self._validate_shared_update(context, original_profile,
+                                         updated_profile, 'service_profile')
+            sc_context = servicechain_context.ServiceProfileContext(
+                self, context, updated_profile,
+                original_profile=original_profile)
+            self.driver_manager.update_service_profile_precommit(
+                sc_context)
+
+        self.driver_manager.update_service_profile_postcommit(
+            sc_context)
+        return updated_profile
+
+    @log.log
+    def delete_service_profile(self, context, service_profile_id):
+        session = context.session
+        with session.begin(subtransactions=True):
+            profile = self.get_service_profile(
+                context, service_profile_id)
+            sc_context = servicechain_context.ServiceProfileContext(
+                self, context, profile)
+            self.driver_manager.delete_service_profile_precommit(
+                sc_context)
+            super(ServiceChainPlugin, self).delete_service_profile(
+                context, service_profile_id)
+
+        try:
+            self.driver_manager.delete_service_profile_postcommit(
+                sc_context)
+        except Exception:
+            LOG.exception(_("delete_service_profile_postcommit failed "
+                            "for service_profile %s"),
+                          service_profile_id)

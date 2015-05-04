@@ -24,6 +24,7 @@ from neutron.plugins.common import constants
 from neutron.services import service_base
 
 import gbpservice.neutron.extensions
+from gbpservice.neutron.services.servicechain.common import constants as scc
 
 # The code below is a monkey patch of key Neutron's modules. This is needed for
 # the GBP service to be loaded correctly. GBP extensions' path is added
@@ -37,6 +38,15 @@ LOG = logging.getLogger(__name__)
 
 
 # Service Chain Exceptions
+class ServiceProfileNotFound(nexc.NotFound):
+    message = _("ServiceProfile %(profile_id)s could not be found")
+
+
+class ServiceProfileInUse(nexc.NotFound):
+    message = _("Unable to complete operation, ServiceProfile "
+                "%(profile_id)s is in use")
+
+
 class ServiceChainNodeNotFound(nexc.NotFound):
     message = _("ServiceChainNode %(sc_node_id)s could not be found")
 
@@ -94,6 +104,7 @@ attr.validators['type:string_list'] = _validate_str_list
 SERVICECHAIN_NODES = 'servicechain_nodes'
 SERVICECHAIN_SPECS = 'servicechain_specs'
 SERVICECHAIN_INSTANCES = 'servicechain_instances'
+SERVICE_PROFILES = 'service_profiles'
 
 RESOURCE_ATTRIBUTE_MAP = {
     SERVICECHAIN_NODES: {
@@ -110,8 +121,11 @@ RESOURCE_ATTRIBUTE_MAP = {
                       'validate': {'type:string': None},
                       'required_by_policy': True, 'is_visible': True},
         'service_type': {'allow_post': True, 'allow_put': False,
-                         'validate': {'type:string': None},
-                         'required': True, 'is_visible': True},
+                         'validate': {'type:string_or_none': None},
+                         'is_visible': True, 'default': None},
+        'service_profile_id': {'allow_post': True, 'allow_put': True,
+                               'validate': {'type:uuid_or_none': None},
+                               'is_visible': True, 'default': None},
         'config': {'allow_post': True, 'allow_put': False,
                    'validate': {'type:string': None},
                    'required': True, 'is_visible': True},
@@ -179,6 +193,37 @@ RESOURCE_ATTRIBUTE_MAP = {
         'config_param_values': {'allow_post': True, 'allow_put': False,
                                 'validate': {'type:string': None},
                                 'default': "", 'is_visible': True},
+    },
+    SERVICE_PROFILES: {
+        'id': {'allow_post': False, 'allow_put': False,
+               'validate': {'type:uuid': None}, 'is_visible': True,
+               'primary_key': True},
+        'name': {'allow_post': True, 'allow_put': True,
+                 'validate': {'type:string': None},
+                 'default': '', 'is_visible': True},
+        'description': {'allow_post': True, 'allow_put': True,
+                        'validate': {'type:string': None},
+                        'is_visible': True, 'default': ''},
+        'tenant_id': {'allow_post': True, 'allow_put': False,
+                      'validate': {'type:string': None},
+                      'required_by_policy': True, 'is_visible': True},
+        attr.SHARED: {'allow_post': True, 'allow_put': True,
+                      'default': False, 'convert_to': attr.convert_to_boolean,
+                      'is_visible': True, 'required_by_policy': True,
+                      'enforce_policy': True},
+        'vendor': {'allow_post': True, 'allow_put': True,
+                   'validate': {'type:string': None},
+                   'is_visible': True, 'default': ''},
+        'insertion_mode': {'allow_post': True, 'allow_put': True,
+                           'validate': {'type:values':
+                                        scc.VALID_INSERTION_MODES},
+                           'is_visible': True, 'default': None},
+        'service_type': {'allow_post': True, 'allow_put': True,
+                         'validate': {'type:string': None},
+                         'is_visible': True, 'required': True},
+        'service_flavor': {'allow_post': True, 'allow_put': True,
+                           'validate': {'type:string_or_none': None},
+                           'is_visible': True, 'default': None},
     },
 }
 
@@ -320,4 +365,35 @@ class ServiceChainPluginBase(service_base.ServicePluginBase):
     @abc.abstractmethod
     @log.log
     def delete_servicechain_instance(self, context, servicechain_instance_id):
+        pass
+
+    @abc.abstractmethod
+    @log.log
+    def get_service_profile_count(self, context, filters=None):
+        pass
+
+    @abc.abstractmethod
+    @log.log
+    def create_service_profile(self, context, service_profile):
+        pass
+
+    @abc.abstractmethod
+    @log.log
+    def update_service_profile(self, context, service_profile_id,
+                               service_profile):
+        pass
+
+    @abc.abstractmethod
+    @log.log
+    def delete_service_profile(self, context, service_profile_id):
+        pass
+
+    @abc.abstractmethod
+    @log.log
+    def get_service_profile(self, context, service_profile_id, fields=None):
+        pass
+
+    @abc.abstractmethod
+    @log.log
+    def get_service_profiles(self, context, filters=None, fields=None):
         pass

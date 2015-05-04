@@ -14,7 +14,6 @@ import ast
 import time
 
 from heatclient import client as heat_client
-
 from heatclient import exc as heat_exc
 from neutron.common import log
 from neutron.db import model_base
@@ -76,8 +75,12 @@ class SimpleChainDriver(object):
 
     @log.log
     def create_servicechain_node_precommit(self, context):
-        if context.current['service_type'] not in sc_supported_type:
-            raise exc.InvalidServiceTypeForReferenceDriver()
+        if context.current['service_profile_id'] is None:
+            if context.current['service_type'] not in sc_supported_type:
+                raise exc.InvalidServiceTypeForReferenceDriver()
+        elif context.current['service_type']:
+            LOG.warn(_('Both service_profile_id and service_type are'
+                       'specified, service_type will be ignored.'))
 
     @log.log
     def create_servicechain_node_postcommit(self, context):
@@ -168,6 +171,31 @@ class SimpleChainDriver(object):
     def delete_servicechain_instance_postcommit(self, context):
         self._delete_servicechain_instance_stacks(context._plugin_context,
                                                   context.current['id'])
+
+    @log.log
+    def create_service_profile_precommit(self, context):
+        if context.current['service_type'] not in sc_supported_type:
+            raise exc.InvalidServiceTypeForReferenceDriver()
+
+    @log.log
+    def create_service_profile_postcommit(self, context):
+        pass
+
+    @log.log
+    def update_service_profile_precommit(self, context):
+        pass
+
+    @log.log
+    def update_service_profile_postcommit(self, context):
+        pass
+
+    @log.log
+    def delete_service_profile_precommit(self, context):
+        pass
+
+    @log.log
+    def delete_service_profile_postcommit(self, context):
+        pass
 
     def _get_ptg(self, context, ptg_id):
         return self._get_resource(self._grouppolicy_plugin,

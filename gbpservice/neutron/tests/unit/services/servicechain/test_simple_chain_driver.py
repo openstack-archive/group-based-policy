@@ -70,27 +70,32 @@ class SimpleChainDriverTestCase(
 class TestServiceChainInstance(SimpleChainDriverTestCase):
 
     def test_invalid_service_type_rejected(self):
-        res = self.create_servicechain_node(
-                    service_type="test", config='{}',
+        res = self.create_service_profile(
+                    service_type="test",
                     expected_res_status=webob.exc.HTTPBadRequest.code)
         self.assertEqual('InvalidServiceTypeForReferenceDriver',
                          res['NeutronError']['type'])
 
     def test_chain_node_create_success(self):
-        res = self.create_servicechain_node(
+        res = self._create_profiled_servicechain_node(
                     service_type=constants.FIREWALL, config='{}',
                     expected_res_status=webob.exc.HTTPCreated.code)
-        self.assertEqual(constants.FIREWALL,
-                         res['servicechain_node']['service_type'])
+        self.assertEqual('{}', res['servicechain_node']['config'])
+
+    def test_chain_node_create_success_service_type(self):
+        res = self.create_servicechain_node(
+            service_type=constants.FIREWALL, config='{}',
+            expected_res_status=webob.exc.HTTPCreated.code)
+        self.assertEqual('{}', res['servicechain_node']['config'])
 
     def test_chain_spec_update(self):
         template1 = '{"key1":"value1"}'
-        scn = self.create_servicechain_node(config=template1)
+        scn = self._create_profiled_servicechain_node(config=template1)
         scn1_name = scn['servicechain_node']['name']
         scn_id = scn['servicechain_node']['id']
         name = "scs1"
         template2 = '{"key2":"value2"}'
-        scn2 = self.create_servicechain_node(config=template2)
+        scn2 = self._create_profiled_servicechain_node(config=template2)
         scn2_id = scn2['servicechain_node']['id']
         scn2_name = scn2['servicechain_node']['name']
         scs = self.create_servicechain_spec(name=name, nodes=[scn_id])
@@ -162,7 +167,7 @@ class TestServiceChainInstance(SimpleChainDriverTestCase):
 
     def test_chain_instance_create(self):
         name = "scs1"
-        scn = self.create_servicechain_node()
+        scn = self._create_profiled_servicechain_node()
         scn_id = scn['servicechain_node']['id']
         scs = self.create_servicechain_spec(name=name, nodes=[scn_id])
         sc_spec_id = scs['servicechain_spec']['id']
@@ -186,7 +191,7 @@ class TestServiceChainInstance(SimpleChainDriverTestCase):
 
     def test_chain_instance_delete(self):
         name = "scs1"
-        scn = self.create_servicechain_node()
+        scn = self._create_profiled_servicechain_node()
         scn_id = scn['servicechain_node']['id']
         scs = self.create_servicechain_spec(name=name, nodes=[scn_id])
         sc_spec_id = scs['servicechain_spec']['id']
@@ -210,7 +215,7 @@ class TestServiceChainInstance(SimpleChainDriverTestCase):
 
     def test_wait_stack_delete_for_instance_delete(self):
         name = "scs1"
-        scn = self.create_servicechain_node()
+        scn = self._create_profiled_servicechain_node()
         scn_id = scn['servicechain_node']['id']
         scs = self.create_servicechain_spec(name=name, nodes=[scn_id])
         sc_spec_id = scs['servicechain_spec']['id']
@@ -264,7 +269,7 @@ class TestServiceChainInstance(SimpleChainDriverTestCase):
 
     def test_stack_not_found_ignored(self):
         name = "scs1"
-        scn = self.create_servicechain_node()
+        scn = self._create_profiled_servicechain_node()
         scn_id = scn['servicechain_node']['id']
         scs = self.create_servicechain_spec(name=name, nodes=[scn_id])
         sc_spec_id = scs['servicechain_spec']['id']
