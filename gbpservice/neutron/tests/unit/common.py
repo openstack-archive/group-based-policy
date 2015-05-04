@@ -293,6 +293,27 @@ def get_update_nat_pool_attrs():
     return {'name': 'new_name'}
 
 
+@gbp_attributes
+def get_create_service_profile_default_attrs():
+    return {'name': '', 'description': ''}
+
+
+@gbp_attributes
+def get_create_service_profile_attrs():
+    return {
+        'name': 'serviceprofile1',
+        'service_type': 'FIREWALL',
+        'description': 'test service profile',
+    }
+
+
+@gbp_attributes
+def get_update_service_profile_attrs():
+    return {
+        'name': 'new_name',
+    }
+
+
 def get_resource_plural(resource):
     if resource.endswith('y'):
         resource_plural = resource.replace('y', 'ies')
