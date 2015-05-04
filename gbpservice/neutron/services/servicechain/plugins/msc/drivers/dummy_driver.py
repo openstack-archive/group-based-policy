@@ -90,3 +90,27 @@ class NoopDriver(object):
     @log.log
     def delete_servicechain_instance_postcommit(self, context):
         pass
+
+    @log.log
+    def create_service_profile_precommit(self, context):
+        pass
+
+    @log.log
+    def create_service_profile_postcommit(self, context):
+        pass
+
+    @log.log
+    def update_service_profile_precommit(self, context):
+        pass
+
+    @log.log
+    def update_service_profile_postcommit(self, context):
+        pass
+
+    @log.log
+    def delete_service_profile_precommit(self, context):
+        pass
+
+    @log.log
+    def delete_service_profile_postcommit(self, context):
+        pass
