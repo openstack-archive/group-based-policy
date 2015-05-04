@@ -42,6 +42,7 @@ from gbpservice.neutron.tests.unit.services.grouppolicy import (
     test_grouppolicy_plugin as test_plugin)
 
 
+SERVICE_PROFILES = 'servicechain/service_profiles'
 SERVICECHAIN_NODES = 'servicechain/servicechain_nodes'
 SERVICECHAIN_SPECS = 'servicechain/servicechain_specs'
 SERVICECHAIN_INSTANCES = 'servicechain/servicechain_instances'
@@ -1457,8 +1458,17 @@ class TestPolicyRuleSet(ResourceMappingTestCase):
 
         self._verify_prs_rules(policy_rule_set_id)
 
+    def _create_service_profile(self, node_type='LOADBALANCER'):
+        data = {'service_profile': {'service_type': node_type,
+                                    'tenant_id': self._tenant_id}}
+        scn_req = self.new_create_request(SERVICE_PROFILES, data, self.fmt)
+        node = self.deserialize(self.fmt, scn_req.get_response(self.ext_api))
+        scn_id = node['service_profile']['id']
+        return scn_id
+
     def _create_servicechain_node(self, node_type="LOADBALANCER"):
-        data = {'servicechain_node': {'service_type': node_type,
+        profile_id = self._create_service_profile(node_type)
+        data = {'servicechain_node': {'service_profile_id': profile_id,
                                       'tenant_id': self._tenant_id,
                                       'config': "{}"}}
         scn_req = self.new_create_request(SERVICECHAIN_NODES, data, self.fmt)
@@ -1601,12 +1611,19 @@ class TestPolicyRuleSet(ResourceMappingTestCase):
         self._assert_proper_chain_instance(sc_instance, provider_ptg_id,
                                            consumer_ptg_id, [scs_id])
 
-        data = {'servicechain_node': {'service_type': "FIREWALL",
+        data = {'service_profile': {'service_type': "FIREWALL",
+                                    'tenant_id': self._tenant_id}}
+        service_profile = self.new_create_request(SERVICE_PROFILES,
+                                                  data, self.fmt)
+        service_profile = self.deserialize(
+            self.fmt, service_profile.get_response(self.ext_api))
+        sp_id = service_profile['service_profile']['id']
+        data = {'servicechain_node': {'service_profile_id': sp_id,
                                       'tenant_id': self._tenant_id,
                                       'config': "{}"}}
         scn_req = self.new_create_request(SERVICECHAIN_NODES, data, self.fmt)
         new_node = self.deserialize(
-                    self.fmt, scn_req.get_response(self.ext_api))
+            self.fmt, scn_req.get_response(self.ext_api))
         new_scn_id = new_node['servicechain_node']['id']
         data = {'servicechain_spec': {'tenant_id': self._tenant_id,
                                       'nodes': [new_scn_id]}}
@@ -1834,7 +1851,14 @@ class TestPolicyRuleSet(ResourceMappingTestCase):
         child_prs_id = child_prs['policy_rule_set']['id']
 
         self._verify_prs_rules(child_prs_id)
-        data = {'servicechain_node': {'service_type': "FIREWALL",
+        data = {'service_profile': {'service_type': "FIREWALL",
+                                    'tenant_id': self._tenant_id}}
+        service_profile = self.new_create_request(SERVICE_PROFILES,
+                                                  data, self.fmt)
+        service_profile = self.deserialize(
+            self.fmt, service_profile.get_response(self.ext_api))
+        sp_id = service_profile['service_profile']['id']
+        data = {'servicechain_node': {'service_profile_id': sp_id,
                                       'tenant_id': self._tenant_id,
                                       'config': "{}"}}
         parent_scn_req = self.new_create_request(SERVICECHAIN_NODES,

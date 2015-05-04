@@ -307,7 +307,7 @@ def get_create_servicechain_node_default_attrs():
 def get_create_servicechain_node_attrs():
     return {
         'name': 'servicechain1',
-        'service_type': 'FIREWALL',
+        'service_profile_id': _uuid(),
         'tenant_id': _uuid(),
         'description': 'test servicechain node',
         'config': 'test_config'
@@ -372,6 +372,27 @@ def get_update_servicechain_instance_attrs():
     return {
         'name': 'new_name',
         'servicechain_specs': [_uuid()]
+    }
+
+
+@gbp_attributes
+def get_create_service_profile_default_attrs():
+    return {'name': '', 'description': ''}
+
+
+@gbp_attributes
+def get_create_service_profile_attrs():
+    return {
+        'name': 'serviceprofile1',
+        'service_type': 'FIREWALL',
+        'description': 'test service profile',
+    }
+
+
+@gbp_attributes
+def get_update_service_profile_attrs():
+    return {
+        'name': 'new_name',
     }
 
 
