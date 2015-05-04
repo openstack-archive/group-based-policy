@@ -63,12 +63,15 @@ class ServiceChainNode(model_base.BASEV2, models_v2.HasId,
     __tablename__ = 'sc_nodes'
     name = sa.Column(sa.String(50))
     description = sa.Column(sa.String(255))
-    service_type = sa.Column(sa.String(50))
     config = sa.Column(sa.String(4096))
     specs = orm.relationship(SpecNodeAssociation,
                              backref="nodes",
                              cascade='all, delete, delete-orphan')
     shared = sa.Column(sa.Boolean)
+    service_type = sa.Column(sa.String(50), nullable=True)
+    service_profile_id = sa.Column(
+        sa.String(36), sa.ForeignKey('service_profiles.id'),
+        nullable=True)
 
 
 class ServiceChainInstance(model_base.BASEV2, models_v2.HasId,
@@ -115,6 +118,23 @@ class ServiceChainSpec(model_base.BASEV2, models_v2.HasId,
     shared = sa.Column(sa.Boolean)
 
 
+class ServiceProfile(model_base.BASEV2, models_v2.HasId,
+                     models_v2.HasTenant):
+    """ Service Profile
+    """
+    __tablename__ = 'service_profiles'
+    name = sa.Column(sa.String(50))
+    description = sa.Column(sa.String(255))
+    vendor = sa.Column(sa.String(50))
+    shared = sa.Column(sa.Boolean)
+    # Not using ENUM for less painful upgrades. Validation will happen at the
+    # API level
+    insertion_mode = sa.Column(sa.String(50))
+    service_type = sa.Column(sa.String(50))
+    service_flavor = sa.Column(sa.String(1024))
+    nodes = orm.relationship(ServiceChainNode, backref="service_profile")
+
+
 class ServiceChainDbPlugin(schain.ServiceChainPluginBase,
                            common_db_mixin.CommonDbMixin):
     """ServiceChain plugin interface implementation using SQLAlchemy models."""
@@ -157,11 +177,19 @@ class ServiceChainDbPlugin(schain.ServiceChainPluginBase,
             raise schain.ServiceChainInstanceNotFound(
                 sc_instance_id=instance_id)
 
+    def _get_service_profile(self, context, profile_id):
+        try:
+            return self._get_by_id(context, ServiceProfile, profile_id)
+        except exc.NoResultFound:
+            raise schain.ServiceProfileNotFound(
+                profile_id=profile_id)
+
     def _make_sc_node_dict(self, sc_node, fields=None):
         res = {'id': sc_node['id'],
                'tenant_id': sc_node['tenant_id'],
                'name': sc_node['name'],
                'description': sc_node['description'],
+               'service_profile_id': sc_node['service_profile_id'],
                'service_type': sc_node['service_type'],
                'config': sc_node['config'],
                'shared': sc_node['shared']}
@@ -192,6 +220,19 @@ class ServiceChainDbPlugin(schain.ServiceChainPluginBase,
                                     for sc_spec in instance['specs']]
         return self._fields(res, fields)
 
+    def _make_service_profile_dict(self, profile, fields=None):
+        res = {'id': profile['id'],
+               'tenant_id': profile['tenant_id'],
+               'name': profile['name'],
+               'description': profile['description'],
+               'shared': profile['shared'],
+               'service_type': profile['service_type'],
+               'service_flavor': profile['service_flavor'],
+               'vendor': profile['vendor'],
+               'insertion_mode': profile['insertion_mode']}
+        res['nodes'] = [node['id'] for node in profile['nodes']]
+        return self._fields(res, fields)
+
     @staticmethod
     def validate_service_type(service_type):
         if service_type not in schain.sc_supported_type:
@@ -202,13 +243,12 @@ class ServiceChainDbPlugin(schain.ServiceChainPluginBase,
         node = servicechain_node['servicechain_node']
         tenant_id = self._get_tenant_id_for_create(context, node)
         with context.session.begin(subtransactions=True):
-            node_db = ServiceChainNode(id=uuidutils.generate_uuid(),
-                                       tenant_id=tenant_id,
-                                       name=node['name'],
-                                       description=node['description'],
-                                       service_type=node['service_type'],
-                                       config=node['config'],
-                                       shared=node['shared'])
+            node_db = ServiceChainNode(
+                id=uuidutils.generate_uuid(), tenant_id=tenant_id,
+                name=node['name'], description=node['description'],
+                service_profile_id=node['service_profile_id'],
+                service_type=node['service_type'],
+                config=node['config'], shared=node['shared'])
             context.session.add(node_db)
         return self._make_sc_node_dict(node_db)
 
@@ -447,6 +487,61 @@ class ServiceChainDbPlugin(schain.ServiceChainPluginBase,
                                     page_reverse=page_reverse)
 
     @log.log
-    def get_servicechain_instances_count(self, context, filters=None):
-        return self._get_collection_count(context, ServiceChainInstance,
+    def get_service_profile_count(self, context, filters=None):
+        return self._get_collection_count(context, ServiceProfile,
                                           filters=filters)
+
+    @log.log
+    def create_service_profile(self, context, service_profile):
+        profile = service_profile['service_profile']
+        tenant_id = self._get_tenant_id_for_create(context, profile)
+        with context.session.begin(subtransactions=True):
+            profile_db = ServiceProfile(
+                id=uuidutils.generate_uuid(), tenant_id=tenant_id,
+                name=profile['name'], description=profile['description'],
+                service_type=profile['service_type'],
+                insertion_mode=profile['insertion_mode'],
+                vendor=profile['vendor'],
+                service_flavor=profile['service_flavor'],
+                shared=profile['shared'])
+            context.session.add(profile_db)
+        return self._make_service_profile_dict(profile_db)
+
+    @log.log
+    def update_service_profile(self, context, service_profile_id,
+                               service_profile):
+        profile = service_profile['service_profile']
+        with context.session.begin(subtransactions=True):
+            profile_db = self._get_service_profile(context,
+                                                   service_profile_id)
+            profile_db.update(profile)
+        return self._make_service_profile_dict(profile_db)
+
+    @log.log
+    def delete_service_profile(self, context, service_profile_id):
+        with context.session.begin(subtransactions=True):
+            profile_db = self._get_service_profile(context,
+                                                   service_profile_id)
+            if profile_db.nodes:
+                raise schain.ServiceProfileInUse(
+                    profile_id=service_profile_id)
+            context.session.delete(profile_db)
+
+    @log.log
+    def get_service_profile(self, context, service_profile_id, fields=None):
+        profile_db = self._get_service_profile(
+            context, service_profile_id)
+        return self._make_service_profile_dict(profile_db, fields)
+
+    @log.log
+    def get_service_profiles(self, context, filters=None, fields=None,
+                             sorts=None, limit=None, marker=None,
+                             page_reverse=False):
+        marker_obj = self._get_marker_obj(context, 'service_profile',
+                                          limit, marker)
+        return self._get_collection(context, ServiceProfile,
+                                    self._make_service_profile_dict,
+                                    filters=filters, fields=fields,
+                                    sorts=sorts, limit=limit,
+                                    marker_obj=marker_obj,
+                                    page_reverse=page_reverse)

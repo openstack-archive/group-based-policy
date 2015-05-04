@@ -30,8 +30,11 @@ class SharingMixin(object):
 
     usage_graph = {'servicechain_spec': {'nodes':
                                          'servicechain_node'},
-                   'servicechain_node': {},
-                   'servicechain_instance': {}}
+                   'servicechain_node': {'service_profile_id':
+                                         'service_profile'},
+                   'servicechain_instance': {},
+                   'service_profile': {},
+                   }
     _plurals = None
 
     @property
@@ -72,3 +75,7 @@ class SharingMixin(object):
         gbp_plugin.GroupPolicyPlugin._check_shared_or_different_tenant(
             context, obj, self.gbp_plugin.get_policy_actions, 'action_value',
             [obj['id']])
+
+    def _validate_service_profile_unshare(self, context, obj):
+        gbp_plugin.GroupPolicyPlugin._check_shared_or_different_tenant(
+            context, obj, self.get_servicechain_nodes, 'service_profile_id')
