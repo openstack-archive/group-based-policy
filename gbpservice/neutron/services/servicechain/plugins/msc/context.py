@@ -24,7 +24,18 @@ class ServiceChainNodeContext(ServiceChainContext):
                  original_sc_node=None):
         super(ServiceChainNodeContext, self).__init__(plugin, plugin_context)
         self._sc_node = sc_node
+        if self._sc_node['service_profile_id']:
+            self._profile = self._plugin.get_service_profile(
+                self._plugin_context, self._sc_node['service_profile_id'])
+        else:
+            self._profile = None
         self._original_sc_node = original_sc_node
+        if self._original_sc_node:
+            self._original_profile = self._plugin.get_service_profile(
+                self._plugin_context,
+                self._original_sc_node['service_profile_id'])
+        else:
+            self._original_sc_node = None
 
     @property
     def current(self):
@@ -33,6 +44,14 @@ class ServiceChainNodeContext(ServiceChainContext):
     @property
     def original(self):
         return self._original_sc_node
+
+    @property
+    def current_profile(self):
+        return self._profile
+
+    @property
+    def original_profile(self):
+        return self._original_profile
 
 
 class ServiceChainSpecContext(ServiceChainContext):
@@ -68,3 +87,20 @@ class ServiceChainInstanceContext(ServiceChainContext):
     @property
     def original(self):
         return self._original_sc_instance
+
+
+class ServiceProfileContext(ServiceChainContext):
+
+    def __init__(self, plugin, plugin_context, profile,
+                 original_profile=None):
+        super(ServiceProfileContext, self).__init__(plugin, plugin_context)
+        self._profile = profile
+        self._original_profile = original_profile
+
+    @property
+    def current(self):
+        return self._profile
+
+    @property
+    def original(self):
+        return self._original_profile
