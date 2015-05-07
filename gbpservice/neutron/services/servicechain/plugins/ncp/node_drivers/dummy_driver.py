@@ -20,8 +20,9 @@ class NoopNodeDriver(driver_base.NodeDriverBase):
     initialized = False
 
     @log.log
-    def initialize(self):
+    def initialize(self, name):
         self.initialized = True
+        self._name = name
 
     @log.log
     def get_plumbing_info(self, context):
@@ -29,7 +30,7 @@ class NoopNodeDriver(driver_base.NodeDriverBase):
 
     @log.log
     def validate(self, context):
-        pass
+        return True
 
     @log.log
     def create(self, context):
@@ -42,3 +43,7 @@ class NoopNodeDriver(driver_base.NodeDriverBase):
     @log.log
     def update(self, context):
         pass
+
+    @property
+    def name(self):
+        return self._name
