@@ -11,7 +11,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import ast
+import collections
+
 from oslo_config import cfg
+from oslo_serialization import jsonutils
 
 from gbpservice.neutron.tests.unit.db.grouppolicy import (
     test_servicechain_db as test_servicechain_db)
@@ -130,3 +134,47 @@ class TestGroupPolicyPluginGroupResources(
         self.assertEqual(200, res.status_int)
         res = self.deserialize(self.fmt, res)
         self.assertTrue(res['service_profile']['shared'])
+
+    def test_spec_parameters(self):
+        params_node_1 = ['p1', 'p2', 'p3']
+        params_node_2 = ['p4', 'p5', 'p6']
+
+        def params_dict(params):
+            return jsonutils.dumps({'Parameters':
+                                    dict((x, {}) for x in params)})
+
+        prof = self.create_service_profile(
+            service_type='LOADBALANCER', shared=True,
+            tenant_id='admin')['service_profile']
+
+        # Create 2 nodes with different parameters
+        node1 = self.create_servicechain_node(
+            service_profile_id=prof['id'], shared=True,
+            config=params_dict(params_node_1),
+            expected_res_status=201)['servicechain_node']
+        node2 = self.create_servicechain_node(
+            service_profile_id=prof['id'], shared=True,
+            config=params_dict(params_node_2),
+            expected_res_status=201)['servicechain_node']
+
+        # Create SC spec with the nodes assigned
+        spec = self.create_servicechain_spec(
+            nodes=[node1['id'], node2['id']], shared=True,
+            expected_res_status=201)['servicechain_spec']
+
+        # Verify param names correspondence
+        self.assertEqual(
+            collections.Counter(params_node_1 + params_node_2),
+            collections.Counter(ast.literal_eval(spec['config_param_names'])))
+
+        # REVISIT(ivar): update verification fails because of bug/1460186
+
+        # Update the spec removing one node
+        #self.update_servicechain_spec(spec['id'], nodes=[node1['id']],
+        #                              expected_res_status=200)
+
+        #spec = self.show_servicechain_spec(spec['id'])['servicechain_spec']
+        # Verify param names correspondence
+        #self.assertEqual(
+        #    collections.Counter(params_node_1),
+        #    collections.Counter(ast.literal_eval(spec['config_param_names'])))

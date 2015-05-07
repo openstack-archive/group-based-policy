@@ -11,10 +11,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import mock
+from neutron.common import config  # noqa
 from neutron import context as n_context
 from neutron.db import api as db_api
 from neutron.db import model_base
+from neutron import manager
+from neutron.plugins.common import constants as pconst
 from oslo_config import cfg
+from oslo_serialization import jsonutils
 
 from gbpservice.neutron.services.servicechain.plugins.ncp import (
     context as ncp_context)
@@ -41,20 +46,60 @@ class NodeCompositionPluginTestCase(
         if node_drivers:
             cfg.CONF.set_override('node_drivers', node_drivers,
                                   group='node_composition_chain')
+        config.cfg.CONF.set_override('policy_drivers',
+                                     ['implicit_policy', 'resource_mapping'],
+                                     group='group_policy')
         super(NodeCompositionPluginTestCase, self).setUp(
             core_plugin=core_plugin or CORE_PLUGIN,
             gp_plugin=gp_plugin or GP_PLUGIN_KLASS,
             sc_plugin=SC_PLUGIN_KLASS)
         engine = db_api.get_engine()
         model_base.BASEV2.metadata.create_all(engine)
+        self.driver = self.sc_plugin.driver_manager.ordered_drivers[0].obj
 
-    def test_node_shared(self):
-        pass
+    @property
+    def sc_plugin(self):
+        plugins = manager.NeutronManager.get_service_plugins()
+        servicechain_plugin = plugins.get(pconst.SERVICECHAIN)
+        return servicechain_plugin
 
-    def test_profile_shared(self):
-        pass
+    def _create_redirect_rule(self, spec_id):
+        action = self.create_policy_action(action_type='REDIRECT',
+                                           action_value=spec_id)
+        classifier = self.create_policy_classifier(
+            port_range=80, protocol='tcp', direction='bi')
+        rule = self.create_policy_rule(
+            policy_actions=[action['policy_action']['id']],
+            policy_classifier_id=classifier['policy_classifier']['id'])
+        return rule
 
-    def test_spec_shared(self):
+    def _create_redirect_prs(self, spec_id):
+        rule = self._create_redirect_rule(spec_id)['policy_rule']
+        prs = self.create_policy_rule_set(policy_rules=[rule['id']])
+        return prs
+
+    def _create_simple_service_chain(self, number_of_nodes=1):
+        prof = self.create_service_profile(
+            service_type='LOADBALANCER')['service_profile']
+
+        node_ids = []
+        for x in xrange(number_of_nodes):
+            node_ids.append(self.create_servicechain_node(
+                service_profile_id=prof['id'],
+                expected_res_status=201)['servicechain_node']['id'])
+
+        spec = self.create_servicechain_spec(
+            nodes=node_ids,
+            expected_res_status=201)['servicechain_spec']
+        prs = self._create_redirect_prs(spec['id'])['policy_rule_set']
+        provider = self.create_policy_target_group(
+            provided_policy_rule_sets={prs['id']: ''})['policy_target_group']
+        consumer = self.create_policy_target_group(
+            consumed_policy_rule_sets={prs['id']: ''})['policy_target_group']
+
+        return provider, consumer, prs
+
+    def test_spec_ordering_list_servicechain_instances(self):
         pass
 
     def test_context_attributes(self):
@@ -86,16 +131,15 @@ class NodeCompositionPluginTestCase(
         self.assertIsNotNone(ctx.session)
         self.assertIsNotNone(ctx.admin_context)
         self.assertIsNotNone(ctx.admin_session)
-        self.assertEqual(ctx.instance, instance)
-        self.assertEqual(ctx.provider, provider)
-        self.assertEqual(ctx.consumer, consumer)
-        self.assertEqual(ctx.management, management)
-        self.assertEqual(ctx.management, management)
-        self.assertEqual(ctx.relevant_specs, [spec])
         del ctx.current_profile['nodes']
         self.assertEqual(ctx.current_profile, profile)
+        self.assertEqual(instance['id'], ctx.instance['id'])
+        self.assertEqual(provider['id'], ctx.provider['id'])
+        self.assertEqual(consumer['id'], ctx.consumer['id'])
+        self.assertEqual(management['id'], ctx.management['id'])
+        self.assertEqual([spec['id']], [x['id'] for x in ctx.relevant_specs])
         self.assertIsNone(ctx.original_node)
-        self.assertIsNone(ctx.service_targets)
+        self.assertEqual(0, len(ctx.get_service_targets()))
 
     def test_context_relevant_specs(self):
         plugin_context = n_context.get_admin_context()
@@ -104,24 +148,15 @@ class NodeCompositionPluginTestCase(
         spec_used = self.create_servicechain_spec(
             nodes=[node_used['id']])['servicechain_spec']
 
-        node_unused = self._create_profiled_servicechain_node(
-            service_type="TYPE", config='{}')['servicechain_node']
-        spec_unused = self.create_servicechain_spec(
-            nodes=[node_unused['id']])['servicechain_spec']
-
         provider = self.create_policy_target_group()['policy_target_group']
         instance = self.create_servicechain_instance(
             provider_ptg_id=provider['id'],
-            servicechain_specs=[spec_used['id'],
-                                spec_unused['id']])['servicechain_instance']
-        self.assertEqual(len(instance['servicechain_specs']), 2)
+            servicechain_specs=[spec_used['id']])['servicechain_instance']
 
         ctx = ncp_context.get_node_driver_context(
             self.plugin, plugin_context, instance, node_used)
-        self.assertEqual(ctx.relevant_specs, [spec_used])
-
-
-class TestNcpNodeDriverManager(NodeCompositionPluginTestCase):
+        self.assertEqual([spec_used['id']],
+                         [x['id'] for x in ctx.relevant_specs])
 
     def test_manager_initialized(self):
         mgr = self.plugin.driver_manager
@@ -129,3 +164,79 @@ class TestNcpNodeDriverManager(NodeCompositionPluginTestCase):
                               dummy_driver.NoopNodeDriver)
         for driver in mgr.ordered_drivers:
             self.assertTrue(driver.obj.initialized)
+
+    def test_spec_parameters(self):
+        """Test that config_param_names is empty when using NCP.
+        In NCP the config attribute of a node may be something different than
+        a HEAT template, therefore config_param_names is not used.
+        """
+
+        params_node_1 = ['p1', 'p2', 'p3']
+        params_node_2 = ['p4', 'p5', 'p6']
+
+        def params_dict(params):
+            return jsonutils.dumps({'Parameters':
+                                    dict((x, {}) for x in params)})
+
+        prof = self.create_service_profile(
+            service_type='LOADBALANCER', shared=True,
+            tenant_id='admin')['service_profile']
+
+        # Create 2 nodes with different parameters
+        node1 = self.create_servicechain_node(
+            service_profile_id=prof['id'], shared=True,
+            config=params_dict(params_node_1),
+            expected_res_status=201)['servicechain_node']
+        node2 = self.create_servicechain_node(
+            service_profile_id=prof['id'], shared=True,
+            config=params_dict(params_node_2),
+            expected_res_status=201)['servicechain_node']
+
+        # Create SC spec with the nodes assigned
+        spec = self.create_servicechain_spec(
+            nodes=[node1['id'], node2['id']], shared=True,
+            expected_res_status=201)['servicechain_spec']
+
+        # Verify param names is empty
+        self.assertIsNone(spec['config_param_names'])
+
+        # Update the spec removing one node
+        self.update_servicechain_spec(spec['id'], nodes=[node1['id']],
+                                      expected_res_status=200)
+
+        spec = self.show_servicechain_spec(spec['id'])['servicechain_spec']
+        # Verify param names is empty
+        self.assertIsNone(spec['config_param_names'])
+
+    def test_create_service_chain(self):
+        deploy = self.driver.create = mock.Mock()
+        destroy = self.driver.delete = mock.Mock()
+
+        self._create_simple_service_chain(1)
+        self.assertEqual(1, deploy.call_count)
+        self.assertEqual(0, destroy.call_count)
+
+        deploy.reset_mock()
+
+        provider, _, _ = self._create_simple_service_chain(3)
+        self.assertEqual(3, deploy.call_count)
+        self.assertEqual(0, destroy.call_count)
+
+        self.update_policy_target_group(provider['id'],
+                                        provided_policy_rule_sets={})
+        self.assertEqual(3, deploy.call_count)
+        self.assertEqual(3, destroy.call_count)
+
+    def test_create_service_chain_fails(self):
+        deploy = self.driver.create = mock.Mock()
+        destroy = self.driver.delete = mock.Mock()
+
+        deploy.side_effect = Exception
+
+        try:
+            self._create_simple_service_chain(3)
+        except Exception:
+            pass
+
+        self.assertEqual(1, deploy.call_count)
+        self.assertEqual(3, destroy.call_count)
