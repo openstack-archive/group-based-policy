@@ -12,38 +12,21 @@
 
 from neutron.common import log
 
-from gbpservice.neutron.services.servicechain.plugins.ncp import driver_base
+from gbpservice.neutron.services.servicechain.plugins.ncp import plumber_base
 
 
-class NoopNodeDriver(driver_base.NodeDriverBase):
+class NoopPlumber(plumber_base.NodePlumberBase):
 
     initialized = False
 
     @log.log
-    def initialize(self, name):
+    def initialize(self):
         self.initialized = True
-        self._name = name
 
     @log.log
-    def get_plumbing_info(self, context):
-        pass
+    def plug_services(self, context, deployment):
+        self._sort_deployment(deployment)
 
     @log.log
-    def validate(self, context):
-        return True
-
-    @log.log
-    def create(self, context):
-        pass
-
-    @log.log
-    def delete(self, context):
-        pass
-
-    @log.log
-    def update(self, context):
-        pass
-
-    @property
-    def name(self):
-        return self._name
+    def unplug_services(self, context, deployment):
+        self._sort_deployment(deployment)
