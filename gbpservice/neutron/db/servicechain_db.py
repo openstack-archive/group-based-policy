@@ -190,6 +190,8 @@ class ServiceChainDbPlugin(schain.ServiceChainPluginBase,
                'service_profile_id': sc_node['service_profile_id'],
                'service_type': sc_node['service_type'],
                'config': sc_node['config']}
+        res['servicechain_specs'] = [x['servicechain_spec_id'] for x in
+                                     sc_node['specs']]
         return self._fields(res, fields)
 
     def _make_sc_spec_dict(self, spec, fields=None):
@@ -199,6 +201,8 @@ class ServiceChainDbPlugin(schain.ServiceChainPluginBase,
                'description': spec['description'],
                'config_param_names': spec.get('config_param_names')}
         res['nodes'] = [sc_node['node_id'] for sc_node in spec['nodes']]
+        res['instances'] = [x['servicechain_instance_id'] for x in
+                            spec['instances']]
         return self._fields(res, fields)
 
     def _make_sc_instance_dict(self, instance, fields=None):
