@@ -148,8 +148,10 @@ class ServiceChainDbTestCase(ServiceChainDBTestBase,
             sc_plugin = DB_GP_PLUGIN_KLASS
         self.plugin = importutils.import_object(sc_plugin)
         if not service_plugins:
-            service_plugins = {'gp_plugin_name': gp_plugin or GP_PLUGIN_KLASS,
-                               'sc_plugin_name': sc_plugin}
+            service_plugins = {
+                'l3_plugin_name': 'router',
+                'gp_plugin_name': gp_plugin or GP_PLUGIN_KLASS,
+                'sc_plugin_name': sc_plugin}
 
         super(ServiceChainDbTestCase, self).setUp(
             plugin=core_plugin, ext_mgr=ext_mgr,
