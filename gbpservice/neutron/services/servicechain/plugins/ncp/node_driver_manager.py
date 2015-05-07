@@ -15,6 +15,7 @@ from oslo_log import log as logging
 import stevedore
 
 from gbpservice.neutron.services.servicechain.plugins.ncp import config  # noqa
+from gbpservice.neutron.services.servicechain.plugins.ncp import model
 
 LOG = logging.getLogger(__name__)
 
@@ -52,6 +53,35 @@ class NodeDriverManager(stevedore.named.NamedExtensionManager):
         for driver in self.ordered_drivers:
             LOG.info(_("Initializing service chain node drivers '%s'"),
                      driver.name)
-            driver.obj.initialize()
+            driver.obj.initialize(driver.name)
             self.native_bulk_support &= getattr(driver.obj,
                                                 'native_bulk_support', True)
+
+    def schedule_deploy(self, context):
+        """Schedule Node Driver for Node creation.
+
+        Given a NodeContext, this method returns the list of node drivers
+        capable of creating the specific node.
+        """
+        return [x.obj for x in self.ordered_drivers if x.obj.validate(context)]
+
+    def schedule_destroy(self, context):
+        """Schedule Node Driver for Node disruption.
+
+        Given a NodeContext, this method returns the list of node drivers
+        capable of destroying the specific node.
+        """
+        return self._get_owning_driver(context)
+
+    def schedule_update(self, context):
+        """Schedule Node Driver for Node Update.
+
+        Given a NodeContext, this method returns the list of node drivers
+        capable of updating the specific node.
+        """
+        return self._get_owning_driver(context)
+
+    def _get_owning_driver(self, context):
+        owner = model.get_node_owner(context)
+        driver = self.drivers.get(owner.driver_name)
+        return [driver.obj] if driver else []
