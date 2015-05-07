@@ -205,6 +205,8 @@ class ServiceChainDbPlugin(schain.ServiceChainPluginBase,
                'config_param_names': spec.get('config_param_names'),
                'shared': spec['shared']}
         res['nodes'] = [sc_node['node_id'] for sc_node in spec['nodes']]
+        res['instances'] = [x['servicechain_instance_id'] for x in
+                            spec['instances']]
         return self._fields(res, fields)
 
     def _make_sc_instance_dict(self, instance, fields=None):
