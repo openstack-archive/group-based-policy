@@ -15,6 +15,7 @@ from neutron import context as n_context
 from neutron.db import api as db_api
 from neutron.db import model_base
 from oslo_config import cfg
+from oslo_serialization import jsonutils
 
 from gbpservice.neutron.services.servicechain.plugins.ncp import (
     context as ncp_context)
@@ -48,13 +49,7 @@ class NodeCompositionPluginTestCase(
         engine = db_api.get_engine()
         model_base.BASEV2.metadata.create_all(engine)
 
-    def test_node_shared(self):
-        pass
-
-    def test_profile_shared(self):
-        pass
-
-    def test_spec_shared(self):
+    def test_spec_ordering_list_servicechain_instances(self):
         pass
 
     def test_context_attributes(self):
@@ -83,14 +78,13 @@ class NodeCompositionPluginTestCase(
         self.assertIsNotNone(ctx.session)
         self.assertIsNotNone(ctx.admin_context)
         self.assertIsNotNone(ctx.admin_session)
-        self.assertEqual(ctx.instance, instance)
-        self.assertEqual(ctx.provider, provider)
-        self.assertEqual(ctx.consumer, consumer)
-        self.assertEqual(ctx.management, management)
-        self.assertEqual(ctx.management, management)
-        self.assertEqual(ctx.relevant_specs, [spec])
+        self.assertEqual(instance['id'], ctx.instance['id'])
+        self.assertEqual(provider['id'], ctx.provider['id'])
+        self.assertEqual(consumer['id'], ctx.consumer['id'])
+        self.assertEqual(management['id'], ctx.management['id'])
+        self.assertEqual([spec['id']], [x['id'] for x in ctx.relevant_specs])
         self.assertIsNone(ctx.original_node)
-        self.assertIsNone(ctx.service_targets)
+        self.assertEqual(0, len(ctx.get_service_targets()))
 
     def test_context_relevant_specs(self):
         plugin_context = n_context.get_admin_context()
@@ -99,24 +93,15 @@ class NodeCompositionPluginTestCase(
         spec_used = self.create_servicechain_spec(
             nodes=[node_used['id']])['servicechain_spec']
 
-        node_unused = self._create_profiled_servicechain_node(
-            service_type="TYPE", config='{}')['servicechain_node']
-        spec_unused = self.create_servicechain_spec(
-            nodes=[node_unused['id']])['servicechain_spec']
-
         provider = self.create_policy_target_group()['policy_target_group']
         instance = self.create_servicechain_instance(
             provider_ptg_id=provider['id'],
-            servicechain_specs=[spec_used['id'],
-                                spec_unused['id']])['servicechain_instance']
-        self.assertEqual(len(instance['servicechain_specs']), 2)
+            servicechain_specs=[spec_used['id']])['servicechain_instance']
 
         ctx = ncp_context.get_node_driver_context(
             self.plugin, plugin_context, instance, node_used)
-        self.assertEqual(ctx.relevant_specs, [spec_used])
-
-
-class TestNcpNodeDriverManager(NodeCompositionPluginTestCase):
+        self.assertEqual([spec_used['id']],
+                         [x['id'] for x in ctx.relevant_specs])
 
     def test_manager_initialized(self):
         mgr = self.plugin.driver_manager
@@ -124,3 +109,46 @@ class TestNcpNodeDriverManager(NodeCompositionPluginTestCase):
                               dummy_driver.NoopNodeDriver)
         for driver in mgr.ordered_drivers:
             self.assertTrue(driver.obj.initialized)
+
+    def test_spec_parameters(self):
+        """Test that config_param_names is empty when using NCP.
+        In NCP the config attribute of a node may be something different than
+        a HEAT template, therefore config_param_names is not used.
+        """
+
+        params_node_1 = ['p1', 'p2', 'p3']
+        params_node_2 = ['p4', 'p5', 'p6']
+
+        def params_dict(params):
+            return jsonutils.dumps({'Parameters':
+                                    dict((x, {}) for x in params)})
+
+        prof = self.create_service_profile(
+            service_type='LOADBALANCER', shared=True,
+            tenant_id='admin')['service_profile']
+
+        # Create 2 nodes with different parameters
+        node1 = self.create_servicechain_node(
+            service_profile_id=prof['id'], shared=True,
+            config=params_dict(params_node_1),
+            expected_res_status=201)['servicechain_node']
+        node2 = self.create_servicechain_node(
+            service_profile_id=prof['id'], shared=True,
+            config=params_dict(params_node_2),
+            expected_res_status=201)['servicechain_node']
+
+        # Create SC spec with the nodes assigned
+        spec = self.create_servicechain_spec(
+            nodes=[node1['id'], node2['id']], shared=True,
+            expected_res_status=201)['servicechain_spec']
+
+        # Verify param names is empty
+        self.assertIsNone(spec['config_param_names'])
+
+        # Update the spec removing one node
+        self.update_servicechain_spec(spec['id'], nodes=[node1['id']],
+                                      expected_res_status=200)
+
+        spec = self.show_servicechain_spec(spec['id'])['servicechain_spec']
+        # Verify param names is empty
+        self.assertIsNone(spec['config_param_names'])
