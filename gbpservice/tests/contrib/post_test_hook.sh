@@ -71,7 +71,8 @@ set -e
 
 # Check if any gbp exercises failed
 set +e
-exercises_exit_code=$(grep -cim1 "FAILED gbp*" $LOGS_DIR/stack.sh.log)
+grep -cim1 "FAILED gbp*" $LOGS_DIR/stack.sh.log
+exercises_exit_code=$?
 set -e
 
 exit $(($exercises_exit_code+$gbpfunc_exit_code+$testr_exit_code))
