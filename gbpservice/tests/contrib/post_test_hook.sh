@@ -25,6 +25,11 @@ function dsvm_functional_prep_func {
     :
 }
 
+# Check if any gbp exercises failed
+set +e
+grep -cm1 "FAILED gbp*" $LOGS_DIR/*
+exercises_exit_code=$?
+set -e
 
 owner=stack
 prep_func="dsvm_functional_prep_func"
@@ -67,11 +72,6 @@ for f in $(find . -name "*.log.2*"); do
 done
 sudo gzip -9fk `find . -maxdepth 1 \! -type l -name "*.txt" | xargs ls -d`
 mv *.gz /opt/stack/logs/
-set -e
-
-# Check if any gbp exercises failed
-set +e
-exercises_exit_code=$(grep -cim1 "FAILED gbp*" $LOGS_DIR/stack.sh.log)
 set -e
 
 exit $(($exercises_exit_code+$gbpfunc_exit_code+$testr_exit_code))
