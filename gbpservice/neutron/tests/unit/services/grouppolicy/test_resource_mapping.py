@@ -11,7 +11,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import contextlib
 import itertools
 
 import mock
@@ -550,23 +549,22 @@ class TestPolicyTargetGroup(ResourceMappingTestCase):
         network = self.deserialize(self.fmt, req.get_response(self.api))
 
         # Create policy_target group with explicit subnet.
-        with contextlib.nested(
-                self.subnet(network=network, cidr='10.10.1.0/24'),
-                self.subnet(network=network, cidr='10.10.2.0/24')
-        ) as (subnet1, subnet2):
-            subnet1_id = subnet1['subnet']['id']
-            subnet2_id = subnet2['subnet']['id']
-            subnets = [subnet1_id]
-            ptg = self.create_policy_target_group(
-                l2_policy_id=l2p_id, subnets=subnets)
-            ptg_id = ptg['policy_target_group']['id']
+        with self.subnet(network=network, cidr='10.10.1.0/24') as subnet1:
+            with self.subnet(network=network, cidr='10.10.2.0/24') as subnet2:
+                subnet1_id = subnet1['subnet']['id']
+                subnet2_id = subnet2['subnet']['id']
+                subnets = [subnet1_id]
+                ptg = self.create_policy_target_group(
+                    l2_policy_id=l2p_id, subnets=subnets)
+                ptg_id = ptg['policy_target_group']['id']
 
-            # Add subnet.
-            subnets = [subnet1_id, subnet2_id]
-            data = {'policy_target_group': {'subnets': subnets}}
-            req = self.new_update_request('policy_target_groups', data, ptg_id)
-            res = req.get_response(self.ext_api)
-            self.assertEqual(res.status_int, webob.exc.HTTPOk.code)
+                # Add subnet.
+                subnets = [subnet1_id, subnet2_id]
+                data = {'policy_target_group': {'subnets': subnets}}
+                req = self.new_update_request('policy_target_groups', data,
+                                              ptg_id)
+                res = req.get_response(self.ext_api)
+                self.assertEqual(res.status_int, webob.exc.HTTPOk.code)
 
     def test_add_subnet_negative(self):
         # Create L2P
@@ -604,23 +602,23 @@ class TestPolicyTargetGroup(ResourceMappingTestCase):
         network = self.deserialize(self.fmt, req.get_response(self.api))
 
         # Create policy_target group with explicit subnets.
-        with contextlib.nested(
-                self.subnet(network=network, cidr='10.10.1.0/24'),
-                self.subnet(network=network, cidr='10.10.2.0/24')
-        ) as (subnet1, subnet2):
-            subnet1_id = subnet1['subnet']['id']
-            subnet2_id = subnet2['subnet']['id']
-            subnets = [subnet1_id, subnet2_id]
-            ptg = self.create_policy_target_group(
-                l2_policy_id=l2p_id, subnets=subnets)
-            ptg_id = ptg['policy_target_group']['id']
+        with self.subnet(network=network, cidr='10.10.1.0/24') as subnet1:
+            with self.subnet(network=network, cidr='10.10.2.0/24') as subnet2:
+                subnet1_id = subnet1['subnet']['id']
+                subnet2_id = subnet2['subnet']['id']
+                subnets = [subnet1_id, subnet2_id]
+                ptg = self.create_policy_target_group(
+                    l2_policy_id=l2p_id, subnets=subnets)
+                ptg_id = ptg['policy_target_group']['id']
 
-            # Verify removing subnet rejected.
-            data = {'policy_target_group': {'subnets': [subnet2_id]}}
-            req = self.new_update_request('policy_target_groups', data, ptg_id)
-            data = self.deserialize(self.fmt, req.get_response(self.ext_api))
-            self.assertEqual('PolicyTargetGroupSubnetRemovalNotSupported',
-                             data['NeutronError']['type'])
+                # Verify removing subnet rejected.
+                data = {'policy_target_group': {'subnets': [subnet2_id]}}
+                req = self.new_update_request('policy_target_groups', data,
+                                              ptg_id)
+                data = self.deserialize(self.fmt, req.get_response(
+                    self.ext_api))
+                self.assertEqual('PolicyTargetGroupSubnetRemovalNotSupported',
+                                 data['NeutronError']['type'])
 
     def test_subnet_allocation(self):
         ptg1 = self.create_policy_target_group(name="ptg1")
@@ -951,16 +949,16 @@ class TestL3Policy(ResourceMappingTestCase):
 
     def test_multiple_routers_rejected(self):
         # Verify update l3 policy with explicit router rejected.
-        with contextlib.nested(self.router(),
-                               self.router()) as (router1, router2):
-            router1_id = router1['router']['id']
-            router2_id = router2['router']['id']
-            data = self.create_l3_policy(name="l3p1",
-                                         routers=[router1_id, router2_id],
-                                         expected_res_status=
-                                         webob.exc.HTTPBadRequest.code)
-            self.assertEqual('L3PolicyMultipleRoutersNotSupported',
-                             data['NeutronError']['type'])
+        with self.router() as router1:
+            with self.router() as router2:
+                router1_id = router1['router']['id']
+                router2_id = router2['router']['id']
+                data = self.create_l3_policy(name="l3p1",
+                                             routers=[router1_id, router2_id],
+                                             expected_res_status=
+                                             webob.exc.HTTPBadRequest.code)
+                self.assertEqual('L3PolicyMultipleRoutersNotSupported',
+                                 data['NeutronError']['type'])
 
     def test_router_update_rejected(self):
         # Create L3 policy with implicit router.
@@ -1019,151 +1017,152 @@ class TestL3Policy(ResourceMappingTestCase):
 
     def test_create_l3p_es(self):
         # Simple test to verify l3p created with 1-N ES
-        with contextlib.nested(
-                 self.network(router__external=True),
-                 self.network(router__external=True)) as (net1, net2):
-            with contextlib.nested(
-                    self.subnet(cidr='10.10.1.0/24', network=net1),
-                    self.subnet(cidr='10.10.2.0/24', network=net2)) as (
-                    sub1, sub2):
-                es1 = self.create_external_segment(
-                    subnet_id=sub1['subnet']['id'])['external_segment']
-                es2 = self.create_external_segment(
-                    subnet_id=sub2['subnet']['id'])['external_segment']
-                external_segments = {es1['id']: []}
-                l3p = self.create_l3_policy(
-                    ip_pool='192.168.0.0/16', expected_res_status=201,
-                    external_segments=external_segments)
-                req = self.new_delete_request('l3_policies',
-                                              l3p['l3_policy']['id'])
-                req.get_response(self.ext_api)
-                external_segments.update({es2['id']: []})
-                res = self.create_l3_policy(
-                    ip_pool='192.168.0.0/16', expected_res_status=400,
-                    external_segments=external_segments)
-                self.assertEqual('MultipleESPerL3PolicyNotSupported',
-                                 res['NeutronError']['type'])
+        with self.network(router__external=True) as net1:
+            with self.network(router__external=True) as net2:
+                with self.subnet(cidr='10.10.1.0/24', network=net1) as sub1:
+                    with self.subnet(cidr='10.10.2.0/24',
+                                     network=net2) as sub2:
+                        es1 = self.create_external_segment(
+                            subnet_id=sub1['subnet']['id'])['external_segment']
+                        es2 = self.create_external_segment(
+                            subnet_id=sub2['subnet']['id'])['external_segment']
+                        external_segments = {es1['id']: []}
+                        l3p = self.create_l3_policy(
+                            ip_pool='192.168.0.0/16', expected_res_status=201,
+                            external_segments=external_segments)
+                        req = self.new_delete_request('l3_policies',
+                                                      l3p['l3_policy']['id'])
+                        req.get_response(self.ext_api)
+                        external_segments.update({es2['id']: []})
+                        res = self.create_l3_policy(
+                            ip_pool='192.168.0.0/16', expected_res_status=400,
+                            external_segments=external_segments)
+                        self.assertEqual('MultipleESPerL3PolicyNotSupported',
+                                         res['NeutronError']['type'])
 
     def test_update_l3p_es(self):
         # Simple test to verify l3p updated with 1-N ES
-        with contextlib.nested(
-                 self.network(router__external=True),
-                 self.network(router__external=True)) as (net1, net2):
-            with contextlib.nested(
-                    self.subnet(cidr='10.10.1.0/24', network=net1),
-                    self.subnet(cidr='10.10.2.0/24', network=net2)) as (
-                    sub1, sub2):
-                es1 = self.create_external_segment(
-                    subnet_id=sub1['subnet']['id'])['external_segment']
-                es2 = self.create_external_segment(
-                    subnet_id=sub2['subnet']['id'])['external_segment']
-                # None to es1, es1 to es2
-                l3p = self.create_l3_policy(
-                    ip_pool='192.168.0.0/16')['l3_policy']
-                for external_segments in [{es1['id']: []}, {es2['id']: []}]:
-                    self.update_l3_policy(
-                        l3p['id'], expected_res_status=200,
-                        external_segments=external_segments)
-                # es2 to [es1, es2]
-                external_segments = {es2['id']: [], es1['id']: []}
-                res = self.update_l3_policy(
-                    l3p['id'], expected_res_status=400,
-                    external_segments=external_segments)
-                self.assertEqual('MultipleESPerL3PolicyNotSupported',
-                                 res['NeutronError']['type'])
+        with self.network(router__external=True) as net1:
+            with self.network(router__external=True) as net2:
+                with self.subnet(cidr='10.10.1.0/24', network=net1) as sub1:
+                    with self.subnet(cidr='10.10.2.0/24',
+                                     network=net2) as sub2:
+                        es1 = self.create_external_segment(
+                            subnet_id=sub1['subnet']['id'])['external_segment']
+                        es2 = self.create_external_segment(
+                            subnet_id=sub2['subnet']['id'])['external_segment']
+                        # None to es1, es1 to es2
+                        l3p = self.create_l3_policy(
+                            ip_pool='192.168.0.0/16')['l3_policy']
+                        for external_segments in [{es1['id']: []}, {es2['id']:
+                                                                    []}]:
+                            self.update_l3_policy(
+                                l3p['id'], expected_res_status=200,
+                                external_segments=external_segments)
+                        # es2 to [es1, es2]
+                        external_segments = {es2['id']: [], es1['id']: []}
+                        res = self.update_l3_policy(
+                            l3p['id'], expected_res_status=400,
+                            external_segments=external_segments)
+                        self.assertEqual('MultipleESPerL3PolicyNotSupported',
+                                         res['NeutronError']['type'])
 
     def test_es_router_plumbing(self):
-        with contextlib.nested(
-                 self.network(router__external=True),
-                 self.network(router__external=True)) as (net1, net2):
-            with contextlib.nested(
-                    self.subnet(cidr='10.10.1.0/24', network=net1),
-                    self.subnet(cidr='10.10.2.0/24', network=net2)) as (
-                    subnet1, subnet2):
-                subnet1 = subnet1['subnet']
-                subnet2 = subnet2['subnet']
-                es1 = self.create_external_segment(
-                    subnet_id=subnet1['id'])['external_segment']
-                es2 = self.create_external_segment(
-                    subnet_id=subnet2['id'])['external_segment']
-                es_dict = {es1['id']: ['10.10.1.3']}
-                l3p = self.create_l3_policy(
-                    ip_pool='192.168.0.0/16',
-                    external_segments=es_dict)['l3_policy']
-                req = self.new_show_request('routers', l3p['routers'][0],
-                                            fmt=self.fmt)
-                res = self.deserialize(self.fmt, req.get_response(
-                    self.ext_api))['router']
-                self.assertEqual(
-                    subnet1['network_id'],
-                    res['external_gateway_info']['network_id'])
-                # Verify auto assigned addresses propagated to L3P
-                es_dict = {es2['id']: []}
-                l3p = self.update_l3_policy(
-                    l3p['id'], external_segments=es_dict,
-                    expected_res_status=200)['l3_policy']
-                req = self.new_show_request('routers', l3p['routers'][0],
-                                            fmt=self.fmt)
-                res = self.deserialize(self.fmt, req.get_response(
-                    self.ext_api))['router']
-                self.assertEqual(
-                    subnet2['network_id'],
-                    res['external_gateway_info']['network_id'])
-                self.assertEqual(
-                    [x['ip_address'] for x in
-                     res['external_gateway_info']['external_fixed_ips']],
-                    l3p['external_segments'][es2['id']])
-                # Verify that the implicit assignment is persisted
-                req = self.new_show_request('l3_policies', l3p['id'],
-                                            fmt=self.fmt)
-                l3p = self.deserialize(self.fmt, req.get_response(
-                    self.ext_api))['l3_policy']
-                self.assertEqual(
-                    [x['ip_address'] for x in
-                     res['external_gateway_info']['external_fixed_ips']],
-                    l3p['external_segments'][es2['id']])
+        with self.network(router__external=True) as net1:
+            with self.network(router__external=True) as net2:
+                with self.subnet(cidr='10.10.1.0/24', network=net1) as sub1:
+                    with self.subnet(cidr='10.10.2.0/24',
+                                     network=net2) as sub2:
+                        subnet1 = sub1['subnet']
+                        subnet2 = sub2['subnet']
+                        es1 = self.create_external_segment(
+                            subnet_id=subnet1['id'])['external_segment']
+                        es2 = self.create_external_segment(
+                            subnet_id=subnet2['id'])['external_segment']
+                        es_dict = {es1['id']: ['10.10.1.3']}
+                        l3p = self.create_l3_policy(
+                            ip_pool='192.168.0.0/16',
+                            external_segments=es_dict)['l3_policy']
+                        req = self.new_show_request('routers',
+                                                    l3p['routers'][0],
+                                                    fmt=self.fmt)
+                        res = self.deserialize(self.fmt, req.get_response(
+                            self.ext_api))['router']
+                        self.assertEqual(
+                            subnet1['network_id'],
+                            res['external_gateway_info']['network_id'])
+                        # Verify auto assigned addresses propagated to L3P
+                        es_dict = {es2['id']: []}
+                        l3p = self.update_l3_policy(
+                            l3p['id'], external_segments=es_dict,
+                            expected_res_status=200)['l3_policy']
+                        req = self.new_show_request('routers',
+                                                    l3p['routers'][0],
+                                                    fmt=self.fmt)
+                        res = self.deserialize(self.fmt, req.get_response(
+                            self.ext_api))['router']
+                        self.assertEqual(
+                            subnet2['network_id'],
+                            res['external_gateway_info']['network_id'])
+                        self.assertEqual(
+                            [x['ip_address'] for x in
+                             res['external_gateway_info'][
+                                 'external_fixed_ips']],
+                            l3p['external_segments'][es2['id']])
+                        # Verify that the implicit assignment is persisted
+                        req = self.new_show_request('l3_policies', l3p['id'],
+                                                    fmt=self.fmt)
+                        l3p = self.deserialize(self.fmt, req.get_response(
+                            self.ext_api))['l3_policy']
+                        self.assertEqual(
+                            [x['ip_address'] for x in
+                             res['external_gateway_info'][
+                                 'external_fixed_ips']],
+                            l3p['external_segments'][es2['id']])
 
     def test_es_routes(self):
         routes1 = [{'destination': '0.0.0.0/0', 'nexthop': '10.10.1.1'},
                    {'destination': '172.0.0.0/16', 'nexthop': '10.10.1.1'}]
         routes2 = [{'destination': '0.0.0.0/0', 'nexthop': '10.10.2.1'},
                    {'destination': '172.0.0.0/16', 'nexthop': '10.10.2.1'}]
-        with contextlib.nested(
-                 self.network(router__external=True),
-                 self.network(router__external=True)) as (net1, net2):
-            with contextlib.nested(
-                    self.subnet(cidr='10.10.1.0/24', network=net1),
-                    self.subnet(cidr='10.10.2.0/24', network=net2)) as (
-                    sub1, sub2):
-                es1 = self.create_external_segment(
-                    cidr='10.10.1.0/24',
-                    subnet_id=sub1['subnet']['id'],
-                    external_routes=routes1)['external_segment']
-                es2 = self.create_external_segment(
-                    cidr='10.10.2.0/24',
-                    subnet_id=sub2['subnet']['id'],
-                    external_routes=routes2)['external_segment']
-                es_dict = {es1['id']: []}
-                l3p = self.create_l3_policy(
-                    ip_pool='192.168.0.0/16', external_segments=es_dict,
-                    expected_res_status=201)['l3_policy']
-                req = self.new_show_request('routers', l3p['routers'][0],
-                                            fmt=self.fmt)
-                res = self.deserialize(self.fmt,
-                                       req.get_response(self.ext_api))
-                self.assertEqual(routes1, res['router']['routes'])
-                es_dict = {es2['id']: []}
-                self.update_l3_policy(l3p['id'], external_segments=es_dict,
-                                      expected_res_status=200)
-                req = self.new_show_request('routers', l3p['routers'][0],
-                                            fmt=self.fmt)
-                res = self.deserialize(self.fmt,
-                                       req.get_response(self.ext_api))
-                self.assertEqual(routes2, res['router']['routes'])
+        with self.network(router__external=True) as net1:
+            with self.network(router__external=True) as net2:
+                with self.subnet(cidr='10.10.1.0/24', network=net1) as sub1:
+                    with self.subnet(cidr='10.10.2.0/24',
+                                     network=net2) as sub2:
+                        es1 = self.create_external_segment(
+                            cidr='10.10.1.0/24',
+                            subnet_id=sub1['subnet']['id'],
+                            external_routes=routes1)['external_segment']
+                        es2 = self.create_external_segment(
+                            cidr='10.10.2.0/24',
+                            subnet_id=sub2['subnet']['id'],
+                            external_routes=routes2)['external_segment']
+                        es_dict = {es1['id']: []}
+                        l3p = self.create_l3_policy(
+                            ip_pool='192.168.0.0/16',
+                            external_segments=es_dict,
+                            expected_res_status=201)['l3_policy']
+                        req = self.new_show_request('routers',
+                                                    l3p['routers'][0],
+                                                    fmt=self.fmt)
+                        res = self.deserialize(self.fmt,
+                                               req.get_response(self.ext_api))
+                        self.assertEqual(routes1, res['router']['routes'])
+                        es_dict = {es2['id']: []}
+                        self.update_l3_policy(l3p['id'],
+                                              external_segments=es_dict,
+                                              expected_res_status=200)
+                        req = self.new_show_request('routers',
+                                                    l3p['routers'][0],
+                                                    fmt=self.fmt)
+                        res = self.deserialize(self.fmt,
+                                               req.get_response(self.ext_api))
+                        self.assertEqual(routes2, res['router']['routes'])
 
     def test_create_l3p_using_different_tenant_router_rejected(self):
-        with contextlib.nested(self.router()) as router1:
-            router1_id = router1[0]['router']['id']
+        with self.router() as router1:
+            router1_id = router1['router']['id']
             res = self.create_l3_policy(name="l3p1",
                                         tenant_id='tenant2',
                                         routers=[router1_id],
@@ -2517,105 +2516,103 @@ class TestExternalPolicy(ResourceMappingTestCase):
 
     def test_create(self):
         with self.network(router__external=True) as net:
-            with contextlib.nested(
-                    self.subnet(cidr='10.10.1.0/24', network=net),
-                    self.subnet(cidr='10.10.2.0/24', network=net)) as (
-                    sub1, sub2):
-                es1 = self.create_external_segment(
-                    subnet_id=sub1['subnet']['id'],
-                    shared=True)['external_segment']
-                es2 = self.create_external_segment(
-                    subnet_id=sub2['subnet']['id'])['external_segment']
-                # Shared Rejected
-                res = self.create_external_policy(
-                    expected_res_status=400, external_segments=[es1['id']],
-                    shared=True)
-                self.assertEqual('InvalidSharedResource',
-                                 res['NeutronError']['type'])
-                # Multiple ES reject
-                res = self.create_external_policy(
-                    expected_res_status=400,
-                    external_segments=[es1['id'], es2['id']])
-                self.assertEqual('MultipleESPerEPNotSupported',
-                                 res['NeutronError']['type'])
-                # No ES reject
-                res = self.create_external_policy(
-                    expected_res_status=400, external_segments=[])
-                self.assertEqual('ESIdRequiredWhenCreatingEP',
-                                 res['NeutronError']['type'])
+            with self.subnet(cidr='10.10.1.0/24', network=net) as sub1:
+                with self.subnet(cidr='10.10.2.0/24', network=net) as sub2:
+                    es1 = self.create_external_segment(
+                        subnet_id=sub1['subnet']['id'],
+                        shared=True)['external_segment']
+                    es2 = self.create_external_segment(
+                        subnet_id=sub2['subnet']['id'])['external_segment']
+                    # Shared Rejected
+                    res = self.create_external_policy(
+                        expected_res_status=400, external_segments=[es1['id']],
+                        shared=True)
+                    self.assertEqual('InvalidSharedResource',
+                                     res['NeutronError']['type'])
+                    # Multiple ES reject
+                    res = self.create_external_policy(
+                        expected_res_status=400,
+                        external_segments=[es1['id'], es2['id']])
+                    self.assertEqual('MultipleESPerEPNotSupported',
+                                     res['NeutronError']['type'])
+                    # No ES reject
+                    res = self.create_external_policy(
+                        expected_res_status=400, external_segments=[])
+                    self.assertEqual('ESIdRequiredWhenCreatingEP',
+                                     res['NeutronError']['type'])
 
-                # Multiple EP per tenant rejected
-                self.create_external_policy(external_segments=[es1['id']],
-                                            expected_res_status=201)
-                res = self.create_external_policy(
-                    expected_res_status=400, external_segments=[es2['id']])
-                self.assertEqual('OnlyOneEPPerTenantAllowed',
-                                 res['NeutronError']['type'])
+                    # Multiple EP per tenant rejected
+                    self.create_external_policy(external_segments=[es1['id']],
+                                                expected_res_status=201)
+                    res = self.create_external_policy(
+                        expected_res_status=400, external_segments=[es2['id']])
+                    self.assertEqual('OnlyOneEPPerTenantAllowed',
+                                     res['NeutronError']['type'])
 
     def test_update(self):
         with self.network(router__external=True) as net:
-            with contextlib.nested(
-                    self.subnet(cidr='10.10.1.0/24', network=net),
-                    self.subnet(cidr='10.10.2.0/24', network=net)) as (
-                    sub1, sub2):
-                route = {'destination': '172.0.0.0/8', 'nexthop': None}
-                es1 = self.create_external_segment(
-                    subnet_id=sub1['subnet']['id'],
-                    external_routes=[route])['external_segment']
-                es2 = self.create_external_segment(
-                    subnet_id=sub2['subnet']['id'])['external_segment']
-                ep = self.create_external_policy(
-                    external_segments=[es1['id']], expected_res_status=201)
-                ep = ep['external_policy']
-                # ES update rejectes
-                res = self.update_external_policy(
-                    ep['id'], external_segments=[es2['id']],
-                    expected_res_status=400)
-                self.assertEqual('ESUpdateNotSupportedForEP',
-                                 res['NeutronError']['type'])
-                # Rules changed when changing PRS
-                pr_ssh = self._create_ssh_allow_rule()
-                pr_http = self._create_http_allow_rule()
+            with self.subnet(cidr='10.10.1.0/24', network=net) as sub1:
+                with self.subnet(cidr='10.10.2.0/24', network=net) as sub2:
+                    route = {'destination': '172.0.0.0/8', 'nexthop': None}
+                    es1 = self.create_external_segment(
+                        subnet_id=sub1['subnet']['id'],
+                        external_routes=[route])['external_segment']
+                    es2 = self.create_external_segment(
+                        subnet_id=sub2['subnet']['id'])['external_segment']
+                    ep = self.create_external_policy(
+                        external_segments=[es1['id']], expected_res_status=201)
+                    ep = ep['external_policy']
+                    # ES update rejectes
+                    res = self.update_external_policy(
+                        ep['id'], external_segments=[es2['id']],
+                        expected_res_status=400)
+                    self.assertEqual('ESUpdateNotSupportedForEP',
+                                     res['NeutronError']['type'])
+                    # Rules changed when changing PRS
+                    pr_ssh = self._create_ssh_allow_rule()
+                    pr_http = self._create_http_allow_rule()
 
-                prs_ssh = self.create_policy_rule_set(
-                    policy_rules=[pr_ssh['id']])['policy_rule_set']
-                prs_http = self.create_policy_rule_set(
-                    policy_rules=[pr_http['id']])['policy_rule_set']
+                    prs_ssh = self.create_policy_rule_set(
+                        policy_rules=[pr_ssh['id']])['policy_rule_set']
+                    prs_http = self.create_policy_rule_set(
+                        policy_rules=[pr_http['id']])['policy_rule_set']
 
-                self.update_external_policy(
-                    ep['id'], provided_policy_rule_sets={prs_ssh['id']: ''},
-                    consumed_policy_rule_sets={prs_ssh['id']: ''},
-                    expected_res_status=200)
+                    self.update_external_policy(
+                        ep['id'], provided_policy_rule_sets={prs_ssh['id']:
+                                                             ''},
+                        consumed_policy_rule_sets={prs_ssh['id']: ''},
+                        expected_res_status=200)
 
-                expected_cidrs = self._calculate_expected_external_cidrs(
-                    es1, [])
-                self.assertTrue(len(expected_cidrs) > 0)
-                current_ssh_rules = self._verify_prs_rules(prs_ssh['id'])
-                self._verify_prs_rules(prs_http['id'])
+                    expected_cidrs = self._calculate_expected_external_cidrs(
+                        es1, [])
+                    self.assertTrue(len(expected_cidrs) > 0)
+                    current_ssh_rules = self._verify_prs_rules(prs_ssh['id'])
+                    self._verify_prs_rules(prs_http['id'])
 
-                # Now swap the contract
-                self.update_external_policy(
-                    ep['id'], provided_policy_rule_sets={prs_http['id']: ''},
-                    consumed_policy_rule_sets={prs_http['id']: ''},
-                    expected_res_status=200)
+                    # Now swap the contract
+                    self.update_external_policy(
+                        ep['id'], provided_policy_rule_sets={prs_http['id']:
+                                                             ''},
+                        consumed_policy_rule_sets={prs_http['id']: ''},
+                        expected_res_status=200)
 
-                # SSH rules removed
-                for rule in current_ssh_rules:
-                    if not (rule['direction'] == ['egress']
-                            and rule['remote_ip_prefix'] == ['0.0.0.0/0']):
-                        self.assertFalse(self._get_sg_rule(**rule))
+                    # SSH rules removed
+                    for rule in current_ssh_rules:
+                        if not (rule['direction'] == ['egress']
+                                and rule['remote_ip_prefix'] == ['0.0.0.0/0']):
+                            self.assertFalse(self._get_sg_rule(**rule))
 
-                # HTTP Added
-                current_http_rules = self._verify_prs_rules(prs_http['id'])
+                    # HTTP Added
+                    current_http_rules = self._verify_prs_rules(prs_http['id'])
 
-                # All removed
-                self.update_external_policy(
-                    ep['id'], provided_policy_rule_sets={},
-                    consumed_policy_rule_sets={}, expected_res_status=200)
-                for rule in current_http_rules:
-                    if not (rule['direction'] == ['egress']
-                            and rule['remote_ip_prefix'] == ['0.0.0.0/0']):
-                        self.assertFalse(self._get_sg_rule(**rule))
+                    # All removed
+                    self.update_external_policy(
+                        ep['id'], provided_policy_rule_sets={},
+                        consumed_policy_rule_sets={}, expected_res_status=200)
+                    for rule in current_http_rules:
+                        if not (rule['direction'] == ['egress']
+                                and rule['remote_ip_prefix'] == ['0.0.0.0/0']):
+                            self.assertFalse(self._get_sg_rule(**rule))
 
 
 class TestPolicyAction(ResourceMappingTestCase):

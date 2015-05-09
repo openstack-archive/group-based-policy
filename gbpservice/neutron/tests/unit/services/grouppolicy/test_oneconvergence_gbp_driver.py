@@ -12,7 +12,6 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-import contextlib
 import mock
 
 from gbpservice.neutron.services.grouppolicy.drivers.oneconvergence import (
@@ -68,23 +67,25 @@ class TestPolicyTarget(OneConvergenceGBPDriverTestCase,
 
     # Functionality tests and api results are covered by the base class tests
     def test_oneconvergence_controller_api_invoked(self):
-        with contextlib.nested(
-                mock.patch.object(MockNVSDApiClient, 'create_endpoint'),
-                mock.patch.object(MockNVSDApiClient, 'update_endpoint'),
-                mock.patch.object(MockNVSDApiClient, 'delete_endpoint')
-        ) as (create_ep, update_ep, delete_ep):
-            ptg = self.create_policy_target_group(name="ptg1")
-            ptg_id = ptg['policy_target_group']['id']
+        with mock.patch.object(MockNVSDApiClient,
+                               'create_endpoint') as create_ep:
+            with mock.patch.object(MockNVSDApiClient,
+                                   'update_endpoint') as update_ep:
+                with mock.patch.object(MockNVSDApiClient,
+                                       'delete_endpoint') as delete_ep:
+                    ptg = self.create_policy_target_group(name="ptg1")
+                    ptg_id = ptg['policy_target_group']['id']
 
-            # Create policy_target with implicit port.
-            pt = self.create_policy_target(
-                    name="pt1", policy_target_group_id=ptg_id)['policy_target']
-            create_ep.assert_called_once_with(mock.ANY, pt)
-            pt = self.update_policy_target(
-                    pt['id'], name="new_pt")['policy_target']
-            update_ep.assert_called_once_with(mock.ANY, pt)
-            self.delete_policy_target(pt['id'])
-            delete_ep.assert_called_once_with(mock.ANY, pt['id'])
+                    # Create policy_target with implicit port.
+                    pt = self.create_policy_target(
+                            name="pt1",
+                            policy_target_group_id=ptg_id)['policy_target']
+                    create_ep.assert_called_once_with(mock.ANY, pt)
+                    pt = self.update_policy_target(
+                            pt['id'], name="new_pt")['policy_target']
+                    update_ep.assert_called_once_with(mock.ANY, pt)
+                    self.delete_policy_target(pt['id'])
+                    delete_ep.assert_called_once_with(mock.ANY, pt['id'])
 
 
 class TestPolicyTargetGroup(OneConvergenceGBPDriverTestCase,
@@ -110,43 +111,50 @@ class TestPolicyTargetGroup(OneConvergenceGBPDriverTestCase,
         pass
 
     def test_oneconvergence_controller_api_invoked(self):
-        with contextlib.nested(
-                mock.patch.object(MockNVSDApiClient, 'create_endpointgroup'),
-                mock.patch.object(MockNVSDApiClient, 'update_endpointgroup'),
-                mock.patch.object(MockNVSDApiClient, 'delete_endpointgroup')
-        ) as (create_epg, update_epg, delete_epg):
-            ptg = self.create_policy_target_group(
-                            name="ptg1")['policy_target_group']
-            create_epg.assert_called_once_with(mock.ANY, ptg)
-            ptg = self.update_policy_target_group(
-                            ptg['id'], name="new_ptg")['policy_target_group']
-            update_epg.assert_called_once_with(mock.ANY, ptg)
-            self.delete_policy_target_group(ptg['id'])
-            delete_epg.assert_called_once_with(mock.ANY, ptg['id'])
+        with mock.patch.object(MockNVSDApiClient,
+                               'create_endpointgroup') as create_epg:
+            with mock.patch.object(MockNVSDApiClient,
+                                   'update_endpointgroup') as update_epg:
+                with mock.patch.object(MockNVSDApiClient,
+                                       'delete_endpointgroup') as delete_epg:
+                    ptg = self.create_policy_target_group(
+                                    name="ptg1")['policy_target_group']
+                    create_epg.assert_called_once_with(mock.ANY, ptg)
+                    ptg = self.update_policy_target_group(
+                                    ptg['id'],
+                                    name="new_ptg")['policy_target_group']
+                    update_epg.assert_called_once_with(mock.ANY, ptg)
+                    self.delete_policy_target_group(ptg['id'])
+                    delete_epg.assert_called_once_with(mock.ANY, ptg['id'])
 
 
 class TestPolicyClassifier(OneConvergenceGBPDriverTestCase):
 
     def test_oneconvergence_controller_api_invoked(self):
-        with contextlib.nested(
-                mock.patch.object(
-                        MockNVSDApiClient, 'create_policy_classifier'),
-                mock.patch.object(
-                        MockNVSDApiClient, 'update_policy_classifier'),
-                mock.patch.object(
-                        MockNVSDApiClient, 'delete_policy_classifier')
-        ) as (create_classifier, update_classifier, delete_classifier):
-            classifier = self.create_policy_classifier(name="classifier1")
-            classifier = classifier['policy_classifier']
-            classifier.update({"policy_rules": []})
-            create_classifier.assert_called_once_with(mock.ANY, classifier)
-            classifier = self.update_policy_classifier(
-                classifier['id'], name="new_classifier")['policy_classifier']
-            classifier.update({"policy_rules": []})
-            update_classifier.assert_called_once_with(mock.ANY, classifier)
-            self.delete_policy_classifier(classifier['id'])
-            delete_classifier.assert_called_once_with(
-                                    mock.ANY, classifier['id'])
+        with mock.patch.object(
+                MockNVSDApiClient,
+                'create_policy_classifier') as create_classifier:
+            with mock.patch.object(
+                    MockNVSDApiClient,
+                    'update_policy_classifier') as update_classifier:
+                with mock.patch.object(
+                        MockNVSDApiClient,
+                        'delete_policy_classifier') as delete_classifier:
+                    classifier = self.create_policy_classifier(
+                        name="classifier1")
+                    classifier = classifier['policy_classifier']
+                    classifier.update({"policy_rules": []})
+                    create_classifier.assert_called_once_with(mock.ANY,
+                                                              classifier)
+                    classifier = self.update_policy_classifier(
+                        classifier['id'],
+                        name="new_classifier")['policy_classifier']
+                    classifier.update({"policy_rules": []})
+                    update_classifier.assert_called_once_with(mock.ANY,
+                                                              classifier)
+                    self.delete_policy_classifier(classifier['id'])
+                    delete_classifier.assert_called_once_with(
+                                            mock.ANY, classifier['id'])
 
 
 class TestL2Policy(OneConvergenceGBPDriverTestCase,

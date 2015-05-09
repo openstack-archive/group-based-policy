@@ -11,8 +11,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import contextlib
-
 import heatclient
 import mock
 from neutron.openstack.common import uuidutils
@@ -102,54 +100,58 @@ class TestServiceChainInstance(SimpleChainDriverTestCase):
         stack3 = {'stack': {'id': uuidutils.generate_uuid()}}
         expected_create_calls = []
         expected_delete_calls = []
-        with contextlib.nested(
-            mock.patch.object(simplechain_driver.HeatClient,
-                              'create'),
-            mock.patch.object(simplechain_driver.HeatClient,
-                              'delete'),
-        ) as (stack_create, stack_delete):
-            stack_create.return_value = stack1
-            instance1_name = "sc_instance_1"
-            sc_instance1 = self.create_servicechain_instance(
-                                        name=instance1_name,
-                                        servicechain_specs=[sc_spec_id])
-            self.assertEqual([sc_spec_id],
-                sc_instance1['servicechain_instance']['servicechain_specs'])
-            stack_name = "stack_" + instance1_name + scn1_name + scn_id[:5]
-            expected_create_calls.append(
-                        mock.call(stack_name, jsonutils.loads(template1), {}))
-            stack_create.return_value = stack2
-            instance2_name = "sc_instance_2"
-            sc_instance2 = self.create_servicechain_instance(
-                                        name=instance2_name,
-                                        servicechain_specs=[sc_spec_id])
-            self.assertEqual([sc_spec_id],
-                sc_instance2['servicechain_instance']['servicechain_specs'])
-            stack_name = "stack_" + instance2_name + scn1_name + scn_id[:5]
-            expected_create_calls.append(
-                        mock.call(stack_name, jsonutils.loads(template1), {}))
+        with mock.patch.object(simplechain_driver.HeatClient,
+                              'create') as stack_create:
+            with mock.patch.object(simplechain_driver.HeatClient,
+                                   'delete') as stack_delete:
+                stack_create.return_value = stack1
+                instance1_name = "sc_instance_1"
+                sc_instance1 = self.create_servicechain_instance(
+                                            name=instance1_name,
+                                            servicechain_specs=[sc_spec_id])
+                self.assertEqual([sc_spec_id],
+                    sc_instance1['servicechain_instance'][
+                        'servicechain_specs'])
+                stack_name = "stack_" + instance1_name + scn1_name + scn_id[:5]
+                expected_create_calls.append(
+                            mock.call(stack_name,
+                                      jsonutils.loads(template1), {}))
+                stack_create.return_value = stack2
+                instance2_name = "sc_instance_2"
+                sc_instance2 = self.create_servicechain_instance(
+                                            name=instance2_name,
+                                            servicechain_specs=[sc_spec_id])
+                self.assertEqual(
+                    [sc_spec_id],
+                    sc_instance2['servicechain_instance'][
+                        'servicechain_specs'])
+                stack_name = "stack_" + instance2_name + scn1_name + scn_id[:5]
+                expected_create_calls.append(
+                    mock.call(stack_name, jsonutils.loads(template1), {}))
 
-            #Now perform an update of the spec
-            new_spec = {'servicechain_spec': {'nodes': [scn2_id]}}
-            stack_create.return_value = stack3
-            req = self.new_update_request(
-                        'servicechain_specs', new_spec, sc_spec_id)
-            res = req.get_response(self.ext_api)
-            self.assertEqual(webob.exc.HTTPOk.code, res.status_int)
-            # The two existing stacks will be deleted and two new stacks
-            # will be created
-            expected_delete_calls.append(mock.call(stack1['stack']['id']))
-            expected_delete_calls.append(mock.call(stack2['stack']['id']))
-            stack_name = "stack_" + instance1_name + scn2_name + scn2_id[:5]
-            expected_create_calls.append(
-                        mock.call(stack_name, jsonutils.loads(template2), {}))
-            stack_name = "stack_" + instance2_name + scn2_name + scn2_id[:5]
-            expected_create_calls.append(
-                        mock.call(stack_name, jsonutils.loads(template2), {}))
-            self.assertEqual(expected_delete_calls,
-                             stack_delete.call_args_list)
-            self.assertEqual(expected_create_calls,
-                             stack_create.call_args_list)
+                #Now perform an update of the spec
+                new_spec = {'servicechain_spec': {'nodes': [scn2_id]}}
+                stack_create.return_value = stack3
+                req = self.new_update_request(
+                            'servicechain_specs', new_spec, sc_spec_id)
+                res = req.get_response(self.ext_api)
+                self.assertEqual(webob.exc.HTTPOk.code, res.status_int)
+                # The two existing stacks will be deleted and two new stacks
+                # will be created
+                expected_delete_calls.append(mock.call(stack1['stack']['id']))
+                expected_delete_calls.append(mock.call(stack2['stack']['id']))
+                stack_name = ("stack_" + instance1_name + scn2_name +
+                              scn2_id[:5])
+                expected_create_calls.append(
+                    mock.call(stack_name, jsonutils.loads(template2), {}))
+                stack_name = ("stack_" + instance2_name + scn2_name +
+                              scn2_id[:5])
+                expected_create_calls.append(
+                    mock.call(stack_name, jsonutils.loads(template2), {}))
+                self.assertEqual(expected_delete_calls,
+                                 stack_delete.call_args_list)
+                self.assertEqual(expected_create_calls,
+                                 stack_create.call_args_list)
 
     def test_chain_instance_create(self):
         name = "scs1"
@@ -217,18 +219,20 @@ class TestServiceChainInstance(SimpleChainDriverTestCase):
             # Verify that as part of delete service chain instance we call
             # get method for heat stack 5 times before giving up if the state
             # does not become DELETE_COMPLETE
-            with contextlib.nested(
-                mock.patch.object(simplechain_driver.HeatClient, 'delete'),
-                mock.patch.object(simplechain_driver.HeatClient, 'get')) as (
-                                                    stack_delete, stack_get):
-                stack_get.return_value = MockStackObject('PENDING_DELETE')
-                req = self.new_delete_request(
-                                    'servicechain_instances',
-                                    sc_instance['servicechain_instance']['id'])
-                res = req.get_response(self.ext_api)
-                self.assertEqual(webob.exc.HTTPNoContent.code, res.status_int)
-                stack_delete.assert_called_once_with(mock.ANY)
-                self.assertEqual(STACK_DELETE_RETRIES, stack_get.call_count)
+            with mock.patch.object(simplechain_driver.HeatClient,
+                                   'delete') as stack_delete:
+                with mock.patch.object(simplechain_driver.HeatClient,
+                                       'get') as stack_get:
+                    stack_get.return_value = MockStackObject('PENDING_DELETE')
+                    req = self.new_delete_request(
+                        'servicechain_instances',
+                        sc_instance['servicechain_instance']['id'])
+                    res = req.get_response(self.ext_api)
+                    self.assertEqual(webob.exc.HTTPNoContent.code,
+                                     res.status_int)
+                    stack_delete.assert_called_once_with(mock.ANY)
+                    self.assertEqual(STACK_DELETE_RETRIES,
+                                     stack_get.call_count)
 
             # Create and delete another service chain instance and verify that
             # we call get method for heat stack only once if the stack state
@@ -236,20 +240,23 @@ class TestServiceChainInstance(SimpleChainDriverTestCase):
             sc_instance = self.create_servicechain_instance(
                                         name="sc_instance_1",
                                         servicechain_specs=[sc_spec_id])
-            self.assertEqual([sc_spec_id],
+            self.assertEqual(
+                [sc_spec_id],
                 sc_instance['servicechain_instance']['servicechain_specs'])
-            with contextlib.nested(
-                mock.patch.object(simplechain_driver.HeatClient, 'delete'),
-                mock.patch.object(simplechain_driver.HeatClient, 'get')) as (
-                                                    stack_delete, stack_get):
-                stack_get.return_value = MockStackObject('DELETE_COMPLETE')
-                req = self.new_delete_request(
-                                    'servicechain_instances',
-                                    sc_instance['servicechain_instance']['id'])
-                res = req.get_response(self.ext_api)
-                self.assertEqual(webob.exc.HTTPNoContent.code, res.status_int)
-                stack_delete.assert_called_once_with(mock.ANY)
-                self.assertEqual(1, stack_get.call_count)
+            with mock.patch.object(simplechain_driver.HeatClient,
+                                   'delete') as stack_delete:
+                with mock.patch.object(simplechain_driver.HeatClient,
+                                       'get') as stack_get:
+                    stack_get.return_value = MockStackObject(
+                        'DELETE_COMPLETE')
+                    req = self.new_delete_request(
+                        'servicechain_instances',
+                        sc_instance['servicechain_instance']['id'])
+                    res = req.get_response(self.ext_api)
+                    self.assertEqual(webob.exc.HTTPNoContent.code,
+                                     res.status_int)
+                    stack_delete.assert_called_once_with(mock.ANY)
+                    self.assertEqual(1, stack_get.call_count)
 
     def test_stack_not_found_ignored(self):
         name = "scs1"

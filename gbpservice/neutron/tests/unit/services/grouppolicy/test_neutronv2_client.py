@@ -11,8 +11,6 @@
 #    under the License.
 #
 
-import contextlib
-
 import mock
 from neutron import context
 from neutron.tests.unit.db import test_db_base_plugin_v2
@@ -103,18 +101,16 @@ class TestNeutronClient(test_db_base_plugin_v2.NeutronDbPluginV2TestCase):
         token_store.admin_auth_token = 'new_token'
         my_context = context.ContextBase('userid', 'my_tenantid',
                                          auth_token='token')
-        with contextlib.nested(
-            mock.patch.object(client.Client, "list_networks",
-                              side_effect=mock.Mock),
-            mock.patch.object(client.Client, 'get_auth_info',
-                              return_value={'auth_token': 'new_token1'}),
-        ):
-            client1 = neutronclient.get_client(my_context, True)
-            client1.list_networks(retrieve_all=False)
-            self.assertEqual('new_token1', token_store.admin_auth_token)
-            client1 = neutronclient.get_client(my_context, True)
-            client1.list_networks(retrieve_all=False)
-            self.assertEqual('new_token1', token_store.admin_auth_token)
+        with mock.patch.object(client.Client, "list_networks",
+                               side_effect=mock.Mock):
+            with mock.patch.object(client.Client, 'get_auth_info',
+                                   return_value={'auth_token': 'new_token1'}):
+                client1 = neutronclient.get_client(my_context, True)
+                client1.list_networks(retrieve_all=False)
+                self.assertEqual('new_token1', token_store.admin_auth_token)
+                client1 = neutronclient.get_client(my_context, True)
+                client1.list_networks(retrieve_all=False)
+                self.assertEqual('new_token1', token_store.admin_auth_token)
 
     def test_admin_token_updated(self):
         CONF.set_override('neutron_server_url',
@@ -128,15 +124,13 @@ class TestNeutronClient(test_db_base_plugin_v2.NeutronDbPluginV2TestCase):
         tokens = [{'auth_token': 'new_token1'}, {'auth_token': 'new_token'}]
         my_context = context.ContextBase('userid', 'my_tenantid',
                                          auth_token='token')
-        with contextlib.nested(
-            mock.patch.object(client.Client, "list_networks",
-                              side_effect=mock.Mock),
-            mock.patch.object(client.Client, 'get_auth_info',
-                              side_effect=tokens.pop),
-        ):
-            client1 = neutronclient.get_client(my_context, True)
-            client1.list_networks(retrieve_all=False)
-            self.assertEqual('new_token', token_store.admin_auth_token)
-            client1 = neutronclient.get_client(my_context, True)
-            client1.list_networks(retrieve_all=False)
-            self.assertEqual('new_token1', token_store.admin_auth_token)
+        with mock.patch.object(client.Client, "list_networks",
+                               side_effect=mock.Mock):
+            with mock.patch.object(client.Client, 'get_auth_info',
+                                   side_effect=tokens.pop):
+                client1 = neutronclient.get_client(my_context, True)
+                client1.list_networks(retrieve_all=False)
+                self.assertEqual('new_token', token_store.admin_auth_token)
+                client1 = neutronclient.get_client(my_context, True)
+                client1.list_networks(retrieve_all=False)
+                self.assertEqual('new_token1', token_store.admin_auth_token)

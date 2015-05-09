@@ -11,7 +11,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import contextlib
 import webob.exc
 
 from neutron.tests.unit.extensions import test_l3
@@ -73,50 +72,59 @@ class TestMappedGroupResourceAttrs(GroupPolicyMappingDbTestCase):
             self.assertEqual(res.status_int, webob.exc.HTTPNoContent.code)
 
     def test_create_delete_policy_target_group_with_subnets(self):
-        with contextlib.nested(self.subnet(cidr='10.10.1.0/24'),
-                               self.subnet(cidr='10.10.2.0/24')) as (
-                                   subnet1, subnet2):
-            subnets = [subnet1['subnet']['id'], subnet2['subnet']['id']]
-            ptg = self.create_policy_target_group(subnets=subnets)
-            ptg_id = ptg['policy_target_group']['id']
-            self.assertEqual(sorted(subnets),
-                             sorted(ptg['policy_target_group']['subnets']))
-            req = self.new_show_request('policy_target_groups', ptg_id,
-                                        fmt=self.fmt)
-            res = self.deserialize(self.fmt, req.get_response(self.ext_api))
-            self.assertEqual(sorted(subnets),
-                             sorted(res['policy_target_group']['subnets']))
-            req = self.new_delete_request('policy_target_groups', ptg_id)
-            res = req.get_response(self.ext_api)
-            self.assertEqual(res.status_int, webob.exc.HTTPNoContent.code)
+        with self.subnet(cidr='10.10.1.0/24') as subnet1:
+            with self.subnet(cidr='10.10.2.0/24') as subnet2:
+                subnets = [subnet1['subnet']['id'], subnet2['subnet']['id']]
+                ptg = self.create_policy_target_group(subnets=subnets)
+                ptg_id = ptg['policy_target_group']['id']
+                self.assertEqual(sorted(subnets),
+                                 sorted(ptg['policy_target_group']['subnets']))
+                req = self.new_show_request('policy_target_groups', ptg_id,
+                                            fmt=self.fmt)
+                res = self.deserialize(
+                    self.fmt, req.get_response(self.ext_api))
+                self.assertEqual(sorted(subnets),
+                                 sorted(res['policy_target_group']['subnets']))
+                req = self.new_delete_request('policy_target_groups', ptg_id)
+                res = req.get_response(self.ext_api)
+                self.assertEqual(res.status_int, webob.exc.HTTPNoContent.code)
 
     def test_update_policy_target_group_subnets(self):
-        with contextlib.nested(self.subnet(cidr='10.10.1.0/24'),
-                               self.subnet(cidr='10.10.2.0/24'),
-                               self.subnet(cidr='10.10.3.0/24')) as (
-                                   subnet1, subnet2, subnet3):
-            orig_subnets = [subnet1['subnet']['id'], subnet2['subnet']['id']]
-            ptg = self.create_policy_target_group(subnets=orig_subnets)
-            ptg_id = ptg['policy_target_group']['id']
-            self.assertEqual(sorted(orig_subnets),
-                             sorted(ptg['policy_target_group']['subnets']))
-            new_subnets = [subnet1['subnet']['id'], subnet3['subnet']['id']]
-            data = {'policy_target_group': {'subnets': new_subnets}}
-            req = self.new_update_request('policy_target_groups', data, ptg_id)
-            res = self.deserialize(self.fmt, req.get_response(self.ext_api))
-            self.assertEqual(sorted(new_subnets),
-                             sorted(res['policy_target_group']['subnets']))
-            req = self.new_show_request('policy_target_groups', ptg_id,
-                                        fmt=self.fmt)
-            res = self.deserialize(self.fmt, req.get_response(self.ext_api))
-            self.assertEqual(sorted(new_subnets),
-                             sorted(res['policy_target_group']['subnets']))
-            # REVISIT(rkukura): Remove delete once subnet() context
-            # manager is replaced with a function that does not delete
-            # the resource(s) that are created.
-            req = self.new_delete_request('policy_target_groups', ptg_id)
-            res = req.get_response(self.ext_api)
-            self.assertEqual(res.status_int, webob.exc.HTTPNoContent.code)
+        with self.subnet(cidr='10.10.1.0/24') as subnet1:
+            with self.subnet(cidr='10.10.2.0/24') as subnet2:
+                with self.subnet(cidr='10.10.3.0/24') as subnet3:
+                    orig_subnets = [subnet1['subnet']['id'],
+                                    subnet2['subnet']['id']]
+                    ptg = self.create_policy_target_group(subnets=orig_subnets)
+                    ptg_id = ptg['policy_target_group']['id']
+                    self.assertEqual(
+                        sorted(orig_subnets),
+                        sorted(ptg['policy_target_group']['subnets']))
+                    new_subnets = [subnet1['subnet']['id'],
+                                   subnet3['subnet']['id']]
+                    data = {'policy_target_group': {'subnets': new_subnets}}
+                    req = self.new_update_request('policy_target_groups', data,
+                                                  ptg_id)
+                    res = self.deserialize(self.fmt,
+                                           req.get_response(self.ext_api))
+                    self.assertEqual(
+                        sorted(new_subnets),
+                        sorted(res['policy_target_group']['subnets']))
+                    req = self.new_show_request('policy_target_groups', ptg_id,
+                                                fmt=self.fmt)
+                    res = self.deserialize(
+                        self.fmt, req.get_response(self.ext_api))
+                    self.assertEqual(
+                        sorted(new_subnets),
+                        sorted(res['policy_target_group']['subnets']))
+                    # REVISIT(rkukura): Remove delete once subnet() context
+                    # manager is replaced with a function that does not delete
+                    # the resource(s) that are created.
+                    req = self.new_delete_request('policy_target_groups',
+                                                  ptg_id)
+                    res = req.get_response(self.ext_api)
+                    self.assertEqual(
+                        res.status_int, webob.exc.HTTPNoContent.code)
 
     def test_create_delete_l2_policy_with_network(self):
         with self.network() as network:
@@ -132,45 +140,54 @@ class TestMappedGroupResourceAttrs(GroupPolicyMappingDbTestCase):
             self.assertEqual(res.status_int, webob.exc.HTTPNoContent.code)
 
     def test_create_delete_l3_policy_with_routers(self):
-        with contextlib.nested(self.router(), self.router()) as (router1,
-                                                                 router2):
-            routers = [router1['router']['id'], router2['router']['id']]
-            l3p = self.create_l3_policy(routers=routers)
-            l3p_id = l3p['l3_policy']['id']
-            self.assertEqual(sorted(routers),
-                             sorted(l3p['l3_policy']['routers']))
-            req = self.new_show_request('l3_policies', l3p_id, fmt=self.fmt)
-            res = self.deserialize(self.fmt, req.get_response(self.ext_api))
-            self.assertEqual(sorted(routers),
-                             sorted(res['l3_policy']['routers']))
-            req = self.new_delete_request('l3_policies', l3p_id)
-            res = req.get_response(self.ext_api)
-            self.assertEqual(res.status_int, webob.exc.HTTPNoContent.code)
+        with self.router() as router1:
+            with self.router() as router2:
+                routers = [router1['router']['id'], router2['router']['id']]
+                l3p = self.create_l3_policy(routers=routers)
+                l3p_id = l3p['l3_policy']['id']
+                self.assertEqual(sorted(routers),
+                                 sorted(l3p['l3_policy']['routers']))
+                req = self.new_show_request('l3_policies', l3p_id,
+                                            fmt=self.fmt)
+                res = self.deserialize(self.fmt,
+                                       req.get_response(self.ext_api))
+                self.assertEqual(sorted(routers),
+                                 sorted(res['l3_policy']['routers']))
+                req = self.new_delete_request('l3_policies', l3p_id)
+                res = req.get_response(self.ext_api)
+                self.assertEqual(res.status_int, webob.exc.HTTPNoContent.code)
 
     def test_update_l3_policy_routers(self):
-        with contextlib.nested(self.router(), self.router(),
-                               self.router()) as (router1, router2, router3):
-            orig_routers = [router1['router']['id'], router2['router']['id']]
-            l3p = self.create_l3_policy(routers=orig_routers)
-            l3p_id = l3p['l3_policy']['id']
-            self.assertEqual(sorted(orig_routers),
-                             sorted(l3p['l3_policy']['routers']))
-            new_routers = [router1['router']['id'], router3['router']['id']]
-            data = {'l3_policy': {'routers': new_routers}}
-            req = self.new_update_request('l3_policies', data, l3p_id)
-            res = self.deserialize(self.fmt, req.get_response(self.ext_api))
-            self.assertEqual(sorted(new_routers),
-                             sorted(res['l3_policy']['routers']))
-            req = self.new_show_request('l3_policies', l3p_id, fmt=self.fmt)
-            res = self.deserialize(self.fmt, req.get_response(self.ext_api))
-            self.assertEqual(sorted(new_routers),
-                             sorted(res['l3_policy']['routers']))
-            # REVISIT(rkukura): Remove delete once router() context
-            # manager is replaced with a function that does not delete
-            # the resource(s) that are created.
-            req = self.new_delete_request('l3_policies', l3p_id)
-            res = req.get_response(self.ext_api)
-            self.assertEqual(res.status_int, webob.exc.HTTPNoContent.code)
+        with self.router() as router1:
+            with self.router() as router2:
+                with self.router() as router3:
+                    orig_routers = [router1['router']['id'],
+                                    router2['router']['id']]
+                    l3p = self.create_l3_policy(routers=orig_routers)
+                    l3p_id = l3p['l3_policy']['id']
+                    self.assertEqual(sorted(orig_routers),
+                                     sorted(l3p['l3_policy']['routers']))
+                    new_routers = [router1['router']['id'],
+                                   router3['router']['id']]
+                    data = {'l3_policy': {'routers': new_routers}}
+                    req = self.new_update_request('l3_policies', data, l3p_id)
+                    res = self.deserialize(self.fmt,
+                                           req.get_response(self.ext_api))
+                    self.assertEqual(sorted(new_routers),
+                                     sorted(res['l3_policy']['routers']))
+                    req = self.new_show_request('l3_policies',
+                                                l3p_id, fmt=self.fmt)
+                    res = self.deserialize(
+                        self.fmt, req.get_response(self.ext_api))
+                    self.assertEqual(sorted(new_routers),
+                                     sorted(res['l3_policy']['routers']))
+                    # REVISIT(rkukura): Remove delete once router() context
+                    # manager is replaced with a function that does not delete
+                    # the resource(s) that are created.
+                    req = self.new_delete_request('l3_policies', l3p_id)
+                    res = req.get_response(self.ext_api)
+                    self.assertEqual(res.status_int,
+                                     webob.exc.HTTPNoContent.code)
 
     def test_create_delete_es_with_subnet(self):
         with self.subnet(cidr='10.10.1.0/24') as subnet:
