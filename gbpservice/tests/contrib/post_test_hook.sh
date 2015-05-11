@@ -2,10 +2,10 @@
 
 set -xe
 
-GBP_DIR="$BASE/new/group-based-policy"
-TEMPEST_DIR="$BASE/new/tempest"
+NEW_BASE="$BASE/new"
+GBP_DIR="$NEW_BASE/group-based-policy"
 SCRIPTS_DIR="/usr/local/jenkins/slave_scripts"
-LOGS_DIR="$BASE/new/logs"
+LOGS_DIR="$NEW_BASE/logs"
 
 function generate_testr_results {
     # Give job user rights to access tox logs
@@ -25,6 +25,13 @@ function dsvm_functional_prep_func {
     :
 }
 
+# Check if any gbp exercises failed
+set +e
+exercises_exit_code=0
+if grep -qs "FAILED gbp*" $LOGS_DIR/*; then
+    exercises_exit_code=1
+fi
+set -e
 
 owner=stack
 prep_func="dsvm_functional_prep_func"
@@ -32,12 +39,12 @@ prep_func="dsvm_functional_prep_func"
 # Run tests
 echo "Running gbpfunc test suite"
 set +e
-cd $BASE/new/devstack
+cd $NEW_BASE/devstack
 source openrc demo demo
-cd $BASE/new
+cd $NEW_BASE
 sudo git clone https://github.com/noironetworks/devstack -b jishnub/testsuites gbpfunctests
 cd gbpfunctests/testcases/testcases_func
-python suite_run.py -s func
+##python suite_run.py -s func
 gbpfunc_exit_code=$?
 set -e
 
@@ -49,6 +56,7 @@ $prep_func
 
 # Run tests
 echo "Running group-based-policy dsvm-functional test suite"
+sudo chmod +rwx -R $NEW_BASE
 set +e
 # Temporary workaround for subunit not getting installed in tox environment
 sudo pip uninstall python-subunit -y
@@ -67,11 +75,6 @@ for f in $(find . -name "*.log.2*"); do
 done
 sudo gzip -9fk `find . -maxdepth 1 \! -type l -name "*.txt" | xargs ls -d`
 mv *.gz /opt/stack/logs/
-set -e
-
-# Check if any gbp exercises failed
-set +e
-exercises_exit_code=$(grep -cim1 "FAILED gbp*" $LOGS_DIR/stack.sh.log)
 set -e
 
 exit $(($exercises_exit_code+$gbpfunc_exit_code+$testr_exit_code))
