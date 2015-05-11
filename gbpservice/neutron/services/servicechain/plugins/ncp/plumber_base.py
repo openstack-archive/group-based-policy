@@ -13,6 +13,15 @@
 import abc
 import six
 
+from oslo_log import log as logging
+
+from gbpservice.neutron.extensions import group_policy
+from gbpservice.neutron.services.servicechain.plugins.ncp import exceptions
+from gbpservice.neutron.services.servicechain.plugins.ncp import model
+
+TARGET_DESCRIPTION = "%s facing Service Target for node %s in instance %s"
+LOG = logging.getLogger(__name__)
+
 
 @six.add_metaclass(abc.ABCMeta)
 class NodePlumberBase(object):
@@ -73,6 +82,60 @@ class NodePlumberBase(object):
         the deployment, but it can be retrieved by calling
         node_context.current_position
         """
+
+    def _create_service_targets(self, context, part):
+        info = part['plumbing_info']
+        if not info:
+            return
+        part_context = part['context']
+        provider = part_context.provider
+        consumer = part_context.consumer
+        management = part_context.management
+
+        self._create_service_target(context, part_context,
+                                    info.get('provider', []),
+                                    provider, 'provider')
+        self._create_service_target(context, part_context,
+                                    info.get('consumer', []),
+                                    consumer, 'consumer')
+        self._create_service_target(context, part_context,
+                                    info.get('management', []),
+                                    management, 'management')
+
+    def _delete_service_targets(self, context, part):
+        part_context = part['context']
+        node = part_context.current_node
+        instance = part_context.instance
+        gbp_plugin = part_context.gbp_plugin
+        pts = model.get_service_targets(
+            context.session, servicechain_instance_id=instance['id'],
+            servicechain_node_id=node['id'])
+
+        for pt in pts:
+            try:
+                gbp_plugin.delete_policy_target(context, pt.policy_target_id)
+            except group_policy.PolicyTargetNotFound as ex:
+                LOG.debug(ex.message)
+
+    def _create_service_target(self, context, part_context, targets, group,
+                               relationship):
+        instance = part_context.instance
+        node = part_context.current_node
+        gbp_plugin = part_context.gbp_plugin
+        for target in targets:
+            if not group:
+                exceptions.NotAvailablePTGForTargetRequest(
+                    ptg_type=relationship, instance=instance['id'],
+                    node=node['id'])
+            data = {'policy_target_group_id': group['id'],
+                    'description': TARGET_DESCRIPTION % (relationship,
+                                                         node['id'],
+                                                         instance['id']),
+                    'name': '', 'port_id': None}
+            data.update(target)
+            pt = gbp_plugin.create_policy_target(context,
+                                                 {'policy_target': data})
+            model.set_service_target(part_context, pt['id'], relationship)
 
     def _sort_deployment(self, deployment):
         deployment.sort(key=lambda x: x['context'].current_position)
