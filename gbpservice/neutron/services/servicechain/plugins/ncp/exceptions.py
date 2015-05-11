@@ -25,6 +25,11 @@ class NodeCompositionPluginException(exceptions.NeutronException):
     pass
 
 
+class PlumbingException(exceptions.NeutronException):
+    """Base for node driver exceptions returned to user."""
+    pass
+
+
 class NodeCompositionPluginBadRequest(exceptions.BadRequest,
                                       NodeCompositionPluginException):
     """Base for node driver bad request exceptions returned to user."""
@@ -46,3 +51,9 @@ class NoDriverAvailableForAction(NodeCompositionPluginBadRequest):
 class ServiceProfileInUseByAnInstance(NodeCompositionPluginBadRequest):
     message = _("Cannot update Service Profile %(profile_id)s because it's "
                 "used by servicechain instance %(instance_id)s.")
+
+
+class NotAvailablePTGForTargetRequest(PlumbingException):
+    message = _("PTG of type %(ptg_type)s doesn't exist for service chain "
+                "instance %(instance)s. However, it is required by the "
+                "scheduled Node Driver in order to deploy Node %(node)s")

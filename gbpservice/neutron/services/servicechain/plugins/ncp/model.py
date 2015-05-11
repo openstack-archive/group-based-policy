@@ -105,17 +105,41 @@ def get_service_targets(session, policy_target_id=None, relationship=None,
                         servicechain_instance_id=None, position=None,
                         servicechain_node_id=None):
     with session.begin(subtransactions=True):
-        query = session.query(ServiceTarget)
-        if servicechain_instance_id:
-            query = query.filter_by(
-                servicechain_instance_id=servicechain_instance_id)
-        if servicechain_node_id:
-            query = query.filter_by(
-                servicechain_node_id=servicechain_node_id)
-        if policy_target_id:
-            query = query.filter_by(policy_target_id=policy_target_id)
-        if position:
-            query = query.filter_by(position=position)
-        if relationship:
-            query = query.filter_by(relationship=relationship)
+        query = _prepare_service_target_query(
+            session, policy_target_id=policy_target_id,
+            relationship=relationship,
+            servicechain_instance_id=servicechain_instance_id,
+            position=position, servicechain_node_id=servicechain_node_id)
         return query.all()
+
+
+def get_service_targets_count(session, policy_target_id=None,
+                              relationship=None, servicechain_instance_id=None,
+                              position=None, servicechain_node_id=None):
+    with session.begin(subtransactions=True):
+        query = _prepare_service_target_query(
+            session, policy_target_id=policy_target_id,
+            relationship=relationship,
+            servicechain_instance_id=servicechain_instance_id,
+            position=position, servicechain_node_id=servicechain_node_id)
+        return query.count()
+
+
+def _prepare_service_target_query(session, policy_target_id=None,
+                                  relationship=None,
+                                  servicechain_instance_id=None, position=None,
+                                  servicechain_node_id=None):
+    query = session.query(ServiceTarget)
+    if servicechain_instance_id:
+        query = query.filter_by(
+            servicechain_instance_id=servicechain_instance_id)
+    if servicechain_node_id:
+        query = query.filter_by(
+            servicechain_node_id=servicechain_node_id)
+    if policy_target_id:
+        query = query.filter_by(policy_target_id=policy_target_id)
+    if position:
+        query = query.filter_by(position=position)
+    if relationship:
+        query = query.filter_by(relationship=relationship)
+    return query
