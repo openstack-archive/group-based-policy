@@ -12,7 +12,7 @@ CONTRIB_DIR="$BASE/new/group-based-policy/gbpservice/tests/contrib"
 
 source $TOP_DIR/functions
 source $TOP_DIR/functions-common
-sudo pip install httplib2
+sudo -H pip install httplib2
 install_package openvswitch-switch
 pip_install -e /opt/stack/new/group-based-policy
 $TOP_DIR/stack.sh
