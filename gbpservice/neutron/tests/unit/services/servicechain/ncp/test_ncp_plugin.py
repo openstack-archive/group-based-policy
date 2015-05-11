@@ -11,17 +11,23 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import mock
 from neutron import context as n_context
 from neutron.db import api as db_api
 from neutron.db import model_base
+from neutron import manager
+from neutron.plugins.common import constants as pconst
 from oslo_config import cfg
 from oslo_serialization import jsonutils
 
 from gbpservice.neutron.services.servicechain.plugins.ncp import (
     context as ncp_context)
 import gbpservice.neutron.services.servicechain.plugins.ncp.config  # noqa
+from gbpservice.neutron.services.servicechain.plugins.ncp import model
 from gbpservice.neutron.services.servicechain.plugins.ncp.node_drivers import (
     dummy_driver as dummy_driver)
+from gbpservice.neutron.tests.unit.services.grouppolicy import (
+    test_resource_mapping as test_gp_driver)
 from gbpservice.neutron.tests.unit.services.servicechain import (
     test_servicechain_plugin as test_base)
 
@@ -38,16 +44,25 @@ GP_PLUGIN_KLASS = (
 class NodeCompositionPluginTestCase(
         test_base.TestGroupPolicyPluginGroupResources):
 
-    def setUp(self, core_plugin=None, gp_plugin=None, node_drivers=None):
+    def setUp(self, core_plugin=None, gp_plugin=None, node_drivers=None,
+              node_plumber=None):
         if node_drivers:
             cfg.CONF.set_override('node_drivers', node_drivers,
-                                  group='node_composition_chain')
+                                  group='node_composition_plugin')
+        cfg.CONF.set_override('node_plumber', node_plumber or 'dummy_plumber',
+                              group='node_composition_plugin')
         super(NodeCompositionPluginTestCase, self).setUp(
             core_plugin=core_plugin or CORE_PLUGIN,
             gp_plugin=gp_plugin or GP_PLUGIN_KLASS,
             sc_plugin=SC_PLUGIN_KLASS)
         engine = db_api.get_engine()
         model_base.BASEV2.metadata.create_all(engine)
+
+    @property
+    def sc_plugin(self):
+        plugins = manager.NeutronManager.get_service_plugins()
+        servicechain_plugin = plugins.get(pconst.SERVICECHAIN)
+        return servicechain_plugin
 
     def test_spec_ordering_list_servicechain_instances(self):
         pass
@@ -152,3 +167,86 @@ class NodeCompositionPluginTestCase(
         spec = self.show_servicechain_spec(spec['id'])['servicechain_spec']
         # Verify param names is empty
         self.assertIsNone(spec['config_param_names'])
+
+
+class AngnosticChainPlumberTestCase(NodeCompositionPluginTestCase):
+
+    def setUp(self):
+        cfg.CONF.set_override('policy_drivers', ['implicit_policy',
+                                                 'resource_mapping'],
+                              group='group_policy')
+        cfg.CONF.set_override('allow_overlapping_ips', True)
+
+        super(AngnosticChainPlumberTestCase, self).setUp(
+            node_drivers=['node_dummy'], node_plumber='agnostic_plumber',
+            core_plugin=test_gp_driver.CORE_PLUGIN)
+        res = mock.patch('neutron.db.l3_db.L3_NAT_dbonly_mixin.'
+                         '_check_router_needs_rescheduling').start()
+        res.return_value = None
+        self.driver = self.sc_plugin.driver_manager.ordered_drivers[0].obj
+        self.driver.get_plumbing_info = mock.Mock()
+        self.driver.get_plumbing_info.return_value = {}
+
+    def _create_simple_chain(self):
+        node = self._create_profiled_servicechain_node()['servicechain_node']
+        spec = self.create_servicechain_spec(
+            nodes=[node['id']])['servicechain_spec']
+
+        action = self.create_policy_action(
+            action_type='REDIRECT', action_value=spec['id'])['policy_action']
+        classifier = self.create_policy_classifier(
+            direction='bi', port_range=80, protocol='tcp')['policy_classifier']
+        rule = self.create_policy_rule(
+            policy_classifier_id=classifier['id'],
+            policy_actions=[action['id']])['policy_rule']
+
+        prs = self.create_policy_rule_set(
+            policy_rules=[rule['id']])['policy_rule_set']
+
+        provider = self.create_policy_target_group(
+            provided_policy_rule_sets={prs['id']: ''})['policy_target_group']
+        consumer = self.create_policy_target_group(
+            consumed_policy_rule_sets={prs['id']: ''})['policy_target_group']
+
+        return provider, consumer, node
+
+    def test_one_pt_prov_cons(self):
+        context = n_context.get_admin_context()
+        self.driver.get_plumbing_info.return_value = {'provider': [{}],
+                                                      'consumer': [{}]}
+        provider, consumer, node = self._create_simple_chain()
+
+        # Verify Service PT created and correctly placed
+        prov_cons = {'provider': provider, 'consumer': consumer}
+        targets = model.get_service_targets(context.session)
+        self.assertEqual(2, len(targets))
+        old_relationship = None
+        for target in targets:
+            self.assertEqual(node['id'], target.servicechain_node_id)
+            pt = self.show_policy_target(
+                target.policy_target_id)['policy_target']
+            self.assertEqual(prov_cons[target.relationship]['id'],
+                             pt['policy_target_group_id'])
+            self.assertNotEqual(old_relationship, target.relationship)
+            old_relationship = target.relationship
+
+        self.update_policy_target_group(
+            provider['id'], provided_policy_rule_sets={})
+        # With chain deletion, also the Service PTs are deleted
+        new_targets = model.get_service_targets(context.session)
+        self.assertEqual(0, len(new_targets))
+        for target in targets:
+            self.show_policy_target(
+                target.policy_target_id, expected_res_status=404)
+
+    def test_pt_override(self):
+        context = n_context.get_admin_context()
+        test_name = 'test_name'
+        self.driver.get_plumbing_info.return_value = {
+            'provider': [{'name': test_name}]}
+        self._create_simple_chain()
+        targets = model.get_service_targets(context.session)
+        self.assertEqual(1, len(targets))
+        pt = self.show_policy_target(
+            targets[0].policy_target_id)['policy_target']
+        self.assertEqual(test_name, pt['name'])
