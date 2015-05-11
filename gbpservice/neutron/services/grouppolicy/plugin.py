@@ -32,6 +32,8 @@ from gbpservice.neutron.services.grouppolicy import (
     policy_driver_manager as manager)
 from gbpservice.neutron.services.grouppolicy.common import constants as gp_cts
 from gbpservice.neutron.services.grouppolicy.common import exceptions as gp_exc
+from gbpservice.neutron.services.servicechain.plugins.ncp import (
+    model as ncp_model)
 
 
 LOG = logging.getLogger(__name__)
@@ -464,10 +466,10 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
                 raise gp_exc.PolicyTargetGroupChained(
                     policy_target_group=policy_target_group_id)
             for pt in self.get_policy_targets(context, {'id': pt_ids}):
-                if pt['port_id']:
-                    if self._is_port_bound(pt['port_id']):
-                        raise gp_exc.PolicyTargetGroupInUse(
-                            policy_target_group=policy_target_group_id)
+                if (pt['port_id'] and self._is_port_bound(pt['port_id'])) or (
+                        self._is_service_target(context, pt['id'])):
+                    raise gp_exc.PolicyTargetGroupInUse(
+                        policy_target_group=policy_target_group_id)
             for pt_id in pt_ids:
                 # We will allow PTG deletion if all PTs are unused.
                 # We could have cleaned these opportunistically in
@@ -1462,3 +1464,6 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
                 context, filters={'provider_ptg_id': [ptg_id]}) or
             self.servicechain_plugin.get_servicechain_instances(
                 context, filters={'consumer_ptg_id': [ptg_id]}))
+
+    def _is_service_target(self, context, pt_id):
+        return bool(ncp_model.get_service_targets(context.session, pt_id))
