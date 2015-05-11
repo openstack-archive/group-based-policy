@@ -17,7 +17,7 @@ source $TOP_DIR/functions-common
 sudo pip install httplib2
 install_package openvswitch-switch
 pip_install -e /opt/stack/new/group-based-policy
-$TOP_DIR/stack.sh
+##$TOP_DIR/stack.sh
 
 # Add a rootwrap filter to support test-only
 # configuration (e.g. a KillFilter for processes that
