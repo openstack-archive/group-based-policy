@@ -7,11 +7,9 @@ cd $TOP_DIR
 sudo git remote add group-policy http://github.com/group-policy/devstack
 sudo git fetch group-policy
 sudo git checkout -t group-policy/kilo-gbp-openstack-master-gate
-#sudo cp devstack-vm-gate.sh $BASE/new/devstack-gate/devstack-vm-gate.sh
 
 CONTRIB_DIR="$BASE/new/group-based-policy/gbpservice/tests/contrib"
 
-#$BASE/new/devstack-gate/devstack-vm-gate.sh
 source $TOP_DIR/functions
 source $TOP_DIR/functions-common
 sudo pip install httplib2
