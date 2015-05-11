@@ -116,6 +116,8 @@ class ApiManagerMixin(object):
             self.assertEqual(res.status_int, expected_res_status)
         elif res.status_int >= webob.exc.HTTPClientError.code:
             raise webob.exc.HTTPClientError(code=res.status_int)
+        if res.status_int != 204:
+            return self.deserialize(self.fmt, res)
 
 
 class GroupPolicyDBTestBase(ApiManagerMixin):
