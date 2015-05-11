@@ -32,6 +32,8 @@ from gbpservice.neutron.services.grouppolicy import (
     policy_driver_manager as manager)
 from gbpservice.neutron.services.grouppolicy.common import constants as gp_cts
 from gbpservice.neutron.services.grouppolicy.common import exceptions as gp_exc
+from gbpservice.neutron.services.servicechain.plugins.ncp import (
+    model as ncp_model)
 
 
 LOG = logging.getLogger(__name__)
@@ -461,9 +463,10 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
                 context, policy_target_group_id)
             pt_ids = policy_target_group['policy_targets']
             for pt in self.get_policy_targets(context, {'id': pt_ids}):
-                if pt['port_id'] and self._is_port_bound(pt['port_id']):
-                        raise gp_exc.PolicyTargetGroupInUse(
-                            policy_target_group=policy_target_group_id)
+                if pt['port_id'] and self._is_port_bound(pt['port_id']) or (
+                        self._is_service_target(context, pt['id'])):
+                    raise gp_exc.PolicyTargetGroupInUse(
+                        policy_target_group=policy_target_group_id)
             policy_context = p_context.PolicyTargetGroupContext(
                 self, context, policy_target_group)
             self.policy_driver_manager.delete_policy_target_group_precommit(
@@ -1460,3 +1463,7 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
         port = n_manager.NeutronManager.get_plugin().get_port(context, port_id)
         return (port.get('binding:vif_type') not in not_bound) and port.get(
             'binding:host_id') and (port['device_owner'] or port['device_id'])
+
+    def _is_service_target(self, context, pt_id):
+        return bool(ncp_model.get_service_targets_count(
+            context.session, pt_id))

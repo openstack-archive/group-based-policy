@@ -32,6 +32,7 @@ import sqlalchemy as sa
 
 from gbpservice.neutron.db.grouppolicy import group_policy_db as gpdb
 from gbpservice.neutron.db import servicechain_db  # noqa
+from gbpservice.neutron.extensions import group_policy as gp_ext
 from gbpservice.neutron.services.grouppolicy import (
     group_policy_driver_api as api)
 from gbpservice.neutron.services.grouppolicy.common import constants as gconst
@@ -2177,7 +2178,12 @@ class ResourceMappingDriver(api.PolicyDriver):
             'egress', protocol, port_range, cidr, unset=unset)
 
     def _assoc_sgs_to_pt(self, context, pt_id, sg_list):
-        pt = context._plugin.get_policy_target(context._plugin_context, pt_id)
+        try:
+            pt = context._plugin.get_policy_target(context._plugin_context,
+                                                   pt_id)
+        except gp_ext.PolicyTargetNotFound:
+            LOG.warn(_("PT %s doesn't exist anymore"), pt_id)
+            return
         port_id = pt['port_id']
         port = self._core_plugin.get_port(context._plugin_context, port_id)
         cur_sg_list = port[ext_sg.SECURITYGROUPS]
@@ -2186,7 +2192,12 @@ class ResourceMappingDriver(api.PolicyDriver):
         self._update_port(context._plugin_context, port_id, port)
 
     def _disassoc_sgs_from_pt(self, context, pt_id, sg_list):
-        pt = context._plugin.get_policy_target(context._plugin_context, pt_id)
+        try:
+            pt = context._plugin.get_policy_target(context._plugin_context,
+                                                   pt_id)
+        except gp_ext.PolicyTargetNotFound:
+            LOG.warn(_("PT %s doesn't exist anymore"), pt_id)
+            return
         port_id = pt['port_id']
         self._disassoc_sgs_from_port(context._plugin_context, port_id, sg_list)
 
