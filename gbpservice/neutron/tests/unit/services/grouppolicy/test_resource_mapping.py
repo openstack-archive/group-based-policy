@@ -2416,7 +2416,8 @@ class TestExternalSegment(ResourceMappingTestCase):
                 l3p1 = self.create_l3_policy(
                     ip_pool='192.168.0.0/16')['l3_policy']
                 l3p2 = self.create_l3_policy(
-                    ip_pool='192.128.0.0/16')['l3_policy']
+                    ip_pool='192.128.0.0/16',
+                    external_segments={es['id']: []})['l3_policy']
                 self.create_external_policy(
                     external_segments=[es['id']],
                     provided_policy_rule_sets={prs['id']: ''})
