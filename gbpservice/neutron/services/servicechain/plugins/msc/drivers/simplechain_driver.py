@@ -269,7 +269,7 @@ class SimpleChainDriver(object):
                 context, sc_instance, sc_spec, sc_node)
 
             stack_name = ("stack_" + sc_instance['name'] + sc_node['name'] +
-                          sc_node['id'][:5])
+                          sc_instance['id'][:8])
             stack = heatclient.create(
                 stack_name.replace(" ", ""), stack_template, stack_params)
 
