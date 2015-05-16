@@ -855,18 +855,35 @@ class ResourceMappingDriver(api.PolicyDriver):
                 context.original['external_routes']):
             # Update SG rules for each EP
             # Get all the EP using this ES
+            admin_context = n_context.get_admin_context()
             ep_ids = context._plugin._get_external_segment_external_policies(
                 context._plugin_context, context.current['id'])
+            eps = context._plugin.get_external_policies(
+                admin_context, {'id': ep_ids})
+            eps_by_tenant = {}
+            for ep in eps:
+                if ep['tenant_id'] not in eps_by_tenant:
+                    eps_by_tenant[ep['tenant_id']] = []
+                eps_by_tenant[ep['tenant_id']].append(ep['id'])
             # Process their routes
-            old_cidrs = [x['destination']
-                         for x in context.original['external_routes']]
-            old_cidrs = self._process_external_cidrs(context, old_cidrs)
-            new_cidrs = [x['destination']
-                         for x in context.current['external_routes']]
-            new_cidrs = self._process_external_cidrs(context, new_cidrs)
-            # Recompute PRS rules
-            self._recompute_external_policy_rules(context, ep_ids,
-                                                  new_cidrs, old_cidrs)
+            visited_tenants = set()
+            for l3p in context._plugin.get_l3_policies(
+                    admin_context, {'id': context.current['l3_policies']}):
+                if l3p['tenant_id'] in visited_tenants:
+                    continue
+                visited_tenants.add(l3p['tenant_id'])
+                old_cidrs = [x['destination']
+                             for x in context.original['external_routes']]
+                old_cidrs = self._process_external_cidrs(
+                    context, old_cidrs, tenant_id=l3p['tenant_id'])
+                new_cidrs = [x['destination']
+                             for x in context.current['external_routes']]
+                new_cidrs = self._process_external_cidrs(
+                    context, new_cidrs, tenant_id=l3p['tenant_id'])
+                # Recompute PRS rules
+                self._recompute_external_policy_rules(
+                    context, eps_by_tenant[l3p['tenant_id']],
+                    new_cidrs, old_cidrs)
             old_routes = set((x['destination'], x['nexthop'])
                              for x in context.original['external_routes'])
             new_routes = set((x['destination'], x['nexthop'])
@@ -1772,15 +1789,15 @@ class ResourceMappingDriver(api.PolicyDriver):
             return self._create_sg_rule(plugin_context, attrs)
 
     def _sg_ingress_rule(self, context, sg_id, protocol, port_range, cidr,
-                         unset=False):
+                         tenant_id, unset=False):
         return self._sg_rule(
-            context._plugin_context, context.current['tenant_id'], sg_id,
+            context._plugin_context, tenant_id, sg_id,
             'ingress', protocol, port_range, cidr, unset=unset)
 
     def _sg_egress_rule(self, context, sg_id, protocol, port_range,
-                        cidr, unset=False):
+                        cidr, tenant_id, unset=False):
         return self._sg_rule(
-            context._plugin_context, context.current['tenant_id'], sg_id,
+            context._plugin_context, tenant_id, sg_id,
             'egress', protocol, port_range, cidr, unset=unset)
 
     def _assoc_sgs_to_pt(self, context, pt_id, sg_list):
@@ -1960,18 +1977,22 @@ class ResourceMappingDriver(api.PolicyDriver):
 
         protocol = classifier['protocol']
         port_range = classifier['port_range']
-
+        admin_context = n_context.get_admin_context()
+        prs = context._plugin.get_policy_rule_set(
+            admin_context, policy_rule_set_sg_mappings.policy_rule_set_id)
+        tenant_id = prs['tenant_id']
         for pos, sg in enumerate(prov_cons):
             if classifier['direction'] in [gconst.GP_DIRECTION_BI,
                                            in_out[pos]]:
                 for cidr in cidr_prov_cons[pos - 1]:
                     self._sg_ingress_rule(context, sg, protocol, port_range,
-                                          cidr, unset=unset)
+                                          cidr, tenant_id, unset=unset)
             if classifier['direction'] in [gconst.GP_DIRECTION_BI,
                                            in_out[pos - 1]]:
                 # TODO(ivar): IPv6 support
                 self._sg_egress_rule(context, sg, protocol, port_range,
-                                     '0.0.0.0/0', unset=unset_egress)
+                                     '0.0.0.0/0', tenant_id,
+                                     unset=unset_egress)
 
     def _apply_policy_rule_set_rules(self, context, policy_rule_set,
                                      policy_rules):
@@ -2117,12 +2138,14 @@ class ResourceMappingDriver(api.PolicyDriver):
             cidr_list += [x['destination'] for x in es['external_routes']]
         return cidr_list
 
-    def _process_external_cidrs(self, context, cidrs, exclude=None):
+    def _process_external_cidrs(self, context, cidrs, exclude=None,
+                                tenant_id=None):
         # Get all the tenant's L3P
         exclude = exclude or []
+        admin_context = n_context.get_admin_context()
         l3ps = context._plugin.get_l3_policies(
-            context._plugin_context,
-            filters={'tenant_id': [context.current['tenant_id']]})
+            admin_context,
+            filters={'tenant_id': [tenant_id or context.current['tenant_id']]})
 
         ip_pool_list = [x['ip_pool'] for x in l3ps if
                         x['ip_pool'] not in exclude]
