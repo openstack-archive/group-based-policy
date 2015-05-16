@@ -109,10 +109,12 @@ class TestServiceChainInstance(SimpleChainDriverTestCase):
                 sc_instance1 = self.create_servicechain_instance(
                                             name=instance1_name,
                                             servicechain_specs=[sc_spec_id])
+                sci1_id = sc_instance1['servicechain_instance']['id']
                 self.assertEqual([sc_spec_id],
                     sc_instance1['servicechain_instance'][
                         'servicechain_specs'])
-                stack_name = "stack_" + instance1_name + scn1_name + scn_id[:5]
+                stack_name = ("stack_" + instance1_name + scn1_name +
+                              sci1_id[:8])
                 expected_create_calls.append(
                             mock.call(stack_name,
                                       jsonutils.loads(template1), {}))
@@ -121,11 +123,13 @@ class TestServiceChainInstance(SimpleChainDriverTestCase):
                 sc_instance2 = self.create_servicechain_instance(
                                             name=instance2_name,
                                             servicechain_specs=[sc_spec_id])
+                sci2_id = sc_instance2['servicechain_instance']['id']
                 self.assertEqual(
                     [sc_spec_id],
                     sc_instance2['servicechain_instance'][
                         'servicechain_specs'])
-                stack_name = "stack_" + instance2_name + scn1_name + scn_id[:5]
+                stack_name = ("stack_" + instance2_name + scn1_name +
+                              sci2_id[:8])
                 expected_create_calls.append(
                     mock.call(stack_name, jsonutils.loads(template1), {}))
 
@@ -141,11 +145,11 @@ class TestServiceChainInstance(SimpleChainDriverTestCase):
                 expected_delete_calls.append(mock.call(stack1['stack']['id']))
                 expected_delete_calls.append(mock.call(stack2['stack']['id']))
                 stack_name = ("stack_" + instance1_name + scn2_name +
-                              scn2_id[:5])
+                              sci1_id[:8])
                 expected_create_calls.append(
                     mock.call(stack_name, jsonutils.loads(template2), {}))
                 stack_name = ("stack_" + instance2_name + scn2_name +
-                              scn2_id[:5])
+                              sci2_id[:8])
                 expected_create_calls.append(
                     mock.call(stack_name, jsonutils.loads(template2), {}))
                 self.assertEqual(expected_delete_calls,
@@ -160,8 +164,6 @@ class TestServiceChainInstance(SimpleChainDriverTestCase):
         scs = self.create_servicechain_spec(name=name, nodes=[scn_id])
         sc_spec_id = scs['servicechain_spec']['id']
 
-        expected_stack_name = ("stack_" + "sc_instance_1" +
-                               scn['servicechain_node']['name'] + scn_id[:5])
         with mock.patch.object(simplechain_driver.HeatClient,
                                'create') as stack_create:
             stack_create.return_value = {'stack': {
@@ -169,6 +171,10 @@ class TestServiceChainInstance(SimpleChainDriverTestCase):
             sc_instance = self.create_servicechain_instance(
                                         name="sc_instance_1",
                                         servicechain_specs=[sc_spec_id])
+            expected_stack_name = (
+                "stack_" + "sc_instance_1" +
+                scn['servicechain_node']['name'] +
+                sc_instance['servicechain_instance']['id'][:8])
             self.assertEqual(
                 [sc_spec_id],
                 sc_instance['servicechain_instance']['servicechain_specs'])
