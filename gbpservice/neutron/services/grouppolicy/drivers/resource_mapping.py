@@ -1586,7 +1586,7 @@ class ResourceMappingDriver(api.PolicyDriver):
                 config_param_values[key] = servicepolicy_ip
 
         attrs = {'tenant_id': context.current['tenant_id'],
-                 'name': 'gbp_' + context.current['name'],
+                 'name': 'gbp_' + ptg['name'],
                  'description': "",
                  'servicechain_specs': sc_spec,
                  'provider_ptg_id': provider_ptg_id,
