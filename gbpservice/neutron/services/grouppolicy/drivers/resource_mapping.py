@@ -2142,16 +2142,17 @@ class ResourceMappingDriver(api.PolicyDriver):
         l3ps = context._plugin.get_l3_policies(
             admin_context, filters={'id': context.current['l3_policies']})
         for l3p in l3ps:
-            router = self._l3_plugin.get_routes(
-                admin_context, l3p['router_id'])
-            current_routes = set((x['destination'], x['nexthop']) for x in
-                                 router['routes'])
-            current_routes = (current_routes - removed_routes |
-                              added_routes)
-            current_routes = [{'destination': x[0], 'nexthop': x[1]} for x
-                              in current_routes if x[1]]
-            self._update_router(admin_context, l3p['router_id'],
-                                {'routes': current_routes})
+            routers = self._l3_plugin.get_routers(admin_context,
+                                                  {'id': l3p['routers']})
+            for router in routers:
+                current_routes = set((x['destination'], x['nexthop']) for x in
+                                     router['routes'])
+                current_routes = (current_routes - removed_routes |
+                                  added_routes)
+                current_routes = [{'destination': x[0], 'nexthop': x[1]} for x
+                                  in current_routes if x[1]]
+                self._update_router(admin_context, router['id'],
+                                    {'routes': current_routes})
 
     def _refresh_ep_cidrs_rules(self, context, ep, new_cidrs, old_cidrs):
         # REVISIT(ivar): calculate cidrs delta to minimize disruption
