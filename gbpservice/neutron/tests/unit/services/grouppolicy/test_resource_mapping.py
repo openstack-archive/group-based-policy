@@ -2477,6 +2477,35 @@ class TestExternalSegment(ResourceMappingTestCase):
                     attrs['remote_ip_prefix'] = [cidr]
                     self.assertTrue(self._get_sg_rule(**attrs))
 
+    def test_update_different_tenant(self):
+        with self.network(router__external=True, shared=True,
+                          tenant_id='admin') as net:
+            with self.subnet(cidr='10.10.1.0/24', network=net) as sub:
+                es = self.create_external_segment(
+                    subnet_id=sub['subnet']['id'],
+                    shared=True, tenant_id='admin')['external_segment']
+                l3p = self.create_l3_policy(
+                    ip_pool='192.128.0.0/16',
+                    external_segments={es['id']: []})['l3_policy']
+                l2p = self.create_l2_policy(
+                    l3_policy_id=l3p['id'])['l2_policy']
+                rule = self._create_http_allow_rule()
+                prs = self.create_policy_rule_set(
+                    policy_rules=[rule['id']])['policy_rule_set']
+                self.create_policy_target_group(
+                    l2_policy_id=l2p['id'],
+                    provided_policy_rule_sets={prs['id']: ''})
+                self.create_external_policy(
+                    external_segments=[es['id']],
+                    provided_policy_rule_sets={prs['id']: ''})
+
+                self._verify_prs_rules(prs['id'])
+                route = {'destination': '0.0.0.0/0', 'nexthop': None}
+                self.update_external_segment(
+                    es['id'], expected_res_status=200,
+                    external_routes=[route], is_admin_context=True)
+                self._verify_prs_rules(prs['id'])
+
     def test_implicit_es(self):
         with self.network(router__external=True) as net:
             with self.subnet(cidr='192.168.0.0/24', network=net) as sub:
