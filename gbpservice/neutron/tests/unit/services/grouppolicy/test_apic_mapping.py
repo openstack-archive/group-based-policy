@@ -45,10 +45,6 @@ APIC_POLICY_RULE = 'policy_rule'
 
 APIC_EXTERNAL_RID = '1.0.0.1'
 
-AGENT_TYPE = 'Open vSwitch agent'
-AGENT_CONF = {'alive': True, 'binary': 'somebinary',
-              'topic': 'sometopic', 'agent_type': AGENT_TYPE}
-
 
 def echo(context, string):
     return string
@@ -109,10 +105,6 @@ class ApicMappingTestCase(
         self.driver.apic_manager.apic.transaction = self.fake_transaction
         amap.apic_manager.TENANT_COMMON = 'common'
         self.common_tenant = amap.apic_manager.TENANT_COMMON
-
-    def _get_object(self, type, id, api):
-        req = self.new_show_request(type, id, self.fmt)
-        return self.deserialize(self.fmt, req.get_response(api))
 
     def _build_external_dict(self, name, cidr_exposed):
         return {name: {
@@ -227,18 +219,6 @@ class TestPolicyTarget(ApicMappingTestCase):
         # APIC path not deleted
         mgr = self.driver.apic_manager
         self.assertEqual(mgr.ensure_path_deleted_for_port.call_count, 0)
-
-    def _bind_port_to_host(self, port_id, host):
-        plugin = manager.NeutronManager.get_plugin()
-        ctx = context.get_admin_context()
-        agent = {'host': host}
-        agent.update(AGENT_CONF)
-        plugin.create_or_update_agent(ctx, agent)
-        data = {'port': {'binding:host_id': host}}
-        # Create EP with bound port
-        req = self.new_update_request('ports', data, port_id,
-                                      self.fmt)
-        return self.deserialize(self.fmt, req.get_response(self.api))
 
 
 class TestPolicyTargetGroup(ApicMappingTestCase):
