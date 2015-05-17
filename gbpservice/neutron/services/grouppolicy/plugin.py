@@ -14,6 +14,8 @@ import netaddr
 
 from neutron.api.v2 import attributes as nattr
 from neutron.common import log
+from neutron import context as n_ctx
+from neutron.extensions import portbindings
 from neutron import manager as n_manager
 from neutron.openstack.common import excutils
 from neutron.openstack.common import log as logging
@@ -458,11 +460,11 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
             policy_target_group = self.get_policy_target_group(
                 context, policy_target_group_id)
             pt_ids = policy_target_group['policy_targets']
-            for pt_id in pt_ids:
-                pt = self.get_policy_target(context, pt_id)
+            for pt in self.get_policy_targets(context, {'id': pt_ids}):
                 if pt['port_id']:
-                    raise gp_exc.PolicyTargetGroupInUse(
-                        policy_target_group=policy_target_group_id)
+                    if self._is_port_bound(pt['port_id']):
+                        raise gp_exc.PolicyTargetGroupInUse(
+                            policy_target_group=policy_target_group_id)
             for pt_id in pt_ids:
                 # We will allow PTG deletion if all PTs are unused.
                 # We could have cleaned these opportunistically in
@@ -1440,3 +1442,13 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
                 self.extension_manager.extend_nat_pool_dict(
                     session, result)
         return [self._fields(result, fields) for result in results]
+
+    def _is_port_bound(self, port_id):
+        # REVISIT(ivar): This operation shouldn't be done within a DB lock
+        # once we refactor the server.
+        not_bound = [portbindings.VIF_TYPE_UNBOUND,
+                     portbindings.VIF_TYPE_BINDING_FAILED]
+        context = n_ctx.get_admin_context()
+        port = n_manager.NeutronManager.get_plugin().get_port(context, port_id)
+        return (port.get('binding:vif_type') not in not_bound) or port.get(
+            'binding:host_id')

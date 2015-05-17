@@ -134,6 +134,7 @@ class ApicMappingDriver(api.ResourceMappingDriver):
                    self._core_plugin._device_to_port_id(kwargs['device']))
         port = self._core_plugin.get_port(context, port_id)
         # retrieve PTG and network from a given Port
+        segmentation_id = None
         if not kwargs.get('policy_target'):
             ptg, network = self._port_to_ptg_network(context, port,
                                                      kwargs['host'])
@@ -144,11 +145,14 @@ class ApicMappingDriver(api.ResourceMappingDriver):
             ptg = self.gbp_plugin.get_policy_target_group(
                 context, pt['policy_target_group_id'])
             network = self._l2p_id_to_network(context, ptg['l2_policy_id'])
+            segmentation_id = self._get_port_segmentation_id(context,
+                                                             port['id'])
 
         return {'port_id': port_id,
                 'mac_address': port['mac_address'],
                 'ptg_id': ptg['id'],
-                'segmentation_id': network[pn.SEGMENTATION_ID],
+                'segmentation_id': segmentation_id or
+                network[pn.SEGMENTATION_ID],
                 'network_type': network[pn.NETWORK_TYPE],
                 'l2_policy_id': ptg['l2_policy_id'],
                 'tenant_id': port['tenant_id'],
@@ -1019,3 +1023,9 @@ class ApicMappingDriver(api.ResourceMappingDriver):
             return self.name_mapper.tenant(None, object['tenant_id'])
         else:
             return apic_manager.TENANT_COMMON
+
+    def _get_port_segmentation_id(self, context, port_id):
+        bind = context.session.query(models.PortBinding).filter(
+            models.PortBinding.port_id == port_id).first()
+        if bind:
+            return bind.segment
