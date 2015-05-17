@@ -97,10 +97,6 @@ class ApicMappingTestCase(
         amap.apic_manager.TENANT_COMMON = 'common'
         self.common_tenant = amap.apic_manager.TENANT_COMMON
 
-    def _get_object(self, type, id, api):
-        req = self.new_show_request(type, id, self.fmt)
-        return self.deserialize(self.fmt, req.get_response(api))
-
     def _build_external_dict(self, name, cidr_exposed):
         return {name: {
                 'switch': mocked.APIC_EXT_SWITCH,
@@ -214,13 +210,6 @@ class TestPolicyTarget(ApicMappingTestCase):
         # APIC path not deleted
         mgr = self.driver.apic_manager
         self.assertEqual(mgr.ensure_path_deleted_for_port.call_count, 0)
-
-    def _bind_port_to_host(self, port_id, host):
-        data = {'port': {'binding:host_id': host}}
-        # Create EP with bound port
-        req = self.new_update_request('ports', data, port_id,
-                                      self.fmt)
-        return self.deserialize(self.fmt, req.get_response(self.api))
 
 
 class TestPolicyTargetGroup(ApicMappingTestCase):
