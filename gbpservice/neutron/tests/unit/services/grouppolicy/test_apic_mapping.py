@@ -144,7 +144,7 @@ class TestPolicyTarget(ApicMappingTestCase):
         self.driver.process_port_changed(context.get_admin_context(),
                                          port['port'], port_up['port'])
         mgr = self.driver.apic_manager
-        self.assertEqual(mgr.ensure_path_created_for_port.call_count, 2)
+        self.assertEqual(mgr.ensure_path_created_for_port.call_count, 1)
 
     def test_policy_target_port_deleted_on_apic(self):
         ptg = self.create_policy_target_group()['policy_target_group']
@@ -187,11 +187,11 @@ class TestPolicyTarget(ApicMappingTestCase):
                                              port['port'], port_up['port'])
 
             mgr = self.driver.apic_manager
-            # Path created 2 times plus 1 for DHCP
+            # Path created 2 times
             self.assertEqual(mgr.ensure_path_created_for_port.call_count,
-                             3)
+                             2)
             # Path deleted 1 time
-            self.assertEqual(mgr.ensure_path_deleted_for_port.call_count, 2)
+            self.assertEqual(mgr.ensure_path_deleted_for_port.call_count, 1)
 
     def test_policy_target_port_not_deleted(self):
         # Create 2 EP same PTG same host bound
