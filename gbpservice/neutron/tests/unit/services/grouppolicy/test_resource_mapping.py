@@ -27,9 +27,9 @@ from neutron import manager
 from neutron.notifiers import nova
 from neutron.openstack.common import uuidutils
 from neutron.plugins.common import constants as pconst
+from neutron.tests.unit.ml2 import test_ml2_plugin as n_test_plugin
 from neutron.tests.unit import test_extension_security_group
 from neutron.tests.unit import test_l3_plugin
-from neutron.tests.unit.ml2 import test_ml2_plugin as n_test_plugin
 import webob.exc
 
 from gbpservice.neutron.db.grouppolicy import group_policy_db as gpdb

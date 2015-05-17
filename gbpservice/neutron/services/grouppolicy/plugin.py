@@ -1450,5 +1450,5 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
                      portbindings.VIF_TYPE_BINDING_FAILED]
         context = n_ctx.get_admin_context()
         port = n_manager.NeutronManager.get_plugin().get_port(context, port_id)
-        return  (port.get('binding:vif_type') not in not_bound) or port.get(
-            'binding:host_id')
+        return (port.get('binding:vif_type') not in not_bound) and port.get(
+            'binding:host_id') and (port['device_owner'] or port['device_id'])

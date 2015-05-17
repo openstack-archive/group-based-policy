@@ -152,7 +152,7 @@ class ApicMappingDriver(api.ResourceMappingDriver):
                 'mac_address': port['mac_address'],
                 'ptg_id': ptg['id'],
                 'segmentation_id': segmentation_id or
-                                   network[pn.SEGMENTATION_ID],
+                network[pn.SEGMENTATION_ID],
                 'network_type': network[pn.NETWORK_TYPE],
                 'l2_policy_id': ptg['l2_policy_id'],
                 'tenant_id': port['tenant_id'],
