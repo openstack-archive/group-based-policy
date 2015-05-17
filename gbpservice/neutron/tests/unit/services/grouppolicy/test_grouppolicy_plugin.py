@@ -15,6 +15,7 @@ import mock
 
 from neutron import context
 from neutron import manager
+from neutron.tests.unit.ml2 import test_ml2_plugin as test_plugin
 from oslo.config import cfg
 import webob.exc
 
@@ -52,6 +53,12 @@ class GroupPolicyPluginTestCase(tgpmdb.GroupPolicyMappingDbTestCase):
     def setUp(self, core_plugin=None, gp_plugin=None):
         if not gp_plugin:
             gp_plugin = GP_PLUGIN_KLASS
+        ml2_opts = {
+            'mechanism_drivers': ['openvswitch'],
+        }
+        for opt, val in ml2_opts.items():
+            cfg.CONF.set_override(opt, val, 'ml2')
+        core_plugin = core_plugin or test_plugin.PLUGIN_NAME
         super(GroupPolicyPluginTestCase, self).setUp(core_plugin=core_plugin,
                                                      gp_plugin=gp_plugin)
         cfg.CONF.set_override('servicechain_drivers', ['dummy'],
@@ -152,7 +159,8 @@ class GroupPolicyPluginTestCase(tgpmdb.GroupPolicyMappingDbTestCase):
         agent = {'host': host}
         agent.update(AGENT_CONF)
         plugin.create_or_update_agent(ctx, agent)
-        data = {'port': {'binding:host_id': host}}
+        data = {'port': {'binding:host_id': host, 'device_owner': 'a',
+                         'device_id': 'b'}}
         # Create EP with bound port
         req = self.new_update_request('ports', data, port_id,
                                       self.fmt)
@@ -527,12 +535,15 @@ class TestPolicyTargetGroup(GroupPolicyPluginTestCase):
         with self.port() as port:
             port_id = port['port']['id']
             ptg = self.create_policy_target_group()['policy_target_group']
-            self.create_policy_target(policy_target_group_id=ptg['id'],
+            pt = self.create_policy_target(policy_target_group_id=ptg['id'],
                                       port_id=port_id)
-            req = self.new_delete_request('policy_target_groups', ptg['id'],
-                                          self.fmt)
-            res = req.get_response(self.ext_api)
-            self.assertEqual(res.status_int, 400)
+            port = self._get_object('ports', pt['policy_target']['port_id'],
+                                    self.api)
+            self._bind_port_to_host(port['port']['id'], 'h1')
+            self.delete_policy_target_group(ptg['id'],
+                                            expected_res_status=400)
+            self._unbind_port(port['port']['id'])
+            self.delete_policy_target_group(ptg['id'], expected_res_status=204)
 
     def test_shared_ptg_create(self):
         l2p = self._create_l2_policy_on_shared(
