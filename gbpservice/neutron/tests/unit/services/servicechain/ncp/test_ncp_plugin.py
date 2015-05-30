@@ -109,12 +109,6 @@ class NodeCompositionPluginTestCase(
 
         return provider, consumer, prs
 
-    @property
-    def sc_plugin(self):
-        plugins = manager.NeutronManager.get_service_plugins()
-        servicechain_plugin = plugins.get(pconst.SERVICECHAIN)
-        return servicechain_plugin
-
     def test_spec_ordering_list_servicechain_instances(self):
         pass
 
@@ -293,8 +287,7 @@ class NodeCompositionPluginTestCase(
             expected_res_status=201)['servicechain_node']['id']
 
         spec = self.create_servicechain_spec(
-            nodes=[node_id],
-            expected_res_status=201)['servicechain_spec']
+            nodes=[node_id], expected_res_status=201)['servicechain_spec']
         prs = self._create_redirect_prs(spec['id'])['policy_rule_set']
         self.create_policy_target_group(
             provided_policy_rule_sets={prs['id']: ''})
@@ -306,6 +299,76 @@ class NodeCompositionPluginTestCase(
                                           expected_res_status=400)
         self.assertEqual('ServiceProfileInUseByAnInstance',
                          res['NeutronError']['type'])
+
+    def test_relevant_ptg_update(self):
+        add = self.driver.update_policy_target_added = mock.Mock()
+        rem = self.driver.update_policy_target_removed = mock.Mock()
+
+        prof = self.create_service_profile(
+            service_type='LOADBALANCER')['service_profile']
+        node = self.create_servicechain_node(
+            service_profile_id=prof['id'],
+            expected_res_status=201)['servicechain_node']
+
+        spec = self.create_servicechain_spec(
+            nodes=[node['id']],
+            expected_res_status=201)['servicechain_spec']
+        prs = self._create_redirect_prs(spec['id'])['policy_rule_set']
+        provider = self.create_policy_target_group(
+            provided_policy_rule_sets={prs['id']: ''})['policy_target_group']
+        consumer = self.create_policy_target_group(
+            consumed_policy_rule_sets={prs['id']: ''})['policy_target_group']
+
+        # Verify notification issued for created PT in the provider
+        pt = self.create_policy_target(
+            policy_target_group_id=provider['id'])['policy_target']
+        self.assertEqual(1, add.call_count)
+        add.assert_called_with(mock.ANY, pt)
+
+        # Verify notification issued for deleted PT in the provider
+        self.delete_policy_target(pt['id'])
+        self.assertEqual(1, rem.call_count)
+        rem.assert_called_with(mock.ANY, pt)
+
+        # Verify notification issued for created PT in the consumer
+        pt = self.create_policy_target(
+            policy_target_group_id=consumer['id'])['policy_target']
+        self.assertEqual(2, add.call_count)
+        add.assert_called_with(mock.ANY, pt)
+
+        # Verify notification issued for deleted PT in the consumer
+        self.delete_policy_target(pt['id'])
+        self.assertEqual(2, rem.call_count)
+        rem.assert_called_with(mock.ANY, pt)
+
+    def test_irrelevant_ptg_update(self):
+        add = self.driver.update_policy_target_added = mock.Mock()
+        rem = self.driver.update_policy_target_removed = mock.Mock()
+
+        prof = self.create_service_profile(
+            service_type='LOADBALANCER')['service_profile']
+        node = self.create_servicechain_node(
+            service_profile_id=prof['id'],
+            expected_res_status=201)['servicechain_node']
+
+        spec = self.create_servicechain_spec(
+            nodes=[node['id']], expected_res_status=201)['servicechain_spec']
+        prs = self._create_redirect_prs(spec['id'])['policy_rule_set']
+        self.create_policy_target_group(
+            provided_policy_rule_sets={prs['id']: ''})
+        self.create_policy_target_group(
+            consumed_policy_rule_sets={prs['id']: ''})
+
+        other = self.create_policy_target_group()['policy_target_group']
+
+        # Verify notification issued for created PT in the provider
+        pt = self.create_policy_target(
+            policy_target_group_id=other['id'])['policy_target']
+        self.assertFalse(add.called)
+
+        # Verify notification issued for deleted PT in the provider
+        self.delete_policy_target(pt['id'])
+        self.assertFalse(rem.called)
 
 
 class AgnosticChainPlumberTestCase(NodeCompositionPluginTestCase):
