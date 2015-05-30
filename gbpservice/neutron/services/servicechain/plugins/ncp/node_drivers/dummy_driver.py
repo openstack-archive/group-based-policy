@@ -48,6 +48,14 @@ class NoopNodeDriver(driver_base.NodeDriverBase):
     def update(self, context):
         pass
 
+    @log.log
+    def update_policy_target_added(self, context, policy_target):
+        pass
+
+    @log.log
+    def update_policy_target_removed(self, context, policy_target):
+        pass
+
     @property
     def name(self):
         return self._name

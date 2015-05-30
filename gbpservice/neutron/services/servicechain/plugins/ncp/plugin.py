@@ -176,7 +176,6 @@ class NodeCompositionPlugin(servicechain_db.ServiceChainDbPlugin,
         for update in updaters.values():
             try:
                 update['driver'].update(update['context'])
-                break
             except exc.NodeDriverError as ex:
                 LOG.error(_("Node Update failed, %s"),
                           ex.message)
@@ -232,6 +231,36 @@ class NodeCompositionPlugin(servicechain_db.ServiceChainDbPlugin,
             self._validate_profile_update(context, original_profile,
                                           updated_profile)
         return updated_profile
+
+    def update_chains_pt_added(self, context, policy_target):
+        """ Auto scaling function.
+
+        Notify the correct set of node drivers that a new policy target has
+        been added to a relevant PTG.
+        """
+        self._update_chains_pt_modified(context, policy_target, 'added')
+
+    def update_chains_pt_removed(self, context, policy_target):
+        """ Auto scaling function.
+
+        Notify the correct set of node drivers that a new policy target has
+        been removed from a relevant PTG.
+        """
+        self._update_chains_pt_modified(context, policy_target, 'removed')
+
+    def _update_chains_pt_modified(self, context, policy_target, action):
+        scis = self._get_instances_from_policy_target(context, policy_target)
+
+        for sci in scis:
+            updaters = self._get_scheduled_drivers(context, sci, 'update')
+            for update in updaters.values():
+                try:
+                    getattr(update['driver'],
+                            'update_policy_target_' + action)(
+                                update['context'], policy_target)
+                except exc.NodeDriverError as ex:
+                    LOG.error(_("Node Update on policy target modification "
+                                "failed, %s"), ex.message)
 
     def _get_instance_nodes(self, context, instance):
         if not instance['servicechain_specs']:
