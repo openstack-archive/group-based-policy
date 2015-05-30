@@ -286,6 +286,20 @@ class ServiceChainPluginBase(service_base.ServicePluginBase):
     def get_plugin_description(self):
         return 'Service Chain plugin'
 
+    def update_chains_pt_added(self, context, policy_target):
+        """ Auto scaling function.
+
+        Override this method to react to policy target creation.
+        """
+        pass
+
+    def update_chains_pt_removed(self, context, policy_target):
+        """ Auto scaling function.
+
+        Override this method to react to policy target deletion.
+        """
+        pass
+
     @abc.abstractmethod
     @log.log
     def get_servicechain_nodes(self, context, filters=None, fields=None):

@@ -377,6 +377,22 @@ class ServiceChainDbPlugin(schain.ServiceChainPluginBase,
                                     servicechain_spec_id=spec_id)
                 instance_db.specs.append(assoc)
 
+    def _get_instances_from_policy_target(self, context, policy_target):
+        with context.session.begin(subtransactions=True):
+            ptg_id = policy_target['policy_target_group_id']
+            scis_p = self.get_servicechain_instances(
+                context, {'provider_ptg_id': [ptg_id]})
+            scis_c = self.get_servicechain_instances(
+                context, {'consumer_ptg_id': [ptg_id]})
+            # Don't return duplicates
+            result = []
+            seen = set()
+            for sci in scis_p + scis_c:
+                if sci['id'] not in seen:
+                    seen.add(sci['id'])
+                    result.append(sci)
+            return result
+
     @log.log
     def create_servicechain_spec(self, context, servicechain_spec,
                                  set_params=True):
