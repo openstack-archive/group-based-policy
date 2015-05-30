@@ -12,6 +12,7 @@
 # limitations under the License.
 
 import mock
+from neutron.common import config  # noqa
 from neutron import context as n_context
 from neutron.db import api as db_api
 from neutron.db import model_base

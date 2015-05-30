@@ -308,8 +308,18 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
         self.extension_manager.initialize()
         self.policy_driver_manager.initialize()
 
+    def _notify_sc_plugin_pt_added(self, context, policy_target):
+        if self.servicechain_plugin:
+            self.servicechain_plugin.update_chains_pt_added(context,
+                                                            policy_target)
+
+    def _notify_sc_plugin_pt_removed(self, context, policy_target):
+        if self.servicechain_plugin:
+            self.servicechain_plugin.update_chains_pt_removed(context,
+                                                              policy_target)
+
     @log.log
-    def create_policy_target(self, context, policy_target):
+    def create_policy_target(self, context, policy_target, notify_sc=True):
         session = context.session
         with session.begin(subtransactions=True):
             result = super(GroupPolicyPlugin,
@@ -332,6 +342,11 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
                             "failed, deleting policy_target %s"),
                           result['id'])
                 self.delete_policy_target(context, result['id'])
+
+        # REVISIT(ivar): For now just raise the exception if something goes
+        # wrong. This will eventually be managed in an asynchronous way.
+        if notify_sc:
+            self._notify_sc_plugin_pt_added(context, result)
 
         return result
 
@@ -360,7 +375,8 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
         return updated_policy_target
 
     @log.log
-    def delete_policy_target(self, context, policy_target_id):
+    def delete_policy_target(self, context, policy_target_id,
+                             notify_sc=True):
         session = context.session
         with session.begin(subtransactions=True):
             policy_target = self.get_policy_target(context, policy_target_id)
@@ -370,6 +386,12 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
                 policy_context)
             super(GroupPolicyPlugin, self).delete_policy_target(
                 context, policy_target_id)
+
+        if notify_sc:
+            # REVISIT(ivar): For now just raise the exception if something goes
+            # wrong. This will eventually be managed in an asynchronous way.
+            self._notify_sc_plugin_pt_removed(
+                context, policy_target)
 
         try:
             self.policy_driver_manager.delete_policy_target_postcommit(
