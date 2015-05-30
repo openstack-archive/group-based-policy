@@ -145,6 +145,32 @@ class NodeDriverBase(object):
         """
         pass
 
+    @abc.abstractmethod
+    def update_policy_target_added(self, context, policy_target):
+        """Update a deployed Service Chain Node on adding of a PT.
+
+        This method can be used for auto scaling some services whenever a
+        Policy Target is added to a relevant PTG.
+
+        :param context: NodeDriverContext instance describing the service chain
+        and the specific node to be processed by this driver.
+        :param policy_target: Dict representing a Policy Target.
+        """
+        pass
+
+    @abc.abstractmethod
+    def update_policy_target_removed(self, context, policy_target):
+        """Update a deployed Service Chain Node on removal of a PT.
+
+        This method can be used for auto scaling some services whenever a
+        Policy Target is removed from a relevant PTG.
+
+        :param context: NodeDriverContext instance describing the service chain
+        and the specific node to be processed by this driver.
+        :param policy_target: Dict representing a Policy Target.
+        """
+        pass
+
     @abc.abstractproperty
     def name(self):
         pass
