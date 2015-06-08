@@ -94,6 +94,9 @@ class ServiceChainInstance(gquota.GBPQuotaBase, model_base.BASEV2,
     consumer_ptg_id = sa.Column(sa.String(36),
                              # sa.ForeignKey('gp_policy_target_groups.id'),
                              nullable=True)
+    management_ptg_id = sa.Column(sa.String(36),
+                                  # sa.ForeignKey('gp_policy_target_groups.id'),
+                                  nullable=True)
     classifier_id = sa.Column(sa.String(36),
                               # sa.ForeignKey('gp_policy_classifiers.id'),
                               nullable=True)
@@ -227,6 +230,7 @@ class ServiceChainDbPlugin(schain.ServiceChainPluginBase,
                'config_param_values': instance['config_param_values'],
                'provider_ptg_id': instance['provider_ptg_id'],
                'consumer_ptg_id': instance['consumer_ptg_id'],
+               'management_ptg_id': instance['management_ptg_id'],
                'classifier_id': instance['classifier_id']}
         res['servicechain_specs'] = [sc_spec['servicechain_spec_id']
                                     for sc_spec in instance['specs']]
@@ -484,6 +488,18 @@ class ServiceChainDbPlugin(schain.ServiceChainPluginBase,
         instance = servicechain_instance['servicechain_instance']
         tenant_id = self._get_tenant_id_for_create(context, instance)
         with context.session.begin(subtransactions=True):
+            if not instance['management_ptg_id']:
+                management_groups = (
+                    self._grouppolicy_plugin.get_policy_target_groups(
+                        context, {'service_management': [True],
+                                  'tenant_id': [instance['tenant_id']]}))
+                if not management_groups:
+                    # Fall back on shared service management
+                    management_groups = (
+                        self._grouppolicy_plugin.get_policy_target_groups(
+                            context, {'service_management': [True]}))
+                if management_groups:
+                    instance['management_ptg_id'] = management_groups[0]['id']
             instance_db = ServiceChainInstance(
                 id=uuidutils.generate_uuid(),
                 tenant_id=tenant_id, name=instance['name'],
@@ -491,6 +507,7 @@ class ServiceChainDbPlugin(schain.ServiceChainPluginBase,
                 config_param_values=instance['config_param_values'],
                 provider_ptg_id=instance['provider_ptg_id'],
                 consumer_ptg_id=instance['consumer_ptg_id'],
+                management_ptg_id=instance['management_ptg_id'],
                 classifier_id=instance['classifier_id'])
             self._process_specs_for_instance(context, instance_db, instance)
             context.session.add(instance_db)
