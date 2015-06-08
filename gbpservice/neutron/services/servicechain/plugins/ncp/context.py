@@ -39,6 +39,16 @@ def get_node_driver_context(sc_plugin, context, sc_instance,
         service_targets = model.get_service_targets(
             context.session, servicechain_instance_id=sc_instance['id'],
             position=position, servicechain_node_id=current_node['id'])
+    if not management_group:
+        management_groups = get_gbp_plugin().get_policy_target_groups(
+            context, {'service_management': [True],
+                      'tenant_id': [sc_instance['tenant_id']]})
+        if not management_groups:
+            # Fall back on shared service management
+            management_groups = get_gbp_plugin().get_policy_target_groups(
+                context, {'service_management': [True]})
+        if management_groups:
+            management_group = management_groups[0]
 
     return NodeDriverContext(sc_plugin=sc_plugin,
                              context=context,
