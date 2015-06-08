@@ -432,6 +432,7 @@ class TestServiceChainResources(ServiceChainDbTestCase):
             servicechain_specs=[scs_id],
             provider_ptg_id=policy_target_group_id,
             consumer_ptg_id=policy_target_group_id,
+            management_ptg_id=policy_target_group_id,
             classifier_id=classifier_id,
             config_param_values=config_param_values)
 
@@ -439,6 +440,7 @@ class TestServiceChainResources(ServiceChainDbTestCase):
             servicechain_specs=[scs_id],
             provider_ptg_id=policy_target_group_id,
             consumer_ptg_id=policy_target_group_id,
+            management_ptg_id=policy_target_group_id,
             classifier_id=classifier_id,
             config_param_values=config_param_values)
         for k, v in attrs.iteritems():
@@ -498,16 +500,19 @@ class TestServiceChainResources(ServiceChainDbTestCase):
         scs_id = self.create_servicechain_spec()['servicechain_spec']['id']
         provider_ptg_id = uuidutils.generate_uuid()
         consumer_ptg_id = uuidutils.generate_uuid()
+        management_ptg_id = uuidutils.generate_uuid()
         classifier_id = uuidutils.generate_uuid()
         attrs = cm.get_create_servicechain_instance_default_attrs(
             name=name, description=description, servicechain_specs=[scs_id],
             provider_ptg_id=provider_ptg_id, consumer_ptg_id=consumer_ptg_id,
+            management_ptg_id=management_ptg_id,
             classifier_id=classifier_id,
             config_param_values=config_param_values)
 
         sci = self.create_servicechain_instance(
             servicechain_specs=[scs_id], provider_ptg_id=provider_ptg_id,
-            consumer_ptg_id=consumer_ptg_id, classifier_id=classifier_id,
+            consumer_ptg_id=consumer_ptg_id,
+            management_ptg_id=management_ptg_id, classifier_id=classifier_id,
             config_param_values=config_param_values)
         data = {'servicechain_instance': {'name': name,
                                           'description': description,
