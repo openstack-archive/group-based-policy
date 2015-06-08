@@ -112,6 +112,7 @@ class PolicyTargetGroup(model_base.BASEV2, models_v2.HasId,
         PTGToPRSConsumingAssociation,
         backref='consuming_policy_target_group', cascade='all, delete-orphan')
     shared = sa.Column(sa.Boolean)
+    service_management = sa.Column(sa.Boolean)
 
 
 class L2Policy(model_base.BASEV2, models_v2.HasId, models_v2.HasTenant):
@@ -799,7 +800,8 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
                'description': ptg['description'],
                'l2_policy_id': ptg['l2_policy_id'],
                'network_service_policy_id': ptg['network_service_policy_id'],
-               'shared': ptg.get('shared', False), }
+               'shared': ptg.get('shared', False),
+               'service_management': ptg.get('service_management', False),}
         res['policy_targets'] = [
             pt['id'] for pt in ptg['policy_targets']]
         res['provided_policy_rule_sets'] = (
@@ -1031,6 +1033,13 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
             value = None
         return value
 
+    def _validate_service_management_ptg(self, context, tenant_id):
+        # Verify whether a Management PTG already exists for this tenant
+        if self.get_policy_target_groups(
+                context, {'tenant_id': [tenant_id],
+                          'service_management': [True]}):
+            raise gpolicy.ManagementPolicyTargetGroupExists()
+
     @staticmethod
     def validate_ip_pool(ip_pool, ip_version):
         attr._validate_subnet(ip_pool)
@@ -1119,12 +1128,15 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
         ptg = policy_target_group['policy_target_group']
         tenant_id = self._get_tenant_id_for_create(context, ptg)
         with context.session.begin(subtransactions=True):
+            if ptg['service_management']:
+                self._validate_service_management_ptg(context, tenant_id)
             ptg_db = PolicyTargetGroup(
                 id=uuidutils.generate_uuid(), tenant_id=tenant_id,
                 name=ptg['name'], description=ptg['description'],
                 l2_policy_id=ptg['l2_policy_id'],
                 network_service_policy_id=ptg['network_service_policy_id'],
-                shared=ptg.get('shared', False))
+                shared=ptg.get('shared', False),
+                service_management=ptg.get('service_management', False))
             context.session.add(ptg_db)
             self._process_policy_rule_sets_for_ptg(context, ptg_db, ptg)
         return self._make_policy_target_group_dict(ptg_db)

@@ -662,6 +662,17 @@ class TestPolicyTargetGroup(GroupPolicyPluginTestCase):
         self._create_ptg_on_shared(tenant_id='other',
                                    expected_res_status=201)
 
+    def test_multiple_service_ptg_fails(self):
+        self.create_policy_target_group(
+            service_management=True, is_admin_context=True,
+            expected_res_status=201)
+        res = self.create_policy_target_group(
+            service_management=True, is_admin_context=True,
+            expected_res_status=400)
+        self.assertEqual('ManagementPolicyTargetGroupExists',
+                         res['NeutronError']['type'])
+
+
 
 class TestExternalSegment(GroupPolicyPluginTestCase):
 
