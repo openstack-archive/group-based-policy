@@ -317,6 +317,51 @@ class NodeCompositionPluginTestCase(
         self.delete_policy_target(pt['id'])
         self.assertFalse(rem.called)
 
+    def test_context_no_management(self):
+        # Verify Context attributes for simple config
+        plugin_context = n_context.get_admin_context()
+        plugin_context.is_admin = False
+        plugin_context.is_advsvc = False
+        plugin_context.tenant_id = 'test-tenant'
+        profile = self.create_service_profile(
+            service_type="TYPE")['service_profile']
+        node = self.create_servicechain_node(
+            service_profile_id=profile['id'], config='{}')['servicechain_node']
+        spec = self.create_servicechain_spec(
+            nodes=[node['id']])['servicechain_spec']
+        provider = self.create_policy_target_group()['policy_target_group']
+        consumer = self.create_policy_target_group()['policy_target_group']
+        instance = self.create_servicechain_instance(
+            provider_ptg_id=provider['id'], consumer_ptg_id=consumer['id'],
+            servicechain_specs=[spec['id']])['servicechain_instance']
+
+        # Verify admin created SM is None
+        management = self.create_policy_target_group(
+            service_management=True, tenant_id='admin',
+            is_admin_context=True)['policy_target_group']
+        ctx = ncp_context.get_node_driver_context(
+            self.plugin, plugin_context, instance, node)
+
+        self.assertIsNone(ctx.management)
+
+        self.delete_policy_target_group(management['id'],
+                                        is_admin_context=True)
+        shared_management = self.create_policy_target_group(
+            service_management=True, tenant_id='admin',
+            is_admin_context=True, shared=True)['policy_target_group']
+        # Now admin Service Management PTG is visible
+        ctx = ncp_context.get_node_driver_context(
+            self.plugin, plugin_context, instance, node)
+        self.assertEqual(shared_management['id'], ctx.management['id'])
+
+        # Private management overrides shared one
+        private_management = self.create_policy_target_group(
+            service_management=True,
+            is_admin_context=True)['policy_target_group']
+        ctx = ncp_context.get_node_driver_context(
+            self.plugin, plugin_context, instance, node)
+        self.assertEqual(private_management['id'], ctx.management['id'])
+
 
 class AngnosticChainPlumberTestCase(NodeCompositionPluginTestCase):
 
