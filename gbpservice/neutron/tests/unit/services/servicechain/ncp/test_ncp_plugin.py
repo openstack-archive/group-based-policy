@@ -148,8 +148,10 @@ class NodeCompositionPluginTestCase(
             nodes=[node['id']])['servicechain_spec']
         provider = self.create_policy_target_group()['policy_target_group']
         consumer = self.create_policy_target_group()['policy_target_group']
-        management = self.create_policy_target_group()['policy_target_group']
+        management = self.create_policy_target_group(
+            service_management=True)['policy_target_group']
         classifier = self.create_policy_classifier()['policy_classifier']
+
         instance = self.create_servicechain_instance(
             provider_ptg_id=provider['id'], consumer_ptg_id=consumer['id'],
             servicechain_specs=[spec['id']], classifier_id=classifier['id'])[
@@ -157,8 +159,7 @@ class NodeCompositionPluginTestCase(
 
         # Verify created without errors
         ctx = ncp_context.get_node_driver_context(
-            self.plugin, plugin_context, instance, node,
-            management_group=management)
+            self.plugin, plugin_context, instance, node)
 
         self.assertIsNotNone(ctx.gbp_plugin)
         self.assertIsNotNone(ctx.sc_plugin)
@@ -505,6 +506,61 @@ class NodeCompositionPluginTestCase(
         # Verify notification issued for deleted PT in the provider
         self.delete_policy_target(pt['id'])
         self.assertFalse(rem.called)
+
+    def test_context_no_management(self):
+        # Verify Context attributes for simple config
+        plugin_context = n_context.get_admin_context()
+        plugin_context.is_admin = False
+        plugin_context.is_advsvc = False
+        plugin_context.tenant_id = 'test-tenant'
+        profile = self.create_service_profile(
+            service_type="TYPE")['service_profile']
+        node = self.create_servicechain_node(
+            service_profile_id=profile['id'], config='{}')['servicechain_node']
+        spec = self.create_servicechain_spec(
+            nodes=[node['id']])['servicechain_spec']
+        provider = self.create_policy_target_group()['policy_target_group']
+        consumer = self.create_policy_target_group()['policy_target_group']
+
+        # Verify admin created SM is None
+        management = self.create_policy_target_group(
+            service_management=True, tenant_id='admin',
+            is_admin_context=True)['policy_target_group']
+        pc = self.create_policy_classifier()['policy_classifier']
+        instance = self.create_servicechain_instance(
+            provider_ptg_id=provider['id'], consumer_ptg_id=consumer['id'],
+            servicechain_specs=[spec['id']],
+            classifier_id=pc['id'])['servicechain_instance']
+        ctx = ncp_context.get_node_driver_context(
+            self.plugin, plugin_context, instance, node)
+
+        self.assertIsNone(ctx.management)
+
+        self.delete_policy_target_group(management['id'],
+                                        is_admin_context=True)
+        shared_management = self.create_policy_target_group(
+            service_management=True, tenant_id='admin',
+            is_admin_context=True, shared=True)['policy_target_group']
+        instance = self.create_servicechain_instance(
+            provider_ptg_id=provider['id'], consumer_ptg_id=consumer['id'],
+            servicechain_specs=[spec['id']],
+            classifier_id=pc['id'])['servicechain_instance']
+        # Now admin Service Management PTG is visible
+        ctx = ncp_context.get_node_driver_context(
+            self.plugin, plugin_context, instance, node)
+        self.assertEqual(shared_management['id'], ctx.management['id'])
+
+        # Private management overrides shared one
+        private_management = self.create_policy_target_group(
+            service_management=True,
+            is_admin_context=True)['policy_target_group']
+        instance = self.create_servicechain_instance(
+            provider_ptg_id=provider['id'], consumer_ptg_id=consumer['id'],
+            servicechain_specs=[spec['id']],
+            classifier_id=pc['id'])['servicechain_instance']
+        ctx = ncp_context.get_node_driver_context(
+            self.plugin, plugin_context, instance, node)
+        self.assertEqual(private_management['id'], ctx.management['id'])
 
 
 class AgnosticChainPlumberTestCase(NodeCompositionPluginTestCase):

@@ -1966,6 +1966,7 @@ class ResourceMappingDriver(api.PolicyDriver):
                  'servicechain_specs': sc_spec,
                  'provider_ptg_id': provider_ptg_id,
                  'consumer_ptg_id': consumer_ptg_id,
+                 'management_ptg_id': None,
                  'classifier_id': classifier_id,
                  'config_param_values': jsonutils.dumps(config_param_values)}
         return self._create_resource(self._servicechain_plugin,
