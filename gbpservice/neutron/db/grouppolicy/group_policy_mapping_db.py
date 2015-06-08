@@ -205,14 +205,15 @@ class GroupPolicyMappingDbPlugin(gpdb.GroupPolicyDbPlugin):
         ptg = policy_target_group['policy_target_group']
         tenant_id = self._get_tenant_id_for_create(context, ptg)
         with context.session.begin(subtransactions=True):
-            ptg_db = PolicyTargetGroupMapping(id=uuidutils.generate_uuid(),
-                                              tenant_id=tenant_id,
-                                              name=ptg['name'],
-                                              description=ptg['description'],
-                                              l2_policy_id=ptg['l2_policy_id'],
-                                              network_service_policy_id=
-                                              ptg['network_service_policy_id'],
-                                              shared=ptg.get('shared', False))
+            if ptg['service_management']:
+                self._validate_service_management_ptg(context, tenant_id)
+            ptg_db = PolicyTargetGroupMapping(
+                id=uuidutils.generate_uuid(), tenant_id=tenant_id,
+                name=ptg['name'], description=ptg['description'],
+                l2_policy_id=ptg['l2_policy_id'],
+                network_service_policy_id=ptg['network_service_policy_id'],
+                shared=ptg.get('shared', False),
+                service_management=ptg.get('service_management', False))
             context.session.add(ptg_db)
             if 'subnets' in ptg:
                 for subnet in ptg['subnets']:

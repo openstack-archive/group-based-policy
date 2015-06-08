@@ -267,6 +267,7 @@ class ServiceChainExtensionTestCase(test_api_v2_extension.ExtensionTestCase):
                 'tenant_id': _uuid(),
                 'provider_ptg_id': _uuid(),
                 'consumer_ptg_id': _uuid(),
+                'management_ptg_id': _uuid(),
                 'classifier_id': _uuid(),
             }
         }
