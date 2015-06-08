@@ -44,7 +44,8 @@ def get_create_policy_target_group_default_attrs():
     return {'name': '', 'description': '', 'l2_policy_id': None,
             'provided_policy_rule_sets': {},
             'consumed_policy_rule_sets': {},
-            'network_service_policy_id': None, 'shared': False}
+            'network_service_policy_id': None, 'shared': False,
+            'service_management': False}
 
 
 @gbp_attributes
@@ -55,7 +56,7 @@ def get_create_policy_target_group_attrs():
             'provided_policy_rule_sets': {_uuid(): None},
             'consumed_policy_rule_sets': {_uuid(): None},
             'network_service_policy_id': _uuid(),
-            'shared': False}
+            'shared': False, 'service_management': False}
 
 
 @gbp_attributes
