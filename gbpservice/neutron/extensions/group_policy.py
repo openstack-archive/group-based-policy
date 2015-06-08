@@ -56,6 +56,11 @@ class PolicyTargetGroupNotFound(nexc.NotFound):
                 "be found")
 
 
+class ManagementPolicyTargetGroupExists(nexc.BadRequest):
+    message = _("Service Management Policy Target Group already exists for "
+                "this tenant.")
+
+
 class L2PolicyNotFound(nexc.NotFound):
     message = _("L2Policy %(l2_policy_id)s could not be found")
 
@@ -428,6 +433,11 @@ RESOURCE_ATTRIBUTE_MAP = {
                       'default': False, 'convert_to': attr.convert_to_boolean,
                       'is_visible': True, 'required_by_policy': True,
                       'enforce_policy': True},
+        'service_management': {'allow_post': True, 'allow_put': True,
+                               'default': False,
+                               'convert_to': attr.convert_to_boolean,
+                               'is_visible': True, 'required_by_policy': True,
+                               'enforce_policy': True},
     },
     L2_POLICIES: {
         'id': {'allow_post': False, 'allow_put': False,
