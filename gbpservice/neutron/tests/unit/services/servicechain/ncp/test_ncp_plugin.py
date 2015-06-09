@@ -134,7 +134,7 @@ class NodeCompositionPluginTestCase(
         # Verify Context attributes for simple config
         plugin_context = n_context.get_admin_context()
         profile = self.create_service_profile(
-            service_type="TYPE")['service_profile']
+            service_type="LOADBALANCER")['service_profile']
         node = self.create_servicechain_node(
             service_profile_id=profile['id'], config='{}')['servicechain_node']
         spec = self.create_servicechain_spec(
@@ -172,7 +172,7 @@ class NodeCompositionPluginTestCase(
     def test_context_relevant_specs(self):
         plugin_context = n_context.get_admin_context()
         node_used = self._create_profiled_servicechain_node(
-            service_type="TYPE", config='{}')['servicechain_node']
+            service_type="LOADBALANCER", config='{}')['servicechain_node']
         spec_used = self.create_servicechain_spec(
             nodes=[node_used['id']])['servicechain_spec']
 
