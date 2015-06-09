@@ -57,3 +57,8 @@ class NotAvailablePTGForTargetRequest(PlumbingException):
     message = _("PTG of type %(ptg_type)s doesn't exist for service chain "
                 "instance %(instance)s. However, it is required by the "
                 "scheduled Node Driver in order to deploy Node %(node)s")
+
+
+class InuseSpecNodeUpdateNotAllowed(NodeCompositionPluginBadRequest):
+    message = _("The Node Composition Plugin does not support updating the "
+                "nodes in an instantiated servicechain spec.")

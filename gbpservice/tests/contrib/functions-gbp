@@ -64,6 +64,7 @@ function check_residual_resources {
     gbp servicechain-instance-list
     gbp servicechain-node-list
     gbp servicechain-spec-list
+    gbp service-profile-list
     gbp network-service-policy-list
     gbp nat-pool-list
     gbp external-policy-list

@@ -205,6 +205,10 @@ class NodeCompositionPlugin(servicechain_db.ServiceChainDbPlugin,
                                         servicechain_spec, set_params=False)
             self._validate_shared_update(context, original_sc_spec,
                                          updated_sc_spec, 'servicechain_spec')
+            # REVISIT(Magesh): Handle this update in a proper way
+            if (original_sc_spec['nodes'] != updated_sc_spec['nodes'] and
+                original_sc_spec['instances']):
+                    raise exc.InuseSpecNodeUpdateNotAllowed()
         return updated_sc_spec
 
     @log.log
