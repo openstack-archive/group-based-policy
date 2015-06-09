@@ -7,14 +7,10 @@
             "Description": "Pool Subnet CIDR, on which VIP port should be created",
             "Type": "String"
         },
-        "PoolMemberIPs": {
-            "Description": "Pool Member IP Address",
-            "Type": "String"
-        },
-	"vip_ip": {
-	    "Description": "VIP IP Address",
-            "Type": "String"
-	}
+        "vip_ip": {
+        	"Description": "VIP IP Address",
+        	"Type": "String"
+        }
     },
 
     "Resources" : {
@@ -43,7 +39,7 @@
                 "subnet_id": {"Ref":"Subnet"},
                 "vip": {
                     "subnet": {"Ref":"Subnet"},
-		    "address": {"Ref":"vip_ip"},
+                    "address": {"Ref":"vip_ip"},
                     "name": "Haproxy vip",
                     "protocol_port": 80,
                     "connection_limit": -1,
@@ -58,16 +54,6 @@
                 "pool_id": {"Ref":"HaproxyPool"},
                 "protocol_port": 80
             }
-        },
-        "Member1": {
-        "Type": "OS::Neutron::PoolMember",
-        "Properties": {
-            "address": {"Ref":"PoolMemberIPs"},
-            "admin_state_up": true,
-            "pool_id": {"Ref":"HaproxyPool"},
-            "protocol_port": 80,
-	    "weight": 1
-          }
         }
     }
 }
