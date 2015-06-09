@@ -28,8 +28,11 @@ def get_node_driver_context(sc_plugin, context, sc_instance,
     specs = sc_plugin.get_servicechain_specs(
         context, filters={'id': sc_instance['servicechain_specs']})
     position = _calculate_node_position(specs, current_node['id'])
-    provider = _get_ptg_or_ep(context, sc_instance['provider_ptg_id'])
-    consumer = _get_ptg_or_ep(context, sc_instance['consumer_ptg_id'])
+    provider, _ = _get_ptg_or_ep(
+                        context, sc_instance['provider_ptg_id'])
+    consumer, is_consumer_external = _get_ptg_or_ep(
+                        context, sc_instance['consumer_ptg_id'])
+    classifier = _get_classifier(context, sc_instance['classifier_id'])
     current_profile = sc_plugin.get_service_profile(
         context, current_node['service_profile_id'])
     original_profile = sc_plugin.get_service_profile(
@@ -52,11 +55,14 @@ def get_node_driver_context(sc_plugin, context, sc_instance,
                              original_service_chain_node=original_node,
                              original_service_profile=original_profile,
                              service_targets=service_targets,
-                             position=position)
+                             position=position,
+                             classifier=classifier,
+                             is_consumer_external=is_consumer_external)
 
 
 def _get_ptg_or_ep(context, group_id):
     group = None
+    is_group_external = False
     if group_id:
         try:
             group = get_gbp_plugin().get_policy_target_group(context, group_id)
@@ -64,7 +70,14 @@ def _get_ptg_or_ep(context, group_id):
             # Could be EP
             context.session.rollback()
             group = get_gbp_plugin().get_external_policy(context, group_id)
-    return group
+            is_group_external = True
+    return (group, is_group_external)
+
+
+def _get_classifier(context, classifier_id):
+    classifier = get_gbp_plugin().get_policy_classifier(
+                                        context, classifier_id)
+    return classifier
 
 
 def _calculate_node_position(specs, node_id):
@@ -83,7 +96,8 @@ class NodeDriverContext(object):
                  service_chain_specs, current_service_chain_node, position,
                  current_service_profile, provider_group, consumer_group=None,
                  management_group=None, original_service_chain_node=None,
-                 original_service_profile=None, service_targets=None):
+                 original_service_profile=None, service_targets=None,
+                 classifier=None, is_consumer_external=False):
         self._gbp_plugin = get_gbp_plugin()
         self._sc_plugin = sc_plugin
         self._plugin_context = context
@@ -98,6 +112,8 @@ class NodeDriverContext(object):
         self._provider_group = provider_group
         self._consumer_group = consumer_group
         self._management_group = management_group
+        self._classifier = classifier
+        self._is_consumer_external = is_consumer_external
         self._relevant_specs = None
         self._core_plugin = manager.NeutronManager.get_plugin()
         self._l3_plugin = manager.NeutronManager.get_service_plugins().get(
@@ -167,6 +183,10 @@ class NodeDriverContext(object):
         return self._original_service_profile
 
     @property
+    def is_consumer_external(self):
+        return self._is_consumer_external
+
+    @property
     def relevant_specs(self):
         """Get specs on the SCI containing this particular Node."""
         if not self._relevant_specs:
@@ -185,6 +205,10 @@ class NodeDriverContext(object):
     @property
     def management(self):
         return self._management_group
+
+    @property
+    def classifier(self):
+        return self._classifier
 
     def get_service_targets(self, update=False):
         """ Returns the service targets assigned for this service if any.
