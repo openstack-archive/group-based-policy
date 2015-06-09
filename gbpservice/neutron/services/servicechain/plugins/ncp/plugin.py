@@ -252,7 +252,7 @@ class NodeCompositionPlugin(servicechain_db.ServiceChainDbPlugin,
         scis = self._get_instances_from_policy_target(context, policy_target)
 
         for sci in scis:
-            updaters = self._get_scheduled_drivers(context, sci, 'update')
+            updaters = self._get_scheduled_drivers(context, sci, 'pt_modified')
             for update in updaters.values():
                 try:
                     getattr(update['driver'],
@@ -281,7 +281,10 @@ class NodeCompositionPlugin(servicechain_db.ServiceChainDbPlugin,
     def _get_scheduled_drivers(self, context, instance, action):
         nodes = self._get_instance_nodes(context, instance)
         result = {}
-        func = getattr(self.driver_manager, 'schedule_' + action)
+        if action == 'pt_modified':
+            func = getattr(self.driver_manager, 'get_owning_driver')
+        else:
+            func = getattr(self.driver_manager, 'schedule_' + action)
         for node in nodes:
             node_context = ctx.get_node_driver_context(
                 self, context, instance, node)
