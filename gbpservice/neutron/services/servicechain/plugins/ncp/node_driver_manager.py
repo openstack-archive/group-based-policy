@@ -79,7 +79,7 @@ class NodeDriverManager(stevedore.named.NamedExtensionManager):
         Given a NodeContext, this method returns the driver capable of
         destroying the specific node.
         """
-        return self._get_owning_driver(context)
+        return self.get_owning_driver(context)
 
     def schedule_update(self, context):
         """Schedule Node Driver for Node Update.
@@ -87,12 +87,12 @@ class NodeDriverManager(stevedore.named.NamedExtensionManager):
         Given a NodeContext, this method returns the driver capable of updating
         the specific node.
         """
-        driver = self._get_owning_driver(context)
+        driver = self.get_owning_driver(context)
         if driver:
             driver.validate_update(context)
         return driver
 
-    def _get_owning_driver(self, context):
+    def get_owning_driver(self, context):
         owner = model.get_node_owner(context)
         if owner:
             driver = self.drivers.get(owner[0].driver_name)
