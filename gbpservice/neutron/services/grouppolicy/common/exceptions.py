@@ -85,8 +85,8 @@ class PolicyTargetGroupInUse(GroupPolicyBadRequest):
 
 class InvalidPortForPTG(GroupPolicyBadRequest):
     message = _("Subnet %(port_subnet_id)s of port %(port_id)s does not "
-            "match subnet %(ptg_subnet_id)s of Policy Target Group "
-            "%(policy_target_group_id)s.")
+                "match subnet %(ptg_subnet_id)s of Policy Target Group "
+                "%(policy_target_group_id)s.")
 
 
 class InvalidSubnetForPTG(GroupPolicyBadRequest):

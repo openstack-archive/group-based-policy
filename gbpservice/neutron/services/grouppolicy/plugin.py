@@ -461,10 +461,22 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
                 context, policy_target_group_id)
             pt_ids = policy_target_group['policy_targets']
             for pt in self.get_policy_targets(context, {'id': pt_ids}):
-                if pt['port_id']:
-                    if self._is_port_bound(pt['port_id']):
+                if pt['port_id'] and self._is_port_bound(pt['port_id']):
                         raise gp_exc.PolicyTargetGroupInUse(
                             policy_target_group=policy_target_group_id)
+            policy_context = p_context.PolicyTargetGroupContext(
+                self, context, policy_target_group)
+            self.policy_driver_manager.delete_policy_target_group_precommit(
+                policy_context)
+
+        # Disassociate all the PRSs first, this will trigger service chains
+        # deletion.
+        self.update_policy_target_group(
+            context, policy_target_group_id,
+            {'policy_target_group': {'provided_policy_rule_sets': {},
+                                     'consumed_policy_rule_sets': {}}})
+
+        with session.begin(subtransactions=True):
             for pt_id in pt_ids:
                 # We will allow PTG deletion if all PTs are unused.
                 # We could have cleaned these opportunistically in
@@ -472,10 +484,6 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
                 # such that either all unused PTs are deleted
                 # or nothing is.
                 self.delete_policy_target(context, pt_id)
-            policy_context = p_context.PolicyTargetGroupContext(
-                self, context, policy_target_group)
-            self.policy_driver_manager.delete_policy_target_group_precommit(
-                policy_context)
             super(GroupPolicyPlugin, self).delete_policy_target_group(
                 context, policy_target_group_id)
 
