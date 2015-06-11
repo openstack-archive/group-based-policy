@@ -1232,7 +1232,7 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
         with session.begin(subtransactions=True):
             es = self.get_external_segment(context, external_segment_id)
             if es['l3_policies'] or es['nat_pools'] or es['external_policies']:
-                return False
+                raise gpex.ExternalSegmentInUse(es_id=es['id'])
             policy_context = p_context.ExternalSegmentContext(
                 self, context, es)
             (self.policy_driver_manager.

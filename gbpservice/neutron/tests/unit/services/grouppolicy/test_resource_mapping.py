@@ -2588,6 +2588,40 @@ class TestExternalSegment(ResourceMappingTestCase):
                     ep['id'], provided_policy_rule_sets={prs['id']: ''},
                     expected_res_status=200)
 
+    def test_delete(self):
+        with self.network(router__external=True, shared=True) as net:
+            with self.subnet(cidr='192.168.0.0/24', network=net) as sub:
+                es = self.create_external_segment(
+                    name="default",
+                    subnet_id=sub['subnet']['id'])['external_segment']
+                self.delete_external_segment(es['id'], expected_res_status=204)
+                self.show_external_segment(es['id'], expected_res_status=404)
+
+    def test_delete_in_use(self):
+        with self.network(router__external=True, shared=True) as net:
+            with self.subnet(cidr='192.168.0.0/24', network=net) as sub:
+                es = self.create_external_segment(
+                    name="default",
+                    subnet_id=sub['subnet']['id'])['external_segment']
+                self.create_l3_policy()
+                # ES is in use
+                res = self.delete_external_segment(es['id'],
+                                                   expected_res_status=409)
+                self.assertEqual('ExternalSegmentInUse',
+                                 res['NeutronError']['type'])
+                self.show_external_segment(es['id'], expected_res_status=200)
+
+    def test_update_l3p_remove_es(self):
+        with self.network(router__external=True, shared=True) as net:
+            with self.subnet(cidr='192.168.0.0/24', network=net) as sub:
+                self.create_external_segment(
+                    name="default", subnet_id=sub['subnet']['id'])
+                l3p = self.create_l3_policy()['l3_policy']
+                self.update_l3_policy(l3p['id'], external_segments={},
+                                      expected_res_status=200)
+                l3p = self.show_l3_policy(l3p['id'])['l3_policy']
+                self.assertEqual({}, l3p['external_segments'])
+
 
 class TestExternalPolicy(ResourceMappingTestCase):
 

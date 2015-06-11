@@ -346,12 +346,6 @@ class TestImplicitExternalSegment(ImplicitPolicyTestCase):
             external_segments=[ndes['id']])['external_policy']
         self.assertEqual(ndes['id'], ep['external_segments'][0])
         self.assertEqual(1, len(ep['external_segments']))
-        # Remove all the ESs and verify default is once again set
-        ep = self.update_external_policy(
-            ep['id'], expected_res_status=200,
-            external_segments=[])['external_policy']
-        self.assertEqual(es['id'], ep['external_segments'][0])
-        self.assertEqual(1, len(ep['external_segments']))
 
         # Create L3P without ES set
         l3p = self.create_l3_policy()['l3_policy']
@@ -368,12 +362,6 @@ class TestImplicitExternalSegment(ImplicitPolicyTestCase):
             l3p['id'], expected_res_status=200,
             external_segments={ndes['id']: []})['l3_policy']
         self.assertEqual(ndes['id'], l3p['external_segments'].keys()[0])
-        self.assertEqual(1, len(l3p['external_segments']))
-        # Remove all the ESs and verify default is once again set
-        l3p = self.update_l3_policy(
-            l3p['id'], expected_res_status=200,
-            external_segments={})['l3_policy']
-        self.assertEqual(es['id'], l3p['external_segments'].keys()[0])
         self.assertEqual(1, len(l3p['external_segments']))
 
         # Verify only one visible ES can exist
