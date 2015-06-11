@@ -148,6 +148,11 @@ class ExternalSegmentNotFound(nexc.NotFound):
     message = _("External Segment %(id)s could not be found")
 
 
+class ExternalSegmentInUse(nexc.InUse):
+    message = _("Unable to complete operation, External Segment "
+                "%(es_id)s is in use")
+
+
 class NATPoolNotFound(nexc.NotFound):
     message = _("NAT Pool %(id)s could not be found")
 
