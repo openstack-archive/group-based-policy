@@ -1,7 +1,7 @@
 [run]
 branch = True
-source = gbp
-omit = gbp/tests/*,gbp/openstack/*
+source = gbpservice
+omit = gbpservice/tests/*,gbpservice/neutron/tests/*,gbpservice/neutron/db/migration/*
 
 [report]
 ignore-errors = True

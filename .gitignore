@@ -28,6 +28,8 @@ pip-log.txt
 nosetests.xml
 .testrepository
 subunit.log
+covhtml
+cover
 
 # Translations
 *.mo
