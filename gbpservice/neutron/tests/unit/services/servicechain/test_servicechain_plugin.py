@@ -232,14 +232,23 @@ class TestGroupPolicyPluginGroupResources(
             collections.Counter(params_node_1 + params_node_2),
             collections.Counter(ast.literal_eval(spec['config_param_names'])))
 
-        # REVISIT(ivar): update verification fails because of bug/1460186
-
         # Update the spec removing one node
-        #self.update_servicechain_spec(spec['id'], nodes=[node1['id']],
-        #                              expected_res_status=200)
+        self.update_servicechain_spec(spec['id'], nodes=[node1['id']],
+                                      expected_res_status=200)
 
-        #spec = self.show_servicechain_spec(spec['id'])['servicechain_spec']
+        spec = self.show_servicechain_spec(spec['id'])['servicechain_spec']
         # Verify param names correspondence
-        #self.assertEqual(
-        #    collections.Counter(params_node_1),
-        #    collections.Counter(ast.literal_eval(spec['config_param_names'])))
+        self.assertEqual(
+            collections.Counter(params_node_1),
+            collections.Counter(ast.literal_eval(spec['config_param_names'])))
+
+        # Update the spec without modifying the node list
+        self.update_servicechain_spec(spec['id'],
+                                      name='new_name',
+                                      expected_res_status=200)
+
+        spec = self.show_servicechain_spec(spec['id'])['servicechain_spec']
+        # Verify param names correspondence
+        self.assertEqual(
+            collections.Counter(params_node_1),
+            collections.Counter(ast.literal_eval(spec['config_param_names'])))
