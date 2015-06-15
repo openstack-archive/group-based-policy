@@ -1878,7 +1878,15 @@ class ResourceMappingDriver(api.PolicyDriver):
                 del subnet['gateway_ip']
                 subnet = self._update_subnet(context._plugin_context,
                                              subnet['id'], subnet)
+                # NOTE(Magesh): The update_subnet invoked directly on core
+                # plugin leaves the old object in this session most of the
+                # time. So expunge all objects from this session now. We may
+                # have to do this for any other objects modified in RMD using
+                # just the core/l3 plugin objects. Else the change may not be
+                # visible in the current session (#bug 1426946)
+                context._plugin_context.session.expunge_all()
                 return
+
         # TODO(Magesh):Have to test this logic. Add proper unit tests
         subnet['allocation_pools'].append({"start": ip_address,
                                           "end": ip_address})
