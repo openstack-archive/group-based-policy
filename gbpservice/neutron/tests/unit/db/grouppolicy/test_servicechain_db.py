@@ -11,6 +11,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import ast
+import collections
 import webob.exc
 
 from neutron.api import extensions
@@ -21,6 +23,7 @@ from neutron.openstack.common import uuidutils
 from neutron.plugins.common import constants
 from neutron.tests.unit.api import test_extensions
 from neutron.tests.unit.db import test_db_base_plugin_v2
+from oslo_serialization import jsonutils
 from oslo_utils import importutils
 
 from gbpservice.neutron.db import servicechain_db as svcchain_db
@@ -366,6 +369,67 @@ class TestServiceChainResources(ServiceChainDbTestCase):
 
         self._test_show_resource('servicechain_spec',
                                  scs['servicechain_spec']['id'], attrs)
+
+    def test_spec_parameters(self):
+        params_node_1 = ['p1', 'p2', 'p3']
+        params_node_2 = ['p4', 'p5', 'p6']
+
+        def params_dict(params):
+            return jsonutils.dumps({'Parameters':
+                                    dict((x, {}) for x in params)})
+
+        prof = self.create_service_profile(
+            service_type='LOADBALANCER', shared=True,
+            tenant_id='admin')['service_profile']
+
+        # Create 2 nodes with different parameters
+        node1 = self.create_servicechain_node(
+            service_profile_id=prof['id'], shared=True,
+            config=params_dict(params_node_1),
+            expected_res_status=201)['servicechain_node']
+        node2 = self.create_servicechain_node(
+            service_profile_id=prof['id'], shared=True,
+            config=params_dict(params_node_2),
+            expected_res_status=201)['servicechain_node']
+
+        # Create SC spec with the nodes assigned
+        spec = self.create_servicechain_spec(
+            nodes=[node1['id'], node2['id']], shared=True,
+            expected_res_status=201)['servicechain_spec']
+        # Verify param names correspondence
+        self.assertEqual(
+            collections.Counter(params_node_1 + params_node_2),
+            collections.Counter(ast.literal_eval(spec['config_param_names'])))
+
+        # Update the spec removing one node
+        self.update_servicechain_spec(spec['id'], nodes=[node1['id']],
+                                      expected_res_status=200)
+
+        spec = self.show_servicechain_spec(spec['id'])['servicechain_spec']
+        # Verify param names correspondence
+        self.assertEqual(
+            collections.Counter(params_node_1),
+            collections.Counter(ast.literal_eval(spec['config_param_names'])))
+
+        # Update the spec removing all nodes
+        self.update_servicechain_spec(spec['id'], nodes=[],
+                                      expected_res_status=200)
+
+        spec = self.show_servicechain_spec(spec['id'])['servicechain_spec']
+        # Verify no param names are set
+        self.assertEqual(
+            collections.Counter(),
+            collections.Counter(ast.literal_eval(spec['config_param_names'])))
+
+        # Update the spec adding one node
+        self.update_servicechain_spec(spec['id'], nodes=[node1['id']],
+                                      expected_res_status=200)
+
+        spec = self.show_servicechain_spec(spec['id'])['servicechain_spec']
+        # Verify param names correspondence
+        self.assertEqual(
+            collections.Counter(params_node_1),
+            collections.Counter(ast.literal_eval(spec['config_param_names'])))
 
     def test_delete_servicechain_spec(self):
         ctx = context.get_admin_context()

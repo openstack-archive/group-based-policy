@@ -311,6 +311,7 @@ class ServiceChainDbPlugin(schain.ServiceChainPluginBase,
 
         if not nodes_id_list:
             spec_db.nodes = []
+            spec_db.config_param_names = '[]'
             return
         with context.session.begin(subtransactions=True):
             # We will first check if the new list of nodes is valid
@@ -328,6 +329,8 @@ class ServiceChainDbPlugin(schain.ServiceChainPluginBase,
             # Note that the list could be empty in which case we interpret
             # it as clearing existing nodes.
             spec_db.nodes = []
+            if set_params:
+                spec_db.config_param_names = '[]'
             for node_id in nodes_id_list:
                 if set_params:
                     sc_node = self.get_servicechain_node(context, node_id)
