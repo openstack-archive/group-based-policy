@@ -3133,6 +3133,50 @@ class TestNetworkServicePolicy(ResourceMappingTestCase):
                 res = self._list('floatingips')['floatingips']
                 self.assertEqual(0, len(res))
 
+    def test_nsp_cleanup_multiple_on_unset(self):
+        ptg = self.create_policy_target_group(
+                    expected_res_status=webob.exc.HTTPCreated.code)[
+                                                        'policy_target_group']
+        ptg_subnet_id = ptg['subnets'][0]
+        subnet = self._show_subnet(ptg_subnet_id)['subnet']
+        nsp = self.create_network_service_policy(
+                    network_service_params=[
+                            {"type": "ip_single", "value": "self_subnet",
+                             "name": "vip"}],
+                    expected_res_status=webob.exc.HTTPCreated.code)[
+                                                    'network_service_policy']
+
+        nsp2 = self.create_network_service_policy(
+                    network_service_params=[
+                            {"type": "ip_single", "value": "self_subnet",
+                             "name": "vip"}],
+                    expected_res_status=webob.exc.HTTPCreated.code)[
+                                                    'network_service_policy']
+
+        # Update PTG, associating an NSP with it and verify that an IP is
+        # reserved from the PTG subnet allocation pool. Also test updating
+        # the PTG with a different NSP and then resetting it back to the
+        # initially set NSP
+        self._verify_update_ptg_with_nsp(ptg['id'], nsp['id'], subnet)
+        self._verify_update_ptg_with_nsp(ptg['id'], nsp2['id'], subnet)
+        self._verify_update_ptg_with_nsp(ptg['id'], nsp['id'], subnet)
+
+    def _verify_update_ptg_with_nsp(self, ptg_id, nsp_id, ptg_subnet_no_nsp):
+        ptg_subnet_id = ptg_subnet_no_nsp['id']
+        initial_allocation_pool = ptg_subnet_no_nsp['allocation_pools']
+        self.update_policy_target_group(
+                    ptg_id,
+                    network_service_policy_id=nsp_id,
+                    expected_res_status=webob.exc.HTTPOk.code)
+        subnet = self._show_subnet(ptg_subnet_id)['subnet']
+        allocation_pool_after_nsp = subnet['allocation_pools']
+        self.assertEqual(
+                netaddr.IPAddress(initial_allocation_pool[0].get('start')),
+                netaddr.IPAddress(allocation_pool_after_nsp[0].get('start')))
+        self.assertEqual(
+                netaddr.IPAddress(initial_allocation_pool[0].get('end')),
+                netaddr.IPAddress(allocation_pool_after_nsp[0].get('end')) + 1)
+
 
 class TestNatPool(ResourceMappingTestCase):
 
