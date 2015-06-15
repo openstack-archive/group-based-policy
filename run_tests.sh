@@ -121,7 +121,7 @@ function run_tests {
   fi
 
   if [ $coverage -eq 1 ]; then
-    TESTRTESTS="$TESTRTESTS --coverage"
+    TESTRTESTS="$TESTRTESTS --coverage --coverage-package-name gbpservice"
   else
     TESTRTESTS="$TESTRTESTS --slowest"
   fi
@@ -147,7 +147,7 @@ function run_tests {
     echo "Generating coverage report in covhtml/"
     # Don't compute coverage for common code, which is tested elsewhere
     ${wrapper} coverage combine
-    ${wrapper} coverage html --include='gbpservice/*' --omit='gbpservice/openstack/common/*' -d covhtml -i
+    ${wrapper} coverage html --include='gbpservice/*' -d covhtml -i
   fi
 
   return $RESULT
