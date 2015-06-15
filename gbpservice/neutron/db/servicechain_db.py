@@ -514,7 +514,12 @@ class ServiceChainDbPlugin(schain.ServiceChainPluginBase,
                                     page_reverse=page_reverse)
 
     @log.log
-    def get_service_profile_count(self, context, filters=None):
+    def get_servicechain_instances_count(self, context, filters=None):
+        return self._get_collection_count(context, ServiceChainInstance,
+                                          filters=filters)
+
+    @log.log
+    def get_service_profiles_count(self, context, filters=None):
         return self._get_collection_count(context, ServiceProfile,
                                           filters=filters)
 
