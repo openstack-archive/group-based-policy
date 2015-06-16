@@ -19,13 +19,15 @@ import sqlalchemy as sa
 from gbpservice.neutron.services.grouppolicy import (
     group_policy_driver_api as api)
 from gbpservice.neutron.services.grouppolicy import config
-from gbpservice.neutron.tests.unit import common as cm
+from gbpservice.neutron.tests.unit import common
 from gbpservice.neutron.tests.unit.services.grouppolicy import (
     extensions as test_ext)
 from gbpservice.neutron.tests.unit.services.grouppolicy import (
     test_grouppolicy_plugin as test_plugin)
 from gbpservice.neutron.tests.unit.services.grouppolicy.extensions import (
     test_extension as test_extension)
+
+cm = common.res
 
 
 class ExtensionDriverTestBase(test_plugin.GroupPolicyPluginTestCase):
@@ -45,8 +47,9 @@ class ExtensionDriverTestBase(test_plugin.GroupPolicyPluginTestCase):
 class ExtensionDriverTestCase(ExtensionDriverTestBase):
 
     def test_pt_attr(self):
+        ptg_id = self.create_policy_target_group()['policy_target_group']['id']
         # Test create with default value.
-        pt = self.create_policy_target()
+        pt = self.create_policy_target(policy_target_group_id=ptg_id)
         policy_target_id = pt['policy_target']['id']
         val = pt['policy_target']['pt_extension']
         self.assertIsNone(val)
@@ -61,7 +64,8 @@ class ExtensionDriverTestCase(ExtensionDriverTestBase):
         self.assertIsNone(val)
 
         # Test create with explict value.
-        pt = self.create_policy_target(pt_extension="abc")
+        pt = self.create_policy_target(policy_target_group_id=ptg_id,
+                                       pt_extension="abc")
         policy_target_id = pt['policy_target']['id']
         val = pt['policy_target']['pt_extension']
         self.assertEqual("abc", val)

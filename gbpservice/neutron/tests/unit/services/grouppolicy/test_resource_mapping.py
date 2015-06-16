@@ -608,13 +608,6 @@ class TestPolicyTarget(ResourceMappingTestCase, TestClusterIdMixin):
             res = req.get_response(self.ext_api)
             self.assertEqual(res.status_int, webob.exc.HTTPNoContent.code)
 
-    def test_missing_ptg_rejected(self):
-        data = self.create_policy_target(
-            policy_target_group_id=None,
-            name="pt1", expected_res_status=webob.exc.HTTPBadRequest.code)
-        self.assertEqual('PolicyTargetRequiresPolicyTargetGroup',
-                         data['NeutronError']['type'])
-
     def test_explicit_port_subnet_mismatches_ptg_subnet_rejected(self):
         ptg1 = self.create_policy_target_group(name="ptg1")
         ptg1_id = ptg1['policy_target_group']['id']

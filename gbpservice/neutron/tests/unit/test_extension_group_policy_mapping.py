@@ -14,8 +14,10 @@ from neutron.plugins.common import constants
 
 from gbpservice.neutron.extensions import group_policy as gp
 from gbpservice.neutron.extensions import group_policy_mapping as gpm
-from gbpservice.neutron.tests.unit import common as cm
+from gbpservice.neutron.tests.unit import common
 from gbpservice.neutron.tests.unit import test_extension_group_policy as tgp
+
+cm = common.res
 
 
 class GroupPolicyMappingExtTestCase(tgp.GroupPolicyExtensionTestCase):

@@ -64,9 +64,11 @@ class TestMappedGroupResources(GroupPolicyMappingDbTestCase,
 class TestMappedGroupResourceAttrs(GroupPolicyMappingDbTestCase):
 
     def test_create_delete_policy_target_with_port(self):
+        ptg_id = self.create_policy_target_group()['policy_target_group']['id']
         with self.port() as port:
             port_id = port['port']['id']
-            pt = self.create_policy_target(port_id=port_id)
+            pt = self.create_policy_target(
+                port_id=port_id, policy_target_group_id=ptg_id)
             pt_id = pt['policy_target']['id']
             self.assertEqual(port_id, pt['policy_target']['port_id'])
             req = self.new_show_request('policy_targets', pt_id, fmt=self.fmt)
@@ -210,11 +212,14 @@ class TestMappedGroupResourceAttrs(GroupPolicyMappingDbTestCase):
             self.assertEqual(res.status_int, webob.exc.HTTPNoContent.code)
 
     def test_list_policy_targets(self):
+        ptg_id = self.create_policy_target_group()['policy_target_group']['id']
         with self.port() as port1:
             with self.port() as port2:
                 ports = [port1['port']['id'], port2['port']['id']]
-                pts = [self.create_policy_target(port_id=ports[0]),
-                       self.create_policy_target(port_id=ports[1])]
+                pts = [self.create_policy_target(
+                    port_id=ports[0], policy_target_group_id=ptg_id),
+                       self.create_policy_target(
+                           port_id=ports[1], policy_target_group_id=ptg_id)]
                 self._test_list_resources('policy_target', pts)
                 self._test_list_resources('policy_target', [pts[0]],
                                           query_params='port_id=' + ports[0])

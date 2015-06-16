@@ -843,10 +843,14 @@ class TestPolicyTarget(GroupPolicyPluginTestCase):
             self.assertEqual(
                 'GbpResourceNotFound', res['NeutronError']['type'])
 
-        # Create EP without PTG
+        # Create EP with another PTG
+        ptg2_id = self.create_policy_target_group(
+            expected_res_status=201, tenant_id='another',
+            is_admin_context=is_admin)['policy_target_group']['id']
         pt = self.create_policy_target(
             expected_res_status=201, tenant_id='another',
-            is_admin_context=is_admin)['policy_target']
+            is_admin_context=is_admin,
+            policy_target_group_id=ptg2_id)['policy_target']
 
         # Update PT fails
         res = self.update_policy_target(
