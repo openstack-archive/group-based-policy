@@ -20,7 +20,7 @@ from neutron.tests.unit.extensions import base as test_extensions_base
 from webob import exc
 
 from gbpservice.neutron.extensions import servicechain
-from gbpservice.neutron.tests.unit import common as cm
+from gbpservice.neutron.tests.unit import common
 
 
 _uuid = uuidutils.generate_uuid
@@ -33,6 +33,7 @@ SERVICECHAIN_NODES_URI = SERVICECHAIN_URI + '/' + 'servicechain_nodes'
 SERVICECHAIN_SPECS_URI = SERVICECHAIN_URI + '/' + 'servicechain_specs'
 SERVICECHAIN_INSTANCES_URI = SERVICECHAIN_URI + '/' + 'servicechain_instances'
 SERVICE_PROFILE_URI = SERVICECHAIN_URI + '/' + 'service_profiles'
+cm = common.res
 
 
 class ServiceChainExtensionTestCase(test_extensions_base.ExtensionTestCase):

@@ -23,7 +23,7 @@ from neutron.tests.unit.extensions import base as test_extensions_base
 from webob import exc
 
 from gbpservice.neutron.extensions import group_policy as gp
-from gbpservice.neutron.tests.unit import common as cm
+from gbpservice.neutron.tests.unit import common
 
 _uuid = uuidutils.generate_uuid
 _get_path = test_base._get_path
@@ -47,6 +47,7 @@ NP_POLICIES_URI = GROUPPOLICY_URI + '/' + 'nat_pools'
 RES_TO_URI = {'external_policy': EP_POLICIES_URI,
               'external_segment': ES_POLICIES_URI,
               'nat_pool': NP_POLICIES_URI}
+cm = common.res
 
 
 class GroupPolicyExtensionTestCase(test_extensions_base.ExtensionTestCase):

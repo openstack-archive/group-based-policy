@@ -135,6 +135,9 @@ class NodeCompositionPluginTestCase(
     def test_spec_ordering_list_servicechain_instances(self):
         pass
 
+    def test_node_invalid_config(self):
+        pass
+
     def test_context_attributes(self):
         # Verify Context attributes for simple config
         plugin_context = n_context.get_admin_context()
