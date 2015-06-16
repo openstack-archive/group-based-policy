@@ -20,51 +20,17 @@ from oslo_config import cfg
 
 from gbpservice.neutron.db import servicechain_db as svcchain_db
 from gbpservice.neutron.extensions import servicechain as service_chain
-from gbpservice.neutron.tests.unit import common as cm
+from gbpservice.neutron.tests.unit import common
 from gbpservice.neutron.tests.unit.db.grouppolicy import test_group_policy_db
 
 JSON_FORMAT = 'json'
 GP_PLUGIN_KLASS = (
     "gbpservice.neutron.services.grouppolicy.plugin.GroupPolicyPlugin")
+cm = common.res
 
 
 class ServiceChainDBTestBase(test_group_policy_db.GroupPolicyDBTestBase):
-
-    def _get_resource_plural(self, resource):
-        if resource.endswith('y'):
-            resource_plural = resource.replace('y', 'ies')
-        else:
-            resource_plural = resource + 's'
-
-        return resource_plural
-
-    def _test_list_resources(self, resource, items,
-                             neutron_context=None,
-                             query_params=None):
-        resource_plural = self._get_resource_plural(resource)
-
-        res = self._list(resource_plural,
-                         neutron_context=neutron_context,
-                         query_params=query_params)
-        params = query_params.split('&')
-        params = dict((x.split('=')[0], x.split('=')[1].split(','))
-                      for x in params)
-        count = getattr(self.plugin, 'get_%s_count' % resource_plural)(
-            neutron_context or context.get_admin_context(), params)
-        self.assertEqual(len(res[resource_plural]), count)
-        resource = resource.replace('-', '_')
-        self.assertEqual(sorted([i['id'] for i in res[resource_plural]]),
-                         sorted([i[resource]['id'] for i in items]))
-
-    def _create_profiled_servicechain_node(
-            self, service_type=constants.LOADBALANCER, shared_profile=False,
-            profile_tenant_id=None, **kwargs):
-        prof = self.create_service_profile(
-            service_type=service_type,
-            shared=shared_profile,
-            tenant_id=profile_tenant_id or self._tenant_id)['service_profile']
-        return self.create_servicechain_node(
-            service_profile_id=prof['id'], **kwargs)
+    pass
 
 
 class ServiceChainDBTestPlugin(svcchain_db.ServiceChainDbPlugin):
@@ -133,11 +99,11 @@ class TestServiceChainResources(ServiceChainDbTestCase):
         profile = self.create_service_profile(service_type=constants.FIREWALL)
         attrs = cm.get_create_servicechain_node_default_attrs(
             service_profile_id=profile['service_profile']['id'],
-            config="config1")
+            config="{}")
 
         scn = self.create_servicechain_node(
             service_profile_id=profile['service_profile']['id'],
-            config="config1")
+            config="{}")
 
         for k, v in attrs.iteritems():
             self.assertEqual(v, scn['servicechain_node'][k])
@@ -157,10 +123,10 @@ class TestServiceChainResources(ServiceChainDbTestCase):
         self._test_list_resources('servicechain_node', scns,
                                   query_params='description=scn')
 
-    def test_update_servicechain_node(self):
+    def test_update_servicechain_node(self, new_config='new_config'):
         name = 'new_servicechain_node'
         description = 'new desc'
-        config = 'new_config'
+        config = new_config
         profile = self.create_service_profile(service_type=constants.FIREWALL)
         attrs = cm.get_create_servicechain_node_default_attrs(
             name=name, description=description,

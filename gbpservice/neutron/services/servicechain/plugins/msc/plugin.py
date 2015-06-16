@@ -12,9 +12,11 @@
 
 from neutron.common import log
 from oslo_log import log as logging
+from oslo_serialization import jsonutils
 from oslo_utils import excutils
 
 import gbpservice.neutron.db.servicechain_db as servicechain_db
+from gbpservice.neutron.extensions import servicechain as sc_ex
 from gbpservice.neutron.services.servicechain.plugins.msc import (
     context as servicechain_context)
 from gbpservice.neutron.services.servicechain.plugins.msc import (
@@ -38,12 +40,25 @@ class ServiceChainPlugin(servicechain_db.ServiceChainDbPlugin,
         super(ServiceChainPlugin, self).__init__()
         self.driver_manager.initialize()
 
+    def _validate_scn_config(self, node):
+        # Validate config is not None
+        if node['config'] is None:
+            raise sc_ex.ServiceChainNodeConfigRequired(
+                node_id=node['id'])
+        # Validate config is JSON
+        try:
+            jsonutils.loads(node['config'])
+        except ValueError as ex:
+            raise sc_ex.ServiceChainNodeInvalidConfig(
+                node_id=node['id'], err=ex.message)
+
     @log.log
     def create_servicechain_node(self, context, servicechain_node):
         session = context.session
         with session.begin(subtransactions=True):
             result = super(ServiceChainPlugin, self).create_servicechain_node(
                 context, servicechain_node)
+            self._validate_scn_config(result)
             self._validate_shared_create(context, result, 'servicechain_node')
             sc_context = servicechain_context.ServiceChainNodeContext(
                 self, context, result)
@@ -74,6 +89,7 @@ class ServiceChainPlugin(servicechain_db.ServiceChainDbPlugin,
                                         context, servicechain_node_id,
                                         servicechain_node,
                                         set_params=True)
+            self._validate_scn_config(updated_sc_node)
             self._validate_shared_update(context, original_sc_node,
                                          updated_sc_node, 'servicechain_node')
             sc_context = servicechain_context.ServiceChainNodeContext(

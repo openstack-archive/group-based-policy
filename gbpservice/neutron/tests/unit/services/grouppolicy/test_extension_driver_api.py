@@ -19,13 +19,15 @@ import sqlalchemy as sa
 from gbpservice.neutron.services.grouppolicy import (
     group_policy_driver_api as api)
 from gbpservice.neutron.services.grouppolicy import config
-from gbpservice.neutron.tests.unit import common as cm
+from gbpservice.neutron.tests.unit import common
 from gbpservice.neutron.tests.unit.services.grouppolicy import (
     extensions as test_ext)
 from gbpservice.neutron.tests.unit.services.grouppolicy import (
     test_grouppolicy_plugin as test_plugin)
 from gbpservice.neutron.tests.unit.services.grouppolicy.extensions import (
     test_extension as test_extension)
+
+cm = common.res
 
 
 class ExtensionDriverTestBase(test_plugin.GroupPolicyPluginTestCase):
