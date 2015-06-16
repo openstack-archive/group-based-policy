@@ -51,6 +51,11 @@ class ServiceChainNodeNotFound(nexc.NotFound):
     message = _("ServiceChainNode %(sc_node_id)s could not be found")
 
 
+class ServiceChainNodeConfigRequired(nexc.BadRequest):
+    message = _("config attribute is required for servicechain node by the "
+                "running plugin.")
+
+
 class ServiceChainSpecNotFound(nexc.NotFound):
     message = _("ServiceChainSpec %(sc_spec_id)s could not be found")
 
@@ -127,8 +132,8 @@ RESOURCE_ATTRIBUTE_MAP = {
                                'validate': {'type:uuid_or_none': None},
                                'is_visible': True, 'default': None},
         'config': {'allow_post': True, 'allow_put': False,
-                   'validate': {'type:string': None},
-                   'required': True, 'is_visible': True},
+                   'validate': {'type:string_or_none': None},
+                   'default': None, 'is_visible': True},
         attr.SHARED: {'allow_post': True, 'allow_put': True,
                       'default': False, 'convert_to': attr.convert_to_boolean,
                       'is_visible': True, 'required_by_policy': True,
@@ -150,8 +155,7 @@ RESOURCE_ATTRIBUTE_MAP = {
         'nodes': {'allow_post': True, 'allow_put': True,
                   'validate': {'type:uuid_list': None},
                   'convert_to': attr.convert_none_to_empty_list,
-                  'default': None, 'is_visible': True,
-                  'required': True},
+                  'default': None, 'is_visible': True},
         'config_param_names': {'allow_post': False, 'allow_put': False,
                                'validate': {'type:string_list': None},
                                'default': [], 'is_visible': True},
@@ -176,20 +180,16 @@ RESOURCE_ATTRIBUTE_MAP = {
         'servicechain_specs': {'allow_post': True, 'allow_put': True,
                               'validate': {'type:uuid_list': None},
                               'convert_to': attr.convert_none_to_empty_list,
-                              'default': None, 'is_visible': True,
-                              'required': True},
+                              'default': None, 'is_visible': True},
         'provider_ptg_id': {'allow_post': True, 'allow_put': False,
                          'validate': {'type:uuid_or_none': None},
-                         'is_visible': True, 'default': None,
-                         'required': True},
+                         'is_visible': True, 'default': None},
         'consumer_ptg_id': {'allow_post': True, 'allow_put': False,
                          'validate': {'type:uuid_or_none': None},
-                         'is_visible': True, 'default': None,
-                         'required': True},
+                         'is_visible': True, 'default': None},
         'classifier_id': {'allow_post': True, 'allow_put': False,
                           'validate': {'type:uuid_or_none': None},
-                          'is_visible': True, 'default': None,
-                          'required': True},
+                          'is_visible': True, 'default': None},
         'config_param_values': {'allow_post': True, 'allow_put': False,
                                 'validate': {'type:string': None},
                                 'default': "", 'is_visible': True},

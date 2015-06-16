@@ -331,20 +331,22 @@ class ServiceChainDbPlugin(schain.ServiceChainPluginBase,
             for node_id in nodes_id_list:
                 if set_params:
                     sc_node = self.get_servicechain_node(context, node_id)
-                    node_dict = jsonutils.loads(sc_node['config'])
-                    config_params = (node_dict.get('parameters') or
-                                     node_dict.get('Parameters'))
-                    if config_params:
-                        if not spec_db.config_param_names:
-                            spec_db.config_param_names = str(
-                                config_params.keys())
-                        else:
-                            config_param_names = ast.literal_eval(
-                                spec_db.config_param_names)
-                            config_param_names.extend(config_params.keys())
-                            spec_db.config_param_names = str(
-                                config_param_names)
-
+                    if sc_node['config']:
+                        node_dict = jsonutils.loads(sc_node['config'])
+                        config_params = (node_dict.get('parameters') or
+                                         node_dict.get('Parameters'))
+                        if config_params:
+                            if not spec_db.config_param_names:
+                                spec_db.config_param_names = str(
+                                    config_params.keys())
+                            else:
+                                config_param_names = ast.literal_eval(
+                                    spec_db.config_param_names)
+                                config_param_names.extend(config_params.keys())
+                                spec_db.config_param_names = str(
+                                    config_param_names)
+                    else:
+                        raise schain.ServiceChainNodeConfigRequired()
                 assoc = SpecNodeAssociation(servicechain_spec_id=spec_db.id,
                                             node_id=node_id)
                 spec_db.nodes.append(assoc)
