@@ -25,36 +25,25 @@ from oslo_config import cfg
 from oslo_utils import importutils
 
 from gbpservice.neutron.db import servicechain_db as svcchain_db
-from gbpservice.neutron.extensions import group_policy as gpolicy
 from gbpservice.neutron.extensions import servicechain as service_chain
-from gbpservice.neutron.tests.unit import common as cm
+from gbpservice.neutron.tests.unit import common
 from gbpservice.neutron.tests.unit.db.grouppolicy import test_group_policy_db
 
 JSON_FORMAT = 'json'
+cm = common.res
 
 
 class ServiceChainDBTestBase(test_group_policy_db.ApiManagerMixin):
-    resource_prefix_map = dict(
-        (k, constants.COMMON_PREFIXES[constants.SERVICECHAIN])
-        for k in service_chain.RESOURCE_ATTRIBUTE_MAP.keys())
-    resource_prefix_map.update(dict(
-        (k, constants.COMMON_PREFIXES[constants.GROUP_POLICY])
-        for k in gpolicy.RESOURCE_ATTRIBUTE_MAP.keys()
-    ))
+
+    resource_prefix_map = cm.resource_prefix_map
 
     fmt = JSON_FORMAT
 
     def __getattr__(self, item):
         # Verify is an update of a proper GBP object
 
-        def _is_sc_resource(plural):
-            return plural in service_chain.RESOURCE_ATTRIBUTE_MAP
-
-        def _is_gbp_resource(plural):
-            return plural in gpolicy.RESOURCE_ATTRIBUTE_MAP
-
         def _is_valid_resource(plural):
-            return _is_gbp_resource(plural) or _is_sc_resource(plural)
+            return cm._is_gbp_resource(plural) or cm._is_sc_resource(plural)
         # Update Method
         if item.startswith('update_'):
             resource = item[len('update_'):]
@@ -210,11 +199,11 @@ class TestServiceChainResources(ServiceChainDbTestCase):
         profile = self.create_service_profile(service_type=constants.FIREWALL)
         attrs = cm.get_create_servicechain_node_default_attrs(
             service_profile_id=profile['service_profile']['id'],
-            config="config1")
+            config="{}")
 
         scn = self.create_servicechain_node(
             service_profile_id=profile['service_profile']['id'],
-            config="config1")
+            config="{}")
 
         for k, v in attrs.iteritems():
             self.assertEqual(v, scn['servicechain_node'][k])
@@ -234,10 +223,10 @@ class TestServiceChainResources(ServiceChainDbTestCase):
         self._test_list_resources('servicechain_node', scns,
                                   query_params='description=scn')
 
-    def test_update_servicechain_node(self):
+    def test_update_servicechain_node(self, new_config='new_config'):
         name = 'new_servicechain_node'
         description = 'new desc'
-        config = 'new_config'
+        config = new_config
         profile = self.create_service_profile(service_type=constants.FIREWALL)
         attrs = cm.get_create_servicechain_node_default_attrs(
             name=name, description=description,

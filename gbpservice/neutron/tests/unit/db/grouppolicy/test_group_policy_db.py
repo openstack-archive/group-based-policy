@@ -29,13 +29,14 @@ from oslo_utils import importutils
 from gbpservice.neutron.db.grouppolicy import group_policy_db as gpdb
 from gbpservice.neutron.extensions import group_policy as gpolicy
 import gbpservice.neutron.tests
-from gbpservice.neutron.tests.unit import common as cm
+from gbpservice.neutron.tests.unit import common
 
 
 JSON_FORMAT = 'json'
 _uuid = uuidutils.generate_uuid
 TESTDIR = os.path.dirname(os.path.abspath(gbpservice.neutron.tests.__file__))
 ETCDIR = os.path.join(TESTDIR, 'etc')
+cm = common.res
 
 
 class ApiManagerMixin(object):
@@ -56,9 +57,8 @@ class ApiManagerMixin(object):
                          is_admin_context=False, **kwargs):
         plural = cm.get_resource_plural(type)
         defaults = getattr(cm,
-                           'get_create_%s_default_attrs' % type)()
+                           'get_create_%s_required_attrs' % type)()
         defaults.update(kwargs)
-
         data = {type: {'tenant_id': self._tenant_id}}
         data[type].update(defaults)
 
@@ -122,22 +122,17 @@ class ApiManagerMixin(object):
 
 
 class GroupPolicyDBTestBase(ApiManagerMixin):
-    resource_prefix_map = dict(
-        (k, constants.COMMON_PREFIXES[constants.GROUP_POLICY])
-        for k in gpolicy.RESOURCE_ATTRIBUTE_MAP.keys()
-    )
+
+    resource_prefix_map = cm.resource_prefix_map
 
     fmt = JSON_FORMAT
 
     def __getattr__(self, item):
-        # Verify is an update of a proper GBP object
-        def _is_gbp_resource(plural):
-            return plural in gpolicy.RESOURCE_ATTRIBUTE_MAP
         # Update Method
         if item.startswith('update_'):
             resource = item[len('update_'):]
             plural = cm.get_resource_plural(resource)
-            if _is_gbp_resource(plural):
+            if cm._is_gbp_resource(plural):
                 def update_wrapper(id, **kwargs):
                     return self._update_resource(id, resource, **kwargs)
                 return update_wrapper
@@ -145,7 +140,7 @@ class GroupPolicyDBTestBase(ApiManagerMixin):
         if item.startswith('show_'):
             resource = item[len('show_'):]
             plural = cm.get_resource_plural(resource)
-            if _is_gbp_resource(plural):
+            if cm._is_gbp_resource(plural):
                 def show_wrapper(id, **kwargs):
                     return self._show_resource(id, plural, **kwargs)
                 return show_wrapper
@@ -153,7 +148,7 @@ class GroupPolicyDBTestBase(ApiManagerMixin):
         if item.startswith('create_'):
             resource = item[len('create_'):]
             plural = cm.get_resource_plural(resource)
-            if _is_gbp_resource(plural):
+            if cm._is_gbp_resource(plural):
                 def create_wrapper(**kwargs):
                     return self._create_resource(resource, **kwargs)
                 return create_wrapper
@@ -161,7 +156,7 @@ class GroupPolicyDBTestBase(ApiManagerMixin):
         if item.startswith('delete_'):
             resource = item[len('delete_'):]
             plural = cm.get_resource_plural(resource)
-            if _is_gbp_resource(plural):
+            if cm._is_gbp_resource(plural):
                 def delete_wrapper(id, **kwargs):
                     return self._delete_resource(id, plural, **kwargs)
                 return delete_wrapper
@@ -1107,8 +1102,7 @@ class TestGroupResources(GroupPolicyDbTestCase):
     def test_prs_one_hierarchy_parent(self):
         child = self.create_policy_rule_set()['policy_rule_set']
         # parent
-        self.create_policy_rule_set(
-            child_policy_rule_sets=[child['id']])['policy_rule_set']
+        self.create_policy_rule_set(child_policy_rule_sets=[child['id']])
         nephew = self.create_policy_rule_set()['policy_rule_set']
         data = {'policy_rule_set': {'child_policy_rule_sets': [nephew['id']]}}
         req = self.new_update_request('policy_rule_sets', data, child['id'])
