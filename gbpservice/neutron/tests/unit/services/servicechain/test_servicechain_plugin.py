@@ -252,3 +252,31 @@ class TestGroupPolicyPluginGroupResources(
         self.assertEqual(
             collections.Counter(params_node_1),
             collections.Counter(ast.literal_eval(spec['config_param_names'])))
+
+    def test_node_invalid_config(self):
+        # Verify Create
+        res = self._create_profiled_servicechain_node(
+            config='notajson', expected_res_status=400)
+        self.assertEqual('ServiceChainNodeInvalidConfig',
+                         res['NeutronError']['type'])
+        res = self._create_profiled_servicechain_node(
+            config=None, expected_res_status=400)
+        self.assertEqual('ServiceChainNodeConfigRequired',
+                         res['NeutronError']['type'])
+
+        # REVISIT(ivar): config update is read-only on SCN today, but
+        # there's an use case for that in NCP and it should soon be possible
+        # to do it.
+
+        # Verify Update
+        # node = self._create_profiled_servicechain_node(
+        #     config='{}', expected_res_status=201)['servicechain_node']
+
+        # res = self.update_servicechain_node(node['id'], config='notajson',
+        #                                     expected_res_status=400)
+        # self.assertEqual('ServiceChainNodeInvalidConfig',
+        #                  res['NeutronError']['type'])
+        # res = self.update_servicechain_node(node['id'], config=None,
+        #                                     expected_res_status=400)
+        # self.assertEqual('ServiceChainNodeConfigRequired',
+        #                  res['NeutronError']['type'])\
