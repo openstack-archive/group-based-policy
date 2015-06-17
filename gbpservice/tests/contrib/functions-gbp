@@ -1,0 +1,33 @@
+#!/usr/bin/env bash
+
+TOP_DIR="$BASE/new/devstack"
+NEW_BASE="$BASE/new"
+GBP_DIR="$NEW_BASE/group-based-policy"
+SCRIPTS_DIR="/usr/local/jenkins/slave_scripts"
+LOGS_DIR="$NEW_BASE/logs"
+ARCHIVE_LOGS_DIR="$BASE/logs"
+
+# Prepare the log files for Jenkins to upload
+function prepare_logs {
+    cd $LOGS_DIR
+    sudo mv screen/screen*.*.log .
+    sudo rm -rf screen
+    for f in $(find . -name "*.20*.log"); do
+            sudo mv $f ${f/.log/.txt}
+    done
+    sudo gzip -9fk `find . -maxdepth 1 \! -type l -name "*.txt" | xargs ls -d`
+    mv *.gz $ARCHIVE_LOGS_DIR/
+}
+
+function generate_testr_results {
+    # Give job user rights to access tox logs
+    sudo -H chmod o+rw .
+    sudo -H chmod o+rw -R .testrepository
+    if [ -f ".testrepository/0" ] ; then
+        .tox/dsvm-functional/bin/subunit-1to2 < .testrepository/0 > ./testrepository.subunit
+        .tox/dsvm-functional/bin/python $SCRIPTS_DIR/subunit2html.py ./testrepository.subunit testr_results.html
+        gzip -9 ./testrepository.subunit
+        gzip -9 ./testr_results.html
+        sudo mv ./*.gz $ARCHIVE_LOGS_DIR/
+    fi
+}

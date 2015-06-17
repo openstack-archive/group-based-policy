@@ -1,8 +1,12 @@
 #!/bin/bash
 
-set -ex
+cp /opt/stack/new/group-based-policy/gbpservice/tests/contrib/functions-gbp .
+source functions-gbp
 
-TOP_DIR=$BASE/new/devstack
+set -x
+
+trap prepare_logs ERR
+
 cd $TOP_DIR
 sudo git remote add group-policy http://github.com/group-policy/devstack
 sudo git fetch group-policy
