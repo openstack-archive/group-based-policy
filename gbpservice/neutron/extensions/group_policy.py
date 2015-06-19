@@ -338,7 +338,7 @@ def _validate_gbproutes(data, valid_values=None):
         if msg:
             LOG.debug(msg)
             return msg
-        if hostroute['nexthop'] is not None:
+        if hostroute['nexthop']:
             msg = attr._validate_ip_address(hostroute['nexthop'])
         if msg:
             LOG.debug(msg)
