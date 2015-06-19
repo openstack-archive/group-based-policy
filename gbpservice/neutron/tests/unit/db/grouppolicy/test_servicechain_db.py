@@ -59,23 +59,24 @@ class ServiceChainDBTestBase(object):
     def _get_test_servicechain_node_attrs(self, name='scn1',
                                           description='test scn',
                                           service_type=constants.FIREWALL,
-                                          config="{}"):
+                                          config="{}", shared=False):
         attrs = {'name': name, 'description': description,
                  'service_type': service_type,
                  'config': config,
-                 'tenant_id': self._tenant_id}
+                 'tenant_id': self._tenant_id,
+                 'shared': shared}
 
         return attrs
 
     def _get_test_servicechain_spec_attrs(self, name='scs1',
                                           description='test scs',
-                                          nodes=None):
+                                          nodes=None, shared=False):
         node_ids = []
         if nodes:
             node_ids = [node_id for node_id in nodes]
         attrs = {'name': name, 'description': description,
                  'tenant_id': self._tenant_id,
-                 'nodes': node_ids}
+                 'nodes': node_ids, 'shared': shared}
 
         return attrs
 
@@ -99,7 +100,7 @@ class ServiceChainDBTestBase(object):
     def create_servicechain_node(self, service_type=constants.FIREWALL,
                                  config="{}", expected_res_status=None,
                                  **kwargs):
-        defaults = {'name': 'scn1', 'description': 'test scn'}
+        defaults = {'name': 'scn1', 'description': 'test scn', 'shared': False}
         defaults.update(kwargs)
 
         data = {'servicechain_node': {'service_type': service_type,
@@ -121,7 +122,7 @@ class ServiceChainDBTestBase(object):
 
     def create_servicechain_spec(self, nodes=None, expected_res_status=None,
                                  **kwargs):
-        defaults = {'name': 'scs1', 'description': 'test scs'}
+        defaults = {'name': 'scs1', 'description': 'test scs', 'shared': False}
         defaults.update(kwargs)
 
         data = {'servicechain_spec': {'tenant_id': self._tenant_id,
@@ -132,7 +133,7 @@ class ServiceChainDBTestBase(object):
         scs_res = scs_req.get_response(self.ext_api)
 
         if expected_res_status:
-            self.assertEqual(scs_res.status_int, expected_res_status)
+            self.assertEqual(expected_res_status, scs_res.status_int)
         elif scs_res.status_int >= webob.exc.HTTPClientError.code:
             raise webob.exc.HTTPClientError(code=scs_res.status_int)
 
@@ -151,7 +152,7 @@ class ServiceChainDBTestBase(object):
                                            spec1,
                                            self.fmt)
         spec_res = spec_req.get_response(self.ext_api)
-        self.assertEqual(spec_res.status_int, webob.exc.HTTPCreated.code)
+        self.assertEqual(webob.exc.HTTPCreated.code, spec_res.status_int)
         res = self.deserialize(self.fmt, spec_res)
         self.assertIn('servicechain_spec', res)
         self.assertEqual([scn_id], res['servicechain_spec']['nodes'])
@@ -162,13 +163,14 @@ class ServiceChainDBTestBase(object):
                                            spec2,
                                            self.fmt)
         spec_res = spec_req.get_response(self.ext_api)
-        self.assertEqual(spec_res.status_int, webob.exc.HTTPCreated.code)
+        self.assertEqual(webob.exc.HTTPCreated.code, spec_res.status_int)
         res = self.deserialize(self.fmt, spec_res)
         self.assertIn('servicechain_spec', res)
         self.assertEqual([scn_id], res['servicechain_spec']['nodes'])
 
     def create_servicechain_instance(self, servicechain_specs=[],
-                                     config_param_values="{}",
+                                     config_param_values=
+                                     '{"key": "value"}',
                                      provider_ptg_id=None,
                                      consumer_ptg_id=None,
                                      classifier_id=None,
@@ -189,7 +191,7 @@ class ServiceChainDBTestBase(object):
         sci_res = sci_req.get_response(self.ext_api)
 
         if expected_res_status:
-            self.assertEqual(sci_res.status_int, expected_res_status)
+            self.assertEqual(expected_res_status, sci_res.status_int)
         elif sci_res.status_int >= webob.exc.HTTPClientError.code:
             raise webob.exc.HTTPClientError(code=sci_res.status_int)
 
@@ -244,17 +246,17 @@ class TestServiceChainResources(ServiceChainDbTestCase):
                                req.get_response(self.ext_api))
 
         for k, v in attrs.iteritems():
-            self.assertEqual(res[resource][k], v)
+            self.assertEqual(v, res[resource][k])
 
     def test_create_and_show_servicechain_node(self):
         attrs = self._get_test_servicechain_node_attrs(
-            service_type=constants.LOADBALANCER, config="config1")
+            service_type=constants.LOADBALANCER)
 
         scn = self.create_servicechain_node(
-            service_type=constants.LOADBALANCER, config="config1")
+            service_type=constants.LOADBALANCER)
 
         for k, v in attrs.iteritems():
-            self.assertEqual(scn['servicechain_node'][k], v)
+            self.assertEqual(v, scn['servicechain_node'][k])
 
         self._test_show_resource('servicechain_node',
                                  scn['servicechain_node']['id'],
@@ -282,7 +284,7 @@ class TestServiceChainResources(ServiceChainDbTestCase):
         res = self.deserialize(self.fmt, req.get_response(self.ext_api))
 
         for k, v in attrs.iteritems():
-            self.assertEqual(res['servicechain_node'][k], v)
+            self.assertEqual(v, res['servicechain_node'][k])
 
         self._test_show_resource('servicechain_node',
                                  scn['servicechain_node']['id'],
@@ -308,7 +310,7 @@ class TestServiceChainResources(ServiceChainDbTestCase):
         # After deleting the Service Chain Spec, node delete should succeed
         req = self.new_delete_request('servicechain_nodes', scn_id)
         res = req.get_response(self.ext_api)
-        self.assertEqual(res.status_int, webob.exc.HTTPNoContent.code)
+        self.assertEqual(webob.exc.HTTPNoContent.code, res.status_int)
         self.assertRaises(service_chain.ServiceChainNodeNotFound,
                           self.plugin.get_servicechain_node,
                           ctx, scn_id)
@@ -323,7 +325,7 @@ class TestServiceChainResources(ServiceChainDbTestCase):
         scs = self.create_servicechain_spec(name=name, nodes=[scn_id])
 
         for k, v in attrs.iteritems():
-            self.assertEqual(scs['servicechain_spec'][k], v)
+            self.assertEqual(v, scs['servicechain_spec'][k])
 
         self._test_show_resource('servicechain_spec',
                                  scs['servicechain_spec']['id'],
@@ -340,7 +342,7 @@ class TestServiceChainResources(ServiceChainDbTestCase):
         scs = self.create_servicechain_spec(
                             name=name, nodes=[scn1_id, scn2_id])
         for k, v in attrs.iteritems():
-            self.assertEqual(scs['servicechain_spec'][k], v)
+            self.assertEqual(v, scs['servicechain_spec'][k])
 
     def test_list_servicechain_specs(self):
         scs = [self.create_servicechain_spec(name='scs1', description='scs'),
@@ -355,27 +357,25 @@ class TestServiceChainResources(ServiceChainDbTestCase):
         nodes_list = [scn1_id, scn2_id]
         scs = self.create_servicechain_spec(name='scs1',
                                             nodes=nodes_list)
-        self.assertEqual(scs['servicechain_spec']['nodes'], nodes_list)
+        self.assertEqual(nodes_list, scs['servicechain_spec']['nodes'])
         res = self._list('servicechain_specs')
-        self.assertEqual(len(res['servicechain_specs']), 1)
-        self.assertEqual(res['servicechain_specs'][0]['nodes'],
-                         nodes_list)
+        self.assertEqual(1, len(res['servicechain_specs']))
+        self.assertEqual(nodes_list, res['servicechain_specs'][0]['nodes'])
 
         # Delete the service chain spec and create another with nodes in
         # reverse order and verify that that proper ordering is maintained
         req = self.new_delete_request('servicechain_specs',
                                       scs['servicechain_spec']['id'])
         res = req.get_response(self.ext_api)
-        self.assertEqual(res.status_int, webob.exc.HTTPNoContent.code)
+        self.assertEqual(webob.exc.HTTPNoContent.code, res.status_int)
 
         nodes_list.reverse()
         scs = self.create_servicechain_spec(name='scs1',
                                             nodes=nodes_list)
         self.assertEqual(scs['servicechain_spec']['nodes'], nodes_list)
         res = self._list('servicechain_specs')
-        self.assertEqual(len(res['servicechain_specs']), 1)
-        self.assertEqual(res['servicechain_specs'][0]['nodes'],
-                         nodes_list)
+        self.assertEqual(1, len(res['servicechain_specs']))
+        self.assertEqual(nodes_list, res['servicechain_specs'][0]['nodes'])
 
     def test_update_servicechain_spec(self):
         name = "new_servicechain_spec1"
@@ -392,7 +392,7 @@ class TestServiceChainResources(ServiceChainDbTestCase):
         res = self.deserialize(self.fmt, req.get_response(self.ext_api))
 
         for k, v in attrs.iteritems():
-            self.assertEqual(res['servicechain_spec'][k], v)
+            self.assertEqual(v, res['servicechain_spec'][k])
 
         self._test_show_resource('servicechain_spec',
                                  scs['servicechain_spec']['id'], attrs)
@@ -405,7 +405,7 @@ class TestServiceChainResources(ServiceChainDbTestCase):
 
         req = self.new_delete_request('servicechain_specs', scs_id)
         res = req.get_response(self.ext_api)
-        self.assertEqual(res.status_int, webob.exc.HTTPNoContent.code)
+        self.assertEqual(webob.exc.HTTPNoContent.code, res.status_int)
         self.assertRaises(service_chain.ServiceChainSpecNotFound,
                           self.plugin.get_servicechain_spec, ctx, scs_id)
 
@@ -468,7 +468,7 @@ class TestServiceChainResources(ServiceChainDbTestCase):
             classifier_id=classifier_id,
             config_param_values=config_param_values)
         for k, v in attrs.iteritems():
-            self.assertEqual(sci['servicechain_instance'][k], v)
+            self.assertEqual(v, sci['servicechain_instance'][k])
 
         self._test_show_resource('servicechain_instance',
                                  sci['servicechain_instance']['id'],
@@ -492,29 +492,30 @@ class TestServiceChainResources(ServiceChainDbTestCase):
         specs_list = [scs1_id, scs2_id]
         sci = self.create_servicechain_instance(name='sci1',
                                                 servicechain_specs=specs_list)
-        self.assertEqual(sci['servicechain_instance']['servicechain_specs'],
-                         specs_list)
+        self.assertEqual(specs_list,
+                         sci['servicechain_instance']['servicechain_specs'])
         res = self._list('servicechain_instances')
-        self.assertEqual(len(res['servicechain_instances']), 1)
+        self.assertEqual(1, len(res['servicechain_instances']))
         result_instance = res['servicechain_instances'][0]
-        self.assertEqual(result_instance['servicechain_specs'], specs_list)
+        self.assertEqual(specs_list, result_instance['servicechain_specs'])
 
         # Delete the service chain instance and create another with specs in
         # reverse order and verify that that proper ordering is maintained
         req = self.new_delete_request('servicechain_instances',
                                       sci['servicechain_instance']['id'])
         res = req.get_response(self.ext_api)
-        self.assertEqual(res.status_int, webob.exc.HTTPNoContent.code)
+        self.assertEqual(webob.exc.HTTPNoContent.code, res.status_int)
 
         specs_list.reverse()
         sci = self.create_servicechain_instance(name='sci1',
                                                 servicechain_specs=specs_list)
-        self.assertEqual(sci['servicechain_instance']['servicechain_specs'],
-                         specs_list)
+        self.assertEqual(specs_list,
+                         sci['servicechain_instance']['servicechain_specs'])
         res = self._list('servicechain_instances')
-        self.assertEqual(len(res['servicechain_instances']), 1)
+        self.assertEqual(1, len(res['servicechain_instances']))
         result_instance = res['servicechain_instances'][0]
-        self.assertEqual(result_instance['servicechain_specs'], specs_list)
+        self.assertEqual(specs_list,
+                         result_instance['servicechain_specs'])
 
     def test_update_servicechain_instance(self):
         name = "new_servicechain_instance"
@@ -541,7 +542,7 @@ class TestServiceChainResources(ServiceChainDbTestCase):
                                       sci['servicechain_instance']['id'])
         res = self.deserialize(self.fmt, req.get_response(self.ext_api))
         for k, v in attrs.iteritems():
-            self.assertEqual(res['servicechain_instance'][k], v)
+            self.assertEqual(v, res['servicechain_instance'][k])
 
         self._test_show_resource('servicechain_instance',
                                  sci['servicechain_instance']['id'], attrs)
@@ -557,7 +558,7 @@ class TestServiceChainResources(ServiceChainDbTestCase):
 
         req = self.new_delete_request('servicechain_instances', sci_id)
         res = req.get_response(self.ext_api)
-        self.assertEqual(res.status_int, webob.exc.HTTPNoContent.code)
+        self.assertEqual(webob.exc.HTTPNoContent.code, res.status_int)
         self.assertRaises(service_chain.ServiceChainInstanceNotFound,
                           self.plugin.get_servicechain_instance,
                           ctx, sci_id)
