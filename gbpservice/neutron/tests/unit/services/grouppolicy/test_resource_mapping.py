@@ -19,12 +19,15 @@ import netaddr
 from neutron.api.rpc.agentnotifiers import dhcp_rpc_agent_api
 from neutron.common import constants as cst
 from neutron import context as nctx
+from neutron.db import api as db_api
+from neutron.db import model_base
 from neutron.extensions import external_net as external_net
 from neutron.extensions import securitygroup as ext_sg
 from neutron import manager
 from neutron.notifiers import nova
 from neutron.openstack.common import uuidutils
 from neutron.plugins.common import constants as pconst
+from neutron.tests.unit.ml2 import test_ml2_plugin as n_test_plugin
 from neutron.tests.unit import test_extension_security_group
 from neutron.tests.unit import test_l3_plugin
 import webob.exc
@@ -68,11 +71,16 @@ class ResourceMappingTestCase(test_plugin.GroupPolicyPluginTestCase):
                                      ['dummy'],
                                      group='servicechain')
         config.cfg.CONF.set_override('allow_overlapping_ips', True)
-        super(ResourceMappingTestCase, self).setUp(core_plugin=CORE_PLUGIN)
+        super(ResourceMappingTestCase, self).setUp(
+            core_plugin=n_test_plugin.PLUGIN_NAME)
+        engine = db_api.get_engine()
+        model_base.BASEV2.metadata.create_all(engine)
         res = mock.patch('neutron.db.l3_db.L3_NAT_dbonly_mixin.'
                          '_check_router_needs_rescheduling').start()
         res.return_value = None
         self._plugin = manager.NeutronManager.get_plugin()
+        self._plugin.remove_networks_from_down_agents = mock.Mock()
+        self._plugin.is_agent_down = mock.Mock(return_value=False)
         self._context = nctx.get_admin_context()
         plugins = manager.NeutronManager.get_service_plugins()
         self._gbp_plugin = plugins.get(pconst.GROUP_POLICY)
@@ -804,6 +812,17 @@ class TestPolicyTargetGroup(ResourceMappingTestCase):
         self.assertFalse(self._list('policy_target_groups',
                                     query_params='name=ptg2')
                          ['policy_target_groups'])
+
+    def test_unbound_ports_deletion(self):
+        ptg = self.create_policy_target_group()['policy_target_group']
+        pt = self.create_policy_target(policy_target_group_id=ptg['id'])
+        port = self._get_object('ports', pt['policy_target']['port_id'],
+                                self.api)
+        self._bind_port_to_host(port['port']['id'], 'h1')
+        self.delete_policy_target_group(ptg['id'],
+                                        expected_res_status=400)
+        self._unbind_port(port['port']['id'])
+        self.delete_policy_target_group(ptg['id'], expected_res_status=204)
 
 
 class TestL2Policy(ResourceMappingTestCase):

@@ -12,10 +12,11 @@
 # limitations under the License.
 
 import mock
-import webob.exc
 
 from neutron import context
+from neutron import manager
 from oslo.config import cfg
+import webob.exc
 
 from gbpservice.neutron.extensions import group_policy as gpolicy
 from gbpservice.neutron.tests.unit.db.grouppolicy import (
@@ -32,6 +33,9 @@ GP_PLUGIN_KLASS = (
 )
 SERVICECHAIN_SPECS = 'servicechain/servicechain_specs'
 SERVICECHAIN_NODES = 'servicechain/servicechain_nodes'
+AGENT_TYPE = 'Open vSwitch agent'
+AGENT_CONF = {'alive': True, 'binary': 'somebinary',
+              'topic': 'sometopic', 'agent_type': AGENT_TYPE}
 
 
 class FakeDriver(object):
@@ -141,6 +145,28 @@ class GroupPolicyPluginTestCase(tgpmdb.GroupPolicyMappingDbTestCase):
         node = self.deserialize(self.fmt, scn_req.get_response(self.ext_api))
         scn_id = node['servicechain_node']['id']
         return scn_id
+
+    def _bind_port_to_host(self, port_id, host):
+        plugin = manager.NeutronManager.get_plugin()
+        ctx = context.get_admin_context()
+        agent = {'host': host}
+        agent.update(AGENT_CONF)
+        plugin.create_or_update_agent(ctx, agent)
+        data = {'port': {'binding:host_id': host}}
+        # Create EP with bound port
+        req = self.new_update_request('ports', data, port_id,
+                                      self.fmt)
+        return self.deserialize(self.fmt, req.get_response(self.api))
+
+    def _unbind_port(self, port_id):
+        data = {'port': {'binding:host_id': ''}}
+        req = self.new_update_request('ports', data, port_id,
+                                      self.fmt)
+        return self.deserialize(self.fmt, req.get_response(self.api))
+
+    def _get_object(self, type, id, api):
+        req = self.new_show_request(type, id, self.fmt)
+        return self.deserialize(self.fmt, req.get_response(api))
 
 
 class TestL3Policy(GroupPolicyPluginTestCase):
