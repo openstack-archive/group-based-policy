@@ -156,3 +156,27 @@ class DriverManager(stevedore.named.NamedExtensionManager):
     def delete_servicechain_instance_postcommit(self, context):
         self._call_on_drivers("delete_servicechain_instance_postcommit",
                               context)
+
+    def create_service_profile_precommit(self, context):
+        self._call_on_drivers("create_service_profile_precommit",
+                              context)
+
+    def create_service_profile_postcommit(self, context):
+        self._call_on_drivers("create_service_profile_postcommit",
+                              context)
+
+    def update_service_profile_precommit(self, context):
+        self._call_on_drivers("update_service_profile_precommit",
+                              context)
+
+    def update_service_profile_postcommit(self, context):
+        self._call_on_drivers("update_service_profile_postcommit",
+                              context)
+
+    def delete_service_profile_precommit(self, context):
+        self._call_on_drivers("delete_service_profile_precommit",
+                              context)
+
+    def delete_service_profile_postcommit(self, context):
+        self._call_on_drivers("delete_service_profile_postcommit",
+                              context)
