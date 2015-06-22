@@ -369,11 +369,6 @@ class ServiceChainPluginBase(service_base.ServicePluginBase):
 
     @abc.abstractmethod
     @log.log
-    def get_service_profile_count(self, context, filters=None):
-        pass
-
-    @abc.abstractmethod
-    @log.log
     def create_service_profile(self, context, service_profile):
         pass
 

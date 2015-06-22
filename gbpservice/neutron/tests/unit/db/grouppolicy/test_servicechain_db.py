@@ -110,6 +110,12 @@ class ServiceChainDBTestBase(test_group_policy_db.ApiManagerMixin):
         res = self._list(resource_plural,
                          neutron_context=neutron_context,
                          query_params=query_params)
+        params = query_params.split('&')
+        params = dict((x.split('=')[0], x.split('=')[1].split(','))
+                      for x in params)
+        count = getattr(self.plugin, 'get_%s_count' % resource_plural)(
+            neutron_context or context.get_admin_context(), params)
+        self.assertEqual(len(res[resource_plural]), count)
         resource = resource.replace('-', '_')
         self.assertEqual(sorted([i['id'] for i in res[resource_plural]]),
                          sorted([i[resource]['id'] for i in items]))
