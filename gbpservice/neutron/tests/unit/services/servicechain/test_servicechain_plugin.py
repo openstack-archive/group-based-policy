@@ -29,16 +29,17 @@ SC_PLUGIN_KLASS = (
 
 class ServiceChainPluginTestCase(test_servicechain_db.ServiceChainDbTestCase):
 
-    def setUp(self, core_plugin=None, sc_plugin=None):
+    def setUp(self, core_plugin=None, sc_plugin=None, gp_plugin=None):
         if not sc_plugin:
             sc_plugin = SC_PLUGIN_KLASS
         super(ServiceChainPluginTestCase, self).setUp(core_plugin=core_plugin,
-                                                      sc_plugin=sc_plugin)
+                                                      sc_plugin=sc_plugin,
+                                                      gp_plugin=gp_plugin)
 
 
 class TestGroupPolicyPluginGroupResources(
-                    ServiceChainPluginTestCase,
-                    test_servicechain_db.TestServiceChainResources):
+        ServiceChainPluginTestCase,
+        test_servicechain_db.TestServiceChainResources):
 
     def test_spec_shared(self):
         # Shared spec can only point shared nodes
@@ -55,7 +56,7 @@ class TestGroupPolicyPluginGroupResources(
             'LOADBALANCER', shared=False, profile_tenant_id='nonadmin',
             tenant_id='nonadmin')['servicechain_node']
         self.create_servicechain_spec(nodes=[node['id']], shared=True,
-                                      expected_res_status=400)
+                                      expected_res_status=404)
         self.create_servicechain_spec(nodes=[node['id']], shared=True,
                                       tenant_id='nonadmin',
                                       expected_res_status=400)
@@ -80,7 +81,7 @@ class TestGroupPolicyPluginGroupResources(
             tenant_id='admin')['service_profile']
         self.create_servicechain_node(
             service_profile_id=prof['id'], shared=True,
-            expected_res_status=400)
+            expected_res_status=404)
         self.create_servicechain_node(
             service_profile_id=prof['id'], shared=True,
             tenant_id='admin', expected_res_status=400)
