@@ -165,7 +165,8 @@ class ESIdRequiredWhenCreatingEP(GroupPolicyBadRequest):
 
 
 class ESUpdateNotSupportedForEP(GroupPolicyBadRequest):
-    message = _("Cannot update external_segment_id for External Policy.")
+    message = _("external_segments update for External Policy is not "
+                "supported.")
 
 
 class MultipleESPerL3PolicyNotSupported(GroupPolicyBadRequest):
