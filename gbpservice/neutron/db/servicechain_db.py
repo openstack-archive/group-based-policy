@@ -204,6 +204,8 @@ class ServiceChainDbPlugin(schain.ServiceChainPluginBase,
                'config_param_names': spec.get('config_param_names'),
                'shared': spec['shared']}
         res['nodes'] = [sc_node['node_id'] for sc_node in spec['nodes']]
+        res['instances'] = [x['servicechain_instance_id'] for x in
+                            spec['instances']]
         return self._fields(res, fields)
 
     def _make_sc_instance_dict(self, instance, fields=None):
@@ -295,13 +297,16 @@ class ServiceChainDbPlugin(schain.ServiceChainPluginBase,
         return self._get_collection_count(context, ServiceChainNode,
                                           filters=filters)
 
-    def _process_nodes_for_spec(self, context, spec_db, spec):
+    def _process_nodes_for_spec(self, context, spec_db, spec,
+                                set_params=True):
         if 'nodes' in spec:
-            self._set_nodes_for_spec(context, spec_db, spec['nodes'])
+            self._set_nodes_for_spec(context, spec_db, spec['nodes'],
+                                     set_params=set_params)
             del spec['nodes']
         return spec
 
-    def _set_nodes_for_spec(self, context, spec_db, nodes_id_list):
+    def _set_nodes_for_spec(self, context, spec_db, nodes_id_list,
+                            set_params=True):
 
         if not nodes_id_list:
             spec_db.nodes = []
@@ -323,18 +328,21 @@ class ServiceChainDbPlugin(schain.ServiceChainPluginBase,
             # it as clearing existing nodes.
             spec_db.nodes = []
             for node_id in nodes_id_list:
-                sc_node = self.get_servicechain_node(context, node_id)
-                node_dict = jsonutils.loads(sc_node['config'])
-                config_params = (node_dict.get('parameters') or
-                                 node_dict.get('Parameters'))
-                if config_params:
-                    if not spec_db.config_param_names:
-                        spec_db.config_param_names = str(config_params.keys())
-                    else:
-                        config_param_names = ast.literal_eval(
-                            spec_db.config_param_names)
-                        config_param_names.extend(config_params.keys())
-                        spec_db.config_param_names = str(config_param_names)
+                if set_params:
+                    sc_node = self.get_servicechain_node(context, node_id)
+                    node_dict = jsonutils.loads(sc_node['config'])
+                    config_params = (node_dict.get('parameters') or
+                                     node_dict.get('Parameters'))
+                    if config_params:
+                        if not spec_db.config_param_names:
+                            spec_db.config_param_names = str(
+                                config_params.keys())
+                        else:
+                            config_param_names = ast.literal_eval(
+                                spec_db.config_param_names)
+                            config_param_names.extend(config_params.keys())
+                            spec_db.config_param_names = str(
+                                config_param_names)
 
                 assoc = SpecNodeAssociation(servicechain_spec_id=spec_db.id,
                                             node_id=node_id)
@@ -370,7 +378,8 @@ class ServiceChainDbPlugin(schain.ServiceChainPluginBase,
                 instance_db.specs.append(assoc)
 
     @log.log
-    def create_servicechain_spec(self, context, servicechain_spec):
+    def create_servicechain_spec(self, context, servicechain_spec,
+                                 set_params=True):
         spec = servicechain_spec['servicechain_spec']
         tenant_id = self._get_tenant_id_for_create(context, spec)
         with context.session.begin(subtransactions=True):
@@ -379,18 +388,20 @@ class ServiceChainDbPlugin(schain.ServiceChainPluginBase,
                                        name=spec['name'],
                                        description=spec['description'],
                                        shared=spec['shared'])
-            self._process_nodes_for_spec(context, spec_db, spec)
+            self._process_nodes_for_spec(context, spec_db, spec,
+                                         set_params=set_params)
             context.session.add(spec_db)
         return self._make_sc_spec_dict(spec_db)
 
     @log.log
     def update_servicechain_spec(self, context, spec_id,
-                                 servicechain_spec):
+                                 servicechain_spec, set_params=True):
         spec = servicechain_spec['servicechain_spec']
         with context.session.begin(subtransactions=True):
             spec_db = self._get_servicechain_spec(context,
                                                   spec_id)
-            spec = self._process_nodes_for_spec(context, spec_db, spec)
+            spec = self._process_nodes_for_spec(context, spec_db, spec,
+                                                set_params=set_params)
             spec_db.update(spec)
         return self._make_sc_spec_dict(spec_db)
 

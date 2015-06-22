@@ -28,12 +28,13 @@ class NodeDriverBase(object):
     """
 
     @abc.abstractmethod
-    def initialize(self):
+    def initialize(self, name):
         """Perform driver initialization.
 
         Called after all drivers have been loaded and the database has
         been initialized. No abstract methods defined below will be
-        called prior to this method being called.
+        called prior to this method being called. Name is a unique attribute
+        that identifies the driver.
         """
         pass
 
@@ -142,4 +143,8 @@ class NodeDriverBase(object):
         :param context: NodeDriverContext instance describing the service chain
         and the specific node to be processed by this driver.
         """
+        pass
+
+    @abc.abstractproperty
+    def name(self):
         pass

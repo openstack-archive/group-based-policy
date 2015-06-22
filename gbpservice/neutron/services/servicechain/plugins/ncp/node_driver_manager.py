@@ -10,11 +10,14 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+from neutron.common import exceptions as n_exc
 from neutron.openstack.common import log as logging
 from oslo.config import cfg
+
 import stevedore
 
 from gbpservice.neutron.services.servicechain.plugins.ncp import config  # noqa
+from gbpservice.neutron.services.servicechain.plugins.ncp import model
 
 LOG = logging.getLogger(__name__)
 
@@ -52,6 +55,45 @@ class NodeDriverManager(stevedore.named.NamedExtensionManager):
         for driver in self.ordered_drivers:
             LOG.info(_("Initializing service chain node drivers '%s'"),
                      driver.name)
-            driver.obj.initialize()
+            driver.obj.initialize(driver.name)
             self.native_bulk_support &= getattr(driver.obj,
                                                 'native_bulk_support', True)
+
+    def schedule_deploy(self, context):
+        """Schedule Node Driver for Node creation.
+
+        Given a NodeContext, this method returns the driver capable of creating
+        the specific node.
+        """
+        for driver in self.ordered_drivers:
+            try:
+                driver.obj.validate_create(context)
+                model.set_node_ownership(context, driver.obj.name)
+                return driver.obj
+            except n_exc.NeutronException as e:
+                LOG.warn(e.message)
+
+    def schedule_destroy(self, context):
+        """Schedule Node Driver for Node disruption.
+
+        Given a NodeContext, this method returns the driver capable of
+        destroying the specific node.
+        """
+        return self._get_owning_driver(context)
+
+    def schedule_update(self, context):
+        """Schedule Node Driver for Node Update.
+
+        Given a NodeContext, this method returns the driver capable of updating
+        the specific node.
+        """
+        driver = self._get_owning_driver(context)
+        if driver:
+            driver.validate_update(context)
+        return driver
+
+    def _get_owning_driver(self, context):
+        owner = model.get_node_owner(context)
+        if owner:
+            driver = self.drivers.get(owner[0].driver_name)
+            return driver.obj if driver else None
