@@ -31,3 +31,12 @@ def load_plugin(namespace, plugin):
             LOG.exception(_("Error loading plugin by class, %s"), e2)
             raise ImportError(_("Plugin not found."))
     return plugin_class()
+
+
+class DictClass(dict):
+
+    def __getattr__(self, item):
+        return self[item]
+
+    __setattr__ = dict.__setattr__
+    __delattr__ = dict.__delattr__

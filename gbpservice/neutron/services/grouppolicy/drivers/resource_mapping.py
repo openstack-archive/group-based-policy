@@ -30,9 +30,11 @@ from oslo_log import log as logging
 from oslo_serialization import jsonutils
 import sqlalchemy as sa
 
+from gbpservice.common import utils
 from gbpservice.neutron.db.grouppolicy import group_policy_db as gpdb
 from gbpservice.neutron.db import servicechain_db  # noqa
 from gbpservice.neutron.extensions import group_policy as gp_ext
+from gbpservice.neutron.extensions import servicechain as sc_ext
 from gbpservice.neutron.services.grouppolicy import (
     group_policy_driver_api as api)
 from gbpservice.neutron.services.grouppolicy.common import constants as gconst
@@ -1971,10 +1973,15 @@ class ResourceMappingDriver(api.PolicyDriver):
                                      'servicechain_instance', attrs)
 
     def _delete_servicechain_instance(self, context, servicechain_instance_id):
-        self._delete_resource(self._servicechain_plugin,
-                              context._plugin_context,
-                              'servicechain_instance',
-                              servicechain_instance_id)
+        try:
+            self._delete_resource(self._servicechain_plugin,
+                                  context._plugin_context,
+                                  'servicechain_instance',
+                                  servicechain_instance_id)
+        except sc_ext.ServiceChainInstanceNotFound:
+            # SC could have been already deleted
+            LOG.warn(_("servicechain %s already deleted"),
+                     servicechain_instance_id)
 
     # Do Not Pass floating_ip_address to this method until after Kilo Release
     def _create_floatingip(self, context, ext_net_id, internal_port_id=None,
@@ -2522,7 +2529,12 @@ class ResourceMappingDriver(api.PolicyDriver):
                 query = query.filter_by(provider_ptg_id=provider_ptg_id)
             if consumer_ptg_id:
                 query = query.filter_by(consumer_ptg_id=consumer_ptg_id)
-            return query.all()
+            all = query.all()
+            return [utils.DictClass([('provider_ptg_id', x.provider_ptg_id),
+                                     ('consumer_ptg_id', x.consumer_ptg_id),
+                                     ('servicechain_instance_id',
+                                      x.servicechain_instance_id)])
+                    for x in all]
 
     def _get_ep_cidr_list(self, context, ep):
         es_list = context._plugin.get_external_segments(

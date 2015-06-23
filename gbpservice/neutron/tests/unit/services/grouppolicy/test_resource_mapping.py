@@ -1550,10 +1550,8 @@ class TestPolicyRuleSet(ResourceMappingTestCase):
                                            consumer_ptg_id, [scs_id])
 
         # Verify that PTG delete cleans up the chain instances
-        req = self.new_delete_request(
-            'policy_target_groups', consumer_ptg_id)
-        res = req.get_response(self.ext_api)
-        self.assertEqual(res.status_int, webob.exc.HTTPNoContent.code)
+        self.delete_policy_target_group(
+            consumer_ptg_id, expected_res_status=webob.exc.HTTPNoContent.code)
         sc_node_list_req = self.new_list_request(SERVICECHAIN_INSTANCES)
         res = sc_node_list_req.get_response(self.ext_api)
         sc_instances = self.deserialize(self.fmt, res)
