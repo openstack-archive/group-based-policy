@@ -4,6 +4,8 @@ source functions-gbp
 
 set -x
 
+trap prepare_logs ERR
+
 # Check if any gbp exercises failed
 exercises_exit_code=0
 if grep -qs "FAILED gbp*" $LOGS_DIR/*; then
