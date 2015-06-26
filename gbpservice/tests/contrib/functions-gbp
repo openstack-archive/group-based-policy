@@ -29,3 +29,26 @@ function generate_testr_results {
         sudo mv ./*.gz $ARCHIVE_LOGS_DIR/
     fi
 }
+
+function check_residual_resources {
+    gbp l3policy-list
+    gbp l2policy-list
+    gbp group-list
+    gbp policy-target-list
+    gbp policy-rule-set-list
+    gbp policy-rule-list
+    gbp policy-classifier-list
+    gbp policy-action-list
+    gbp servicechain-instance-list
+    gbp servicechain-node-list
+    gbp servicechain-spec-list
+    gbp network-service-policy-list
+    gbp nat-pool-list
+    gbp external-policy-list
+    gbp external-segment-list
+
+    neutron router-list
+    neutron net-list
+    neutron subnet-list
+    neutron port-list
+}
