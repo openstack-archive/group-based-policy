@@ -1,6 +1,7 @@
 #!/bin/bash
 
-cp /opt/stack/new/group-based-policy/gbpservice/tests/contrib/functions-gbp .
+CONTRIB_DIR="$BASE/new/group-based-policy/gbpservice/tests/contrib"
+cp $CONTRIB_DIR/functions-gbp .
 source functions-gbp
 
 set -x
@@ -10,10 +11,11 @@ trap prepare_logs ERR
 cd $TOP_DIR
 sudo git remote add group-policy http://github.com/group-policy/devstack
 sudo git fetch group-policy
-sudo git checkout -t group-policy/test-gbp-fip-exercise-on-master-gate
+sudo git checkout -t group-policy/test-gbp-kilo-gate
 
-CONTRIB_DIR="$BASE/new/group-based-policy/gbpservice/tests/contrib"
 
+cp $CONTRIB_DIR/devstack/local.conf $TOP_DIR/local.conf
+cp -r $CONTRIB_DIR/exercises/*.sh $TOP_DIR/exercises/
 source $TOP_DIR/functions
 source $TOP_DIR/functions-common
 sudo -H pip install httplib2

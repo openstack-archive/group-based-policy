@@ -15,7 +15,12 @@ fi
 # Run integration tests
 echo "Running gbpfunc test suite"
 cd $NEW_BASE/devstack
+source openrc admin admin
+check_residual_resources
+source openrc admin demo
+check_residual_resources
 source openrc demo demo
+check_residual_resources
 cd $NEW_BASE
 sudo git clone https://github.com/noironetworks/devstack -b jishnub/testsuites gbpfunctests
 cd gbpfunctests/testcases/testcases_func
