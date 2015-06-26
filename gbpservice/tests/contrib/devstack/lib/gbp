@@ -1,0 +1,59 @@
+# lib/gbp
+# functions - functions specific to group-based-policy
+
+# Dependencies:
+# ``functions`` file
+# ``DEST`` must be defined
+# ``STACK_USER`` must be defined
+
+# ``stack.sh`` calls the entry points in this order:
+#
+# - install_gbpservice
+# - install_gbpclient
+# - init_gbpservice
+#
+# ``unstack.sh`` calls the entry points in this order:
+
+# Set up default directories
+GBPSERVICE_DIR=$DEST/group-based-policy
+GBPCLIENT_DIR=$DEST/python-group-based-policy-client
+GBPHEAT_DIR=$DEST/group-based-policy-automation
+GBPUI_DIR=$DEST/group-based-policy-ui
+NEUTRON_CONF_DIR=/etc/neutron
+NEUTRON_CONF=$NEUTRON_CONF_DIR/neutron.conf
+
+# Save trace setting
+XTRACE=$(set +o | grep xtrace)
+set +o xtrace
+
+
+# Functions
+# ---------
+
+# init_gbpservice() - Initialize databases, etc.
+function init_gbpservice {
+    # Run GBP db migrations
+    gbp-db-manage --config-file $NEUTRON_CONF --config-file /$Q_PLUGIN_CONF_FILE upgrade head
+}
+
+# install_gbpservice() - Collect source and prepare
+function install_gbpservice {
+    sed -i '/gbptestneutron/d' $GBPSERVICE_DIR/test-requirements.txt
+    setup_develop $GBPSERVICE_DIR
+}
+
+# install_gbpclient() - Collect source and prepare
+function install_gbpclient {
+    sudo rm -rf $GBPCLIENT_DIR
+    git_clone $GBPCLIENT_REPO $GBPCLIENT_DIR $GBPCLIENT_BRANCH
+    setup_develop $GBPCLIENT_DIR
+    sudo install -D -m 0644 -o $STACK_USER {$GBPCLIENT_DIR/tools/,/etc/bash_completion.d/}gbp.bash_completion
+}
+
+# Restore xtrace
+$XTRACE
+
+# Tell emacs to use shell-script-mode
+## Local variables:
+## mode: shell-script
+## End:
