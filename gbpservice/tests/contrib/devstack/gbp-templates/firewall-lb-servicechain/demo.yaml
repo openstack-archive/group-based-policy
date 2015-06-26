@@ -1,0 +1,133 @@
+#!highlight yaml
+
+heat_template_version: 2013-05-23
+
+resources:
+
+# Create firewall service chain node
+    sc_fw_node:
+        type: OS::Neutron::ServiceChainNode
+        properties:
+            name: SvcChainFWNode
+            service_type: FIREWALL
+            config: { get_file: fw.template }
+
+# Create loadbalancer service chain node
+    sc_lb_node:
+        type: OS::Neutron::ServiceChainNode
+        properties:
+            name: SvcChainLBNode
+            service_type: LOADBALANCER
+            config: { get_file: lb.template }
+
+# Tie the services into a chain
+    sc_spec:
+        type: OS::Neutron::ServiceChainSpec
+        properties:
+            name: svc_chain_spec
+            nodes:
+                - { get_resource: sc_fw_node }
+                - { get_resource: sc_lb_node }
+
+# Create a network service policy
+    vip_ip_policy:
+        type: OS::Neutron::NetworkServicePolicy
+        properties:
+            name: vip_ip_policy
+            network_service_params: 
+                - type: ip_single
+                  name: vip_ip
+                  value: self_subnet
+            shared: True
+
+# Creating a classifier for all tcp traffic
+    any_tcp_classifier:
+        type: OS::Neutron::PolicyClassifier
+        properties:
+            name: any_tcp_classifier
+            protocol: tcp
+            direction: in
+            shared: True
+
+# Creating redirect action
+    redirect_to_chain:
+        type: OS::Neutron::PolicyAction
+        properties:
+            name: redirect_to_chain
+            action_type: redirect
+            action_value: { get_resource: sc_spec }
+            shared: False
+
+# Creating a policy rule set
+    tcp_traffic_rule:
+        type: OS::Neutron::PolicyRule
+        properties:
+            name: tcp_traffic_rule
+            policy_classifier_id: { get_resource: any_tcp_classifier }
+            policy_actions: [{ get_resource: redirect_to_chain }]
+            shared: False
+
+    tcp_rule_set:
+        type: OS::Neutron::PolicyRuleSet
+        properties:
+            name: tcp_rule_set
+            policy_rules: [{ get_resource: tcp_traffic_rule }] 
+            child_policy_rule_sets: []
+            shared: False
+
+# Create EPGs for providers and consumers
+    app_ptg:
+        type: OS::Neutron::PolicyTargetGroup
+        properties:
+            name: app_ptg
+            provided_policy_rule_sets: 
+                - policy_rule_set_id: { get_resource: tcp_rule_set }
+                  policy_rule_set_scope: 
+            network_service_policy_id: { get_resource: vip_ip_policy }
+            shared: False
+
+    user_ptg:
+        type: OS::Neutron::PolicyTargetGroup
+        depends_on: app_server_pt
+        properties:
+            name: user_ptg
+            consumed_policy_rule_sets: 
+                - policy_rule_set_id: { get_resource: tcp_rule_set }
+                  policy_rule_set_scope: 
+            shared: False
+
+# Create webserver
+
+    app_server_pt:
+        type: OS::Neutron::PolicyTarget
+        properties:
+            name: app_server_pt
+            policy_target_group_id: { get_resource: app_ptg }
+
+    app_server:
+        type: OS::Nova::Server
+        properties:
+            name: app_svr
+            image: cirros-0.3.2-x86_64-uec
+            flavor: m1.tiny
+            networks:
+                - port: {get_attr: [app_server_pt, port_id]}
+
+# Create a user
+
+    user_server_pt:
+        type: OS::Neutron::PolicyTarget
+        properties:
+            name: user_server_pt
+            policy_target_group_id: { get_resource: user_ptg }
+
+    user_server:
+        type: OS::Nova::Server
+        properties:
+            name: user_svr
+            image: cirros-0.3.2-x86_64-uec
+            flavor: m1.tiny
+            networks:
+                - port: {get_attr: [user_server_pt, port_id]}
+
+
