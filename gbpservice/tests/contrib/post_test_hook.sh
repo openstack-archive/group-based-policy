@@ -6,16 +6,21 @@ set -x
 
 trap prepare_logs ERR
 
+# Run exercise scripts
+$TOP_DIR/exercise.sh
 # Check if any gbp exercises failed
 exercises_exit_code=0
 if grep -qs "FAILED gbp*" $LOGS_DIR/*; then
     exercises_exit_code=1
 fi
 
-# Run integration tests
+# Check if exercises left any resources undeleted
+check_residual_resources admin admin
+check_residual_resources admin demo
+check_residual_resources demo demo
+
+# Run gbpfunc integration tests
 echo "Running gbpfunc test suite"
-cd $NEW_BASE/devstack
-source openrc demo demo
 cd $NEW_BASE
 sudo git clone https://github.com/noironetworks/devstack -b jishnub/testsuites gbpfunctests
 cd gbpfunctests/testcases/testcases_func

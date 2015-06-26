@@ -7,6 +7,28 @@ SCRIPTS_DIR="/usr/local/jenkins/slave_scripts"
 LOGS_DIR="$NEW_BASE/logs"
 ARCHIVE_LOGS_DIR="$BASE/logs"
 
+function prepare_gbp_devstack {
+    cd $TOP_DIR
+    sudo git checkout stable/kilo
+    sudo cp $CONTRIB_DIR/devstack/local.conf $TOP_DIR/local.conf
+    sudo cp $CONTRIB_DIR/devstack/exercises/*.sh $TOP_DIR/exercises/
+    sudo cp $CONTRIB_DIR/devstack/lib/* $TOP_DIR/lib/
+    sudo cp -r $CONTRIB_DIR/devstack/gbp-templates $TOP_DIR
+    sudo sed -i 's/DEST=\/opt\/stack/DEST=\/opt\/stack\/new/g' $TOP_DIR/stackrc
+    sudo sed -i 's/exit 1/echo/g' $TOP_DIR/exercise.sh
+    sudo sed -i 's/source $TOP_DIR\/lib\/neutron-legacy/source $TOP_DIR\/lib\/neutron-legacy\nsource $TOP_DIR\/lib\/gbp/g' $TOP_DIR/stack.sh
+    sudo sed -i 's/install_neutronclient/install_neutronclient\n    install_gbpclient/g' $TOP_DIR/stack.sh
+    #sudo sed -i 's/init_neutron/init_neutron\n        init_gbpservice/g' $TOP_DIR/stack.sh
+    sudo sed -i 's/# Extras Configuration/init_gbpservice\n# Extras Configuration/g' $TOP_DIR/stack.sh
+    sudo sed -i 's/echo_summary "Creating initial neutron network elements"//g' $TOP_DIR/stack.sh
+    sudo sed -i 's/create_neutron_initial_network//g' $TOP_DIR/stack.sh
+    source $TOP_DIR/functions
+    source $TOP_DIR/functions-common
+    #sudo -H pip install httplib2
+    #install_package openvswitch-switch
+    pip_install -e $GBP_DIR
+}
+
 # Prepare the log files for Jenkins to upload
 function prepare_logs {
     cd $LOGS_DIR
@@ -28,4 +50,28 @@ function generate_testr_results {
         gzip -9 ./testr_results.html
         sudo mv ./*.gz $ARCHIVE_LOGS_DIR/
     fi
+}
+
+function check_residual_resources {
+    source $NEW_BASE/devstack/openrc $1 $2
+    gbp l3policy-list
+    gbp l2policy-list
+    gbp group-list
+    gbp policy-target-list
+    gbp policy-rule-set-list
+    gbp policy-rule-list
+    gbp policy-classifier-list
+    gbp policy-action-list
+    gbp servicechain-instance-list
+    gbp servicechain-node-list
+    gbp servicechain-spec-list
+    gbp network-service-policy-list
+    gbp nat-pool-list
+    gbp external-policy-list
+    gbp external-segment-list
+
+    neutron router-list
+    neutron net-list
+    neutron subnet-list
+    neutron port-list
 }

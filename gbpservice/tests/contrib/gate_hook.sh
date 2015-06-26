@@ -1,24 +1,14 @@
 #!/bin/bash
 
-cp /opt/stack/new/group-based-policy/gbpservice/tests/contrib/functions-gbp .
+CONTRIB_DIR="$BASE/new/group-based-policy/gbpservice/tests/contrib"
+cp $CONTRIB_DIR/functions-gbp .
 source functions-gbp
 
 set -x
 
 trap prepare_logs ERR
 
-cd $TOP_DIR
-sudo git remote add group-policy http://github.com/group-policy/devstack
-sudo git fetch group-policy
-sudo git checkout -t group-policy/test-gbp-fip-exercise-on-master-gate
-
-CONTRIB_DIR="$BASE/new/group-based-policy/gbpservice/tests/contrib"
-
-source $TOP_DIR/functions
-source $TOP_DIR/functions-common
-sudo -H pip install httplib2
-install_package openvswitch-switch
-pip_install -e /opt/stack/new/group-based-policy
+prepare_gbp_devstack
 $TOP_DIR/stack.sh
 
 # Add a rootwrap filter to support test-only
