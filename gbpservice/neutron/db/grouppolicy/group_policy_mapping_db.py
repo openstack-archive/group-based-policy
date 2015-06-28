@@ -171,6 +171,19 @@ class GroupPolicyMappingDbPlugin(gpdb.GroupPolicyDbPlugin):
         return self._make_policy_target_dict(pt_db)
 
     @log.log
+    def get_policy_targets(self, context, filters=None, fields=None,
+                           sorts=None, limit=None, marker=None,
+                           page_reverse=False):
+        marker_obj = self._get_marker_obj(context, 'policy_target', limit,
+                                          marker)
+        return self._get_collection(context, PolicyTargetMapping,
+                                    self._make_policy_target_dict,
+                                    filters=filters, fields=fields,
+                                    sorts=sorts, limit=limit,
+                                    marker_obj=marker_obj,
+                                    page_reverse=page_reverse)
+
+    @log.log
     def create_policy_target_group(self, context, policy_target_group):
         ptg = policy_target_group['policy_target_group']
         tenant_id = self._get_tenant_id_for_create(context, ptg)
@@ -239,6 +252,19 @@ class GroupPolicyMappingDbPlugin(gpdb.GroupPolicyDbPlugin):
                                      shared=l2p.get('shared', False))
             context.session.add(l2p_db)
         return self._make_l2_policy_dict(l2p_db)
+
+    @log.log
+    def get_l2_policies(self, context, filters=None, fields=None,
+                        sorts=None, limit=None, marker=None,
+                        page_reverse=False):
+        marker_obj = self._get_marker_obj(context, 'l2_policy', limit,
+                                          marker)
+        return self._get_collection(context, L2PolicyMapping,
+                                    self._make_l2_policy_dict,
+                                    filters=filters, fields=fields,
+                                    sorts=sorts, limit=limit,
+                                    marker_obj=marker_obj,
+                                    page_reverse=page_reverse)
 
     @log.log
     def create_l3_policy(self, context, l3_policy):
@@ -321,3 +347,16 @@ class GroupPolicyMappingDbPlugin(gpdb.GroupPolicyDbPlugin):
             if 'external_routes' in es:
                 self._process_segment_ers(context, es_db, es)
         return self._make_external_segment_dict(es_db)
+
+    @log.log
+    def get_external_segments(self, context, filters=None, fields=None,
+                              sorts=None, limit=None, marker=None,
+                              page_reverse=False):
+        marker_obj = self._get_marker_obj(context, 'external_segment', limit,
+                                          marker)
+        return self._get_collection(context, ExternalSegmentMapping,
+                                    self._make_external_segment_dict,
+                                    filters=filters, fields=fields,
+                                    sorts=sorts, limit=limit,
+                                    marker_obj=marker_obj,
+                                    page_reverse=page_reverse)
