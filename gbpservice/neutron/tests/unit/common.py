@@ -397,7 +397,8 @@ def get_create_servicechain_instance_attrs():
 def get_update_servicechain_instance_attrs():
     return {
         'name': 'new_name',
-        'servicechain_specs': [_uuid()]
+        'servicechain_specs': [_uuid()],
+        'classifier_id': _uuid()
     }
 
 
