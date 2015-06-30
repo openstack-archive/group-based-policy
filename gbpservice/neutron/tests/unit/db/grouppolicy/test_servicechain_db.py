@@ -514,9 +514,14 @@ class TestServiceChainResources(ServiceChainDbTestCase):
             consumer_ptg_id=consumer_ptg_id,
             management_ptg_id=management_ptg_id, classifier_id=classifier_id,
             config_param_values=config_param_values)
+        new_classifier_id = uuidutils.generate_uuid()
+        new_scs_id = self.create_servicechain_spec()['servicechain_spec']['id']
+        attrs.update({'servicechain_specs': [new_scs_id],
+                      'classifier_id': new_classifier_id})
         data = {'servicechain_instance': {'name': name,
                                           'description': description,
-                                          'servicechain_specs': [scs_id]}}
+                                          'servicechain_specs': [new_scs_id],
+                                          'classifier_id': new_classifier_id}}
         req = self.new_update_request('servicechain_instances', data,
                                       sci['servicechain_instance']['id'])
         res = self.deserialize(self.fmt, req.get_response(self.ext_api))
