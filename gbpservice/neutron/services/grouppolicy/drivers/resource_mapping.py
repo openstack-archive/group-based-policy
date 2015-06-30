@@ -599,20 +599,49 @@ class ResourceMappingDriver(api.PolicyDriver):
             'consumed_policy_rule_sets']
         curr_consumed_policy_rule_sets = context.current[
             'consumed_policy_rule_sets']
-        if (set(orig_provided_policy_rule_sets) !=
-            set(curr_provided_policy_rule_sets)
-            or set(orig_consumed_policy_rule_sets) !=
-            set(curr_consumed_policy_rule_sets)):
-            provider_ptg_chain_map = self._get_ptg_servicechain_mapping(
+
+        removed_provided_prs = (set(orig_provided_policy_rule_sets) -
+                                set(curr_provided_policy_rule_sets))
+        removed_consumed_prs = (set(orig_consumed_policy_rule_sets) -
+                                set(curr_consumed_policy_rule_sets))
+        added_provided_prs = (set(curr_provided_policy_rule_sets) -
+                              set(orig_provided_policy_rule_sets))
+        added_consumed_prs = (set(curr_consumed_policy_rule_sets) -
+                              set(orig_consumed_policy_rule_sets))
+        context.ptg_chain_map = []
+        # If the Redirect is removed, delete the chain. If the spec is
+        # changed, then update the existing instance with new spec
+        if (self._is_redirect_in_policy_rule_sets(
+                context, removed_provided_prs) and not
+            self._is_redirect_in_policy_rule_sets(
+                context, added_provided_prs)):
+            context.ptg_chain_map += self._get_ptg_servicechain_mapping(
                                             context._plugin_context.session,
                                             context.current['id'],
                                             None)
-            consumer_ptg_chain_map = self._get_ptg_servicechain_mapping(
+        if (self._is_redirect_in_policy_rule_sets(
+                context, removed_consumed_prs) and not
+            self._is_redirect_in_policy_rule_sets(
+                context, added_consumed_prs)):
+            context.ptg_chain_map += self._get_ptg_servicechain_mapping(
                                             context._plugin_context.session,
                                             None,
                                             context.current['id'])
-            context.ptg_chain_map = (provider_ptg_chain_map +
-                                     consumer_ptg_chain_map)
+
+    def _is_redirect_in_policy_rule_sets(self, context, policy_rule_sets):
+        policy_rule_ids = []
+        for prs in context._plugin.get_policy_rule_sets(
+                context._plugin_context, filters={'id': policy_rule_sets}):
+            policy_rule_ids.extend(prs['policy_rules'])
+        for rule in context._plugin.get_policy_rules(
+                context._plugin_context, filters={'id': policy_rule_ids}):
+            redirect_actions = context._plugin.get_policy_actions(
+                        context._plugin_context,
+                        filters={'id': rule["policy_actions"],
+                                 'action_type': [gconst.GP_ACTION_REDIRECT]})
+            if redirect_actions:
+                return True
+        return False
 
     @log.log
     def update_policy_target_group_postcommit(self, context):
@@ -659,17 +688,16 @@ class ResourceMappingDriver(api.PolicyDriver):
             if new_nsp:
                 self._handle_network_service_policy(context)
 
-        # Delete old servicechain instance and create new one in case of update
-        if (set(orig_provided_policy_rule_sets) !=
-            set(curr_provided_policy_rule_sets)
-            or set(orig_consumed_policy_rule_sets) !=
-            set(curr_consumed_policy_rule_sets)):
-            self._cleanup_redirect_action(context)
-            if (curr_consumed_policy_rule_sets or
-                curr_provided_policy_rule_sets):
-                policy_rule_sets = (curr_consumed_policy_rule_sets +
-                                    curr_provided_policy_rule_sets)
-                self._handle_redirect_action(context, policy_rule_sets)
+        # Only the ones set in context in precommit operation will be deleted
+        self._cleanup_redirect_action(context)
+        # If the spec is changed, then update the chain with new spec
+        # If redirect is newly added, create the chain
+        if self._is_redirect_in_policy_rule_sets(
+            context,
+            new_provided_policy_rule_sets + new_consumed_policy_rule_sets):
+            policy_rule_sets = (curr_consumed_policy_rule_sets +
+                                curr_provided_policy_rule_sets)
+            self._handle_redirect_action(context, policy_rule_sets)
 
         # if PTG associated policy_rule_sets are updated, we need to update
         # the policy rules, then assoicate SGs to ports
@@ -868,7 +896,20 @@ class ResourceMappingDriver(api.PolicyDriver):
             policy_rulesets_to_update.extend(pr_sets)
             self._update_policy_rule_sg_rules(context, pr_sets,
                 policy_rule, context.original, context.current)
-        self._handle_redirect_action(context, policy_rulesets_to_update)
+
+        # Invoke Service chain update if protocol or port or direction is
+        # updated. The SC side may have to reclassify the chain and update the
+        # traffic steering programming
+        if (context.original['port_range'] != context.current['port_range'] or
+            context.original['protocol'] != context.current['protocol'] or
+            context.original['direction'] != context.current['direction']):
+            sc_instances = (
+                self._servicechain_plugin.get_servicechain_instances(
+                    context._plugin_context,
+                    filters={'classifier_id': [context.current['id']]}))
+            for sc_instance in sc_instances:
+                self._servicechain_plugin.notify_chain_parameters_updated(
+                    context._plugin_context, sc_instance['id'])
 
     @log.log
     def delete_policy_classifier_precommit(self, context):
@@ -938,7 +979,17 @@ class ResourceMappingDriver(api.PolicyDriver):
                                                    [context.original])
                 self._apply_policy_rule_set_rules(context, prs,
                                                   [context.current])
-            self._handle_redirect_action(context, policy_rule_sets)
+
+            old_redirect_policy_actions = context._plugin.get_policy_actions(
+                        context._plugin_context,
+                        filters={'id': context.original['policy_actions'],
+                                 'action_type': [gconst.GP_ACTION_REDIRECT]})
+            new_redirect_policy_actions = context._plugin.get_policy_actions(
+                        context._plugin_context,
+                        filters={'id': context.current['policy_actions'],
+                                 'action_type': [gconst.GP_ACTION_REDIRECT]})
+            if old_redirect_policy_actions or new_redirect_policy_actions:
+                self._handle_redirect_action(context, policy_rule_sets)
 
     @log.log
     def delete_policy_rule_precommit(self, context):
@@ -1674,11 +1725,21 @@ class ResourceMappingDriver(api.PolicyDriver):
             or context.current['action_value'] ==
             context.original['action_value']):
             return
+
         spec = self._servicechain_plugin._get_servicechain_spec(
                     context._plugin_context, context.original['action_value'])
         for servicechain_instance in spec.instances:
+            sc_instance_id = servicechain_instance.servicechain_instance_id
+            sc_instance = self._servicechain_plugin.get_servicechain_instance(
+                    context._plugin_context, sc_instance_id)
+            old_specs = sc_instance['servicechain_specs']
+            # Use the parent/child redirect spec as it is. Only replace the
+            # current one
+            new_specs = [context.current['action_value'] if
+                         x == context.original['action_value'] else
+                         x for x in old_specs]
             sc_instance_update_req = {
-                    'servicechain_specs': [context.current['action_value']]}
+                    'servicechain_specs': new_specs}
             self._update_resource(
                         self._servicechain_plugin,
                         context._plugin_context,
@@ -1686,18 +1747,29 @@ class ResourceMappingDriver(api.PolicyDriver):
                         servicechain_instance.servicechain_instance_id,
                         sc_instance_update_req)
 
+    def _update_servicechain_instance(self, context, sc_instance_id,
+                                      classifier_id=None, sc_specs=None):
+        sc_instance_update_data = {}
+        if sc_specs:
+            sc_instance_update_data.update({'servicechain_specs': sc_specs})
+        if classifier_id:
+            sc_instance_update_data.update({'classifier_id': classifier_id})
+        self._update_resource(
+                    self._servicechain_plugin,
+                    context._plugin_context,
+                    'servicechain_instance',
+                    sc_instance_id,
+                    sc_instance_update_data)
+
     def _get_rule_ids_for_actions(self, context, action_id):
         policy_rule_qry = context.session.query(
                             gpdb.PolicyRuleActionAssociation.policy_rule_id)
         policy_rule_qry.filter_by(policy_action_id=action_id)
         return policy_rule_qry.all()
 
-    # This method is invoked from both PTG create and classifier update
-    # TODO(Magesh): Handle classifier updates gracefully by invoking service
-    # chain instance update. This requires having an extra mapping between PRS
-    # and service chain instance, navigating though parent-child PRS and also
-    # changes in service chain implementation as no resources is directly
-    # getting updated in service chain instance
+    # This method either updates the chain if it exists or creates one
+    # if there is no existing chain. The parameters that can be updated are
+    # service chain spec and classifier ID.
     def _handle_redirect_action(self, context, policy_rule_set_ids):
         policy_rule_sets = context._plugin.get_policy_rule_sets(
                                     context._plugin_context,
@@ -1736,36 +1808,59 @@ class ResourceMappingDriver(api.PolicyDriver):
                     context._plugin_context,
                     filters={'id': policy_rule_set['policy_rules']})
             for policy_rule in policy_rules:
+                hierarchial_classifier_mismatch = False
                 classifier_id = policy_rule.get("policy_classifier_id")
-                if parent_classifier_id and not set(
-                                [parent_classifier_id]) & set([classifier_id]):
-                    continue
+                if parent_classifier_id and (parent_classifier_id !=
+                                             classifier_id):
+                    hierarchial_classifier_mismatch = True
                 policy_actions = context._plugin.get_policy_actions(
                         context._plugin_context,
                         filters={'id': policy_rule.get("policy_actions"),
                                  'action_type': [gconst.GP_ACTION_REDIRECT]})
-                for policy_action in policy_actions:
-                    for ptg_consuming_prs in ptgs_consuming_prs:
-                        for ptg_providing_prs in ptgs_providing_prs:
-                            ptg_chain_map = (
-                                        self._get_ptg_servicechain_mapping(
-                                            context._plugin_context.session,
-                                            ptg_providing_prs,
-                                            ptg_consuming_prs))
-                            # REVISIT(Magesh): There may be concurrency
-                            # issues here.
-                            for ptg_chain in ptg_chain_map:
-                                self._delete_servicechain_instance(
-                                    context,
-                                    ptg_chain.servicechain_instance_id)
-                            sc_instance = self._create_servicechain_instance(
-                                context, policy_action.get("action_value"),
-                                parent_spec_id, ptg_providing_prs,
-                                ptg_consuming_prs, classifier_id)
-                            self._set_ptg_servicechain_instance_mapping(
-                                context._plugin_context.session,
-                                ptg_providing_prs, ptg_consuming_prs,
-                                sc_instance['id'])
+                # Only one Redirect action per PRS. The chain may belong to
+                # another PRS in which case the chain should not be deleted
+                if (self._is_redirect_in_policy_rule_sets(
+                    context, policy_rule_set_ids) and not policy_actions):
+                    continue
+                spec_id = (policy_actions and policy_actions[0]['action_value']
+                           or None)
+                for ptg_consuming_prs in ptgs_consuming_prs:
+                    for ptg_providing_prs in ptgs_providing_prs:
+                        # REVISIT(Magesh): There may be concurrency issues here
+                        self._create_or_update_chain(
+                            context, ptg_providing_prs, ptg_consuming_prs,
+                            spec_id,
+                            parent_spec_id, classifier_id,
+                            hierarchial_classifier_mismatch)
+
+    def _create_or_update_chain(self, context, provider, consumer, spec_id,
+                                parent_spec_id, classifier_id,
+                                hierarchial_classifier_mismatch):
+        ptg_chain_map = self._get_ptg_servicechain_mapping(
+            context._plugin_context.session, provider, consumer)
+        if ptg_chain_map:
+            if hierarchial_classifier_mismatch or not spec_id:
+                self._delete_servicechain_instance(
+                        context, ptg_chain_map[0].servicechain_instance_id)
+            else:
+                sc_specs = [spec_id]
+                if parent_spec_id:
+                    sc_specs.insert(0, parent_spec_id)
+                # One Chain between a unique pair of provider and consumer
+                self._update_servicechain_instance(
+                        context,
+                        ptg_chain_map[0].servicechain_instance_id,
+                        classifier_id=classifier_id,
+                        sc_specs=sc_specs)
+        elif spec_id and not hierarchial_classifier_mismatch:
+            sc_instance = self._create_servicechain_instance(
+                context, spec_id,
+                parent_spec_id, provider,
+                consumer, classifier_id)
+            self._set_ptg_servicechain_instance_mapping(
+                context._plugin_context.session,
+                provider, consumer,
+                sc_instance['id'])
 
     def _cleanup_redirect_action(self, context):
         for ptg_chain in context.ptg_chain_map:
