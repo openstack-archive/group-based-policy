@@ -268,6 +268,28 @@ class NodeCompositionPluginTestCase(
         self.assertEqual(3, deploy.call_count)
         self.assertEqual(3, destroy.call_count)
 
+    def test_update_service_chain(self):
+        deploy = self.driver.create = mock.Mock()
+        update = self.driver.update = mock.Mock()
+        destroy = self.driver.delete = mock.Mock()
+
+        self._create_simple_service_chain(1)
+        self.assertEqual(1, deploy.call_count)
+        self.assertEqual(0, destroy.call_count)
+
+        deploy.reset_mock()
+
+        provider, _, prs = self._create_simple_service_chain(3)
+        self.assertEqual(3, deploy.call_count)
+        self.assertEqual(0, destroy.call_count)
+
+        rules = prs['policy_rules']
+        rule = self.show_policy_rule(rules[0])
+        self.update_policy_classifier(
+                rule['policy_rule']['policy_classifier_id'],
+                protocol='udp')
+        self.assertEqual(3, update.call_count)
+
     def test_create_service_chain_fails(self):
         deploy = self.driver.create = mock.Mock()
         destroy = self.driver.delete = mock.Mock()
