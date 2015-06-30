@@ -191,7 +191,7 @@ RESOURCE_ATTRIBUTE_MAP = {
                               'validate': {'type:uuid_or_none': None},
                               'is_visible': True, 'default': None,
                               'required': True},
-        'classifier_id': {'allow_post': True, 'allow_put': False,
+        'classifier_id': {'allow_post': True, 'allow_put': True,
                           'validate': {'type:uuid_or_none': None},
                           'is_visible': True, 'default': None,
                           'required': True},

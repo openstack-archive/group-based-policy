@@ -584,25 +584,29 @@ class NodeCompositionPluginTestCase(
             service_profile_id=prof['id'],
             config=self.DEFAULT_LB_CONFIG,
             expected_res_status=201)['servicechain_node']
-
         spec = self.create_servicechain_spec(
             nodes=[node['id']],
             expected_res_status=201)['servicechain_spec']
-        prs = self._create_redirect_prs(spec['id'])['policy_rule_set']
+
+        action = self.create_policy_action(action_type='REDIRECT',
+                                           action_value=spec['id'])
+        classifier = self.create_policy_classifier(
+            port_range=80, protocol='tcp', direction='bi')['policy_classifier']
+        rule = self.create_policy_rule(
+            policy_actions=[action['policy_action']['id']],
+            policy_classifier_id=classifier['id'])['policy_rule']
+        prs = self.create_policy_rule_set(
+            policy_rules=[rule['id']])['policy_rule_set']
+
         self.create_policy_target_group(
             provided_policy_rule_sets={prs['id']: ''})
         self.create_policy_target_group(
-            consumed_policy_rule_sets={prs['id']: ''})
-
-        # Verify notification issued for update in the driver
-        # REVISIT(Magesh): When bug #1446587 is fixed, we should test by
-        # performing a classifier or rule update instead
+            consumed_policy_rule_sets={prs['id']: ''})['policy_target_group']
         instances = self._list('servicechain_instances')[
             'servicechain_instances']
         self.assertEqual(1, len(instances))
-        plugin_context = n_context.get_admin_context()
-        self.sc_plugin.notify_chain_parameters_updated(
-            plugin_context, instances[0]['id'])
+
+        self.update_policy_classifier(classifier['id'], port_range=22)
         update_hook.assert_called_with(mock.ANY)
 
     def test_context_no_management(self):
