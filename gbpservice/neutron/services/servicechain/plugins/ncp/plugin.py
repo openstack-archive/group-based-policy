@@ -88,6 +88,7 @@ class NodeCompositionPlugin(servicechain_db.ServiceChainDbPlugin,
         """
         session = context.session
         deployers = {}
+        updaters = {}
         destroyers = {}
         with session.begin(subtransactions=True):
             original_instance = self.get_servicechain_instance(
@@ -104,8 +105,16 @@ class NodeCompositionPlugin(servicechain_db.ServiceChainDbPlugin,
                     context, original_instance, 'destroy')
                 deployers = self._get_scheduled_drivers(
                     context, updated_instance, 'deploy')
-        self._destroy_servicechain_nodes(context, destroyers)
-        self._deploy_servicechain_nodes(context, deployers)
+            else:  # Could be classifier ID update or classifier port update
+                updaters = self._get_scheduled_drivers(
+                    context, original_instance, 'update')
+
+        if (original_instance['servicechain_specs'] !=
+            updated_instance['servicechain_specs']):
+            self._destroy_servicechain_nodes(context, destroyers)
+            self._deploy_servicechain_nodes(context, deployers)
+        else:
+            self._update_servicechain_nodes(context, updaters)
         return updated_instance
 
     @log.log
@@ -305,6 +314,11 @@ class NodeCompositionPlugin(servicechain_db.ServiceChainDbPlugin,
         for deploy in deployers.values():
             driver = deploy['driver']
             driver.create(deploy['context'])
+
+    def _update_servicechain_nodes(self, context, updaters):
+        for update in updaters.values():
+            driver = update['driver']
+            driver.update(update['context'])
 
     def _destroy_servicechain_nodes(self, context, destroyers):
         # Actual node disruption
