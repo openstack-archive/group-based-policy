@@ -201,6 +201,7 @@ class NodeCompositionPluginTestCase(
 
         params_node_1 = ['p1', 'p2', 'p3']
         params_node_2 = ['p4', 'p5', 'p6']
+        params_node_3 = ['p7', 'p8', 'p9']
 
         def params_dict(params):
             return jsonutils.dumps({'Parameters':
@@ -230,6 +231,15 @@ class NodeCompositionPluginTestCase(
 
         # Update the spec removing one node
         self.update_servicechain_spec(spec['id'], nodes=[node1['id']],
+                                      expected_res_status=200)
+
+        spec = self.show_servicechain_spec(spec['id'])['servicechain_spec']
+        # Verify param names is empty
+        self.assertIsNone(spec['config_param_names'])
+
+        # Update a node with new config params
+        self.update_servicechain_node(node1['id'],
+                                      config=params_dict(params_node_3),
                                       expected_res_status=200)
 
         spec = self.show_servicechain_spec(spec['id'])['servicechain_spec']

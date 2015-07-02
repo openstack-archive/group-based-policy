@@ -154,7 +154,8 @@ class NodeCompositionPlugin(servicechain_db.ServiceChainDbPlugin,
             updated_sc_node = super(NodeCompositionPlugin,
                                     self).update_servicechain_node(
                                         context, servicechain_node_id,
-                                        servicechain_node)
+                                        servicechain_node,
+                                        set_params=False)
             self._validate_shared_update(context, original_sc_node,
                                          updated_sc_node, 'servicechain_node')
             instances = self._get_node_instances(context, updated_sc_node)
