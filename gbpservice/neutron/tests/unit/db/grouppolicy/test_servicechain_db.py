@@ -236,16 +236,19 @@ class TestServiceChainResources(ServiceChainDbTestCase):
     def test_update_servicechain_node(self):
         name = 'new_servicechain_node'
         description = 'new desc'
+        config = 'new_config'
         profile = self.create_service_profile(service_type=constants.FIREWALL)
         attrs = cm.get_create_servicechain_node_default_attrs(
             name=name, description=description,
+            config=config,
             service_profile_id=profile['service_profile']['id'])
 
         scn = self.create_servicechain_node(
             service_profile_id=profile['service_profile']['id'])
 
         data = {'servicechain_node': {'name': name,
-                                      'description': description}}
+                                      'description': description,
+                                      'config': config}}
         req = self.new_update_request('servicechain_nodes', data,
                                       scn['servicechain_node']['id'])
         res = self.deserialize(self.fmt, req.get_response(self.ext_api))
