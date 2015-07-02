@@ -171,6 +171,21 @@ class NodeDriverBase(object):
         """
         pass
 
+    @abc.abstractmethod
+    def notify_chain_parameters_updated(self, context):
+        """Update a deployed Service Chain Node on GBP PRS updates
+
+        This method can be used to inform the node driver that some parameter
+        that affects the service chain is updated. The update may be
+        something like adding or removing an Allow Rule to the ruleset and
+        this has to be enforced in the Firewall Service VM, or it could simply
+        be a classifier update.
+
+        :param context: NodeDriverContext instance describing the service chain
+        and the specific node to be processed by this driver.
+        """
+        pass
+
     @abc.abstractproperty
     def name(self):
         pass

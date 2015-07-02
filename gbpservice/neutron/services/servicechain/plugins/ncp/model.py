@@ -68,7 +68,7 @@ class ServiceTarget(model_base.BASEV2):
     position = sa.Column(sa.Integer)
 
 
-def set_node_ownership(context, driver_name):
+def set_node_owner(context, driver_name):
     session = context.session
     with session.begin(subtransactions=True):
             owner = NodeToDriverMapping(
@@ -87,6 +87,18 @@ def get_node_owner(context):
         query = query.filter_by(
             servicechain_node_id=context.current_node['id'])
         return query.all()
+
+
+def unset_node_owner(context):
+    session = context.session
+    with session.begin(subtransactions=True):
+        query = session.query(NodeToDriverMapping)
+        query = query.filter_by(
+            servicechain_instance_id=context.instance['id'])
+        query = query.filter_by(
+            servicechain_node_id=context.current_node['id'])
+        for owner in query.all():
+            session.delete(owner)
 
 
 def set_service_target(context, policy_target_id, relationship):
