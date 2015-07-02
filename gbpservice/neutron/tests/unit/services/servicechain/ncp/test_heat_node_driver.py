@@ -570,7 +570,8 @@ class TestServiceChainInstance(HeatNodeDriverTestCase):
                                    'delete') as stack_delete:
                 with mock.patch.object(heatClient.HeatClient,
                                        'get') as stack_get:
-                    stack_get.return_value = MockStackObject('PENDING_DELETE')
+                    stack_get.return_value = MockStackObject(
+                        'DELETE_IN_PROGRESS')
                     # Removing the PRSs will make the PTG deletable again
                     self.update_policy_target_group(
                                         provider['id'],

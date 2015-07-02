@@ -280,6 +280,26 @@ class NodeCompositionPluginTestCase(
         self.assertEqual(3, deploy.call_count)
         self.assertEqual(3, destroy.call_count)
 
+    def test_update_service_chain(self):
+        deploy = self.driver.create = mock.Mock()
+        update = self.driver.update = mock.Mock()
+        destroy = self.driver.delete = mock.Mock()
+
+        provider, _, prs = self._create_simple_service_chain(1)
+        self.assertEqual(1, deploy.call_count)
+        self.assertEqual(0, destroy.call_count)
+
+        # REVISIT(Magesh): When bug #1446587 is fixed, we should test by
+        # performing a classifier or rule update instead of SC instance update
+        instances = self._list('servicechain_instances')[
+                                            'servicechain_instances']
+        self.assertEqual(1, len(instances))
+        self.update_servicechain_instance(
+            instances[0]['id'],
+            expected_res_status=200)
+        self.assertEqual(1, update.call_count)
+        self.assertEqual(0, destroy.call_count)
+
     def test_create_service_chain_fails(self):
         deploy = self.driver.create = mock.Mock()
         destroy = self.driver.delete = mock.Mock()
@@ -415,22 +435,20 @@ class NodeCompositionPluginTestCase(
         self.update_servicechain_node(node['id'], name='somethingelse')
         self.assertEqual(3, update.call_count)
 
-    def test_instantiated_spec_node_update_rejected(self):
+    def test_update_spec(self):
         prof = self.create_service_profile(
             service_type='LOADBALANCER',
             vendor=self.SERVICE_PROFILE_VENDOR)['service_profile']
 
-        node1_id = self.create_servicechain_node(
+        node1 = self.create_servicechain_node(
             service_profile_id=prof['id'],
-            config=self.DEFAULT_LB_CONFIG,
-            expected_res_status=201)['servicechain_node']['id']
-        node2_id = self.create_servicechain_node(
+            config=self.DEFAULT_LB_CONFIG)['servicechain_node']
+        node2 = self.create_servicechain_node(
             service_profile_id=prof['id'],
-            config=self.DEFAULT_LB_CONFIG,
-            expected_res_status=201)['servicechain_node']['id']
+            config=self.DEFAULT_LB_CONFIG)['servicechain_node']
 
         spec = self.create_servicechain_spec(
-            nodes=[node1_id, node2_id],
+            nodes=[node1['id'], node2['id']],
             expected_res_status=201)['servicechain_spec']
         prs = self._create_redirect_prs(spec['id'])['policy_rule_set']
         self.create_policy_target_group(
@@ -439,10 +457,42 @@ class NodeCompositionPluginTestCase(
             consumed_policy_rule_sets={prs['id']: ''})
 
         res = self.update_servicechain_spec(spec['id'],
-                                            nodes=[node1_id],
-                                            expected_res_status=400)
-        self.assertEqual('InuseSpecNodeUpdateNotAllowed',
-                         res['NeutronError']['type'])
+                                            nodes=[node1['id']],
+                                            expected_res_status=200)
+        self.assertEqual([node1['id']], res['servicechain_spec']['nodes'])
+
+    def test_instance_update(self):
+        prof = self.create_service_profile(
+            service_type='LOADBALANCER',
+            vendor=self.SERVICE_PROFILE_VENDOR)['service_profile']
+
+        node1 = self.create_servicechain_node(
+            service_profile_id=prof['id'],
+            config=self.DEFAULT_LB_CONFIG)['servicechain_node']
+        node2 = self.create_servicechain_node(
+            service_profile_id=prof['id'],
+            config=self.DEFAULT_LB_CONFIG)['servicechain_node']
+
+        spec = self.create_servicechain_spec(
+            nodes=[node1['id'], node2['id']],
+            expected_res_status=201)['servicechain_spec']
+        prs = self._create_redirect_prs(spec['id'])['policy_rule_set']
+        self.create_policy_target_group(
+            provided_policy_rule_sets={prs['id']: ''})
+        self.create_policy_target_group(
+            consumed_policy_rule_sets={prs['id']: ''})
+
+        instances = self._list('servicechain_instances')[
+                                            'servicechain_instances']
+        self.assertEqual(1, len(instances))
+        spec2 = self.create_servicechain_spec(
+            nodes=[node1['id']],
+            expected_res_status=201)['servicechain_spec']
+        res = self.update_servicechain_instance(
+            instances[0]['id'], servicechain_specs=[spec2['id']],
+            expected_res_status=200)
+        self.assertEqual([spec2['id']],
+                         res['servicechain_instance']['servicechain_specs'])
 
     def test_relevant_ptg_update(self):
         add = self.driver.update_policy_target_added = mock.Mock()
@@ -517,6 +567,37 @@ class NodeCompositionPluginTestCase(
         # Verify notification issued for deleted PT in the provider
         self.delete_policy_target(pt['id'])
         self.assertFalse(rem.called)
+
+    def test_notify_chain_update_hook(self):
+        update_hook = self.driver.notify_chain_parameters_updated = mock.Mock()
+
+        prof = self.create_service_profile(
+            service_type='LOADBALANCER',
+            vendor=self.SERVICE_PROFILE_VENDOR)['service_profile']
+        node = self.create_servicechain_node(
+            service_profile_id=prof['id'],
+            config=self.DEFAULT_LB_CONFIG,
+            expected_res_status=201)['servicechain_node']
+
+        spec = self.create_servicechain_spec(
+            nodes=[node['id']],
+            expected_res_status=201)['servicechain_spec']
+        prs = self._create_redirect_prs(spec['id'])['policy_rule_set']
+        self.create_policy_target_group(
+            provided_policy_rule_sets={prs['id']: ''})['policy_target_group']
+        self.create_policy_target_group(
+            consumed_policy_rule_sets={prs['id']: ''})['policy_target_group']
+
+        # Verify notification issued for update in the driver
+        # REVISIT(Magesh): When bug #1446587 is fixed, we should test by
+        # performing a classifier or rule update instead
+        instances = self._list('servicechain_instances')[
+            'servicechain_instances']
+        self.assertEqual(1, len(instances))
+        plugin_context = n_context.get_admin_context()
+        self.sc_plugin.notify_chain_parameters_updated(
+            plugin_context, instances[0]['id'])
+        update_hook.assert_called_with(mock.ANY)
 
 
 class AgnosticChainPlumberTestCase(NodeCompositionPluginTestCase):
