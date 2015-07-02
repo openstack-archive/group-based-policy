@@ -68,7 +68,7 @@ class NodeDriverManager(stevedore.named.NamedExtensionManager):
         for driver in self.ordered_drivers:
             try:
                 driver.obj.validate_create(context)
-                model.set_node_ownership(context, driver.obj.name)
+                model.set_node_owner(context, driver.obj.name)
                 return driver.obj
             except n_exc.NeutronException as e:
                 LOG.warn(e.message)
@@ -79,7 +79,10 @@ class NodeDriverManager(stevedore.named.NamedExtensionManager):
         Given a NodeContext, this method returns the driver capable of
         destroying the specific node.
         """
-        return self.get_owning_driver(context)
+        driver = self.get_owning_driver(context)
+        if driver:
+            model.unset_node_owner(context)
+        return driver
 
     def schedule_update(self, context):
         """Schedule Node Driver for Node Update.
@@ -91,6 +94,15 @@ class NodeDriverManager(stevedore.named.NamedExtensionManager):
         if driver:
             driver.validate_update(context)
         return driver
+
+    def clear_node_owner(self, context):
+        """Remove Node Driver ownership set for a Node
+
+        Given a NodeContext, this method removes the Node owner mapping in DB.
+        This method is used when we want to perform a disruptive chain update
+        by deleting and recreating the Node instances
+        """
+        model.unset_node_owner(context)
 
     def get_owning_driver(self, context):
         owner = model.get_node_owner(context)

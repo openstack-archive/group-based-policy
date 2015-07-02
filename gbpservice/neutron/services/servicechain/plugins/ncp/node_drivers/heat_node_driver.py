@@ -242,6 +242,10 @@ class HeatNodeDriver(driver_base.NodeDriverBase):
         if service_type == pconst.LOADBALANCER:
             self.update(context)
 
+    @log.log
+    def notify_chain_parameters_updated(self, context):
+        self.update(context)
+
     @property
     def name(self):
         return self._name
@@ -314,7 +318,7 @@ class HeatNodeDriver(driver_base.NodeDriverBase):
                 if stack.stack_status == 'DELETE_FAILED':
                     heatclient.delete(stack_id)
                 elif stack.stack_status not in ['UPDATE_IN_PROGRESS',
-                                                'PENDING_DELETE']:
+                                                'DELETE_IN_PROGRESS']:
                     return
             except Exception:
                 LOG.exception(_("Retrieving the stack %(stack)s failed."),
