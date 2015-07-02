@@ -88,6 +88,7 @@ class NodeCompositionPlugin(servicechain_db.ServiceChainDbPlugin,
         """
         session = context.session
         deployers = {}
+        updaters = {}
         destroyers = {}
         with session.begin(subtransactions=True):
             original_instance = self.get_servicechain_instance(
@@ -102,10 +103,18 @@ class NodeCompositionPlugin(servicechain_db.ServiceChainDbPlugin,
                     raise exc.OneSpecPerInstanceAllowed()
                 destroyers = self._get_scheduled_drivers(
                     context, original_instance, 'destroy')
-                deployers = self._get_scheduled_drivers(
-                    context, updated_instance, 'deploy')
-        self._destroy_servicechain_nodes(context, destroyers)
-        self._deploy_servicechain_nodes(context, deployers)
+            else:  # Could be classifier update
+                updaters = self._get_scheduled_drivers(
+                    context, original_instance, 'update')
+
+        if (original_instance['servicechain_specs'] !=
+            updated_instance['servicechain_specs']):
+            self._destroy_servicechain_nodes(context, destroyers)
+            deployers = self._get_scheduled_drivers(
+                        context, updated_instance, 'deploy')
+            self._deploy_servicechain_nodes(context, deployers)
+        else:
+            self._update_servicechain_nodes(context, updaters)
         return updated_instance
 
     @log.log
@@ -205,10 +214,31 @@ class NodeCompositionPlugin(servicechain_db.ServiceChainDbPlugin,
                                         servicechain_spec, set_params=False)
             self._validate_shared_update(context, original_sc_spec,
                                          updated_sc_spec, 'servicechain_spec')
-            # REVISIT(Magesh): Handle this update in a proper way
-            if (original_sc_spec['nodes'] != updated_sc_spec['nodes'] and
-                original_sc_spec['instances']):
-                    raise exc.InuseSpecNodeUpdateNotAllowed()
+
+        # Remove the deleted node instances and add any new ones added
+        # REVISIT(Magesh): Invoke a validate update in Node plumber
+        # and reject the update in case the plumber does not support node
+        # reordering in the spec. For now reordering is a NOOP
+        if original_sc_spec['nodes'] != updated_sc_spec['nodes']:
+            instances = original_sc_spec['instances']
+            instances = self.get_servicechain_instances(
+                context, filters={'id': instances})
+            for instance in instances:
+                removed_nodes = (set(original_sc_spec['nodes']) -
+                                 set(updated_sc_spec['nodes']))
+                added_nodes = (set(updated_sc_spec['nodes']) -
+                               set(original_sc_spec['nodes']))
+                removed_nodes = self.get_servicechain_nodes(
+                        context, filters={'id': removed_nodes})
+                added_nodes = self.get_servicechain_nodes(
+                        context, filters={'id': added_nodes})
+                destroyers = self._get_scheduled_drivers(
+                        context, instance, 'destroy', nodes=removed_nodes)
+                deployers = self._get_scheduled_drivers(
+                        context, instance, 'deploy', nodes=added_nodes)
+                self._destroy_servicechain_nodes(context, destroyers)
+                self._deploy_servicechain_nodes(context, deployers)
+
         return updated_sc_spec
 
     @log.log
@@ -282,11 +312,12 @@ class NodeCompositionPlugin(servicechain_db.ServiceChainDbPlugin,
                 context, {'id': spec['instances']}))
         return result
 
-    def _get_scheduled_drivers(self, context, instance, action):
-        nodes = self._get_instance_nodes(context, instance)
+    def _get_scheduled_drivers(self, context, instance, action, nodes=None):
+        if nodes is None:
+            nodes = self._get_instance_nodes(context, instance)
         result = {}
         func = getattr(self.driver_manager, 'schedule_' + action)
-        for node in nodes:
+        for node in nodes or []:
             node_context = ctx.get_node_driver_context(
                 self, context, instance, node)
             driver = func(node_context)
@@ -306,6 +337,11 @@ class NodeCompositionPlugin(servicechain_db.ServiceChainDbPlugin,
             driver = deploy['driver']
             driver.create(deploy['context'])
 
+    def _update_servicechain_nodes(self, context, updaters):
+        for update in updaters.values():
+            driver = update['driver']
+            driver.update(update['context'])
+
     def _destroy_servicechain_nodes(self, context, destroyers):
         # Actual node disruption
         try:
@@ -318,9 +354,10 @@ class NodeCompositionPlugin(servicechain_db.ServiceChainDbPlugin,
                               driver['context'].current_node['id'])
                 except Exception as e:
                     LOG.exception(e)
+                finally:
+                    self.driver_manager.clear_node_owner(destroy['context'])
         finally:
             self.plumber.unplug_services(context, destroyers.values())
-            pass
 
     def _validate_profile_update(self, context, original, updated):
         # Raise if the profile is in use by any instance
