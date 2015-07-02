@@ -203,6 +203,7 @@ class TestGroupPolicyPluginGroupResources(
     def test_spec_parameters(self):
         params_node_1 = ['p1', 'p2', 'p3']
         params_node_2 = ['p4', 'p5', 'p6']
+        params_node_3 = ['p7', 'p8', 'p9']
 
         def params_dict(params):
             return jsonutils.dumps({'Parameters':
@@ -251,4 +252,15 @@ class TestGroupPolicyPluginGroupResources(
         # Verify param names correspondence
         self.assertEqual(
             collections.Counter(params_node_1),
+            collections.Counter(ast.literal_eval(spec['config_param_names'])))
+
+        # Update a node with new config params
+        self.update_servicechain_node(node1['id'],
+                                      config=params_dict(params_node_3),
+                                      expected_res_status=200)
+
+        spec = self.show_servicechain_spec(spec['id'])['servicechain_spec']
+        # Verify param names correspondence
+        self.assertEqual(
+            collections.Counter(params_node_3),
             collections.Counter(ast.literal_eval(spec['config_param_names'])))

@@ -88,7 +88,13 @@ class SimpleChainDriver(object):
 
     @log.log
     def update_servicechain_node_precommit(self, context):
-        pass
+        if (context.original['config'] != context.current['config']):
+            filters = {'servicechain_spec': context.original[
+                                                'servicechain_specs']}
+            sc_instances = context._plugin.get_servicechain_instances(
+                context._plugin_context, filters)
+            if sc_instances:
+                raise exc.NodeUpdateNotSupported()
 
     @log.log
     def update_servicechain_node_postcommit(self, context):

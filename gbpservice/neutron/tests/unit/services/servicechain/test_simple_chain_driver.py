@@ -82,11 +82,27 @@ class TestServiceChainInstance(SimpleChainDriverTestCase):
                     expected_res_status=webob.exc.HTTPCreated.code)
         self.assertEqual('{}', res['servicechain_node']['config'])
 
-    def test_chain_node_create_success_service_type(self):
-        res = self.create_servicechain_node(
+    def test_in_use_node_config_update_rejected(self):
+        node = self.create_servicechain_node(
             service_type=constants.FIREWALL, config='{}',
-            expected_res_status=webob.exc.HTTPCreated.code)
-        self.assertEqual('{}', res['servicechain_node']['config'])
+            expected_res_status=webob.exc.HTTPCreated.code)[
+                                                'servicechain_node']
+        self.assertEqual('{}', node['config'])
+        spec = self.create_servicechain_spec(
+            nodes=[node['id']],
+            expected_res_status=webob.exc.HTTPCreated.code)[
+                                                'servicechain_spec']
+        with mock.patch.object(simplechain_driver.HeatClient,
+                              'create') as stack_create:
+            stack_create.return_value = {'stack': {
+                                            'id': uuidutils.generate_uuid()}}
+            self.create_servicechain_instance(servicechain_specs=[spec['id']])
+            res = self.update_servicechain_node(
+                    node['id'],
+                    config='{"key": "value"}',
+                    expected_res_status=webob.exc.HTTPBadRequest.code)
+            self.assertEqual('NodeUpdateNotSupported',
+                             res['NeutronError']['type'])
 
     def test_chain_spec_update(self):
         template1 = '{"key1":"value1"}'
