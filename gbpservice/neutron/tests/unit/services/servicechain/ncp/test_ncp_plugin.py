@@ -403,22 +403,20 @@ class NodeCompositionPluginTestCase(
         self.update_servicechain_node(node['id'], name='somethingelse')
         self.assertEqual(3, update.call_count)
 
-    def test_instantiated_spec_node_update_rejected(self):
+    def test_update_spec(self):
         prof = self.create_service_profile(
             service_type='LOADBALANCER',
             vendor=self.SERVICE_PROFILE_VENDOR)['service_profile']
 
-        node1_id = self.create_servicechain_node(
+        node1 = self.create_servicechain_node(
             service_profile_id=prof['id'],
-            config=self.DEFAULT_LB_CONFIG,
-            expected_res_status=201)['servicechain_node']['id']
-        node2_id = self.create_servicechain_node(
+            config=self.DEFAULT_LB_CONFIG)['servicechain_node']
+        node2 = self.create_servicechain_node(
             service_profile_id=prof['id'],
-            config=self.DEFAULT_LB_CONFIG,
-            expected_res_status=201)['servicechain_node']['id']
+            config=self.DEFAULT_LB_CONFIG)['servicechain_node']
 
         spec = self.create_servicechain_spec(
-            nodes=[node1_id, node2_id],
+            nodes=[node1['id'], node2['id']],
             expected_res_status=201)['servicechain_spec']
         prs = self._create_redirect_prs(spec['id'])['policy_rule_set']
         self.create_policy_target_group(
@@ -427,10 +425,42 @@ class NodeCompositionPluginTestCase(
             consumed_policy_rule_sets={prs['id']: ''})
 
         res = self.update_servicechain_spec(spec['id'],
-                                            nodes=[node1_id],
-                                            expected_res_status=400)
-        self.assertEqual('InuseSpecNodeUpdateNotAllowed',
-                         res['NeutronError']['type'])
+                                            nodes=[node1['id']],
+                                            expected_res_status=200)
+        self.assertEqual([node1['id']], res['servicechain_spec']['nodes'])
+
+    def test_instance_update(self):
+        prof = self.create_service_profile(
+            service_type='LOADBALANCER',
+            vendor=self.SERVICE_PROFILE_VENDOR)['service_profile']
+
+        node1 = self.create_servicechain_node(
+            service_profile_id=prof['id'],
+            config=self.DEFAULT_LB_CONFIG)['servicechain_node']
+        node2 = self.create_servicechain_node(
+            service_profile_id=prof['id'],
+            config=self.DEFAULT_LB_CONFIG)['servicechain_node']
+
+        spec = self.create_servicechain_spec(
+            nodes=[node1['id'], node2['id']],
+            expected_res_status=201)['servicechain_spec']
+        prs = self._create_redirect_prs(spec['id'])['policy_rule_set']
+        self.create_policy_target_group(
+            provided_policy_rule_sets={prs['id']: ''})
+        self.create_policy_target_group(
+            consumed_policy_rule_sets={prs['id']: ''})
+
+        instances = self._list('servicechain_instances')[
+                                            'servicechain_instances']
+        self.assertEqual(1, len(instances))
+        spec2 = self.create_servicechain_spec(
+            nodes=[node1['id']],
+            expected_res_status=201)['servicechain_spec']
+        res = self.update_servicechain_instance(
+            instances[0]['id'], servicechain_specs=[spec2['id']],
+            expected_res_status=200)
+        self.assertEqual([spec2['id']],
+                         res['servicechain_instance']['servicechain_specs'])
 
     def test_relevant_ptg_update(self):
         add = self.driver.update_policy_target_added = mock.Mock()
