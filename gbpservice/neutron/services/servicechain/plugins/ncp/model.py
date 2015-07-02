@@ -89,6 +89,18 @@ def get_node_owner(context):
         return query.all()
 
 
+def delete_node_owner(context):
+    session = context.session
+    with session.begin(subtransactions=True):
+        query = session.query(NodeToDriverMapping)
+        query = query.filter_by(
+            servicechain_instance_id=context.instance['id'])
+        query = query.filter_by(
+            servicechain_node_id=context.current_node['id'])
+        for owner in query.all():
+            session.delete(owner)
+
+
 def set_service_target(context, policy_target_id, relationship):
     session = context.session
     with session.begin(subtransactions=True):

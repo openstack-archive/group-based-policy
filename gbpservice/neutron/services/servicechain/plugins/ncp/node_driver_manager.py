@@ -80,6 +80,14 @@ class NodeDriverManager(stevedore.named.NamedExtensionManager):
         """
         return self._get_owning_driver(context)
 
+    def destroy(self, context):
+        """Remove Node Driver ownership set for a Node
+
+        Given a NodeContext, this method removed the Node owner mapping in DB.
+        This method is used when we want to perform a disruptive chain update
+        """
+        model.delete_node_owner(context)
+
     def schedule_update(self, context):
         """Schedule Node Driver for Node Update.
 
