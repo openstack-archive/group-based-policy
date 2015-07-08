@@ -50,6 +50,9 @@ GP_PLUGIN_KLASS = (
 class NodeCompositionPluginTestCase(
         test_base.TestGroupPolicyPluginGroupResources):
 
+    DEFAULT_LB_CONFIG = '{}'
+    SERVICE_PROFILE_VENDOR = 'dummy'
+
     def setUp(self, core_plugin=None, gp_plugin=None, node_drivers=None,
               node_plumber=None):
         if node_drivers:
@@ -91,12 +94,14 @@ class NodeCompositionPluginTestCase(
 
     def _create_simple_service_chain(self, number_of_nodes=1):
         prof = self.create_service_profile(
-            service_type='LOADBALANCER')['service_profile']
+            service_type='LOADBALANCER',
+            vendor=self.SERVICE_PROFILE_VENDOR)['service_profile']
 
         node_ids = []
         for x in xrange(number_of_nodes):
             node_ids.append(self.create_servicechain_node(
                 service_profile_id=prof['id'],
+                config=self.DEFAULT_LB_CONFIG,
                 expected_res_status=201)['servicechain_node']['id'])
 
         return self._create_chain_with_nodes(node_ids)
@@ -134,17 +139,21 @@ class NodeCompositionPluginTestCase(
         # Verify Context attributes for simple config
         plugin_context = n_context.get_admin_context()
         profile = self.create_service_profile(
-            service_type="TYPE")['service_profile']
+            service_type="LOADBALANCER",
+            vendor=self.SERVICE_PROFILE_VENDOR)['service_profile']
         node = self.create_servicechain_node(
-            service_profile_id=profile['id'], config='{}')['servicechain_node']
+            service_profile_id=profile['id'],
+            config=self.DEFAULT_LB_CONFIG)['servicechain_node']
         spec = self.create_servicechain_spec(
             nodes=[node['id']])['servicechain_spec']
         provider = self.create_policy_target_group()['policy_target_group']
         consumer = self.create_policy_target_group()['policy_target_group']
         management = self.create_policy_target_group()['policy_target_group']
+        classifier = self.create_policy_classifier()['policy_classifier']
         instance = self.create_servicechain_instance(
             provider_ptg_id=provider['id'], consumer_ptg_id=consumer['id'],
-            servicechain_specs=[spec['id']])['servicechain_instance']
+            servicechain_specs=[spec['id']], classifier_id=classifier['id'])[
+                                                    'servicechain_instance']
 
         # Verify created without errors
         ctx = ncp_context.get_node_driver_context(
@@ -172,13 +181,16 @@ class NodeCompositionPluginTestCase(
     def test_context_relevant_specs(self):
         plugin_context = n_context.get_admin_context()
         node_used = self._create_profiled_servicechain_node(
-            service_type="TYPE", config='{}')['servicechain_node']
+            service_type="LOADBALANCER",
+            config=self.DEFAULT_LB_CONFIG)['servicechain_node']
         spec_used = self.create_servicechain_spec(
             nodes=[node_used['id']])['servicechain_spec']
 
         provider = self.create_policy_target_group()['policy_target_group']
+        classifier = self.create_policy_classifier()['policy_classifier']
         instance = self.create_servicechain_instance(
             provider_ptg_id=provider['id'],
+            classifier_id=classifier['id'],
             servicechain_specs=[spec_used['id']])['servicechain_instance']
 
         ctx = ncp_context.get_node_driver_context(
@@ -208,6 +220,7 @@ class NodeCompositionPluginTestCase(
 
         prof = self.create_service_profile(
             service_type='LOADBALANCER', shared=True,
+            vendor=self.SERVICE_PROFILE_VENDOR,
             tenant_id='admin')['service_profile']
 
         # Create 2 nodes with different parameters
@@ -275,10 +288,12 @@ class NodeCompositionPluginTestCase(
             resource='node', msg='reason')
 
         prof = self.create_service_profile(
-            service_type='LOADBALANCER')['service_profile']
+            service_type='LOADBALANCER',
+            vendor=self.SERVICE_PROFILE_VENDOR)['service_profile']
 
         node_id = self.create_servicechain_node(
             service_profile_id=prof['id'],
+            config=self.DEFAULT_LB_CONFIG,
             expected_res_status=201)['servicechain_node']['id']
 
         spec = self.create_servicechain_spec(
@@ -298,10 +313,12 @@ class NodeCompositionPluginTestCase(
 
     def test_update_instantiated_profile_fails(self):
         prof = self.create_service_profile(
-            service_type='LOADBALANCER')['service_profile']
+            service_type='LOADBALANCER',
+            vendor=self.SERVICE_PROFILE_VENDOR)['service_profile']
 
         node_id = self.create_servicechain_node(
             service_profile_id=prof['id'],
+            config=self.DEFAULT_LB_CONFIG,
             expected_res_status=201)['servicechain_node']['id']
 
         spec = self.create_servicechain_spec(
@@ -327,16 +344,20 @@ class NodeCompositionPluginTestCase(
 
         # This happens without error
         profile = self.create_service_profile(
-            service_type="TYPE")['service_profile']
+            service_type="TYPE",
+            vendor=self.SERVICE_PROFILE_VENDOR)['service_profile']
         node = self.create_servicechain_node(
-            service_profile_id=profile['id'], config='{}')['servicechain_node']
+            service_profile_id=profile['id'],
+            config=self.DEFAULT_LB_CONFIG)['servicechain_node']
         spec = self.create_servicechain_spec(
             nodes=[node['id']])['servicechain_spec']
         provider = self.create_policy_target_group()['policy_target_group']
         consumer = self.create_policy_target_group()['policy_target_group']
+        classifier = self.create_policy_classifier()['policy_classifier']
         self.create_servicechain_instance(
             provider_ptg_id=provider['id'], consumer_ptg_id=consumer['id'],
-            servicechain_specs=[spec['id']], expected_res_status=201)
+            servicechain_specs=[spec['id']], classifier_id=classifier['id'],
+            expected_res_status=201)
 
     def test_chain_fails_if_no_drivers_available(self):
         self._add_node_driver('test')
@@ -348,23 +369,29 @@ class NodeCompositionPluginTestCase(
         create_2.side_effect = n_exc.NeutronException()
 
         profile = self.create_service_profile(
-            service_type="TYPE")['service_profile']
+            service_type="TYPE",
+            vendor=self.SERVICE_PROFILE_VENDOR)['service_profile']
         node = self.create_servicechain_node(
-            service_profile_id=profile['id'], config='{}')['servicechain_node']
+            service_profile_id=profile['id'],
+            config=self.DEFAULT_LB_CONFIG)['servicechain_node']
         spec = self.create_servicechain_spec(
             nodes=[node['id']])['servicechain_spec']
         provider = self.create_policy_target_group()['policy_target_group']
         consumer = self.create_policy_target_group()['policy_target_group']
+        classifier = self.create_policy_classifier()['policy_classifier']
         self.create_servicechain_instance(
             provider_ptg_id=provider['id'], consumer_ptg_id=consumer['id'],
-            servicechain_specs=[spec['id']], expected_res_status=400)
+            servicechain_specs=[spec['id']], classifier_id=classifier['id'],
+            expected_res_status=400)
 
     def test_multiple_nodes_update(self):
         update = self.driver.update = mock.Mock()
         prof = self.create_service_profile(
-            service_type='LOADBALANCER')['service_profile']
+            service_type='LOADBALANCER',
+            vendor=self.SERVICE_PROFILE_VENDOR)['service_profile']
         node = self.create_servicechain_node(
-            service_profile_id=prof['id'], config='{}')['servicechain_node']
+            service_profile_id=prof['id'],
+            config=self.DEFAULT_LB_CONFIG)['servicechain_node']
 
         self._create_chain_with_nodes([node['id']])
         self.update_servicechain_node(node['id'], name='somethingelse')
@@ -376,14 +403,45 @@ class NodeCompositionPluginTestCase(
         self.update_servicechain_node(node['id'], name='somethingelse')
         self.assertEqual(3, update.call_count)
 
+    def test_instantiated_spec_node_update_rejected(self):
+        prof = self.create_service_profile(
+            service_type='LOADBALANCER',
+            vendor=self.SERVICE_PROFILE_VENDOR)['service_profile']
+
+        node1_id = self.create_servicechain_node(
+            service_profile_id=prof['id'],
+            config=self.DEFAULT_LB_CONFIG,
+            expected_res_status=201)['servicechain_node']['id']
+        node2_id = self.create_servicechain_node(
+            service_profile_id=prof['id'],
+            config=self.DEFAULT_LB_CONFIG,
+            expected_res_status=201)['servicechain_node']['id']
+
+        spec = self.create_servicechain_spec(
+            nodes=[node1_id, node2_id],
+            expected_res_status=201)['servicechain_spec']
+        prs = self._create_redirect_prs(spec['id'])['policy_rule_set']
+        self.create_policy_target_group(
+            provided_policy_rule_sets={prs['id']: ''})
+        self.create_policy_target_group(
+            consumed_policy_rule_sets={prs['id']: ''})
+
+        res = self.update_servicechain_spec(spec['id'],
+                                            nodes=[node1_id],
+                                            expected_res_status=400)
+        self.assertEqual('InuseSpecNodeUpdateNotAllowed',
+                         res['NeutronError']['type'])
+
     def test_relevant_ptg_update(self):
         add = self.driver.update_policy_target_added = mock.Mock()
         rem = self.driver.update_policy_target_removed = mock.Mock()
 
         prof = self.create_service_profile(
-            service_type='LOADBALANCER')['service_profile']
+            service_type='LOADBALANCER',
+            vendor=self.SERVICE_PROFILE_VENDOR)['service_profile']
         node = self.create_servicechain_node(
             service_profile_id=prof['id'],
+            config=self.DEFAULT_LB_CONFIG,
             expected_res_status=201)['servicechain_node']
 
         spec = self.create_servicechain_spec(
@@ -422,9 +480,11 @@ class NodeCompositionPluginTestCase(
         rem = self.driver.update_policy_target_removed = mock.Mock()
 
         prof = self.create_service_profile(
-            service_type='LOADBALANCER')['service_profile']
+            service_type='LOADBALANCER',
+            vendor=self.SERVICE_PROFILE_VENDOR)['service_profile']
         node = self.create_servicechain_node(
             service_profile_id=prof['id'],
+            config=self.DEFAULT_LB_CONFIG,
             expected_res_status=201)['servicechain_node']
 
         spec = self.create_servicechain_spec(
@@ -466,7 +526,9 @@ class AgnosticChainPlumberTestCase(NodeCompositionPluginTestCase):
         self.driver.get_plumbing_info.return_value = {}
 
     def _create_simple_chain(self):
-        node = self._create_profiled_servicechain_node()['servicechain_node']
+        node = self._create_profiled_servicechain_node(
+            service_type="LOADBALANCER",
+            config=self.DEFAULT_LB_CONFIG)['servicechain_node']
         spec = self.create_servicechain_spec(
             nodes=[node['id']])['servicechain_spec']
 
