@@ -6,6 +6,8 @@ set -x
 
 trap prepare_logs ERR
 
+run_gbp_rally
+
 # Run exercise scripts
 $TOP_DIR/exercise.sh
 # Check if any gbp exercises failed
