@@ -1,0 +1,9 @@
+Verified+2: Jenkins
+Code-Review+2: Sumit Naiksatam <sumitnaiksatam@gmail.com>
+Workflow+1: Sumit Naiksatam <sumitnaiksatam@gmail.com>
+Code-Review+2: Hemanth Ravi <hemanth.ravi@oneconvergence.com>
+Submitted-by: Jenkins
+Submitted-at: Mon, 20 Jul 2015 06:28:41 +0000
+Reviewed-on: https://review.openstack.org/203486
+Project: stackforge/group-based-policy
+Branch: refs/heads/stable/juno
