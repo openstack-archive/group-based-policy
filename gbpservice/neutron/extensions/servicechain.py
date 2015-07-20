@@ -126,7 +126,7 @@ RESOURCE_ATTRIBUTE_MAP = {
         'service_profile_id': {'allow_post': True, 'allow_put': True,
                                'validate': {'type:uuid_or_none': None},
                                'is_visible': True, 'default': None},
-        'config': {'allow_post': True, 'allow_put': False,
+        'config': {'allow_post': True, 'allow_put': True,
                    'validate': {'type:string': None},
                    'required': True, 'is_visible': True},
         attr.SHARED: {'allow_post': True, 'allow_put': True,

@@ -37,3 +37,8 @@ class ServiceChainDeploymentError(ServiceChainException):
 class InvalidServiceTypeForReferenceDriver(ServiceChainBadRequest):
     message = _("The reference service chain driver only supports the services"
                 " Loadbalancer and Firewall services in a Service Chain Spec")
+
+
+class NodeUpdateNotSupported(ServiceChainBadRequest):
+    message = _("The configured service chain driver does not support Service "
+                "Chain Node config update")

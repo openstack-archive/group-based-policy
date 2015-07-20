@@ -256,12 +256,20 @@ class ServiceChainDbPlugin(schain.ServiceChainPluginBase,
 
     @log.log
     def update_servicechain_node(self, context, servicechain_node_id,
-                                 servicechain_node):
+                                 servicechain_node, set_params=False):
         node = servicechain_node['servicechain_node']
         with context.session.begin(subtransactions=True):
             node_db = self._get_servicechain_node(context,
                                                   servicechain_node_id)
             node_db.update(node)
+            # Update the config param names derived for the associated specs
+            spec_node_associations = node_db.specs
+            for node_spec in spec_node_associations:
+                spec_id = node_spec.servicechain_spec_id
+                spec_db = self._get_servicechain_spec(context, spec_id)
+                self._process_nodes_for_spec(
+                    context, spec_db, self._make_sc_spec_dict(spec_db),
+                    set_params=set_params)
         return self._make_sc_node_dict(node_db)
 
     @log.log
