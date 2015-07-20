@@ -5,7 +5,6 @@
 -e git+https://github.com/openstack/neutron.git@stable/juno#egg=neutron
 prettytable>=0.7
 
-cliff==1.13.0
 coverage==3.7.1
 discover==0.4.0
 docutils==0.12
