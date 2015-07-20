@@ -22,9 +22,10 @@ check_residual_resources demo demo
 # Run gbpfunc integration tests
 echo "Running gbpfunc test suite"
 cd $NEW_BASE
-sudo git clone https://github.com/noironetworks/devstack -b jishnub/testsuites gbpfunctests
-cd gbpfunctests/testcases/testcases_func
-python suite_run.py -s func
+sudo git clone http://github.com/group-policy/gbpfunctests gbpfunctests
+export PYTHONPATH="$NEW_BASE/gbpfunctests:${PYTHONPATH}"
+cd gbpfunctests/testcases
+python suite_run.py upstream
 gbpfunc_exit_code=$?
 
 # Run functional tests
