@@ -26,6 +26,21 @@ function prepare_gbp_devstack {
     pip_install -e $GBP_DIR
 }
 
+function run_gbp_rally {
+    cd $NEW_BASE
+    git clone http://github.com/group-policy/rally.git -b dev
+    cd rally
+    sed -i 's/\"times\"\: 1/\"times\"\: 10/g' samples/tasks/scenarios/gbp/gbp.json
+    sed -i 's/\"concurrency\"\: 1/\"concurrency\"\: 10,/g' samples/tasks/scenarios/gbp/gbp.json
+    ./install_rally.sh -f
+    . /home/jenkins/rally/bin/activate
+    source $TOP_DIR/openrc admin admin
+    rally deployment create --fromenv --name=gbp
+    rally -v task start samples/tasks/scenarios/gbp/gbp.json
+    rally task results > $LOGS_DIR/rally-task-results.20.log
+    deactivate
+}
+
 # Prepare the log files for Jenkins to upload
 function prepare_logs {
     cd $LOGS_DIR
