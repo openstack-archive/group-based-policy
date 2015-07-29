@@ -271,14 +271,14 @@ class ResourceMappingTestCase(test_plugin.GroupPolicyPluginTestCase):
                                  'remote_ip_prefix': [cidr]}
                         expected_rules.append(attrs)
                     # And consumer SG have egress allowed
-                    # TODO(ivar): IPv6 support
-                    attrs = {'security_group_id': [consumed_sg],
-                             'direction': ['egress'],
-                             'protocol': [protocol],
-                             'port_range_min': [port_min],
-                             'port_range_max': [port_max],
-                             'remote_ip_prefix': ['0.0.0.0/0']}
-                    expected_rules.append(attrs)
+                    for cidr in providers:
+                        attrs = {'security_group_id': [consumed_sg],
+                                 'direction': ['egress'],
+                                 'protocol': [protocol],
+                                 'port_range_min': [port_min],
+                                 'port_range_max': [port_max],
+                                 'remote_ip_prefix': [cidr]}
+                        expected_rules.append(attrs)
                 if classifier['direction'] in out_bi:
                     # If direction OUT/BI, provider CIDRs go into consumer SG
                     for cidr in providers:
@@ -290,13 +290,14 @@ class ResourceMappingTestCase(test_plugin.GroupPolicyPluginTestCase):
                                  'remote_ip_prefix': [cidr]}
                         expected_rules.append(attrs)
                     # And provider SG have egress allowed
-                    attrs = {'security_group_id': [provided_sg],
-                             'direction': ['egress'],
-                             'protocol': [protocol],
-                             'port_range_min': [port_min],
-                             'port_range_max': [port_max],
-                             'remote_ip_prefix': ['0.0.0.0/0']}
-                    expected_rules.append(attrs)
+                    for cidr in consumers:
+                        attrs = {'security_group_id': [provided_sg],
+                                 'direction': ['egress'],
+                                 'protocol': [protocol],
+                                 'port_range_min': [port_min],
+                                 'port_range_max': [port_max],
+                                 'remote_ip_prefix': [cidr]}
+                        expected_rules.append(attrs)
         return expected_rules
 
     def _verify_prs_rules(self, prs):
@@ -866,16 +867,27 @@ class TestPolicyTargetGroup(ResourceMappingTestCase):
 
         # Verify Port's SG has all the right rules
         # Allow all ingress traffic from same ptg subnet
+        def verify_rule(filters):
+            sg_rule = self._get_sg_rule(**filters)
+            self.assertTrue(len(sg_rule) == 1)
+            self.assertIsNone(sg_rule[0]['protocol'])
+            self.assertIsNone(sg_rule[0]['port_range_max'])
+            self.assertIsNone(sg_rule[0]['port_range_min'])
+
         filters = {'tenant_id': [ptg['tenant_id']],
                    'security_group_id': [port['security_groups'][0]],
                    'ethertype': [ip_v[subnet['ip_version']]],
                    'remote_ip_prefix': [subnet['cidr']],
                    'direction': ['ingress']}
+        verify_rule(filters)
+        filters.update({'direction': ['egress']})
+        verify_rule(filters)
+        filters = {'tenant_id': [ptg['tenant_id']],
+                   'security_group_id': [port['security_groups'][0]],
+                   'remote_ip_prefix': ['0.0.0.0/0']}
+        # No wide rule applied
         sg_rule = self._get_sg_rule(**filters)
-        self.assertTrue(len(sg_rule) == 1)
-        self.assertIsNone(sg_rule[0]['protocol'])
-        self.assertIsNone(sg_rule[0]['port_range_max'])
-        self.assertIsNone(sg_rule[0]['port_range_min'])
+        self.assertTrue(len(sg_rule) == 0)
 
     def test_default_security_group_allows_intra_ptg_update(self):
         # Create ptg and retrieve subnet and network
@@ -1601,6 +1613,9 @@ class TestPolicyRuleSet(ResourceMappingTestCase):
         policy_rule_set_id = policy_rule_set['policy_rule_set']['id']
         ptg = self.create_policy_target_group(
             name="ptg1", provided_policy_rule_sets={policy_rule_set_id: None})
+        # Need a consumer for rules to exist
+        self.create_policy_target_group(
+            name="ptg2", consumed_policy_rule_sets={policy_rule_set_id: None})
         ptg_id = ptg['policy_target_group']['id']
         pt = self.create_policy_target(
             name="pt1", policy_target_group_id=ptg_id)
@@ -1621,10 +1636,12 @@ class TestPolicyRuleSet(ResourceMappingTestCase):
             sg_rules = sg['security_group_rules']
             udp_rules.extend([r for r in sg_rules if r['protocol'] == 'udp'])
 
-        self.assertEqual(len(udp_rules), 1)
+        # Classifier 2 direction in 'out', so only one egress rule exists
+        self.assertEqual(1, len(udp_rules))
         udp_rule = udp_rules[0]
         self.assertEqual(udp_rule['port_range_min'], 30)
         self.assertEqual(udp_rule['port_range_max'], 100)
+        self.assertEqual(udp_rule['direction'], 'egress')
         self._verify_prs_rules(policy_rule_set_id)
 
     # Test update of policy classifier
