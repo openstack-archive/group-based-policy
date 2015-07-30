@@ -679,6 +679,22 @@ class TestPolicyTargetGroup(ResourceMappingTestCase):
         self.assertNotEqual(subnet1['subnet']['cidr'],
                             subnet2['subnet']['cidr'])
 
+    def test_subnet_dns_nameserver_configuration(self):
+        ptg1 = self.create_policy_target_group(name="ptg1")
+        subnets = ptg1['policy_target_group']['subnets']
+        req = self.new_show_request('subnets', subnets[0], fmt=self.fmt)
+        subnet = self.deserialize(self.fmt, req.get_response(self.api))
+        self.assertEqual([], subnet['subnet']['dns_nameservers'])
+
+        dns_servers = ['8.8.8.7', '8.8.8.8']
+        config.cfg.CONF.set_override('dns_nameservers', dns_servers,
+                                     group='resource_mapping')
+        ptg2 = self.create_policy_target_group(name="ptg1")
+        subnets = ptg2['policy_target_group']['subnets']
+        req = self.new_show_request('subnets', subnets[0], fmt=self.fmt)
+        subnet = self.deserialize(self.fmt, req.get_response(self.api))
+        self.assertEqual(dns_servers, subnet['subnet']['dns_nameservers'])
+
     def test_no_extra_subnets_created(self):
         count = len(self._get_all_subnets())
         self.create_policy_target_group()
