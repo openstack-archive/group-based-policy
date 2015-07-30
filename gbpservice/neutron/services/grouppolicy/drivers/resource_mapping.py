@@ -42,6 +42,16 @@ from gbpservice.neutron.services.grouppolicy.common import exceptions as exc
 LOG = logging.getLogger(__name__)
 
 
+opts = [
+    cfg.ListOpt('dns_nameservers',
+                default=[],
+                help=_("List of DNS nameservers to be configured for the "
+                       "PTG subnets")),
+]
+
+cfg.CONF.register_opts(opts, "resource_mapping")
+
+
 class OwnedPort(model_base.BASEV2):
     """A Port owned by the resource_mapping driver."""
 
@@ -1429,7 +1439,9 @@ class ResourceMappingDriver(api.PolicyDriver):
                          'enable_dhcp': True,
                          'gateway_ip': attributes.ATTR_NOT_SPECIFIED,
                          'allocation_pools': attributes.ATTR_NOT_SPECIFIED,
-                         'dns_nameservers': attributes.ATTR_NOT_SPECIFIED,
+                         'dns_nameservers': (
+                             cfg.CONF.resource_mapping.dns_nameservers or
+                             attributes.ATTR_NOT_SPECIFIED),
                          'host_routes': attributes.ATTR_NOT_SPECIFIED}
                 subnet = self._create_subnet(context._plugin_context, attrs)
                 subnet_id = subnet['id']

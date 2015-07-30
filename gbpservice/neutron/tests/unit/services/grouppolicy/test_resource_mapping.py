@@ -506,6 +506,32 @@ class TestPolicyTarget(ResourceMappingTestCase):
                          data['NeutronError']['type'])
 
 
+class TestPolicyTargetGroupWithDNSConfiguration(ResourceMappingTestCase):
+
+    def setUp(self):
+        self.dns_servers = ['8.8.8.7', '8.8.8.8']
+        config.cfg.CONF.set_override('dns_nameservers', self.dns_servers,
+                                     group='resource_mapping')
+        super(TestPolicyTargetGroupWithDNSConfiguration, self).setUp()
+
+    def test_subnet_create(self):
+        ptg = self.create_policy_target_group(name="ptg1")
+        subnets = ptg['policy_target_group']['subnets']
+        req = self.new_show_request('subnets', subnets[0], fmt=self.fmt)
+        subnet = self.deserialize(self.fmt, req.get_response(self.api))
+        self.assertEqual(self.dns_servers, subnet['subnet']['dns_nameservers'])
+
+
+class TestPolicyTargetGroupWithoutDNSConfiguration(ResourceMappingTestCase):
+
+    def test_subnet_create(self):
+        ptg = self.create_policy_target_group(name="ptg1")
+        subnets = ptg['policy_target_group']['subnets']
+        req = self.new_show_request('subnets', subnets[0], fmt=self.fmt)
+        subnet = self.deserialize(self.fmt, req.get_response(self.api))
+        self.assertEqual([], subnet['subnet']['dns_nameservers'])
+
+
 class TestPolicyTargetGroup(ResourceMappingTestCase):
 
     def _test_implicit_subnet_lifecycle(self, shared=False):
