@@ -18,6 +18,7 @@ import webob.exc
 from neutron.api import extensions
 from neutron.api.v2 import attributes as nattr
 from neutron import context
+from neutron import manager
 from neutron.openstack.common import uuidutils
 from neutron.plugins.common import constants
 from neutron.tests.unit.api import test_extensions
@@ -197,6 +198,9 @@ class GroupPolicyDbTestCase(GroupPolicyDBTestBase,
             self.ext_api = test_extensions.setup_extensions_middleware(ext_mgr)
         test_policy_file = ETCDIR + "/test-policy.json"
         cfg.CONF.set_override('policy_file', test_policy_file)
+
+        plugins = manager.NeutronManager.get_service_plugins()
+        self._gbp_plugin = plugins.get(constants.GROUP_POLICY)
 
 
 class TestGroupResources(GroupPolicyDbTestCase):
@@ -1272,3 +1276,41 @@ class TestGroupResources(GroupPolicyDbTestCase):
         self.assertEqual(res.status_int, webob.exc.HTTPNoContent.code)
         self.assertRaises(gpolicy.NATPoolNotFound,
                           self.plugin.get_nat_pool, ctx, ep_id)
+
+    def test_get_l3p_ptgs(self):
+        ctx = context.get_admin_context()
+        # Create 1 PTG in one L3P
+        l3p1 = self.create_l3_policy()['l3_policy']
+        l2p1_1 = self.create_l2_policy(l3_policy_id=l3p1['id'])['l2_policy']
+        ptg1_1 = self.create_policy_target_group(
+            l2_policy_id=l2p1_1['id'])['policy_target_group']
+
+        # Create 1 PTG in another L3P
+        l3p2 = self.create_l3_policy()['l3_policy']
+        l2p2_1 = self.create_l2_policy(l3_policy_id=l3p2['id'])['l2_policy']
+        ptg2_1 = self.create_policy_target_group(
+            l2_policy_id=l2p2_1['id'])['policy_target_group']
+
+        # Verify only the right PTG is retrieved from L3P1
+        ptgs = self._gbp_plugin._get_l3p_ptgs(ctx, l3p1['id'])
+        self.assertEqual(1, len(ptgs))
+        self.assertEqual(ptg1_1['id'], ptgs[0]['id'])
+
+        # Verify only the right PTG is retrieved from L3P2
+        ptgs = self._gbp_plugin._get_l3p_ptgs(ctx, l3p2['id'])
+        self.assertEqual(1, len(ptgs))
+        self.assertEqual(ptg2_1['id'], ptgs[0]['id'])
+
+        # Create 2 more PTGs on L3P1, same L2P and different L2P
+        ptg1_2 = self.create_policy_target_group(
+            l2_policy_id=l2p1_1['id'])['policy_target_group']
+        l2p1_2 = self.create_l2_policy(l3_policy_id=l3p1['id'])['l2_policy']
+        ptg1_3 = self.create_policy_target_group(
+            l2_policy_id=l2p1_2['id'])['policy_target_group']
+
+        # Verify all 3 PTGs are retrieved
+        ptgs = self._gbp_plugin._get_l3p_ptgs(ctx, l3p1['id'])
+        self.assertEqual(3, len(ptgs))
+        found = set(x['id'] for x in ptgs)
+        expected = set([ptg1_1['id'], ptg1_2['id'], ptg1_3['id']])
+        self.assertEqual(expected, found)
