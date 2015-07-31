@@ -14,7 +14,6 @@ import netaddr
 
 from apicapi import apic_manager
 from keystoneclient.v2_0 import client as keyclient
-from neutron.api.v2 import attributes
 from neutron.common import constants as n_constants
 from neutron.common import exceptions as n_exc
 from neutron.common import rpc as n_rpc
@@ -1179,52 +1178,16 @@ class ApicMappingDriver(api.ResourceMappingDriver):
             subs = set([x['id'] for x in subs])
             added = None
             if not subs or force_add:
-                added = self._internal_use_implicit_subnet(context)
+                l2p = context._plugin.get_l2_policy(context._plugin_context,
+                                                    l2p_id)
+                added = super(
+                    ApicMappingDriver, self)._use_implicit_subnet(
+                        context, mark_as_owned=False,
+                        subnet_specifics={'name': APIC_OWNED + l2p['name']})
                 subs.add(added['id'])
             context.add_subnets(subs - set(context.current['subnets']))
             if added:
                 self.process_subnet_added(context._plugin_context, added)
-
-    def _internal_use_implicit_subnet(self, context):
-        l2p_id = context.current['l2_policy_id']
-        l2p = context._plugin.get_l2_policy(context._plugin_context, l2p_id)
-        l3p_id = l2p['l3_policy_id']
-        l3p = context._plugin.get_l3_policy(context._plugin_context, l3p_id)
-        pool = netaddr.IPNetwork(l3p['ip_pool'])
-
-        admin_context = nctx.get_admin_context()
-        l2ps = context._plugin.get_l2_policies(
-            admin_context, filters={'l3_policy_id': [l3p['id']]})
-        ptgs = context._plugin.get_policy_target_groups(
-            admin_context, filters={'l2_policy_id': [x['id'] for x in l2ps]})
-        subnets = []
-        for ptg in ptgs:
-            subnets.extend(ptg['subnets'])
-        subnets = self._core_plugin.get_subnets(admin_context,
-                                                filters={'id': subnets})
-        for cidr in pool.subnet(l3p['subnet_prefix_length']):
-            if not self._validate_subnet_overlap_for_l3p(subnets,
-                                                         cidr.__str__()):
-                continue
-            try:
-                attrs = {'tenant_id': context.current['tenant_id'],
-                         'name': APIC_OWNED + l2p['name'],
-                         'network_id': l2p['network_id'],
-                         'ip_version': l3p['ip_version'],
-                         'cidr': cidr.__str__(),
-                         'enable_dhcp': True,
-                         'gateway_ip': attributes.ATTR_NOT_SPECIFIED,
-                         'allocation_pools': attributes.ATTR_NOT_SPECIFIED,
-                         'dns_nameservers': attributes.ATTR_NOT_SPECIFIED,
-                         'host_routes': attributes.ATTR_NOT_SPECIFIED}
-                subnet = self._create_subnet(context._plugin_context, attrs)
-                return subnet
-            except n_exc.BadRequest:
-                # This is expected (CIDR overlap) until we have a
-                # proper subnet allocation algorithm. We ignore the
-                # exception and repeat with the next CIDR.
-                pass
-        raise gpexc.NoSubnetAvailable()
 
     def _sync_epg_subnets(self, plugin_context, l2p):
         l2p_subnets = [x['id'] for x in
