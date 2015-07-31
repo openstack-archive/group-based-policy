@@ -11,6 +11,7 @@
 #    under the License.
 
 import netaddr
+import operator
 
 from neutron.api.rpc.agentnotifiers import dhcp_rpc_agent_api
 from neutron.api.v2 import attributes
@@ -1409,77 +1410,76 @@ class ResourceMappingDriver(api.PolicyDriver):
                 self._remove_router_gw_interface(context._plugin_context,
                                                  router_id, interface_info)
 
-    def _use_implicit_subnet(self, context):
+    def _use_implicit_subnet(self, context, address_pool=None, prefix_len=None,
+                             mark_as_owned=True, subnet_specifics=None):
         # REVISIT(rkukura): This is a temporary allocation algorithm
         # that depends on an exception being raised when the subnet
-        # being created is already in use. A DB allocation table for
-        # the pool of subnets, or at lest a more efficient way to
-        # test if a subnet is in-use, may be needed.
+        # being created is already in use.
+        subnet_specifics = subnet_specifics or {}
         l2p_id = context.current['l2_policy_id']
         l2p = context._plugin.get_l2_policy(context._plugin_context, l2p_id)
         l3p_id = l2p['l3_policy_id']
         l3p = context._plugin.get_l3_policy(context._plugin_context, l3p_id)
-        pool = netaddr.IPNetwork(l3p['ip_pool'])
+        pool = netaddr.IPSet(iterable=[address_pool or l3p['ip_pool']])
+        prefixlen = prefix_len or l3p['subnet_prefix_length']
 
-        l2ps = context._plugin.get_l2_policies(
-            context._plugin_context, filters={'l3_policy_id': [l3p['id']]})
-        ptgs = context._plugin.get_policy_target_groups(
-            context._plugin_context,
-            filters={'l2_policy_id': [x['id'] for x in l2ps]})
-        subnets = []
-        for ptg in ptgs:
-            subnets.extend(ptg['subnets'])
-        subnets = self._core_plugin.get_subnets(context._plugin_context,
-                                                filters={'id': subnets})
-        for cidr in pool.subnet(l3p['subnet_prefix_length']):
-            if not self._validate_subnet_overlap_for_l3p(subnets,
-                                                         cidr.__str__()):
-                continue
-            try:
-                attrs = {'tenant_id': context.current['tenant_id'],
-                         'name': 'ptg_' + context.current['name'],
-                         'network_id': l2p['network_id'],
-                         'ip_version': l3p['ip_version'],
-                         'cidr': cidr.__str__(),
-                         'enable_dhcp': True,
-                         'gateway_ip': attributes.ATTR_NOT_SPECIFIED,
-                         'allocation_pools': attributes.ATTR_NOT_SPECIFIED,
-                         'dns_nameservers': (
-                             cfg.CONF.resource_mapping.dns_nameservers or
-                             attributes.ATTR_NOT_SPECIFIED),
-                         'host_routes': attributes.ATTR_NOT_SPECIFIED}
-                subnet = self._create_subnet(context._plugin_context, attrs)
-                subnet_id = subnet['id']
+        ptgs = context._plugin._get_l3p_ptgs(
+            context._plugin_context.elevated(), l3p_id)
+        allocated = netaddr.IPSet(
+            iterable=self._get_ptg_cidrs(context, None, ptg_dicts=ptgs))
+        available = pool - allocated
+        available.compact()
+
+        for cidr in sorted(available.iter_cidrs(),
+                           key=operator.attrgetter('prefixlen'), reverse=True):
+            if prefixlen < cidr.prefixlen:
+                # Close the loop, no remaining subnet is big enough for this
+                # allocation
+                break
+            for usable_cidr in cidr.subnet(prefixlen):
                 try:
-                    if l3p['routers']:
-                        router_id = l3p['routers'][0]
-                        interface_info = {'subnet_id': subnet_id}
-                        self._add_router_interface(context._plugin_context,
-                                                   router_id, interface_info)
-                    self._mark_subnet_owned(
-                        context._plugin_context.session, subnet_id)
-                    context.add_subnet(subnet_id)
-                    return
-                except n_exc.InvalidInput:
-                    # This exception is not expected. We catch this
-                    # here so that it isn't caught below and handled
-                    # as if the CIDR is already in use.
-                    LOG.exception(_("adding subnet to router failed"))
-                    self._delete_subnet(context._plugin_context, subnet['id'])
-                    raise exc.GroupPolicyInternalError()
-            except n_exc.BadRequest:
-                # This is expected (CIDR overlap) until we have a
-                # proper subnet allocation algorithm. We ignore the
-                # exception and repeat with the next CIDR.
-                pass
+                    attrs = {'tenant_id': context.current['tenant_id'],
+                             'name': 'ptg_' + context.current['name'],
+                             'network_id': l2p['network_id'],
+                             'ip_version': l3p['ip_version'],
+                             'cidr': usable_cidr,
+                             'enable_dhcp': True,
+                             'gateway_ip': attributes.ATTR_NOT_SPECIFIED,
+                             'allocation_pools': attributes.ATTR_NOT_SPECIFIED,
+                             'dns_nameservers': (
+                                 cfg.CONF.resource_mapping.dns_nameservers or
+                                 attributes.ATTR_NOT_SPECIFIED),
+                             'host_routes': attributes.ATTR_NOT_SPECIFIED}
+                    attrs.update(subnet_specifics)
+                    subnet = self._create_subnet(context._plugin_context,
+                                                 attrs)
+                    subnet_id = subnet['id']
+                    try:
+                        if l3p['routers']:
+                            router_id = l3p['routers'][0]
+                            interface_info = {'subnet_id': subnet_id}
+                            self._add_router_interface(
+                                context._plugin_context, router_id,
+                                interface_info)
+                        if mark_as_owned:
+                            self._mark_subnet_owned(
+                                context._plugin_context.session, subnet_id)
+                            context.add_subnet(subnet_id)
+                        return subnet
+                    except n_exc.InvalidInput:
+                        # This exception is not expected. We catch this
+                        # here so that it isn't caught below and handled
+                        # as if the CIDR is already in use.
+                        LOG.exception(_("adding subnet to router failed"))
+                        self._delete_subnet(context._plugin_context,
+                                            subnet['id'])
+                        raise exc.GroupPolicyInternalError()
+                except n_exc.BadRequest:
+                    # This is expected (CIDR overlap) until we have a
+                    # proper subnet allocation algorithm. We ignore the
+                    # exception and repeat with the next CIDR.
+                    pass
         raise exc.NoSubnetAvailable()
-
-    def _validate_subnet_overlap_for_l3p(self, subnets, subnet_cidr):
-        new_subnet_ipset = netaddr.IPSet([subnet_cidr])
-        for subnet in subnets:
-            if (netaddr.IPSet([subnet['cidr']]) & new_subnet_ipset):
-                return False
-        return True
 
     def _use_explicit_subnet(self, plugin_context, subnet_id, router_id):
         interface_info = {'subnet_id': subnet_id}
@@ -2496,13 +2496,20 @@ class ResourceMappingDriver(api.PolicyDriver):
         else:
             return []
 
-    def _get_ptg_cidrs(self, context, ptgs):
+    def _get_ptg_cidrs(self, context, ptgs, ptg_dicts=None):
         cidrs = []
-        ptgs = context._plugin.get_policy_target_groups(
-            context._plugin_context, filters={'id': ptgs})
+        if ptg_dicts:
+            ptgs = ptg_dicts
+        else:
+            ptgs = context._plugin.get_policy_target_groups(
+                context._plugin_context.elevated(), filters={'id': ptgs})
+        subnets = []
         for ptg in ptgs:
-            cidrs.extend([self._core_plugin.get_subnet(
-                context._plugin_context, x)['cidr'] for x in ptg['subnets']])
+            subnets.extend(ptg['subnets'])
+
+        if subnets:
+            cidrs = [x['cidr'] for x in self._core_plugin.get_subnets(
+                context._plugin_context.elevated(), {'id': subnets})]
         return cidrs
 
     def _get_ep_cidrs(self, context, eps):
