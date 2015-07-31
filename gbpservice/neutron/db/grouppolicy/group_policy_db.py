@@ -1025,6 +1025,13 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
                 context.session.query(EPToESAssociation).filter_by(
                     external_segment_id=es_id)]
 
+    def _get_l3p_ptgs(self, context, l3p_id, l3p_klass=L3Policy,
+                      ptg_klass=PolicyTargetGroup, l2p_klass=L2Policy):
+        return [self._make_policy_target_group_dict(x) for x in
+                context.session.query(ptg_klass).join(
+                    l2p_klass).join(l3p_klass).filter(
+                        l2p_klass.l3_policy_id == l3p_id).all()]
+
     def _get_attribute(self, attrs, key):
         value = attrs.get(key)
         if value is attr.ATTR_NOT_SPECIFIED:
