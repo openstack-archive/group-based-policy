@@ -1,6 +1,6 @@
 #!/bin/bash
 
-source ../functions-gbp
+source functions-gbp
 
 set -x
 
