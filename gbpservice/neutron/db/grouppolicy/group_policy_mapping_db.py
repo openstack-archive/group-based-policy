@@ -155,6 +155,11 @@ class GroupPolicyMappingDbPlugin(gpdb.GroupPolicyDbPlugin):
             l3p_db = self._get_l3_policy(context, l3p_id)
             self._set_ess_for_l3p(context, l3p_db, ess)
 
+    def _get_l3p_ptgs(self, context, l3p_id):
+        return super(GroupPolicyMappingDbPlugin, self)._get_l3p_ptgs(
+            context, l3p_id, l3p_klass=L3PolicyMapping,
+            ptg_klass=PolicyTargetGroupMapping, l2p_klass=L2PolicyMapping)
+
     @log.log
     def create_policy_target(self, context, policy_target):
         pt = policy_target['policy_target']
