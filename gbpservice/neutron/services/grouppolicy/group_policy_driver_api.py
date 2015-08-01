@@ -12,7 +12,10 @@
 
 import abc
 
+from neutron.api.v2 import attributes
 import six
+
+from gbpservice.common import utils
 
 
 @six.add_metaclass(abc.ABCMeta)
@@ -1662,3 +1665,90 @@ class ExtensionDriver(object):
         nat_pool operation.
         """
         pass
+
+    def _default_process_create(self, session, data, result, type=None,
+                                table=None, keys=None):
+        """Default process create behavior.
+
+        Gives a default data storing behavior in order to avoid code
+        duplication across drivers. Use multiple times to fill multiple
+        tables if needed.
+        """
+        kwargs = dict((x, data[type][x] if
+                       attributes.is_attr_set(data[type][x]) else None)
+                      for x in keys)
+        kwargs[type + '_' + 'id'] = result['id']
+        record = table(**kwargs)
+        session.add(record)
+        del kwargs[type + '_' + 'id']
+        result.update(kwargs)
+
+    def _default_process_update(self, session, data, result, type=None,
+                                table=None, keys=None):
+        """Default process update behavior.
+
+        Gives a default data storing behavior in order to avoid code
+        duplication across drivers. Use multiple times to fill multiple
+        tables if needed.
+        """
+        record = (session.query(table).filter_by(**{type + '_' + 'id':
+                                                    result['id']}).one())
+        for key in keys:
+            value = data[type].get(key)
+            if attributes.is_attr_set(value) and value != getattr(record, key):
+                setattr(record, key, value)
+            result[key] = getattr(record, key)
+
+    def _default_extend_dict(self, session, result, type=None,
+                             table=None, keys=None):
+        """Default dictionary extension behavior.
+
+        Gives a default dictionary extension behavior in order to avoid code
+        duplication across drivers. Use multiple times to fill from multiple
+        tables if needed.
+        """
+        record = (session.query(table).filter_by(**{type + '_' + 'id':
+                                                    result['id']}).one())
+        for key in keys:
+            result[key] = getattr(record, key)
+
+
+def default_extension_behavior(table, keys=None):
+    def wrap(func):
+        def inner(inst, *args):
+
+            def filter_keys(inst, to_be_true, plural):
+                if keys:
+                    return keys
+                definition = inst._extension_dict[plural]
+                return [x for x in definition if (definition[x][to_be_true]
+                        if to_be_true else True)]
+
+            name = func.__name__
+            if name.startswith('process_create_'):
+                # call default process create
+                type = name[len('process_create_'):]
+                plural = utils.get_resource_plural(type)
+                inst._default_process_create(*args, type=type, table=table,
+                    keys=filter_keys(inst, 'allow_post', plural))
+                # After creation, complete result dictionary with unfiltered
+                # attributes
+                inst._default_extend_dict(args[0], args[2], type=type,
+                                          table=table,
+                    keys=filter_keys(inst, None, plural))
+            elif name.startswith('process_update_'):
+                # call default process update
+                type = name[len('process_update_'):]
+                plural = utils.get_resource_plural(type)
+                inst._default_process_update(*args, type=type, table=table,
+                    keys=filter_keys(inst, 'allow_put', plural))
+            elif name.startswith('extend_') and name.endswith('_dict'):
+                # call default extend dict
+                type = name[len('extend_'):-len('_dict')]
+                plural = utils.get_resource_plural(type)
+                inst._default_extend_dict(*args, type=type, table=table,
+                    keys=filter_keys(inst, None, plural))
+            # Now exec the actual function for postprocessing
+            func(inst, *args)
+        return inner
+    return wrap
