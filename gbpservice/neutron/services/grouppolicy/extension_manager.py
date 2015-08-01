@@ -11,9 +11,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from neutron.common import exceptions as n_exc
 from oslo_config import cfg
 from oslo_log import log
 import stevedore
+
+from gbpservice.neutron.services.grouppolicy.common import exceptions as gp_exc
 
 
 LOG = log.getLogger(__name__)
@@ -68,6 +71,8 @@ class ExtensionManager(stevedore.named.NamedExtensionManager):
         for driver in self.ordered_ext_drivers:
             try:
                 getattr(driver.obj, method_name)(session, data, result)
+            except (gp_exc.GroupPolicyException, n_exc.NeutronException):
+                raise
             except Exception:
                 LOG.exception(
                     _("Extension driver '%(name)s' failed in %(method)s"),
