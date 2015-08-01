@@ -31,6 +31,15 @@ def clean_session(session):
     session.expunge_all()
 
 
+def get_resource_plural(resource):
+    if resource.endswith('y'):
+        resource_plural = resource.replace('y', 'ies')
+    else:
+        resource_plural = resource + 's'
+
+    return resource_plural
+
+
 def load_plugin(namespace, plugin):
     try:
         # Try to resolve plugin by name
