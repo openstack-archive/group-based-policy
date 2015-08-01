@@ -12,7 +12,14 @@
 
 import abc
 
+from neutron.api.v2 import attributes
+from neutron.openstack.common import log as logging
 import six
+from sqlalchemy.orm import exc as orm_exc
+
+from gbpservice.common import utils
+
+LOG = logging.getLogger(__name__)
 
 
 @six.add_metaclass(abc.ABCMeta)
@@ -1662,3 +1669,104 @@ class ExtensionDriver(object):
         nat_pool operation.
         """
         pass
+
+    def _default_process_create(self, session, data, result, type=None,
+                                table=None, keys=None):
+        """Default process create behavior.
+
+        Gives a default data storing behavior in order to avoid code
+        duplication across drivers. Use multiple times to fill multiple
+        tables if needed.
+        """
+        kwargs = dict((x, data[type][x] if
+                       attributes.is_attr_set(data[type][x]) else None)
+                      for x in keys)
+        kwargs[type + '_' + 'id'] = result['id']
+        record = table(**kwargs)
+        session.add(record)
+        del kwargs[type + '_' + 'id']
+        result.update(kwargs)
+
+    def _default_process_update(self, session, data, result, type=None,
+                                table=None, keys=None):
+        """Default process update behavior.
+
+        Gives a default data storing behavior in order to avoid code
+        duplication across drivers. Use multiple times to fill multiple
+        tables if needed.
+        """
+        try:
+            record = (session.query(table).filter_by(**{type + '_' + 'id':
+                                                        result['id']}).one())
+        except orm_exc.NoResultFound:
+            # TODO(ivar) This is a preexisting object. For now just ignore
+            # this and return. Each extension driver should be able to specify
+            # a default behavior in case this happens.
+            return
+        for key in keys:
+            value = data[type].get(key)
+            if attributes.is_attr_set(value) and value != getattr(record, key):
+                setattr(record, key, value)
+            result[key] = getattr(record, key)
+
+    def _default_extend_dict(self, session, result, type=None,
+                             table=None, keys=None):
+        """Default dictionary extension behavior.
+
+        Gives a default dictionary extension behavior in order to avoid code
+        duplication across drivers. Use multiple times to fill from multiple
+        tables if needed.
+        """
+        try:
+            record = (session.query(table).filter_by(**{type + '_' + 'id':
+                                                        result['id']}).one())
+        except orm_exc.NoResultFound:
+            # TODO(ivar) This is a preexisting object. For now just ignore
+            # this and return. Each extension driver should be able to specify
+            # a default behavior in case this happens.
+            return
+        for key in keys:
+            result[key] = getattr(record, key)
+
+
+def default_extension_behavior(table, keys=None):
+    def wrap(func):
+        def inner(inst, *args):
+
+            def filter_keys(inst, data, type):
+                plural = utils.get_resource_plural(type)
+                if keys:
+                    return keys
+                definition = inst._extension_dict[plural]
+                return [x for x in definition if (x in data[type] if data else
+                                                  True)]
+
+            name = func.__name__
+            if name.startswith('process_create_'):
+                # call default process create
+                type = name[len('process_create_'):]
+                inst._default_process_create(*args, type=type, table=table,
+                    keys=filter_keys(inst, args[1], type))
+                # Complete result dictionary with unfiltered attributes
+                inst._default_extend_dict(args[0], args[2], type=type,
+                                          table=table,
+                    keys=filter_keys(inst, None, type))
+            elif name.startswith('process_update_'):
+                # call default process update
+                type = name[len('process_update_'):]
+                inst._default_process_update(*args, type=type, table=table,
+                    keys=filter_keys(inst, args[1], type))
+
+                # Complete result dictionary with unfiltered attributes
+                inst._default_extend_dict(args[0], args[2], type=type,
+                                          table=table,
+                    keys=filter_keys(inst, None, type))
+            elif name.startswith('extend_') and name.endswith('_dict'):
+                # call default extend dict
+                type = name[len('extend_'):-len('_dict')]
+                inst._default_extend_dict(*args, type=type, table=table,
+                    keys=filter_keys(inst, None, type))
+            # Now exec the actual function for postprocessing
+            func(inst, *args)
+        return inner
+    return wrap
