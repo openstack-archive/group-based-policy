@@ -18,6 +18,9 @@ import webob.exc
 
 from gbpservice.neutron.tests.unit.services.grouppolicy import (
     test_grouppolicy_plugin as test_plugin)
+from gbpservice.neutron.db import servicechain_db  # noqa
+from gbpservice.neutron.services.servicechain.plugins.ncp import (
+    model)  # noqa
 
 
 class ImplicitPolicyTestCase(
@@ -392,3 +395,26 @@ class TestImplicitExternalSegment(ImplicitPolicyTestCase):
                                       tenant_id='anothertenant')
         self.assertEqual('DefaultExternalSegmentAlreadyExists',
                          res['NeutronError']['type'])
+
+
+class TestQuotasForGBP(ImplicitPolicyTestCase):
+
+    def setUp(self):
+        cfg.CONF.set_override('quota_l3_policy', 1, group='QUOTAS')
+        cfg.CONF.set_override('quota_l2_policy', 1, group='QUOTAS')
+        cfg.CONF.set_override('quota_policy_target_group', 1, group='QUOTAS')
+        cfg.CONF.set_override('quota_policy_target', 1, group='QUOTAS')
+        super(TestQuotasForGBP, self).setUp()
+
+    def test_quota_for_group_resources(self):
+        ptg_id = self.create_policy_target_group()['policy_target_group']['id']
+        self.create_policy_target(policy_target_group_id=ptg_id)
+        self.assertRaises(webob.exc.HTTPClientError,
+                          self.create_policy_target,
+                          policy_target_group_id=ptg_id)
+        self.assertRaises(webob.exc.HTTPClientError,
+                          self.create_policy_target_group)
+        self.assertRaises(webob.exc.HTTPClientError,
+                          self.create_l3_policy)
+        self.assertRaises(webob.exc.HTTPClientError,
+                          self.create_l2_policy)
