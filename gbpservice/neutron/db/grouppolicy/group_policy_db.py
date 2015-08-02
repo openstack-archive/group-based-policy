@@ -15,10 +15,13 @@ from neutron.api.v2 import attributes as attr
 from neutron.common import constants
 from neutron.common import log
 from neutron import context
+from neutron.common import exceptions as nexcp
 from neutron.db import common_db_mixin
 from neutron.db import model_base
 from neutron.db import models_v2
+from neutron.db import quota_db
 from neutron.openstack.common import uuidutils
+from neutron import quota
 from oslo_log import log as logging
 import sqlalchemy as sa
 from sqlalchemy import orm
@@ -34,6 +37,28 @@ MAX_IPV4_SUBNET_PREFIX_LENGTH = 31
 MAX_IPV6_SUBNET_PREFIX_LENGTH = 127
 ADDRESS_NOT_SPECIFIED = ''
 
+QUOTA_DRIVER = quota_db.DbQuotaDriver
+
+
+class GBPQuotaBase(common_db_mixin.CommonDbMixin):
+
+    def __init__(self, *args, **kwargs):
+        super(GBPQuotaBase, self).__init__(*args, **kwargs)
+
+        tenant_id = kwargs['tenant_id']
+        ctx = context.Context(user_id=None, tenant_id=tenant_id)
+        class_name = self.__class__.__name__
+        resource = DB_CLASS_TO_RESOURCE_NAMES[class_name]
+        d = {resource: quota.CountableResource(resource, None,
+                                               "quota_" + resource)}
+        resource_quota = QUOTA_DRIVER.get_tenant_quotas(ctx, d,
+                                                        tenant_id)[resource]
+        if resource_quota == -1:
+            return
+        count = self._get_collection_count(ctx, self.__class__)
+        if count >= resource_quota:
+            raise nexcp.OverQuota(overs=[resource])
+
 
 class HasNameDescription(object):
     name = sa.Column(sa.String(50))
@@ -46,7 +71,8 @@ class BaseSharedGbpResource(models_v2.HasId, models_v2.HasTenant,
     pass
 
 
-class PolicyTarget(model_base.BASEV2, models_v2.HasId, models_v2.HasTenant):
+class PolicyTarget(GBPQuotaBase, model_base.BASEV2, models_v2.HasId,
+                   models_v2.HasTenant):
     """Lowest unit of abstraction on which a policy is applied."""
     __tablename__ = 'gp_policy_targets'
     type = sa.Column(sa.String(15))
@@ -86,7 +112,7 @@ class PTGToPRSConsumingAssociation(model_base.BASEV2):
                                        primary_key=True)
 
 
-class PolicyTargetGroup(model_base.BASEV2, models_v2.HasId,
+class PolicyTargetGroup(GBPQuotaBase, model_base.BASEV2, models_v2.HasId,
                         models_v2.HasTenant):
     """It is a collection of policy_targets."""
     __tablename__ = 'gp_policy_target_groups'
@@ -114,7 +140,8 @@ class PolicyTargetGroup(model_base.BASEV2, models_v2.HasId,
     shared = sa.Column(sa.Boolean)
 
 
-class L2Policy(model_base.BASEV2, models_v2.HasId, models_v2.HasTenant):
+class L2Policy(GBPQuotaBase, model_base.BASEV2, models_v2.HasId,
+               models_v2.HasTenant):
     """Represents a L2 Policy for a collection of policy_target_groups."""
     __tablename__ = 'gp_l2_policies'
     type = sa.Column(sa.String(15))
@@ -147,7 +174,8 @@ class ESToL3PAssociation(model_base.BASEV2):
                                   primary_key=True)
 
 
-class L3Policy(model_base.BASEV2, models_v2.HasId, models_v2.HasTenant):
+class L3Policy(GBPQuotaBase, model_base.BASEV2, models_v2.HasId,
+               models_v2.HasTenant):
     """Represents a L3 Policy with a non-overlapping IP address space."""
     __tablename__ = 'gp_l3_policies'
     type = sa.Column(sa.String(15))
@@ -166,6 +194,9 @@ class L3Policy(model_base.BASEV2, models_v2.HasId, models_v2.HasTenant):
         ESToL3PAssociation, backref='l3_policies',
         cascade='all, delete-orphan')
 
+    def __init__(self, *args, **kwargs):
+        super(L3Policy, self).__init__(*args, **kwargs)
+
 
 class NetworkServiceParam(model_base.BASEV2, models_v2.HasId):
     """Represents a network service param used in a NetworkServicePolicy."""
@@ -178,8 +209,8 @@ class NetworkServiceParam(model_base.BASEV2, models_v2.HasId):
         nullable=False)
 
 
-class NetworkServicePolicy(
-    model_base.BASEV2, models_v2.HasId, models_v2.HasTenant):
+class NetworkServicePolicy(GBPQuotaBase, model_base.BASEV2, models_v2.HasId,
+                           models_v2.HasTenant):
     """Represents a Network Service Policy."""
     __tablename__ = 'gp_network_service_policies'
     name = sa.Column(sa.String(50))
@@ -215,7 +246,8 @@ class PolicyRuleActionAssociation(model_base.BASEV2):
                                  primary_key=True)
 
 
-class PolicyRule(model_base.BASEV2, models_v2.HasId, models_v2.HasTenant):
+class PolicyRule(GBPQuotaBase, model_base.BASEV2, models_v2.HasId,
+                 models_v2.HasTenant):
     """Represents a Group Policy Rule."""
     __tablename__ = 'gp_policy_rules'
     name = sa.Column(sa.String(50))
@@ -234,7 +266,7 @@ class PolicyRule(model_base.BASEV2, models_v2.HasId, models_v2.HasTenant):
     shared = sa.Column(sa.Boolean)
 
 
-class PolicyClassifier(model_base.BASEV2, models_v2.HasId,
+class PolicyClassifier(GBPQuotaBase, model_base.BASEV2, models_v2.HasId,
                        models_v2.HasTenant):
     """Represents a Group Policy Classifier."""
     __tablename__ = 'gp_policy_classifiers'
@@ -256,7 +288,8 @@ class PolicyClassifier(model_base.BASEV2, models_v2.HasId,
     shared = sa.Column(sa.Boolean)
 
 
-class PolicyAction(model_base.BASEV2, models_v2.HasId, models_v2.HasTenant):
+class PolicyAction(GBPQuotaBase, model_base.BASEV2, models_v2.HasId,
+                   models_v2.HasTenant):
     """Represents a Group Policy Action."""
     __tablename__ = 'gp_policy_actions'
     name = sa.Column(sa.String(50))
@@ -295,7 +328,7 @@ class EPToPRSConsumingAssociation(model_base.BASEV2):
         primary_key=True)
 
 
-class PolicyRuleSet(model_base.BASEV2, models_v2.HasTenant):
+class PolicyRuleSet(GBPQuotaBase, model_base.BASEV2, models_v2.HasTenant):
     """It is a collection of Policy rules."""
     __tablename__ = 'gp_policy_rule_sets'
     id = sa.Column(sa.String(36), primary_key=True,
@@ -325,7 +358,7 @@ class PolicyRuleSet(model_base.BASEV2, models_v2.HasTenant):
     shared = sa.Column(sa.Boolean)
 
 
-class NATPool(model_base.BASEV2, BaseSharedGbpResource):
+class NATPool(GBPQuotaBase, model_base.BASEV2, BaseSharedGbpResource):
     __tablename__ = 'gp_nat_pools'
     ip_version = sa.Column(sa.Integer, nullable=False)
     ip_pool = sa.Column(sa.String(64), nullable=False)
@@ -354,7 +387,7 @@ class EPToESAssociation(model_base.BASEV2):
         primary_key=True)
 
 
-class ExternalSegment(model_base.BASEV2, BaseSharedGbpResource):
+class ExternalSegment(GBPQuotaBase, model_base.BASEV2, BaseSharedGbpResource):
     __tablename__ = 'gp_external_segments'
     type = sa.Column(sa.String(15))
     __mapper_args__ = {
@@ -376,7 +409,7 @@ class ExternalSegment(model_base.BASEV2, BaseSharedGbpResource):
         cascade='all, delete-orphan')
 
 
-class ExternalPolicy(model_base.BASEV2, BaseSharedGbpResource):
+class ExternalPolicy(GBPQuotaBase, model_base.BASEV2, BaseSharedGbpResource):
     __tablename__ = 'gp_external_policies'
     external_segments = orm.relationship(
         EPToESAssociation,
@@ -389,6 +422,21 @@ class ExternalPolicy(model_base.BASEV2, BaseSharedGbpResource):
         EPToPRSConsumingAssociation,
         backref='consuming_external_policies',
         cascade='all, delete-orphan')
+
+
+DB_CLASS_TO_RESOURCE_NAMES = {}
+DB_CLASS_TO_RESOURCE_NAMES[L3Policy.__name__] = 'l3_policy'
+DB_CLASS_TO_RESOURCE_NAMES[L2Policy.__name__] = 'l2_policy'
+DB_CLASS_TO_RESOURCE_NAMES[PolicyTargetGroup.__name__] = 'policy_target_group'
+DB_CLASS_TO_RESOURCE_NAMES[PolicyTarget.__name__] = 'policy_target'
+DB_CLASS_TO_RESOURCE_NAMES[PolicyClassifier.__name__] = 'policy_classifier'
+DB_CLASS_TO_RESOURCE_NAMES[PolicyAction.__name__] = 'policy_action'
+DB_CLASS_TO_RESOURCE_NAMES[PolicyRuleSet.__name__] = 'policy_rule_set'
+DB_CLASS_TO_RESOURCE_NAMES[NetworkServicePolicy.__name__] = (
+    'network_service_policy')
+DB_CLASS_TO_RESOURCE_NAMES[ExternalPolicy.__name__] = 'external_policy'
+DB_CLASS_TO_RESOURCE_NAMES[ExternalSegment.__name__] = 'external_segment'
+DB_CLASS_TO_RESOURCE_NAMES[NATPool.__name__] = 'nat_pool'
 
 
 class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,

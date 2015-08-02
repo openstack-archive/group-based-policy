@@ -21,6 +21,7 @@ from neutron.openstack.common import uuidutils
 from neutron.plugins.common import constants
 from neutron.tests.unit.api import test_extensions
 from neutron.tests.unit.db import test_db_base_plugin_v2
+from oslo_config import cfg
 from oslo_utils import importutils
 
 from gbpservice.neutron.db import servicechain_db as svcchain_db
@@ -604,3 +605,53 @@ class TestServiceChainResources(ServiceChainDbTestCase):
         self.assertRaises(service_chain.ServiceProfileNotFound,
                           self.plugin.get_service_profile,
                           ctx, sp_id)
+
+
+class TestQuotasForServiceChain(ServiceChainDbTestCase):
+
+    def setUp(self, core_plugin=None, sc_plugin=None,
+              gp_plugin=None, service_plugins=None, ext_mgr=None):
+        cfg.CONF.set_override('quota_servicechain_node', 1,
+                              group='QUOTAS')
+        cfg.CONF.set_override('quota_servicechain_spec', 1,
+                              group='QUOTAS')
+        cfg.CONF.set_override('quota_servicechain_instance', 1,
+                              group='QUOTAS')
+        cfg.CONF.set_override('quota_service_profile', 1,
+                              group='QUOTAS')
+        super(TestQuotasForServiceChain, self).setUp(
+            core_plugin=core_plugin, sc_plugin=sc_plugin,
+            gp_plugin=gp_plugin, service_plugins=service_plugins,
+            ext_mgr=ext_mgr)
+
+    def tearDown(self):
+        cfg.CONF.set_override('quota_servicechain_node', -1,
+                              group='QUOTAS')
+        cfg.CONF.set_override('quota_servicechain_spec', -1,
+                              group='QUOTAS')
+        cfg.CONF.set_override('quota_servicechain_instance', -1,
+                              group='QUOTAS')
+        cfg.CONF.set_override('quota_service_profile', -1,
+                              group='QUOTAS')
+        super(TestQuotasForServiceChain, self).tearDown()
+
+    def test_servicechain_node_quota(self):
+        self.create_servicechain_node()
+        self.assertRaises(webob.exc.HTTPClientError,
+                          self.create_servicechain_node)
+
+    def test_servicechain_spec_quota(self):
+        self.create_servicechain_spec()
+        self.assertRaises(webob.exc.HTTPClientError,
+                          self.create_servicechain_spec)
+
+    def test_servicechain_instance_quota(self):
+        self.create_servicechain_instance()
+        self.assertRaises(webob.exc.HTTPClientError,
+                          self.create_servicechain_instance)
+
+    def test_service_profile(self):
+        self.create_service_profile(service_type=constants.FIREWALL)
+        self.assertRaises(webob.exc.HTTPClientError,
+                          self.create_service_profile,
+                          service_type=constants.FIREWALL)
