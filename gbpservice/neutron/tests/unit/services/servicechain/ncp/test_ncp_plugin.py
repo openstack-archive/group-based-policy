@@ -11,6 +11,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import webob.exc
+
 import mock
 from neutron.common import config  # noqa
 from neutron.common import exceptions as n_exc
@@ -617,3 +619,81 @@ class AgnosticChainPlumberTestCase(NodeCompositionPluginTestCase):
                                         expected_res_status=200)
         self.delete_policy_target_group(provider['id'],
                                         expected_res_status=204)
+
+
+class TestQuotasForServiceChain(test_base.ServiceChainPluginTestCase):
+
+    @property
+    def sc_plugin(self):
+        plugins = manager.NeutronManager.get_service_plugins()
+        servicechain_plugin = plugins.get(pconst.SERVICECHAIN)
+        return servicechain_plugin
+
+    def setUp(self, core_plugin=None, gp_plugin=None, node_drivers=None,
+              node_plumber=None):
+        if node_drivers:
+            cfg.CONF.set_override('node_drivers', node_drivers,
+                                  group='node_composition_plugin')
+        cfg.CONF.set_override('node_plumber', node_plumber or 'dummy_plumber',
+                              group='node_composition_plugin')
+        config.cfg.CONF.set_override('policy_drivers',
+                                     ['implicit_policy', 'resource_mapping'],
+                                     group='group_policy')
+        super(TestQuotasForServiceChain, self).setUp(
+            core_plugin=core_plugin or CORE_PLUGIN,
+            gp_plugin=gp_plugin or GP_PLUGIN_KLASS,
+            sc_plugin=SC_PLUGIN_KLASS)
+        engine = db_api.get_engine()
+        model_base.BASEV2.metadata.create_all(engine)
+        self.driver = self.sc_plugin.driver_manager.ordered_drivers[0].obj
+        cfg.CONF.set_override('quota_servicechain_node', 1,
+                              group='QUOTAS')
+        cfg.CONF.set_override('quota_servicechain_spec', 1,
+                              group='QUOTAS')
+        cfg.CONF.set_override('quota_servicechain_instance', 1,
+                              group='QUOTAS')
+        cfg.CONF.set_override('quota_service_profile', 1,
+                              group='QUOTAS')
+
+    def tearDown(self):
+        cfg.CONF.set_override('quota_servicechain_node', -1,
+                              group='QUOTAS')
+        cfg.CONF.set_override('quota_servicechain_spec', -1,
+                              group='QUOTAS')
+        cfg.CONF.set_override('quota_servicechain_instance', -1,
+                              group='QUOTAS')
+        cfg.CONF.set_override('quota_service_profile', -1,
+                              group='QUOTAS')
+        super(TestQuotasForServiceChain, self).tearDown()
+
+    def test_quota_implicit_service_instance(self):
+        prof = self.create_service_profile(
+            service_type='LOADBALANCER',
+            vendor="vendor")['service_profile']
+
+        node1_id = self.create_servicechain_node(
+            service_profile_id=prof['id'], config="{}",
+            expected_res_status=201)['servicechain_node']['id']
+
+        spec = self.create_servicechain_spec(
+            nodes=[node1_id],
+            expected_res_status=201)['servicechain_spec']
+        action = self.create_policy_action(action_type='REDIRECT',
+                                           action_value=spec['id'])
+        classifier = self.create_policy_classifier(
+            port_range=80, protocol='tcp', direction='bi')
+        rule = self.create_policy_rule(
+            policy_actions=[action['policy_action']['id']],
+            policy_classifier_id=classifier['policy_classifier']['id'])
+        prs = self.create_policy_rule_set(
+            policy_rules=[rule['policy_rule']['id']])['policy_rule_set']
+        self.create_policy_target_group(
+            provided_policy_rule_sets={prs['id']: ''})
+        self.create_policy_target_group(
+            consumed_policy_rule_sets={prs['id']: ''})
+        # Second service instance creation should fail now
+        # sice service instance quota is 1, resulting in PTG
+        # creation error
+        self.assertRaises(webob.exc.HTTPClientError,
+                          self.create_policy_target_group,
+                          consumed_policy_rule_sets={prs['id']: ''})

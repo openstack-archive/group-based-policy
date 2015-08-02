@@ -17,6 +17,7 @@ from oslo_log import log as logging
 import sqlalchemy as sa
 from sqlalchemy import orm
 
+from gbpservice.neutron.db import gbp_quota_db as gquota
 from gbpservice.neutron.db.grouppolicy import group_policy_db as gpdb
 
 
@@ -83,6 +84,16 @@ class ExternalSegmentMapping(gpdb.ExternalSegment):
     __mapper_args__ = {'polymorphic_identity': 'mapping'}
     subnet_id = sa.Column(sa.String(36), sa.ForeignKey('subnets.id'),
                           nullable=True, unique=True)
+
+
+gquota.DB_CLASS_TO_RESOURCE_NAMES[L3PolicyMapping.__name__] = 'l3_policy'
+gquota.DB_CLASS_TO_RESOURCE_NAMES[L2PolicyMapping.__name__] = 'l2_policy'
+gquota.DB_CLASS_TO_RESOURCE_NAMES[PolicyTargetGroupMapping.__name__] = (
+    'policy_target_group')
+gquota.DB_CLASS_TO_RESOURCE_NAMES[PolicyTargetMapping.__name__] = (
+    'policy_target')
+gquota.DB_CLASS_TO_RESOURCE_NAMES[ExternalSegmentMapping.__name__] = (
+    'external_segment')
 
 
 class GroupPolicyMappingDbPlugin(gpdb.GroupPolicyDbPlugin):
