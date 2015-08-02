@@ -13,7 +13,10 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+<<<<<<< HEAD
 from neutron._i18n import _LW
+=======
+>>>>>>> a3d5e2329050802f4a677c9940027db02f68a0b0
 from neutron import context as nctx
 from neutron.extensions import portbindings
 from neutron import manager
@@ -54,8 +57,13 @@ class APICMechanismGBPDriver(api.MechanismDriver):
                         LOG.debug("Bound using segment: %s", segment)
                         return True
             else:
+<<<<<<< HEAD
                 LOG.warning(_LW("Refusing to bind port %(pid)s to dead agent: "
                                 "%(agent)s"),
+=======
+                LOG.warning(_("Refusing to bind port %(pid)s to dead agent: "
+                              "%(agent)s"),
+>>>>>>> a3d5e2329050802f4a677c9940027db02f68a0b0
                             {'pid': context.current['id'], 'agent': agent})
         return False
 
@@ -105,7 +113,11 @@ class APICMechanismGBPDriver(api.MechanismDriver):
             ptg, pt = self.apic_gbp._port_id_to_ptg(context._plugin_context,
                                                     port['id'])
             if ptg is None:
+<<<<<<< HEAD
                 LOG.warning(_LW("PTG for port %s does not exist"), port['id'])
+=======
+                LOG.warning(_("PTG for port %s does not exist"), port['id'])
+>>>>>>> a3d5e2329050802f4a677c9940027db02f68a0b0
                 return False
             mapper = self.apic_gbp.name_mapper.name_mapper
             ptg_name = mapper.policy_target_group(context, ptg['name'])

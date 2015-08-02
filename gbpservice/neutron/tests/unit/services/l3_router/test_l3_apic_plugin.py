@@ -20,7 +20,11 @@ from neutron import context
 
 from gbpservice.neutron.services.l3_router import l3_apic
 from gbpservice.neutron.tests.unit.services.grouppolicy import (
+<<<<<<< HEAD
     test_apic_mapping)
+=======
+    test_apic_mapping as apic_map)
+>>>>>>> a3d5e2329050802f4a677c9940027db02f68a0b0
 
 
 TENANT = 'tenant1'
@@ -34,7 +38,11 @@ FLOATINGIP = 'fip1'
 
 
 # TODO(tbachman): create better test class hierarchy to inherit
+<<<<<<< HEAD
 class TestCiscoApicL3Plugin(test_apic_mapping.ApicMappingTestCase):
+=======
+class TestCiscoApicL3Plugin(apic_map.ApicMappingTestCase):
+>>>>>>> a3d5e2329050802f4a677c9940027db02f68a0b0
     '''Test class for the Cisco APIC L3 Plugin
 
        This is a set of tests specific to the Cisco APIC
