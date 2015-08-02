@@ -1452,6 +1452,7 @@ class TestL2Policy(ApicMappingTestCase):
                     l2_policy_id=l2p['id'])['policy_target_group']
                 self.assertEqual(ptg['subnets'], [sub['id']])
 
+<<<<<<< HEAD
     def test_reject_l3p_update(self):
         l2p = self.create_l2_policy()['l2_policy']
         new_l3p = self.create_l3_policy()['l3_policy']
@@ -1460,6 +1461,8 @@ class TestL2Policy(ApicMappingTestCase):
         self.assertEqual('L3PolicyUpdateOfL2PolicyNotSupported',
                          res['NeutronError']['type'])
 
+=======
+>>>>>>> a3d5e2329050802f4a677c9940027db02f68a0b0
     def test_subnet_deallocated(self):
         l2p = self.create_l2_policy()['l2_policy']
         ptg = self.create_policy_target_group(
@@ -3278,6 +3281,7 @@ class TestExternalSegmentPreL3Out(TestExternalSegment):
             name='supported', expected_res_status=400)
         self.assertEqual('EdgeNatWrongL3OutAuthTypeForOSPF',
                          res['NeutronError']['type'])
+<<<<<<< HEAD
 
     def test_edge_nat_wrong_L3out_BGP_Auth_type_rejected(self):
         self._mock_external_dict([('supported', '192.168.0.2/24')],
@@ -3319,6 +3323,49 @@ class TestExternalSegmentPreL3Out(TestExternalSegment):
         res = self.create_external_segment(
             name='supported', expected_res_status=201)
 
+=======
+
+    def test_edge_nat_wrong_L3out_BGP_Auth_type_rejected(self):
+        self._mock_external_dict([('supported', '192.168.0.2/24')],
+                                 is_edge_nat=True)
+        self.driver._query_l3out_info.return_value['l3out'] = (
+            [{u'l3extLNodeP':
+              {u'attributes':
+               {u'dn': u'uni/tn-common/out-supported/lnodep-Leaf3-4_NP'},
+               u'children': [{u'l3extLIfP':
+                              {u'children': [{u'l3extRsNodeL3OutAtt':
+                                              {u'attributes':
+                                               {u'type': u'sha1'}}},
+                                             {u'bfdIfP':
+                                              {u'attributes':
+                                               {u'type': u'sha1'}}},
+                                             {u'l3extRsNodeL3OutAtt':
+                                              {u'attributes':
+                                               {u'type': u'sha1'}}}]}}]}}])
+        res = self.create_external_segment(
+            name='supported', expected_res_status=400)
+        self.assertEqual('EdgeNatWrongL3OutAuthTypeForBGP',
+                         res['NeutronError']['type'])
+
+        # try again with a good input
+        self.driver._query_l3out_info.return_value['l3out'] = (
+            [{u'l3extLNodeP':
+              {u'attributes':
+               {u'dn': u'uni/tn-common/out-supported/lnodep-Leaf3-4_NP'},
+               u'children': [{u'l3extLIfP':
+                              {u'children': [{u'l3extRsNodeL3OutAtt':
+                                              {u'attributes':
+                                               {u'type': u'sha1'}}},
+                                             {u'bfdIfP':
+                                              {u'attributes':
+                                               {u'type': u'none'}}},
+                                             {u'l3extRsNodeL3OutAtt':
+                                              {u'attributes':
+                                               {u'type': u'sha1'}}}]}}]}}])
+        res = self.create_external_segment(
+            name='supported', expected_res_status=201)
+
+>>>>>>> a3d5e2329050802f4a677c9940027db02f68a0b0
 
 class TestExternalSegmentNoNatPreL3Out(TestExternalSegmentPreL3Out):
     def setUp(self):

@@ -267,8 +267,13 @@ class LocalAPI(object):
             self._l3_plugin.remove_router_interface(plugin_context, router_id,
                                                     interface_info)
         except l3.RouterInterfaceNotFoundForSubnet:
+<<<<<<< HEAD
             LOG.warning(_LW('Router interface already deleted for subnet %s'),
                         interface_info)
+=======
+            LOG.warn(_('Router interface already deleted for subnet %s'),
+                     interface_info)
+>>>>>>> a3d5e2329050802f4a677c9940027db02f68a0b0
             return
         else:
             # The DHCP agent is not getting this event for the router
