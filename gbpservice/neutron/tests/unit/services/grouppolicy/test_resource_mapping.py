@@ -691,6 +691,38 @@ class TestPolicyTargetGroup(ResourceMappingTestCase):
         return self.deserialize(self.fmt,
                                 req.get_response(self.api))['subnets']
 
+    # Test update of PTG with PT that doesnt have port association
+    def test_policy_target_group_update_with_unbound_pt(self):
+        ptg = self.create_policy_target_group(name="ptg")
+        ptg_id = ptg['policy_target_group']['id']
+
+        pt1 = self.create_policy_target(name="pt",
+                                        policy_target_group_id=ptg_id)
+        port_id = pt1['policy_target']['port_id']
+        self.new_delete_request('ports', port_id).get_response(self.api)
+        classifier = self.create_policy_classifier(
+            name="class1", protocol="tcp", direction="bi")
+        classifier_id = classifier['policy_classifier']['id']
+        action = self.create_policy_action(name="action1",
+                                           action_type=gconst.GP_ACTION_ALLOW)
+        action_id = action['policy_action']['id']
+        action_id_list = [action_id]
+        policy_rule = self.create_policy_rule(
+            name='pr', policy_classifier_id=classifier_id,
+            policy_actions=action_id_list)
+        policy_rule_list = [policy_rule['policy_rule']['id']]
+        policy_rule_set = self.create_policy_rule_set(
+            name="c1", policy_rules=policy_rule_list)
+        policy_rule_set_id = policy_rule_set['policy_rule_set']['id']
+        ptg = self.create_policy_target_group(name="ptg",
+            provided_policy_rule_sets={policy_rule_set_id: ''})
+        # now add a policy_rule_set to PTG
+        data = {'policy_target_group':
+                {'provided_policy_rule_sets': {policy_rule_set_id: None}}}
+        req = self.new_update_request('policy_target_groups', data, ptg_id)
+        res = req.get_response(self.ext_api)
+        self.assertEqual(res.status_int, webob.exc.HTTPOk.code)
+
     def test_default_security_group_allows_intra_ptg(self):
         # Create PTG and retrieve subnet
         ptg = self.create_policy_target_group()['policy_target_group']
