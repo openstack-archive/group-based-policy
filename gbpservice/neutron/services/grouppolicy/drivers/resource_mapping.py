@@ -2199,12 +2199,15 @@ class ResourceMappingDriver(api.PolicyDriver):
         except gp_ext.PolicyTargetNotFound:
             LOG.warn(_("PT %s doesn't exist anymore"), pt_id)
             return
-        port_id = pt['port_id']
-        port = self._core_plugin.get_port(context._plugin_context, port_id)
-        cur_sg_list = port[ext_sg.SECURITYGROUPS]
-        new_sg_list = cur_sg_list + sg_list
-        port[ext_sg.SECURITYGROUPS] = new_sg_list
-        self._update_port(context._plugin_context, port_id, port)
+        try:
+            port_id = pt['port_id']
+            port = self._core_plugin.get_port(context._plugin_context, port_id)
+            cur_sg_list = port[ext_sg.SECURITYGROUPS]
+            new_sg_list = cur_sg_list + sg_list
+            port[ext_sg.SECURITYGROUPS] = new_sg_list
+            self._update_port(context._plugin_context, port_id, port)
+        except n_exc.PortNotFound:
+            LOG.warn(_("Port %s is missing") % port_id)
 
     def _disassoc_sgs_from_pt(self, context, pt_id, sg_list):
         try:
