@@ -19,7 +19,9 @@ from neutron.common import constants as n_constants
 from neutron.common import exceptions as nexc
 from neutron.openstack.common import uuidutils
 from neutron.plugins.common import constants
+from neutron import quota
 from neutron.services import service_base
+from oslo_config import cfg
 from oslo_log import log as logging
 import six
 
@@ -755,6 +757,59 @@ RESOURCE_ATTRIBUTE_MAP = {
 }
 
 
+group_based_policy_quota_opts = [
+    cfg.IntOpt('quota_l3_policy',
+               default=-1,
+               help=_('Number of L3 Policies allowed per tenant. '
+                      'A negative value means unlimited.')),
+    cfg.IntOpt('quota_l2_policy',
+               default=-1,
+               help=_('Number of L2 Policies allowed per tenant. '
+                      'A negative value means unlimited.')),
+    cfg.IntOpt('quota_policy_target_group',
+               default=-1,
+               help=_('Number of Policy Target Groups allowed per tenant. '
+                      'A negative value means unlimited.')),
+    cfg.IntOpt('quota_policy_target',
+               default=-1,
+               help=_('Number of Policy Targets allowed per tenant. '
+                      'A negative value means unlimited.')),
+    cfg.IntOpt('quota_policy_classifier',
+               default=-1,
+               help=_('Number of Policy Classifiers allowed per tenant. '
+                      'A negative value means unlimited.')),
+    cfg.IntOpt('quota_policy_action',
+               default=-1,
+               help=_('Number of Policy Actions allowed per tenant. '
+                      'A negative value means unlimited.')),
+    cfg.IntOpt('quota_policy_rule',
+               default=-1,
+               help=_('Number of Policy Rules allowed per tenant. '
+                      'A negative value means unlimited.')),
+    cfg.IntOpt('quota_policy_rule_sets',
+               default=-1,
+               help=_('Number of Policy Rule Sets allowed per tenant. '
+                      'A negative value means unlimited.')),
+    cfg.IntOpt('quota_external_policy',
+               default=-1,
+               help=_('Number of External Policies allowed per tenant. '
+                      'A negative value means unlimited.')),
+    cfg.IntOpt('quota_external_segment',
+               default=-1,
+               help=_('Number of External Segments allowed per tenant. '
+                      'A negative value means unlimited.')),
+    cfg.IntOpt('quota_nat_pool',
+               default=-1,
+               help=_('Number of NAT Pools allowed per tenant. '
+                      'A negative value means unlimited.')),
+    cfg.IntOpt('quota_network_service_policy',
+               default=-1,
+               help=_('Number of Network Service Policies allowed per '
+                      'tenant. A negative value means unlimited.')),
+]
+cfg.CONF.register_opts(group_based_policy_quota_opts, 'QUOTAS')
+
+
 class Group_policy(extensions.ExtensionDescriptor):
 
     @classmethod
@@ -786,6 +841,13 @@ class Group_policy(extensions.ExtensionDescriptor):
         plural_mappings = resource_helper.build_plural_mappings(
             special_mappings, RESOURCE_ATTRIBUTE_MAP)
         attr.PLURALS.update(plural_mappings)
+        for resource_name in ['l3_policy', 'l2_policy', 'policy_target_group',
+                              'policy_target', 'policy_classifier',
+                              'policy_action', 'policy_rule',
+                              'policy_rule_set', 'external_policy',
+                              'external_segment', 'nat_pool',
+                              'network_service_policy']:
+            quota.QUOTAS.register_resource_by_name(resource_name)
         return resource_helper.build_resource_info(plural_mappings,
                                                    RESOURCE_ATTRIBUTE_MAP,
                                                    constants.GROUP_POLICY)

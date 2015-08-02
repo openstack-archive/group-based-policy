@@ -17,6 +17,7 @@ import webob.exc
 
 from neutron.api import extensions
 from neutron.api.v2 import attributes as nattr
+import neutron.common.test_lib as test_lib
 from neutron import context
 from neutron.openstack.common import uuidutils
 from neutron.plugins.common import constants
@@ -1272,3 +1273,18 @@ class TestGroupResources(GroupPolicyDbTestCase):
         self.assertEqual(res.status_int, webob.exc.HTTPNoContent.code)
         self.assertRaises(gpolicy.NATPoolNotFound,
                           self.plugin.get_nat_pool, ctx, ep_id)
+
+
+class TestQuotasForGBP(GroupPolicyDbTestCase):
+
+    def setUp(self, core_plugin=None, gp_plugin=None, service_plugins=None,
+              ext_mgr=None):
+        cfg.CONF.set_override('quota_l3_policy', 1, group='QUOTAS')
+        super(TestQuotasForGBP, self).setUp(
+            core_plugin=core_plugin, gp_plugin=gp_plugin,
+            service_plugins=service_plugins, ext_mgr=ext_mgr)
+
+    def test_l3_policy_quota(self):
+        l3p = self.create_l3_policy()
+        self.assertRaises(webob.exc.HTTPClientError,
+                          self.create_l3_policy)

@@ -372,6 +372,16 @@ class GroupPolicyExtensionTestCase(test_extensions_base.ExtensionTestCase):
 
         self._test_create_l3_policy(data, expected_value)
 
+    def test_l3_policy_quota(self):
+        data = {'l3_policy': self.get_create_l3_policy_attrs()}
+        res = self.api.post(_get_path(L3_POLICIES_URI, fmt=self.fmt),
+                            self.serialize(data),
+                            content_type='application/%s' % self.fmt)
+        res = self.api.post(_get_path(L3_POLICIES_URI, fmt=self.fmt),
+                            self.serialize(data),
+                            content_type='application/%s' % self.fmt)
+
+
     def test_list_l3_policies(self):
         l3_policy_id = _uuid()
         expected_value = [{'tenant_id': _uuid(), 'id': l3_policy_id}]
