@@ -26,6 +26,7 @@ from sqlalchemy.ext.orderinglist import ordering_list
 from sqlalchemy import orm
 from sqlalchemy.orm import exc
 
+from gbpservice.neutron.db import gbp_quota_db as gquota
 from gbpservice.neutron.extensions import servicechain as schain
 from gbpservice.neutron.services.servicechain.common import exceptions as s_exc
 
@@ -57,7 +58,7 @@ class InstanceSpecAssociation(model_base.BASEV2):
     position = sa.Column(sa.Integer)
 
 
-class ServiceChainNode(model_base.BASEV2, models_v2.HasId,
+class ServiceChainNode(gquota.GBPQuotaBase, model_base.BASEV2, models_v2.HasId,
                        models_v2.HasTenant):
     """ServiceChain Node"""
     __tablename__ = 'sc_nodes'
@@ -74,8 +75,8 @@ class ServiceChainNode(model_base.BASEV2, models_v2.HasId,
         nullable=True)
 
 
-class ServiceChainInstance(model_base.BASEV2, models_v2.HasId,
-                           models_v2.HasTenant):
+class ServiceChainInstance(gquota.GBPQuotaBase, model_base.BASEV2,
+                           models_v2.HasId, models_v2.HasTenant):
     """Service chain instances"""
     __tablename__ = 'sc_instances'
     name = sa.Column(sa.String(50))
@@ -99,7 +100,7 @@ class ServiceChainInstance(model_base.BASEV2, models_v2.HasId,
                               nullable=True)
 
 
-class ServiceChainSpec(model_base.BASEV2, models_v2.HasId,
+class ServiceChainSpec(gquota.GBPQuotaBase, model_base.BASEV2, models_v2.HasId,
                        models_v2.HasTenant):
     """ ServiceChain Spec
     """
@@ -118,7 +119,7 @@ class ServiceChainSpec(model_base.BASEV2, models_v2.HasId,
     shared = sa.Column(sa.Boolean)
 
 
-class ServiceProfile(model_base.BASEV2, models_v2.HasId,
+class ServiceProfile(gquota.GBPQuotaBase, model_base.BASEV2, models_v2.HasId,
                      models_v2.HasTenant):
     """ Service Profile
     """
@@ -133,6 +134,16 @@ class ServiceProfile(model_base.BASEV2, models_v2.HasId,
     service_type = sa.Column(sa.String(50))
     service_flavor = sa.Column(sa.String(1024))
     nodes = orm.relationship(ServiceChainNode, backref="service_profile")
+
+
+gquota.DB_CLASS_TO_RESOURCE_NAMES[ServiceChainNode.__name__] = (
+    'servicechain_node')
+gquota.DB_CLASS_TO_RESOURCE_NAMES[ServiceChainSpec.__name__] = (
+    'servicechain_spec')
+gquota.DB_CLASS_TO_RESOURCE_NAMES[ServiceChainInstance.__name__] = (
+    'servicechain_instance')
+gquota.DB_CLASS_TO_RESOURCE_NAMES[ServiceProfile.__name__] = (
+    'service_profile')
 
 
 class ServiceChainDbPlugin(schain.ServiceChainPluginBase,
