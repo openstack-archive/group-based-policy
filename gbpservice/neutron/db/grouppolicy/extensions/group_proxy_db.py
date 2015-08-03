@@ -37,3 +37,13 @@ class ProxyGatewayMapping(model_base.BASEV2):
                                      ondelete="CASCADE"), primary_key=True)
     proxy_gateway = sa.Column(sa.Boolean, nullable=False)
     group_default_gateway = sa.Column(sa.Boolean, nullable=False)
+
+
+class ProxyIPPoolMapping(model_base.BASEV2):
+    __tablename__ = 'gp_proxy_ip_pool_mapping'
+
+    l3_policy_id = sa.Column(
+        sa.String(36), sa.ForeignKey('gp_l3_policies.id', ondelete="CASCADE"),
+        primary_key=True)
+    proxy_ip_pool = sa.Column(sa.String(64), nullable=False)
+    proxy_subnet_prefix_length = sa.Column(sa.Integer, nullable=False)
