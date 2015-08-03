@@ -1731,7 +1731,7 @@ def default_extension_behavior(table, keys=None):
                 plural = utils.get_resource_plural(type)
                 inst._default_process_create(*args, type=type, table=table,
                     keys=filter_keys(inst, 'allow_post', plural))
-                # After creation, complete result dictionary with unfiltered
+                # Complete result dictionary with unfiltered
                 # attributes
                 inst._default_extend_dict(args[0], args[2], type=type,
                                           table=table,
@@ -1742,6 +1742,11 @@ def default_extension_behavior(table, keys=None):
                 plural = utils.get_resource_plural(type)
                 inst._default_process_update(*args, type=type, table=table,
                     keys=filter_keys(inst, 'allow_put', plural))
+                # Complete result dictionary with unfiltered
+                # attributes
+                inst._default_extend_dict(args[0], args[2], type=type,
+                                          table=table,
+                    keys=filter_keys(inst, None, plural))
             elif name.startswith('extend_') and name.endswith('_dict'):
                 # call default extend dict
                 type = name[len('extend_'):-len('_dict')]

@@ -29,3 +29,12 @@ class GroupProxyMapping(model_base.BASEV2):
                                sa.ForeignKey('gp_policy_target_groups.id',
                                              ondelete="SET NULL"),
                                unique=True)
+
+
+class ProxyIPPoolMapping(model_base.BASEV2):
+    __tablename__ = 'proxy_ip_pool_mapping'
+
+    l3_policy_id = sa.Column(sa.String(36), sa.ForeignKey('gp_l3_policies.id'),
+                             primary_key=True)
+    proxy_ip_pool = sa.Column(sa.String(64), nullable=False)
+    proxy_subnet_prefix_length = sa.Column(sa.Integer, nullable=False)
