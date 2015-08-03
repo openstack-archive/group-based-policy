@@ -72,6 +72,7 @@ class ExtensionManager(stevedore.named.NamedExtensionManager):
             try:
                 getattr(driver.obj, method_name)(session, data, result)
             except (gp_exc.GroupPolicyException, n_exc.NeutronException):
+                # This is an exception for the user.
                 raise
             except Exception:
                 LOG.exception(

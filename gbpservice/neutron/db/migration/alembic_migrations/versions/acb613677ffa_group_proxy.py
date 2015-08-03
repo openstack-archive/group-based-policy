@@ -59,6 +59,18 @@ def upgrade():
                                 name='group_proxy_mapping_fk_ptg_id'),
     )
 
+    op.create_table(
+        'gp_proxy_ip_pool_mapping',
+        sa.Column('l3_policy_id', sa.String(length=36), nullable=False),
+        sa.Column('proxy_ip_pool', sa.String(length=64), nullable=False),
+        sa.Column('proxy_subnet_prefix_length', sa.Integer, nullable=False),
+
+        sa.PrimaryKeyConstraint('l3_policy_id'),
+        sa.ForeignKeyConstraint(['l3_policy_id'], ['gp_l3_policies.id'],
+                                ondelete='CASCADE',
+                                name='proxy_ip_pool_mapping_fk_l3_policy_id'),
+    )
+
 
 def downgrade():
     pass
