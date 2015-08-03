@@ -54,6 +54,20 @@ EXTENDED_ATTRIBUTES_2_0 = {
             'allow_post': False, 'allow_put': False,
             'validate': {'type:uuid_or_none': None}, 'is_visible': True,
             'enforce_policy': True},
+        # TODO(ivar): The APIs should allow the creation of a group with a
+        # custom subnet prefix length. It may be useful for both the proxy
+        # groups and traditional ones.
+    },
+    gp.L3_POLICIES: {
+        'proxy_ip_pool': {'allow_post': True, 'allow_put': False,
+                          'validate': {'type:subnet': None},
+                          'default': '192.168.0.0/16', 'is_visible': True},
+        'proxy_subnet_prefix_length': {'allow_post': True, 'allow_put': True,
+                                       'convert_to': attr.convert_to_int,
+                                       # for ipv4 legal values are 2 to 30
+                                       # for ipv6 legal values are 2 to 127
+                                       'default': 29, 'is_visible': True},
+        # Proxy IP version is the same as the standard L3 pool ip version
     },
     gp.POLICY_TARGETS: {
         # This policy target will be used to reach the -proxied- PTG
@@ -94,7 +108,7 @@ class Driver_proxy_group(extensions.ExtensionDescriptor):
 
     @classmethod
     def get_updated(cls):
-        return "2015-07-31T10:00:00-00:00"
+        return "2015-08-03T10:00:00-00:00"
 
     def get_extended_resources(self, version):
         if version == "2.0":
