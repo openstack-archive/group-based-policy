@@ -14,6 +14,7 @@ from neutron.api.v2 import attributes
 from neutron.openstack.common import log as logging
 
 from gbpservice.neutron.db.grouppolicy.extensions import group_proxy_db as db
+from gbpservice.neutron.db.grouppolicy import group_policy_db as gp_db
 from gbpservice.neutron.extensions import driver_proxy_group
 from gbpservice.neutron.services.grouppolicy import (
     group_policy_driver_api as api)
@@ -91,3 +92,24 @@ class ProxyGroupDriver(api.ExtensionDriver):
                 # The group of this PT is not a proxy
                 raise driver_proxy_group.InvalidProxyGatewayGroup(
                     group_id=ptg_id)
+
+    @api.default_extension_behavior(db.ProxyIPPoolMapping)
+    def process_create_l3_policy(self, session, data, result):
+        data = data['l3_policy']
+        gp_db.GroupPolicyDbPlugin.validate_ip_pool(
+            data['proxy_ip_pool'], data['ip_version'])
+        gp_db.GroupPolicyDbPlugin.validate_subnet_prefix_length(
+            data['ip_version'], data['proxy_subnet_prefix_length'],
+            data['proxy_ip_pool'])
+
+    @api.default_extension_behavior(db.ProxyIPPoolMapping)
+    def process_update_l3_policy(self, session, data, result):
+        data = data['l3_policy']
+        if 'proxy_subnet_prefix_length' in data:
+            gp_db.GroupPolicyDbPlugin.validate_subnet_prefix_length(
+                result['ip_version'], data['proxy_subnet_prefix_length'],
+                result['proxy_ip_pool'])
+
+    @api.default_extension_behavior(db.ProxyIPPoolMapping)
+    def extend_l3_policy_dict(self, session, result):
+        pass
