@@ -92,7 +92,7 @@ class NetworkServicePolicyNotFound(nexc.NotFound):
 
 
 class InvalidDefaultSubnetPrefixLength(nexc.InvalidInput):
-    message = _("Default subnet prefix length %(length)s is invalid for"
+    message = _("Default subnet prefix length %(length)s is invalid for "
                 "ipv%(protocol)s")
 
 
@@ -109,6 +109,10 @@ class InvalidIpPoolSize(nexc.InvalidInput):
 class InvalidIpPoolPrefixLength(nexc.InvalidInput):
     message = _("IP pool %(ip_pool)s is invalid:%(err_msg)s"
                 "Prefix Length=%(prefixlen)s")
+
+
+class InvalidIpPoolVersion(nexc.InvalidInput):
+    message = _("%(ip_pool)s is not a ipv%(version)s address.")
 
 
 class PolicyClassifierNotFound(nexc.NotFound):
