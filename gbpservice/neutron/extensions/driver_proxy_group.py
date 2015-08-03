@@ -11,7 +11,7 @@
 #    under the License.
 
 from neutron.api import extensions
-from neutron.api.v2 import attributes
+from neutron.api.v2 import attributes as attr
 from neutron.common import exceptions as nexc
 
 from gbpservice.neutron.extensions import group_policy as gp
@@ -39,17 +39,31 @@ EXTENDED_ATTRIBUTES_2_0 = {
         'proxied_group_id': {
             'allow_post': True, 'allow_put': False,
             'validate': {'type:uuid_or_none': None}, 'is_visible': True,
-            'default': attributes.ATTR_NOT_SPECIFIED,
+            'default': attr.ATTR_NOT_SPECIFIED,
             'enforce_policy': True},
         'proxy_type': {
             'allow_post': True, 'allow_put': False,
             'validate': {'type:values': ['l2', 'l3', None]},
-            'is_visible': True, 'default': attributes.ATTR_NOT_SPECIFIED,
+            'is_visible': True, 'default': attr.ATTR_NOT_SPECIFIED,
             'enforce_policy': True},
         'proxy_group_id': {
             'allow_post': False, 'allow_put': False,
             'validate': {'type:uuid_or_none': None}, 'is_visible': True,
             'enforce_policy': True},
+        # TODO(ivar): The APIs should allow the creation of a group with a
+        # custom subnet prefix length. It may be useful for both the proxy
+        # groups and traditional ones.
+    },
+    gp.L3_POLICIES: {
+        'proxy_ip_pool': {'allow_post': True, 'allow_put': False,
+                          'validate': {'type:subnet': None},
+                          'default': '192.168.0.0/16', 'is_visible': True},
+        'proxy_subnet_prefix_length': {'allow_post': True, 'allow_put': True,
+                                       'convert_to': attr.convert_to_int,
+                                       # for ipv4 legal values are 2 to 30
+                                       # for ipv6 legal values are 2 to 127
+                                       'default': 29, 'is_visible': True},
+        # Proxy IP version is the same as the standard L3 pool ip version
     },
 }
 
@@ -75,7 +89,7 @@ class Driver_proxy_group(extensions.ExtensionDescriptor):
 
     @classmethod
     def get_updated(cls):
-        return "2015-07-31T10:00:00-00:00"
+        return "2015-08-03T10:00:00-00:00"
 
     def get_extended_resources(self, version):
         if version == "2.0":
