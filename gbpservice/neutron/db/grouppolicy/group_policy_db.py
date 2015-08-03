@@ -1087,11 +1087,14 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
     @staticmethod
     def validate_ip_pool(ip_pool, ip_version):
         attr._validate_subnet(ip_pool)
-        ip_net = netaddr.IPNetwork(ip_pool, version=ip_version)
+        ip_net = netaddr.IPNetwork(ip_pool)
+        if ip_net.version != ip_version:
+            raise gpolicy.InvalidIpPoolVersion(ip_pool=ip_pool,
+                                               version=ip_version)
         if (ip_net.size <= 3):
             err_msg = "Too few available IPs in the pool."
             raise gpolicy.InvalidIpPoolSize(ip_pool=ip_pool, err_msg=err_msg,
-                                        size=ip_net.size)
+                                            size=ip_net.size)
 
         if (ip_net.prefixlen == 0):
             err_msg = "Prefix length of 0 is invalid."
