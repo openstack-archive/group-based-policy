@@ -200,7 +200,8 @@ class ApicMappingDriver(api.ResourceMappingDriver):
                    'l2_policy_id': l2_policy_id,
                    'tenant_id': port['tenant_id'],
                    'host': port[portbindings.HOST_ID],
-                   'ptg_tenant': str(ptg_tenant),
+                   'ptg_tenant': self.apic_manager.apic.fvTenant.name(
+                       ptg_tenant),
                    'endpoint_group_name': str(endpoint_group_name),
                    'promiscuous_mode': is_port_promiscuous(port)}
         if port['device_owner'].startswith('compute:') and port['device_id']:
