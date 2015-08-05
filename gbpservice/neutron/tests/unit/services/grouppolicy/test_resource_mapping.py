@@ -504,6 +504,104 @@ class TestPolicyTarget(ResourceMappingTestCase):
         self.assertEqual('PolicyTargetGroupUpdateOfPolicyTargetNotSupported',
                          data['NeutronError']['type'])
 
+    def test_ptg_same_l2p(self):
+        l2p = self.create_l2_policy()['l2_policy']
+        ptg1 = self.create_policy_target_group(
+            l2_policy_id=l2p['id'])['policy_target_group']
+        ptg2 = self.create_policy_target_group(
+            l2_policy_id=l2p['id'])['policy_target_group']
+
+        sub1 = self._get_object('subnets', ptg1['subnets'][0],
+                                self.api)['subnet']
+        sub2 = self._get_object('subnets', ptg2['subnets'][0],
+                                self.api)['subnet']
+
+        pt1 = self.create_policy_target(
+            policy_target_group_id=ptg1['id'])['policy_target']
+        pt2 = self.create_policy_target(
+            policy_target_group_id=ptg2['id'])['policy_target']
+
+        port1 = self._get_object('ports', pt1['port_id'], self.api)['port']
+        port2 = self._get_object('ports', pt2['port_id'], self.api)['port']
+
+        ip1 = port1['fixed_ips'][0]['ip_address']
+        cidr1 = sub1['cidr']
+        self.assertTrue(
+            netaddr.IPAddress(ip1) in netaddr.IPNetwork(cidr1),
+            "IP %s not in CIDR %s" % (ip1, cidr1))
+
+        ip2 = port2['fixed_ips'][0]['ip_address']
+        cidr2 = sub2['cidr']
+        self.assertTrue(
+            netaddr.IPAddress(ip2) in netaddr.IPNetwork(cidr2),
+            "IP %s not in CIDR %s" % (ip2, cidr2))
+
+    def test_ptg_multiple_subnets(self):
+        l3p = self.create_l3_policy(name="l3p1", ip_pool='10.0.0.0/8')
+        l3p_id = l3p['l3_policy']['id']
+
+        # Create L2 policy.
+        l2p = self.create_l2_policy(name="l2p1", l3_policy_id=l3p_id)
+        l2p_id = l2p['l2_policy']['id']
+        network_id = l2p['l2_policy']['network_id']
+        req = self.new_show_request('networks', network_id)
+        network = self.deserialize(self.fmt, req.get_response(self.api))
+
+        # Create policy_target group with explicit subnet.
+        with self.subnet(network=network, cidr='10.10.1.0/24') as subnet1:
+            with self.subnet(network=network, cidr='10.10.2.0/24') as subnet2:
+                ptg = self.create_policy_target_group(
+                    l2_policy_id=l2p_id,
+                    subnets=[subnet1['subnet']['id'],
+                             subnet2['subnet']['id']])['policy_target_group']
+                pt = self.create_policy_target(
+                    policy_target_group_id=ptg['id'])['policy_target']
+                port = self._get_object('ports', pt['port_id'],
+                                        self.api)['port']
+                self.assertEqual(1, len(port['fixed_ips']))
+                ip = port['fixed_ips'][0]['ip_address']
+                cidr1 = subnet1['subnet']['cidr']
+                cidr2 = subnet2['subnet']['cidr']
+                self.assertTrue(
+                    (netaddr.IPAddress(ip) in netaddr.IPNetwork(cidr1)) or
+                    (netaddr.IPAddress(ip) in netaddr.IPNetwork(cidr2)),
+                    "IP %s neither in CIDR %s nor in CIDR %s" % (ip, cidr1,
+                                                                 cidr2))
+
+    def test_ptg_multiple_subnets_fallback(self):
+        l3p = self.create_l3_policy(name="l3p1", ip_pool='10.0.0.0/8')
+        l3p_id = l3p['l3_policy']['id']
+
+        # Create L2 policy.
+        l2p = self.create_l2_policy(name="l2p1", l3_policy_id=l3p_id)
+        l2p_id = l2p['l2_policy']['id']
+        network_id = l2p['l2_policy']['network_id']
+        req = self.new_show_request('networks', network_id)
+        network = self.deserialize(self.fmt, req.get_response(self.api))
+
+        # Create policy_target group with explicit subnet.
+        with self.subnet(network=network, cidr='10.10.1.0/30') as subnet1:
+            with self.subnet(network=network, cidr='10.10.2.0/29') as subnet2:
+                ptg = self.create_policy_target_group(
+                    l2_policy_id=l2p_id,
+                    subnets=[subnet1['subnet']['id'],
+                             subnet2['subnet']['id']])['policy_target_group']
+                # Only 5 PTs can be created, and both in subnet2
+                # (subnet1 is full)
+                ports = []
+                for x in range(6):
+                    pt = self.create_policy_target(
+                        policy_target_group_id=ptg['id'],
+                        expected_res_status=201)['policy_target']
+                    port = self._get_object('ports', pt['port_id'],
+                                            self.api)['port']
+                    ports.append(port)
+                    self.assertEqual(1, len(port['fixed_ips']))
+                # sadly, we expect a 500 being a postcommit Neutron raised
+                # exception
+                self.create_policy_target(
+                    policy_target_group_id=ptg['id'], expected_res_status=500)
+
 
 class TestPolicyTargetGroupWithDNSConfiguration(ResourceMappingTestCase):
 
