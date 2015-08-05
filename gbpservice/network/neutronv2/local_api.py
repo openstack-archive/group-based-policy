@@ -255,8 +255,12 @@ class LocalAPI(object):
 
     def _remove_router_interface(self, plugin_context, router_id,
                                  interface_info):
-        self._l3_plugin.remove_router_interface(plugin_context, router_id,
-                                                interface_info)
+        try:
+            self._l3_plugin.remove_router_interface(plugin_context, router_id,
+                                                    interface_info)
+        except l3.RouterInterfaceNotFoundForSubnet:
+            LOG.warn(_('Router interface already deleted for subnet %s'),
+                     interface_info)
 
     def _add_router_gw_interface(self, plugin_context, router_id, gw_info):
         return self._l3_plugin.update_router(
