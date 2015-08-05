@@ -19,6 +19,7 @@ from neutron.openstack.common import excutils
 from neutron.openstack.common import log as logging
 
 from gbpservice.network.neutronv2 import local_api
+from gbpservice.neutron.extensions import driver_proxy_group as pg_ext
 from gbpservice.neutron.services.grouppolicy import (
     group_policy_driver_api as api)
 from gbpservice.neutron.services.grouppolicy.common import exceptions as exc
@@ -44,7 +45,18 @@ opts = [
                help=_("Subnet prefix length for implicitly created default L3 "
                       "polices, controlling size of subnets allocated for "
                       "policy target groups.")),
-
+    cfg.StrOpt('default_proxy_ip_pool',
+               default='192.168.0.0/16',
+               help=_("Proxy IP pool for implicitly created default "
+                      "L3 policies, from which subnets are allocated for "
+                      "policy target groups with proxy_group_id set to a "
+                      "valid value.")),
+    cfg.IntOpt('default_proxy_subnet_prefix_length',
+               default=29,
+               help=_("Proxy Subnet prefix length for implicitly created "
+                      "default L3 polices, controlling size of subnets "
+                      "allocated for policy target groups with proxy_group_id "
+                      "set to a valid value.")),
     cfg.StrOpt('default_external_segment_name',
                default='default',
                help=_("Name of default External Segment. This will be used "
@@ -88,10 +100,16 @@ class ImplicitPolicyDriver(api.PolicyDriver, local_api.LocalAPI):
     @log.log
     def initialize(self):
         gpip = cfg.CONF.group_policy_implicit_policy
+        gpconf = cfg.CONF.group_policy
+        self._proxy_group_enabled = (pg_ext.PROXY_GROUP in
+                                     gpconf.extension_drivers)
         self._default_l3p_name = gpip.default_l3_policy_name
         self._default_ip_version = gpip.default_ip_version
         self._default_ip_pool = gpip.default_ip_pool
+        self._default_proxy_ip_pool = gpip.default_proxy_ip_pool
         self._default_subnet_prefix_length = gpip.default_subnet_prefix_length
+        self._default_proxy_subnet_prefix_length = (
+            gpip.default_proxy_subnet_prefix_length)
 
         self._default_es_name = gpip.default_external_segment_name
 
@@ -183,6 +201,14 @@ class ImplicitPolicyDriver(api.PolicyDriver, local_api.LocalAPI):
                  'l3_policy_id': None,
                  'shared': context.current.get('shared', False),
                  'network_id': None}
+        if context.current.get('proxied_group_id'):
+            # The L3P has to be the same as the proxied group
+            group = context._plugin.get_policy_target_group(
+                context._plugin_context, context.current['proxied_group_id'])
+            l2p = context._plugin.get_l2_policy(
+                context._plugin_context, group['l2_policy_id'])
+            attrs['l3_policy_id'] = l2p['l3_policy_id']
+
         l2p = self._create_l2_policy(context._plugin_context, attrs)
         l2p_id = l2p['id']
         self._mark_l2_policy_owned(context._plugin_context.session, l2p_id)
@@ -207,6 +233,11 @@ class ImplicitPolicyDriver(api.PolicyDriver, local_api.LocalAPI):
                      'shared': context.current.get('shared', False),
                      'subnet_prefix_length':
                      self._default_subnet_prefix_length}
+            if self._proxy_group_enabled:
+                attrs['proxy_ip_pool'] = (
+                    self._default_proxy_ip_pool)
+                attrs['proxy_subnet_prefix_length'] = (
+                    self._default_proxy_subnet_prefix_length)
             try:
                 l3p = self._create_l3_policy(context._plugin_context, attrs)
                 self._mark_l3_policy_owned(context._plugin_context.session,
@@ -230,7 +261,6 @@ class ImplicitPolicyDriver(api.PolicyDriver, local_api.LocalAPI):
                                "OverlappingIPPoolsinSameTenantNotAllowed "
                                "during creation of default L3 policy for "
                                "tenant %s"), tenant_id)
-
         context.current['l3_policy_id'] = l3p['id']
         context.set_l3_policy_id(l3p['id'])
 
