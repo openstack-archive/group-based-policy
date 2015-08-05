@@ -137,7 +137,8 @@ class NvsdGbpDriver(res_map.ResourceMappingDriver):
                         "Error : %s"), err)
         try:
             l2p_id = context.current['l2_policy_id']
-            router_id = self._get_routerid_for_l2policy(context, l2p_id)
+            l3p = self._get_l3p_for_l2policy(context, l2p_id)
+            router_id = l3p['routers'][0]
             for subnet_id in context.current['subnets']:
                 self._cleanup_subnet(context, subnet_id, router_id)
             self._delete_default_security_group(
