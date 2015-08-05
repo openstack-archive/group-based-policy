@@ -251,3 +251,23 @@ class L3PEsinUseByNSP(exceptions.InUse, GroupPolicyException):
 
 class NatPoolinUseByNSP(exceptions.InUse, GroupPolicyException):
     message = _("The Nat Pool is in use by Network Service Policy")
+
+
+class InvalidProxiedGroupL3P(GroupPolicyBadRequest):
+    message = _("Cannot proxy PTG %(ptg_id)s: it's on a different L3 policy "
+                "%(l3p_id)s")
+
+
+class InvalidProxiedGroupL2P(GroupPolicyBadRequest):
+    message = _("Cannot proxy PTG %(ptg_id)s: it's on the same L2 Policy as "
+                "the proxy group of type L2.")
+
+
+class OnlyOneProxyGatewayAllowed(GroupPolicyBadRequest):
+    message = _("Another proxy gateway PT already exists for group "
+                "%(group_id)s")
+
+
+class OnlyOneGroupDefaultGatewayAllowed(GroupPolicyBadRequest):
+    message = _("Another group default gateway PT already exists for group "
+                "%(group_id)s")
