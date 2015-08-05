@@ -1347,19 +1347,27 @@ class ResourceMappingDriver(api.PolicyDriver):
         l2p = context._plugin.get_l2_policy(context._plugin_context, l2p_id)
         sg_id = self._get_default_security_group(
             context._plugin_context, ptg_id, context.current['tenant_id'])
-        attrs = {'tenant_id': context.current['tenant_id'],
-                 'name': 'pt_' + context.current['name'],
-                 'network_id': l2p['network_id'],
-                 'mac_address': attributes.ATTR_NOT_SPECIFIED,
-                 'fixed_ips': attributes.ATTR_NOT_SPECIFIED,
-                 'device_id': '',
-                 'device_owner': '',
-                 'security_groups': [sg_id] if sg_id else None,
-                 'admin_state_up': True}
-        port = self._create_port(context._plugin_context, attrs)
-        port_id = port['id']
-        self._mark_port_owned(context._plugin_context.session, port_id)
-        context.set_port_id(port_id)
+        for subnet in ptg['subnets']:
+            last = None
+            try:
+                attrs = {'tenant_id': context.current['tenant_id'],
+                         'name': 'pt_' + context.current['name'],
+                         'network_id': l2p['network_id'],
+                         'mac_address': attributes.ATTR_NOT_SPECIFIED,
+                         'fixed_ips': [{'subnet_id': subnet}],
+                         'device_id': '',
+                         'device_owner': '',
+                         'security_groups': [sg_id] if sg_id else None,
+                         'admin_state_up': True}
+                port = self._create_port(context._plugin_context, attrs)
+                port_id = port['id']
+                self._mark_port_owned(context._plugin_context.session, port_id)
+                context.set_port_id(port_id)
+                return
+            except n_exc.IpAddressGenerationFailure as ex:
+                LOG.warn(_("No more address available in subnet %s"), subnet)
+                last = ex
+        raise last
 
     def _cleanup_port(self, plugin_context, port_id):
         if self._port_is_owned(plugin_context.session, port_id):
