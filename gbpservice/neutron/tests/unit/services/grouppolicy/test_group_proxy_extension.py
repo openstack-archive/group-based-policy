@@ -18,10 +18,7 @@ from gbpservice.neutron.tests.unit.services.grouppolicy import (
     test_extension_driver_api as test_ext_base)
 
 
-class ExtensionDriverTestCase(test_ext_base.ExtensionDriverTestBase):
-
-    _extension_drivers = ['proxy_group']
-    _extension_path = None
+class ExtensionDriverTestCaseMixin(object):
 
     def test_proxy_group_extension(self):
         l3p = self.create_l3_policy()['l3_policy']
@@ -176,3 +173,9 @@ class ExtensionDriverTestCase(test_ext_base.ExtensionDriverTestBase):
                                     proxy_ip_pool='192.168.0.0/16',
                                     expected_res_status=400)
         self.assertEqual('InvalidIpPoolVersion', res['NeutronError']['type'])
+
+
+class ExtensionDriverTestCase(test_ext_base.ExtensionDriverTestBase,
+                              ExtensionDriverTestCaseMixin):
+    _extension_drivers = ['proxy_group']
+    _extension_path = None

@@ -418,7 +418,7 @@ class ResourceMappingTestCase(test_plugin.GroupPolicyPluginTestCase):
 
 class TestPolicyTarget(ResourceMappingTestCase):
 
-    def test_implicit_port_lifecycle(self):
+    def test_implicit_port_lifecycle(self, proxy_ip_pool=None):
         # Create policy_target group.
         ptg = self.create_policy_target_group(name="ptg1")
         ptg_id = ptg['policy_target_group']['id']
@@ -431,7 +431,12 @@ class TestPolicyTarget(ResourceMappingTestCase):
         self.assertIsNotNone(port_id)
 
         # Create policy_target in shared policy_target group
-        l3p = self.create_l3_policy(shared=True, ip_pool='11.0.0.0/8')
+        if proxy_ip_pool:
+            l3p = self.create_l3_policy(
+                shared=True, ip_pool='11.0.0.0/8', proxy_ip_pool=proxy_ip_pool)
+        else:
+            l3p = self.create_l3_policy(shared=True, ip_pool='11.0.0.0/8')
+
         l2p = self.create_l2_policy(l3_policy_id=l3p['l3_policy']['id'],
                                     shared=True)
         s_ptg = self.create_policy_target_group(
@@ -1203,11 +1208,15 @@ class TestL2Policy(ResourceMappingTestCase):
             self.assertEqual('NonSharedNetworkOnSharedL2PolicyNotSupported',
                              res['NeutronError']['type'])
 
-    def test_l3p_update_rejected(self):
+    def test_l3p_update_rejected(self, proxy_ip_pool=None):
         # Create two l3 policies.
         l3p1 = self.create_l3_policy(name="l3p1", ip_pool='10.0.0.0/16')
         l3p1_id = l3p1['l3_policy']['id']
-        l3p2 = self.create_l3_policy(name="l3p2", ip_pool='10.1.0.0/16')
+        if proxy_ip_pool:
+            l3p2 = self.create_l3_policy(name="l3p2", ip_pool='10.1.0.0/16',
+                                         proxy_ip_pool=proxy_ip_pool)
+        else:
+            l3p2 = self.create_l3_policy(name="l3p2", ip_pool='10.1.0.0/16')
         l3p2_id = l3p2['l3_policy']['id']
 
         # Create l2 policy.
@@ -3095,7 +3104,7 @@ class TestExternalSegment(ResourceMappingTestCase):
                 self.assertEqual(subnet['subnet']['ip_version'],
                                  es['ip_version'])
 
-    def test_update(self):
+    def test_update(self, proxy_ip_pool1=None, proxy_ip_pool2=None):
         with self.network(router__external=True) as net:
             with self.subnet(cidr='10.10.1.0/24', network=net) as sub:
                 changes = {'port_address_translation': True}
@@ -3116,9 +3125,14 @@ class TestExternalSegment(ResourceMappingTestCase):
                     policy_rules=[pr['id']])['policy_rule_set']
                 l3p1 = self.create_l3_policy(
                     ip_pool='192.168.0.0/16')['l3_policy']
-                l3p2 = self.create_l3_policy(
-                    ip_pool='192.128.0.0/16',
-                    external_segments={es['id']: []})['l3_policy']
+                if not proxy_ip_pool1:
+                    l3p2 = self.create_l3_policy(
+                        ip_pool='192.128.0.0/16',
+                        external_segments={es['id']: []})['l3_policy']
+                else:
+                    l3p2 = self.create_l3_policy(
+                        ip_pool='192.128.0.0/16', proxy_ip_pool=proxy_ip_pool1,
+                        external_segments={es['id']: []})['l3_policy']
                 self.create_external_policy(
                     external_segments=[es['id']],
                     provided_policy_rule_sets={prs['id']: ''})
@@ -3161,8 +3175,13 @@ class TestExternalSegment(ResourceMappingTestCase):
 
                 # Creating a new L3P changes the definition of what's external
                 # and what is not
-                l3p3 = self.create_l3_policy(
-                    ip_pool='192.64.0.0/16')['l3_policy']
+                if proxy_ip_pool2:
+                    l3p3 = self.create_l3_policy(
+                        ip_pool='192.64.0.0/16',
+                        proxy_ip_pool=proxy_ip_pool2)['l3_policy']
+                else:
+                    l3p3 = self.create_l3_policy(
+                        ip_pool='192.64.0.0/16')['l3_policy']
                 new_cidrs = self._calculate_expected_external_cidrs(es,
                                                            [l3p1, l3p2, l3p3])
 

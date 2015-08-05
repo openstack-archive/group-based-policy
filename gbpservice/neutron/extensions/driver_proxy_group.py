@@ -20,6 +20,7 @@ from gbpservice.neutron.services.grouppolicy.common import exceptions as gp_exc
 PROXY_TYPE_L2 = 'l2'
 PROXY_TYPE_L3 = 'l3'
 DEFAULT_PROXY_TYPE = PROXY_TYPE_L3
+PROXY_GROUP = 'proxy_group'
 
 
 class ProxyGroupBadRequest(gp_exc.GroupPolicyBadRequest):
@@ -95,7 +96,7 @@ class Driver_proxy_group(extensions.ExtensionDescriptor):
 
     @classmethod
     def get_alias(cls):
-        return "proxy_group"
+        return PROXY_GROUP
 
     @classmethod
     def get_description(cls):
