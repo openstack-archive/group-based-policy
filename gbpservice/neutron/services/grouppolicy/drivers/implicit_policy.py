@@ -16,6 +16,7 @@ from oslo_config import cfg
 from oslo_log import log as logging
 import sqlalchemy as sa
 
+from gbpservice.neutron.extensions import driver_proxy_group as pg_ext
 from gbpservice.neutron.services.grouppolicy import (
     group_policy_driver_api as api)
 from gbpservice.neutron.services.grouppolicy.common import exceptions as exc
@@ -41,7 +42,18 @@ opts = [
                help=_("Subnet prefix length for implicitly created default L3 "
                       "polices, controlling size of subnets allocated for "
                       "policy target groups.")),
-
+    cfg.StrOpt('default_proxy_ip_pool',
+               default='192.168.0.0/16',
+               help=_("Proxy IP pool for implicitly created default "
+                      "L3 policies, from which subnets are allocated for "
+                      "policy target groups with proxy_group_id set to a "
+                      "valid value.")),
+    cfg.IntOpt('default_proxy_subnet_prefix_length',
+               default=29,
+               help=_("Proxy Subnet prefix length for implicitly created "
+                      "default L3 polices, controlling size of subnets "
+                      "allocated for policy target groups with proxy_group_id "
+                      "set to a valid value.")),
     cfg.StrOpt('default_external_segment_name',
                default='default',
                help=_("Name of default External Segment. This will be used "
@@ -85,10 +97,16 @@ class ImplicitPolicyDriver(api.PolicyDriver):
     @log.log
     def initialize(self):
         gpip = cfg.CONF.group_policy_implicit_policy
+        gpconf = cfg.CONF.group_policy
+        self._proxy_group_enabled = (pg_ext.PROXY_GROUP in
+                                     gpconf.extension_drivers)
         self._default_l3p_name = gpip.default_l3_policy_name
         self._default_ip_version = gpip.default_ip_version
         self._default_ip_pool = gpip.default_ip_pool
+        self._default_proxy_ip_pool = gpip.default_proxy_ip_pool
         self._default_subnet_prefix_length = gpip.default_subnet_prefix_length
+        self._default_proxy_subnet_prefix_length = (
+            gpip.default_proxy_subnet_prefix_length)
 
         self._default_es_name = gpip.default_external_segment_name
 
@@ -195,6 +213,11 @@ class ImplicitPolicyDriver(api.PolicyDriver):
                       'shared': context.current.get('shared', False),
                       'subnet_prefix_length':
                       self._default_subnet_prefix_length}}
+            if self._proxy_group_enabled:
+                attrs['l3_policy']['proxy_ip_pool'] = (
+                    self._default_proxy_ip_pool)
+                attrs['l3_policy']['proxy_subnet_prefix_length'] = (
+                    self._default_proxy_subnet_prefix_length)
             l3p = context._plugin.create_l3_policy(context._plugin_context,
                                                    attrs)
             self._mark_l3_policy_owned(context._plugin_context.session,
