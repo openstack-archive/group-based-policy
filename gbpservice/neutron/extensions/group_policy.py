@@ -243,6 +243,31 @@ def convert_to_int_if_needed(value):
         return attr.convert_to_int(value)
 
 
+def convert_prs_to_dict_if_needed(value):
+    if value is []:
+        return {}
+    elif isinstance(value, dict):
+        return value
+    else:
+        value_dict = {}
+        for d in value:
+            if isinstance(value, dict):
+                if ['policy_rule_set'] in d:
+                    if ['scope'] in d:
+                        value_dict[d['policy_rule_set']] = d['scope']
+                    else:
+                        value_dict[d['policy_rule_set']] = None
+                else:
+                    msg = _("Invalid data format for Policy Rule Set: %s") % d
+                    LOG.debug(msg)
+                    return msg
+            else:
+                msg = _("Invalid data format for Policy Rule Set: %s") % d
+                LOG.debug(msg)
+                return msg
+        return value_dict
+
+
 def _validate_gbp_port_range(data, key_specs=None):
     if data is None:
         return
@@ -356,10 +381,18 @@ def _validate_gbproutes(data, valid_values=None):
             return msg
         hostroutes.append(hostroute)
 
+
+def _validate_prs(data, valid_values=None):
+    if not isinstance(data, dict) and not isinstance(data, list):
+        msg = _("Invalid data format for Policy Rule Set: '%s'") % data
+        LOG.debug(msg)
+        return msg
+
 attr.validators['type:gbp_port_range'] = _validate_gbp_port_range
 attr.validators['type:network_service_params'] = _validate_network_svc_params
 attr.validators['type:external_dict'] = _validate_external_dict
 attr.validators['type:gbproutes'] = _validate_gbproutes
+attr.validators['type:prs_dict'] = _validate_prs
 
 
 POLICY_TARGETS = 'policy_targets'
@@ -414,14 +447,14 @@ RESOURCE_ATTRIBUTE_MAP = {
                          'validate': {'type:uuid_or_none': None},
                          'default': None, 'is_visible': True},
         'provided_policy_rule_sets': {'allow_post': True, 'allow_put': True,
-                                      'validate': {'type:dict_or_none': None},
+                                      'validate': {'type:prs_dict': None},
                                       'convert_to':
-                                      attr.convert_none_to_empty_dict,
+                                      convert_prs_to_dict_if_needed,
                                       'default': None, 'is_visible': True},
         'consumed_policy_rule_sets': {'allow_post': True, 'allow_put': True,
-                                      'validate': {'type:dict_or_none': None},
+                                      'validate': {'type:prs_dict': None},
                                       'convert_to':
-                                      attr.convert_none_to_empty_dict,
+                                      convert_prs_to_dict_if_needed,
                                       'default': None, 'is_visible': True},
         'network_service_policy_id': {'allow_post': True, 'allow_put': True,
                                       'validate': {'type:uuid_or_none': None},
