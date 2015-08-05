@@ -320,6 +320,16 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
             self.servicechain_plugin.update_chains_pt_removed(context,
                                                               policy_target)
 
+    def _filter_extended_result(self, result, filters):
+        filters = filters or {}
+        for field in filters:
+            # Ignore unknown fields
+            if field in result:
+                if result[field] not in filters[field]:
+                    break
+        else:
+            return result
+
     @log.log
     def create_policy_target(self, context, policy_target, notify_sc=True):
         session = context.session
@@ -418,10 +428,14 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
         with session.begin(subtransactions=True):
             results = super(GroupPolicyPlugin, self).get_policy_targets(
                 context, filters, None, sorts, limit, marker, page_reverse)
+            filtered_results = []
             for result in results:
                 self.extension_manager.extend_policy_target_dict(
                     session, result)
-        return [self._fields(result, fields) for result in results]
+                filtered = self._filter_extended_result(result, filters)
+                if filtered:
+                    filtered_results.append(filtered)
+        return [self._fields(result, fields) for result in filtered_results]
 
     @log.log
     def create_policy_target_group(self, context, policy_target_group):
@@ -537,9 +551,13 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
         with session.begin(subtransactions=True):
             results = super(GroupPolicyPlugin, self).get_policy_target_groups(
                 context, filters, None, sorts, limit, marker, page_reverse)
+            filtered_results = []
             for result in results:
                 self.extension_manager.extend_policy_target_group_dict(
                     session, result)
+                filtered = self._filter_extended_result(result, filters)
+                if filtered:
+                    filtered_results.append(filtered)
         return [self._fields(result, fields) for result in results]
 
     @log.log
@@ -623,9 +641,13 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
         with session.begin(subtransactions=True):
             results = super(GroupPolicyPlugin, self).get_l2_policies(
                 context, filters, None, sorts, limit, marker, page_reverse)
+            filtered_results = []
             for result in results:
                 self.extension_manager.extend_l2_policy_dict(
                     session, result)
+                filtered = self._filter_extended_result(result, filters)
+                if filtered:
+                    filtered_results.append(filtered)
         return [self._fields(result, fields) for result in results]
 
     @log.log
@@ -725,9 +747,13 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
             results = super(GroupPolicyPlugin,
                             self).get_network_service_policies(
                 context, filters, None, sorts, limit, marker, page_reverse)
+            filtered_results = []
             for result in results:
                 self.extension_manager.extend_network_service_policy_dict(
                     session, result)
+                filtered = self._filter_extended_result(result, filters)
+                if filtered:
+                    filtered_results.append(filtered)
         return [self._fields(result, fields) for result in results]
 
     @log.log
@@ -820,9 +846,13 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
         with session.begin(subtransactions=True):
             results = super(GroupPolicyPlugin, self).get_l3_policies(
                 context, filters, None, sorts, limit, marker, page_reverse)
+            filtered_results = []
             for result in results:
                 self.extension_manager.extend_l3_policy_dict(
                     session, result)
+                filtered = self._filter_extended_result(result, filters)
+                if filtered:
+                    filtered_results.append(filtered)
         return [self._fields(result, fields) for result in results]
 
     @log.log
@@ -914,9 +944,13 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
         with session.begin(subtransactions=True):
             results = super(GroupPolicyPlugin, self).get_policy_classifiers(
                 context, filters, None, sorts, limit, marker, page_reverse)
+            filtered_results = []
             for result in results:
                 self.extension_manager.extend_policy_classifier_dict(
                     session, result)
+                filtered = self._filter_extended_result(result, filters)
+                if filtered:
+                    filtered_results.append(filtered)
         return [self._fields(result, fields) for result in results]
 
     @log.log
@@ -1006,9 +1040,13 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
         with session.begin(subtransactions=True):
             results = super(GroupPolicyPlugin, self).get_policy_actions(
                 context, filters, None, sorts, limit, marker, page_reverse)
+            filtered_results = []
             for result in results:
                 self.extension_manager.extend_policy_action_dict(
                     session, result)
+                filtered = self._filter_extended_result(result, filters)
+                if filtered:
+                    filtered_results.append(filtered)
         return [self._fields(result, fields) for result in results]
 
     @log.log
@@ -1096,9 +1134,13 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
         with session.begin(subtransactions=True):
             results = super(GroupPolicyPlugin, self).get_policy_rules(
                 context, filters, None, sorts, limit, marker, page_reverse)
+            filtered_results = []
             for result in results:
                 self.extension_manager.extend_policy_rule_dict(
                     session, result)
+                filtered = self._filter_extended_result(result, filters)
+                if filtered:
+                    filtered_results.append(filtered)
         return [self._fields(result, fields) for result in results]
 
     @log.log
@@ -1187,9 +1229,13 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
         with session.begin(subtransactions=True):
             results = super(GroupPolicyPlugin, self).get_policy_rule_sets(
                 context, filters, None, sorts, limit, marker, page_reverse)
+            filtered_results = []
             for result in results:
                 self.extension_manager.extend_policy_rule_set_dict(
                     session, result)
+                filtered = self._filter_extended_result(result, filters)
+                if filtered:
+                    filtered_results.append(filtered)
         return [self._fields(result, fields) for result in results]
 
     @log.log
@@ -1290,9 +1336,13 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
         with session.begin(subtransactions=True):
             results = super(GroupPolicyPlugin, self).get_external_segments(
                 context, filters, None, sorts, limit, marker, page_reverse)
+            filtered_results = []
             for result in results:
                 self.extension_manager.extend_external_segment_dict(
                     session, result)
+                filtered = self._filter_extended_result(result, filters)
+                if filtered:
+                    filtered_results.append(filtered)
         return [self._fields(result, fields) for result in results]
 
     @log.log
@@ -1387,9 +1437,13 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
         with session.begin(subtransactions=True):
             results = super(GroupPolicyPlugin, self).get_external_policies(
                 context, filters, None, sorts, limit, marker, page_reverse)
+            filtered_results = []
             for result in results:
                 self.extension_manager.extend_external_policy_dict(
                     session, result)
+                filtered = self._filter_extended_result(result, filters)
+                if filtered:
+                    filtered_results.append(filtered)
         return [self._fields(result, fields) for result in results]
 
     @log.log
@@ -1471,9 +1525,13 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
         with session.begin(subtransactions=True):
             results = super(GroupPolicyPlugin, self).get_nat_pools(
                 context, filters, None, sorts, limit, marker, page_reverse)
+            filtered_results = []
             for result in results:
                 self.extension_manager.extend_nat_pool_dict(
                     session, result)
+                filtered = self._filter_extended_result(result, filters)
+                if filtered:
+                    filtered_results.append(filtered)
         return [self._fields(result, fields) for result in results]
 
     def _is_port_bound(self, port_id):
