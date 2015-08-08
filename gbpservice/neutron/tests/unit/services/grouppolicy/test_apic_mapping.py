@@ -78,6 +78,7 @@ class ApicMappingTestCase(
         mocked.ControllerMixin, mocked.ConfigMixin):
 
     def setUp(self):
+        self.agent_conf = AGENT_CONF
         cfg.CONF.register_opts(sg_cfg.security_group_opts, 'SECURITYGROUP')
         config.cfg.CONF.set_override('enable_security_group', False,
                                      group='SECURITYGROUP')
@@ -93,7 +94,7 @@ class ApicMappingTestCase(
                    'apic.apic_mapping.ApicMappingDriver._setup_rpc').start()
         host_agents = mock.patch('neutron.plugins.ml2.driver_context.'
                                  'PortContext.host_agents').start()
-        host_agents.return_value = [AGENT_CONF]
+        host_agents.return_value = [self.agent_conf]
         nova_client = mock.patch(
             'gbpservice.neutron.services.grouppolicy.drivers.cisco.'
             'apic.nova_client.NovaClient.get_server').start()
@@ -164,17 +165,10 @@ class ApicMappingTestCase(
             shared=shared)['policy_rule']
 
     def _bind_port_to_host(self, port_id, host):
-        plugin = manager.NeutronManager.get_plugin()
-        ctx = context.get_admin_context()
-        agent = {'host': host}
-        agent.update(AGENT_CONF)
-        plugin.create_or_update_agent(ctx, agent)
         data = {'port': {'binding:host_id': host, 'device_owner': 'compute:',
                          'device_id': 'someid'}}
-        # Create EP with bound port
-        req = self.new_update_request('ports', data, port_id,
-                                      self.fmt)
-        return self.deserialize(self.fmt, req.get_response(self.api))
+        return super(ApicMappingTestCase, self)._bind_port_to_host(
+            port_id, host, data=data)
 
 
 class TestPolicyTarget(ApicMappingTestCase):
