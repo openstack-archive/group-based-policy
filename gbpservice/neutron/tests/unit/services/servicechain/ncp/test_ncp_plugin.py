@@ -605,15 +605,5 @@ class AgnosticChainPlumberTestCase(NodeCompositionPluginTestCase):
         self.driver.get_plumbing_info.return_value = {'provider': [{}],
                                                       'consumer': [{}]}
         provider, _, _ = self._create_simple_service_chain()
-        # Deleting a PTG will fail because of existing PTs
-        res = self.delete_policy_target_group(provider['id'],
-                                              expected_res_status=400)
-        self.assertEqual('PolicyTargetGroupInUse',
-                         res['NeutronError']['type'])
-
-        # Removing the PRSs will make the PTG deletable again
-        self.update_policy_target_group(provider['id'],
-                                        provided_policy_rule_sets={},
-                                        expected_res_status=200)
         self.delete_policy_target_group(provider['id'],
                                         expected_res_status=204)
