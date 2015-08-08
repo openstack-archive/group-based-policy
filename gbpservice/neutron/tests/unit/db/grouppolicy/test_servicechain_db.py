@@ -18,15 +18,61 @@ from neutron.openstack.common import uuidutils
 from neutron.plugins.common import constants
 from oslo_config import cfg
 
+from gbpservice.neutron.db import servicechain_db as svcchain_db
 from gbpservice.neutron.extensions import servicechain as service_chain
 from gbpservice.neutron.tests.unit import common as cm
 from gbpservice.neutron.tests.unit.db.grouppolicy import test_group_policy_db
 
 JSON_FORMAT = 'json'
-
-
 GP_PLUGIN_KLASS = (
     "gbpservice.neutron.services.grouppolicy.plugin.GroupPolicyPlugin")
+
+
+class ServiceChainDBTestBase(test_group_policy_db.GroupPolicyDBTestBase):
+
+    def _get_resource_plural(self, resource):
+        if resource.endswith('y'):
+            resource_plural = resource.replace('y', 'ies')
+        else:
+            resource_plural = resource + 's'
+
+        return resource_plural
+
+    def _test_list_resources(self, resource, items,
+                             neutron_context=None,
+                             query_params=None):
+        resource_plural = self._get_resource_plural(resource)
+
+        res = self._list(resource_plural,
+                         neutron_context=neutron_context,
+                         query_params=query_params)
+        params = query_params.split('&')
+        params = dict((x.split('=')[0], x.split('=')[1].split(','))
+                      for x in params)
+        count = getattr(self.plugin, 'get_%s_count' % resource_plural)(
+            neutron_context or context.get_admin_context(), params)
+        self.assertEqual(len(res[resource_plural]), count)
+        resource = resource.replace('-', '_')
+        self.assertEqual(sorted([i['id'] for i in res[resource_plural]]),
+                         sorted([i[resource]['id'] for i in items]))
+
+    def _create_profiled_servicechain_node(
+            self, service_type=constants.LOADBALANCER, shared_profile=False,
+            profile_tenant_id=None, **kwargs):
+        prof = self.create_service_profile(
+            service_type=service_type,
+            shared=shared_profile,
+            tenant_id=profile_tenant_id or self._tenant_id)['service_profile']
+        return self.create_servicechain_node(
+            service_profile_id=prof['id'], **kwargs)
+
+
+class ServiceChainDBTestPlugin(svcchain_db.ServiceChainDbPlugin):
+
+        supported_extension_aliases = ['servicechain']
+
+DB_GP_PLUGIN_KLASS = (ServiceChainDBTestPlugin.__module__ + '.' +
+                      ServiceChainDBTestPlugin.__name__)
 
 
 class ServiceChainDbTestCase(test_group_policy_db.GroupPolicyDbTestCase):
