@@ -50,29 +50,10 @@ GP_PLUGIN_KLASS = (
 CHAIN_TENANT_ID = 'sci_owner'
 
 
-class NodeCompositionPluginTestCase(
-        test_base.TestGroupPolicyPluginGroupResources):
+class NodeCompositionPluginTestMixin(object):
 
     DEFAULT_LB_CONFIG = '{}'
     SERVICE_PROFILE_VENDOR = 'dummy'
-
-    def setUp(self, core_plugin=None, gp_plugin=None, node_drivers=None,
-              node_plumber=None):
-        if node_drivers:
-            cfg.CONF.set_override('node_drivers', node_drivers,
-                                  group='node_composition_plugin')
-        cfg.CONF.set_override('node_plumber', node_plumber or 'dummy_plumber',
-                              group='node_composition_plugin')
-        config.cfg.CONF.set_override('policy_drivers',
-                                     ['implicit_policy', 'resource_mapping'],
-                                     group='group_policy')
-        super(NodeCompositionPluginTestCase, self).setUp(
-            core_plugin=core_plugin or CORE_PLUGIN,
-            gp_plugin=gp_plugin or GP_PLUGIN_KLASS,
-            sc_plugin=SC_PLUGIN_KLASS)
-        engine = db_api.get_engine()
-        model_base.BASEV2.metadata.create_all(engine)
-        self.driver = self.sc_plugin.driver_manager.ordered_drivers[0].obj
 
     @property
     def sc_plugin(self):
@@ -99,9 +80,10 @@ class NodeCompositionPluginTestCase(
         prs = self.create_policy_rule_set(policy_rules=[rule['id']])
         return prs
 
-    def _create_simple_service_chain(self, number_of_nodes=1):
-        prof = self._create_service_profile(
-            service_type='LOADBALANCER',
+    def _create_simple_service_chain(self, number_of_nodes=1,
+                                     service_type='LOADBALANCER'):
+        prof = self.create_service_profile(
+            service_type=service_type,
             vendor=self.SERVICE_PROFILE_VENDOR)['service_profile']
 
         node_ids = []
@@ -133,11 +115,53 @@ class NodeCompositionPluginTestCase(
         self.sc_plugin.driver_manager.ordered_drivers.append(ext)
         self.sc_plugin.driver_manager.drivers[name] = ext
 
-    @property
-    def sc_plugin(self):
-        plugins = manager.NeutronManager.get_service_plugins()
-        servicechain_plugin = plugins.get(pconst.SERVICECHAIN)
-        return servicechain_plugin
+
+class NodeCompositionPluginTestCase(
+        test_base.TestGroupPolicyPluginGroupResources,
+        NodeCompositionPluginTestMixin):
+
+    def setUp(self, core_plugin=None, gp_plugin=None, node_drivers=None,
+              node_plumber=None):
+        if node_drivers:
+            cfg.CONF.set_override('node_drivers', node_drivers,
+                                  group='node_composition_plugin')
+        cfg.CONF.set_override('node_plumber', node_plumber or 'dummy_plumber',
+                              group='node_composition_plugin')
+        config.cfg.CONF.set_override('policy_drivers',
+                                     ['implicit_policy', 'resource_mapping'],
+                                     group='group_policy')
+        super(NodeCompositionPluginTestCase, self).setUp(
+            core_plugin=core_plugin or CORE_PLUGIN,
+            gp_plugin=gp_plugin or GP_PLUGIN_KLASS,
+            sc_plugin=SC_PLUGIN_KLASS)
+        engine = db_api.get_engine()
+        model_base.BASEV2.metadata.create_all(engine)
+        self.driver = self.sc_plugin.driver_manager.ordered_drivers[0].obj
+
+    def _create_simple_chain(self):
+        node = self._create_profiled_servicechain_node(
+            service_type="LOADBALANCER",
+            config=self.DEFAULT_LB_CONFIG)['servicechain_node']
+        spec = self.create_servicechain_spec(
+            nodes=[node['id']])['servicechain_spec']
+
+        action = self.create_policy_action(
+            action_type='REDIRECT', action_value=spec['id'])['policy_action']
+        classifier = self.create_policy_classifier(
+            direction='bi', port_range=80, protocol='tcp')['policy_classifier']
+        rule = self.create_policy_rule(
+            policy_classifier_id=classifier['id'],
+            policy_actions=[action['id']])['policy_rule']
+
+        prs = self.create_policy_rule_set(
+            policy_rules=[rule['id']])['policy_rule_set']
+
+        provider = self.create_policy_target_group(
+            provided_policy_rule_sets={prs['id']: ''})['policy_target_group']
+        consumer = self.create_policy_target_group(
+            consumed_policy_rule_sets={prs['id']: ''})['policy_target_group']
+
+        return provider, consumer, node
 
     def test_spec_ordering_list_servicechain_instances(self):
         pass
@@ -758,16 +782,6 @@ class AgnosticChainPlumberTestCase(NodeCompositionPluginTestCase):
         self.driver.get_plumbing_info.return_value = {'provider': [{}],
                                                       'consumer': [{}]}
         provider, _, _ = self._create_simple_service_chain()
-        # Deleting a PTG will fail because of existing PTs
-        res = self.delete_policy_target_group(provider['id'],
-                                              expected_res_status=400)
-        self.assertEqual('PolicyTargetGroupInUse',
-                         res['NeutronError']['type'])
-
-        # Removing the PRSs will make the PTG deletable again
-        self.update_policy_target_group(provider['id'],
-                                        provided_policy_rule_sets={},
-                                        expected_res_status=200)
         self.delete_policy_target_group(provider['id'],
                                         expected_res_status=204)
 
