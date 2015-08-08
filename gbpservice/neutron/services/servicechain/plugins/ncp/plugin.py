@@ -42,9 +42,11 @@ class NodeCompositionPlugin(servicechain_db.ServiceChainDbPlugin,
         self.driver_manager = manager.NodeDriverManager()
         super(NodeCompositionPlugin, self).__init__()
         self.driver_manager.initialize()
+        plumber_klass = cfg.CONF.node_composition_plugin.node_plumber
         self.plumber = utils.load_plugin(
-            PLUMBER_NAMESPACE, cfg.CONF.node_composition_plugin.node_plumber)
+            PLUMBER_NAMESPACE, plumber_klass)
         self.plumber.initialize()
+        LOG.info(_("Initialized node plumber '%s'"), plumber_klass)
 
     @log.log
     def create_servicechain_instance(self, context, servicechain_instance):
