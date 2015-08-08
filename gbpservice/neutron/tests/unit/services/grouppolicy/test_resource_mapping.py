@@ -62,18 +62,19 @@ CORE_PLUGIN = ('gbpservice.neutron.tests.unit.services.grouppolicy.'
 class ResourceMappingTestCase(test_plugin.GroupPolicyPluginTestCase):
 
     def setUp(self, policy_drivers=None,
-              core_plugin=n_test_plugin.PLUGIN_NAME, ml2_options=None):
+              core_plugin=n_test_plugin.PLUGIN_NAME, ml2_options=None,
+              sc_plugin=None):
         policy_drivers = policy_drivers or ['implicit_policy',
                                             'resource_mapping']
         config.cfg.CONF.set_override('policy_drivers',
                                      policy_drivers,
                                      group='group_policy')
         sc_cfg.cfg.CONF.set_override('servicechain_drivers',
-                                     ['dummy'],
-                                     group='servicechain')
+                                     ['dummy'], group='servicechain')
         config.cfg.CONF.set_override('allow_overlapping_ips', True)
         super(ResourceMappingTestCase, self).setUp(core_plugin=core_plugin,
-                                                   ml2_options=ml2_options)
+                                                   ml2_options=ml2_options,
+                                                   sc_plugin=sc_plugin)
         engine = db_api.get_engine()
         model_base.BASEV2.metadata.create_all(engine)
         res = mock.patch('neutron.db.l3_db.L3_NAT_dbonly_mixin.'
@@ -1864,11 +1865,8 @@ class TestPolicyRuleSet(ResourceMappingTestCase):
                                            consumer_ptg_id, [scs_id])
 
         # Update classifier and verify instance is recreated
-        classifier = {'policy_classifier': {'port_range': "80"}}
-        req = self.new_update_request('policy_classifiers',
-                                      classifier, classifier_id)
-        classifier = self.deserialize(self.fmt,
-                                      req.get_response(self.ext_api))
+        self.update_policy_classifier(
+            classifier_id, port_range="80")
 
         self._verify_prs_rules(policy_rule_set_id)
         sc_instance_list_req = self.new_list_request(SERVICECHAIN_INSTANCES)
@@ -1916,12 +1914,8 @@ class TestPolicyRuleSet(ResourceMappingTestCase):
             protocol='TCP', port_range="80",
             direction='bi')['policy_classifier']
 
-        policy_rule = {'policy_rule': {
-                                'policy_classifier_id': classifier['id']}}
-        req = self.new_update_request('policy_rules', policy_rule,
-                                      policy_rule_id)
-        policy_rule = self.deserialize(self.fmt,
-                                       req.get_response(self.ext_api))
+        self.update_policy_rule(policy_rule_id,
+                                policy_classifier_id=classifier['id'])
 
         self._verify_prs_rules(policy_rule_set_id)
         sc_instance_list_req = self.new_list_request(SERVICECHAIN_INSTANCES)
@@ -2524,10 +2518,9 @@ class TestPolicyRuleSet(ResourceMappingTestCase):
                     ep['external_policy']['id'], [scs_id])
 
                 # Verify that PTG delete cleans up the chain instances
-                req = self.new_delete_request(
-                    'external_policies', ep['external_policy']['id'])
-                res = req.get_response(self.ext_api)
-                self.assertEqual(res.status_int, webob.exc.HTTPNoContent.code)
+                self.delete_external_policy(
+                    ep['external_policy']['id'],
+                    expected_res_status=webob.exc.HTTPNoContent.code)
                 sc_node_list_req = self.new_list_request(
                     SERVICECHAIN_INSTANCES)
                 res = sc_node_list_req.get_response(self.ext_api)
