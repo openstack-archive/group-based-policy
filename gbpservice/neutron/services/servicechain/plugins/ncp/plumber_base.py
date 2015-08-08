@@ -20,6 +20,7 @@ from gbpservice.neutron.services.servicechain.plugins.ncp import exceptions
 from gbpservice.neutron.services.servicechain.plugins.ncp import model
 
 TARGET_DESCRIPTION = "%s facing Service Target for node %s in instance %s"
+SERVICE_TARGET_NAME_PREFIX = 'service_target_'
 LOG = logging.getLogger(__name__)
 
 
@@ -119,7 +120,8 @@ class NodePlumberBase(object):
                 LOG.debug(ex.message)
 
     def _create_service_target(self, context, part_context, targets, group,
-                               relationship):
+                               relationship, extra_data=None):
+        extra_data = extra_data or {}
         instance = part_context.instance
         node = part_context.current_node
         gbp_plugin = part_context.gbp_plugin
@@ -132,7 +134,10 @@ class NodePlumberBase(object):
                     'description': TARGET_DESCRIPTION % (relationship,
                                                          node['id'],
                                                          instance['id']),
-                    'name': '', 'port_id': None}
+                    'name': SERVICE_TARGET_NAME_PREFIX + '_%s_%s_%s' % (
+                        relationship, node['id'][:5], instance['id'][:5]),
+                    'port_id': None}
+            data.update(extra_data)
             data.update(target)
             pt = gbp_plugin.create_policy_target(context.elevated(),
                                                  {'policy_target': data},
@@ -140,4 +145,5 @@ class NodePlumberBase(object):
             model.set_service_target(part_context, pt['id'], relationship)
 
     def _sort_deployment(self, deployment):
-        deployment.sort(key=lambda x: x['context'].current_position)
+        deployment.sort(key=lambda x: x['context'].current_position,
+                        reverse=True)
