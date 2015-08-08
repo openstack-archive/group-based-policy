@@ -41,9 +41,15 @@ _uuid = uuidutils.generate_uuid
 TESTDIR = os.path.dirname(os.path.abspath(gbpservice.neutron.tests.__file__))
 ETCDIR = os.path.join(TESTDIR, 'etc')
 CHAIN_TENANT_ID = 'chain_owner'
+AGENT_TYPE = 'Open vSwitch agent'
+AGENT_CONF = {'alive': True, 'binary': 'somebinary',
+              'topic': 'sometopic', 'agent_type': AGENT_TYPE,
+              'configurations': {'bridge_mappings': {'physnet1': 'br-eth1'}}}
 
 
 class ApiManagerMixin(object):
+
+    agent_conf = AGENT_CONF
 
     def _test_list_resources(self, resource, items,
                              neutron_context=None,
@@ -124,6 +130,29 @@ class ApiManagerMixin(object):
             raise webob.exc.HTTPClientError(code=res.status_int)
         if res.status_int != 204:
             return self.deserialize(self.fmt, res)
+
+    def _get_object(self, type, id, api):
+        req = self.new_show_request(type, id, self.fmt)
+        return self.deserialize(self.fmt, req.get_response(api))
+
+    def _bind_port_to_host(self, port_id, host, data=None):
+        plugin = manager.NeutronManager.get_plugin()
+        ctx = context.get_admin_context()
+        agent = {'host': host}
+        agent.update(self.agent_conf)
+        plugin.create_or_update_agent(ctx, agent)
+        data = data or {'port': {'binding:host_id': host, 'device_owner': 'a',
+                                 'device_id': 'b'}}
+        # Create EP with bound port
+        req = self.new_update_request('ports', data, port_id,
+                                      self.fmt)
+        return self.deserialize(self.fmt, req.get_response(self.api))
+
+    def _unbind_port(self, port_id):
+        data = {'port': {'binding:host_id': ''}}
+        req = self.new_update_request('ports', data, port_id,
+                                      self.fmt)
+        return self.deserialize(self.fmt, req.get_response(self.api))
 
 
 class GroupPolicyDBTestBase(ApiManagerMixin):
