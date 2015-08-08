@@ -67,18 +67,19 @@ CORE_PLUGIN = ('gbpservice.neutron.tests.unit.services.grouppolicy.'
 class ResourceMappingTestCase(test_plugin.GroupPolicyPluginTestCase):
 
     def setUp(self, policy_drivers=None,
-              core_plugin=n_test_plugin.PLUGIN_NAME, ml2_options=None):
+              core_plugin=n_test_plugin.PLUGIN_NAME, ml2_options=None,
+              sc_plugin=None):
         policy_drivers = policy_drivers or ['implicit_policy',
                                             'resource_mapping']
         config.cfg.CONF.set_override('policy_drivers',
                                      policy_drivers,
                                      group='group_policy')
         sc_cfg.cfg.CONF.set_override('servicechain_drivers',
-                                     ['dummy'],
-                                     group='servicechain')
+                                     ['dummy'], group='servicechain')
         config.cfg.CONF.set_override('allow_overlapping_ips', True)
         super(ResourceMappingTestCase, self).setUp(core_plugin=core_plugin,
-                                                   ml2_options=ml2_options)
+                                                   ml2_options=ml2_options,
+                                                   sc_plugin=sc_plugin)
         engine = db_api.get_engine()
         model_base.BASEV2.metadata.create_all(engine)
         res = mock.patch('neutron.db.l3_db.L3_NAT_dbonly_mixin.'
@@ -2967,7 +2968,6 @@ class TestServiceChain(ResourceMappingTestCase):
         self._assert_proper_chain_instance(
             sc_instances[0], provider_ptg_id, consumer_ptg_id,
             [parent_scs_id, scs2_id], classifier_id=classifier_id)
-
         self._verify_ptg_delete_cleanup_chain(consumer_ptg_id)
 
     def test_redirect_multiple_ptgs_single_prs(self):
