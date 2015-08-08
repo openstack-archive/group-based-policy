@@ -24,7 +24,6 @@ from neutron.tests.unit.db import test_db_base_plugin_v2
 from oslo_utils import importutils
 
 from gbpservice.neutron.db import servicechain_db as svcchain_db
-from gbpservice.neutron.extensions import group_policy as gpolicy
 from gbpservice.neutron.extensions import servicechain as service_chain
 from gbpservice.neutron.tests.unit import common as cm
 from gbpservice.neutron.tests.unit.db.grouppolicy import test_group_policy_db
@@ -32,62 +31,7 @@ from gbpservice.neutron.tests.unit.db.grouppolicy import test_group_policy_db
 JSON_FORMAT = 'json'
 
 
-class ServiceChainDBTestBase(test_group_policy_db.ApiManagerMixin):
-    resource_prefix_map = dict(
-        (k, constants.COMMON_PREFIXES[constants.SERVICECHAIN])
-        for k in service_chain.RESOURCE_ATTRIBUTE_MAP.keys())
-    resource_prefix_map.update(dict(
-        (k, constants.COMMON_PREFIXES[constants.GROUP_POLICY])
-        for k in gpolicy.RESOURCE_ATTRIBUTE_MAP.keys()
-    ))
-
-    fmt = JSON_FORMAT
-
-    def __getattr__(self, item):
-        # Verify is an update of a proper GBP object
-
-        def _is_sc_resource(plural):
-            return plural in service_chain.RESOURCE_ATTRIBUTE_MAP
-
-        def _is_gbp_resource(plural):
-            return plural in gpolicy.RESOURCE_ATTRIBUTE_MAP
-
-        def _is_valid_resource(plural):
-            return _is_gbp_resource(plural) or _is_sc_resource(plural)
-        # Update Method
-        if item.startswith('update_'):
-            resource = item[len('update_'):]
-            plural = cm.get_resource_plural(resource)
-            if _is_valid_resource(plural):
-                def update_wrapper(id, **kwargs):
-                    return self._update_resource(id, resource, **kwargs)
-                return update_wrapper
-        # Show Method
-        if item.startswith('show_'):
-            resource = item[len('show_'):]
-            plural = cm.get_resource_plural(resource)
-            if _is_valid_resource(plural):
-                def show_wrapper(id, **kwargs):
-                    return self._show_resource(id, plural, **kwargs)
-                return show_wrapper
-        # Create Method
-        if item.startswith('create_'):
-            resource = item[len('create_'):]
-            plural = cm.get_resource_plural(resource)
-            if _is_valid_resource(plural):
-                def create_wrapper(**kwargs):
-                    return self._create_resource(resource, **kwargs)
-                return create_wrapper
-        # Delete Method
-        if item.startswith('delete_'):
-            resource = item[len('delete_'):]
-            plural = cm.get_resource_plural(resource)
-            if _is_valid_resource(plural):
-                def delete_wrapper(id, **kwargs):
-                    return self._delete_resource(id, plural, **kwargs)
-                return delete_wrapper
-
-        raise AttributeError
+class ServiceChainDBTestBase(test_group_policy_db.GroupPolicyDBTestBase):
 
     def _get_resource_plural(self, resource):
         if resource.endswith('y'):
