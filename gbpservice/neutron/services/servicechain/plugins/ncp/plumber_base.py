@@ -119,7 +119,8 @@ class NodePlumberBase(object):
                 LOG.debug(ex.message)
 
     def _create_service_target(self, context, part_context, targets, group,
-                               relationship):
+                               relationship, extra_data=None):
+        extra_data = extra_data or {}
         instance = part_context.instance
         node = part_context.current_node
         gbp_plugin = part_context.gbp_plugin
@@ -133,6 +134,7 @@ class NodePlumberBase(object):
                                                          node['id'],
                                                          instance['id']),
                     'name': '', 'port_id': None}
+            data.update(extra_data)
             data.update(target)
             pt = gbp_plugin.create_policy_target(context,
                                                  {'policy_target': data},
