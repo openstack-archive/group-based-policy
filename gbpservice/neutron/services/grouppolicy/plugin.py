@@ -502,8 +502,8 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
             pt_ids = policy_target_group['policy_targets']
             for pt in self.get_policy_targets(context.elevated(),
                                               {'id': pt_ids}):
-                if pt['port_id'] and self._is_port_bound(pt['port_id']) or (
-                        self._is_service_target(context, pt['id'])):
+                if (pt['port_id'] and self._is_port_bound(pt['port_id'])
+                        and not (self._is_service_target(context, pt['id']))):
                     raise gp_exc.PolicyTargetGroupInUse(
                         policy_target_group=policy_target_group_id)
             policy_context = p_context.PolicyTargetGroupContext(
@@ -520,17 +520,21 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
 
         # Proxy PTGs must be deleted before the group itself
         if policy_target_group.get('proxy_group_id'):
-            self.delete_policy_target_group(
-                context, policy_target_group['proxy_group_id'])
+            try:
+                self.delete_policy_target_group(
+                    context, policy_target_group['proxy_group_id'])
+            except gpex.PolicyTargetGroupNotFound:
+                LOG.warn(_('PTG %s already deleted'),
+                         policy_target_group['proxy_group_id'])
 
         with session.begin(subtransactions=True):
-            for pt_id in pt_ids:
+            for pt in self.get_policy_targets(context, {'id': pt_ids}):
                 # We will allow PTG deletion if all PTs are unused.
                 # We could have cleaned these opportunistically in
                 # the previous loop, but we will keep it simple,
                 # such that either all unused PTs are deleted
                 # or nothing is.
-                self.delete_policy_target(context, pt_id)
+                self.delete_policy_target(context, pt['id'])
             super(GroupPolicyPlugin, self).delete_policy_target_group(
                 context, policy_target_group_id)
 
@@ -1420,9 +1424,17 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
                 self, context, es)
             (self.policy_driver_manager.
              delete_external_policy_precommit(policy_context))
+
+        # Disassociate all the PRSs first, this will trigger service chains
+        # deletion.
+        self.update_external_policy(
+            context, external_policy_id,
+            {'external_policy': {'provided_policy_rule_sets': {},
+                                 'consumed_policy_rule_sets': {}}})
+
+        with session.begin(subtransactions=True):
             super(GroupPolicyPlugin, self).delete_external_policy(
                 context, external_policy_id)
-
         try:
             self.policy_driver_manager.delete_external_policy_postcommit(
                 policy_context)
