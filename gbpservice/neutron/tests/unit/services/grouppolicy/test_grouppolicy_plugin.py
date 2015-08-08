@@ -49,7 +49,8 @@ class FakeDriver(object):
 
 class GroupPolicyPluginTestCase(tgpmdb.GroupPolicyMappingDbTestCase):
 
-    def setUp(self, core_plugin=None, gp_plugin=None, ml2_options=None):
+    def setUp(self, core_plugin=None, gp_plugin=None, ml2_options=None,
+              sc_plugin=None):
         if not gp_plugin:
             gp_plugin = GP_PLUGIN_KLASS
         ml2_opts = ml2_options or {'mechanism_drivers': ['openvswitch']}
@@ -57,9 +58,8 @@ class GroupPolicyPluginTestCase(tgpmdb.GroupPolicyMappingDbTestCase):
             cfg.CONF.set_override(opt, val, 'ml2')
         core_plugin = core_plugin or test_plugin.PLUGIN_NAME
         super(GroupPolicyPluginTestCase, self).setUp(core_plugin=core_plugin,
-                                                     gp_plugin=gp_plugin)
-        cfg.CONF.set_override('servicechain_drivers', ['dummy'],
-                              group='servicechain')
+                                                     gp_plugin=gp_plugin,
+                                                     sc_plugin=sc_plugin)
 
     def test_reverse_on_delete(self):
         manager = self.plugin.policy_driver_manager
