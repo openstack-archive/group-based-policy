@@ -13,7 +13,6 @@
 
 import mock
 from neutron import context
-from neutron import manager
 from neutron.tests.unit.plugins.ml2 import test_plugin
 from oslo_config import cfg
 import webob.exc
@@ -33,9 +32,6 @@ GP_PLUGIN_KLASS = (
 )
 SERVICECHAIN_SPECS = 'servicechain/servicechain_specs'
 SERVICECHAIN_NODES = 'servicechain/servicechain_nodes'
-AGENT_TYPE = 'Open vSwitch agent'
-AGENT_CONF = {'alive': True, 'binary': 'somebinary',
-              'topic': 'sometopic', 'agent_type': AGENT_TYPE}
 
 
 class FakeDriver(object):
@@ -49,7 +45,8 @@ class FakeDriver(object):
 
 class GroupPolicyPluginTestCase(tgpmdb.GroupPolicyMappingDbTestCase):
 
-    def setUp(self, core_plugin=None, gp_plugin=None, ml2_options=None):
+    def setUp(self, core_plugin=None, gp_plugin=None, ml2_options=None,
+              sc_plugin=None):
         if not gp_plugin:
             gp_plugin = GP_PLUGIN_KLASS
         ml2_opts = ml2_options or {'mechanism_drivers': ['openvswitch']}
@@ -57,9 +54,8 @@ class GroupPolicyPluginTestCase(tgpmdb.GroupPolicyMappingDbTestCase):
             cfg.CONF.set_override(opt, val, 'ml2')
         core_plugin = core_plugin or test_plugin.PLUGIN_NAME
         super(GroupPolicyPluginTestCase, self).setUp(core_plugin=core_plugin,
-                                                     gp_plugin=gp_plugin)
-        cfg.CONF.set_override('servicechain_drivers', ['dummy'],
-                              group='servicechain')
+                                                     gp_plugin=gp_plugin,
+                                                     sc_plugin=sc_plugin)
 
     def test_reverse_on_delete(self):
         manager = self.plugin.policy_driver_manager
@@ -149,25 +145,6 @@ class GroupPolicyPluginTestCase(tgpmdb.GroupPolicyMappingDbTestCase):
         node = self.deserialize(self.fmt, scn_req.get_response(self.ext_api))
         scn_id = node['servicechain_node']['id']
         return scn_id
-
-    def _bind_port_to_host(self, port_id, host):
-        plugin = manager.NeutronManager.get_plugin()
-        ctx = context.get_admin_context()
-        agent = {'host': host}
-        agent.update(AGENT_CONF)
-        plugin.create_or_update_agent(ctx, agent)
-        data = {'port': {'binding:host_id': host, 'device_owner': 'a',
-                         'device_id': 'b'}}
-        # Create EP with bound port
-        req = self.new_update_request('ports', data, port_id,
-                                      self.fmt)
-        return self.deserialize(self.fmt, req.get_response(self.api))
-
-    def _unbind_port(self, port_id):
-        data = {'port': {'binding:host_id': ''}}
-        req = self.new_update_request('ports', data, port_id,
-                                      self.fmt)
-        return self.deserialize(self.fmt, req.get_response(self.api))
 
     def _get_object(self, type, id, api, expected_res_status=None):
         req = self.new_show_request(type, id, self.fmt)
