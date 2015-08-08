@@ -28,6 +28,7 @@ from oslo_utils import importutils
 
 from gbpservice.neutron.db.grouppolicy import group_policy_db as gpdb
 from gbpservice.neutron.extensions import group_policy as gpolicy
+from gbpservice.neutron.extensions import servicechain as service_chain
 import gbpservice.neutron.tests
 from gbpservice.neutron.tests.unit import common as cm
 
@@ -36,9 +37,15 @@ JSON_FORMAT = 'json'
 _uuid = uuidutils.generate_uuid
 TESTDIR = os.path.dirname(os.path.abspath(gbpservice.neutron.tests.__file__))
 ETCDIR = os.path.join(TESTDIR, 'etc')
+AGENT_TYPE = 'Open vSwitch agent'
+AGENT_CONF = {'alive': True, 'binary': 'somebinary',
+              'topic': 'sometopic', 'agent_type': AGENT_TYPE,
+              'configurations': {'bridge_mappings': {'physnet1': 'br-eth1'}}}
 
 
 class ApiManagerMixin(object):
+
+    agent_conf = AGENT_CONF
 
     def _test_list_resources(self, resource, items,
                              neutron_context=None,
@@ -120,24 +127,57 @@ class ApiManagerMixin(object):
         if res.status_int != 204:
             return self.deserialize(self.fmt, res)
 
+    def _get_object(self, type, id, api):
+        req = self.new_show_request(type, id, self.fmt)
+        return self.deserialize(self.fmt, req.get_response(api))
+
+    def _bind_port_to_host(self, port_id, host, data=None):
+        plugin = manager.NeutronManager.get_plugin()
+        ctx = context.get_admin_context()
+        agent = {'host': host}
+        agent.update(self.agent_conf)
+        plugin.create_or_update_agent(ctx, agent)
+        data = data or {'port': {'binding:host_id': host, 'device_owner': 'a',
+                                 'device_id': 'b'}}
+        # Create EP with bound port
+        req = self.new_update_request('ports', data, port_id,
+                                      self.fmt)
+        return self.deserialize(self.fmt, req.get_response(self.api))
+
+    def _unbind_port(self, port_id):
+        data = {'port': {'binding:host_id': ''}}
+        req = self.new_update_request('ports', data, port_id,
+                                      self.fmt)
+        return self.deserialize(self.fmt, req.get_response(self.api))
+
 
 class GroupPolicyDBTestBase(ApiManagerMixin):
     resource_prefix_map = dict(
+        (k, constants.COMMON_PREFIXES[constants.SERVICECHAIN])
+        for k in service_chain.RESOURCE_ATTRIBUTE_MAP.keys())
+    resource_prefix_map.update(dict(
         (k, constants.COMMON_PREFIXES[constants.GROUP_POLICY])
         for k in gpolicy.RESOURCE_ATTRIBUTE_MAP.keys()
-    )
+    ))
 
     fmt = JSON_FORMAT
 
     def __getattr__(self, item):
         # Verify is an update of a proper GBP object
+
+        def _is_sc_resource(plural):
+            return plural in service_chain.RESOURCE_ATTRIBUTE_MAP
+
         def _is_gbp_resource(plural):
             return plural in gpolicy.RESOURCE_ATTRIBUTE_MAP
+
+        def _is_valid_resource(plural):
+            return _is_gbp_resource(plural) or _is_sc_resource(plural)
         # Update Method
         if item.startswith('update_'):
             resource = item[len('update_'):]
             plural = cm.get_resource_plural(resource)
-            if _is_gbp_resource(plural):
+            if _is_valid_resource(plural):
                 def update_wrapper(id, **kwargs):
                     return self._update_resource(id, resource, **kwargs)
                 return update_wrapper
@@ -145,7 +185,7 @@ class GroupPolicyDBTestBase(ApiManagerMixin):
         if item.startswith('show_'):
             resource = item[len('show_'):]
             plural = cm.get_resource_plural(resource)
-            if _is_gbp_resource(plural):
+            if _is_valid_resource(plural):
                 def show_wrapper(id, **kwargs):
                     return self._show_resource(id, plural, **kwargs)
                 return show_wrapper
@@ -153,7 +193,7 @@ class GroupPolicyDBTestBase(ApiManagerMixin):
         if item.startswith('create_'):
             resource = item[len('create_'):]
             plural = cm.get_resource_plural(resource)
-            if _is_gbp_resource(plural):
+            if _is_valid_resource(plural):
                 def create_wrapper(**kwargs):
                     return self._create_resource(resource, **kwargs)
                 return create_wrapper
@@ -161,7 +201,7 @@ class GroupPolicyDBTestBase(ApiManagerMixin):
         if item.startswith('delete_'):
             resource = item[len('delete_'):]
             plural = cm.get_resource_plural(resource)
-            if _is_gbp_resource(plural):
+            if _is_valid_resource(plural):
                 def delete_wrapper(id, **kwargs):
                     return self._delete_resource(id, plural, **kwargs)
                 return delete_wrapper
