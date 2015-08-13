@@ -26,6 +26,7 @@ from oslo_log import log as logging
 import six
 
 import gbpservice.neutron.extensions
+from gbpservice.neutron.extensions import patch  # noqa
 from gbpservice.neutron.services.grouppolicy.common import (
     constants as gp_constants)
 
@@ -38,7 +39,7 @@ extensions.append_api_extensions_path(gbpservice.neutron.extensions.__path__)
 constants.GROUP_POLICY = "GROUP_POLICY"
 constants.COMMON_PREFIXES["GROUP_POLICY"] = "/grouppolicy"
 constants.EXT_TO_SERVICE_MAPPING['gp'] = constants.GROUP_POLICY
-constants.ALLOWED_SERVICES.append(constants.GROUP_POLICY)
+
 
 LOG = logging.getLogger(__name__)
 
