@@ -578,8 +578,6 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
     def _set_providers_or_consumers_for_res(
             self, context, type, db_res, policy_rule_sets_dict, assoc_table,
             provider=True):
-        # TODO(Sumit): Check that the same policy_rule_set ID does not belong
-        # to provider and consumer dicts
         if not policy_rule_sets_dict:
             if provider:
                 db_res.provided_policy_rule_sets = []
@@ -667,7 +665,15 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
                     policy_rule_set_id=prs_db.id)
                 prs_db.policy_rules.append(prs_rule_db)
 
+    def _validate_provided_consumed_prs_overlap(self, group):
+        if ('provided_policy_rule_sets' in group and
+            'consumed_policy_rule_sets' in group):
+            if (set(group['provided_policy_rule_sets']) &
+                set(group['consumed_policy_rule_sets'])):
+                raise gpolicy.BadPRSScope()
+
     def _process_policy_rule_sets_for_ptg(self, context, db_res, ptg):
+        self._validate_provided_consumed_prs_overlap(ptg)
         if 'provided_policy_rule_sets' in ptg:
             self._set_providers_or_consumers_for_policy_target_group(
                 context, db_res, ptg['provided_policy_rule_sets'])
@@ -679,6 +685,7 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
         return ptg
 
     def _process_policy_rule_sets_for_ep(self, context, db_res, res):
+        self._validate_provided_consumed_prs_overlap(res)
         if 'provided_policy_rule_sets' in res:
             self._set_providers_or_consumers_for_ep(
                 context, db_res, res['provided_policy_rule_sets'])

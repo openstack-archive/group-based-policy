@@ -179,6 +179,11 @@ class GroupPolicyInvalidProtocol(nexc.InvalidInput):
                 "representation (0 to 255) are supported.")
 
 
+class BadPRSScope(nexc.BadRequest):
+    message = _("The same Policy ruleset cannot be provided and consumed by "
+                "the Group")
+
+
 # Group Policy Values
 gp_supported_actions = [None, gp_constants.GP_ACTION_ALLOW,
                         gp_constants.GP_ACTION_REDIRECT]

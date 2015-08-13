@@ -2372,14 +2372,19 @@ class TestPolicyRuleSet(ResourceMappingTestCase):
         pr1 = self._create_ssh_allow_rule()
         pr2 = self._create_http_allow_rule()
 
-        prs = self.create_policy_rule_set(
+        prs1 = self.create_policy_rule_set(
+            expected_res_status=201,
+            policy_rules=[pr1['id'], pr2['id']])['policy_rule_set']
+        prs2 = self.create_policy_rule_set(
             expected_res_status=201,
             policy_rules=[pr1['id'], pr2['id']])['policy_rule_set']
         ptg = self.create_policy_target_group(
-            expected_res_status=201, provided_policy_rule_sets={prs['id']: ''},
-            consumed_policy_rule_sets={prs['id']: ''})['policy_target_group']
+            expected_res_status=201,
+            provided_policy_rule_sets={prs1['id']: ''},
+            consumed_policy_rule_sets={prs2['id']: ''})['policy_target_group']
         self.delete_policy_target_group(ptg['id'])
-        self._verify_prs_rules(prs['id'])
+        self._verify_prs_rules(prs1['id'])
+        self._verify_prs_rules(prs2['id'])
 
     def test_redirect_to_ep(self):
         scs_id = self._create_servicechain_spec()
@@ -2748,7 +2753,7 @@ class TestExternalPolicy(ResourceMappingTestCase):
                     self.update_external_policy(
                         ep['id'], provided_policy_rule_sets={prs_ssh['id']:
                                                              ''},
-                        consumed_policy_rule_sets={prs_ssh['id']: ''},
+                        consumed_policy_rule_sets={prs_http['id']: ''},
                         expected_res_status=200)
 
                     expected_cidrs = self._calculate_expected_external_cidrs(
@@ -2761,7 +2766,7 @@ class TestExternalPolicy(ResourceMappingTestCase):
                     self.update_external_policy(
                         ep['id'], provided_policy_rule_sets={prs_http['id']:
                                                              ''},
-                        consumed_policy_rule_sets={prs_http['id']: ''},
+                        consumed_policy_rule_sets={prs_ssh['id']: ''},
                         expected_res_status=200)
 
                     # SSH rules removed
