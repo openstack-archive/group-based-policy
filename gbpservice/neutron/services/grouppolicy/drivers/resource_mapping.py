@@ -349,14 +349,23 @@ class ResourceMappingDriver(api.PolicyDriver):
                         "not have an attached external segment"))
             return fip_ids
 
+        # Retrieve Router ID
+        l2p = context._plugin.get_l2_policy(context._plugin_context,
+                                            l2_policy_id)
+        l3p = context._plugin.get_l3_policy(context._plugin_context,
+                                            l2p['l3_policy_id'])
         for es in external_segments:
             ext_sub = self._core_plugin.get_subnet(context._plugin_context,
                                                    es['subnet_id'])
             ext_net_id = ext_sub['network_id']
             # REVISIT(Magesh): Allocate floating IP from the Nat Pool in Kilo
             try:
+                # REVISIT(ivar): router_id is the first router of the L3P for
+                # now, this may change once we have a dedicated external router
+                # for L3P.
                 fip_id = self._create_floatingip(
-                                        context, ext_net_id, fixed_port)
+                    context, ext_net_id, fixed_port,
+                    router_id=l3p.get('routers', [None])[0])
                 fip_ids.append(fip_id)
             except Exception:
                 # TODO(Magesh): catch no free ip exception
@@ -1997,9 +2006,11 @@ class ResourceMappingDriver(api.PolicyDriver):
 
     # Do Not Pass floating_ip_address to this method until after Kilo Release
     def _create_floatingip(self, context, ext_net_id, internal_port_id=None,
-                           floating_ip_address=None):
+                           floating_ip_address=None, router_id=None):
         attrs = {'tenant_id': context.current['tenant_id'],
                  'floating_network_id': ext_net_id}
+        if router_id:
+            attrs['router_id'] = router_id
         if internal_port_id:
             attrs.update({"port_id": internal_port_id})
         if floating_ip_address:

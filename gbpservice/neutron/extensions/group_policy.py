@@ -17,6 +17,7 @@ from neutron.api.v2 import attributes as attr
 from neutron.api.v2 import resource_helper
 from neutron.common import constants as n_constants
 from neutron.common import exceptions as nexc
+from neutron.db import l3_db
 from neutron.openstack.common import uuidutils
 from neutron.plugins.common import constants
 from neutron.services import service_base
@@ -37,6 +38,27 @@ constants.GROUP_POLICY = "GROUP_POLICY"
 constants.COMMON_PREFIXES["GROUP_POLICY"] = "/grouppolicy"
 constants.EXT_TO_SERVICE_MAPPING['gp'] = constants.GROUP_POLICY
 constants.ALLOWED_SERVICES.append(constants.GROUP_POLICY)
+
+
+# REVISIT(ivar): Monkey patch to allow explicit router_id to be set in Neutron
+# for Floating Ip creation (for internal calls only). Once we split the server,
+# this could be part of a GBP Neutron L3 driver.
+def get_assoc_data(self, context, fip, floating_network_id):
+    (internal_port, internal_subnet_id,
+     internal_ip_address) = self._internal_fip_assoc_data(context, fip)
+    if fip.get('router_id'):
+        router_id = fip['router_id']
+        del fip['router_id']
+    else:
+        router_id = self._get_router_for_floatingip(context,
+                                                    internal_port,
+                                                    internal_subnet_id,
+                                                    floating_network_id)
+
+    return fip['port_id'], internal_ip_address, router_id
+
+l3_db.L3_NAT_dbonly_mixin.get_assoc_data = get_assoc_data
+
 
 LOG = logging.getLogger(__name__)
 
