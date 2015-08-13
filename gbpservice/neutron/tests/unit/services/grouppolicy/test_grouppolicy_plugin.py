@@ -547,9 +547,13 @@ class TestPolicyTargetGroup(GroupPolicyPluginTestCase):
             shared=True)
         l2pns = self._create_l2_policy_on_shared()
 
-        prs = self._create_policy_rule_set_on_shared(
+        pprs1 = self._create_policy_rule_set_on_shared(
             shared=True)
-        ctns = self._create_policy_rule_set_on_shared()
+        pprsns1 = self._create_policy_rule_set_on_shared()
+
+        pprs2 = self._create_policy_rule_set_on_shared(
+            shared=True)
+        pprs1ns2 = self._create_policy_rule_set_on_shared()
 
         nsp = self.create_network_service_policy(
             shared=True)['network_service_policy']
@@ -561,8 +565,8 @@ class TestPolicyTargetGroup(GroupPolicyPluginTestCase):
         self.assertEqual(False, ptg['policy_target_group']['shared'])
         ptg = self.create_policy_target_group(
             l2_policy_id=l2p['id'],
-            provided_policy_rule_sets={prs['id']: '', ctns['id']: ''},
-            consumed_policy_rule_sets={prs['id']: '', ctns['id']: ''},
+            provided_policy_rule_sets={pprs1['id']: '', pprsns1['id']: ''},
+            consumed_policy_rule_sets={pprs2['id']: '', pprs1ns2['id']: ''},
             expected_res_status=201)
         self.assertEqual(False, ptg['policy_target_group']['shared'])
         ptg = self.create_policy_target_group(
@@ -581,14 +585,16 @@ class TestPolicyTargetGroup(GroupPolicyPluginTestCase):
             expected_res_status=201)
         self.assertEqual(True, ptg['policy_target_group']['shared'])
         ptg = self.create_policy_target_group(
-            l2_policy_id=l2p['id'], provided_policy_rule_sets={prs['id']: ''},
-            consumed_policy_rule_sets={prs['id']: ''}, shared=True,
+            l2_policy_id=l2p['id'],
+            provided_policy_rule_sets={pprs1['id']: ''},
+            consumed_policy_rule_sets={pprs2['id']: ''},
+            shared=True,
             expected_res_status=201)
         self.assertEqual(True, ptg['policy_target_group']['shared'])
 
         # Verify not shared created without error on not shared l2p
         self.create_policy_target_group(l2_policy_id=l2pns['id'],
-                                   expected_res_status=201)
+                                        expected_res_status=201)
 
     def test_shared_ptg_update(self):
         ptg = self._create_ptg_on_shared()['policy_target_group']
@@ -715,8 +721,11 @@ class TestExternalPolicy(GroupPolicyPluginTestCase):
         esns = self.create_external_segment(
         )['external_segment']
 
-        prs = self._create_policy_rule_set_on_shared(shared=True)
-        prsns = self._create_policy_rule_set_on_shared()
+        prs1 = self._create_policy_rule_set_on_shared(shared=True)
+        prsns1 = self._create_policy_rule_set_on_shared()
+
+        prs2 = self._create_policy_rule_set_on_shared(shared=True)
+        prsns2 = self._create_policy_rule_set_on_shared()
 
         # Verify non-shared ep providing and consuming shared and non shared
         # policy_rule_sets
@@ -725,8 +734,8 @@ class TestExternalPolicy(GroupPolicyPluginTestCase):
         self.assertEqual(False, ep['external_policy']['shared'])
         ep = self.create_external_policy(
             external_segments=[es['id']],
-            provided_policy_rule_sets={prs['id']: '', prsns['id']: ''},
-            consumed_policy_rule_sets={prs['id']: '', prsns['id']: ''},
+            provided_policy_rule_sets={prs1['id']: '', prsns1['id']: ''},
+            consumed_policy_rule_sets={prs2['id']: '', prsns2['id']: ''},
             expected_res_status=201)
         self.assertEqual(False, ep['external_policy']['shared'])
 
@@ -738,8 +747,8 @@ class TestExternalPolicy(GroupPolicyPluginTestCase):
         self.assertEqual(True, ep['external_policy']['shared'])
         ep = self.create_external_policy(
             external_segments=[es['id']],
-            provided_policy_rule_sets={prs['id']: ''},
-            consumed_policy_rule_sets={prs['id']: ''}, shared=True,
+            provided_policy_rule_sets={prs1['id']: ''},
+            consumed_policy_rule_sets={prs2['id']: ''}, shared=True,
             expected_res_status=201)
         self.assertEqual(True, ep['external_policy']['shared'])
 
@@ -756,7 +765,8 @@ class TestExternalPolicy(GroupPolicyPluginTestCase):
 
     def test_shared_ep_create_negative(self):
         es = self.create_external_segment()['external_segment']
-        prs = self._create_policy_rule_set_on_shared()
+        prs1 = self._create_policy_rule_set_on_shared()
+        prs2 = self._create_policy_rule_set_on_shared()
         # Verify shared EP fails on non-shared es
         res = self.create_external_policy(
             external_segments=[es['id']], shared=True,
@@ -767,8 +777,8 @@ class TestExternalPolicy(GroupPolicyPluginTestCase):
         # policy_rule_sets
         res = self.create_external_policy(
             shared=True,
-            provided_policy_rule_sets={prs['id']: ''},
-            consumed_policy_rule_sets={prs['id']: ''},
+            provided_policy_rule_sets={prs1['id']: ''},
+            consumed_policy_rule_sets={prs2['id']: ''},
             expected_res_status=400)
         self.assertEqual('SharedResourceReferenceError',
                          res['NeutronError']['type'])

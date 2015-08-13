@@ -22,7 +22,7 @@ check_residual_resources demo demo
 # Run gbpfunc integration tests
 echo "Running gbpfunc test suite"
 cd $NEW_BASE
-sudo git clone http://github.com/group-policy/gbpfunctests gbpfunctests
+sudo git clone http://github.com/group-policy/gbpfunctests -b fix_overlapping_prs_in_provide_consume gbpfunctests
 export PYTHONPATH="$NEW_BASE/gbpfunctests:${PYTHONPATH}"
 cd gbpfunctests/testcases
 python suite_run.py upstream
