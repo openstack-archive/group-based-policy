@@ -342,6 +342,11 @@ class ResourceMappingDriver(api.PolicyDriver, local_api.LocalAPI):
                         "not have an attached external segment"))
             return fip_ids
 
+        # Retrieve Router ID
+        l2p = context._plugin.get_l2_policy(context._plugin_context,
+                                            l2_policy_id)
+        l3p = context._plugin.get_l3_policy(context._plugin_context,
+                                            l2p['l3_policy_id'])
         for es in external_segments:
             ext_sub = self._get_subnet(context._plugin_context,
                                        es['subnet_id'])
@@ -357,7 +362,8 @@ class ResourceMappingDriver(api.PolicyDriver, local_api.LocalAPI):
                     try:
                         fip_id = self._create_floatingip(
                             context, ext_net_id, fixed_port,
-                            subnet_id=nat_pool['subnet_id'])
+                            subnet_id=nat_pool['subnet_id'],
+                            router_id=l3p.get('routers', [None])[0])
                         fip_ids.append(fip_id)
                         # FIP allocated, empty the no subnet pools to avoid
                         # further allocation
@@ -2059,11 +2065,14 @@ class ResourceMappingDriver(api.PolicyDriver, local_api.LocalAPI):
 
     # Do Not Pass floating_ip_address to this method until after Kilo Release
     def _create_floatingip(self, context, ext_net_id, internal_port_id=None,
-                           floating_ip_address=None, subnet_id=None):
+                           floating_ip_address=None, subnet_id=None,
+                           router_id=None):
         attrs = {'tenant_id': context.current['tenant_id'],
                  'floating_network_id': ext_net_id}
         if subnet_id:
             attrs.update({"subnet_id": subnet_id})
+        if router_id:
+            attrs['router_id'] = router_id
         if internal_port_id:
             attrs.update({"port_id": internal_port_id})
         if floating_ip_address:
