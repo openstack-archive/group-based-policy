@@ -87,6 +87,7 @@ class ResourceMappingTestCase(test_plugin.GroupPolicyPluginTestCase):
         self._context = nctx.get_admin_context()
         plugins = manager.NeutronManager.get_service_plugins()
         self._gbp_plugin = plugins.get(pconst.GROUP_POLICY)
+        self._l3_plugin = plugins.get(pconst.L3_ROUTER_NAT)
 
     def get_plugin_context(self):
         return self._plugin, self._context
@@ -3860,3 +3861,39 @@ class TestNatPool(ResourceMappingTestCase):
 
     def test_not_owned_subnet_not_deleted(self):
         self._test_subnet_swap(False)
+
+    def _test_create_rejected_for_es_without_subnet(self, shared=False):
+        es = self.create_external_segment(
+            name="default",
+            expected_res_status=webob.exc.HTTPCreated.code)
+        es = es['external_segment']
+        result = self.create_nat_pool(
+            external_segment_id=es['id'],
+            ip_version=4,
+            ip_pool='192.168.1.0/24',
+            expected_res_status=webob.exc.HTTPBadRequest.code)
+        self.assertEqual('ESSubnetRequiredForNatPool',
+                         result['NeutronError']['type'])
+
+
+class TestFloatingIpMonkeyPatch(ResourceMappingTestCase,
+                                test_l3_plugin.L3NatTestCaseMixin):
+
+    def test_create_fip_specify_router_id(self):
+        with self.subnet() as sub:
+            self._set_net_external(sub['subnet']['network_id'])
+            with self.port() as private_port:
+                with self.router() as router:
+                    data = {
+                        'tenant_id': 'test-tenant',
+                        'floating_network_id': sub['subnet']['network_id'],
+                        'port_id': private_port['port']['id'],
+                        'router_id': router['router']['id']}
+                    context = nctx.get_admin_context()
+                    fip = self._l3_plugin.create_floatingip(
+                        context, {'floatingip': data})
+                    # Verify that the router was correctly set even if not
+                    # directly connected
+                    self.assertEqual(router['router']['id'],
+                                     fip['router_id'])
+                    self._l3_plugin.delete_floatingip(context, fip['id'])
