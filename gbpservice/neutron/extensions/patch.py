@@ -78,7 +78,6 @@ def create_floatingip(
 
     return self._make_floatingip_dict(floatingip_db)
 
-
 l3_db.L3_NAT_dbonly_mixin.create_floatingip = create_floatingip
 
 
@@ -206,3 +205,24 @@ l3_db.L3_NAT_dbonly_mixin._validate_gw_info = _validate_gw_info
 l3_db.L3_NAT_dbonly_mixin._update_router_gw_info = _update_router_gw_info
 l3_db.L3_NAT_dbonly_mixin._check_for_external_ip_change = (
     _check_for_external_ip_change)
+
+
+# REVISIT(ivar): Monkey patch to allow explicit router_id to be set in Neutron
+# for Floating Ip creation (for internal calls only). Once we split the server,
+# this could be part of a GBP Neutron L3 driver.
+def get_assoc_data(self, context, fip, floating_network_id):
+    (internal_port, internal_subnet_id,
+     internal_ip_address) = self._internal_fip_assoc_data(context, fip)
+    if fip.get('router_id'):
+        router_id = fip['router_id']
+        del fip['router_id']
+    else:
+        router_id = self._get_router_for_floatingip(context,
+                                                    internal_port,
+                                                    internal_subnet_id,
+                                                    floating_network_id)
+
+    return fip['port_id'], internal_ip_address, router_id
+
+
+l3_db.L3_NAT_dbonly_mixin.get_assoc_data = get_assoc_data

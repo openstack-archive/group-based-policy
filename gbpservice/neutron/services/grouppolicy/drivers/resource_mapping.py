@@ -343,18 +343,26 @@ class ResourceMappingDriver(api.PolicyDriver, local_api.LocalAPI):
                         "not have an attached external segment"))
             return fip_ids
         tenant_id = context.current['tenant_id']
+
+        # Retrieve Router ID
+        l2p = context._plugin.get_l2_policy(context._plugin_context,
+                                            l2_policy_id)
+        l3p = context._plugin.get_l3_policy(context._plugin_context,
+                                            l2p['l3_policy_id'])
         for es in external_segments:
             ext_sub = self._get_subnet(context._plugin_context,
                                        es['subnet_id'])
             ext_net_id = ext_sub['network_id']
             fip_id = self._allocate_floating_ip_in_ext_seg(
-                context, tenant_id, es, ext_net_id, fixed_port)
+                context, tenant_id, es, ext_net_id, fixed_port,
+                router_id=l3p.get('routers', [None])[0])
             if fip_id:
                 fip_ids.append(fip_id)
         return fip_ids
 
     def _allocate_floating_ip_in_ext_seg(self, context, tenant_id,
-                                         es, ext_net_id, fixed_port):
+                                         es, ext_net_id, fixed_port,
+                                         router_id=None):
         nat_pools = context._plugin.get_nat_pools(
             context._plugin_context.elevated(), {'id': es['nat_pools']})
         no_subnet_pools = []
@@ -367,7 +375,8 @@ class ResourceMappingDriver(api.PolicyDriver, local_api.LocalAPI):
                 try:
                     fip_id = self._create_floatingip(
                         context._plugin_context, tenant_id, ext_net_id,
-                        fixed_port, subnet_id=nat_pool['subnet_id'])
+                        fixed_port, subnet_id=nat_pool['subnet_id'],
+                        router_id=router_id)
                     # FIP allocated, empty the no subnet pools to avoid
                     # further allocation
                     no_subnet_pools = []
@@ -2075,12 +2084,14 @@ class ResourceMappingDriver(api.PolicyDriver, local_api.LocalAPI):
 
     # Do Not Pass floating_ip_address to this method until after Kilo Release
     def _create_floatingip(self, plugin_context, tenant_id, ext_net_id,
-                           internal_port_id=None,
-                           floating_ip_address=None, subnet_id=None):
+                           internal_port_id=None, floating_ip_address=None,
+                           subnet_id=None, router_id=None):
         attrs = {'tenant_id': tenant_id,
                  'floating_network_id': ext_net_id}
         if subnet_id:
             attrs.update({"subnet_id": subnet_id})
+        if router_id:
+            attrs['router_id'] = router_id
         if internal_port_id:
             attrs.update({"port_id": internal_port_id})
         if floating_ip_address:
