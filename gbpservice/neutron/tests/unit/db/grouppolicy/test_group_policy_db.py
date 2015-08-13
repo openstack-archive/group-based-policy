@@ -401,6 +401,41 @@ class TestGroupResources(GroupPolicyDbTestCase):
         self._test_show_resource('policy_target_group',
                                  ptg['policy_target_group']['id'], attrs)
 
+    def test_provided_consumed_prs_overlap_rejected(self):
+        ct1_id = self.create_policy_rule_set(
+            name='policy_rule_set1')['policy_rule_set']['id']
+        ptg = self.create_policy_target_group(
+            consumed_policy_rule_sets={ct1_id: 'scope'},
+            provided_policy_rule_sets={ct1_id: 'scope'},
+            expected_res_status=webob.exc.HTTPBadRequest.code)
+        self.assertEqual('BadPRSScope',
+                         ptg['NeutronError']['type'])
+
+        ptg = self.create_policy_target_group()['policy_target_group']
+        ptg = self.update_policy_target_group(
+            ptg['id'],
+            consumed_policy_rule_sets={ct1_id: 'scope'},
+            provided_policy_rule_sets={ct1_id: 'scope'},
+            expected_res_status=webob.exc.HTTPBadRequest.code)
+        self.assertEqual('BadPRSScope',
+                         ptg['NeutronError']['type'])
+
+        ep = self.create_external_policy(
+            consumed_policy_rule_sets={ct1_id: 'scope'},
+            provided_policy_rule_sets={ct1_id: 'scope'},
+            expected_res_status=webob.exc.HTTPBadRequest.code)
+        self.assertEqual('BadPRSScope',
+                         ep['NeutronError']['type'])
+
+        ep = self.create_external_policy()['external_policy']
+        ep = self.update_external_policy(
+            ep['id'],
+            consumed_policy_rule_sets={ct1_id: 'scope'},
+            provided_policy_rule_sets={ct1_id: 'scope'},
+            expected_res_status=webob.exc.HTTPBadRequest.code)
+        self.assertEqual('BadPRSScope',
+                         ep['NeutronError']['type'])
+
     def test_delete_policy_target_group(self):
         ctx = context.get_admin_context()
 
@@ -1137,15 +1172,16 @@ class TestGroupResources(GroupPolicyDbTestCase):
 
     def test_create_and_show_ep(self):
         es = self.create_external_segment()['external_segment']
-        prs = self.create_policy_rule_set()['policy_rule_set']
+        prs1 = self.create_policy_rule_set()['policy_rule_set']
+        prs2 = self.create_policy_rule_set()['policy_rule_set']
         attrs = {'external_segments': [es['id']],
-                 'provided_policy_rule_sets': {prs['id']: None},
-                 'consumed_policy_rule_sets': {prs['id']: None}}
+                 'provided_policy_rule_sets': {prs1['id']: None},
+                 'consumed_policy_rule_sets': {prs2['id']: None}}
         body = cm.get_create_external_policy_default_attrs()
         body.update(attrs)
         expected = copy.deepcopy(body)
-        expected['provided_policy_rule_sets'] = [prs['id']]
-        expected['consumed_policy_rule_sets'] = [prs['id']]
+        expected['provided_policy_rule_sets'] = [prs1['id']]
+        expected['consumed_policy_rule_sets'] = [prs2['id']]
         self._test_create_and_show('external_policy', body,
                                    expected=expected)
 
