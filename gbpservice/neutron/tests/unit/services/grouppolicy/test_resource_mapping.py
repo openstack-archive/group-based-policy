@@ -11,6 +11,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import copy
 import itertools
 
 import mock
@@ -306,12 +307,14 @@ class ResourceMappingTestCase(test_plugin.GroupPolicyPluginTestCase):
             x for x in self._get_sg_rule(
                 security_group_id=[mapping.provided_sg_id,
                                    mapping.consumed_sg_id])]
+        existing_copy = copy.deepcopy(existing)
         expected = self._generate_expected_sg_rules(prs)
         for rule in expected:
             # Verify the rule exists
             r = self._get_sg_rule(**rule)
             self.assertTrue(len(r) == 1,
-                            "Rule not found, expected:\n%s" % rule)
+                            "Rule not found, expected:\n%s\n\nfound:%s\n" %
+                            (rule, existing_copy))
             existing.remove(r[0])
         self.assertTrue(len(existing) == 0,
                         "Some rules still exist:\n%s" % str(existing))
@@ -2528,7 +2531,7 @@ class TestPolicyRuleSet(ResourceMappingTestCase):
             port_range=8080)
         self._verify_prs_rules(prs['id'])
 
-    def _test_hierarchical_update_policy_classifier(self):
+    def test_hierarchical_update_policy_classifier(self):
         pr = self._create_http_allow_rule()
         prs = self.create_policy_rule_set(
             policy_rules=[pr['id']],
