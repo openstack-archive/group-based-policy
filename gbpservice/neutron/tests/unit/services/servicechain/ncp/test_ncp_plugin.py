@@ -79,6 +79,10 @@ class NodeCompositionPluginTestCase(
         servicechain_plugin = plugins.get(pconst.SERVICECHAIN)
         return servicechain_plugin
 
+    def _create_service_profile(self, **kwargs):
+        """Create service profile wrapper that can be used by drivers."""
+        return self.create_service_profile(**kwargs)
+
     def _create_redirect_rule(self, spec_id):
         action = self.create_policy_action(action_type='REDIRECT',
                                            action_value=spec_id)
@@ -95,7 +99,7 @@ class NodeCompositionPluginTestCase(
         return prs
 
     def _create_simple_service_chain(self, number_of_nodes=1):
-        prof = self.create_service_profile(
+        prof = self._create_service_profile(
             service_type='LOADBALANCER',
             vendor=self.SERVICE_PROFILE_VENDOR)['service_profile']
 
@@ -140,7 +144,7 @@ class NodeCompositionPluginTestCase(
     def test_context_attributes(self):
         # Verify Context attributes for simple config
         plugin_context = n_context.get_admin_context()
-        profile = self.create_service_profile(
+        profile = self._create_service_profile(
             service_type="LOADBALANCER",
             vendor=self.SERVICE_PROFILE_VENDOR)['service_profile']
         node = self.create_servicechain_node(
@@ -150,8 +154,10 @@ class NodeCompositionPluginTestCase(
             nodes=[node['id']])['servicechain_spec']
         provider = self.create_policy_target_group()['policy_target_group']
         consumer = self.create_policy_target_group()['policy_target_group']
-        management = self.create_policy_target_group()['policy_target_group']
+        management = self.create_policy_target_group(
+            service_management=True)['policy_target_group']
         classifier = self.create_policy_classifier()['policy_classifier']
+
         instance = self.create_servicechain_instance(
             provider_ptg_id=provider['id'], consumer_ptg_id=consumer['id'],
             servicechain_specs=[spec['id']], classifier_id=classifier['id'])[
@@ -159,8 +165,7 @@ class NodeCompositionPluginTestCase(
 
         # Verify created without errors
         ctx = ncp_context.get_node_driver_context(
-            self.plugin, plugin_context, instance, node,
-            management_group=management)
+            self.plugin, plugin_context, instance, node)
 
         self.assertIsNotNone(ctx.gbp_plugin)
         self.assertIsNotNone(ctx.sc_plugin)
@@ -221,7 +226,7 @@ class NodeCompositionPluginTestCase(
             return jsonutils.dumps({'Parameters':
                                     dict((x, {}) for x in params)})
 
-        prof = self.create_service_profile(
+        prof = self._create_service_profile(
             service_type='LOADBALANCER', shared=True,
             vendor=self.SERVICE_PROFILE_VENDOR,
             tenant_id='admin')['service_profile']
@@ -319,7 +324,7 @@ class NodeCompositionPluginTestCase(
         validate_update.side_effect = exc.NodeCompositionPluginBadRequest(
             resource='node', msg='reason')
 
-        prof = self.create_service_profile(
+        prof = self._create_service_profile(
             service_type='LOADBALANCER',
             vendor=self.SERVICE_PROFILE_VENDOR)['service_profile']
 
@@ -344,7 +349,7 @@ class NodeCompositionPluginTestCase(
                          res['NeutronError']['type'])
 
     def test_update_instantiated_profile_fails(self):
-        prof = self.create_service_profile(
+        prof = self._create_service_profile(
             service_type='LOADBALANCER',
             vendor=self.SERVICE_PROFILE_VENDOR)['service_profile']
 
@@ -375,7 +380,7 @@ class NodeCompositionPluginTestCase(
         create_1.side_effect = n_exc.NeutronException()
 
         # This happens without error
-        profile = self.create_service_profile(
+        profile = self._create_service_profile(
             service_type="TYPE",
             vendor=self.SERVICE_PROFILE_VENDOR)['service_profile']
         node = self.create_servicechain_node(
@@ -400,7 +405,7 @@ class NodeCompositionPluginTestCase(
         create_2 = drivers[1].validate_create = mock.Mock()
         create_2.side_effect = n_exc.NeutronException()
 
-        profile = self.create_service_profile(
+        profile = self._create_service_profile(
             service_type="TYPE",
             vendor=self.SERVICE_PROFILE_VENDOR)['service_profile']
         node = self.create_servicechain_node(
@@ -418,7 +423,7 @@ class NodeCompositionPluginTestCase(
 
     def test_multiple_nodes_update(self):
         update = self.driver.update = mock.Mock()
-        prof = self.create_service_profile(
+        prof = self._create_service_profile(
             service_type='LOADBALANCER',
             vendor=self.SERVICE_PROFILE_VENDOR)['service_profile']
         node = self.create_servicechain_node(
@@ -498,7 +503,7 @@ class NodeCompositionPluginTestCase(
         add = self.driver.update_policy_target_added = mock.Mock()
         rem = self.driver.update_policy_target_removed = mock.Mock()
 
-        prof = self.create_service_profile(
+        prof = self._create_service_profile(
             service_type='LOADBALANCER',
             vendor=self.SERVICE_PROFILE_VENDOR)['service_profile']
         node = self.create_servicechain_node(
@@ -541,7 +546,7 @@ class NodeCompositionPluginTestCase(
         add = self.driver.update_policy_target_added = mock.Mock()
         rem = self.driver.update_policy_target_removed = mock.Mock()
 
-        prof = self.create_service_profile(
+        prof = self._create_service_profile(
             service_type='LOADBALANCER',
             vendor=self.SERVICE_PROFILE_VENDOR)['service_profile']
         node = self.create_servicechain_node(
@@ -584,9 +589,9 @@ class NodeCompositionPluginTestCase(
             expected_res_status=201)['servicechain_spec']
         prs = self._create_redirect_prs(spec['id'])['policy_rule_set']
         self.create_policy_target_group(
-            provided_policy_rule_sets={prs['id']: ''})['policy_target_group']
+            provided_policy_rule_sets={prs['id']: ''})
         self.create_policy_target_group(
-            consumed_policy_rule_sets={prs['id']: ''})['policy_target_group']
+            consumed_policy_rule_sets={prs['id']: ''})
 
         # Verify notification issued for update in the driver
         # REVISIT(Magesh): When bug #1446587 is fixed, we should test by
@@ -598,6 +603,58 @@ class NodeCompositionPluginTestCase(
         self.sc_plugin.notify_chain_parameters_updated(
             plugin_context, instances[0]['id'])
         update_hook.assert_called_with(mock.ANY)
+
+    def test_context_no_management(self):
+        # Verify Context attributes for simple config
+        plugin_context = n_context.get_admin_context()
+        plugin_context.is_admin = False
+        plugin_context.is_advsvc = False
+        plugin_context.tenant_id = 'test-tenant'
+        node = self._create_profiled_servicechain_node()['servicechain_node']
+        spec = self.create_servicechain_spec(
+            nodes=[node['id']])['servicechain_spec']
+        provider = self.create_policy_target_group()['policy_target_group']
+        consumer = self.create_policy_target_group()['policy_target_group']
+
+        # Verify admin created SM is None
+        management = self.create_policy_target_group(
+            service_management=True, tenant_id='admin',
+            is_admin_context=True)['policy_target_group']
+        pc = self.create_policy_classifier()['policy_classifier']
+        instance = self.create_servicechain_instance(
+            provider_ptg_id=provider['id'], consumer_ptg_id=consumer['id'],
+            servicechain_specs=[spec['id']],
+            classifier_id=pc['id'])['servicechain_instance']
+        ctx = ncp_context.get_node_driver_context(
+            self.plugin, plugin_context, instance, node)
+
+        self.assertIsNone(ctx.management)
+
+        self.delete_policy_target_group(management['id'],
+                                        is_admin_context=True)
+        shared_management = self.create_policy_target_group(
+            service_management=True, tenant_id='admin',
+            is_admin_context=True, shared=True)['policy_target_group']
+        instance = self.create_servicechain_instance(
+            provider_ptg_id=provider['id'], consumer_ptg_id=consumer['id'],
+            servicechain_specs=[spec['id']],
+            classifier_id=pc['id'])['servicechain_instance']
+        # Now admin Service Management PTG is visible
+        ctx = ncp_context.get_node_driver_context(
+            self.plugin, plugin_context, instance, node)
+        self.assertEqual(shared_management['id'], ctx.management['id'])
+
+        # Private management overrides shared one
+        private_management = self.create_policy_target_group(
+            service_management=True,
+            is_admin_context=True)['policy_target_group']
+        instance = self.create_servicechain_instance(
+            provider_ptg_id=provider['id'], consumer_ptg_id=consumer['id'],
+            servicechain_specs=[spec['id']],
+            classifier_id=pc['id'])['servicechain_instance']
+        ctx = ncp_context.get_node_driver_context(
+            self.plugin, plugin_context, instance, node)
+        self.assertEqual(private_management['id'], ctx.management['id'])
 
 
 class AgnosticChainPlumberTestCase(NodeCompositionPluginTestCase):

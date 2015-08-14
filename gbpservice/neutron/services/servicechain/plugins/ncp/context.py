@@ -23,16 +23,18 @@ def get_gbp_plugin():
 
 def get_node_driver_context(sc_plugin, context, sc_instance,
                             current_node, original_node=None,
-                            management_group=None, service_targets=None):
+                            service_targets=None):
     specs = sc_plugin.get_servicechain_specs(
         context, filters={'id': sc_instance['servicechain_specs']})
     position = _calculate_node_position(specs, current_node['id'])
     provider, _ = _get_ptg_or_ep(
-                        context, sc_instance['provider_ptg_id'])
+        context, sc_instance['provider_ptg_id'])
     consumer, is_consumer_external = _get_ptg_or_ep(
-                        context, sc_instance['consumer_ptg_id'])
+        context, sc_instance['consumer_ptg_id'])
+    management, _ = _get_ptg_or_ep(context, sc_instance['management_ptg_id'])
     classifier = get_gbp_plugin().get_policy_classifier(
-                            context, sc_instance['classifier_id'])
+        context, sc_instance['classifier_id'])
+
     current_profile = sc_plugin.get_service_profile(
         context, current_node['service_profile_id'])
     original_profile = sc_plugin.get_service_profile(
@@ -51,7 +53,7 @@ def get_node_driver_context(sc_plugin, context, sc_instance,
                              current_service_profile=current_profile,
                              provider_group=provider,
                              consumer_group=consumer,
-                             management_group=management_group,
+                             management_group=management,
                              original_service_chain_node=original_node,
                              original_service_profile=original_profile,
                              service_targets=service_targets,
