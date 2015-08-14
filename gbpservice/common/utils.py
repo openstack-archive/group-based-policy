@@ -10,11 +10,22 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-from neutron.openstack.common import log as logging
-from oslo.utils import importutils
+import contextlib
+
+from oslo_log import log as logging
+from oslo_utils import importutils
 from stevedore import driver
 
 LOG = logging.getLogger(__name__)
+
+
+@contextlib.contextmanager
+def clean_session(session):
+    # Cleans session by expunging persisted object. This avoids inconsistency
+    # when multiple transactions are called with the same context.
+    session.expunge_all()
+    yield
+    session.expunge_all()
 
 
 def load_plugin(namespace, plugin):
