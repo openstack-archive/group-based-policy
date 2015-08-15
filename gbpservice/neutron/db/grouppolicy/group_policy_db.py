@@ -26,6 +26,7 @@ from neutron.openstack.common import log as logging
 from neutron.openstack.common import uuidutils
 from neutron.plugins.common import constants
 
+from gbpservice.neutron.db import gbp_quota_db as gquota
 from gbpservice.neutron.extensions import group_policy as gpolicy
 from gbpservice.neutron.services.grouppolicy.common import (
     constants as gp_constants)
@@ -48,7 +49,8 @@ class BaseSharedGbpResource(models_v2.HasId, models_v2.HasTenant,
     pass
 
 
-class PolicyTarget(model_base.BASEV2, models_v2.HasId, models_v2.HasTenant):
+class PolicyTarget(gquota.GBPQuotaBase, model_base.BASEV2, models_v2.HasId,
+                   models_v2.HasTenant):
     """Lowest unit of abstraction on which a policy is applied."""
     __tablename__ = 'gp_policy_targets'
     type = sa.Column(sa.String(15))
@@ -88,8 +90,8 @@ class PTGToPRSConsumingAssociation(model_base.BASEV2):
                                        primary_key=True)
 
 
-class PolicyTargetGroup(model_base.BASEV2, models_v2.HasId,
-                        models_v2.HasTenant):
+class PolicyTargetGroup(gquota.GBPQuotaBase, model_base.BASEV2,
+                        models_v2.HasId, models_v2.HasTenant):
     """It is a collection of policy_targets."""
     __tablename__ = 'gp_policy_target_groups'
     type = sa.Column(sa.String(15))
@@ -116,7 +118,8 @@ class PolicyTargetGroup(model_base.BASEV2, models_v2.HasId,
     shared = sa.Column(sa.Boolean)
 
 
-class L2Policy(model_base.BASEV2, models_v2.HasId, models_v2.HasTenant):
+class L2Policy(gquota.GBPQuotaBase, model_base.BASEV2, models_v2.HasId,
+               models_v2.HasTenant):
     """Represents a L2 Policy for a collection of policy_target_groups."""
     __tablename__ = 'gp_l2_policies'
     type = sa.Column(sa.String(15))
@@ -149,7 +152,8 @@ class ESToL3PAssociation(model_base.BASEV2):
                                   primary_key=True)
 
 
-class L3Policy(model_base.BASEV2, models_v2.HasId, models_v2.HasTenant):
+class L3Policy(gquota.GBPQuotaBase, model_base.BASEV2, models_v2.HasId,
+               models_v2.HasTenant):
     """Represents a L3 Policy with a non-overlapping IP address space."""
     __tablename__ = 'gp_l3_policies'
     type = sa.Column(sa.String(15))
@@ -180,8 +184,8 @@ class NetworkServiceParam(model_base.BASEV2, models_v2.HasId):
         nullable=False)
 
 
-class NetworkServicePolicy(
-    model_base.BASEV2, models_v2.HasId, models_v2.HasTenant):
+class NetworkServicePolicy(gquota.GBPQuotaBase, model_base.BASEV2,
+                           models_v2.HasId, models_v2.HasTenant):
     """Represents a Network Service Policy."""
     __tablename__ = 'gp_network_service_policies'
     name = sa.Column(sa.String(50))
@@ -217,7 +221,8 @@ class PolicyRuleActionAssociation(model_base.BASEV2):
                                  primary_key=True)
 
 
-class PolicyRule(model_base.BASEV2, models_v2.HasId, models_v2.HasTenant):
+class PolicyRule(gquota.GBPQuotaBase, model_base.BASEV2, models_v2.HasId,
+                 models_v2.HasTenant):
     """Represents a Group Policy Rule."""
     __tablename__ = 'gp_policy_rules'
     name = sa.Column(sa.String(50))
@@ -236,7 +241,7 @@ class PolicyRule(model_base.BASEV2, models_v2.HasId, models_v2.HasTenant):
     shared = sa.Column(sa.Boolean)
 
 
-class PolicyClassifier(model_base.BASEV2, models_v2.HasId,
+class PolicyClassifier(gquota.GBPQuotaBase, model_base.BASEV2, models_v2.HasId,
                        models_v2.HasTenant):
     """Represents a Group Policy Classifier."""
     __tablename__ = 'gp_policy_classifiers'
@@ -256,7 +261,8 @@ class PolicyClassifier(model_base.BASEV2, models_v2.HasId,
     shared = sa.Column(sa.Boolean)
 
 
-class PolicyAction(model_base.BASEV2, models_v2.HasId, models_v2.HasTenant):
+class PolicyAction(gquota.GBPQuotaBase, model_base.BASEV2, models_v2.HasId,
+                   models_v2.HasTenant):
     """Represents a Group Policy Action."""
     __tablename__ = 'gp_policy_actions'
     name = sa.Column(sa.String(50))
@@ -295,7 +301,8 @@ class EPToPRSConsumingAssociation(model_base.BASEV2):
         primary_key=True)
 
 
-class PolicyRuleSet(model_base.BASEV2, models_v2.HasTenant):
+class PolicyRuleSet(gquota.GBPQuotaBase, model_base.BASEV2,
+                    models_v2.HasTenant):
     """It is a collection of Policy rules."""
     __tablename__ = 'gp_policy_rule_sets'
     id = sa.Column(sa.String(36), primary_key=True,
@@ -325,7 +332,7 @@ class PolicyRuleSet(model_base.BASEV2, models_v2.HasTenant):
     shared = sa.Column(sa.Boolean)
 
 
-class NATPool(model_base.BASEV2, BaseSharedGbpResource):
+class NATPool(gquota.GBPQuotaBase, model_base.BASEV2, BaseSharedGbpResource):
     __tablename__ = 'gp_nat_pools'
     ip_version = sa.Column(sa.Integer, nullable=False)
     ip_pool = sa.Column(sa.String(64), nullable=False)
@@ -354,7 +361,8 @@ class EPToESAssociation(model_base.BASEV2):
         primary_key=True)
 
 
-class ExternalSegment(model_base.BASEV2, BaseSharedGbpResource):
+class ExternalSegment(gquota.GBPQuotaBase, model_base.BASEV2,
+                      BaseSharedGbpResource):
     __tablename__ = 'gp_external_segments'
     type = sa.Column(sa.String(15))
     __mapper_args__ = {
@@ -376,7 +384,8 @@ class ExternalSegment(model_base.BASEV2, BaseSharedGbpResource):
         cascade='all, delete-orphan')
 
 
-class ExternalPolicy(model_base.BASEV2, BaseSharedGbpResource):
+class ExternalPolicy(gquota.GBPQuotaBase, model_base.BASEV2,
+                     BaseSharedGbpResource):
     __tablename__ = 'gp_external_policies'
     external_segments = orm.relationship(
         EPToESAssociation,
@@ -389,6 +398,24 @@ class ExternalPolicy(model_base.BASEV2, BaseSharedGbpResource):
         EPToPRSConsumingAssociation,
         backref='consuming_external_policies',
         cascade='all, delete-orphan')
+
+
+gquota.DB_CLASS_TO_RESOURCE_NAMES[L3Policy.__name__] = 'l3_policy'
+gquota.DB_CLASS_TO_RESOURCE_NAMES[L2Policy.__name__] = 'l2_policy'
+gquota.DB_CLASS_TO_RESOURCE_NAMES[PolicyTargetGroup.__name__] = (
+    'policy_target_group')
+gquota.DB_CLASS_TO_RESOURCE_NAMES[PolicyTarget.__name__] = 'policy_target'
+gquota.DB_CLASS_TO_RESOURCE_NAMES[PolicyClassifier.__name__] = (
+    'policy_classifier')
+gquota.DB_CLASS_TO_RESOURCE_NAMES[PolicyAction.__name__] = 'policy_action'
+gquota.DB_CLASS_TO_RESOURCE_NAMES[PolicyRule.__name__] = 'policy_rule'
+gquota.DB_CLASS_TO_RESOURCE_NAMES[PolicyRuleSet.__name__] = 'policy_rule_set'
+gquota.DB_CLASS_TO_RESOURCE_NAMES[NetworkServicePolicy.__name__] = (
+    'network_service_policy')
+gquota.DB_CLASS_TO_RESOURCE_NAMES[ExternalPolicy.__name__] = 'external_policy'
+gquota.DB_CLASS_TO_RESOURCE_NAMES[ExternalSegment.__name__] = (
+    'external_segment')
+gquota.DB_CLASS_TO_RESOURCE_NAMES[NATPool.__name__] = 'nat_pool'
 
 
 class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,

@@ -12,8 +12,6 @@
 
 import abc
 
-import six
-
 from neutron.api import extensions
 from neutron.api.v2 import attributes as attr
 from neutron.api.v2 import resource_helper
@@ -21,7 +19,10 @@ from neutron.common import exceptions as nexc
 from neutron.common import log
 from neutron.openstack.common import log as logging
 from neutron.plugins.common import constants
+from neutron import quota
 from neutron.services import service_base
+from oslo.config import cfg
+import six
 
 import gbpservice.neutron.extensions
 from gbpservice.neutron.services.servicechain.common import constants as scc
@@ -228,6 +229,27 @@ RESOURCE_ATTRIBUTE_MAP = {
 }
 
 
+service_chain_quota_opts = [
+    cfg.IntOpt('quota_servicechain_node',
+               default=-1,
+               help=_('Number of Service Chain Nodes allowed per tenant. '
+                      'A negative value means unlimited.')),
+    cfg.IntOpt('quota_servicechain_spec',
+               default=-1,
+               help=_('Number of Service Chain Specs allowed per tenant. '
+                      'A negative value means unlimited.')),
+    cfg.IntOpt('quota_servicechain_instance',
+               default=-1,
+               help=_('Number of Service Chain Instances allowed per tenant. '
+                      'A negative value means unlimited.')),
+    cfg.IntOpt('quota_service_profile',
+               default=-1,
+               help=_('Number of Service Profiles allowed per tenant. '
+                      'A negative value means unlimited.')),
+]
+cfg.CONF.register_opts(service_chain_quota_opts, 'QUOTAS')
+
+
 class Servicechain(extensions.ExtensionDescriptor):
 
     @classmethod
@@ -255,6 +277,9 @@ class Servicechain(extensions.ExtensionDescriptor):
         plural_mappings = resource_helper.build_plural_mappings(
             {}, RESOURCE_ATTRIBUTE_MAP)
         attr.PLURALS.update(plural_mappings)
+        for resource_name in ['servicechain_node', 'servicechain_spec',
+                              'servicechain_instance', 'service_profile']:
+            quota.QUOTAS.register_resource_by_name(resource_name)
         return resource_helper.build_resource_info(plural_mappings,
                                                    RESOURCE_ATTRIBUTE_MAP,
                                                    constants.SERVICECHAIN)

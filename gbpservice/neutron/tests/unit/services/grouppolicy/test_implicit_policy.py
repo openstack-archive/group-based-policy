@@ -14,6 +14,9 @@
 from oslo.config import cfg
 import webob.exc
 
+from gbpservice.neutron.db import servicechain_db  # noqa
+from gbpservice.neutron.services.servicechain.plugins.ncp import (  # noqa
+    model)  # noqa
 from gbpservice.neutron.tests.unit.services.grouppolicy import (
     test_grouppolicy_plugin as test_plugin)
 
@@ -388,3 +391,63 @@ class TestImplicitExternalSegment(ImplicitPolicyTestCase):
                                       tenant_id='anothertenant')
         self.assertEqual('DefaultExternalSegmentAlreadyExists',
                          res['NeutronError']['type'])
+
+
+class TestQuotasForGBPWithImplicitDriver(ImplicitPolicyTestCase):
+
+    def setUp(self):
+        cfg.CONF.set_override('quota_l3_policy', 1, group='QUOTAS')
+        cfg.CONF.set_override('quota_l2_policy', 1, group='QUOTAS')
+        cfg.CONF.set_override('quota_policy_target_group', 1, group='QUOTAS')
+        cfg.CONF.set_override('quota_policy_target', 1, group='QUOTAS')
+        super(TestQuotasForGBPWithImplicitDriver, self).setUp()
+
+    def tearDown(self):
+        cfg.CONF.set_override('quota_l3_policy', -1, group='QUOTAS')
+        cfg.CONF.set_override('quota_l2_policy', -1, group='QUOTAS')
+        cfg.CONF.set_override('quota_policy_target_group', -1, group='QUOTAS')
+        cfg.CONF.set_override('quota_policy_target', -1, group='QUOTAS')
+        super(TestQuotasForGBPWithImplicitDriver, self).tearDown()
+
+    def test_quota_for_group_resources_implicit(self):
+        # The following tests that implicitly created L2P and L3P
+        # are counted as a part of the resource quota.
+        ptg_id = self.create_policy_target_group()['policy_target_group']['id']
+        self.create_policy_target(policy_target_group_id=ptg_id)
+        self.assertRaises(webob.exc.HTTPClientError,
+                          self.create_policy_target,
+                          policy_target_group_id=ptg_id)
+        self.assertRaises(webob.exc.HTTPClientError,
+                          self.create_policy_target_group)
+        self.assertRaises(webob.exc.HTTPClientError,
+                          self.create_l3_policy)
+        self.assertRaises(webob.exc.HTTPClientError,
+                          self.create_l2_policy)
+
+    def test_quota_for_implicit_l3p(self):
+        # The following tests that implicit L3P creation fails
+        # when resource quota is reached.
+        cfg.CONF.set_override('quota_policy_target_group', 2, group='QUOTAS')
+        cfg.CONF.set_override('quota_l2_policy', 2, group='QUOTAS')
+        l3p = self.create_l3_policy(name='test')
+        l3p_id = l3p['l3_policy']['id']
+        l2p = self.create_l2_policy(name='test', l3_policy_id=l3p_id)
+        l2p_id = l2p['l2_policy']['id']
+        self.create_policy_target_group(
+            l2_policy_id=l2p_id)['policy_target_group']['id']
+        self.assertRaises(webob.exc.HTTPClientError,
+                          self.create_policy_target_group)
+
+    def test_quota_for_implicit_l2p(self):
+        # The following tests that implicit L2P creation fails
+        # when resource quota is reached.
+        cfg.CONF.set_override('quota_policy_target_group', 2, group='QUOTAS')
+        cfg.CONF.set_override('quota_l3_policy', 2, group='QUOTAS')
+        l3p = self.create_l3_policy(name='test')
+        l3p_id = l3p['l3_policy']['id']
+        l2p = self.create_l2_policy(name='test', l3_policy_id=l3p_id)
+        l2p_id = l2p['l2_policy']['id']
+        self.create_policy_target_group(
+            l2_policy_id=l2p_id)['policy_target_group']['id']
+        self.assertRaises(webob.exc.HTTPClientError,
+                          self.create_policy_target_group)
