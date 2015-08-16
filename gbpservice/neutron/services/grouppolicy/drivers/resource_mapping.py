@@ -41,6 +41,7 @@ from gbpservice.neutron.services.grouppolicy.common import exceptions as exc
 
 
 LOG = logging.getLogger(__name__)
+DEFAULT_SG_PREFIX = 'gbp_%s'
 
 
 opts = [
@@ -1583,18 +1584,23 @@ class ResourceMappingDriver(api.PolicyDriver):
             self._delete_router(plugin_context, router_id)
 
     def _create_policy_rule_set_sg(self, context, sg_name_prefix):
+        return self._create_gbp_sg(
+            context._plugin_context, context.current['tenant_id'],
+            sg_name_prefix + '_' + context.current['name'])
+
+    def _create_gbp_sg(self, plugin_context, tenant_id, name, **kwargs):
         # This method sets up the attributes of security group
-        attrs = {'tenant_id': context.current['tenant_id'],
-                 'name': sg_name_prefix + '_' + context.current['name'],
+        attrs = {'tenant_id': tenant_id,
+                 'name': name,
                  'description': '',
                  'security_group_rules': ''}
-        sg = self._create_sg(context._plugin_context, attrs)
+        attrs.update(kwargs)
+        sg = self._create_sg(plugin_context, attrs)
         # Cleanup default rules
         for rule in self._core_plugin.get_security_group_rules(
-                context._plugin_context,
-                filters={'security_group_id': [sg['id']]}):
+                plugin_context, filters={'security_group_id': [sg['id']]}):
             self._core_plugin.delete_security_group_rule(
-                context._plugin_context, rule['id'])
+                plugin_context, rule['id'])
         return sg
 
     def _handle_policy_rule_sets(self, context):
@@ -2501,10 +2507,10 @@ class ResourceMappingDriver(api.PolicyDriver):
                                           cidr, tenant_id, unset=unset)
             if classifier['direction'] in [gconst.GP_DIRECTION_BI,
                                            in_out[pos - 1]]:
-                # TODO(ivar): IPv6 support
-                self._sg_egress_rule(context, sg, protocol, port_range,
-                                     '0.0.0.0/0', tenant_id,
-                                     unset=unset_egress)
+                for cidr in cidr_prov_cons[pos - 1]:
+                    self._sg_egress_rule(context, sg, protocol, port_range,
+                                         cidr, tenant_id,
+                                         unset=unset or unset_egress)
 
     def _apply_policy_rule_set_rules(self, context, policy_rule_set,
                                      policy_rules):
@@ -2551,7 +2557,7 @@ class ResourceMappingDriver(api.PolicyDriver):
 
     def _get_default_security_group(self, plugin_context, ptg_id,
                                     tenant_id):
-        port_name = 'gbp_%s' % ptg_id
+        port_name = DEFAULT_SG_PREFIX % ptg_id
         filters = {'name': [port_name], 'tenant_id': [tenant_id]}
         default_group = self._core_plugin.get_security_groups(
             plugin_context, filters)
@@ -2564,15 +2570,18 @@ class ResourceMappingDriver(api.PolicyDriver):
                                                  tenant_id)
         ip_v = {4: const.IPv4, 6: const.IPv6}
         if not sg_id:
-            port_name = 'gbp_%s' % ptg_id
-            attrs = {'name': port_name, 'tenant_id': tenant_id,
-                     'description': 'default'}
-            sg_id = self._create_sg(plugin_context, attrs)['id']
+            sg_name = DEFAULT_SG_PREFIX % ptg_id
+            sg = self._create_gbp_sg(plugin_context, tenant_id, sg_name,
+                                     description='default GBP security group')
+            sg_id = sg['id']
 
         for subnet in self._core_plugin.get_subnets(
                 plugin_context, filters={'id': subnets or []}):
             self._sg_rule(plugin_context, tenant_id, sg_id,
                           'ingress', cidr=subnet['cidr'],
+                          ethertype=ip_v[subnet['ip_version']])
+            self._sg_rule(plugin_context, tenant_id, sg_id,
+                          'egress', cidr=subnet['cidr'],
                           ethertype=ip_v[subnet['ip_version']])
         return sg_id
 
