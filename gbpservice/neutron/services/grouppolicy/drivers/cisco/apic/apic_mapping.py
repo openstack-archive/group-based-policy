@@ -30,6 +30,7 @@ from oslo_config import cfg
 from oslo_log import log as logging
 
 from gbpservice.neutron.db.grouppolicy import group_policy_mapping_db as gpdb
+from gbpservice.neutron.extensions import driver_proxy_group as proxy_group
 from gbpservice.neutron.extensions import group_policy as gpolicy
 from gbpservice.neutron.services.grouppolicy.common import constants as g_const
 from gbpservice.neutron.services.grouppolicy.common import exceptions as gpexc
@@ -180,7 +181,6 @@ class ApicMappingDriver(api.ResourceMappingDriver):
         context._plugin = self.gbp_plugin
         context._plugin_context = context
 
-        l2_policy_id = l2p['id']
         ptg_tenant = self._tenant_by_sharing_policy(ptg or l2p)
         if ptg:
             endpoint_group_name = self.name_mapper.policy_target_group(
@@ -198,7 +198,6 @@ class ApicMappingDriver(api.ResourceMappingDriver):
                    'mac_address': port['mac_address'],
                    'app_profile_name': str(
                        self.apic_manager.app_profile_name),
-                   'l2_policy_id': l2_policy_id,
                    'tenant_id': port['tenant_id'],
                    'host': port[portbindings.HOST_ID],
                    'ptg_tenant': self.apic_manager.apic.fvTenant.name(
@@ -290,6 +289,14 @@ class ApicMappingDriver(api.ResourceMappingDriver):
     def create_policy_target_group_precommit(self, context):
         if context.current['subnets']:
             raise ExplicitSubnetAssociationNotSupported()
+        if context.current.get('proxied_group_id'):
+            # goes in same L2P as proxied group
+            proxied = context._plugin.get_policy_target_group(
+                context._plugin_context, context.current['proxied_group_id'])
+            db_group = context._plugin._get_policy_target_group(
+                context._plugin_context, context.current['id'])
+            db_group.l2_policy_id = proxied['l2_policy_id']
+            context.current['l2_policy_id'] = proxied['l2_policy_id']
 
     def create_policy_target_group_postcommit(self, context):
         if not context.current['subnets']:
@@ -424,6 +431,34 @@ class ApicMappingDriver(api.ResourceMappingDriver):
                                                    context.current['id'])
 
         self.apic_manager.delete_epg_for_network(tenant, ptg)
+        # Place back proxied PTG, if any
+        if context.current.get('proxied_group_id'):
+            proxied = context._plugin.get_policy_target_group(
+                context._plugin_context, context.current['proxied_group_id'])
+            ptg_name = self.name_mapper.policy_target_group(
+                context, proxied['id'])
+            l2_policy = self.name_mapper.l2_policy(
+                context, context.current['l2_policy_id'])
+            l2_policy_object = context._plugin.get_l2_policy(
+                context._plugin_context, context.current['l2_policy_id'])
+            bd_owner = self._tenant_by_sharing_policy(l2_policy_object)
+            tenant = self._tenant_by_sharing_policy(proxied)
+            self.apic_manager.ensure_epg_created(
+                tenant, ptg_name, bd_owner=bd_owner, bd_name=l2_policy)
+
+            # Delete shadow BD
+            shadow_bd = self.name_mapper.policy_target_group(
+                context, proxied['id'], prefix=SHADOW_PREFIX)
+            self.apic_manager.delete_bd_on_apic(tenant, shadow_bd)
+        # Delete PTG specific subnets
+        subnets = self._core_plugin.get_subnets(
+            context._plugin_context, {'name': [APIC_OWNED +
+                                               context.current['id']]})
+        self.gbp_plugin._remove_subnets_from_policy_target_groups(
+            nctx.get_admin_context(), [x['id'] for x in subnets])
+        for subnet in subnets:
+            self._cleanup_subnet(context._plugin_context, subnet['id'],
+                                 None)
 
     def delete_l2_policy_postcommit(self, context):
         super(ApicMappingDriver, self).delete_l2_policy_postcommit(context)
@@ -1176,18 +1211,45 @@ class ApicMappingDriver(api.ResourceMappingDriver):
         with lockutils.lock(l2p_id, external=True):
             subs = self._get_l2p_subnets(context._plugin_context, l2p_id)
             subs = set([x['id'] for x in subs])
-            added = None
+            added = []
+            # Always add a new subnet to L3 proxies
+            is_proxy = bool(context.current.get('proxied_group_id'))
+            force_add = force_add or is_proxy
             if not subs or force_add:
                 l2p = context._plugin.get_l2_policy(context._plugin_context,
                                                     l2p_id)
+                name = (APIC_OWNED + (context.current['id'] if is_proxy else
+                        l2p['name']))
                 added = super(
                     ApicMappingDriver, self)._use_implicit_subnet(
-                        context, mark_as_owned=False,
-                        subnet_specifics={'name': APIC_OWNED + l2p['name']})
-                subs.add(added['id'])
+                        context, subnet_specifics={'name': name},
+                        add_to_ptg=False, is_proxy=is_proxy)
+                subs |= set([x['id'] for x in added])
             context.add_subnets(subs - set(context.current['subnets']))
-            if added:
-                self.process_subnet_added(context._plugin_context, added)
+            for subnet in added:
+                self.process_subnet_added(context._plugin_context, subnet)
+
+    def _stitch_proxy_ptg_to_l3p(self, context, l3p, subnet_ids):
+        """Stitch proxy PTGs properly."""
+        # Proxied PTG is moved to a shadow BD (no routing, learning ON?)
+        tenant = self._tenant_by_sharing_policy(context.current)
+        ctx_owner = self._tenant_by_sharing_policy(l3p)
+        l3_policy_name = self.name_mapper.l3_policy(context, l3p['id'])
+        proxied = context._plugin.get_policy_target_group(
+            context._plugin_context, context.current['proxied_group_id'])
+        bd_name = self.name_mapper.policy_target_group(
+                context, proxied['id'], prefix=SHADOW_PREFIX)
+        ptg_name = self.name_mapper.policy_target_group(context, proxied['id'])
+        is_l2 = context.current['proxy_type'] == proxy_group.PROXY_TYPE_L2
+        with self.apic_manager.apic.transaction(None) as trs:
+            # Create shadow BD to host the proxied EPG
+            self.apic_manager.ensure_bd_created_on_apic(
+                tenant, bd_name, ctx_owner=ctx_owner, ctx_name=l3_policy_name,
+                allow_broadcast=is_l2, unicast_route=False, transaction=trs)
+            # Move current PTG to different BD
+            self.apic_manager.ensure_epg_created(
+                tenant, ptg_name, bd_owner=tenant, bd_name=bd_name,
+                transaction=trs)
 
     def _sync_epg_subnets(self, plugin_context, l2p):
         l2p_subnets = [x['id'] for x in

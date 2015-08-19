@@ -1510,7 +1510,7 @@ class ResourceMappingDriver(api.PolicyDriver, local_api.LocalAPI):
                                                  router_id, interface_info)
 
     def _use_implicit_subnet(self, context, is_proxy=False, prefix_len=None,
-                             mark_as_owned=True, subnet_specifics=None):
+                             add_to_ptg=True, subnet_specifics=None):
         # REVISIT(rkukura): This is a temporary allocation algorithm
         # that depends on an exception being raised when the subnet
         # being created is already in use.
@@ -1533,15 +1533,16 @@ class ResourceMappingDriver(api.PolicyDriver, local_api.LocalAPI):
                 context, l2p, l3p, [x['cidr'] for x in subnets],
                 subnet_specifics)
             # Unroll the generator
-            subnet_ids = [x['id'] for x in generator]
+            subnets = [x for x in generator]
+            subnet_ids = [x['id'] for x in subnets]
             # Stitch the Proxy
             self._stitch_proxy_ptg_to_l3p(context, l3p, subnet_ids)
-            if mark_as_owned:
-                for subnet_id in subnet_ids:
-                    self._mark_subnet_owned(
-                        context._plugin_context.session, subnet_id)
+            for subnet_id in subnet_ids:
+                self._mark_subnet_owned(
+                    context._plugin_context.session, subnet_id)
+                if add_to_ptg:
                     context.add_subnet(subnet_id)
-            return
+            return subnets
         else:
             # In case of non proxy PTG or L3 Proxy
             LOG.debug("allocate subnets for L2 Proxy or normal PTG %s",
@@ -1569,19 +1570,18 @@ class ResourceMappingDriver(api.PolicyDriver, local_api.LocalAPI):
                     subnet_specifics)
                 for subnet in generator:
                     subnet_id = subnet['id']
-                    if l3p['routers']:
-                        if is_proxy:
-                            self._stitch_proxy_ptg_to_l3p(context, l3p,
-                                                          [subnet_id])
-                        else:
-                            self._stitch_ptg_to_l3p(context, l3p, [subnet_id])
+                    if is_proxy:
+                        self._stitch_proxy_ptg_to_l3p(context, l3p,
+                                                      [subnet_id])
+                    elif l3p['routers']:
+                        self._stitch_ptg_to_l3p(context, l3p, [subnet_id])
 
-                    if mark_as_owned:
-                        self._mark_subnet_owned(
-                            context._plugin_context.session, subnet_id)
+                    self._mark_subnet_owned(
+                        context._plugin_context.session, subnet_id)
+                    if add_to_ptg:
                         context.add_subnet(subnet_id)
                     # End after the first valid subnet
-                    return subnet
+                    return [subnet]
         # No subnet is available for this PTG
         raise exc.NoSubnetAvailable()
 
