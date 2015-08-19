@@ -77,7 +77,7 @@ class ApicMappingTestCase(
         test_rmd.ResourceMappingTestCase,
         mocked.ControllerMixin, mocked.ConfigMixin):
 
-    def setUp(self):
+    def setUp(self, sc_plugin=None):
         self.agent_conf = AGENT_CONF
         cfg.CONF.register_opts(sg_cfg.security_group_opts, 'SECURITYGROUP')
         config.cfg.CONF.set_override('enable_security_group', False,
@@ -103,7 +103,8 @@ class ApicMappingTestCase(
         nova_client.return_value = vm
         super(ApicMappingTestCase, self).setUp(
             policy_drivers=['implicit_policy', 'apic'],
-            core_plugin=test_plugin.PLUGIN_NAME, ml2_options=ml2_opts)
+            core_plugin=test_plugin.PLUGIN_NAME,
+            ml2_options=ml2_opts, sc_plugin=sc_plugin)
         engine = db_api.get_engine()
         model_base.BASEV2.metadata.create_all(engine)
         plugin = manager.NeutronManager.get_plugin()
@@ -734,6 +735,38 @@ class TestL3Policy(ApicMappingTestCase):
             external_segments={es['id']: ['192.168.0.2', '192.168.0.3']})
         self.assertEqual('OnlyOneAddressIsAllowedPerExternalSegment',
                          res['NeutronError']['type'])
+
+    def test_router_interface_no_gateway(self):
+        self._mock_external_dict([('supported', '192.168.0.2/24')])
+        es = self.create_external_segment(
+            name='supported', cidr='192.168.0.0/24')['external_segment']
+        l3p = self.create_l3_policy(
+            external_segments={es['id']: ['192.168.0.2']},
+            expected_res_status=201)['l3_policy']
+        l2p = self.create_l2_policy(l3_policy_id=l3p['id'])['l2_policy']
+        ptg = self.create_policy_target_group(
+            l2_policy_id=l2p['id'])['policy_target_group']
+
+        l3p = self.show_l3_policy(l3p['id'])['l3_policy']
+        self.assertEqual(1, len(l3p['routers']))
+
+        subnet = self._show_subnet(ptg['subnets'][0])['subnet']
+        router_ports = self._list(
+            'ports',
+            query_params='device_id=%s' % l3p['routers'][0])['ports']
+        self.assertEqual(2, len(router_ports))
+
+        for port in router_ports:
+            self.assertEqual(1, len(port['fixed_ips']))
+            self.assertNotEqual(subnet['gateway_ip'],
+                                port['fixed_ips'][0]['ip_address'])
+
+        # One of the two ports is in subnet
+        self.assertNotEqual(router_ports[0]['fixed_ips'][0]['subnet_id'],
+                            router_ports[1]['fixed_ips'][0]['subnet_id'])
+        self.assertTrue(
+            router_ports[0]['fixed_ips'][0]['subnet_id'] == subnet['id'] or
+            router_ports[1]['fixed_ips'][0]['subnet_id'] == subnet['id'])
 
     def _test_l3p_plugged_to_es_at_creation(self, shared_es, shared_l3p):
         # Verify L3P is correctly plugged to ES on APIC during create
