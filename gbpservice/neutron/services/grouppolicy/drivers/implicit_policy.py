@@ -17,6 +17,7 @@ from oslo_log import log as logging
 import sqlalchemy as sa
 
 from gbpservice.neutron.extensions import driver_proxy_group as pg_ext
+from gbpservice.neutron.extensions import group_policy as gbp_ext
 from gbpservice.neutron.services.grouppolicy import (
     group_policy_driver_api as api)
 from gbpservice.neutron.services.grouppolicy.common import exceptions as exc
@@ -200,7 +201,12 @@ class ImplicitPolicyDriver(api.PolicyDriver):
 
     def _cleanup_l2_policy(self, context, l2p_id):
         if self._l2_policy_is_owned(context._plugin_context.session, l2p_id):
-            context._plugin.delete_l2_policy(context._plugin_context, l2p_id)
+            try:
+                context._plugin.delete_l2_policy(context._plugin_context,
+                                                 l2p_id)
+            except gbp_ext.L2PolicyInUse:
+                LOG.info(_("Cannot delete implicit L2 Policy %s because it's"
+                           "in use."), l2p_id)
 
     def _use_implicit_l3_policy(self, context):
         filter = {'tenant_id': [context.current['tenant_id']],
