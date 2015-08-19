@@ -91,6 +91,25 @@ class ResourceMappingTestCase(test_plugin.GroupPolicyPluginTestCase):
     def get_plugin_context(self):
         return self._plugin, self._context
 
+    def _verify_ptg_delete_cleanup_chain(self, ptg_id):
+        self.delete_policy_target_group(
+            ptg_id, expected_res_status=webob.exc.HTTPNoContent.code)
+        sc_instance_list_req = self.new_list_request(SERVICECHAIN_INSTANCES)
+        res = sc_instance_list_req.get_response(self.ext_api)
+        sc_instances = self.deserialize(self.fmt, res)
+        self.assertEqual(len(sc_instances['servicechain_instances']), 0)
+
+    def _create_provider_consumer_ptgs(self, prs_id=None):
+        policy_rule_set_dict = {prs_id: None} if prs_id else {}
+        provider_ptg = self.create_policy_target_group(
+            name="ptg1", provided_policy_rule_sets=policy_rule_set_dict)
+        provider_ptg_id = provider_ptg['policy_target_group']['id']
+        consumer_ptg = self.create_policy_target_group(
+            name="ptg2",
+            consumed_policy_rule_sets=policy_rule_set_dict)
+        consumer_ptg_id = consumer_ptg['policy_target_group']['id']
+        return (provider_ptg_id, consumer_ptg_id)
+
     def _create_network(self, fmt, name, admin_state_up, **kwargs):
         """Override the routine for allowing the router:external attribute."""
         # attributes containing a colon should be passed with
@@ -329,34 +348,35 @@ class ResourceMappingTestCase(test_plugin.GroupPolicyPluginTestCase):
                     filter_by(policy_target_group_id=ptg_id).
                     all())
 
-    def _create_service_profile(self, node_type='LOADBALANCER'):
-        data = {'service_profile': {'service_type': node_type,
-                                    'tenant_id': self._tenant_id}}
-        scn_req = self.new_create_request(SERVICE_PROFILES, data, self.fmt)
-        node = self.deserialize(self.fmt, scn_req.get_response(self.ext_api))
-        scn_id = node['service_profile']['id']
-        return scn_id
+    def _create_service_profile(self, node_type='LOADBALANCER', shared=False):
+        data = {'service_type': node_type, 'shared': shared}
+        profile = self.create_service_profile(expected_res_status=201,
+                                              is_admin_context=shared,
+                                              **data)
+        scp_id = profile['service_profile']['id']
+        return scp_id
 
-    def _create_servicechain_node(self, node_type="LOADBALANCER"):
-        profile_id = self._create_service_profile(node_type)
-        data = {'servicechain_node': {'service_profile_id': profile_id,
-                                      'tenant_id': self._tenant_id,
-                                      'config': "{}"}}
-        scn_req = self.new_create_request(SERVICECHAIN_NODES, data, self.fmt)
-        node = self.deserialize(self.fmt, scn_req.get_response(self.ext_api))
+    def _create_servicechain_node(self, node_type="LOADBALANCER",
+                                  shared=False):
+        profile_id = self._create_service_profile(node_type, shared=shared)
+        data = {'service_profile_id': profile_id,
+                'config': "{}", 'shared': shared}
+        node = self.create_servicechain_node(expected_res_status=201,
+                                             is_admin_context=shared,
+                                             **data)
         scn_id = node['servicechain_node']['id']
         return scn_id
 
-    def _create_servicechain_spec(self, node_types=[]):
-        if not node_types:
-            node_types = ['LOADBALANCER']
+    def _create_servicechain_spec(self, node_types=None, shared=False):
+        node_types = node_types or ['LOADBALANCER']
         node_ids = []
         for node_type in node_types:
-            node_ids.append(self._create_servicechain_node(node_type))
-        data = {'servicechain_spec': {'tenant_id': self._tenant_id,
-                                      'nodes': node_ids}}
-        scs_req = self.new_create_request(SERVICECHAIN_SPECS, data, self.fmt)
-        spec = self.deserialize(self.fmt, scs_req.get_response(self.ext_api))
+            node_ids.append(self._create_servicechain_node(
+                node_type, shared=shared))
+        data = {'nodes': node_ids, 'shared': shared}
+        spec = self.create_servicechain_spec(expected_res_status=201,
+                                             is_admin_context=shared,
+                                             **data)
         scs_id = spec['servicechain_spec']['id']
         return scs_id
 
@@ -1698,17 +1718,6 @@ class TestPolicyRuleSet(ResourceMappingTestCase):
 
         self._verify_prs_rules(policy_rule_set_id)
 
-    def _create_provider_consumer_ptgs(self, prs_id=None):
-        policy_rule_set_dict = {prs_id: None} if prs_id else {}
-        provider_ptg = self.create_policy_target_group(
-            name="ptg1", provided_policy_rule_sets=policy_rule_set_dict)
-        provider_ptg_id = provider_ptg['policy_target_group']['id']
-        consumer_ptg = self.create_policy_target_group(
-            name="ptg2",
-            consumed_policy_rule_sets=policy_rule_set_dict)
-        consumer_ptg_id = consumer_ptg['policy_target_group']['id']
-        return (provider_ptg_id, consumer_ptg_id)
-
     def _assert_proper_chain_instance(self, sc_instance, provider_ptg_id,
                                       consumer_ptg_id, scs_id_list,
                                       classifier_id=None):
@@ -1717,14 +1726,6 @@ class TestPolicyRuleSet(ResourceMappingTestCase):
         self.assertEqual(scs_id_list, sc_instance['servicechain_specs'])
         if classifier_id:
             self.assertEqual(sc_instance['classifier_id'], classifier_id)
-
-    def _verify_ptg_delete_cleanup_chain(self, ptg_id):
-        self.delete_policy_target_group(
-            ptg_id, expected_res_status=webob.exc.HTTPNoContent.code)
-        sc_instance_list_req = self.new_list_request(SERVICECHAIN_INSTANCES)
-        res = sc_instance_list_req.get_response(self.ext_api)
-        sc_instances = self.deserialize(self.fmt, res)
-        self.assertEqual(len(sc_instances['servicechain_instances']), 0)
 
     def _verify_ptg_prs_unset_cleansup_chain(self, ptg_id, prs_ids):
         self.update_policy_target_group(

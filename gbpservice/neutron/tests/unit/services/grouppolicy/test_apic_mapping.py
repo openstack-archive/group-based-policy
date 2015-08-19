@@ -77,7 +77,7 @@ class ApicMappingTestCase(
         test_rmd.ResourceMappingTestCase,
         mocked.ControllerMixin, mocked.ConfigMixin):
 
-    def setUp(self):
+    def setUp(self, sc_plugin=None):
         self.agent_conf = AGENT_CONF
         cfg.CONF.register_opts(sg_cfg.security_group_opts, 'SECURITYGROUP')
         config.cfg.CONF.set_override('enable_security_group', False,
@@ -103,7 +103,8 @@ class ApicMappingTestCase(
         nova_client.return_value = vm
         super(ApicMappingTestCase, self).setUp(
             policy_drivers=['implicit_policy', 'apic'],
-            core_plugin=test_plugin.PLUGIN_NAME, ml2_options=ml2_opts)
+            core_plugin=test_plugin.PLUGIN_NAME,
+            ml2_options=ml2_opts, sc_plugin=sc_plugin)
         engine = db_api.get_engine()
         model_base.BASEV2.metadata.create_all(engine)
         plugin = manager.NeutronManager.get_plugin()
@@ -145,15 +146,16 @@ class ApicMappingTestCase(
             self.driver.apic_manager.ext_net_dict.update(
                 self._build_external_dict(x[0], x[1]))
 
-    def _check_call_list(self, expected, observed):
+    def _check_call_list(self, expected, observed, check_all=True):
         for call in expected:
             self.assertTrue(call in observed,
                             msg='Call not found, expected:\n%s\nobserved:'
                                 '\n%s' % (str(call), str(observed)))
             observed.remove(call)
-        self.assertFalse(
-            len(observed),
-            msg='There are more calls than expected: %s' % str(observed))
+        if check_all:
+            self.assertFalse(
+                len(observed),
+                msg='There are more calls than expected: %s' % str(observed))
 
     def _create_simple_policy_rule(self, direction='bi', protocol='tcp',
                                    port_range=80, shared=False,
