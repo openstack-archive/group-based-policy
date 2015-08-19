@@ -163,6 +163,8 @@ class Gbp_Config(object):
             elif '_' in arg:
                 arg = string.replace(arg, '_', '-')
                 cmd = cmd + " --" + "".join('%s=%s' % (arg, value))
+            else:
+                cmd = cmd + " --" + "".join('%s=%s' % (arg, value))
         _log.info(cmd)
         # Execute the cmd
         cmd_out = getoutput(cmd)
