@@ -91,6 +91,17 @@ class ResourceMappingTestCase(test_plugin.GroupPolicyPluginTestCase):
     def get_plugin_context(self):
         return self._plugin, self._context
 
+    def _create_provider_consumer_ptgs(self, prs_id=None):
+        policy_rule_set_dict = {prs_id: None} if prs_id else {}
+        provider_ptg = self.create_policy_target_group(
+            name="ptg1", provided_policy_rule_sets=policy_rule_set_dict)
+        provider_ptg_id = provider_ptg['policy_target_group']['id']
+        consumer_ptg = self.create_policy_target_group(
+            name="ptg2",
+            consumed_policy_rule_sets=policy_rule_set_dict)
+        consumer_ptg_id = consumer_ptg['policy_target_group']['id']
+        return (provider_ptg_id, consumer_ptg_id)
+
     def _create_network(self, fmt, name, admin_state_up, **kwargs):
         """Override the routine for allowing the router:external attribute."""
         # attributes containing a colon should be passed with
@@ -337,24 +348,26 @@ class ResourceMappingTestCase(test_plugin.GroupPolicyPluginTestCase):
         scn_id = node['service_profile']['id']
         return scn_id
 
-    def _create_servicechain_node(self, node_type="LOADBALANCER"):
+    def _create_servicechain_node(self, node_type="LOADBALANCER",
+                                  shared=False):
         profile_id = self._create_service_profile(node_type)
         data = {'servicechain_node': {'service_profile_id': profile_id,
                                       'tenant_id': self._tenant_id,
-                                      'config': "{}"}}
+                                      'config': "{}",
+                                      'shared': shared}}
         scn_req = self.new_create_request(SERVICECHAIN_NODES, data, self.fmt)
         node = self.deserialize(self.fmt, scn_req.get_response(self.ext_api))
         scn_id = node['servicechain_node']['id']
         return scn_id
 
-    def _create_servicechain_spec(self, node_types=[]):
-        if not node_types:
-            node_types = ['LOADBALANCER']
+    def _create_servicechain_spec(self, node_types=None, shared=False):
+        node_types = node_types or ['LOADBALANCER']
         node_ids = []
         for node_type in node_types:
             node_ids.append(self._create_servicechain_node(node_type))
         data = {'servicechain_spec': {'tenant_id': self._tenant_id,
-                                      'nodes': node_ids}}
+                                      'nodes': node_ids,
+                                      'shared': shared}}
         scs_req = self.new_create_request(SERVICECHAIN_SPECS, data, self.fmt)
         spec = self.deserialize(self.fmt, scs_req.get_response(self.ext_api))
         scs_id = spec['servicechain_spec']['id']
@@ -1697,17 +1710,6 @@ class TestPolicyRuleSet(ResourceMappingTestCase):
             udp_rules.extend([r for r in sg_rules if r['protocol'] == 'udp'])
 
         self._verify_prs_rules(policy_rule_set_id)
-
-    def _create_provider_consumer_ptgs(self, prs_id=None):
-        policy_rule_set_dict = {prs_id: None} if prs_id else {}
-        provider_ptg = self.create_policy_target_group(
-            name="ptg1", provided_policy_rule_sets=policy_rule_set_dict)
-        provider_ptg_id = provider_ptg['policy_target_group']['id']
-        consumer_ptg = self.create_policy_target_group(
-            name="ptg2",
-            consumed_policy_rule_sets=policy_rule_set_dict)
-        consumer_ptg_id = consumer_ptg['policy_target_group']['id']
-        return (provider_ptg_id, consumer_ptg_id)
 
     def _assert_proper_chain_instance(self, sc_instance, provider_ptg_id,
                                       consumer_ptg_id, scs_id_list,
