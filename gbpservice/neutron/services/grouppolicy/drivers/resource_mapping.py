@@ -58,20 +58,13 @@ group_policy_opts = [
                help=_("Name of the Tenant that will own the service chain "
                       "instances for this driver. Leave empty for provider "
                       "owned chains."), default=''),
-
-]
-
-cfg.CONF.register_opts(group_policy_opts, "resource_mapping")
-
-
-opts = [
     cfg.ListOpt('dns_nameservers',
                 default=[],
                 help=_("List of DNS nameservers to be configured for the "
                        "PTG subnets")),
 ]
 
-cfg.CONF.register_opts(opts, "resource_mapping")
+cfg.CONF.register_opts(group_policy_opts, "resource_mapping")
 
 
 class OwnedPort(model_base.BASEV2):
@@ -466,6 +459,7 @@ class ResourceMappingDriver(api.PolicyDriver, local_api.LocalAPI):
         self._reject_cross_tenant_ptg_l2p(context)
         self._validate_ptg_subnets(context)
         self._validate_nat_pool_for_nsp(context)
+        self._validate_ptg_prss(context, context.current)
         self._validate_proxy_ptg(context)
         self._validate_ptg_prss(context, context.current)
 
@@ -653,16 +647,15 @@ class ResourceMappingDriver(api.PolicyDriver, local_api.LocalAPI):
         if set(context.original['subnets']) - set(context.current['subnets']):
             raise exc.PolicyTargetGroupSubnetRemovalNotSupported()
 
-        new_subnets = list(set(context.current['subnets']) -
-                           set(context.original['subnets']))
-        self._validate_ptg_subnets(context, new_subnets)
-        self._reject_cross_tenant_ptg_l2p(context)
         self._validate_ptg_subnets(context, context.current['subnets'])
         self._validate_ptg_prss(context, context.current)
-
+        self._reject_cross_tenant_ptg_l2p(context)
         if (context.current['network_service_policy_id'] !=
             context.original['network_service_policy_id']):
             self._validate_nat_pool_for_nsp(context)
+        self._stash_ptg_modified_chains(context)
+
+    def _stash_ptg_modified_chains(self, context):
         #Update service chain instance when any ruleset is changed
         orig_provided_policy_rule_sets = context.original[
             'provided_policy_rule_sets']
@@ -733,15 +726,7 @@ class ResourceMappingDriver(api.PolicyDriver, local_api.LocalAPI):
             set(curr_consumed_policy_rule_sets) - set(
                 orig_consumed_policy_rule_sets))
 
-        old_nsp = context.original.get("network_service_policy_id")
-        new_nsp = context.current.get("network_service_policy_id")
-        if old_nsp != new_nsp:
-            if old_nsp:
-                self._cleanup_network_service_policy(
-                                        context,
-                                        context.original)
-            if new_nsp:
-                self._handle_network_service_policy(context)
+        self._handle_nsp_update_on_ptg(context)
 
         # Only the ones set in context in precommit operation will be deleted
         self._cleanup_redirect_action(context)
@@ -782,6 +767,17 @@ class ResourceMappingDriver(api.PolicyDriver, local_api.LocalAPI):
         self._update_default_security_group(
             context._plugin_context, context.current['id'],
             context.current['tenant_id'], subnets=new_subnets)
+
+    def _handle_nsp_update_on_ptg(self, context):
+        old_nsp = context.original.get("network_service_policy_id")
+        new_nsp = context.current.get("network_service_policy_id")
+        if old_nsp != new_nsp:
+            if old_nsp:
+                self._cleanup_network_service_policy(
+                                        context,
+                                        context.original)
+            if new_nsp:
+                self._handle_network_service_policy(context)
 
     @log.log
     def delete_policy_target_group_precommit(self, context):
@@ -968,6 +964,9 @@ class ResourceMappingDriver(api.PolicyDriver, local_api.LocalAPI):
             self._update_policy_rule_sg_rules(context, pr_sets,
                 policy_rule, context.original, context.current)
 
+        self._handle_classifier_update_notification(context)
+
+    def _handle_classifier_update_notification(self, context):
         # Invoke Service chain update notify hook if protocol or port or
         # direction is updated. The SC side will have to reclassify the chain
         # and update the traffic steering programming
@@ -1456,7 +1455,7 @@ class ResourceMappingDriver(api.PolicyDriver, local_api.LocalAPI):
         l3p = context._plugin.get_l3_policy(context._plugin_context, l3p_id)
         return l3p['routers'][0]
 
-    def _use_implicit_port(self, context):
+    def _use_implicit_port(self, context, subnets=None):
         ptg_id = context.current['policy_target_group_id']
         ptg = context._plugin.get_policy_target_group(
             context._plugin_context, ptg_id)
@@ -1465,8 +1464,9 @@ class ResourceMappingDriver(api.PolicyDriver, local_api.LocalAPI):
         sg_id = self._get_default_security_group(
             context._plugin_context, ptg_id, context.current['tenant_id'])
         last = exc.NoSubnetAvailable()
-        for subnet in self._get_subnets(context._plugin_context,
-                                        {'id': ptg['subnets']}):
+        subnets = subnets or self._get_subnets(context._plugin_context,
+                                               {'id': ptg['subnets']})
+        for subnet in subnets:
             try:
                 attrs = {'tenant_id': context.current['tenant_id'],
                          'name': 'pt_' + context.current['name'],
@@ -1538,7 +1538,7 @@ class ResourceMappingDriver(api.PolicyDriver, local_api.LocalAPI):
                                                  router_id, interface_info)
 
     def _use_implicit_subnet(self, context, is_proxy=False, prefix_len=None,
-                             mark_as_owned=True, subnet_specifics=None):
+                             add_to_ptg=True, subnet_specifics=None):
         # REVISIT(rkukura): This is a temporary allocation algorithm
         # that depends on an exception being raised when the subnet
         # being created is already in use.
@@ -1561,15 +1561,16 @@ class ResourceMappingDriver(api.PolicyDriver, local_api.LocalAPI):
                 context, l2p, l3p, [x['cidr'] for x in subnets],
                 subnet_specifics)
             # Unroll the generator
-            subnet_ids = [x['id'] for x in generator]
+            subnets = [x for x in generator]
+            subnet_ids = [x['id'] for x in subnets]
             # Stitch the Proxy
             self._stitch_proxy_ptg_to_l3p(context, l3p, subnet_ids)
-            if mark_as_owned:
-                for subnet_id in subnet_ids:
-                    self._mark_subnet_owned(
-                        context._plugin_context.session, subnet_id)
+            for subnet_id in subnet_ids:
+                self._mark_subnet_owned(
+                    context._plugin_context.session, subnet_id)
+                if add_to_ptg:
                     context.add_subnet(subnet_id)
-            return
+            return subnets
         else:
             # In case of non proxy PTG or L3 Proxy
             LOG.debug("allocate subnets for L2 Proxy or normal PTG %s",
@@ -1597,19 +1598,18 @@ class ResourceMappingDriver(api.PolicyDriver, local_api.LocalAPI):
                     subnet_specifics)
                 for subnet in generator:
                     subnet_id = subnet['id']
-                    if l3p['routers']:
-                        if is_proxy:
-                            self._stitch_proxy_ptg_to_l3p(context, l3p,
-                                                          [subnet_id])
-                        else:
-                            self._stitch_ptg_to_l3p(context, l3p, [subnet_id])
+                    if is_proxy:
+                        self._stitch_proxy_ptg_to_l3p(context, l3p,
+                                                      [subnet_id])
+                    elif l3p['routers']:
+                        self._stitch_ptg_to_l3p(context, l3p, [subnet_id])
 
-                    if mark_as_owned:
-                        self._mark_subnet_owned(
-                            context._plugin_context.session, subnet_id)
+                    self._mark_subnet_owned(
+                        context._plugin_context.session, subnet_id)
+                    if add_to_ptg:
                         context.add_subnet(subnet_id)
                     # End after the first valid subnet
-                    return subnet
+                    return [subnet]
         # No subnet is available for this PTG
         raise exc.NoSubnetAvailable()
 
