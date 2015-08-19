@@ -134,7 +134,7 @@ class NodePlumberBase(object):
                     'description': TARGET_DESCRIPTION % (relationship,
                                                          node['id'],
                                                          instance['id']),
-                    'name': SERVICE_TARGET_NAME_PREFIX + '_%s_%s_%s' % (
+                    'name': SERVICE_TARGET_NAME_PREFIX + '%s_%s_%s' % (
                         relationship, node['id'][:5], instance['id'][:5]),
                     'port_id': None}
             data.update(extra_data)
