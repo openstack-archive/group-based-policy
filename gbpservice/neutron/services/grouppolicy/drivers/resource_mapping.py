@@ -40,7 +40,7 @@ from gbpservice.neutron.services.grouppolicy.common import exceptions as exc
 
 LOG = logging.getLogger(__name__)
 DEFAULT_SG_PREFIX = 'gbp_%s'
-
+SCI_CONSUMER_NOT_AVAILABLE = 'N/A'
 
 opts = [
     cfg.ListOpt('dns_nameservers',
@@ -409,6 +409,7 @@ class ResourceMappingDriver(api.PolicyDriver, local_api.LocalAPI):
         self._reject_cross_tenant_ptg_l2p(context)
         self._validate_ptg_subnets(context)
         self._validate_nat_pool_for_nsp(context)
+        self._validate_ptg_prss(context, context.current)
         self._validate_proxy_ptg(context)
 
     @log.log
@@ -596,14 +597,14 @@ class ResourceMappingDriver(api.PolicyDriver, local_api.LocalAPI):
         if set(context.original['subnets']) - set(context.current['subnets']):
             raise exc.PolicyTargetGroupSubnetRemovalNotSupported()
 
-        new_subnets = list(set(context.current['subnets']) -
-                           set(context.original['subnets']))
-        self._validate_ptg_subnets(context, new_subnets)
-        self._reject_cross_tenant_ptg_l2p(context)
         self._validate_ptg_subnets(context, context.current['subnets'])
+        self._reject_cross_tenant_ptg_l2p(context)
         if (context.current['network_service_policy_id'] !=
             context.original['network_service_policy_id']):
             self._validate_nat_pool_for_nsp(context)
+        self._stash_ptg_modified_chains(context)
+
+    def _stash_ptg_modified_chains(self, context):
         #Update service chain instance when any ruleset is changed
         orig_provided_policy_rule_sets = context.original[
             'provided_policy_rule_sets']
@@ -692,15 +693,7 @@ class ResourceMappingDriver(api.PolicyDriver, local_api.LocalAPI):
             set(curr_consumed_policy_rule_sets) - set(
                 orig_consumed_policy_rule_sets))
 
-        old_nsp = context.original.get("network_service_policy_id")
-        new_nsp = context.current.get("network_service_policy_id")
-        if old_nsp != new_nsp:
-            if old_nsp:
-                self._cleanup_network_service_policy(
-                                        context,
-                                        context.original)
-            if new_nsp:
-                self._handle_network_service_policy(context)
+        self._handle_nsp_update_on_ptg(context)
 
         # Only the ones set in context in precommit operation will be deleted
         self._cleanup_redirect_action(context)
@@ -742,6 +735,17 @@ class ResourceMappingDriver(api.PolicyDriver, local_api.LocalAPI):
         self._update_default_security_group(
             context._plugin_context, context.current['id'],
             context.current['tenant_id'], subnets=new_subnets)
+
+    def _handle_nsp_update_on_ptg(self, context):
+        old_nsp = context.original.get("network_service_policy_id")
+        new_nsp = context.current.get("network_service_policy_id")
+        if old_nsp != new_nsp:
+            if old_nsp:
+                self._cleanup_network_service_policy(
+                                        context,
+                                        context.original)
+            if new_nsp:
+                self._handle_network_service_policy(context)
 
     @log.log
     def delete_policy_target_group_precommit(self, context):
@@ -933,6 +937,9 @@ class ResourceMappingDriver(api.PolicyDriver, local_api.LocalAPI):
             self._update_policy_rule_sg_rules(context, pr_sets,
                 policy_rule, context.original, context.current)
 
+        self._handle_classifier_update_notification(context)
+
+    def _handle_classifier_update_notification(self, context):
         # Invoke Service chain update notify hook if protocol or port or
         # direction is updated. The SC side will have to reclassify the chain
         # and update the traffic steering programming
@@ -1248,14 +1255,14 @@ class ResourceMappingDriver(api.PolicyDriver, local_api.LocalAPI):
             if (set(context.current['external_segments']) !=
                     set(context.original['external_segments'])):
                 raise exc.ESUpdateNotSupportedForEP()
+        self._stash_ep_chains(context)
+
+    def _stash_ep_chains(self, context):
         provider_ptg_chain_map = self._get_ptg_servicechain_mapping(
-                                            context._plugin_context.session,
-                                            context.current['id'],
-                                            None)
+            context._plugin_context.session, context.current['id'], None)
         consumer_ptg_chain_map = self._get_ptg_servicechain_mapping(
-                                            context._plugin_context.session,
-                                            None,
-                                            context.current['id'],)
+            context._plugin_context.session, None, context.current['id'],)
+
         context.ptg_chain_map = provider_ptg_chain_map + consumer_ptg_chain_map
 
     def update_external_policy_postcommit(self, context):
@@ -1428,7 +1435,7 @@ class ResourceMappingDriver(api.PolicyDriver, local_api.LocalAPI):
         l3p = context._plugin.get_l3_policy(context._plugin_context, l3p_id)
         return l3p['routers'][0]
 
-    def _use_implicit_port(self, context):
+    def _use_implicit_port(self, context, subnets=None):
         ptg_id = context.current['policy_target_group_id']
         ptg = context._plugin.get_policy_target_group(
             context._plugin_context, ptg_id)
@@ -1437,8 +1444,9 @@ class ResourceMappingDriver(api.PolicyDriver, local_api.LocalAPI):
         sg_id = self._get_default_security_group(
             context._plugin_context, ptg_id, context.current['tenant_id'])
         last = exc.NoSubnetAvailable()
-        for subnet in self._get_subnets(context._plugin_context,
-                                        {'id': ptg['subnets']}):
+        subnets = subnets or self._get_subnets(context._plugin_context,
+                                               {'id': ptg['subnets']})
+        for subnet in subnets:
             try:
                 attrs = {'tenant_id': context.current['tenant_id'],
                          'name': 'pt_' + context.current['name'],
@@ -1510,7 +1518,7 @@ class ResourceMappingDriver(api.PolicyDriver, local_api.LocalAPI):
                                                  router_id, interface_info)
 
     def _use_implicit_subnet(self, context, is_proxy=False, prefix_len=None,
-                             mark_as_owned=True, subnet_specifics=None):
+                             add_to_ptg=True, subnet_specifics=None):
         # REVISIT(rkukura): This is a temporary allocation algorithm
         # that depends on an exception being raised when the subnet
         # being created is already in use.
@@ -1533,15 +1541,16 @@ class ResourceMappingDriver(api.PolicyDriver, local_api.LocalAPI):
                 context, l2p, l3p, [x['cidr'] for x in subnets],
                 subnet_specifics)
             # Unroll the generator
-            subnet_ids = [x['id'] for x in generator]
+            subnets = [x for x in generator]
+            subnet_ids = [x['id'] for x in subnets]
             # Stitch the Proxy
             self._stitch_proxy_ptg_to_l3p(context, l3p, subnet_ids)
-            if mark_as_owned:
-                for subnet_id in subnet_ids:
-                    self._mark_subnet_owned(
-                        context._plugin_context.session, subnet_id)
+            for subnet_id in subnet_ids:
+                self._mark_subnet_owned(
+                    context._plugin_context.session, subnet_id)
+                if add_to_ptg:
                     context.add_subnet(subnet_id)
-            return
+            return subnets
         else:
             # In case of non proxy PTG or L3 Proxy
             LOG.debug("allocate subnets for L2 Proxy or normal PTG %s",
@@ -1569,19 +1578,18 @@ class ResourceMappingDriver(api.PolicyDriver, local_api.LocalAPI):
                     subnet_specifics)
                 for subnet in generator:
                     subnet_id = subnet['id']
-                    if l3p['routers']:
-                        if is_proxy:
-                            self._stitch_proxy_ptg_to_l3p(context, l3p,
-                                                          [subnet_id])
-                        else:
-                            self._stitch_ptg_to_l3p(context, l3p, [subnet_id])
+                    if is_proxy:
+                        self._stitch_proxy_ptg_to_l3p(context, l3p,
+                                                      [subnet_id])
+                    elif l3p['routers']:
+                        self._stitch_ptg_to_l3p(context, l3p, [subnet_id])
 
-                    if mark_as_owned:
-                        self._mark_subnet_owned(
-                            context._plugin_context.session, subnet_id)
+                    self._mark_subnet_owned(
+                        context._plugin_context.session, subnet_id)
+                    if add_to_ptg:
                         context.add_subnet(subnet_id)
                     # End after the first valid subnet
-                    return subnet
+                    return [subnet]
         # No subnet is available for this PTG
         raise exc.NoSubnetAvailable()
 
@@ -1903,7 +1911,8 @@ class ResourceMappingDriver(api.PolicyDriver, local_api.LocalAPI):
     # new chain instance or delete the existing instance. In case of updates,
     # the parameters that can be updated are service chain spec and
     # classifier ID.
-    def _handle_redirect_action(self, context, policy_rule_set_ids):
+    def _handle_redirect_action(self, context, policy_rule_set_ids,
+                                one_per_pair=True):
         policy_rule_sets = context._plugin.get_policy_rule_sets(
                                     context._plugin_context,
                                     filters={'id': policy_rule_set_ids})
@@ -1916,7 +1925,8 @@ class ResourceMappingDriver(api.PolicyDriver, local_api.LocalAPI):
 
             # Create the ServiceChain Instance when we have both Provider and
             # consumer PTGs. If Labels are available, they have to be applied
-            if not ptgs_consuming_prs or not ptgs_providing_prs:
+            if not ptgs_providing_prs or (not ptgs_consuming_prs and
+                                          one_per_pair):
                 continue
 
             parent_classifier_id = None
@@ -1957,13 +1967,20 @@ class ResourceMappingDriver(api.PolicyDriver, local_api.LocalAPI):
                     continue
                 spec_id = (policy_actions and policy_actions[0]['action_value']
                            or None)
-                for ptg_consuming_prs in ptgs_consuming_prs:
-                    for ptg_providing_prs in ptgs_providing_prs:
-                        # REVISIT(Magesh): There may be concurrency issues here
+                for ptg_providing_prs in ptgs_providing_prs:
+                    # REVISIT(Magesh): There may be concurrency issues here
+                    if one_per_pair:
+                        for ptg_consuming_prs in ptgs_consuming_prs:
+                            self._create_or_update_chain(
+                                context, ptg_providing_prs, ptg_consuming_prs,
+                                spec_id,
+                                parent_spec_id, classifier_id,
+                                hierarchial_classifier_mismatch)
+                    else:
                         self._create_or_update_chain(
-                            context, ptg_providing_prs, ptg_consuming_prs,
-                            spec_id,
-                            parent_spec_id, classifier_id,
+                            context, ptg_providing_prs,
+                            SCI_CONSUMER_NOT_AVAILABLE,
+                            spec_id, parent_spec_id, classifier_id,
                             hierarchial_classifier_mismatch)
 
     def _create_or_update_chain(self, context, provider, consumer, spec_id,
@@ -2829,3 +2846,33 @@ class ResourceMappingDriver(api.PolicyDriver, local_api.LocalAPI):
 
     def _unset_proxy_gateway_routes(self, context, pt):
         self._update_proxy_gateway_routes(context, pt, unset=True)
+
+    def _validate_ptg_prss(self, context, ptg):
+        # If the PTG is providing a redirect PRS, it can't provide any more
+        # redirect rules
+        if self._prss_redirect_rules(context._plugin_context.session,
+                                     ptg['provided_policy_rule_sets']) > 1:
+                raise exc.PTGAlreadyProvidingRedirectPRS(ptg_id=ptg['id'])
+
+    def _validate_new_prs_redirect(self, context, prs):
+        if self._prss_redirect_rules(context._plugin_context.session,
+                                     [prs['id']]) > 1:
+            raise exc.MultipleRedirectActionsNotSupportedForPRS()
+        for ptg in context._plugin.get_policy_target_groups(
+                context._plugin_context,
+                {'id': prs['providing_policy_target_groups']}):
+            self._validate_ptg_prss(context, ptg)
+
+    def _prss_redirect_rules(self, session, prs_ids):
+        if len(prs_ids) == 0:
+            # No result will be found in this case
+            return 0
+        query = (session.query(gpdb.PolicyAction).
+                 join(gpdb.PolicyRuleActionAssociation).
+                 join(gpdb.PolicyRule).
+                 join(gpdb.PRSToPRAssociation).
+                 filter(
+                 gpdb.PRSToPRAssociation.policy_rule_set_id.in_(prs_ids)).
+                 filter(gpdb.PolicyAction.action_type ==
+                        gconst.GP_ACTION_REDIRECT))
+        return query.count()
