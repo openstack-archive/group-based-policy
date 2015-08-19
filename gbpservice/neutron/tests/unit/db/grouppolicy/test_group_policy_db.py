@@ -131,9 +131,15 @@ class ApiManagerMixin(object):
         if res.status_int != 204:
             return self.deserialize(self.fmt, res)
 
-    def _get_object(self, type, id, api):
+    def _get_object(self, type, id, api, expected_res_status=None):
         req = self.new_show_request(type, id, self.fmt)
-        return self.deserialize(self.fmt, req.get_response(api))
+        res = req.get_response(api)
+
+        if expected_res_status:
+            self.assertEqual(res.status_int, expected_res_status)
+        elif res.status_int >= webob.exc.HTTPClientError.code:
+            raise webob.exc.HTTPClientError(code=res.status_int)
+        return self.deserialize(self.fmt, res)
 
     def _bind_port_to_host(self, port_id, host, data=None):
         plugin = manager.NeutronManager.get_plugin()
