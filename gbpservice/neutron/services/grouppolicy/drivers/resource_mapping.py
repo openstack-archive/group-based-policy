@@ -26,6 +26,7 @@ from neutron.openstack.common import log as logging
 from oslo.config import cfg
 import sqlalchemy as sa
 
+from gbpservice.common import utils
 from gbpservice.network.neutronv2 import local_api
 from gbpservice.neutron.db.grouppolicy import group_policy_db as gpdb
 from gbpservice.neutron.db import servicechain_db  # noqa
@@ -2417,7 +2418,12 @@ class ResourceMappingDriver(api.PolicyDriver, local_api.LocalAPI):
                 query = query.filter_by(provider_ptg_id=provider_ptg_id)
             if consumer_ptg_id:
                 query = query.filter_by(consumer_ptg_id=consumer_ptg_id)
-            return query.all()
+            all = query.all()
+            return [utils.DictClass([('provider_ptg_id', x.provider_ptg_id),
+                                     ('consumer_ptg_id', x.consumer_ptg_id),
+                                     ('servicechain_instance_id',
+                                      x.servicechain_instance_id)])
+                    for x in all]
 
     def _get_ep_cidr_list(self, context, ep):
         es_list = context._plugin.get_external_segments(
