@@ -284,17 +284,21 @@ class HeatNodeDriver(driver_base.NodeDriverBase):
         else:
             provider_subnet = context.core_plugin.get_subnet(
                                 context.plugin_context, provider_ptg_subnet_id)
-            if context.is_consumer_external:
-                # REVISIT(Magesh): Allowing the first destination which is 0/0
-                # Validate and skip adding FW rule in case routes is not set
-                es = context.gbp_plugin.get_external_segment(
-                    context.plugin_context, consumer['external_segments'][0])
-                consumer_cidrs = [x['destination']
-                                  for x in es['external_routes']]
-            else:
-                consumer_subnet = context.core_plugin.get_subnet(
-                    context._plugin_context, consumer['subnets'][0])
-                consumer_cidrs = [consumer_subnet['cidr']]
+            consumer_cidrs = []
+            if consumer:
+                if context.is_consumer_external:
+                    # REVISIT(Magesh): Allowing the first destination which is
+                    # 0/0 Validate and skip adding FW rule in case routes is
+                    # not set
+                    es = context.gbp_plugin.get_external_segment(
+                        context.plugin_context,
+                        consumer['external_segments'][0])
+                    consumer_cidrs = [x['destination']
+                                      for x in es['external_routes']]
+                else:
+                    consumer_subnet = context.core_plugin.get_subnet(
+                        context._plugin_context, consumer['subnets'][0])
+                    consumer_cidrs = [consumer_subnet['cidr']]
             provider_cidr = provider_subnet['cidr']
             self._update_template_with_firewall_rules(
                     context, provider_ptg, provider_cidr, consumer_cidrs,
