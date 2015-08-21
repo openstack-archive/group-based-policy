@@ -14,6 +14,7 @@ from neutron import manager
 from neutron.plugins.common import constants as pconst
 
 from gbpservice.common import utils
+from gbpservice.neutron.services.grouppolicy.drivers import resource_mapping
 from gbpservice.neutron.services.servicechain.plugins.ncp import model
 
 
@@ -63,6 +64,8 @@ def get_node_driver_context(sc_plugin, context, sc_instance,
 
 
 def _get_ptg_or_ep(context, group_id):
+    if group_id == resource_mapping.SCI_CONSUMER_NOT_AVAILABLE:
+        return None, False
     group = None
     is_group_external = False
     if group_id:
