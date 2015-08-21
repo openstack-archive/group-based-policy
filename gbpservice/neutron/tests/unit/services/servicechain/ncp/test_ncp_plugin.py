@@ -31,11 +31,8 @@ from gbpservice.neutron.services.servicechain.plugins.ncp import (
 from gbpservice.neutron.services.servicechain.plugins.ncp import (
     exceptions as exc)
 import gbpservice.neutron.services.servicechain.plugins.ncp.config  # noqa
-from gbpservice.neutron.services.servicechain.plugins.ncp import model
 from gbpservice.neutron.services.servicechain.plugins.ncp.node_drivers import (
     dummy_driver as dummy_driver)
-from gbpservice.neutron.tests.unit.services.grouppolicy import (
-    test_resource_mapping as test_gp_driver)
 from gbpservice.neutron.tests.unit.services.servicechain import (
     test_servicechain_plugin as test_base)
 
@@ -121,6 +118,8 @@ class NodeCompositionPluginTestCase(
 
     def setUp(self, core_plugin=None, gp_plugin=None, node_drivers=None,
               node_plumber=None):
+        cfg.CONF.set_override(
+            'extension_drivers', ['proxy_group'], group='group_policy')
         if node_drivers:
             cfg.CONF.set_override('node_drivers', node_drivers,
                                   group='node_composition_plugin')
@@ -177,13 +176,12 @@ class NodeCompositionPluginTestCase(
         spec = self.create_servicechain_spec(
             nodes=[node['id']])['servicechain_spec']
         provider = self.create_policy_target_group()['policy_target_group']
-        consumer = self.create_policy_target_group()['policy_target_group']
+        self.create_policy_target_group()
         management = self.create_policy_target_group(
             service_management=True)['policy_target_group']
         classifier = self.create_policy_classifier()['policy_classifier']
-
         instance = self.create_servicechain_instance(
-            provider_ptg_id=provider['id'], consumer_ptg_id=consumer['id'],
+            provider_ptg_id=provider['id'], consumer_ptg_id='N/A',
             servicechain_specs=[spec['id']], classifier_id=classifier['id'])[
                                                     'servicechain_instance']
 
@@ -203,7 +201,7 @@ class NodeCompositionPluginTestCase(
         self.assertEqual(ctx.current_profile, profile)
         self.assertEqual(instance['id'], ctx.instance['id'])
         self.assertEqual(provider['id'], ctx.provider['id'])
-        self.assertEqual(consumer['id'], ctx.consumer['id'])
+        self.assertIsNone(ctx.consumer)
         self.assertEqual(management['id'], ctx.management['id'])
         self.assertEqual([spec['id']], [x['id'] for x in ctx.relevant_specs])
         self.assertIsNone(ctx.original_node)
@@ -413,10 +411,9 @@ class NodeCompositionPluginTestCase(
         spec = self.create_servicechain_spec(
             nodes=[node['id']])['servicechain_spec']
         provider = self.create_policy_target_group()['policy_target_group']
-        consumer = self.create_policy_target_group()['policy_target_group']
         classifier = self.create_policy_classifier()['policy_classifier']
         self.create_servicechain_instance(
-            provider_ptg_id=provider['id'], consumer_ptg_id=consumer['id'],
+            provider_ptg_id=provider['id'], consumer_ptg_id='N/A',
             servicechain_specs=[spec['id']], classifier_id=classifier['id'],
             expected_res_status=201)
 
@@ -438,10 +435,9 @@ class NodeCompositionPluginTestCase(
         spec = self.create_servicechain_spec(
             nodes=[node['id']])['servicechain_spec']
         provider = self.create_policy_target_group()['policy_target_group']
-        consumer = self.create_policy_target_group()['policy_target_group']
         classifier = self.create_policy_classifier()['policy_classifier']
         self.create_servicechain_instance(
-            provider_ptg_id=provider['id'], consumer_ptg_id=consumer['id'],
+            provider_ptg_id=provider['id'], consumer_ptg_id='N/A',
             servicechain_specs=[spec['id']], classifier_id=classifier['id'],
             expected_res_status=400)
 
@@ -541,8 +537,8 @@ class NodeCompositionPluginTestCase(
         prs = self._create_redirect_prs(spec['id'])['policy_rule_set']
         provider = self.create_policy_target_group(
             provided_policy_rule_sets={prs['id']: ''})['policy_target_group']
-        consumer = self.create_policy_target_group(
-            consumed_policy_rule_sets={prs['id']: ''})['policy_target_group']
+        self.create_policy_target_group(
+            consumed_policy_rule_sets={prs['id']: ''})
 
         # Verify notification issued for created PT in the provider
         pt = self.create_policy_target(
@@ -553,17 +549,6 @@ class NodeCompositionPluginTestCase(
         # Verify notification issued for deleted PT in the provider
         self.delete_policy_target(pt['id'])
         self.assertEqual(1, rem.call_count)
-        rem.assert_called_with(mock.ANY, pt)
-
-        # Verify notification issued for created PT in the consumer
-        pt = self.create_policy_target(
-            policy_target_group_id=consumer['id'])['policy_target']
-        self.assertEqual(2, add.call_count)
-        add.assert_called_with(mock.ANY, pt)
-
-        # Verify notification issued for deleted PT in the consumer
-        self.delete_policy_target(pt['id'])
-        self.assertEqual(2, rem.call_count)
         rem.assert_called_with(mock.ANY, pt)
 
     def test_irrelevant_ptg_update(self):
@@ -624,7 +609,7 @@ class NodeCompositionPluginTestCase(
         self.create_policy_target_group(
             provided_policy_rule_sets={prs['id']: ''})
         self.create_policy_target_group(
-            consumed_policy_rule_sets={prs['id']: ''})['policy_target_group']
+            consumed_policy_rule_sets={prs['id']: ''})
         instances = self._list('servicechain_instances')[
             'servicechain_instances']
         self.assertEqual(1, len(instances))
@@ -642,7 +627,6 @@ class NodeCompositionPluginTestCase(
         spec = self.create_servicechain_spec(
             nodes=[node['id']])['servicechain_spec']
         provider = self.create_policy_target_group()['policy_target_group']
-        consumer = self.create_policy_target_group()['policy_target_group']
 
         # Verify admin created SM is None
         management = self.create_policy_target_group(
@@ -650,7 +634,7 @@ class NodeCompositionPluginTestCase(
             is_admin_context=True)['policy_target_group']
         pc = self.create_policy_classifier()['policy_classifier']
         instance = self.create_servicechain_instance(
-            provider_ptg_id=provider['id'], consumer_ptg_id=consumer['id'],
+            provider_ptg_id=provider['id'], consumer_ptg_id='N/A',
             servicechain_specs=[spec['id']],
             classifier_id=pc['id'])['servicechain_instance']
         ctx = ncp_context.get_node_driver_context(
@@ -664,7 +648,7 @@ class NodeCompositionPluginTestCase(
             service_management=True, tenant_id='admin',
             is_admin_context=True, shared=True)['policy_target_group']
         instance = self.create_servicechain_instance(
-            provider_ptg_id=provider['id'], consumer_ptg_id=consumer['id'],
+            provider_ptg_id=provider['id'], consumer_ptg_id='N/A',
             servicechain_specs=[spec['id']],
             classifier_id=pc['id'])['servicechain_instance']
         # Now admin Service Management PTG is visible
@@ -677,79 +661,12 @@ class NodeCompositionPluginTestCase(
             service_management=True,
             is_admin_context=True)['policy_target_group']
         instance = self.create_servicechain_instance(
-            provider_ptg_id=provider['id'], consumer_ptg_id=consumer['id'],
+            provider_ptg_id=provider['id'], consumer_ptg_id='N/A',
             servicechain_specs=[spec['id']],
             classifier_id=pc['id'])['servicechain_instance']
         ctx = ncp_context.get_node_driver_context(
             self.plugin, plugin_context, instance, node)
         self.assertEqual(private_management['id'], ctx.management['id'])
-
-
-class AgnosticChainPlumberTestCase(NodeCompositionPluginTestCase):
-
-    def setUp(self):
-        cfg.CONF.set_override('policy_drivers', ['implicit_policy',
-                                                 'resource_mapping'],
-                              group='group_policy')
-        cfg.CONF.set_override('allow_overlapping_ips', True)
-
-        super(AgnosticChainPlumberTestCase, self).setUp(
-            node_drivers=['node_dummy'], node_plumber='agnostic_plumber',
-            core_plugin=test_gp_driver.CORE_PLUGIN)
-        res = mock.patch('neutron.db.l3_db.L3_NAT_dbonly_mixin.'
-                         '_check_router_needs_rescheduling').start()
-        res.return_value = None
-        self.driver = self.sc_plugin.driver_manager.ordered_drivers[0].obj
-        self.driver.get_plumbing_info = mock.Mock()
-        self.driver.get_plumbing_info.return_value = {}
-
-    def test_one_pt_prov_cons(self):
-        context = n_context.get_admin_context()
-        self.driver.get_plumbing_info.return_value = {'provider': [{}],
-                                                      'consumer': [{}]}
-        provider, consumer, node = self._create_simple_chain()
-
-        # Verify Service PT created and correctly placed
-        prov_cons = {'provider': provider, 'consumer': consumer}
-        targets = model.get_service_targets(context.session)
-        self.assertEqual(2, len(targets))
-        old_relationship = None
-        for target in targets:
-            self.assertEqual(node['id'], target.servicechain_node_id)
-            pt = self.show_policy_target(
-                target.policy_target_id)['policy_target']
-            self.assertEqual(prov_cons[target.relationship]['id'],
-                             pt['policy_target_group_id'])
-            self.assertNotEqual(old_relationship, target.relationship)
-            old_relationship = target.relationship
-
-        self.update_policy_target_group(
-            provider['id'], provided_policy_rule_sets={})
-        # With chain deletion, also the Service PTs are deleted
-        new_targets = model.get_service_targets(context.session)
-        self.assertEqual(0, len(new_targets))
-        for target in targets:
-            self.show_policy_target(
-                target.policy_target_id, expected_res_status=404)
-
-    def test_pt_override(self):
-        context = n_context.get_admin_context()
-        test_name = 'test_name'
-        self.driver.get_plumbing_info.return_value = {
-            'provider': [{'name': test_name}]}
-        self._create_simple_chain()
-        targets = model.get_service_targets(context.session)
-        self.assertEqual(1, len(targets))
-        pt = self.show_policy_target(
-            targets[0].policy_target_id)['policy_target']
-        self.assertEqual(test_name, pt['name'])
-
-    def test_ptg_delete(self):
-        self.driver.get_plumbing_info.return_value = {'provider': [{}],
-                                                      'consumer': [{}]}
-        provider, _, _ = self._create_simple_service_chain()
-        self.delete_policy_target_group(provider['id'],
-                                        expected_res_status=204)
 
 
 class TestQuotasForServiceChain(test_base.ServiceChainPluginTestCase):
@@ -827,4 +744,4 @@ class TestQuotasForServiceChain(test_base.ServiceChainPluginTestCase):
         # creation error
         self.assertRaises(webob.exc.HTTPClientError,
                           self.create_policy_target_group,
-                          consumed_policy_rule_sets={prs['id']: ''})
+                          provided_policy_rule_sets={prs['id']: ''})
