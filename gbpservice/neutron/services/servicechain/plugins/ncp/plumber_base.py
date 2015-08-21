@@ -127,7 +127,7 @@ class NodePlumberBase(object):
         gbp_plugin = part_context.gbp_plugin
         for target in targets:
             if not group:
-                exceptions.NotAvailablePTGForTargetRequest(
+                raise exceptions.NotAvailablePTGForTargetRequest(
                     ptg_type=relationship, instance=instance['id'],
                     node=node['id'])
             data = {'policy_target_group_id': group['id'],

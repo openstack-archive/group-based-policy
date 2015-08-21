@@ -286,3 +286,7 @@ class OnlyOneProxyGatewayAllowed(GroupPolicyBadRequest):
 class OnlyOneGroupDefaultGatewayAllowed(GroupPolicyBadRequest):
     message = _("Another group default gateway PT already exists for group "
                 "%(group_id)s")
+
+
+class PTGAlreadyProvidingRedirectPRS(GroupPolicyBadRequest):
+    message = _("PTG %(ptg_id)s is already providing a redirect PRS.")
