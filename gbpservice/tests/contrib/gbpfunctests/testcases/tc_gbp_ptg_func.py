@@ -94,7 +94,7 @@ class test_gbp_ptg_func(object):
         if self.prs_uuid == 0:
            self._log.info("\n## Reqd Policy Target-Group Create Failed, hence GBP Policy Target-Group Functional Test Suite Run ABORTED\n ")
            return 0
-        l3p_uuid = self.gbpcfg.gbp_policy_cfg_all(1,'l3p',self.l3p_name,ip_pool='20.20.0.0/24',subnet_prefix_length='28')
+        l3p_uuid = self.gbpcfg.gbp_policy_cfg_all(1,'l3p',self.l3p_name,ip_pool='20.20.0.0/24',subnet_prefix_length='28', _proxy_ip_pool='20.20.1.0/24', _proxy_subnet_prefix_length='28')
         if l3p_uuid == 0:
            self._log.info("\n## Reqd L3Policy Create Failed, hence GBP Policy Target-Group Functional Test Suite Run ABORTED\n")
            return 0
