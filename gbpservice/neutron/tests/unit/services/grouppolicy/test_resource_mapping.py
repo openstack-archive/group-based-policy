@@ -107,7 +107,7 @@ class ResourceMappingTestCase(test_plugin.GroupPolicyPluginTestCase):
                                       consumer_ptg_id, scs_id_list,
                                       classifier_id=None):
         self.assertEqual(sc_instance['provider_ptg_id'], provider_ptg_id)
-        self.assertEqual(sc_instance['consumer_ptg_id'], consumer_ptg_id)
+        self.assertEqual(sc_instance['consumer_ptg_id'], 'N/A')
         self.assertEqual(scs_id_list, sc_instance['servicechain_specs'])
         if classifier_id:
             self.assertEqual(sc_instance['classifier_id'], classifier_id)
@@ -2023,7 +2023,7 @@ class TestServiceChain(ResourceMappingTestCase):
                                       consumer_ptg_id, scs_id_list,
                                       classifier_id=None):
         self.assertEqual(sc_instance['provider_ptg_id'], provider_ptg_id)
-        self.assertEqual(sc_instance['consumer_ptg_id'], consumer_ptg_id)
+        self.assertEqual(sc_instance['consumer_ptg_id'], 'N/A')
         self.assertEqual(scs_id_list, sc_instance['servicechain_specs'])
         provider = self.show_policy_target_group(
             provider_ptg_id)['policy_target_group']
@@ -2141,9 +2141,8 @@ class TestServiceChain(ResourceMappingTestCase):
         self._assert_proper_chain_instance(
             sc_instance, provider_ptg_id, consumer_ptg_id, [scs_id],
             classifier_id=classifier_id)
-
         # Verify that PTG delete cleans up the chain instances
-        self._verify_ptg_delete_cleanup_chain(consumer_ptg_id)
+        self._verify_ptg_delete_cleanup_chain(provider_ptg_id)
 
     def test_ptg_updates_affecting_chain(self):
         scs1_id = self._create_servicechain_spec()
@@ -2297,7 +2296,7 @@ class TestServiceChain(ResourceMappingTestCase):
             sc_instances[0], provider_ptg_id, consumer_ptg_id,
             [scs4_id, scs3_id], classifier_id=classifier_id)
 
-        self._verify_ptg_delete_cleanup_chain(consumer_ptg_id)
+        self._verify_ptg_delete_cleanup_chain(provider_ptg_id)
 
     def test_rule_update_updates_chain(self):
         scs_id = self._create_servicechain_spec()
@@ -2370,7 +2369,7 @@ class TestServiceChain(ResourceMappingTestCase):
             sc_instances[0], provider_ptg_id, consumer_ptg_id,
             [scs2_id], classifier_id=classifier['id'])
 
-        self._verify_ptg_delete_cleanup_chain(consumer_ptg_id)
+        self._verify_ptg_delete_cleanup_chain(provider_ptg_id)
 
     def test_redirect_to_ep_update(self):
         scs_id = self._create_servicechain_spec()
@@ -2407,9 +2406,9 @@ class TestServiceChain(ResourceMappingTestCase):
                     sc_instance, provider['policy_target_group']['id'],
                     ep['external_policy']['id'], [scs_id])
 
-                self.update_external_policy(
-                    ep['external_policy']['id'],
-                    consumed_policy_rule_sets={})
+                self.delete_policy_target_group(
+                    provider['policy_target_group']['id'],
+                    expected_res_status=webob.exc.HTTPNoContent.code)
                 sc_instance_list_req = self.new_list_request(
                     SERVICECHAIN_INSTANCES)
                 res = sc_instance_list_req.get_response(self.ext_api)
@@ -2451,10 +2450,9 @@ class TestServiceChain(ResourceMappingTestCase):
                     ep['external_policy']['id'], [scs_id])
 
                 # Verify that PTG delete cleans up the chain instances
-                req = self.new_delete_request(
-                    'external_policies', ep['external_policy']['id'])
-                res = req.get_response(self.ext_api)
-                self.assertEqual(res.status_int, webob.exc.HTTPNoContent.code)
+                self.delete_policy_target_group(
+                    provider['policy_target_group']['id'],
+                    expected_res_status=webob.exc.HTTPNoContent.code)
                 sc_instance_list_req = self.new_list_request(
                     SERVICECHAIN_INSTANCES)
                 res = sc_instance_list_req.get_response(self.ext_api)
@@ -2510,7 +2508,7 @@ class TestServiceChain(ResourceMappingTestCase):
                                            consumer_ptg_id,
                                            [parent_scs_id, scs_id])
 
-        self._verify_ptg_delete_cleanup_chain(consumer_ptg_id)
+        self._verify_ptg_delete_cleanup_chain(provider_ptg_id)
 
     def test_enforce_parent_redirect_after_ptg_create(self):
         scs_id = self._create_servicechain_spec()
@@ -2549,6 +2547,7 @@ class TestServiceChain(ResourceMappingTestCase):
         parent_prs_id = parent_prs['policy_rule_set']['id']
 
         self._verify_prs_rules(child_prs_id)
+
         sc_instances = self._list(SERVICECHAIN_INSTANCES)
         # We should have a new service chain instance created now from both
         # parent and child specs
@@ -2569,7 +2568,7 @@ class TestServiceChain(ResourceMappingTestCase):
         self._assert_proper_chain_instance(sc_instance, provider_ptg_id,
                                            consumer_ptg_id, [scs_id])
 
-        self._verify_ptg_delete_cleanup_chain(consumer_ptg_id)
+        self._verify_ptg_delete_cleanup_chain(provider_ptg_id)
 
     def test_hierarchical_redirect(self):
         scs_id = self._create_servicechain_spec()
@@ -2601,21 +2600,16 @@ class TestServiceChain(ResourceMappingTestCase):
         self._verify_prs_rules(child_prs_id)
         sc_instances = self._list(SERVICECHAIN_INSTANCES)
         # We should have one service chain instance created now
-        self.assertEqual(4, len(sc_instances['servicechain_instances']))
+        self.assertEqual(2, len(sc_instances['servicechain_instances']))
         sc_instances = sc_instances['servicechain_instances']
         sc_instances_provider_ptg_ids = set()
-        sc_instances_consumer_ptg_ids = set()
         for sc_instance in sc_instances:
             sc_instances_provider_ptg_ids.add(sc_instance['provider_ptg_id'])
-            sc_instances_consumer_ptg_ids.add(sc_instance['consumer_ptg_id'])
             self.assertEqual(sc_instance['servicechain_specs'],
                              [parent_scs_id, scs_id])
         expected_provider_ptg_ids = set([provider_ptg1_id, provider_ptg2_id])
-        expected_consumer_ptg_ids = set([consumer_ptg1_id, consumer_ptg2_id])
         self.assertEqual(expected_provider_ptg_ids,
                          sc_instances_provider_ptg_ids)
-        self.assertEqual(expected_consumer_ptg_ids,
-                         sc_instances_consumer_ptg_ids)
 
         with mock.patch.object(
                 servicechain_db.ServiceChainDbPlugin,
@@ -2635,7 +2629,7 @@ class TestServiceChain(ResourceMappingTestCase):
             self._verify_prs_rules(child_prs_id)
             sc_instances_updated = self._list(SERVICECHAIN_INSTANCES)[
                                                 'servicechain_instances']
-            self.assertEqual(4, len(sc_instances_updated))
+            self.assertEqual(2, len(sc_instances_updated))
             self.assertEqual(sc_instances, sc_instances_updated)
 
             expected_update_calls = []
@@ -2652,24 +2646,11 @@ class TestServiceChain(ResourceMappingTestCase):
         # Deleting one group should end up deleting the two service chain
         # Instances associated to it
         req = self.new_delete_request(
-            'policy_target_groups', consumer_ptg1_id)
-        res = req.get_response(self.ext_api)
-        self.assertEqual(res.status_int, webob.exc.HTTPNoContent.code)
-        sc_instances = self._list(SERVICECHAIN_INSTANCES)
-        self.assertEqual(2, len(sc_instances['servicechain_instances']))
-        sc_instances = sc_instances['servicechain_instances']
-        for sc_instance in sc_instances:
-            self.assertNotEqual(sc_instance['consumer_ptg_id'],
-                                consumer_ptg1_id)
-
-        req = self.new_delete_request(
             'policy_target_groups', provider_ptg1_id)
         res = req.get_response(self.ext_api)
         self.assertEqual(res.status_int, webob.exc.HTTPNoContent.code)
         sc_instances = self._list(SERVICECHAIN_INSTANCES)
         self.assertEqual(1, len(sc_instances['servicechain_instances']))
-        sc_instance = sc_instances['servicechain_instances'][0]
-        self.assertNotEqual(sc_instance['provider_ptg_id'], provider_ptg1_id)
 
         self._verify_ptg_delete_cleanup_chain(provider_ptg2_id)
 
@@ -2694,6 +2675,7 @@ class TestServiceChain(ResourceMappingTestCase):
         self.create_policy_rule_set(
             name="c1", policy_rules=[parent_policy_rule_id],
             child_policy_rule_sets=[child_prs_id])
+
         provider_ptg_id, consumer_ptg_id = self._create_provider_consumer_ptgs(
                                                             child_prs_id)
 
@@ -2770,7 +2752,7 @@ class TestServiceChain(ResourceMappingTestCase):
         self._assert_proper_chain_instance(
             sc_instances[0], provider_ptg_id, consumer_ptg_id,
             [parent_scs_id, scs2_id], classifier_id=classifier_id)
-        self._verify_ptg_delete_cleanup_chain(consumer_ptg_id)
+        self._verify_ptg_delete_cleanup_chain(provider_ptg_id)
 
     def test_redirect_multiple_ptgs_single_prs(self):
         scs_id = self._create_servicechain_spec()
@@ -2790,19 +2772,14 @@ class TestServiceChain(ResourceMappingTestCase):
         self._verify_prs_rules(policy_rule_set_id)
         sc_instances = self._list(SERVICECHAIN_INSTANCES)
         # We should have 4 service chain instances created now
-        self.assertEqual(len(sc_instances['servicechain_instances']), 4)
+        self.assertEqual(2, len(sc_instances['servicechain_instances']))
         sc_instances = sc_instances['servicechain_instances']
         sc_instances_provider_ptg_ids = set()
-        sc_instances_consumer_ptg_ids = set()
         for sc_instance in sc_instances:
             sc_instances_provider_ptg_ids.add(sc_instance['provider_ptg_id'])
-            sc_instances_consumer_ptg_ids.add(sc_instance['consumer_ptg_id'])
         expected_provider_ptg_ids = set([provider_ptg1_id, provider_ptg2_id])
-        expected_consumer_ptg_ids = set([consumer_ptg1_id, consumer_ptg2_id])
         self.assertEqual(expected_provider_ptg_ids,
                          sc_instances_provider_ptg_ids)
-        self.assertEqual(expected_consumer_ptg_ids,
-                         sc_instances_consumer_ptg_ids)
 
         with mock.patch.object(
                 servicechain_db.ServiceChainDbPlugin,
@@ -2817,7 +2794,7 @@ class TestServiceChain(ResourceMappingTestCase):
             self._verify_prs_rules(policy_rule_set_id)
             sc_instances_updated = self._list(SERVICECHAIN_INSTANCES)[
                                                 'servicechain_instances']
-            self.assertEqual(4, len(sc_instances_updated))
+            self.assertEqual(2, len(sc_instances_updated))
             self.assertEqual(sc_instances, sc_instances_updated)
 
             expected_update_calls = []
@@ -2838,13 +2815,8 @@ class TestServiceChain(ResourceMappingTestCase):
         self.assertEqual(res.status_int, webob.exc.HTTPNoContent.code)
         sc_instances = self._list(SERVICECHAIN_INSTANCES)
         self.assertEqual(2, len(sc_instances['servicechain_instances']))
-        sc_instances = sc_instances['servicechain_instances']
-        for sc_instance in sc_instances:
-            self.assertNotEqual(sc_instance['consumer_ptg_id'],
-                                consumer_ptg1_id)
 
-        req = self.new_delete_request(
-            'policy_target_groups', provider_ptg1_id)
+        req = self.new_delete_request('policy_target_groups', provider_ptg1_id)
         res = req.get_response(self.ext_api)
         self.assertEqual(res.status_int, webob.exc.HTTPNoContent.code)
         sc_instances = self._list(SERVICECHAIN_INSTANCES)
@@ -2868,9 +2840,9 @@ class TestServiceChainAdminOwner(TestServiceChain):
                                       consumer_ptg_id, scs_id_list,
                                       classifier_id=None):
         self.assertEqual(sc_instance['provider_ptg_id'], provider_ptg_id)
-        self.assertEqual(sc_instance['consumer_ptg_id'], consumer_ptg_id)
-        self.assertEqual(scs_id_list, sc_instance['servicechain_specs'])
+        self.assertEqual(sc_instance['consumer_ptg_id'], 'N/A')
         self.assertEqual(sc_instance['tenant_id'], CHAIN_TENANT_ID)
+        self.assertEqual(scs_id_list, sc_instance['servicechain_specs'])
         if classifier_id:
             self.assertEqual(sc_instance['classifier_id'], classifier_id)
 
@@ -3495,11 +3467,9 @@ class TestNetworkServicePolicy(ResourceMappingTestCase):
                             expected_res_status=webob.exc.HTTPCreated.code)
                         self.create_policy_target_group(
                             network_service_policy_id=nsp['id'],
-                            expected_res_status=webob.exc.HTTPCreated.code)[
-                                                        'policy_target_group']
+                            expected_res_status=webob.exc.HTTPCreated.code)
                         self.create_policy_target_group(
-                            expected_res_status=webob.exc.HTTPCreated.code)[
-                                                        'policy_target_group']
+                            expected_res_status=webob.exc.HTTPCreated.code)
                         req = self.new_list_request('l3_policies',
                                                     fmt=self.fmt)
                         l3ps = self.deserialize(self.fmt,
@@ -3530,11 +3500,9 @@ class TestNetworkServicePolicy(ResourceMappingTestCase):
                             network_service_params=[
                                     {"type": "ip_single", "value": "nat_pool",
                                      "name": "vip"}],
-                            expected_res_status=webob.exc.HTTPCreated.code)[
-                                                    'network_service_policy']
+                            expected_res_status=webob.exc.HTTPCreated.code)
                 self.create_policy_target_group(
-                            expected_res_status=webob.exc.HTTPCreated.code)[
-                                                        'policy_target_group']
+                            expected_res_status=webob.exc.HTTPCreated.code)
                 req = self.new_delete_request('nat_pools', nat_pool['id'])
                 res = req.get_response(self.ext_api)
                 self.assertEqual(res.status_int, webob.exc.HTTPNoContent.code)
