@@ -21,7 +21,7 @@ service_chain_opts = [
                        "gbpservice.neutron.servicechain.ncp_drivers "
                        "namespace.")),
     cfg.StrOpt('node_plumber',
-               default='agnostic_plumber',
+               default='dummy_plumber',
                help=_("The plumber used by the Node Composition Plugin "
                       "for service plumbing. Entrypoint loaded from the "
                       "gbpservice.neutron.servicechain.ncp_plumbers "
