@@ -93,6 +93,20 @@ class ResourceMappingTestCase(test_plugin.GroupPolicyPluginTestCase):
     def get_plugin_context(self):
         return self._plugin, self._context
 
+    def _verify_ptg_delete_cleanup_chain(self, ptg_id, prs_ids=None):
+        prs_ids = prs_ids or []
+        self.update_policy_target_group(
+                            ptg_id,
+                            provided_policy_rule_sets={},
+                            consumed_policy_rule_sets={},
+                            expected_res_status=200)
+        for prs_id in prs_ids:
+            self._verify_prs_rules(prs_id)
+        sc_instance_list_req = self.new_list_request(SERVICECHAIN_INSTANCES)
+        res = sc_instance_list_req.get_response(self.ext_api)
+        sc_instances = self.deserialize(self.fmt, res)
+        self.assertEqual(len(sc_instances['servicechain_instances']), 0)
+
     def _check_call_list(self, expected, observed):
         for call in expected:
             self.assertTrue(call in observed,
@@ -1762,214 +1776,6 @@ class TestPolicyRuleSet(ResourceMappingTestCase):
         consumer_ptg_id = consumer_ptg['policy_target_group']['id']
         return (provider_ptg_id, consumer_ptg_id)
 
-    def _assert_proper_chain_instance(self, sc_instance, provider_ptg_id,
-                                      consumer_ptg_id, scs_id_list,
-                                      classifier_id=None):
-        self.assertEqual(sc_instance['provider_ptg_id'], provider_ptg_id)
-        self.assertEqual(sc_instance['consumer_ptg_id'], consumer_ptg_id)
-        self.assertEqual(scs_id_list, sc_instance['servicechain_specs'])
-        if classifier_id:
-            self.assertEqual(sc_instance['classifier_id'], classifier_id)
-
-    def _verify_ptg_delete_cleanup_chain(self, ptg_id):
-        self.delete_policy_target_group(
-            ptg_id, expected_res_status=webob.exc.HTTPNoContent.code)
-        sc_instance_list_req = self.new_list_request(SERVICECHAIN_INSTANCES)
-        res = sc_instance_list_req.get_response(self.ext_api)
-        sc_instances = self.deserialize(self.fmt, res)
-        self.assertEqual(len(sc_instances['servicechain_instances']), 0)
-
-    def _verify_ptg_prs_unset_cleansup_chain(self, ptg_id, prs_ids):
-        self.update_policy_target_group(
-                            ptg_id,
-                            provided_policy_rule_sets={},
-                            consumed_policy_rule_sets={},
-                            expected_res_status=200)
-        for prs_id in prs_ids:
-            self._verify_prs_rules(prs_id)
-        sc_instance_list_req = self.new_list_request(SERVICECHAIN_INSTANCES)
-        res = sc_instance_list_req.get_response(self.ext_api)
-        sc_instances = self.deserialize(self.fmt, res)
-        self.assertEqual(len(sc_instances['servicechain_instances']), 0)
-
-    def test_redirect_to_chain(self):
-        scs_id = self._create_servicechain_spec()
-        _, classifier_id, policy_rule_id = self._create_tcp_redirect_rule(
-                                                            "20:90", scs_id)
-
-        policy_rule_set = self.create_policy_rule_set(
-            name="c1", policy_rules=[policy_rule_id])['policy_rule_set']
-        provider_ptg_id, consumer_ptg_id = self._create_provider_consumer_ptgs(
-                                                        policy_rule_set['id'])
-
-        self._verify_prs_rules(policy_rule_set['id'])
-        sc_instance_list_req = self.new_list_request(SERVICECHAIN_INSTANCES)
-        res = sc_instance_list_req.get_response(self.ext_api)
-        sc_instances = self.deserialize(self.fmt, res)
-        # We should have one service chain instance created now
-        self.assertEqual(len(sc_instances['servicechain_instances']), 1)
-        sc_instance = sc_instances['servicechain_instances'][0]
-        self._assert_proper_chain_instance(
-            sc_instance, provider_ptg_id, consumer_ptg_id, [scs_id],
-            classifier_id=classifier_id)
-
-        # Verify that PTG delete cleans up the chain instances
-        self._verify_ptg_delete_cleanup_chain(consumer_ptg_id)
-
-    def test_ptg_updates_affecting_chain(self):
-        scs1_id = self._create_servicechain_spec()
-        _, classifier_id, policy_rule_id = self._create_tcp_redirect_rule(
-                                                            "20:90", scs1_id)
-        prs1 = self.create_policy_rule_set(
-            name="c1", policy_rules=[policy_rule_id])['policy_rule_set']
-        self._verify_prs_rules(prs1['id'])
-        provider_ptg, consumer_ptg = self._create_provider_consumer_ptgs()
-        self._verify_prs_rules(prs1['id'])
-
-        # No service chain instances until we have provider and consumer prs
-        sc_instances = self._list(SERVICECHAIN_INSTANCES)
-        self.assertEqual([], sc_instances['servicechain_instances'])
-
-        # One service chain instance should be created when PTGs are
-        # updated with provided and consumed prs
-        self.update_policy_target_group(
-            provider_ptg, provided_policy_rule_sets={prs1['id']: ''},
-            consumed_policy_rule_sets={}, expected_res_status=200)
-        self.update_policy_target_group(
-            consumer_ptg, consumed_policy_rule_sets={prs1['id']: ''},
-            provided_policy_rule_sets={}, expected_res_status=200)
-        self._verify_prs_rules(prs1['id'])
-        sc_instances = self._list(SERVICECHAIN_INSTANCES)
-        self.assertEqual(1, len(sc_instances['servicechain_instances']))
-        sc_instance = sc_instances['servicechain_instances'][0]
-        self._assert_proper_chain_instance(
-            sc_instance, provider_ptg, consumer_ptg,
-            [scs1_id], classifier_id=classifier_id)
-
-        # Verify that adding a new PRS with just Allow rule does not affect
-        # the chain
-        with mock.patch.object(
-                servicechain_db.ServiceChainDbPlugin,
-                'update_servicechain_instance') as sc_instance_update:
-            sc_instance_update.return_value = {'id': sc_instance['id']}
-            pr = self._create_ssh_allow_rule()
-            prs2 = self.create_policy_rule_set(
-                policy_rules=[pr['id']])['policy_rule_set']
-            self.update_policy_target_group(
-                provider_ptg, consumed_policy_rule_sets={},
-                provided_policy_rule_sets={prs1['id']: '', prs2['id']: ''},
-                expected_res_status=200)
-            self.update_policy_target_group(
-                consumer_ptg, provided_policy_rule_sets={},
-                consumed_policy_rule_sets={prs1['id']: '', prs2['id']: ''},
-                expected_res_status=200)
-            self._verify_prs_rules(prs2['id'])
-            sc_instances_new = self._list(SERVICECHAIN_INSTANCES)
-            self.assertEqual(sc_instances, sc_instances_new)
-            self.assertEqual(sc_instance_update.call_args_list, [])
-
-        # update with a new redirect ruleset and verify that the instance is
-        # updated with the new classifier
-        scs2_id = self._create_servicechain_spec()
-        _, classifier3_id, policy_rule3_id = self._create_tcp_redirect_rule(
-                                            "443", scs2_id)
-        prs3 = self.create_policy_rule_set(
-            name="c1", policy_rules=[policy_rule3_id])['policy_rule_set']
-        self._verify_prs_rules(prs3['id'])
-        self.update_policy_target_group(
-            provider_ptg, consumed_policy_rule_sets={},
-            provided_policy_rule_sets={prs2['id']: '', prs3['id']: ''},
-            expected_res_status=200)
-        self.update_policy_target_group(
-            consumer_ptg, provided_policy_rule_sets={},
-            consumed_policy_rule_sets={prs2['id']: '', prs3['id']: ''},
-            expected_res_status=200)
-        self._verify_prs_rules(prs3['id'])
-        sc_instances_new = self._list(SERVICECHAIN_INSTANCES)
-        self.assertEqual(1, len(sc_instances_new['servicechain_instances']))
-        sc_instance_new = sc_instances_new['servicechain_instances'][0]
-        self._assert_proper_chain_instance(
-            sc_instance_new, provider_ptg, consumer_ptg,
-            [scs2_id], classifier_id=classifier3_id)
-        self.assertEqual(sc_instance['id'], sc_instance_new['id'])
-
-        # Remove redirect and see if the instance got deleted
-        self.update_policy_target_group(
-            provider_ptg, provided_policy_rule_sets={prs2['id']: ''},
-            consumed_policy_rule_sets={}, expected_res_status=200)
-        self.update_policy_target_group(
-            consumer_ptg, consumed_policy_rule_sets={prs2['id']: ''},
-            provided_policy_rule_sets={}, expected_res_status=200)
-        self._verify_prs_rules(prs2['id'])
-        sc_instances_new = self._list(SERVICECHAIN_INSTANCES)
-        self.assertEqual([], sc_instances_new['servicechain_instances'])
-        self.assertEqual(sc_instance_update.call_args_list, [])
-
-        # Verify that PTG update removing prs cleansup the chain instances
-        self._verify_ptg_prs_unset_cleansup_chain(provider_ptg, [prs1['id']])
-
-    def test_action_spec_value_update(self):
-        scs1_id = self._create_servicechain_spec()
-        action_id, classifier_id, policy_rule_id = (
-                            self._create_tcp_redirect_rule("20:90", scs1_id))
-
-        child_prs = self.create_policy_rule_set(
-            name="prs", policy_rules=[policy_rule_id])
-        child_prs_id = child_prs['policy_rule_set']['id']
-        self._verify_prs_rules(child_prs_id)
-
-        scs2_id = self._create_servicechain_spec()
-        parent_action = self.create_policy_action(
-            name="action2", action_type=gconst.GP_ACTION_REDIRECT,
-            action_value=scs2_id)
-        parent_action_id = parent_action['policy_action']['id']
-        parent_policy_rule = self.create_policy_rule(
-            name='pr1', policy_classifier_id=classifier_id,
-            policy_actions=[parent_action_id])
-        parent_policy_rule_id = parent_policy_rule['policy_rule']['id']
-        self.create_policy_rule_set(
-            name="c1", policy_rules=[parent_policy_rule_id],
-            child_policy_rule_sets=[child_prs_id])
-
-        provider_ptg_id, consumer_ptg_id = self._create_provider_consumer_ptgs(
-                                                        child_prs_id)
-        self._verify_prs_rules(child_prs_id)
-        sc_instances = self._list(SERVICECHAIN_INSTANCES)[
-                                                'servicechain_instances']
-        self.assertEqual(1, len(sc_instances))
-        # We should have one service chain instance created now
-        self._assert_proper_chain_instance(
-            sc_instances[0], provider_ptg_id, consumer_ptg_id,
-            [scs2_id, scs1_id], classifier_id=classifier_id)
-
-        # Update child spec and verify that SC instance is updated properly
-        scs3_id = self._create_servicechain_spec()
-        action = {'policy_action': {'action_value': scs3_id}}
-        req = self.new_update_request('policy_actions', action, action_id)
-        action = self.deserialize(self.fmt, req.get_response(self.ext_api))
-        sc_instances = self._list(SERVICECHAIN_INSTANCES)[
-                                                'servicechain_instances']
-        self.assertEqual(1, len(sc_instances))
-        self._assert_proper_chain_instance(
-            sc_instances[0], provider_ptg_id, consumer_ptg_id,
-            [scs2_id, scs3_id], classifier_id=classifier_id)
-
-        # Update parent spec and verify that SC instance is updated properly
-        scs4_id = self._create_servicechain_spec()
-        action = {'policy_action': {'action_value': scs4_id}}
-        req = self.new_update_request(
-                            'policy_actions', action, parent_action_id)
-        action = self.deserialize(self.fmt, req.get_response(self.ext_api))
-        sc_instances = self._list(SERVICECHAIN_INSTANCES)[
-                                                'servicechain_instances']
-        self.assertEqual(1, len(sc_instances))
-        # We should have one service chain instance created now
-        self._assert_proper_chain_instance(
-            sc_instances[0], provider_ptg_id, consumer_ptg_id,
-            [scs4_id, scs3_id], classifier_id=classifier_id)
-
-        self._verify_ptg_delete_cleanup_chain(consumer_ptg_id)
-
     def test_shared_policy_rule_set_create_negative(self):
         self.create_policy_rule_set(shared=True,
                                     expected_res_status=400)
@@ -2022,8 +1828,9 @@ class TestPolicyRuleSet(ResourceMappingTestCase):
             expected_res_status=201, policy_rules=[pr1['id']],
             child_policy_rule_sets=[child['id']])['policy_rule_set']
 
-        self.create_policy_target_group(
-            provided_policy_rule_sets={child['id']: None})
+        provider_ptg_id = self.create_policy_target_group(
+            provided_policy_rule_sets={child['id']: None})[
+                'policy_target_group']['id']
 
         self.create_policy_target_group(
             consumed_policy_rule_sets={child['id']: None})
@@ -2049,6 +1856,8 @@ class TestPolicyRuleSet(ResourceMappingTestCase):
             pr1['id'], expected_res_status=200,
             policy_classifier_id=pr3['policy_classifier_id'])
         self._verify_prs_rules(child['id'])
+
+        self._verify_ptg_delete_cleanup_chain(provider_ptg_id)
 
         # Swap parent
         self.update_policy_rule_set(parent['id'], expected_res_status=200,
@@ -2206,571 +2015,42 @@ class TestPolicyRuleSet(ResourceMappingTestCase):
         self.delete_policy_target_group(ptg['id'])
         self._verify_prs_rules(prs['id'])
 
-    def test_rule_update_updates_chain(self):
-        scs_id = self._create_servicechain_spec()
-        _, _, policy_rule_id = self._create_tcp_redirect_rule("20:90", scs_id)
-
-        policy_rule_set = self.create_policy_rule_set(
-            name="c1", policy_rules=[policy_rule_id])
-        policy_rule_set_id = policy_rule_set['policy_rule_set']['id']
-        self._verify_prs_rules(policy_rule_set_id)
-        provider_ptg_id, consumer_ptg_id = self._create_provider_consumer_ptgs(
-                                                            policy_rule_set_id)
-
-        self._verify_prs_rules(policy_rule_set_id)
-        sc_instances = self._list(SERVICECHAIN_INSTANCES)
-        # One service chain instance should be created now
-        self.assertEqual(len(sc_instances['servicechain_instances']), 1)
-        sc_instance = sc_instances['servicechain_instances'][0]
-        self._assert_proper_chain_instance(sc_instance, provider_ptg_id,
-                                           consumer_ptg_id, [scs_id])
-
-        # Update policy rule with new classifier and verify instance is updated
-        classifier = self.create_policy_classifier(
-            protocol='TCP', port_range="80",
-            direction='bi')['policy_classifier']
-        rule = {'policy_rule': {'policy_classifier_id': classifier['id']}}
-        req = self.new_update_request('policy_rules', rule, policy_rule_id)
-        self.deserialize(self.fmt, req.get_response(self.ext_api))
-
-        self._verify_prs_rules(policy_rule_set_id)
-        sc_instances = self._list(SERVICECHAIN_INSTANCES)
-        # The service chain instance should be updated with new classifier
-        self.assertEqual(len(sc_instances['servicechain_instances']), 1)
-        sc_instance_updated = sc_instances['servicechain_instances'][0]
-        sc_instance.update({'classifier_id': classifier['id']})
-        self.assertEqual(sc_instance, sc_instance_updated)
-
-        # Verify redirect action replacement in rule
-        scs2_id = self._create_servicechain_spec()
-        action2 = self.create_policy_action(
-            action_type='redirect', action_value=scs2_id)['policy_action']
-        rule2 = {'policy_rule': {'policy_actions': [action2['id']]}}
-        req = self.new_update_request('policy_rules', rule2, policy_rule_id)
-        rule2 = self.deserialize(self.fmt, req.get_response(self.ext_api))
-        sc_instances = self._list(SERVICECHAIN_INSTANCES)[
-                                                    'servicechain_instances']
-        self.assertEqual(1, len(sc_instances))
-        self.assertEqual(sc_instance['id'], sc_instances[0]['id'])
-        self._assert_proper_chain_instance(
-            sc_instances[0], provider_ptg_id, consumer_ptg_id,
-            [scs2_id], classifier_id=classifier['id'])
-
-        # Verify Removing Redirect action deletes the chain
-        action3 = self.create_policy_action(
-                            action_type='allow')['policy_action']
-        rule = {'policy_rule': {'policy_actions': [action3['id']]}}
-        req = self.new_update_request('policy_rules', rule, policy_rule_id)
-        rule = self.deserialize(self.fmt, req.get_response(self.ext_api))
-        sc_instances = self._list(SERVICECHAIN_INSTANCES)[
-                                                'servicechain_instances']
-        self.assertEqual(0, len(sc_instances))
-
-        # Verify redirect action addition in rule
-        rule = {'policy_rule': {'policy_actions': [action2['id']]}}
-        req = self.new_update_request('policy_rules', rule, policy_rule_id)
-        rule = self.deserialize(self.fmt, req.get_response(self.ext_api))
-        sc_instances = self._list(SERVICECHAIN_INSTANCES)[
-                                                'servicechain_instances']
-        self.assertEqual(1, len(sc_instances))
-        self._assert_proper_chain_instance(
-            sc_instances[0], provider_ptg_id, consumer_ptg_id,
-            [scs2_id], classifier_id=classifier['id'])
-
-        self._verify_ptg_delete_cleanup_chain(consumer_ptg_id)
-
-    def test_rule_update_hierarchial_prs(self):
-        scs_id = self._create_servicechain_spec()
-        action_id, classifier_id, policy_rule_id = (
-            self._create_tcp_redirect_rule("20:90", scs_id))
-
-        child_prs = self.create_policy_rule_set(
-            name="prs", policy_rules=[policy_rule_id])
-        child_prs_id = child_prs['policy_rule_set']['id']
-        self._verify_prs_rules(child_prs_id)
-        parent_scs_id = self._create_servicechain_spec()
-        parent_action = self.create_policy_action(
-            name="action2", action_type=gconst.GP_ACTION_REDIRECT,
-            action_value=parent_scs_id)
-        parent_action_id = parent_action['policy_action']['id']
-        parent_policy_rule = self.create_policy_rule(
-            name='pr1', policy_classifier_id=classifier_id,
-            policy_actions=[parent_action_id])
-        parent_policy_rule_id = parent_policy_rule['policy_rule']['id']
-        self.create_policy_rule_set(
-            name="c1", policy_rules=[parent_policy_rule_id],
-            child_policy_rule_sets=[child_prs_id])
-        provider_ptg_id, consumer_ptg_id = self._create_provider_consumer_ptgs(
-                                                            child_prs_id)
-
-        self._verify_prs_rules(child_prs_id)
-        sc_instances = self._list(SERVICECHAIN_INSTANCES)
-        # We should have one service chain instance created now
-        self.assertEqual(len(sc_instances['servicechain_instances']), 1)
-        sc_instance = sc_instances['servicechain_instances'][0]
-        self._assert_proper_chain_instance(
-            sc_instance, provider_ptg_id, consumer_ptg_id,
-            [parent_scs_id, scs_id])
-
-        # Update policy rule with new classifier and verify instance is
-        # deleted because of classifier mismatch
-        classifier2 = self.create_policy_classifier(
-            protocol='TCP', port_range="80",
-            direction='bi')['policy_classifier']
-        policy_rule = {'policy_rule': {
-                                'policy_classifier_id': classifier2['id']}}
-        req = self.new_update_request('policy_rules', policy_rule,
-                                      policy_rule_id)
-        policy_rule = self.deserialize(self.fmt,
-                                       req.get_response(self.ext_api))
-
-        self._verify_prs_rules(child_prs_id)
-        sc_instances = self._list(SERVICECHAIN_INSTANCES)
-        self.assertEqual(0, len(sc_instances['servicechain_instances']))
-
-        # Verify restoring classifier recreates chain
-        rule = {'policy_rule': {'policy_classifier_id': classifier_id}}
-        req = self.new_update_request('policy_rules', rule, policy_rule_id)
-        rule = self.deserialize(self.fmt, req.get_response(self.ext_api))
-        sc_instances = self._list(SERVICECHAIN_INSTANCES)[
-                                                'servicechain_instances']
-        sc_instance = sc_instances[0]
-        self.assertEqual(1, len(sc_instances))
-        self._assert_proper_chain_instance(
-            sc_instances[0], provider_ptg_id, consumer_ptg_id,
-            [parent_scs_id, scs_id], classifier_id=classifier_id)
-
-        # Verify redirect action replacement in rule
-        scs2_id = self._create_servicechain_spec()
-        action2 = self.create_policy_action(
-            action_type='redirect',
-            action_value=scs2_id)['policy_action']
-        rule2 = {'policy_rule': {'policy_actions': [action2['id']]}}
-        req = self.new_update_request('policy_rules', rule2, policy_rule_id)
-        rule2 = self.deserialize(self.fmt, req.get_response(self.ext_api))
-        sc_instances = self._list(SERVICECHAIN_INSTANCES)[
-                                                'servicechain_instances']
-        self.assertEqual(1, len(sc_instances))
-        self.assertEqual(sc_instance['id'], sc_instances[0]['id'])
-        self._assert_proper_chain_instance(
-            sc_instances[0], provider_ptg_id, consumer_ptg_id,
-            [parent_scs_id, scs2_id], classifier_id=classifier_id)
-
-        # Verify Removing child Redirect action deleted the chain
-        action3 = self.create_policy_action(
-            action_type='allow')['policy_action']
-        rule = {'policy_rule': {'policy_actions': [action3['id']]}}
-        req = self.new_update_request('policy_rules', rule, policy_rule_id)
-        rule = self.deserialize(self.fmt, req.get_response(self.ext_api))
-        sc_instances = self._list(SERVICECHAIN_INSTANCES)[
-                                                'servicechain_instances']
-        self.assertEqual(0, len(sc_instances))
-
-        # Verify redirect action adding in rule
-        rule = {'policy_rule': {'policy_actions': [action2['id']]}}
-        req = self.new_update_request('policy_rules', rule, policy_rule_id)
-        rule = self.deserialize(self.fmt, req.get_response(self.ext_api))
-        sc_instances = self._list(SERVICECHAIN_INSTANCES)[
-                                                'servicechain_instances']
-        self.assertEqual(1, len(sc_instances))
-        self._assert_proper_chain_instance(
-            sc_instances[0], provider_ptg_id, consumer_ptg_id,
-            [parent_scs_id, scs2_id], classifier_id=classifier_id)
-
-        self._verify_ptg_delete_cleanup_chain(consumer_ptg_id)
-
-    def test_redirect_multiple_ptgs_single_prs(self):
-        scs_id = self._create_servicechain_spec()
-        _, _, policy_rule_id = self._create_tcp_redirect_rule(
-                                                "20:90", scs_id)
-
-        policy_rule_set = self.create_policy_rule_set(
-            name="c1", policy_rules=[policy_rule_id])
-        policy_rule_set_id = policy_rule_set['policy_rule_set']['id']
-        self._verify_prs_rules(policy_rule_set_id)
-
-        #Create 2 provider and 2 consumer PTGs
-        provider_ptg1_id, consumer_ptg1_id = (
-                self._create_provider_consumer_ptgs(policy_rule_set_id))
-        provider_ptg2_id, consumer_ptg2_id = (
-                self._create_provider_consumer_ptgs(policy_rule_set_id))
-        self._verify_prs_rules(policy_rule_set_id)
-        sc_instances = self._list(SERVICECHAIN_INSTANCES)
-        # We should have 4 service chain instances created now
-        self.assertEqual(len(sc_instances['servicechain_instances']), 4)
-        sc_instances = sc_instances['servicechain_instances']
-        sc_instances_provider_ptg_ids = set()
-        sc_instances_consumer_ptg_ids = set()
-        for sc_instance in sc_instances:
-            sc_instances_provider_ptg_ids.add(sc_instance['provider_ptg_id'])
-            sc_instances_consumer_ptg_ids.add(sc_instance['consumer_ptg_id'])
-        expected_provider_ptg_ids = set([provider_ptg1_id, provider_ptg2_id])
-        expected_consumer_ptg_ids = set([consumer_ptg1_id, consumer_ptg2_id])
-        self.assertEqual(expected_provider_ptg_ids,
-                         sc_instances_provider_ptg_ids)
-        self.assertEqual(expected_consumer_ptg_ids,
-                         sc_instances_consumer_ptg_ids)
-
-        with mock.patch.object(
-                servicechain_db.ServiceChainDbPlugin,
-                'update_servicechain_instance') as sc_instance_update:
-            sc_instance_update.return_value = {'id': uuidutils.generate_uuid()}
-            scs2_id = self._create_servicechain_spec()
-            _, classifier_id, policy_rule2_id = self._create_tcp_redirect_rule(
-                                                "80", scs2_id)
-            self.update_policy_rule_set(policy_rule_set_id,
-                                        expected_res_status=200,
-                                        policy_rules=[policy_rule2_id])
-            self._verify_prs_rules(policy_rule_set_id)
-            sc_instances_updated = self._list(SERVICECHAIN_INSTANCES)[
-                                                'servicechain_instances']
-            self.assertEqual(4, len(sc_instances_updated))
-            self.assertEqual(sc_instances, sc_instances_updated)
-
-            expected_update_calls = []
-            instance_data = {'servicechain_instance': {
-                                        'classifier_id': classifier_id,
-                                        'servicechain_specs': [scs2_id]}}
-            for sc_instance in sc_instances:
-                expected_update_calls.append(
-                    mock.call(mock.ANY, sc_instance['id'], instance_data))
-            self._check_call_list(expected_update_calls,
-                                  sc_instance_update.call_args_list)
-
-        # Deleting one group should end up deleting the two service chain
-        # Instances associated to it
-        req = self.new_delete_request(
-            'policy_target_groups', consumer_ptg1_id)
-        res = req.get_response(self.ext_api)
-        self.assertEqual(res.status_int, webob.exc.HTTPNoContent.code)
-        sc_instances = self._list(SERVICECHAIN_INSTANCES)
-        self.assertEqual(2, len(sc_instances['servicechain_instances']))
-        sc_instances = sc_instances['servicechain_instances']
-        for sc_instance in sc_instances:
-            self.assertNotEqual(sc_instance['consumer_ptg_id'],
-                                consumer_ptg1_id)
-
-        req = self.new_delete_request(
-            'policy_target_groups', provider_ptg1_id)
-        res = req.get_response(self.ext_api)
-        self.assertEqual(res.status_int, webob.exc.HTTPNoContent.code)
-        sc_instances = self._list(SERVICECHAIN_INSTANCES)
-        self.assertEqual(1, len(sc_instances['servicechain_instances']))
-        sc_instance = sc_instances['servicechain_instances'][0]
-        self.assertNotEqual(sc_instance['provider_ptg_id'], provider_ptg1_id)
-
-        self._verify_ptg_delete_cleanup_chain(provider_ptg2_id)
-
-    def test_hierarchical_redirect(self):
-        scs_id = self._create_servicechain_spec()
-        action_id, classifier_id, policy_rule_id = (
-            self._create_tcp_redirect_rule("20:90", scs_id))
-
-        child_prs = self.create_policy_rule_set(
-            name="prs", policy_rules=[policy_rule_id])
-        child_prs_id = child_prs['policy_rule_set']['id']
-        self._verify_prs_rules(child_prs_id)
-
-        parent_scs_id = self._create_servicechain_spec()
-        parent_action = self.create_policy_action(
-            name="action2", action_type=gconst.GP_ACTION_REDIRECT,
-            action_value=parent_scs_id)
-        parent_action_id = parent_action['policy_action']['id']
-        parent_policy_rule = self.create_policy_rule(
-            name='pr1', policy_classifier_id=classifier_id,
-            policy_actions=[parent_action_id])
-        parent_policy_rule_id = parent_policy_rule['policy_rule']['id']
+    def test_hierarchical_update_policy_classifier(self):
+        pr = self._create_http_allow_rule()
+        prs = self.create_policy_rule_set(
+            policy_rules=[pr['id']],
+            expected_res_status=201)['policy_rule_set']
 
         self.create_policy_rule_set(
-            name="c1", policy_rules=[parent_policy_rule_id],
-            child_policy_rule_sets=[child_prs_id])
-        provider_ptg1_id, consumer_ptg1_id = (
-                self._create_provider_consumer_ptgs(child_prs_id))
-        provider_ptg2_id, consumer_ptg2_id = (
-                self._create_provider_consumer_ptgs(child_prs_id))
-        self._verify_prs_rules(child_prs_id)
-        sc_instances = self._list(SERVICECHAIN_INSTANCES)
-        # We should have one service chain instance created now
-        self.assertEqual(4, len(sc_instances['servicechain_instances']))
-        sc_instances = sc_instances['servicechain_instances']
-        sc_instances_provider_ptg_ids = set()
-        sc_instances_consumer_ptg_ids = set()
-        for sc_instance in sc_instances:
-            sc_instances_provider_ptg_ids.add(sc_instance['provider_ptg_id'])
-            sc_instances_consumer_ptg_ids.add(sc_instance['consumer_ptg_id'])
-            self.assertEqual(sc_instance['servicechain_specs'],
-                             [parent_scs_id, scs_id])
-        expected_provider_ptg_ids = set([provider_ptg1_id, provider_ptg2_id])
-        expected_consumer_ptg_ids = set([consumer_ptg1_id, consumer_ptg2_id])
-        self.assertEqual(expected_provider_ptg_ids,
-                         sc_instances_provider_ptg_ids)
-        self.assertEqual(expected_consumer_ptg_ids,
-                         sc_instances_consumer_ptg_ids)
+            policy_rules=[pr['id']], child_policy_rule_sets=[prs['id']],
+            expected_res_status=201)
 
-        with mock.patch.object(
-                servicechain_db.ServiceChainDbPlugin,
-                'update_servicechain_instance') as sc_instance_update:
-            sc_instance_update.return_value = {'id': uuidutils.generate_uuid()}
-            scs2_id = self._create_servicechain_spec()
-            action = self.create_policy_action(
-                                action_type='redirect',
-                                action_value=scs2_id)['policy_action']
-            policy_rule = self.create_policy_rule(
-                                policy_classifier_id=classifier_id,
-                                policy_actions=[action['id']])['policy_rule']
-            policy_rule2_id = policy_rule['id']
-            self.update_policy_rule_set(child_prs_id,
-                                        expected_res_status=200,
-                                        policy_rules=[policy_rule2_id])
-            self._verify_prs_rules(child_prs_id)
-            sc_instances_updated = self._list(SERVICECHAIN_INSTANCES)[
-                                                'servicechain_instances']
-            self.assertEqual(4, len(sc_instances_updated))
-            self.assertEqual(sc_instances, sc_instances_updated)
+        self._verify_prs_rules(prs['id'])
 
-            expected_update_calls = []
-            instance_data = {'servicechain_instance': {
-                                'classifier_id': classifier_id,
-                                'servicechain_specs': [parent_scs_id,
-                                                       scs2_id]}}
-            for sc_instance in sc_instances:
-                expected_update_calls.append(
-                    mock.call(mock.ANY, sc_instance['id'], instance_data))
-            self._check_call_list(expected_update_calls,
-                                  sc_instance_update.call_args_list)
+        self.create_policy_target_group(
+            provided_policy_rule_sets={prs['id']: None},
+            expected_res_status=201)
+        self.create_policy_target_group(
+            consumed_policy_rule_sets={prs['id']: None},
+            expected_res_status=201)
+        self._verify_prs_rules(prs['id'])
 
-        # Deleting one group should end up deleting the two service chain
-        # Instances associated to it
-        req = self.new_delete_request(
-            'policy_target_groups', consumer_ptg1_id)
-        res = req.get_response(self.ext_api)
-        self.assertEqual(res.status_int, webob.exc.HTTPNoContent.code)
-        sc_instances = self._list(SERVICECHAIN_INSTANCES)
-        self.assertEqual(2, len(sc_instances['servicechain_instances']))
-        sc_instances = sc_instances['servicechain_instances']
-        for sc_instance in sc_instances:
-            self.assertNotEqual(sc_instance['consumer_ptg_id'],
-                                consumer_ptg1_id)
-
-        req = self.new_delete_request(
-            'policy_target_groups', provider_ptg1_id)
-        res = req.get_response(self.ext_api)
-        self.assertEqual(res.status_int, webob.exc.HTTPNoContent.code)
-        sc_instances = self._list(SERVICECHAIN_INSTANCES)
-        self.assertEqual(1, len(sc_instances['servicechain_instances']))
-        sc_instance = sc_instances['servicechain_instances'][0]
-        self.assertNotEqual(sc_instance['provider_ptg_id'], provider_ptg1_id)
-
-        self._verify_ptg_delete_cleanup_chain(provider_ptg2_id)
-
-    def test_enforce_parent_redirect_after_ptg_create(self):
-        scs_id = self._create_servicechain_spec()
-        _, classifier_id, policy_rule_id = self._create_tcp_redirect_rule(
-                                                            "20:90", scs_id)
-
-        child_prs = self.create_policy_rule_set(
-            name="prs", policy_rules=[policy_rule_id])
-        child_prs_id = child_prs['policy_rule_set']['id']
-        self._verify_prs_rules(child_prs_id)
-
-        provider_ptg_id, consumer_ptg_id = self._create_provider_consumer_ptgs(
-                                                                child_prs_id)
-        self._verify_prs_rules(child_prs_id)
-        sc_instances = self._list(SERVICECHAIN_INSTANCES)
-        # We should have one service chain instance created now
-        self.assertEqual(len(sc_instances['servicechain_instances']), 1)
-        sc_instance = sc_instances['servicechain_instances'][0]
-        self._assert_proper_chain_instance(
-            sc_instance, provider_ptg_id, consumer_ptg_id,
-            [scs_id], classifier_id=classifier_id)
-
-        parent_scs_id = self._create_servicechain_spec(node_types='FIREWALL')
-        parent_action = self.create_policy_action(
-            name="action2", action_type=gconst.GP_ACTION_REDIRECT,
-            action_value=parent_scs_id)
-        parent_action_id = parent_action['policy_action']['id']
-        parent_policy_rule = self.create_policy_rule(
-            name='pr1', policy_classifier_id=classifier_id,
-            policy_actions=[parent_action_id])
-        parent_policy_rule_id = parent_policy_rule['policy_rule']['id']
-
-        parent_prs = self.create_policy_rule_set(
-            name="c1", policy_rules=[parent_policy_rule_id],
-            child_policy_rule_sets=[child_prs_id])
-        parent_prs_id = parent_prs['policy_rule_set']['id']
-
-        self._verify_prs_rules(child_prs_id)
-        sc_instances = self._list(SERVICECHAIN_INSTANCES)
-        # We should have a new service chain instance created now from both
-        # parent and child specs
-        self.assertEqual(len(sc_instances['servicechain_instances']), 1)
-        sc_instance = sc_instances['servicechain_instances'][0]
-        self._assert_proper_chain_instance(sc_instance, provider_ptg_id,
-                                           consumer_ptg_id,
-                                           [parent_scs_id, scs_id])
-
-        # Delete parent ruleset and verify that the parent spec association
-        # is removed from servicechain instance
-        self.delete_policy_rule_set(
-            parent_prs_id, expected_res_status=webob.exc.HTTPNoContent.code)
-        self._verify_prs_rules(child_prs_id)
-        sc_instances = self._list(SERVICECHAIN_INSTANCES)
-        self.assertEqual(len(sc_instances['servicechain_instances']), 1)
-        sc_instance = sc_instances['servicechain_instances'][0]
-        self._assert_proper_chain_instance(sc_instance, provider_ptg_id,
-                                           consumer_ptg_id, [scs_id])
-
-        self._verify_ptg_delete_cleanup_chain(consumer_ptg_id)
-
-    def test_parent_ruleset_update_for_redirect(self):
-        scs_id = self._create_servicechain_spec()
-        _, classifier_id, policy_rule_id = self._create_tcp_redirect_rule(
-                                                            "20:90", scs_id)
-
-        child_prs = self.create_policy_rule_set(
-            name="prs", policy_rules=[policy_rule_id])
-        child_prs_id = child_prs['policy_rule_set']['id']
-
-        self._verify_prs_rules(child_prs_id)
-
-        parent_scs_id = self._create_servicechain_spec(node_types='FIREWALL')
-        parent_action = self.create_policy_action(
-            name="action2", action_type=gconst.GP_ACTION_REDIRECT,
-            action_value=parent_scs_id)
-        parent_action_id = parent_action['policy_action']['id']
-        parent_policy_rule = self.create_policy_rule(
-            name='pr1', policy_classifier_id=classifier_id,
-            policy_actions=[parent_action_id])
-        parent_policy_rule_id = parent_policy_rule['policy_rule']['id']
-
-        parent_prs = self.create_policy_rule_set(
-            name="c1", policy_rules=[parent_policy_rule_id])
-        parent_prs_id = parent_prs['policy_rule_set']['id']
-
-        provider_ptg_id, consumer_ptg_id = self._create_provider_consumer_ptgs(
-                                                                child_prs_id)
-        self._verify_prs_rules(child_prs_id)
-        sc_instances = self._list(SERVICECHAIN_INSTANCES)
-        # We should have one service chain instance created now
-        self.assertEqual(len(sc_instances['servicechain_instances']), 1)
-        sc_instance = sc_instances['servicechain_instances'][0]
-        self._assert_proper_chain_instance(sc_instance, provider_ptg_id,
-                                           consumer_ptg_id, [scs_id])
-
-        self.update_policy_rule_set(parent_prs_id, expected_res_status=200,
-                                    child_policy_rule_sets=[child_prs_id])
-
-        self._verify_prs_rules(child_prs_id)
-        sc_instances = self._list(SERVICECHAIN_INSTANCES)
-        # We should have a new service chain instance created now from both
-        # parent and child specs
-        self.assertEqual(len(sc_instances['servicechain_instances']), 1)
-        sc_instance = sc_instances['servicechain_instances'][0]
-        self._assert_proper_chain_instance(sc_instance, provider_ptg_id,
-                                           consumer_ptg_id,
-                                           [parent_scs_id, scs_id])
-
-        self._verify_ptg_delete_cleanup_chain(consumer_ptg_id)
-
-    def test_redirect_to_ep(self):
-        scs_id = self._create_servicechain_spec()
-        _, _, policy_rule_id = self._create_tcp_redirect_rule(
-                                                "20:90", scs_id)
-
-        policy_rule_set = self.create_policy_rule_set(
-            name="c1", policy_rules=[policy_rule_id])
-        policy_rule_set_id = policy_rule_set['policy_rule_set']['id']
-
-        with self.network(router__external=True, shared=True) as net:
-            with self.subnet(cidr='192.168.0.0/24', network=net) as sub:
-                self.create_external_segment(
-                    shared=True, tenant_id='admin', name="default",
-                    subnet_id=sub['subnet']['id'])
-
-                ep = self.create_external_policy(
-                    consumed_policy_rule_sets={policy_rule_set_id: ''})
-                provider = self.create_policy_target_group(
-                    provided_policy_rule_sets={policy_rule_set_id: ''})
-
-                self._verify_prs_rules(policy_rule_set_id)
-                sc_instance_list_req = self.new_list_request(
-                    SERVICECHAIN_INSTANCES)
-                res = sc_instance_list_req.get_response(self.ext_api)
-                sc_instances = self.deserialize(self.fmt, res)
-                # We should have one service chain instance created now
-                self.assertEqual(
-                    1, len(sc_instances['servicechain_instances']))
-                sc_instance = sc_instances['servicechain_instances'][0]
-                self._assert_proper_chain_instance(
-                    sc_instance, provider['policy_target_group']['id'],
-                    ep['external_policy']['id'], [scs_id])
-
-                # Verify that PTG delete cleans up the chain instances
-                self.delete_external_policy(
-                    ep['external_policy']['id'],
-                    expected_res_status=webob.exc.HTTPNoContent.code)
-                sc_instances = self.new_list_request(SERVICECHAIN_INSTANCES)
-                res = sc_instance_list_req.get_response(self.ext_api)
-                sc_instances = self.deserialize(self.fmt, res)
-                self.assertEqual(
-                    0, len(sc_instances['servicechain_instances']))
-
-    def test_redirect_to_ep_update(self):
-        scs_id = self._create_servicechain_spec()
-        _, _, policy_rule_id = self._create_tcp_redirect_rule(
-                                                "20:90", scs_id)
-
-        policy_rule_set = self.create_policy_rule_set(
-            name="c1", policy_rules=[policy_rule_id])
-        policy_rule_set_id = policy_rule_set['policy_rule_set']['id']
-
-        with self.network(router__external=True, shared=True) as net:
-            with self.subnet(cidr='192.168.0.0/24', network=net) as sub:
-                self.create_external_segment(
-                    shared=True, tenant_id='admin', name="default",
-                    subnet_id=sub['subnet']['id'])
-
-                ep = self.create_external_policy()
-                provider = self.create_policy_target_group(
-                    provided_policy_rule_sets={policy_rule_set_id: ''})
-
-                self.update_external_policy(
-                    ep['external_policy']['id'],
-                    consumed_policy_rule_sets={policy_rule_set_id: ''})
-                self._verify_prs_rules(policy_rule_set_id)
-                sc_instance_list_req = self.new_list_request(
-                    SERVICECHAIN_INSTANCES)
-                res = sc_instance_list_req.get_response(self.ext_api)
-                sc_instances = self.deserialize(self.fmt, res)
-                # We should have one service chain instance created now
-                self.assertEqual(
-                    1, len(sc_instances['servicechain_instances']))
-                sc_instance = sc_instances['servicechain_instances'][0]
-                self._assert_proper_chain_instance(
-                    sc_instance, provider['policy_target_group']['id'],
-                    ep['external_policy']['id'], [scs_id])
-
-                self.update_external_policy(
-                    ep['external_policy']['id'],
-                    consumed_policy_rule_sets={})
-                sc_instance_list_req = self.new_list_request(
-                    SERVICECHAIN_INSTANCES)
-                res = sc_instance_list_req.get_response(self.ext_api)
-                sc_instances = self.deserialize(self.fmt, res)
-                self.assertEqual(
-                    0, len(sc_instances['servicechain_instances']))
+        self.update_policy_classifier(
+            pr['policy_classifier_id'], expected_res_status=200,
+            port_range=8080)
+        self._verify_prs_rules(prs['id'])
 
 
 class TestServiceChain(ResourceMappingTestCase):
 
     def _assert_proper_chain_instance(self, sc_instance, provider_ptg_id,
-                                      consumer_ptg_id, scs_id_list):
+                                      consumer_ptg_id, scs_id_list,
+                                      classifier_id=None):
         self.assertEqual(sc_instance['provider_ptg_id'], provider_ptg_id)
-        self.assertEqual(sc_instance['consumer_ptg_id'], consumer_ptg_id)
+        self.assertEqual(sc_instance['consumer_ptg_id'], 'N/A')
         self.assertEqual(scs_id_list, sc_instance['servicechain_specs'])
-        provider = self.show_policy_target_group(
-            provider_ptg_id)['policy_target_group']
-        self.assertEqual(sc_instance['tenant_id'], provider['tenant_id'])
+        if classifier_id:
+            self.assertEqual(sc_instance['classifier_id'], classifier_id)
 
     def test_redirect_to_chain(self):
         scs_id = self._create_servicechain_spec()
@@ -2794,14 +2074,7 @@ class TestServiceChain(ResourceMappingTestCase):
                                            consumer_ptg_id, [scs_id])
 
         # Verify that PTG delete cleans up the chain instances
-        req = self.new_delete_request(
-            'policy_target_groups', consumer_ptg_id)
-        res = req.get_response(self.ext_api)
-        self.assertEqual(res.status_int, webob.exc.HTTPNoContent.code)
-        sc_node_list_req = self.new_list_request(SERVICECHAIN_INSTANCES)
-        res = sc_node_list_req.get_response(self.ext_api)
-        sc_instances = self.deserialize(self.fmt, res)
-        self.assertEqual(len(sc_instances['servicechain_instances']), 0)
+        self._verify_ptg_delete_cleanup_chain(provider_ptg_id)
 
     def test_update_ptg_with_redirect_prs(self):
         scs_id = self._create_servicechain_spec()
@@ -2912,14 +2185,7 @@ class TestServiceChain(ResourceMappingTestCase):
         self.assertEqual(sc_instance['id'], new_sc_instance['id'])
         self.assertEqual([new_scs_id], new_sc_instance['servicechain_specs'])
 
-        req = self.new_delete_request(
-                'policy_target_groups', consumer_ptg_id)
-        res = req.get_response(self.ext_api)
-        self.assertEqual(res.status_int, webob.exc.HTTPNoContent.code)
-        sc_instance_list_req = self.new_list_request(SERVICECHAIN_INSTANCES)
-        res = sc_instance_list_req.get_response(self.ext_api)
-        sc_instances = self.deserialize(self.fmt, res)
-        self.assertEqual(len(sc_instances['servicechain_instances']), 0)
+        self._verify_ptg_delete_cleanup_chain(provider_ptg_id)
 
     # REVISIT(Magesh): Enable this UT when we run the GBP UTs against NCP
     '''
@@ -2959,6 +2225,624 @@ class TestServiceChain(ResourceMappingTestCase):
         self._verify_ptg_delete_cleanup_chain(consumer_ptg_id)
     '''
 
+    def test_ptg_updates_affecting_chain(self):
+        scs1_id = self._create_servicechain_spec()
+        _, classifier_id, policy_rule_id = self._create_tcp_redirect_rule(
+                                                            "20:90", scs1_id)
+        prs1 = self.create_policy_rule_set(
+            name="c1", policy_rules=[policy_rule_id])['policy_rule_set']
+        self._verify_prs_rules(prs1['id'])
+        provider_ptg, consumer_ptg = self._create_provider_consumer_ptgs()
+        self._verify_prs_rules(prs1['id'])
+
+        # No service chain instances until we have provider and consumer prs
+        sc_instances = self._list(SERVICECHAIN_INSTANCES)
+        self.assertEqual([], sc_instances['servicechain_instances'])
+
+        # One service chain instance should be created when PTGs are
+        # updated with provided and consumed prs
+        self.update_policy_target_group(
+            provider_ptg, provided_policy_rule_sets={prs1['id']: ''},
+            consumed_policy_rule_sets={}, expected_res_status=200)
+        self.update_policy_target_group(
+            consumer_ptg, consumed_policy_rule_sets={prs1['id']: ''},
+            provided_policy_rule_sets={}, expected_res_status=200)
+        self._verify_prs_rules(prs1['id'])
+        sc_instances = self._list(SERVICECHAIN_INSTANCES)
+        self.assertEqual(1, len(sc_instances['servicechain_instances']))
+        sc_instance = sc_instances['servicechain_instances'][0]
+        self._assert_proper_chain_instance(
+            sc_instance, provider_ptg, consumer_ptg,
+            [scs1_id], classifier_id=classifier_id)
+
+        # Verify that adding a new PRS with just Allow rule does not affect
+        # the chain
+        with mock.patch.object(
+                servicechain_db.ServiceChainDbPlugin,
+                'update_servicechain_instance') as sc_instance_update:
+            sc_instance_update.return_value = {'id': sc_instance['id']}
+            pr = self._create_ssh_allow_rule()
+            prs2 = self.create_policy_rule_set(
+                policy_rules=[pr['id']])['policy_rule_set']
+            self.update_policy_target_group(
+                provider_ptg, consumed_policy_rule_sets={},
+                provided_policy_rule_sets={prs1['id']: '', prs2['id']: ''},
+                expected_res_status=200)
+            self.update_policy_target_group(
+                consumer_ptg, provided_policy_rule_sets={},
+                consumed_policy_rule_sets={prs1['id']: '', prs2['id']: ''},
+                expected_res_status=200)
+            self._verify_prs_rules(prs2['id'])
+            sc_instances_new = self._list(SERVICECHAIN_INSTANCES)
+            self.assertEqual(sc_instances, sc_instances_new)
+            self.assertEqual(sc_instance_update.call_args_list, [])
+
+        # update with a new redirect ruleset and verify that the instance is
+        # updated with the new classifier
+        scs2_id = self._create_servicechain_spec()
+        _, classifier3_id, policy_rule3_id = self._create_tcp_redirect_rule(
+                                            "443", scs2_id)
+        prs3 = self.create_policy_rule_set(
+            name="c1", policy_rules=[policy_rule3_id])['policy_rule_set']
+        self._verify_prs_rules(prs3['id'])
+        self.update_policy_target_group(
+            provider_ptg, consumed_policy_rule_sets={},
+            provided_policy_rule_sets={prs2['id']: '', prs3['id']: ''},
+            expected_res_status=200)
+        self.update_policy_target_group(
+            consumer_ptg, provided_policy_rule_sets={},
+            consumed_policy_rule_sets={prs2['id']: '', prs3['id']: ''},
+            expected_res_status=200)
+        self._verify_prs_rules(prs3['id'])
+        sc_instances_new = self._list(SERVICECHAIN_INSTANCES)
+        self.assertEqual(1, len(sc_instances_new['servicechain_instances']))
+        sc_instance_new = sc_instances_new['servicechain_instances'][0]
+        self._assert_proper_chain_instance(
+            sc_instance_new, provider_ptg, consumer_ptg,
+            [scs2_id], classifier_id=classifier3_id)
+        self.assertEqual(sc_instance['id'], sc_instance_new['id'])
+
+        # Remove redirect and see if the instance got deleted
+        self.update_policy_target_group(
+            provider_ptg, provided_policy_rule_sets={prs2['id']: ''},
+            consumed_policy_rule_sets={}, expected_res_status=200)
+        self.update_policy_target_group(
+            consumer_ptg, consumed_policy_rule_sets={prs2['id']: ''},
+            provided_policy_rule_sets={}, expected_res_status=200)
+        self._verify_prs_rules(prs2['id'])
+        sc_instances_new = self._list(SERVICECHAIN_INSTANCES)
+        self.assertEqual([], sc_instances_new['servicechain_instances'])
+        self.assertEqual(sc_instance_update.call_args_list, [])
+
+        # Verify that PTG update removing prs cleansup the chain instances
+        self._verify_ptg_delete_cleanup_chain(provider_ptg, [prs1['id']])
+
+    def test_rule_update_updates_chain(self):
+        scs_id = self._create_servicechain_spec()
+        _, _, policy_rule_id = self._create_tcp_redirect_rule("20:90", scs_id)
+
+        policy_rule_set = self.create_policy_rule_set(
+            name="c1", policy_rules=[policy_rule_id])
+        policy_rule_set_id = policy_rule_set['policy_rule_set']['id']
+        self._verify_prs_rules(policy_rule_set_id)
+        provider_ptg_id, consumer_ptg_id = self._create_provider_consumer_ptgs(
+                                                            policy_rule_set_id)
+
+        self._verify_prs_rules(policy_rule_set_id)
+        sc_instances = self._list(SERVICECHAIN_INSTANCES)
+        # One service chain instance should be created now
+        self.assertEqual(len(sc_instances['servicechain_instances']), 1)
+        sc_instance = sc_instances['servicechain_instances'][0]
+        self._assert_proper_chain_instance(sc_instance, provider_ptg_id,
+                                           consumer_ptg_id, [scs_id])
+
+        # Update policy rule with new classifier and verify instance is updated
+        classifier = self.create_policy_classifier(
+            protocol='TCP', port_range="80",
+            direction='bi')['policy_classifier']
+        rule = {'policy_rule': {'policy_classifier_id': classifier['id']}}
+        req = self.new_update_request('policy_rules', rule, policy_rule_id)
+        self.deserialize(self.fmt, req.get_response(self.ext_api))
+
+        self._verify_prs_rules(policy_rule_set_id)
+        sc_instances = self._list(SERVICECHAIN_INSTANCES)
+        # The service chain instance should be updated with new classifier
+        self.assertEqual(len(sc_instances['servicechain_instances']), 1)
+        sc_instance_updated = sc_instances['servicechain_instances'][0]
+        sc_instance.update({'classifier_id': classifier['id']})
+        self.assertEqual(sc_instance, sc_instance_updated)
+
+        # Verify redirect action replacement in rule
+        scs2_id = self._create_servicechain_spec()
+        action2 = self.create_policy_action(
+            action_type='redirect', action_value=scs2_id)['policy_action']
+        rule2 = {'policy_rule': {'policy_actions': [action2['id']]}}
+        req = self.new_update_request('policy_rules', rule2, policy_rule_id)
+        rule2 = self.deserialize(self.fmt, req.get_response(self.ext_api))
+        sc_instances = self._list(SERVICECHAIN_INSTANCES)[
+                                                    'servicechain_instances']
+        self.assertEqual(1, len(sc_instances))
+        self.assertEqual(sc_instance['id'], sc_instances[0]['id'])
+        self._assert_proper_chain_instance(
+            sc_instances[0], provider_ptg_id, consumer_ptg_id,
+            [scs2_id], classifier_id=classifier['id'])
+
+        # Verify Removing Redirect action deletes the chain
+        action3 = self.create_policy_action(
+                            action_type='allow')['policy_action']
+        rule = {'policy_rule': {'policy_actions': [action3['id']]}}
+        req = self.new_update_request('policy_rules', rule, policy_rule_id)
+        rule = self.deserialize(self.fmt, req.get_response(self.ext_api))
+        sc_instances = self._list(SERVICECHAIN_INSTANCES)[
+                                                'servicechain_instances']
+        self.assertEqual(0, len(sc_instances))
+
+        # Verify redirect action addition in rule
+        rule = {'policy_rule': {'policy_actions': [action2['id']]}}
+        req = self.new_update_request('policy_rules', rule, policy_rule_id)
+        rule = self.deserialize(self.fmt, req.get_response(self.ext_api))
+        sc_instances = self._list(SERVICECHAIN_INSTANCES)[
+                                                'servicechain_instances']
+        self.assertEqual(1, len(sc_instances))
+        self._assert_proper_chain_instance(
+            sc_instances[0], provider_ptg_id, consumer_ptg_id,
+            [scs2_id], classifier_id=classifier['id'])
+
+        self._verify_ptg_delete_cleanup_chain(provider_ptg_id)
+
+    def test_rule_update_hierarchial_prs(self):
+        scs_id = self._create_servicechain_spec()
+        action_id, classifier_id, policy_rule_id = (
+            self._create_tcp_redirect_rule("20:90", scs_id))
+
+        child_prs = self.create_policy_rule_set(
+            name="prs", policy_rules=[policy_rule_id])
+        child_prs_id = child_prs['policy_rule_set']['id']
+        self._verify_prs_rules(child_prs_id)
+        parent_scs_id = self._create_servicechain_spec()
+        parent_action = self.create_policy_action(
+            name="action2", action_type=gconst.GP_ACTION_REDIRECT,
+            action_value=parent_scs_id)
+        parent_action_id = parent_action['policy_action']['id']
+        parent_policy_rule = self.create_policy_rule(
+            name='pr1', policy_classifier_id=classifier_id,
+            policy_actions=[parent_action_id])
+        parent_policy_rule_id = parent_policy_rule['policy_rule']['id']
+        self.create_policy_rule_set(
+            name="c1", policy_rules=[parent_policy_rule_id],
+            child_policy_rule_sets=[child_prs_id])
+        provider_ptg_id, consumer_ptg_id = self._create_provider_consumer_ptgs(
+                                                            child_prs_id)
+
+        self._verify_prs_rules(child_prs_id)
+        sc_instances = self._list(SERVICECHAIN_INSTANCES)
+        # We should have one service chain instance created now
+        self.assertEqual(len(sc_instances['servicechain_instances']), 1)
+        sc_instance = sc_instances['servicechain_instances'][0]
+        self._assert_proper_chain_instance(
+            sc_instance, provider_ptg_id, consumer_ptg_id,
+            [parent_scs_id, scs_id])
+
+        # Update policy rule with new classifier and verify instance is
+        # deleted because of classifier mismatch
+        classifier2 = self.create_policy_classifier(
+            protocol='TCP', port_range="80",
+            direction='bi')['policy_classifier']
+        policy_rule = {'policy_rule': {
+                                'policy_classifier_id': classifier2['id']}}
+        req = self.new_update_request('policy_rules', policy_rule,
+                                      policy_rule_id)
+        policy_rule = self.deserialize(self.fmt,
+                                       req.get_response(self.ext_api))
+
+        self._verify_prs_rules(child_prs_id)
+        sc_instances = self._list(SERVICECHAIN_INSTANCES)
+        self.assertEqual(0, len(sc_instances['servicechain_instances']))
+
+        # Verify restoring classifier recreates chain
+        rule = {'policy_rule': {'policy_classifier_id': classifier_id}}
+        req = self.new_update_request('policy_rules', rule, policy_rule_id)
+        rule = self.deserialize(self.fmt, req.get_response(self.ext_api))
+        sc_instances = self._list(SERVICECHAIN_INSTANCES)[
+                                                'servicechain_instances']
+        sc_instance = sc_instances[0]
+        self.assertEqual(1, len(sc_instances))
+        self._assert_proper_chain_instance(
+            sc_instances[0], provider_ptg_id, consumer_ptg_id,
+            [parent_scs_id, scs_id], classifier_id=classifier_id)
+
+        # Verify redirect action replacement in rule
+        scs2_id = self._create_servicechain_spec()
+        action2 = self.create_policy_action(
+            action_type='redirect',
+            action_value=scs2_id)['policy_action']
+        rule2 = {'policy_rule': {'policy_actions': [action2['id']]}}
+        req = self.new_update_request('policy_rules', rule2, policy_rule_id)
+        rule2 = self.deserialize(self.fmt, req.get_response(self.ext_api))
+        sc_instances = self._list(SERVICECHAIN_INSTANCES)[
+                                                'servicechain_instances']
+        self.assertEqual(1, len(sc_instances))
+        self.assertEqual(sc_instance['id'], sc_instances[0]['id'])
+        self._assert_proper_chain_instance(
+            sc_instances[0], provider_ptg_id, consumer_ptg_id,
+            [parent_scs_id, scs2_id], classifier_id=classifier_id)
+
+        # Verify Removing child Redirect action deleted the chain
+        action3 = self.create_policy_action(
+            action_type='allow')['policy_action']
+        rule = {'policy_rule': {'policy_actions': [action3['id']]}}
+        req = self.new_update_request('policy_rules', rule, policy_rule_id)
+        rule = self.deserialize(self.fmt, req.get_response(self.ext_api))
+        sc_instances = self._list(SERVICECHAIN_INSTANCES)[
+                                                'servicechain_instances']
+        self.assertEqual(0, len(sc_instances))
+
+        # Verify redirect action adding in rule
+        rule = {'policy_rule': {'policy_actions': [action2['id']]}}
+        req = self.new_update_request('policy_rules', rule, policy_rule_id)
+        rule = self.deserialize(self.fmt, req.get_response(self.ext_api))
+        sc_instances = self._list(SERVICECHAIN_INSTANCES)[
+                                                'servicechain_instances']
+        self.assertEqual(1, len(sc_instances))
+        self._assert_proper_chain_instance(
+            sc_instances[0], provider_ptg_id, consumer_ptg_id,
+            [parent_scs_id, scs2_id], classifier_id=classifier_id)
+
+        self._verify_ptg_delete_cleanup_chain(provider_ptg_id)
+
+    def test_redirect_multiple_ptgs_single_prs(self):
+        scs_id = self._create_servicechain_spec()
+        _, _, policy_rule_id = self._create_tcp_redirect_rule(
+                                                "20:90", scs_id)
+
+        policy_rule_set = self.create_policy_rule_set(
+            name="c1", policy_rules=[policy_rule_id])
+        policy_rule_set_id = policy_rule_set['policy_rule_set']['id']
+        self._verify_prs_rules(policy_rule_set_id)
+
+        #Create 2 provider and 2 consumer PTGs
+        provider_ptg1_id, consumer_ptg1_id = (
+                self._create_provider_consumer_ptgs(policy_rule_set_id))
+        provider_ptg2_id, consumer_ptg2_id = (
+                self._create_provider_consumer_ptgs(policy_rule_set_id))
+        self._verify_prs_rules(policy_rule_set_id)
+        sc_instances = self._list(SERVICECHAIN_INSTANCES)
+        # We should have 4 service chain instances created now
+        self.assertEqual(2, len(sc_instances['servicechain_instances']))
+        sc_instances = sc_instances['servicechain_instances']
+        sc_instances_provider_ptg_ids = set()
+        for sc_instance in sc_instances:
+            sc_instances_provider_ptg_ids.add(sc_instance['provider_ptg_id'])
+        expected_provider_ptg_ids = set([provider_ptg1_id, provider_ptg2_id])
+        self.assertEqual(expected_provider_ptg_ids,
+                         sc_instances_provider_ptg_ids)
+
+        with mock.patch.object(
+                servicechain_db.ServiceChainDbPlugin,
+                'update_servicechain_instance') as sc_instance_update:
+            sc_instance_update.return_value = {'id': uuidutils.generate_uuid()}
+            scs2_id = self._create_servicechain_spec()
+            _, classifier_id, policy_rule2_id = self._create_tcp_redirect_rule(
+                                                "80", scs2_id)
+            self.update_policy_rule_set(policy_rule_set_id,
+                                        expected_res_status=200,
+                                        policy_rules=[policy_rule2_id])
+            self._verify_prs_rules(policy_rule_set_id)
+            sc_instances_updated = self._list(SERVICECHAIN_INSTANCES)[
+                                                'servicechain_instances']
+            self.assertEqual(2, len(sc_instances_updated))
+            self.assertEqual(sc_instances, sc_instances_updated)
+
+            expected_update_calls = []
+            instance_data = {'servicechain_instance': {
+                                        'classifier_id': classifier_id,
+                                        'servicechain_specs': [scs2_id]}}
+            for sc_instance in sc_instances:
+                expected_update_calls.append(
+                    mock.call(mock.ANY, sc_instance['id'], instance_data))
+            self._check_call_list(expected_update_calls,
+                                  sc_instance_update.call_args_list)
+
+        # Deleting one group should end up deleting the two service chain
+        # Instances associated to it
+        req = self.new_delete_request(
+            'policy_target_groups', consumer_ptg1_id)
+        res = req.get_response(self.ext_api)
+        self.assertEqual(res.status_int, webob.exc.HTTPNoContent.code)
+        sc_instances = self._list(SERVICECHAIN_INSTANCES)
+        self.assertEqual(2, len(sc_instances['servicechain_instances']))
+
+        req = self.new_delete_request('policy_target_groups', provider_ptg1_id)
+        res = req.get_response(self.ext_api)
+        self.assertEqual(res.status_int, webob.exc.HTTPNoContent.code)
+        sc_instances = self._list(SERVICECHAIN_INSTANCES)
+        self.assertEqual(1, len(sc_instances['servicechain_instances']))
+        sc_instance = sc_instances['servicechain_instances'][0]
+        self.assertNotEqual(sc_instance['provider_ptg_id'], provider_ptg1_id)
+
+        self._verify_ptg_delete_cleanup_chain(provider_ptg2_id)
+
+    def test_hierarchical_redirect(self):
+        scs_id = self._create_servicechain_spec()
+        action_id, classifier_id, policy_rule_id = (
+            self._create_tcp_redirect_rule("20:90", scs_id))
+
+        child_prs = self.create_policy_rule_set(
+            name="prs", policy_rules=[policy_rule_id])
+        child_prs_id = child_prs['policy_rule_set']['id']
+        self._verify_prs_rules(child_prs_id)
+
+        parent_scs_id = self._create_servicechain_spec()
+        parent_action = self.create_policy_action(
+            name="action2", action_type=gconst.GP_ACTION_REDIRECT,
+            action_value=parent_scs_id)
+        parent_action_id = parent_action['policy_action']['id']
+        parent_policy_rule = self.create_policy_rule(
+            name='pr1', policy_classifier_id=classifier_id,
+            policy_actions=[parent_action_id])
+        parent_policy_rule_id = parent_policy_rule['policy_rule']['id']
+
+        self.create_policy_rule_set(
+            name="c1", policy_rules=[parent_policy_rule_id],
+            child_policy_rule_sets=[child_prs_id])
+        provider_ptg1_id, consumer_ptg1_id = (
+                self._create_provider_consumer_ptgs(child_prs_id))
+        provider_ptg2_id, consumer_ptg2_id = (
+                self._create_provider_consumer_ptgs(child_prs_id))
+        self._verify_prs_rules(child_prs_id)
+        sc_instances = self._list(SERVICECHAIN_INSTANCES)
+        # We should have one service chain instance created now
+        self.assertEqual(2, len(sc_instances['servicechain_instances']))
+        sc_instances = sc_instances['servicechain_instances']
+        sc_instances_provider_ptg_ids = set()
+        for sc_instance in sc_instances:
+            sc_instances_provider_ptg_ids.add(sc_instance['provider_ptg_id'])
+            self.assertEqual(sc_instance['servicechain_specs'],
+                             [parent_scs_id, scs_id])
+        expected_provider_ptg_ids = set([provider_ptg1_id, provider_ptg2_id])
+        self.assertEqual(expected_provider_ptg_ids,
+                         sc_instances_provider_ptg_ids)
+
+        with mock.patch.object(
+                servicechain_db.ServiceChainDbPlugin,
+                'update_servicechain_instance') as sc_instance_update:
+            sc_instance_update.return_value = {'id': uuidutils.generate_uuid()}
+            scs2_id = self._create_servicechain_spec()
+            action = self.create_policy_action(
+                                action_type='redirect',
+                                action_value=scs2_id)['policy_action']
+            policy_rule = self.create_policy_rule(
+                                policy_classifier_id=classifier_id,
+                                policy_actions=[action['id']])['policy_rule']
+            policy_rule2_id = policy_rule['id']
+            self.update_policy_rule_set(child_prs_id,
+                                        expected_res_status=200,
+                                        policy_rules=[policy_rule2_id])
+            self._verify_prs_rules(child_prs_id)
+            sc_instances_updated = self._list(SERVICECHAIN_INSTANCES)[
+                                                'servicechain_instances']
+            self.assertEqual(2, len(sc_instances_updated))
+            self.assertEqual(sc_instances, sc_instances_updated)
+
+            expected_update_calls = []
+            instance_data = {'servicechain_instance': {
+                                'classifier_id': classifier_id,
+                                'servicechain_specs': [parent_scs_id,
+                                                       scs2_id]}}
+            for sc_instance in sc_instances:
+                expected_update_calls.append(
+                    mock.call(mock.ANY, sc_instance['id'], instance_data))
+            self._check_call_list(expected_update_calls,
+                                  sc_instance_update.call_args_list)
+
+        # Deleting one group should end up deleting the two service chain
+        # Instances associated to it
+        req = self.new_delete_request(
+            'policy_target_groups', provider_ptg1_id)
+        res = req.get_response(self.ext_api)
+        self.assertEqual(res.status_int, webob.exc.HTTPNoContent.code)
+        sc_instances = self._list(SERVICECHAIN_INSTANCES)
+        self.assertEqual(1, len(sc_instances['servicechain_instances']))
+
+        self._verify_ptg_delete_cleanup_chain(provider_ptg2_id)
+
+    def test_enforce_parent_redirect_after_ptg_create(self):
+        scs_id = self._create_servicechain_spec()
+        _, classifier_id, policy_rule_id = self._create_tcp_redirect_rule(
+                                                            "20:90", scs_id)
+
+        child_prs = self.create_policy_rule_set(
+            name="prs", policy_rules=[policy_rule_id])
+        child_prs_id = child_prs['policy_rule_set']['id']
+        self._verify_prs_rules(child_prs_id)
+
+        provider_ptg_id, consumer_ptg_id = self._create_provider_consumer_ptgs(
+                                                                child_prs_id)
+        self._verify_prs_rules(child_prs_id)
+        sc_instances = self._list(SERVICECHAIN_INSTANCES)
+        # We should have one service chain instance created now
+        self.assertEqual(len(sc_instances['servicechain_instances']), 1)
+        sc_instance = sc_instances['servicechain_instances'][0]
+        self._assert_proper_chain_instance(
+            sc_instance, provider_ptg_id, consumer_ptg_id,
+            [scs_id], classifier_id=classifier_id)
+
+        parent_scs_id = self._create_servicechain_spec(node_types='FIREWALL')
+        parent_action = self.create_policy_action(
+            name="action2", action_type=gconst.GP_ACTION_REDIRECT,
+            action_value=parent_scs_id)
+        parent_action_id = parent_action['policy_action']['id']
+        parent_policy_rule = self.create_policy_rule(
+            name='pr1', policy_classifier_id=classifier_id,
+            policy_actions=[parent_action_id])
+        parent_policy_rule_id = parent_policy_rule['policy_rule']['id']
+
+        parent_prs = self.create_policy_rule_set(
+            name="c1", policy_rules=[parent_policy_rule_id],
+            child_policy_rule_sets=[child_prs_id])
+        parent_prs_id = parent_prs['policy_rule_set']['id']
+
+        self._verify_prs_rules(child_prs_id)
+        sc_instances = self._list(SERVICECHAIN_INSTANCES)
+        # We should have a new service chain instance created now from both
+        # parent and child specs
+        self.assertEqual(len(sc_instances['servicechain_instances']), 1)
+        sc_instance = sc_instances['servicechain_instances'][0]
+        self._assert_proper_chain_instance(sc_instance, provider_ptg_id,
+                                           consumer_ptg_id,
+                                           [parent_scs_id, scs_id])
+
+        # Delete parent ruleset and verify that the parent spec association
+        # is removed from servicechain instance
+        self.delete_policy_rule_set(
+            parent_prs_id, expected_res_status=webob.exc.HTTPNoContent.code)
+        self._verify_prs_rules(child_prs_id)
+        sc_instances = self._list(SERVICECHAIN_INSTANCES)
+        self.assertEqual(len(sc_instances['servicechain_instances']), 1)
+        sc_instance = sc_instances['servicechain_instances'][0]
+        self._assert_proper_chain_instance(sc_instance, provider_ptg_id,
+                                           consumer_ptg_id, [scs_id])
+
+        self._verify_ptg_delete_cleanup_chain(provider_ptg_id)
+
+    def test_parent_ruleset_update_for_redirect(self):
+        scs_id = self._create_servicechain_spec()
+        _, classifier_id, policy_rule_id = self._create_tcp_redirect_rule(
+                                                            "20:90", scs_id)
+
+        child_prs = self.create_policy_rule_set(
+            name="prs", policy_rules=[policy_rule_id])
+        child_prs_id = child_prs['policy_rule_set']['id']
+
+        self._verify_prs_rules(child_prs_id)
+
+        parent_scs_id = self._create_servicechain_spec(node_types='FIREWALL')
+        parent_action = self.create_policy_action(
+            name="action2", action_type=gconst.GP_ACTION_REDIRECT,
+            action_value=parent_scs_id)
+        parent_action_id = parent_action['policy_action']['id']
+        parent_policy_rule = self.create_policy_rule(
+            name='pr1', policy_classifier_id=classifier_id,
+            policy_actions=[parent_action_id])
+        parent_policy_rule_id = parent_policy_rule['policy_rule']['id']
+
+        parent_prs = self.create_policy_rule_set(
+            name="c1", policy_rules=[parent_policy_rule_id])
+        parent_prs_id = parent_prs['policy_rule_set']['id']
+
+        provider_ptg_id, consumer_ptg_id = self._create_provider_consumer_ptgs(
+                                                                child_prs_id)
+        self._verify_prs_rules(child_prs_id)
+        sc_instances = self._list(SERVICECHAIN_INSTANCES)
+        # We should have one service chain instance created now
+        self.assertEqual(len(sc_instances['servicechain_instances']), 1)
+        sc_instance = sc_instances['servicechain_instances'][0]
+        self._assert_proper_chain_instance(sc_instance, provider_ptg_id,
+                                           consumer_ptg_id, [scs_id])
+
+        self.update_policy_rule_set(parent_prs_id, expected_res_status=200,
+                                    child_policy_rule_sets=[child_prs_id])
+
+        self._verify_prs_rules(child_prs_id)
+        sc_instances = self._list(SERVICECHAIN_INSTANCES)
+        # We should have a new service chain instance created now from both
+        # parent and child specs
+        self.assertEqual(len(sc_instances['servicechain_instances']), 1)
+        sc_instance = sc_instances['servicechain_instances'][0]
+        self._assert_proper_chain_instance(sc_instance, provider_ptg_id,
+                                           consumer_ptg_id,
+                                           [parent_scs_id, scs_id])
+
+        self._verify_ptg_delete_cleanup_chain(provider_ptg_id)
+
+    def test_redirect_to_ep(self):
+        scs_id = self._create_servicechain_spec()
+        _, _, policy_rule_id = self._create_tcp_redirect_rule(
+                                                "20:90", scs_id)
+
+        policy_rule_set = self.create_policy_rule_set(
+            name="c1", policy_rules=[policy_rule_id])
+        policy_rule_set_id = policy_rule_set['policy_rule_set']['id']
+
+        with self.network(router__external=True, shared=True) as net:
+            with self.subnet(cidr='192.168.0.0/24', network=net) as sub:
+                self.create_external_segment(
+                    shared=True, tenant_id='admin', name="default",
+                    subnet_id=sub['subnet']['id'])
+
+                ep = self.create_external_policy(
+                    consumed_policy_rule_sets={policy_rule_set_id: ''})
+                provider = self.create_policy_target_group(
+                    provided_policy_rule_sets={policy_rule_set_id: ''})
+
+                self._verify_prs_rules(policy_rule_set_id)
+                sc_instance_list_req = self.new_list_request(
+                    SERVICECHAIN_INSTANCES)
+                res = sc_instance_list_req.get_response(self.ext_api)
+                sc_instances = self.deserialize(self.fmt, res)
+                # We should have one service chain instance created now
+                self.assertEqual(
+                    1, len(sc_instances['servicechain_instances']))
+                sc_instance = sc_instances['servicechain_instances'][0]
+                self._assert_proper_chain_instance(
+                    sc_instance, provider['policy_target_group']['id'],
+                    ep['external_policy']['id'], [scs_id])
+
+                self.delete_policy_target_group(
+                    provider['policy_target_group']['id'],
+                    expected_res_status=webob.exc.HTTPNoContent.code)
+                sc_instance_list_req = self.new_list_request(
+                    SERVICECHAIN_INSTANCES)
+                res = sc_instance_list_req.get_response(self.ext_api)
+                sc_instances = self.deserialize(self.fmt, res)
+                self.assertEqual(
+                    0, len(sc_instances['servicechain_instances']))
+
+    def test_redirect_to_ep_update(self):
+        scs_id = self._create_servicechain_spec()
+        _, _, policy_rule_id = self._create_tcp_redirect_rule(
+                                                "20:90", scs_id)
+
+        policy_rule_set = self.create_policy_rule_set(
+            name="c1", policy_rules=[policy_rule_id])
+        policy_rule_set_id = policy_rule_set['policy_rule_set']['id']
+
+        with self.network(router__external=True, shared=True) as net:
+            with self.subnet(cidr='192.168.0.0/24', network=net) as sub:
+                self.create_external_segment(
+                    shared=True, tenant_id='admin', name="default",
+                    subnet_id=sub['subnet']['id'])
+
+                ep = self.create_external_policy()
+                provider = self.create_policy_target_group(
+                    provided_policy_rule_sets={policy_rule_set_id: ''})
+
+                self.update_external_policy(
+                    ep['external_policy']['id'],
+                    consumed_policy_rule_sets={policy_rule_set_id: ''})
+                self._verify_prs_rules(policy_rule_set_id)
+                sc_instance_list_req = self.new_list_request(
+                    SERVICECHAIN_INSTANCES)
+                res = sc_instance_list_req.get_response(self.ext_api)
+                sc_instances = self.deserialize(self.fmt, res)
+                # We should have one service chain instance created now
+                self.assertEqual(
+                    1, len(sc_instances['servicechain_instances']))
+                sc_instance = sc_instances['servicechain_instances'][0]
+                self._assert_proper_chain_instance(
+                    sc_instance, provider['policy_target_group']['id'],
+                    ep['external_policy']['id'], [scs_id])
+
+                self.delete_policy_target_group(
+                    provider['policy_target_group']['id'],
+                    expected_res_status=webob.exc.HTTPNoContent.code)
+                sc_instance_list_req = self.new_list_request(
+                    SERVICECHAIN_INSTANCES)
+                res = sc_instance_list_req.get_response(self.ext_api)
+                sc_instances = self.deserialize(self.fmt, res)
+                self.assertEqual(
+                    0, len(sc_instances['servicechain_instances']))
+
 
 class TestServiceChainAdminOwner(TestServiceChain):
 
@@ -2968,11 +2852,14 @@ class TestServiceChainAdminOwner(TestServiceChain):
         super(TestServiceChainAdminOwner, self).setUp(**kwargs)
 
     def _assert_proper_chain_instance(self, sc_instance, provider_ptg_id,
-                                      consumer_ptg_id, scs_id_list):
+                                      consumer_ptg_id, scs_id_list,
+                                      classifier_id=None):
         self.assertEqual(sc_instance['provider_ptg_id'], provider_ptg_id)
-        self.assertEqual(sc_instance['consumer_ptg_id'], consumer_ptg_id)
-        self.assertEqual(scs_id_list, sc_instance['servicechain_specs'])
+        self.assertEqual(sc_instance['consumer_ptg_id'], 'N/A')
         self.assertEqual(sc_instance['tenant_id'], CHAIN_TENANT_ID)
+        self.assertEqual(scs_id_list, sc_instance['servicechain_specs'])
+        if classifier_id:
+            self.assertEqual(sc_instance['classifier_id'], classifier_id)
 
 
 class TestExternalSegment(ResourceMappingTestCase):
@@ -3595,11 +3482,9 @@ class TestNetworkServicePolicy(ResourceMappingTestCase):
                             expected_res_status=webob.exc.HTTPCreated.code)
                         self.create_policy_target_group(
                             network_service_policy_id=nsp['id'],
-                            expected_res_status=webob.exc.HTTPCreated.code)[
-                                                        'policy_target_group']
+                            expected_res_status=webob.exc.HTTPCreated.code)
                         self.create_policy_target_group(
-                            expected_res_status=webob.exc.HTTPCreated.code)[
-                                                        'policy_target_group']
+                            expected_res_status=webob.exc.HTTPCreated.code)
                         req = self.new_list_request('l3_policies',
                                                     fmt=self.fmt)
                         l3ps = self.deserialize(self.fmt,
@@ -3630,11 +3515,9 @@ class TestNetworkServicePolicy(ResourceMappingTestCase):
                             network_service_params=[
                                     {"type": "ip_single", "value": "nat_pool",
                                      "name": "vip"}],
-                            expected_res_status=webob.exc.HTTPCreated.code)[
-                                                    'network_service_policy']
+                            expected_res_status=webob.exc.HTTPCreated.code)
                 self.create_policy_target_group(
-                            expected_res_status=webob.exc.HTTPCreated.code)[
-                                                        'policy_target_group']
+                            expected_res_status=webob.exc.HTTPCreated.code)
                 req = self.new_delete_request('nat_pools', nat_pool['id'])
                 res = req.get_response(self.ext_api)
                 self.assertEqual(res.status_int, webob.exc.HTTPNoContent.code)

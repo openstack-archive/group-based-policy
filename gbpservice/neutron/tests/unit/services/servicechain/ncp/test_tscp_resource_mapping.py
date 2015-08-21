@@ -68,6 +68,11 @@ class ResourceMappingStitchingPlumberGBPTestCase(
 
 class TestPolicyRuleSet(ResourceMappingStitchingPlumberGBPTestCase,
                         test_gp_driver.TestPolicyRuleSet):
+    pass
+
+
+class TestServiceChain(ResourceMappingStitchingPlumberGBPTestCase,
+                       test_gp_driver.TestServiceChain):
 
     def test_parent_ruleset_update_for_redirect(self):
         # NCP doesn't support multiple SPECs per instance
