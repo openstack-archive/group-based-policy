@@ -352,9 +352,9 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
                 policy_context)
         except Exception:
             with excutils.save_and_reraise_exception():
-                LOG.error(_("create_policy_target_postcommit "
-                            "failed, deleting policy_target %s"),
-                          result['id'])
+                LOG.exception(_("create_policy_target_postcommit "
+                                "failed, deleting policy_target %s"),
+                              result['id'])
                 self.delete_policy_target(context, result['id'])
 
         # REVISIT(ivar): For now just raise the exception if something goes
@@ -460,9 +460,9 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
                 policy_context)
         except Exception:
             with excutils.save_and_reraise_exception():
-                LOG.error(_("create_policy_target_group_postcommit "
-                            "failed, deleting policy_target_group %s"),
-                          result['id'])
+                LOG.exception(_("create_policy_target_group_postcommit "
+                                "failed, deleting policy_target_group %s"),
+                              result['id'])
                 self.delete_policy_target_group(context, result['id'])
 
         return result
@@ -590,8 +590,8 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
                 policy_context)
         except Exception:
             with excutils.save_and_reraise_exception():
-                LOG.error(_("create_l2_policy_postcommit "
-                            "failed, deleting l2_policy %s"), result['id'])
+                LOG.exception(_("create_l2_policy_postcommit "
+                                "failed, deleting l2_policy %s"), result['id'])
                 self.delete_l2_policy(context, result['id'])
 
         return result
@@ -684,9 +684,9 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
                 policy_context)
         except Exception:
             with excutils.save_and_reraise_exception():
-                LOG.error(_("create_network_service_policy_postcommit "
-                            "failed, deleting network_service_policy %s"),
-                          result['id'])
+                LOG.exception(_("create_network_service_policy_postcommit "
+                                "failed, deleting network_service_policy %s"),
+                              result['id'])
                 self.delete_network_service_policy(context, result['id'])
 
         return result
@@ -788,8 +788,8 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
                 policy_context)
         except Exception:
             with excutils.save_and_reraise_exception():
-                LOG.error(_("create_l3_policy_postcommit "
-                            "failed, deleting l3_policy %s"), result['id'])
+                LOG.exception(_("create_l3_policy_postcommit "
+                                "failed, deleting l3_policy %s"), result['id'])
                 self.delete_l3_policy(context, result['id'])
 
         return result
@@ -888,7 +888,7 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
                 policy_context)
         except Exception:
             with excutils.save_and_reraise_exception():
-                LOG.error(_(
+                LOG.exception(_(
                     "policy_driver_manager.create_policy_classifier_postcommit"
                     " failed, deleting policy_classifier %s"), result['id'])
                 self.delete_policy_classifier(context, result['id'])
@@ -986,7 +986,7 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
                 policy_context)
         except Exception:
             with excutils.save_and_reraise_exception():
-                LOG.error(_(
+                LOG.exception(_(
                     "policy_driver_manager.create_policy_action_postcommit "
                     "failed, deleting policy_action %s"), result['id'])
                 self.delete_policy_action(context, result['id'])
@@ -1081,7 +1081,7 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
                 policy_context)
         except Exception:
             with excutils.save_and_reraise_exception():
-                LOG.error(_(
+                LOG.exception(_(
                     "policy_driver_manager.create_policy_rule_postcommit"
                     " failed, deleting policy_rule %s"), result['id'])
                 self.delete_policy_rule(context, result['id'])
@@ -1176,7 +1176,7 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
                 policy_context)
         except Exception:
             with excutils.save_and_reraise_exception():
-                LOG.error(_(
+                LOG.exception(_(
                     "policy_driver_manager.create_policy_rule_set_postcommit "
                     "failed, deleting policy_rule_set %s"), result['id'])
                 self.delete_policy_rule_set(context, result['id'])
@@ -1274,9 +1274,9 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
              create_external_segment_postcommit(policy_context))
         except Exception:
             with excutils.save_and_reraise_exception():
-                LOG.error(_("create_external_segment_postcommit "
-                            "failed, deleting external_segment "
-                            "%s"), result['id'])
+                LOG.exception(_("create_external_segment_postcommit "
+                                "failed, deleting external_segment "
+                                "%s"), result['id'])
                 self.delete_external_segment(context, result['id'])
 
         return result
@@ -1380,9 +1380,9 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
              create_external_policy_postcommit(policy_context))
         except Exception:
             with excutils.save_and_reraise_exception():
-                LOG.error(_("create_external_policy_postcommit "
-                            "failed, deleting external_policy "
-                            "%s"), result['id'])
+                LOG.exception(_("create_external_policy_postcommit "
+                                "failed, deleting external_policy "
+                                "%s"), result['id'])
                 self.delete_external_policy(context, result['id'])
 
         return result
@@ -1424,17 +1424,9 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
                 self, context, es)
             (self.policy_driver_manager.
              delete_external_policy_precommit(policy_context))
-
-        # Disassociate all the PRSs first, this will trigger service chains
-        # deletion.
-        self.update_external_policy(
-            context, external_policy_id,
-            {'external_policy': {'provided_policy_rule_sets': {},
-                                 'consumed_policy_rule_sets': {}}})
-
-        with session.begin(subtransactions=True):
             super(GroupPolicyPlugin, self).delete_external_policy(
                 context, external_policy_id)
+
         try:
             self.policy_driver_manager.delete_external_policy_postcommit(
                 policy_context)
@@ -1486,8 +1478,8 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
              create_nat_pool_postcommit(policy_context))
         except Exception:
             with excutils.save_and_reraise_exception():
-                LOG.error(_("create_nat_pool_postcommit failed, deleting "
-                            "nat_pool %s"), result['id'])
+                LOG.exception(_("create_nat_pool_postcommit failed, deleting "
+                                "nat_pool %s"), result['id'])
                 self.delete_nat_pool(context, result['id'])
 
         return result

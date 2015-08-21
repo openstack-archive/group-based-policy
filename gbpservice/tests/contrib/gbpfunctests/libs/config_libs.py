@@ -156,9 +156,15 @@ class Gbp_Config(object):
            cmd = 'gbp %s-update ' % cfgobj_dict[cfgobj]+str(name_uuid)
         # Build the cmd string for optional/non-default args/values
         for arg, value in kwargs.items():
-          if '_' in arg:
-             arg=string.replace(arg,'_','-')
-          cmd = cmd + " --" + "".join( '%s=%s' %(arg, value ))
+            if arg.startswith('_'):
+                # Parameter not supported by CLI, leave it as is
+                arg = arg[1:]
+                cmd = cmd + " --" + "".join('%s %s' % (arg, value))
+            elif '_' in arg:
+                arg = string.replace(arg, '_', '-')
+                cmd = cmd + " --" + "".join('%s=%s' % (arg, value))
+            else:
+                cmd = cmd + " --" + "".join('%s=%s' % (arg, value))
         _log.info(cmd)
         # Execute the cmd
         cmd_out = getoutput(cmd)
