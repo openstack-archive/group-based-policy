@@ -2342,6 +2342,24 @@ class ResourceMappingDriver(api.PolicyDriver, local_api.LocalAPI):
             self._sg_rule(plugin_context, tenant_id, sg_id,
                           'egress', cidr=subnet['cidr'],
                           ethertype=ip_v[subnet['ip_version']])
+
+        # The following rules are added for access to the link local
+        # network (metadata server in most cases), and to the DNS
+        # port.
+        # TODO(Sumit): The following can be optimized by creating
+        # the rules once and then referrig to them in every default
+        # SG that gets created. If we do that, then when we delete the
+        # default SG we cannot delete all the rules in it.
+        # We can also consider reading these rules from a config which
+        # would make it more flexible to add any rules if required.
+        self._sg_rule(plugin_context, tenant_id, sg_id, 'egress',
+                      cidr='169.254.0.0/16', ethertype=ip_v[4])
+        for ether_type in ip_v:
+            for proto in [const.PROTO_NAME_TCP, const.PROTO_NAME_UDP]:
+                self._sg_rule(plugin_context, tenant_id, sg_id, 'egress',
+                              protocol=proto, port_range='53',
+                              ethertype=ip_v[ether_type])
+
         return sg_id
 
     def _delete_default_security_group(self, plugin_context, ptg_id,
