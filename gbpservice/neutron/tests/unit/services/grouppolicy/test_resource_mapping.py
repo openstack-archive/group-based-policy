@@ -853,6 +853,42 @@ class TestPolicyTargetGroup(ResourceMappingTestCase):
         res = req.get_response(self.ext_api)
         self.assertEqual(res.status_int, webob.exc.HTTPOk.code)
 
+    def test_default_security_group_egress_rules(self):
+        # Create PTG and retrieve self subnet
+        ptg = self.create_policy_target_group()['policy_target_group']
+        subnets = ptg['subnets']
+        req = self.new_show_request('subnets', subnets[0], fmt=self.fmt)
+        subnet = self.deserialize(self.fmt,
+                                  req.get_response(self.api))['subnet']
+        # Create PT and retrieve port to get SG
+        pt = self.create_policy_target(
+            policy_target_group_id=ptg['id'])['policy_target']
+        req = self.new_show_request('ports', pt['port_id'], fmt=self.fmt)
+        port = self.deserialize(self.fmt, req.get_response(self.api))['port']
+
+        sg_id = port['security_groups'][0]
+        ip_v = {4: cst.IPv4, 6: cst.IPv6}
+        filters = {'tenant_id': [ptg['tenant_id']],
+                   'security_group_id': [sg_id],
+                   'ethertype': [ip_v[subnet['ip_version']]],
+                   'direction': ['egress'],
+                   'remote_ip_prefix': [subnet['cidr']]}
+
+        sg_rule = self._get_sg_rule(**filters)
+        self.assertTrue(len(sg_rule) == 1)
+        del filters['remote_ip_prefix']
+        filters['ethertype'] = [ip_v[4]]
+        sg_rule = self._get_sg_rule(**filters)
+        self.assertTrue(len(sg_rule) == 4)
+        filters['port_range_min'] = [53]
+        filters['port_range_max'] = [53]
+        for ether_type in ip_v:
+            for proto in ['tcp', 'udp']:
+                filters['ethertype'] = [ip_v[ether_type]]
+                filters['protocol'] = [proto]
+                sg_rule = self._get_sg_rule(**filters)
+                self.assertTrue(len(sg_rule) == 1)
+
     def test_default_security_group_allows_intra_ptg(self):
         # Create PTG and retrieve subnet
         ptg = self.create_policy_target_group()['policy_target_group']
@@ -1637,14 +1673,14 @@ class TestPolicyRuleSet(ResourceMappingTestCase):
         for sgid in security_groups:
             sg = self._get_sg(sgid)
             sg_rules = sg['security_group_rules']
-            udp_rules.extend([r for r in sg_rules if r['protocol'] == 'udp'])
+            udp_rules.extend([r for r in sg_rules if (
+                r['protocol'] == 'udp') and (r['port_range_min'] == 30) and (
+                    r['port_range_max'] == 100) and (
+                        r['direction'] == 'egress')])
 
-        # Classifier 2 direction in 'out', so only one egress rule exists
+        # Classifier 2 direction in 'out', so one egress rule exists
+        # in addition to the default egree rule(s)
         self.assertEqual(1, len(udp_rules))
-        udp_rule = udp_rules[0]
-        self.assertEqual(udp_rule['port_range_min'], 30)
-        self.assertEqual(udp_rule['port_range_max'], 100)
-        self.assertEqual(udp_rule['direction'], 'egress')
         self._verify_prs_rules(policy_rule_set_id)
 
     # Test update of policy classifier
