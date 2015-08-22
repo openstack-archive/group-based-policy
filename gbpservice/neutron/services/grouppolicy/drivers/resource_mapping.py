@@ -2342,6 +2342,15 @@ class ResourceMappingDriver(api.PolicyDriver, local_api.LocalAPI):
             self._sg_rule(plugin_context, tenant_id, sg_id,
                           'egress', cidr=subnet['cidr'],
                           ethertype=ip_v[subnet['ip_version']])
+
+        self._sg_rule(plugin_context, tenant_id, sg_id, 'egress',
+                      cidr='169.254.0.0/16', ethertype=ip_v[4])
+        self._sg_rule(plugin_context, tenant_id, sg_id, 'egress',
+                      protocol=const.PROTO_NAME_TCP,
+                      port_range='53', ethertype=ip_v[4])
+        self._sg_rule(plugin_context, tenant_id, sg_id, 'egress',
+                      protocol=const.PROTO_NAME_UDP,
+                      port_range='53', ethertype=ip_v[4])
         return sg_id
 
     def _delete_default_security_group(self, plugin_context, ptg_id,

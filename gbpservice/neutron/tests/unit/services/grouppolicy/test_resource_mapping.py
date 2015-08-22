@@ -1638,8 +1638,9 @@ class TestPolicyRuleSet(ResourceMappingTestCase):
             sg_rules = sg['security_group_rules']
             udp_rules.extend([r for r in sg_rules if r['protocol'] == 'udp'])
 
-        # Classifier 2 direction in 'out', so only one egress rule exists
-        self.assertEqual(1, len(udp_rules))
+        # Classifier 2 direction in 'out', so one egress rule exists
+        # in addition to the default egree rule(s)
+        self.assertEqual(2, len(udp_rules))
         udp_rule = udp_rules[0]
         self.assertEqual(udp_rule['port_range_min'], 30)
         self.assertEqual(udp_rule['port_range_max'], 100)
