@@ -1672,15 +1672,14 @@ class TestPolicyRuleSet(ResourceMappingTestCase):
         for sgid in security_groups:
             sg = self._get_sg(sgid)
             sg_rules = sg['security_group_rules']
-            udp_rules.extend([r for r in sg_rules if r['protocol'] == 'udp'])
+            udp_rules.extend([r for r in sg_rules if (
+                r['protocol'] == 'udp') and (r['port_range_min'] == 30) and (
+                    r['port_range_max'] == 100) and (
+                        r['direction'] == 'egress')])
 
         # Classifier 2 direction in 'out', so one egress rule exists
         # in addition to the default egree rule(s)
-        self.assertEqual(3, len(udp_rules))
-        udp_rule = udp_rules[0]
-        self.assertEqual(udp_rule['port_range_min'], 30)
-        self.assertEqual(udp_rule['port_range_max'], 100)
-        self.assertEqual(udp_rule['direction'], 'egress')
+        self.assertEqual(1, len(udp_rules))
         self._verify_prs_rules(policy_rule_set_id)
 
     # Test update of policy classifier
