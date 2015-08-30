@@ -10,7 +10,7 @@ trap prepare_logs ERR
 $TOP_DIR/exercise.sh
 # Check if any gbp exercises failed
 exercises_exit_code=0
-if grep -qs "FAILED gbp*" $LOGS_DIR/*; then
+if grep -s "FAILED gbp*" $LOGS_DIR/*; then
     exercises_exit_code=1
 fi
 
