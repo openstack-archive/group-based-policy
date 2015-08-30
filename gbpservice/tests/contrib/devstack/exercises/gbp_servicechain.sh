@@ -43,9 +43,12 @@ function confirm_server_active {
     fi
 }
 
-gbp  servicechain-node-create loadbalancer-node --template-file $TOP_DIR/gbp-templates/firewall-lb-servicechain/lb.template --servicetype LOADBALANCER
 
-gbp  servicechain-node-create firewall-node --template-file $TOP_DIR/gbp-templates/firewall-lb-servicechain/fw.template  --servicetype FIREWALL
+gbp service-profile-create --vendor heat_based_node_driver --insertion-mode l3 --servicetype FIREWALL fw-profile
+gbp service-profile-create --vendor heat_based_node_driver --insertion-mode l3 --servicetype LOADBALANCER lb-profile
+
+gbp  servicechain-node-create loadbalancer-node --template-file $TOP_DIR/gbp-templates/firewall-lb-servicechain/lb.template --service-profile lb-profile
+gbp  servicechain-node-create firewall-node --template-file $TOP_DIR/gbp-templates/firewall-lb-servicechain/fw.template  --service-profile fw-profile
 
 gbp servicechain-spec-create firewall-loadbalancer-spec --description spec --nodes "firewall-node loadbalancer-node"
 
@@ -144,6 +147,8 @@ gbp servicechain-spec-delete firewall-loadbalancer-spec
 gbp  servicechain-node-delete loadbalancer-node
 gbp  servicechain-node-delete firewall-node
 
+gbp service-profile-delete lb-profile
+gbp service-profile-delete fw-profile
 
 set +o xtrace
 echo "*********************************************************************"
