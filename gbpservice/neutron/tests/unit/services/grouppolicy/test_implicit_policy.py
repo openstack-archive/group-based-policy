@@ -186,6 +186,7 @@ class TestImplicitL3Policy(ImplicitPolicyTestCase):
         l3p = self.deserialize(self.fmt, req.get_response(self.ext_api))
         self.assertEqual('default', l3p['l3_policy']['name'])
         self.assertEqual(shared, l3p['l3_policy']['shared'])
+        self.assertEqual(24, l3p['l3_policy']['subnet_prefix_length'])
 
         # Create 2nd L2 policy sharing implicit L3 policy.
         l2p2 = self.create_l2_policy()

@@ -38,7 +38,7 @@ opts = [
                       "from which subnets are allocated for policy target "
                       "groups.")),
     cfg.IntOpt('default_subnet_prefix_length',
-               default=26,
+               default=24,
                help=_("Subnet prefix length for implicitly created default L3 "
                       "polices, controlling size of subnets allocated for "
                       "policy target groups.")),

@@ -505,7 +505,7 @@ class TestGroupResources(GroupPolicyDbTestCase):
         ctx = context.get_admin_context()
         data = {'l3_policy': {'name': 'l3p1', 'ip_version': 4,
                               'description': '', 'ip_pool': '0.0.0.0/0',
-                              'subnet_prefix_length': 26}}
+                              'subnet_prefix_length': 24}}
 
         self.assertRaises(gpolicy.InvalidIpPoolPrefixLength,
                           self.plugin.create_l3_policy, ctx, data)
@@ -536,7 +536,7 @@ class TestGroupResources(GroupPolicyDbTestCase):
     def test_update_l3_policy(self):
         name = "new_l3_policy"
         description = 'new desc'
-        prefix_length = 26
+        prefix_length = 24
         es = self.create_external_segment()['external_segment']
         es_dict = {es['id']: ['172.16.0.2', '172.16.0.3']}
         attrs = cm.get_create_l3_policy_default_attrs(
