@@ -1188,6 +1188,12 @@ class ApicMappingDriver(api.ResourceMappingDriver):
             context.add_subnets(subs - set(context.current['subnets']))
             if added:
                 self.process_subnet_added(context._plugin_context, added)
+                l3p_id = l2p['l3_policy_id']
+                l3p = context._plugin.get_l3_policy(context._plugin_context,
+                                                    l3p_id)
+                for router_id in l3p['routers']:
+                    self._plug_router_to_subnet(context._plugin_context,
+                                                added['id'], router_id)
 
     def _sync_epg_subnets(self, plugin_context, l2p):
         l2p_subnets = [x['id'] for x in
