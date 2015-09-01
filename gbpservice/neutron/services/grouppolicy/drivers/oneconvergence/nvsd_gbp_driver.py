@@ -12,7 +12,6 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-from neutron.common import exceptions as n_exc
 from neutron.common import log
 from oslo_log import log as logging
 from oslo_utils import excutils
@@ -79,18 +78,19 @@ class NvsdGbpDriver(res_map.ResourceMappingDriver):
     @log.log
     def create_policy_target_group_postcommit(self, context):
         subnets = context.current['subnets']
-        if subnets:
-            l2p_id = context.current['l2_policy_id']
-            l2p = context._plugin.get_l2_policy(context._plugin_context,
-                                                l2p_id)
-            l3p_id = l2p['l3_policy_id']
-            l3p = context._plugin.get_l3_policy(context._plugin_context,
-                                                l3p_id)
-            router_id = l3p['routers'][0]
-            for subnet_id in subnets:
-                self._use_explicit_subnet(context, subnet_id, router_id)
-        else:
-            self._use_implicit_subnet(context)
+        if not subnets:
+            if self._use_implicit_subnet(context) is True:
+                subnets = context.current['subnets']
+        l2p_id = context.current['l2_policy_id']
+        l2p = context._plugin.get_l2_policy(context._plugin_context,
+                                            l2p_id)
+        l3p_id = l2p['l3_policy_id']
+        l3p = context._plugin.get_l3_policy(context._plugin_context,
+                                            l3p_id)
+        router_id = l3p['routers'][0]
+        for subnet_id in subnets:
+            self._plug_router_to_subnet(context._plugin_context,
+                                        subnet_id, router_id)
         self.nvsd_api.create_endpointgroup(context._plugin_context,
                                            context.current)
         self._handle_network_service_policy(context)
@@ -176,14 +176,6 @@ class NvsdGbpDriver(res_map.ResourceMappingDriver):
                                                context.current['id'])
         super(NvsdGbpDriver, self).delete_policy_classifier_postcommit(context)
 
-    def _use_explicit_subnet(self, context, subnet_id, router_id):
-        interface_info = {'subnet_id': subnet_id}
-        try:
-            self._add_router_interface(context._plugin_context, router_id,
-                                       interface_info)
-        except n_exc.BadRequest:
-            pass
-
     def _use_implicit_subnet(self, context):
         # One Convergence NVSD does not support REDIRECT to a different Subnet
         # at present. So restricting to use same subnet for a given L2 Policy
@@ -193,9 +185,10 @@ class NvsdGbpDriver(res_map.ResourceMappingDriver):
         for ptg in ptgs:
             if ptg['subnets']:
                 context.add_subnet(ptg['subnets'][0])
-                return
+                return False
         # Create a new Subnet for first PTG using the L2 Policy
         super(NvsdGbpDriver, self)._use_implicit_subnet(context)
+        return True
 
     def _cleanup_subnet(self, context, subnet_id, router_id):
         # Cleanup is performed only when the last PTG on subnet is removed
