@@ -14,6 +14,7 @@ import netaddr
 
 from apicapi import apic_manager
 from keystoneclient.v2_0 import client as keyclient
+from neutron.api.v2 import attributes
 from neutron.common import constants as n_constants
 from neutron.common import exceptions as n_exc
 from neutron.common import rpc as n_rpc
@@ -85,6 +86,16 @@ class ExplicitSubnetAssociationNotSupported(gpexc.GroupPolicyBadRequest):
 class HierarchicalContractsNotSupported(gpexc.GroupPolicyBadRequest):
     message = _("Hierarchical contracts not supported by APIC driver.")
 
+
+class HostPoolSubnetOverlap(gpexc.GroupPolicyBadRequest):
+    message = _("Host pool subnet %(host_pool_cidr)s overlaps with "
+                "APIC external network subnet for %(es)s.")
+
+
+class FloatingIPFromExtSegmentInUse(gpexc.GroupPolicyBadRequest):
+    message = _("One or more policy targets in L3 policy %(l3p)s have "
+                "floating IPs associated with external segment.")
+
 REVERSE_PREFIX = 'reverse-'
 SHADOW_PREFIX = 'Shd-'
 SERVICE_PREFIX = 'Svc-'
@@ -96,6 +107,7 @@ PROMISCUOUS_TYPES = [n_constants.DEVICE_OWNER_DHCP,
                      n_constants.DEVICE_OWNER_LOADBALANCER]
 ALLOWING_ACTIONS = [g_const.GP_ACTION_ALLOW, g_const.GP_ACTION_REDIRECT]
 REVERTIBLE_PROTOCOLS = [n_constants.PROTO_NAME_TCP.lower()]
+NAT_EPG_PREFIX = "NAT-"
 
 
 class ApicMappingDriver(api.ResourceMappingDriver):
@@ -208,7 +220,41 @@ class ApicMappingDriver(api.ResourceMappingDriver):
         if port['device_owner'].startswith('compute:') and port['device_id']:
             vm = nclient.NovaClient().get_server(port['device_id'])
             details['vm-name'] = vm.name if vm else port['device_id']
+
+            l3_policy = context._plugin.get_l3_policy(context,
+                                                      l2p['l3_policy_id'])
+            self._add_ip_mapping_details(context, port_id, l3_policy, details)
         return details
+
+    def _add_ip_mapping_details(self, context, port_id, l3_policy, details):
+        """ Add information about IP mapping for DNAT/SNAT """
+        if not l3_policy['external_segments']:
+            return
+        fips = self._l3_plugin.get_floatingips(
+            context, filters={'port_id': [port_id]})
+        ipms = []
+        ess = context._plugin.get_external_segments(context._plugin_context,
+                filters={'id': l3_policy['external_segments'].keys()})
+        for es in ess:
+            nat_epg_name = self._get_nat_epg_for_es(context, es)
+            nat_epg_tenant = str(self._tenant_by_sharing_policy(es))
+            fips_in_es = []
+
+            if es['subnet_id']:
+                subnet = self._core_plugin.get_subnet(context._plugin_context,
+                                                      es['subnet_id'])
+                ext_net_id = subnet['network_id']
+                fips_in_es = filter(
+                    lambda x: x['floating_network_id'] == ext_net_id, fips)
+            if not fips_in_es:
+                ipms.append({'external_segment_name': es['name'],
+                             'nat_epg_name': nat_epg_name,
+                             'nat_epg_tenant': nat_epg_tenant})
+            for f in fips_in_es:
+                f['nat_epg_name'] = nat_epg_name
+                f['nat_epg_tenant'] = nat_epg_tenant
+        details['floating_ip'] = fips
+        details['ip_mapping'] = ipms
 
     def process_port_added(self, plugin_context, port):
         pass
@@ -286,6 +332,16 @@ class ApicMappingDriver(api.ResourceMappingDriver):
                                           context.current['port_id'])
         if self._is_port_bound(port):
             self._notify_port_update(context._plugin_context, port['id'])
+        if self._may_have_fip(context):
+            self._associate_fip_to_pt(context)
+
+    def _may_have_fip(self, context):
+        ptg = context._plugin.get_policy_target_group(
+            context._plugin_context,
+            context.current['policy_target_group_id'])
+        es = self._retrieve_es_with_nat_pools(context, ptg['l2_policy_id'])
+        return reduce(lambda x, y: x and y,
+                      [e['subnet_id'] for e in es], True)
 
     def create_policy_target_group_precommit(self, context):
         if context.current['subnets']:
@@ -367,6 +423,7 @@ class ApicMappingDriver(api.ResourceMappingDriver):
             ess = context._plugin.get_external_segments(
                 context._plugin_context,
                 filters={'id': external_segments.keys()})
+            self._create_and_plug_router_to_es(context, external_segments)
             for es in ess:
                 self._plug_l3p_to_es(context, es)
 
@@ -401,6 +458,8 @@ class ApicMappingDriver(api.ResourceMappingDriver):
         self.apic_manager.delete_contract(contract, owner=tenant)
 
     def delete_policy_target_postcommit(self, context):
+        for fip in context.fips:
+            self._delete_fip(context._plugin_context, fip.floatingip_id)
         try:
             if context.current['port_id']:
                 port = self._core_plugin.get_port(context._plugin_context,
@@ -426,6 +485,8 @@ class ApicMappingDriver(api.ResourceMappingDriver):
         self.apic_manager.delete_epg_for_network(tenant, ptg)
 
     def delete_l2_policy_postcommit(self, context):
+        # before removing the network, remove interfaces attached to router
+        self._cleanup_router_interface(context, context.current)
         super(ApicMappingDriver, self).delete_l2_policy_postcommit(context)
         tenant = self._tenant_by_sharing_policy(context.current)
         l2_policy = self.name_mapper.l2_policy(context, context.current['id'])
@@ -451,6 +512,8 @@ class ApicMappingDriver(api.ResourceMappingDriver):
                 filters={'id': external_segments.keys()})
             for es in ess:
                 self._unplug_l3p_from_es(context, es)
+        for router_id in context.current['routers']:
+            self._cleanup_router(context._plugin_context, router_id)
 
     def update_policy_rule_set_precommit(self, context):
         self._reject_shared_update(context, 'policy_rule_set')
@@ -550,6 +613,11 @@ class ApicMappingDriver(api.ResourceMappingDriver):
     def update_l3_policy_precommit(self, context):
         self._reject_shared_update(context, 'l3_policy')
         self._check_l3p_es(context)
+        if context.current['routers'] != context.original['routers']:
+            raise gpexc.L3PolicyRoutersUpdateNotSupported()
+        rmvd_es = (set(context.original['external_segments'].keys()) -
+                  set(context.current['external_segments'].keys()))
+        self._check_fip_in_use_in_es(context, context.original, rmvd_es)
 
     def update_l3_policy_postcommit(self, context):
         old_segment_dict = context.original['external_segments']
@@ -566,17 +634,20 @@ class ApicMappingDriver(api.ResourceMappingDriver):
             added |= modified
             # The following operations could be intra-tenant, can't be executed
             # in a single transaction
-            if added:
-                # Create a L3 ext for each External Segment
-                added_ess = context._plugin.get_external_segments(
-                    context._plugin_context, filters={'id': added})
-                for es in added_ess:
-                    self._plug_l3p_to_es(context, es)
             if removed:
                 removed_ess = context._plugin.get_external_segments(
                     context._plugin_context, filters={'id': removed})
                 for es in removed_ess:
                     self._unplug_l3p_from_es(context, es)
+                self._cleanup_and_unplug_router_from_es(context, removed_ess)
+            if added:
+                # Create a L3 ext for each External Segment
+                added_ess = context._plugin.get_external_segments(
+                    context._plugin_context, filters={'id': added})
+                self._create_and_plug_router_to_es(context, new_segment_dict)
+                for es in added_ess:
+                    self._plug_l3p_to_es(context, es)
+            self._notify_port_update_in_l3policy(context, context.current)
 
     def create_policy_classifier_precommit(self, context):
         pass
@@ -628,6 +699,12 @@ class ApicMappingDriver(api.ResourceMappingDriver):
             db_es.ip_version = net[0].version
             context.current['cidr'] = db_es.cidr
             context.current['ip_version'] = db_es.ip_version
+            self._check_es_subnet(context, context.current)
+            if 'host_pool_cidr' in ext_info:
+                hp_net = netaddr.IPNetwork(ext_info['host_pool_cidr'])
+                if hp_net.cidr == net.cidr:
+                    raise HostPoolSubnetOverlap(host_pool_cidr=hp_net.cidr,
+                                                es=context.current['name'])
         else:
             LOG.warn(UNMANAGED_SEGMENT % context.current['id'])
 
@@ -636,10 +713,16 @@ class ApicMappingDriver(api.ResourceMappingDriver):
             context.current['name'])
         if not external_info:
             LOG.warn(UNMANAGED_SEGMENT % context.current['id'])
+        elif not context.current['subnet_id']:
+            subnet = self._use_implicit_external_subnet(
+                context, context.current, external_info)
+            context.add_subnet(subnet['id'])
 
     def update_external_segment_precommit(self, context):
         if context.current['port_address_translation']:
             raise PATNotSupportedByApicDriver()
+        if context.current['subnet_id'] != context.original['subnet_id']:
+            raise gpexc.InvalidAttributeUpdateForES(attribute='subnet_id')
 
     def update_external_segment_postcommit(self, context):
         ext_info = self.apic_manager.ext_net_dict.get(
@@ -649,59 +732,13 @@ class ApicMappingDriver(api.ResourceMappingDriver):
             return
         if (context.current['external_routes'] !=
                 context.original['external_routes']):
-            new_routes_dict = self._build_routes_dict(
-                context.current['external_routes'])
-            new_routes = set((x['destination'], x['nexthop'])
-                             for x in context.current['external_routes'])
-            old_routes = set((x['destination'], x['nexthop'])
-                             for x in context.original['external_routes'])
-            added = new_routes - old_routes
-            removed = old_routes - new_routes
-            switch = ext_info['switch']
-            default_gateway = ext_info['gateway_ip']
-            es_name = self.name_mapper.external_segment(
-                context, context.current['id'])
-            es_tenant = self._tenant_by_sharing_policy(context.current)
-            ep_names = [self.name_mapper.external_policy(context, x)
-                        for x in context.current['external_policies']]
-
-            nexthop = lambda h: h if h else default_gateway
-            with self.apic_manager.apic.transaction() as trs:
-                for route in removed:
-                    if route[0] not in new_routes_dict:
-                        # Remove Route completely
-                        self.apic_manager.ensure_static_route_deleted(
-                            es_name, switch, route[0], owner=es_tenant,
-                            transaction=trs)
-                        # Also from External EPG
-                        del_epg = (self.apic_manager.
-                                   ensure_external_epg_routes_deleted)
-                        for ep in ep_names:
-                            del_epg(
-                                es_name, external_epg=ep, owner=es_tenant,
-                                subnets=[route[0]], transaction=trs)
-                    else:
-                        # Only remove nexthop
-                        self.apic_manager.ensure_next_hop_deleted(
-                            es_name, switch, route[0], nexthop(route[1]),
-                            owner=es_tenant, transaction=trs)
-                for route in added:
-                    # Create Static Route on External Routed Network
-                    self.apic_manager.ensure_static_route_created(
-                        es_name, switch, nexthop(route[1]),
-                        owner=es_tenant, subnet=route[0], transaction=trs)
-                    # And on the External EPGs
-                    for ep in ep_names:
-                        self.apic_manager.ensure_external_epg_created(
-                            es_name, subnet=route[0], external_epg=ep,
-                            owner=es_tenant, transaction=trs)
+            self._do_external_segment_update(context, ext_info)
 
     def delete_external_segment_precommit(self, context):
         pass
 
     def delete_external_segment_postcommit(self, context):
-        # If not in use, there's no representation of it in the APIC
-        pass
+        self._delete_implicit_external_subnet(context, context.current)
 
     def create_external_policy_precommit(self, context):
         pass
@@ -747,9 +784,14 @@ class ApicMappingDriver(api.ResourceMappingDriver):
             filters={'id': delta_segments})
         for es in new_ess:
             if es['name'] in self.apic_manager.ext_net_dict:
-                self._manage_ep_policy_rule_sets(
-                    context._plugin_context, es, context.current, added_p_prs,
-                    added_c_prs, removed_p_prs, removed_c_prs)
+                # Update to the PRS of EP updates the shadow EPs only
+                l3ps = context._plugin.get_l3_policies(context._plugin_context,
+                    filters={'id': es['l3_policies']})
+                for l3p in l3ps:
+                    self._manage_ep_policy_rule_sets(
+                        context._plugin_context, es, context.current,
+                        added_p_prs, added_c_prs, removed_p_prs, removed_c_prs,
+                        l3policy_obj=l3p)
 
     def delete_external_policy_precommit(self, context):
         pass
@@ -786,6 +828,10 @@ class ApicMappingDriver(api.ResourceMappingDriver):
             context.policy_target_id = pt['id']
 
     def process_port_deleted(self, context, port):
+        # do nothing for floating-ip ports
+        if port['device_owner'] == n_constants.DEVICE_OWNER_FLOATINGIP:
+            LOG.debug(_("Ignoring floating-ip port %s") % port['id'])
+            return
         try:
             self.gbp_plugin.delete_policy_target(
                 context, context.policy_target_id)
@@ -895,7 +941,8 @@ class ApicMappingDriver(api.ResourceMappingDriver):
 
     def _manage_ep_policy_rule_sets(
             self, plugin_context, es, ep, added_provided, added_consumed,
-            removed_provided, removed_consumed, transaction=None):
+            removed_provided, removed_consumed, l3policy_obj=None,
+            transaction=None):
 
         ext_info = self.apic_manager.ext_net_dict.get(es['name'])
         if not ext_info:
@@ -904,11 +951,15 @@ class ApicMappingDriver(api.ResourceMappingDriver):
             return
         plugin_context._plugin = self.gbp_plugin
         plugin_context._plugin_context = plugin_context
-        mapped_tenant = self._tenant_by_sharing_policy(es)
-        mapped_es = self.name_mapper.external_segment(plugin_context, es['id'])
-
-        mapped_ep = self.name_mapper.external_policy(plugin_context,
-                                                     ep['id'])
+        is_shadow = bool(l3policy_obj)
+        mapped_tenant = self._get_tenant_for_shadow(is_shadow, l3policy_obj,
+                                                    es)
+        mapped_es = self.name_mapper.external_segment(plugin_context, es['id'],
+            prefix=self._get_shadow_prefix(plugin_context,
+                is_shadow, l3policy_obj))
+        mapped_ep = self.name_mapper.external_policy(plugin_context, ep['id'],
+            prefix=self._get_shadow_prefix(plugin_context,
+                is_shadow, l3policy_obj))
         provided = [added_provided, removed_provided]
         consumed = [added_consumed, removed_consumed]
         methods = [self.apic_manager.set_contract_for_external_epg,
@@ -1006,9 +1057,10 @@ class ApicMappingDriver(api.ResourceMappingDriver):
             db_utils = gpdb.GroupPolicyMappingDbPlugin()
             return db_utils._make_policy_target_group_dict(ptg)
 
-    def _plug_l3p_to_es(self, context, external_segment):
-        l3_policy = self.name_mapper.l3_policy(context, context.current['id'])
-        es = external_segment
+    def _plug_l3p_to_es(self, context, es, is_shadow=False):
+        l3_policy = (is_shadow and
+            self.name_mapper.l3_policy(context, context.current['id'])
+            or self._get_nat_vrf_for_es(context, es))
         external_segments = context.current['external_segments']
         ext_info = self.apic_manager.ext_net_dict.get(es['name'])
         if not ext_info:
@@ -1019,7 +1071,11 @@ class ApicMappingDriver(api.ResourceMappingDriver):
             ip = ip[0]
             exposed = ip + '/' + es['cidr'].split('/')[1]
         else:
-            ip = ext_info.get('cidr_exposed', '/').split('/')[0]
+            ip = getattr(context, 'assigned_router_ips', {}).get(es['id'], [])
+            if ip and ip[0]:
+                ip = ip[0]
+            else:
+                ip = ext_info.get('cidr_exposed', '/').split('/')[0]
             exposed = ext_info.get('cidr_exposed')
 
         if not ip:
@@ -1031,30 +1087,63 @@ class ApicMappingDriver(api.ResourceMappingDriver):
         module, sport = ext_info['port'].split('/')
         router_id = ext_info['router_id']
         default_gateway = ext_info['gateway_ip']
-        es_name = self.name_mapper.external_segment(
-            context, es['id'])
-        es_tenant = self._tenant_by_sharing_policy(es)
+        es_name = self.name_mapper.external_segment(context, es['id'],
+            prefix=self._get_shadow_prefix(context,
+                is_shadow, context.current))
+        es_tenant = self._get_tenant_for_shadow(is_shadow, context.current, es)
         with self.apic_manager.apic.transaction() as trs:
             # Create External Routed Network connected to the proper
             # L3 Context
             self.apic_manager.ensure_external_routed_network_created(
                 es_name, owner=es_tenant, context=l3_policy,
                 transaction=trs)
-            self.apic_manager.ensure_logical_node_profile_created(
-                es_name, switch, module, sport, encap,
-                exposed, owner=es_tenant,
-                router_id=router_id, transaction=trs)
-            for route in es['external_routes']:
-                self.apic_manager.ensure_static_route_created(
-                    es_name, switch, route['nexthop'] or default_gateway,
-                    owner=es_tenant,
-                    subnet=route['destination'], transaction=trs)
+            if not is_shadow:
+                self.apic_manager.ensure_logical_node_profile_created(
+                    es_name, switch, module, sport, encap,
+                    exposed, owner=es_tenant,
+                    router_id=router_id, transaction=trs)
+                for route in es['external_routes']:
+                    self.apic_manager.ensure_static_route_created(
+                        es_name, switch, route['nexthop'] or default_gateway,
+                        owner=es_tenant,
+                        subnet=route['destination'], transaction=trs)
+        if not is_shadow:
+            # create NAT EPG
+            if (not [x for x in es['l3_policies']
+                if x != context.current['id']]):
+                    self._create_nat_epg_for_es(context, es, ext_info)
+            # create shadow external-networks
+            self._plug_l3p_to_es(context, es, True)
+            # create shadow external EPGs indirectly by re-plugging
+            # external policies to external segment
+            eps = context._plugin.get_external_policies(
+                context._plugin_context,
+                filters={'id': es['external_policies']})
+            for ep in eps:
+                self._plug_externa_policy_to_segment(context, ep,
+                    [es['id']], ep['provided_policy_rule_sets'],
+                    ep['consumed_policy_rule_sets'])
 
-    def _unplug_l3p_from_es(self, context, es):
-        es_name = self.name_mapper.external_segment(context, es['id'])
-        es_tenant = self._tenant_by_sharing_policy(es)
-        self.apic_manager.delete_external_routed_network(
-            es_name, owner=es_tenant)
+    def _unplug_l3p_from_es(self, context, es, is_shadow=False):
+        es_name = self.name_mapper.external_segment(context, es['id'],
+            prefix=self._get_shadow_prefix(context,
+                is_shadow, context.current))
+        es_tenant = self._get_tenant_for_shadow(is_shadow, context.current, es)
+        # remove shadow external-networks
+        if not is_shadow:
+            self._unplug_l3p_from_es(context, es, True)
+        if (is_shadow or
+            not [x for x in es['l3_policies'] if x != context.current['id']]):
+            if not is_shadow:
+                # remove NAT EPG if there are no L3-policies using
+                # external segment
+                self.apic_manager.ensure_nat_epg_deleted(
+                    self._tenant_by_sharing_policy(es),
+                    self._get_nat_epg_for_es(context, es),
+                    self._get_nat_bd_for_es(context, es),
+                    self._get_nat_vrf_for_es(context, es))
+            self.apic_manager.delete_external_routed_network(
+                es_name, owner=es_tenant)
 
     def _build_routes_dict(self, routes):
         result = {}
@@ -1065,19 +1154,26 @@ class ApicMappingDriver(api.ResourceMappingDriver):
         return result
 
     def _plug_externa_policy_to_segment(self, context, ep, segments,
-                                        provided_prs, consumed_prs):
+                                        provided_prs, consumed_prs,
+                                        l3policy_obj=None):
+        is_shadow = bool(l3policy_obj)
         if segments:
             added_ess = context._plugin.get_external_segments(
                 context._plugin_context, filters={'id': segments})
-            ep_name = self.name_mapper.external_policy(
-                context, ep['id'])
+            ep_name = self.name_mapper.external_policy(context, ep['id'],
+                prefix=self._get_shadow_prefix(context,
+                    is_shadow, l3policy_obj))
             for es in added_ess:
                 ext_info = self.apic_manager.ext_net_dict.get(es['name'])
                 if not ext_info:
                     LOG.warn(UNMANAGED_SEGMENT % es['id'])
                     continue
-                es_name = self.name_mapper.external_segment(context, es['id'])
-                es_tenant = self._tenant_by_sharing_policy(es)
+                es_name = self.name_mapper.external_segment(context,
+                    es['id'],
+                    prefix=self._get_shadow_prefix(context,
+                        is_shadow, l3policy_obj))
+                es_tenant = self._get_tenant_for_shadow(is_shadow,
+                    l3policy_obj, es)
                 with self.apic_manager.apic.transaction() as trs:
                     # Create External EPG
                     subnets = set(x['destination'] for
@@ -1086,37 +1182,138 @@ class ApicMappingDriver(api.ResourceMappingDriver):
                         self.apic_manager.ensure_external_epg_created(
                             es_name, subnet=s, external_epg=ep_name,
                             owner=es_tenant, transaction=trs)
-                    # Provide and consume contracts
-                    self._manage_ep_policy_rule_sets(
-                        context._plugin_context, es, ep,
-                        provided_prs, consumed_prs, [], [], transaction=trs)
+                    if is_shadow:
+                        # Shadow external EPGs provide and consume user
+                        # specified contracts
+                        self._manage_ep_policy_rule_sets(
+                            context._plugin_context, es, ep,
+                            provided_prs, consumed_prs, [], [],
+                            l3policy_obj=l3policy_obj, transaction=trs)
+                        # set up link to NAT EPG
+                        self.apic_manager.associate_external_epg_to_nat_epg(
+                            es_tenant, es_name, ep_name,
+                            self._get_nat_epg_for_es(context, es),
+                            target_owner=self._tenant_by_sharing_policy(es),
+                            transaction=trs)
+                    else:
+                        # 'real' external EPGs provide and consume
+                        # allow-all contract
+                        self.apic_manager.set_contract_for_external_epg(
+                            es_name, self._get_allow_all_contract_name(),
+                            external_epg=ep_name, owner=es_tenant,
+                            provided=True, transaction=trs)
+                        self.apic_manager.set_contract_for_external_epg(
+                            es_name, self._get_allow_all_contract_name(),
+                            external_epg=ep_name, owner=es_tenant,
+                            provided=False, transaction=trs)
 
-    def _unplug_external_policy_from_segment(self, context, ep, segments):
+                # create shadow external epgs in L3policies associated
+                # with the segment
+                if not is_shadow:
+                    l3ps = context._plugin.get_l3_policies(
+                        context._plugin_context,
+                        filters={'id': es['l3_policies']})
+                    for l3p in l3ps:
+                        self._plug_externa_policy_to_segment(context, ep,
+                            [es['id']], provided_prs, consumed_prs,
+                            l3policy_obj=l3p)
+
+    def _unplug_external_policy_from_segment(self, context, ep, segments,
+                                             l3policy_obj=None):
+        is_shadow = l3policy_obj and True or False
         if segments:
             added_ess = context._plugin.get_external_segments(
                 context._plugin_context, filters={'id': segments})
-            ep_name = self.name_mapper.external_policy(
-                context, ep['id'])
+            ep_name = self.name_mapper.external_policy(context, ep['id'],
+                prefix=self._get_shadow_prefix(context,
+                    is_shadow, l3policy_obj))
             for es in added_ess:
                 ext_info = self.apic_manager.ext_net_dict.get(es['name'])
                 if not ext_info:
                     LOG.warn(UNMANAGED_SEGMENT % es['id'])
                     continue
-                es_name = self.name_mapper.external_segment(context, es['id'])
-                es_tenant = self._tenant_by_sharing_policy(es)
+                # remove the shadow external EPGs from L3policies
+                # associated with the segment
+                if not is_shadow:
+                    l3ps = context._plugin.get_l3_policies(
+                        context._plugin_context,
+                        filters={'id': es['l3_policies']})
+                    for l3p in l3ps:
+                        self._unplug_external_policy_from_segment(context, ep,
+                            [es['id']], l3policy_obj=l3p)
+
+                es_name = self.name_mapper.external_segment(context, es['id'],
+                    prefix=self._get_shadow_prefix(context,
+                        is_shadow, l3policy_obj))
+                es_tenant = self._get_tenant_for_shadow(is_shadow,
+                    l3policy_obj, es)
                 self.apic_manager.ensure_external_epg_deleted(
                         es_name, external_epg=ep_name, owner=es_tenant)
+
+    def _do_external_segment_update(self, context, ext_info,
+                                    l3policy_obj=None):
+        is_shadow = bool(l3policy_obj)
+        es = context.current
+        new_routes_dict = self._build_routes_dict(es['external_routes'])
+        new_routes = set((x['destination'], x['nexthop'])
+                         for x in context.current['external_routes'])
+        old_routes = set((x['destination'], x['nexthop'])
+                         for x in context.original['external_routes'])
+        added = new_routes - old_routes
+        removed = old_routes - new_routes
+        switch = ext_info['switch']
+        default_gateway = ext_info['gateway_ip']
+
+        pfx = self._get_shadow_prefix(context, is_shadow, l3policy_obj)
+        es_name = self.name_mapper.external_segment(context, es['id'],
+                                                    prefix=pfx)
+        es_tenant = self._get_tenant_for_shadow(is_shadow, l3policy_obj, es)
+        ep_names = [self.name_mapper.external_policy(context, x, prefix=pfx)
+                    for x in es['external_policies']]
+
+        nexthop = lambda h: h if h else default_gateway
+        with self.apic_manager.apic.transaction() as trs:
+            for route in removed:
+                if route[0] not in new_routes_dict:
+                    # Remove Route completely
+                    if not is_shadow:
+                        self.apic_manager.ensure_static_route_deleted(
+                            es_name, switch, route[0], owner=es_tenant,
+                            transaction=trs)
+                    # Also from External EPG
+                    del_epg = (self.apic_manager.
+                               ensure_external_epg_routes_deleted)
+                    for ep in ep_names:
+                        del_epg(
+                            es_name, external_epg=ep, owner=es_tenant,
+                            subnets=[route[0]], transaction=trs)
+                else:
+                    # Only remove nexthop
+                    self.apic_manager.ensure_next_hop_deleted(
+                        es_name, switch, route[0], nexthop(route[1]),
+                        owner=es_tenant, transaction=trs)
+            for route in added:
+                # Create Static Route on External Routed Network
+                if not is_shadow:
+                    self.apic_manager.ensure_static_route_created(
+                        es_name, switch, nexthop(route[1]),
+                        owner=es_tenant, subnet=route[0], transaction=trs)
+                # And on the External EPGs
+                for ep in ep_names:
+                    self.apic_manager.ensure_external_epg_created(
+                        es_name, subnet=route[0], external_epg=ep,
+                        owner=es_tenant, transaction=trs)
+        # Update the shadow external-segments
+        if not is_shadow:
+            l3ps = context._plugin.get_l3_policies(context._plugin_context,
+                filters={'id': es['l3_policies']})
+            for l3p in l3ps:
+                self._do_external_segment_update(context, ext_info,
+                                                 l3policy_obj=l3p)
 
     def _check_l3p_es(self, context):
         l3p = context.current
         if l3p['external_segments']:
-            # Check not used
-            ess = context._plugin.get_external_segments(
-                context._plugin_context,
-                filters={'id': l3p['external_segments'].keys()})
-            for es in ess:
-                if [x for x in es['l3_policies'] if x != l3p['id']]:
-                    raise OnlyOneL3PolicyIsAllowedPerExternalSegment()
             for allocations in l3p['external_segments'].values():
                 if len(allocations) > 1:
                     raise OnlyOneAddressIsAllowedPerExternalSegment()
@@ -1137,6 +1334,30 @@ class ApicMappingDriver(api.ResourceMappingDriver):
             return self.name_mapper.tenant(None, object['tenant_id'])
         else:
             return apic_manager.TENANT_COMMON
+
+    def _get_nat_epg_for_es(self, context, es):
+        return ("NAT-epg-%s" %
+            self.name_mapper.external_segment(context, es['id']))
+
+    def _get_nat_bd_for_es(self, context, es):
+        return ("NAT-bd-%s" %
+            self.name_mapper.external_segment(context, es['id']))
+
+    def _get_nat_vrf_for_es(self, context, es):
+        return ("NAT-vrf-%s" %
+            self.name_mapper.external_segment(context, es['id']))
+
+    def _get_allow_all_contract_name(self):
+        return "NAT-allow-all"
+
+    def _get_shadow_prefix(self, context, is_shadow, l3_obj):
+        return (is_shadow and
+            ('%s%s-' % (SHADOW_PREFIX,
+                str(self.name_mapper.l3_policy(context, l3_obj['id']))))
+            or '')
+
+    def _get_tenant_for_shadow(self, is_shadow, shadow_obj, obj):
+        return self._tenant_by_sharing_policy(is_shadow and shadow_obj or obj)
 
     def _notify_port_update(self, plugin_context, port_id):
         try:
@@ -1192,7 +1413,9 @@ class ApicMappingDriver(api.ResourceMappingDriver):
                 l3p = context._plugin.get_l3_policy(context._plugin_context,
                                                     l3p_id)
                 for router_id in l3p['routers']:
-                    self._plug_router_to_subnet(context._plugin_context,
+                    # Use admin context because router and subnet may
+                    # be in different tenants
+                    self._plug_router_to_subnet(nctx.get_admin_context(),
                                                 added['id'], router_id)
 
     def _sync_epg_subnets(self, plugin_context, l2p):
@@ -1414,3 +1637,258 @@ class ApicMappingDriver(api.ResourceMappingDriver):
                     pr_ids)).
                 filter(gpdb.gpdb.PolicyAction.action_type ==
                        g_const.GP_ACTION_REDIRECT)).count()
+
+    def _check_es_subnet(self, context, es):
+        if es['subnet_id']:
+            subnet = self._core_plugin.get_subnet(context._plugin_context,
+                                                  es['subnet_id'])
+            network = self._core_plugin.get_network(context._plugin_context,
+                                                    subnet['network_id'])
+            if not network['router:external']:
+                raise gpexc.InvalidSubnetForES(sub_id=subnet['id'],
+                                               net_id=network['id'])
+
+    def _use_implicit_external_subnet(self, context, es, ext_info):
+        # create external-network if required
+        ext_net_name = "%s%s-%s" % (APIC_OWNED, es['name'], es['id'])
+        networks = self._core_plugin.get_networks(context._plugin_context,
+            filters={'name': [ext_net_name],
+                     'tenant_id': [es['tenant_id']]})
+        if networks:
+            extnet = networks[0]
+        else:
+            attrs = {'tenant_id': es['tenant_id'],
+                     'name': ext_net_name,
+                     'admin_state_up': True,
+                     'router:external': True,
+                     'provider:physical_network': ext_net_name,
+                     'provider:network_type': 'flat',
+                     'shared': es.get('shared', False)}
+            extnet = self._create_network(context._plugin_context, attrs)
+
+        # create subnet in external-network
+        sn_name = "%s%s-%s" % (APIC_OWNED, es['name'], es['id'])
+        subnets = self._core_plugin.get_subnets(context._plugin_context,
+            filters={'name': [sn_name],
+                     'network_id': [extnet['id']]})
+        if subnets:
+            subnet = subnets[0]
+        else:
+            attrs = {'tenant_id': es['tenant_id'],
+                     'name': sn_name,
+                     'network_id': extnet['id'],
+                     'ip_version': es['ip_version'],
+                     'cidr': es['cidr'],
+                     'enable_dhcp': False,
+                     'gateway_ip': ext_info['gateway_ip'],
+                     'allocation_pools': attributes.ATTR_NOT_SPECIFIED,
+                     'dns_nameservers': attributes.ATTR_NOT_SPECIFIED,
+                     'host_routes': attributes.ATTR_NOT_SPECIFIED}
+            subnet = self._create_subnet(context._plugin_context, attrs)
+        return subnet
+
+    def _delete_implicit_external_subnet(self, context, es):
+        if not es['subnet_id']:
+            return
+        subnet = self._core_plugin.get_subnet(context._plugin_context,
+                                              es['subnet_id'])
+        network = self._core_plugin.get_network(context._plugin_context,
+                                                subnet['network_id'])
+        if subnet['name'].startswith(APIC_OWNED):
+            self._delete_subnet(context._plugin_context, subnet['id'])
+        if (network['name'].startswith(APIC_OWNED) and
+            not [x for x in network['subnets'] if x != subnet['id']]):
+            self._delete_network(context._plugin_context, network['id'])
+
+    def _get_router_ext_subnet_for_l3p(self, context, l3policy):
+        """ Get dict of external-subnets to the routers of l3 policy """
+        rtr_sn = {}
+        routers = self._l3_plugin.get_routers(context._plugin_context,
+                                              {'id': l3policy['routers']})
+        for r in routers:
+            if (not r['external_gateway_info'] or
+                not r['external_gateway_info']['external_fixed_ips']):
+                continue
+            for ip in r['external_gateway_info']['external_fixed_ips']:
+                rtr_sn[ip['subnet_id']] = r['id']
+        return rtr_sn
+
+    def _create_and_plug_router_to_es(self, context, es_dict):
+        l3p = context.current
+        sub_r_dict = self._get_router_ext_subnet_for_l3p(context, l3p)
+
+        l2p_sn_ids = set()
+        for l2p_id in l3p['l2_policies']:
+            l2p_sn_ids.update([x['id'] for x in
+                self._get_l2p_subnets(context._plugin_context, l2p_id)])
+
+        es_list = context._plugin.get_external_segments(
+            context._plugin_context, filters={'id': es_dict.keys()})
+        assigned_ips = {}
+        for es in es_list:
+            if not es['subnet_id']:
+                continue
+            router_id = sub_r_dict.get(es['subnet_id'])
+            if router_id:   # router connecting to ES's subnet exists
+                router = self._l3_plugin.get_router(context._plugin_context,
+                                                    router_id)
+            else:
+                subnet = self._core_plugin.get_subnet(context._plugin_context,
+                                                      es['subnet_id'])
+                router_id = self._use_implicit_router(context,
+                    l3p['name'] + '-' + subnet['name'])
+                external_fixed_ips = [
+                        {'subnet_id': es['subnet_id'],
+                         'ip_address': x} for x in es_dict[es['id']]
+                                      ] if es_dict[es['id']] else None
+                for ip in external_fixed_ips or []:
+                    if not ip['ip_address']:
+                        del ip['ip_address']
+                interface_info = {
+                    'network_id': subnet['network_id'],
+                    'enable_snat': es['port_address_translation'],
+                    'external_fixed_ips': external_fixed_ips}
+                router = self._add_router_gw_interface(
+                    context._plugin_context, router_id, interface_info)
+            if not es_dict[es['id']] or not es_dict[es['id']][0]:
+                # Update L3P assigned address
+                efi = router['external_gateway_info']['external_fixed_ips']
+                rtr_ips = [x['ip_address'] for x in efi
+                           if x['subnet_id'] == es['subnet_id']]
+                assigned_ips[es['id']] = rtr_ips
+            # Use admin context because router and subnet may
+            # be in different tenants
+            self._attach_router_to_subnets(nctx.get_admin_context(),
+                                           router_id, l2p_sn_ids)
+        context.assigned_router_ips = assigned_ips
+
+    def _cleanup_and_unplug_router_from_es(self, context, es_list):
+        l3p = context.current
+        sub_r_dict = self._get_router_ext_subnet_for_l3p(context, l3p)
+        current_es = context._plugin.get_external_segments(
+            context._plugin_context, filters={'id': l3p['external_segments']})
+        ext_sn_in_use = set([e['subnet_id'] for e in current_es])
+        for es in es_list:
+            if not es['subnet_id'] or es['subnet_id'] in ext_sn_in_use:
+                continue
+            router_id = sub_r_dict.get(es['subnet_id'])
+            if not router_id:
+                continue
+            router_sn = self._get_router_interface_subnets(
+                context._plugin_context, router_id)
+            # Use admin context because router and subnet may be
+            # in different tenants
+            self._detach_router_from_subnets(nctx.get_admin_context(),
+                                             router_id, router_sn)
+            context.remove_router(router_id)
+            self._cleanup_router(context._plugin_context, router_id)
+
+    def _get_router_interface_subnets(self, plugin_context, router_id):
+        router_ports = self._core_plugin.get_ports(plugin_context,
+            filters={'device_owner': [n_constants.DEVICE_OWNER_ROUTER_INTF],
+                     'device_id': [router_id]})
+        return set(y['subnet_id']
+                   for x in router_ports for y in x['fixed_ips'])
+
+    def _attach_router_to_subnets(self, plugin_context, router_id, sn_ids):
+        rtr_sn = self._get_router_interface_subnets(plugin_context, router_id)
+        for subnet_id in sn_ids:
+            if subnet_id in rtr_sn:     # already attached
+                continue
+            self._plug_router_to_subnet(plugin_context, subnet_id, router_id)
+
+    def _plug_router_to_subnet(self, plugin_context, subnet_id, router_id):
+        interface_info = {'subnet_id': subnet_id}
+        if router_id:
+            try:
+                self._add_router_interface(plugin_context, router_id,
+                                           interface_info)
+                return
+            except n_exc.IpAddressInUse as e:
+                LOG.debug(_("Will try to use create and use port - %s"), e)
+            except n_exc.BadRequest:
+                LOG.exception(_("Adding subnet to router failed"))
+                return
+            # Allocate port and use it as router interface
+            subnet = self._core_plugin.get_subnet(plugin_context, subnet_id)
+            attrs = {'tenant_id': subnet['tenant_id'],
+                     'network_id': subnet['network_id'],
+                     'mac_address': attributes.ATTR_NOT_SPECIFIED,
+                     'fixed_ips': [{'subnet_id': subnet_id}],
+                     'device_id': '',
+                     'device_owner': '',
+                     'name': "%s-%s" % (router_id, subnet_id),
+                     'admin_state_up': True}
+            port = self._create_port(plugin_context, attrs)
+            interface_info = {'port_id': port['id']}
+            try:
+                self._add_router_interface(plugin_context, router_id,
+                                           interface_info)
+            except n_exc.BadRequest:
+                self._delete_port(plugin_context, port['id'])
+                LOG.exception(_("Adding subnet to router with "
+                                "explicit port failed"))
+
+    def _detach_router_from_subnets(self, plugin_context, router_id, sn_ids):
+        for subnet_id in sn_ids:
+            self._remove_router_interface(plugin_context, router_id,
+                                          {'subnet_id': subnet_id})
+
+    def _cleanup_router_interface(self, context, l2p):
+        l3p = context._plugin.get_l3_policy(context._plugin_context,
+                                            l2p['l3_policy_id'])
+        network = self._core_plugin.get_network(context._plugin_context,
+                                                l2p['network_id'])
+        for router_id in l3p['routers']:
+            router_sn = self._get_router_interface_subnets(
+                context._plugin_context, router_id)
+            router_sn.intersection_update(network['subnets'])
+            # Use admin context because router and subnet may be
+            # in different tenants
+            self._detach_router_from_subnets(nctx.get_admin_context(),
+                                             router_id, router_sn)
+
+    def _create_nat_epg_for_es(self, context, es, ext_info, transaction=None):
+        tenant_name = self._tenant_by_sharing_policy(es)
+        nat_bd_name = self._get_nat_bd_for_es(context, es)
+        with self.apic_manager.apic.transaction(transaction) as trs:
+            self.apic_manager.ensure_nat_epg_contract_created(
+                tenant_name,
+                self._get_nat_epg_for_es(context, es),
+                nat_bd_name,
+                self._get_nat_vrf_for_es(context, es),
+                self._get_allow_all_contract_name(),
+                transaction=trs)
+            gw, plen = ext_info.get('host_pool_cidr', '/').split('/', 1)
+            if gw and plen:
+                self.apic_manager.ensure_subnet_created_on_apic(tenant_name,
+                    nat_bd_name, gw + '/' + plen, transaction=trs)
+
+    def _get_ports_in_l3policy(self, context, l3p):
+        admin_ctx = nctx.get_admin_context()
+        ptgs = context._plugin.get_policy_target_groups(
+            admin_ctx, filters={'l2_policy_id': l3p['l2_policies']})
+        pts = context._plugin.get_policy_targets(
+            admin_ctx,
+            filters={'policy_target_group_id': [g['id'] for g in ptgs]})
+        return [pt['port_id'] for pt in pts]
+
+    def _notify_port_update_in_l3policy(self, context, l3p):
+        for port in self._get_ports_in_l3policy(context, l3p):
+            self._notify_port_update(context._plugin_context, port)
+
+    def _check_fip_in_use_in_es(self, context, l3p, ess_id):
+        admin_ctx = nctx.get_admin_context()
+        port_id = self._get_ports_in_l3policy(context, l3p)
+        fips = self._l3_plugin.get_floatingips(
+            admin_ctx, filters={'port_id': port_id})
+        fip_net = set([x['floating_network_id'] for x in fips])
+
+        ess = context._plugin.get_external_segments(admin_ctx,
+            filters={'id': list(ess_id)})
+        sn_id = set([es['subnet_id'] for es in ess])
+        subnet = self._core_plugin.get_subnets(admin_ctx,
+            filters={'id': list(sn_id)})
+        sn_net = set([sn['network_id'] for sn in subnet])
+        if (fip_net & sn_net):
+            raise FloatingIPFromExtSegmentInUse(l3p=l3p['name'])
