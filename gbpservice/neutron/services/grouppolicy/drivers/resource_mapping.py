@@ -393,19 +393,20 @@ class ResourceMappingDriver(api.PolicyDriver, local_api.LocalAPI):
     @log.log
     def create_policy_target_group_postcommit(self, context):
         subnets = context.current['subnets']
-        if subnets:
-            l2p_id = context.current['l2_policy_id']
-            l2p = context._plugin.get_l2_policy(context._plugin_context,
-                                                l2p_id)
-            l3p_id = l2p['l3_policy_id']
-            l3p = context._plugin.get_l3_policy(context._plugin_context,
-                                                l3p_id)
-            router_id = l3p['routers'][0] if l3p['routers'] else None
-            for subnet_id in subnets:
-                self._use_explicit_subnet(context._plugin_context, subnet_id,
-                                          router_id)
-        else:
+        if not subnets:
             self._use_implicit_subnet(context)
+            subnets = context.current['subnets']
+        # connect router to subnets of the PTG
+        l2p_id = context.current['l2_policy_id']
+        l2p = context._plugin.get_l2_policy(context._plugin_context,
+                                            l2p_id)
+        l3p_id = l2p['l3_policy_id']
+        l3p = context._plugin.get_l3_policy(context._plugin_context,
+                                            l3p_id)
+        router_id = l3p['routers'][0] if l3p['routers'] else None
+        for subnet_id in subnets:
+            self._plug_router_to_subnet(context._plugin_context,
+                                        subnet_id, router_id)
         self._handle_network_service_policy(context)
         self._handle_policy_rule_sets(context)
         self._update_default_security_group(context._plugin_context,
@@ -813,7 +814,8 @@ class ResourceMappingDriver(api.PolicyDriver, local_api.LocalAPI):
     @log.log
     def create_l3_policy_postcommit(self, context):
         if not context.current['routers']:
-            self._use_implicit_router(context)
+            self._use_implicit_router(
+                context, 'l3p_' + context.current['name'])
         l3p = context.current
         if l3p['external_segments']:
             self._plug_router_to_external_segment(
@@ -1507,12 +1509,6 @@ class ResourceMappingDriver(api.PolicyDriver, local_api.LocalAPI):
                                                  attrs)
                     subnet_id = subnet['id']
                     try:
-                        if l3p['routers']:
-                            router_id = l3p['routers'][0]
-                            interface_info = {'subnet_id': subnet_id}
-                            self._add_router_interface(
-                                context._plugin_context, router_id,
-                                interface_info)
                         if mark_as_owned:
                             self._mark_subnet_owned(
                                 context._plugin_context.session, subnet_id)
@@ -1533,11 +1529,14 @@ class ResourceMappingDriver(api.PolicyDriver, local_api.LocalAPI):
                     pass
         raise exc.NoSubnetAvailable()
 
-    def _use_explicit_subnet(self, plugin_context, subnet_id, router_id):
+    def _plug_router_to_subnet(self, plugin_context, subnet_id, router_id):
         interface_info = {'subnet_id': subnet_id}
         if router_id:
-            self._add_router_interface(plugin_context, router_id,
-                                       interface_info)
+            try:
+                self._add_router_interface(plugin_context, router_id,
+                                           interface_info)
+            except n_exc.BadRequest:
+                LOG.exception(_("Adding subnet to router failed"))
 
     def _cleanup_subnet(self, plugin_context, subnet_id, router_id):
         interface_info = {'subnet_id': subnet_id}
@@ -1566,9 +1565,9 @@ class ResourceMappingDriver(api.PolicyDriver, local_api.LocalAPI):
         if self._network_is_owned(plugin_context.session, network_id):
             self._delete_network(plugin_context, network_id)
 
-    def _use_implicit_router(self, context):
+    def _use_implicit_router(self, context, router_name):
         attrs = {'tenant_id': context.current['tenant_id'],
-                 'name': 'l3p_' + context.current['name'],
+                 'name': router_name,
                  'external_gateway_info': None,
                  'admin_state_up': True}
         router = self._create_router(context._plugin_context, attrs)
