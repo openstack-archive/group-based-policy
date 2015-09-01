@@ -156,6 +156,16 @@ class GroupPolicyMappingDbPlugin(gpdb.GroupPolicyDbPlugin):
             l3p_db.routers.append(assoc)
         return [router.router_id for router in l3p_db.routers]
 
+    def _remove_router_from_l3_policy(self, context, l3p_id, router_id):
+        with context.session.begin(subtransactions=True):
+            l3p_db = self._get_l3_policy(context, l3p_id)
+            assoc = (context.session.query(L3PolicyRouterAssociation).
+                     filter_by(l3_policy_id=l3p_id, router_id=router_id).
+                     one())
+            l3p_db.routers.remove(assoc)
+            context.session.delete(assoc)
+        return [router.router_id for router in l3p_db.routers]
+
     def _set_subnet_to_es(self, context, es_id, subnet_id):
         with context.session.begin(subtransactions=True):
             es_db = self._get_external_segment(context, es_id)
