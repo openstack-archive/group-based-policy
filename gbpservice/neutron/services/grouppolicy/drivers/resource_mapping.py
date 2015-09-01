@@ -1429,27 +1429,32 @@ class ResourceMappingDriver(api.PolicyDriver, local_api.LocalAPI):
         if context.current['routers']:
             router_id = context.current['routers'][0]
             for es in es_list:
-                subnet = self._get_subnet(context._plugin_context,
-                                          es['subnet_id'])
-                external_fixed_ips = [
-                        {'subnet_id': es['subnet_id'],
-                         'ip_address': x} for x in es_dict[es['id']]
-                                      ] if es_dict[es['id']] else None
-                for ip in external_fixed_ips or []:
-                    if not ip['ip_address']:
-                        del ip['ip_address']
-                interface_info = {
-                    'network_id': subnet['network_id'],
-                    'enable_snat': es['port_address_translation'],
-                    'external_fixed_ips': external_fixed_ips}
-                router = self._add_router_gw_interface(
-                    context._plugin_context, router_id, interface_info)
+                router = self._create_router_gw_for_external_segment(
+                    context._plugin_context, es, es_dict, router_id)
                 if not es_dict[es['id']] or not es_dict[es['id']][0]:
                     # Update L3P assigned address
                     efi = router['external_gateway_info']['external_fixed_ips']
                     assigned_ips = [x['ip_address'] for x in efi
                                     if x['subnet_id'] == es['subnet_id']]
                     context.set_external_fixed_ips(es['id'], assigned_ips)
+
+    def _create_router_gw_for_external_segment(self, plugin_context, es,
+                                               es_dict, router_id):
+        subnet = self._get_subnet(plugin_context, es['subnet_id'])
+        external_fixed_ips = [
+                {'subnet_id': es['subnet_id'],
+                 'ip_address': x} for x in es_dict[es['id']]
+                              ] if es_dict[es['id']] else None
+        for ip in external_fixed_ips or []:
+            if not ip['ip_address']:
+                del ip['ip_address']
+        interface_info = {
+            'network_id': subnet['network_id'],
+            'enable_snat': es['port_address_translation'],
+            'external_fixed_ips': external_fixed_ips}
+        router = self._add_router_gw_interface(
+            plugin_context, router_id, interface_info)
+        return router
 
     def _unplug_router_from_external_segment(self, context, es_ids):
         es_list = context._plugin.get_external_segments(
