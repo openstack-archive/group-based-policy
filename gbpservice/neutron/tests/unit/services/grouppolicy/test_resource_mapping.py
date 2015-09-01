@@ -1181,6 +1181,11 @@ class TestL3Policy(ResourceMappingTestCase):
         self.assertIsNotNone(routers)
         self.assertEqual(len(routers), 1)
         router_id = routers[0]
+        # Verify router name
+        req = self.new_show_request('routers', router_id, fmt=self.fmt)
+        res = self.deserialize(self.fmt, req.get_response(
+            self.ext_api))['router']
+        self.assertEqual(res['name'], 'l3p_l3p1')
 
         # Verify deleting L3 policy cleans up router.
         req = self.new_delete_request('l3_policies', l3p_id)
