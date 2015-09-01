@@ -150,6 +150,11 @@ class L3PolicyContext(GroupPolicyContext, api.L3PolicyContext):
             self._plugin_context, self._l3_policy['id'], router_id)
         self._l3_policy['routers'] = routers
 
+    def remove_router(self, router_id):
+        routers = self._plugin._remove_router_from_l3_policy(
+            self._plugin_context, self._l3_policy['id'], router_id)
+        self._l3_policy['routers'] = routers
+
     def set_external_fixed_ips(self, external_segment_id, ips):
         self._l3_policy['external_segments'][external_segment_id] = ips
         self._plugin._update_ess_for_l3p(self._plugin_context,
