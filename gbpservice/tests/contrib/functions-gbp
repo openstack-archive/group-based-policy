@@ -3,7 +3,7 @@
 TOP_DIR="$BASE/new/devstack"
 NEW_BASE="$BASE/new"
 GBP_DIR="$NEW_BASE/group-based-policy"
-SCRIPTS_DIR="/usr/local/jenkins/slave_scripts"
+SCRIPTS_DIR="/usr/os-testr-env/bin"
 LOGS_DIR="$NEW_BASE/logs"
 ARCHIVE_LOGS_DIR="$BASE/logs"
 
@@ -56,7 +56,7 @@ function generate_testr_results {
     sudo -H chmod o+rw -R .testrepository
     if [ -f ".testrepository/0" ] ; then
         .tox/dsvm-functional/bin/subunit-1to2 < .testrepository/0 > ./testrepository.subunit
-        .tox/dsvm-functional/bin/python $SCRIPTS_DIR/subunit2html.py ./testrepository.subunit testr_results.html
+        $SCRIPTS_DIR/subunit2html ./testrepository.subunit testr_results.html
         gzip -9 ./testrepository.subunit
         gzip -9 ./testr_results.html
         sudo mv ./*.gz $ARCHIVE_LOGS_DIR/
