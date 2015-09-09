@@ -26,6 +26,7 @@ from oslo_log import log as logging
 import six
 
 import gbpservice.neutron.extensions
+from gbpservice.neutron.extensions import patch  # noqa
 from gbpservice.neutron.services.grouppolicy.common import (
     constants as gp_constants)
 
