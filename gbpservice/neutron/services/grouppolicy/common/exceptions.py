@@ -251,3 +251,13 @@ class L3PEsinUseByNSP(exceptions.InUse, GroupPolicyException):
 
 class NatPoolinUseByNSP(exceptions.InUse, GroupPolicyException):
     message = _("The Nat Pool is in use by Network Service Policy")
+
+
+class OverlappingNATPoolInES(GroupPolicyBadRequest):
+    message = _("One or more NAT Pools associated with ES %(es_id)s overlaps "
+                "with NAT Pool %(np_id)s.")
+
+
+class OverlappingSubnetForNATPoolInES(GroupPolicyBadRequest):
+    message = _("One or more subnets associated with network %(net_id)s "
+                "partially overlaps with NAT Pool %(np_id)s.")

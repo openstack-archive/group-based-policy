@@ -43,6 +43,11 @@ EXTENDED_ATTRIBUTES_2_0 = {
         'subnet_id': {'allow_post': True, 'allow_put': False,
                       'validate': {'type:uuid_or_none': None},
                       'is_visible': True, 'default': None},
+    },
+    gp.NAT_POOLS: {
+        'subnet_id': {'allow_post': False, 'allow_put': False,
+                      'validate': {'type:uuid_or_none': None},
+                      'is_visible': True, 'default': None},
     }
 }
 
