@@ -346,14 +346,36 @@ class ResourceMappingDriver(api.PolicyDriver, local_api.LocalAPI):
             ext_sub = self._get_subnet(context._plugin_context,
                                        es['subnet_id'])
             ext_net_id = ext_sub['network_id']
-            # REVISIT(Magesh): Allocate floating IP from the Nat Pool in Kilo
-            try:
-                fip_id = self._create_floatingip(
-                                        context, ext_net_id, fixed_port)
-                fip_ids.append(fip_id)
-            except Exception:
-                # TODO(Magesh): catch no free ip exception
-                LOG.exception(_("Floating allocation failed"))
+            nat_pools = context._plugin.get_nat_pools(
+                context._plugin_context.elevated(), {'id': es['nat_pools']})
+            no_subnet_pools = []
+            for nat_pool in nat_pools:
+                # For backward compatibility
+                if not nat_pool['subnet_id']:
+                    no_subnet_pools.append(nat_pool)
+                else:
+                    try:
+                        fip_id = self._create_floatingip(
+                            context, ext_net_id, fixed_port,
+                            subnet_id=nat_pool['subnet_id'])
+                        fip_ids.append(fip_id)
+                        # FIP allocated, empty the no subnet pools to avoid
+                        # further allocation
+                        no_subnet_pools = []
+                        break
+                    except n_exc.IpAddressGenerationFailure as ex:
+                        LOG.warn(_("Floating allocation failed: %s"),
+                                 ex.message)
+            for nat_pool in no_subnet_pools:
+                # Use old allocation method
+                try:
+                    fip_id = self._create_floatingip(
+                        context, ext_net_id, fixed_port)
+                    fip_ids.append(fip_id)
+                    break
+                except n_exc.IpAddressGenerationFailure as ex:
+                    LOG.warn(_("Floating allocation failed: %s"),
+                             ex.message)
         return fip_ids
 
     @log.log
@@ -1281,31 +1303,90 @@ class ResourceMappingDriver(api.PolicyDriver, local_api.LocalAPI):
         self._cleanup_redirect_action(context)
 
     def create_nat_pool_precommit(self, context):
-        self._reject_nat_pool_external_segment_cidr_mismatch(context)
+        self._add_nat_pool_to_segment(context)
+
+    def create_nat_pool_postcommit(self, context):
+        if (context.current['external_segment_id'] and not
+                context.current['subnet_id']):
+            self._use_implicit_nat_pool_subnet(context)
 
     def update_nat_pool_precommit(self, context):
         nsps_using_nat_pool = self._get_nsps_using_nat_pool(context)
-        if nsps_using_nat_pool:
-            if (context.original['external_segment_id'] !=
+        if (context.original['external_segment_id'] !=
                 context.current['external_segment_id']):
+            if nsps_using_nat_pool:
                 raise exc.NatPoolinUseByNSP()
-        else:
-            self._reject_nat_pool_external_segment_cidr_mismatch(context)
+            # Clean the current subnet_id. The subnet itself will be
+            # cleaned by the postcommit operation
+            context._plugin._set_db_np_subnet(
+                context._plugin_context, context.current, None)
+            self._add_nat_pool_to_segment(context)
+
+    def update_nat_pool_postcommit(self, context):
+        # For backward compatibility, do the following only if the external
+        # segment changed
+        if (context.original['external_segment_id'] !=
+                context.current['external_segment_id']):
+            if context.original['subnet_id']:
+                if self._subnet_is_owned(context._plugin_context.session,
+                                         context.original['subnet_id']):
+                    self._delete_subnet(context._plugin_context,
+                                        context.original['subnet_id'])
+            if (context.current['external_segment_id'] and not
+                    context.current['subnet_id']):
+                self._use_implicit_nat_pool_subnet(context)
 
     def delete_nat_pool_precommit(self, context):
         nsps_using_nat_pool = self._get_nsps_using_nat_pool(context)
         if nsps_using_nat_pool:
             raise exc.NatPoolinUseByNSP()
 
-    def _reject_nat_pool_external_segment_cidr_mismatch(self, context):
+    def delete_nat_pool_postcommit(self, context):
+        if context.current['subnet_id']:
+            if self._subnet_is_owned(context._plugin_context.session,
+                                     context.current['subnet_id']):
+                self._delete_subnet(context._plugin_context,
+                                    context.current['subnet_id'])
+
+    def _add_nat_pool_to_segment(self, context):
         external_segment = context._plugin.get_external_segment(
             context._plugin_context, context.current['external_segment_id'])
         if not external_segment['subnet_id']:
             raise exc.ESSubnetRequiredForNatPool()
         ext_sub = self._get_subnet(context._plugin_context,
                                    external_segment['subnet_id'])
-        if context.current['ip_pool'] != ext_sub['cidr']:
-            raise exc.InvalidESSubnetCidrForNatPool()
+        # Verify there's no overlap. This will also be verified by Neutron at
+        # subnet creation, but we try to fail as soon as possible to return
+        # a nicer error to the user (concurrency may still need to fallback on
+        # Neutron's validation).
+        ext_subs = self._get_subnets(context._plugin_context,
+                                     {'network_id': [ext_sub['network_id']]})
+        peer_pools = context._plugin.get_nat_pools(
+                context._plugin_context.elevated(),
+                {'id': external_segment['nat_pools']})
+        peer_set = netaddr.IPSet(
+            [x['ip_pool'] for x in peer_pools if
+             x['id'] != context.current['id']])
+        curr_ip_set = netaddr.IPSet([context.current['ip_pool']])
+        if peer_set & curr_ip_set:
+            # Raise for overlapping CIDRs
+            raise exc.OverlappingNATPoolInES(
+                es_id=external_segment['id'], np_id=context.current['id'])
+        # A perfect subnet overlap is allowed as long as the subnet can be
+        # assigned to the pool.
+        match = [x for x in ext_subs if x['cidr'] ==
+                 context.current['ip_pool']]
+        if match:
+            # There's no owning peer given the overlapping check above.
+            # Use this subnet on the current Nat pool
+            context._plugin._set_db_np_subnet(
+                context._plugin_context, context.current, match[0]['id'])
+        elif netaddr.IPSet([x['cidr'] for x in ext_subs]) & curr_ip_set:
+            # Partial overlapp not allowed
+            raise exc.OverlappingSubnetForNATPoolInES(
+                net_id=ext_sub['network_id'], np_id=context.current['id'])
+        # At this point, either a subnet was assigned to the NAT Pool, or a new
+        # one needs to be created by the postcommit operation.
 
     def _get_nsps_using_nat_pool(self, context):
         external_segment = context._plugin.get_external_segment(
@@ -1432,12 +1513,10 @@ class ResourceMappingDriver(api.PolicyDriver, local_api.LocalAPI):
                 subnet = self._get_subnet(context._plugin_context,
                                           es['subnet_id'])
                 external_fixed_ips = [
-                        {'subnet_id': es['subnet_id'],
-                         'ip_address': x} for x in es_dict[es['id']]
-                                      ] if es_dict[es['id']] else None
-                for ip in external_fixed_ips or []:
-                    if not ip['ip_address']:
-                        del ip['ip_address']
+                    {'subnet_id': es['subnet_id'], 'ip_address': x}
+                    for x in es_dict[es['id']] if x
+                ] if es_dict[es['id']] else [{'subnet_id': es['subnet_id']}]
+
                 interface_info = {
                     'network_id': subnet['network_id'],
                     'enable_snat': es['port_address_translation'],
@@ -1526,6 +1605,26 @@ class ResourceMappingDriver(api.PolicyDriver, local_api.LocalAPI):
                     # exception and repeat with the next CIDR.
                     pass
         raise exc.NoSubnetAvailable()
+
+    def _use_implicit_nat_pool_subnet(self, context):
+        es = context._plugin.get_external_segment(
+            context._plugin_context, context.current['external_segment_id'])
+        ext_sub = self._get_subnet(context._plugin_context, es['subnet_id'])
+        attrs = {'tenant_id': context.current['tenant_id'],
+                 'name': 'ptg_' + context.current['name'],
+                 'network_id': ext_sub['network_id'],
+                 'ip_version': context.current['ip_version'],
+                 'cidr': context.current['ip_pool'],
+                 'enable_dhcp': False,
+                 'gateway_ip': attributes.ATTR_NOT_SPECIFIED,
+                 'allocation_pools': attributes.ATTR_NOT_SPECIFIED,
+                 'dns_nameservers': attributes.ATTR_NOT_SPECIFIED,
+                 'host_routes': attributes.ATTR_NOT_SPECIFIED}
+        subnet = self._create_subnet(context._plugin_context, attrs)
+        context._plugin._set_db_np_subnet(
+            context._plugin_context, context.current, subnet['id'])
+        self._mark_subnet_owned(context._plugin_context.session, subnet['id'])
+        return subnet
 
     def _plug_router_to_subnet(self, plugin_context, subnet_id, router_id):
         interface_info = {'subnet_id': subnet_id}
@@ -1955,9 +2054,11 @@ class ResourceMappingDriver(api.PolicyDriver, local_api.LocalAPI):
 
     # Do Not Pass floating_ip_address to this method until after Kilo Release
     def _create_floatingip(self, context, ext_net_id, internal_port_id=None,
-                           floating_ip_address=None):
+                           floating_ip_address=None, subnet_id=None):
         attrs = {'tenant_id': context.current['tenant_id'],
                  'floating_network_id': ext_net_id}
+        if subnet_id:
+            attrs.update({"subnet_id": subnet_id})
         if internal_port_id:
             attrs.update({"port_id": internal_port_id})
         if floating_ip_address:
