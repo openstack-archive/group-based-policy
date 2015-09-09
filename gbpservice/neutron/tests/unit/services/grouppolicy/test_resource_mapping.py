@@ -3321,6 +3321,61 @@ class TestNetworkServicePolicy(ResourceMappingTestCase):
                 mapping = self._get_nsp_ptg_fip_mapping(ptg['id'])
                 self.assertEqual([], mapping)
 
+    def test_nsp_fip_single_different_pool(self):
+        routes = [{'destination': '0.0.0.0/0', 'nexthop': None}]
+        with self.network(router__external=True) as net:
+            with self.subnet(cidr='192.168.0.0/24', network=net) as sub:
+                es = self.create_external_segment(
+                    name="default",
+                    subnet_id=sub['subnet']['id'],
+                    external_routes=routes,
+                    expected_res_status=webob.exc.HTTPCreated.code)
+                es = es['external_segment']
+                # Create NAT Pool on a different subnet
+                self.create_nat_pool(
+                    external_segment_id=es['id'],
+                    ip_version=4,
+                    ip_pool='192.168.1.0/24',
+                    expected_res_status=webob.exc.HTTPCreated.code)
+                ptg = self.create_policy_target_group(
+                            expected_res_status=webob.exc.HTTPCreated.code)[
+                                                        'policy_target_group']
+                nsp = self.create_network_service_policy(
+                            network_service_params=[
+                                    {"type": "ip_single", "value": "nat_pool",
+                                     "name": "vip"}],
+                            expected_res_status=webob.exc.HTTPCreated.code)[
+                                                    'network_service_policy']
+                # Update PTG, associating a NSP with it and verify that a FIP
+                # is allocated
+                self.update_policy_target_group(
+                            ptg['id'],
+                            network_service_policy_id=nsp['id'],
+                            expected_res_status=webob.exc.HTTPOk.code)
+                mapping = self._get_nsp_ptg_fip_mapping(ptg['id'])
+                self.assertNotEqual([], mapping)
+                self.assertEqual(mapping[0].service_policy_id, nsp['id'])
+                self.assertIsNotNone(mapping[0].floatingip_id)
+
+                fip = self._get_object(
+                    'floatingips', mapping[0].floatingip_id,
+                    self.ext_api)['floatingip']
+
+                # Verify FIP is in the new subnet
+                self.assertTrue(
+                    netaddr.IPAddress(fip['floating_ip_address']) in
+                    netaddr.IPNetwork('192.168.1.0/24'),
+                    "IP %s not in pool %s" % (fip['floating_ip_address'],
+                                              '192.168.1.0/24'))
+                # Update the PTGs and unset the NSP used and verify that the IP
+                # is restored to the PTG subnet allocation pool
+                self.update_policy_target_group(
+                            ptg['id'],
+                            network_service_policy_id=None,
+                            expected_res_status=webob.exc.HTTPOk.code)
+                mapping = self._get_nsp_ptg_fip_mapping(ptg['id'])
+                self.assertEqual([], mapping)
+
     def test_nsp_rejected_without_nat_pool(self):
         routes = [{'destination': '0.0.0.0/0', 'nexthop': None}]
         with self.network(router__external=True) as net:
@@ -3550,33 +3605,175 @@ class TestNetworkServicePolicy(ResourceMappingTestCase):
 
 class TestNatPool(ResourceMappingTestCase):
 
-    def _test_create_rejected_for_pool_mismatch(self, shared=False):
+    def _test_overlapping_peer_rejected(self, shared1=False, shared2=False):
+        shared_net = shared1 or shared2
         routes = [{'destination': '0.0.0.0/0', 'nexthop': None}]
-        with self.network(router__external=True) as net:
+        with self.network(router__external=True, shared=shared_net) as net:
             with self.subnet(cidr='192.168.0.0/24', network=net) as sub:
                 es = self.create_external_segment(
                     name="default",
                     subnet_id=sub['subnet']['id'],
+                    external_routes=routes, shared=shared_net,
+                    expected_res_status=webob.exc.HTTPCreated.code)
+                es = es['external_segment']
+                # Allowed
+                self.create_nat_pool(
+                    external_segment_id=es['id'],
+                    ip_version=4, ip_pool='192.168.1.0/24', shared=shared1,
+                    expected_res_status=webob.exc.HTTPCreated.code)
+
+                # Fails
+                res = self.create_nat_pool(
+                    external_segment_id=es['id'],
+                    ip_version=4, ip_pool='192.168.1.0/24', shared=shared2,
+                    expected_res_status=webob.exc.HTTPBadRequest.code)
+                self.assertEqual('OverlappingNATPoolInES',
+                                 res['NeutronError']['type'])
+
+    def test_overlapping_peer_rejected1(self):
+        self._test_overlapping_peer_rejected(False, False)
+
+    def test_overlapping_peer_rejected2(self):
+        self._test_overlapping_peer_rejected(True, False)
+
+    def test_overlapping_peer_rejected3(self):
+        self._test_overlapping_peer_rejected(True, True)
+
+    def test_overlapping_peer_rejected4(self):
+        self._test_overlapping_peer_rejected(False, True)
+
+    def _test_implicit_subnet_created(self, shared=False):
+        routes = [{'destination': '0.0.0.0/0', 'nexthop': None}]
+        with self.network(router__external=True, shared=shared) as net:
+            with self.subnet(cidr='192.168.0.0/24', network=net) as sub:
+                es = self.create_external_segment(
+                    name="default",
+                    subnet_id=sub['subnet']['id'],
+                    external_routes=routes, shared=shared,
+                    expected_res_status=webob.exc.HTTPCreated.code)
+                es = es['external_segment']
+                nat_pool = self.create_nat_pool(
+                    external_segment_id=es['id'],
+                    ip_version=4, ip_pool='192.168.1.0/24', shared=shared,
+                    expected_res_status=webob.exc.HTTPCreated.code)['nat_pool']
+                self.assertIsNotNone(nat_pool['subnet_id'])
+                subnet = self._get_object('subnets', nat_pool['subnet_id'],
+                                          self.api)['subnet']
+                self.assertEqual('192.168.1.0/24', subnet['cidr'])
+
+    def test_implicit_subnet_created(self):
+        self._test_implicit_subnet_created()
+
+    def test_implicit_subnet_created_shared(self):
+        self._test_implicit_subnet_created(True)
+
+    def _test_partially_overlapping_subnets_rejected(self, shared=False):
+        routes = [{'destination': '0.0.0.0/0', 'nexthop': None}]
+        with self.network(router__external=True, shared=shared) as net:
+            with self.subnet(cidr='192.168.0.0/24', network=net) as sub:
+                with self.subnet(cidr='192.168.1.0/28', network=net):
+                    es = self.create_external_segment(
+                        name="default",
+                        subnet_id=sub['subnet']['id'],
+                        external_routes=routes, shared=shared,
+                        expected_res_status=webob.exc.HTTPCreated.code)
+                    es = es['external_segment']
+                    # Disallowed because they partially overlaps
+                    res = self.create_nat_pool(
+                        external_segment_id=es['id'],
+                        ip_version=4, ip_pool='192.168.1.0/24', shared=shared,
+                        expected_res_status=webob.exc.HTTPBadRequest.code)
+                    self.assertEqual('OverlappingSubnetForNATPoolInES',
+                                     res['NeutronError']['type'])
+
+    def test_partially_overlapping_subnets_rejected(self):
+        self._test_partially_overlapping_subnets_rejected()
+
+    def test_partially_overlapping_subnets_rejected_shared(self):
+        self._test_partially_overlapping_subnets_rejected(True)
+
+    def _test_overlapping_subnets(self, shared=False):
+        routes = [{'destination': '0.0.0.0/0', 'nexthop': None}]
+        with self.network(router__external=True, shared=shared) as net:
+            with self.subnet(cidr='192.168.0.0/24', network=net) as sub:
+                with self.subnet(cidr='192.168.1.0/24', network=net) as sub2:
+                    es = self.create_external_segment(
+                        name="default",
+                        subnet_id=sub['subnet']['id'],
+                        external_routes=routes, shared=shared,
+                        expected_res_status=webob.exc.HTTPCreated.code)
+                    es = es['external_segment']
+                    # Sub2 associated with the newly created NAT pool
+                    nat_pool = self.create_nat_pool(
+                        external_segment_id=es['id'],
+                        ip_version=4, ip_pool='192.168.1.0/24', shared=shared,
+                        expected_res_status=webob.exc.HTTPCreated.code)[
+                            'nat_pool']
+                    self.assertEqual(sub2['subnet']['id'],
+                                     nat_pool['subnet_id'])
+
+    def test_overlapping_subnets(self):
+        self._test_overlapping_subnets()
+
+    def test_overlapping_subnets_shared(self):
+        self._test_overlapping_subnets(True)
+
+    def _test_subnet_swap(self, owned=True):
+        routes = [{'destination': '0.0.0.0/0', 'nexthop': None}]
+        with self.network(router__external=True) as net:
+            with self.subnet(cidr='192.168.0.0/24', network=net) as sub:
+                es = self.create_external_segment(
+                    name="default", subnet_id=sub['subnet']['id'],
                     external_routes=routes,
                     expected_res_status=webob.exc.HTTPCreated.code)
                 es = es['external_segment']
-                result = self.create_nat_pool(
-                    external_segment_id=es['id'],
-                    ip_version=4,
-                    ip_pool='192.168.1.0/24',
-                    expected_res_status=webob.exc.HTTPBadRequest.code)
-                self.assertEqual('InvalidESSubnetCidrForNatPool',
-                                 result['NeutronError']['type'])
+                # Use same IP pool as ES sub_id if we don't have to own
+                # the subnet.
+                ip_pool = '192.168.1.0/24' if owned else '192.168.0.0/24'
 
-    def _test_create_rejected_for_es_without_subnet(self, shared=False):
-        es = self.create_external_segment(
-            name="default",
-            expected_res_status=webob.exc.HTTPCreated.code)
-        es = es['external_segment']
-        result = self.create_nat_pool(
-            external_segment_id=es['id'],
-            ip_version=4,
-            ip_pool='192.168.1.0/24',
-            expected_res_status=webob.exc.HTTPBadRequest.code)
-        self.assertEqual('ESSubnetRequiredForNatPool',
-                         result['NeutronError']['type'])
+                nat_pool = self.create_nat_pool(
+                    external_segment_id=es['id'],
+                    ip_version=4, ip_pool=ip_pool,
+                    expected_res_status=webob.exc.HTTPCreated.code)['nat_pool']
+
+                # Subnet deleted on 'delete'
+                sub_id = nat_pool['subnet_id']
+                self.delete_nat_pool(
+                    nat_pool['id'],
+                    expected_res_status=webob.exc.HTTPNoContent.code)
+                self._get_object(
+                    'subnets', sub_id, self.api,
+                    expected_res_status=404 if owned else 200)
+
+                # Subnet deleted on 'update'
+                nat_pool = self.create_nat_pool(
+                    external_segment_id=es['id'],
+                    ip_version=4, ip_pool=ip_pool,
+                    expected_res_status=webob.exc.HTTPCreated.code)['nat_pool']
+                sub_id = nat_pool['subnet_id']
+                with self.network(router__external=True) as net2:
+                    with self.subnet(cidr='192.167.0.0/24',
+                                     network=net2) as sub2:
+                        es2 = self.create_external_segment(
+                            name="nondefault", subnet_id=sub2['subnet']['id'],
+                            external_routes=routes,
+                            expected_res_status=webob.exc.HTTPCreated.code)
+                        es2 = es2['external_segment']
+
+                        # Update External Segment
+                        nat_pool = self.update_nat_pool(
+                            nat_pool['id'],
+                            external_segment_id=es2['id'])['nat_pool']
+                        self.assertNotEqual(nat_pool['subnet_id'], sub_id)
+                        self.assertIsNotNone(nat_pool['subnet_id'])
+
+                        # Verify subnet deleted
+                        self._get_object(
+                            'subnets', sub_id, self.api,
+                            expected_res_status=404 if owned else 200)
+
+    def test_owned_subnet_deleted(self):
+        self._test_subnet_swap(True)
+
+    def test_not_owned_subnet_not_deleted(self):
+        self._test_subnet_swap(False)

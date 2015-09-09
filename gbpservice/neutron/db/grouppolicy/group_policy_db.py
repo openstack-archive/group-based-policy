@@ -335,6 +335,11 @@ class PolicyRuleSet(gquota.GBPQuotaBase, model_base.BASEV2,
 
 class NATPool(gquota.GBPQuotaBase, model_base.BASEV2, BaseSharedGbpResource):
     __tablename__ = 'gp_nat_pools'
+    type = sa.Column(sa.String(15))
+    __mapper_args__ = {
+        'polymorphic_on': type,
+        'polymorphic_identity': 'base'
+    }
     ip_version = sa.Column(sa.Integer, nullable=False)
     ip_pool = sa.Column(sa.String(64), nullable=False)
     external_segment_id = sa.Column(
