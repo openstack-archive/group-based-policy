@@ -19,6 +19,7 @@ from sqlalchemy import orm
 
 from gbpservice.neutron.db import gbp_quota_db as gquota
 from gbpservice.neutron.db.grouppolicy import group_policy_db as gpdb
+from gbpservice.neutron.extensions import group_policy as gpolicy
 
 
 LOG = logging.getLogger(__name__)
@@ -86,6 +87,14 @@ class ExternalSegmentMapping(gpdb.ExternalSegment):
                           nullable=True, unique=True)
 
 
+class NATPoolMapping(gpdb.NATPool):
+    """Mapping of NAT Pool to Neutron Subnet."""
+    __table_args__ = {'extend_existing': True}
+    __mapper_args__ = {'polymorphic_identity': 'mapping'}
+    subnet_id = sa.Column(sa.String(36), sa.ForeignKey('subnets.id'),
+                          nullable=True, unique=True)
+
+
 gquota.DB_CLASS_TO_RESOURCE_NAMES[L3PolicyMapping.__name__] = 'l3_policy'
 gquota.DB_CLASS_TO_RESOURCE_NAMES[L2PolicyMapping.__name__] = 'l2_policy'
 gquota.DB_CLASS_TO_RESOURCE_NAMES[PolicyTargetGroupMapping.__name__] = (
@@ -94,6 +103,7 @@ gquota.DB_CLASS_TO_RESOURCE_NAMES[PolicyTargetMapping.__name__] = (
     'policy_target')
 gquota.DB_CLASS_TO_RESOURCE_NAMES[ExternalSegmentMapping.__name__] = (
     'external_segment')
+gquota.DB_CLASS_TO_RESOURCE_NAMES[NATPoolMapping.__name__] = 'nat_pool'
 
 
 class GroupPolicyMappingDbPlugin(gpdb.GroupPolicyDbPlugin):
@@ -130,6 +140,12 @@ class GroupPolicyMappingDbPlugin(gpdb.GroupPolicyDbPlugin):
         res['subnet_id'] = es.subnet_id
         return self._fields(res, fields)
 
+    def _make_nat_pool_dict(self, np, fields=None):
+        res = super(GroupPolicyMappingDbPlugin,
+                    self)._make_nat_pool_dict(np)
+        res['subnet_id'] = np.subnet_id
+        return self._fields(res, fields)
+
     def _set_port_for_policy_target(self, context, pt_id, port_id):
         with context.session.begin(subtransactions=True):
             pt_db = self._get_policy_target(context, pt_id)
@@ -161,15 +177,32 @@ class GroupPolicyMappingDbPlugin(gpdb.GroupPolicyDbPlugin):
             es_db = self._get_external_segment(context, es_id)
             es_db.subnet_id = subnet_id
 
+    def _set_subnet_to_np(self, context, np_id, subnet_id):
+        with context.session.begin(subtransactions=True):
+            np_db = self._get_nat_pool(context, np_id)
+            np_db.subnet_id = subnet_id
+
     def _update_ess_for_l3p(self, context, l3p_id, ess):
         with context.session.begin(subtransactions=True):
             l3p_db = self._get_l3_policy(context, l3p_id)
             self._set_ess_for_l3p(context, l3p_db, ess)
 
+    def _get_nat_pool(self, context, nat_pool_id):
+        return self._find_gbp_resource(
+            context, NATPoolMapping, nat_pool_id,
+            gpolicy.NATPoolNotFound)
+
     def _get_l3p_ptgs(self, context, l3p_id):
         return super(GroupPolicyMappingDbPlugin, self)._get_l3p_ptgs(
             context, l3p_id, l3p_klass=L3PolicyMapping,
             ptg_klass=PolicyTargetGroupMapping, l2p_klass=L2PolicyMapping)
+
+    def _set_db_np_subnet(self, context, nat_pool, subnet_id):
+        with context.session.begin(subtransactions=True):
+            nat_pool['subnet_id'] = subnet_id
+            db_np = self._get_nat_pool(context, nat_pool['id'])
+            db_np.subnet_id = nat_pool['subnet_id']
+            context.session.merge(db_np)
 
     @log.log
     def create_policy_target(self, context, policy_target):
@@ -373,6 +406,34 @@ class GroupPolicyMappingDbPlugin(gpdb.GroupPolicyDbPlugin):
                                           marker)
         return self._get_collection(context, ExternalSegmentMapping,
                                     self._make_external_segment_dict,
+                                    filters=filters, fields=fields,
+                                    sorts=sorts, limit=limit,
+                                    marker_obj=marker_obj,
+                                    page_reverse=page_reverse)
+
+    @log.log
+    def create_nat_pool(self, context, nat_pool):
+        np = nat_pool['nat_pool']
+        tenant_id = self._get_tenant_id_for_create(context, np)
+        with context.session.begin(subtransactions=True):
+            np_db = NATPoolMapping(
+                id=uuidutils.generate_uuid(), tenant_id=tenant_id,
+                name=np['name'], description=np['description'],
+                shared=np.get('shared', False), ip_version=np['ip_version'],
+                ip_pool=np['ip_pool'],
+                external_segment_id=np['external_segment_id'],
+                subnet_id=np.get('subnet_id'))
+            context.session.add(np_db)
+        return self._make_nat_pool_dict(np_db)
+
+    @log.log
+    def get_nat_pools(self, context, filters=None, fields=None,
+                      sorts=None, limit=None, marker=None,
+                      page_reverse=False):
+        marker_obj = self._get_marker_obj(context, 'nat_pool', limit,
+                                          marker)
+        return self._get_collection(context, NATPoolMapping,
+                                    self._make_nat_pool_dict,
                                     filters=filters, fields=fields,
                                     sorts=sorts, limit=limit,
                                     marker_obj=marker_obj,
