@@ -170,9 +170,16 @@ class GroupPolicyPluginTestCase(tgpmdb.GroupPolicyMappingDbTestCase):
                                       self.fmt)
         return self.deserialize(self.fmt, req.get_response(self.api))
 
-    def _get_object(self, type, id, api):
+    def _get_object(self, type, id, api, expected_res_status=None):
         req = self.new_show_request(type, id, self.fmt)
-        return self.deserialize(self.fmt, req.get_response(api))
+        res = req.get_response(api)
+
+        if expected_res_status:
+            self.assertEqual(res.status_int, expected_res_status)
+        elif res.status_int >= webob.exc.HTTPClientError.code:
+            raise webob.exc.HTTPClientError(code=res.status_int)
+
+        return self.deserialize(self.fmt, res)
 
 
 class TestL3Policy(GroupPolicyPluginTestCase):

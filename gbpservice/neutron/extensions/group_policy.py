@@ -25,6 +25,7 @@ from oslo.config import cfg
 import six
 
 import gbpservice.neutron.extensions
+from gbpservice.neutron.extensions import patch  # noqa
 from gbpservice.neutron.services.grouppolicy.common import (
     constants as gp_constants)
 
