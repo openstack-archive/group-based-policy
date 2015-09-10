@@ -19,12 +19,11 @@ check_residual_resources admin admin
 check_residual_resources admin demo
 check_residual_resources demo demo
 
+GBP_FUNC_DIR=$GBP_DIR/gbpservice/tests/contrib/gbpfunctests
 # Run gbpfunc integration tests
 echo "Running gbpfunc test suite"
-cd $NEW_BASE
-sudo git clone http://github.com/group-policy/gbpfunctests gbpfunctests
-export PYTHONPATH="$NEW_BASE/gbpfunctests:${PYTHONPATH}"
-cd gbpfunctests/testcases
+export PYTHONPATH="$GBP_FUNC_DIR:${PYTHONPATH}"
+cd $GBP_FUNC_DIR/testcases
 python suite_run.py upstream
 gbpfunc_exit_code=$?
 
