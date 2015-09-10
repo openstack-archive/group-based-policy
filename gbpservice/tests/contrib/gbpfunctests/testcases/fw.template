@@ -1,0 +1,36 @@
+{
+    "heat_template_version": "2013-05-23", 
+    "resources": {
+	"Firewall_service": {
+	    "type": "OS::Neutron::Firewall", 
+	    "properties": {
+		"admin_state_up": true,
+		"firewall_policy_id": {"get_resource": "Firewall_policy"},
+		"name": "testFirewall",
+		"description": "test Firewall"
+		}
+	    },
+	"Firewall_policy": {
+	    "type": "OS::Neutron::FirewallPolicy",
+	    "properties": {
+		"shared": false,
+		"description": "test firewall policy",
+		"name": "testFWPolicy",
+		"firewall_rules": [{"get_resource": "Firewall_rule"}],
+		"audited": true
+		}
+	    },
+	"Firewall_rule": {
+	    "type": "OS::Neutron::FirewallRule",
+	    "properties": {
+		"protocol": "tcp",
+		"description": "firewall rule 1",
+		"enabled": true,
+		"destination_port": "80",
+		"shared": false,
+		"action": "allow",
+		"name": "testFw"
+		}
+	    }
+	}
+}
