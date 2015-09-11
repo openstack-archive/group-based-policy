@@ -243,6 +243,14 @@ class HeatNodeDriver(driver_base.NodeDriverBase):
             self.update(context)
 
     @log.log
+    def update_node_consumer_ptg_added(self, context, policy_target_group):
+        pass
+
+    @log.log
+    def update_node_consumer_ptg_removed(self, context, policy_target_group):
+        pass
+
+    @log.log
     def notify_chain_parameters_updated(self, context):
         self.update(context)
 

@@ -329,6 +329,24 @@ class ServiceChainPluginBase(service_base.ServicePluginBase):
         """
         pass
 
+    def update_chains_consumer_added(self, context, policy_target_group,
+                                     new_consumed):
+        """ Auto scaling function.
+
+        Override this method to react to policy target group addition as
+        a consumer of a chain.
+        """
+        pass
+
+    def update_chains_consumer_removed(self, context, policy_target_group,
+                                       old_consumed):
+        """ Auto scaling function.
+
+        Override this method to react to policy target group removed as a
+        consumer of a chain
+        """
+        pass
+
     @abc.abstractmethod
     @log.log
     def get_servicechain_nodes(self, context, filters=None, fields=None):

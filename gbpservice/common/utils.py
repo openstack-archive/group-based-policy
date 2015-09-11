@@ -85,3 +85,9 @@ def get_keystone_creds():
             keystone_conf.auth_host,
             keystone_conf.auth_port))
     return user, pw, tenant, auth_url + '/'
+
+
+def set_difference(iterable_1, iterable_2):
+    set1 = set(iterable_1)
+    set2 = set(iterable_2)
+    return (set1 - set2), (set2 - set1)
