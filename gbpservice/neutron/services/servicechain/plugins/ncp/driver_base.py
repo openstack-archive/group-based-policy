@@ -172,6 +172,34 @@ class NodeDriverBase(object):
         pass
 
     @abc.abstractmethod
+    def update_policy_target_group_consumer_added(self, context,
+                                                  policy_target_group):
+        """Update a deployed Service Chain Node on addition of a consumer PTG.
+
+        This method can be used for auto scaling some services whenever a
+        Policy Target is added to a relevant PTG.
+
+        :param context: NodeDriverContext instance describing the service chain
+        and the specific node to be processed by this driver.
+        :param policy_target_group: Dict representing a Policy Target Group.
+        """
+        pass
+
+    @abc.abstractmethod
+    def update_policy_target_group_consumer_removed(self, context,
+                                                    policy_target_group):
+        """Update a deployed Service Chain Node on removal of a consumer PTG.
+
+        This method can be used for auto scaling some services whenever a
+        Policy Target is removed from a relevant PTG.
+
+        :param context: NodeDriverContext instance describing the service chain
+        and the specific node to be processed by this driver.
+        :param policy_target_group: Dict representing a Policy Target Group.
+        """
+        pass
+
+    @abc.abstractmethod
     def notify_chain_parameters_updated(self, context):
         """Update a deployed Service Chain Node on GBP PRS updates
 
