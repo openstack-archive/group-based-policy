@@ -284,6 +284,26 @@ class NodeCompositionPlugin(servicechain_db.ServiceChainDbPlugin,
         """
         self._update_chains_pt_modified(context, policy_target, 'removed')
 
+    def update_chains_consumer_added(self, context, policy_target_group,
+                                     new_consumed):
+        """ Auto scaling function.
+
+        Override this method to react to policy target group addition as
+        a consumer of a chain.
+        """
+        self._update_chains_consumer_modified(context, policy_target_group,
+                                              new_consumed, 'added')
+
+    def update_chains_consumer_removed(self, context, policy_target_group,
+                                       old_consumed):
+        """ Auto scaling function.
+
+        Override this method to react to policy target group removed as a
+        consumer of a chain
+        """
+        self._update_chains_consumer_modified(context, policy_target_group,
+                                              old_consumed, 'removed')
+
     def _update_chains_pt_modified(self, context, policy_target, action):
         admin_context = utils.admin_context(context)
         scis = self._get_instances_from_policy_target(
@@ -299,6 +319,10 @@ class NodeCompositionPlugin(servicechain_db.ServiceChainDbPlugin,
                 except exc.NodeDriverError as ex:
                     LOG.error(_("Node Update on policy target modification "
                                 "failed, %s"), ex.message)
+
+    def _update_chains_consumer_modified(self, *args, **kwargs):
+        # TODO(ivar): implement
+        pass
 
     def notify_chain_parameters_updated(self, context,
                                         servicechain_instance_id):
