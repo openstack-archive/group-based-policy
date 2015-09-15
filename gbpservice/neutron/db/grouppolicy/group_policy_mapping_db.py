@@ -215,6 +215,11 @@ class GroupPolicyMappingDbPlugin(gpdb.GroupPolicyDbPlugin):
             db_np.subnet_id = nat_pool['subnet_id']
             context.session.merge(db_np)
 
+    def _get_ptgs_for_subnet(self, context, subnet_id):
+        return [x['policy_target_group_id'] for x in
+            context.session.query(PTGToSubnetAssociation).filter_by(
+                subnet_id=subnet_id)]
+
     @log.log
     def create_policy_target(self, context, policy_target):
         pt = policy_target['policy_target']
