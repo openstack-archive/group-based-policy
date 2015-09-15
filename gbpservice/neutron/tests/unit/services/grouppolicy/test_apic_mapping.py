@@ -243,6 +243,8 @@ class TestPolicyTarget(ApicMappingTestCase):
         self.assertEqual(pt1['port_id'], mapping['port_id'])
         self.assertEqual(ptg['id'], mapping['endpoint_group_name'])
         self.assertEqual('someid', mapping['vm-name'])
+        self.assertEqual(1, len(mapping['subnets']))
+        self.assertEqual(ptg['subnets'][0], mapping['subnets'][0]['id'])
 
     def test_get_gbp_details_shadow(self):
         l2p = self.create_l2_policy()['l2_policy']
@@ -293,6 +295,22 @@ class TestPolicyTarget(ApicMappingTestCase):
             pt['id'], policy_target_group_id=ptg2['id'],
             expected_res_status=400)
         self.assertEqual('InvalidPortForPTG', res['NeutronError']['type'])
+
+    def test_port_notified_on_subnet_change(self):
+        ptg = self.create_policy_target_group()['policy_target_group']
+        pt = self.create_policy_target(
+            policy_target_group_id=ptg['id'])['policy_target']
+        self._bind_port_to_host(pt['port_id'], 'h1')
+
+        subnet = self._get_object('subnets', ptg['subnets'][0], self.api)
+        subnet2 = copy.deepcopy(subnet)
+        subnet2['subnet']['gateway_ip'] = '10.0.0.254'
+
+        self.driver.apic_manager.reset_mock()
+        self.driver.notifier.port_update.reset_mock()
+        self.driver.process_subnet_changed(context.get_admin_context(),
+                                           subnet['subnet'], subnet2['subnet'])
+        self.assertTrue(self.driver.notifier.port_update.called)
 
 
 class TestPolicyTargetGroup(ApicMappingTestCase):
