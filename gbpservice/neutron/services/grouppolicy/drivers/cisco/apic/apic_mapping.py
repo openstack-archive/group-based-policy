@@ -150,6 +150,7 @@ class ApicMappingDriver(api.ResourceMappingDriver):
         self._setup_rpc()
         self.apic_manager = ApicMappingDriver.get_apic_manager()
         self.name_mapper = self.apic_manager.apic_mapper
+        self.enable_dhcp_opt = self.apic_manager.enable_optimized_dhcp
         self._gbp_plugin = None
 
     def _setup_rpc_listeners(self):
@@ -224,6 +225,7 @@ class ApicMappingDriver(api.ResourceMappingDriver):
             l3_policy = context._plugin.get_l3_policy(context,
                                                       l2p['l3_policy_id'])
             self._add_ip_mapping_details(context, port_id, l3_policy, details)
+        self._add_network_details(context, port, details)
         return details
 
     def _add_ip_mapping_details(self, context, port_id, l3_policy, details):
@@ -254,6 +256,12 @@ class ApicMappingDriver(api.ResourceMappingDriver):
                 f['nat_epg_tenant'] = nat_epg_tenant
         details['floating_ip'] = fips
         details['ip_mapping'] = ipms
+
+    def _add_network_details(self, context, port, details):
+        details['allowed_address_pairs'] = port['allowed_address_pairs']
+        details['enable_dhcp_optimization'] = self.enable_dhcp_opt
+        details['subnets'] = self._get_subnets(context,
+            filters={'id': [ip['subnet_id'] for ip in port['fixed_ips']]})
 
     def process_port_added(self, plugin_context, port):
         pass
@@ -806,6 +814,12 @@ class ApicMappingDriver(api.ResourceMappingDriver):
             if l2p:
                 # Is GBP owned, reflect on APIC
                 self._manage_l2p_subnets(context, l2p['id'], [new], [old])
+        # notify ports in the subnet
+        ptg_ids = self.gbp_plugin._get_ptgs_for_subnet(context, old['id'])
+        pts = self.gbp_plugin.get_policy_targets(
+            context, filters={'policy_target_group_id': ptg_ids})
+        for pt in pts:
+            self._notify_port_update(context, pt['port_id'])
 
     def process_subnet_added(self, context, subnet):
         l2p = self._network_id_to_l2p(context, subnet['network_id'])
