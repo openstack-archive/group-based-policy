@@ -10,6 +10,7 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+from eventlet import greenthread
 from neutron.common import log
 from neutron.db import model_base
 from oslo_config import cfg
@@ -177,17 +178,31 @@ class ImplicitPolicyDriver(api.PolicyDriver):
             context._plugin.delete_l2_policy(context._plugin_context, l2p_id)
 
     def _use_implicit_l3_policy(self, context):
-        filter = {'tenant_id': [context.current['tenant_id']],
+        tenant_id = context.current['tenant_id']
+        filter = {'tenant_id': [tenant_id],
                   'name': [self._default_l3p_name]}
         l3ps = context._plugin.get_l3_policies(context._plugin_context, filter)
         l3p = l3ps and l3ps[0]
         if not l3p:
-            # REVISIT(rkukura): Concurrency could result in multiple
-            # default L3Ps for the same tenant. A DB table mapping
-            # tenant_id to default l3_policy_id may be needed to
-            # ensure a single default L3 policy is used per tenant.
+            # If concurrent threads or processes attempt to create
+            # default L3 polcies for the same tenant, it is critical
+            # that only one default L3 policy gets created for that
+            # tenant. Since all attempts will use the same IP pool
+            # CIDR, one should succeed, while the others should result
+            # in OverlappingIPPoolsInSameTenantNotAllowed
+            # exceptions. On catching this exception, we delay a bit
+            # and query again, expecting to find an existing default
+            # L3P.
+            #
+            # REVISIT(rkukura): If/when we remove the restriction
+            # against overlapping L3P IP pools for a single tenant,
+            # the above approach will no longer prevent creation of
+            # multiple default L3Ps for the same tenant. A DB table
+            # mapping tenant_id to default l3_policy_id may then be
+            # needed to ensure a single default L3 policy is created
+            # and used per tenant.
             attrs = {'l3_policy':
-                     {'tenant_id': context.current['tenant_id'],
+                     {'tenant_id': tenant_id,
                       'name': self._default_l3p_name,
                       'description': _("Implicitly created L3 policy"),
                       'ip_version': self._default_ip_version,
@@ -195,10 +210,27 @@ class ImplicitPolicyDriver(api.PolicyDriver):
                       'shared': context.current.get('shared', False),
                       'subnet_prefix_length':
                       self._default_subnet_prefix_length}}
-            l3p = context._plugin.create_l3_policy(context._plugin_context,
-                                                   attrs)
-            self._mark_l3_policy_owned(context._plugin_context.session,
-                                       l3p['id'])
+            try:
+                l3p = context._plugin.create_l3_policy(context._plugin_context,
+                                                       attrs)
+                self._mark_l3_policy_owned(context._plugin_context.session,
+                                           l3p['id'])
+            except exc.OverlappingIPPoolsInSameTenantNotAllowed:
+                LOG.info(_("Possible concurrent creation of implicit L3P for"
+                           " tenant %s"), tenant_id)
+
+                # Allow time for conccurent L3P creation to complete,
+                # then find and use it.
+                greenthread.sleep(5)
+                l3ps = context._plugin.get_l3_policies(context._plugin_context,
+                                                       filter)
+                l3p = l3ps and l3ps[0]
+                if not l3p:
+                    LOG.warning(_("Overlapping IPPool detected, but implicit "
+                                  "L3P not concurrently created for tenant "
+                                  "%s"), tenant_id)
+                    raise
+
         context.current['l3_policy_id'] = l3p['id']
         context.set_l3_policy_id(l3p['id'])
 
