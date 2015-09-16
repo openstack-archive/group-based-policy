@@ -186,9 +186,14 @@ class ImplicitSubnetNotSupported(GroupPolicyBadRequest):
     message = _("RMD doesn't support implicit external subnet creation.")
 
 
+class DefaultL3PolicyAlreadyExists(GroupPolicyBadRequest):
+    message = _("Default L3 Policy with name %(l3p_name)s already "
+                "exists and is visible for this tenant.")
+
+
 class DefaultExternalSegmentAlreadyExists(GroupPolicyBadRequest):
     message = _("Default External Segment with name %(es_name)s already "
-                "exists and is visible for this tenant")
+                "exists and is visible for this tenant.")
 
 
 class InvalidCrossTenantReference(GroupPolicyBadRequest):
