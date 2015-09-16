@@ -14,8 +14,10 @@ from neutron.common import log
 from neutron.db import model_base
 from oslo_config import cfg
 from oslo_log import log as logging
+from oslo_utils import excutils
 import sqlalchemy as sa
 
+from gbpservice.network.neutronv2 import local_api
 from gbpservice.neutron.services.grouppolicy import (
     group_policy_driver_api as api)
 from gbpservice.neutron.services.grouppolicy.common import exceptions as exc
@@ -73,7 +75,7 @@ class OwnedL3Policy(model_base.BASEV2):
                              nullable=False, primary_key=True)
 
 
-class ImplicitPolicyDriver(api.PolicyDriver):
+class ImplicitPolicyDriver(api.PolicyDriver, local_api.LocalAPI):
     """Implicit Policy driver for Group Policy plugin.
 
     This driver ensures that the l2_policy_id attribute of
@@ -151,7 +153,30 @@ class ImplicitPolicyDriver(api.PolicyDriver):
         pass
 
     @log.log
+    def create_l3_policy_precommit(self, context):
+        if self._default_l3p_name == context.current['name']:
+            LOG.info(_("In precommit, creating default L3 policy: %s"),
+                     context.current)  # temp
+            tenant_id = context.current['tenant_id']
+            filter = {'tenant_id': [tenant_id],
+                      'name': [self._default_l3p_name]}
+            l3ps = context._plugin.get_l3_policies(context._plugin_context,
+                                                   filter)
+            LOG.info(_("In precommit, got default L3 policies: %s"),
+                     l3ps)  # temp
+            if [x for x in l3ps if x['id'] != context.current['id']]:
+                LOG.info(_("In precommit, rejecting default L3 policy: %s"),
+                         context.current)  # temp
+                raise exc.DefaultL3PolicyAlreadyExists(
+                    l3p_name=self._default_l3p_name)
+
+    @log.log
     def create_l3_policy_postcommit(self, context):
+        # temp
+        if self._default_l3p_name == context.current['name']:
+            LOG.info(_("In postcommit, created default L3 policy: %s"),
+                     context.current)  # temp
+
         if not context.current['external_segments']:
             self._use_implicit_external_segment(context)
 
@@ -160,45 +185,62 @@ class ImplicitPolicyDriver(api.PolicyDriver):
         pass
 
     def _use_implicit_l2_policy(self, context):
-        attrs = {'l2_policy':
-                 {'tenant_id': context.current['tenant_id'],
-                  'name': context.current['name'],
-                  'description': _("Implicitly created L2 policy"),
-                  'l3_policy_id': None,
-                  'shared': context.current.get('shared', False),
-                  'network_id': None}}
-        l2p = context._plugin.create_l2_policy(context._plugin_context, attrs)
+        attrs = {'tenant_id': context.current['tenant_id'],
+                 'name': context.current['name'],
+                 'description': _("Implicitly created L2 policy"),
+                 'l3_policy_id': None,
+                 'shared': context.current.get('shared', False),
+                 'network_id': None}
+        l2p = self._create_l2_policy(context._plugin_context, attrs)
         l2p_id = l2p['id']
         self._mark_l2_policy_owned(context._plugin_context.session, l2p_id)
         context.set_l2_policy_id(l2p_id)
 
     def _cleanup_l2_policy(self, context, l2p_id):
         if self._l2_policy_is_owned(context._plugin_context.session, l2p_id):
-            context._plugin.delete_l2_policy(context._plugin_context, l2p_id)
+            self._delete_l2_policy(context._plugin_context, l2p_id)
 
     def _use_implicit_l3_policy(self, context):
-        filter = {'tenant_id': [context.current['tenant_id']],
+        tenant_id = context.current['tenant_id']
+        filter = {'tenant_id': [tenant_id],
                   'name': [self._default_l3p_name]}
-        l3ps = context._plugin.get_l3_policies(context._plugin_context, filter)
+        l3ps = self._get_l3_policies(context._plugin_context, filter)
+        LOG.info(_("Got default L3 policies: %s"), l3ps)  # temp
         l3p = l3ps and l3ps[0]
         if not l3p:
-            # REVISIT(rkukura): Concurrency could result in multiple
-            # default L3Ps for the same tenant. A DB table mapping
-            # tenant_id to default l3_policy_id may be needed to
-            # ensure a single default L3 policy is used per tenant.
-            attrs = {'l3_policy':
-                     {'tenant_id': context.current['tenant_id'],
-                      'name': self._default_l3p_name,
-                      'description': _("Implicitly created L3 policy"),
-                      'ip_version': self._default_ip_version,
-                      'ip_pool': self._default_ip_pool,
-                      'shared': context.current.get('shared', False),
-                      'subnet_prefix_length':
-                      self._default_subnet_prefix_length}}
-            l3p = context._plugin.create_l3_policy(context._plugin_context,
-                                                   attrs)
-            self._mark_l3_policy_owned(context._plugin_context.session,
-                                       l3p['id'])
+            attrs = {'tenant_id': tenant_id,
+                     'name': self._default_l3p_name,
+                     'description': _("Implicitly created L3 policy"),
+                     'ip_version': self._default_ip_version,
+                     'ip_pool': self._default_ip_pool,
+                     'shared': context.current.get('shared', False),
+                     'subnet_prefix_length':
+                     self._default_subnet_prefix_length}
+            try:
+                l3p = self._create_l3_policy(context._plugin_context, attrs)
+                self._mark_l3_policy_owned(context._plugin_context.session,
+                                           l3p['id'])
+            except exc.DefaultL3PolicyAlreadyExists:
+                with excutils.save_and_reraise_exception(
+                        reraise=False) as ctxt:
+                    LOG.info(_("Possible concurrent creation of default L3 "
+                               "policy for tenant %s"), tenant_id)
+                    l3ps = self._get_l3_policies(context._plugin_context,
+                                                 filter)
+                    # temp
+                    LOG.info(_("Now got default L3 policies: %s"), l3ps)
+                    l3p = l3ps and l3ps[0]
+                    if not l3p:
+                        LOG.warning(_("Caught DefaultL3PolicyAlreadyExists, "
+                                      "but default L3 policy not concurrently "
+                                      "created for tenant %s"), tenant_id)
+                        ctxt.reraise = True
+            except exc.OverlappingIPPoolsInSameTenantNotAllowed:
+                with excutils.save_and_reraise_exception() as ctxt:
+                    LOG.info(_("OverlappingIPPoolsinSameTenantNotAllowed "
+                               "during creation of default L3 "
+                               "policy for tenant %s"), tenant_id)
+
         context.current['l3_policy_id'] = l3p['id']
         context.set_l3_policy_id(l3p['id'])
 
@@ -207,8 +249,7 @@ class ImplicitPolicyDriver(api.PolicyDriver):
             return
 
         filter = {'name': [self._default_es_name]}
-        ess = context._plugin.get_external_segments(context._plugin_context,
-                                                    filter)
+        ess = self._get_external_segments(context._plugin_context, filter)
         # Multiple default ES may exist, this can happen when a per-tenant
         # default ES gets his shared attribute flipped. Always prefer the
         # specific tenant's ES if any.
@@ -224,6 +265,7 @@ class ImplicitPolicyDriver(api.PolicyDriver):
 
     def _cleanup_l3_policy(self, context, l3p_id):
         if self._l3_policy_is_owned(context._plugin_context.session, l3p_id):
+            # REVISIT(rkukura): add check_unused to local_api wrapper?
             context._plugin.delete_l3_policy(context._plugin_context, l3p_id,
                                              check_unused=True)
 

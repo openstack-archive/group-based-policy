@@ -20,6 +20,7 @@ from neutron.common import log
 from neutron import context as n_context
 from neutron.db import model_base
 from neutron.db import models_v2
+from neutron.extensions import l3 as ext_l3
 from neutron.extensions import securitygroup as ext_sg
 from oslo_config import cfg
 from oslo_log import log as logging
@@ -791,9 +792,11 @@ class ResourceMappingDriver(api.PolicyDriver, local_api.LocalAPI):
             context.current['consumed_policy_rule_sets'])
 
         l2p_id = context.current['l2_policy_id']
-        router_id = self._get_routerid_for_l2policy(context, l2p_id)
-        for subnet_id in context.current['subnets']:
-            self._cleanup_subnet(context._plugin_context, subnet_id, router_id)
+        if l2p_id:
+            router_id = self._get_routerid_for_l2policy(context, l2p_id)
+            for subnet_id in context.current['subnets']:
+                self._cleanup_subnet(context._plugin_context, subnet_id,
+                                     router_id)
         self._delete_default_security_group(
             context._plugin_context, context.current['id'],
             context.current['tenant_id'])
@@ -1651,17 +1654,25 @@ class ResourceMappingDriver(api.PolicyDriver, local_api.LocalAPI):
         interface_info = {'subnet_id': subnet_id}
         if router_id:
             try:
+                LOG.info(_("TEMP about to add subnet %s to router"), subnet_id)
                 self._add_router_interface(plugin_context, router_id,
                                            interface_info)
+                LOG.info(_("TEMP added subnet %s to router"), subnet_id)
             except n_exc.BadRequest:
                 LOG.exception(_("Adding subnet to router failed"))
+                LOG.info(_("TEMP got BadRequest adding subnet %s to router"),
+                         subnet_id)
                 raise exc.GroupPolicyInternalError()
 
     def _cleanup_subnet(self, plugin_context, subnet_id, router_id):
         interface_info = {'subnet_id': subnet_id}
         if router_id:
-            self._remove_router_interface(plugin_context, router_id,
-                                          interface_info)
+            try:
+                self._remove_router_interface(plugin_context, router_id,
+                                              interface_info)
+            except ext_l3.RouterInterfaceNotFoundForSubnet:
+                LOG.debug("Ignoring RouterInterfaceNotFoundForSubnet cleaning "
+                          "up subnet: %s", subnet_id)
         if self._subnet_is_owned(plugin_context.session, subnet_id):
             self._delete_subnet(plugin_context, subnet_id)
 
