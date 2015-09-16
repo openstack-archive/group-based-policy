@@ -251,6 +251,14 @@ class TestImplicitL3Policy(ImplicitPolicyTestCase):
         res = req.get_response(self.ext_api)
         self.assertEqual(res.status_int, webob.exc.HTTPOk.code)
 
+    def test_single_default_policy(self):
+        # Verify only one default L3 policy can be created per tenant.
+        l3p = self.create_l3_policy(name='default')
+        self.assertEqual('default', l3p['l3_policy']['name'])
+        res = self.create_l3_policy(name='default', expected_res_status=400)
+        self.assertEqual('DefaultL3PolicyAlreadyExists',
+                         res['NeutronError']['type'])
+
     def test_update_from_implicit(self):
         # Create L2 policy with implicit L3 policy.
         l2p = self.create_l2_policy()
