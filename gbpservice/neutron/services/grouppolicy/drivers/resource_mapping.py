@@ -20,6 +20,7 @@ from neutron.common import log
 from neutron import context as n_context
 from neutron.db import model_base
 from neutron.db import models_v2
+from neutron.extensions import l3 as ext_l3
 from neutron.extensions import securitygroup as ext_sg
 from oslo_config import cfg
 from oslo_log import log as logging
@@ -782,9 +783,11 @@ class ResourceMappingDriver(api.PolicyDriver, local_api.LocalAPI):
             context.current['consumed_policy_rule_sets'])
 
         l2p_id = context.current['l2_policy_id']
-        router_id = self._get_routerid_for_l2policy(context, l2p_id)
-        for subnet_id in context.current['subnets']:
-            self._cleanup_subnet(context._plugin_context, subnet_id, router_id)
+        if l2p_id:
+            router_id = self._get_routerid_for_l2policy(context, l2p_id)
+            for subnet_id in context.current['subnets']:
+                self._cleanup_subnet(context._plugin_context, subnet_id,
+                                     router_id)
         self._delete_default_security_group(
             context._plugin_context, context.current['id'],
             context.current['tenant_id'])
@@ -1651,8 +1654,12 @@ class ResourceMappingDriver(api.PolicyDriver, local_api.LocalAPI):
     def _cleanup_subnet(self, plugin_context, subnet_id, router_id):
         interface_info = {'subnet_id': subnet_id}
         if router_id:
-            self._remove_router_interface(plugin_context, router_id,
-                                          interface_info)
+            try:
+                self._remove_router_interface(plugin_context, router_id,
+                                              interface_info)
+            except ext_l3.RouterInterfaceNotFoundForSubnet:
+                LOG.debug("Ignoring RouterInterfaceNotFoundForSubnet cleaning "
+                          "up subnet: %s", subnet_id)
         if self._subnet_is_owned(plugin_context.session, subnet_id):
             self._delete_subnet(plugin_context, subnet_id)
 
@@ -1941,7 +1948,8 @@ class ResourceMappingDriver(api.PolicyDriver, local_api.LocalAPI):
         if ptg_chain_map:
             if hierarchial_classifier_mismatch or not spec_id:
                 self._delete_servicechain_instance(
-                        context, ptg_chain_map[0].servicechain_instance_id)
+                    context._plugin_context,
+                    ptg_chain_map[0].servicechain_instance_id)
             else:
                 sc_specs = [spec_id]
                 if parent_spec_id:
@@ -1965,7 +1973,7 @@ class ResourceMappingDriver(api.PolicyDriver, local_api.LocalAPI):
     def _cleanup_redirect_action(self, context):
         for ptg_chain in context.ptg_chain_map:
             self._delete_servicechain_instance(
-                            context, ptg_chain.servicechain_instance_id)
+                context._plugin_context, ptg_chain.servicechain_instance_id)
 
     def _restore_ip_to_allocation_pool(self, context, subnet_id, ip_address):
         # TODO(Magesh):Pass subnets and loop on subnets. Better to add logic
