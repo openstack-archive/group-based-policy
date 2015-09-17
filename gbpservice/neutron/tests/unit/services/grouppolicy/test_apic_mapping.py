@@ -233,11 +233,18 @@ class TestPolicyTarget(ApicMappingTestCase):
             self.assertTrue(self.driver.notifier.port_update.called)
 
     def test_get_gbp_details(self):
+        l3p = self.create_l3_policy(name='myl3')['l3_policy']
+        l2p = self.create_l2_policy(name='myl2',
+                                    l3_policy_id=l3p['id'])['l2_policy']
         ptg = self.create_policy_target_group(
-            name="ptg1")['policy_target_group']
+            name="ptg1", l2_policy_id=l2p['id'])['policy_target_group']
         pt1 = self.create_policy_target(
             policy_target_group_id=ptg['id'])['policy_target']
         self._bind_port_to_host(pt1['port_id'], 'h1')
+
+        def echo(string):
+            return string
+        self.driver.apic_manager.apic.fvTenant.name = echo
         mapping = self.driver.get_gbp_details(context.get_admin_context(),
             device='tap%s' % pt1['port_id'], host='h1')
         self.assertEqual(pt1['port_id'], mapping['port_id'])
@@ -246,6 +253,14 @@ class TestPolicyTarget(ApicMappingTestCase):
         self.assertTrue(mapping['enable_dhcp_optimization'])
         self.assertEqual(1, len(mapping['subnets']))
         self.assertEqual(ptg['subnets'][0], mapping['subnets'][0]['id'])
+
+        self.assertEqual(l3p['tenant_id'], mapping['vrf_tenant'])
+        self.assertEqual(l3p['id'], mapping['vrf_name'])
+        if 'proxy_ip_pool' in l3p:
+            self.assertEqual([l3p['ip_pool'], l3p['proxy_ip_pool']],
+                             mapping['vrf_subnets'])
+        else:
+            self.assertEqual([l3p['ip_pool']], mapping['vrf_subnets'])
 
     def test_get_gbp_details_shadow(self):
         l2p = self.create_l2_policy()['l2_policy']

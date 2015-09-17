@@ -227,6 +227,7 @@ class ApicMappingDriver(api.ResourceMappingDriver):
                                                       l2p['l3_policy_id'])
             self._add_ip_mapping_details(context, port_id, l3_policy, details)
         self._add_network_details(context, port, details)
+        self._add_vrf_details(context, details)
         return details
 
     def _add_ip_mapping_details(self, context, port_id, l3_policy, details):
@@ -263,6 +264,16 @@ class ApicMappingDriver(api.ResourceMappingDriver):
         details['enable_dhcp_optimization'] = self.enable_dhcp_opt
         details['subnets'] = self._get_subnets(context,
             filters={'id': [ip['subnet_id'] for ip in port['fixed_ips']]})
+
+    def _add_vrf_details(self, context, details):
+        l3p = self._gbp_plugin.get_l3_policy(context, details['l3_policy_id'])
+        details['vrf_tenant'] = self.apic_manager.apic.fvTenant.name(
+            self._tenant_by_sharing_policy(l3p))
+        details['vrf_name'] = self.name_mapper.l3_policy(
+            context, l3p['id'])
+        details['vrf_subnets'] = [l3p['ip_pool']]
+        if l3p.get('proxy_ip_pool'):
+            details['vrf_subnets'].append(l3p['proxy_ip_pool'])
 
     def process_port_added(self, plugin_context, port):
         pass
