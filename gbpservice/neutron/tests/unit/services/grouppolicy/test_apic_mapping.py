@@ -717,8 +717,11 @@ class TestL3Policy(ApicMappingTestCase):
         l3p = self.create_l3_policy(
             shared=shared_l3p,
             tenant_id=es['tenant_id'] if not shared_es else 'another_tenant',
-            external_segments={es['id']: ['192.168.0.3']},
+            external_segments={es['id']: []},
             expected_res_status=201)['l3_policy']
+
+        self.assertEqual(1, len(l3p['external_segments'][es['id']]))
+        self.assertEqual('192.168.0.2', l3p['external_segments'][es['id']][0])
 
         owner = self.common_tenant if shared_es else es['tenant_id']
         l3p_owner = self.common_tenant if shared_l3p else l3p['tenant_id']
@@ -734,7 +737,7 @@ class TestL3Policy(ApicMappingTestCase):
 
         mgr.ensure_logical_node_profile_created.assert_called_once_with(
             es['id'], mocked.APIC_EXT_SWITCH, mocked.APIC_EXT_MODULE,
-            mocked.APIC_EXT_PORT, mocked.APIC_EXT_ENCAP, '192.168.0.3/24',
+            mocked.APIC_EXT_PORT, mocked.APIC_EXT_ENCAP, '192.168.0.2/24',
             owner=owner, router_id=APIC_EXTERNAL_RID,
             transaction=mock.ANY)
 
@@ -780,7 +783,9 @@ class TestL3Policy(ApicMappingTestCase):
             shared=shared_l3p)['l3_policy']
         l3p = self.update_l3_policy(
             l3p['id'], tenant_id=l3p['tenant_id'], expected_res_status=200,
-            external_segments={es['id']: ['192.168.0.3']})['l3_policy']
+            external_segments={es['id']: []})['l3_policy']
+        self.assertEqual(1, len(l3p['external_segments'][es['id']]))
+        self.assertEqual('192.168.0.2', l3p['external_segments'][es['id']][0])
 
         mgr = self.driver.apic_manager
         owner = self.common_tenant if shared_es else es['tenant_id']
@@ -795,7 +800,7 @@ class TestL3Policy(ApicMappingTestCase):
             mgr.ensure_external_routed_network_created.call_args_list)
         mgr.ensure_logical_node_profile_created.assert_called_once_with(
             es['id'], mocked.APIC_EXT_SWITCH, mocked.APIC_EXT_MODULE,
-            mocked.APIC_EXT_PORT, mocked.APIC_EXT_ENCAP, '192.168.0.3/24',
+            mocked.APIC_EXT_PORT, mocked.APIC_EXT_ENCAP, '192.168.0.2/24',
             owner=owner, router_id=APIC_EXTERNAL_RID,
             transaction=mock.ANY)
 
