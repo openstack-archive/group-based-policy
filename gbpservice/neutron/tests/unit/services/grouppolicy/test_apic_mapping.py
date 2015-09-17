@@ -1634,6 +1634,14 @@ class TestExternalSegment(ApicMappingTestCase):
     def test_route_update_add_3(self):
         self._test_route_update_add(shared_ep=False, shared_es=False)
 
+    def test_es_create_no_cidr_with_routes(self):
+        self._mock_external_dict([('supported', '192.168.0.2/24')])
+        self.create_external_segment(
+            name='supported',
+            external_routes=[{'destination': '0.0.0.0/0',
+                              'nexthop': '192.168.0.254'}],
+            expected_res_status=201)
+
 
 class TestExternalPolicy(ApicMappingTestCase):
 
