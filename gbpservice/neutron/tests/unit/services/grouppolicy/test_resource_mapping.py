@@ -1296,6 +1296,9 @@ class TestL3Policy(ResourceMappingTestCase):
                         l3p = self.create_l3_policy(
                             ip_pool='192.168.0.0/16', expected_res_status=201,
                             external_segments=external_segments)
+                        # IP address is set in the API
+                        self.assertEqual(1, len(
+                            l3p['l3_policy']['external_segments'][es1['id']]))
                         req = self.new_delete_request('l3_policies',
                                                       l3p['l3_policy']['id'])
                         req.get_response(self.ext_api)
@@ -1322,9 +1325,13 @@ class TestL3Policy(ResourceMappingTestCase):
                             ip_pool='192.168.0.0/16')['l3_policy']
                         for external_segments in [{es1['id']: []}, {es2['id']:
                                                                     []}]:
-                            self.update_l3_policy(
+                            l3p = self.update_l3_policy(
                                 l3p['id'], expected_res_status=200,
-                                external_segments=external_segments)
+                                external_segments=external_segments)[
+                                    'l3_policy']
+                            self.assertEqual(
+                                1, len(l3p['external_segments'][
+                                    external_segments.keys()[0]]))
                         # es2 to [es1, es2]
                         external_segments = {es2['id']: [], es1['id']: []}
                         res = self.update_l3_policy(
