@@ -1315,6 +1315,23 @@ class TestGroupResources(GroupPolicyDbTestCase):
         expected = set([ptg1_1['id'], ptg1_2['id'], ptg1_3['id']])
         self.assertEqual(expected, found)
 
+    def test_multiple_l3p_in_es_default_address(self):
+        es = self.create_external_segment()['external_segment']
+        es_dict = {es['id']: []}
+        self.create_l3_policy(external_segments=es_dict,
+                              expected_res_status=201)
+        self.create_l3_policy(external_segments=es_dict,
+                              expected_res_status=201)
+        es_dict = {es['id']: ['192.168.0.1', '192.168.0.2']}
+        self.create_l3_policy(external_segments=es_dict,
+                              expected_res_status=201)
+        # First address is overlapping
+        es_dict = {es['id']: ['192.168.0.1', '192.168.0.3']}
+        res = self.create_l3_policy(external_segments=es_dict,
+                                    expected_res_status=400)
+        self.assertEqual('IpAddressOverlappingInExternalSegment',
+                         res['NeutronError']['type'])
+
 
 class TestQuotasForGBP(GroupPolicyDbTestCase):
 
