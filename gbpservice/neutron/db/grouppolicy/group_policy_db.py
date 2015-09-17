@@ -141,9 +141,6 @@ class L2Policy(gquota.GBPQuotaBase, model_base.BASEV2, models_v2.HasId,
 class ESToL3PAssociation(model_base.BASEV2):
     """Many to many consuming relation between ESs and L3Ps."""
     __tablename__ = 'gp_es_to_l3p_associations'
-    __table_args__ = (
-        sa.UniqueConstraint('external_segment_id', 'allocated_address'),
-    )
     l3_policy_id = sa.Column(sa.String(36), sa.ForeignKey('gp_l3_policies.id'),
                              primary_key=True)
     external_segment_id = sa.Column(
@@ -811,6 +808,14 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
                     l3p_db.external_segments.append(assoc)
                 else:
                     # Create address allocation
+                    existing = context.session.query(
+                        ESToL3PAssociation).filter_by(
+                            external_segment_id=es['id']).filter(
+                                ESToL3PAssociation.allocated_address.in_(
+                                    es_dict[es['id']])).all()
+                    if existing:
+                        raise gpolicy.IpAddressOverlappingInExternalSegment(
+                            es_id=es['id'])
                     for ip in es_dict[es['id']]:
                         assoc = ESToL3PAssociation(
                             external_segment_id=es['id'],

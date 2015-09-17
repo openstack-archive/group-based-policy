@@ -186,6 +186,11 @@ class GroupPolicyInvalidProtocol(nexc.InvalidInput):
                 "representation (0 to 255) are supported.")
 
 
+class IpAddressOverlappingInExternalSegment(nexc.BadRequest):
+    message = _("One or more requested IP addresses are already allocated for "
+                "External Segment %(es_id)s.")
+
+
 # Group Policy Values
 gp_supported_actions = [None, gp_constants.GP_ACTION_ALLOW,
                         gp_constants.GP_ACTION_REDIRECT]
