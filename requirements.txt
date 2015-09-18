@@ -3,5 +3,3 @@
 # process, which may cause wedges in the gate later.
 
 oslosphinx>=2.5.0,<2.6.0  # Apache-2.0
-oslo.utils<1.4.1
-oslo.i18n==1.5.0
