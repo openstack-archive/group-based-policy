@@ -12,11 +12,6 @@ echo "*********************************************************************"
 # only the first error that occurred.
 set -o errexit
 
-# Print the commands being run so that we can see the command that triggers
-# an error.  It is also useful for following redirecting as the install occurs.
-set -o xtrace
-
-
 # Settings
 # ========
 
@@ -34,6 +29,10 @@ source $TOP_DIR/openrc
 source $TOP_DIR/exerciserc
 
 source $TOP_DIR/openrc demo demo
+
+# Print the commands being run so that we can see the command that triggers
+# an error.  It is also useful for following redirecting as the install occurs.
+set -o xtrace
 
 function confirm_server_active {
     local VM_UUID=$1
@@ -91,11 +90,11 @@ WEB_PORT=$(gbp policy-target-create web-pt-1 --policy-target-group web | awk "/p
 CLIENT1_PORT=$(gbp policy-target-create client-pt-1 --policy-target-group client-1 | awk "/port_id/ {print \$4}")
 
 ##TODO(Magesh): Add traffic testing and use namespace ports instead of launching VMs
-WEB_VM_1_UUID=`nova boot --flavor m1.tiny --image cirros-0.3.2-x86_64-uec --nic port-id=$WEB_PORT web-vm-1 | grep ' id ' | cut -d"|" -f3 | sed 's/ //g'`
+WEB_VM_1_UUID=`nova boot --flavor m1.tiny --image $DEFAULT_IMAGE_NAME --nic port-id=$WEB_PORT web-vm-1 | grep ' id ' | cut -d"|" -f3 | sed 's/ //g'`
 die_if_not_set $LINENO WEB_VM_1_UUID "Failure launching web-vm-1"
 confirm_server_active $WEB_VM_1_UUID
 
-CLIENT_VM_1_UUID=`nova boot --flavor m1.tiny --image cirros-0.3.2-x86_64-uec --nic port-id=$CLIENT1_PORT client-vm-1 | grep ' id ' | cut -d"|" -f3 | sed 's/ //g'`
+CLIENT_VM_1_UUID=`nova boot --flavor m1.tiny --image $DEFAULT_IMAGE_NAME --nic port-id=$CLIENT1_PORT client-vm-1 | grep ' id ' | cut -d"|" -f3 | sed 's/ //g'`
 die_if_not_set $LINENO CLIENT_VM_1_UUID "Failure launching client-vm-1"
 confirm_server_active $CLIENT_VM_1_UUID
 
