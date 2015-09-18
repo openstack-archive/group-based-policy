@@ -96,6 +96,11 @@ class FloatingIPFromExtSegmentInUse(gpexc.GroupPolicyBadRequest):
     message = _("One or more policy targets in L3 policy %(l3p)s have "
                 "floating IPs associated with external segment.")
 
+
+class NatPoolOverlapsApicSubnet(gpexc.GroupPolicyBadRequest):
+    message = _("NAT IP pool %(nat_pool_cidr)s overlaps with "
+                "APIC external network or host-pool subnet for %(es)s.")
+
 REVERSE_PREFIX = 'reverse-'
 SHADOW_PREFIX = 'Shd-'
 SERVICE_PREFIX = 'Svc-'
@@ -269,8 +274,8 @@ class ApicMappingDriver(api.ResourceMappingDriver):
         l3p = self._gbp_plugin.get_l3_policy(context, details['l3_policy_id'])
         details['vrf_tenant'] = self.apic_manager.apic.fvTenant.name(
             self._tenant_by_sharing_policy(l3p))
-        details['vrf_name'] = self.name_mapper.l3_policy(
-            context, l3p['id'])
+        details['vrf_name'] = str(self.name_mapper.l3_policy(
+            context, l3p['id']))
         details['vrf_subnets'] = [l3p['ip_pool']]
         if l3p.get('proxy_ip_pool'):
             details['vrf_subnets'].append(l3p['proxy_ip_pool'])
@@ -733,6 +738,8 @@ class ApicMappingDriver(api.ResourceMappingDriver):
         if not external_info:
             LOG.warn(UNMANAGED_SEGMENT % context.current['id'])
         elif not context.current['subnet_id']:
+            self._create_nat_epg_for_es(context, context.current,
+                                        external_info)
             subnet = self._use_implicit_external_subnet(
                 context, context.current, external_info)
             context.add_subnet(subnet['id'])
@@ -757,7 +764,14 @@ class ApicMappingDriver(api.ResourceMappingDriver):
         pass
 
     def delete_external_segment_postcommit(self, context):
-        self._delete_implicit_external_subnet(context, context.current)
+        # cleanup NAT EPG
+        es = context.current
+        self.apic_manager.ensure_nat_epg_deleted(
+            self._tenant_by_sharing_policy(es),
+            self._get_nat_epg_for_es(context, es),
+            self._get_nat_bd_for_es(context, es),
+            self._get_nat_vrf_for_es(context, es))
+        self._delete_implicit_external_subnet(context, es)
 
     def create_external_policy_precommit(self, context):
         pass
@@ -820,6 +834,31 @@ class ApicMappingDriver(api.ResourceMappingDriver):
         self._unplug_external_policy_from_segment(
             context, context.current, external_segments)
 
+    def create_nat_pool_precommit(self, context):
+        self._check_nat_pool_cidr(context, context.current)
+        super(ApicMappingDriver, self).create_nat_pool_precommit(context)
+
+    def create_nat_pool_postcommit(self, context):
+        super(ApicMappingDriver, self).create_nat_pool_postcommit(context)
+        self._stash_es_subnet_for_nat_pool(context, context.current)
+        self._manage_nat_pool_subnet(context, None, context.current)
+
+    def update_nat_pool_precommit(self, context):
+        self._check_nat_pool_cidr(context, context.current)
+        super(ApicMappingDriver, self).update_nat_pool_precommit(context)
+
+    def update_nat_pool_postcommit(self, context):
+        self._stash_es_subnet_for_nat_pool(context, context.original)
+        super(ApicMappingDriver, self).update_nat_pool_postcommit(context)
+        self._stash_es_subnet_for_nat_pool(context, context.current)
+        self._manage_nat_pool_subnet(context, context.original,
+                                     context.current)
+
+    def delete_nat_pool_postcommit(self, context):
+        self._stash_es_subnet_for_nat_pool(context, context.current)
+        super(ApicMappingDriver, self).delete_nat_pool_postcommit(context)
+        self._manage_nat_pool_subnet(context, context.current, None)
+
     def process_subnet_changed(self, context, old, new):
         if old['gateway_ip'] != new['gateway_ip']:
             l2p = self._network_id_to_l2p(context, new['network_id'])
@@ -864,6 +903,25 @@ class ApicMappingDriver(api.ResourceMappingDriver):
                 context, context.policy_target_id)
         except AttributeError:
             pass
+
+    def create_floatingip_in_nat_pool(self, context, tenant_id, floatingip):
+        """Create floating-ip in NAT pool associated with external-network"""
+        fip = floatingip['floatingip']
+        f_net_id = fip['floating_network_id']
+        subnets = self._get_subnets(context.elevated(),
+            {'network_id': [f_net_id]})
+        ext_seg = self.gbp_plugin.get_external_segments(context.elevated(),
+            {'subnet_id': [s['id'] for s in subnets]}) if subnets else []
+        if not ext_seg:
+            return None
+        context._plugin = self.gbp_plugin
+        context._plugin_context = context
+        for es in ext_seg:
+            fip_id = self._allocate_floating_ip_in_ext_seg(context,
+                tenant_id, es, f_net_id, fip.get('port_id'))
+            if fip_id:
+                return fip_id
+        raise n_exc.IpAddressGenerationFailure(net_id=f_net_id)
 
     def _apply_policy_rule_set_rules(
             self, context, policy_rule_set, policy_rules, transaction=None):
@@ -1134,10 +1192,6 @@ class ApicMappingDriver(api.ResourceMappingDriver):
                         owner=es_tenant,
                         subnet=route['destination'], transaction=trs)
         if not is_shadow:
-            # create NAT EPG
-            if (not [x for x in es['l3_policies']
-                if x != context.current['id']]):
-                    self._create_nat_epg_for_es(context, es, ext_info)
             # create shadow external-networks
             self._plug_l3p_to_es(context, es, True)
             # create shadow external EPGs indirectly by re-plugging
@@ -1160,16 +1214,8 @@ class ApicMappingDriver(api.ResourceMappingDriver):
             self._unplug_l3p_from_es(context, es, True)
         if (is_shadow or
             not [x for x in es['l3_policies'] if x != context.current['id']]):
-            if not is_shadow:
-                # remove NAT EPG if there are no L3-policies using
-                # external segment
-                self.apic_manager.ensure_nat_epg_deleted(
-                    self._tenant_by_sharing_policy(es),
-                    self._get_nat_epg_for_es(context, es),
-                    self._get_nat_bd_for_es(context, es),
-                    self._get_nat_vrf_for_es(context, es))
-            self.apic_manager.delete_external_routed_network(
-                es_name, owner=es_tenant)
+                self.apic_manager.delete_external_routed_network(
+                    es_name, owner=es_tenant)
 
     def _build_routes_dict(self, routes):
         result = {}
@@ -1903,3 +1949,40 @@ class ApicMappingDriver(api.ResourceMappingDriver):
         sn_net = set([sn['network_id'] for sn in subnet])
         if (fip_net & sn_net):
             raise FloatingIPFromExtSegmentInUse(l3p=l3p['name'])
+
+    def _check_nat_pool_cidr(self, context, nat_pool):
+        ext_info = None
+        if nat_pool['external_segment_id']:
+            es = context._plugin.get_external_segment(
+                context._plugin_context, nat_pool['external_segment_id'])
+            ext_info = self.apic_manager.ext_net_dict.get(es['name'])
+        if ext_info:
+            exposed = netaddr.IPSet([])
+            if ext_info.get('cidr_exposed'):
+                exposed.add(ext_info['cidr_exposed'])
+            if ext_info.get('host_pool_cidr'):
+                exposed.add(ext_info['host_pool_cidr'])
+            np_ip_set = netaddr.IPSet([nat_pool['ip_pool']])
+            if exposed & np_ip_set:
+                raise NatPoolOverlapsApicSubnet(nat_pool_cidr=np_ip_set,
+                                                es=es['name'])
+
+    def _stash_es_subnet_for_nat_pool(self, context, nat_pool):
+        if nat_pool['external_segment_id'] and nat_pool['subnet_id']:
+            nat_pool['ext_seg'] = context._plugin.get_external_segment(
+                context._plugin_context, nat_pool['external_segment_id'])
+            nat_pool['subnet'] = self._get_subnet(
+                context._plugin_context, nat_pool['subnet_id'])
+
+    def _manage_nat_pool_subnet(self, context, old, new):
+        if old and old.get('ext_seg') and old.get('subnet'):
+            tenant_name = self._tenant_by_sharing_policy(old['ext_seg'])
+            nat_bd_name = self._get_nat_bd_for_es(context, old['ext_seg'])
+            self.apic_manager.ensure_subnet_deleted_on_apic(tenant_name,
+                    nat_bd_name, self._gateway_ip(old['subnet']))
+
+        if new and new.get('ext_seg') and new.get('subnet'):
+            tenant_name = self._tenant_by_sharing_policy(new['ext_seg'])
+            nat_bd_name = self._get_nat_bd_for_es(context, new['ext_seg'])
+            self.apic_manager.ensure_subnet_created_on_apic(tenant_name,
+                    nat_bd_name, self._gateway_ip(new['subnet']))
