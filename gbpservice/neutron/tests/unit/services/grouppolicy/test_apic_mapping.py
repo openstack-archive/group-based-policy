@@ -1464,16 +1464,35 @@ class TestExternalSegment(ApicMappingTestCase):
         self.assertEqual('PATNotSupportedByApicDriver',
                          res['NeutronError']['type'])
 
-    def _test_create(self, shared=False):
+    def _test_create_delete(self, shared=False):
         self._mock_external_dict([('supported', '192.168.0.2/24')])
-        self.create_external_segment(name='supported', expected_res_status=201,
-                                     shared=shared)
+        es = self.create_external_segment(name='supported',
+            expected_res_status=201, shared=shared)['external_segment']
         self.create_external_segment(name='unsupport', expected_res_status=201,
                                      shared=shared)
+        self.assertIsNotNone(es['subnet_id'])
+        subnet = self._get_object('subnets', es['subnet_id'],
+            self.api)['subnet']
+        self.assertEqual('192.168.0.0/24', subnet['cidr'])
+        mgr = self.driver.apic_manager
+        owner = es['tenant_id'] if not shared else self.common_tenant
+        mgr.ensure_nat_epg_contract_created.assert_called_with(owner,
+            "NAT-epg-%s" % es['id'], "NAT-bd-%s" % es['id'],
+            "NAT-vrf-%s" % es['id'], "NAT-allow-all",
+            transaction=mock.ANY)
 
-    def test_create(self):
-        self._test_create(False)
-        self._test_create(True)
+        subnet_id = es['subnet_id']
+        self.delete_external_segment(es['id'],
+            expected_res_status=webob.exc.HTTPNoContent.code)
+        self._get_object('subnets', subnet_id, self.api,
+                         expected_res_status=404)
+        mgr.ensure_nat_epg_deleted.assert_called_with(owner,
+            "NAT-epg-%s" % es['id'], "NAT-bd-%s" % es['id'],
+            "NAT-vrf-%s" % es['id'])
+
+    def test_create_delete(self):
+        self._test_create_delete(False)
+        self._test_create_delete(True)
 
     def test_update_unsupported_noop(self):
         self._mock_external_dict([('supported', '192.168.0.2/24')])
@@ -2004,3 +2023,128 @@ class TestExternalPolicy(ApicMappingTestCase):
             consumed_policy_rule_sets={cons['id']: ''})['external_policy']
         mgr = self.driver.apic_manager
         self.assertFalse(mgr.set_contract_for_external_epg.called)
+
+
+class TestNatPool(ApicMappingTestCase):
+
+    def test_overlap_nat_pool_create(self):
+        self._mock_external_dict([('supported', '192.168.0.2/24')])
+        mgr = self.driver.apic_manager
+        mgr.ext_net_dict['supported']['host_pool_cidr'] = '192.168.200.0/24'
+        es = self.create_external_segment(name='supported',
+            expected_res_status=webob.exc.HTTPCreated.code)['external_segment']
+        # cidr_exposed overlap
+        res = self.create_nat_pool(
+            external_segment_id=es['id'],
+            ip_version=4, ip_pool='192.168.0.0/24',
+            expected_res_status=webob.exc.HTTPBadRequest.code)
+        self.assertEqual('NatPoolOverlapsApicSubnet',
+                         res['NeutronError']['type'])
+        # host-pool overlap
+        res = self.create_nat_pool(
+            external_segment_id=es['id'],
+            ip_version=4, ip_pool='192.168.200.0/24',
+            expected_res_status=webob.exc.HTTPBadRequest.code)
+        self.assertEqual('NatPoolOverlapsApicSubnet',
+                         res['NeutronError']['type'])
+
+    def test_overlap_nat_pool_update(self):
+        self._mock_external_dict([('supported', '192.168.0.2/24'),
+                                  ('supported1', '192.168.1.2/24')])
+        es1 = self.create_external_segment(name='supported',
+            expected_res_status=webob.exc.HTTPCreated.code)['external_segment']
+        es2 = self.create_external_segment(name='supported1',
+            expected_res_status=webob.exc.HTTPCreated.code)['external_segment']
+        nat_pool = self.create_nat_pool(
+            external_segment_id=es1['id'],
+            ip_version=4, ip_pool='192.168.1.0/24',
+            expected_res_status=webob.exc.HTTPCreated.code)['nat_pool']
+        res = self.update_nat_pool(nat_pool['id'],
+            external_segment_id=es2['id'],
+            expected_res_status=webob.exc.HTTPBadRequest.code)
+        self.assertEqual('NatPoolOverlapsApicSubnet',
+                         res['NeutronError']['type'])
+
+    def _test_nat_bd_subnet_created_deleted(self, shared):
+        self._mock_external_dict([('supported', '192.168.0.2/24')])
+        es = self.create_external_segment(name='supported',
+            expected_res_status=webob.exc.HTTPCreated.code,
+            shared=shared)['external_segment']
+        nat_pool = self.create_nat_pool(
+            external_segment_id=es['id'],
+            ip_version=4, ip_pool='192.168.1.0/24', shared=shared,
+            expected_res_status=webob.exc.HTTPCreated.code)['nat_pool']
+        owner = es['tenant_id'] if not shared else self.common_tenant
+        mgr = self.driver.apic_manager
+
+        mgr.ensure_subnet_created_on_apic.assert_called_with(
+            owner, "NAT-bd-%s" % es['id'], '192.168.1.1/24')
+        self.delete_nat_pool(nat_pool['id'],
+            expected_res_status=webob.exc.HTTPNoContent.code)
+        mgr.ensure_subnet_deleted_on_apic.assert_called_with(
+            owner, "NAT-bd-%s" % es['id'], '192.168.1.1/24')
+
+    def test_nat_bd_subnet_created_deleted(self):
+        self._test_nat_bd_subnet_created_deleted(False)
+
+    def test_nat_bd_subnet_created_shared(self):
+        self._test_nat_bd_subnet_created_deleted(True)
+
+    def _test_nat_bd_subnet_updated(self, shared):
+        self._mock_external_dict([('supported', '192.168.0.2/24'),
+                                  ('supported1', '192.168.10.2/24')])
+        es1 = self.create_external_segment(name='supported',
+            expected_res_status=webob.exc.HTTPCreated.code,
+            shared=shared)['external_segment']
+        es2 = self.create_external_segment(name='supported1',
+            expected_res_status=webob.exc.HTTPCreated.code,
+            shared=shared)['external_segment']
+        nat_pool = self.create_nat_pool(
+            external_segment_id=es1['id'],
+            ip_version=4, ip_pool='192.168.1.0/24', shared=shared,
+            expected_res_status=webob.exc.HTTPCreated.code)['nat_pool']
+        owner = es1['tenant_id'] if not shared else self.common_tenant
+        mgr = self.driver.apic_manager
+
+        mgr.ensure_subnet_created_on_apic.reset_mock()
+        nat_pool = self.update_nat_pool(nat_pool['id'],
+            external_segment_id=es2['id'],
+            expected_res_status=webob.exc.HTTPOk.code)['nat_pool']
+        mgr.ensure_subnet_deleted_on_apic.assert_called_with(
+            owner, "NAT-bd-%s" % es1['id'], '192.168.1.1/24')
+        mgr.ensure_subnet_created_on_apic.assert_called_with(
+            owner, "NAT-bd-%s" % es2['id'], '192.168.1.1/24')
+
+    def test_nat_bd_subnet_updated(self):
+        self._test_nat_bd_subnet_updated(False)
+
+    def test_nat_bd_subnet_updated(self):
+        self._test_nat_bd_subnet_updated(True)
+
+    def _test_create_fip(self, shared):
+        self._mock_external_dict([('supported', '192.168.0.2/24')])
+        es = self.create_external_segment(name='supported',
+            expected_res_status=webob.exc.HTTPCreated.code,
+            shared=shared)['external_segment']
+        self.create_nat_pool(external_segment_id=es['id'],
+            ip_version=4, ip_pool='192.168.1.0/24', shared=shared,
+            expected_res_status=webob.exc.HTTPCreated.code)
+        subnet = self._get_object('subnets', es['subnet_id'],
+            self.api)['subnet']
+
+        fip_dict = {'floating_network_id': subnet['network_id']}
+        fip_id = self.driver.create_floatingip_in_nat_pool(
+            context.get_admin_context(),
+            es['tenant_id'], {'floatingip': fip_dict})
+        self.assertIsNotNone(fip_id)
+        fip = self._get_object(
+            'floatingips', fip_id, self.ext_api)['floatingip']
+        self.assertTrue(
+            netaddr.IPAddress(fip['floating_ip_address']) in
+            netaddr.IPNetwork('192.168.1.0/24'))
+
+    def test_create_fip(self):
+        self._test_create_fip(False)
+
+    def test_create_fip_shared(self):
+        self._test_create_fip(True)
