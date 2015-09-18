@@ -6,6 +6,7 @@ GBP_DIR="$NEW_BASE/group-based-policy"
 SCRIPTS_DIR="/usr/os-testr-env/bin"
 LOGS_DIR="$NEW_BASE/logs"
 ARCHIVE_LOGS_DIR="$BASE/logs"
+XTRACE=$(set +o | grep xtrace)
 
 function prepare_gbp_devstack {
     cd $TOP_DIR
@@ -25,6 +26,14 @@ function prepare_gbp_devstack {
     pip_install -e $GBP_DIR
 }
 
+function source_creds {
+    local xtrace=$(set +o | grep xtrace)
+    set +o xtrace
+    source $1 $2 $3
+    $xtrace
+
+}
+
 function run_gbp_rally {
     cd $NEW_BASE
     git clone http://github.com/group-policy/rally.git -b dev
@@ -33,7 +42,7 @@ function run_gbp_rally {
     sed -i 's/\"concurrency\"\: 1/\"concurrency\"\: 10,/g' samples/tasks/scenarios/gbp/gbp.json
     ./install_rally.sh -f
     . /home/jenkins/rally/bin/activate
-    source $TOP_DIR/openrc admin admin
+    source_creds $TOP_DIR/openrc admin admin
     rally deployment create --fromenv --name=gbp
     rally -v task start samples/tasks/scenarios/gbp/gbp.json
     rally task results > $LOGS_DIR/rally-task-results.log.20
@@ -64,7 +73,7 @@ function generate_testr_results {
 }
 
 function check_residual_resources {
-    source $NEW_BASE/devstack/openrc $1 $2
+    source_creds $NEW_BASE/devstack/openrc $1 $2
     gbp l3policy-list
     gbp l2policy-list
     gbp group-list
