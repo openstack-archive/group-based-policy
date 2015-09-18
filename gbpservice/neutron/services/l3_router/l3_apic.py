@@ -50,8 +50,16 @@ class ApicGBPL3ServicePlugin(db_base_plugin_v2.NeutronDbPluginV2,
 
     # Floating IP API
     def create_floatingip(self, context, floatingip):
-        res = super(ApicGBPL3ServicePlugin, self).create_floatingip(
-            context, floatingip)
+        res = None
+        fip = floatingip['floatingip']
+        if self.apic_gbp and not fip.get('subnet_id'):
+            tenant_id = self._get_tenant_id_for_create(context, fip)
+            fip_id = self.apic_gbp.create_floatingip_in_nat_pool(context,
+                tenant_id, floatingip)
+            res = self.get_floatingip(context, fip_id) if fip_id else None
+        if not res:
+            res = super(ApicGBPL3ServicePlugin, self).create_floatingip(
+                context, floatingip)
         port_id = floatingip.get('floatingip', {}).get('port_id')
         self._notify_port_update(port_id, context)
         return res

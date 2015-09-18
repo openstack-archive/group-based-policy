@@ -341,42 +341,49 @@ class ResourceMappingDriver(api.PolicyDriver, local_api.LocalAPI):
                         "could not be applied because l3policy does "
                         "not have an attached external segment"))
             return fip_ids
-
+        tenant_id = context.current['tenant_id']
         for es in external_segments:
             ext_sub = self._get_subnet(context._plugin_context,
                                        es['subnet_id'])
             ext_net_id = ext_sub['network_id']
-            nat_pools = context._plugin.get_nat_pools(
-                context._plugin_context.elevated(), {'id': es['nat_pools']})
-            no_subnet_pools = []
-            for nat_pool in nat_pools:
-                # For backward compatibility
-                if not nat_pool['subnet_id']:
-                    no_subnet_pools.append(nat_pool)
-                else:
-                    try:
-                        fip_id = self._create_floatingip(
-                            context, ext_net_id, fixed_port,
-                            subnet_id=nat_pool['subnet_id'])
-                        fip_ids.append(fip_id)
-                        # FIP allocated, empty the no subnet pools to avoid
-                        # further allocation
-                        no_subnet_pools = []
-                        break
-                    except n_exc.IpAddressGenerationFailure as ex:
-                        LOG.warn(_("Floating allocation failed: %s"),
-                                 ex.message)
-            for nat_pool in no_subnet_pools:
-                # Use old allocation method
+            fip_id = self._allocate_floating_ip_in_ext_seg(
+                context, tenant_id, es, ext_net_id, fixed_port)
+            if fip_id:
+                fip_ids.append(fip_id)
+        return fip_ids
+
+    def _allocate_floating_ip_in_ext_seg(self, context, tenant_id,
+                                         es, ext_net_id, fixed_port):
+        nat_pools = context._plugin.get_nat_pools(
+            context._plugin_context.elevated(), {'id': es['nat_pools']})
+        no_subnet_pools = []
+        fip_id = None
+        for nat_pool in nat_pools:
+            # For backward compatibility
+            if not nat_pool['subnet_id']:
+                no_subnet_pools.append(nat_pool)
+            else:
                 try:
                     fip_id = self._create_floatingip(
-                        context, ext_net_id, fixed_port)
-                    fip_ids.append(fip_id)
+                        context._plugin_context, tenant_id, ext_net_id,
+                        fixed_port, subnet_id=nat_pool['subnet_id'])
+                    # FIP allocated, empty the no subnet pools to avoid
+                    # further allocation
+                    no_subnet_pools = []
                     break
                 except n_exc.IpAddressGenerationFailure as ex:
                     LOG.warn(_("Floating allocation failed: %s"),
                              ex.message)
-        return fip_ids
+        for nat_pool in no_subnet_pools:
+            # Use old allocation method
+            try:
+                fip_id = self._create_floatingip(
+                    context._plugin_context, tenant_id, ext_net_id, fixed_port)
+                break
+            except n_exc.IpAddressGenerationFailure as ex:
+                LOG.warn(_("Floating allocation failed: %s"),
+                         ex.message)
+        return fip_id
 
     @log.log
     def update_policy_target_precommit(self, context):
@@ -2058,9 +2065,10 @@ class ResourceMappingDriver(api.PolicyDriver, local_api.LocalAPI):
             context._plugin_context, attrs)
 
     # Do Not Pass floating_ip_address to this method until after Kilo Release
-    def _create_floatingip(self, context, ext_net_id, internal_port_id=None,
+    def _create_floatingip(self, plugin_context, tenant_id, ext_net_id,
+                           internal_port_id=None,
                            floating_ip_address=None, subnet_id=None):
-        attrs = {'tenant_id': context.current['tenant_id'],
+        attrs = {'tenant_id': tenant_id,
                  'floating_network_id': ext_net_id}
         if subnet_id:
             attrs.update({"subnet_id": subnet_id})
@@ -2068,7 +2076,7 @@ class ResourceMappingDriver(api.PolicyDriver, local_api.LocalAPI):
             attrs.update({"port_id": internal_port_id})
         if floating_ip_address:
             attrs.update({"floating_ip_address": floating_ip_address})
-        fip = self._create_fip(context._plugin_context, attrs)
+        fip = self._create_fip(plugin_context, attrs)
         return fip['id']
 
     def _mark_port_owned(self, session, port_id):
