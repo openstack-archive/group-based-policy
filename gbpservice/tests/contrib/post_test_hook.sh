@@ -8,11 +8,7 @@ trap prepare_logs ERR
 
 # Run exercise scripts
 $TOP_DIR/exercise.sh
-# Check if any gbp exercises failed
-exercises_exit_code=0
-if grep -qs "FAILED gbp*" $LOGS_DIR/*; then
-    exercises_exit_code=1
-fi
+exercises_exit_code=$?
 
 # Check if exercises left any resources undeleted
 check_residual_resources admin admin

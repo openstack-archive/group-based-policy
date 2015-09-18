@@ -12,11 +12,6 @@ echo "*********************************************************************"
 # only the first error that occurred.
 set -o errexit
 
-# Print the commands being run so that we can see the command that triggers
-# an error.  It is also useful for following allowing as the install occurs.
-set -o xtrace
-
-
 # Settings
 # ========
 
@@ -34,6 +29,10 @@ source $TOP_DIR/openrc
 source $TOP_DIR/exerciserc
 
 source $TOP_DIR/openrc admin admin
+
+# Print the commands being run so that we can see the command that triggers
+# an error.  It is also useful for following allowing as the install occurs.
+set -o xtrace
 
 function confirm_server_active {
     local VM_UUID=$1
