@@ -177,6 +177,12 @@ class ApicMappingDriver(api.ResourceMappingDriver):
         return self._gbp_plugin
 
     # RPC Method
+    def get_vrf_details(self, context, **kwargs):
+        details = {'l3_policy_id': kwargs['vrf_id']}
+        self._add_vrf_details(context, details)
+        return details
+
+    # RPC Method
     def get_gbp_details(self, context, **kwargs):
         port_id = self._core_plugin._device_to_port_id(
             kwargs['device'])
@@ -271,7 +277,7 @@ class ApicMappingDriver(api.ResourceMappingDriver):
             filters={'id': [ip['subnet_id'] for ip in port['fixed_ips']]})
 
     def _add_vrf_details(self, context, details):
-        l3p = self._gbp_plugin.get_l3_policy(context, details['l3_policy_id'])
+        l3p = self.gbp_plugin.get_l3_policy(context, details['l3_policy_id'])
         details['vrf_tenant'] = self.apic_manager.apic.fvTenant.name(
             self._tenant_by_sharing_policy(l3p))
         details['vrf_name'] = str(self.name_mapper.l3_policy(
