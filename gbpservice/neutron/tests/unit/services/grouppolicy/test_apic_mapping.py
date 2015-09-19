@@ -128,6 +128,9 @@ class ApicMappingTestCase(
         self.driver.apic_manager.ext_net_dict = {}
         amap.apic_manager.TENANT_COMMON = 'common'
         self.common_tenant = amap.apic_manager.TENANT_COMMON
+        def echo2(string):
+            return string
+        self.driver.apic_manager.apic.fvTenant.name = echo2
 
     def _build_external_dict(self, name, cidr_exposed):
         return {name: {
@@ -232,6 +235,19 @@ class TestPolicyTarget(ApicMappingTestCase):
             # Issue notification for the agent
             self.assertTrue(self.driver.notifier.port_update.called)
 
+    def test_get_vrf_details(self):
+        l3p = self.create_l3_policy(name='myl3')['l3_policy']
+        details = self.driver.get_vrf_details(
+            context.get_admin_context(),
+            vrf_id=l3p['id'], host='h1')
+        self.assertEqual(l3p['id'], details['l3_policy_id'])
+        pool = set([l3p['ip_pool']])
+        if 'proxy_ip_pool' in  l3p:
+            pool.add(l3p['proxy_ip_pool'])
+        self.assertEqual(pool, set(details['vrf_subnets']))
+        self.assertEqual(l3p['tenant_id'], details['vrf_tenant'])
+        self.assertEqual(l3p['id'], details['vrf_name'])
+
     def test_get_gbp_details(self):
         l3p = self.create_l3_policy(name='myl3')['l3_policy']
         l2p = self.create_l2_policy(name='myl2',
@@ -242,9 +258,6 @@ class TestPolicyTarget(ApicMappingTestCase):
             policy_target_group_id=ptg['id'])['policy_target']
         self._bind_port_to_host(pt1['port_id'], 'h1')
 
-        def echo(string):
-            return string
-        self.driver.apic_manager.apic.fvTenant.name = echo
         mapping = self.driver.get_gbp_details(context.get_admin_context(),
             device='tap%s' % pt1['port_id'], host='h1')
         self.assertEqual(pt1['port_id'], mapping['port_id'])
