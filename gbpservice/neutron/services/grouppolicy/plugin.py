@@ -1203,11 +1203,13 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
                 session, external_segment, result)
             self._validate_shared_create(self, context, result,
                                          'external_segment')
-            self._validate_routes(context, result)
             policy_context = p_context.ExternalSegmentContext(
                 self, context, result)
             (self.policy_driver_manager.
              create_external_segment_precommit(policy_context))
+            # Validate the routes after the drivers had the chance to fill
+            # the cidr field.
+            self._validate_routes(context, result)
 
         try:
             (self.policy_driver_manager.
