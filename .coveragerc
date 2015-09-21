@@ -4,4 +4,4 @@ source = gbpservice
 omit = gbpservice/tests/*,gbpservice/neutron/tests/*,gbpservice/neutron/db/migration/*
 
 [report]
-ignore-errors = True
+ignore_errors = True
