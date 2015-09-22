@@ -15,7 +15,6 @@ function prepare_gbp_devstack {
     sudo cp $CONTRIB_DIR/devstack/exercises/*.sh $TOP_DIR/exercises/
     sudo cp $CONTRIB_DIR/devstack/lib/* $TOP_DIR/lib/
     sudo cp -r $CONTRIB_DIR/devstack/gbp-templates $TOP_DIR
-    sudo sed -i "s/.*REQUIREMENTS_REPO.*/&\n    sed -i 's\/.*python-neutronclient.*\/python-neutronclient==2.3.9\/g' \$REQUIREMENTS_DIR\/global-requirements.txt/g" $TOP_DIR/lib/infra
     sudo sed -i 's/DEST=\/opt\/stack/DEST=\/opt\/stack\/new/g' $TOP_DIR/stackrc
     sudo sed -i 's/source $TOP_DIR\/lib\/neutron-legacy/&\nsource $TOP_DIR\/lib\/gbp/g' $TOP_DIR/stack.sh
     sudo sed -i 's/# Extras Configuration/source $TOP_DIR\/lib\/gbp\ninit_gbpservice\ninstall_gbpclient\n&/g' $TOP_DIR/stack.sh
