@@ -1358,7 +1358,7 @@ class TestL3Policy(ResourceMappingTestCase):
                     subnet_id=subnet1['id'])['external_segment']
                 es2 = self.create_external_segment(
                     subnet_id=subnet2['id'])['external_segment']
-                es_dict = {es1['id']: ['10.10.1.3']}
+                es_dict = {es1['id']: ['10.10.1.42']}
                 l3p = self.create_l3_policy(
                     ip_pool='192.168.0.0/16',
                     external_segments=es_dict)['l3_policy']
@@ -1369,6 +1369,10 @@ class TestL3Policy(ResourceMappingTestCase):
                 self.assertEqual(
                     subnet1['network_id'],
                     res['external_gateway_info']['network_id'])
+                self.assertEqual(
+                    [x['ip_address'] for x in
+                     res['external_gateway_info']['external_fixed_ips']],
+                    l3p['external_segments'][es1['id']])
                 # Verify auto assigned addresses propagated to L3P
                 es_dict = {es2['id']: []}
                 l3p = self.update_l3_policy(
@@ -1394,6 +1398,78 @@ class TestL3Policy(ResourceMappingTestCase):
                     [x['ip_address'] for x in
                      res['external_gateway_info']['external_fixed_ips']],
                     l3p['external_segments'][es2['id']])
+
+    def test_router_gw_update(self):
+        with contextlib.nested(
+                 self.network(router__external=True),
+                 self.network(router__external=True)) as (net1, net2):
+            with contextlib.nested(
+                    self.subnet(cidr='10.10.1.0/24', network=net1),
+                    self.subnet(cidr='10.10.2.0/24', network=net2)) as (
+                    subnet1, subnet2):
+                subnet1 = subnet1['subnet']
+                subnet2 = subnet2['subnet']
+                with contextlib.nested(self.router('router1')) as router1:
+                    router1 = router1[0]['router']
+
+                    # Use specific address in subnet1
+                    data = {'router':
+                        {'external_gateway_info': {
+                            'network_id': subnet1['network_id'],
+                            'external_fixed_ips': [
+                                {'subnet_id': subnet1['id'],
+                                 'ip_address': '10.10.1.36'}]}}}
+                    req = self.new_update_request('routers', data,
+                                                  router1['id'])
+                    res = req.get_response(self.ext_api)
+                    self.assertEqual(res.status_int, webob.exc.HTTPOk.code)
+
+                    req = self.new_show_request('routers', router1['id'],
+                                                fmt=self.fmt)
+                    router1 = self.deserialize(self.fmt, req.get_response(
+                                               self.ext_api))['router']
+                    self.assertEqual(['10.10.1.36'],
+                        [x['ip_address'] for x in
+                         router1['external_gateway_info'][
+                            'external_fixed_ips']])
+
+                    # Use specific address in subnet2
+                    data['router']['external_gateway_info'] = {
+                        'network_id': subnet2['network_id'],
+                        'external_fixed_ips': [
+                            {'subnet_id': subnet2['id'],
+                             'ip_address': '10.10.2.46'}]}
+                    req = self.new_update_request('routers', data,
+                                                  router1['id'])
+                    res = req.get_response(self.ext_api)
+                    self.assertEqual(res.status_int, webob.exc.HTTPOk.code)
+
+                    req = self.new_show_request('routers', router1['id'],
+                                                fmt=self.fmt)
+                    router1 = self.deserialize(self.fmt, req.get_response(
+                                               self.ext_api))['router']
+                    self.assertEqual(['10.10.2.46'],
+                        [x['ip_address'] for x in
+                         router1['external_gateway_info'][
+                            'external_fixed_ips']])
+
+                    # Use auto address in subnet1
+                    data['router']['external_gateway_info'] = {
+                        'network_id': subnet1['network_id'],
+                        'external_fixed_ips': [{'subnet_id': subnet1['id']}]}
+                    req = self.new_update_request('routers', data,
+                                                  router1['id'])
+                    res = req.get_response(self.ext_api)
+                    self.assertEqual(res.status_int, webob.exc.HTTPOk.code)
+
+                    req = self.new_show_request('routers', router1['id'],
+                                                fmt=self.fmt)
+                    router1 = self.deserialize(self.fmt, req.get_response(
+                                               self.ext_api))['router']
+                    self.assertEqual(['10.10.1.2'],
+                        [x['ip_address'] for x in
+                         router1['external_gateway_info'][
+                            'external_fixed_ips']])
 
     def test_es_routes(self):
         routes1 = [{'destination': '0.0.0.0/0', 'nexthop': '10.10.1.1'},
