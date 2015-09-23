@@ -10,7 +10,13 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+from neutron.api.v2 import attributes
+from neutron.common import exceptions as n_exc
 from neutron.db import l3_db
+from neutron.db import l3_dvr_db
+from neutron.openstack.common import log as logging
+
+LOG = logging.getLogger(__name__)
 
 
 # Monkey patch create floatingip to allow subnet_id to be specified.
@@ -74,3 +80,129 @@ def create_floatingip(
 
 
 l3_db.L3_NAT_dbonly_mixin.create_floatingip = create_floatingip
+
+
+# Monkey patch updating router-gateway to use specified external fixed IP.
+def _create_router_gw_port(self, context, router, network_id, ext_ips):
+    if ext_ips and len(ext_ips) > 1:
+        msg = _("Routers support only 1 external IP")
+        raise n_exc.BadRequest(resource='router', msg=msg)
+    # Port has no 'tenant-id', as it is hidden from user
+    gw_port = self._core_plugin.create_port(context.elevated(), {
+        'port': {'tenant_id': '',  # intentionally not set
+                 'network_id': network_id,
+                 'mac_address': attributes.ATTR_NOT_SPECIFIED,
+                 'fixed_ips': ext_ips or attributes.ATTR_NOT_SPECIFIED,
+                 'device_id': router['id'],
+                 'device_owner': l3_db.DEVICE_OWNER_ROUTER_GW,
+                 'admin_state_up': True,
+                 'name': ''}})
+
+    if not gw_port['fixed_ips']:
+        self._core_plugin.delete_port(context.elevated(), gw_port['id'],
+                                      l3_port_check=False)
+        msg = (_('No IPs available for external network %s') %
+               network_id)
+        raise n_exc.BadRequest(resource='router', msg=msg)
+
+    with context.session.begin(subtransactions=True):
+        router.gw_port = self._core_plugin._get_port(context.elevated(),
+                                                     gw_port['id'])
+        router_port = l3_db.RouterPort(
+            router_id=router.id,
+            port_id=gw_port['id'],
+            port_type=l3_db.DEVICE_OWNER_ROUTER_GW
+        )
+        context.session.add(router)
+        context.session.add(router_port)
+
+
+def _validate_gw_info(self, context, gw_port, info, ext_ips):
+    network_id = info['network_id'] if info else None
+    if network_id:
+        network_db = self._core_plugin._get_network(context, network_id)
+        if not network_db.external:
+            msg = _("Network %s is not an external network") % network_id
+            raise n_exc.BadRequest(resource='router', msg=msg)
+        if ext_ips:
+            subnets = self._core_plugin._get_subnets_by_network(context,
+                                                                network_id)
+            for s in subnets:
+                if not s['gateway_ip']:
+                    continue
+                for ext_ip in ext_ips:
+                    if ext_ip.get('ip_address') == s['gateway_ip']:
+                        msg = _("External IP %s is the same as the "
+                                "gateway IP") % ext_ip.get('ip_address')
+                        raise n_exc.BadRequest(resource='router', msg=msg)
+    return network_id
+
+
+def _create_gw_port_l3(self, context, router_id, router, new_network,
+                       ext_ips, ext_ip_change):
+    new_valid_gw_port_attachment = (
+        new_network and (not router.gw_port or ext_ip_change or
+                         router.gw_port['network_id'] != new_network))
+    if new_valid_gw_port_attachment:
+        subnets = self._core_plugin._get_subnets_by_network(context,
+                                                            new_network)
+        for subnet in subnets:
+            self._check_for_dup_router_subnet(context, router,
+                                              new_network, subnet['id'],
+                                              subnet['cidr'])
+        self._create_router_gw_port(context, router, new_network, ext_ips)
+
+
+def _create_gw_port_l3_dvr(self, context, router_id, router, new_network,
+                           ext_ips, ext_ip_change):
+    super(l3_dvr_db.L3_NAT_with_dvr_db_mixin,
+          self)._create_gw_port(context, router_id,
+                                router, new_network, ext_ips, ext_ip_change)
+    if router.extra_attributes.distributed and router.gw_port:
+        snat_p_list = self.create_snat_intf_ports_if_not_exists(
+            context.elevated(), router)
+        if not snat_p_list:
+            LOG.debug("SNAT interface ports not created: %s", snat_p_list)
+
+
+def _update_router_gw_info(self, context, router_id, info, router=None):
+    router = router or self._get_router(context, router_id)
+    gw_port = router.gw_port
+    ext_ips = info.get('external_fixed_ips') if info else []
+    ext_ip_change = self._check_for_external_ip_change(
+        context, gw_port, ext_ips)
+    network_id = self._validate_gw_info(context, gw_port, info, ext_ips)
+    if (gw_port and (gw_port['network_id'] != network_id or ext_ip_change)):
+        self._delete_current_gw_port(context, router_id, router, network_id)
+    self._create_gw_port(context, router_id, router, network_id,
+                         ext_ips, ext_ip_change)
+
+
+def _check_for_external_ip_change(self, context, gw_port, ext_ips):
+    # determine if new external IPs differ from the existing fixed_ips
+    if not ext_ips:
+        # no external_fixed_ips were included
+        return False
+    if not gw_port:
+        return True
+
+    subnet_ids = set(ip['subnet_id'] for ip in gw_port['fixed_ips'])
+    new_subnet_ids = set(f['subnet_id'] for f in ext_ips
+                         if f.get('subnet_id'))
+    subnet_change = not new_subnet_ids == subnet_ids
+    if subnet_change:
+        return True
+    ip_addresses = set(ip['ip_address'] for ip in gw_port['fixed_ips'])
+    new_ip_addresses = set(f['ip_address'] for f in ext_ips
+                           if f.get('ip_address'))
+    ip_address_change = not ip_addresses == new_ip_addresses
+    return ip_address_change
+
+
+l3_db.L3_NAT_dbonly_mixin._create_gw_port = _create_gw_port_l3
+l3_dvr_db.L3_NAT_with_dvr_db_mixin._create_gw_port = _create_gw_port_l3_dvr
+l3_db.L3_NAT_dbonly_mixin._create_router_gw_port = _create_router_gw_port
+l3_db.L3_NAT_dbonly_mixin._validate_gw_info = _validate_gw_info
+l3_db.L3_NAT_dbonly_mixin._update_router_gw_info = _update_router_gw_info
+l3_db.L3_NAT_dbonly_mixin._check_for_external_ip_change = (
+    _check_for_external_ip_change)
