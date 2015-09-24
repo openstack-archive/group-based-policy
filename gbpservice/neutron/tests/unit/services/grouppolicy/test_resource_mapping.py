@@ -39,6 +39,8 @@ from gbpservice.neutron.db.grouppolicy import group_policy_db as gpdb
 from gbpservice.neutron.db import servicechain_db
 from gbpservice.neutron.services.grouppolicy.common import constants as gconst
 from gbpservice.neutron.services.grouppolicy import config
+from gbpservice.neutron.services.grouppolicy.drivers import chain_mapping
+from gbpservice.neutron.services.grouppolicy.drivers import nsp_manager
 from gbpservice.neutron.services.grouppolicy.drivers import resource_mapping
 from gbpservice.neutron.services.servicechain.plugins.msc import (
     config as sc_cfg)
@@ -70,7 +72,8 @@ class ResourceMappingTestCase(test_plugin.GroupPolicyPluginTestCase):
               core_plugin=n_test_plugin.PLUGIN_NAME, ml2_options=None,
               sc_plugin=None):
         policy_drivers = policy_drivers or ['implicit_policy',
-                                            'resource_mapping']
+                                            'resource_mapping',
+                                            'chain_mapping']
         config.cfg.CONF.set_override('policy_drivers',
                                      policy_drivers,
                                      group='group_policy')
@@ -382,7 +385,7 @@ class ResourceMappingTestCase(test_plugin.GroupPolicyPluginTestCase):
         ctx = nctx.get_admin_context()
         with ctx.session.begin(subtransactions=True):
             return (ctx.session.query(
-                        resource_mapping.ServicePolicyPTGFipMapping).
+                        nsp_manager.ServicePolicyPTGFipMapping).
                     filter_by(policy_target_group_id=ptg_id).
                     all())
 
@@ -2156,40 +2159,40 @@ class TestServiceChain(ResourceMappingTestCase):
         self.assertEqual('http://127.0.0.1:35357/v2.0/', uri)
 
     def test_chain_tenant_keystone_client(self):
-        resource_mapping.k_client = mock.Mock()
+        chain_mapping.k_client = mock.Mock()
         self._override_keystone_creds(
             'key_user', 'key_password', 'key_tenant_name',
             'http://127.0.0.1:35357/v2.0/')
         config.cfg.CONF.set_override(
             'chain_owner_tenant_name', 'chain_owner',
-            group='resource_mapping')
-        resource_mapping.ResourceMappingDriver.chain_tenant_keystone_client()
-        resource_mapping.k_client.Client.assert_called_once_with(
+            group='chain_mapping')
+        chain_mapping.ChainMappingDriver.chain_tenant_keystone_client()
+        chain_mapping.k_client.Client.assert_called_once_with(
             username='key_user', password='key_password',
             auth_url='http://127.0.0.1:35357/v2.0/')
 
         # Use chain specific tenants
-        resource_mapping.k_client.reset_mock()
+        chain_mapping.k_client.reset_mock()
         config.cfg.CONF.set_override(
-            'chain_owner_user', 'chain_owner_user', group='resource_mapping')
+            'chain_owner_user', 'chain_owner_user', group='chain_mapping')
         config.cfg.CONF.set_override(
-            'chain_owner_password', 'chain_owner_p', group='resource_mapping')
-        resource_mapping.ResourceMappingDriver.chain_tenant_keystone_client()
-        resource_mapping.k_client.Client.assert_called_once_with(
+            'chain_owner_password', 'chain_owner_p', group='chain_mapping')
+        chain_mapping.ChainMappingDriver.chain_tenant_keystone_client()
+        chain_mapping.k_client.Client.assert_called_once_with(
             username='chain_owner_user', password='chain_owner_p',
             auth_url='http://127.0.0.1:35357/v2.0/')
 
         # Not called if no tenant name
-        resource_mapping.k_client.reset_mock()
+        chain_mapping.k_client.reset_mock()
         config.cfg.CONF.set_override(
-            'chain_owner_tenant_name', '', group='resource_mapping')
-        resource_mapping.ResourceMappingDriver.chain_tenant_keystone_client()
-        self.assertFalse(resource_mapping.k_client.Client.called)
+            'chain_owner_tenant_name', '', group='chain_mapping')
+        chain_mapping.ChainMappingDriver.chain_tenant_keystone_client()
+        self.assertFalse(chain_mapping.k_client.Client.called)
 
     def test_chain_tenant_id(self):
         keyclient = mock.Mock()
         with mock.patch.object(
-                resource_mapping.ResourceMappingDriver,
+                chain_mapping.ChainMappingDriver,
                 'chain_tenant_keystone_client') as key_client:
 
             key_client.return_value = keyclient
@@ -2201,35 +2204,35 @@ class TestServiceChain(ResourceMappingTestCase):
                 return res
             keyclient.tenants.find = ok
 
-            res = resource_mapping.ResourceMappingDriver.chain_tenant_id()
+            res = chain_mapping.ChainMappingDriver.chain_tenant_id()
             self.assertEqual(CHAIN_TENANT_ID, res)
 
             # Test NotFound
             def not_found(name=''):
-                raise resource_mapping.k_exceptions.NotFound()
+                raise chain_mapping.k_exceptions.NotFound()
             keyclient.tenants.find = not_found
 
             # Do not rerise
-            res = resource_mapping.ResourceMappingDriver.chain_tenant_id()
+            res = chain_mapping.ChainMappingDriver.chain_tenant_id()
             self.assertIsNone(res)
             # Rerise
             self.assertRaises(
-                resource_mapping.k_exceptions.NotFound,
-                resource_mapping.ResourceMappingDriver.chain_tenant_id, True)
+                chain_mapping.k_exceptions.NotFound,
+                chain_mapping.ChainMappingDriver.chain_tenant_id, True)
 
             # Test Duplicated
             def duplicated(name=''):
-                raise resource_mapping.k_exceptions.NoUniqueMatch()
+                raise chain_mapping.k_exceptions.NoUniqueMatch()
             keyclient.tenants.find = duplicated
 
             # Do not rerise
-            res = resource_mapping.ResourceMappingDriver.chain_tenant_id()
+            res = chain_mapping.ChainMappingDriver.chain_tenant_id()
             self.assertIsNone(res)
 
             # Rerise
             self.assertRaises(
-                resource_mapping.k_exceptions.NoUniqueMatch,
-                resource_mapping.ResourceMappingDriver.chain_tenant_id, True)
+                chain_mapping.k_exceptions.NoUniqueMatch,
+                chain_mapping.ChainMappingDriver.chain_tenant_id, True)
 
     def test_update_ptg_with_redirect_prs(self):
         scs_id = self._create_servicechain_spec()
@@ -3031,10 +3034,10 @@ class TestServiceChainAdminOwner(TestServiceChain):
 
     def setUp(self, **kwargs):
         mock.patch('gbpservice.neutron.services.grouppolicy.drivers.'
-                   'resource_mapping.ResourceMappingDriver.'
+                   'chain_mapping.ChainMappingDriver.'
                    'chain_tenant_keystone_client').start()
         res = mock.patch('gbpservice.neutron.services.grouppolicy.drivers.'
-                         'resource_mapping.ResourceMappingDriver.'
+                         'chain_mapping.ChainMappingDriver.'
                          'chain_tenant_id').start()
         res.return_value = CHAIN_TENANT_ID
         super(TestServiceChainAdminOwner, self).setUp(**kwargs)

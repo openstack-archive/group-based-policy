@@ -55,7 +55,8 @@ class OneConvergenceGBPDriverTestCase(
                     test_resource_mapping.ResourceMappingTestCase):
 
     def setUp(self):
-        policy_drivers = ['implicit_policy', 'oneconvergence_gbp_driver']
+        policy_drivers = ['implicit_policy', 'oneconvergence_gbp_driver',
+                          'chain_mapping']
         with mock.patch.object(
                     api, 'NVSDServiceApi',
                     new=MockNVSDApiClient) as self.mockNVSDApi:
