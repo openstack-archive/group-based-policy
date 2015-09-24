@@ -127,7 +127,8 @@ class NodeCompositionPluginTestCase(
         cfg.CONF.set_override('node_plumber', node_plumber or 'dummy_plumber',
                               group='node_composition_plugin')
         config.cfg.CONF.set_override('policy_drivers',
-                                     ['implicit_policy', 'resource_mapping'],
+                                     ['implicit_policy', 'resource_mapping',
+                                      'chain_mapping'],
                                      group='group_policy')
         super(NodeCompositionPluginTestCase, self).setUp(
             core_plugin=core_plugin or CORE_PLUGIN,
@@ -687,7 +688,8 @@ class TestQuotasForServiceChain(test_base.ServiceChainPluginTestCase):
         cfg.CONF.set_override('node_plumber', node_plumber or 'dummy_plumber',
                               group='node_composition_plugin')
         config.cfg.CONF.set_override('policy_drivers',
-                                     ['implicit_policy', 'resource_mapping'],
+                                     ['implicit_policy', 'resource_mapping',
+                                      'chain_mapping'],
                                      group='group_policy')
         super(TestQuotasForServiceChain, self).setUp(
             core_plugin=core_plugin or CORE_PLUGIN,
