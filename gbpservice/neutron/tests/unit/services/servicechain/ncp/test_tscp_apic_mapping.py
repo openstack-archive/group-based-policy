@@ -1024,10 +1024,10 @@ class TestApicChainsAdminOwner(TestApicChains):
 
     def setUp(self, **kwargs):
         mock.patch('gbpservice.neutron.services.grouppolicy.drivers.'
-                   'resource_mapping.ResourceMappingDriver.'
+                   'chain_mapping.ChainMappingDriver.'
                    'chain_tenant_keystone_client').start()
         res = mock.patch('gbpservice.neutron.services.grouppolicy.drivers.'
-                         'resource_mapping.ResourceMappingDriver.'
+                         'chain_mapping.ChainMappingDriver.'
                          'chain_tenant_id').start()
         res.return_value = test_rmd.CHAIN_TENANT_ID
         super(TestApicChainsAdminOwner, self).setUp(**kwargs)
