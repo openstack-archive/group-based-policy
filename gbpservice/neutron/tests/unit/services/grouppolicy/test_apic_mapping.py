@@ -102,7 +102,7 @@ class ApicMappingTestCase(
         vm.name = 'someid'
         nova_client.return_value = vm
         super(ApicMappingTestCase, self).setUp(
-            policy_drivers=['implicit_policy', 'apic'],
+            policy_drivers=['implicit_policy', 'apic', 'chain_mapping'],
             core_plugin=test_plugin.PLUGIN_NAME,
             ml2_options=ml2_opts, sc_plugin=sc_plugin)
         engine = db_api.get_engine()
@@ -1350,16 +1350,6 @@ class TestPolicyRule(ApicMappingTestCase):
 
     def test_policy_rule_created_on_apic_shared(self):
         self._test_policy_rule_created_on_apic(shared=True)
-
-    def test_policy_rule_many_actions_rejected(self):
-        actions = [self.create_policy_action(
-            action_type='allow')['policy_action']['id'] for x in range(2)]
-
-        cls = self.create_policy_classifier(direction='in', protocol='udp',
-                                            port_range=80)['policy_classifier']
-        self.create_policy_rule(policy_classifier_id=cls['id'],
-                                expected_res_status=400,
-                                policy_actions=actions)
 
     def _test_policy_rule_deleted_on_apic(self, shared=False):
         pr = self._create_simple_policy_rule(shared=shared)

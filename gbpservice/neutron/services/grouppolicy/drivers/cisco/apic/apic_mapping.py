@@ -333,7 +333,7 @@ class ApicMappingDriver(api.ResourceMappingDriver):
         pass
 
     def create_policy_rule_precommit(self, context):
-        self._validate_one_action_per_pr(context)
+        pass
 
     def create_policy_rule_postcommit(self, context, transaction=None):
         action = context._plugin.get_policy_action(
@@ -377,7 +377,6 @@ class ApicMappingDriver(api.ResourceMappingDriver):
         if not self.name_mapper._is_apic_reference(context.current):
             if context.current['child_policy_rule_sets']:
                 raise HierarchicalContractsNotSupported()
-            self._reject_multiple_redirects_in_prs(context)
         else:
             self.name_mapper.has_valid_name(context.current)
 
@@ -442,9 +441,8 @@ class ApicMappingDriver(api.ResourceMappingDriver):
                     context._plugin_context, context.current['id'])
                 db_group.l2_policy_id = proxied['l2_policy_id']
                 context.current['l2_policy_id'] = proxied['l2_policy_id']
-            self._validate_ptg_prss(context, context.current)
-        else:
-            self.name_mapper.has_valid_name(context.current)
+            else:
+                self.name_mapper.has_valid_name(context.current)
 
     def create_policy_target_group_postcommit(self, context):
         if not context.current['subnets']:
@@ -463,9 +461,6 @@ class ApicMappingDriver(api.ResourceMappingDriver):
                 self.apic_manager.ensure_epg_created(tenant, epg,
                                                      bd_owner=bd_owner,
                                                      bd_name=l2_policy)
-
-                l2p = context._plugin.get_l2_policy(
-                    context._plugin_context, context.current['l2_policy_id'])
                 self._configure_epg_service_contract(
                     context, context.current, l2p, epg, transaction=trs)
                 self._configure_epg_implicit_contract(
@@ -476,12 +471,6 @@ class ApicMappingDriver(api.ResourceMappingDriver):
             if context.current.get('proxied_group_id'):
                 self._stitch_proxy_ptg_to_l3p(context, l3p)
             self._handle_network_service_policy(context)
-            # Handle redirect action if any
-            consumed_prs = context.current['consumed_policy_rule_sets']
-            provided_prs = context.current['provided_policy_rule_sets']
-            if provided_prs and not context.current.get('proxied_group_id'):
-                policy_rule_sets = (consumed_prs + provided_prs)
-                self._handle_redirect_action(context, policy_rule_sets)
 
             self._manage_ptg_policy_rule_sets(
                     context, context.current['provided_policy_rule_sets'],
@@ -694,22 +683,10 @@ class ApicMappingDriver(api.ResourceMappingDriver):
                 self._cleanup_router(context._plugin_context, router_id)
 
     def update_policy_rule_set_precommit(self, context):
-        self._reject_apic_name_change(context)
         if not self.name_mapper._is_apic_reference(context.current):
             self._reject_shared_update(context, 'policy_rule_set')
-            self._reject_multiple_redirects_in_prs(context)
             if context.current['child_policy_rule_sets']:
                 raise HierarchicalContractsNotSupported()
-            # If a redirect action is added (from 0 to one) we have to validate
-            # the providing and consuming PTGs
-            old_red_count = self._multiple_pr_redirect_action_number(
-                context._plugin_context.session,
-                context.original['policy_rules'])
-            new_red_count = self._multiple_pr_redirect_action_number(
-                context._plugin_context.session,
-                context.current['policy_rules'])
-            if new_red_count > old_red_count:
-                self._validate_new_prs_redirect(context, context.current)
 
     def update_policy_rule_set_postcommit(self, context):
         # Update policy_rule_set rules
@@ -722,8 +699,6 @@ class ApicMappingDriver(api.ResourceMappingDriver):
         self._remove_policy_rule_set_rules(context, context.current,
                                            to_remove)
         self._apply_policy_rule_set_rules(context, context.current, to_add)
-
-        self._handle_redirect_action(context, [context.current['id']])
 
     def update_policy_target_precommit(self, context):
         if (context.original['policy_target_group_id'] !=
@@ -738,24 +713,14 @@ class ApicMappingDriver(api.ResourceMappingDriver):
                                      context.current['port_id'])
 
     def update_policy_rule_precommit(self, context):
-        self._validate_one_action_per_pr(context)
-        old_redirect = self._get_redirect_action(context, context.original)
-        new_redirect = self._get_redirect_action(context, context.current)
-        if not old_redirect and new_redirect:
-            # If redirect action is added, check that there's no contract that
-            # already has a redirect action
-            for prs in context._plugin.get_policy_rule_sets(
-                    context._plugin_context,
-                    {'id': context.current['policy_rule_sets']}):
-                # Make sure the PRS can have a new redirect action
-                self._validate_new_prs_redirect(context, prs)
+        pass
 
     def update_policy_rule_postcommit(self, context):
         self._update_policy_rule_on_apic(context)
         super(ApicMappingDriver, self).update_policy_rule_postcommit(context)
 
     def update_policy_action_postcommit(self, context):
-        self._handle_redirect_spec_id_update(context)
+        pass
 
     def _update_policy_rule_on_apic(self, context):
         self._delete_policy_rule_from_apic(context, transaction=None)
@@ -763,19 +728,11 @@ class ApicMappingDriver(api.ResourceMappingDriver):
         self.create_policy_rule_postcommit(context, transaction=None)
 
     def update_policy_target_group_precommit(self, context):
-        self._reject_apic_name_change(context)
         if not self.name_mapper._is_apic_reference(context.current):
             if set(context.original['subnets']) != set(
-                    context.current['subnets']):
+                 context.current['subnets']):
                 raise ExplicitSubnetAssociationNotSupported()
             self._reject_shared_update(context, 'policy_target_group')
-
-            if set(context.original['subnets']) != set(
-                    context.current['subnets']):
-                raise ExplicitSubnetAssociationNotSupported()
-            self._reject_shared_update(context, 'policy_target_group')
-            self._validate_ptg_prss(context, context.current)
-            self._stash_ptg_modified_chains(context)
 
     def update_policy_target_group_postcommit(self, context):
         if not self.name_mapper._is_apic_reference(context.current):
@@ -803,14 +760,6 @@ class ApicMappingDriver(api.ResourceMappingDriver):
                     curr_consumed_policy_rule_sets))
 
             self._handle_nsp_update_on_ptg(context)
-            self._cleanup_redirect_action(context)
-
-            if self._is_redirect_in_policy_rule_sets(
-                    context, new_provided_policy_rule_sets) and not (
-                        context.current.get('proxied_group_id')):
-                policy_rule_sets = (curr_consumed_policy_rule_sets +
-                                    curr_provided_policy_rule_sets)
-                self._handle_redirect_action(context, policy_rule_sets)
 
             self._manage_ptg_policy_rule_sets(
                 context, new_provided_policy_rule_sets,
@@ -918,7 +867,6 @@ class ApicMappingDriver(api.ResourceMappingDriver):
                     self._remove_policy_rule_set_rules(
                         context, prs, [(rule, context.original)])
                     self._apply_policy_rule_set_rules(context, prs, [rule])
-            self._handle_classifier_update_notification(context)
 
     def create_external_segment_precommit(self, context):
         if context.current['port_address_translation']:
@@ -1922,27 +1870,6 @@ class ApicMappingDriver(api.ResourceMappingDriver):
                 tenant, epg_name, contract, provider=True,
                 contract_owner=contract_owner, transaction=trs)
 
-    def _get_redirect_action(self, context, policy_rule):
-        for action in context._plugin.get_policy_actions(
-                context._plugin_context,
-                filters={'id': policy_rule['policy_actions']}):
-            if action['action_type'] == g_const.GP_ACTION_REDIRECT:
-                return action
-
-    def _multiple_pr_redirect_action_number(self, session, pr_ids):
-        # Given a set of rules, gives the total number of redirect actions
-        # found
-        if len(pr_ids) == 0:
-            # No result will be found in this case
-            return 0
-        return (session.query(gpdb.gpdb.PolicyAction).
-                join(gpdb.gpdb.PolicyRuleActionAssociation).
-                filter(
-                gpdb.gpdb.PolicyRuleActionAssociation.policy_rule_id.in_(
-                    pr_ids)).
-                filter(gpdb.gpdb.PolicyAction.action_type ==
-                       g_const.GP_ACTION_REDIRECT)).count()
-
     def _check_es_subnet(self, context, es):
         if es['subnet_id']:
             subnet = self._get_subnet(context._plugin_context,
@@ -2244,11 +2171,6 @@ class ApicMappingDriver(api.ResourceMappingDriver):
         for port in ports:
             if self._is_port_bound(port):
                 self._notify_port_update(plugin_context, port['id'])
-
-    def _validate_one_action_per_pr(self, context):
-        if ('policy_actions' in context.current and
-                len(context.current['policy_actions']) != 1):
-            raise ExactlyOneActionPerRuleIsSupportedOnApicDriver()
 
     def _create_any_contract(self, origin_ptg_id, transaction=None):
         tenant = apic_manager.TENANT_COMMON
