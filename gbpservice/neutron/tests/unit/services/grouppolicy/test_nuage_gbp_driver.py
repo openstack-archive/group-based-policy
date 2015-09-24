@@ -62,7 +62,7 @@ class NuageGBPDriverTestCase(test_plugin.GroupPolicyPluginTestCase):
     def setUp(self):
         config.cfg.CONF.set_override('policy_drivers',
                                      ['implicit_policy', 'resource_mapping',
-                                      'nuage_gbp_driver'],
+                                      'nuage_gbp_driver', 'chain_mapping'],
                                      group='group_policy')
         ml2_opts = {
             'mechanism_drivers': ['nuage_gbp'],
