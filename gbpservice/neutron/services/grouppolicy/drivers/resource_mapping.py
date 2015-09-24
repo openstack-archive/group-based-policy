@@ -13,8 +13,6 @@
 import netaddr
 import operator
 
-from keystoneclient import exceptions as k_exceptions
-from keystoneclient.v2_0 import client as k_client
 from neutron.api.v2 import attributes
 from neutron.common import constants as const
 from neutron.common import exceptions as n_exc
@@ -25,11 +23,8 @@ from neutron.db import models_v2
 from neutron.extensions import securitygroup as ext_sg
 from oslo_config import cfg
 from oslo_log import log as logging
-from oslo_serialization import jsonutils
-from oslo_utils import excutils
 import sqlalchemy as sa
 
-from gbpservice.common import utils
 from gbpservice.network.neutronv2 import local_api
 from gbpservice.neutron.db.grouppolicy import group_policy_db as gpdb
 from gbpservice.neutron.db import servicechain_db  # noqa
@@ -45,26 +40,14 @@ LOG = logging.getLogger(__name__)
 DEFAULT_SG_PREFIX = 'gbp_%s'
 SCI_CONSUMER_NOT_AVAILABLE = 'N/A'
 
-group_policy_opts = [
-    cfg.StrOpt('chain_owner_user',
-               help=_("Chain owner username. If set, will be used in "
-                      "place of the Neutron service admin for retrieving "
-                      "tenant owner information through Keystone."),
-               default=''),
-    cfg.StrOpt('chain_owner_password',
-               help=_("Chain owner password."), default='',
-               secret=True),
-    cfg.StrOpt('chain_owner_tenant_name',
-               help=_("Name of the Tenant that will own the service chain "
-                      "instances for this driver. Leave empty for provider "
-                      "owned chains."), default=''),
+opts = [
     cfg.ListOpt('dns_nameservers',
                 default=[],
                 help=_("List of DNS nameservers to be configured for the "
                        "PTG subnets")),
 ]
 
-cfg.CONF.register_opts(group_policy_opts, "resource_mapping")
+cfg.CONF.register_opts(opts, "resource_mapping")
 
 
 class OwnedPort(model_base.BASEV2):
@@ -115,22 +98,6 @@ class PolicyRuleSetSGsMapping(model_base.BASEV2):
                                sa.ForeignKey('securitygroups.id'))
     consumed_sg_id = sa.Column(sa.String(36),
                                sa.ForeignKey('securitygroups.id'))
-
-
-class PtgServiceChainInstanceMapping(model_base.BASEV2, models_v2.HasTenant):
-    """Policy Target Group to ServiceChainInstance mapping DB."""
-
-    __tablename__ = 'gpm_ptgs_servicechain_mapping'
-    provider_ptg_id = sa.Column(sa.String(36),
-                                sa.ForeignKey('gp_policy_target_groups.id',
-                                              ondelete='CASCADE'),
-                                nullable=False)
-    # Consumer PTG could be an External Policy
-    consumer_ptg_id = sa.Column(sa.String(36), nullable=False)
-    servicechain_instance_id = sa.Column(sa.String(36),
-                                         sa.ForeignKey('sc_instances.id',
-                                                       ondelete='CASCADE'),
-                                         primary_key=True)
 
 
 class ServicePolicyPTGIpAddressMapping(model_base.BASEV2):
@@ -189,41 +156,6 @@ class ResourceMappingDriver(api.PolicyDriver, local_api.LocalAPI):
     @log.log
     def initialize(self):
         self._cached_agent_notifier = None
-        self.chain_owner = ResourceMappingDriver.chain_tenant_id(reraise=True)
-
-    @staticmethod
-    def chain_tenant_id(reraise=False):
-        keystone = ResourceMappingDriver.chain_tenant_keystone_client()
-        if keystone:
-            tenant = cfg.CONF.resource_mapping.chain_owner_tenant_name
-            try:
-                # Can it be retrieved directly, without a further keystone
-                # call?
-                tenant = keystone.tenants.find(name=tenant)
-                return tenant.id
-            except k_exceptions.NotFound:
-                with excutils.save_and_reraise_exception(reraise=reraise):
-                    LOG.error(_('No tenant with name %s exists.'), tenant)
-            except k_exceptions.NoUniqueMatch:
-                with excutils.save_and_reraise_exception(reraise=reraise):
-                    LOG.error(_('Multiple tenants matches found for %s'),
-                              tenant)
-
-    @staticmethod
-    def chain_tenant_keystone_client():
-        chain_user = cfg.CONF.resource_mapping.chain_owner_user
-        user, pwd, tenant, auth_url = utils.get_keystone_creds()
-        user = (chain_user or user)
-        pwd = (cfg.CONF.resource_mapping.chain_owner_password or
-               (pwd if not chain_user else ''))
-
-        # Tenant must be configured in the resource_mapping section, provider
-        # owner will be used otherwise.
-        tenant = cfg.CONF.resource_mapping.chain_owner_tenant_name
-
-        if tenant:
-            return k_client.Client(username=user, password=pwd,
-                                   auth_url=auth_url)
 
     def _reject_shared(self, object, type):
         if object.get('shared'):
@@ -301,28 +233,6 @@ class ResourceMappingDriver(api.PolicyDriver, local_api.LocalAPI):
                         msg="Can't access other tenants router",
                         router_id=router_id,
                         tenant_id=context.current['tenant_id'])
-
-    def _reject_multiple_redirects_in_rule(self, context):
-        policy_actions = context._plugin.get_policy_actions(
-                context._plugin_context,
-                filters={'id': context.current['policy_actions'],
-                         'action_type': [gconst.GP_ACTION_REDIRECT]})
-        if len(policy_actions) > 1:
-            raise exc.MultipleRedirectActionsNotSupportedForRule()
-
-    def _reject_multiple_redirects_in_prs(self, context):
-        policy_rules = context._plugin.get_policy_rules(
-                context._plugin_context,
-                filters={'id': context.current['policy_rules']})
-        redirect_actions_list = []
-        for policy_rule in policy_rules:
-            policy_actions = context._plugin.get_policy_actions(
-                    context._plugin_context,
-                    filters={'id': policy_rule['policy_actions'],
-                             'action_type': [gconst.GP_ACTION_REDIRECT]})
-            redirect_actions_list.extend(policy_actions)
-        if len(redirect_actions_list) > 1:
-            raise exc.MultipleRedirectActionsNotSupportedForPRS()
 
     @log.log
     def create_policy_target_precommit(self, context):
@@ -497,9 +407,7 @@ class ResourceMappingDriver(api.PolicyDriver, local_api.LocalAPI):
         self._reject_cross_tenant_ptg_l2p(context)
         self._validate_ptg_subnets(context)
         self._validate_nat_pool_for_nsp(context)
-        self._validate_ptg_prss(context, context.current)
         self._validate_proxy_ptg(context)
-        self._validate_ptg_prss(context, context.current)
 
     @log.log
     def create_policy_target_group_postcommit(self, context):
@@ -690,48 +598,10 @@ class ResourceMappingDriver(api.PolicyDriver, local_api.LocalAPI):
             raise exc.PolicyTargetGroupSubnetRemovalNotSupported()
 
         self._validate_ptg_subnets(context, context.current['subnets'])
-        self._validate_ptg_prss(context, context.current)
         self._reject_cross_tenant_ptg_l2p(context)
         if (context.current['network_service_policy_id'] !=
             context.original['network_service_policy_id']):
             self._validate_nat_pool_for_nsp(context)
-        self._stash_ptg_modified_chains(context)
-
-    def _stash_ptg_modified_chains(self, context):
-        #Update service chain instance when any ruleset is changed
-        orig_provided_policy_rule_sets = context.original[
-            'provided_policy_rule_sets']
-        curr_provided_policy_rule_sets = context.current[
-            'provided_policy_rule_sets']
-
-        removed_provided_prs = (set(orig_provided_policy_rule_sets) -
-                                set(curr_provided_policy_rule_sets))
-        added_provided_prs = (set(curr_provided_policy_rule_sets) -
-                              set(orig_provided_policy_rule_sets))
-        context.ptg_chain_map = []
-        # If the Redirect is removed, delete the chain. If the spec is
-        # changed, then update the existing instance with new spec
-        if (self._is_redirect_in_policy_rule_sets(
-                context, removed_provided_prs) and not
-            self._is_redirect_in_policy_rule_sets(
-                context, added_provided_prs)):
-            context.ptg_chain_map += self._get_ptg_servicechain_mapping(
-                context._plugin_context.session, context.current['id'])
-
-    def _is_redirect_in_policy_rule_sets(self, context, policy_rule_sets):
-        policy_rule_ids = []
-        for prs in context._plugin.get_policy_rule_sets(
-                context._plugin_context, filters={'id': policy_rule_sets}):
-            policy_rule_ids.extend(prs['policy_rules'])
-        for rule in context._plugin.get_policy_rules(
-                context._plugin_context, filters={'id': policy_rule_ids}):
-            redirect_actions = context._plugin.get_policy_actions(
-                        context._plugin_context,
-                        filters={'id': rule["policy_actions"],
-                                 'action_type': [gconst.GP_ACTION_REDIRECT]})
-            if redirect_actions:
-                return True
-        return False
 
     @log.log
     def update_policy_target_group_postcommit(self, context):
@@ -769,16 +639,6 @@ class ResourceMappingDriver(api.PolicyDriver, local_api.LocalAPI):
                 orig_consumed_policy_rule_sets))
 
         self._handle_nsp_update_on_ptg(context)
-
-        # Only the ones set in context in precommit operation will be deleted
-        self._cleanup_redirect_action(context)
-        # If the spec is changed, then update the chain with new spec
-        # If redirect is newly added, create the chain
-        if self._is_redirect_in_policy_rule_sets(
-                context, new_provided_policy_rule_sets):
-            policy_rule_sets = (curr_consumed_policy_rule_sets +
-                                curr_provided_policy_rule_sets)
-            self._handle_redirect_action(context, policy_rule_sets)
 
         # if PTG associated policy_rule_sets are updated, we need to update
         # the policy rules, then assoicate SGs to ports
@@ -827,10 +687,6 @@ class ResourceMappingDriver(api.PolicyDriver, local_api.LocalAPI):
             context._plugin_context.session, context.current['id'])
         context.nsp_cleanup_fips = self._get_ptg_policy_fip_mapping(
             context._plugin_context.session, context.current['id'])
-        provider_ptg_chain_map = self._get_ptg_servicechain_mapping(
-            context._plugin_context.session, context.current['id'])
-
-        context.ptg_chain_map = provider_ptg_chain_map
 
     @log.log
     def delete_policy_target_group_postcommit(self, context):
@@ -838,7 +694,6 @@ class ResourceMappingDriver(api.PolicyDriver, local_api.LocalAPI):
                                              context.current,
                                              context.nsp_cleanup_ipaddress,
                                              context.nsp_cleanup_fips)
-        self._cleanup_redirect_action(context)
         # Cleanup SGs
         self._unset_sg_rules_for_subnets(
             context, context.current['subnets'],
@@ -1005,28 +860,6 @@ class ResourceMappingDriver(api.PolicyDriver, local_api.LocalAPI):
             self._update_policy_rule_sg_rules(context, pr_sets,
                 policy_rule, context.original, context.current)
 
-        self._handle_classifier_update_notification(context)
-
-    def _handle_classifier_update_notification(self, context):
-        # Invoke Service chain update notify hook if protocol or port or
-        # direction is updated. The SC side will have to reclassify the chain
-        # and update the traffic steering programming
-        if (context.original['port_range'] != context.current['port_range'] or
-            context.original['protocol'] != context.current['protocol'] or
-            context.original['direction'] != context.current['direction']):
-            sc_instances = (
-                self._servicechain_plugin.get_servicechain_instances(
-                    context._plugin_context.elevated(),
-                    filters={'classifier_id': [context.current['id']]}))
-            for sc_instance in sc_instances:
-                cmap = self._get_ptg_servicechain_mapping(
-                    context._plugin_context.session,
-                    servicechain_instance_id=sc_instance['id'])
-                ctx = self._get_chain_admin_context(context._plugin_context,
-                                                    cmap[0].tenant_id)
-                self._servicechain_plugin.notify_chain_parameters_updated(
-                    ctx, sc_instance['id'])
-
     @log.log
     def delete_policy_classifier_precommit(self, context):
         pass
@@ -1037,13 +870,7 @@ class ResourceMappingDriver(api.PolicyDriver, local_api.LocalAPI):
 
     @log.log
     def create_policy_action_precommit(self, context):
-        spec_id = context.current['action_value']
-        if spec_id:
-            specs = self._get_servicechain_specs(
-                context._plugin_context, filters={'id': [spec_id]})
-            for spec in specs:
-                if not spec.get('shared', False):
-                    self._reject_shared(context.current, 'policy_action')
+        pass
 
     @log.log
     def create_policy_action_postcommit(self, context):
@@ -1055,8 +882,7 @@ class ResourceMappingDriver(api.PolicyDriver, local_api.LocalAPI):
 
     @log.log
     def update_policy_action_postcommit(self, context):
-        # TODO(ivar): Should affect related SGs
-        self._handle_redirect_spec_id_update(context)
+        pass
 
     @log.log
     def delete_policy_action_precommit(self, context):
@@ -1068,7 +894,7 @@ class ResourceMappingDriver(api.PolicyDriver, local_api.LocalAPI):
 
     @log.log
     def create_policy_rule_precommit(self, context):
-        self._reject_multiple_redirects_in_rule(context)
+        pass
 
     @log.log
     def create_policy_rule_postcommit(self, context):
@@ -1076,14 +902,7 @@ class ResourceMappingDriver(api.PolicyDriver, local_api.LocalAPI):
 
     @log.log
     def update_policy_rule_precommit(self, context):
-        self._reject_multiple_redirects_in_rule(context)
-        old_redirect = self._get_redirect_action(context, context.original)
-        new_redirect = self._get_redirect_action(context, context.current)
-        if not old_redirect and new_redirect:
-            for prs in context._plugin.get_policy_rule_sets(
-                    context._plugin_context,
-                    {'id': context.current['policy_rule_sets']}):
-                self._validate_new_prs_redirect(context, prs)
+        pass
 
     @log.log
     def update_policy_rule_postcommit(self, context):
@@ -1103,17 +922,6 @@ class ResourceMappingDriver(api.PolicyDriver, local_api.LocalAPI):
                 self._apply_policy_rule_set_rules(context, prs,
                                                   [context.current])
 
-            old_redirect_policy_actions = context._plugin.get_policy_actions(
-                        context._plugin_context,
-                        filters={'id': context.original['policy_actions'],
-                                 'action_type': [gconst.GP_ACTION_REDIRECT]})
-            new_redirect_policy_actions = context._plugin.get_policy_actions(
-                        context._plugin_context,
-                        filters={'id': context.current['policy_actions'],
-                                 'action_type': [gconst.GP_ACTION_REDIRECT]})
-            if old_redirect_policy_actions or new_redirect_policy_actions:
-                self._handle_redirect_action(context, policy_rule_sets)
-
     @log.log
     def delete_policy_rule_precommit(self, context):
         # REVISIT(ivar): This will be removed once navigability issue is
@@ -1132,7 +940,6 @@ class ResourceMappingDriver(api.PolicyDriver, local_api.LocalAPI):
     @log.log
     def create_policy_rule_set_precommit(self, context):
         self._reject_shared(context.current, 'policy_rule_set')
-        self._reject_multiple_redirects_in_prs(context)
 
     @log.log
     def create_policy_rule_set_postcommit(self, context):
@@ -1152,22 +959,10 @@ class ResourceMappingDriver(api.PolicyDriver, local_api.LocalAPI):
         if context.current['child_policy_rule_sets']:
             self._recompute_policy_rule_sets(
                 context, context.current['child_policy_rule_sets'])
-            self._handle_redirect_action(
-                    context, context.current['child_policy_rule_sets'])
 
     @log.log
     def update_policy_rule_set_precommit(self, context):
         self._reject_shared(context.current, 'policy_rule_set')
-        self._reject_multiple_redirects_in_prs(context)
-
-        old_red_count = self._multiple_pr_redirect_action_number(
-            context._plugin_context.session,
-            context.original['policy_rules'])
-        new_red_count = self._multiple_pr_redirect_action_number(
-            context._plugin_context.session,
-            context.current['policy_rules'])
-        if new_red_count > old_red_count:
-            self._validate_new_prs_redirect(context, context.current)
 
     @log.log
     def update_policy_rule_set_postcommit(self, context):
@@ -1188,17 +983,6 @@ class ResourceMappingDriver(api.PolicyDriver, local_api.LocalAPI):
             to_recompute = (set(context.original['child_policy_rule_sets']) &
                             set(context.current['child_policy_rule_sets']))
             self._recompute_policy_rule_sets(context, to_recompute)
-        # Handle any Redirects from the current Policy Rule Set
-        self._handle_redirect_action(context, [context.current['id']])
-        # Handle Update/Delete of Redirects for any child Rule Sets
-        if (set(context.original['child_policy_rule_sets']) !=
-            set(context.current['child_policy_rule_sets'])):
-            if context.original['child_policy_rule_sets']:
-                self._handle_redirect_action(
-                    context, context.original['child_policy_rule_sets'])
-            if context.current['child_policy_rule_sets']:
-                self._handle_redirect_action(
-                    context, context.current['child_policy_rule_sets'])
 
     @log.log
     def delete_policy_rule_set_precommit(self, context):
@@ -1221,9 +1005,6 @@ class ResourceMappingDriver(api.PolicyDriver, local_api.LocalAPI):
         # Delete SGs
         for sg in sg_list:
             self._delete_sg(context._plugin_context, sg)
-        if context.current['child_policy_rule_sets']:
-            self._handle_redirect_action(
-                context, context.current['child_policy_rule_sets'])
 
     @log.log
     def create_network_service_policy_precommit(self, context):
@@ -1913,10 +1694,6 @@ class ResourceMappingDriver(api.PolicyDriver, local_api.LocalAPI):
             'provided_policy_rule_sets']
         subnets = context.current['subnets']
         ptg_id = context.current['id']
-        if provided_policy_rule_sets:
-            policy_rule_sets = (
-                consumed_policy_rule_sets + provided_policy_rule_sets)
-            self._handle_redirect_action(context, policy_rule_sets)
         self._set_sg_rules_for_subnets(context, subnets,
                                        provided_policy_rule_sets,
                                        consumed_policy_rule_sets)
@@ -2018,148 +1795,11 @@ class ResourceMappingDriver(api.PolicyDriver, local_api.LocalAPI):
             for fip_mapping in fip_mappings:
                 session.delete(fip_mapping)
 
-    def _handle_redirect_spec_id_update(self, context):
-        if (context.current['action_type'] != gconst.GP_ACTION_REDIRECT
-            or context.current['action_value'] ==
-            context.original['action_value']):
-            return
-
-        spec = self._servicechain_plugin._get_servicechain_spec(
-                    context._plugin_context, context.original['action_value'])
-        for servicechain_instance in spec.instances:
-            sc_instance_id = servicechain_instance.servicechain_instance_id
-            sc_instance = self._servicechain_plugin.get_servicechain_instance(
-                    context._plugin_context, sc_instance_id)
-            old_specs = sc_instance['servicechain_specs']
-            # Use the parent/child redirect spec as it is. Only replace the
-            # current one
-            new_specs = [context.current['action_value'] if
-                         x == context.original['action_value'] else
-                         x for x in old_specs]
-            self._update_servicechain_instance(
-                context._plugin_context,
-                servicechain_instance.servicechain_instance_id,
-                sc_specs=new_specs)
-
-    def _update_servicechain_instance(self, plugin_context, sc_instance_id,
-                                      classifier_id=None, sc_specs=None):
-        sc_instance_update_data = {}
-        if sc_specs:
-            sc_instance_update_data.update({'servicechain_specs': sc_specs})
-        if classifier_id:
-            sc_instance_update_data.update({'classifier_id': classifier_id})
-        super(ResourceMappingDriver, self)._update_servicechain_instance(
-            self._get_chain_admin_context(
-                plugin_context, instance_id=sc_instance_id),
-            sc_instance_id, sc_instance_update_data)
-
     def _get_rule_ids_for_actions(self, context, action_id):
         policy_rule_qry = context.session.query(
                             gpdb.PolicyRuleActionAssociation.policy_rule_id)
         policy_rule_qry.filter_by(policy_action_id=action_id)
         return policy_rule_qry.all()
-
-    # This method would either update an existing chain instance, or creates a
-    # new chain instance or delete the existing instance. In case of updates,
-    # the parameters that can be updated are service chain spec and
-    # classifier ID.
-    def _handle_redirect_action(self, context, policy_rule_set_ids):
-        policy_rule_sets = context._plugin.get_policy_rule_sets(
-                                    context._plugin_context,
-                                    filters={'id': policy_rule_set_ids})
-        for policy_rule_set in policy_rule_sets:
-            ptgs_providing_prs = policy_rule_set[
-                'providing_policy_target_groups']
-
-            # Create the ServiceChain Instance when we have both Provider and
-            # consumer PTGs. If Labels are available, they have to be applied
-            if not ptgs_providing_prs:
-                continue
-
-            ptgs_providing_prs = context._plugin.get_policy_target_groups(
-                context._plugin_context.elevated(), {'id': ptgs_providing_prs})
-            parent_classifier_id = None
-            parent_spec_id = None
-            if policy_rule_set['parent_id']:
-                parent = context._plugin.get_policy_rule_set(
-                    context._plugin_context, policy_rule_set['parent_id'])
-                policy_rules = context._plugin.get_policy_rules(
-                                    context._plugin_context,
-                                    filters={'id': parent['policy_rules']})
-                for policy_rule in policy_rules:
-                    policy_actions = context._plugin.get_policy_actions(
-                        context._plugin_context,
-                        filters={'id': policy_rule["policy_actions"],
-                                 'action_type': [gconst.GP_ACTION_REDIRECT]})
-                    if policy_actions:
-                        parent_spec_id = policy_actions[0].get("action_value")
-                        parent_classifier_id = policy_rule.get(
-                                                    "policy_classifier_id")
-                        break  # only one redirect action is supported
-            policy_rules = context._plugin.get_policy_rules(
-                    context._plugin_context,
-                    filters={'id': policy_rule_set['policy_rules']})
-            for policy_rule in policy_rules:
-                hierarchial_classifier_mismatch = False
-                classifier_id = policy_rule.get("policy_classifier_id")
-                if parent_classifier_id and (parent_classifier_id !=
-                                             classifier_id):
-                    hierarchial_classifier_mismatch = True
-                policy_actions = context._plugin.get_policy_actions(
-                        context._plugin_context,
-                        filters={'id': policy_rule.get("policy_actions"),
-                                 'action_type': [gconst.GP_ACTION_REDIRECT]})
-                # Only one Redirect action per PRS. The chain may belong to
-                # another PRS in which case the chain should not be deleted
-                if (self._is_redirect_in_policy_rule_sets(
-                    context, policy_rule_set_ids) and not policy_actions):
-                    continue
-                spec_id = (policy_actions and policy_actions[0]['action_value']
-                           or None)
-                for ptg_providing_prs in ptgs_providing_prs:
-                    # REVISIT(Magesh): There may be concurrency issues here
-                    if not ptg_providing_prs.get('proxied_group_id'):
-                        self._create_or_update_chain(
-                            context, ptg_providing_prs['id'],
-                            SCI_CONSUMER_NOT_AVAILABLE, spec_id,
-                            parent_spec_id, classifier_id,
-                            hierarchial_classifier_mismatch,
-                            policy_rule_set)
-
-    def _create_or_update_chain(self, context, provider, consumer, spec_id,
-                                parent_spec_id, classifier_id,
-                                hierarchial_classifier_mismatch, prs_id):
-        ptg_chain_map = self._get_ptg_servicechain_mapping(
-            context._plugin_context.session, provider)
-        if ptg_chain_map:
-            if hierarchial_classifier_mismatch or not spec_id:
-                ctx = self._get_chain_admin_context(
-                    context._plugin_context,
-                    tenant_id=ptg_chain_map[0].tenant_id)
-                self._delete_servicechain_instance(
-                    ctx, ptg_chain_map[0].servicechain_instance_id)
-            else:
-                sc_specs = [spec_id]
-                if parent_spec_id:
-                    sc_specs.insert(0, parent_spec_id)
-                # One Chain between a unique pair of provider and consumer
-
-                self._update_servicechain_instance(
-                        context._plugin_context,
-                        ptg_chain_map[0].servicechain_instance_id,
-                        classifier_id=classifier_id,
-                        sc_specs=sc_specs)
-        elif spec_id and not hierarchial_classifier_mismatch:
-            self._create_servicechain_instance(
-                context, spec_id, parent_spec_id, provider,
-                SCI_CONSUMER_NOT_AVAILABLE, classifier_id, prs_id)
-
-    def _cleanup_redirect_action(self, context):
-        for ptg_chain in context.ptg_chain_map:
-            ctx = self._get_chain_admin_context(context._plugin_context,
-                                                tenant_id=ptg_chain.tenant_id)
-            self._delete_servicechain_instance(
-                ctx, ptg_chain.servicechain_instance_id)
 
     def _restore_ip_to_allocation_pool(self, context, subnet_id, ip_address):
         # TODO(Magesh):Pass subnets and loop on subnets. Better to add logic
@@ -2207,67 +1847,6 @@ class ResourceMappingDriver(api.PolicyDriver, local_api.LocalAPI):
                 continue
             ip_address = ip_range['last_ip']
             return ip_address
-
-    def _create_servicechain_instance(self, context, servicechain_spec,
-                                      parent_servicechain_spec,
-                                      provider_ptg_id, consumer_ptg_id,
-                                      classifier_id, policy_rule_set,
-                                      config_params=None):
-        sc_spec = [servicechain_spec]
-        if parent_servicechain_spec:
-            sc_spec.insert(0, parent_servicechain_spec)
-        config_param_values = {}
-        provider_ptg = context._plugin.get_policy_target_group(
-            utils.admin_context(context._plugin_context), provider_ptg_id)
-        p_ctx = self._get_chain_admin_context(
-            context._plugin_context,
-            provider_tenant_id=provider_ptg['tenant_id'])
-        session = context._plugin_context.session
-        network_service_policy_id = provider_ptg.get(
-            "network_service_policy_id")
-        if network_service_policy_id:
-            nsp = context._plugin.get_network_service_policy(
-                p_ctx, network_service_policy_id)
-            service_params = nsp.get("network_service_params")
-            for service_parameter in service_params:
-                param_type = service_parameter.get("type")
-                param_value = service_parameter.get("value")
-                if param_type == "ip_single" and param_value == "self_subnet":
-                    key = service_parameter.get("name")
-                    servicepolicy_ptg_ip_map = (
-                        self._get_ptg_policy_ipaddress_mapping(
-                            session, provider_ptg_id))
-                    servicepolicy_ip = servicepolicy_ptg_ip_map.get(
-                                                        "ipaddress")
-                    config_param_values[key] = servicepolicy_ip
-                elif param_type == "ip_single" and param_value == "nat_pool":
-                    key = service_parameter.get("name")
-                    fip_maps = (
-                        self._get_ptg_policy_fip_mapping(
-                            context._plugin_context.session,
-                            provider_ptg_id))
-                    servicepolicy_fip_ids = []
-                    for fip_map in fip_maps:
-                        servicepolicy_fip_ids.append(fip_map.floatingip_id)
-                    config_param_values[key] = servicepolicy_fip_ids
-        name = 'gbp_%s_%s' % (policy_rule_set['name'], provider_ptg['name'])
-
-        attrs = {'tenant_id': p_ctx.tenant,
-                 'name': name,
-                 'description': "",
-                 'servicechain_specs': sc_spec,
-                 'provider_ptg_id': provider_ptg_id,
-                 'consumer_ptg_id': SCI_CONSUMER_NOT_AVAILABLE,
-                 'management_ptg_id': None,
-                 'classifier_id': classifier_id,
-                 'config_param_values': jsonutils.dumps(config_param_values)}
-        sc_instance = super(
-            ResourceMappingDriver, self)._create_servicechain_instance(
-                p_ctx, attrs)
-        self._set_ptg_servicechain_instance_mapping(
-            session, provider_ptg_id, SCI_CONSUMER_NOT_AVAILABLE,
-            sc_instance['id'], p_ctx.tenant)
-        return sc_instance
 
     # Do Not Pass floating_ip_address to this method until after Kilo Release
     def _create_floatingip(self, plugin_context, tenant_id, ext_net_id,
@@ -2689,14 +2268,6 @@ class ResourceMappingDriver(api.PolicyDriver, local_api.LocalAPI):
         if sg_id:
             self._delete_sg(plugin_context, sg_id)
 
-    def _get_ptgs_by_id(self, context, ids):
-        if ids:
-            filters = {'id': ids}
-            return context._plugin.get_policy_target_groups(
-                context._plugin_context, filters)
-        else:
-            return []
-
     def _get_ptg_cidrs(self, context, ptgs, ptg_dicts=None):
         cidrs = []
         if ptg_dicts:
@@ -2733,40 +2304,6 @@ class ResourceMappingDriver(api.PolicyDriver, local_api.LocalAPI):
             'consuming_cidrs': self._get_ptg_cidrs(
                 context, consuming_ptgs) + self._get_ep_cidrs(context,
                                                               consuming_eps)}
-
-    def _set_ptg_servicechain_instance_mapping(self, session, provider_ptg_id,
-                                               consumer_ptg_id,
-                                               servicechain_instance_id,
-                                               provider_tenant_id):
-        with session.begin(subtransactions=True):
-            mapping = PtgServiceChainInstanceMapping(
-                provider_ptg_id=provider_ptg_id,
-                consumer_ptg_id=consumer_ptg_id,
-                servicechain_instance_id=servicechain_instance_id,
-                tenant_id=provider_tenant_id)
-            session.add(mapping)
-
-    def _get_ptg_servicechain_mapping(self, session, provider_ptg_id=None,
-                                      consumer_ptg_id=None, tenant_id=None,
-                                      servicechain_instance_id=None):
-        with session.begin(subtransactions=True):
-            query = session.query(PtgServiceChainInstanceMapping)
-            if provider_ptg_id:
-                query = query.filter_by(provider_ptg_id=provider_ptg_id)
-            if consumer_ptg_id:
-                query = query.filter_by(consumer_ptg_id=consumer_ptg_id)
-            if servicechain_instance_id:
-                query = query.filter_by(
-                    servicechain_instance_id=servicechain_instance_id)
-            if tenant_id:
-                query = query.filter_by(consumer_ptg_id=tenant_id)
-            all = query.all()
-            return [utils.DictClass([('provider_ptg_id', x.provider_ptg_id),
-                                     ('consumer_ptg_id', x.consumer_ptg_id),
-                                     ('servicechain_instance_id',
-                                      x.servicechain_instance_id),
-                                     ('tenant_id', x.tenant_id)])
-                    for x in all]
 
     def _get_ep_cidr_list(self, context, ep):
         es_list = context._plugin.get_external_segments(
@@ -2972,28 +2509,6 @@ class ResourceMappingDriver(api.PolicyDriver, local_api.LocalAPI):
                                 port_subnet_id=port_subnet_id,
                                 policy_target_group_id=ptg_id)
 
-    def _get_chain_admin_context(self, plugin_context, tenant_id=None,
-                                 provider_tenant_id=None, instance_id=None):
-        ctx = plugin_context.elevated()
-        # REVISIT(Ivar): Any particular implication when a provider owned PT
-        # exist in the consumer PTG? Especially when the consumer PTG belongs
-        # to another tenant? We may want to consider a strong convention
-        # for reference plumbers to absolutely avoid this kind of inter tenant
-        # object creation when the owner is the provider (in which case, the
-        # context can as well be a normal context without admin capabilities).
-        ctx.tenant_id = None
-        if instance_id:
-            cmap = self._get_ptg_servicechain_mapping(
-                ctx.session, servicechain_instance_id=instance_id)
-            if cmap:
-                ctx.tenant_id = cmap[0].tenant_id
-        if not ctx.tenant_id:
-            ctx.tenant_id = tenant_id or self.chain_owner or provider_tenant_id
-        if self.chain_owner == ctx.tenant_id:
-            ctx.auth_token = self.chain_tenant_keystone_client().get_token(
-                self.chain_owner)
-        return ctx
-
     def _get_ptg_l3p(self, context, ptg):
         l3p_id = context._plugin.get_l2_policy(
             context._plugin_context, ptg['l2_policy_id'])['l3_policy_id']
@@ -3055,54 +2570,3 @@ class ResourceMappingDriver(api.PolicyDriver, local_api.LocalAPI):
 
     def _unset_proxy_gateway_routes(self, context, pt):
         self._update_proxy_gateway_routes(context, pt, unset=True)
-
-    def _validate_ptg_prss(self, context, ptg):
-        # If the PTG is providing a redirect PRS, it can't provide any more
-        # redirect rules
-        if self._prss_redirect_rules(context._plugin_context.session,
-                                     ptg['provided_policy_rule_sets']) > 1:
-                raise exc.PTGAlreadyProvidingRedirectPRS(ptg_id=ptg['id'])
-
-    def _validate_new_prs_redirect(self, context, prs):
-        if self._prss_redirect_rules(context._plugin_context.session,
-                                     [prs['id']]) > 1:
-            raise exc.MultipleRedirectActionsNotSupportedForPRS()
-        for ptg in context._plugin.get_policy_target_groups(
-                context._plugin_context,
-                {'id': prs['providing_policy_target_groups']}):
-            self._validate_ptg_prss(context, ptg)
-
-    def _prss_redirect_rules(self, session, prs_ids):
-        if len(prs_ids) == 0:
-            # No result will be found in this case
-            return 0
-        query = (session.query(gpdb.PolicyAction).
-                 join(gpdb.PolicyRuleActionAssociation).
-                 join(gpdb.PolicyRule).
-                 join(gpdb.PRSToPRAssociation).
-                 filter(
-                 gpdb.PRSToPRAssociation.policy_rule_set_id.in_(prs_ids)).
-                 filter(gpdb.PolicyAction.action_type ==
-                        gconst.GP_ACTION_REDIRECT))
-        return query.count()
-
-    def _multiple_pr_redirect_action_number(self, session, pr_ids):
-        # Given a set of rules, gives the total number of redirect actions
-        # found
-        if len(pr_ids) == 0:
-            # No result will be found in this case
-            return 0
-        return (session.query(gpdb.PolicyAction).
-                join(gpdb.PolicyRuleActionAssociation).
-                filter(
-                gpdb.PolicyRuleActionAssociation.policy_rule_id.in_(
-                    pr_ids)).
-                filter(gpdb.PolicyAction.action_type ==
-                       gconst.GP_ACTION_REDIRECT)).count()
-
-    def _get_redirect_action(self, context, policy_rule):
-        for action in context._plugin.get_policy_actions(
-                context._plugin_context,
-                filters={'id': policy_rule['policy_actions']}):
-            if action['action_type'] == gconst.GP_ACTION_REDIRECT:
-                return action
