@@ -122,6 +122,7 @@ PROMISCUOUS_TYPES = [n_constants.DEVICE_OWNER_DHCP,
 ALLOWING_ACTIONS = [g_const.GP_ACTION_ALLOW, g_const.GP_ACTION_REDIRECT]
 REVERTIBLE_PROTOCOLS = [n_constants.PROTO_NAME_TCP.lower()]
 NAT_EPG_PREFIX = "NAT-"
+PROXY_PORT_PREFIX = "opflex_proxy:"
 
 
 class ApicMappingDriver(api.ResourceMappingDriver):
@@ -205,14 +206,20 @@ class ApicMappingDriver(api.ResourceMappingDriver):
                          'agent_id': kwargs.get('agent_id')})
             return
         port = port_context.current
-
         # retrieve PTG from a given Port
         ptg, pt = self._port_id_to_ptg(context, port['id'])
+        context._plugin = self.gbp_plugin
+        context._plugin_context = context
+        if pt and pt['description'].startswith(PROXY_PORT_PREFIX):
+            new_id = pt['description'].replace(
+                PROXY_PORT_PREFIX, '').rstrip(' ')
+            LOG.debug("Replace port %s with port %s", port_id, new_id)
+            port = self._get_port(context, new_id)
+            ptg, pt = self._port_id_to_ptg(context, port['id'])
+
         l2p = self._network_id_to_l2p(context, port['network_id'])
         if not ptg and not l2p:
             return
-        context._plugin = self.gbp_plugin
-        context._plugin_context = context
 
         l2_policy_id = l2p['id']
         if ptg:
