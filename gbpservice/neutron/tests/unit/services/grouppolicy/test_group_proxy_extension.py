@@ -24,10 +24,21 @@ class ExtensionDriverTestCase(test_ext_base.ExtensionDriverTestBase):
     _extension_path = None
 
     def test_proxy_group_extension(self):
-        ptg = self.create_policy_target_group()['policy_target_group']
+        l3p = self.create_l3_policy()['l3_policy']
+        self.assertEqual('192.168.0.0/16', l3p['proxy_ip_pool'])
+        self.assertEqual(29, l3p['proxy_subnet_prefix_length'])
+
+        l2p = self.create_l2_policy(l3_policy_id=l3p['id'])['l2_policy']
+        ptg = self.create_policy_target_group(
+            l2_policy_id=l2p['id'])['policy_target_group']
         self.assertIsNone(ptg['proxy_group_id'])
         self.assertIsNone(ptg['proxied_group_id'])
         self.assertIsNone(ptg['proxy_type'])
+
+        # Verify Default L3P pool mapping on show
+        l3p = self.show_l3_policy(l3p['id'])['l3_policy']
+        self.assertEqual('192.168.0.0/16', l3p['proxy_ip_pool'])
+        self.assertEqual(29, l3p['proxy_subnet_prefix_length'])
 
         ptg_proxy = self.create_policy_target_group(
             proxied_group_id=ptg['id'])['policy_target_group']
@@ -141,3 +152,27 @@ class ExtensionDriverTestCase(test_ext_base.ExtensionDriverTestBase):
             expected_res_status=400)
         self.assertEqual('InvalidProxyGatewayGroup',
                          res['NeutronError']['type'])
+
+    def test_proxy_pool_invalid_prefix_length(self):
+        l3p = self.create_l3_policy(proxy_subnet_prefix_length=29)['l3_policy']
+        res = self.update_l3_policy(l3p['id'], proxy_subnet_prefix_length=32,
+                                    expected_res_status=400)
+        self.assertEqual('InvalidDefaultSubnetPrefixLength',
+                         res['NeutronError']['type'])
+
+        # Verify change didn't persist
+        l3p = self.show_l3_policy(l3p['id'])['l3_policy']
+        self.assertEqual(29, l3p['proxy_subnet_prefix_length'])
+
+        # Verify it fails in creation
+        res = self.create_l3_policy(
+            proxy_subnet_prefix_length=32, expected_res_status=400)
+        self.assertEqual('InvalidDefaultSubnetPrefixLength',
+                         res['NeutronError']['type'])
+
+    def test_proxy_pool_invalid_version(self):
+        # proxy_ip_pool is of a different version
+        res = self.create_l3_policy(ip_version=6, ip_pool='1::1/16',
+                                    proxy_ip_pool='192.168.0.0/16',
+                                    expected_res_status=400)
+        self.assertEqual('InvalidIpPoolVersion', res['NeutronError']['type'])
