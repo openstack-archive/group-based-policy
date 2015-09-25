@@ -262,6 +262,44 @@ class TestPolicyTarget(ApicMappingTestCase):
         else:
             self.assertEqual([l3p['ip_pool']], mapping['vrf_subnets'])
 
+    def test_get_gbp_proxy_details(self):
+        l3p_fake = self.create_l3_policy(name='myl3')['l3_policy']
+        l2p_fake = self.create_l2_policy(
+            name='myl2', l3_policy_id=l3p_fake['id'])['l2_policy']
+        ptg_fake = self.create_policy_target_group(
+            name="ptg1", l2_policy_id=l2p_fake['id'])['policy_target_group']
+        # The PT below will be actually bound for a VM
+        pt_bound = self.create_policy_target(
+            policy_target_group_id=ptg_fake['id'])['policy_target']
+
+        l3p_real = self.create_l3_policy(name='myl3')['l3_policy']
+        l2p_real = self.create_l2_policy(
+            name='myl2', l3_policy_id=l3p_real['id'])['l2_policy']
+        ptg_real = self.create_policy_target_group(
+            name="ptg1", l2_policy_id=l2p_real['id'])['policy_target_group']
+        # The PT below will never be bound
+        pt_unbound = self.create_policy_target(
+            policy_target_group_id=ptg_real['id'])['policy_target']
+
+        # Change description to link the ports. The bound on will point
+        # to the unbound one to get its info overridden
+        self.update_policy_target(
+            pt_bound['id'],
+            description=amap.PROXY_PORT_PREFIX + pt_unbound['port_id'])
+
+        # Bind the first port
+        self._bind_port_to_host(pt_bound['port_id'], 'h1')
+        # Get info on bound port
+        mapping = self.driver.get_gbp_details(context.get_admin_context(),
+            device='tap%s' % pt_bound['port_id'], host='h1')
+        # Bound port info
+        self.assertEqual(pt_bound['port_id'], mapping['port_id'])
+        self.assertEqual('tap%s' % pt_bound['port_id'], mapping['device'])
+        # APIC info are from the unbound port
+        self.assertEqual(ptg_real['id'], mapping['endpoint_group_name'])
+        self.assertEqual(l3p_real['tenant_id'], mapping['vrf_tenant'])
+        self.assertEqual(l3p_real['id'], mapping['vrf_name'])
+
     def test_get_gbp_details_shadow(self):
         l2p = self.create_l2_policy()['l2_policy']
         network = self._get_object('networks', l2p['network_id'], self.api)
