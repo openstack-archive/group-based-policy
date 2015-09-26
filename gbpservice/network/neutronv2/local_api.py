@@ -426,6 +426,54 @@ class LocalAPI(object):
         except gp_ext.ExternalSegmentNotFound:
             LOG.warn(_('External Segment %s already deleted'), es_id)
 
+    def _get_external_policy(self, plugin_context, ep_id):
+        return self._get_resource(self._group_policy_plugin, plugin_context,
+                                  'external_policy', ep_id)
+
+    def _get_external_policies(self, plugin_context, filters=None):
+        filters = filters or {}
+        return self._get_resources(self._group_policy_plugin, plugin_context,
+                                   'external_policies', filters)
+
+    def _create_external_policy(self, plugin_context, attrs):
+        return self._create_resource(self._group_policy_plugin, plugin_context,
+                                     'external_policy', attrs, False)
+
+    def _update_external_policy(self, plugin_context, ep_id, attrs):
+        return self._update_resource(self._group_policy_plugin, plugin_context,
+                                     'external_policy', ep_id, attrs, False)
+
+    def _delete_external_policy(self, plugin_context, ep_id):
+        try:
+            self._delete_resource(self._group_policy_plugin, plugin_context,
+                                  'external_policy', ep_id, False)
+        except gp_ext.ExternalPolicyNotFound:
+            LOG.warn(_('External Policy %s already deleted'), ep_id)
+
+    def _get_policy_rule_set(self, plugin_context, prs_id):
+        return self._get_resource(self._group_policy_plugin, plugin_context,
+                                  'policy_rule_set', prs_id)
+
+    def _get_policy_rule_sets(self, plugin_context, filters=None):
+        filters = filters or {}
+        return self._get_resources(self._group_policy_plugin, plugin_context,
+                                   'policy_rule_sets', filters)
+
+    def _create_policy_rule_set(self, plugin_context, attrs):
+        return self._create_resource(self._group_policy_plugin, plugin_context,
+                                     'policy_rule_set', attrs, False)
+
+    def _update_policy_rule_set(self, plugin_context, prs_id, attrs):
+        return self._update_resource(self._group_policy_plugin, plugin_context,
+                                     'policy_rule_set', prs_id, attrs, False)
+
+    def _delete_policy_rule_set(self, plugin_context, prs_id):
+        try:
+            self._delete_resource(self._group_policy_plugin, plugin_context,
+                                  'policy_rule_set', prs_id, False)
+        except gp_ext.PolicyRuleSetNotFound:
+            LOG.warn(_('Policy Rule Set %s already deleted'), prs_id)
+
     def _get_servicechain_instance(self, plugin_context, sci_id):
         return self._get_resource(self._servicechain_plugin, plugin_context,
                                   'servicechain_instance', sci_id)
