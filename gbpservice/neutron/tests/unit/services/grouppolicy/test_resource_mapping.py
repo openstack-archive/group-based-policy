@@ -1374,7 +1374,7 @@ class TestL3Policy(ResourceMappingTestCase):
                      res['external_gateway_info']['external_fixed_ips']],
                     l3p['external_segments'][es1['id']])
                 # Verify auto assigned addresses propagated to L3P
-                es_dict = {es2['id']: []}
+                es_dict = {es2['id']: ['']}
                 l3p = self.update_l3_policy(
                     l3p['id'], external_segments=es_dict,
                     expected_res_status=200)['l3_policy']
