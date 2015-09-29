@@ -1535,7 +1535,8 @@ class ResourceMappingDriver(api.PolicyDriver, local_api.LocalAPI):
         subnet = self._get_subnet(plugin_context, es['subnet_id'])
         external_fixed_ips = [
             {'subnet_id': es['subnet_id'], 'ip_address': x}
-            for x in es_dict[es['id']] if x
+            if x else {'subnet_id': es['subnet_id']}
+            for x in es_dict[es['id']]
         ] if es_dict[es['id']] else [{'subnet_id': es['subnet_id']}]
         interface_info = {
             'network_id': subnet['network_id'],
