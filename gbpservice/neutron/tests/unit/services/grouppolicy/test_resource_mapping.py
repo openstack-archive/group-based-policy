@@ -1423,7 +1423,7 @@ class TestL3Policy(ResourceMappingTestCase):
                             subnet1['network_id'],
                             res['external_gateway_info']['network_id'])
                         # Verify auto assigned addresses propagated to L3P
-                        es_dict = {es2['id']: []}
+                        es_dict = {es2['id']: ['']}
                         l3p = self.update_l3_policy(
                             l3p['id'], external_segments=es_dict,
                             expected_res_status=200)['l3_policy']
