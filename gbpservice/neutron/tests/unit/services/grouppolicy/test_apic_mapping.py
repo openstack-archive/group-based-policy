@@ -1584,7 +1584,7 @@ class TestExternalSegment(ApicMappingTestCase):
         self.assertFalse(mgr.ensure_external_epg_created.called)
         self.assertFalse(mgr.ensure_next_hop_deleted.called)
 
-    def _test_route_update_remove(self, shared_es, shared_ep):
+    def _test_route_update_remove(self, shared_es):
         # Verify routes are updated correctly
         self._mock_external_dict([('supported', '192.168.0.2/24')])
         es = self.create_external_segment(
@@ -1595,15 +1595,27 @@ class TestExternalSegment(ApicMappingTestCase):
                               'nexthop': None}],
             expected_res_status=201)['external_segment']
 
-        # Attach 3 external policies
+        tenants = (['tenant_a', 'tenant_b', 'tenant_c'] if shared_es
+                   else [es['tenant_id']])
+        # create L3-policies
+        l3p_list = [
+            self.create_l3_policy(
+                shared=False,
+                tenant_id=tenants[x],
+                external_segments={es['id']: []},
+                expected_res_status=201)['l3_policy']
+            for x in xrange(len(tenants))]
+
+        # Attach external policy
         f = self.create_external_policy
-        eps = [f(external_segments=[es['id']], shared=shared_ep,
-                 tenant_id=es['tenant_id'] if not shared_es else 'another',
+        eps = [f(external_segments=[es['id']],
+                 tenant_id=tenants[x],
                  expected_res_status=201)['external_policy']
-               for x in xrange(3)]
+               for x in xrange(len(tenants))]
         mgr = self.driver.apic_manager
         owner = es['tenant_id'] if not shared_es else self.common_tenant
         mgr.ensure_external_epg_created.reset_mock()
+        mgr.ensure_static_route_created.reset_mock()
         # Remove route completely
         self.update_external_segment(es['id'], expected_res_status=200,
                                      external_routes=[
@@ -1614,10 +1626,14 @@ class TestExternalSegment(ApicMappingTestCase):
             es['id'], mocked.APIC_EXT_SWITCH, '128.0.0.0/16',
             owner=owner, transaction=mock.ANY)
         expected_delete_calls = []
-        for ep in eps:
+        for x in range(len(tenants)):
+            ep = eps[x]
+            l3p = l3p_list[x]
             expected_delete_calls.append(
-                mock.call(es['id'], subnets=['128.0.0.0/16'],
-                          external_epg=ep['id'], owner=owner,
+                mock.call("Shd-%s-%s" % (l3p['id'], es['id']),
+                          subnets=['128.0.0.0/16'],
+                          external_epg="Shd-%s-%s" % (l3p['id'], ep['id']),
+                          owner=tenants[x],
                           transaction=mock.ANY))
         self._check_call_list(
             expected_delete_calls,
@@ -1643,10 +1659,14 @@ class TestExternalSegment(ApicMappingTestCase):
             subnet='0.0.0.0/0', owner=owner, transaction=mock.ANY)
 
         expected_delete_calls = []
-        for ep in eps:
+        for x in range(len(tenants)):
+            ep = eps[x]
+            l3p = l3p_list[x]
             expected_delete_calls.append(
-                mock.call(es['id'], subnet='0.0.0.0/0', external_epg=ep['id'],
-                          owner=owner, transaction=mock.ANY))
+                mock.call("Shd-%s-%s" % (l3p['id'], es['id']),
+                          subnet='0.0.0.0/0',
+                          external_epg="Shd-%s-%s" % (l3p['id'], ep['id']),
+                          owner=tenants[x], transaction=mock.ANY))
         self._check_call_list(expected_delete_calls,
                               mgr.ensure_external_epg_created.call_args_list)
 
@@ -1656,27 +1676,35 @@ class TestExternalSegment(ApicMappingTestCase):
     # Although the naming convention used here has been chosen poorly,
     # I'm separating the tests in order to get the mock re-set.
     def test_route_update_remove_1(self):
-        self._test_route_update_remove(shared_ep=True, shared_es=True)
+        self._test_route_update_remove(shared_es=True)
 
     def test_route_update_remove_2(self):
-        self._test_route_update_remove(shared_ep=False, shared_es=True)
+        self._test_route_update_remove(shared_es=False)
 
-    def test_route_update_remove_3(self):
-        self._test_route_update_remove(shared_ep=False, shared_es=False)
-
-    def _test_route_update_add(self, shared_es, shared_ep):
+    def _test_route_update_add(self, shared_es):
         # Verify routes are updated correctly
         self._mock_external_dict([('supported', '192.168.0.2/24')])
         es = self.create_external_segment(
             name='supported', cidr='192.168.0.0/24', shared=shared_es,
             external_routes=[], expected_res_status=201)['external_segment']
 
-        # Attach 3 external policies
+        tenants = (['tenant_a', 'tenant_b', 'tenant_c'] if shared_es
+                   else [es['tenant_id']])
+        # create L3-policies
+        l3p_list = [
+            self.create_l3_policy(
+                shared=False,
+                tenant_id=tenants[x],
+                external_segments={es['id']: []},
+                expected_res_status=201)['l3_policy']
+            for x in xrange(len(tenants))]
+
+        # Attach external policies
         f = self.create_external_policy
-        eps = [f(external_segments=[es['id']], shared=shared_ep,
-                 tenant_id=es['tenant_id'] if not shared_es else 'another',
+        eps = [f(external_segments=[es['id']],
+                 tenant_id=tenants[x],
                  expected_res_status=201)['external_policy']
-               for x in xrange(3)]
+               for x in xrange(len(tenants))]
         mgr = self.driver.apic_manager
         mgr.ensure_external_epg_created.reset_mock()
         owner = es['tenant_id'] if not shared_es else self.common_tenant
@@ -1690,10 +1718,14 @@ class TestExternalSegment(ApicMappingTestCase):
             subnet='128.0.0.0/16', owner=owner, transaction=mock.ANY)
 
         expected_create_calls = []
-        for ep in eps:
+        for x in range(len(tenants)):
+            ep = eps[x]
+            l3p = l3p_list[x]
             expected_create_calls.append(
-                mock.call(es['id'], subnet='128.0.0.0/16',
-                          external_epg=ep['id'], owner=owner,
+                mock.call("Shd-%s-%s" % (l3p['id'], es['id']),
+                          subnet='128.0.0.0/16',
+                          external_epg="Shd-%s-%s" % (l3p['id'], ep['id']),
+                          owner=tenants[x],
                           transaction=mock.ANY))
         self._check_call_list(expected_create_calls,
                               mgr.ensure_external_epg_created.call_args_list)
@@ -1716,10 +1748,14 @@ class TestExternalSegment(ApicMappingTestCase):
             es['id'], mocked.APIC_EXT_SWITCH, '192.168.0.1',
             subnet='0.0.0.0/0', owner=owner, transaction=mock.ANY)
         expected_create_calls = []
-        for ep in eps:
+        for x in range(len(tenants)):
+            ep = eps[x]
+            l3p = l3p_list[x]
             expected_create_calls.append(
-                mock.call(es['id'], subnet='0.0.0.0/0',
-                          external_epg=ep['id'], owner=owner,
+                mock.call("Shd-%s-%s" % (l3p['id'], es['id']),
+                          subnet='0.0.0.0/0',
+                          external_epg="Shd-%s-%s" % (l3p['id'], ep['id']),
+                          owner=tenants[x],
                           transaction=mock.ANY))
         self._check_call_list(expected_create_calls,
                               mgr.ensure_external_epg_created.call_args_list)
@@ -1730,13 +1766,10 @@ class TestExternalSegment(ApicMappingTestCase):
     # Although the naming convention used here has been chosen poorly,
     # I'm separating the tests in order to get the mock re-set.
     def test_route_update_add_1(self):
-        self._test_route_update_add(shared_ep=True, shared_es=True)
+        self._test_route_update_add(shared_es=True)
 
     def test_route_update_add_2(self):
-        self._test_route_update_add(shared_ep=False, shared_es=True)
-
-    def test_route_update_add_3(self):
-        self._test_route_update_add(shared_ep=False, shared_es=False)
+        self._test_route_update_add(shared_es=False)
 
     def test_es_create_no_cidr_with_routes(self):
         self._mock_external_dict([('supported', '192.168.0.2/24')])
@@ -1757,24 +1790,53 @@ class TestExternalPolicy(ApicMappingTestCase):
 
         self.create_external_policy(
             external_segments=[es['id']], expected_res_status=201)
-        # Verify not called since no routes are set
+        # Verify called with default route always
         mgr = self.driver.apic_manager
-        self.assertFalse(
-            mgr.ensure_external_epg_created.called,
-            msg='calls:\n%s' %
-                str(mgr.ensure_external_epg_created.call_args_list))
+        mgr.ensure_external_epg_created.assert_called_once_with(
+            es['id'], subnet='0.0.0.0/0',
+            external_epg="default-%s" % es['id'], owner=es['tenant_id'],
+            transaction=mock.ANY)
 
+        mgr.ensure_external_epg_created.reset_mock()
         es = self.create_external_segment(
             name='unsupported', cidr='192.168.0.0/24', expected_res_status=201,
             external_routes=[{'destination': '128.0.0.0/16',
                               'nexthop': '192.168.0.254'}])['external_segment']
 
         self.create_external_policy(
-            external_segments=[es['id']], expected_res_status=201,)
+            external_segments=[es['id']], expected_res_status=201)
         # Verify noop on unsupported
         self.assertFalse(mgr.ensure_external_epg_created.called)
 
-    def _test_creation_no_prs(self, shared_es, shared_ep):
+    def test_create_shared(self):
+        self._mock_external_dict([('supported', '192.168.0.2/24')])
+        es = self.create_external_segment(
+            name='supported', cidr='192.168.0.0/24',
+            external_routes=[], shared=True,
+            expected_res_status=201)['external_segment']
+
+        res = self.create_external_policy(
+            external_segments=[es['id']], shared=True,
+            expected_res_status=400)
+        self.assertEqual('SharedExternalPolicyUnsupported',
+                         res['NeutronError']['type'])
+
+    def test_update_shared(self):
+        self._mock_external_dict([('supported', '192.168.0.2/24')])
+        es = self.create_external_segment(
+            name='supported', cidr='192.168.0.0/24',
+            external_routes=[], shared=True,
+            expected_res_status=201)['external_segment']
+
+        ep = self.create_external_policy(
+            external_segments=[es['id']],
+            expected_res_status=201)['external_policy']
+        res = self.update_external_policy(
+            ep['id'], shared=True, expected_res_status=400)
+        self.assertEqual('SharedExternalPolicyUnsupported',
+                         res['NeutronError']['type'])
+
+    def _test_creation_no_prs(self, shared_es):
         self._mock_external_dict([('supported', '192.168.0.2/24')])
         es_list = [
             self.create_external_segment(
@@ -1793,7 +1855,7 @@ class TestExternalPolicy(ApicMappingTestCase):
             for x in range(len(es_list))]
 
         ep = self.create_external_policy(
-            external_segments=[x['id'] for x in es_list], shared=shared_ep,
+            external_segments=[x['id'] for x in es_list],
             tenant_id=es_list[0]['tenant_id'] if not shared_es else 'another',
             expected_res_status=201)['external_policy']
 
@@ -1806,8 +1868,8 @@ class TestExternalPolicy(ApicMappingTestCase):
             es = es_list[x]
             l3p = l3p_list[x]
             expected_create_calls.append(
-                mock.call(es['id'], subnet='128.0.0.0/16',
-                external_epg=ep['id'], owner=owner,
+                mock.call(es['id'], subnet='0.0.0.0/0',
+                external_epg="default-%s" % es['id'], owner=owner,
                 transaction=mock.ANY))
             expected_create_calls.append(
                 mock.call("Shd-%s-%s" % (l3p['id'], es['id']),
@@ -1821,15 +1883,12 @@ class TestExternalPolicy(ApicMappingTestCase):
     # Although the naming convention used here has been chosen poorly,
     # I'm separating the tests in order to get the mock re-set.
     def test_creation_no_prs_1(self):
-        self._test_creation_no_prs(shared_ep=True, shared_es=True)
+        self._test_creation_no_prs(shared_es=True)
 
     def test_creation_no_prs_2(self):
-        self._test_creation_no_prs(shared_ep=False, shared_es=True)
+        self._test_creation_no_prs(shared_es=False)
 
-    def test_creation_no_prs_3(self):
-        self._test_creation_no_prs(shared_ep=False, shared_es=False)
-
-    def _test_update_no_prs(self, shared_es, shared_ep):
+    def _test_update_no_prs(self, shared_es):
         self._mock_external_dict([('supported', '192.168.0.2/24')])
         es_list = [
             self.create_external_segment(
@@ -1848,7 +1907,7 @@ class TestExternalPolicy(ApicMappingTestCase):
             for x in range(len(es_list))]
         ep = self.create_external_policy(
             tenant_id=es_list[0]['tenant_id'] if not shared_es else 'another',
-            shared=shared_ep, expected_res_status=201)['external_policy']
+            expected_res_status=201)['external_policy']
         ep = self.update_external_policy(
             ep['id'], expected_res_status=200, tenant_id=ep['tenant_id'],
             external_segments=[x['id'] for x in es_list])['external_policy']
@@ -1861,8 +1920,9 @@ class TestExternalPolicy(ApicMappingTestCase):
             es = es_list[x]
             l3p = l3p_list[x]
             expected_create_calls.append(
-                mock.call(es['id'], subnet='128.0.0.0/16',
-                    external_epg=ep['id'], owner=owner, transaction=mock.ANY))
+                mock.call(es['id'], subnet='0.0.0.0/0',
+                    external_epg="default-%s" % es['id'],
+                    owner=owner, transaction=mock.ANY))
             expected_create_calls.append(
                 mock.call("Shd-%s-%s" % (l3p['id'], es['id']),
                      subnet='128.0.0.0/16',
@@ -1880,7 +1940,8 @@ class TestExternalPolicy(ApicMappingTestCase):
             es = es_list[x]
             l3p = l3p_list[x]
             expected_create_calls.append(
-                mock.call(es['id'], owner=owner, external_epg=ep['id']))
+                mock.call(es['id'], owner=owner,
+                external_epg="default-%s" % es['id']))
             expected_create_calls.append(
                 mock.call("Shd-%s-%s" % (l3p['id'], es['id']),
                      owner=l3p_owner,
@@ -1891,15 +1952,12 @@ class TestExternalPolicy(ApicMappingTestCase):
     # Although the naming convention used here has been chosen poorly,
     # I'm separating the tests in order to get the mock re-set.
     def test_update_no_prs_1(self):
-        self._test_update_no_prs(shared_ep=True, shared_es=True)
+        self._test_update_no_prs(shared_es=True)
 
     def test_update_no_prs_2(self):
-        self._test_update_no_prs(shared_ep=False, shared_es=True)
+        self._test_update_no_prs(shared_es=False)
 
-    def test_update_no_prs_3(self):
-        self._test_update_no_prs(shared_ep=False, shared_es=False)
-
-    def _test_create_with_prs(self, shared_es, shared_ep, shared_prs):
+    def _test_create_with_prs(self, shared_es, shared_prs):
         self._mock_external_dict([('supported', '192.168.0.2/24')])
         es_list = [
             self.create_external_segment(
@@ -1926,7 +1984,7 @@ class TestExternalPolicy(ApicMappingTestCase):
                 shared_es | shared_prs) else 'another')
         ep = self.create_external_policy(
             provided_policy_rule_sets={prov['id']: ''},
-            consumed_policy_rule_sets={cons['id']: ''}, shared=shared_ep,
+            consumed_policy_rule_sets={cons['id']: ''},
             tenant_id=es_list[0]['tenant_id'] if not shared_es else 'another',
             external_segments=[x['id'] for x in es_list],
             expected_res_status=201)['external_policy']
@@ -1940,11 +1998,13 @@ class TestExternalPolicy(ApicMappingTestCase):
             es = es_list[x]
             l3p = l3p_list[x]
             expected_calls.append(
-                mock.call(es['id'], nat_prs, external_epg=ep['id'],
+                mock.call(es['id'], nat_prs,
+                          external_epg="default-%s" % es['id'],
                           provided=True, owner=owner,
                           transaction=mock.ANY))
             expected_calls.append(
-                mock.call(es['id'], nat_prs, external_epg=ep['id'],
+                mock.call(es['id'], nat_prs,
+                          external_epg="default-%s" % es['id'],
                           provided=False, owner=owner,
                           transaction=mock.ANY))
             expected_calls.append(
@@ -1963,26 +2023,18 @@ class TestExternalPolicy(ApicMappingTestCase):
     # Although the naming convention used here has been chosen poorly,
     # I'm separating the tests in order to get the mock re-set.
     def test_create_with_prs_1(self):
-        self._test_create_with_prs(shared_es=True, shared_ep=True,
-                                   shared_prs=True)
+        self._test_create_with_prs(shared_es=True, shared_prs=True)
 
     def test_create_with_prs_2(self):
-        self._test_create_with_prs(shared_es=True, shared_ep=False,
-                                   shared_prs=True)
+        self._test_create_with_prs(shared_es=True, shared_prs=False)
 
     def test_create_with_prs_3(self):
-        self._test_create_with_prs(shared_es=True, shared_ep=False,
-                                   shared_prs=False)
+        self._test_create_with_prs(shared_es=False, shared_prs=False)
 
     def test_create_with_prs_4(self):
-        self._test_create_with_prs(shared_es=False, shared_ep=False,
-                                   shared_prs=False)
+        self._test_create_with_prs(shared_es=False, shared_prs=True)
 
-    def test_create_with_prs_5(self):
-        self._test_create_with_prs(shared_es=False, shared_ep=False,
-                                   shared_prs=True)
-
-    def _test_update_add_prs(self, shared_es, shared_ep, shared_prs):
+    def _test_update_add_prs(self, shared_es, shared_prs):
         self._mock_external_dict([('supported', '192.168.0.2/24')])
         es_list = [
             self.create_external_segment(
@@ -2006,7 +2058,7 @@ class TestExternalPolicy(ApicMappingTestCase):
             shared=shared_prs, tenant_id=es_list[0]['tenant_id'] if not (
                 shared_es | shared_prs) else 'another')
         ep = self.create_external_policy(
-            external_segments=[x['id'] for x in es_list], shared=shared_ep,
+            external_segments=[x['id'] for x in es_list],
             tenant_id=es_list[0]['tenant_id'] if not shared_es else 'another',
             expected_res_status=201)['external_policy']
         ep = self.update_external_policy(
@@ -2023,10 +2075,12 @@ class TestExternalPolicy(ApicMappingTestCase):
             es = es_list[x]
             l3p = l3p_list[x]
             expected_calls.append(
-                mock.call(es['id'], nat_prs, external_epg=ep['id'],
+                mock.call(es['id'], nat_prs,
+                          external_epg="default-%s" % es['id'],
                           provided=True, owner=owner, transaction=mock.ANY))
             expected_calls.append(
-                mock.call(es['id'], nat_prs, external_epg=ep['id'],
+                mock.call(es['id'], nat_prs,
+                          external_epg="default-%s" % es['id'],
                           provided=False, owner=owner, transaction=mock.ANY))
             expected_calls.append(
                 mock.call("Shd-%s-%s" % (l3p['id'], es['id']), prov['id'],
@@ -2065,24 +2119,16 @@ class TestExternalPolicy(ApicMappingTestCase):
     # Although the naming convention used here has been chosen poorly,
     # I'm separating the tests in order to get the mock re-set.
     def test_update_add_prs_1(self):
-        self._test_update_add_prs(shared_es=True, shared_ep=True,
-                                  shared_prs=True)
+        self._test_update_add_prs(shared_es=True, shared_prs=True)
 
     def test_update_add_prs_2(self):
-        self._test_update_add_prs(shared_es=True, shared_ep=False,
-                                  shared_prs=True)
+        self._test_update_add_prs(shared_es=True, shared_prs=False)
 
     def test_update_add_prs_3(self):
-        self._test_update_add_prs(shared_es=True, shared_ep=False,
-                                  shared_prs=False)
+        self._test_update_add_prs(shared_es=False, shared_prs=False)
 
     def test_update_add_prs_4(self):
-        self._test_update_add_prs(shared_es=False, shared_ep=False,
-                                  shared_prs=False)
-
-    def test_update_add_prs_5(self):
-        self._test_update_add_prs(shared_es=False, shared_ep=False,
-                                  shared_prs=True)
+        self._test_update_add_prs(shared_es=False, shared_prs=True)
 
     def test_update_add_prs_unsupported(self):
         self._mock_external_dict([('supported', '192.168.0.2/24')])
@@ -2101,6 +2147,113 @@ class TestExternalPolicy(ApicMappingTestCase):
             consumed_policy_rule_sets={cons['id']: ''})['external_policy']
         mgr = self.driver.apic_manager
         self.assertFalse(mgr.set_contract_for_external_epg.called)
+
+    def _test_multi_policy_single_tenant(self, shared_es):
+        self._mock_external_dict([('supported', '192.168.0.2/24')])
+        es = self.create_external_segment(
+            name='supported', cidr='192.168.0.0/24',
+            expected_res_status=201, shared=shared_es,
+            external_routes=[{
+                'destination': '128.0.0.0/16',
+                'nexthop': '192.168.0.254'}])['external_segment']
+
+        owner = 'another' if shared_es else es['tenant_id']
+        self.create_external_policy(
+            external_segments=[es['id']],
+            tenant_id=owner,
+            expected_res_status=201)
+        res = self.create_external_policy(
+            external_segments=[es['id']],
+            tenant_id=owner,
+            expected_res_status=400)
+        self.assertEqual('MultipleExternalPoliciesForL3Policy',
+                         res['NeutronError']['type'])
+
+        # create another external policy and update it to use external-segment
+        ep2 = self.create_external_policy(
+            tenant_id=owner,
+            expected_res_status=201)['external_policy']
+        res = self.update_external_policy(
+            ep2['id'], external_segments=[es['id']],
+            tenant_id=owner,
+            expected_res_status=400)
+        self.assertEqual('MultipleExternalPoliciesForL3Policy',
+                         res['NeutronError']['type'])
+
+    def test_multi_policy_single_tenant_1(self):
+        self._test_multi_policy_single_tenant(True)
+
+    def test_multi_policy_single_tenant_2(self):
+        self._test_multi_policy_single_tenant(False)
+
+    def test_multi_policy_multi_tenant(self):
+        tenants = ['tenant_a', 'tenant_b', 'tenant_c']
+
+        self._mock_external_dict([('supported', '192.168.0.2/24')])
+        es_list = [
+            self.create_external_segment(
+                name='supported', cidr='192.168.0.0/24', shared=True,
+                expected_res_status=201,
+                external_routes=[{
+                    'destination': '128.0.0.0/16',
+                    'nexthop': '192.168.0.254'}])['external_segment']
+            for x in range(2)]
+
+        l3p_list = [
+            self.create_l3_policy(
+                shared=False,
+                tenant_id=tenants[x],
+                external_segments={x['id']: [] for x in es_list},
+                expected_res_status=201)['l3_policy']
+            for x in range(len(tenants))]
+
+        # create external-policy
+        ep_list = []
+        mgr = self.driver.apic_manager
+        for x in range(len(tenants)):
+            ep = self.create_external_policy(
+                external_segments=[e['id'] for e in es_list],
+                tenant_id=tenants[x],
+                expected_res_status=201)['external_policy']
+            ep_list.append(ep)
+            l3p = l3p_list[x]
+            expected_calls = []
+            for es in es_list:
+                expected_calls.append(
+                    mock.call(es['id'], subnet='0.0.0.0/0',
+                        external_epg="default-%s" % es['id'],
+                        owner=self.common_tenant,
+                        transaction=mock.ANY))
+                expected_calls.append(
+                    mock.call("Shd-%s-%s" % (l3p['id'], es['id']),
+                        subnet='128.0.0.0/16',
+                        external_epg=("Shd-%s-%s" % (l3p['id'], ep['id'])),
+                        owner=tenants[x],
+                        transaction=mock.ANY))
+            self._check_call_list(expected_calls,
+                mgr.ensure_external_epg_created.call_args_list)
+            mgr.ensure_external_epg_created.reset_mock()
+
+        # delete external-policy
+        expected_calls = []
+        for x in range(len(tenants)):
+            ep = ep_list[x]
+            self.delete_external_policy(
+                ep['id'], tenant_id=ep['tenant_id'],
+                expected_res_status=webob.exc.HTTPNoContent.code)
+            l3p = l3p_list[x]
+
+            for es in es_list:
+                expected_calls.append(
+                    mock.call("Shd-%s-%s" % (l3p['id'], es['id']),
+                        external_epg=("Shd-%s-%s" % (l3p['id'], ep['id'])),
+                        owner=tenants[x]))
+        for es in es_list:
+            expected_calls.append(
+                mock.call(es['id'], external_epg="default-%s" % es['id'],
+                          owner=self.common_tenant))
+        self._check_call_list(expected_calls,
+            mgr.ensure_external_epg_deleted.call_args_list)
 
 
 class TestNatPool(ApicMappingTestCase):
