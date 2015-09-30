@@ -411,6 +411,8 @@ class ApicMappingDriver(api.ResourceMappingDriver):
                     reserved.append(subnet)
 
             self._use_implicit_port(context, subnets=reserved or owned)
+        self._update_cluster_membership(
+            context, new_cluster_id=context.current['cluster_id'])
         port = self._get_port(context._plugin_context,
                               context.current['port_id'])
         if self._is_port_bound(port):
@@ -701,12 +703,16 @@ class ApicMappingDriver(api.ResourceMappingDriver):
         self._apply_policy_rule_set_rules(context, context.current, to_add)
 
     def update_policy_target_precommit(self, context):
+        self._validate_cluster_id(context)
         if (context.original['policy_target_group_id'] !=
                 context.current['policy_target_group_id']):
             if context.current['policy_target_group_id']:
                 self._validate_pt_port_subnets(context)
 
     def update_policy_target_postcommit(self, context):
+        self._update_cluster_membership(
+            context, new_cluster_id=context.current['cluster_id'],
+            old_cluster_id=context.original['cluster_id'])
         if (context.original['policy_target_group_id'] !=
                 context.current['policy_target_group_id']):
             self._notify_port_update(context._plugin_context,
