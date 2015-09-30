@@ -62,6 +62,7 @@ class PolicyTarget(gquota.GBPQuotaBase, model_base.BASEV2, models_v2.HasId,
                                        sa.ForeignKey(
                                            'gp_policy_target_groups.id'),
                                        nullable=True)
+    cluster_id = sa.Column(sa.String(255))
 
 
 class PTGToPRSProvidingAssociation(model_base.BASEV2):
@@ -828,7 +829,8 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
                'tenant_id': pt['tenant_id'],
                'name': pt['name'],
                'description': pt['description'],
-               'policy_target_group_id': pt['policy_target_group_id']}
+               'policy_target_group_id': pt['policy_target_group_id'],
+               'cluster_id': pt['cluster_id']}
         return self._fields(res, fields)
 
     def _make_policy_target_group_dict(self, ptg, fields=None):
@@ -1130,7 +1132,8 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
             pt_db = PolicyTarget(
                 id=uuidutils.generate_uuid(), tenant_id=tenant_id,
                 name=pt['name'], description=pt['description'],
-                policy_target_group_id=pt['policy_target_group_id'])
+                policy_target_group_id=pt['policy_target_group_id'],
+                cluster_id=pt['cluster_id'])
             context.session.add(pt_db)
         return self._make_policy_target_dict(pt_db)
 
