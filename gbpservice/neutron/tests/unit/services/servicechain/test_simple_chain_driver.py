@@ -45,6 +45,9 @@ class MockHeatClientFunctions(object):
     def get(self, stack_id):
         return MockStackObject('DELETE_COMPLETE')
 
+    def update(self, *args, **fields):
+        return {'stack': {'id': uuidutils.generate_uuid()}}
+
 
 class MockHeatClient(object):
     def __init__(self, api_version, endpoint, **kwargs):
