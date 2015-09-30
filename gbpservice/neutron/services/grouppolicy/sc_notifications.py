@@ -13,24 +13,25 @@
 
 class ServiceChainNotificationsMixin(object):
 
-    def _notify_sc_plugin_pt_added(self, context, policy_target):
-        if self.servicechain_plugin:
-            self.servicechain_plugin.update_chains_pt_added(context,
-                                                            policy_target)
+    def _notify_sc_plugin_pt_added(self, context, policy_target, instance_id):
+        if self._servicechain_plugin:
+            self._servicechain_plugin.update_chains_pt_added(
+                context, policy_target, instance_id)
 
-    def _notify_sc_plugin_pt_removed(self, context, policy_target):
-        if self.servicechain_plugin:
-            self.servicechain_plugin.update_chains_pt_removed(context,
-                                                              policy_target)
+    def _notify_sc_plugin_pt_removed(self, context, policy_target,
+                                     instance_id):
+        if self._servicechain_plugin:
+            self._servicechain_plugin.update_chains_pt_removed(
+                context, policy_target, instance_id)
 
     def _notify_sc_consumer_added(self, context, policy_target_group,
-                                  new_consumed):
-        if self.servicechain_plugin:
-            self.servicechain_plugin.update_chains_consumer_added(
-                context, policy_target_group, new_consumed)
+                                  instance_id):
+        if self._servicechain_plugin:
+            self._servicechain_plugin.update_chains_consumer_added(
+                context, policy_target_group, instance_id)
 
     def _notify_sc_consumer_removed(self, context, policy_target_group,
-                                    old_consumed):
-        if self.servicechain_plugin:
-            self.servicechain_plugin.update_chains_consumer_removed(
-                context, policy_target_group, old_consumed)
+                                    instance_id):
+        if self._servicechain_plugin:
+            self._servicechain_plugin.update_chains_consumer_removed(
+                context, policy_target_group, instance_id)

@@ -21,7 +21,6 @@ from neutron.plugins.common import constants as pconst
 from oslo_log import log as logging
 from oslo_utils import excutils
 
-from gbpservice.common import utils
 from gbpservice.neutron.db.grouppolicy import group_policy_db as gpdb
 from gbpservice.neutron.db.grouppolicy import group_policy_mapping_db
 from gbpservice.neutron.extensions import group_policy as gpex
@@ -33,7 +32,6 @@ from gbpservice.neutron.services.grouppolicy import (
     policy_driver_manager as manager)
 from gbpservice.neutron.services.grouppolicy.common import constants as gp_cts
 from gbpservice.neutron.services.grouppolicy.common import exceptions as gp_exc
-from gbpservice.neutron.services.grouppolicy import sc_notifications
 from gbpservice.neutron.services.servicechain.plugins.ncp import (
     model as ncp_model)
 
@@ -41,8 +39,7 @@ from gbpservice.neutron.services.servicechain.plugins.ncp import (
 LOG = logging.getLogger(__name__)
 
 
-class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin,
-                        sc_notifications.ServiceChainNotificationsMixin):
+class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
 
     """Implementation of the Group Policy Model Plugin.
 
@@ -331,7 +328,7 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin,
             return result
 
     @log.log
-    def create_policy_target(self, context, policy_target, notify_sc=True):
+    def create_policy_target(self, context, policy_target):
         session = context.session
         with session.begin(subtransactions=True):
             result = super(GroupPolicyPlugin,
@@ -354,11 +351,6 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin,
                                 "failed, deleting policy_target %s"),
                               result['id'])
                 self.delete_policy_target(context, result['id'])
-
-        # REVISIT(ivar): For now just raise the exception if something goes
-        # wrong. This will eventually be managed in an asynchronous way.
-        if notify_sc:
-            self._notify_sc_plugin_pt_added(context, result)
 
         return result
 
@@ -387,8 +379,7 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin,
         return updated_policy_target
 
     @log.log
-    def delete_policy_target(self, context, policy_target_id,
-                             notify_sc=True):
+    def delete_policy_target(self, context, policy_target_id):
         session = context.session
         with session.begin(subtransactions=True):
             policy_target = self.get_policy_target(context, policy_target_id)
@@ -398,11 +389,6 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin,
                 policy_context)
             super(GroupPolicyPlugin, self).delete_policy_target(
                 context, policy_target_id)
-
-        if notify_sc:
-            # REVISIT(ivar): For now just raise the exception if something goes
-            # wrong. This will eventually be managed in an asynchronous way.
-            self._notify_sc_plugin_pt_removed(context, policy_target)
 
         try:
             self.policy_driver_manager.delete_policy_target_postcommit(
@@ -437,8 +423,7 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin,
         return [self._fields(result, fields) for result in filtered_results]
 
     @log.log
-    def create_policy_target_group(self, context, policy_target_group,
-                                   notify_sc=True):
+    def create_policy_target_group(self, context, policy_target_group):
         session = context.session
         with session.begin(subtransactions=True):
             result = super(GroupPolicyPlugin,
@@ -463,17 +448,11 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin,
                               result['id'])
                 self.delete_policy_target_group(context, result['id'])
 
-        # Notify Service Chain plugin
-        if notify_sc and policy_context.current['consumed_policy_rule_sets']:
-            self._notify_sc_consumer_added(
-                context, policy_context.current,
-                policy_context.current['consumed_policy_rule_sets'])
-
         return result
 
     @log.log
     def update_policy_target_group(self, context, policy_target_group_id,
-                                   policy_target_group, notify_sc=True):
+                                   policy_target_group):
         session = context.session
         with session.begin(subtransactions=True):
             original_policy_target_group = self.get_policy_target_group(
@@ -492,27 +471,13 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin,
             self.policy_driver_manager.update_policy_target_group_precommit(
                 policy_context)
 
-        if notify_sc and (
-                policy_context.current['consumed_policy_rule_sets'] !=
-                policy_context.original['consumed_policy_rule_sets']):
-            added, removed = utils.set_difference(
-                policy_context.current['consumed_policy_rule_sets'],
-                policy_context.original['consumed_policy_rule_sets'])
-            if removed:
-                self._notify_sc_consumer_removed(
-                    context, policy_context.current, removed)
-            if added:
-                self._notify_sc_consumer_removed(
-                    context, policy_context.current, added)
-
         self.policy_driver_manager.update_policy_target_group_postcommit(
             policy_context)
 
         return updated_policy_target_group
 
     @log.log
-    def delete_policy_target_group(self, context, policy_target_group_id,
-                                   notify_sc=True):
+    def delete_policy_target_group(self, context, policy_target_group_id):
         session = context.session
         with session.begin(subtransactions=True):
             policy_target_group = self.get_policy_target_group(
@@ -544,11 +509,6 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin,
             except gpex.PolicyTargetGroupNotFound:
                 LOG.warn(_('PTG %s already deleted'),
                          policy_target_group['proxy_group_id'])
-
-        if notify_sc and policy_context.current['consumed_policy_rule_sets']:
-            self._notify_sc_consumer_removed(
-                context, policy_context.current,
-                policy_context.current['consumed_policy_rule_sets'])
 
         with session.begin(subtransactions=True):
             for pt in self.get_policy_targets(context, {'id': pt_ids}):
