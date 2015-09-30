@@ -25,13 +25,15 @@ def gbp_attributes(func):
 
 @gbp_attributes
 def get_create_policy_target_default_attrs():
-    return {'name': '', 'description': '', 'policy_target_group_id': None}
+    return {'name': '', 'description': '', 'policy_target_group_id': None,
+            'cluster_id': ''}
 
 
 @gbp_attributes
 def get_create_policy_target_attrs():
     return {'name': 'ep1', 'policy_target_group_id': _uuid(),
-            'tenant_id': _uuid(), 'description': 'test policy_target'}
+            'tenant_id': _uuid(), 'description': 'test policy_target',
+            'cluster_id': 'some_cluster_id'}
 
 
 @gbp_attributes
