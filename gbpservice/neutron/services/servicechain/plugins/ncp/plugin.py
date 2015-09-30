@@ -268,61 +268,71 @@ class NodeCompositionPlugin(servicechain_db.ServiceChainDbPlugin,
                                           updated_profile)
         return updated_profile
 
-    def update_chains_pt_added(self, context, policy_target):
+    def update_chains_pt_added(self, context, policy_target, instance_id):
         """ Auto scaling function.
 
         Notify the correct set of node drivers that a new policy target has
         been added to a relevant PTG.
         """
-        self._update_chains_pt_modified(context, policy_target, 'added')
+        self._update_chains_pt_modified(context, policy_target, instance_id,
+                                        'added')
 
-    def update_chains_pt_removed(self, context, policy_target):
+    def update_chains_pt_removed(self, context, policy_target, instance_id):
         """ Auto scaling function.
 
         Notify the correct set of node drivers that a new policy target has
         been removed from a relevant PTG.
         """
-        self._update_chains_pt_modified(context, policy_target, 'removed')
+        self._update_chains_pt_modified(context, policy_target, instance_id,
+                                        'removed')
 
     def update_chains_consumer_added(self, context, policy_target_group,
-                                     new_consumed):
+                                     instance_id):
         """ Auto scaling function.
 
         Override this method to react to policy target group addition as
         a consumer of a chain.
         """
         self._update_chains_consumer_modified(context, policy_target_group,
-                                              new_consumed, 'added')
+                                              instance_id, 'added')
 
     def update_chains_consumer_removed(self, context, policy_target_group,
-                                       old_consumed):
+                                       instance_id):
         """ Auto scaling function.
 
         Override this method to react to policy target group removed as a
         consumer of a chain
         """
         self._update_chains_consumer_modified(context, policy_target_group,
-                                              old_consumed, 'removed')
+                                              instance_id, 'removed')
 
-    def _update_chains_pt_modified(self, context, policy_target, action):
-        admin_context = utils.admin_context(context)
-        scis = self._get_instances_from_policy_target(
-            admin_context, policy_target)
+    def _update_chains_pt_modified(self, context, policy_target, instance_id,
+                                   action):
+        updaters = self._get_scheduled_drivers(
+            context, self.get_servicechain_instance(context, instance_id),
+            'update')
+        for update in updaters.values():
+            try:
+                getattr(update['driver'],
+                        'update_policy_target_' + action)(
+                            update['context'], policy_target)
+            except exc.NodeDriverError as ex:
+                LOG.error(_("Node Update on policy target modification "
+                            "failed, %s"), ex.message)
 
-        for sci in scis:
-            updaters = self._get_scheduled_drivers(context, sci, 'update')
-            for update in updaters.values():
-                try:
-                    getattr(update['driver'],
-                            'update_policy_target_' + action)(
-                                update['context'], policy_target)
-                except exc.NodeDriverError as ex:
-                    LOG.error(_("Node Update on policy target modification "
-                                "failed, %s"), ex.message)
-
-    def _update_chains_consumer_modified(self, *args, **kwargs):
-        # TODO(ivar): implement
-        pass
+    def _update_chains_consumer_modified(self, context, policy_target_group,
+                                         instance_id, action):
+        updaters = self._get_scheduled_drivers(
+            context, self.get_servicechain_instance(context, instance_id),
+            'update')
+        for update in updaters.values():
+            try:
+                getattr(update['driver'],
+                        'update_policy_target_group_consumer_' + action)(
+                            update['context'], policy_target_group)
+            except exc.NodeDriverError as ex:
+                LOG.error(_("Node Update on policy target group modification "
+                            "failed, %s"), ex.message)
 
     def notify_chain_parameters_updated(self, context,
                                         servicechain_instance_id):
