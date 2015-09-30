@@ -52,6 +52,7 @@ class NvsdGbpDriver(res_map.ResourceMappingDriver):
 
     @log.log
     def update_policy_target_postcommit(self, context):
+        super(NvsdGbpDriver, self).update_policy_target_postcommit(context)
         self.nvsd_api.update_endpoint(context._plugin_context,
                                       context.current)
 

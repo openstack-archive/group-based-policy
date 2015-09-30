@@ -238,7 +238,8 @@ class GroupPolicyMappingDbPlugin(gpdb.GroupPolicyDbPlugin):
                                         description=pt['description'],
                                         policy_target_group_id=
                                         pt['policy_target_group_id'],
-                                        port_id=pt['port_id'])
+                                        port_id=pt['port_id'],
+                                        cluster_id=pt['cluster_id'])
             context.session.add(pt_db)
         return self._make_policy_target_dict(pt_db)
 
