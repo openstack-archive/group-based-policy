@@ -29,6 +29,7 @@ from gbpservice.neutron.services.grouppolicy import (
     group_policy_driver_api as api)
 from gbpservice.neutron.services.grouppolicy.common import constants as gconst
 from gbpservice.neutron.services.grouppolicy.common import exceptions as exc
+from gbpservice.neutron.services.grouppolicy import sc_notifications
 
 
 LOG = logging.getLogger(__name__)
@@ -69,7 +70,8 @@ class PtgServiceChainInstanceMapping(model_base.BASEV2, models_v2.HasTenant):
                                          primary_key=True)
 
 
-class ChainMappingDriver(api.PolicyDriver, local_api.LocalAPI):
+class ChainMappingDriver(api.PolicyDriver, local_api.LocalAPI,
+                         sc_notifications.ServiceChainNotificationsMixin):
     """Resource Mapping driver for Group Policy plugin.
 
     This driver implements service chain semantics by mapping group
@@ -116,12 +118,50 @@ class ChainMappingDriver(api.PolicyDriver, local_api.LocalAPI):
                                    auth_url=auth_url)
 
     @log.log
+    def create_policy_target_postcommit(self, context):
+        if not context._plugin._is_service_target(context._plugin_context,
+                                                  context.current['id']):
+            mappings = self._get_ptg_servicechain_mapping(
+                context._plugin_context.session,
+                provider_ptg_id=context.current['policy_target_group_id'])
+            for mapping in mappings:
+                chain_context = self._get_chain_admin_context(
+                    context._plugin_context,
+                    instance_id=mapping.servicechain_instance_id)
+                self._notify_sc_plugin_pt_added(
+                    chain_context, context.current,
+                    mapping.servicechain_instance_id)
+
+    @log.log
+    def delete_policy_target_precommit(self, context):
+        context._is_service_target = context._plugin._is_service_target(
+            context._plugin_context, context.current['id'])
+
+    @log.log
+    def delete_policy_target_postcommit(self, context):
+        if not context._is_service_target:
+            mappings = self._get_ptg_servicechain_mapping(
+                context._plugin_context.session,
+                provider_ptg_id=context.current['policy_target_group_id'])
+            for mapping in mappings:
+                chain_context = self._get_chain_admin_context(
+                    context._plugin_context,
+                    instance_id=mapping.servicechain_instance_id)
+                self._notify_sc_plugin_pt_removed(
+                    chain_context, context.current,
+                    mapping.servicechain_instance_id)
+
+    @log.log
     def create_policy_target_group_precommit(self, context):
         self._validate_ptg_prss(context, context.current)
 
     @log.log
     def create_policy_target_group_postcommit(self, context):
         self._handle_policy_rule_sets(context)
+        if context.current['consumed_policy_rule_sets']:
+            self._notify_sc_consumer_added(
+                context._plugin_context, context.current,
+                context.current['consumed_policy_rule_sets'])
 
     @log.log
     def update_policy_target_group_precommit(self, context):
@@ -148,15 +188,28 @@ class ChainMappingDriver(api.PolicyDriver, local_api.LocalAPI):
             policy_rule_sets = (curr['provided_policy_rule_sets'] +
                                 orig['provided_policy_rule_sets'])
             self._handle_redirect_action(context, policy_rule_sets)
+        if (context.current['consumed_policy_rule_sets'] !=
+                context.original['consumed_policy_rule_sets']):
+            added, removed = utils.set_difference(
+                context.current['consumed_policy_rule_sets'],
+                context.original['consumed_policy_rule_sets'])
+            if removed:
+                self._notify_sc_consumer_removed(
+                    context._plugin_context, context.current, removed)
+            if added:
+                self._notify_sc_consumer_removed(
+                    context._plugin_context, context.current, added)
 
     @log.log
     def delete_policy_target_group_precommit(self, context):
-        provider_ptg_chain_map = self._get_ptg_servicechain_mapping(
-            context._plugin_context.session, context.current['id'], None)
-        consumer_ptg_chain_map = self._get_ptg_servicechain_mapping(
-            context._plugin_context.session, None, context.current['id'])
+        pass
 
-        context.ptg_chain_map = provider_ptg_chain_map + consumer_ptg_chain_map
+    @log.log
+    def delete_policy_target_group_postcommit(self, context):
+        if context.current['consumed_policy_rule_sets']:
+            self._notify_sc_consumer_removed(
+                context._plugin_context, context.current,
+                context.current['consumed_policy_rule_sets'])
 
     @log.log
     def update_policy_classifier_postcommit(self, context):
@@ -337,7 +390,7 @@ class ChainMappingDriver(api.PolicyDriver, local_api.LocalAPI):
                     if policy_actions:
                         parent_spec_id = policy_actions[0].get("action_value")
                         parent_classifier_id = policy_rule.get(
-                                                    "policy_classifier_id")
+                            "policy_classifier_id")
                         break  # only one redirect action is supported
             policy_rules = context._plugin.get_policy_rules(
                     context._plugin_context,
