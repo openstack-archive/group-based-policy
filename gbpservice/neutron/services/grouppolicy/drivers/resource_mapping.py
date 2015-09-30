@@ -193,6 +193,7 @@ class ResourceMappingDriver(api.PolicyDriver, local_api.LocalAPI,
 
     @log.log
     def create_policy_target_precommit(self, context):
+        self._validate_cluster_id(context)
         if not context.current['policy_target_group_id']:
             raise exc.PolicyTargetRequiresPolicyTargetGroup()
         if context.current['port_id']:
@@ -219,6 +220,8 @@ class ResourceMappingDriver(api.PolicyDriver, local_api.LocalAPI,
     def create_policy_target_postcommit(self, context):
         if not context.current['port_id']:
             self._use_implicit_port(context)
+        self._update_cluster_membership(
+            context, new_cluster_id=context.current['cluster_id'])
         self._assoc_ptg_sg_to_pt(context, context.current['id'],
                                  context.current['policy_target_group_id'])
         self._associate_fip_to_pt(context)
@@ -331,16 +334,21 @@ class ResourceMappingDriver(api.PolicyDriver, local_api.LocalAPI,
 
     @log.log
     def update_policy_target_precommit(self, context):
+        self._validate_cluster_id(context)
         if (context.current['policy_target_group_id'] !=
             context.original['policy_target_group_id']):
             raise exc.PolicyTargetGroupUpdateOfPolicyTargetNotSupported()
 
     @log.log
     def update_policy_target_postcommit(self, context):
-        pass
+        if context.current['cluster_id'] != context.original['cluster_id']:
+            self._update_cluster_membership(
+                context, new_cluster_id=context.current['cluster_id'],
+                old_cluster_id=context.original['cluster_id'])
 
     @log.log
     def delete_policy_target_precommit(self, context):
+        self._validate_pt_in_use_by_cluster(context)
         context.fips = self._get_pt_floating_ip_mapping(
                     context._plugin_context.session,
                     context.current['id'])
@@ -2463,3 +2471,52 @@ class ResourceMappingDriver(api.PolicyDriver, local_api.LocalAPI,
 
     def _unset_proxy_gateway_routes(self, context, pt):
         self._update_proxy_gateway_routes(context, pt, unset=True)
+
+    def _validate_cluster_id(self, context):
+        # In RMD, cluster_id can only point to a preexisting PT.
+        if context.current['cluster_id']:
+            try:
+                self._get_policy_target(context._plugin_context,
+                                        context.current['cluster_id'])
+            except gp_ext.PolicyTargetNotFound:
+                raise exc.InvalidClusterId()
+
+    def _validate_pt_in_use_by_cluster(self, context):
+        # Useful for avoiding to delete a cluster master
+        pts = [x for x in self._get_policy_targets(
+            context._plugin_context.elevated(),
+            {'cluster_id': [context.current['id']]})
+               if x['id'] != context.current['id']]
+        if pts:
+            raise exc.PolicyTargetInUse()
+
+    def _update_cluster_membership(self, context, new_cluster_id=None,
+                                   old_cluster_id=None):
+        if ("allowed-address-pairs" in
+                self._core_plugin.supported_extension_aliases):
+            curr_port = self._get_port(
+                    context._plugin_context, context.current['port_id'])
+            curr_pairs = curr_port['allowed_address_pairs']
+            if old_cluster_id:
+                # Remove allowed address
+                master_mac, master_ips = self._get_cluster_master_pairs(
+                    context._plugin_context, old_cluster_id)
+                curr_pairs = [x for x in curr_port['allowed_address_pairs']
+                              if not ((x['ip_address'] in master_ips) and
+                                      (x['mac_address'] == master_mac))]
+            if new_cluster_id:
+                master_mac, master_ips = self._get_cluster_master_pairs(
+                    context._plugin_context, new_cluster_id)
+                curr_pairs += [
+                    {'mac_address': master_mac,
+                     'ip_address': x} for x in master_ips]
+            self._update_port(context._plugin_context, curr_port['id'],
+                              {'allowed_address_pairs': curr_pairs})
+
+    def _get_cluster_master_pairs(self, plugin_context, cluster_id):
+        master_pt = self._get_policy_target(plugin_context, cluster_id)
+        master_port = self._get_port(plugin_context,
+                                     master_pt['port_id'])
+        master_mac = master_port['mac_address']
+        master_ips = [x['ip_address'] for x in master_port['fixed_ips']]
+        return master_mac, master_ips
