@@ -290,3 +290,16 @@ class OnlyOneGroupDefaultGatewayAllowed(GroupPolicyBadRequest):
 
 class PTGAlreadyProvidingRedirectPRS(GroupPolicyBadRequest):
     message = _("PTG %(ptg_id)s is already providing a redirect PRS.")
+
+
+class InvalidClusterId(GroupPolicyBadRequest):
+    message = _("In RMD and derived drivers, a PT cluster_id should point to "
+                "an existing PT.")
+
+
+class PolicyTargetInUse(GroupPolicyBadRequest):
+    message = _("Cannot delete a PT in use by a cluster.")
+
+
+class InvalidClusterPtg(GroupPolicyBadRequest):
+    message = _("Inter PTG clustering disallowed.")
