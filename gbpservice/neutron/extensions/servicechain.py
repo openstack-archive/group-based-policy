@@ -315,14 +315,14 @@ class ServiceChainPluginBase(service_base.ServicePluginBase):
     def get_plugin_description(self):
         return 'Service Chain plugin'
 
-    def update_chains_pt_added(self, context, policy_target):
+    def update_chains_pt_added(self, context, policy_target, instance_id):
         """ Auto scaling function.
 
         Override this method to react to policy target creation.
         """
         pass
 
-    def update_chains_pt_removed(self, context, policy_target):
+    def update_chains_pt_removed(self, context, policy_target, instance_id):
         """ Auto scaling function.
 
         Override this method to react to policy target deletion.
@@ -330,7 +330,7 @@ class ServiceChainPluginBase(service_base.ServicePluginBase):
         pass
 
     def update_chains_consumer_added(self, context, policy_target_group,
-                                     new_consumed):
+                                     instance_id):
         """ Auto scaling function.
 
         Override this method to react to policy target group addition as
@@ -339,7 +339,7 @@ class ServiceChainPluginBase(service_base.ServicePluginBase):
         pass
 
     def update_chains_consumer_removed(self, context, policy_target_group,
-                                       old_consumed):
+                                       instance_id):
         """ Auto scaling function.
 
         Override this method to react to policy target group removed as a
