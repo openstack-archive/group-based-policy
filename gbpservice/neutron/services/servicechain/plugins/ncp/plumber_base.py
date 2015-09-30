@@ -115,7 +115,7 @@ class NodePlumberBase(object):
         for pt in pts:
             try:
                 gbp_plugin.delete_policy_target(
-                    context.elevated(), pt.policy_target_id, notify_sc=False)
+                    context.elevated(), pt.policy_target_id)
             except group_policy.PolicyTargetNotFound as ex:
                 LOG.debug(ex.message)
 
@@ -140,8 +140,7 @@ class NodePlumberBase(object):
             data.update(extra_data)
             data.update(target)
             pt = gbp_plugin.create_policy_target(context.elevated(),
-                                                 {'policy_target': data},
-                                                 notify_sc=False)
+                                                 {'policy_target': data})
             model.set_service_target(part_context, pt['id'], relationship)
 
     def _sort_deployment(self, deployment):
