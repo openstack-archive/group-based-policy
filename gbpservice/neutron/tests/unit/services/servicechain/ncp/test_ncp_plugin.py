@@ -346,8 +346,6 @@ class NodeCompositionPluginTestCase(
 
     def test_update_node_fails(self):
         validate_update = self.driver.validate_update = mock.Mock()
-        validate_update.side_effect = exc.NodeCompositionPluginBadRequest(
-            resource='node', msg='reason')
 
         prof = self._create_service_profile(
             service_type='LOADBALANCER',
@@ -366,6 +364,9 @@ class NodeCompositionPluginTestCase(
             provided_policy_rule_sets={prs['id']: ''})
         self.create_policy_target_group(
             consumed_policy_rule_sets={prs['id']: ''})
+
+        validate_update.side_effect = exc.NodeCompositionPluginBadRequest(
+            resource='node', msg='reason')
 
         res = self.update_servicechain_node(node_id,
                                             description='somethingelse',
@@ -670,6 +671,39 @@ class NodeCompositionPluginTestCase(
         ctx = ncp_context.get_node_driver_context(
             self.plugin, plugin_context, instance, node)
         self.assertEqual(private_management['id'], ctx.management['id'])
+
+    def test_node_drivers_notified_consumer_event(self):
+        add = self.driver.update_node_consumer_ptg_added = mock.Mock()
+        rem = self.driver.update_node_consumer_ptg_removed = mock.Mock()
+
+        prof = self._create_service_profile(
+            service_type='LOADBALANCER',
+            vendor=self.SERVICE_PROFILE_VENDOR)['service_profile']
+        node = self.create_servicechain_node(
+            service_profile_id=prof['id'],
+            config=self.DEFAULT_LB_CONFIG,
+            expected_res_status=201)['servicechain_node']
+
+        spec = self.create_servicechain_spec(
+            nodes=[node['id']],
+            expected_res_status=201)['servicechain_spec']
+        prs = self._create_redirect_prs(spec['id'])['policy_rule_set']
+        self.create_policy_target_group(
+            provided_policy_rule_sets={prs['id']: ''})
+        consumer = self.create_policy_target_group(
+            consumed_policy_rule_sets={prs['id']: ''})['policy_target_group']
+
+        # Verify notification issued for PTG consuming
+        add.assert_called_with(mock.ANY, consumer)
+
+        # Verify notification issued for PTG unconsuming
+        consumer = self.update_policy_target_group(
+            consumer['id'],
+            consumed_policy_rule_sets={})['policy_target_group']
+        rem.assert_called_with(mock.ANY, consumer)
+
+        add.reset_mock()
+        rem.reset_mock()
 
 
 class TestQuotasForServiceChain(test_base.ServiceChainPluginTestCase):
