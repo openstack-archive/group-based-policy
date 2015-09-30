@@ -346,8 +346,6 @@ class NodeCompositionPluginTestCase(
 
     def test_update_node_fails(self):
         validate_update = self.driver.validate_update = mock.Mock()
-        validate_update.side_effect = exc.NodeCompositionPluginBadRequest(
-            resource='node', msg='reason')
 
         prof = self._create_service_profile(
             service_type='LOADBALANCER',
@@ -366,6 +364,9 @@ class NodeCompositionPluginTestCase(
             provided_policy_rule_sets={prs['id']: ''})
         self.create_policy_target_group(
             consumed_policy_rule_sets={prs['id']: ''})
+
+        validate_update.side_effect = exc.NodeCompositionPluginBadRequest(
+            resource='node', msg='reason')
 
         res = self.update_servicechain_node(node_id,
                                             description='somethingelse',
