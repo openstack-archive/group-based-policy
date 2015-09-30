@@ -136,7 +136,8 @@ class NodePlumberBase(object):
                                                          instance['id']),
                     'name': SERVICE_TARGET_NAME_PREFIX + '%s_%s_%s' % (
                         relationship, node['id'][:5], instance['id'][:5]),
-                    'port_id': None}
+                    'port_id': None,
+                    'cluster_id': ''}
             data.update(extra_data)
             data.update(target)
             pt = gbp_plugin.create_policy_target(context.elevated(),
