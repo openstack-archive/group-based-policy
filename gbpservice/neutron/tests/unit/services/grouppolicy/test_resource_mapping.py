@@ -671,6 +671,26 @@ class TestPolicyTarget(ResourceMappingTestCase):
                 self.create_policy_target(
                     policy_target_group_id=ptg['id'], expected_res_status=500)
 
+    def test_cluster_invalid_id(self):
+        ptg_id = self.create_policy_target_group()['policy_target_group']['id']
+        res = self.create_policy_target(policy_target_group_id=ptg_id,
+                                        cluster_id='SomeInvalidCluster',
+                                        expected_res_status=400)
+        self.assertEqual('InvalidClusterId',
+                         res['NeutronError']['type'])
+
+    def test_invalid_cluster_head_deletion(self):
+        ptg_id = self.create_policy_target_group()['policy_target_group']['id']
+        master = self.create_policy_target(
+            policy_target_group_id=ptg_id)['policy_target']
+        self.create_policy_target(
+            policy_target_group_id=ptg_id, cluster_id=master['id'],
+            expected_res_status=201)
+        res = self.delete_policy_target(master['id'],
+                                        expected_res_status=400)
+        self.assertEqual('PolicyTargetInUse',
+                         res['NeutronError']['type'])
+
 
 class TestPolicyTargetGroupWithDNSConfiguration(ResourceMappingTestCase):
 

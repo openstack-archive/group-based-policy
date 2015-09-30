@@ -701,6 +701,7 @@ class ApicMappingDriver(api.ResourceMappingDriver):
         self._apply_policy_rule_set_rules(context, context.current, to_add)
 
     def update_policy_target_precommit(self, context):
+        self._validate_cluster_id(context)
         if (context.original['policy_target_group_id'] !=
                 context.current['policy_target_group_id']):
             if context.current['policy_target_group_id']:

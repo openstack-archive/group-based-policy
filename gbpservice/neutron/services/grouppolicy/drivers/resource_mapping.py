@@ -237,6 +237,7 @@ class ResourceMappingDriver(api.PolicyDriver, local_api.LocalAPI):
 
     @log.log
     def create_policy_target_precommit(self, context):
+        self._validate_cluster_id(context)
         if not context.current['policy_target_group_id']:
             raise exc.PolicyTargetRequiresPolicyTargetGroup()
         if context.current['port_id']:
@@ -375,6 +376,7 @@ class ResourceMappingDriver(api.PolicyDriver, local_api.LocalAPI):
 
     @log.log
     def update_policy_target_precommit(self, context):
+        self._validate_cluster_id(context)
         if (context.current['policy_target_group_id'] !=
             context.original['policy_target_group_id']):
             raise exc.PolicyTargetGroupUpdateOfPolicyTargetNotSupported()
@@ -385,6 +387,7 @@ class ResourceMappingDriver(api.PolicyDriver, local_api.LocalAPI):
 
     @log.log
     def delete_policy_target_precommit(self, context):
+        self._validate_pt_in_use_by_cluster(context)
         context.fips = self._get_pt_floating_ip_mapping(
                     context._plugin_context.session,
                     context.current['id'])
@@ -2578,3 +2581,20 @@ class ResourceMappingDriver(api.PolicyDriver, local_api.LocalAPI):
 
     def _unset_proxy_gateway_routes(self, context, pt):
         self._update_proxy_gateway_routes(context, pt, unset=True)
+
+    def _validate_cluster_id(self, context):
+        # In RMD, cluster_id can only point to a preexisting PT.
+        if context.current['cluster_id']:
+            try:
+                self._get_policy_target(context._plugin_context,
+                                        context.current['cluster_id'])
+            except gp_ext.PolicyTargetNotFound:
+                raise exc.InvalidClusterId()
+
+    def _validate_pt_in_use_by_cluster(self, context):
+        # Useful for avoiding to delete a cluster master
+        pts = self._get_policy_targets(
+            context._plugin_context.elevated(),
+            {'cluster_id': [context.current['id']]})
+        if pts:
+            raise exc.PolicyTargetInUse()
