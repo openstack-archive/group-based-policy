@@ -354,8 +354,8 @@ class test_gbp_pc_func(object):
             "\n## Step 0: Creating a Policy Action needed for this test\n")
         act_uuid = self.gbpcfg.gbp_policy_cfg_all(1, 'action', self.act_name)
         if act_uuid == 0:
-            self._log.info("\n## TESTCASE_GBP_PC_FUNC_4: ABORTED\n")
-            os._exit(1)
+            self._log.info("\n## Policy Action failed to get created, hence this Testcase is ABORTED\n")
+            return 0
         self._log.info(
             "\n## Step 1: Create and Verify Classifier with valued "
             "attrib ##\n")

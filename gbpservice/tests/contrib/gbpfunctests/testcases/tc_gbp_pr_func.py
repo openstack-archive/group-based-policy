@@ -75,7 +75,7 @@ class test_gbp_pr_func(object):
             self._log.info(
                 "\nReqd Classifier Create Failed, hence GBP Policy Rule "
                 "Functional Test Suite Run ABORTED\n")
-            os._exit(1)
+            return 0
         self._log.info('\n## Step 1: Create a PA needed for PR Testing ##')
         self.act_uuid = self.gbpcfg.gbp_policy_cfg_all(
             1, 'action', self.act_name)
@@ -83,7 +83,7 @@ class test_gbp_pr_func(object):
             self._log.info(
                 "\nReqd Action Create Failed, hence GBP Policy Rule "
                 "Functional Test Suite Run ABORTED\n")
-            os._exit(1)
+            return 0
 
     def cleanup(self, tc_name=''):
         if tc_name != '':
@@ -237,14 +237,14 @@ class test_gbp_pr_func(object):
         if new_cls_uuid == 0:
             self._log.info(
                 "\nNew Classifier Create Failed, hence "
-                "TESTCASE_GBP_PR_FUNC_3 ABORTED\n")
+                "this Testcase is ABORTED\n")
             return 0
         new_act_uuid = self.gbpcfg.gbp_policy_cfg_all(
             1, 'action', 'grppol_pa1')
         if new_act_uuid == 0:
             self._log.info(
                 "\nNew Action Create Failed, hence "
-                "TESTCASE_GBP_PR_FUNC_3 ABORTED\n")
+                "this Testcase is ABORTED\n")
             return 0
 
         attrib_list = [{'name': 'grppol_pr'}, {'classifier': 'grppol_pc1'}, {
@@ -310,15 +310,15 @@ class test_gbp_pr_func(object):
         if new_cls_uuid == 0:
             self._log.info(
                 "\nNew Classifier Create Failed, hence "
-                "TESTCASE_GBP_PR_FUNC_3 ABORTED\n")
-            os._exit(1)
+                "this Testcase is ABORTED\n")
+            return 0
         new_act_uuid = self.gbpcfg.gbp_policy_cfg_all(
             1, 'action', 'grppol_pa2')
         if new_act_uuid == 0:
             self._log.info(
                 "\nNew Action Create Failed, hence "
-                "TESTCASE_GBP_PR_FUNC_3 ABORTED\n")
-            os._exit(1)
+                "this Testcase is ABORTED\n")
+            return 0
         self._log.info(
             '\n###########################################\n'
             '## Step 2: Update Policy Rule Attributes ##\n'
@@ -389,14 +389,14 @@ class test_gbp_pr_func(object):
         if new_cls_uuid == 0:
             self._log.info(
                 "\nNew Classifier Create Failed, hence "
-                "TESTCASE_GBP_PS_FUNC_4 ABORTED\n")
+                "this Testcase is ABORTED\n")
             return 0
         new_act_uuid = self.gbpcfg.gbp_policy_cfg_all(
             1, 'action', 'grppol_pa1')
         if new_act_uuid == 0:
             self._log.info(
                 "\nNew Action Create Failed, hence "
-                "TESTCASE_GBP_PR_FUNC_4 ABORTED\n")
+                "this Testcase is ABORTED\n")
             return 0
         rule_uuid = self.gbpcfg.gbp_policy_cfg_all(
             1,
@@ -486,15 +486,15 @@ class test_gbp_pr_func(object):
         if new_cls_uuid == 0:
             self._log.info(
                 "\nNew Classifier Create Failed, hence "
-                "TESTCASE_GBP_PR_FUNC_3 ABORTED\n")
-            os._exit(1)
+                "this Testcase is ABORTED\n")
+            return 0
         new_act_uuid = self.gbpcfg.gbp_policy_cfg_all(
             1, 'action', 'grppol_pa2')
         if new_act_uuid == 0:
             self._log.info(
                 "\nNew Action Create Failed, hence "
-                "TESTCASE_GBP_PR_FUNC_3 ABORTED\n")
-            os._exit(1)
+                "this Testcase is ABORTED\n")
+            return 0
         rule_uuid = self.gbpcfg.gbp_policy_cfg_all(
             1, 'rule', self.rule_name, classifier=new_cls_uuid,
             action=new_act_uuid)

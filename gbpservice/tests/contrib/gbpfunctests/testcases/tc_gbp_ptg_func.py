@@ -76,6 +76,16 @@ class test_gbp_ptg_func(object):
             self.def_ip_pool = '10.0.0.0/8'
             self.cidr = '10.0.0.0/24'
 
+    def debug(self):
+        self._log.info("\nDEBUG: Dump pre-existing L2Policy,
+                          L3Policy from the previous test-run or from Pre-cfg")
+        from commands import *
+        cmd_l3p = 'gbp l3policy-list'
+        cmd_l2p = 'gbp l2policy-list'
+        for cmd in [cmd_l2p,cmd_l3p]:
+            cmd_out = getoutput(cmd)
+            self._log.info("\nDEBUG: The dumped output: %s\n" %(cmd_out))
+
     def global_cfg(self):
         self._log.info('\n## Step 1: Create a PC needed for PTG Testing ##')
         self.cls_uuid = self.gbpcfg.gbp_policy_cfg_all(
@@ -90,7 +100,7 @@ class test_gbp_ptg_func(object):
             1, 'action', self.act_name)
         if self.act_uuid == 0:
             self._log.info(
-                "\n## Reqd Policy Action Create Failed, hence GBP "
+                "\nReqd Policy Action Create Failed, hence GBP "
                 "Policy Target-Group Functional Test Suite Run ABORTED\n")
             return 0
         self._log.info('\n## Step 1: Create a PR needed for PTG Testing ##')
@@ -99,7 +109,7 @@ class test_gbp_ptg_func(object):
             action=self.act_name)
         if self.rule_uuid == 0:
             self._log.info(
-                "\n## Reqd Policy Rule Create Failed, hence GBP Policy "
+                "\nReqd Policy Rule Create Failed, hence GBP Policy "
                 "Target-Group Functional Test Suite Run ABORTED\n ")
             return 0
         self._log.info('\n## Step 1: Create a PRS needed for PTG Testing ##')
@@ -107,16 +117,17 @@ class test_gbp_ptg_func(object):
             1, 'ruleset', self.ruleset_name, policy_rules=self.rule_name)
         if self.prs_uuid == 0:
             self._log.info(
-                "\n## Reqd Policy Target-Group Create Failed, hence "
+                "\nReqd Policy Target-Group Create Failed, hence "
                 "GBP Policy Target-Group Functional Test Suite "
                 "Run ABORTED\n ")
             return 0
         l3p_uuid = self.gbpcfg.gbp_policy_cfg_all(
             1, 'l3p', self.l3p_name, ip_pool='20.20.0.0/24',
-            subnet_prefix_length='28')
+            subnet_prefix_length='28', _proxy_ip_pool='20.20.1.0/24',
+            _proxy_subnet_prefix_length='28')
         if l3p_uuid == 0:
             self._log.info(
-                "\n## Reqd L3Policy Create Failed, hence GBP Policy "
+                "\nReqd L3Policy Create Failed, hence GBP Policy "
                 "Target-Group Functional Test Suite Run ABORTED\n")
             return 0
         self.gbpcfg.gbp_policy_cfg_all(
@@ -271,7 +282,7 @@ class test_gbp_ptg_func(object):
             "TESTCASE_GBP_PTG_FUNC_2: TO CREATE/VERIFY/DELETE/VERIFY "
             "a POLICY TARGET-GROUP with POLICY RULESET\n"
             "TEST_STEPS::\n"
-            "Create Policy Target-Group Object with ConsumedPRS=A\n"
+            "Create Policy Target-Group Object with Consumed PRS=A\n"
             "Verify the attributes & value, show & list cmds\n"
             "Update the PTG's atribute ProvidedPRS=A\n"
             "Create a PRS=B\n"
@@ -341,8 +352,8 @@ class test_gbp_ptg_func(object):
             1, 'ruleset', 'demo-new-prs', policy_rules=self.rule_name)
         if new_prs_uuid == 0:
             self._log.info(
-                "\n## Step 4: Reqd Policy Target-Group Create Failed, "
-                "hence TESTCASE_GBP_PTG_FUNC_2 Run ABORTED\n ")
+                "\nStep 4: Reqd Policy Target-Group Create Failed, "
+                "hence this Testcase is ABORTED\n ")
             return 0
         if self.gbpcfg.gbp_policy_cfg_all(
                 2,

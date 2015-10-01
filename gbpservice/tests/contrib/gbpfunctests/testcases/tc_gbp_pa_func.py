@@ -73,7 +73,6 @@ class test_gbp_pa_func(object):
                 self._log.info(
                     'Failed to Clean-up/Delete of Policy Object %s\n' %
                     (obj))
-        os._exit(1)
 
     def test_cr_ver_del_ver_default(self, rep_cr=0, rep_del=0):
 
