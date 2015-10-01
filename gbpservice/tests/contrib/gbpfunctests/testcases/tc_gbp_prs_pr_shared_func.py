@@ -95,14 +95,14 @@ class test_gbp_prs_pr_shared_func(object):
         if new_cls_uuid == 0:
             self._log.info(
                 "\nNew Classifier Create Failed, hence "
-                "TESTCASE_GBP_PRS_PR_SHARED_INTEG_4 ABORTED\n")
+                "this Testcase is ABORTED\n")
             return 0
         new_act_uuid = self.gbpcfg.gbp_policy_cfg_all(
             1, 'action', 'grppol_pa1', shared='True')
         if new_act_uuid == 0:
             self._log.info(
                 "\nNew Action Create Failed, hence "
-                "TESTCASE_GBP_PRS_PR_SHARED_INTEG_4 ABORTED\n")
+                "this Testcase is ABORTED\n")
             return 0
         rule_uuid_list = []
         for i in range(4):
@@ -118,7 +118,7 @@ class test_gbp_prs_pr_shared_func(object):
             if new_rule_uuid == 0:
                 self._log.info(
                     "\nNew Rule Create Failed, hence "
-                    "TESTCASE_GBP_PRS_PR_SHARED_INTEG_4 ABORTED\n")
+                    "this Testcase is ABORTED\n")
                 return 0
             rule_uuid_list.append(new_rule_uuid)
         ruleset_uuid = self.gbpcfg.gbp_policy_cfg_all(
@@ -213,14 +213,14 @@ class test_gbp_prs_pr_shared_func(object):
         if new_cls_uuid == 0:
             self._log.info(
                 "\nNew Classifier Create Failed, hence "
-                "TESTCASE_GBP_PRS_PR_SHARED_INTEG_4 ABORTED\n")
+                "this Testcase is ABORTED\n")
             return 0
         new_act_uuid = self.gbpcfg.gbp_policy_cfg_all(
             1, 'action', 'grppol_pa1', shared='True')
         if new_act_uuid == 0:
             self._log.info(
                 "\nNew Action Create Failed, hence "
-                "TESTCASE_GBP_PRS_PR_SHARED_INTEG_4 ABORTED\n")
+                "this Testcase is ABORTED\n")
             return 0
         rule_uuid_list = []
         shared_flag = ['True', 'False', 'True', 'False']
@@ -237,7 +237,7 @@ class test_gbp_prs_pr_shared_func(object):
             if new_rule_uuid == 0:
                 self._log.info(
                     "\nNew Rule Create Failed, hence "
-                    "TESTCASE_GBP_PRS_PR_SHARED_INTEG_4 ABORTED\n")
+                    "this Testcase is ABORTED\n")
                 return 0
             rule_uuid_list.append(new_rule_uuid)
         ruleset_uuid = self.gbpcfg.gbp_policy_cfg_all(

@@ -164,9 +164,13 @@ class Gbp_Config(object):
             cmd = 'gbp %s-update ' % cfgobj_dict[cfgobj] + str(name_uuid)
         # Build the cmd string for optional/non-default args/values
         for arg, value in kwargs.items():
-            if '_' in arg:
+            if arg.startswith('_'):
+                # Parameter not supported by CLI, leave it as is
+                arg = arg[1:]
+                cmd = cmd + " --" + "%s %s" % (arg, value)
+            else:
                 arg = string.replace(arg, '_', '-')
-            cmd = cmd + " --" + "%s=%s" % (arg, value)
+                cmd = cmd + " --" + "%s=%s" % (arg, value)
         _log.info(cmd)
         # Execute the cmd
         cmd_out = commands.getoutput(cmd)
@@ -207,6 +211,7 @@ class Gbp_Config(object):
             exc_type, exc_value, exc_traceback = sys.exc_info()
             _log.info('Exception Type = %s, Exception Object = %s' % (
                 exc_type, exc_value))
+            _log.info('\nDEBUG: CLI Response: %s' %(cmd_out))
             return 0
         return 1
 
