@@ -211,6 +211,7 @@ class Gbp_Config(object):
             exc_type, exc_value, exc_traceback = sys.exc_info()
             _log.info('Exception Type = %s, Exception Object = %s' % (
                 exc_type, exc_value))
+            _log.info('\nDEBUG: CLI Response: %s' %(cmd_out))
             return 0
         return 1
 

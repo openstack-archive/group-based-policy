@@ -70,7 +70,7 @@ class test_gbp_pr_neg(object):
             self._log.info(
                 "\nReqd Classifier Create Failed, hence GBP Policy Rule "
                 "Negative Test Suite Run ABORTED\n")
-            os._exit(1)
+            return 0
         self._log.info('\n## Step 1: Create a PA needed for PR Testing ##')
         self.act_uuid = self.gbpcfg.gbp_policy_cfg_all(
             1, 'action', self.act_name)
@@ -78,7 +78,7 @@ class test_gbp_pr_neg(object):
             self._log.info(
                 "\nReqd Action Create Failed, hence GBP Policy Rule "
                 "Negative Test Suite Run ABORTED\n")
-            os._exit(1)
+            return 0
 
     def cleanup(self, tc_name=''):
         if tc_name != '':
