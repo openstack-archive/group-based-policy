@@ -13,6 +13,7 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+from neutron import context as n_ctx
 from neutron.db import db_base_plugin_v2
 from neutron.db import extraroute_db
 from neutron.db import l3_dvr_db
@@ -89,5 +90,8 @@ class ApicGBPL3ServicePlugin(db_base_plugin_v2.NeutronDbPluginV2,
         return None
 
     def _notify_port_update(self, port_id, context=None):
+        context = context or n_ctx.get_admin_context()
         if self.apic_gbp and port_id:
             self.apic_gbp._notify_port_update(context, port_id)
+            ptg, _ = self.apic_gbp._port_id_to_ptg(context, port_id)
+            self.apic_gbp._notify_head_chain_ports(ptg['id'])
