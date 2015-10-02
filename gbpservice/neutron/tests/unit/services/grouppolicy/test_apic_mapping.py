@@ -1271,6 +1271,7 @@ class TestPolicyRule(ApicMappingTestCase):
 
     def _test_policy_rule_created_on_apic(self, shared=False):
         pr = self._create_simple_policy_rule('in', 'tcp', 88, shared=shared)
+        pr2 = self._create_simple_policy_rule('in', None, 88, shared=shared)
 
         tenant = self.common_tenant if shared else pr['tenant_id']
         mgr = self.driver.apic_manager
@@ -1279,7 +1280,9 @@ class TestPolicyRule(ApicMappingTestCase):
                       dToPort=88, dFromPort=88, transaction=mock.ANY),
             mock.call(amap.REVERSE_PREFIX + pr['id'], owner=tenant,
                       etherT='ip', prot='tcp', sToPort=88, sFromPort=88,
-                      tcpRules='est', transaction=mock.ANY)]
+                      tcpRules='est', transaction=mock.ANY),
+            mock.call(pr2['id'], owner=tenant, etherT='unspecified',
+                      dToPort=88, dFromPort=88, transaction=mock.ANY)]
         self._check_call_list(
             expected_calls, mgr.create_tenant_filter.call_args_list)
         mgr.reset_mock()
@@ -1372,12 +1375,12 @@ class TestPolicyRule(ApicMappingTestCase):
         mgr.reset_mock()
 
         # Change Classifier protocol, to not revertible
-        self.update_policy_classifier(pc['id'], protocol='icmp',
+        self.update_policy_classifier(pc['id'], protocol=None,
                                       is_admin_context=True)
         expected_calls = [
-            mock.call(pr1['id'], owner='common', etherT='ip', prot='icmp',
+            mock.call(pr1['id'], owner='common', etherT='unspecified',
                       transaction=mock.ANY),
-            mock.call(pr2['id'], owner='test-tenant', etherT='ip', prot='icmp',
+            mock.call(pr2['id'], owner='test-tenant', etherT='unspecified',
                       transaction=mock.ANY)]
         self._check_call_list(
             expected_calls, mgr.create_tenant_filter.call_args_list)
