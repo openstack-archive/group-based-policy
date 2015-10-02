@@ -1400,6 +1400,10 @@ class ApicMappingDriver(api.ResourceMappingDriver):
                         es_name, switch, route['nexthop'] or default_gateway,
                         owner=es_tenant,
                         subnet=route['destination'], transaction=trs)
+                # set L3-out for NAT-BD
+                self.apic_manager.set_l3out_for_bd(es_tenant,
+                    self._get_nat_bd_for_es(context, es), es_name,
+                    transaction=trs)
         if not is_shadow:
             # create shadow external-networks
             self._plug_l3p_to_es(context, es, True)
@@ -1423,8 +1427,13 @@ class ApicMappingDriver(api.ResourceMappingDriver):
             self._unplug_l3p_from_es(context, es, True)
         if (is_shadow or
             not [x for x in es['l3_policies'] if x != context.current['id']]):
-                self.apic_manager.delete_external_routed_network(
-                    es_name, owner=es_tenant)
+                with self.apic_manager.apic.transaction() as trs:
+                    self.apic_manager.delete_external_routed_network(
+                        es_name, owner=es_tenant, transaction=trs)
+                    if not is_shadow:
+                        self.apic_manager.unset_l3out_for_bd(es_tenant,
+                            self._get_nat_bd_for_es(context, es), es_name,
+                            transaction=trs)
 
     def _build_routes_dict(self, routes):
         result = {}

@@ -854,6 +854,8 @@ class TestL3Policy(ApicMappingTestCase):
                       transaction=mock.ANY)]
         self._check_call_list(expected_route_calls,
                               mgr.ensure_static_route_created.call_args_list)
+        mgr.set_l3out_for_bd.assert_called_once_with(owner,
+            "NAT-bd-%s" % es['id'], es['id'], transaction=mock.ANY)
 
     # Although the naming convention used here has been chosen poorly,
     # I'm separating the tests in order to get the mock re-set.
@@ -917,6 +919,8 @@ class TestL3Policy(ApicMappingTestCase):
                       transaction=mock.ANY)]
         self._check_call_list(expected_route_calls,
                               mgr.ensure_static_route_created.call_args_list)
+        mgr.set_l3out_for_bd.assert_called_once_with(owner,
+            "NAT-bd-%s" % es['id'], es['id'], transaction=mock.ANY)
 
     # Although the naming convention used here has been chosen poorly,
     # I'm separating the tests in order to get the mock re-set.
@@ -957,13 +961,18 @@ class TestL3Policy(ApicMappingTestCase):
         owner = self.common_tenant if shared_es else es1['tenant_id']
         l3p_owner = self.common_tenant if shared_l3p else l3p['tenant_id']
         expected_delete_calls = [
-            mock.call(es1['id'], owner=owner),
-            mock.call("Shd-%s-%s" % (l3p['id'], es1['id']), owner=l3p_owner)]
+            mock.call(es1['id'], owner=owner, transaction=mock.ANY),
+            mock.call("Shd-%s-%s" % (l3p['id'], es1['id']), owner=l3p_owner,
+                transaction=mock.ANY)]
         self._check_call_list(
             expected_delete_calls,
             mgr.delete_external_routed_network.call_args_list)
+        mgr.unset_l3out_for_bd.assert_called_once_with(owner,
+            "NAT-bd-%s" % es1['id'], es1['id'], transaction=mock.ANY)
 
         mgr.delete_external_routed_network.reset_mock()
+        mgr.unset_l3out_for_bd.reset_mock()
+
         # Verify correct deletion for 2 ESs
         l3p = self.create_l3_policy(
             shared=shared_l3p,
@@ -976,13 +985,22 @@ class TestL3Policy(ApicMappingTestCase):
         self.assertEqual(res.status_int, webob.exc.HTTPNoContent.code)
 
         expected_delete_calls = [
-            mock.call(es1['id'], owner=owner),
-            mock.call("Shd-%s-%s" % (l3p['id'], es1['id']), owner=l3p_owner),
-            mock.call(es2['id'], owner=owner),
-            mock.call("Shd-%s-%s" % (l3p['id'], es2['id']), owner=l3p_owner)]
+            mock.call(es1['id'], owner=owner, transaction=mock.ANY),
+            mock.call("Shd-%s-%s" % (l3p['id'], es1['id']), owner=l3p_owner,
+                transaction=mock.ANY),
+            mock.call(es2['id'], owner=owner, transaction=mock.ANY),
+            mock.call("Shd-%s-%s" % (l3p['id'], es2['id']), owner=l3p_owner,
+                transaction=mock.ANY)]
         self._check_call_list(
             expected_delete_calls,
             mgr.delete_external_routed_network.call_args_list)
+        expected_unset_calls = [
+            mock.call(owner, "NAT-bd-%s" % es1['id'], es1['id'],
+                transaction=mock.ANY),
+            mock.call(owner, "NAT-bd-%s" % es2['id'], es2['id'],
+                transaction=mock.ANY)]
+        self._check_call_list(
+            expected_unset_calls, mgr.unset_l3out_for_bd.call_args_list)
 
     # Although the naming convention used here has been chosen poorly,
     # I'm separating the tests in order to get the mock re-set.
@@ -1028,8 +1046,9 @@ class TestL3Policy(ApicMappingTestCase):
             external_segments={es2['id']: ['192.168.1.3']})['l3_policy']
 
         expected_delete_calls = [
-            mock.call(es1['id'], owner=owner),
-            mock.call("Shd-%s-%s" % (l3p['id'], es1['id']), owner=l3p_owner)]
+            mock.call(es1['id'], owner=owner, transaction=mock.ANY),
+            mock.call("Shd-%s-%s" % (l3p['id'], es1['id']), owner=l3p_owner,
+                transaction=mock.ANY)]
         self._check_call_list(
             expected_delete_calls,
             mgr.delete_external_routed_network.call_args_list)
@@ -1047,8 +1066,11 @@ class TestL3Policy(ApicMappingTestCase):
             owner=owner, router_id=APIC_EXTERNAL_RID,
             transaction=mock.ANY)
         self.assertFalse(mgr.ensure_static_route_created.called)
+        mgr.unset_l3out_for_bd.assert_called_once_with(owner,
+            "NAT-bd-%s" % es1['id'], es1['id'], transaction=mock.ANY)
 
         mgr.delete_external_routed_network.reset_mock()
+        mgr.unset_l3out_for_bd.reset_mock()
         self.update_l3_policy(
             l3p['id'], expected_res_status=200, tenant_id=l3p['tenant_id'],
             external_segments={es1['id']: ['192.168.0.3'],
@@ -1057,13 +1079,22 @@ class TestL3Policy(ApicMappingTestCase):
             l3p['id'], tenant_id=l3p['tenant_id'],
             expected_res_status=200, external_segments={})
         expected_delete_calls = [
-            mock.call(es1['id'], owner=owner),
-            mock.call("Shd-%s-%s" % (l3p['id'], es1['id']), owner=l3p_owner),
-            mock.call(es2['id'], owner=owner),
-            mock.call("Shd-%s-%s" % (l3p['id'], es2['id']), owner=l3p_owner)]
+            mock.call(es1['id'], owner=owner, transaction=mock.ANY),
+            mock.call("Shd-%s-%s" % (l3p['id'], es1['id']), owner=l3p_owner,
+                transaction=mock.ANY),
+            mock.call(es2['id'], owner=owner, transaction=mock.ANY),
+            mock.call("Shd-%s-%s" % (l3p['id'], es2['id']), owner=l3p_owner,
+                transaction=mock.ANY)]
         self._check_call_list(
             expected_delete_calls,
             mgr.delete_external_routed_network.call_args_list)
+        expected_unset_calls = [
+            mock.call(owner, "NAT-bd-%s" % es1['id'], es1['id'],
+                transaction=mock.ANY),
+            mock.call(owner, "NAT-bd-%s" % es2['id'], es2['id'],
+                transaction=mock.ANY)]
+        self._check_call_list(
+            expected_unset_calls, mgr.unset_l3out_for_bd.call_args_list)
 
     # Although the naming convention used here has been chosen poorly,
     # I'm separating the tests in order to get the mock re-set.
