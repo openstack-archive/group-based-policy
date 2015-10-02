@@ -586,6 +586,9 @@ class ApicMappingDriver(api.ResourceMappingDriver):
             self.apic_manager.delete_tenant_filter(policy_rule, owner=tenant,
                                                    transaction=trs)
 
+    def delete_policy_rule_precommit(self, context):
+        pass
+
     def delete_policy_rule_set_postcommit(self, context):
         if not self.name_mapper._is_apic_reference(context.current):
             tenant = self._tenant_by_sharing_policy(context.current)
