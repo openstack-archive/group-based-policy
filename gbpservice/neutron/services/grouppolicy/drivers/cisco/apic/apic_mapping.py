@@ -1376,14 +1376,13 @@ class ApicMappingDriver(api.ResourceMappingDriver):
         ip = external_segments[es['id']]
         if ip and ip[0]:
             ip = ip[0]
-            exposed = ip + '/' + es['cidr'].split('/')[1]
         else:
             ip = getattr(context, 'assigned_router_ips', {}).get(es['id'], [])
             if ip and ip[0]:
                 ip = ip[0]
             else:
                 ip = ext_info.get('cidr_exposed', '/').split('/')[0]
-            exposed = ext_info.get('cidr_exposed')
+        exposed = ext_info.get('cidr_exposed')
 
         if not ip:
             raise NoAddressConfiguredOnExternalSegment(
@@ -2002,8 +2001,7 @@ class ApicMappingDriver(api.ResourceMappingDriver):
                      'name': ext_net_name,
                      'admin_state_up': True,
                      'router:external': True,
-                     'provider:physical_network': ext_net_name,
-                     'provider:network_type': 'flat',
+                     'provider:network_type': attributes.ATTR_NOT_SPECIFIED,
                      'shared': es.get('shared', False)}
             extnet = self._create_network(context._plugin_context, attrs)
 
@@ -2019,9 +2017,10 @@ class ApicMappingDriver(api.ResourceMappingDriver):
                      'name': sn_name,
                      'network_id': extnet['id'],
                      'ip_version': es['ip_version'],
-                     'cidr': es['cidr'],
+                     'cidr': ('169.254.0.0/25' if es['ip_version'] == 4
+                              else 'fe80::/64'),
                      'enable_dhcp': False,
-                     'gateway_ip': ext_info['gateway_ip'],
+                     'gateway_ip': attributes.ATTR_NOT_SPECIFIED,
                      'allocation_pools': attributes.ATTR_NOT_SPECIFIED,
                      'dns_nameservers': attributes.ATTR_NOT_SPECIFIED,
                      'host_routes': attributes.ATTR_NOT_SPECIFIED}

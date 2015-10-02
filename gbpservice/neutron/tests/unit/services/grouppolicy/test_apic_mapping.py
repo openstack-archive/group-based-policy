@@ -87,7 +87,7 @@ class ApicMappingTestCase(
         self.set_up_mocks()
         ml2_opts = {
             'mechanism_drivers': ['apic_gbp'],
-            'type_drivers': ['opflex', 'flat'],
+            'type_drivers': ['opflex'],
             'tenant_network_types': ['opflex']
         }
         mock.patch('gbpservice.neutron.services.grouppolicy.drivers.cisco.'
@@ -779,7 +779,7 @@ class TestL3Policy(ApicMappingTestCase):
         es = self.create_external_segment(
             name='supported', cidr='192.168.0.0/24')['external_segment']
         l3p = self.create_l3_policy(
-            external_segments={es['id']: ['192.168.0.2']},
+            external_segments={es['id']: ['169.254.0.42']},
             expected_res_status=201)['l3_policy']
         l2p = self.create_l2_policy(l3_policy_id=l3p['id'])['l2_policy']
         ptg = self.create_policy_target_group(
@@ -825,7 +825,7 @@ class TestL3Policy(ApicMappingTestCase):
             expected_res_status=201)['l3_policy']
 
         self.assertEqual(1, len(l3p['external_segments'][es['id']]))
-        self.assertEqual('192.168.0.2', l3p['external_segments'][es['id']][0])
+        self.assertEqual('169.254.0.2', l3p['external_segments'][es['id']][0])
 
         owner = self.common_tenant if shared_es else es['tenant_id']
         l3p_owner = self.common_tenant if shared_l3p else l3p['tenant_id']
@@ -889,7 +889,7 @@ class TestL3Policy(ApicMappingTestCase):
             l3p['id'], tenant_id=l3p['tenant_id'], expected_res_status=200,
             external_segments={es['id']: []})['l3_policy']
         self.assertEqual(1, len(l3p['external_segments'][es['id']]))
-        self.assertEqual('192.168.0.2', l3p['external_segments'][es['id']][0])
+        self.assertEqual('169.254.0.2', l3p['external_segments'][es['id']][0])
 
         mgr = self.driver.apic_manager
         owner = self.common_tenant if shared_es else es['tenant_id']
@@ -946,7 +946,7 @@ class TestL3Policy(ApicMappingTestCase):
             cidr='192.168.1.0/24')['external_segment']
 
         l3p = self.create_l3_policy(
-            external_segments={es1['id']: ['192.168.0.3']}, shared=shared_l3p,
+            external_segments={es1['id']: ['169.254.0.3']}, shared=shared_l3p,
             tenant_id=es1['tenant_id'] if not shared_es else 'another_tenant',
             expected_res_status=201)['l3_policy']
         req = self.new_delete_request('l3_policies', l3p['id'], self.fmt)
@@ -968,8 +968,8 @@ class TestL3Policy(ApicMappingTestCase):
         l3p = self.create_l3_policy(
             shared=shared_l3p,
             tenant_id=es1['tenant_id'] if not shared_es else 'another_tenant',
-            external_segments={es1['id']: ['192.168.0.3'],
-                               es2['id']: ['192.168.1.3']},
+            external_segments={es1['id']: ['169.254.0.3'],
+                               es2['id']: ['169.254.0.3']},
             expected_res_status=201)['l3_policy']
         req = self.new_delete_request('l3_policies', l3p['id'], self.fmt)
         res = req.get_response(self.ext_api)
@@ -1013,7 +1013,7 @@ class TestL3Policy(ApicMappingTestCase):
         l3p = self.create_l3_policy(
             tenant_id=es1['tenant_id'] if not shared_es else 'another_tenant',
             shared=shared_l3p,
-            external_segments={es1['id']: ['192.168.0.3']},
+            external_segments={es1['id']: ['169.254.0.3']},
             expected_res_status=201)['l3_policy']
 
         mgr = self.driver.apic_manager
@@ -1025,7 +1025,7 @@ class TestL3Policy(ApicMappingTestCase):
 
         l3p = self.update_l3_policy(
             l3p['id'], tenant_id=l3p['tenant_id'], expected_res_status=200,
-            external_segments={es2['id']: ['192.168.1.3']})['l3_policy']
+            external_segments={es2['id']: ['169.254.0.4']})['l3_policy']
 
         expected_delete_calls = [
             mock.call(es1['id'], owner=owner),
@@ -1043,7 +1043,7 @@ class TestL3Policy(ApicMappingTestCase):
             mgr.ensure_external_routed_network_created.call_args_list)
         mgr.ensure_logical_node_profile_created.assert_called_once_with(
             es2['id'], mocked.APIC_EXT_SWITCH, mocked.APIC_EXT_MODULE,
-            mocked.APIC_EXT_PORT, mocked.APIC_EXT_ENCAP, '192.168.1.3/24',
+            mocked.APIC_EXT_PORT, mocked.APIC_EXT_ENCAP, '192.168.1.2/24',
             owner=owner, router_id=APIC_EXTERNAL_RID,
             transaction=mock.ANY)
         self.assertFalse(mgr.ensure_static_route_created.called)
@@ -1051,8 +1051,8 @@ class TestL3Policy(ApicMappingTestCase):
         mgr.delete_external_routed_network.reset_mock()
         self.update_l3_policy(
             l3p['id'], expected_res_status=200, tenant_id=l3p['tenant_id'],
-            external_segments={es1['id']: ['192.168.0.3'],
-                               es2['id']: ['192.168.1.3']})
+            external_segments={es1['id']: ['169.254.0.5'],
+                               es2['id']: ['169.254.0.6']})
         self.update_l3_policy(
             l3p['id'], tenant_id=l3p['tenant_id'],
             expected_res_status=200, external_segments={})
@@ -1093,8 +1093,8 @@ class TestL3Policy(ApicMappingTestCase):
         self.assertFalse(mgr.ensure_logical_node_profile_created.called)
         self.assertFalse(mgr.ensure_static_route_created.called)
 
-    def test_cidr_exposd(self):
-        # Verify "cidr_exposed" configuration is assigned to L3P when no
+    def test_l3p_external_address(self):
+        # Verify auto allocated IP address is assigned to L3P when no
         # explicit address is configured
         self._mock_external_dict([('supported1', '192.168.0.2/24'),
                                   ('supported2', '192.168.1.2/24')])
@@ -1105,21 +1105,21 @@ class TestL3Policy(ApicMappingTestCase):
         l3p = self.create_l3_policy(
             external_segments={es1['id']: []},
             expected_res_status=201)['l3_policy']
-        self.assertEqual(['192.168.0.2'], l3p['external_segments'][es1['id']])
+        self.assertEqual(['169.254.0.2'], l3p['external_segments'][es1['id']])
 
         l3p = self.update_l3_policy(
             l3p['id'], expected_res_status=200,
             external_segments={es1['id']: [], es2['id']: []})['l3_policy']
-        self.assertEqual(['192.168.0.2'], l3p['external_segments'][es1['id']])
-        self.assertEqual(['192.168.1.2'], l3p['external_segments'][es2['id']])
+        self.assertEqual(['169.254.0.2'], l3p['external_segments'][es1['id']])
+        self.assertEqual(['169.254.0.2'], l3p['external_segments'][es2['id']])
 
         # Address IP changed
         l3p = self.update_l3_policy(
             l3p['id'], expected_res_status=200,
-            external_segments={es1['id']: ['192.168.0.3'],
+            external_segments={es1['id']: ['169.254.0.3'],
                                es2['id']: []})['l3_policy']
-        self.assertEqual(['192.168.0.3'], l3p['external_segments'][es1['id']])
-        self.assertEqual(['192.168.1.2'], l3p['external_segments'][es2['id']])
+        self.assertEqual(['169.254.0.3'], l3p['external_segments'][es1['id']])
+        self.assertEqual(['169.254.0.2'], l3p['external_segments'][es2['id']])
 
     def _test_multi_es_with_ptg(self, shared_es):
         self._mock_external_dict([('supported1', '192.168.0.2/24'),
@@ -1543,10 +1543,11 @@ class TestExternalSegment(ApicMappingTestCase):
             expected_res_status=201, shared=shared)['external_segment']
         self.create_external_segment(name='unsupport', expected_res_status=201,
                                      shared=shared)
+        self.assertEqual('192.168.0.2/24', es['cidr'])
         self.assertIsNotNone(es['subnet_id'])
         subnet = self._get_object('subnets', es['subnet_id'],
             self.api)['subnet']
-        self.assertEqual('192.168.0.0/24', subnet['cidr'])
+        self.assertEqual('169.254.0.0/25', subnet['cidr'])
         mgr = self.driver.apic_manager
         owner = es['tenant_id'] if not shared else self.common_tenant
         mgr.ensure_nat_epg_contract_created.assert_called_with(owner,
