@@ -91,3 +91,5 @@ class ApicGBPL3ServicePlugin(db_base_plugin_v2.NeutronDbPluginV2,
     def _notify_port_update(self, port_id, context=None):
         if self.apic_gbp and port_id:
             self.apic_gbp._notify_port_update(context, port_id)
+            ptg, _ = self.apic_gbp._port_id_to_ptg(context, port_id)
+            self.apic_gbp._notify_head_chain_ports(ptg['id'])
