@@ -269,17 +269,22 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
                         destination=dest_set, l3p_id=current['id'],
                         es_id=es['id'])
                 # Verify segment CIDR doesn't overlap with L3P's
-                if l3p_ipset & netaddr.IPSet([es['cidr']]):
+                cidr = es['cidr']
+                if es['subnet_id']:
+                    core_plugin = n_manager.NeutronManager.get_plugin()
+                    cidr = core_plugin.get_subnet(context,
+                        es['subnet_id'])['cidr']
+                if l3p_ipset & netaddr.IPSet([cidr]):
                     raise gp_exc.ExternalSegmentSubnetOverlapsWithL3PIpPool(
-                        subnet=es['cidr'], l3p_id=current['id'],
+                        subnet=cidr, l3p_id=current['id'],
                         es_id=current['id'])
                 # Verify allocated address correctly in subnet
                 for addr in current['external_segments'][es['id']]:
                     if addr != gpdb.ADDRESS_NOT_SPECIFIED:
-                        if addr not in netaddr.IPNetwork(es['cidr']):
+                        if addr not in netaddr.IPNetwork(cidr):
                             raise gp_exc.InvalidL3PExternalIPAddress(
                                 ip=addr, es_id=es['id'], l3p_id=current['id'],
-                                es_cidr=es['cidr'])
+                                es_cidr=cidr)
 
     def _validate_action_value(self, context, action):
         if action.get('action_type') == gp_cts.GP_ACTION_REDIRECT:
