@@ -80,7 +80,12 @@ class UpdateClassifierNotSupportedOnOdlDriver(gpexc.GroupPolicyBadRequest):
 
 
 class PolicyRuleUpdateNotSupportedOnOdlDriver(gpexc.GroupPolicyBadRequest):
-    message = _("Policy rule update is not supported on for ODL GBP"
+    message = _("Policy rule update is not supported on for ODL GBP "
+                "driver.")
+
+
+class PolicyRuleSetUpdateNotSupportedOnOdlDriver(gpexc.GroupPolicyBadRequest):
+    message = _("Policy rule set update is not supported on for ODL GBP "
                 "driver.")
 
 
@@ -284,38 +289,44 @@ class OdlMappingDriver(api.ResourceMappingDriver):
     def create_policy_target_group_postcommit(self, context):
         super(OdlMappingDriver, self).create_policy_target_group_postcommit(
             context)
-        tenant_id = uuid.UUID(context.current['tenant_id']).urn[9:]
-        subnets = context.current['subnets']
-        provided_contract = self._make_odl_contract_and_clause(
-            context, context.current['provided_policy_rule_sets']
-        )
-        consumed_contract = self._make_odl_contract_and_clause(
-            context, context.current['consumed_policy_rule_sets']
-        )
+
+        # consumed_policy_rule_sets mapped to consumer_named_selectors
+        consumer_named_selectors = []
+        for prs_id in context.current['consumed_policy_rule_sets']:
+            prs = context._plugin.get_policy_rule_set(
+                context._plugin_context, prs_id
+            )
+            consumer_named_selectors.append(
+                {
+                    "name": prs['name'],
+                    "contract": prs_id
+                }
+            )
+
+        # provided_policy_rule_sets mapped to provider_named_selectors
+        provider_named_selectors = []
+        for prs_id in context.current['provided_policy_rule_sets']:
+            prs = context._plugin.get_policy_rule_set(
+                context._plugin_context, prs_id
+            )
+            provider_named_selectors.append(
+                {
+                    "name": prs['name'],
+                    "contract": prs_id
+                }
+            )
 
         # PTG mapped to EPG in ODL
-        # TODO(ODL); add back description field after PoC
+        subnets = context.current['subnets']
         epg = {
             "id": context.current['id'],
             "name": context.current['name'],
-            "network-domain": subnets[0]
+            "description": context.current['description'],
+            "network-domain": subnets[0],
+            "consumer_named_selector": consumer_named_selectors,
+            "provider_named_selector": provider_named_selectors
         }
-
-        if provided_contract:
-            epg['provider-named-selector'] = {
-                "name": 'Contract-' + provided_contract['id'],
-                "contract": provided_contract['id']
-            }
-            self.odl_manager.create_update_contract(tenant_id,
-                                                    provided_contract)
-        if consumed_contract:
-            epg['consumer-named-selector'] = {
-                "name": 'Contract-' + consumed_contract['id'],
-                "contract": consumed_contract['id']
-            }
-            self.odl_manager.create_update_contract(tenant_id,
-                                                    consumed_contract)
-
+        tenant_id = uuid.UUID(context.current['tenant_id']).urn[9:]
         self.odl_manager.create_update_endpoint_group(tenant_id, epg)
 
         # Implicit subnet within policy target group mapped to subnet in ODL
@@ -331,94 +342,10 @@ class OdlMappingDriver(api.ResourceMappingDriver):
             }
             self.odl_manager.create_update_subnet(tenant_id, odl_subnet)
 
-    def _make_odl_contract_and_clause(self, context, rule_sets):
-        # As no contract/clause in O.S., they will be generated dynamically
-        # when rule sets are associated with PTG:
-        # 1. an association is mapped to a contract with single clause
-        # 2. rule sets mapped to subjects
-        # 3. clause name is concatenation of sorted subject names
-        # 4. contract ID is generated based on the clause name
-        # 5. As a combination of same rule sets produce same sorted subject
-        #    names, consistent clause name and contract ID are guaranteed
-        contract = None
-        if rule_sets:
-            subjects = []
-            subject_names = []
-            for rule_set_id in rule_sets:
-                # a subject is mapped to a rule set
-                subject = self._make_subject(context, rule_set_id)
-                subjects.append(subject)
-                subject_names.append(subject['name'])
-            clause_name = "-".join(sorted(subject_names)).encode('ascii',
-                                                                 'ignore')
-            contract_id = uuid.uuid3(uuid.NAMESPACE_DNS, clause_name).urn[9:]
-            clauses = [
-                {
-                    "name": clause_name,
-                    "subject-refs": subject_names
-                }
-            ]
-            contract = {
-                "id": contract_id,
-                "clause": clauses,
-                "subject": subjects
-            }
-        return contract
-
-    def _make_subject(self, context, rule_set_id):
-        rule_set = context._plugin.get_policy_rule_set(
-            context._plugin_context, rule_set_id
-        )
-        rules = []
-        for rule_id in rule_set['policy_rules']:
-            rule = self._make_odl_rule(context, rule_id)
-            rules.append(rule)
-        return {
-            "name": rule_set['name'],
-            "rule": rules
-        }
-
-    def _make_odl_rule(self, context, rule_id):
-        rule = context._plugin.get_policy_rule(
-            context._plugin_context, rule_id
-        )
-        stack_classifier = context._plugin.get_policy_classifier(
-            context._plugin_context, rule['policy_classifier_id']
-        )
-
-        # while openstack supports only one classifier per rule, the classifier
-        # may mapped to multi classifier in ODL
-        classifier_refs = []
-        classifiers = self._make_odl_classifiers(stack_classifier)
-        for classifier in classifiers:
-            classifier_ref = {
-                "name": classifier['name']
-            }
-            if classifier['direction'] != "bidirectional":
-                classifier_ref['direction'] = classifier['direction']
-            classifier_refs.append(classifier_ref)
-        action_refs = []
-        for action_id in rule['policy_actions']:
-            action = context._plugin.get_policy_action(
-                context._plugin_context, action_id
-            )
-            action_refs.append(
-                {
-                    "name": action['name']
-                }
-            )
-
-        # TODO(ODL): send action_refs later but not for PoC
-        return {
-            "name": rule['name'],
-            "classifier-ref": classifier_refs,
-        }
-
     def update_policy_target_group_precommit(self, context):
         raise UpdatePTGNotSupportedOnOdlDriver()
 
     def delete_policy_target_group_postcommit(self, context):
-        # TODO(ODL): delete contract if no one uses it
         tenant_id = uuid.UUID(context.current['tenant_id']).urn[9:]
         subnets = context.current['subnets']
 
@@ -579,6 +506,92 @@ class OdlMappingDriver(api.ResourceMappingDriver):
     def update_policy_rule_precommit(self, context):
         # TODO(ivar): add support for action update on policy rules
         raise PolicyRuleUpdateNotSupportedOnOdlDriver()
+
+    def create_policy_rule_set_postcommit(self, context):
+        """Each Policy Rule Set is mapped to a contract, with a single clause
+
+        Each included Policy Rule will be mapped to one subject, which includes
+        one rule.
+
+        The clause has no matcher, but refers to all the subjects
+        """
+        subjects = []
+        subject_names = []
+        for rule_id in context.current['policy_rules']:
+            subject = self._make_odl_subject(context, rule_id)
+            subjects.append(subject)
+            subject_names.append(subject['name'])
+
+        clauses = [
+            {
+                "name": context.current['name'],
+                "subject-refs": subject_names
+            }
+        ]
+
+        contract_id = context.current['id']
+        contract_desc = context.current['name']
+        contract = {
+            "id": contract_id,
+            "description": contract_desc,
+            "clause": clauses,
+            "subject": subjects
+        }
+
+        tenant_id = uuid.UUID(context.current['tenant_id']).urn[9:]
+        self.odl_manager.create_update_contract(tenant_id, contract)
+
+    def _make_odl_subject(self, context, rule_id):
+        gbp_rule = context._plugin.get_policy_rule(
+            context._plugin_context, rule_id
+        )
+        odl_rules = []
+        odl_rule = self._make_odl_rule(context, rule_id)
+        odl_rules.append(odl_rule)
+        return {
+            "name": gbp_rule['name'],
+            "rule": odl_rules
+        }
+
+    def _make_odl_rule(self, context, rule_id):
+        rule = context._plugin.get_policy_rule(
+            context._plugin_context, rule_id
+        )
+        stack_classifier = context._plugin.get_policy_classifier(
+            context._plugin_context, rule['policy_classifier_id']
+        )
+
+        # while openstack supports only one classifier per rule, the classifier
+        # may mapped to multi classifier in ODL
+        classifier_refs = []
+        classifiers = self._make_odl_classifiers(stack_classifier)
+        for classifier in classifiers:
+            classifier_ref = {
+                "name": classifier['name']
+            }
+            if classifier['direction'] != "bidirectional":
+                classifier_ref['direction'] = classifier['direction']
+            classifier_refs.append(classifier_ref)
+        action_refs = []
+        for action_id in rule['policy_actions']:
+            action = context._plugin.get_policy_action(
+                context._plugin_context, action_id
+            )
+            action_refs.append(
+                {
+                    "name": action['name']
+                }
+            )
+
+        # TODO(ODL): send action_refs later but not for PoC
+        return {
+            "name": rule['name'],
+            "classifier-ref": classifier_refs,
+        }
+
+    def update_policy_rule_set_precommit(self, context):
+        # TODO(Yi): add support for action update on policy rule sets
+        raise PolicyRuleSetUpdateNotSupportedOnOdlDriver()
 
     def _get_pt_detail(self, context):
         port_id = context.current['port_id']
