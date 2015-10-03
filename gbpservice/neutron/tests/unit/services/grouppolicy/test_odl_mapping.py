@@ -748,7 +748,7 @@ class PolicyTargetGroupTestCase(OdlMappingTestCase):
     @mock.patch.object(odl_manager.OdlManager, 'create_update_contract')
     @mock.patch.object(resource_mapping.ResourceMappingDriver,
                        'create_policy_target_group_postcommit')
-    def test_create_policy_target_postcommit(
+    def test_create_policy_target_group_postcommit(
             self,
             mock_create_policy_target_group_postcommit,
             mock_create_update_contract,
@@ -1114,6 +1114,78 @@ class PolicyRuleTestCase(OdlMappingTestCase):
         self.assertRaises(
             odl_mapping.PolicyRuleUpdateNotSupportedOnOdlDriver,
             getattr(self.driver, 'update_policy_rule_precommit'),
+            self.context_1
+        )
+
+
+class PolicyRuleSetTestCase(OdlMappingTestCase):
+    """ Test case for policy rule set operations
+    """
+    def setUp(self):
+        super(PolicyRuleSetTestCase, self).setUp()
+        self.context_1 = mock.Mock(
+            current=self.fake_gbp_plugin.get_policy_rule_set(
+                FAKE_CONTEXT,
+                RULE_SET_1_ID
+            ),
+            _plugin_context=FAKE_PLUGIN_CONTEXT,
+            _plugin=self.fake_gbp_plugin
+        )
+
+    @mock.patch.object(g_plugin.GroupPolicyPlugin, 'get_policy_action')
+    @mock.patch.object(g_plugin.GroupPolicyPlugin, 'get_policy_classifier')
+    @mock.patch.object(g_plugin.GroupPolicyPlugin, 'get_policy_rule')
+    @mock.patch.object(odl_manager.OdlManager, 'create_update_contract')
+    def test_create_policy_rule_set_postcommit(
+            self,
+            mock_create_update_contract,
+            mock_get_policy_rule,
+            mock_get_policy_classifier,
+            mock_get_policy_action):
+
+        mock_get_policy_rule.side_effect = (self.fake_gbp_plugin.
+                                            get_policy_rule)
+        mock_get_policy_classifier.side_effect = (self.fake_gbp_plugin.
+                                                  get_policy_classifier)
+        mock_get_policy_action.side_effect = (self.fake_gbp_plugin.
+                                              get_policy_action)
+
+        contract = {
+            "id": RULE_SET_1_ID,
+            "clause": [
+                {
+                    "name": RULE_SET_1_NAME,
+                    "subject-refs": [RULE_1_NAME]
+                }
+            ],
+            "subject": [
+                {
+                    "name": RULE_1_NAME,
+                    "rule": [
+                        {
+                            "name": RULE_1_NAME,
+                            "classifier-ref": [
+                                {
+                                    "name": CLASSIFIER_1_NAME + '-sourceport'
+                                },
+                                {
+                                    "name": CLASSIFIER_1_NAME + '-destport'
+                                }
+                            ]
+                        }
+                    ]
+                }
+            ]
+        }
+
+        self.driver.create_policy_rule_set_postcommit(self.context_1)
+        mock_create_update_contract.assert_called_once_with(TENANT_UUID,
+                                                            contract)
+
+    def test_update_policy_rule_set_precommit(self):
+        self.assertRaises(
+            odl_mapping.PolicyRuleSetUpdateNotSupportedOnOdlDriver,
+            getattr(self.driver, 'update_policy_rule_set_precommit'),
             self.context_1
         )
 
