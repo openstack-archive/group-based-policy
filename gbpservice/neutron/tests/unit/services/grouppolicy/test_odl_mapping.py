@@ -516,7 +516,7 @@ class PolicyTargetTestCase(OdlMappingTestCase):
                   'create_policy_target_postcommit')
     def test_create_policy_target_postcommit(
             self,
-            mock_create_policy_target_commit,
+            mock_create_policy_target_postcommit,
             mock_register_endpoints,
             mock_get_port,
             mock_get_policy_target_group,
@@ -543,7 +543,7 @@ class PolicyTargetTestCase(OdlMappingTestCase):
         }
 
         self.driver.create_policy_target_postcommit(self.context)
-        mock_create_policy_target_commit.assert_called_once_with(self.context)
+        mock_create_policy_target_postcommit.assert_called_once_with(self.context)
         mock_register_endpoints.assert_called_once_with([ep])
 
     def test_update_policy_target_precommit(self):
@@ -561,7 +561,7 @@ class PolicyTargetTestCase(OdlMappingTestCase):
                        'delete_policy_target_postcommit')
     def test_delete_policy_target_postcommit(
             self,
-            mock_delete_policy_target_commit,
+            mock_delete_policy_target_postcommit,
             mock_unregister_endpoints,
             mock_get_port,
             mock_get_policy_target_group,
@@ -589,7 +589,7 @@ class PolicyTargetTestCase(OdlMappingTestCase):
         }
 
         self.driver.delete_policy_target_postcommit(self.context)
-        mock_delete_policy_target_commit.assert_called_once_with(self.context)
+        mock_delete_policy_target_postcommit.assert_called_once_with(self.context)
         mock_unregister_endpoints.assert_called_once_with([ep])
 
 
@@ -748,7 +748,7 @@ class PolicyTargetGroupTestCase(OdlMappingTestCase):
     @mock.patch.object(odl_manager.OdlManager, 'create_update_contract')
     @mock.patch.object(resource_mapping.ResourceMappingDriver,
                        'create_policy_target_group_postcommit')
-    def test_create_policy_target_postcommit(
+    def test_create_policy_target_group_postcommit(
             self,
             mock_create_policy_target_group_postcommit,
             mock_create_update_contract,
@@ -765,86 +765,26 @@ class PolicyTargetGroupTestCase(OdlMappingTestCase):
         mock_get_subnet.side_effect = self.fake_core_plugin.get_subnet
         mock_get_policy_rule_set.side_effect = (self.fake_gbp_plugin.
                                                 get_policy_rule_set)
-        mock_get_policy_rule.side_effect = (self.fake_gbp_plugin.
-                                            get_policy_rule)
-        mock_get_policy_classifier.side_effect = (self.fake_gbp_plugin.
-                                                  get_policy_classifier)
-        mock_get_policy_action.side_effect = (self.fake_gbp_plugin.
-                                              get_policy_action)
+        #mock_get_policy_rule.side_effect = (self.fake_gbp_plugin.
+        #                                    get_policy_rule)
+        #mock_get_policy_classifier.side_effect = (self.fake_gbp_plugin.
+        #                                          get_policy_classifier)
+        #mock_get_policy_action.side_effect = (self.fake_gbp_plugin.
+        #                                      get_policy_action)
 
-        provided_contract_id = (
-            uuid.uuid3(uuid.NAMESPACE_DNS, RULE_SET_1_NAME).urn[9:])
-        provided_contract = {
-            "id": provided_contract_id,
-            "clause": [
-                {
-                    "name": RULE_SET_1_NAME,
-                    "subject-refs": [RULE_SET_1_NAME]
-                }
-            ],
-            "subject": [
-                {
-                    "name": RULE_SET_1_NAME,
-                    "rule": [
-                        {
-                            "name": RULE_1_NAME,
-                            "classifier-ref": [
-                                {
-                                    "name": CLASSIFIER_1_NAME + '-sourceport'
-                                },
-                                {
-                                    "name": CLASSIFIER_1_NAME + '-destport'
-                                }
-                            ]
-                        }
 
-                    ]
-                }
-            ]
-        }
-        consumed_contract_id = (
-            uuid.uuid3(uuid.NAMESPACE_DNS, RULE_SET_2_NAME).urn[9:])
-        consumed_contract = {
-            "id": consumed_contract_id,
-            "clause": [
-                {
-                    "name": RULE_SET_2_NAME,
-                    "subject-refs": [RULE_SET_2_NAME]
-                }
-            ],
-            "subject": [
-                {
-                    "name": RULE_SET_2_NAME,
-                    "rule": [
-                        {
-                            "name": RULE_2_NAME,
-                            "classifier-ref": [
-                                {
-                                    "name": CLASSIFIER_2_NAME + '-sourceport',
-                                    "direction": 'out'
-                                },
-                                {
-                                    "name": CLASSIFIER_2_NAME + '-destport',
-                                    "direction": 'in'
-                                },
-                            ]
-                        }
 
-                    ]
-                }
-            ]
-        }
         epg = {
             "id": GROUP_ID,
             "name": GROUP_NAME,
             "network-domain": SUBNET_ID,
             "provider-named-selector": {
-                "name": 'Contract-' + provided_contract_id,
-                "contract": provided_contract_id
+                "name": RULE_SET_1_NAME,
+                "contract": RULE_SET_1_ID
             },
             "consumer-named-selector": {
-                "name": 'Contract-' + consumed_contract_id,
-                "contract": consumed_contract_id
+                "name": RULE_SET_2_NAME,
+                "contract": RULE_SET_2_ID
             }
         }
         odl_subnet = {
@@ -857,10 +797,6 @@ class PolicyTargetGroupTestCase(OdlMappingTestCase):
         self.driver.create_policy_target_group_postcommit(self.context)
         mock_create_policy_target_group_postcommit.assert_called_once_with(
             self.context)
-        mock_create_update_contract.assert_any_call(TENANT_UUID,
-                                                    provided_contract)
-        mock_create_update_contract.assert_any_call(TENANT_UUID,
-                                                    consumed_contract)
         mock_create_update_endpoint_group.assert_called_once_with(TENANT_UUID,
                                                                   epg)
         mock_create_update_subnet.assert_called_once_with(TENANT_UUID,
@@ -1114,6 +1050,79 @@ class PolicyRuleTestCase(OdlMappingTestCase):
         self.assertRaises(
             odl_mapping.PolicyRuleUpdateNotSupportedOnOdlDriver,
             getattr(self.driver, 'update_policy_rule_precommit'),
+            self.context_1
+        )
+
+
+class PolicyRuleSetTestCase(OdlMappingTestCase):
+    """ Test case for policy rule set operations
+    """
+    def setUp(self):
+        super(PolicyRuleSetTestCase, self).setUp()
+        self.context_1 = mock.Mock(
+            current=self.fake_gbp_plugin.get_policy_rule_set(
+                FAKE_CONTEXT,
+                RULE_SET_1_ID
+            ),
+            _plugin_context=FAKE_PLUGIN_CONTEXT,
+            _plugin=self.fake_gbp_plugin
+        )
+
+    @mock.patch.object(g_plugin.GroupPolicyPlugin, 'get_policy_action')
+    @mock.patch.object(g_plugin.GroupPolicyPlugin, 'get_policy_classifier')
+    @mock.patch.object(g_plugin.GroupPolicyPlugin, 'get_policy_rule')
+    @mock.patch.object(odl_manager.OdlManager, 'create_update_contract')
+    def test_create_policy_rule_set_postcommit(
+            self,
+            mock_create_update_contract,
+            mock_get_policy_rule,
+            mock_get_policy_classifier,
+            mock_get_policy_action):
+
+        mock_get_policy_rule.side_effect = (self.fake_gbp_plugin.
+                                            get_policy_rule)
+        mock_get_policy_classifier.side_effect = (self.fake_gbp_plugin.
+                                                  get_policy_classifier)
+        mock_get_policy_action.side_effect = (self.fake_gbp_plugin.
+                                              get_policy_action)
+
+        contract = {
+            "id": RULE_SET_1_ID,
+            "description": RULE_SET_1_NAME,
+            "clause": [
+                {
+                    "name": RULE_SET_1_NAME,
+                    "subject-refs": [RULE_1_NAME]
+                }
+            ],
+            "subject": [
+                {
+                    "name": RULE_1_NAME,
+                    "rule": [
+                        {
+                            "name": RULE_1_NAME,
+                            "classifier-ref": [
+                                {
+                                    "name": CLASSIFIER_1_NAME + '-sourceport'
+                                },
+                                {
+                                    "name": CLASSIFIER_1_NAME + '-destport'
+                                }
+                            ]
+                        }
+                    ]
+                }
+            ]
+        }
+
+        self.driver.create_policy_rule_set_postcommit(self.context_1)
+        mock_create_update_contract.assert_called_once_with(TENANT_UUID,
+                                                            contract)
+
+    def test_update_policy_rule_set_precommit(self):
+        self.assertRaises(
+            odl_mapping.PolicyRuleSetUpdateNotSupportedOnOdlDriver,
+            getattr(self.driver, 'update_policy_rule_set_precommit'),
             self.context_1
         )
 
