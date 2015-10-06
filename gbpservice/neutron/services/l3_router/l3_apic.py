@@ -13,6 +13,7 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+from neutron.common import constants as q_const
 from neutron import context as n_ctx
 from neutron.db import db_base_plugin_v2
 from neutron.db import extraroute_db
@@ -31,6 +32,25 @@ class ApicGBPL3ServicePlugin(db_base_plugin_v2.NeutronDbPluginV2,
     def __init__(self):
         super(ApicGBPL3ServicePlugin, self).__init__()
         self._apic_gbp = None
+        self.ml2_plugin = None
+
+    def _get_port_id_for_router_interface(self, context, router_id, subnet_id):
+        filters = {'device_id': [router_id],
+                   'device_owner': [q_const.DEVICE_OWNER_ROUTER_INTF],
+                   'fixed_ips': {'subnet_id': [subnet_id]}}
+        ports = self.get_ports(context, filters=filters)
+        return ports[0]['id']
+
+    def _update_router_gw_info(self, context, router_id, info, router=None):
+        super(ApicGBPL3ServicePlugin, self)._update_router_gw_info(
+            context, router_id, info, router)
+        if 'network_id' in info:
+            filters = {'device_id': [router_id],
+                       'device_owner': [q_const.DEVICE_OWNER_ROUTER_GW],
+                       'network_id': [info['network_id']]}
+            ports = self.get_ports(context, filters=filters)
+            manager.NeutronManager.get_plugin().update_port_status(
+                context, ports[0]['id'], q_const.PORT_STATUS_ACTIVE)
 
     @staticmethod
     def get_plugin_type():
@@ -43,11 +63,37 @@ class ApicGBPL3ServicePlugin(db_base_plugin_v2.NeutronDbPluginV2,
 
     @property
     def apic_gbp(self):
+        if not self.ml2_plugin:
+            self.ml2_plugin = manager.NeutronManager.get_plugin()
         if not self._apic_gbp:
             self._apic_gbp = manager.NeutronManager.get_service_plugins()[
                 'GROUP_POLICY'].policy_driver_manager.policy_drivers[
                 'apic'].obj
         return self._apic_gbp
+
+    def add_router_interface(self, context, router_id, interface_info):
+        super(ApicGBPL3ServicePlugin, self).add_router_interface(
+            context, router_id, interface_info)
+        if 'subnet_id' in interface_info:
+            port = self._get_port_id_for_router_interface(
+                context, router_id, interface_info['subnet_id'])
+        else:
+            port = self.get_port(context, interface_info['port_id'])
+
+        self.ml2_plugin.update_port_status(context, port,
+                                           q_const.PORT_STATUS_ACTIVE)
+
+    def remove_router_interface(self, context, router_id, interface_info):
+        super(ApicGBPL3ServicePlugin, self).remove_router_interface(
+            context, router_id, interface_info)
+        if 'subnet_id' in interface_info:
+            port = self._get_port_id_for_router_interface(
+                context, router_id, interface_info['subnet_id'])
+        else:
+            port = self.get_port(context, interface_info['port_id'])
+
+        self.ml2_plugin.update_port_status(context, port,
+                                           q_const.PORT_STATUS_DOWN)
 
     # Floating IP API
     def create_floatingip(self, context, floatingip):
