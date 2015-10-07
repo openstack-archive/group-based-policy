@@ -41,8 +41,9 @@ from gbpservice.neutron.services.grouppolicy.drivers.cisco.apic import (
     name_manager as name_manager)
 from gbpservice.neutron.services.grouppolicy.drivers.cisco.apic import (
     nova_client as nclient)
+from gbpservice.neutron.services.grouppolicy.drivers.sg_managers import (
+    dummy_manager as sg_manager)
 from gbpservice.neutron.services.grouppolicy import group_policy_context
-
 
 LOG = logging.getLogger(__name__)
 UNMANAGED_SEGMENT = _("External Segment %s is not managed by APIC mapping "
@@ -169,7 +170,8 @@ class ApicMappingDriver(api.ResourceMappingDriver):
         return ApicMappingDriver.manager
 
     def initialize(self):
-        super(ApicMappingDriver, self).initialize()
+        super(ApicMappingDriver, self).initialize(
+            sg_manager=sg_manager.DummyManager())
         self._setup_rpc_listeners()
         self._setup_rpc()
         self.apic_manager = ApicMappingDriver.get_apic_manager()

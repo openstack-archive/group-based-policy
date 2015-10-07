@@ -30,6 +30,22 @@ def clean_session(session):
     session.expunge_all()
 
 
+def load_driver(namespace, driver_name):
+    try:
+        # Try to resolve driver by name
+        mgr = driver.DriverManager(namespace, driver_name)
+        driver_class = mgr.driver
+    except RuntimeError as e1:
+        # fallback to class name
+        try:
+            driver_class = importutils.import_class(driver_name)
+        except ImportError as e2:
+            LOG.exception(_("Error loading driver by name, %s"), e1)
+            LOG.exception(_("Error loading driver by class, %s"), e2)
+            raise ImportError(_("Driver not found."))
+    return driver_class()
+
+
 def get_resource_plural(resource):
     if resource.endswith('y'):
         resource_plural = resource.replace('y', 'ies')
@@ -37,22 +53,6 @@ def get_resource_plural(resource):
         resource_plural = resource + 's'
 
     return resource_plural
-
-
-def load_plugin(namespace, plugin):
-    try:
-        # Try to resolve plugin by name
-        mgr = driver.DriverManager(namespace, plugin)
-        plugin_class = mgr.driver
-    except RuntimeError as e1:
-        # fallback to class name
-        try:
-            plugin_class = importutils.import_class(plugin)
-        except ImportError as e2:
-            LOG.exception(_("Error loading plugin by name, %s"), e1)
-            LOG.exception(_("Error loading plugin by class, %s"), e2)
-            raise ImportError(_("Plugin not found."))
-    return plugin_class()
 
 
 def admin_context(context):
