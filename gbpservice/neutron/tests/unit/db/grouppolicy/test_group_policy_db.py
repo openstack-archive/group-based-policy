@@ -573,8 +573,9 @@ class TestGroupResources(GroupPolicyDbTestCase):
                           self.plugin.delete_l2_policy, ctx, l2p_id)
 
     def test_create_and_show_l3_policy(self):
-        es = self.create_external_segment()['external_segment']
-        es_dict = {es['id']: ['172.16.0.2', '172.16.0.3']}
+        es1 = self.create_external_segment()['external_segment']
+        es2 = self.create_external_segment()['external_segment']
+        es_dict = {es1['id']: ['172.16.0.2', '172.16.0.3'], es2['id']: ['']}
         attrs = cm.get_create_l3_policy_default_attrs(
             external_segments=es_dict)
 
@@ -637,8 +638,9 @@ class TestGroupResources(GroupPolicyDbTestCase):
         name = "new_l3_policy"
         description = 'new desc'
         prefix_length = 24
-        es = self.create_external_segment()['external_segment']
-        es_dict = {es['id']: ['172.16.0.2', '172.16.0.3']}
+        es1 = self.create_external_segment()['external_segment']
+        es2 = self.create_external_segment()['external_segment']
+        es_dict = {es1['id']: ['172.16.0.2', '172.16.0.3'], es2['id']: ['']}
         attrs = cm.get_create_l3_policy_default_attrs(
             name=name, description=description,
             subnet_prefix_length=prefix_length,
