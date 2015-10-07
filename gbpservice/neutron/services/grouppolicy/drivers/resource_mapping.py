@@ -180,6 +180,11 @@ class PolicyTargetFloatingIPMapping(model_base.BASEV2):
                               primary_key=True)
 
 
+# REVISIT(rkukura): Internal-only or public?
+class CIDRInUse(exc.GroupPolicyInternalError):
+    message = _("CIDR %(cidr)s in-use within L3Policy %(l3p_id)s")
+
+
 class ResourceMappingDriver(api.PolicyDriver, local_api.LocalAPI):
     """Resource Mapping driver for Group Policy plugin.
 
@@ -1706,19 +1711,48 @@ class ResourceMappingDriver(api.PolicyDriver, local_api.LocalAPI):
                 for subnet in generator:
                     subnet_id = subnet['id']
                     try:
+                        LOG.info(_("before using subnet %s"),
+                                 subnet_id)  # TEMP
                         self._mark_subnet_owned(
                             context._plugin_context.session, subnet_id)
                         if add_to_ptg:
-                            context.add_subnet(subnet_id)
+                            self._validate_and_add_subnet(context, subnet,
+                                                          l3p_id)
+                        LOG.info(_("after using subnet %s"), subnet_id)  # TEMP
                         return [subnet]
                     except n_exc.InvalidInput:
                         # This exception is not expected. We catch this
                         # here so that it isn't caught below and handled
                         # as if the CIDR is already in use.
+                        LOG.info(_("got InvalidInput using subnet %s"),
+                                 subnet_id)  # TEMP
                         self._delete_subnet(context._plugin_context,
                                             subnet['id'])
                         raise exc.GroupPolicyInternalError()
         raise exc.NoSubnetAvailable()
+
+    def _validate_and_add_subnet(self, context, subnet, l3p_id):
+        subnet_id = subnet['id']
+        session = context._plugin_context.session
+        with utils.clean_session(session):
+            with session.begin(subtransactions=True):
+                LOG.info(_("starting validate_and_add_subnet transaction for "
+                           "subnet %s"), subnet_id)  # TEMP
+                ptgs = context._plugin._get_l3p_ptgs(
+                    context._plugin_context.elevated(), l3p_id)
+                allocated = netaddr.IPSet(
+                    iterable=self._get_ptg_cidrs(context, None,
+                                                 ptg_dicts=ptgs))
+                LOG.info(_("got allocated: %s"), allocated)  # TEMP
+                cidr = subnet['cidr']
+                LOG.info(_("got cidr: %s"), cidr)  # TEMP
+                if cidr in allocated:
+                    LOG.info(_("in-use cidr: %s"), cidr)  # TEMP
+                    raise CIDRInUse(cidr=cidr,
+                                    l3p_id=l3p_id)
+                context.add_subnet(subnet_id)
+                LOG.info(_("ending validate_and_add_subnet transaction for "
+                           "subnet %s"), subnet_id)  # TEMP
 
     def _use_implicit_nat_pool_subnet(self, context):
         es = context._plugin.get_external_segment(
@@ -1744,10 +1778,19 @@ class ResourceMappingDriver(api.PolicyDriver, local_api.LocalAPI):
         interface_info = {'subnet_id': subnet_id}
         if router_id:
             try:
+                LOG.info(_("before adding subnet %(subnet)s to router"
+                           " %(router)s"),
+                         {'subnet': subnet_id, 'router': router_id})  # TEMP
                 self._add_router_interface(plugin_context, router_id,
                                            interface_info)
+                LOG.info(_("after adding subnet %(subnet)s to router"
+                           " %(router)s"),
+                         {'subnet': subnet_id, 'router': router_id})  # TEMP
             except n_exc.BadRequest:
                 LOG.exception(_("Adding subnet to router failed"))
+                LOG.info(_("got BadRequest adding subnet %(subnet)s to router"
+                           " %(router)s"),
+                         {'subnet': subnet_id, 'router': router_id})  # TEMP
                 raise exc.GroupPolicyInternalError()
 
     def _generate_subnets_from_cidrs(self, context, l2p, l3p, cidrs,
@@ -1767,13 +1810,17 @@ class ResourceMappingDriver(api.PolicyDriver, local_api.LocalAPI):
                              attributes.ATTR_NOT_SPECIFIED),
                          'host_routes': attributes.ATTR_NOT_SPECIFIED}
                 attrs.update(subnet_specifics)
+                LOG.info(_("before creating subnet: %s"), attrs)  # TEMP
                 subnet = self._create_subnet(context._plugin_context,
                                              attrs)
+                LOG.info(_("after creating subnet: %s"), subnet)  # TEMP
                 yield subnet
             except n_exc.BadRequest:
                 # This is expected (CIDR overlap) until we have a
                 # proper subnet allocation algorithm. We ignore the
                 # exception and repeat with the next CIDR.
+                LOG.info(_("got BadRequest creating subnet: %s"),
+                         attrs)  # TEMP
                 pass
 
     def _stitch_ptg_to_l3p(self, context, ptg, l3p, subnet_ids):
