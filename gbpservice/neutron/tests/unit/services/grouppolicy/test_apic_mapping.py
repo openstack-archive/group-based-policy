@@ -287,6 +287,8 @@ class TestPolicyTarget(ApicMappingTestCase):
             pt_bound['id'],
             description=amap.PROXY_PORT_PREFIX + pt_unbound['port_id'])
 
+        port_unbound = self._get_object('ports', pt_unbound['port_id'],
+                                        self.api)['port']
         # Bind the first port
         self._bind_port_to_host(pt_bound['port_id'], 'h1')
         # Get info on bound port
@@ -299,6 +301,7 @@ class TestPolicyTarget(ApicMappingTestCase):
         self.assertEqual(ptg_real['id'], mapping['endpoint_group_name'])
         self.assertEqual(l3p_real['tenant_id'], mapping['vrf_tenant'])
         self.assertEqual(l3p_real['id'], mapping['vrf_name'])
+        self.assertEqual(port_unbound['fixed_ips'], mapping['fixed_ips'])
 
     def test_get_gbp_details_shadow(self):
         l2p = self.create_l2_policy()['l2_policy']
