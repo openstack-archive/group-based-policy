@@ -41,6 +41,8 @@ from gbpservice.neutron.services.grouppolicy import config
 from gbpservice.neutron.services.grouppolicy.drivers import chain_mapping
 from gbpservice.neutron.services.grouppolicy.drivers import nsp_manager
 from gbpservice.neutron.services.grouppolicy.drivers import resource_mapping
+from gbpservice.neutron.services.grouppolicy.drivers.sg_managers import (
+    remote_subnet_manager as remote_subnet_manager)
 from gbpservice.neutron.services.servicechain.plugins.msc import (
     config as sc_cfg)
 from gbpservice.neutron.tests.unit.services.grouppolicy import (
@@ -69,7 +71,7 @@ class ResourceMappingTestCase(test_plugin.GroupPolicyPluginTestCase):
 
     def setUp(self, policy_drivers=None,
               core_plugin=n_test_plugin.PLUGIN_NAME, ml2_options=None,
-              sc_plugin=None):
+              sc_plugin=None, sg_manager='remote_subnet_manager'):
         policy_drivers = policy_drivers or ['implicit_policy',
                                             'resource_mapping',
                                             'chain_mapping']
@@ -78,6 +80,9 @@ class ResourceMappingTestCase(test_plugin.GroupPolicyPluginTestCase):
                                      group='group_policy')
         sc_cfg.cfg.CONF.set_override('servicechain_drivers',
                                      ['dummy'], group='servicechain')
+        resource_mapping.cfg.CONF.set_override('security_group_manager',
+                                               sg_manager,
+                                               group='resource_mapping')
         config.cfg.CONF.set_override('allow_overlapping_ips', True)
         super(ResourceMappingTestCase, self).setUp(core_plugin=core_plugin,
                                                    ml2_options=ml2_options,
@@ -173,8 +178,8 @@ class ResourceMappingTestCase(test_plugin.GroupPolicyPluginTestCase):
 
     def _get_prs_mapping(self, prs_id):
         ctx = nctx.get_admin_context()
-        return (resource_mapping.ResourceMappingDriver.
-                _get_policy_rule_set_sg_mapping(ctx.session, prs_id))
+        return (remote_subnet_manager.get_policy_rule_set_sg_mapping(
+            ctx.session, prs_id))
 
     def _create_ssh_allow_rule(self):
         return self._create_tcp_allow_rule('22')
