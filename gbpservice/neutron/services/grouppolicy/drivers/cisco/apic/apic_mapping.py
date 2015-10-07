@@ -218,12 +218,14 @@ class ApicMappingDriver(api.ResourceMappingDriver):
         ptg, pt = self._port_id_to_ptg(context, port['id'])
         context._plugin = self.gbp_plugin
         context._plugin_context = context
+        switched = False
         if pt and pt['description'].startswith(PROXY_PORT_PREFIX):
             new_id = pt['description'].replace(
                 PROXY_PORT_PREFIX, '').rstrip(' ')
             LOG.debug("Replace port %s with port %s", port_id, new_id)
             port = self._get_port(context, new_id)
             ptg, pt = self._port_id_to_ptg(context, port['id'])
+            switched = True
 
         l2p = self._network_id_to_l2p(context, port['network_id'])
         if not ptg and not l2p:
@@ -260,13 +262,15 @@ class ApicMappingDriver(api.ResourceMappingDriver):
                    'extra_ips': [],
                    'floating_ip': [],
                    'ip_mapping': []}
+        if switched:
+            details['fixed_ips'] = port['fixed_ips']
         if port['device_owner'].startswith('compute:') and port['device_id']:
             vm = nclient.NovaClient().get_server(port['device_id'])
             details['vm-name'] = vm.name if vm else port['device_id']
             l3_policy = context._plugin.get_l3_policy(context,
                                                       l2p['l3_policy_id'])
             details['floating_ip'], details['ip_mapping'] = (
-                self._get_ip_mapping_details(context, port_id, l3_policy))
+                self._get_ip_mapping_details(context, port['id'], l3_policy))
         self._add_network_details(context, port, details)
         self._add_vrf_details(context, details)
         is_chain_end = bool(pt and pt.get('proxy_gateway') and
@@ -743,8 +747,10 @@ class ApicMappingDriver(api.ResourceMappingDriver):
                 self._validate_pt_port_subnets(context)
 
     def update_policy_target_postcommit(self, context):
-        if (context.original['policy_target_group_id'] !=
-                context.current['policy_target_group_id']):
+        curr, orig = context.current, context.original
+        if ((orig['policy_target_group_id'] != curr['policy_target_group_id'])
+            or ((curr['description'] != orig['description']) and
+                curr['description'].startswith(PROXY_PORT_PREFIX))):
             self._notify_port_update(context._plugin_context,
                                      context.current['port_id'])
 
@@ -2284,8 +2290,15 @@ class ApicMappingDriver(api.ResourceMappingDriver):
         proxy_pts = self._gbp_plugin.get_policy_targets(
             plugin_context, {'policy_target_group_id': [group_id],
                              'proxy_gateway': [True]})
-        ports = self._get_ports(plugin_context,
-                                {'id': [x['port_id'] for x in proxy_pts]})
+        # Get all the fake PTs pointing to the proxy ones to update their ports
+        pointing_pts = self._gbp_plugin.get_policy_targets(
+            plugin_context.elevated(),
+            {'description': [PROXY_PORT_PREFIX + x['port_id'] for x in
+                             proxy_pts]})
+        ports = self._get_ports(
+            plugin_context,
+            {'id': [x['port_id'] for x in (proxy_pts + pointing_pts)]})
+
         for port in ports:
             if self._is_port_bound(port):
                 self._notify_port_update(plugin_context, port['id'])
