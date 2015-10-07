@@ -95,7 +95,7 @@ class NvsdGbpDriver(res_map.ResourceMappingDriver):
         self.nvsd_api.create_endpointgroup(context._plugin_context,
                                            context.current)
         self._handle_network_service_policy(context)
-        self._handle_policy_rule_sets(context)
+        self._sg_manager.handle_policy_target_group_create(context)
         self._update_default_security_group(context._plugin_context,
                                             context.current['id'],
                                             context.current['tenant_id'],
