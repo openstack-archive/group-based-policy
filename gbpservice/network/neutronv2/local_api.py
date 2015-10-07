@@ -478,6 +478,30 @@ class LocalAPI(object):
         except gp_ext.PolicyRuleSetNotFound:
             LOG.warn(_('Policy Rule Set %s already deleted'), prs_id)
 
+    def _get_policy_rule(self, plugin_context, pr_id):
+        return self._get_resource(self._group_policy_plugin, plugin_context,
+                                  'policy_rule', pr_id)
+
+    def _get_policy_rules(self, plugin_context, filters=None):
+        filters = filters or {}
+        return self._get_resources(self._group_policy_plugin, plugin_context,
+                                   'policy_rules', filters)
+
+    def _create_policy_rule(self, plugin_context, attrs):
+        return self._create_resource(self._group_policy_plugin, plugin_context,
+                                     'policy_rule', attrs, False)
+
+    def _update_policy_rule(self, plugin_context, pr_id, attrs):
+        return self._update_resource(self._group_policy_plugin, plugin_context,
+                                     'policy_rule', pr_id, attrs, False)
+
+    def _delete_policy_rule(self, plugin_context, pr_id):
+        try:
+            self._delete_resource(self._group_policy_plugin, plugin_context,
+                                  'policy_rule', pr_id, False)
+        except gp_ext.PolicyRuleNotFound:
+            LOG.warn(_('Policy Rule %s already deleted'), pr_id)
+
     def _get_servicechain_instance(self, plugin_context, sci_id):
         return self._get_resource(self._servicechain_plugin, plugin_context,
                                   'servicechain_instance', sci_id)
@@ -549,4 +573,54 @@ class LocalAPI(object):
             self._delete_resource(self._group_policy_plugin, plugin_context,
                                   'policy_target', pt_id, False)
         except gp_ext.PolicyTargetNotFound:
-            LOG.warn(_('Policy Rule Set %s already deleted'), pt_id)
+            LOG.warn(_('Policy Target %s already deleted'), pt_id)
+
+    def _get_policy_target_group(self, plugin_context, ptg_id):
+        return self._get_resource(self._group_policy_plugin, plugin_context,
+                                  'policy_target_group', ptg_id)
+
+    def _get_policy_target_groups(self, plugin_context, filters=None):
+        filters = filters or {}
+        return self._get_resources(self._group_policy_plugin, plugin_context,
+                                   'policy_target_groups', filters)
+
+    def _create_policy_target_group(self, plugin_context, attrs):
+        return self._create_resource(self._group_policy_plugin, plugin_context,
+                                     'policy_target_group', attrs, False)
+
+    def _update_policy_target_group(self, plugin_context, ptg_id, attrs):
+        return self._update_resource(self._group_policy_plugin, plugin_context,
+                                     'policy_target_group', ptg_id, attrs,
+                                     False)
+
+    def _delete_policy_target_group(self, plugin_context, ptg_id):
+        try:
+            self._delete_resource(self._group_policy_plugin, plugin_context,
+                                  'policy_target_group', ptg_id, False)
+        except gp_ext.PolicyTargetNotFound:
+            LOG.warn(_('Policy Target Group %s already deleted'), ptg_id)
+
+    def _get_policy_classifier(self, plugin_context, ptg_id):
+        return self._get_resource(self._group_policy_plugin, plugin_context,
+                                  'policy_classifier', ptg_id)
+
+    def _get_policy_classifiers(self, plugin_context, filters=None):
+        filters = filters or {}
+        return self._get_resources(self._group_policy_plugin, plugin_context,
+                                   'policy_classifiers', filters)
+
+    def _create_policy_classifier(self, plugin_context, attrs):
+        return self._create_resource(self._group_policy_plugin, plugin_context,
+                                     'policy_classifier', attrs, False)
+
+    def _update_policy_classifier(self, plugin_context, pc_id, attrs):
+        return self._update_resource(self._group_policy_plugin, plugin_context,
+                                     'policy_classifier', pc_id, attrs,
+                                     False)
+
+    def _delete_policy_classifier(self, plugin_context, pc_id):
+        try:
+            self._delete_resource(self._group_policy_plugin, plugin_context,
+                                  'policy_classifier', pc_id, False)
+        except gp_ext.PolicyTargetNotFound:
+            LOG.warn(_('Policy Classifier %s already deleted'), pc_id)
