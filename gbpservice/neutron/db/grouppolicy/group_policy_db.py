@@ -800,7 +800,8 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
                     id=not_found.pop())
             l3p_db.external_segments = []
             for es in es_in_db:
-                if not es_dict[es['id']]:
+                ips = [x for x in es_dict[es['id']] if x]
+                if not ips:
                     assoc = ESToL3PAssociation(
                         external_segment_id=es['id'],
                         l3_policy_id=l3p_db['id'],
@@ -812,7 +813,7 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
                         ESToL3PAssociation).filter_by(
                             external_segment_id=es['id']).filter(
                                 ESToL3PAssociation.allocated_address.in_(
-                                    es_dict[es['id']])).all()
+                                    ips)).all()
                     if existing:
                         raise gpolicy.IpAddressOverlappingInExternalSegment(
                             es_id=es['id'])
