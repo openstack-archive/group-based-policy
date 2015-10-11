@@ -93,9 +93,9 @@ confirm_server_active $CLIENT_VM_2_UUID
 ####CHECKPOINT: No traffic flows
 
 # policy-rule-set Association
-gbp group-update client-1 --consumed-policy-rule-sets "icmp-policy-rule-set=scope,web-policy-rule-set=scope"
-gbp group-update client-2 --consumed-policy-rule-sets "icmp-policy-rule-set=scope,web-policy-rule-set=scope"
-gbp group-update web --provided-policy-rule-sets "icmp-policy-rule-set=scope,web-policy-rule-set=scope"
+gbp group-update client-1 --consumed-policy-rule-sets "icmp-policy-rule-set,web-policy-rule-set"
+gbp group-update client-2 --consumed-policy-rule-sets "icmp-policy-rule-set,web-policy-rule-set"
+gbp group-update web --provided-policy-rule-sets "icmp-policy-rule-set,web-policy-rule-set"
 
 ####CHECKPOINT: ICMP and HTTP work from app to web and vice versa
 
