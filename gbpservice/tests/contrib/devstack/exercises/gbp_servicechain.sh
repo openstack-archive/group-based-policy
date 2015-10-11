@@ -103,8 +103,8 @@ confirm_server_active $CLIENT_VM_1_UUID
 ####CHECKPOINT: No traffic flows and no Service Chain Instances or Services are created
 
 # policy-rule-set Association
-gbp group-update client-1 --consumed-policy-rule-sets "icmp-policy-rule-set=scope,web-policy-rule-set=scope"
-gbp group-update web --provided-policy-rule-sets "icmp-policy-rule-set=scope,web-policy-rule-set=scope" --network-service-policy vip_ip_policy
+gbp group-update client-1 --consumed-policy-rule-sets "icmp-policy-rule-set,web-policy-rule-set"
+gbp group-update web --provided-policy-rule-sets "icmp-policy-rule-set,web-policy-rule-set" --network-service-policy vip_ip_policy
 
 # Wait for the heat stacks to be setup completely
 sleep 15
