@@ -1709,8 +1709,7 @@ class ApicMappingDriver(api.ResourceMappingDriver):
                 added = super(
                     ApicMappingDriver, self)._use_implicit_subnet(
                         context, subnet_specifics={'name': name},
-                        add_to_ptg=False, is_proxy=is_proxy)
-                subs |= set([x['id'] for x in added])
+                        is_proxy=is_proxy)
             context.add_subnets(subs - set(context.current['subnets']))
             if added:
                 l3p_id = l2p['l3_policy_id']
