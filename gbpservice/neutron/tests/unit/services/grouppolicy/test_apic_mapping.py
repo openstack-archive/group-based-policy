@@ -262,6 +262,46 @@ class TestPolicyTarget(ApicMappingTestCase):
         else:
             self.assertEqual([l3p['ip_pool']], mapping['vrf_subnets'])
 
+    def test_enhanced_subnet_options(self):
+        self.driver.enable_metadata_opt = False
+        l3p = self.create_l3_policy(name='myl3',
+                                    ip_pool='192.168.0.0/16')['l3_policy']
+        l2p = self.create_l2_policy(name='myl2',
+                                    l3_policy_id=l3p['id'])['l2_policy']
+        ptg = self.create_policy_target_group(
+            name="ptg1", l2_policy_id=l2p['id'])['policy_target_group']
+        pt1 = self.create_policy_target(
+            policy_target_group_id=ptg['id'])['policy_target']
+        self._bind_port_to_host(pt1['port_id'], 'h1')
+        sub = self._get_object('subnets', ptg['subnets'][0],
+                               self.api)
+        with self.port(subnet=sub, device_owner='network:dhcp',
+                       tenant_id='onetenant') as dhcp:
+            dhcp = dhcp['port']
+            details = self.driver.get_gbp_details(
+                context.get_admin_context(),
+                device='tap%s' % pt1['port_id'], host='h1')
+
+            self.assertEqual(1, len(details['subnets']))
+            # Verify that DNS nameservers are correctly set
+            self.assertEqual([dhcp['fixed_ips'][0]['ip_address']],
+                             details['subnets'][0]['dns_nameservers'])
+            # Verify Default route via GW
+            self.assertTrue({'destination': '0.0.0.0/0',
+                             'nexthop': '192.168.0.1'} in
+                            details['subnets'][0]['host_routes'])
+
+            # Verify Metadata route via DHCP
+            self.assertTrue(
+                {'destination': '169.254.169.254/16',
+                 'nexthop': dhcp['fixed_ips'][0]['ip_address']} in
+                details['subnets'][0]['host_routes'])
+
+            # Verify no extra routes are leaking inside
+            self.assertEqual(2, len(details['subnets'][0]['host_routes']))
+            self.assertEqual([dhcp['fixed_ips'][0]['ip_address']],
+                             details['subnets'][0]['dhcp_server_ips'])
+
     def test_get_gbp_proxy_details(self):
         l3p_fake = self.create_l3_policy(name='myl3')['l3_policy']
         l2p_fake = self.create_l2_policy(
