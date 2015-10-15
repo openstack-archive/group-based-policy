@@ -14,6 +14,7 @@ import netaddr
 
 from apicapi import apic_manager
 from keystoneclient.v2_0 import client as keyclient
+from neutron.agent.linux import dhcp
 from neutron.api.v2 import attributes
 from neutron.common import constants as n_constants
 from neutron.common import exceptions as n_exc
@@ -174,6 +175,7 @@ class ApicMappingDriver(api.ResourceMappingDriver):
         self.apic_manager = ApicMappingDriver.get_apic_manager()
         self.name_mapper = name_manager.ApicNameManager(self.apic_manager)
         self.enable_dhcp_opt = self.apic_manager.enable_optimized_dhcp
+        self.enable_metadata_opt = self.apic_manager.enable_optimized_metadata
         self._gbp_plugin = None
         ApicMappingDriver.me = self
 
@@ -325,8 +327,39 @@ class ApicMappingDriver(api.ResourceMappingDriver):
     def _add_network_details(self, context, port, details):
         details['allowed_address_pairs'] = port['allowed_address_pairs']
         details['enable_dhcp_optimization'] = self.enable_dhcp_opt
+        details['enable_metadata_optimization'] = self.enable_metadata_opt
         details['subnets'] = self._get_subnets(context,
             filters={'id': [ip['subnet_id'] for ip in port['fixed_ips']]})
+        for subnet in details['subnets']:
+            dhcp_ips = set()
+            for port in self._get_ports(
+                    context, filters={
+                        'network_id': [subnet['network_id']],
+                        'device_owner': [n_constants.DEVICE_OWNER_DHCP]}):
+                dhcp_ips |= set([x['ip_address'] for x in port['fixed_ips']
+                                 if x['subnet_id'] == subnet['id']])
+            dhcp_ips = list(dhcp_ips)
+            if not subnet['dns_nameservers']:
+                # Use DHCP namespace port IP
+                subnet['dns_nameservers'] = dhcp_ips
+            # Ser Default route if needed
+            metadata = default = False
+            if subnet['ip_version'] == 4:
+                for route in subnet['host_routes']:
+                    if route['destination'] == '0.0.0.0/0':
+                        default = True
+                    if route['destination'] == dhcp.METADATA_DEFAULT_CIDR:
+                        metadata = True
+                # Set missing routes
+                if not default:
+                    subnet['host_routes'].append(
+                        {'destination': '0.0.0.0/0',
+                         'nexthop': subnet['gateway_ip']})
+                if not metadata and dhcp_ips and not self.enable_metadata_opt:
+                    subnet['host_routes'].append(
+                        {'destination': dhcp.METADATA_DEFAULT_CIDR,
+                         'nexthop': dhcp_ips[0]})
+            subnet['dhcp_server_ips'] = dhcp_ips
 
     def _add_vrf_details(self, context, details):
         l3p = self.gbp_plugin.get_l3_policy(context, details['l3_policy_id'])
