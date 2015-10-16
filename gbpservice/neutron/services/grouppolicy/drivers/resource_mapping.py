@@ -1388,7 +1388,7 @@ class ResourceMappingDriver(api.PolicyDriver, local_api.LocalAPI,
                                                  router_id, interface_info)
 
     def _use_implicit_subnet(self, context, is_proxy=False, prefix_len=None,
-                             add_to_ptg=True, subnet_specifics=None):
+                             subnet_specifics=None):
         subnet_specifics = subnet_specifics or {}
         l2p_id = context.current['l2_policy_id']
         l2p = context._plugin.get_l2_policy(context._plugin_context, l2p_id)
@@ -1398,14 +1398,13 @@ class ResourceMappingDriver(api.PolicyDriver, local_api.LocalAPI,
                 context.current['proxy_type'] == proxy_ext.PROXY_TYPE_L2):
             # In case of L2 proxy
             return self._use_l2_proxy_implicit_subnets(
-                context, add_to_ptg, subnet_specifics, l2p, l3p)
+                context, subnet_specifics, l2p, l3p)
         else:
             # In case of non proxy PTG or L3 Proxy
             return self._use_normal_implicit_subnet(
-                context, is_proxy, prefix_len, add_to_ptg, subnet_specifics,
-                l2p, l3p)
+                context, is_proxy, prefix_len, subnet_specifics, l2p, l3p)
 
-    def _use_l2_proxy_implicit_subnets(self, context, add_to_ptg,
+    def _use_l2_proxy_implicit_subnets(self, context,
                                        subnet_specifics, l2p, l3p):
         LOG.debug("allocate subnets for L2 Proxy %s",
                   context.current['id'])
@@ -1423,12 +1422,11 @@ class ResourceMappingDriver(api.PolicyDriver, local_api.LocalAPI,
         for subnet_id in subnet_ids:
             self._mark_subnet_owned(
                 context._plugin_context.session, subnet_id)
-            if add_to_ptg:
-                context.add_subnet(subnet_id)
+            context.add_subnet(subnet_id)
         return subnets
 
     def _use_normal_implicit_subnet(self, context, is_proxy, prefix_len,
-                                    add_to_ptg, subnet_specifics, l2p, l3p):
+                                    subnet_specifics, l2p, l3p):
         LOG.debug("allocate subnets for L3 Proxy or normal PTG %s",
                   context.current['id'])
 
@@ -1467,11 +1465,10 @@ class ResourceMappingDriver(api.PolicyDriver, local_api.LocalAPI,
                 try:
                     self._mark_subnet_owned(context._plugin_context.session,
                                             subnet_id)
-                    if add_to_ptg:
-                        self._validate_and_add_subnet(context, subnet,
-                                                      l3p_id)
-                        LOG.debug("Using subnet %s for PTG %s", subnet,
-                                  context.current['id'])
+                    self._validate_and_add_subnet(context, subnet,
+                                                  l3p_id)
+                    LOG.debug("Using subnet %s for PTG %s", subnet,
+                              context.current['id'])
                     return [subnet]
                 except CidrInUse:
                     # This exception is expected when a concurrent
