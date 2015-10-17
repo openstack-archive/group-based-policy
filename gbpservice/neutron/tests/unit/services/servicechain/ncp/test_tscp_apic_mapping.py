@@ -766,6 +766,28 @@ class TestProxyGroup(ApicMappingStitchingPlumberGBPTestCase):
         self.assertTrue(netaddr.IPNetwork(subnet['cidr']) in
                         netaddr.IPNetwork(l3p['proxy_ip_pool']))
 
+        # Attach external segment to create a router interface
+        self._mock_external_dict([('supported', '192.168.0.2/24')])
+        es = self.create_external_segment(
+            name='supported', cidr='192.168.0.0/24',
+            external_routes=[{'destination': '0.0.0.0/0',
+                              'nexthop': '192.168.0.254'},
+                             {'destination': '128.0.0.0/16',
+                              'nexthop': None}])['external_segment']
+        self.update_l3_policy(l2p['l3_policy_id'],
+                              external_segments={es['id']: []},
+                              expected_res_status=200)
+
+        # the proxy subnets should have no router
+        ports = self._list(
+            'ports',
+            query_params='device_owner=network:router_interface')['ports']
+        self.assertEqual(1, len(ports))
+
+        # this router port is only connected to the original PTG
+        self.assertEqual(ptg1['subnets'][0],
+                         ports[0]['fixed_ips'][0]['subnet_id'])
+
         # Verify port address comes from that subnet
         pt = self.create_policy_target(
             policy_target_group_id=proxy['id'],
