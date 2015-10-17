@@ -1750,10 +1750,12 @@ class ApicMappingDriver(api.ResourceMappingDriver):
                                                     l3p_id)
                 for subnet in added:
                     self.process_subnet_added(context._plugin_context, subnet)
-                for router_id in l3p['routers']:
-                    for subnet in added:
-                        self._plug_router_to_subnet(nctx.get_admin_context(),
-                                                    subnet['id'], router_id)
+                if not is_proxy:
+                    for router_id in l3p['routers']:
+                        for subnet in added:
+                            self._plug_router_to_subnet(
+                                nctx.get_admin_context(),
+                                subnet['id'], router_id)
 
     def _stitch_proxy_ptg_to_l3p(self, context, l3p):
         """Stitch proxy PTGs properly."""
@@ -2039,8 +2041,10 @@ class ApicMappingDriver(api.ResourceMappingDriver):
 
         l2p_sn_ids = set()
         for l2p_id in l3p['l2_policies']:
-            l2p_sn_ids.update([x['id'] for x in
-                self._get_l2p_subnets(context._plugin_context, l2p_id)])
+            l2p_sn_ids.update([
+                x['id'] for x in self._get_l2p_subnets(context._plugin_context,
+                                                       l2p_id)
+                if not x['name'].startswith(APIC_OWNED_RES)])
 
         es_list = context._plugin.get_external_segments(
             context._plugin_context, filters={'id': es_dict.keys()})
