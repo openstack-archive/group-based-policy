@@ -26,7 +26,6 @@ from neutron.db import model_base
 from neutron import manager
 from neutron.tests.unit.plugins.ml2.drivers.cisco.apic import (
     base as mocked)
-from neutron.tests.unit.plugins.ml2 import test_plugin
 from opflexagent import constants as ocst
 from oslo_config import cfg
 
@@ -103,7 +102,6 @@ class ApicMappingTestCase(
         nova_client.return_value = vm
         super(ApicMappingTestCase, self).setUp(
             policy_drivers=['implicit_policy', 'apic', 'chain_mapping'],
-            core_plugin=test_plugin.PLUGIN_NAME,
             ml2_options=ml2_opts, sc_plugin=sc_plugin)
         engine = db_api.get_engine()
         model_base.BASEV2.metadata.create_all(engine)
