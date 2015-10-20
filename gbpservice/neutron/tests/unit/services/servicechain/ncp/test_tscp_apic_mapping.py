@@ -785,7 +785,7 @@ class TestProxyGroup(ApicMappingStitchingPlumberGBPTestCase):
         self.assertEqual(1, len(ports))
 
         # this router port is only connected to the original PTG
-        self.assertEqual(ptg1['subnets'][0],
+        self.assertEqual(original_subnet,
                          ports[0]['fixed_ips'][0]['subnet_id'])
 
         # Verify port address comes from that subnet
