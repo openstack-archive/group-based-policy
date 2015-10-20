@@ -2530,7 +2530,7 @@ class ResourceMappingDriver(api.PolicyDriver, local_api.LocalAPI,
                 pt = self._get_policy_target(
                     context._plugin_context, context.current['cluster_id'])
                 if pt['policy_target_group_id'] != context.current[
-                    'policy_target_group_id']:
+                        'policy_target_group_id']:
                     raise exc.InvalidClusterPtg()
             except gp_ext.PolicyTargetNotFound:
                 raise exc.InvalidClusterId()
@@ -2547,7 +2547,7 @@ class ResourceMappingDriver(api.PolicyDriver, local_api.LocalAPI,
     def _update_cluster_membership(self, context, new_cluster_id=None,
                                    old_cluster_id=None):
         if ("allowed-address-pairs" in
-                self._core_plugin.supported_extension_aliases):
+                self._core_plugin._supported_extension_aliases):
             curr_port = self._get_port(
                     context._plugin_context, context.current['port_id'])
             curr_pairs = curr_port['allowed_address_pairs']
