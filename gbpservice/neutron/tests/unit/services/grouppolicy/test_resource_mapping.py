@@ -58,7 +58,7 @@ class NoL3NatSGTestPlugin(
         test_l3.TestNoL3NatPlugin,
         test_securitygroup.SecurityGroupTestPlugin):
 
-    supported_extension_aliases = ["external-net", "security-group"]
+    _supported_extension_aliases = ["external-net", "security-group"]
 
 
 CORE_PLUGIN = ('gbpservice.neutron.tests.unit.services.grouppolicy.'
