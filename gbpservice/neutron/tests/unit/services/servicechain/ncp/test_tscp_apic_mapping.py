@@ -902,8 +902,16 @@ class TestProxyGroup(ApicMappingStitchingPlumberGBPTestCase):
             proxy_gateway=True,
             tenant_id=proxy['tenant_id'],
             is_admin_context=admin_proxy)['policy_target']
+        # Create a PT in the same cluster
+        proxy_gw_failover = self.create_policy_target(
+            policy_target_group_id=proxy['id'],
+            cluster_id=proxy_gw['id'],
+            tenant_id=proxy['tenant_id'],
+            is_admin_context=admin_proxy)['policy_target']
 
         self._bind_port_to_host(pt2['port_id'], 'h2')
+        master_port = self._get_object('ports', proxy_gw['port_id'],
+                                       self.api)['port']
 
         def echo(name):
             return name
@@ -926,6 +934,21 @@ class TestProxyGroup(ApicMappingStitchingPlumberGBPTestCase):
             context.get_admin_context(),
             device='tap%s' % group_default_gw['port_id'], host='h2')
         self.assertTrue(mapping['promiscuous_mode'])
+
+        # No extra IPs for the failover since it doesn't own the master IP
+        mapping = self.driver.get_gbp_details(
+            context.get_admin_context(),
+            device='tap%s' % proxy_gw_failover['port_id'], host='h2')
+        self.assertEqual(0, len(mapping['extra_ips'] or []))
+
+        # Set the port ownership and verify that extra_ips is correctly set
+        ips = self._get_pts_addresses([pt1, pt2, group_default_gw])
+        self.driver._get_owned_addresses = mock.Mock(
+            return_value=[x['ip_address'] for x in master_port['fixed_ips']])
+        mapping = self.driver.get_gbp_details(
+            context.get_admin_context(),
+            device='tap%s' % proxy_gw_failover['port_id'], host='h2')
+        self.assertEqual(set(ips), set(mapping['extra_ips']))
 
     def test_get_gbp_details(self):
         self._test_get_gbp_details()

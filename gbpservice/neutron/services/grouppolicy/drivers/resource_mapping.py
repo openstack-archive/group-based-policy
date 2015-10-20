@@ -2530,7 +2530,7 @@ class ResourceMappingDriver(api.PolicyDriver, local_api.LocalAPI,
                 pt = self._get_policy_target(
                     context._plugin_context, context.current['cluster_id'])
                 if pt['policy_target_group_id'] != context.current[
-                    'policy_target_group_id']:
+                        'policy_target_group_id']:
                     raise exc.InvalidClusterPtg()
             except gp_ext.PolicyTargetNotFound:
                 raise exc.InvalidClusterId()
