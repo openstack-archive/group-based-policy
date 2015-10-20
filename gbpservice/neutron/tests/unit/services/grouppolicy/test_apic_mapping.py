@@ -103,7 +103,6 @@ class ApicMappingTestCase(
         nova_client.return_value = vm
         super(ApicMappingTestCase, self).setUp(
             policy_drivers=['implicit_policy', 'apic', 'chain_mapping'],
-            core_plugin=test_plugin.PLUGIN_NAME,
             ml2_options=ml2_opts, sc_plugin=sc_plugin)
         engine = db_api.get_engine()
         model_base.BASEV2.metadata.create_all(engine)
