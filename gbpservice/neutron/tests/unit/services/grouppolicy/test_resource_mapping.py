@@ -3241,7 +3241,8 @@ class TestExternalPolicy(ResourceMappingTestCase):
                     route = {'destination': '172.0.0.0/8', 'nexthop': None}
                     es1 = self.create_external_segment(
                         subnet_id=sub1['subnet']['id'],
-                        external_routes=[route])['external_segment']
+                        external_routes=[route],
+                        shared=True, is_admin_context=True)['external_segment']
                     es2 = self.create_external_segment(
                         subnet_id=sub2['subnet']['id'])['external_segment']
                     ep = self.create_external_policy(
@@ -3252,6 +3253,12 @@ class TestExternalPolicy(ResourceMappingTestCase):
                         ep['id'], external_segments=[es2['id']],
                         expected_res_status=400)
                     self.assertEqual('ESUpdateNotSupportedForEP',
+                                     res['NeutronError']['type'])
+                    # Shared update rejected
+                    res = self.update_external_policy(
+                        ep['id'], shared=True, is_admin_context=True,
+                        expected_res_status=400)
+                    self.assertEqual('InvalidSharedResource',
                                      res['NeutronError']['type'])
                     # Rules changed when changing PRS
                     pr_ssh = self._create_ssh_allow_rule()
