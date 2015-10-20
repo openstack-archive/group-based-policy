@@ -1083,6 +1083,7 @@ class ResourceMappingDriver(api.PolicyDriver, local_api.LocalAPI,
                     ep['consumed_policy_rule_sets'])
 
     def update_external_policy_precommit(self, context):
+        self._reject_shared(context.current, 'external_policy')
         if context.original['external_segments']:
             if (set(context.current['external_segments']) !=
                     set(context.original['external_segments'])):
