@@ -12,6 +12,7 @@
 
 import netaddr
 
+from apic_ml2.neutron.db import port_ha_ipaddress_binding as ha_ip_db
 from apicapi import apic_manager
 from keystoneclient.v2_0 import client as keyclient
 from neutron.agent.linux import dhcp
@@ -177,6 +178,7 @@ class ApicMappingDriver(api.ResourceMappingDriver):
         self.name_mapper = name_manager.ApicNameManager(self.apic_manager)
         self.enable_dhcp_opt = self.apic_manager.enable_optimized_dhcp
         self.enable_metadata_opt = self.apic_manager.enable_optimized_metadata
+        self.ha_ip_handler = ha_ip_db.PortForHAIPAddress()
         self._gbp_plugin = None
         ApicMappingDriver.me = self
 
@@ -264,7 +266,10 @@ class ApicMappingDriver(api.ResourceMappingDriver):
                    'promiscuous_mode': is_port_promiscuous(port),
                    'extra_ips': [],
                    'floating_ip': [],
-                   'ip_mapping': []}
+                   'ip_mapping': [],
+                   'owned_addresses': list(
+                       set(self._get_owned_addresses(
+                           context, pt['port_id'] if pt else port_id)))}
         if switched:
             details['fixed_ips'] = port['fixed_ips']
         if port['device_owner'].startswith('compute:') and port['device_id']:
@@ -273,13 +278,12 @@ class ApicMappingDriver(api.ResourceMappingDriver):
         l3_policy = context._plugin.get_l3_policy(context,
                                                   l2p['l3_policy_id'])
         details['floating_ip'], details['ip_mapping'] = (
-            self._get_ip_mapping_details(context, port['id'], l3_policy))
-        self._add_network_details(context, port, details)
+            self._get_ip_mapping_details(
+                context, port['id'], l3_policy, pt=pt,
+                owned_addresses=details['owned_addresses']))
+        self._add_network_details(context, port, details, pt=pt)
         self._add_vrf_details(context, details)
-        is_chain_end = bool(pt and pt.get('proxy_gateway') and
-                            ptg.get('proxied_group_id') and
-                            not ptg.get('proxy_group'))
-        if is_chain_end:
+        if self._is_pt_chain_head(context, pt, ptg):
             # is a relevant proxy_gateway, push all the addresses from this
             # chain to this PT
             l3_policy = context._plugin.get_l3_policy(
@@ -297,11 +301,29 @@ class ApicMappingDriver(api.ResourceMappingDriver):
                 ptg = proxied
         return details
 
-    def _get_ip_mapping_details(self, context, port_id, l3_policy):
+    def _get_ip_mapping_details(self, context, port_id, l3_policy, pt=None,
+                                owned_addresses=None):
         """ Add information about IP mapping for DNAT/SNAT """
         if not l3_policy['external_segments']:
             return [], []
-        fips = self._get_fips(context, filters={'port_id': [port_id]})
+        fips_filter = [port_id]
+        if pt:
+            # For each owned address, we must pass the FIPs of the original
+            # owning port.
+            # REVISIT(ivar): should be done for allowed_address_pairs in
+            # general?
+            ptg_pts = self._get_policy_targets(
+                context, {'policy_target_group_id':
+                          [pt['policy_target_group_id']]})
+            ports = self._get_ports(context,
+                                    {'id': [x['port_id'] for x in ptg_pts]})
+            for port in ports:
+                # Whenever a owned address belongs to a port, steal its FIPs
+                if owned_addresses & set([x['ip_address'] for x in
+                                          port['fixed_ips']]):
+                    fips_filter.append(port['id'])
+
+        fips = self._get_fips(context, filters={'port_id': fips_filter})
         ipms = []
         ess = context._plugin.get_external_segments(context._plugin_context,
                 filters={'id': l3_policy['external_segments'].keys()})
@@ -328,8 +350,17 @@ class ApicMappingDriver(api.ResourceMappingDriver):
                 f['nat_epg_tenant'] = nat_epg_tenant
         return fips, ipms
 
-    def _add_network_details(self, context, port, details):
+    def _add_network_details(self, context, port, details, pt=None):
         details['allowed_address_pairs'] = port['allowed_address_pairs']
+        if pt:
+            # Set the correct address ownership for this port
+            owned_addresses = set(self._get_owned_addresses(
+                context, pt['port_id']))
+            for allowed in details['allowed_address_pairs']:
+                if allowed['ip_address'] in owned_addresses:
+                    # Signal the agent that this particular address is active
+                    # on its port
+                    allowed['active'] = True
         details['enable_dhcp_optimization'] = self.enable_dhcp_opt
         details['enable_metadata_optimization'] = self.enable_metadata_opt
         details['subnets'] = self._get_subnets(context,
@@ -2394,3 +2425,44 @@ class ApicMappingDriver(api.ResourceMappingDriver):
             opt = ext_info.get('enable_nat', 'true')
             return opt.lower() in ['true', 'yes', '1']
         return False
+
+    def _is_pt_chain_head(self, plugin_context, pt, ptg=None):
+        if pt:
+            ptg = ptg or self._get_policy_target_group(
+                plugin_context, pt['policy_target_group_id'])
+            # Check whenther PTG is the end of a chain
+            chain_end = bool(ptg.get('proxied_group_id') and
+                             not ptg.get('proxy_group'))
+            if chain_end:
+                cluster_id = pt['cluster_id']
+                if cluster_id:
+                    # The master PT must be a proxy gateway for this to be
+                    # eligible as the chain head
+                    master_pt = self._get_pt_cluster_master(plugin_context, pt)
+
+                    # Verify whether this is the active PT
+                    return bool(master_pt['proxy_gateway'] and
+                                self._is_master_owner(plugin_context, pt,
+                                                      master_pt=master_pt))
+                # regular PT not part of a cluster, return if proxy gateway
+                return bool(pt['proxy_gateway'])
+
+    def _is_master_owner(self, plugin_context, pt, master_pt=None):
+        master_pt = master_pt or self._get_pt_cluster_master(plugin_context,
+                                                             pt)
+        # Get the owned IPs by PT, and verify at least one of them belong to
+        # the cluster master.
+        owned_addresses = set(self._get_owned_addresses(
+            plugin_context, pt['port_id']))
+        master_port = self._get_port(plugin_context, master_pt['port_id'])
+        master_addresses = set([x['ip_address'] for x in
+                                master_port['fixed_ips']])
+        # TODO(ivar): should we check MAC address?
+        return bool(owned_addresses & master_addresses)
+
+    def _get_owned_addresses(self, plugin_context, port_id):
+        return self.ha_ip_handler.get_ha_ipaddresses_for_port(port_id)
+
+    def _get_pt_cluster_master(self, plugin_context, pt):
+        return (self._get_policy_target(plugin_context, pt['cluster_id'])
+                if pt['cluster_id'] != pt['id'] else pt)
