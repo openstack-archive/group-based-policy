@@ -37,7 +37,7 @@ class ApicGBPL3ServicePlugin(db_base_plugin_v2.NeutronDbPluginV2,
         filters = {'device_id': [router_id],
                    'device_owner': [q_const.DEVICE_OWNER_ROUTER_INTF],
                    'fixed_ips': {'subnet_id': [subnet_id]}}
-        ports = self.get_ports(context, filters=filters)
+        ports = self.get_ports(context.elevated(), filters=filters)
         return ports[0]['id']
 
     def _update_router_gw_info(self, context, router_id, info, router=None):
@@ -47,7 +47,7 @@ class ApicGBPL3ServicePlugin(db_base_plugin_v2.NeutronDbPluginV2,
             filters = {'device_id': [router_id],
                        'device_owner': [q_const.DEVICE_OWNER_ROUTER_GW],
                        'network_id': [info['network_id']]}
-            ports = self.get_ports(context, filters=filters)
+            ports = self.get_ports(context.elevated(), filters=filters)
             manager.NeutronManager.get_plugin().update_port_status(
                 context, ports[0]['id'], q_const.PORT_STATUS_ACTIVE)
 
