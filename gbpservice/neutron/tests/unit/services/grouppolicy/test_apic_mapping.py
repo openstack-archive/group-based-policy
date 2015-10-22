@@ -264,6 +264,56 @@ class TestPolicyTarget(ApicMappingTestCase):
         else:
             self.assertEqual([l3p['ip_pool']], mapping['vrf_subnets'])
 
+    def test_ip_address_owner_update(self):
+        l3p = self.create_l3_policy(name='myl3')['l3_policy']
+        l2p = self.create_l2_policy(name='myl2',
+                                    l3_policy_id=l3p['id'])['l2_policy']
+        ptg = self.create_policy_target_group(
+            name="ptg1", l2_policy_id=l2p['id'])['policy_target_group']
+        pt1 = self.create_policy_target(
+            policy_target_group_id=ptg['id'])['policy_target']
+        pt2 = self.create_policy_target(
+            policy_target_group_id=ptg['id'])['policy_target']
+        self._bind_port_to_host(pt1['port_id'], 'h1')
+        self._bind_port_to_host(pt2['port_id'], 'h2')
+
+        ip_owner_info = {'port': pt1['port_id'], 'ip_address_v4': '1.2.3.4'}
+        ip_db = mock.Mock()
+        self.driver.ha_ip_handler = ip_db
+        self.driver._notify_port_update = mock.Mock()
+
+        # set new owner
+        ip_db.get_port_for_ha_ipaddress.return_value = None
+        self.driver.ip_address_owner_update(context.get_admin_context(),
+            ip_owner_info=ip_owner_info, host='h1')
+        ip_db.get_port_for_ha_ipaddress.assert_called_with('1.2.3.4',
+            l2p['network_id'])
+        ip_db.set_port_id_for_ha_ipaddress.assert_called_with(pt1['port_id'],
+            '1.2.3.4')
+        self.assertFalse(ip_db.delete_port_id_for_ha_ipaddress.called)
+        self.driver._notify_port_update.assert_called_with(mock.ANY,
+            pt1['port_id'])
+
+        # update existing owner
+        ip_db.get_port_for_ha_ipaddress.reset_mock()
+        ip_db.set_port_id_for_ha_ipaddress.reset_mock()
+        self.driver._notify_port_update.reset_mock()
+
+        ip_owner_info['port'] = pt2['port_id']
+        ip_db.get_port_for_ha_ipaddress.return_value = {
+            'port_id': pt1['port_id']}
+        self.driver.ip_address_owner_update(context.get_admin_context(),
+            ip_owner_info=ip_owner_info, host='h2')
+        ip_db.set_port_id_for_ha_ipaddress.assert_called_with(pt2['port_id'],
+            '1.2.3.4')
+        ip_db.delete_port_id_for_ha_ipaddress.assert_called_with(
+            pt1['port_id'], '1.2.3.4')
+        exp_calls = [
+            mock.call(mock.ANY, pt1['port_id']),
+            mock.call(mock.ANY, pt2['port_id'])]
+        self._check_call_list(exp_calls,
+            self.driver._notify_port_update.call_args_list)
+
     def test_enhanced_subnet_options(self):
         self.driver.enable_metadata_opt = False
         l3p = self.create_l3_policy(name='myl3',

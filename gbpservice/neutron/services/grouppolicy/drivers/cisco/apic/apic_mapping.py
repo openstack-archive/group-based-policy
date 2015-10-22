@@ -12,6 +12,7 @@
 
 import netaddr
 
+from apic_ml2.neutron.db import port_ha_ipaddress_binding as ha_ip_db
 from apicapi import apic_manager
 from keystoneclient.v2_0 import client as keyclient
 from neutron.agent.linux import dhcp
@@ -29,6 +30,7 @@ from opflexagent import constants as ofcst
 from opflexagent import rpc
 from oslo_concurrency import lockutils
 from oslo_config import cfg
+from oslo_db import exception as db_exc
 from oslo_log import log as logging
 
 from gbpservice.neutron.db.grouppolicy import group_policy_mapping_db as gpdb
@@ -178,6 +180,7 @@ class ApicMappingDriver(api.ResourceMappingDriver):
         self.name_mapper = name_manager.ApicNameManager(self.apic_manager)
         self.enable_dhcp_opt = self.apic_manager.enable_optimized_dhcp
         self.enable_metadata_opt = self.apic_manager.enable_optimized_metadata
+        self.ha_ip_handler = ha_ip_db.PortForHAIPAddress()
         self._gbp_plugin = None
 
     def _setup_rpc_listeners(self):
@@ -374,6 +377,37 @@ class ApicMappingDriver(api.ResourceMappingDriver):
         details['vrf_subnets'] = [l3p['ip_pool']]
         if l3p.get('proxy_ip_pool'):
             details['vrf_subnets'].append(l3p['proxy_ip_pool'])
+
+    # RPC Method
+    def ip_address_owner_update(self, context, **kwargs):
+        if not kwargs.get('ip_owner_info'):
+            return
+        port_id = kwargs['ip_owner_info'].get('port')
+        ipv4 = kwargs['ip_owner_info'].get('ip_address_v4')
+        ipv6 = kwargs['ip_owner_info'].get('ip_address_v6')
+        if not port_id or (not ipv4 and not ipv6):
+            return
+        LOG.debug("Got IP owner update: %s", kwargs['ip_owner_info'])
+        port = self._get_port(context, port_id)
+        if not port:
+            LOG.debug("Ignoring update for non-existent port: %s", port_id)
+            return
+        ports_to_update = set([port_id])
+        for ipa in [ipv4, ipv6]:
+            if not ipa:
+                continue
+            try:
+                old_owner = self.ha_ip_handler.get_port_for_ha_ipaddress(ipa,
+                    port['network_id'])
+                self.ha_ip_handler.set_port_id_for_ha_ipaddress(port_id, ipa)
+                if old_owner and old_owner['port_id'] != port_id:
+                    self.ha_ip_handler.delete_port_id_for_ha_ipaddress(
+                        old_owner['port_id'], ipa)
+                    ports_to_update.add(old_owner['port_id'])
+            except db_exc.DBReferenceError as dbe:
+                LOG.debug("Ignoring FK error for port %s: %s", port_id, dbe)
+        for p in ports_to_update:
+            self._notify_port_update(context, p)
 
     def process_port_added(self, plugin_context, port):
         pass
