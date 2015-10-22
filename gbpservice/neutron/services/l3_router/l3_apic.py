@@ -105,7 +105,7 @@ class ApicGBPL3ServicePlugin(db_base_plugin_v2.NeutronDbPluginV2,
             res = super(ApicGBPL3ServicePlugin, self).create_floatingip(
                 context, floatingip)
         port_id = floatingip.get('floatingip', {}).get('port_id')
-        self._notify_port_update(port_id, context)
+        self._notify_port_update(port_id)
         return res
 
     def update_floatingip(self, context, id, floatingip):
@@ -114,14 +114,14 @@ class ApicGBPL3ServicePlugin(db_base_plugin_v2.NeutronDbPluginV2,
             context, id, floatingip)
         port_id.append(floatingip.get('floatingip', {}).get('port_id'))
         for p in port_id:
-            self._notify_port_update(p, context)
+            self._notify_port_update(p)
         return res
 
     def delete_floatingip(self, context, id):
         port_id = self._get_port_mapped_to_floatingip(context, id)
         res = super(ApicGBPL3ServicePlugin, self).delete_floatingip(
                 context, id)
-        self._notify_port_update(port_id, context)
+        self._notify_port_update(port_id)
         return res
 
     def _get_port_mapped_to_floatingip(self, context, fip_id):
@@ -132,9 +132,10 @@ class ApicGBPL3ServicePlugin(db_base_plugin_v2.NeutronDbPluginV2,
             pass
         return None
 
-    def _notify_port_update(self, port_id, context=None):
-        context = context or n_ctx.get_admin_context()
+    def _notify_port_update(self, port_id):
+        context = n_ctx.get_admin_context()
         if self.apic_gbp and port_id:
             self.apic_gbp._notify_port_update(context, port_id)
             ptg, _ = self.apic_gbp._port_id_to_ptg(context, port_id)
-            self.apic_gbp._notify_head_chain_ports(ptg['id'])
+            if ptg:
+                self.apic_gbp._notify_head_chain_ports(ptg['id'])
