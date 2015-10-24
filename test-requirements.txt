@@ -3,7 +3,6 @@
 # process, which may cause wedges in the gate later.
 
 -e git+https://github.com/openstack/neutron.git@stable/juno#egg=neutron
--e git+https://github.com/noironetworks/apic-ml2-driver.git@juno#egg=apic_ml2
 prettytable>=0.7
 
 coverage==3.7.1
@@ -30,3 +29,4 @@ oslo.utils==1.7.0
 oslo.rootwrap==1.5.0
 
 -e git+https://github.com/noironetworks/python-opflex-agent.git@stable/juno#egg=opflexagent
+-e git+https://github.com/noironetworks/apic-ml2-driver.git@juno#egg=neutron_ml2_driver_apic
