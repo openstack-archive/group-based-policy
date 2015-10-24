@@ -32,10 +32,10 @@ from gbpservice.neutron.tests.unit.services.servicechain.ncp import (
 class ApicMappingStitchingPlumberGBPTestCase(
         test_apic.ApicMappingTestCase):
 
-    def setUp(self):
+    def setUp(self, plumber='stitching_plumber'):
         cfg.CONF.set_override(
             'extension_drivers', ['proxy_group'], group='group_policy')
-        cfg.CONF.set_override('node_plumber', 'stitching_plumber',
+        cfg.CONF.set_override('node_plumber', plumber,
                               group='node_composition_plugin')
         super(ApicMappingStitchingPlumberGBPTestCase, self).setUp(
             sc_plugin=base.SC_PLUGIN_KLASS)
