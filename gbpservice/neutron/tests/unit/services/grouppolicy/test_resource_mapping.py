@@ -422,7 +422,105 @@ class ResourceMappingTestCase(test_plugin.GroupPolicyPluginTestCase):
         return scs_id
 
 
-class TestPolicyTarget(ResourceMappingTestCase):
+class TestClusterIdMixin(object):
+
+    def test_cluster_invalid_id(self):
+        ptg_id = self.create_policy_target_group()['policy_target_group']['id']
+        res = self.create_policy_target(policy_target_group_id=ptg_id,
+                                        cluster_id='SomeInvalidCluster',
+                                        expected_res_status=400)
+        self.assertEqual('InvalidClusterId',
+                         res['NeutronError']['type'])
+
+    def test_invalid_cluster_head_deletion(self):
+        ptg_id = self.create_policy_target_group()['policy_target_group']['id']
+        master = self.create_policy_target(
+            policy_target_group_id=ptg_id)['policy_target']
+        self.create_policy_target(
+            policy_target_group_id=ptg_id, cluster_id=master['id'],
+            expected_res_status=201)
+        res = self.delete_policy_target(master['id'],
+                                        expected_res_status=400)
+        self.assertEqual('PolicyTargetInUse',
+                         res['NeutronError']['type'])
+
+    def test_cluster_invalid_ptg(self):
+        ptg_1 = self.create_policy_target_group()['policy_target_group']['id']
+        ptg_2 = self.create_policy_target_group()['policy_target_group']['id']
+        master = self.create_policy_target(
+            policy_target_group_id=ptg_1)['policy_target']
+        # Cluster member belonging to a different PTG.
+        res = self.create_policy_target(
+            policy_target_group_id=ptg_2, cluster_id=master['id'],
+            expected_res_status=400)
+        self.assertEqual('InvalidClusterPtg',
+                         res['NeutronError']['type'])
+
+    def test_cluster_self_deletion(self):
+        ptg_id = self.create_policy_target_group()['policy_target_group']['id']
+        master = self.create_policy_target(
+            policy_target_group_id=ptg_id)['policy_target']
+        member = self.create_policy_target(
+            policy_target_group_id=ptg_id, cluster_id=master['id'],
+            expected_res_status=201)['policy_target']
+        # Use self id as cluster ID
+        self.update_policy_target(master['id'], cluster_id=master['id'])
+
+        self.delete_policy_target(master['id'], expected_res_status=400)
+        self.delete_policy_target(member['id'], expected_res_status=204)
+
+        # Deletion doesn't fail now that master is the only cluster  member
+        self.delete_policy_target(master['id'], expected_res_status=204)
+
+    def test_cluster_id_create(self):
+        ptg_id = self.create_policy_target_group()['policy_target_group']['id']
+        master = self.create_policy_target(
+            policy_target_group_id=ptg_id)['policy_target']
+        member = self.create_policy_target(
+            policy_target_group_id=ptg_id, cluster_id=master['id'],
+            expected_res_status=201)['policy_target']
+        master_port = self._get_object('ports', master['port_id'],
+                                       self.api)['port']
+        member_port = self._get_object('ports', member['port_id'],
+                                       self.api)['port']
+        self.assertEqual(
+            [{'mac_address': master_port['mac_address'],
+              'ip_address': master_port['fixed_ips'][0]['ip_address']}],
+            member_port['allowed_address_pairs'])
+
+    def test_cluster_id_update_add(self):
+        ptg_id = self.create_policy_target_group()['policy_target_group']['id']
+        master = self.create_policy_target(
+            policy_target_group_id=ptg_id)['policy_target']
+        member = self.create_policy_target(
+            policy_target_group_id=ptg_id,
+            expected_res_status=201)['policy_target']
+        self.update_policy_target(member['id'], cluster_id=master['id'])
+
+        master_port = self._get_object('ports', master['port_id'],
+                                       self.api)['port']
+        member_port = self._get_object('ports', member['port_id'],
+                                       self.api)['port']
+        self.assertEqual(
+            [{'mac_address': master_port['mac_address'],
+              'ip_address': master_port['fixed_ips'][0]['ip_address']}],
+            member_port['allowed_address_pairs'])
+
+    def test_cluster_id_update_remove(self):
+        ptg_id = self.create_policy_target_group()['policy_target_group']['id']
+        master = self.create_policy_target(
+            policy_target_group_id=ptg_id)['policy_target']
+        member = self.create_policy_target(
+            policy_target_group_id=ptg_id, cluster_id=master['id'],
+            expected_res_status=201)['policy_target']
+
+        self.update_policy_target(member['id'], cluster_id='')
+        member_port = self._get_object('ports', member['port_id'],
+                                       self.api)['port']
+        self.assertEqual([], member_port['allowed_address_pairs'])
+
+
+class TestPolicyTarget(ResourceMappingTestCase, TestClusterIdMixin):
 
     def test_implicit_port_lifecycle(self, proxy_ip_pool=None):
         # Create policy_target group.

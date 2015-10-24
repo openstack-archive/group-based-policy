@@ -526,3 +526,27 @@ class LocalAPI(object):
                                   'servicechain_spec', scs_id)
         except sc_ext.ServiceChainSpecNotFound:
             LOG.warn(_("servicechain spec %s already deleted"), scs_id)
+
+    def _get_policy_target(self, plugin_context, pt_id):
+        return self._get_resource(self._group_policy_plugin, plugin_context,
+                                  'policy_target', pt_id)
+
+    def _get_policy_targets(self, plugin_context, filters=None):
+        filters = filters or {}
+        return self._get_resources(self._group_policy_plugin, plugin_context,
+                                   'policy_targets', filters)
+
+    def _create_policy_target(self, plugin_context, attrs):
+        return self._create_resource(self._group_policy_plugin, plugin_context,
+                                     'policy_target', attrs, False)
+
+    def _update_policy_target(self, plugin_context, pt_id, attrs):
+        return self._update_resource(self._group_policy_plugin, plugin_context,
+                                     'policy_target', pt_id, attrs, False)
+
+    def _delete_policy_target(self, plugin_context, pt_id):
+        try:
+            self._delete_resource(self._group_policy_plugin, plugin_context,
+                                  'policy_target', pt_id, False)
+        except gp_ext.PolicyTargetNotFound:
+            LOG.warn(_('Policy Rule Set %s already deleted'), pt_id)
