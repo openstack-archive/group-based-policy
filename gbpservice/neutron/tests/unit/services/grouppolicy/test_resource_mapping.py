@@ -3314,68 +3314,75 @@ class TestExternalPolicy(ResourceMappingTestCase):
 
     def test_update(self):
         with self.network(router__external=True) as net:
-            with contextlib.nested(
-                    self.subnet(cidr='10.10.1.0/24', network=net),
-                    self.subnet(cidr='10.10.2.0/24', network=net)) as (
-                    sub1, sub2):
-                route = {'destination': '172.0.0.0/8', 'nexthop': None}
-                es1 = self.create_external_segment(
-                    subnet_id=sub1['subnet']['id'],
-                    external_routes=[route])['external_segment']
-                es2 = self.create_external_segment(
-                    subnet_id=sub2['subnet']['id'])['external_segment']
-                ep = self.create_external_policy(
-                    external_segments=[es1['id']], expected_res_status=201)
-                ep = ep['external_policy']
-                # ES update rejectes
-                res = self.update_external_policy(
-                    ep['id'], external_segments=[es2['id']],
-                    expected_res_status=400)
-                self.assertEqual('ESUpdateNotSupportedForEP',
-                                 res['NeutronError']['type'])
-                # Rules changed when changing PRS
-                pr_ssh = self._create_ssh_allow_rule()
-                pr_http = self._create_http_allow_rule()
+            with self.subnet(cidr='10.10.1.0/24', network=net) as sub1:
+                with self.subnet(cidr='10.10.2.0/24', network=net) as sub2:
+                    route = {'destination': '172.0.0.0/8', 'nexthop': None}
+                    es1 = self.create_external_segment(
+                        subnet_id=sub1['subnet']['id'],
+                        external_routes=[route],
+                        shared=True, is_admin_context=True)['external_segment']
+                    es2 = self.create_external_segment(
+                        subnet_id=sub2['subnet']['id'])['external_segment']
+                    ep = self.create_external_policy(
+                        external_segments=[es1['id']], expected_res_status=201)
+                    ep = ep['external_policy']
+                    # ES update rejectes
+                    res = self.update_external_policy(
+                        ep['id'], external_segments=[es2['id']],
+                        expected_res_status=400)
+                    self.assertEqual('ESUpdateNotSupportedForEP',
+                                     res['NeutronError']['type'])
+                    # Shared update rejected
+                    res = self.update_external_policy(
+                        ep['id'], shared=True, is_admin_context=True,
+                        expected_res_status=400)
+                    self.assertEqual('InvalidSharedResource',
+                                     res['NeutronError']['type'])
+                    # Rules changed when changing PRS
+                    pr_ssh = self._create_ssh_allow_rule()
+                    pr_http = self._create_http_allow_rule()
 
-                prs_ssh = self.create_policy_rule_set(
-                    policy_rules=[pr_ssh['id']])['policy_rule_set']
-                prs_http = self.create_policy_rule_set(
-                    policy_rules=[pr_http['id']])['policy_rule_set']
+                    prs_ssh = self.create_policy_rule_set(
+                        policy_rules=[pr_ssh['id']])['policy_rule_set']
+                    prs_http = self.create_policy_rule_set(
+                        policy_rules=[pr_http['id']])['policy_rule_set']
 
-                self.update_external_policy(
-                    ep['id'], provided_policy_rule_sets={prs_ssh['id']: ''},
-                    consumed_policy_rule_sets={prs_ssh['id']: ''},
-                    expected_res_status=200)
+                    self.update_external_policy(
+                        ep['id'], provided_policy_rule_sets={prs_ssh['id']:
+                                                             ''},
+                        consumed_policy_rule_sets={prs_ssh['id']: ''},
+                        expected_res_status=200)
 
-                expected_cidrs = self._calculate_expected_external_cidrs(
-                    es1, [])
-                self.assertTrue(len(expected_cidrs) > 0)
-                current_ssh_rules = self._verify_prs_rules(prs_ssh['id'])
-                self._verify_prs_rules(prs_http['id'])
+                    expected_cidrs = self._calculate_expected_external_cidrs(
+                        es1, [])
+                    self.assertTrue(len(expected_cidrs) > 0)
+                    current_ssh_rules = self._verify_prs_rules(prs_ssh['id'])
+                    self._verify_prs_rules(prs_http['id'])
 
-                # Now swap the contract
-                self.update_external_policy(
-                    ep['id'], provided_policy_rule_sets={prs_http['id']: ''},
-                    consumed_policy_rule_sets={prs_http['id']: ''},
-                    expected_res_status=200)
+                    # Now swap the contract
+                    self.update_external_policy(
+                        ep['id'], provided_policy_rule_sets={prs_http['id']:
+                                                             ''},
+                        consumed_policy_rule_sets={prs_http['id']: ''},
+                        expected_res_status=200)
 
-                # SSH rules removed
-                for rule in current_ssh_rules:
-                    if not (rule['direction'] == ['egress']
-                            and rule['remote_ip_prefix'] == ['0.0.0.0/0']):
-                        self.assertFalse(self._get_sg_rule(**rule))
+                    # SSH rules removed
+                    for rule in current_ssh_rules:
+                        if not (rule['direction'] == ['egress']
+                                and rule['remote_ip_prefix'] == ['0.0.0.0/0']):
+                            self.assertFalse(self._get_sg_rule(**rule))
 
-                # HTTP Added
-                current_http_rules = self._verify_prs_rules(prs_http['id'])
+                    # HTTP Added
+                    current_http_rules = self._verify_prs_rules(prs_http['id'])
 
-                # All removed
-                self.update_external_policy(
-                    ep['id'], provided_policy_rule_sets={},
-                    consumed_policy_rule_sets={}, expected_res_status=200)
-                for rule in current_http_rules:
-                    if not (rule['direction'] == ['egress']
-                            and rule['remote_ip_prefix'] == ['0.0.0.0/0']):
-                        self.assertFalse(self._get_sg_rule(**rule))
+                    # All removed
+                    self.update_external_policy(
+                        ep['id'], provided_policy_rule_sets={},
+                        consumed_policy_rule_sets={}, expected_res_status=200)
+                    for rule in current_http_rules:
+                        if not (rule['direction'] == ['egress']
+                                and rule['remote_ip_prefix'] == ['0.0.0.0/0']):
+                            self.assertFalse(self._get_sg_rule(**rule))
 
 
 class TestPolicyAction(ResourceMappingTestCase):
