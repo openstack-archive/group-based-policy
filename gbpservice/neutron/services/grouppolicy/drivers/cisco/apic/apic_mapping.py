@@ -137,7 +137,8 @@ REVERTIBLE_PROTOCOLS = [n_constants.PROTO_NAME_TCP.lower()]
 PROXY_PORT_PREFIX = "opflex_proxy:"
 
 
-class ApicMappingDriver(api.ResourceMappingDriver):
+class ApicMappingDriver(api.ResourceMappingDriver,
+                        ha_ip_db.HAIPOwnerDbMixin):
     """Apic Mapping driver for Group Policy plugin.
 
     This driver implements group policy semantics by mapping group
@@ -405,6 +406,14 @@ class ApicMappingDriver(api.ResourceMappingDriver):
         details['vrf_subnets'] = [l3p['ip_pool']]
         if l3p.get('proxy_ip_pool'):
             details['vrf_subnets'].append(l3p['proxy_ip_pool'])
+
+    # RPC Method
+    def ip_address_owner_update(self, context, **kwargs):
+        if not kwargs.get('ip_owner_info'):
+            return
+        ports_to_update = self.update_ip_owner(kwargs['ip_owner_info'])
+        for p in ports_to_update:
+            self._notify_port_update(context, p)
 
     def process_port_added(self, plugin_context, port):
         pass
