@@ -757,9 +757,11 @@ class ChainMappingDriver(api.PolicyDriver, local_api.LocalAPI,
         result = set()
         for prs in self._get_policy_rule_sets(
                 context._plugin_context.elevated(), {'id': prs_ids}):
-            result |= set(
-                [x.servicechain_instance_id for x in
-                 self._get_ptg_servicechain_mapping(
-                     context._plugin_context.session,
-                     provider_ptg_ids=prs['providing_policy_target_groups'])])
+            if prs['providing_policy_target_groups']:
+                result |= set(
+                    [x.servicechain_instance_id for x in
+                     self._get_ptg_servicechain_mapping(
+                         context._plugin_context.session,
+                         provider_ptg_ids=prs[
+                             'providing_policy_target_groups'])])
         return result
