@@ -725,7 +725,7 @@ class ApicMappingDriver(api.ResourceMappingDriver,
                 self.apic_manager.delete_bd_on_apic(tenant, shadow_bd)
             # Delete PTG specific subnets
             subnets = self._core_plugin.get_subnets(
-                context._plugin_context, {'name': [APIC_OWNED +
+                context._plugin_context, {'name': [APIC_OWNED_RES +
                                                    context.current['id']]})
             self.gbp_plugin._remove_subnets_from_policy_target_groups(
                 nctx.get_admin_context(), [x['id'] for x in subnets])
