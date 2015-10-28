@@ -705,6 +705,43 @@ class NodeCompositionPluginTestCase(
         add.reset_mock()
         rem.reset_mock()
 
+    def test_no_unrelated_chains_notified(self):
+        add = self.driver.update_node_consumer_ptg_added = mock.Mock()
+        rem = self.driver.update_node_consumer_ptg_removed = mock.Mock()
+
+        prof = self._create_service_profile(
+            service_type='LOADBALANCER',
+            vendor=self.SERVICE_PROFILE_VENDOR)['service_profile']
+        node = self.create_servicechain_node(
+            service_profile_id=prof['id'],
+            config=self.DEFAULT_LB_CONFIG,
+            expected_res_status=201)['servicechain_node']
+
+        spec = self.create_servicechain_spec(
+            nodes=[node['id']],
+            expected_res_status=201)['servicechain_spec']
+        prs = self._create_redirect_prs(spec['id'])['policy_rule_set']
+        # This creates a chain
+        self.create_policy_target_group(
+            provided_policy_rule_sets={prs['id']: ''})
+
+        # Create a PRS and assign a consumer with no provider (hence, no chain)
+        prs = self._create_redirect_prs(spec['id'])['policy_rule_set']
+        ptg = self.create_policy_target_group(
+            consumed_policy_rule_sets={prs['id']: ''})['policy_target_group']
+
+        # No notification should be issued
+        self.assertFalse(add.called)
+        self.assertFalse(rem.called)
+
+        # Remove the consumer
+        self.update_policy_target_group(ptg['id'],
+                                        consumed_policy_rule_sets={},
+                                        expected_res_status=200)
+        # No notification should be issued
+        self.assertFalse(add.called)
+        self.assertFalse(rem.called)
+
 
 class TestQuotasForServiceChain(test_base.ServiceChainPluginTestCase):
 
