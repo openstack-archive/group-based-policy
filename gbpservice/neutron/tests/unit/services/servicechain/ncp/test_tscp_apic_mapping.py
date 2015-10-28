@@ -1074,6 +1074,24 @@ class TestProxyGroup(ApicMappingStitchingPlumberGBPTestCase):
         self.assertEqual([policy_rule_set_2['id']],
                          proxy2['consumed_policy_rule_sets'])
 
+    def test_l3_proxy_subnets_delete(self):
+        l2p = self.create_l2_policy(tenant_id='non-admin')['l2_policy']
+        ptg = self.create_policy_target_group(
+            l2_policy_id=l2p['id'],
+            tenant_id='non-admin')['policy_target_group']
+        main_subnet = set(ptg['subnets'])
+        self.mgr.reset_mock()
+        proxy = self.create_policy_target_group(
+            proxied_group_id=ptg['id'], is_admin_context=True,
+            tenant_id='admin-tenant')['policy_target_group']
+        subnets = set(proxy['subnets'])
+        added = subnets - main_subnet
+        self.delete_policy_target_group(proxy['id'], is_admin_context=True,
+                                        expected_res_status=204)
+        # Subnet doesn't exist anymore
+        self._get_object('subnets', list(added)[0], self.api,
+                         expected_res_status=404)
+
 
 class TestApicChainsAdminOwner(TestApicChains):
 
