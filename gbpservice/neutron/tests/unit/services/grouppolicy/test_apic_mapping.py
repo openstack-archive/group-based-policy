@@ -236,11 +236,21 @@ class TestPolicyTarget(ApicMappingTestCase):
         self.assertEqual(l3p['id'], details['vrf_name'])
 
     def test_get_gbp_details(self):
-        l3p = self.create_l3_policy(name='myl3')['l3_policy']
+        self._mock_external_dict([('supported', '192.168.0.2/24')])
+        es = self.create_external_segment(name='supported')['external_segment']
+        self.create_nat_pool(external_segment_id=es['id'],
+                             ip_pool='20.20.20.0/24')
+        l3p = self.create_l3_policy(name='myl3',
+            external_segments={es['id']: ['']})['l3_policy']
         l2p = self.create_l2_policy(name='myl2',
                                     l3_policy_id=l3p['id'])['l2_policy']
+        nsp = self.create_network_service_policy(
+            network_service_params=[
+                {"type": "ip_pool", "value": "nat_pool", "name": "test"}])[
+            'network_service_policy']
         ptg = self.create_policy_target_group(
-            name="ptg1", l2_policy_id=l2p['id'])['policy_target_group']
+            name="ptg1", l2_policy_id=l2p['id'],
+            network_service_policy_id=nsp['id'])['policy_target_group']
         pt1 = self.create_policy_target(
             policy_target_group_id=ptg['id'])['policy_target']
         self._bind_port_to_host(pt1['port_id'], 'h1')
@@ -253,6 +263,11 @@ class TestPolicyTarget(ApicMappingTestCase):
         self.assertTrue(mapping['enable_dhcp_optimization'])
         self.assertEqual(1, len(mapping['subnets']))
         self.assertEqual(ptg['subnets'][0], mapping['subnets'][0]['id'])
+        self.assertEqual(1, len(mapping['floating_ip']))
+        fip = mapping['floating_ip'][0]
+        self.assertEqual(pt1['port_id'], fip['port_id'])
+        self.assertEqual("NAT-epg-%s" % es['id'], fip['nat_epg_name'])
+        self.assertEqual(es['tenant_id'], fip['nat_epg_tenant'])
 
         self.assertEqual(l3p['tenant_id'], mapping['vrf_tenant'])
         self.assertEqual(l3p['id'], mapping['vrf_name'])

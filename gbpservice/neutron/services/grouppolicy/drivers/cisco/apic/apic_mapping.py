@@ -180,7 +180,6 @@ class ApicMappingDriver(api.ResourceMappingDriver,
         self.name_mapper = name_manager.ApicNameManager(self.apic_manager)
         self.enable_dhcp_opt = self.apic_manager.enable_optimized_dhcp
         self.enable_metadata_opt = self.apic_manager.enable_optimized_metadata
-        self.ha_ip_handler = ha_ip_db.PortForHAIPAddress()
         self._gbp_plugin = None
 
     def _setup_rpc_listeners(self):
@@ -267,10 +266,7 @@ class ApicMappingDriver(api.ResourceMappingDriver,
                    'promiscuous_mode': is_port_promiscuous(port),
                    'extra_ips': [],
                    'floating_ip': [],
-                   'ip_mapping': [],
-                   'owned_addresses': list(
-                       set(self._get_owned_addresses(
-                           context, pt['port_id'] if pt else port_id)))}
+                   'ip_mapping': []}
         if switched:
             details['fixed_ips'] = port['fixed_ips']
         if port['device_owner'].startswith('compute:') and port['device_id']:
@@ -278,10 +274,12 @@ class ApicMappingDriver(api.ResourceMappingDriver,
             details['vm-name'] = vm.name if vm else port['device_id']
         l3_policy = context._plugin.get_l3_policy(context,
                                                   l2p['l3_policy_id'])
+        own_addr = self._get_owned_addresses(context,
+                                             pt['port_id'] if pt else port_id)
         details['floating_ip'], details['ip_mapping'] = (
             self._get_ip_mapping_details(
                 context, port['id'], l3_policy, pt=pt,
-                owned_addresses=details['owned_addresses']))
+                owned_addresses=own_addr))
         self._add_network_details(context, port, details, pt=pt)
         self._add_vrf_details(context, details)
         if self._is_pt_chain_head(context, pt, ptg):
@@ -355,8 +353,7 @@ class ApicMappingDriver(api.ResourceMappingDriver,
         details['allowed_address_pairs'] = port['allowed_address_pairs']
         if pt:
             # Set the correct address ownership for this port
-            owned_addresses = set(self._get_owned_addresses(
-                context, pt['port_id']))
+            owned_addresses = self._get_owned_addresses(context, pt['port_id'])
             for allowed in details['allowed_address_pairs']:
                 if allowed['ip_address'] in owned_addresses:
                     # Signal the agent that this particular address is active
@@ -2445,8 +2442,8 @@ class ApicMappingDriver(api.ResourceMappingDriver,
                                                              pt)
         # Get the owned IPs by PT, and verify at least one of them belong to
         # the cluster master.
-        owned_addresses = set(self._get_owned_addresses(
-            plugin_context, pt['port_id']))
+        owned_addresses = self._get_owned_addresses(plugin_context,
+                                                    pt['port_id'])
         master_port = self._get_port(plugin_context, master_pt['port_id'])
         master_addresses = set([x['ip_address'] for x in
                                 master_port['fixed_ips']])
@@ -2454,7 +2451,7 @@ class ApicMappingDriver(api.ResourceMappingDriver,
         return bool(owned_addresses & master_addresses)
 
     def _get_owned_addresses(self, plugin_context, port_id):
-        return self.ha_ip_handler.get_ha_ipaddresses_for_port(port_id)
+        return set(self.ha_ip_handler.get_ha_ipaddresses_for_port(port_id))
 
     def _get_pt_cluster_master(self, plugin_context, pt):
         return (self._get_policy_target(plugin_context, pt['cluster_id'])
