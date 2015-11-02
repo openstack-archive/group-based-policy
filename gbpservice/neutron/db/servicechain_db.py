@@ -17,10 +17,10 @@ from neutron.db import common_db_mixin
 from neutron.db import model_base
 from neutron.db import models_v2
 from neutron import manager
-from neutron.openstack.common import uuidutils
 from neutron.plugins.common import constants as pconst
 from oslo_log import log as logging
 from oslo_serialization import jsonutils
+from oslo_utils import uuidutils
 import sqlalchemy as sa
 from sqlalchemy.ext.orderinglist import ordering_list
 from sqlalchemy import orm
