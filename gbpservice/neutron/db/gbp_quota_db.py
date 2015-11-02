@@ -13,11 +13,11 @@
 from neutron.common import exceptions as nexcp
 from neutron import context
 from neutron.db import common_db_mixin
-from neutron.db import quota_db
-from neutron import quota
+from neutron.db.quota import driver
+from neutron.quota import resource as quota_resource
 
 
-QUOTA_DRIVER = quota_db.DbQuotaDriver
+QUOTA_DRIVER = driver.DbQuotaDriver
 
 DB_CLASS_TO_RESOURCE_NAMES = {}
 
@@ -31,8 +31,8 @@ class GBPQuotaBase(common_db_mixin.CommonDbMixin):
         ctx = context.Context(user_id=None, tenant_id=tenant_id)
         class_name = self.__class__.__name__
         resource = DB_CLASS_TO_RESOURCE_NAMES[class_name]
-        d = {resource: quota.CountableResource(resource, None,
-                                               "quota_" + resource)}
+        d = {resource: quota_resource.CountableResource(resource, None,
+                                                        "quota_" + resource)}
         resource_quota = QUOTA_DRIVER.get_tenant_quotas(ctx, d,
                                                         tenant_id)[resource]
         if resource_quota == -1:
