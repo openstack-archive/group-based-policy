@@ -11,10 +11,12 @@
 #    under the License.
 
 from neutron.common import log
+from neutron.plugins.common import constants as pconst
 from oslo_log import log as logging
 from oslo_utils import excutils
 
 import gbpservice.neutron.db.servicechain_db as servicechain_db
+from gbpservice.neutron.services.grouppolicy.common import constants as gp_cts
 from gbpservice.neutron.services.servicechain.plugins.msc import (
     context as servicechain_context)
 from gbpservice.neutron.services.servicechain.plugins.msc import (
@@ -32,6 +34,7 @@ class ServiceChainPlugin(servicechain_db.ServiceChainDbPlugin,
 
     """
     supported_extension_aliases = ["servicechain"]
+    path_prefix = gp_cts.GBP_PREFIXES[pconst.SERVICECHAIN]
 
     def __init__(self):
         self.driver_manager = manager.DriverManager()

@@ -11,12 +11,14 @@
 #    under the License.
 
 from neutron.common import log
+from neutron.plugins.common import constants as pconst
 from oslo_config import cfg
 from oslo_log import log as logging
 from oslo_utils import excutils
 
 from gbpservice.common import utils
 from gbpservice.neutron.db import servicechain_db
+from gbpservice.neutron.services.grouppolicy.common import constants as gp_cts
 from gbpservice.neutron.services.servicechain.plugins.ncp import (
     context as ctx)
 from gbpservice.neutron.services.servicechain.plugins.ncp import (
@@ -37,6 +39,7 @@ class NodeCompositionPlugin(servicechain_db.ServiceChainDbPlugin,
 
     """
     supported_extension_aliases = ["servicechain"]
+    path_prefix = gp_cts.GBP_PREFIXES[pconst.SERVICECHAIN]
 
     def __init__(self):
         self.driver_manager = manager.NodeDriverManager()

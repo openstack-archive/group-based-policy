@@ -48,6 +48,7 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
     db_group_policy_mapping.GroupPolicyMappingDbMixin.
     """
     _supported_extension_aliases = ["group-policy", "group-policy-mapping"]
+    path_prefix = gp_cts.GBP_PREFIXES[pconst.GROUP_POLICY]
 
     @property
     def supported_extension_aliases(self):
