@@ -13,10 +13,10 @@
 import copy
 
 import mock
-from neutron.openstack.common import uuidutils
 from neutron.plugins.common import constants
 from neutron.tests.unit.api.v2 import test_base
 from neutron.tests.unit.extensions import base as test_extensions_base
+from oslo_utils import uuidutils
 from webob import exc
 
 from gbpservice.neutron.extensions import servicechain
