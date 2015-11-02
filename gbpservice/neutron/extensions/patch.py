@@ -12,6 +12,7 @@
 
 from neutron.db import l3_db
 from neutron.db import securitygroups_db
+from neutron import manager
 
 
 # Monkey patch create floatingip to allow subnet_id to be specified.
@@ -129,3 +130,9 @@ def _get_security_groups_on_port(self, context, port):
 
 securitygroups_db.SecurityGroupDbMixin._get_security_groups_on_port = (
     _get_security_groups_on_port)
+
+
+def _load_flavors_manager(self):
+    pass
+
+manager.NeutronManager._load_flavors_manager = _load_flavors_manager
