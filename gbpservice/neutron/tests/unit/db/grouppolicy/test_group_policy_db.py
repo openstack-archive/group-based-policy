@@ -20,12 +20,12 @@ from neutron import context
 from neutron.db import api as db_api
 from neutron.db import model_base
 from neutron import manager
-from neutron.openstack.common import uuidutils
 from neutron.plugins.common import constants
 from neutron.tests.unit.api import test_extensions
 from neutron.tests.unit.db import test_db_base_plugin_v2
 from oslo_config import cfg
 from oslo_utils import importutils
+from oslo_utils import uuidutils
 
 from gbpservice.neutron.db.grouppolicy import group_policy_db as gpdb
 from gbpservice.neutron.db import servicechain_db as svcchain_db
