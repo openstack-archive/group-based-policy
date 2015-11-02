@@ -12,8 +12,8 @@
 
 from neutron.common import log
 from neutron.db import model_base
-from neutron.openstack.common import uuidutils
 from oslo_log import log as logging
+from oslo_utils import uuidutils
 import sqlalchemy as sa
 from sqlalchemy import orm
 

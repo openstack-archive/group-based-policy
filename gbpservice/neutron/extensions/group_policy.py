@@ -17,12 +17,12 @@ from neutron.api.v2 import attributes as attr
 from neutron.api.v2 import resource_helper
 from neutron.common import constants as n_constants
 from neutron.common import exceptions as nexc
-from neutron.openstack.common import uuidutils
 from neutron.plugins.common import constants
-from neutron import quota
+from neutron.quota import resource_registry
 from neutron.services import service_base
 from oslo_config import cfg
 from oslo_log import log as logging
+from oslo_utils import uuidutils
 import six
 
 import gbpservice.neutron.extensions
@@ -36,10 +36,6 @@ from gbpservice.neutron.services.grouppolicy.common import (
 # the GBP service to be loaded correctly. GBP extensions' path is added
 # to Neutron's so that it's found at extension scanning time.
 extensions.append_api_extensions_path(gbpservice.neutron.extensions.__path__)
-constants.GROUP_POLICY = "GROUP_POLICY"
-constants.COMMON_PREFIXES["GROUP_POLICY"] = "/grouppolicy"
-constants.EXT_TO_SERVICE_MAPPING['gp'] = constants.GROUP_POLICY
-constants.ALLOWED_SERVICES.append(constants.GROUP_POLICY)
 
 LOG = logging.getLogger(__name__)
 
@@ -880,7 +876,7 @@ class Group_policy(extensions.ExtensionDescriptor):
                               'policy_rule_set', 'external_policy',
                               'external_segment', 'nat_pool',
                               'network_service_policy']:
-            quota.QUOTAS.register_resource_by_name(resource_name)
+            resource_registry.register_resource_by_name(resource_name)
         return resource_helper.build_resource_info(plural_mappings,
                                                    RESOURCE_ATTRIBUTE_MAP,
                                                    constants.GROUP_POLICY)
