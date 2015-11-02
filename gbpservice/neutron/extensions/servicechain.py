@@ -34,8 +34,7 @@ from gbpservice.neutron.services.servicechain.common import constants as scc
 # to Neutron's so that it's found at extension scanning time.
 
 extensions.append_api_extensions_path(gbpservice.neutron.extensions.__path__)
-constants.SERVICECHAIN = "SERVICECHAIN"
-constants.COMMON_PREFIXES["SERVICECHAIN"] = "/servicechain"
+
 
 LOG = logging.getLogger(__name__)
 
