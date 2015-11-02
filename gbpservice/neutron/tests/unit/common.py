@@ -10,7 +10,7 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-from neutron.openstack.common import uuidutils
+from oslo_utils import uuidutils
 
 _uuid = uuidutils.generate_uuid
 
