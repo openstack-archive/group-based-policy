@@ -10,6 +10,7 @@ trap prepare_logs ERR
 
 prepare_gbp_devstack
 $TOP_DIR/stack.sh
+pip_install -e $GBP_DIR
 
 # Add a rootwrap filter to support test-only
 # configuration (e.g. a KillFilter for processes that

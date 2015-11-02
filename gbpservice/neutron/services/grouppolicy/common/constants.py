@@ -10,6 +10,17 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+from neutron.plugins.common import constants
+
+
+constants.GROUP_POLICY = "GROUP_POLICY"
+constants.SERVICECHAIN = "SERVICECHAIN"
+
+COMMON_PREFIXES = {
+    constants.GROUP_POLICY: "/grouppolicy",
+    constants.SERVICECHAIN: "/servicechain",
+}
+
 GP_ACTION_ALLOW = 'allow'
 GP_ACTION_REDIRECT = 'redirect'
 
