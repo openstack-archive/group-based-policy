@@ -20,17 +20,20 @@ from neutron import context
 from neutron.db import api as db_api
 from neutron.db import model_base
 from neutron import manager
-from neutron.openstack.common import uuidutils
 from neutron.plugins.common import constants
+from neutron import policy
 from neutron.tests.unit.api import test_extensions
 from neutron.tests.unit.db import test_db_base_plugin_v2
 from oslo_config import cfg
 from oslo_utils import importutils
+from oslo_utils import uuidutils
 
 from gbpservice.neutron.db.grouppolicy import group_policy_db as gpdb
 from gbpservice.neutron.db import servicechain_db as svcchain_db
 from gbpservice.neutron.extensions import group_policy as gpolicy
 from gbpservice.neutron.extensions import servicechain as service_chain
+from gbpservice.neutron.services.grouppolicy.common import (
+    constants as gp_constants)
 import gbpservice.neutron.tests
 from gbpservice.neutron.tests.unit import common as cm
 
@@ -162,10 +165,10 @@ class ApiManagerMixin(object):
 
 class GroupPolicyDBTestBase(ApiManagerMixin):
     resource_prefix_map = dict(
-        (k, constants.COMMON_PREFIXES[constants.SERVICECHAIN])
+        (k, gp_constants.COMMON_PREFIXES[constants.SERVICECHAIN])
         for k in service_chain.RESOURCE_ATTRIBUTE_MAP.keys())
     resource_prefix_map.update(dict(
-        (k, constants.COMMON_PREFIXES[constants.GROUP_POLICY])
+        (k, gp_constants.COMMON_PREFIXES[constants.GROUP_POLICY])
         for k in gpolicy.RESOURCE_ATTRIBUTE_MAP.keys()
     ))
 
@@ -258,7 +261,8 @@ class GroupPolicyDBTestBase(ApiManagerMixin):
 
 class GroupPolicyDBTestPlugin(gpdb.GroupPolicyDbPlugin):
 
-        supported_extension_aliases = ['group-policy']
+    supported_extension_aliases = ['group-policy']
+    path_prefix = "/grouppolicy"
 
 
 DB_GP_PLUGIN_KLASS = (GroupPolicyDBTestPlugin.__module__ + '.' +
@@ -267,7 +271,8 @@ DB_GP_PLUGIN_KLASS = (GroupPolicyDBTestPlugin.__module__ + '.' +
 
 class ServiceChainDBTestPlugin(svcchain_db.ServiceChainDbPlugin):
 
-        supported_extension_aliases = ['servicechain']
+    supported_extension_aliases = ['servicechain']
+    path_prefix = "/servicechain"
 
 
 DB_SC_PLUGIN_KLASS = (ServiceChainDBTestPlugin.__module__ + '.' +
@@ -288,12 +293,14 @@ class GroupPolicyDbTestCase(GroupPolicyDBTestBase,
                 'gp_plugin_name': gp_plugin,
                 'sc_plugin_name': sc_plugin}
 
-        test_policy_file = ETCDIR + "/test-policy.json"
-        cfg.CONF.set_override('policy_file', test_policy_file)
+        extensions.append_api_extensions_path(
+            gbpservice.neutron.extensions.__path__)
         super(GroupPolicyDbTestCase, self).setUp(
             plugin=core_plugin, ext_mgr=ext_mgr,
             service_plugins=service_plugins
         )
+        test_policy_file = ETCDIR + "/test-policy.json"
+        policy.refresh(policy_file=test_policy_file)
         self.plugin = importutils.import_object(gp_plugin)
         self._sc_plugin = importutils.import_object(sc_plugin)
         if not ext_mgr:
