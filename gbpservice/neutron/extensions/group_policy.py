@@ -17,12 +17,12 @@ from neutron.api.v2 import attributes as attr
 from neutron.api.v2 import resource_helper
 from neutron.common import constants as n_constants
 from neutron.common import exceptions as nexc
-from neutron.openstack.common import uuidutils
 from neutron.plugins.common import constants
 from neutron import quota
 from neutron.services import service_base
 from oslo_config import cfg
 from oslo_log import log as logging
+from oslo_utils import uuidutils
 import six
 
 import gbpservice.neutron.extensions
@@ -35,8 +35,6 @@ from gbpservice.neutron.services.grouppolicy.common import (
 # the GBP service to be loaded correctly. GBP extensions' path is added
 # to Neutron's so that it's found at extension scanning time.
 extensions.append_api_extensions_path(gbpservice.neutron.extensions.__path__)
-constants.GROUP_POLICY = "GROUP_POLICY"
-constants.COMMON_PREFIXES["GROUP_POLICY"] = "/grouppolicy"
 constants.EXT_TO_SERVICE_MAPPING['gp'] = constants.GROUP_POLICY
 constants.ALLOWED_SERVICES.append(constants.GROUP_POLICY)
 
