@@ -26,11 +26,11 @@ from neutron.extensions import external_net as external_net
 from neutron.extensions import securitygroup as ext_sg
 from neutron import manager
 from neutron.notifiers import nova
-from neutron.openstack.common import uuidutils
 from neutron.plugins.common import constants as pconst
 from neutron.tests.unit.extensions import test_l3
 from neutron.tests.unit.extensions import test_securitygroup
 from neutron.tests.unit.plugins.ml2 import test_plugin as n_test_plugin
+from oslo_utils import uuidutils
 import webob.exc
 
 from gbpservice.common import utils
