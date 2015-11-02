@@ -13,6 +13,8 @@
 import netaddr
 
 from apic_ml2.neutron.db import port_ha_ipaddress_binding as ha_ip_db
+from apic_ml2.neutron.ml2.drivers.cisco.apic import apic_model
+from apic_ml2.neutron.ml2.drivers.cisco.apic import config
 from apicapi import apic_manager
 from keystoneclient.v2_0 import client as keyclient
 from neutron.agent.linux import dhcp
@@ -25,8 +27,6 @@ from neutron import context as nctx
 from neutron.db import db_base_plugin_v2 as n_db
 from neutron.extensions import portbindings
 from neutron import manager
-from neutron.plugins.ml2.drivers.cisco.apic import apic_model
-from neutron.plugins.ml2.drivers.cisco.apic import config
 from opflexagent import constants as ofcst
 from opflexagent import rpc
 from oslo_concurrency import lockutils
