@@ -18,9 +18,9 @@ import heatclient
 import mock
 from neutron import context as neutron_context
 from neutron.extensions import external_net as external_net
-from neutron.openstack.common import uuidutils
 from neutron.plugins.common import constants
 from oslo_serialization import jsonutils
+from oslo_utils import uuidutils
 import webob
 
 from gbpservice.neutron.services.servicechain.plugins.ncp import config
