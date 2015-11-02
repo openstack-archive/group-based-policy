@@ -14,9 +14,9 @@
 import webob.exc
 
 from neutron import context
-from neutron.openstack.common import uuidutils
 from neutron.plugins.common import constants
 from oslo_config import cfg
+from oslo_utils import uuidutils
 
 from gbpservice.neutron.db import servicechain_db as svcchain_db
 from gbpservice.neutron.extensions import servicechain as service_chain
@@ -69,7 +69,8 @@ class ServiceChainDBTestBase(test_group_policy_db.GroupPolicyDBTestBase):
 
 class ServiceChainDBTestPlugin(svcchain_db.ServiceChainDbPlugin):
 
-        supported_extension_aliases = ['servicechain']
+    supported_extension_aliases = ['servicechain']
+    path_prefix = "/servicechain"
 
 DB_GP_PLUGIN_KLASS = (ServiceChainDBTestPlugin.__module__ + '.' +
                       ServiceChainDBTestPlugin.__name__)
