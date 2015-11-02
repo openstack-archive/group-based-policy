@@ -11,6 +11,7 @@
 #    under the License.
 
 from neutron.db import l3_db
+from neutron import manager
 from neutron.db import securitygroups_db
 
 
@@ -129,3 +130,9 @@ def _get_security_groups_on_port(self, context, port):
 
 securitygroups_db.SecurityGroupDbMixin._get_security_groups_on_port = (
     _get_security_groups_on_port)
+
+
+def _load_flavors_manager(self):
+    pass
+
+manager.NeutronManager._load_flavors_manager = _load_flavors_manager
