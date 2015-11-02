@@ -12,7 +12,8 @@
 
 from neutron.extensions import portbindings
 from neutron.plugins.ml2 import driver_api as api
-from neutron.plugins.ml2.drivers import mech_openvswitch as base
+from neutron.plugins.ml2.drivers.openvswitch.mech_driver import (
+        mech_openvswitch as base)
 from oslo_log import log
 
 from gbpservice.neutron.services.servicechain.plugins.ncp import plumber_base
