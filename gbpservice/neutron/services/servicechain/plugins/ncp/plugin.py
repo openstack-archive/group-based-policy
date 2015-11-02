@@ -37,6 +37,7 @@ class NodeCompositionPlugin(servicechain_db.ServiceChainDbPlugin,
 
     """
     supported_extension_aliases = ["servicechain"]
+    path_prefix = "/servicechain"
 
     def __init__(self):
         self.driver_manager = manager.NodeDriverManager()
