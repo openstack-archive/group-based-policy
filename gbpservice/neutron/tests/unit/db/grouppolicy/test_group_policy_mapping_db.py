@@ -26,6 +26,7 @@ from gbpservice.neutron.tests.unit.db.grouppolicy import (
 class GroupPolicyMappingDBTestPlugin(gpmdb.GroupPolicyMappingDbPlugin):
 
     supported_extension_aliases = ['group-policy', 'group-policy-mapping']
+    path_prefix = "/grouppolicy"
 
 
 DB_GP_PLUGIN_KLASS = (GroupPolicyMappingDBTestPlugin.__module__ + '.' +
