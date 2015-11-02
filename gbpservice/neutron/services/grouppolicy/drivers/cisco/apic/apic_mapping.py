@@ -13,8 +13,10 @@
 import netaddr
 
 from apic_ml2.neutron.db import port_ha_ipaddress_binding as ha_ip_db
+from apic_ml2.neutron.plugins.ml2.drivers.cisco.apic import config
 from apicapi import apic_manager
 from keystoneclient.v2_0 import client as keyclient
+from networking_cisco.plugins.ml2.drivers.cisco.apic import apic_model
 from neutron.agent.linux import dhcp
 from neutron.api.v2 import attributes
 from neutron.common import constants as n_constants
@@ -25,8 +27,6 @@ from neutron import context as nctx
 from neutron.db import db_base_plugin_v2 as n_db
 from neutron.extensions import portbindings
 from neutron import manager
-from neutron.plugins.ml2.drivers.cisco.apic import apic_model
-from neutron.plugins.ml2.drivers.cisco.apic import config
 from opflexagent import constants as ofcst
 from opflexagent import rpc
 from oslo_concurrency import lockutils
@@ -255,7 +255,7 @@ class ApicMappingDriver(api.ResourceMappingDriver,
     def get_gbp_details(self, context, **kwargs):
         try:
             port_id = self._core_plugin._device_to_port_id(
-                kwargs['device'])
+                context, kwargs['device'])
             port_context = self._core_plugin.get_bound_port_context(
                 context, port_id, kwargs['host'])
             if not port_context:
