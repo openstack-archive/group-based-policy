@@ -11,7 +11,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import base64
 import copy
+import hashlib
+import hmac
 import sys
 
 import mock
@@ -28,8 +31,10 @@ from neutron.tests.unit.plugins.ml2.drivers.cisco.apic import (
     base as mocked)
 from opflexagent import constants as ocst
 from oslo_config import cfg
+from oslo_serialization import jsonutils as json
 
 sys.modules["apicapi"] = mock.Mock()
+sys.modules["apicapi"].exceptions.ApicHostNotConfigured = Exception
 
 from gbpservice.neutron.services.grouppolicy import (
     group_policy_context as p_context)
@@ -134,6 +139,7 @@ class ApicMappingTestCase(
         def echo2(string):
             return string
         self.driver.apic_manager.apic.fvTenant.name = echo2
+        self.driver.apic_manager.vmm_shared_secret = 'dirtylittlesecret'
 
     def _build_external_dict(self, name, cidr_exposed):
         return {name: {
@@ -276,6 +282,40 @@ class TestPolicyTarget(ApicMappingTestCase):
                              mapping['vrf_subnets'])
         else:
             self.assertEqual([l3p['ip_pool']], mapping['vrf_subnets'])
+
+    def test_attestation(self):
+        ptg = self.create_policy_target_group()['policy_target_group']
+        pt1 = self.create_policy_target(
+            policy_target_group_id=ptg['id'])['policy_target']
+        self._bind_port_to_host(pt1['port_id'], 'h1')
+        details = self.driver.get_gbp_details(context.get_admin_context(),
+                                              device='tap%s' % pt1['port_id'],
+                                              host='h1')
+        expected_attestation = {'ports': [{'switch': '201', 'port': '5/31'}],
+                                'endpoint-group': {
+                                    'policy-space-name': self._tenant_id,
+                                    'endpoint-group-name': ptg['id']}}
+        self.assertTrue('attestation' in details)
+        self.assertEqual(1, len(details['attestation']))
+        observed_attestation = base64.b64decode(
+            details['attestation'][0]['validator'])
+        # It's a json string
+        observed_attestation_copy = observed_attestation
+        # Unmarshal
+        observed_attestation = json.loads(observed_attestation)
+        del observed_attestation['timestamp']
+        del observed_attestation['validity']
+        self.assertEqual(expected_attestation, observed_attestation)
+        self.assertEqual(details['attestation'][0]['name'], p1['id'])
+
+        # Validate decrypting
+        observed_mac = base64.b64decode(
+            details['attestation'][0]['validator-mac'])
+        expected_mac =hmac.new(
+            'dirtylittlesecret', msg=observed_attestation_copy,
+            digestmod=hashlib.sha256).digest()
+        # Validation succeeded
+        self.assertEqual(expected_mac, observed_mac)
 
     def test_ip_address_owner_update(self):
         l3p = self.create_l3_policy(name='myl3')['l3_policy']

@@ -181,6 +181,14 @@ class ApicMappingDriver(api.ResourceMappingDriver,
         self.enable_dhcp_opt = self.apic_manager.enable_optimized_dhcp
         self.enable_metadata_opt = self.apic_manager.enable_optimized_metadata
         self._gbp_plugin = None
+        try:
+            from apic_ml2.neutron.plugins.ml2.drivers.cisco.apic import (
+                attestation as attestation)
+            self.attestator = attestation.EndpointAttestator(self.apic_manager)
+        except ImportError:
+            LOG.warn("APIC_ML2 driver module is out of date, EP validation "
+                     "won't be supported. Traffic may be negated if the APIC "
+                     "expects the EP attestation to be present.")
 
     def _setup_rpc_listeners(self):
         self.endpoints = [rpc.GBPServerRpcCallback(self)]
@@ -298,6 +306,13 @@ class ApicMappingDriver(api.ResourceMappingDriver,
                     details['floating_ip'].extend(fips)
                     details['ip_mapping'].extend(ipms)
                 ptg = proxied
+        try:
+            self.apic_manager.vmm_shared_secred
+            details['attestation'] = self.attestator.get_endpoint_attestation(
+                port_id, details['host'], details['endpoint_group_name'],
+                details['ptg_tenant'])
+        except KeyError:
+            LOG.warning("EP attestation not supported by APICAPI.")
         return details
 
     def _get_ip_mapping_details(self, context, port_id, l3_policy, pt=None,
