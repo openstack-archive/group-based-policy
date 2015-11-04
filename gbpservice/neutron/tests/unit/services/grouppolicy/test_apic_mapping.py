@@ -22,6 +22,7 @@ from neutron.agent import securitygroups_rpc as sg_cfg
 from neutron.common import rpc as n_rpc
 from neutron import context
 from neutron.db import api as db_api
+from neutron.db import db_base_plugin_v2 as n_db
 from neutron.db import model_base
 from neutron import manager
 from neutron.tests.unit.plugins.ml2.drivers.cisco.apic import (
@@ -149,6 +150,7 @@ class ApicMappingTestCase(
             return string
         self.driver.apic_manager.apic.fvTenant.name = echo2
         self.driver.apic_manager.apic.fvCtx.name = echo2
+        self._db_plugin = n_db.NeutronDbPluginV2()
 
     def _build_external_dict(self, name, cidr_exposed):
         ext_info = {
@@ -265,7 +267,11 @@ class TestPolicyTarget(ApicMappingTestCase):
 
     def test_get_gbp_details(self):
         self._mock_external_dict([('supported', '192.168.0.2/24')])
-        es = self.create_external_segment(name='supported')['external_segment']
+        self.driver.apic_manager.ext_net_dict[
+                'supported']['host_pool_cidr'] = '192.168.200.1/24'
+        es = self.create_external_segment(name='supported',
+            cidr='192.168.0.2/24',
+            expected_res_status=201, shared=False)['external_segment']
         self.create_nat_pool(external_segment_id=es['id'],
                              ip_pool='20.20.20.0/24')
         l3p = self.create_l3_policy(name='myl3',
@@ -304,6 +310,60 @@ class TestPolicyTarget(ApicMappingTestCase):
                              mapping['vrf_subnets'])
         else:
             self.assertEqual([l3p['ip_pool']], mapping['vrf_subnets'])
+        self.assertEqual(1, len(mapping['host_snat_ips']))
+        self.assertEqual("192.168.200.1",
+            mapping['host_snat_ips'][0]['gateway_ip'])
+        self.assertEqual("192.168.200.2",
+            mapping['host_snat_ips'][0]['host_snat_ip'])
+        self.assertEqual(24, mapping['host_snat_ips'][0]['prefixlen'])
+
+        # Create event on a second host to verify that the SNAT
+        # port gets created for this second host
+        pt2 = self.create_policy_target(
+            policy_target_group_id=ptg['id'])['policy_target']
+        self._bind_port_to_host(pt2['port_id'], 'h2')
+
+        mapping = self.driver.get_gbp_details(context.get_admin_context(),
+            device='tap%s' % pt2['port_id'], host='h2')
+        self.assertEqual(pt2['port_id'], mapping['port_id'])
+        self.assertEqual(1, len(mapping['host_snat_ips']))
+        self.assertEqual("192.168.200.1",
+            mapping['host_snat_ips'][0]['gateway_ip'])
+        self.assertEqual("192.168.200.3",
+            mapping['host_snat_ips'][0]['host_snat_ip'])
+        self.assertEqual(24, mapping['host_snat_ips'][0]['prefixlen'])
+
+
+    def test_snat_pool_subnet_deletion(self):
+        self._mock_external_dict([('supported', '192.168.0.2/24')])
+        self.driver.apic_manager.ext_net_dict[
+                'supported']['host_pool_cidr'] = '192.168.200.1/24'
+        es = self.create_external_segment(name='supported',
+            cidr='192.168.0.2/24',
+            expected_res_status=201, shared=False)['external_segment']
+        l3p = self.create_l3_policy(name='myl3',
+            external_segments={es['id']: ['']})['l3_policy']
+        l2p = self.create_l2_policy(name='myl2',
+                                    l3_policy_id=l3p['id'])['l2_policy']
+        ptg = self.create_policy_target_group(
+            name="ptg1", l2_policy_id=l2p['id'])['policy_target_group']
+        pt1 = self.create_policy_target(
+            policy_target_group_id=ptg['id'])['policy_target']
+        self._bind_port_to_host(pt1['port_id'], 'h1')
+
+        mapping = self.driver.get_gbp_details(context.get_admin_context(),
+            device='tap%s' % pt1['port_id'], host='h1')
+        self.assertEqual(pt1['port_id'], mapping['port_id'])
+        self.assertEqual(1, len(mapping['host_snat_ips']))
+        self.assertEqual("192.168.200.1",
+            mapping['host_snat_ips'][0]['gateway_ip'])
+        self.assertEqual("192.168.200.2",
+            mapping['host_snat_ips'][0]['host_snat_ip'])
+        self.assertEqual(24, mapping['host_snat_ips'][0]['prefixlen'])
+        self.update_l3_policy(l3p['id'], external_segments={},
+                expected_res_status=200)
+        self.delete_external_segment(es['id'],
+            expected_res_status=webob.exc.HTTPNoContent.code)
 
     def test_ip_address_owner_update(self):
         l3p = self.create_l3_policy(name='myl3')['l3_policy']
@@ -1834,7 +1894,9 @@ class TestExternalSegment(ApicMappingTestCase):
                          res['NeutronError']['type'])
 
     def _test_create_delete(self, shared=False):
+        mgr = self.driver.apic_manager
         self._mock_external_dict([('supported', '192.168.0.2/24')])
+        mgr.ext_net_dict['supported']['host_pool_cidr'] = '192.168.200.1/24'
         es = self.create_external_segment(name='supported',
             cidr='192.168.0.2/24',
             expected_res_status=201, shared=shared)['external_segment']
@@ -1845,7 +1907,6 @@ class TestExternalSegment(ApicMappingTestCase):
         subnet = self._get_object('subnets', es['subnet_id'],
             self.api)['subnet']
         self.assertEqual('169.254.0.0/25', subnet['cidr'])
-        mgr = self.driver.apic_manager
         owner = es['tenant_id'] if not shared else self.common_tenant
         prs = "NAT-allow-%s" % es['id']
         if self.nat_enabled:
@@ -1879,6 +1940,10 @@ class TestExternalSegment(ApicMappingTestCase):
                           provider=True, transaction=mock.ANY)]
             self._check_call_list(expected_calls,
                 mgr.set_contract_for_epg.call_args_list)
+            ctx = context.get_admin_context()
+            internal_subnets = self._db_plugin.get_subnets(
+                    ctx, filters={'name': [amap.HOST_SNAT_POOL]})
+            self.assertEqual(1, len(internal_subnets))
         else:
             self.assertFalse(mgr.ensure_bd_created_on_apic.called)
             self.assertFalse(mgr.ensure_epg_created.called)
@@ -1917,8 +1982,10 @@ class TestExternalSegment(ApicMappingTestCase):
             self.assertFalse(mgr.delete_contract.called)
             self.assertFalse(mgr.delete_tenant_filter.called)
 
-    def test_create_delete(self):
+    def test_create_delete_unshared(self):
         self._test_create_delete(False)
+
+    def test_create_delete_shared(self):
         self._test_create_delete(True)
 
     def test_update_unsupported_noop(self):
@@ -2895,7 +2962,7 @@ class TestNatPool(ApicMappingTestCase):
     def test_overlap_nat_pool_create(self):
         self._mock_external_dict([('supported', '192.168.0.2/24')])
         mgr = self.driver.apic_manager
-        mgr.ext_net_dict['supported']['host_pool_cidr'] = '192.168.200.0/24'
+        mgr.ext_net_dict['supported']['host_pool_cidr'] = '192.168.200.1/24'
         es = self.create_external_segment(name='supported',
             expected_res_status=webob.exc.HTTPCreated.code)['external_segment']
         # cidr_exposed overlap
