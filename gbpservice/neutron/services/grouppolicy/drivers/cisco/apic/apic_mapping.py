@@ -227,10 +227,13 @@ class ApicMappingDriver(api.ResourceMappingDriver,
         if pt and pt['description'].startswith(PROXY_PORT_PREFIX):
             new_id = pt['description'].replace(
                 PROXY_PORT_PREFIX, '').rstrip(' ')
-            LOG.debug("Replace port %s with port %s", port_id, new_id)
-            port = self._get_port(context, new_id)
-            ptg, pt = self._port_id_to_ptg(context, port['id'])
-            switched = True
+            try:
+                LOG.debug("Replace port %s with port %s", port_id, new_id)
+                port = self._get_port(context, new_id)
+                ptg, pt = self._port_id_to_ptg(context, port['id'])
+                switched = True
+            except n_exc.PortNotFound:
+                LOG.warn(_("Proxied port %s could not be found"), new_id)
 
         l2p = self._network_id_to_l2p(context, port['network_id'])
         if not ptg and not l2p:
@@ -266,7 +269,9 @@ class ApicMappingDriver(api.ResourceMappingDriver,
                    'promiscuous_mode': is_port_promiscuous(port),
                    'extra_ips': [],
                    'floating_ip': [],
-                   'ip_mapping': []}
+                   'ip_mapping': [],
+                   # Put per mac-address extra info
+                   'extra_details': {}}
         if switched:
             details['fixed_ips'] = port['fixed_ips']
         if port['device_owner'].startswith('compute:') and port['device_id']:
@@ -274,30 +279,44 @@ class ApicMappingDriver(api.ResourceMappingDriver,
             details['vm-name'] = vm.name if vm else port['device_id']
         l3_policy = context._plugin.get_l3_policy(context,
                                                   l2p['l3_policy_id'])
-        own_addr = self._get_owned_addresses(context,
-                                             pt['port_id'] if pt else port_id)
+        own_addr = self._get_owned_addresses(
+            context, pt['port_id'] if (pt and not switched) else port_id)
         details['floating_ip'], details['ip_mapping'] = (
             self._get_ip_mapping_details(
                 context, port['id'], l3_policy, pt=pt,
                 owned_addresses=own_addr))
-        self._add_network_details(context, port, details, pt=pt)
+        self._add_network_details(context, port, details, pt=pt,
+                                  owned=own_addr)
         self._add_vrf_details(context, details)
-        if self._is_pt_chain_head(context, pt, ptg):
+        if self._is_pt_chain_head(context, pt, ptg, owned_ips=own_addr):
             # is a relevant proxy_gateway, push all the addresses from this
             # chain to this PT
-            l3_policy = context._plugin.get_l3_policy(
-                context, l2p['l3_policy_id'])
-            while ptg['proxied_group_id']:
-                proxied = self.gbp_plugin.get_policy_target_group(
-                    context, ptg['proxied_group_id'])
-                for port in self._get_ptg_ports(proxied):
-                    details['extra_ips'].extend([x['ip_address'] for x in
-                                                 port['fixed_ips']])
-                    fips, ipms = self._get_ip_mapping_details(
-                        context, port['id'], l3_policy)
-                    details['floating_ip'].extend(fips)
-                    details['ip_mapping'].extend(ipms)
-                ptg = proxied
+            extra_map = details
+            master_mac = self._is_master_owner(context, pt, owned_ips=own_addr)
+            if master_mac:
+                extra_map = details['extra_details'].setdefault(
+                    master_mac, {'extra_ips': [], 'floating_ip': [],
+                                 'ip_mapping': []})
+            if bool(master_mac) == bool(pt['cluster_id']):
+                l3_policy = context._plugin.get_l3_policy(
+                    context, l2p['l3_policy_id'])
+                while ptg['proxied_group_id']:
+                    proxied = self.gbp_plugin.get_policy_target_group(
+                        context, ptg['proxied_group_id'])
+                    for port in self._get_ptg_ports(proxied):
+                        extra_map['extra_ips'].extend([x['ip_address'] for x in
+                                                      port['fixed_ips']])
+                        fips, ipms = self._get_ip_mapping_details(
+                            context, port['id'], l3_policy)
+                        extra_map['floating_ip'].extend(fips)
+                        extra_map['ip_mapping'].extend(ipms)
+                    ptg = proxied
+            else:
+                LOG.info(_("Active master has changed for PT %s"), pt['id'])
+                # There's no master mac even if a cluster_id is set.
+                # Active chain head must have changed in a concurrent
+                # operation, get out of here
+                pass
         return details
 
     def _get_ip_mapping_details(self, context, port_id, l3_policy, pt=None,
@@ -349,11 +368,13 @@ class ApicMappingDriver(api.ResourceMappingDriver,
                 f['nat_epg_tenant'] = nat_epg_tenant
         return fips, ipms
 
-    def _add_network_details(self, context, port, details, pt=None):
+    def _add_network_details(self, context, port, details, pt=None,
+                             owned=None):
         details['allowed_address_pairs'] = port['allowed_address_pairs']
         if pt:
             # Set the correct address ownership for this port
-            owned_addresses = self._get_owned_addresses(context, pt['port_id'])
+            owned_addresses = owned or self._get_owned_addresses(context,
+                                                                 pt['port_id'])
             for allowed in details['allowed_address_pairs']:
                 if allowed['ip_address'] in owned_addresses:
                     # Signal the agent that this particular address is active
@@ -2416,7 +2437,7 @@ class ApicMappingDriver(api.ResourceMappingDriver,
             return opt.lower() in ['true', 'yes', '1']
         return False
 
-    def _is_pt_chain_head(self, plugin_context, pt, ptg=None):
+    def _is_pt_chain_head(self, plugin_context, pt, ptg=None, owned_ips=None):
         if pt:
             ptg = ptg or self._get_policy_target_group(
                 plugin_context, pt['policy_target_group_id'])
@@ -2433,22 +2454,31 @@ class ApicMappingDriver(api.ResourceMappingDriver,
                     # Verify whether this is the active PT
                     return bool(master_pt['proxy_gateway'] and
                                 self._is_master_owner(plugin_context, pt,
-                                                      master_pt=master_pt))
+                                                      master_pt=master_pt,
+                                                      owned_ips=owned_ips))
                 # regular PT not part of a cluster, return if proxy gateway
                 return bool(pt['proxy_gateway'])
 
-    def _is_master_owner(self, plugin_context, pt, master_pt=None):
-        master_pt = master_pt or self._get_pt_cluster_master(plugin_context,
-                                                             pt)
-        # Get the owned IPs by PT, and verify at least one of them belong to
-        # the cluster master.
-        owned_addresses = self._get_owned_addresses(plugin_context,
-                                                    pt['port_id'])
-        master_port = self._get_port(plugin_context, master_pt['port_id'])
-        master_addresses = set([x['ip_address'] for x in
-                                master_port['fixed_ips']])
-        # TODO(ivar): should we check MAC address?
-        return bool(owned_addresses & master_addresses)
+    def _is_master_owner(self, plugin_context, pt, master_pt=None,
+                         owned_ips=None):
+        """Verifies if the port owns the master address.
+
+        Returns the master MAC address or False
+        """
+        if pt['cluster_id']:
+            master_pt = master_pt or self._get_pt_cluster_master(
+                plugin_context, pt)
+            # Get the owned IPs by PT, and verify at least one of them belong
+            # to the cluster master.
+            owned_addresses = owned_ips or self._get_owned_addresses(
+                plugin_context, pt['port_id'])
+            master_port = self._get_port(plugin_context, master_pt['port_id'])
+            master_addresses = set([x['ip_address'] for x in
+                                    master_port['fixed_ips']])
+            master_mac = master_port['mac_address']
+            if bool(owned_addresses & master_addresses):
+                return master_mac
+        return False
 
     def _get_owned_addresses(self, plugin_context, port_id):
         return set(self.ha_ip_handler.get_ha_ipaddresses_for_port(port_id))
