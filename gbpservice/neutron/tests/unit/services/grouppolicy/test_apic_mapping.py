@@ -22,6 +22,7 @@ from neutron.agent import securitygroups_rpc as sg_cfg
 from neutron.common import rpc as n_rpc
 from neutron import context
 from neutron.db import api as db_api
+from neutron.db import db_base_plugin_v2 as n_db
 from neutron.db import model_base
 from neutron import manager
 from neutron.tests.unit.plugins.ml2.drivers.cisco.apic import (
@@ -149,6 +150,7 @@ class ApicMappingTestCase(
             return string
         self.driver.apic_manager.apic.fvTenant.name = echo2
         self.driver.apic_manager.apic.fvCtx.name = echo2
+        self._db_plugin = n_db.NeutronDbPluginV2()
 
     def _build_external_dict(self, name, cidr_exposed):
         ext_info = {
@@ -1834,7 +1836,9 @@ class TestExternalSegment(ApicMappingTestCase):
                          res['NeutronError']['type'])
 
     def _test_create_delete(self, shared=False):
+        mgr = self.driver.apic_manager
         self._mock_external_dict([('supported', '192.168.0.2/24')])
+        mgr.ext_net_dict['supported']['host_pool_cidr'] = '192.168.200.1/24'
         es = self.create_external_segment(name='supported',
             cidr='192.168.0.2/24',
             expected_res_status=201, shared=shared)['external_segment']
@@ -1845,7 +1849,6 @@ class TestExternalSegment(ApicMappingTestCase):
         subnet = self._get_object('subnets', es['subnet_id'],
             self.api)['subnet']
         self.assertEqual('169.254.0.0/25', subnet['cidr'])
-        mgr = self.driver.apic_manager
         owner = es['tenant_id'] if not shared else self.common_tenant
         prs = "NAT-allow-%s" % es['id']
         if self.nat_enabled:
@@ -1879,6 +1882,10 @@ class TestExternalSegment(ApicMappingTestCase):
                           provider=True, transaction=mock.ANY)]
             self._check_call_list(expected_calls,
                 mgr.set_contract_for_epg.call_args_list)
+            ctx = context.get_admin_context()
+            internal_subnets = self._db_plugin.get_subnets(
+                    ctx, filters={'name': [amap.HOST_SNAT_POOL]})
+            self.assertEqual(1, len(internal_subnets))
         else:
             self.assertFalse(mgr.ensure_bd_created_on_apic.called)
             self.assertFalse(mgr.ensure_epg_created.called)
@@ -1917,8 +1924,10 @@ class TestExternalSegment(ApicMappingTestCase):
             self.assertFalse(mgr.delete_contract.called)
             self.assertFalse(mgr.delete_tenant_filter.called)
 
-    def test_create_delete(self):
+    def test_create_delete_unshared(self):
         self._test_create_delete(False)
+
+    def test_create_delete_shared(self):
         self._test_create_delete(True)
 
     def test_update_unsupported_noop(self):
@@ -2895,7 +2904,7 @@ class TestNatPool(ApicMappingTestCase):
     def test_overlap_nat_pool_create(self):
         self._mock_external_dict([('supported', '192.168.0.2/24')])
         mgr = self.driver.apic_manager
-        mgr.ext_net_dict['supported']['host_pool_cidr'] = '192.168.200.0/24'
+        mgr.ext_net_dict['supported']['host_pool_cidr'] = '192.168.200.1/24'
         es = self.create_external_segment(name='supported',
             expected_res_status=webob.exc.HTTPCreated.code)['external_segment']
         # cidr_exposed overlap
