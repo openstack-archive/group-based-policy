@@ -953,7 +953,9 @@ class TestProxyGroup(ApicMappingStitchingPlumberGBPTestCase):
         mapping = self.driver.get_gbp_details(
             context.get_admin_context(),
             device='tap%s' % proxy_gw_failover['port_id'], host='h2')
-        self.assertEqual(set(ips), set(mapping['extra_ips']))
+        self.assertEqual(
+            set(ips), set(mapping['extra_details'][master_port['mac_address']][
+                'extra_ips']))
         self.assertEqual(
             [{'mac_address': master_port['mac_address'],
              'ip_address': master_port['fixed_ips'][0]['ip_address'],
