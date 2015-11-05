@@ -384,6 +384,23 @@ class TestPolicyTarget(ApicMappingTestCase):
             self.assertEqual([dhcp['fixed_ips'][0]['ip_address']],
                              details['subnets'][0]['dhcp_server_ips'])
 
+    def test_get_gbp_details_error(self):
+        details = self.driver.get_gbp_details(
+            context.get_admin_context(), device='tap%s' % 'randomid',
+            host='h1')
+        # device was not found
+        self.assertEqual(None, details)
+        ptg = self.create_policy_target_group()['policy_target_group']
+        pt1 = self.create_policy_target(
+            policy_target_group_id=ptg['id'])['policy_target']
+        self._bind_port_to_host(pt1['port_id'], 'h1')
+        self.driver._get_owned_addresses = mock.Mock(side_effect=Exception)
+        details = self.driver.get_gbp_details(
+            context.get_admin_context(), device='tap%s' % pt1['port_id'],
+            host='h1')
+        # device was not found
+        self.assertEqual({'device': 'tap%s' % pt1['port_id']}, details)
+
     def test_get_gbp_proxy_details(self):
         l3p_fake = self.create_l3_policy(name='myl3')['l3_policy']
         l2p_fake = self.create_l2_policy(
