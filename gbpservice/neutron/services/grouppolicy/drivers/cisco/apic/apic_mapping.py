@@ -13,6 +13,7 @@
 import netaddr
 
 from apic_ml2.neutron.db import port_ha_ipaddress_binding as ha_ip_db
+from apic_ml2.neutron.plugins.ml2.drivers.cisco.apic import rpc as t_rpc
 from apicapi import apic_manager
 from keystoneclient.v2_0 import client as keyclient
 from neutron.agent.linux import dhcp
@@ -31,6 +32,7 @@ from opflexagent import rpc
 from oslo_concurrency import lockutils
 from oslo_config import cfg
 from oslo_log import log as logging
+from oslo_messaging import target
 
 from gbpservice.neutron.db.grouppolicy import group_policy_mapping_db as gpdb
 from gbpservice.neutron.extensions import driver_proxy_group as proxy_group
@@ -137,6 +139,16 @@ REVERTIBLE_PROTOCOLS = [n_constants.PROTO_NAME_TCP.lower()]
 PROXY_PORT_PREFIX = "opflex_proxy:"
 
 
+class ApicTopologyRpcCallbackGBP(t_rpc.ApicTopologyRpcCallback):
+    RPC_API_VERSION = "1.1"
+    target = target.Target(version=RPC_API_VERSION)
+
+    def __init__(self, apic_manager):
+        self.apic_manager = apic_manager
+        self.peers = self._load_peers()
+        LOG.debug("Current peers %s", self.peers)
+
+
 class ApicMappingDriver(api.ResourceMappingDriver,
                         ha_ip_db.HAIPOwnerDbMixin):
     """Apic Mapping driver for Group Policy plugin.
@@ -190,6 +202,18 @@ class ApicMappingDriver(api.ResourceMappingDriver,
                                   fanout=False)
         return self.conn.consume_in_threads()
 
+    def _setup_topology_rpc_listeners(self):
+        self.topology_endpoints = []
+        if cfg.CONF.ml2_cisco_apic.integrated_topology_service:
+            self.topology_endpoints.append(
+                ApicTopologyRpcCallbackGBP(self.apic_manager))
+            LOG.debug("New RPC endpoints: %s", self.topology_endpoints)
+            self.topology_topic = t_rpc.TOPIC_APIC_SERVICE
+            self.topology_conn = n_rpc.create_connection(new=True)
+            self.topology_conn.create_consumer(
+                self.topology_topic, self.topology_endpoints, fanout=False)
+            return self.topology_conn.consume_in_threads()
+
     def _setup_rpc(self):
         self.notifier = rpc.AgentNotifierApi(topics.AGENT)
 
@@ -208,115 +232,124 @@ class ApicMappingDriver(api.ResourceMappingDriver,
 
     # RPC Method
     def get_gbp_details(self, context, **kwargs):
-        port_id = self._core_plugin._device_to_port_id(
-            kwargs['device'])
-        port_context = self._core_plugin.get_bound_port_context(
-            context, port_id, kwargs['host'])
-        if not port_context:
-            LOG.warning(_("Device %(device)s requested by agent "
-                          "%(agent_id)s not found in database"),
-                        {'device': port_id,
-                         'agent_id': kwargs.get('agent_id')})
-            return
-        port = port_context.current
-        # retrieve PTG from a given Port
-        ptg, pt = self._port_id_to_ptg(context, port['id'])
-        context._plugin = self.gbp_plugin
-        context._plugin_context = context
-        switched = False
-        if pt and pt['description'].startswith(PROXY_PORT_PREFIX):
-            new_id = pt['description'].replace(
-                PROXY_PORT_PREFIX, '').rstrip(' ')
-            try:
-                LOG.debug("Replace port %s with port %s", port_id, new_id)
-                port = self._get_port(context, new_id)
-                ptg, pt = self._port_id_to_ptg(context, port['id'])
-                switched = True
-            except n_exc.PortNotFound:
-                LOG.warn(_("Proxied port %s could not be found"), new_id)
+        try:
+            port_id = self._core_plugin._device_to_port_id(
+                kwargs['device'])
+            port_context = self._core_plugin.get_bound_port_context(
+                context, port_id, kwargs['host'])
+            if not port_context:
+                LOG.warning(_("Device %(device)s requested by agent "
+                              "%(agent_id)s not found in database"),
+                            {'device': port_id,
+                             'agent_id': kwargs.get('agent_id')})
+                return
+            port = port_context.current
+            # retrieve PTG from a given Port
+            ptg, pt = self._port_id_to_ptg(context, port['id'])
+            context._plugin = self.gbp_plugin
+            context._plugin_context = context
+            switched = False
+            if pt and pt['description'].startswith(PROXY_PORT_PREFIX):
+                new_id = pt['description'].replace(
+                    PROXY_PORT_PREFIX, '').rstrip(' ')
+                try:
+                    LOG.debug("Replace port %s with port %s", port_id, new_id)
+                    port = self._get_port(context, new_id)
+                    ptg, pt = self._port_id_to_ptg(context, port['id'])
+                    switched = True
+                except n_exc.PortNotFound:
+                    LOG.warn(_("Proxied port %s could not be found"), new_id)
 
-        l2p = self._network_id_to_l2p(context, port['network_id'])
-        if not ptg and not l2p:
-            return
+            l2p = self._network_id_to_l2p(context, port['network_id'])
+            if not ptg and not l2p:
+                return
 
-        l2_policy_id = l2p['id']
-        if ptg:
-            ptg_tenant = self._tenant_by_sharing_policy(ptg)
-            endpoint_group_name = self.name_mapper.policy_target_group(
-                context, ptg)
-        else:
-            ptg_tenant = self._tenant_by_sharing_policy(l2p)
-            endpoint_group_name = self.name_mapper.l2_policy(
-                context, l2p, prefix=SHADOW_PREFIX)
-
-        def is_port_promiscuous(port):
-            return (port['device_owner'] in PROMISCUOUS_TYPES or
-                    port['name'].endswith(PROMISCUOUS_SUFFIX)) or (
-                        pt and pt.get('group_default_gateway'))
-
-        details = {'device': kwargs.get('device'),
-                   'port_id': port_id,
-                   'mac_address': port['mac_address'],
-                   'app_profile_name': str(
-                       self.apic_manager.app_profile_name),
-                   'l2_policy_id': l2_policy_id,
-                   'l3_policy_id': l2p['l3_policy_id'],
-                   'tenant_id': port['tenant_id'],
-                   'host': port[portbindings.HOST_ID],
-                   'ptg_tenant': self.apic_manager.apic.fvTenant.name(
-                       ptg_tenant),
-                   'endpoint_group_name': str(endpoint_group_name),
-                   'promiscuous_mode': is_port_promiscuous(port),
-                   'extra_ips': [],
-                   'floating_ip': [],
-                   'ip_mapping': [],
-                   # Put per mac-address extra info
-                   'extra_details': {}}
-        if switched:
-            details['fixed_ips'] = port['fixed_ips']
-        if port['device_owner'].startswith('compute:') and port['device_id']:
-            vm = nclient.NovaClient().get_server(port['device_id'])
-            details['vm-name'] = vm.name if vm else port['device_id']
-        l3_policy = context._plugin.get_l3_policy(context,
-                                                  l2p['l3_policy_id'])
-        own_addr = self._get_owned_addresses(
-            context, pt['port_id'] if (pt and not switched) else port_id)
-        details['floating_ip'], details['ip_mapping'] = (
-            self._get_ip_mapping_details(
-                context, port['id'], l3_policy, pt=pt,
-                owned_addresses=own_addr))
-        self._add_network_details(context, port, details, pt=pt,
-                                  owned=own_addr)
-        self._add_vrf_details(context, details)
-        if self._is_pt_chain_head(context, pt, ptg, owned_ips=own_addr):
-            # is a relevant proxy_gateway, push all the addresses from this
-            # chain to this PT
-            extra_map = details
-            master_mac = self._is_master_owner(context, pt, owned_ips=own_addr)
-            if master_mac:
-                extra_map = details['extra_details'].setdefault(
-                    master_mac, {'extra_ips': [], 'floating_ip': [],
-                                 'ip_mapping': []})
-            if bool(master_mac) == bool(pt['cluster_id']):
-                l3_policy = context._plugin.get_l3_policy(
-                    context, l2p['l3_policy_id'])
-                while ptg['proxied_group_id']:
-                    proxied = self.gbp_plugin.get_policy_target_group(
-                        context, ptg['proxied_group_id'])
-                    for port in self._get_ptg_ports(proxied):
-                        extra_map['extra_ips'].extend([x['ip_address'] for x in
-                                                      port['fixed_ips']])
-                        fips, ipms = self._get_ip_mapping_details(
-                            context, port['id'], l3_policy)
-                        extra_map['floating_ip'].extend(fips)
-                        extra_map['ip_mapping'].extend(ipms)
-                    ptg = proxied
+            l2_policy_id = l2p['id']
+            if ptg:
+                ptg_tenant = self._tenant_by_sharing_policy(ptg)
+                endpoint_group_name = self.name_mapper.policy_target_group(
+                    context, ptg)
             else:
-                LOG.info(_("Active master has changed for PT %s"), pt['id'])
-                # There's no master mac even if a cluster_id is set.
-                # Active chain head must have changed in a concurrent
-                # operation, get out of here
-                pass
+                ptg_tenant = self._tenant_by_sharing_policy(l2p)
+                endpoint_group_name = self.name_mapper.l2_policy(
+                    context, l2p, prefix=SHADOW_PREFIX)
+
+            def is_port_promiscuous(port):
+                return (port['device_owner'] in PROMISCUOUS_TYPES or
+                        port['name'].endswith(PROMISCUOUS_SUFFIX)) or (
+                            pt and pt.get('group_default_gateway'))
+
+            details = {'device': kwargs.get('device'),
+                       'port_id': port_id,
+                       'mac_address': port['mac_address'],
+                       'app_profile_name': str(
+                           self.apic_manager.app_profile_name),
+                       'l2_policy_id': l2_policy_id,
+                       'l3_policy_id': l2p['l3_policy_id'],
+                       'tenant_id': port['tenant_id'],
+                       'host': port[portbindings.HOST_ID],
+                       'ptg_tenant': self.apic_manager.apic.fvTenant.name(
+                           ptg_tenant),
+                       'endpoint_group_name': str(endpoint_group_name),
+                       'promiscuous_mode': is_port_promiscuous(port),
+                       'extra_ips': [],
+                       'floating_ip': [],
+                       'ip_mapping': [],
+                       # Put per mac-address extra info
+                       'extra_details': {}}
+            if switched:
+                details['fixed_ips'] = port['fixed_ips']
+            if port['device_owner'].startswith('compute:') and port[
+                    'device_id']:
+                vm = nclient.NovaClient().get_server(port['device_id'])
+                details['vm-name'] = vm.name if vm else port['device_id']
+            l3_policy = context._plugin.get_l3_policy(context,
+                                                      l2p['l3_policy_id'])
+            own_addr = self._get_owned_addresses(
+                context, pt['port_id'] if (pt and not switched) else port_id)
+            details['floating_ip'], details['ip_mapping'] = (
+                self._get_ip_mapping_details(
+                    context, port['id'], l3_policy, pt=pt,
+                    owned_addresses=own_addr))
+            self._add_network_details(context, port, details, pt=pt,
+                                      owned=own_addr)
+            self._add_vrf_details(context, details)
+            if self._is_pt_chain_head(context, pt, ptg, owned_ips=own_addr):
+                # is a relevant proxy_gateway, push all the addresses from this
+                # chain to this PT
+                extra_map = details
+                master_mac = self._is_master_owner(context, pt,
+                                                   owned_ips=own_addr)
+                if master_mac:
+                    extra_map = details['extra_details'].setdefault(
+                        master_mac, {'extra_ips': [], 'floating_ip': [],
+                                     'ip_mapping': []})
+                if bool(master_mac) == bool(pt['cluster_id']):
+                    l3_policy = context._plugin.get_l3_policy(
+                        context, l2p['l3_policy_id'])
+                    while ptg['proxied_group_id']:
+                        proxied = self.gbp_plugin.get_policy_target_group(
+                            context, ptg['proxied_group_id'])
+                        for port in self._get_ptg_ports(proxied):
+                            extra_map['extra_ips'].extend(
+                                [x['ip_address'] for x in port['fixed_ips']])
+                            fips, ipms = self._get_ip_mapping_details(
+                                context, port['id'], l3_policy)
+                            extra_map['floating_ip'].extend(fips)
+                            extra_map['ip_mapping'].extend(ipms)
+                        ptg = proxied
+                else:
+                    LOG.info(_("Active master has changed for PT %s"),
+                             pt['id'])
+                    # There's no master mac even if a cluster_id is set.
+                    # Active chain head must have changed in a concurrent
+                    # operation, get out of here
+                    pass
+        except Exception as e:
+            LOG.error(_("An exception has occurred while retrieving device "
+                        "gbp details for %(device)s with error %(error)s"),
+                      {'device': kwargs.get('device'), 'error': e.message})
+            details = {'device': kwargs.get('device')}
         return details
 
     def _get_ip_mapping_details(self, context, port_id, l3_policy, pt=None,
