@@ -995,6 +995,40 @@ class TestProxyGroup(ApicMappingStitchingPlumberGBPTestCase):
             proxy_gw['port_id'],
             self.driver.notifier.port_update.call_args[0][1]['id'])
 
+    def _test_end_chain_notified_cluster_id(self, admin_proxy=False):
+        self.driver.notifier = mock.Mock()
+        ptg = self.create_policy_target_group(
+            name="ptg1")['policy_target_group']
+        proxy1 = self.create_policy_target_group(
+            proxied_group_id=ptg['id'],
+            tenant_id=self._proxy_tenant(ptg, admin_proxy),
+            is_admin_context=admin_proxy)['policy_target_group']
+        proxy2 = self.create_policy_target_group(
+            proxied_group_id=proxy1['id'],
+            tenant_id=self._proxy_tenant(ptg, admin_proxy),
+            is_admin_context=admin_proxy)['policy_target_group']
+        proxy_gw_master = self.create_policy_target(
+            policy_target_group_id=proxy2['id'],
+            proxy_gateway=True, tenant_id=proxy2['tenant_id'],
+            is_admin_context=admin_proxy)['policy_target']
+        # The following is not proxy gateway, but is part of a proxy_gw cluster
+        proxy_gw = self.create_policy_target(
+            policy_target_group_id=proxy2['id'],
+            cluster_id=proxy_gw_master['id'], tenant_id=proxy2['tenant_id'],
+            is_admin_context=admin_proxy)['policy_target']
+
+        self._bind_port_to_host(proxy_gw['port_id'], 'h2')
+        self.driver.notifier.reset_mock()
+
+        # Create a PT on the starting PTG, and verify that proxy_gw is
+        # notified
+        self.create_policy_target(policy_target_group_id=ptg['id'])
+        self.assertEqual(1, self.driver.notifier.port_update.call_count)
+        self.assertEqual(
+            proxy_gw['port_id'],
+            self.driver.notifier.port_update.call_args[0][1]['id'])
+
+
     def test_end_chain_notified(self):
         self._test_end_chain_notified()
 
