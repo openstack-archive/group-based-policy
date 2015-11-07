@@ -2602,10 +2602,13 @@ class ApicMappingDriver(api.ResourceMappingDriver,
         proxy_pts = self.gbp_plugin.get_policy_targets(
             plugin_context, {'policy_target_group_id': [group_id],
                              'proxy_gateway': [True]})
+        # Get any possible cluster member
+        cluster_pts = self.gbp_plugin.get_policy_targets(
+            plugin_context, {'cluster_id': [x['id'] for x in proxy_pts]})
         # Get all the fake PTs pointing to the proxy ones to update their ports
         ports = self._get_ports(
-            plugin_context, {'id': [x['port_id'] for x in proxy_pts]})
-
+            plugin_context, {'id': [x['port_id'] for x in (proxy_pts +
+                                                           cluster_pts)]})
         for port in ports:
             self._notify_port_update(plugin_context, port['id'])
 
