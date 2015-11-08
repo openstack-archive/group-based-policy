@@ -1,0 +1,9 @@
+Verified+2: Jenkins
+Code-Review+2: Sumit Naiksatam <sumitnaiksatam@gmail.com>
+Workflow+1: Sumit Naiksatam <sumitnaiksatam@gmail.com>
+Code-Review+2: Hemanth Ravi <hemanth.ravi@oneconvergence.com>
+Submitted-by: Jenkins
+Submitted-at: Sun, 08 Nov 2015 00:05:34 +0000
+Reviewed-on: https://review.openstack.org/242782
+Project: openstack/group-based-policy
+Branch: refs/heads/stable/kilo
