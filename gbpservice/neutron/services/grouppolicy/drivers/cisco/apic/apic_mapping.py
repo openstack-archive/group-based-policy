@@ -519,8 +519,8 @@ class ApicMappingDriver(api.ResourceMappingDriver,
         l3p = self.gbp_plugin.get_l3_policy(context, details['l3_policy_id'])
         details['vrf_tenant'] = self.apic_manager.apic.fvTenant.name(
             self._tenant_by_sharing_policy(l3p))
-        details['vrf_name'] = str(self.name_mapper.l3_policy(
-            context, l3p))
+        details['vrf_name'] = self.apic_manager.apic.fvCtx.name(
+            str(self.name_mapper.l3_policy(context, l3p)))
         details['vrf_subnets'] = [l3p['ip_pool']]
         if l3p.get('proxy_ip_pool'):
             details['vrf_subnets'].append(l3p['proxy_ip_pool'])
