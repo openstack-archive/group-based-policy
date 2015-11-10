@@ -356,7 +356,8 @@ class ApicMappingDriver(api.ResourceMappingDriver,
             details = {'device': kwargs.get('device')}
         return details
 
-    def _allocate_snat_ip_for_host_and_ext_net(self, context, host, network):
+    def _allocate_snat_ip_for_host_and_ext_net(self, context, host, network,
+            es_name):
         """Allocate SNAT IP for a host for an external network."""
         snat_subnets = self._get_subnets(context,
                 filters={'name': [HOST_SNAT_POOL],
@@ -399,7 +400,7 @@ class ApicMappingDriver(api.ResourceMappingDriver,
             else:
                 snat_ip = snat_ports[0]['fixed_ips'][0]['ip_address']
 
-            return {'external_segment_name': network['name'],
+            return {'external_segment_name': es_name,
                     'host_snat_ip': snat_ip,
                     'gateway_ip': snat_subnets[0]['gateway_ip'],
                     'prefixlen':
@@ -456,7 +457,8 @@ class ApicMappingDriver(api.ResourceMappingDriver,
                 if host:
                     host_snat_ip_allocation = (
                         self._allocate_snat_ip_for_host_and_ext_net(
-                            context._plugin_context, host, ext_network))
+                            context._plugin_context, host, ext_network,
+                            es['name']))
                     if host_snat_ip_allocation:
                         host_snat_ips.append(host_snat_ip_allocation)
             if not fips_in_es:
