@@ -311,6 +311,8 @@ class TestPolicyTarget(ApicMappingTestCase):
         else:
             self.assertEqual([l3p['ip_pool']], mapping['vrf_subnets'])
         self.assertEqual(1, len(mapping['host_snat_ips']))
+        self.assertEqual(es['name'],
+            mapping['host_snat_ips'][0]['external_segment_name'])
         self.assertEqual("192.168.200.1",
             mapping['host_snat_ips'][0]['gateway_ip'])
         self.assertEqual("192.168.200.2",
@@ -327,6 +329,8 @@ class TestPolicyTarget(ApicMappingTestCase):
             device='tap%s' % pt2['port_id'], host='h2')
         self.assertEqual(pt2['port_id'], mapping['port_id'])
         self.assertEqual(1, len(mapping['host_snat_ips']))
+        self.assertEqual(es['name'],
+            mapping['host_snat_ips'][0]['external_segment_name'])
         self.assertEqual("192.168.200.1",
             mapping['host_snat_ips'][0]['gateway_ip'])
         self.assertEqual("192.168.200.3",
@@ -354,6 +358,8 @@ class TestPolicyTarget(ApicMappingTestCase):
             device='tap%s' % pt1['port_id'], host='h1')
         self.assertEqual(pt1['port_id'], mapping['port_id'])
         self.assertEqual(1, len(mapping['host_snat_ips']))
+        self.assertEqual(es['name'],
+            mapping['host_snat_ips'][0]['external_segment_name'])
         self.assertEqual("192.168.200.1",
             mapping['host_snat_ips'][0]['gateway_ip'])
         self.assertEqual("192.168.200.2",
