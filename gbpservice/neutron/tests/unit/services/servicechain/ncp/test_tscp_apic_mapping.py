@@ -968,6 +968,24 @@ class TestProxyGroup(ApicMappingStitchingPlumberGBPTestCase):
     def test_get_gbp_details_admin(self):
         self._test_get_gbp_details(True)
 
+    def test_cluster_promiscuous_mode(self):
+        ptg = self.create_policy_target_group(
+            name="ptg1")['policy_target_group']
+        # Create proxy group
+        proxy = self.create_policy_target_group(
+            proxied_group_id=ptg['id'])['policy_target_group']
+        group_gw = self.create_policy_target(
+            policy_target_group_id=ptg['id'],
+            group_default_gateway=True)['policy_target']
+        # Create a PT in the same cluster
+        group_gw_failover = self.create_policy_target(
+            policy_target_group_id=ptg['id'],
+            cluster_id=group_gw['id'])['policy_target']
+        mapping = self.driver.get_gbp_details(
+            context.get_admin_context(),
+            device='tap%s' % group_gw_failover['port_id'], host='h2')
+        self.assertTrue(mapping['promiscuous_mode'])
+
     def _test_end_chain_notified(self, admin_proxy=False):
         self.driver.notifier = mock.Mock()
         ptg = self.create_policy_target_group(
