@@ -539,6 +539,7 @@ class ApicMappingDriver(api.ResourceMappingDriver,
             return
         ports_to_update = self.update_ip_owner(kwargs['ip_owner_info'])
         for p in ports_to_update:
+            LOG.debug("APIC ownership update for port %s", p)
             self._notify_port_update(context, p)
 
     def process_port_added(self, plugin_context, port):
@@ -1999,16 +2000,13 @@ class ApicMappingDriver(api.ResourceMappingDriver,
         pointing_pts = self.gbp_plugin.get_policy_targets(
             plugin_context.elevated(),
             {'description': [PROXY_PORT_PREFIX + port_id]})
-        try:
-            ports = self._core_plugin.get_ports(
-                plugin_context, {'id': [port_id] +
-                                       [x['port_id'] for x in pointing_pts]})
-            for port in ports:
-                if self._is_port_bound(port):
-                    self.notifier.port_update(plugin_context, port)
-        except n_exc.PortNotFound:
-            # Notification not needed
-            pass
+        ports = self._get_ports(
+            plugin_context, {'id': [port_id] +
+                             [x['port_id'] for x in pointing_pts]})
+        for port in ports:
+            if self._is_port_bound(port):
+                LOG.debug("APIC notify port %s", port['id'])
+                self.notifier.port_update(plugin_context, port)
 
     def _get_port_network_type(self, context, port):
         try:
