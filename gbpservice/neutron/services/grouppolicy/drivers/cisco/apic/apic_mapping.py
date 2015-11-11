@@ -276,6 +276,11 @@ class ApicMappingDriver(api.ResourceMappingDriver,
                     context, l2p, prefix=SHADOW_PREFIX)
 
             def is_port_promiscuous(port):
+                if (pt and pt.get('cluster_id') and
+                        pt.get('cluster_id') != pt['id']):
+                    master = self._get_policy_target(context, pt['cluster_id'])
+                    if master.get('group_default_gateway'):
+                        return True
                 return (port['device_owner'] in PROMISCUOUS_TYPES or
                         port['name'].endswith(PROMISCUOUS_SUFFIX)) or (
                             pt and pt.get('group_default_gateway'))
