@@ -1178,7 +1178,7 @@ class TestGroupResources(GroupPolicyDbTestCase):
         self.assertRaises(gpolicy.PolicyRuleSetNotFound,
                           self.plugin.get_policy_rule_set, ctx, prs_id)
 
-    def test_delete_policy_rule_set_in_use(self):
+    def test_delete_policy_rule_set_in_use_by_ptg(self):
         ctx = context.get_admin_context()
         l3p = self.create_l3_policy()
         l3p_id = l3p['l3_policy']['id']
@@ -1193,6 +1193,26 @@ class TestGroupResources(GroupPolicyDbTestCase):
 
         self.create_policy_target_group(
             l2_policy_id=l2p_id,
+            provided_policy_rule_sets={provided_prs_id: None},
+            consumed_policy_rule_sets={consumed_prs_id: None})
+
+        self.assertRaises(gpolicy.PolicyRuleSetInUse,
+                          self.plugin.delete_policy_rule_set, ctx,
+                          provided_prs_id)
+
+        self.assertRaises(gpolicy.PolicyRuleSetInUse,
+                          self.plugin.delete_policy_rule_set, ctx,
+                          consumed_prs_id)
+
+    def test_delete_policy_rule_set_in_use_by_ep(self):
+        ctx = context.get_admin_context()
+
+        provided_prs_id = (
+            self.create_policy_rule_set()['policy_rule_set']['id'])
+        consumed_prs_id = (
+            self.create_policy_rule_set()['policy_rule_set']['id'])
+
+        self.create_external_policy(
             provided_policy_rule_sets={provided_prs_id: None},
             consumed_policy_rule_sets={consumed_prs_id: None})
 

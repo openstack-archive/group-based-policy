@@ -1047,6 +1047,18 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
                 context.session.query(PTGToPRSConsumingAssociation).filter_by(
                     policy_rule_set_id=policy_rule_set_id)]
 
+    def _get_eps_for_providing_policy_rule_set(self, context,
+                                               policy_rule_set_id):
+        return [x['external_policy_id'] for x in
+                context.session.query(EPToPRSProvidingAssociation).filter_by(
+                    policy_rule_set_id=policy_rule_set_id)]
+
+    def _get_eps_for_consuming_policy_rule_set(self, context,
+                                               policy_rule_set_id):
+        return [x['external_policy_id'] for x in
+                context.session.query(EPToPRSConsumingAssociation).filter_by(
+                    policy_rule_set_id=policy_rule_set_id)]
+
     def _get_policy_rule_policy_rule_sets(self, context, policy_rule_id):
         return [x['policy_rule_set_id'] for x in
                 context.session.query(PRSToPRAssociation).filter_by(
@@ -1656,10 +1668,16 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
     def delete_policy_rule_set(self, context, policy_rule_set_id):
         with context.session.begin(subtransactions=True):
             prs_db = self._get_policy_rule_set(context, policy_rule_set_id)
-            prs_ids = self._get_ptgs_for_providing_policy_rule_set(
-                context, policy_rule_set_id) or (
-                    self._get_ptgs_for_consuming_policy_rule_set(
-                        context, policy_rule_set_id))
+            prs_ids = (
+                self._get_ptgs_for_providing_policy_rule_set(
+                    context, policy_rule_set_id) or
+                self._get_ptgs_for_consuming_policy_rule_set(
+                    context, policy_rule_set_id) or
+                self._get_eps_for_providing_policy_rule_set(
+                    context, policy_rule_set_id) or
+                self._get_eps_for_consuming_policy_rule_set(
+                    context, policy_rule_set_id))
+
             if prs_ids:
                 raise gpolicy.PolicyRuleSetInUse(policy_rule_set_id=
                                                  policy_rule_set_id)
