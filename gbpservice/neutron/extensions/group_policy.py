@@ -229,6 +229,8 @@ def convert_protocol(value):
             protocol=value, values=gp_supported_protocols)
     except (ValueError, TypeError):
         protocol = value.lower()
+        if protocol.lower() == "any":
+            return None
         if protocol in gp_supported_protocols:
             return protocol
         raise GroupPolicyInvalidProtocol(

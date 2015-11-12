@@ -554,6 +554,18 @@ class GroupPolicyExtensionTestCase(test_extensions_base.ExtensionTestCase):
 
         self._test_create_policy_classifier(data, expected_value)
 
+    def test_create_policy_classifier_any_protocol(self):
+        policy_classifier_id = _uuid()
+        data = {'policy_classifier':
+                self.get_create_policy_classifier_attrs(protocol="any")}
+        default_data = copy.copy(data)
+        default_data['policy_classifier'].update({'protocol': None})
+        expected_value = dict(data['policy_classifier'])
+        expected_value['id'] = policy_classifier_id
+        expected_value['protocol'] = None
+
+        self._test_create_policy_classifier(data, expected_value)
+
     def test_list_policy_classifiers(self):
         policy_classifier_id = _uuid()
         expected_value = [{'tenant_id': _uuid(),
@@ -603,6 +615,30 @@ class GroupPolicyExtensionTestCase(test_extensions_base.ExtensionTestCase):
 
         instance.update_policy_classifier.assert_called_once_with(
             mock.ANY, policy_classifier_id, policy_classifier=update_data)
+        self.assertEqual(res.status_int, exc.HTTPOk.code)
+        res = self.deserialize(res)
+        self.assertIn('policy_classifier', res)
+        self.assertEqual(expected_value, res['policy_classifier'])
+
+    def test_update_policy_classifier_any_protocol(self):
+        policy_classifier_id = _uuid()
+        any_protocol = {"protocol": "any"}
+        update_data = {'policy_classifier': any_protocol}
+        plugin_call_data = copy.copy(update_data)
+        plugin_call_data['policy_classifier']['protocol'] = None
+        expected_value = {'tenant_id': _uuid(),
+                          'id': policy_classifier_id,
+                          'policy_classifier': None}
+
+        instance = self.plugin.return_value
+        instance.update_policy_classifier.return_value = expected_value
+
+        res = self.api.put(_get_path(POLICY_CLASSIFIERS_URI,
+                                     id=policy_classifier_id,
+                                     fmt=self.fmt),
+                           self.serialize(update_data))
+        instance.update_policy_classifier.assert_called_once_with(
+            mock.ANY, policy_classifier_id, policy_classifier=plugin_call_data)
         self.assertEqual(res.status_int, exc.HTTPOk.code)
         res = self.deserialize(res)
         self.assertIn('policy_classifier', res)

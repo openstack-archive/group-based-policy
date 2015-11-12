@@ -139,11 +139,11 @@ def get_create_policy_classifier_default_attrs():
 
 
 @gbp_attributes
-def get_create_policy_classifier_attrs():
+def get_create_policy_classifier_attrs(protocol="tcp"):
     return {'name': 'pc1',
             'description': 'test policy classifier',
             'tenant_id': _uuid(),
-            'protocol': 'tcp',
+            'protocol': protocol,
             'port_range': '100:200',
             'direction': 'in',
             'shared': False}

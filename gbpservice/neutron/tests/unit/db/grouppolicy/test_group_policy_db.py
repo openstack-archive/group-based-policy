@@ -830,11 +830,11 @@ class TestGroupResources(GroupPolicyDbTestCase):
     def test_update_policy_classifier(self):
         name = "new_policy_classifier"
         description = 'new desc'
-        protocol = 'tcp'
+        protocol = 'any'
         port_range = '100:200'
         direction = 'in'
         attrs = cm.get_create_policy_classifier_default_attrs(
-            name=name, description=description, protocol=protocol,
+            name=name, description=description, protocol=None,
             port_range=port_range, direction=direction)
 
         pc = self.create_policy_classifier()
