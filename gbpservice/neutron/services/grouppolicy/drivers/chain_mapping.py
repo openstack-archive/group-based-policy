@@ -159,7 +159,11 @@ class ChainMappingDriver(api.PolicyDriver, local_api.LocalAPI,
 
     @log.log
     def create_policy_target_group_postcommit(self, context):
-        self._handle_policy_rule_sets(context)
+        if (context.current['provided_policy_rule_sets'] and not
+            context.current.get('proxied_group_id')):
+            self._handle_redirect_action(
+                context, context.current['provided_policy_rule_sets'],
+                providing_ptg=context.current)
         self._handle_prs_added(context)
 
     @log.log
@@ -184,9 +188,9 @@ class ChainMappingDriver(api.PolicyDriver, local_api.LocalAPI,
         if self._is_redirect_in_policy_rule_sets(
                 context, new_provided_policy_rule_sets) and not (
                     context.current.get('proxied_group_id')):
-            policy_rule_sets = (curr['provided_policy_rule_sets'] +
-                                orig['provided_policy_rule_sets'])
-            self._handle_redirect_action(context, policy_rule_sets)
+            self._handle_redirect_action(
+                context, curr['provided_policy_rule_sets'],
+                providing_ptg=context.current)
         self._handle_prs_updated(context)
 
     @log.log
@@ -351,13 +355,6 @@ class ChainMappingDriver(api.PolicyDriver, local_api.LocalAPI,
                     self._notify_sc_consumer_removed(
                         chain_context, context.current, sci)
 
-    def _handle_policy_rule_sets(self, context):
-        consumed_prs = context.current['consumed_policy_rule_sets']
-        provided_prs = context.current['provided_policy_rule_sets']
-        if provided_prs and not context.current.get('proxied_group_id'):
-            policy_rule_sets = consumed_prs + provided_prs
-            self._handle_redirect_action(context, policy_rule_sets)
-
     def _handle_redirect_spec_id_update(self, context):
         if (context.current['action_type'] != gconst.GP_ACTION_REDIRECT
             or context.current['action_value'] ==
@@ -397,29 +394,27 @@ class ChainMappingDriver(api.PolicyDriver, local_api.LocalAPI,
     # new chain instance or delete the existing instance. In case of updates,
     # the parameters that can be updated are service chain spec and
     # classifier ID.
-    def _handle_redirect_action(self, context, policy_rule_set_ids):
+    def _handle_redirect_action(self, context, policy_rule_set_ids,
+                                providing_ptg=None):
         policy_rule_sets = context._plugin.get_policy_rule_sets(
-                                    context._plugin_context,
-                                    filters={'id': policy_rule_set_ids})
+            context._plugin_context, filters={'id': policy_rule_set_ids})
         for policy_rule_set in policy_rule_sets:
-            ptgs_providing_prs = policy_rule_set[
-                'providing_policy_target_groups']
-
-            # Create the ServiceChain Instance when we have both Provider and
-            # consumer PTGs. If Labels are available, they have to be applied
-            if not ptgs_providing_prs:
-                continue
-
-            ptgs_providing_prs = context._plugin.get_policy_target_groups(
-                context._plugin_context.elevated(), {'id': ptgs_providing_prs})
+            if providing_ptg:
+                ptgs_providing_prs = [providing_ptg]
+            else:
+                if not policy_rule_set['providing_policy_target_groups']:
+                    continue
+                ptgs_providing_prs = context._plugin.get_policy_target_groups(
+                    context._plugin_context.elevated(),
+                    {'id': policy_rule_set['providing_policy_target_groups']})
             parent_classifier_id = None
             parent_spec_id = None
             if policy_rule_set['parent_id']:
                 parent = context._plugin.get_policy_rule_set(
                     context._plugin_context, policy_rule_set['parent_id'])
                 policy_rules = context._plugin.get_policy_rules(
-                                    context._plugin_context,
-                                    filters={'id': parent['policy_rules']})
+                    context._plugin_context,
+                    filters={'id': parent['policy_rules']})
                 for policy_rule in policy_rules:
                     policy_actions = context._plugin.get_policy_actions(
                         context._plugin_context,
@@ -451,7 +446,9 @@ class ChainMappingDriver(api.PolicyDriver, local_api.LocalAPI,
                 spec_id = (policy_actions and policy_actions[0]['action_value']
                            or None)
                 for ptg_providing_prs in ptgs_providing_prs:
-                    # REVISIT(Magesh): There may be concurrency issues here
+                    # REVISIT(Magesh): There are concurrency issues here with
+                    # concurrent updates to the same PRS, Policy Rule or Action
+                    # value
                     if not ptg_providing_prs.get('proxied_group_id'):
                         self._create_or_update_chain(
                             context, ptg_providing_prs['id'],
@@ -476,13 +473,12 @@ class ChainMappingDriver(api.PolicyDriver, local_api.LocalAPI,
                 sc_specs = [spec_id]
                 if parent_spec_id:
                     sc_specs.insert(0, parent_spec_id)
-                # One Chain between a unique pair of provider and consumer
-
+                # One chain per providing PTG
                 self._update_servicechain_instance(
-                        context._plugin_context,
-                        ptg_chain_map[0].servicechain_instance_id,
-                        classifier_id=classifier_id,
-                        sc_specs=sc_specs)
+                    context._plugin_context,
+                    ptg_chain_map[0].servicechain_instance_id,
+                    classifier_id=classifier_id,
+                    sc_specs=sc_specs)
         elif spec_id and not hierarchial_classifier_mismatch:
             self._create_servicechain_instance(
                 context, spec_id, parent_spec_id, provider,
