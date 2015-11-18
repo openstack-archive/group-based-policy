@@ -1589,6 +1589,8 @@ class ApicMappingDriver(api.ResourceMappingDriver,
                 module, sport = ext_info['port'].split('/')
                 router_id = ext_info['router_id']
                 default_gateway = ext_info['gateway_ip']
+                self.apic_manager.set_domain_for_external_routed_network(
+                    es_name, owner=es_tenant, transaction=trs)
                 self.apic_manager.ensure_logical_node_profile_created(
                     es_name, switch, module, sport, encap,
                     exposed, owner=es_tenant,
