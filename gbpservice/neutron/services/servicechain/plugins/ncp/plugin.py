@@ -216,30 +216,11 @@ class NodeCompositionPlugin(servicechain_db.ServiceChainDbPlugin,
                                         servicechain_spec, set_params=False)
             self._validate_shared_update(context, original_sc_spec,
                                          updated_sc_spec, 'servicechain_spec')
-
-        # Remove the deleted node instances and add any new ones added
-        # REVISIT(Magesh): Invoke a validate update in Node plumber
-        # and reject the update in case the plumber does not support node
-        # reordering in the spec. For now reordering is a NOOP
-        if original_sc_spec['nodes'] != updated_sc_spec['nodes']:
-            instances = original_sc_spec['instances']
-            instances = self.get_servicechain_instances(
-                context, filters={'id': instances})
-            for instance in instances:
-                removed_nodes = (set(original_sc_spec['nodes']) -
-                                 set(updated_sc_spec['nodes']))
-                added_nodes = (set(updated_sc_spec['nodes']) -
-                               set(original_sc_spec['nodes']))
-                removed_nodes = self.get_servicechain_nodes(
-                        context, filters={'id': removed_nodes})
-                added_nodes = self.get_servicechain_nodes(
-                        context, filters={'id': added_nodes})
-                destroyers = self._get_scheduled_drivers(
-                        context, instance, 'destroy', nodes=removed_nodes)
-                deployers = self._get_scheduled_drivers(
-                        context, instance, 'deploy', nodes=added_nodes)
-                self._destroy_servicechain_nodes(context, destroyers)
-                self._deploy_servicechain_nodes(context, deployers)
+            # The reference plumber does not support modifying or reordering of
+            # nodes in a service chain spec. Disallow update for now
+            if (original_sc_spec['nodes'] != updated_sc_spec['nodes'] and
+                original_sc_spec['instances']):
+                raise exc.InuseSpecNodeUpdateNotAllowed()
 
         return updated_sc_spec
 
