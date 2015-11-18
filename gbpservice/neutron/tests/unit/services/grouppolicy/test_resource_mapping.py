@@ -326,18 +326,22 @@ class ResourceMappingTestCase(test_plugin.GroupPolicyPluginTestCase):
                         attrs = {'security_group_id': [provided_sg],
                                  'direction': ['ingress'],
                                  'protocol': [protocol],
-                                 'port_range_min': [port_min],
-                                 'port_range_max': [port_max],
                                  'remote_ip_prefix': [cidr]}
+                        if port_min is not None:
+                            attrs['port_range_min'] = [port_min]
+                        if port_max is not None:
+                            attrs['port_range_max'] = [port_max]
                         expected_rules.append(attrs)
                     # And consumer SG have egress allowed
                     for cidr in providers:
                         attrs = {'security_group_id': [consumed_sg],
                                  'direction': ['egress'],
                                  'protocol': [protocol],
-                                 'port_range_min': [port_min],
-                                 'port_range_max': [port_max],
                                  'remote_ip_prefix': [cidr]}
+                        if port_min is not None:
+                            attrs['port_range_min'] = [port_min]
+                        if port_max is not None:
+                            attrs['port_range_max'] = [port_max]
                         expected_rules.append(attrs)
                 if classifier['direction'] in out_bi:
                     # If direction OUT/BI, provider CIDRs go into consumer SG
@@ -345,18 +349,22 @@ class ResourceMappingTestCase(test_plugin.GroupPolicyPluginTestCase):
                         attrs = {'security_group_id': [consumed_sg],
                                  'direction': ['ingress'],
                                  'protocol': [protocol],
-                                 'port_range_min': [port_min],
-                                 'port_range_max': [port_max],
                                  'remote_ip_prefix': [cidr]}
+                        if port_min is not None:
+                            attrs['port_range_min'] = [port_min]
+                        if port_max is not None:
+                            attrs['port_range_max'] = [port_max]
                         expected_rules.append(attrs)
                     # And provider SG have egress allowed
                     for cidr in consumers:
                         attrs = {'security_group_id': [provided_sg],
                                  'direction': ['egress'],
                                  'protocol': [protocol],
-                                 'port_range_min': [port_min],
-                                 'port_range_max': [port_max],
                                  'remote_ip_prefix': [cidr]}
+                        if port_min is not None:
+                            attrs['port_range_min'] = [port_min]
+                        if port_max is not None:
+                            attrs['port_range_max'] = [port_max]
                         expected_rules.append(attrs)
         return expected_rules
 
@@ -373,11 +381,12 @@ class ResourceMappingTestCase(test_plugin.GroupPolicyPluginTestCase):
             # Verify the rule exists
             r = self._get_sg_rule(**rule)
             self.assertTrue(len(r) == 1,
-                            "Rule not found, expected:\n%s\n\nfound:%s\n" %
-                            (rule, existing_copy))
+                            "Rule not found, expected:\n%s\n\nfound:%s\n"
+                            "Missing:%s\n" % (expected, existing_copy, rule))
             existing.remove(r[0])
         self.assertTrue(len(existing) == 0,
-                        "Some rules still exist:\n%s" % str(existing))
+                        "Unexpected additional rules are configured:\n%s"
+                        % str(existing))
         return expected
 
     def _get_nsp_ptg_fip_mapping(self, ptg_id):
@@ -1893,6 +1902,38 @@ class TestPolicyRuleSet(ResourceMappingTestCase):
             sg = self._get_sg(sgid)
             sg_rules = sg['security_group_rules']
             udp_rules.extend([r for r in sg_rules if r['protocol'] == 'udp'])
+
+        self._verify_prs_rules(policy_rule_set_id)
+
+    def test_policy_classifier_update_using_protocol_number(self):
+        classifier = self.create_policy_classifier(
+            name="class1", protocol="tcp", direction="bi")
+        classifier_id = classifier['policy_classifier']['id']
+        action = self.create_policy_action(name="action1",
+                                           action_type=gconst.GP_ACTION_ALLOW)
+        action_id = action['policy_action']['id']
+        action_id_list = [action_id]
+        policy_rule = self.create_policy_rule(
+            name='pr1', policy_classifier_id=classifier_id,
+            policy_actions=action_id_list)
+        policy_rule_id = policy_rule['policy_rule']['id']
+        policy_rule_list = [policy_rule_id]
+        policy_rule_set = self.create_policy_rule_set(
+            name="c1", policy_rules=policy_rule_list)
+        policy_rule_set_id = policy_rule_set['policy_rule_set']['id']
+        self.create_policy_target_group(
+            name="ptg1", provided_policy_rule_sets={policy_rule_set_id: None})
+        self.create_policy_target_group(
+            name="ptg2", consumed_policy_rule_sets={policy_rule_set_id: None})
+        self._verify_prs_rules(policy_rule_set_id)
+
+        # now updates the policy classifier with new protocol field
+        data = {'policy_classifier':
+                {'protocol': '50', 'direction': 'bi'}}
+        req = self.new_update_request('policy_classifiers', data,
+            classifier_id)
+        res = req.get_response(self.ext_api)
+        self.assertEqual(res.status_int, webob.exc.HTTPOk.code)
 
         self._verify_prs_rules(policy_rule_set_id)
 
