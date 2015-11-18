@@ -1089,6 +1089,8 @@ class TestL3Policy(ApicMappingTestCase):
                       owner=owner, subnet='128.0.0.0/16',
                       transaction=mock.ANY)]
         if not self.pre_l3out:
+            mgr.set_domain_for_external_routed_network.assert_called_once_with(
+                es['id'], owner=owner, transaction=mock.ANY)
             mgr.ensure_logical_node_profile_created.assert_called_once_with(
                 es['id'], mocked.APIC_EXT_SWITCH, mocked.APIC_EXT_MODULE,
                 mocked.APIC_EXT_PORT, mocked.APIC_EXT_ENCAP, '192.168.0.2/24',
@@ -1097,6 +1099,7 @@ class TestL3Policy(ApicMappingTestCase):
             self._check_call_list(expected_route_calls,
                 mgr.ensure_static_route_created.call_args_list)
         else:
+            self.assertFalse(mgr.set_domain_for_external_routed_network.called)
             self.assertFalse(mgr.ensure_logical_node_profile_created.called)
             self.assertFalse(mgr.ensure_static_route_created.called)
 
@@ -1166,6 +1169,8 @@ class TestL3Policy(ApicMappingTestCase):
             mgr.ensure_external_routed_network_created.call_args_list)
 
         if not self.pre_l3out:
+            mgr.set_domain_for_external_routed_network.assert_called_once_with(
+                es['id'], owner=owner, transaction=mock.ANY)
             mgr.ensure_logical_node_profile_created.assert_called_once_with(
                 es['id'], mocked.APIC_EXT_SWITCH, mocked.APIC_EXT_MODULE,
                 mocked.APIC_EXT_PORT, mocked.APIC_EXT_ENCAP, '192.168.0.2/24',
@@ -1330,6 +1335,7 @@ class TestL3Policy(ApicMappingTestCase):
         owner = self.common_tenant if shared_es else es1['tenant_id']
         l3p_owner = self.common_tenant if shared_l3p else l3p['tenant_id']
         mgr.ensure_external_routed_network_created.reset_mock()
+        mgr.set_domain_for_external_routed_network.reset_mock()
         mgr.ensure_logical_node_profile_created.reset_mock()
         mgr.ensure_static_route_created.reset_mock()
 
@@ -1366,12 +1372,15 @@ class TestL3Policy(ApicMappingTestCase):
         self._check_call_list(expected_l3out_calls,
             mgr.ensure_external_routed_network_created.call_args_list)
         if not self.pre_l3out:
+            mgr.set_domain_for_external_routed_network.assert_called_once_with(
+                es2['id'], owner=owner, transaction=mock.ANY)
             mgr.ensure_logical_node_profile_created.assert_called_once_with(
                 es2['id'], mocked.APIC_EXT_SWITCH, mocked.APIC_EXT_MODULE,
                 mocked.APIC_EXT_PORT, mocked.APIC_EXT_ENCAP, '192.168.1.2/24',
                 owner=owner, router_id=APIC_EXTERNAL_RID,
                 transaction=mock.ANY)
         else:
+            self.assertFalse(mgr.set_domain_for_external_routed_network.called)
             self.assertFalse(mgr.ensure_logical_node_profile_created.called)
         self.assertFalse(mgr.ensure_static_route_created.called)
         if self.nat_enabled:
@@ -1438,6 +1447,7 @@ class TestL3Policy(ApicMappingTestCase):
 
         mgr = self.driver.apic_manager
         self.assertFalse(mgr.ensure_external_routed_network_created.called)
+        self.assertFalse(mgr.set_domain_for_external_routed_network.called)
         self.assertFalse(mgr.ensure_logical_node_profile_created.called)
         self.assertFalse(mgr.ensure_static_route_created.called)
 
