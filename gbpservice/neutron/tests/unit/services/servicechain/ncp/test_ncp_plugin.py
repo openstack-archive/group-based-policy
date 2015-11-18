@@ -464,7 +464,7 @@ class NodeCompositionPluginTestCase(
         self.update_servicechain_node(node['id'], name='somethingelse')
         self.assertEqual(3, update.call_count)
 
-    def test_update_spec(self):
+    def test_inuse_spec_node_update_rejected(self):
         prof = self.create_service_profile(
             service_type='LOADBALANCER',
             vendor=self.SERVICE_PROFILE_VENDOR)['service_profile']
@@ -487,8 +487,9 @@ class NodeCompositionPluginTestCase(
 
         res = self.update_servicechain_spec(spec['id'],
                                             nodes=[node1['id']],
-                                            expected_res_status=200)
-        self.assertEqual([node1['id']], res['servicechain_spec']['nodes'])
+                                            expected_res_status=400)
+        self.assertEqual('InuseSpecNodeUpdateNotAllowed',
+                         res['NeutronError']['type'])
 
     def test_instance_update(self):
         prof = self.create_service_profile(
