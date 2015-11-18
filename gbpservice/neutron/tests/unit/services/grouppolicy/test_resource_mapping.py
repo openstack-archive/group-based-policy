@@ -1896,6 +1896,38 @@ class TestPolicyRuleSet(ResourceMappingTestCase):
 
         self._verify_prs_rules(policy_rule_set_id)
 
+    def test_policy_classifier_update_using_protocol_number(self):
+        classifier = self.create_policy_classifier(
+            name="class1", protocol="tcp", direction="bi")
+        classifier_id = classifier['policy_classifier']['id']
+        action = self.create_policy_action(name="action1",
+                                           action_type=gconst.GP_ACTION_ALLOW)
+        action_id = action['policy_action']['id']
+        action_id_list = [action_id]
+        policy_rule = self.create_policy_rule(
+            name='pr1', policy_classifier_id=classifier_id,
+            policy_actions=action_id_list)
+        policy_rule_id = policy_rule['policy_rule']['id']
+        policy_rule_list = [policy_rule_id]
+        policy_rule_set = self.create_policy_rule_set(
+            name="c1", policy_rules=policy_rule_list)
+        policy_rule_set_id = policy_rule_set['policy_rule_set']['id']
+        self.create_policy_target_group(
+            name="ptg1", provided_policy_rule_sets={policy_rule_set_id: None})
+        self.create_policy_target_group(
+            name="ptg2", consumed_policy_rule_sets={policy_rule_set_id: None})
+        self._verify_prs_rules(policy_rule_set_id)
+
+        # now updates the policy classifier with new protocol field
+        data = {'policy_classifier':
+                {'protocol': '50', 'direction': 'bi'}}
+        req = self.new_update_request('policy_classifiers', data,
+            classifier_id)
+        res = req.get_response(self.ext_api)
+        self.assertEqual(res.status_int, webob.exc.HTTPOk.code)
+
+        self._verify_prs_rules(policy_rule_set_id)
+
     def test_shared_policy_rule_set_create_negative(self):
         self.create_policy_rule_set(shared=True,
                                     expected_res_status=400)
