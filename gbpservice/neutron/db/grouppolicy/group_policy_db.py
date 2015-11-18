@@ -12,7 +12,6 @@
 
 import netaddr
 from neutron.api.v2 import attributes as attr
-from neutron.common import constants
 from neutron.common import log
 from neutron import context
 from neutron.db import common_db_mixin
@@ -244,11 +243,7 @@ class PolicyClassifier(gquota.GBPQuotaBase, model_base.BASEV2, models_v2.HasId,
     __tablename__ = 'gp_policy_classifiers'
     name = sa.Column(sa.String(50))
     description = sa.Column(sa.String(255))
-    protocol = sa.Column(sa.Enum(constants.PROTO_NAME_TCP,
-                                 constants.PROTO_NAME_UDP,
-                                 constants.PROTO_NAME_ICMP,
-                                 name="protocol_type"),
-                         nullable=True)
+    protocol = sa.Column(sa.String(50))
     port_range_min = sa.Column(sa.Integer)
     port_range_max = sa.Column(sa.Integer)
     direction = sa.Column(sa.Enum(gp_constants.GP_DIRECTION_IN,
