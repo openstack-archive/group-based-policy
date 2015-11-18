@@ -822,6 +822,28 @@ class TestGroupResources(GroupPolicyDbTestCase):
         self._test_show_resource('policy_classifier',
                                  pc['policy_classifier']['id'], attrs)
 
+    def test_classifier_with_protocol_number(self):
+        name = 'pc1'
+        protocol = '55'
+
+        attrs = cm.get_create_policy_classifier_default_attrs(
+            name=name, protocol=protocol)
+        pc = self.create_policy_classifier(name=name, protocol=protocol)
+
+        for k, v in attrs.iteritems():
+            self.assertEqual(pc['policy_classifier'][k], v)
+
+        req = self.new_show_request('policy_classifiers',
+                                    pc['policy_classifier']['id'],
+                                    fmt=self.fmt)
+        res = self.deserialize(self.fmt, req.get_response(self.ext_api))
+
+        for k, v in attrs.iteritems():
+            self.assertEqual(res['policy_classifier'][k], v)
+
+        self._test_show_resource('policy_classifier',
+                                 pc['policy_classifier']['id'], attrs)
+
     def test_list_policy_classifiers(self):
         policy_classifiers = [
             self.create_policy_classifier(name='pc1', description='pc'),
@@ -834,6 +856,31 @@ class TestGroupResources(GroupPolicyDbTestCase):
         name = "new_policy_classifier"
         description = 'new desc'
         protocol = 'tcp'
+        port_range = '100:200'
+        direction = 'in'
+        attrs = cm.get_create_policy_classifier_default_attrs(
+            name=name, description=description, protocol=protocol,
+            port_range=port_range, direction=direction)
+
+        pc = self.create_policy_classifier()
+        data = {'policy_classifier': {'name': name, 'description': description,
+                                      'protocol': protocol, 'port_range':
+                                      port_range, 'direction': direction}}
+
+        req = self.new_update_request('policy_classifiers', data,
+                                      pc['policy_classifier']['id'])
+        res = self.deserialize(self.fmt, req.get_response(self.ext_api))
+
+        for k, v in attrs.iteritems():
+            self.assertEqual(res['policy_classifier'][k], v)
+
+        self._test_show_resource('policy_classifier',
+                                 pc['policy_classifier']['id'], attrs)
+
+    def test_update_policy_classifier_with_protocol_number(self):
+        name = "new_policy_classifier"
+        description = 'new desc'
+        protocol = '50'
         port_range = '100:200'
         direction = 'in'
         attrs = cm.get_create_policy_classifier_default_attrs(
