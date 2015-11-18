@@ -2537,6 +2537,54 @@ class TestServiceChain(ResourceMappingTestCase):
         # Verify that PTG update removing prs cleansup the chain instances
         self._verify_ptg_prs_unset_cleansup_chain(provider_ptg, [prs1['id']])
 
+    def test_ptg_create_does_not_affect_other_chains(self):
+        scs1_id = self._create_servicechain_spec()
+        _, classifier_id, policy_rule_id = self._create_tcp_redirect_rule(
+            "20:90", scs1_id)
+        prs1 = self.create_policy_rule_set(
+            name="c1", policy_rules=[policy_rule_id])['policy_rule_set']
+        self._verify_prs_rules(prs1['id'])
+        provider_ptg, consumer_ptg = self._create_provider_consumer_ptgs()
+        self._verify_prs_rules(prs1['id'])
+
+        # No service chain instances until we have provider and consumer prs
+        sc_instances = self._list(SERVICECHAIN_INSTANCES)
+        self.assertEqual([], sc_instances['servicechain_instances'])
+
+        # One service chain instance should be created when PTGs are
+        # updated with provided and consumed prs
+        self.update_policy_target_group(
+            provider_ptg, provided_policy_rule_sets={prs1['id']: ''},
+            consumed_policy_rule_sets={}, expected_res_status=200)
+        sc_instances = self._list(SERVICECHAIN_INSTANCES)
+        self.assertEqual(1, len(sc_instances['servicechain_instances']))
+        sc_instance = sc_instances['servicechain_instances'][0]
+        self._assert_proper_chain_instance(
+            sc_instance, provider_ptg, consumer_ptg,
+            [scs1_id], classifier_id=classifier_id)
+
+        # Verify that creating a new PTG providing the same PRS does not affect
+        # existing chains
+        with mock.patch.object(
+                servicechain_db.ServiceChainDbPlugin,
+                'update_servicechain_instance') as sc_instance_update:
+            provider_ptg_new = self.create_policy_target_group(
+                provided_policy_rule_sets={prs1['id']: ''},
+                expected_res_status=webob.exc.HTTPCreated.code)[
+                    'policy_target_group']['id']
+            self._verify_prs_rules(prs1['id'])
+            sc_instances_new = self._list(SERVICECHAIN_INSTANCES)[
+                'servicechain_instances']
+            self.assertEqual(2, len(sc_instances_new))
+            sc_instances_provider_ptg_ids = set()
+            for sc_instance in sc_instances_new:
+                sc_instances_provider_ptg_ids.add(
+                    sc_instance['provider_ptg_id'])
+            expected_provider_ptg_ids = set([provider_ptg, provider_ptg_new])
+            self.assertEqual(expected_provider_ptg_ids,
+                             sc_instances_provider_ptg_ids)
+            self.assertEqual(sc_instance_update.call_args_list, [])
+
     def test_action_spec_value_update(self):
         scs1_id = self._create_servicechain_spec()
         action_id, classifier_id, policy_rule_id = (
