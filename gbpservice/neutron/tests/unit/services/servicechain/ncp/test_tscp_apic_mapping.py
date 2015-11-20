@@ -902,12 +902,25 @@ class TestProxyGroup(ApicMappingStitchingPlumberGBPTestCase):
             proxy_gateway=True,
             tenant_id=proxy['tenant_id'],
             is_admin_context=admin_proxy)['policy_target']
+        self._bind_port_to_host(proxy_gw['port_id'], 'h2')
         # Create a PT in the same cluster
         proxy_gw_failover = self.create_policy_target(
             policy_target_group_id=proxy['id'],
             cluster_id=proxy_gw['id'],
             tenant_id=proxy['tenant_id'],
             is_admin_context=admin_proxy)['policy_target']
+        self._bind_port_to_host(proxy_gw_failover['port_id'], 'h2')
+        self._mock_external_dict([('supported', '192.168.0.2/24')])
+        es = self.create_external_segment(
+            name='supported', cidr='192.168.0.0/24',
+            external_routes=[], expected_res_status=201)['external_segment']
+        self.create_external_policy(external_segments=[es['id']],
+                                    expected_res_status=201)
+
+        l2p = self.show_l2_policy(ptg['l2_policy_id'])['l2_policy']
+        self.update_l3_policy(l2p['l3_policy_id'],
+                              external_segments={es['id']: []},
+                              expected_res_status=200)
 
         self._bind_port_to_host(pt2['port_id'], 'h2')
         master_port = self._get_object('ports', proxy_gw['port_id'],
@@ -924,6 +937,9 @@ class TestProxyGroup(ApicMappingStitchingPlumberGBPTestCase):
         ips = self._get_pts_addresses([pt1, pt2])
         self.assertEqual(set(ips), set(mapping['extra_ips']))
         self.assertEqual(ptg['tenant_id'], mapping['ptg_tenant'])
+        self.assertEqual(1, len(mapping['ip_mapping']))
+        # No SNAT subnet
+        self.assertEqual(0, len(mapping['host_snat_ips']))
 
         group_default_gw = self.create_policy_target(
             policy_target_group_id=ptg['id'],
