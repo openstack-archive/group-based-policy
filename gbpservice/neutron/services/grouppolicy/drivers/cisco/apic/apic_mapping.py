@@ -283,7 +283,6 @@ class ApicMappingDriver(api.ResourceMappingDriver,
                 return (port['device_owner'] in PROMISCUOUS_TYPES or
                         port['name'].endswith(PROMISCUOUS_SUFFIX)) or (
                             pt and pt.get('group_default_gateway'))
-
             details = {'device': kwargs.get('device'),
                        'port_id': port_id,
                        'mac_address': port['mac_address'],
@@ -314,9 +313,9 @@ class ApicMappingDriver(api.ResourceMappingDriver,
                 context, pt['port_id'] if (pt and not switched) else port_id)
             (details['floating_ip'], details['ip_mapping'],
                 details['host_snat_ips']) = (
-                        self._get_ip_mapping_details(
-                            context, port['id'], l3_policy, pt=pt,
-                            owned_addresses=own_addr, host=details['host']))
+                    self._get_ip_mapping_details(
+                        context, port['id'], l3_policy, pt=pt,
+                        owned_addresses=own_addr, host=details['host']))
             self._add_network_details(context, port, details, pt=pt,
                                       owned=own_addr)
             self._add_vrf_details(context, details)
@@ -340,12 +339,15 @@ class ApicMappingDriver(api.ResourceMappingDriver,
                             extra_map['extra_ips'].extend(
                                 [x['ip_address'] for x in port['fixed_ips']])
                             (fips, ipms, host_snat_ips) = (
-                                    self._get_ip_mapping_details(
-                                        context, port['id'], l3_policy,
-                                        host=details['host']))
+                                self._get_ip_mapping_details(
+                                    context, port['id'], l3_policy,
+                                    host=details['host']))
                             extra_map['floating_ip'].extend(fips)
-                            extra_map['ip_mapping'].extend(ipms)
-                            extra_map['host_snat_ips'].extend(host_snat_ips)
+                            if not extra_map['ip_mapping']:
+                                extra_map['ip_mapping'].extend(ipms)
+                            if not extra_map['host_snat_ips']:
+                                extra_map['host_snat_ips'].extend(
+                                    host_snat_ips)
                         ptg = proxied
                 else:
                     LOG.info(_("Active master has changed for PT %s"),
@@ -362,7 +364,7 @@ class ApicMappingDriver(api.ResourceMappingDriver,
         return details
 
     def _allocate_snat_ip_for_host_and_ext_net(self, context, host, network,
-            es_name):
+                                               es_name):
         """Allocate SNAT IP for a host for an external network."""
         snat_subnets = self._get_subnets(context,
                 filters={'name': [HOST_SNAT_POOL],
