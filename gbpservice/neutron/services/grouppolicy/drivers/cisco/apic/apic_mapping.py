@@ -383,7 +383,7 @@ class ApicMappingDriver(api.ResourceMappingDriver,
             snat_ip = None
             if not snat_ports:
                 # Note that the following port is created for only getting
-                # an IP assignment in the
+                # an IP assignment in the subnet
                 attrs = {'device_id': host,
                          'device_owner': DEVICE_OWNER_SNAT_PORT,
                          'binding:host_id': host,
@@ -392,27 +392,34 @@ class ApicMappingDriver(api.ResourceMappingDriver,
                          'name': HOST_SNAT_POOL_PORT,
                          'network_id': network['id'],
                          'mac_address': attributes.ATTR_NOT_SPECIFIED,
-                         'fixed_ips': [{'subnet_id': snat_subnets[0]['id']}],
                          'admin_state_up': False}
-                port = self._create_port(context, attrs)
+                port = None
+                for sub in snat_subnets:
+                    attrs['fixed_ips'] = [{'subnet_id': sub['id']}]
+                    try:
+                        port = self._create_port(context, attrs)
+                        snat_sub = sub
+                        break
+                    except Exception:
+                        continue
                 if port and port['fixed_ips'][0]:
                     snat_ip = port['fixed_ips'][0]['ip_address']
                 else:
-                    LOG.warning(_("SNAT-port creation failed for subnet "
-                                  "%(subnet_id)s on external network "
-                                  "%(net_id)s. SNAT will not function on"
-                                  "host %(host)s for this network"),
-                                {'subnet_id': snat_subnets[0]['id'],
-                                 'net_id': network['id'], 'host': host})
+                    LOG.warning(_("SNAT-port creation failed on external "
+                                  "network %(net_id)s. SNAT will not function "
+                                  "on host %(host)s for this network"),
+                                {'net_id': network['id'], 'host': host})
                     return {}
             else:
                 snat_ip = snat_ports[0]['fixed_ips'][0]['ip_address']
+                snat_sub = self._get_subnet(
+                    context, snat_ports[0]['fixed_ips'][0]['subnet_id'])
 
             return {'external_segment_name': es_name,
                     'host_snat_ip': snat_ip,
-                    'gateway_ip': snat_subnets[0]['gateway_ip'],
+                    'gateway_ip': snat_sub['gateway_ip'],
                     'prefixlen':
-                    netaddr.IPNetwork(snat_subnets[0]['cidr']).prefixlen}
+                    netaddr.IPNetwork(snat_sub['cidr']).prefixlen}
 
     def _get_ip_mapping_details(self, context, port_id, l3_policy, pt=None,
                                 owned_addresses=None, host=None):
@@ -2541,11 +2548,11 @@ class ApicMappingDriver(api.ResourceMappingDriver,
                     # external network will get port allocation and IP
                     # from this subnet.
                     host_cidr = ext_info.get('host_pool_cidr')
-                    host_cidir_ver = netaddr.IPNetwork(host_cidr).version
+                    host_cidr_ver = netaddr.IPNetwork(host_cidr).version
                     attrs = {'name': HOST_SNAT_POOL,
                              'cidr': host_cidr,
                              'network_id': es_net_id,
-                             'ip_version': host_cidir_ver,
+                             'ip_version': host_cidr_ver,
                              'enable_dhcp': False,
                              'gateway_ip': gw,
                              'allocation_pools':

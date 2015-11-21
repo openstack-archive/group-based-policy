@@ -19,6 +19,7 @@ import netaddr
 import webob.exc
 
 from neutron.agent import securitygroups_rpc as sg_cfg
+from neutron.api.v2 import attributes
 from neutron.common import rpc as n_rpc
 from neutron import context
 from neutron.db import api as db_api
@@ -268,7 +269,7 @@ class TestPolicyTarget(ApicMappingTestCase):
     def test_get_gbp_details(self):
         self._mock_external_dict([('supported', '192.168.0.2/24')])
         self.driver.apic_manager.ext_net_dict[
-                'supported']['host_pool_cidr'] = '192.168.200.1/24'
+                'supported']['host_pool_cidr'] = '192.168.200.1/30'
         es = self.create_external_segment(name='supported',
             cidr='192.168.0.2/24',
             expected_res_status=201, shared=False)['external_segment']
@@ -317,25 +318,46 @@ class TestPolicyTarget(ApicMappingTestCase):
             mapping['host_snat_ips'][0]['gateway_ip'])
         self.assertEqual("192.168.200.2",
             mapping['host_snat_ips'][0]['host_snat_ip'])
-        self.assertEqual(24, mapping['host_snat_ips'][0]['prefixlen'])
+        self.assertEqual(30, mapping['host_snat_ips'][0]['prefixlen'])
 
-        # Create event on a second host to verify that the SNAT
-        # port gets created for this second host
         pt2 = self.create_policy_target(
             policy_target_group_id=ptg['id'])['policy_target']
         self._bind_port_to_host(pt2['port_id'], 'h2')
+        self.driver.get_gbp_details(context.get_admin_context(),
+            device='tap%s' % pt2['port_id'], host='h2')
+
+        es_sub = manager.NeutronManager.get_plugin().get_subnet(
+            context.get_admin_context(), es['subnet_id'])
+        # First subnet is exhausted, so create an additional subnet
+        # and test that an IP is allocated from this new subnet
+        attrs = {'name': amap.HOST_SNAT_POOL,
+                 'cidr': '192.168.201.0/30',
+                 'network_id': es_sub['network_id'],
+                 'ip_version': 4,
+                 'enable_dhcp': False,
+                 'gateway_ip': attributes.ATTR_NOT_SPECIFIED,
+                 'allocation_pools': attributes.ATTR_NOT_SPECIFIED,
+                 'dns_nameservers': attributes.ATTR_NOT_SPECIFIED,
+                 'host_routes': attributes.ATTR_NOT_SPECIFIED}
+        manager.NeutronManager.get_plugin().create_subnet(
+            context.get_admin_context(), {'subnet': attrs})
+        # Create event on a thirs host and verify that the SNAT
+        # port gets created for this third host
+        pt3 = self.create_policy_target(
+            policy_target_group_id=ptg['id'])['policy_target']
+        self._bind_port_to_host(pt3['port_id'], 'h3')
 
         mapping = self.driver.get_gbp_details(context.get_admin_context(),
-            device='tap%s' % pt2['port_id'], host='h2')
-        self.assertEqual(pt2['port_id'], mapping['port_id'])
+            device='tap%s' % pt3['port_id'], host='h2')
+        self.assertEqual(pt3['port_id'], mapping['port_id'])
         self.assertEqual(1, len(mapping['host_snat_ips']))
         self.assertEqual(es['name'],
             mapping['host_snat_ips'][0]['external_segment_name'])
-        self.assertEqual("192.168.200.1",
+        self.assertEqual("192.168.201.1",
             mapping['host_snat_ips'][0]['gateway_ip'])
-        self.assertEqual("192.168.200.3",
+        self.assertEqual("192.168.201.2",
             mapping['host_snat_ips'][0]['host_snat_ip'])
-        self.assertEqual(24, mapping['host_snat_ips'][0]['prefixlen'])
+        self.assertEqual(30, mapping['host_snat_ips'][0]['prefixlen'])
 
     def test_snat_pool_subnet_deletion(self):
         self._mock_external_dict([('supported', '192.168.0.2/24')])
