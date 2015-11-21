@@ -33,7 +33,8 @@ def get_node_driver_context(sc_plugin, context, sc_instance,
         admin_context, sc_instance['provider_ptg_id'])
     consumer, is_consumer_external = _get_ptg_or_ep(
         admin_context, sc_instance['consumer_ptg_id'])
-    management, _ = _get_ptg_or_ep(context, sc_instance['management_ptg_id'])
+    management, _ = _get_ptg_or_ep(admin_context,
+                                   sc_instance['management_ptg_id'])
     classifier = get_gbp_plugin().get_policy_classifier(
         admin_context, sc_instance['classifier_id'])
     current_profile = (current_node['service_profile_id'] and
