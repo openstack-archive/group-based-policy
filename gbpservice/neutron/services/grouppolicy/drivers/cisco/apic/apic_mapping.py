@@ -157,7 +157,8 @@ APIC_OWNED_RES = 'apic_owned_res_'
 PROMISCUOUS_TYPES = [n_constants.DEVICE_OWNER_DHCP,
                      n_constants.DEVICE_OWNER_LOADBALANCER]
 ALLOWING_ACTIONS = [g_const.GP_ACTION_ALLOW, g_const.GP_ACTION_REDIRECT]
-REVERTIBLE_PROTOCOLS = [n_constants.PROTO_NAME_TCP.lower()]
+REVERTIBLE_PROTOCOLS = [n_constants.PROTO_NAME_TCP.lower(),
+                        n_constants.PROTO_NAME_UDP.lower()]
 PROXY_PORT_PREFIX = "opflex_proxy:"
 
 
@@ -577,18 +578,19 @@ class ApicMappingDriver(api.ResourceMappingDriver,
                     policy_rule, owner=tenant, transaction=trs, **attrs)
                 # Also create reverse rule
                 if attrs.get('prot') in REVERTIBLE_PROTOCOLS:
+                    policy_rule = self.name_mapper.policy_rule(
+                        context, context.current, prefix=REVERSE_PREFIX)
+                    if attrs.get('dToPort') and attrs.get('dFromPort'):
+                        attrs.pop('dToPort')
+                        attrs.pop('dFromPort')
+                        attrs['sToPort'] = port_max
+                        attrs['sFromPort'] = port_min
                     if attrs['prot'] == n_constants.PROTO_NAME_TCP.lower():
-                        policy_rule = self.name_mapper.policy_rule(
-                            context, context.current, prefix=REVERSE_PREFIX)
-                        if attrs.get('dToPort') and attrs.get('dFromPort'):
-                            attrs.pop('dToPort')
-                            attrs.pop('dFromPort')
-                            attrs['sToPort'] = port_max
-                            attrs['sFromPort'] = port_min
+                        # Only match on established sessions
                         attrs['tcpRules'] = 'est'
-                        self.apic_manager.create_tenant_filter(
-                            policy_rule, owner=tenant, transaction=trs,
-                            **attrs)
+                    self.apic_manager.create_tenant_filter(
+                        policy_rule, owner=tenant, transaction=trs,
+                        **attrs)
 
     def create_policy_rule_set_precommit(self, context):
         if not self.name_mapper._is_apic_reference(context.current):

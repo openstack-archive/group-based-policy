@@ -1703,6 +1703,8 @@ class TestPolicyRuleSet(ApicMappingTestCase):
         cl_attr = {'protocol': 'tcp', 'port_range': 80}
         cls = []
         for direction in ['bi', 'in', 'out']:
+            if direction == 'out':
+                cl_attr['protocol'] = 'udp'
             cls.append(self.create_policy_classifier(
                 direction=direction, shared=shared,
                 **cl_attr)['policy_classifier'])
@@ -1719,6 +1721,7 @@ class TestPolicyRule(ApicMappingTestCase):
 
     def _test_policy_rule_created_on_apic(self, shared=False):
         pr = self._create_simple_policy_rule('in', 'tcp', 88, shared=shared)
+        pr1 = self._create_simple_policy_rule('in', 'udp', 53, shared=shared)
         pr2 = self._create_simple_policy_rule('in', None, 88, shared=shared)
 
         tenant = self.common_tenant if shared else pr['tenant_id']
@@ -1729,6 +1732,11 @@ class TestPolicyRule(ApicMappingTestCase):
             mock.call(amap.REVERSE_PREFIX + pr['id'], owner=tenant,
                       etherT='ip', prot='tcp', sToPort=88, sFromPort=88,
                       tcpRules='est', transaction=mock.ANY),
+            mock.call(pr1['id'], owner=tenant, etherT='ip', prot='udp',
+                      dToPort=53, dFromPort=53, transaction=mock.ANY),
+            mock.call(amap.REVERSE_PREFIX + pr1['id'], owner=tenant,
+                      etherT='ip', prot='udp', sToPort=53, sFromPort=53,
+                      transaction=mock.ANY),
             mock.call(pr2['id'], owner=tenant, etherT='unspecified',
                       dToPort=88, dFromPort=88, transaction=mock.ANY)]
         self._check_call_list(
@@ -1749,14 +1757,23 @@ class TestPolicyRule(ApicMappingTestCase):
 
     def _test_policy_rule_deleted_on_apic(self, shared=False):
         pr = self._create_simple_policy_rule(shared=shared)
-        req = self.new_delete_request('policy_rules', pr['id'], self.fmt)
-        req.get_response(self.ext_api)
+        pr1 = self._create_simple_policy_rule('in', 'udp', 53, shared=shared)
+        self.delete_policy_rule(pr['id'], expected_res_status=204)
 
         tenant = self.common_tenant if shared else pr['tenant_id']
         mgr = self.driver.apic_manager
         expected_calls = [
             mock.call(pr['id'], owner=tenant, transaction=mock.ANY),
             mock.call(amap.REVERSE_PREFIX + pr['id'], owner=tenant,
+                      transaction=mock.ANY)]
+        self._check_call_list(
+            expected_calls, mgr.delete_tenant_filter.call_args_list)
+
+        mgr.delete_tenant_filter.reset_mock()
+        self.delete_policy_rule(pr1['id'], expected_res_status=204)
+        expected_calls = [
+            mock.call(pr1['id'], owner=tenant, transaction=mock.ANY),
+            mock.call(amap.REVERSE_PREFIX + pr1['id'], owner=tenant,
                       transaction=mock.ANY)]
         self._check_call_list(
             expected_calls, mgr.delete_tenant_filter.call_args_list)
@@ -1796,7 +1813,11 @@ class TestPolicyRule(ApicMappingTestCase):
             mock.call(pr1['id'], owner='common', etherT='ip', prot='udp',
                       transaction=mock.ANY),
             mock.call(pr2['id'], owner='test-tenant', etherT='ip', prot='udp',
-                      transaction=mock.ANY)]
+                      transaction=mock.ANY),
+            mock.call(amap.REVERSE_PREFIX + pr1['id'], owner='common',
+                      etherT='ip', prot='udp', transaction=mock.ANY),
+            mock.call(amap.REVERSE_PREFIX + pr2['id'], owner='test-tenant',
+                      etherT='ip', prot='udp', transaction=mock.ANY)]
         self._check_call_list(
             expected_calls, mgr.create_tenant_filter.call_args_list)
         expected_calls = [
@@ -1832,8 +1853,9 @@ class TestPolicyRule(ApicMappingTestCase):
         self._check_call_list(
             expected_calls, mgr.delete_tenant_filter.call_args_list)
 
-        self.assertFalse(mgr.manage_contract_subject_in_filter.called)
-        self.assertFalse(mgr.manage_contract_subject_out_filter.called)
+        # Protocol went from revertible to non-revertible
+        self.assertTrue(mgr.manage_contract_subject_in_filter.called)
+        self.assertTrue(mgr.manage_contract_subject_out_filter.called)
         mgr.reset_mock()
 
         # Change Classifier protocol to revertible
