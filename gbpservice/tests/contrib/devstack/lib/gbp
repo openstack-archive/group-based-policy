@@ -48,6 +48,7 @@ function install_gbpclient {
     git_clone $GBPCLIENT_REPO $GBPCLIENT_DIR $GBPCLIENT_BRANCH
     setup_develop $GBPCLIENT_DIR
     sudo install -D -m 0644 -o $STACK_USER {$GBPCLIENT_DIR/tools/,/etc/bash_completion.d/}gbp.bash_completion
+    sudo pip install python-neutronclient==2.3.9
 }
 
 # Restore xtrace
