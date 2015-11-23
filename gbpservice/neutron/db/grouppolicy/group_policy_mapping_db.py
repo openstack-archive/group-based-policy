@@ -214,6 +214,10 @@ class GroupPolicyMappingDbPlugin(gpdb.GroupPolicyDbPlugin):
             context, l3p_id, l3p_klass=L3PolicyMapping,
             ptg_klass=PolicyTargetGroupMapping, l2p_klass=L2PolicyMapping)
 
+    def _get_cluster_members(self, context, cluster_id):
+        return super(GroupPolicyMappingDbPlugin, self)._get_cluster_members(
+            context, cluster_id, pt_klass=PolicyTargetMapping)
+
     def _set_db_np_subnet(self, context, nat_pool, subnet_id):
         with context.session.begin(subtransactions=True):
             nat_pool['subnet_id'] = subnet_id
@@ -237,9 +241,14 @@ class GroupPolicyMappingDbPlugin(gpdb.GroupPolicyDbPlugin):
                                         description=pt['description'],
                                         policy_target_group_id=
                                         pt['policy_target_group_id'],
-                                        port_id=pt['port_id'],
-                                        cluster_id=pt['cluster_id'])
+                                        port_id=pt['port_id'])
             context.session.add(pt_db)
+            if 'cluster_ids' in pt:
+                for cluster_id in pt['cluster_ids']:
+                    assoc = gpdb.PTToClusterAssociation(
+                        policy_target_id=pt_db.id,
+                        cluster_id=cluster_id)
+                    pt_db.cluster_ids.append(assoc)
         return self._make_policy_target_dict(pt_db)
 
     @log.log

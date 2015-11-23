@@ -226,8 +226,12 @@ class ResourceMappingDriver(api.PolicyDriver, local_api.LocalAPI,
     def create_policy_target_postcommit(self, context):
         if not context.current['port_id']:
             self._use_implicit_port(context)
-        self._update_cluster_membership(
-            context, new_cluster_id=context.current['cluster_id'])
+        try:
+            self._update_cluster_membership(
+                context, new_cluster_id=context.current['cluster_ids'][0])
+        except IndexError:
+            self._update_cluster_membership(context, new_cluster_id=None)
+
         self._assoc_ptg_sg_to_pt(context, context.current['id'],
                                  context.current['policy_target_group_id'])
         self._associate_fip_to_pt(context)
@@ -347,10 +351,13 @@ class ResourceMappingDriver(api.PolicyDriver, local_api.LocalAPI,
 
     @log.log
     def update_policy_target_postcommit(self, context):
-        if context.current['cluster_id'] != context.original['cluster_id']:
+        if context.current['cluster_ids'] != context.original['cluster_ids']:
+            old_cid = (context.original['cluster_ids'][0] if
+                       context.original['cluster_ids'] else None)
+            new_cid = (context.current['cluster_ids'][0] if
+                       context.current['cluster_ids'] else None)
             self._update_cluster_membership(
-                context, new_cluster_id=context.current['cluster_id'],
-                old_cluster_id=context.original['cluster_id'])
+                context, new_cluster_id=new_cid, old_cluster_id=old_cid)
 
     @log.log
     def delete_policy_target_precommit(self, context):
@@ -2526,21 +2533,21 @@ class ResourceMappingDriver(api.PolicyDriver, local_api.LocalAPI,
 
     def _validate_cluster_id(self, context):
         # In RMD, cluster_id can only point to a preexisting PT.
-        if context.current['cluster_id']:
-            try:
-                pt = self._get_policy_target(
-                    context._plugin_context, context.current['cluster_id'])
+        if context.current['cluster_ids']:
+            pts = self._get_policy_targets(
+                context._plugin_context,
+                {'id': context.current['cluster_ids']})
+            if len(pts) < len(context.current['cluster_ids']):
+                raise exc.InvalidClusterId()
+            for pt in pts:
                 if pt['policy_target_group_id'] != context.current[
                         'policy_target_group_id']:
                     raise exc.InvalidClusterPtg()
-            except gp_ext.PolicyTargetNotFound:
-                raise exc.InvalidClusterId()
 
     def _validate_pt_in_use_by_cluster(self, context):
         # Useful for avoiding to delete a cluster master
-        pts = [x for x in self._get_policy_targets(
-            context._plugin_context.elevated(),
-            {'cluster_id': [context.current['id']]})
+        pts = [x for x in context._plugin._get_cluster_members(
+               context._plugin_context, context.current['id'])
                if x['id'] != context.current['id']]
         if pts:
             raise exc.PolicyTargetInUse()

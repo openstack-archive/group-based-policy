@@ -435,7 +435,7 @@ class TestClusterIdMixin(object):
     def test_cluster_invalid_id(self):
         ptg_id = self.create_policy_target_group()['policy_target_group']['id']
         res = self.create_policy_target(policy_target_group_id=ptg_id,
-                                        cluster_id='SomeInvalidCluster',
+                                        cluster_ids=[ptg_id],
                                         expected_res_status=400)
         self.assertEqual('InvalidClusterId',
                          res['NeutronError']['type'])
@@ -445,7 +445,7 @@ class TestClusterIdMixin(object):
         master = self.create_policy_target(
             policy_target_group_id=ptg_id)['policy_target']
         self.create_policy_target(
-            policy_target_group_id=ptg_id, cluster_id=master['id'],
+            policy_target_group_id=ptg_id, cluster_ids=[master['id']],
             expected_res_status=201)
         res = self.delete_policy_target(master['id'],
                                         expected_res_status=400)
@@ -459,7 +459,7 @@ class TestClusterIdMixin(object):
             policy_target_group_id=ptg_1)['policy_target']
         # Cluster member belonging to a different PTG.
         res = self.create_policy_target(
-            policy_target_group_id=ptg_2, cluster_id=master['id'],
+            policy_target_group_id=ptg_2, cluster_ids=[master['id']],
             expected_res_status=400)
         self.assertEqual('InvalidClusterPtg',
                          res['NeutronError']['type'])
@@ -469,10 +469,10 @@ class TestClusterIdMixin(object):
         master = self.create_policy_target(
             policy_target_group_id=ptg_id)['policy_target']
         member = self.create_policy_target(
-            policy_target_group_id=ptg_id, cluster_id=master['id'],
+            policy_target_group_id=ptg_id, cluster_ids=[master['id']],
             expected_res_status=201)['policy_target']
         # Use self id as cluster ID
-        self.update_policy_target(master['id'], cluster_id=master['id'])
+        self.update_policy_target(master['id'], cluster_ids=[master['id']])
 
         self.delete_policy_target(master['id'], expected_res_status=400)
         self.delete_policy_target(member['id'], expected_res_status=204)
@@ -485,7 +485,7 @@ class TestClusterIdMixin(object):
         master = self.create_policy_target(
             policy_target_group_id=ptg_id)['policy_target']
         member = self.create_policy_target(
-            policy_target_group_id=ptg_id, cluster_id=master['id'],
+            policy_target_group_id=ptg_id, cluster_ids=[master['id']],
             expected_res_status=201)['policy_target']
         master_port = self._get_object('ports', master['port_id'],
                                        self.api)['port']
@@ -503,7 +503,7 @@ class TestClusterIdMixin(object):
         member = self.create_policy_target(
             policy_target_group_id=ptg_id,
             expected_res_status=201)['policy_target']
-        self.update_policy_target(member['id'], cluster_id=master['id'])
+        self.update_policy_target(member['id'], cluster_ids=[master['id']])
 
         master_port = self._get_object('ports', master['port_id'],
                                        self.api)['port']
@@ -519,10 +519,10 @@ class TestClusterIdMixin(object):
         master = self.create_policy_target(
             policy_target_group_id=ptg_id)['policy_target']
         member = self.create_policy_target(
-            policy_target_group_id=ptg_id, cluster_id=master['id'],
+            policy_target_group_id=ptg_id, cluster_ids=[master['id']],
             expected_res_status=201)['policy_target']
 
-        self.update_policy_target(member['id'], cluster_id='')
+        self.update_policy_target(member['id'], cluster_ids=None)
         member_port = self._get_object('ports', member['port_id'],
                                        self.api)['port']
         self.assertEqual([], member_port['allowed_address_pairs'])

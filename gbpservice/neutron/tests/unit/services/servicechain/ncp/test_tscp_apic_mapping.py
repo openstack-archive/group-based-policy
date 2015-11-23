@@ -906,7 +906,7 @@ class TestProxyGroup(ApicMappingStitchingPlumberGBPTestCase):
         # Create a PT in the same cluster
         proxy_gw_failover = self.create_policy_target(
             policy_target_group_id=proxy['id'],
-            cluster_id=proxy_gw['id'],
+            cluster_ids=[proxy_gw['id']],
             tenant_id=proxy['tenant_id'],
             is_admin_context=admin_proxy)['policy_target']
         self._bind_port_to_host(proxy_gw_failover['port_id'], 'h2')
@@ -995,7 +995,7 @@ class TestProxyGroup(ApicMappingStitchingPlumberGBPTestCase):
         # Create a PT in the same cluster
         group_gw_failover = self.create_policy_target(
             policy_target_group_id=ptg['id'],
-            cluster_id=group_gw['id'])['policy_target']
+            cluster_ids=[group_gw['id']])['policy_target']
         mapping = self.driver.get_gbp_details(
             context.get_admin_context(),
             device='tap%s' % group_gw_failover['port_id'], host='h2')
@@ -1047,7 +1047,7 @@ class TestProxyGroup(ApicMappingStitchingPlumberGBPTestCase):
         # The following is not proxy gateway, but is part of a proxy_gw cluster
         proxy_gw = self.create_policy_target(
             policy_target_group_id=proxy2['id'],
-            cluster_id=proxy_gw_master['id'], tenant_id=proxy2['tenant_id'],
+            cluster_ids=[proxy_gw_master['id']], tenant_id=proxy2['tenant_id'],
             is_admin_context=admin_proxy)['policy_target']
 
         self._bind_port_to_host(proxy_gw['port_id'], 'h2')

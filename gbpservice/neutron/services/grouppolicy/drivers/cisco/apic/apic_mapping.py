@@ -276,9 +276,10 @@ class ApicMappingDriver(api.ResourceMappingDriver,
                     context, l2p, prefix=SHADOW_PREFIX)
 
             def is_port_promiscuous(port):
-                if (pt and pt.get('cluster_id') and
-                        pt.get('cluster_id') != pt['id']):
-                    master = self._get_policy_target(context, pt['cluster_id'])
+                if (pt and pt.get('cluster_ids') and
+                        pt.get('cluster_ids')[0] != pt['id']):
+                    master = self._get_policy_target(context,
+                                                     pt['cluster_ids'][0])
                     if master.get('group_default_gateway'):
                         return True
                 return (port['device_owner'] in PROMISCUOUS_TYPES or
@@ -330,7 +331,7 @@ class ApicMappingDriver(api.ResourceMappingDriver,
                     extra_map = details['extra_details'].setdefault(
                         master_mac, {'extra_ips': [], 'floating_ip': [],
                             'ip_mapping': [], 'host_snat_ips': []})
-                if bool(master_mac) == bool(pt['cluster_id']):
+                if bool(master_mac) == bool(pt['cluster_ids']):
                     l3_policy = context._plugin.get_l3_policy(
                         context, l2p['l3_policy_id'])
                     while ptg['proxied_group_id']:
@@ -630,8 +631,11 @@ class ApicMappingDriver(api.ResourceMappingDriver,
                     reserved.append(subnet)
 
             self._use_implicit_port(context, subnets=reserved or owned)
-        self._update_cluster_membership(
-            context, new_cluster_id=context.current['cluster_id'])
+        try:
+            cid = context.current['cluster_ids'][0]
+        except IndexError:
+            cid = None
+        self._update_cluster_membership(context, new_cluster_id=cid)
         port = self._get_port(context._plugin_context,
                               context.current['port_id'])
         if self._is_port_bound(port):
@@ -933,9 +937,10 @@ class ApicMappingDriver(api.ResourceMappingDriver,
 
     def update_policy_target_postcommit(self, context):
         curr, orig = context.current, context.original
+        old_cid = orig['cluster_ids'][0] if orig['cluster_ids'] else None
+        new_cid = curr['cluster_ids'][0] if curr['cluster_ids'] else None
         self._update_cluster_membership(
-            context, new_cluster_id=context.current['cluster_id'],
-            old_cluster_id=context.original['cluster_id'])
+            context, new_cluster_id=new_cid, old_cluster_id=old_cid)
         if ((orig['policy_target_group_id'] != curr['policy_target_group_id'])
             or ((curr['description'] != orig['description']) and
                 curr['description'].startswith(PROXY_PORT_PREFIX))):
@@ -2712,8 +2717,10 @@ class ApicMappingDriver(api.ResourceMappingDriver,
             plugin_context, {'policy_target_group_id': [group_id],
                              'proxy_gateway': [True]})
         # Get any possible cluster member
-        cluster_pts = self.gbp_plugin.get_policy_targets(
-            plugin_context, {'cluster_id': [x['id'] for x in proxy_pts]})
+        cluster_pts = []
+        for pt in proxy_pts:
+            cluster_pts.extend(self.gbp_plugin._get_cluster_members(
+                plugin_context, pt['id']))
         # Get all the fake PTs pointing to the proxy ones to update their ports
         ports = self._get_ports(
             plugin_context, {'id': [x['port_id'] for x in (proxy_pts +
@@ -2809,7 +2816,7 @@ class ApicMappingDriver(api.ResourceMappingDriver,
             chain_end = bool(ptg.get('proxied_group_id') and
                              not ptg.get('proxy_group'))
             if chain_end:
-                cluster_id = pt['cluster_id']
+                cluster_id = pt['cluster_ids']
                 if cluster_id:
                     # The master PT must be a proxy gateway for this to be
                     # eligible as the chain head
@@ -2829,7 +2836,7 @@ class ApicMappingDriver(api.ResourceMappingDriver,
 
         Returns the master MAC address or False
         """
-        if pt['cluster_id']:
+        if pt['cluster_ids']:
             master_pt = master_pt or self._get_pt_cluster_master(
                 plugin_context, pt)
             # Get the owned IPs by PT, and verify at least one of them belong
@@ -2848,8 +2855,10 @@ class ApicMappingDriver(api.ResourceMappingDriver,
         return set(self.ha_ip_handler.get_ha_ipaddresses_for_port(port_id))
 
     def _get_pt_cluster_master(self, plugin_context, pt):
-        return (self._get_policy_target(plugin_context, pt['cluster_id'])
-                if pt['cluster_id'] != pt['id'] else pt)
+        if pt['cluster_ids']:
+            return (self._get_policy_target(plugin_context,
+                                            pt['cluster_ids'][0])
+                    if pt['cluster_ids'][0] != pt['id'] else pt)
 
     def _is_pre_existing(self, es):
         ext_info = self.apic_manager.ext_net_dict.get(es['name'])

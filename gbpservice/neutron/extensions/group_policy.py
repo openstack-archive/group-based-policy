@@ -409,9 +409,10 @@ RESOURCE_ATTRIBUTE_MAP = {
         'policy_target_group_id': {'allow_post': True, 'allow_put': True,
                                    'validate': {'type:uuid_or_none': None},
                                    'required': True, 'is_visible': True},
-        'cluster_id': {'allow_post': True, 'allow_put': True,
-                       'validate': {'type:string': None},
-                       'default': '', 'is_visible': True}
+        'cluster_ids': {'allow_post': True, 'allow_put': True,
+                        'validate': {'type:uuid_list': None},
+                        'convert_to': attr.convert_none_to_empty_list,
+                        'is_visible': True, 'default': None}
     },
     POLICY_TARGET_GROUPS: {
         'id': {'allow_post': False, 'allow_put': False,

@@ -46,6 +46,15 @@ class BaseSharedGbpResource(models_v2.HasId, models_v2.HasTenant,
     pass
 
 
+class PTToClusterAssociation(model_base.BASEV2):
+    """Many to many relation between PolicyTarget and Clusters."""
+    __tablename__ = 'gp_pt_to_cluster_associations'
+    policy_target_id = sa.Column(
+        sa.String(36), sa.ForeignKey('gp_policy_targets.id'),
+        primary_key=True)
+    cluster_id = sa.Column(sa.String(36), primary_key=True)
+
+
 class PolicyTarget(gquota.GBPQuotaBase, model_base.BASEV2, models_v2.HasId,
                    models_v2.HasTenant):
     """Lowest unit of abstraction on which a policy is applied."""
@@ -61,7 +70,8 @@ class PolicyTarget(gquota.GBPQuotaBase, model_base.BASEV2, models_v2.HasId,
                                        sa.ForeignKey(
                                            'gp_policy_target_groups.id'),
                                        nullable=True)
-    cluster_id = sa.Column(sa.String(255))
+    cluster_ids = orm.relationship(PTToClusterAssociation,
+                                   cascade='all', lazy="joined")
 
 
 class PTGToPRSProvidingAssociation(model_base.BASEV2):
@@ -825,7 +835,7 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
                'name': pt['name'],
                'description': pt['description'],
                'policy_target_group_id': pt['policy_target_group_id'],
-               'cluster_id': pt['cluster_id']}
+               'cluster_ids': [x.cluster_id for x in pt['cluster_ids']]}
         return self._fields(res, fields)
 
     def _make_policy_target_group_dict(self, ptg, fields=None):
@@ -1081,6 +1091,11 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
                     l2p_klass).join(l3p_klass).filter(
                         l2p_klass.l3_policy_id == l3p_id).all()]
 
+    def _get_cluster_members(self, context, cluster_id, pt_klass=PolicyTarget):
+        return [self._make_policy_target_dict(x) for x in
+                context.session.query(pt_klass).join(PTToClusterAssociation).
+                filter(PTToClusterAssociation.cluster_id == cluster_id).all()]
+
     def _get_attribute(self, attrs, key):
         value = attrs.get(key)
         if value is attr.ATTR_NOT_SPECIFIED:
@@ -1139,9 +1154,14 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
             pt_db = PolicyTarget(
                 id=uuidutils.generate_uuid(), tenant_id=tenant_id,
                 name=pt['name'], description=pt['description'],
-                policy_target_group_id=pt['policy_target_group_id'],
-                cluster_id=pt['cluster_id'])
+                policy_target_group_id=pt['policy_target_group_id'])
             context.session.add(pt_db)
+            if 'cluster_ids' in pt:
+                for cluster_id in pt['cluster_ids']:
+                    assoc = PTToClusterAssociation(
+                        policy_target_id=pt_db.id,
+                        cluster_id=cluster_id)
+                    pt_db.cluster_ids.append(assoc)
         return self._make_policy_target_dict(pt_db)
 
     @log.log
@@ -1149,6 +1169,26 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
         pt = policy_target['policy_target']
         with context.session.begin(subtransactions=True):
             pt_db = self._get_policy_target(context, policy_target_id)
+            if 'cluster_ids' in pt:
+                # Add/remove associations for changes in cids.
+                new_cids = set(pt['cluster_ids'])
+                old_cids = set(cluster.cluster_id
+                               for cluster in pt_db.cluster_ids)
+                for cid in new_cids - old_cids:
+                    assoc = PTToClusterAssociation(
+                        policy_target_id=policy_target_id,
+                        cluster_id=cid)
+                    pt_db.cluster_ids.append(assoc)
+                for cid in old_cids - new_cids:
+                    assoc = (
+                        context.session.query(
+                            PTToClusterAssociation).filter_by(
+                                policy_target_id=policy_target_id,
+                                cluster_id=cid).one())
+                    pt_db.cluster_ids.remove(assoc)
+                    context.session.delete(assoc)
+                # Don't update pt_db.subnets with cluster IDs.
+                del pt['cluster_ids']
             pt_db.update(pt)
         return self._make_policy_target_dict(pt_db)
 
