@@ -18,7 +18,7 @@ Checkout the GBP wiki page for more detailed information:
 <http://wiki.openstack.org/GroupBasedPolicy>
 
 The latest code is available at:
-<http://git.openstack.org/cgit/stackforge/group-based-policy>.
+<http://git.openstack.org/cgit/openstack/group-based-policy>.
 
 GBP project management (blueprints, bugs) is done via Launchpad:
 <http://launchpad.net/group-based-policy>
