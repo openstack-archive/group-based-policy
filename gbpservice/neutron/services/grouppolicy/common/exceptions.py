@@ -67,6 +67,11 @@ class L3PolicyUpdateOfL2PolicyNotSupported(GroupPolicyBadRequest):
     message = _("Updating L3 policy of L2 policy is not supported.")
 
 
+class DisableGatewayUpdateOfL2PolicyNotSupported(GroupPolicyBadRequest):
+    message = _("Updating disable_gateway attribute of L2 policy is not "
+                "supported.")
+
+
 class L3PolicyMultipleRoutersNotSupported(GroupPolicyBadRequest):
     message = _("L3 policy does not support multiple routers.")
 
