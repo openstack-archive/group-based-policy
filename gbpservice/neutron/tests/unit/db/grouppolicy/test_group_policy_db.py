@@ -538,11 +538,12 @@ class TestGroupResources(GroupPolicyDbTestCase):
         description = 'new desc'
         l3p_id = self.create_l3_policy()['l3_policy']['id']
         attrs = cm.get_create_l2_policy_default_attrs(
-            name=name, description=description, l3_policy_id=l3p_id)
+            name=name, description=description, l3_policy_id=l3p_id,
+            disable_gateway=True)
 
         l2p = self.create_l2_policy()
         data = {'l2_policy': {'name': name, 'description': description,
-                              'l3_policy_id': l3p_id}}
+                              'l3_policy_id': l3p_id, 'disable_gateway': True}}
         req = self.new_update_request('l2_policies', data,
                                       l2p['l2_policy']['id'])
         res = self.deserialize(self.fmt, req.get_response(self.ext_api))
