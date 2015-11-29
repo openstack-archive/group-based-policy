@@ -380,26 +380,29 @@ class ResourceMappingDriver(api.PolicyDriver, local_api.LocalAPI,
         self._validate_nat_pool_for_nsp(context)
         self._validate_proxy_ptg(context)
 
-    @log.log
-    def create_policy_target_group_postcommit(self, context):
-        # REVISIT(ivar) this validates the PTG L2P after the IPD creates it
-        # (which happens in the postcommit phase)
-        self._validate_proxy_ptg(context)
+    def _create_and_connect_ptg_subnets_to_router(self, context):
         subnets = context.current['subnets']
         if not subnets:
             self._use_implicit_subnet(
                 context,
                 is_proxy=bool(context.current.get('proxied_group_id')))
             subnets = context.current['subnets']
-        # connect router to subnets of the PTG
-        l2p_id = context.current['l2_policy_id']
-        l2p = context._plugin.get_l2_policy(context._plugin_context,
-                                            l2p_id)
-        l3p_id = l2p['l3_policy_id']
-        l3p = context._plugin.get_l3_policy(context._plugin_context,
-                                            l3p_id)
-        self._stitch_ptg_to_l3p(context, context.current, l3p, subnets)
 
+        l2p_id = context.current['l2_policy_id']
+        l2p = context._plugin.get_l2_policy(context._plugin_context, l2p_id)
+        if subnets and not l2p['disable_gateway']:
+            # connect router to subnets of the PTG
+            l3p_id = l2p['l3_policy_id']
+            l3p = context._plugin.get_l3_policy(context._plugin_context,
+                                                l3p_id)
+            self._stitch_ptg_to_l3p(context, context.current, l3p, subnets)
+
+    @log.log
+    def create_policy_target_group_postcommit(self, context):
+        # REVISIT(ivar) this validates the PTG L2P after the IPD creates it
+        # (which happens in the postcommit phase)
+        self._validate_proxy_ptg(context)
+        self._create_and_connect_ptg_subnets_to_router(context)
         self._handle_network_service_policy(context)
         self._handle_policy_rule_sets(context)
         self._update_default_security_group(context._plugin_context,
@@ -640,6 +643,7 @@ class ResourceMappingDriver(api.PolicyDriver, local_api.LocalAPI,
         self._update_default_security_group(
             context._plugin_context, context.current['id'],
             context.current['tenant_id'], subnets=new_subnets)
+        #self._create_and_connect_ptg_subnets_to_router(context)
 
     def _handle_nsp_update_on_ptg(self, context):
         old_nsp = context.original.get("network_service_policy_id")
@@ -707,6 +711,15 @@ class ResourceMappingDriver(api.PolicyDriver, local_api.LocalAPI,
         if (context.current['l3_policy_id'] !=
             context.original['l3_policy_id']):
             raise exc.L3PolicyUpdateOfL2PolicyNotSupported()
+
+        l2p = context._plugin.get_l2_policy(context._plugin_context,
+                                            context.original['id'])
+        if len(l2p['policy_target_groups']) and (
+            'disable_gateway' in context.current) and (
+                context.original['disable_gateway'] !=
+                context.current['disable_gateway']):
+            raise exc.DisableGatewayUpdateOfL2PolicyNotSupported()
+
         self._reject_cross_tenant_l2p_l3p(context)
         self._reject_non_shared_net_on_shared_l2p(context)
 
