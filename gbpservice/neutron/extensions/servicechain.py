@@ -25,6 +25,7 @@ from oslo.config import cfg
 import six
 
 import gbpservice.neutron.extensions
+import gbpservice.neutron.extensions.group_policy  # noqa
 from gbpservice.neutron.services.servicechain.common import constants as scc
 
 # The code below is a monkey patch of key Neutron's modules. This is needed for
@@ -113,7 +114,7 @@ RESOURCE_ATTRIBUTE_MAP = {
                'validate': {'type:uuid': None}, 'is_visible': True,
                'primary_key': True},
         'name': {'allow_post': True, 'allow_put': True,
-                 'validate': {'type:string': None}, 'default': '',
+                 'validate': {'type:gbp_resource_name': None}, 'default': '',
                  'is_visible': True},
         'description': {'allow_post': True, 'allow_put': True,
                         'validate': {'type:string': None},
@@ -140,7 +141,7 @@ RESOURCE_ATTRIBUTE_MAP = {
                'validate': {'type:uuid': None}, 'is_visible': True,
                'primary_key': True},
         'name': {'allow_post': True, 'allow_put': True,
-                 'validate': {'type:string': None},
+                 'validate': {'type:gbp_resource_name': None},
                  'default': '', 'is_visible': True},
         'description': {'allow_post': True, 'allow_put': True,
                         'validate': {'type:string': None},
@@ -166,7 +167,7 @@ RESOURCE_ATTRIBUTE_MAP = {
                'validate': {'type:uuid': None}, 'is_visible': True,
                'primary_key': True},
         'name': {'allow_post': True, 'allow_put': True,
-                 'validate': {'type:string': None},
+                 'validate': {'type:gbp_resource_name': None},
                  'default': '', 'is_visible': True},
         'description': {'allow_post': True, 'allow_put': True,
                         'validate': {'type:string': None},
@@ -204,7 +205,7 @@ RESOURCE_ATTRIBUTE_MAP = {
                'validate': {'type:uuid': None}, 'is_visible': True,
                'primary_key': True},
         'name': {'allow_post': True, 'allow_put': True,
-                 'validate': {'type:string': None},
+                 'validate': {'type:gbp_resource_name': None},
                  'default': '', 'is_visible': True},
         'description': {'allow_post': True, 'allow_put': True,
                         'validate': {'type:string': None},

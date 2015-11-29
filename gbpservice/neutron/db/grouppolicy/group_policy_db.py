@@ -38,7 +38,7 @@ ADDRESS_NOT_SPECIFIED = ''
 
 
 class HasNameDescription(object):
-    name = sa.Column(sa.String(50))
+    name = sa.Column(sa.String(255))
     description = sa.Column(sa.String(255))
 
 
@@ -57,7 +57,7 @@ class PolicyTarget(gquota.GBPQuotaBase, model_base.BASEV2, models_v2.HasId,
         'polymorphic_on': type,
         'polymorphic_identity': 'base'
     }
-    name = sa.Column(sa.String(50))
+    name = sa.Column(sa.String(255))
     description = sa.Column(sa.String(255))
     policy_target_group_id = sa.Column(sa.String(36),
                                        sa.ForeignKey(
@@ -99,7 +99,7 @@ class PolicyTargetGroup(gquota.GBPQuotaBase, model_base.BASEV2,
         'polymorphic_on': type,
         'polymorphic_identity': 'base'
     }
-    name = sa.Column(sa.String(50))
+    name = sa.Column(sa.String(255))
     description = sa.Column(sa.String(255))
     policy_targets = orm.relationship(PolicyTarget,
                                       backref='policy_target_group')
@@ -128,7 +128,7 @@ class L2Policy(gquota.GBPQuotaBase, model_base.BASEV2, models_v2.HasId,
         'polymorphic_on': type,
         'polymorphic_identity': 'base'
     }
-    name = sa.Column(sa.String(50))
+    name = sa.Column(sa.String(255))
     description = sa.Column(sa.String(255))
     policy_target_groups = orm.relationship(PolicyTargetGroup,
                                             backref='l2_policy')
@@ -159,7 +159,7 @@ class L3Policy(gquota.GBPQuotaBase, model_base.BASEV2, models_v2.HasId,
         'polymorphic_on': type,
         'polymorphic_identity': 'base'
     }
-    name = sa.Column(sa.String(50))
+    name = sa.Column(sa.String(255))
     description = sa.Column(sa.String(255))
     ip_version = sa.Column(sa.Integer, nullable=False)
     ip_pool = sa.Column(sa.String(64), nullable=False)
@@ -186,7 +186,7 @@ class NetworkServicePolicy(gquota.GBPQuotaBase, model_base.BASEV2,
                            models_v2.HasId, models_v2.HasTenant):
     """Represents a Network Service Policy."""
     __tablename__ = 'gp_network_service_policies'
-    name = sa.Column(sa.String(50))
+    name = sa.Column(sa.String(255))
     description = sa.Column(sa.String(255))
     policy_target_groups = orm.relationship(PolicyTargetGroup,
                                             backref='network_service_policy')
@@ -223,7 +223,7 @@ class PolicyRule(gquota.GBPQuotaBase, model_base.BASEV2, models_v2.HasId,
                  models_v2.HasTenant):
     """Represents a Group Policy Rule."""
     __tablename__ = 'gp_policy_rules'
-    name = sa.Column(sa.String(50))
+    name = sa.Column(sa.String(255))
     description = sa.Column(sa.String(255))
     enabled = sa.Column(sa.Boolean)
     policy_classifier_id = sa.Column(sa.String(36),
@@ -243,7 +243,7 @@ class PolicyClassifier(gquota.GBPQuotaBase, model_base.BASEV2, models_v2.HasId,
                        models_v2.HasTenant):
     """Represents a Group Policy Classifier."""
     __tablename__ = 'gp_policy_classifiers'
-    name = sa.Column(sa.String(50))
+    name = sa.Column(sa.String(255))
     description = sa.Column(sa.String(255))
     protocol = sa.Column(sa.String(50), nullable=True)
     port_range_min = sa.Column(sa.Integer)
@@ -261,7 +261,7 @@ class PolicyAction(gquota.GBPQuotaBase, model_base.BASEV2, models_v2.HasId,
                    models_v2.HasTenant):
     """Represents a Group Policy Action."""
     __tablename__ = 'gp_policy_actions'
-    name = sa.Column(sa.String(50))
+    name = sa.Column(sa.String(255))
     description = sa.Column(sa.String(255))
     action_type = sa.Column(sa.Enum(gp_constants.GP_ACTION_ALLOW,
                                     gp_constants.GP_ACTION_REDIRECT,
@@ -303,7 +303,7 @@ class PolicyRuleSet(gquota.GBPQuotaBase, model_base.BASEV2,
     __tablename__ = 'gp_policy_rule_sets'
     id = sa.Column(sa.String(36), primary_key=True,
                    default=uuidutils.generate_uuid)
-    name = sa.Column(sa.String(50))
+    name = sa.Column(sa.String(255))
     description = sa.Column(sa.String(255))
     parent_id = sa.Column(sa.String(255),
                           sa.ForeignKey('gp_policy_rule_sets.id'),
