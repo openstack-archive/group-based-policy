@@ -370,10 +370,16 @@ def _validate_gbproutes(data, valid_values=None):
             return msg
         hostroutes.append(hostroute)
 
+
+def _validate_gbp_resource_name(data, valid_values=None):
+    # Any REST API defined GBP resource name is restricted to 128 characters
+    return attr._validate_string(data, max_len=128)
+
 attr.validators['type:gbp_port_range'] = _validate_gbp_port_range
 attr.validators['type:network_service_params'] = _validate_network_svc_params
 attr.validators['type:external_dict'] = _validate_external_dict
 attr.validators['type:gbproutes'] = _validate_gbproutes
+attr.validators['type:gbp_resource_name'] = _validate_gbp_resource_name
 
 
 POLICY_TARGETS = 'policy_targets'
@@ -395,7 +401,7 @@ RESOURCE_ATTRIBUTE_MAP = {
                'validate': {'type:uuid': None}, 'is_visible': True,
                'primary_key': True},
         'name': {'allow_post': True, 'allow_put': True,
-                 'validate': {'type:string': None}, 'default': '',
+                 'validate': {'type:gbp_resource_name': None}, 'default': '',
                  'is_visible': True},
         'description': {'allow_post': True, 'allow_put': True,
                         'validate': {'type:string': None},
@@ -415,7 +421,7 @@ RESOURCE_ATTRIBUTE_MAP = {
                'validate': {'type:uuid': None}, 'is_visible': True,
                'primary_key': True},
         'name': {'allow_post': True, 'allow_put': True,
-                 'validate': {'type:string': None},
+                 'validate': {'type:gbp_resource_name': None},
                  'default': '', 'is_visible': True},
         'description': {'allow_post': True, 'allow_put': True,
                         'validate': {'type:string': None},
@@ -458,7 +464,7 @@ RESOURCE_ATTRIBUTE_MAP = {
                'validate': {'type:uuid': None}, 'is_visible': True,
                'primary_key': True},
         'name': {'allow_post': True, 'allow_put': True,
-                 'validate': {'type:string': None},
+                 'validate': {'type:gbp_resource_name': None},
                  'default': '', 'is_visible': True},
         'description': {'allow_post': True, 'allow_put': True,
                         'validate': {'type:string': None},
@@ -489,7 +495,7 @@ RESOURCE_ATTRIBUTE_MAP = {
                'validate': {'type:uuid': None}, 'is_visible': True,
                'primary_key': True},
         'name': {'allow_post': True, 'allow_put': True,
-                 'validate': {'type:string': None},
+                 'validate': {'type:gbp_resource_name': None},
                  'default': '', 'is_visible': True},
         'description': {'allow_post': True, 'allow_put': True,
                         'validate': {'type:string': None},
@@ -527,7 +533,7 @@ RESOURCE_ATTRIBUTE_MAP = {
                'validate': {'type:uuid': None},
                'is_visible': True, 'primary_key': True},
         'name': {'allow_post': True, 'allow_put': True,
-                 'validate': {'type:string': None},
+                 'validate': {'type:gbp_resource_name': None},
                  'default': '', 'is_visible': True},
         'description': {'allow_post': True, 'allow_put': True,
                         'validate': {'type:string': None},
@@ -558,7 +564,7 @@ RESOURCE_ATTRIBUTE_MAP = {
                'is_visible': True,
                'primary_key': True},
         'name': {'allow_post': True, 'allow_put': True,
-                 'validate': {'type:string': None},
+                 'validate': {'type:gbp_resource_name': None},
                  'default': '', 'is_visible': True},
         'description': {'allow_post': True, 'allow_put': True,
                         'validate': {'type:string': None},
@@ -584,7 +590,7 @@ RESOURCE_ATTRIBUTE_MAP = {
                'validate': {'type:uuid': None},
                'is_visible': True, 'primary_key': True},
         'name': {'allow_post': True, 'allow_put': True,
-                 'validate': {'type:string': None},
+                 'validate': {'type:gbp_resource_name': None},
                  'default': '', 'is_visible': True},
         'description': {'allow_post': True, 'allow_put': True,
                         'validate': {'type:string': None},
@@ -613,7 +619,7 @@ RESOURCE_ATTRIBUTE_MAP = {
                'is_visible': True,
                'primary_key': True},
         'name': {'allow_post': True, 'allow_put': True,
-                 'validate': {'type:string': None},
+                 'validate': {'type:gbp_resource_name': None},
                  'default': '',
                  'is_visible': True},
         'description': {'allow_post': True, 'allow_put': True,
@@ -645,7 +651,7 @@ RESOURCE_ATTRIBUTE_MAP = {
                'validate': {'type:uuid': None}, 'is_visible': True,
                'primary_key': True},
         'name': {'allow_post': True, 'allow_put': True,
-                 'validate': {'type:string': None},
+                 'validate': {'type:gbp_resource_name': None},
                  'default': '', 'is_visible': True},
         'description': {'allow_post': True, 'allow_put': True,
                         'validate': {'type:string': None},
@@ -671,7 +677,7 @@ RESOURCE_ATTRIBUTE_MAP = {
                'validate': {'type:uuid': None},
                'is_visible': True, 'primary_key': True},
         'name': {'allow_post': True, 'allow_put': True,
-                 'validate': {'type:string': None},
+                 'validate': {'type:gbp_resource_name': None},
                  'default': '', 'is_visible': True},
         'description': {'allow_post': True, 'allow_put': True,
                         'validate': {'type:string': None},
@@ -703,7 +709,7 @@ RESOURCE_ATTRIBUTE_MAP = {
                'validate': {'type:uuid': None},
                'is_visible': True, 'primary_key': True},
         'name': {'allow_post': True, 'allow_put': True,
-                 'validate': {'type:string': None},
+                 'validate': {'type:gbp_resource_name': None},
                  'default': '', 'is_visible': True},
         'description': {'allow_post': True, 'allow_put': True,
                         'validate': {'type:string': None},
@@ -751,7 +757,7 @@ RESOURCE_ATTRIBUTE_MAP = {
                'validate': {'type:uuid': None},
                'is_visible': True, 'primary_key': True},
         'name': {'allow_post': True, 'allow_put': True,
-                 'validate': {'type:string': None},
+                 'validate': {'type:gbp_resource_name': None},
                  'default': '', 'is_visible': True},
         'description': {'allow_post': True, 'allow_put': True,
                         'validate': {'type:string': None},

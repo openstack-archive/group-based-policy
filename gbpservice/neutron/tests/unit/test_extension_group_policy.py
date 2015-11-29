@@ -1182,3 +1182,10 @@ class TestGroupPolicyAttributeValidators(base.BaseTestCase):
         incorrect = {uuid: not_a_list}
         self.assertEqual(gp._validate_external_dict(incorrect),
                          "'%s' is not a list" % not_a_list)
+
+    def test_validate_gbp_resource_name(self):
+        long_name = 'x' * 128
+        self.assertIsNone(gp._validate_gbp_resource_name(long_name))
+        invalid_name = 'x' * 129
+        msg = "'" + invalid_name + "' exceeds maximum length of 128"
+        self.assertEqual(gp._validate_gbp_resource_name(invalid_name), msg)

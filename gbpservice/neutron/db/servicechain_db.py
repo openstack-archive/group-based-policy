@@ -61,7 +61,7 @@ class ServiceChainNode(gquota.GBPQuotaBase, model_base.BASEV2, models_v2.HasId,
                        models_v2.HasTenant):
     """ServiceChain Node"""
     __tablename__ = 'sc_nodes'
-    name = sa.Column(sa.String(50))
+    name = sa.Column(sa.String(255))
     description = sa.Column(sa.String(255))
     config = sa.Column(sa.String(4096))
     specs = orm.relationship(SpecNodeAssociation,
@@ -78,7 +78,7 @@ class ServiceChainInstance(gquota.GBPQuotaBase, model_base.BASEV2,
                            models_v2.HasId, models_v2.HasTenant):
     """Service chain instances"""
     __tablename__ = 'sc_instances'
-    name = sa.Column(sa.String(50))
+    name = sa.Column(sa.String(255))
     description = sa.Column(sa.String(255))
     config_param_values = sa.Column(sa.String(4096))
     specs = orm.relationship(
@@ -107,7 +107,7 @@ class ServiceChainSpec(gquota.GBPQuotaBase, model_base.BASEV2, models_v2.HasId,
     """ ServiceChain Spec
     """
     __tablename__ = 'sc_specs'
-    name = sa.Column(sa.String(50))
+    name = sa.Column(sa.String(255))
     description = sa.Column(sa.String(255))
     nodes = orm.relationship(
         SpecNodeAssociation,
@@ -126,7 +126,7 @@ class ServiceProfile(gquota.GBPQuotaBase, model_base.BASEV2, models_v2.HasId,
     """ Service Profile
     """
     __tablename__ = 'service_profiles'
-    name = sa.Column(sa.String(50))
+    name = sa.Column(sa.String(255))
     description = sa.Column(sa.String(255))
     vendor = sa.Column(sa.String(50))
     shared = sa.Column(sa.Boolean)
