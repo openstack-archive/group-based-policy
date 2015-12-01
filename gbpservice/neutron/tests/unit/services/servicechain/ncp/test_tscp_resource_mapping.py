@@ -24,16 +24,21 @@ from gbpservice.neutron.tests.unit.services.servicechain.ncp import (
 
 
 GATEWAY = 'gateway'
+GATEWAY_HA = 'gateway_ha'
 TRANSPARENT = 'transparent'
 ENDPOINT = 'endpoint'
 
 info_mapping = {
     GATEWAY: {'plumbing_type': GATEWAY, 'provider': [{}], 'consumer': [{}]},
+    GATEWAY_HA: {'plumbing_type': GATEWAY, 'provider': [{}, {}, {}],
+                 'consumer': [{}, {}, {}]},
     TRANSPARENT: {'plumbing_type': TRANSPARENT, 'provider': [{}],
                   'consumer': [{}]},
     ENDPOINT: {'plumbing_type': ENDPOINT, 'provider': [{}]},
+
 }
 info_mapping['FIREWALL'] = info_mapping[GATEWAY]
+info_mapping['FIREWALL_HA'] = info_mapping[GATEWAY_HA]
 info_mapping['TRANSPARENT_FIREWALL'] = info_mapping[TRANSPARENT]
 info_mapping['LOADBALANCER'] = info_mapping[ENDPOINT]
 
