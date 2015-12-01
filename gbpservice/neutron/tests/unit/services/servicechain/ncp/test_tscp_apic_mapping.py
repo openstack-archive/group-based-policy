@@ -10,6 +10,7 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+from apic_ml2.neutron.db import port_ha_ipaddress_binding as ha_ip_db
 import mock
 import netaddr
 from neutron.common import config  # noqa
@@ -19,6 +20,7 @@ from oslo_config import cfg
 
 from gbpservice.neutron.services.servicechain.plugins.ncp import (
     plugin as ncp_plugin)
+from gbpservice.neutron.services.servicechain.plugins.ncp import model
 from gbpservice.neutron.tests.unit.services.grouppolicy import (
     test_apic_mapping as test_apic)
 from gbpservice.neutron.tests.unit.services.grouppolicy import (
@@ -697,6 +699,112 @@ class TestApicChains(ApicMappingStitchingPlumberGBPTestCase,
             'servicechain/servicechain_instances')
         res = sc_instance_list_req.get_response(self.ext_api)
         return self.deserialize(self.fmt, res)
+
+    def test_ha_chain_same_subnet(self):
+        session = context.get_admin_context().session
+        # Create 2 L3Ps with same pools
+        l3p1 = self.create_l3_policy()['l3_policy']
+        l3p2 = self.create_l3_policy()['l3_policy']
+
+        # Attach proper L2Ps
+        l2p1 = self.create_l2_policy(l3_policy_id=l3p1['id'])['l2_policy']
+        l2p2 = self.create_l2_policy(l3_policy_id=l3p2['id'])['l2_policy']
+
+        # Set providers PTGs
+        ptg_prov_1 = self.create_policy_target_group(
+            l2_policy_id=l2p1['id'])['policy_target_group']
+        ptg_prov_2 = self.create_policy_target_group(
+            l2_policy_id=l2p2['id'])['policy_target_group']
+
+        # At this point, they  have the same subnet CIDR associated, same will
+        # be for Proxy Groups
+        ha_spec_id = self._create_servicechain_spec(node_types=['FIREWALL_HA'])
+
+        # Create proper PRS
+        policy_rule_id = self._create_simple_policy_rule(
+            action_type='redirect', action_value=ha_spec_id)['id']
+        policy_rule_set = self.create_policy_rule_set(
+            name="c1", policy_rules=[policy_rule_id])['policy_rule_set']
+
+        # Form first and second chain
+        ptg_prov_1 = self.update_policy_target_group(
+            ptg_prov_1['id'], provided_policy_rule_sets={
+                policy_rule_set['id']: ''})['policy_target_group']
+        ptg_prov_2 = self.update_policy_target_group(
+            ptg_prov_2['id'], provided_policy_rule_sets={
+                policy_rule_set['id']: ''})['policy_target_group']
+
+        # One proxy group exists for both, each with 2 service PTs. Put them in
+        # HA
+        scis = self._list_service_chains()['servicechain_instances']
+        self.assertEqual(2, len(scis))
+        # Chain 1 targets
+        targets_1 = model.get_service_targets(
+            session, servicechain_instance_id=scis[0]['id'])
+        # Chain 2 targets
+        targets_2 = model.get_service_targets(
+            session, servicechain_instance_id=scis[1]['id'])
+
+        def _assert_service_targets_and_cluster_them(targets):
+            result = {}
+            for pt in targets:
+                pt = self.show_policy_target(
+                    pt.policy_target_id,
+                    is_admin_context=True)['policy_target']
+                result.setdefault(
+                    pt['policy_target_group_id'], []).append(pt)
+
+            # There are 2 PTGs, and 3 PTs each
+            self.assertEqual(2, len(result))
+            for key in result:
+                # Sort by IP address
+                result[key].sort(key=lambda x: self._get_object(
+                    'ports', x['port_id'],
+                    self.api)['port']['fixed_ips'][0]['ip_address'])
+                value = result[key]
+                self.assertEqual(3, len(value))
+                # Set first PT as master of the other twos
+                self.update_policy_target(value[1]['id'],
+                                          cluster_id=value[0]['id'],
+                                          is_admin_context=True)
+                self.update_policy_target(value[2]['id'],
+                                          cluster_id=value[0]['id'],
+                                          is_admin_context=True)
+            return result
+        # Group chain 1 targets by PTG:
+        chain_targets_1 = _assert_service_targets_and_cluster_them(targets_1)
+        # Group chain 2 targets by PTG:
+        chain_targets_2 = _assert_service_targets_and_cluster_them(targets_2)
+
+        # Verify IPs overlap on provider side
+        main_ip = None
+        for x in range(3):
+            port_1 = self._get_object(
+                'ports', chain_targets_1[ptg_prov_1['id']][x]['port_id'],
+                self.api)['port']
+            port_2 = self._get_object(
+                'ports', chain_targets_2[ptg_prov_2['id']][x]['port_id'],
+                self.api)['port']
+            self.assertEqual(port_1['fixed_ips'][0]['ip_address'],
+                             port_2['fixed_ips'][0]['ip_address'])
+            if x == 0:
+                main_ip = port_1['fixed_ips'][0]['ip_address']
+
+        # Update address ownership on second port
+        self.driver.update_ip_owner(
+            {'port': chain_targets_1[ptg_prov_1['id']][1]['port_id'],
+             'ip_address_v4': main_ip})
+        # Same address owned by another port in a different subnet
+        self.driver.update_ip_owner(
+            {'port': chain_targets_2[ptg_prov_2['id']][1]['port_id'],
+             'ip_address_v4': main_ip})
+
+        # There are 2 ownership entries for the same address
+        entries = self.driver.ha_ip_handler.session.query(
+                    ha_ip_db.HAIPAddressToPortAssocation).all()
+        self.assertEqual(2, len(entries))
+        self.assertEqual(main_ip, entries[0].ha_ip_address)
+        self.assertEqual(main_ip, entries[1].ha_ip_address)
 
 
 class TestProxyGroup(ApicMappingStitchingPlumberGBPTestCase):
