@@ -14,6 +14,7 @@
 import copy
 import sys
 
+from apic_ml2.neutron.db import port_ha_ipaddress_binding as ha_ip_db
 import mock
 import netaddr
 import webob.exc
@@ -584,6 +585,63 @@ class TestPolicyTarget(ApicMappingTestCase):
         self.driver.process_subnet_changed(context.get_admin_context(),
                                            subnet['subnet'], subnet2['subnet'])
         self.assertTrue(self.driver.notifier.port_update.called)
+
+    def test_get_gbp_proxy_address_ownership(self):
+        l3p_fake = self.create_l3_policy(name='myl3')['l3_policy']
+        l2p_fake = self.create_l2_policy(
+            name='myl2', l3_policy_id=l3p_fake['id'])['l2_policy']
+        ptg_fake = self.create_policy_target_group(
+            name="ptg1", l2_policy_id=l2p_fake['id'])['policy_target_group']
+        # The PT below will be actually bound for a VM. They are in the same
+        # Network
+        pt_bound_1 = self.create_policy_target(
+            policy_target_group_id=ptg_fake['id'])['policy_target']
+        pt_bound_2 = self.create_policy_target(
+            policy_target_group_id=ptg_fake['id'])['policy_target']
+
+        l3p_real = self.create_l3_policy(name='myl3')['l3_policy']
+        # Build 2 L2Ps in order to get 2 networks.
+        l2p_real_1 = self.create_l2_policy(
+            name='myl2', l3_policy_id=l3p_real['id'])['l2_policy']
+        l2p_real_2 = self.create_l2_policy(
+            name='myl2', l3_policy_id=l3p_real['id'])['l2_policy']
+
+        ptg_real_1 = self.create_policy_target_group(
+            name="ptg1", l2_policy_id=l2p_real_1['id'])['policy_target_group']
+        ptg_real_2 = self.create_policy_target_group(
+            name="ptg1", l2_policy_id=l2p_real_2['id'])['policy_target_group']
+
+        # The PTs below will never be bound. They are on different networks
+        pt_unbound_1 = self.create_policy_target(
+            policy_target_group_id=ptg_real_1['id'])['policy_target']
+        pt_unbound_2 = self.create_policy_target(
+            policy_target_group_id=ptg_real_2['id'])['policy_target']
+
+        # Change description to link the ports. The bound one will point
+        # to the unbound one to get its info overridden
+        self.update_policy_target(
+            pt_bound_1['id'],
+            description=amap.PROXY_PORT_PREFIX + pt_unbound_1['port_id'])
+        self.update_policy_target(
+            pt_bound_2['id'],
+            description=amap.PROXY_PORT_PREFIX + pt_unbound_2['port_id'])
+
+        # Set up address ownership on the bound ports, and verify that  both
+        # entries exists
+        # Update address ownership on second port
+        self.driver.update_ip_owner({'port': pt_bound_1['port_id'],
+                                     'ip_address_v4': '1.1.1.1'})
+        # Same address owned by another port in a different subnet
+        self.driver.update_ip_owner({'port': pt_bound_2['port_id'],
+                                     'ip_address_v4': '1.1.1.1'})
+
+        # There are 2 ownership entries for the same address
+        entries = self.driver.ha_ip_handler.session.query(
+                    ha_ip_db.HAIPAddressToPortAssocation).all()
+        self.assertEqual(2, len(entries))
+        self.assertEqual('1.1.1.1', entries[0].ha_ip_address)
+        self.assertEqual('1.1.1.1', entries[1].ha_ip_address)
+
 
 
 class TestPolicyTargetGroup(ApicMappingTestCase):
