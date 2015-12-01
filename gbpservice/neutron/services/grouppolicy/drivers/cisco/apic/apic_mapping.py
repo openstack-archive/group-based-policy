@@ -31,6 +31,7 @@ from opflexagent import constants as ofcst
 from opflexagent import rpc
 from oslo_concurrency import lockutils
 from oslo_config import cfg
+from oslo_db import exception as db_exc
 from oslo_log import log as logging
 
 from gbpservice.neutron.db.grouppolicy import group_policy_mapping_db as gpdb
@@ -224,6 +225,26 @@ class ApicMappingDriver(api.ResourceMappingDriver,
             self._gbp_plugin = (manager.NeutronManager.get_service_plugins()
                                 .get("GROUP_POLICY"))
         return self._gbp_plugin
+
+    # HA RPC call
+    def update_ip_owner(self, ip_owner_info):
+        # Needs to handle proxy ports
+        context = nctx.get_admin_context()
+        port_id = ip_owner_info.get('port')
+        if port_id:
+            ptg, pt = self._port_id_to_ptg(context, port_id)
+            if pt and pt['description'].startswith(PROXY_PORT_PREFIX):
+                new_id = pt['description'].replace(PROXY_PORT_PREFIX,
+                                                   '').rstrip(' ')
+                try:
+                    LOG.debug("Replace port %s with port %s", port_id,
+                              new_id)
+                    port = self._get_port(context, new_id)
+                    ip_owner_info['network_id'] = port['network_id']
+                except n_exc.PortNotFound:
+                    LOG.warn(_("Proxied port %s could not be found"),
+                             new_id)
+        return super(ApicMappingDriver, self).update_ip_owner(ip_owner_info)
 
     # RPC Method
     def get_vrf_details(self, context, **kwargs):
