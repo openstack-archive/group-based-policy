@@ -239,7 +239,7 @@ class ApicMappingDriver(api.ResourceMappingDriver,
                     LOG.debug("Replace port %s with port %s", port_id,
                               new_id)
                     port = self._get_port(context, new_id)
-                    ip_owner_info['network_id'] = port['network_id']
+                    ip_owner_info['port'] = port['id']
                 except n_exc.PortNotFound:
                     LOG.warn(_("Proxied port %s could not be found"),
                              new_id)
@@ -330,8 +330,11 @@ class ApicMappingDriver(api.ResourceMappingDriver,
                 details['vm-name'] = vm.name if vm else port['device_id']
             l3_policy = context._plugin.get_l3_policy(context,
                                                       l2p['l3_policy_id'])
-            own_addr = self._get_owned_addresses(
-                context, pt['port_id'] if (pt and not switched) else port_id)
+            own_addr = set()
+            if pt:
+                own_addr = set(self._get_owned_addresses(context,
+                                                         pt['port_id']))
+            own_addr |= set(self._get_owned_addresses(context, port_id))
             (details['floating_ip'], details['ip_mapping'],
                 details['host_snat_ips']) = (
                     self._get_ip_mapping_details(
@@ -560,9 +563,12 @@ class ApicMappingDriver(api.ResourceMappingDriver,
         if not kwargs.get('ip_owner_info'):
             return
         ports_to_update = self.update_ip_owner(kwargs['ip_owner_info'])
+        pts = self._get_policy_targets(context, {'port_id': ports_to_update})
         for p in ports_to_update:
             LOG.debug("APIC ownership update for port %s", p)
             self._notify_port_update(context, p)
+        for pt in pts:
+            self._notify_head_chain_ports(pt['policy_target_group_id'])
 
     def process_port_added(self, plugin_context, port):
         pass
