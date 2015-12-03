@@ -586,6 +586,8 @@ class TestPolicyTarget(ApicMappingTestCase):
             policy_target_group_id=ptg_fake['id'])['policy_target']
         pt_bound_2 = self.create_policy_target(
             policy_target_group_id=ptg_fake['id'])['policy_target']
+        pt_bound_3 = self.create_policy_target(
+            policy_target_group_id=ptg_fake['id'])['policy_target']
 
         l3p_real = self.create_l3_policy(name='myl3')['l3_policy']
         # Build 2 L2Ps in order to get 2 networks.
@@ -604,6 +606,8 @@ class TestPolicyTarget(ApicMappingTestCase):
             policy_target_group_id=ptg_real_1['id'])['policy_target']
         pt_unbound_2 = self.create_policy_target(
             policy_target_group_id=ptg_real_2['id'])['policy_target']
+        pt_unbound_2_1 = self.create_policy_target(
+            policy_target_group_id=ptg_real_2['id'])['policy_target']
 
         # Change description to link the ports. The bound one will point
         # to the unbound one to get its info overridden
@@ -613,6 +617,9 @@ class TestPolicyTarget(ApicMappingTestCase):
         self.update_policy_target(
             pt_bound_2['id'],
             description=amap.PROXY_PORT_PREFIX + pt_unbound_2['port_id'])
+        self.update_policy_target(
+            pt_bound_3['id'],
+            description=amap.PROXY_PORT_PREFIX + pt_unbound_2_1['port_id'])
 
         # Set up address ownership on the bound ports, and verify that  both
         # entries exists
@@ -624,6 +631,14 @@ class TestPolicyTarget(ApicMappingTestCase):
                                      'ip_address_v4': '1.1.1.1'})
 
         # There are 2 ownership entries for the same address
+        entries = self.driver.ha_ip_handler.session.query(
+                    ha_ip_db.HAIPAddressToPortAssocation).all()
+        self.assertEqual(2, len(entries))
+        self.assertEqual('1.1.1.1', entries[0].ha_ip_address)
+        self.assertEqual('1.1.1.1', entries[1].ha_ip_address)
+        self.driver.update_ip_owner({'port': pt_bound_3['port_id'],
+                                     'ip_address_v4': '1.1.1.1'})
+
         entries = self.driver.ha_ip_handler.session.query(
                     ha_ip_db.HAIPAddressToPortAssocation).all()
         self.assertEqual(2, len(entries))
