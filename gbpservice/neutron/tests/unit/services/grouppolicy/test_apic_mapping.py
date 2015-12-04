@@ -2352,6 +2352,18 @@ class TestExternalSegment(ApicMappingTestCase):
                               'nexthop': nh}],
             expected_res_status=201)
 
+    def test_implicit_es_router_gw_ip(self):
+        self._mock_external_dict([('default', '192.168.0.2/24')])
+        es = self.create_external_segment(
+            name='default',
+            external_routes=[{'destination': '0.0.0.0/0',
+                              'nexthop': None}])['external_segment']
+        l3p = self.create_l3_policy()['l3_policy']
+        self.assertEqual(es['id'],
+                         l3p['external_segments'].keys()[0])
+        self.assertEqual('169.254.0.2',
+                         l3p['external_segments'][es['id']][0])
+
 
 class TestExternalSegmentNoNat(TestExternalSegment):
     def setUp(self):

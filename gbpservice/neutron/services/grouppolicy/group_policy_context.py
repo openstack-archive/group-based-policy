@@ -164,9 +164,12 @@ class L3PolicyContext(GroupPolicyContext, api.L3PolicyContext):
     def set_external_segment(self, external_segment_id):
         external_segments = {external_segment_id: []}
         self.current['external_segments'] = external_segments
-        self._plugin.update_l3_policy(
-            self._plugin_context, self.current['id'],
-            {'l3_policy': {'external_segments': external_segments}})
+        plugin_context = self._plugin_context
+        with plugin_context.session.begin(subtransactions=True):
+            l3p_db = self._plugin._get_l3_policy(plugin_context,
+                                                 self._l3_policy['id'])
+            self._plugin._set_ess_for_l3p(plugin_context, l3p_db,
+                                          self.current['external_segments'])
 
 
 class NetworkServicePolicyContext(
