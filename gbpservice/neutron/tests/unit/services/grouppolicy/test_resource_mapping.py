@@ -3322,6 +3322,8 @@ class TestExternalSegment(ResourceMappingTestCase):
                     subnet_id=sub['subnet']['id'])['external_segment']
                 l3p = self.create_l3_policy()['l3_policy']
                 self.assertEqual(es['id'], l3p['external_segments'].keys()[0])
+                self.assertEqual('192.168.0.2',
+                                 l3p['external_segments'][es['id']][0])
 
                 ep = self.create_external_policy()['external_policy']
                 self.assertEqual(es['id'], ep['external_segments'][0])
@@ -3340,6 +3342,8 @@ class TestExternalSegment(ResourceMappingTestCase):
                     subnet_id=sub['subnet']['id'])['external_segment']
                 l3p = self.create_l3_policy()['l3_policy']
                 self.assertEqual(es['id'], l3p['external_segments'].keys()[0])
+                self.assertEqual('192.168.0.2',
+                                 l3p['external_segments'][es['id']][0])
 
                 ep = self.create_external_policy()['external_policy']
                 self.assertEqual(es['id'], ep['external_segments'][0])
