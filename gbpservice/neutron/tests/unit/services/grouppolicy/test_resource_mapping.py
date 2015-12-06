@@ -1303,6 +1303,12 @@ class TestL2Policy(ResourceMappingTestCase):
             self.assertEqual('InvalidNetworkAccess',
                              res['NeutronError']['type'])
 
+    def test_l2_policy_create_unset_inject_default_route_reject(self):
+        res = self.create_l2_policy(inject_default_route='False',
+                                    expected_res_status=400)
+        self.assertEqual('UnsettingInjectDefaultRouteOfL2PolicyNotSupported',
+                         res['NeutronError']['type'])
+
     def test_shared_l2_policy_create_negative(self):
         l3p = self.create_l3_policy(shared=True)
         for shared in [True, False]:
@@ -1341,6 +1347,16 @@ class TestL2Policy(ResourceMappingTestCase):
         req = self.new_update_request('l2_policies', data, l2p_id)
         data = self.deserialize(self.fmt, req.get_response(self.ext_api))
         self.assertEqual('L3PolicyUpdateOfL2PolicyNotSupported',
+                         data['NeutronError']['type'])
+
+    def test_l2_policy_update_inject_default_route_reject(self):
+        l2p = self.create_l2_policy()
+        l2p_id = l2p['l2_policy']['id']
+
+        data = {'l2_policy': {'inject_default_route': False}}
+        req = self.new_update_request('l2_policies', data, l2p_id)
+        data = self.deserialize(self.fmt, req.get_response(self.ext_api))
+        self.assertEqual('UnsettingInjectDefaultRouteOfL2PolicyNotSupported',
                          data['NeutronError']['type'])
 
 
