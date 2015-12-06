@@ -67,6 +67,11 @@ class L3PolicyUpdateOfL2PolicyNotSupported(GroupPolicyBadRequest):
     message = _("Updating L3 policy of L2 policy is not supported.")
 
 
+class UnsettingInjectDHCPRoutesOfL2PolicyNotSupported(GroupPolicyBadRequest):
+    message = _("Unsetting inject_dhcp_routes attribute of L2 policy is not "
+                "supported.")
+
+
 class L3PolicyMultipleRoutersNotSupported(GroupPolicyBadRequest):
     message = _("L3 policy does not support multiple routers.")
 

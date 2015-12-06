@@ -435,6 +435,7 @@ class TestPolicyTarget(ApicMappingTestCase):
         self._bind_port_to_host(pt1['port_id'], 'h1')
         sub = self._get_object('subnets', ptg['subnets'][0],
                                self.api)
+
         with self.port(subnet=sub, device_owner='network:dhcp',
                        tenant_id='onetenant') as dhcp:
             dhcp = dhcp['port']
@@ -458,6 +459,87 @@ class TestPolicyTarget(ApicMappingTestCase):
                 details['subnets'][0]['host_routes'])
 
             # Verify no extra routes are leaking inside
+            self.assertEqual(2, len(details['subnets'][0]['host_routes']))
+            self.assertEqual([dhcp['fixed_ips'][0]['ip_address']],
+                             details['subnets'][0]['dhcp_server_ips'])
+
+    def test_enhanced_subnet_options_with_extra_host_routes(self):
+        self.driver.enable_metadata_opt = False
+        l3p = self.create_l3_policy(name='myl3',
+                                    ip_pool='192.168.0.0/16')['l3_policy']
+        l2p = self.create_l2_policy(name='myl2',
+                                    l3_policy_id=l3p['id'])['l2_policy']
+        ptg = self.create_policy_target_group(
+            name="ptg1", l2_policy_id=l2p['id'])['policy_target_group']
+        pt1 = self.create_policy_target(
+            policy_target_group_id=ptg['id'])['policy_target']
+        self._bind_port_to_host(pt1['port_id'], 'h1')
+        sub = self._get_object('subnets', ptg['subnets'][0],
+                               self.api)
+
+        # Add two more host_routes to the subnet
+        more_host_routes = [{'destination': '172.16.0.0/24',
+                             'nexthop': '10.0.2.2'},
+                            {'destination': '192.168.0.0/24',
+                             'nexthop': '10.0.2.3'}]
+        data = {'subnet': {'host_routes': more_host_routes}}
+        req = self.new_update_request('subnets', data, sub['subnet']['id'])
+        res = self.deserialize(self.fmt, req.get_response(self.api))
+        self.assertEqual(sorted(res['subnet']['host_routes']),
+                         sorted(more_host_routes))
+
+        with self.port(subnet=sub, device_owner='network:dhcp',
+                       tenant_id='onetenant') as dhcp:
+            dhcp = dhcp['port']
+            details = self.driver.get_gbp_details(
+                context.get_admin_context(),
+                device='tap%s' % pt1['port_id'], host='h1')
+
+            self.assertEqual(1, len(details['subnets']))
+            # Verify that DNS nameservers are correctly set
+            self.assertEqual([dhcp['fixed_ips'][0]['ip_address']],
+                             details['subnets'][0]['dns_nameservers'])
+            # Verify Default route via GW
+            self.assertTrue({'destination': '0.0.0.0/0',
+                             'nexthop': '192.168.0.1'} in
+                            details['subnets'][0]['host_routes'])
+
+            # Verify Metadata route via DHCP
+            self.assertTrue(
+                {'destination': '169.254.169.254/16',
+                 'nexthop': dhcp['fixed_ips'][0]['ip_address']} in
+                details['subnets'][0]['host_routes'])
+
+            # Verify additional host_routes are also added:
+            # GW + Metadata + 2 additional routes = 4
+            self.assertEqual(4, len(details['subnets'][0]['host_routes']))
+            self.assertEqual([dhcp['fixed_ips'][0]['ip_address']],
+                             details['subnets'][0]['dhcp_server_ips'])
+
+        data = {'l2_policy': {'inject_dhcp_routes': False}}
+        res = self.new_update_request('l2_policies', data, l2p['id'],
+                                    self.fmt).get_response(self.ext_api)
+        pt2 = self.create_policy_target(
+            policy_target_group_id=ptg['id'])['policy_target']
+        self._bind_port_to_host(pt2['port_id'], 'h1')
+        with self.port(subnet=sub, tenant_id='onetenant'):
+            details = self.driver.get_gbp_details(
+                context.get_admin_context(),
+                device='tap%s' % pt2['port_id'], host='h1')
+
+            self.assertEqual(1, len(details['subnets']))
+            # Verify Default route via GW
+            self.assertTrue({'destination': '0.0.0.0/0',
+                             'nexthop': '192.168.0.1'} in
+                            details['subnets'][0]['host_routes'])
+
+            # Verify Metadata route via DHCP
+            self.assertTrue(
+                {'destination': '169.254.169.254/16',
+                 'nexthop': dhcp['fixed_ips'][0]['ip_address']} in
+                details['subnets'][0]['host_routes'])
+
+            # Verify only GW + Metadata routes = 2
             self.assertEqual(2, len(details['subnets'][0]['host_routes']))
             self.assertEqual([dhcp['fixed_ips'][0]['ip_address']],
                              details['subnets'][0]['dhcp_server_ips'])

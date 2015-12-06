@@ -327,6 +327,8 @@ class GroupPolicyMappingDbPlugin(gpdb.GroupPolicyDbPlugin):
                                      description=l2p['description'],
                                      l3_policy_id=l2p['l3_policy_id'],
                                      network_id=l2p['network_id'],
+                                     inject_dhcp_routes=l2p.get(
+                                         'inject_dhcp_routes', True),
                                      shared=l2p.get('shared', False))
             context.session.add(l2p_db)
         return self._make_l2_policy_dict(l2p_db)

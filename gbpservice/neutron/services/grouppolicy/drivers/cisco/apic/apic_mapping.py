@@ -341,7 +341,8 @@ class ApicMappingDriver(api.ResourceMappingDriver,
                         context, port['id'], l3_policy, pt=pt,
                         owned_addresses=own_addr, host=details['host']))
             self._add_network_details(context, port, details, pt=pt,
-                                      owned=own_addr)
+                                      owned=own_addr, inject_dhcp_routes=
+                                      l2p['inject_dhcp_routes'])
             self._add_vrf_details(context, details)
             if self._is_pt_chain_head(context, pt, ptg, owned_ips=own_addr):
                 # is a relevant proxy_gateway, push all the addresses from this
@@ -502,7 +503,7 @@ class ApicMappingDriver(api.ResourceMappingDriver,
         return fips, ipms, host_snat_ips
 
     def _add_network_details(self, context, port, details, pt=None,
-                             owned=None):
+                             owned=None, inject_dhcp_routes=True):
         details['allowed_address_pairs'] = port['allowed_address_pairs']
         if pt:
             # Set the correct address ownership for this port
@@ -518,6 +519,7 @@ class ApicMappingDriver(api.ResourceMappingDriver,
         details['subnets'] = self._get_subnets(context,
             filters={'id': [ip['subnet_id'] for ip in port['fixed_ips']]})
         for subnet in details['subnets']:
+            essential_routes = []
             dhcp_ips = set()
             for port in self._get_ports(
                     context, filters={
@@ -535,17 +537,27 @@ class ApicMappingDriver(api.ResourceMappingDriver,
                 for route in subnet['host_routes']:
                     if route['destination'] == '0.0.0.0/0':
                         default = True
+                        essential_routes.append(route)
                     if route['destination'] == dhcp.METADATA_DEFAULT_CIDR:
                         metadata = True
+                        essential_routes.append(route)
                 # Set missing routes
                 if not default:
-                    subnet['host_routes'].append(
-                        {'destination': '0.0.0.0/0',
-                         'nexthop': subnet['gateway_ip']})
+                    default_route = {'destination': '0.0.0.0/0',
+                                     'nexthop': subnet['gateway_ip']}
+                    essential_routes.append(default_route)
+                    subnet['host_routes'].append(default_route)
                 if not metadata and dhcp_ips and not self.enable_metadata_opt:
-                    subnet['host_routes'].append(
-                        {'destination': dhcp.METADATA_DEFAULT_CIDR,
-                         'nexthop': dhcp_ips[0]})
+                    metadata_route = {'destination':
+                                      dhcp.METADATA_DEFAULT_CIDR,
+                                      'nexthop': dhcp_ips[0]}
+                    essential_routes.append(metadata_route)
+                    subnet['host_routes'].append(metadata_route)
+                if not inject_dhcp_routes:
+                    # In this case we only want to send default and metadata
+                    # routes. Hence replace original host_routes list with a
+                    # list of only those essential routes
+                    subnet['host_routes'] = essential_routes
             subnet['dhcp_server_ips'] = dhcp_ips
 
     def _add_vrf_details(self, context, details):
