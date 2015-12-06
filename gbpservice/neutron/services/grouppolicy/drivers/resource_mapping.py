@@ -696,6 +696,8 @@ class ResourceMappingDriver(api.PolicyDriver, local_api.LocalAPI,
         self._reject_cross_tenant_l2p_l3p(context)
         self._reject_non_shared_net_on_shared_l2p(context)
         self._reject_invalid_network_access(context)
+        if not context.current['inject_default_route']:
+            raise exc.UnsettingInjectDefaultRouteOfL2PolicyNotSupported()
 
     @log.log
     def create_l2_policy_postcommit(self, context):
@@ -704,6 +706,9 @@ class ResourceMappingDriver(api.PolicyDriver, local_api.LocalAPI,
 
     @log.log
     def update_l2_policy_precommit(self, context):
+        if (context.current['inject_default_route'] !=
+            context.original['inject_default_route']):
+            raise exc.UnsettingInjectDefaultRouteOfL2PolicyNotSupported()
         if (context.current['l3_policy_id'] !=
             context.original['l3_policy_id']):
             raise exc.L3PolicyUpdateOfL2PolicyNotSupported()
