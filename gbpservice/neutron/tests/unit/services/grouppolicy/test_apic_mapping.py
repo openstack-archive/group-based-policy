@@ -324,7 +324,7 @@ class TestPolicyTarget(ApicMappingTestCase):
         # port gets created for this second host
         pt2 = self.create_policy_target(
             policy_target_group_id=ptg['id'])['policy_target']
-        self._bind_port_to_host(pt2['port_id'], 'h2')
+        self._bind_port_to_host(pt2['port_id'], 'h1')
 
         mapping = self.driver.get_gbp_details(context.get_admin_context(),
             device='tap%s' % pt2['port_id'], host='h2')
