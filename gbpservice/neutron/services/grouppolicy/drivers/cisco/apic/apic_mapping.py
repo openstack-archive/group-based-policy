@@ -336,7 +336,7 @@ class ApicMappingDriver(api.ResourceMappingDriver,
                 details['host_snat_ips']) = (
                     self._get_ip_mapping_details(
                         context, port['id'], l3_policy, pt=pt,
-                        owned_addresses=own_addr, host=details['host']))
+                        owned_addresses=own_addr, host=kwargs['host']))
             self._add_network_details(context, port, details, pt=pt,
                                       owned=own_addr)
             self._add_vrf_details(context, details)
@@ -362,7 +362,7 @@ class ApicMappingDriver(api.ResourceMappingDriver,
                             (fips, ipms, host_snat_ips) = (
                                 self._get_ip_mapping_details(
                                     context, port['id'], l3_policy,
-                                    host=details['host']))
+                                    host=kwargs['host']))
                             extra_map['floating_ip'].extend(fips)
                             if not extra_map['ip_mapping']:
                                 extra_map['ip_mapping'].extend(ipms)
