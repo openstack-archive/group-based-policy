@@ -2,7 +2,7 @@
 # of appearance. Changing the order has an impact on the overall integration
 # process, which may cause wedges in the gate later.
 
--e git+https://github.com/openstack/neutron.git@stable/juno#egg=neutron
+-e git+https://github.com/openstack/neutron.git@juno-eol#egg=neutron
 prettytable>=0.7
 
 coverage==3.7.1
