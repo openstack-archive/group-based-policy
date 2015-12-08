@@ -1,0 +1,9 @@
+Verified+2: Jenkins
+Code-Review+2: Sumit Naiksatam <sumitnaiksatam@gmail.com>
+Workflow+1: Sumit Naiksatam <sumitnaiksatam@gmail.com>
+Code-Review+2: Robert Kukura <kukura@noironetworks.com>
+Submitted-by: Jenkins
+Submitted-at: Tue, 08 Dec 2015 23:51:24 +0000
+Reviewed-on: https://review.openstack.org/254934
+Project: openstack/group-based-policy
+Branch: refs/heads/stable/kilo
