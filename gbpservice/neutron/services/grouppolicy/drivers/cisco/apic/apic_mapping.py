@@ -1585,21 +1585,25 @@ class ApicMappingDriver(api.ResourceMappingDriver,
         if not ext_info:
             LOG.warn(UNMANAGED_SEGMENT % es['id'])
             return
-        ip = external_segments[es['id']]
-        if ip and ip[0]:
-            ip = ip[0]
-        else:
-            ip = getattr(context, 'assigned_router_ips', {}).get(es['id'], [])
+        exposed = ext_info.get('cidr_exposed')
+
+        # Set the external fixed-ip for L3P for the non-shadow call
+        if not is_shadow:
+            ip = external_segments[es['id']]
             if ip and ip[0]:
                 ip = ip[0]
             else:
-                ip = ext_info.get('cidr_exposed', '/').split('/')[0]
-        exposed = ext_info.get('cidr_exposed')
+                ip = getattr(context, 'assigned_router_ips', {}).get(
+                    es['id'], [])
+                if ip and ip[0]:
+                    ip = ip[0]
+                else:
+                    ip = ext_info.get('cidr_exposed', '/').split('/')[0]
+            if not ip:
+                raise NoAddressConfiguredOnExternalSegment(
+                    l3p_id=context.current['id'], es_id=es['id'])
+            context.set_external_fixed_ips(es['id'], [ip])
 
-        if not ip:
-            raise NoAddressConfiguredOnExternalSegment(
-                l3p_id=context.current['id'], es_id=es['id'])
-        context.set_external_fixed_ips(es['id'], [ip])
         es_name = self.name_mapper.external_segment(context, es,
             prefix=self._get_shadow_prefix(context,
                 is_shadow, context.current))
