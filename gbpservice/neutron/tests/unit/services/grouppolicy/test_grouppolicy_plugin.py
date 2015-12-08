@@ -655,6 +655,17 @@ class TestPolicyTargetGroup(GroupPolicyPluginTestCase):
         self.assertEqual('ManagementPolicyTargetGroupExists',
                          res['NeutronError']['type'])
 
+    def test_update_l2p_rejectet(self):
+        l2p_1 = self.create_l2_policy()['l2_policy']
+        l2p_2 = self.create_l2_policy()['l2_policy']
+        ptg = self.create_policy_target_group(
+            l2_policy_id=l2p_1['id'],
+            expected_res_status=201)['policy_target_group']
+        res = self.update_policy_target_group(
+            ptg['id'], l2_policy_id=l2p_2['id'], expected_res_status=400)
+        self.assertEqual('L2PolicyUpdateOfPolicyTargetGroupNotSupported',
+                         res['NeutronError']['type'])
+
 
 class TestExternalSegment(GroupPolicyPluginTestCase):
 
