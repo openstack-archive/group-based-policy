@@ -133,6 +133,8 @@ class L2Policy(gquota.GBPQuotaBase, model_base.BASEV2, models_v2.HasId,
     l3_policy_id = sa.Column(sa.String(36),
                              sa.ForeignKey('gp_l3_policies.id'),
                              nullable=True)
+    inject_default_route = sa.Column(sa.Boolean, default=True,
+                                     server_default=sa.sql.true())
     shared = sa.Column(sa.Boolean)
 
 
@@ -853,6 +855,7 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
                'name': l2p['name'],
                'description': l2p['description'],
                'l3_policy_id': l2p['l3_policy_id'],
+               'inject_default_route': l2p.get('inject_default_route', True),
                'shared': l2p.get('shared', False), }
         res['policy_target_groups'] = [
             ptg['id'] for ptg in l2p['policy_target_groups']]
@@ -1261,6 +1264,8 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
                               tenant_id=tenant_id, name=l2p['name'],
                               description=l2p['description'],
                               l3_policy_id=l2p['l3_policy_id'],
+                              inject_default_route=l2p.get(
+                                  'inject_default_route', True),
                               shared=l2p.get('shared', False))
             context.session.add(l2p_db)
         return self._make_l2_policy_dict(l2p_db)
