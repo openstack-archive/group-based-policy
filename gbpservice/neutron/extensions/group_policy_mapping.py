@@ -21,6 +21,11 @@ EXTENDED_ATTRIBUTES_2_0 = {
         'port_id': {'allow_post': True, 'allow_put': False,
                     'validate': {'type:uuid_or_none': None},
                     'is_visible': True, 'default': None},
+        'port_attributes': {
+                    'allow_post': True, 'allow_put': False,
+                    'validate': {'type:dict_or_none': None},
+                    'convert_to': attr.convert_none_to_empty_dict,
+                    'is_visible': False, 'default': None},
     },
     gp.POLICY_TARGET_GROUPS: {
         'subnets': {'allow_post': True, 'allow_put': True,

@@ -244,3 +244,19 @@ class TestMappedGroupResourceAttrs(GroupPolicyMappingDbTestCase):
                 self._test_list_resources(
                     'external_segment', [external_segments[0]],
                     query_params='subnet_id=' + subnets[0])
+
+    def test_pt_port_extra_attributes_fail(self):
+        ptg = self.create_policy_target_group()['policy_target_group']
+        res = self.create_policy_target(
+            policy_target_group_id=ptg['id'],
+            port_attributes={'network_id': ''},
+            expected_res_status=400, is_admin_context=True)
+        self.assertEqual('InvalidPortExtraAttributes',
+                         res['NeutronError']['type'])
+
+        res = self.create_policy_target(
+            policy_target_group_id=ptg['id'],
+            port_attributes={'allowed_address_pairs': ''},
+            expected_res_status=400, is_admin_context=True)
+        self.assertEqual('InvalidPortExtraAttributes',
+                         res['NeutronError']['type'])
