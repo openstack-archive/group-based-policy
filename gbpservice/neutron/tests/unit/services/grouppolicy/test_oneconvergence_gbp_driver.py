@@ -81,6 +81,7 @@ class TestPolicyTarget(OneConvergenceGBPDriverTestCase,
                     pt = self.create_policy_target(
                             name="pt1",
                             policy_target_group_id=ptg_id)['policy_target']
+                    pt['port_attributes'] = {}
                     create_ep.assert_called_once_with(mock.ANY, pt)
                     pt = self.update_policy_target(
                             pt['id'], name="new_pt")['policy_target']

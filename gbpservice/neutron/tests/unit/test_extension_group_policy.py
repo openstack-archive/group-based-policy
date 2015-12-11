@@ -89,6 +89,7 @@ class GroupPolicyExtensionTestCase(test_extensions_base.ExtensionTestCase):
         self.assertEqual(exc.HTTPCreated.code, res.status_int)
         res = self.deserialize(res)
         self.assertIn('policy_target', res)
+        expected_value.pop('port_attributes', None)
         self.assertEqual(expected_value, res['policy_target'])
 
     def test_create_policy_target_with_defaults(self):

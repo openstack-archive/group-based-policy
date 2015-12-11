@@ -549,11 +549,13 @@ class NodeCompositionPluginTestCase(
         pt = self.create_policy_target(
             policy_target_group_id=provider['id'])['policy_target']
         self.assertEqual(1, add.call_count)
+        pt['port_attributes'] = {}
         add.assert_called_with(mock.ANY, pt)
 
         # Verify notification issued for deleted PT in the provider
         self.delete_policy_target(pt['id'])
         self.assertEqual(1, rem.call_count)
+        pt.pop('port_attributes', None)
         rem.assert_called_with(mock.ANY, pt)
 
     def test_irrelevant_ptg_update(self):
