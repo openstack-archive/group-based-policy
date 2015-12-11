@@ -20,6 +20,9 @@
     "shared_scs": "field:servicechain_specs:shared=True",
     "shared_sp": "field:service_profiles:shared=True",
 
+    "create_policy_target": "",
+    "create_policy_target:port_attributes": "rule:admin_only",
+
     "create_policy_target_group": "",
     "create_policy_target_group:shared": "rule:admin_only",
     "create_policy_target_group:service_management": "rule:admin_only",
