@@ -13,12 +13,14 @@
 
 import webob.exc
 
+from neutron import context as nctx
 from neutron.db import api as db_api
 from neutron.db import model_base
 from neutron.tests.unit.extensions import test_l3
 from neutron.tests.unit import testlib_api
 
 from gbpservice.neutron.db.grouppolicy import group_policy_mapping_db as gpmdb
+from gbpservice.neutron.services.grouppolicy.common import exceptions as gpexc
 from gbpservice.neutron.tests.unit.db.grouppolicy import (
     test_group_policy_db as tgpdb)
 
@@ -244,3 +246,25 @@ class TestMappedGroupResourceAttrs(GroupPolicyMappingDbTestCase):
                 self._test_list_resources(
                     'external_segment', [external_segments[0]],
                     query_params='subnet_id=' + subnets[0])
+
+    def test_pt_port_extra_attributes_fail(self):
+        ptg = self.create_policy_target_group()['policy_target_group']
+        ctx = nctx.get_admin_context()
+        self.assertRaises(gpexc.InvalidPortExtraAttributes,
+                          self._gbp_plugin.create_policy_target,
+                          ctx, {'policy_target': {
+                                    'description': '', 'name': '',
+                                    'port_id': None, 'cluster_id': '',
+                                    'policy_target_group_id': ptg['id'],
+                                    'port_attributes': {'network_id': ''},
+                                    'tenant_id': self._tenant_id}})
+
+        self.assertRaises(gpexc.InvalidPortExtraAttributes,
+                          self._gbp_plugin.create_policy_target,
+                          ctx, {'policy_target': {
+                                    'description': '', 'name': '',
+                                    'port_id': None, 'cluster_id': '',
+                                    'policy_target_group_id': ptg['id'],
+                                    'port_attributes': {
+                                        'allowed_address_pairs': ''},
+                                    'tenant_id': self._tenant_id}})
