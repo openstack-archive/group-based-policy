@@ -38,6 +38,7 @@ from gbpservice.common import utils
 from gbpservice.neutron.db.grouppolicy import group_policy_db as gpdb
 from gbpservice.neutron.db import servicechain_db
 from gbpservice.neutron.services.grouppolicy.common import constants as gconst
+from gbpservice.neutron.services.grouppolicy.common import exceptions as gpexc
 from gbpservice.neutron.services.grouppolicy import config
 from gbpservice.neutron.services.grouppolicy.drivers import chain_mapping
 from gbpservice.neutron.services.grouppolicy.drivers import nsp_manager
@@ -779,6 +780,97 @@ class TestPolicyTarget(ResourceMappingTestCase, TestClusterIdMixin):
                 # exception
                 self.create_policy_target(
                     policy_target_group_id=ptg['id'], expected_res_status=500)
+
+    def test_port_extra_attributes(self, extra=None):
+        extra = extra or {}
+        ptg = self.create_policy_target_group()['policy_target_group']
+        # Issue internal call
+        ctx = nctx.get_admin_context()
+        data = {'description': '', 'name': '',
+                'port_id': None, 'cluster_id': '',
+                'policy_target_group_id': ptg['id'],
+                'port_attributes': {'mac_address':
+                                    'aa:bb:cc:dd:ee:ff'},
+                'tenant_id': self._tenant_id}
+        data.update(extra)
+        pt = self._gbp_plugin.create_policy_target(
+            ctx, {'policy_target': data})
+        port = self._get_object('ports', pt['port_id'], self.api)['port']
+        self.assertEqual('aa:bb:cc:dd:ee:ff', port['mac_address'])
+
+    def test_weird_port_extra_attributes_ignored(self, extra=None):
+        extra = extra or {}
+        ptg = self.create_policy_target_group()['policy_target_group']
+        # Calling an internal API, all additional weird attributes are ignored.
+        # This will change once we go to a separated server
+        ctx = nctx.get_admin_context()
+        data = {'description': '', 'name': '',
+                'port_id': None, 'cluster_id': '',
+                'policy_target_group_id': ptg['id'],
+                'port_attributes': {'non_port_attribute': ''},
+                'tenant_id': self._tenant_id}
+        data.update(extra)
+        pt = self._gbp_plugin.create_policy_target(
+            ctx, {'policy_target': data})
+        self.assertIsNotNone(pt['id'])
+
+    def test_port_extra_attributes_fixed_ips(self, extra=None):
+        extra = extra or {}
+        l2p = self.create_l2_policy()['l2_policy']
+        network = self._get_object('networks', l2p['network_id'], self.api)
+        with self.subnet(network=network, cidr='10.10.1.0/24') as subnet:
+            subnet = subnet['subnet']
+            ptg = self.create_policy_target_group(
+                subnets=[subnet['id']],
+                l2_policy_id=l2p['id'])['policy_target_group']
+            fixed_ips = [{'subnet_id': subnet['id'],
+                          'ip_address': '10.10.1.10'}]
+            ctx = nctx.get_admin_context()
+            data = {'description': '', 'name': '',
+                    'port_id': None, 'cluster_id': '',
+                    'policy_target_group_id': ptg['id'],
+                    'port_attributes': {'fixed_ips': fixed_ips},
+                    'tenant_id': self._tenant_id}
+            data.update(extra)
+            pt = self._gbp_plugin.create_policy_target(
+                ctx, {'policy_target': data})
+            port = self._get_object('ports', pt['port_id'], self.api)['port']
+            self.assertEqual(fixed_ips, port['fixed_ips'])
+
+            # Now use a different subnet
+            ctx = nctx.get_admin_context()
+            data = {'description': '', 'name': '', 'port_id': None,
+                    'cluster_id': '', 'policy_target_group_id': ptg['id'],
+                    'port_attributes': {'fixed_ips': [{
+                        'subnet_id': 'not_in_ptg',
+                        'ip_address': '10.10.1.10'}]},
+                    'tenant_id': self._tenant_id}
+            data.update(extra)
+            self.assertRaises(gpexc.InvalidPortExtraAttributes,
+                              self._gbp_plugin.create_policy_target,
+                              ctx, {'policy_target': data})
+
+    def test_port_extra_attributes_implicit(self, extra=None):
+        extra = extra or {}
+        ptg = self.create_policy_target_group()['policy_target_group']
+        ctx = nctx.get_admin_context()
+        data = {'description': '', 'name': '',
+                'port_id': None, 'cluster_id': '',
+                'policy_target_group_id': ptg['id'],
+                'port_attributes': {'mac_address':
+                                    'aa:bb:cc:dd:ee:ff'},
+                'tenant_id': self._tenant_id}
+        data.update(extra)
+        pt = self._gbp_plugin.create_policy_target(
+            ctx, {'policy_target': data})
+        # Port exists
+        self._get_object('ports', pt['port_id'], self.api,
+                         expected_res_status=200)
+
+        self.delete_policy_target(pt['id'], expected_res_status=204)
+        # Port is gone since owned by GBP
+        self._get_object('ports', pt['port_id'], self.api,
+                         expected_res_status=404)
 
 
 class TestPolicyTargetGroupWithDNSConfiguration(ResourceMappingTestCase):

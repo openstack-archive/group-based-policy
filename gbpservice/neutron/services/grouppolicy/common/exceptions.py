@@ -94,6 +94,11 @@ class InvalidPortForPTG(GroupPolicyBadRequest):
                 "%(policy_target_group_id)s.")
 
 
+class InvalidPortExtraAttributes(GroupPolicyBadRequest):
+    message = _("Port extra attribute %(attribute)s is invalid for the "
+                "following reason: %(reason)s")
+
+
 class InvalidSubnetForPTG(GroupPolicyBadRequest):
     message = _("Subnet %(subnet_id)s does not belong to network "
                 "%(network_id)s associated with L2P %(l2p_id)s for PTG "

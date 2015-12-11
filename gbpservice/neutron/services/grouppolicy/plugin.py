@@ -352,6 +352,8 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
                               result['id'])
                 self.delete_policy_target(context, result['id'])
 
+        # Strip the extra port attributes
+        result.pop('port_attributes', None)
         return result
 
     @log.log

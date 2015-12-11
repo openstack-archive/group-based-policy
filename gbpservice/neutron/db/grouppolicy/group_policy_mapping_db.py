@@ -21,6 +21,7 @@ from neutron.openstack.common import uuidutils
 from gbpservice.neutron.db import gbp_quota_db as gquota
 from gbpservice.neutron.db.grouppolicy import group_policy_db as gpdb
 from gbpservice.neutron.extensions import group_policy as gpolicy
+from gbpservice.neutron.services.grouppolicy.common import exceptions
 
 
 LOG = logging.getLogger(__name__)
@@ -111,10 +112,11 @@ class GroupPolicyMappingDbPlugin(gpdb.GroupPolicyDbPlugin):
     """Group Policy Mapping interface implementation using SQLAlchemy models.
     """
 
-    def _make_policy_target_dict(self, pt, fields=None):
+    def _make_policy_target_dict(self, pt, fields=None, **kwargs):
         res = super(GroupPolicyMappingDbPlugin,
                     self)._make_policy_target_dict(pt)
         res['port_id'] = pt.port_id
+        res.update(kwargs)
         return self._fields(res, fields)
 
     def _make_policy_target_group_dict(self, ptg, fields=None):
@@ -227,11 +229,35 @@ class GroupPolicyMappingDbPlugin(gpdb.GroupPolicyDbPlugin):
             context.session.query(PTGToSubnetAssociation).filter_by(
                 subnet_id=subnet_id)]
 
+    def _validate_pt_port_exta_attributes(self, context, pt):
+        attributes = pt.get('port_attributes')
+        if attributes:
+            # Check network ID not overridden
+            if 'network_id' in attributes:
+                raise exceptions.InvalidPortExtraAttributes(
+                    attribute='network_id', reason='read only attribute')
+            if 'fixed_ips' in attributes:
+                ptg = self.get_policy_target_group(
+                    context, pt['policy_target_group_id'])
+                subnets = ptg['subnets']
+                for fixed_ip in attributes.get('fixed_ips'):
+                    if fixed_ip['subnet_id'] not in subnets:
+                        raise exceptions.InvalidPortExtraAttributes(
+                            attribute='fixed_ips:subnet_id',
+                            reason='subnet not in PTG')
+            if 'allowed_address_pairs' in attributes:
+                # REVISIT(ivar); Could be allowed with certain restrictions,
+                # but we don't have a use case for it right now
+                raise exceptions.InvalidPortExtraAttributes(
+                    attribute='allowed_address_pairs',
+                    reason='read only attribute')
+
     @log.log
     def create_policy_target(self, context, policy_target):
         pt = policy_target['policy_target']
         tenant_id = self._get_tenant_id_for_create(context, pt)
         with context.session.begin(subtransactions=True):
+            self._validate_pt_port_exta_attributes(context, pt)
             pt_db = PolicyTargetMapping(id=uuidutils.generate_uuid(),
                                         tenant_id=tenant_id,
                                         name=pt['name'],
@@ -241,7 +267,8 @@ class GroupPolicyMappingDbPlugin(gpdb.GroupPolicyDbPlugin):
                                         port_id=pt['port_id'],
                                         cluster_id=pt['cluster_id'])
             context.session.add(pt_db)
-        return self._make_policy_target_dict(pt_db)
+        return self._make_policy_target_dict(
+            pt_db, port_attributes=pt.get('port_attributes', {}))
 
     @log.log
     def get_policy_targets_count(self, context, filters=None):
