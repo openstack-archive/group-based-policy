@@ -55,12 +55,12 @@ class GroupPolicyMappingExtTestCase(tgp.GroupPolicyExtensionTestCase):
 
     def get_create_policy_target_default_attrs(self):
         attrs = cm.get_create_policy_target_default_attrs()
-        attrs.update({'port_id': None})
+        attrs.update({'port_id': None, 'port_attributes': {}})
         return attrs
 
     def get_create_policy_target_attrs(self):
         attrs = cm.get_create_policy_target_attrs()
-        attrs.update({'port_id': tgp._uuid()})
+        attrs.update({'port_id': tgp._uuid(), 'port_attributes': {}})
         return attrs
 
     def get_create_policy_target_group_default_attrs(self):

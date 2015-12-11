@@ -779,6 +779,67 @@ class TestPolicyTarget(ResourceMappingTestCase, TestClusterIdMixin):
                 self.create_policy_target(
                     policy_target_group_id=ptg['id'], expected_res_status=500)
 
+    def test_port_extra_attributes(self):
+        ptg = self.create_policy_target_group()['policy_target_group']
+        pt = self.create_policy_target(
+            policy_target_group_id=ptg['id'],
+            port_attributes={'mac_address': 'aa:bb:cc:dd:ee:ff'},
+            expected_res_status=201, is_admin_context=True)['policy_target']
+        port = self._get_object('ports', pt['port_id'], self.api)['port']
+        self.assertEqual('aa:bb:cc:dd:ee:ff', port['mac_address'])
+
+    def test_weird_port_extra_attributes_ignored(self):
+        ptg = self.create_policy_target_group()['policy_target_group']
+        # Calling an internal API, all additional weird attributes are ignored.
+        # This will change once we go to a separated server
+        self.create_policy_target(
+            policy_target_group_id=ptg['id'],
+            port_attributes={'non_port_attribute': ''},
+            expected_res_status=201, is_admin_context=True)
+
+    def test_port_extra_attributes_fixed_ips(self):
+        l2p = self.create_l2_policy()['l2_policy']
+        network = self._get_object('networks', l2p['network_id'], self.api)
+        with self.subnet(network=network, cidr='10.10.1.0/24') as subnet:
+            subnet = subnet['subnet']
+            ptg = self.create_policy_target_group(
+                subnets=[subnet['id']],
+                l2_policy_id=l2p['id'])['policy_target_group']
+            fixed_ips = [{'subnet_id': subnet['id'],
+                          'ip_address': '10.10.1.10'}]
+            pt = self.create_policy_target(
+                policy_target_group_id=ptg['id'],
+                port_attributes={'fixed_ips': fixed_ips},
+                expected_res_status=201,
+                is_admin_context=True)['policy_target']
+            port = self._get_object('ports', pt['port_id'], self.api)['port']
+            self.assertEqual(fixed_ips, port['fixed_ips'])
+
+            # Now use a different subnet
+            res = self.create_policy_target(
+                policy_target_group_id=ptg['id'],
+                port_attributes={'fixed_ips': [{'subnet_id': 'not_in_ptg',
+                                                'ip_address': '10.10.1.10'}]},
+                expected_res_status=400,
+                is_admin_context=True)
+            self.assertEqual('InvalidPortExtraAttributes',
+                             res['NeutronError']['type'])
+
+    def test_port_extra_attributes_implicit(self):
+        ptg = self.create_policy_target_group()['policy_target_group']
+        pt = self.create_policy_target(
+            policy_target_group_id=ptg['id'],
+            port_attributes={'mac_address': 'aa:bb:cc:dd:ee:ff'},
+            expected_res_status=201, is_admin_context=True)['policy_target']
+        # Port exists
+        self._get_object('ports', pt['port_id'], self.api,
+                         expected_res_status=200)
+
+        self.delete_policy_target(pt['id'], expected_res_status=204)
+        # Port is gone since owned by GBP
+        self._get_object('ports', pt['port_id'], self.api,
+                         expected_res_status=404)
+
 
 class TestPolicyTargetGroupWithDNSConfiguration(ResourceMappingTestCase):
 
