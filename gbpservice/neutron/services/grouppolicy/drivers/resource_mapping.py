@@ -1326,6 +1326,7 @@ class ResourceMappingDriver(api.PolicyDriver, local_api.LocalAPI,
                          'admin_state_up': True}
                 if context.current.get('group_default_gateway'):
                     attrs['fixed_ips'][0]['ip_address'] = subnet['gateway_ip']
+                attrs.update(context.current.get('port_attributes', {}))
                 port = self._create_port(context._plugin_context, attrs)
                 port_id = port['id']
                 self._mark_port_owned(context._plugin_context.session, port_id)
@@ -2449,10 +2450,10 @@ class ResourceMappingDriver(api.PolicyDriver, local_api.LocalAPI,
             if subnet == port_subnet_id:
                 break
         else:
-            raise exc.InvalidPortForPTG(port_id=port_id,
-                                ptg_subnet_id=",".join(ptg.get('subnets')),
-                                port_subnet_id=port_subnet_id,
-                                policy_target_group_id=ptg_id)
+            raise exc.InvalidPortForPTG(
+                port_id=port_id, ptg_subnet_id=",".join(ptg.get('subnets')),
+                port_subnet_id=port_subnet_id,
+                policy_target_group_id=ptg_id)
 
     def _get_ptg_l3p(self, context, ptg):
         l3p_id = context._plugin.get_l2_policy(

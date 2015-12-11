@@ -314,6 +314,22 @@ class TestPolicyTarget(ResourceMappingProxyGroupGBPTestCase,
         super(TestPolicyTarget, self).test_implicit_port_lifecycle(
             proxy_ip_pool='182.169.0.0/16')
 
+    def test_weird_port_extra_attributes_ignored(self):
+        super(TestPolicyTarget, self).test_weird_port_extra_attributes_ignored(
+            extra={'proxy_gateway': False, 'group_default_gateway': False})
+
+    def test_port_extra_attributes(self):
+        super(TestPolicyTarget, self).test_port_extra_attributes(
+            extra={'proxy_gateway': False, 'group_default_gateway': False})
+
+    def test_port_extra_attributes_fixed_ips(self):
+        super(TestPolicyTarget, self).test_port_extra_attributes_fixed_ips(
+            extra={'proxy_gateway': False, 'group_default_gateway': False})
+
+    def test_port_extra_attributes_implicit(self):
+        super(TestPolicyTarget, self).test_port_extra_attributes_implicit(
+            extra={'proxy_gateway': False, 'group_default_gateway': False})
+
 
 class TestPolicyTargetGroup(ResourceMappingProxyGroupGBPTestCase,
                             test_resource_mapping.TestPolicyTargetGroup):
