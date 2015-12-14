@@ -14,7 +14,7 @@
 import copy
 import itertools
 
-from keystoneclient.middleware import auth_token  # noqa
+from keystonemiddleware import auth_token  # noqa
 import mock
 import netaddr
 from neutron.api.rpc.agentnotifiers import dhcp_rpc_agent_api
