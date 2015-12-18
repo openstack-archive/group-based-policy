@@ -3228,6 +3228,71 @@ class TestExternalPolicyPreL3Out(TestExternalPolicy):
         super(TestExternalPolicyPreL3Out, self).setUp(
             pre_existing_l3out=True)
 
+    def test_multi_tenant_delete(self):
+        self._mock_external_dict([('supported', '192.168.0.2/24')])
+        es = self.create_external_segment(
+            name='supported', cidr='192.168.0.0/24', shared=True,
+            expected_res_status=201)['external_segment']
+
+        ep_list = [
+            self.create_external_policy(
+                name=APIC_EXTERNAL_EPG,
+                external_segments=[es['id']],
+                tenant_id=tnnt,
+                expected_res_status=201)['external_policy']
+            for tnnt in ['tenant_a', 'tenant_b', 'tenant_c']]
+        for ep in ep_list:
+            self.delete_external_policy(
+                ep['id'], tenant_id=ep['tenant_id'],
+                expected_res_status=webob.exc.HTTPNoContent.code)
+        nat_contract = "NAT-allow-%s" % es['id']
+        expected_calls = [
+            mock.call(es['name'], nat_contract,
+                      external_epg=APIC_EXTERNAL_EPG,
+                      provided=True, owner=APIC_PRE_L3OUT_TENANT,
+                      transaction=mock.ANY),
+            mock.call(es['name'], nat_contract,
+                      external_epg=APIC_EXTERNAL_EPG,
+                      provided=False, owner=APIC_PRE_L3OUT_TENANT,
+                      transaction=mock.ANY)
+        ]
+        mgr = self.driver.apic_manager
+        self._check_call_list(expected_calls,
+            mgr.unset_contract_for_external_epg.call_args_list)
+
+    def test_multi_tenant_update_dissociate(self):
+        self._mock_external_dict([('supported', '192.168.0.2/24')])
+        es = self.create_external_segment(
+            name='supported', cidr='192.168.0.0/24', shared=True,
+            expected_res_status=201)['external_segment']
+
+        ep_list = [
+            self.create_external_policy(
+                name=APIC_EXTERNAL_EPG,
+                external_segments=[es['id']],
+                tenant_id=tnnt,
+                expected_res_status=201)['external_policy']
+            for tnnt in ['tenant_a', 'tenant_b', 'tenant_c']]
+        for ep in ep_list:
+            self.update_external_policy(
+                ep['id'], tenant_id=ep['tenant_id'],
+                external_segments=[],
+                expected_res_status=200)
+        nat_contract = "NAT-allow-%s" % es['id']
+        expected_calls = [
+            mock.call(es['name'], nat_contract,
+                      external_epg=APIC_EXTERNAL_EPG,
+                      provided=True, owner=APIC_PRE_L3OUT_TENANT,
+                      transaction=mock.ANY),
+            mock.call(es['name'], nat_contract,
+                      external_epg=APIC_EXTERNAL_EPG,
+                      provided=False, owner=APIC_PRE_L3OUT_TENANT,
+                      transaction=mock.ANY)
+        ]
+        mgr = self.driver.apic_manager
+        self._check_call_list(expected_calls,
+            mgr.unset_contract_for_external_epg.call_args_list)
+
 
 class TestExternalPolicyNoNatPreL3Out(TestExternalPolicy):
     def setUp(self):
