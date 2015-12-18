@@ -1857,16 +1857,23 @@ class ApicMappingDriver(api.ResourceMappingDriver,
                         self.apic_manager.ensure_external_epg_deleted(
                             es_name, external_epg=ep_name, owner=es_tenant)
                 elif pre_existing_epg and nat_enabled:
-                    nat_contract = self._get_nat_contract_for_es(context, es)
-                    with self.apic_manager.apic.transaction() as trs:
-                        self.apic_manager.unset_contract_for_external_epg(
-                            es_name, nat_contract,
-                            external_epg=ep_name, owner=es_tenant,
-                            provided=True, transaction=trs)
-                        self.apic_manager.unset_contract_for_external_epg(
-                            es_name, nat_contract,
-                            external_epg=ep_name, owner=es_tenant,
-                            provided=False, transaction=trs)
+                    pre_epgs = context._plugin.get_external_policies(
+                        context._plugin_context.elevated(),
+                        filters={'id': es['external_policies'],
+                                 'name': [ep['name']]})
+                    # Unset contracts if there are no other pre-existing EPGs
+                    if not [x for x in pre_epgs if x['id'] != ep['id']]:
+                        nat_contract = self._get_nat_contract_for_es(
+                            context, es)
+                        with self.apic_manager.apic.transaction() as trs:
+                            self.apic_manager.unset_contract_for_external_epg(
+                                es_name, nat_contract,
+                                external_epg=ep_name, owner=es_tenant,
+                                provided=True, transaction=trs)
+                            self.apic_manager.unset_contract_for_external_epg(
+                                es_name, nat_contract,
+                                external_epg=ep_name, owner=es_tenant,
+                                provided=False, transaction=trs)
 
     def _do_external_segment_update(self, context, ext_info,
                                     l3policy_obj=None):
