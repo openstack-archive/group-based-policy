@@ -462,6 +462,19 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
             updated_policy_target_group = super(
                 GroupPolicyPlugin, self).update_policy_target_group(
                     context, policy_target_group_id, policy_target_group)
+            # REVISIT(rkukura): We could potentially allow updates to
+            # l2_policy_id when no policy targets exist. This would
+            # involve removing each old subnet from the l3_policy's
+            # router, deleting each old subnet, creating a new subnet on
+            # the new l2_policy's network, and adding that subnet to the
+            # l3_policy's router in postcommit. Its also possible that new
+            # subnet[s] would be provided explicitly as part of the
+            # update.
+            old_l2p = original_policy_target_group['l2_policy_id']
+            new_l2p = updated_policy_target_group['l2_policy_id']
+            if old_l2p and old_l2p != new_l2p:
+                raise gp_exc.L2PolicyUpdateOfPolicyTargetGroupNotSupported()
+
             self.extension_manager.process_update_policy_target_group(
                 session, policy_target_group, updated_policy_target_group)
             self._validate_shared_update(
