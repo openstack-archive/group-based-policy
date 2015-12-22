@@ -64,7 +64,7 @@ class ServiceChainNode(gquota.GBPQuotaBase, model_base.BASEV2, models_v2.HasId,
     __tablename__ = 'sc_nodes'
     name = sa.Column(sa.String(255))
     description = sa.Column(sa.String(255))
-    config = sa.Column(sa.String(4096))
+    config = sa.Column(sa.TEXT)
     specs = orm.relationship(SpecNodeAssociation,
                              backref="nodes",
                              cascade='all, delete, delete-orphan')
