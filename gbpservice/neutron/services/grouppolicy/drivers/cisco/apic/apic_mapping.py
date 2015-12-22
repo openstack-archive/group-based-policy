@@ -10,6 +10,7 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+import copy
 import netaddr
 
 from apic_ml2.neutron.db import port_ha_ipaddress_binding as ha_ip_db
@@ -158,8 +159,10 @@ PROMISCUOUS_TYPES = [n_constants.DEVICE_OWNER_DHCP,
                      n_constants.DEVICE_OWNER_LOADBALANCER]
 ALLOWING_ACTIONS = [g_const.GP_ACTION_ALLOW, g_const.GP_ACTION_REDIRECT]
 REVERTIBLE_PROTOCOLS = [n_constants.PROTO_NAME_TCP.lower(),
-                        n_constants.PROTO_NAME_UDP.lower()]
+                        n_constants.PROTO_NAME_UDP.lower(),
+                        n_constants.PROTO_NAME_ICMP.lower()]
 PROXY_PORT_PREFIX = "opflex_proxy:"
+ICMP_REPLY_TYPES = ['echo-rep', 'dst-unreach', 'src-quench', 'time-exceeded']
 
 
 class ApicMappingDriver(api.ResourceMappingDriver,
@@ -611,9 +614,10 @@ class ApicMappingDriver(api.ResourceMappingDriver,
             tenant = self._tenant_by_sharing_policy(context.current)
             policy_rule = self.name_mapper.policy_rule(context,
                                                        context.current)
+            entries = [attrs]
             with self.apic_manager.apic.transaction(transaction) as trs:
-                self.apic_manager.create_tenant_filter(
-                    policy_rule, owner=tenant, transaction=trs, **attrs)
+                self._create_tenant_filter(policy_rule, tenant, entries,
+                                           transaction=trs)
                 # Also create reverse rule
                 if attrs.get('prot') in REVERTIBLE_PROTOCOLS:
                     policy_rule = self.name_mapper.policy_rule(
@@ -626,9 +630,15 @@ class ApicMappingDriver(api.ResourceMappingDriver,
                     if attrs['prot'] == n_constants.PROTO_NAME_TCP.lower():
                         # Only match on established sessions
                         attrs['tcpRules'] = 'est'
-                    self.apic_manager.create_tenant_filter(
-                        policy_rule, owner=tenant, transaction=trs,
-                        **attrs)
+                    if attrs['prot'] == n_constants.PROTO_NAME_ICMP.lower():
+                        # create more entries:
+                        entries = []
+                        for reply_type in ICMP_REPLY_TYPES:
+                            entry = copy.deepcopy(attrs)
+                            entry['icmpv4T'] = reply_type
+                            entries.append(entry)
+                    self._create_tenant_filter(policy_rule, tenant, entries,
+                                               transaction=trs)
 
     def create_policy_rule_set_precommit(self, context):
         if not self.name_mapper._is_apic_reference(context.current):
@@ -2944,3 +2954,14 @@ class ApicMappingDriver(api.ResourceMappingDriver,
                 raise PreExistingL3OutInIncorrectTenant(
                     tenant=l3out_info['l3out_tenant'], l3out=es['name'],
                     es=es['name'])
+
+    def _create_tenant_filter(self, rule_name, tenant, entries=None,
+                              transaction=None):
+        entries = entries or []
+        x = 0
+        with self.apic_manager.apic.transaction(transaction) as trs:
+            for entry in entries:
+                self.apic_manager.create_tenant_filter(
+                    rule_name, owner=tenant, transaction=trs,
+                    entry=apic_manager.CP_ENTRY + '-' + str(x), **entry)
+                x += 1
