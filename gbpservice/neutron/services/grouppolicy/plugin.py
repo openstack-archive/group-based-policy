@@ -522,8 +522,8 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
                 self.delete_policy_target_group(
                     context, policy_target_group['proxy_group_id'])
             except gpex.PolicyTargetGroupNotFound:
-                LOG.warn(_('PTG %s already deleted'),
-                         policy_target_group['proxy_group_id'])
+                LOG.warning(_('PTG %s already deleted'),
+                            policy_target_group['proxy_group_id'])
 
         with session.begin(subtransactions=True):
             for pt in self.get_policy_targets(context, {'id': pt_ids}):

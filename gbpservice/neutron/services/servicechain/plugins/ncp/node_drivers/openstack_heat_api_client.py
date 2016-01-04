@@ -55,8 +55,8 @@ class HeatClient:
         try:
             self.stacks.delete(stack_id)
         except heat_exc.HTTPNotFound:
-            LOG.warn(_("Stack %(stack)s created by service chain driver is "
-                       "not found at cleanup"), {'stack': stack_id})
+            LOG.warning(_("Stack %(stack)s created by service chain driver is "
+                          "not found at cleanup"), {'stack': stack_id})
 
     def get(self, stack_id):
         return self.stacks.get(stack_id)

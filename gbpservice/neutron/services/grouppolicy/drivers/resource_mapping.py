@@ -325,8 +325,8 @@ class ResourceMappingDriver(api.PolicyDriver, local_api.LocalAPI,
                     no_subnet_pools = []
                     break
                 except n_exc.IpAddressGenerationFailure as ex:
-                    LOG.warn(_("Floating allocation failed: %s"),
-                             ex.message)
+                    LOG.warning(_("Floating allocation failed: %s"),
+                                ex.message)
         for nat_pool in no_subnet_pools:
             # Use old allocation method
             try:
@@ -334,8 +334,8 @@ class ResourceMappingDriver(api.PolicyDriver, local_api.LocalAPI,
                     context._plugin_context, tenant_id, ext_net_id, fixed_port)
                 break
             except n_exc.IpAddressGenerationFailure as ex:
-                LOG.warn(_("Floating allocation failed: %s"),
-                         ex.message)
+                LOG.warning(_("Floating allocation failed: %s"),
+                            ex.message)
         return fip_id
 
     @log.log
@@ -1333,8 +1333,8 @@ class ResourceMappingDriver(api.PolicyDriver, local_api.LocalAPI,
                 context.set_port_id(port_id)
                 return
             except n_exc.IpAddressGenerationFailure as ex:
-                LOG.warn(_("No more address available in subnet %s"),
-                         subnet['id'])
+                LOG.warning(_("No more address available in subnet %s"),
+                            subnet['id'])
                 last = ex
         raise last
 
@@ -1343,7 +1343,7 @@ class ResourceMappingDriver(api.PolicyDriver, local_api.LocalAPI,
             try:
                 self._delete_port(plugin_context, port_id)
             except n_exc.PortNotFound:
-                LOG.warn(_("Port %s is missing") % port_id)
+                LOG.warning(_("Port %s is missing") % port_id)
 
     def _plug_router_to_external_segment(self, context, es_dict):
         es_list = context._plugin.get_external_segments(
@@ -1916,7 +1916,7 @@ class ResourceMappingDriver(api.PolicyDriver, local_api.LocalAPI,
             pt = context._plugin.get_policy_target(context._plugin_context,
                                                    pt_id)
         except gp_ext.PolicyTargetNotFound:
-            LOG.warn(_("PT %s doesn't exist anymore"), pt_id)
+            LOG.warning(_("PT %s doesn't exist anymore"), pt_id)
             return
         try:
             port_id = pt['port_id']
@@ -1926,14 +1926,14 @@ class ResourceMappingDriver(api.PolicyDriver, local_api.LocalAPI,
             port[ext_sg.SECURITYGROUPS] = new_sg_list
             self._update_port(context._plugin_context, port_id, port)
         except n_exc.PortNotFound:
-            LOG.warn(_("Port %s is missing") % port_id)
+            LOG.warning(_("Port %s is missing") % port_id)
 
     def _disassoc_sgs_from_pt(self, context, pt_id, sg_list):
         try:
             pt = context._plugin.get_policy_target(context._plugin_context,
                                                    pt_id)
         except gp_ext.PolicyTargetNotFound:
-            LOG.warn(_("PT %s doesn't exist anymore"), pt_id)
+            LOG.warning(_("PT %s doesn't exist anymore"), pt_id)
             return
         port_id = pt['port_id']
         self._disassoc_sgs_from_port(context._plugin_context, port_id, sg_list)
@@ -1946,7 +1946,7 @@ class ResourceMappingDriver(api.PolicyDriver, local_api.LocalAPI,
             port[ext_sg.SECURITYGROUPS] = new_sg_list
             self._update_port(plugin_context, port_id, port)
         except n_exc.PortNotFound:
-            LOG.warn(_("Port %s is missing") % port_id)
+            LOG.warning(_("Port %s is missing") % port_id)
 
     def _generate_list_of_sg_from_ptg(self, context, ptg_id):
         ptg = context._plugin.get_policy_target_group(
