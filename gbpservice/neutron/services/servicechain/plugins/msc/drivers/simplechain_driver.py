@@ -79,8 +79,8 @@ class SimpleChainDriver(object):
             if context.current['service_type'] not in sc_supported_type:
                 raise exc.InvalidServiceTypeForReferenceDriver()
         elif context.current['service_type']:
-            LOG.warn(_('Both service_profile_id and service_type are'
-                       'specified, service_type will be ignored.'))
+            LOG.warning(_('Both service_profile_id and service_type are'
+                          'specified, service_type will be ignored.'))
 
     @log.log
     def create_servicechain_node_postcommit(self, context):
@@ -344,12 +344,12 @@ class SimpleChainDriver(object):
                 time.sleep(STACK_DELETE_RETRY_WAIT)
                 stack_delete_retries = stack_delete_retries - 1
                 if stack_delete_retries == 0:
-                    LOG.warn(_("Resource cleanup for service chain instance is"
-                               " not completed within %(wait)s seconds as "
-                               "deletion of Stack %(stack)s is not completed"),
-                             {'wait': (STACK_DELETE_RETRIES *
-                                       STACK_DELETE_RETRY_WAIT),
-                              'stack': stack_id})
+                    LOG.warning(_("Resource cleanup for service chain instance is"
+                                  " not completed within %(wait)s seconds as "
+                                  "deletion of Stack %(stack)s is not completed"),
+                                {'wait': (STACK_DELETE_RETRIES *
+                                          STACK_DELETE_RETRY_WAIT),
+                                 'stack': stack_id})
                     return
                 else:
                     continue
@@ -446,8 +446,8 @@ class HeatClient:
         try:
             self.stacks.delete(stack_id)
         except heat_exc.HTTPNotFound:
-            LOG.warn(_("Stack %(stack)s created by service chain driver is "
-                       "not found at cleanup"), {'stack': stack_id})
+            LOG.warning(_("Stack %(stack)s created by service chain driver is "
+                          "not found at cleanup"), {'stack': stack_id})
 
     def get(self, stack_id):
         return self.stacks.get(stack_id)

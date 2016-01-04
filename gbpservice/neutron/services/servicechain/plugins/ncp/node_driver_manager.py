@@ -70,7 +70,7 @@ class NodeDriverManager(stevedore.named.NamedExtensionManager):
                 model.set_node_owner(context, driver.obj.name)
                 return driver.obj
             except n_exc.NeutronException as e:
-                LOG.warn(e.message)
+                LOG.warning(e.message)
 
     def schedule_destroy(self, context):
         """Schedule Node Driver for Node disruption.
