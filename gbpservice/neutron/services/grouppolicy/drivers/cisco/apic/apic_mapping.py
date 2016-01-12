@@ -14,10 +14,10 @@ import copy
 import netaddr
 
 from apic_ml2.neutron.db import port_ha_ipaddress_binding as ha_ip_db
+from apic_ml2.neutron.plugins.ml2.drivers.cisco.apic import apic_model
 from apic_ml2.neutron.plugins.ml2.drivers.cisco.apic import config
 from apicapi import apic_manager
 from keystoneclient.v2_0 import client as keyclient
-from networking_cisco.plugins.ml2.drivers.cisco.apic import apic_model
 from neutron.agent.linux import dhcp
 from neutron.api.v2 import attributes
 from neutron.common import constants as n_constants
@@ -195,7 +195,9 @@ class ApicMappingDriver(api.ResourceMappingDriver,
                                   None)
             ApicMappingDriver.manager = apic_manager.APICManager(
                 apic_model.ApicDbModel(), logging, network_config, apic_config,
-                keyclient_param, keystone_authtoken, apic_system_id)
+                keyclient_param, keystone_authtoken, apic_system_id,
+                default_apic_model=('apic_ml2.neutron.plugins.ml2.drivers.'
+                                    'cisco.apic.apic_model'))
             ApicMappingDriver.manager.ensure_infra_created_on_apic()
             ApicMappingDriver.manager.ensure_bgp_pod_policy_created_on_apic()
         return ApicMappingDriver.manager
