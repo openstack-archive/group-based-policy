@@ -60,7 +60,7 @@ class test_gbp_l2p_func(object):
 
     def cleanup(self, tc_name=''):
         if tc_name != '':
-            self._log.info('Testcase %s: FAILED' % (tc_name))
+            self._log.info('%s: FAILED' % (tc_name))
         for obj in ['group', 'l2p', 'l3p']:
             self.gbpcfg.gbp_del_all_anyobj(obj)
 
