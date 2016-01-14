@@ -105,7 +105,7 @@ class test_gbp_prs_func(object):
 
     def cleanup(self, tc_name=''):
         if tc_name != '':
-            self._log.info('Testcase %s: FAILED' % (tc_name))
+            self._log.info('%s: FAILED' % (tc_name))
         for obj in ['ruleset', 'rule', 'classifier', 'action']:
             self.gbpcfg.gbp_del_all_anyobj(obj)
 
@@ -247,14 +247,14 @@ class test_gbp_prs_func(object):
         if new_cls_uuid == 0:
             self._log.info(
                 "\nNew Classifier Create Failed, hence "
-                "TESTCASE_GBP_PRS_FUNC_3 ABORTED\n")
+                "testcase_gbp_prs_func_3 ABORTED\n")
             return 0
         new_act_uuid = self.gbpcfg.gbp_policy_cfg_all(
             1, 'action', 'grppol_pa1')
         if new_act_uuid == 0:
             self._log.info(
                 "\nNew Action Create Failed, hence "
-                "TESTCASE_GBP_PRS_FUNC_3 ABORTED\n")
+                "testcase_gbp_prs_func_3 ABORTED\n")
             return 0
         new_rule_uuid = self.gbpcfg.gbp_policy_cfg_all(
             1,
@@ -266,7 +266,7 @@ class test_gbp_prs_func(object):
         if new_rule_uuid == 0:
             self._log.info(
                 "\nNew Rule Create Failed, hence "
-                "TESTCASE_GBP_PRS_FUNC_3 ABORTED\n")
+                "testcase_gbp_prs_func_3 ABORTED\n")
             return 0
         if self.gbpcfg.gbp_policy_cfg_all(
                 2,
@@ -327,14 +327,14 @@ class test_gbp_prs_func(object):
         if new_cls_uuid == 0:
             self._log.info(
                 "\nNew Classifier Create Failed, hence "
-                "TESTCASE_GBP_PRS_FUNC_4 ABORTED\n")
+                "testcase_gbp_prs_func_4 ABORTED\n")
             return 0
         new_act_uuid = self.gbpcfg.gbp_policy_cfg_all(
             1, 'action', 'grppol_pa1')
         if new_act_uuid == 0:
             self._log.info(
                 "\nNew Action Create Failed, hence "
-                "TESTCASE_GBP_PRS_FUNC_4 ABORTED\n")
+                "testcase_gbp_prs_func_4 ABORTED\n")
             return 0
         rule_uuid_list = []
         for i in range(4):
@@ -349,7 +349,7 @@ class test_gbp_prs_func(object):
             if new_rule_uuid == 0:
                 self._log.info(
                     "\nNew Rule Create Failed, hence "
-                    "TESTCASE_GBP_PRS_FUNC_4 ABORTED\n")
+                    "testcase_gbp_prs_func_4 ABORTED\n")
                 return 0
             rule_uuid_list.append(new_rule_uuid)
         ruleset_uuid = self.gbpcfg.gbp_policy_cfg_all(

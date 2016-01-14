@@ -39,7 +39,7 @@ def report_table(suite_name):
                            '/tmp/%s.log' % (suite_name)],
                           stdout=subprocess.PIPE)
     output = ps.communicate()[0]
-    # print output
+    #print 'Output inside report_table: ', output
     output = output.splitlines()
     line = 0
     tc_dict = {}
@@ -54,7 +54,7 @@ def report_table(suite_name):
                 if find2 is not None:
                     tc_dict[find1.group(1)] = find2.group(1), find1.group(2)
         line += 1
-    # print tc_dict
+    #print 'Table Dict == ', tc_dict
     table = prettytable.PrettyTable(["TESTCASE_ID", "RESULTS",
                                      "TESTCASE_HEADER"])
     table.padding_width = 1
