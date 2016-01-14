@@ -66,7 +66,7 @@ class test_gbp_pc_func(object):
 
     def cleanup(self, tc_name=''):
         if tc_name != '':
-            self._log.info('Testcase %s: FAILED' % (tc_name))
+            self._log.info('%s: FAILED' % (tc_name))
         for obj in ['rule', 'classifier', 'action']:
             self.gbpcfg.gbp_del_all_anyobj(obj)
 
@@ -354,7 +354,7 @@ class test_gbp_pc_func(object):
             "\n## Step 0: Creating a Policy Action needed for this test\n")
         act_uuid = self.gbpcfg.gbp_policy_cfg_all(1, 'action', self.act_name)
         if act_uuid == 0:
-            self._log.info("\n## TESTCASE_GBP_PC_FUNC_4: ABORTED\n")
+            self._log.info("\n## Testcase_gbp_pc_func_4: ABORTED\n")
             os._exit(1)
         self._log.info(
             "\n## Step 1: Create and Verify Classifier with valued "

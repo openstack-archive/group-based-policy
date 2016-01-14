@@ -125,7 +125,7 @@ class test_gbp_ptg_func(object):
 
     def cleanup(self, tc_name=''):
         if tc_name != '':
-            self._log.info('Testcase %s: FAILED' % (tc_name))
+            self._log.info('%s: FAILED' % (tc_name))
         for obj in [
                 'target',
                 'group',
@@ -343,7 +343,7 @@ class test_gbp_ptg_func(object):
         if new_prs_uuid == 0:
             self._log.info(
                 "\n## Step 4: Reqd Policy Target-Group Create Failed, "
-                "hence TESTCASE_GBP_PTG_FUNC_2 Run ABORTED\n ")
+                "hence Testcase_gbp_ptg_func_2 Run ABORTED\n ")
             return 0
         if self.gbpcfg.gbp_policy_cfg_all(
                 2,

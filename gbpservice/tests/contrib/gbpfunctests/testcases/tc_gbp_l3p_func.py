@@ -65,7 +65,7 @@ class test_gbp_l3p_func(object):
 
     def cleanup(self, tc_name=''):
         if tc_name != '':
-            self._log.info('Testcase %s: FAILED' % (tc_name))
+            self._log.info('## %s: FAILED' % (tc_name))
         for obj in ['group', 'l2p', 'l3p']:
             self.gbpcfg.gbp_del_all_anyobj(obj)
 
@@ -287,7 +287,8 @@ class test_gbp_l3p_func(object):
             "values ##")
         l3p_uuid = self.gbpcfg.gbp_policy_cfg_all(
             1, 'l3p', self.l3p_name, ip_pool='20.20.0.0/24',
-            subnet_prefix_length='28')
+            subnet_prefix_length='28',
+            proxy_ip_pool='192.167.0.0/16')
         if l3p_uuid == 0:
             self._log.info("\n## Step 1: Create L3Policy == Failed")
             return 0
@@ -297,7 +298,7 @@ class test_gbp_l3p_func(object):
         if l2p == 0:
             self._log.info(
                 "\n## New L2Policy Create Failed, hence "
-                "TESTCASE_GBP_L3P_FUNC_3 ABORTED\n")
+                "Testcase_gbp_l3p_func_3 ABORTED\n")
             return 0
         elif len(l2p) < 2:
             self._log.info(
@@ -407,7 +408,7 @@ class test_gbp_l3p_func(object):
             if l2p == 0:
                 self._log.info(
                     "\n## Step 2B:New L2Policy Create Failed, hence "
-                    "TESTCASE_GBP_L3P_FUNC_3 ABORTED\n")
+                    "Testcase_gbp_l3p_func_4 ABORTED\n")
                 return 0
             elif len(l2p) < 2:
                 self._log.info(

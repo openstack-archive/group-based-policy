@@ -20,8 +20,6 @@ from libs import verify_libs
 
 
 def main():
-    print('For now skipping this entire suite ..')
-    sys.exit(1)
     # Run the Testcases:
     test = test_gbp_prs_pr_shared_func()
     if test.test_gbp_prs_pr_shared_func_1() == 0:
@@ -65,7 +63,7 @@ class test_gbp_prs_pr_shared_func(object):
 
     def cleanup(self, tc_name=''):
         if tc_name != '':
-            self._log.info('Testcase %s: FAILED' % (tc_name))
+            self._log.info('%s: FAILED' % (tc_name))
         for obj in ['ruleset', 'rule', 'classifier', 'action']:
             self.gbpcfg.gbp_del_all_anyobj(obj)
 
@@ -95,14 +93,14 @@ class test_gbp_prs_pr_shared_func(object):
         if new_cls_uuid == 0:
             self._log.info(
                 "\nNew Classifier Create Failed, hence "
-                "TESTCASE_GBP_PRS_PR_SHARED_INTEG_4 ABORTED\n")
+                "Testcase_gbp_prs_pr_shared_integ_1 ABORTED\n")
             return 0
         new_act_uuid = self.gbpcfg.gbp_policy_cfg_all(
             1, 'action', 'grppol_pa1', shared='True')
         if new_act_uuid == 0:
             self._log.info(
                 "\nNew Action Create Failed, hence "
-                "TESTCASE_GBP_PRS_PR_SHARED_INTEG_4 ABORTED\n")
+                "testcase_gbp_prs_pr_shared_integ_1 ABORTED\n")
             return 0
         rule_uuid_list = []
         for i in range(4):
@@ -118,7 +116,7 @@ class test_gbp_prs_pr_shared_func(object):
             if new_rule_uuid == 0:
                 self._log.info(
                     "\nNew Rule Create Failed, hence "
-                    "TESTCASE_GBP_PRS_PR_SHARED_INTEG_4 ABORTED\n")
+                    "testcase_gbp_prs_pr_shared_integ_1 ABORTED\n")
                 return 0
             rule_uuid_list.append(new_rule_uuid)
         ruleset_uuid = self.gbpcfg.gbp_policy_cfg_all(
@@ -156,7 +154,7 @@ class test_gbp_prs_pr_shared_func(object):
                 "# Step 2C: Verify Policy RuleSet and its "
                 "Multiple PRs using -show option == Failed")
             return 0
-        # Update the Policy RuleSet with shared=True and update should fail
+        # Update the Policy RuleSet with shared=True and update MUST fail as it is not supported by RMD
         if self.gbpcfg.gbp_policy_cfg_all(
                 2, 'ruleset', 'grppol_prs_many', shared='True') != 0:
             self._log.info(
@@ -165,7 +163,7 @@ class test_gbp_prs_pr_shared_func(object):
             return 0
         if self.gbpverify.gbp_obj_ver_attr_all_values(
                 'ruleset', 'grppol_prs_many', 'policy_rules',
-                rule_uuid_list) != 0:
+                rule_uuid_list) == 0:
             self._log.info(
                 "# Step 3A: Verify Policy RuleSet and its "
                 "Multiple PRs, == Failed")
@@ -183,6 +181,7 @@ class test_gbp_prs_pr_shared_func(object):
             return 0
 
         self._log.info("\nTESTCASE_GBP_PRS_PR_SHARED_INTEG_1: PASSED")
+        self.cleanup()  
         return 1
 
     def test_gbp_prs_pr_shared_func_2(self):
@@ -213,14 +212,14 @@ class test_gbp_prs_pr_shared_func(object):
         if new_cls_uuid == 0:
             self._log.info(
                 "\nNew Classifier Create Failed, hence "
-                "TESTCASE_GBP_PRS_PR_SHARED_INTEG_4 ABORTED\n")
+                "testcase_gbp_prs_pr_shared_integ_2 ABORTED\n")
             return 0
         new_act_uuid = self.gbpcfg.gbp_policy_cfg_all(
             1, 'action', 'grppol_pa1', shared='True')
         if new_act_uuid == 0:
             self._log.info(
                 "\nNew Action Create Failed, hence "
-                "TESTCASE_GBP_PRS_PR_SHARED_INTEG_4 ABORTED\n")
+                "testcase_gbp_prs_pr_shared_integ_2 ABORTED\n")
             return 0
         rule_uuid_list = []
         shared_flag = ['True', 'False', 'True', 'False']
@@ -237,7 +236,7 @@ class test_gbp_prs_pr_shared_func(object):
             if new_rule_uuid == 0:
                 self._log.info(
                     "\nNew Rule Create Failed, hence "
-                    "TESTCASE_GBP_PRS_PR_SHARED_INTEG_4 ABORTED\n")
+                    "testcase_gbp_prs_pr_shared_integ_2 ABORTED\n")
                 return 0
             rule_uuid_list.append(new_rule_uuid)
         ruleset_uuid = self.gbpcfg.gbp_policy_cfg_all(
@@ -278,14 +277,14 @@ class test_gbp_prs_pr_shared_func(object):
         # Update and Verify the PRS by updating the PRs(removing few existing
         # ones)
         if self.gbpcfg.gbp_policy_cfg_all(
-                2, 'ruleset', 'grppol_prs_many', shared='True') == 0:
+                2, 'ruleset', 'grppol_prs_many', shared='True') != 0:
             self._log.info(
                 "# Step 3: Updating Policy RuleSet's"
-                " Attribute shared=True , Failed")
+                " Attribute shared=True did NOT fail")
             return 0
         if self.gbpverify.gbp_obj_ver_attr_all_values(
                 'ruleset', 'grppol_prs_many', 'policy_rules',
-                rule_uuid_list) != 0:
+                rule_uuid_list) == 0:
             self._log.info(
                 "# Step 3A: Verify Policy RuleSet and its "
                 "Multiple PRs using -show option == Failed")
@@ -296,10 +295,10 @@ class test_gbp_prs_pr_shared_func(object):
                 ruleset_uuid,
                 name='grppol_prs_many',
                 description='For devstack demo',
-                shared='True') == 0:
+                shared='False') == 0:
             self._log.info(
                 "# Step 3B: Verify Policy RuleSet and its "
-                "shared=True, == Failed")
+                "shared=False, == Failed")
             return 0
 
         self._log.info("\nTESTCASE_GBP_PRS_PR_SHARED_INTEG_2: PASSED")
