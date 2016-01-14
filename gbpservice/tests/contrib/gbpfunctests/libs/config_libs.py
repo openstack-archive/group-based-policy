@@ -32,7 +32,9 @@ class Gbp_Config(object):
         self.err_strings = ['Unable', 'Conflict', 'Bad Request',
                             'Error', 'Unknown', 'Exception', 'Invalid',
                             'read-only', 'not supported',
-                            'prefix greater than subnet mask']
+                            'prefix greater than subnet mask',
+                            'reference the non shared resource',
+                            'cannot be shared by driver']
 
     def keystone_creds(self):
         creds = {}

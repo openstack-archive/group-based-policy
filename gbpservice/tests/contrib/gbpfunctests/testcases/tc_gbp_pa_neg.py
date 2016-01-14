@@ -67,7 +67,7 @@ class test_gbp_pa_neg(object):
 
     def cleanup(self, tc_name=''):
         if tc_name != '':
-            self._log.info('Testcase %s: FAILED' % (tc_name))
+            self._log.info('%s: FAILED' % (tc_name))
         for obj in ['ruleset', 'rule', 'classifier', 'action']:
             self.gbpcfg.gbp_del_all_anyobj(obj)
 
