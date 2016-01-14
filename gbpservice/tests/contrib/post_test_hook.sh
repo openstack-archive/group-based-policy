@@ -20,10 +20,16 @@ GBP_FUNC_DIR=$GBP_DIR/gbpservice/tests/contrib/gbpfunctests
 echo "Running gbpfunc test suite"
 export PYTHONPATH="$GBP_FUNC_DIR:${PYTHONPATH}"
 cd $GBP_FUNC_DIR/testcases
-python suite_run.py upstream
-gbpfunc_exit_code=$?
+# Run shared_resource tests as admin cred
+source_creds $TOP_DIR/openrc admin admin
+python suite_admin_run.py
+gbpfunc_admin_exit_code=$?
+# Run rest of the tests as non-admin cred
+source_creds $TOP_DIR/openrc demo demo
+python suite_non_admin_run.py upstream
+gbpfunc_non_admin_exit_code=$?
 
 # Prepare the log files for Jenkins to upload
 prepare_logs
 
-exit $(($exercises_exit_code+$gbpfunc_exit_code))
+exit $(($exercises_exit_code+$gbpfunc_admin_exit_code+$gbpfunc_non_admin_exit_code))

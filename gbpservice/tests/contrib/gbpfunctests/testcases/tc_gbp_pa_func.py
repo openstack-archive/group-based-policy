@@ -59,7 +59,7 @@ class test_gbp_pa_func(object):
 
     def cleanup(self, cfgobj, uuid_name, tc_name=''):
         if tc_name != '':
-            self._log.info('Testcase %s FAILED' % (tc_name))
+            self._log.info('%s FAILED' % (tc_name))
         if isinstance(cfgobj, str):
             cfgobj = [cfgobj]
         if isinstance(uuid_name, str):
@@ -82,7 +82,7 @@ class test_gbp_pa_func(object):
                 "\n###################################################\n"
                 "TESTCASE_GBP_PA_FUNC_1: CREATE/VERIFY/DELETE/VERIFY a "
                 "POLICY ACTION with DEFAULT ATTR VALUE\n"
-                "TEST_STEPS::\n"
+                "TEST_STEPS:\n"
                 "Create Policy Action Object,default params\n"
                 "Verify the attributes & value, show & list cmds\n"
                 "Delete Policy Action using Name\n"
