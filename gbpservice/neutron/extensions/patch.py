@@ -260,3 +260,16 @@ def _get_security_groups_on_port(self, context, port):
 
 securitygroups_db.SecurityGroupDbMixin._get_security_groups_on_port = (
     _get_security_groups_on_port)
+
+
+def _delete_floatingip(self, context, id):
+    floatingip = self._get_floatingip(context, id)
+    router_id = floatingip['router_id']
+    context.session.delete(floatingip)
+    self._core_plugin.delete_port(context.elevated(),
+                                  floatingip['floating_port_id'],
+                                  l3_port_check=False)
+    return router_id
+
+
+l3_db.L3_NAT_dbonly_mixin._delete_floatingip = _delete_floatingip
