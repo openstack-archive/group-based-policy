@@ -22,7 +22,7 @@ export PYTHONPATH="$GBP_FUNC_DIR:${PYTHONPATH}"
 cd $GBP_FUNC_DIR/testcases
 # Run shared_resource tests as admin cred
 source_creds $TOP_DIR/openrc admin admin
-python suite_admin_run.py upstream
+python suite_admin_run.py
 gbpfunc_admin_exit_code=$?
 # Run rest of the tests as non-admin cred
 source_creds $TOP_DIR/openrc demo demo
