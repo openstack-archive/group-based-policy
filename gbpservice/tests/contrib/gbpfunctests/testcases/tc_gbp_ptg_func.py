@@ -245,7 +245,7 @@ class test_gbp_ptg_func(object):
                         "\n## Step 2G: Implicit-creation of Neutron "
                         "Router-Obj == Failed")
                     return 0
-        ## Delete and Verify
+        # Delete and Verify
         if rep_del == 0 or rep_del > 0:
             self._log.info('\n## Step 3: Delete Target-Group using name  ##\n')
             if self.gbpcfg.gbp_policy_cfg_all(0, 'group', ptg_uuid) == 0:

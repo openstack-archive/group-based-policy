@@ -28,7 +28,7 @@ def main():
         test.cleanup(tc_name='TESTCASE_GBP_PRS_PR_SHARED_INTEG_2')
     test.cleanup()
     utils_libs.report_results('test_gbp_prs_pr_shared_func',
-                              'test_results.txt')
+                              'test_results_admin.txt')
     sys.exit(1)
 
 
@@ -154,7 +154,8 @@ class test_gbp_prs_pr_shared_func(object):
                 "# Step 2C: Verify Policy RuleSet and its "
                 "Multiple PRs using -show option == Failed")
             return 0
-        # Update the Policy RuleSet with shared=True and update MUST fail as it is not supported by RMD
+        # Update the Policy RuleSet with shared=True and
+        # update MUST fail as it is not supported by RMD
         if self.gbpcfg.gbp_policy_cfg_all(
                 2, 'ruleset', 'grppol_prs_many', shared='True') != 0:
             self._log.info(
@@ -179,9 +180,8 @@ class test_gbp_prs_pr_shared_func(object):
                 "# Step 3B: Verify Policy RuleSet and its "
                 "shared=False, == Failed")
             return 0
-
         self._log.info("\nTESTCASE_GBP_PRS_PR_SHARED_INTEG_1: PASSED")
-        self.cleanup()  
+        self.cleanup()
         return 1
 
     def test_gbp_prs_pr_shared_func_2(self):

@@ -32,7 +32,7 @@ def main():
         test.cleanup(tc_name='TESTCASE_GBP_PR_PC_PA_SHARED_INTEG_4')
     test.cleanup()
     utils_libs.report_results('test_gbp_pr_pc_pa_shared_func',
-                              'test_results.txt')
+                              'test_results_admin.txt')
     sys.exit(1)
 
 
@@ -248,7 +248,7 @@ class test_gbp_pr_pc_pa_shared_func(object):
             self._log.info(
                 "# Step 4A: Updating Policy Rule(shared=True) by attributes "
                 "PA+PC(shared=False) DID NOT Fail")
-            return 0  ##<< we have a bug for this
+            return 0
         self._log.info(
             "\n## Step 4B: Verify the Policy Rule initial attributes "
             "PA,PC,shared=True ##")
@@ -269,7 +269,7 @@ class test_gbp_pr_pc_pa_shared_func(object):
             "\n## Step 5A: Update the Policy Rule's shared=False  along "
             "with PC+PA(shared=False) ##")
         if self.gbpcfg.gbp_policy_cfg_all(
-                1,
+                2,
                 'rule',
                 rule_uuid,
                 classifier=obj_uuid_false['classifier'],
@@ -290,7 +290,7 @@ class test_gbp_pr_pc_pa_shared_func(object):
                 policy_classifier_id=obj_uuid_false['classifier'],
                 enabled='True',
                 policy_actions=obj_uuid_false['action'],
-                shared=True) == 0:
+                shared=False) == 0:
             self._log.info(
                 "# Step 5B: Verify Policy Rule with shared=False, Failed")
             return 0
