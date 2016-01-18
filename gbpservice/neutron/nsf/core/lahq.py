@@ -7,25 +7,27 @@ eventlet.monkey_patch()
 import os
 import time
 
+
 class LookAheadQueue(Queue):
+
     def __init__(self, maxsize=0):
         self._memq_ = []
         Queue.__init__(self, maxsize)
 
     def peek(self, pos, count):
-        #Better to fill queue from pipe
+        # Better to fill queue from pipe
         queued = Queue.qsize(self)
         tempq = []
         try:
-		    for n in range(0, queued):
-			    tempq.append(self.get())
+            for n in range(0, queued):
+                tempq.append(self.get())
         except Empty:
-		    pass
+            pass
         self._rlock.acquire()
         self._memq_.extend(tempq)
         qlen = len(self._memq_)
         pull = qlen if (pos + count) > qlen else count
-        values = self._memq_[pos:(pos+pull)]
+        values = self._memq_[pos:(pos + pull)]
         self._rlock.release()
         return values
 
@@ -41,7 +43,7 @@ class LookAheadQueue(Queue):
         except Empty:
             pass
 
-        if elem:		
+        if elem:
             self._rlock.acquire()
             self._memq_.append(elem)
             self._rlock.release()

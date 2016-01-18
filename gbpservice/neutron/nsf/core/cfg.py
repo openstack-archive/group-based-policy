@@ -42,7 +42,7 @@ OPTS = [
     ),
     cfg.StrOpt(
         'modules_dir',
-        default='sc.visibility_ahmed.modules',
+        default='gbpservice.neutron.nsf.modules',
         help=_('Modules path to import ')
     )
 ]
