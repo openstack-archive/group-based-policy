@@ -20,9 +20,6 @@ from libs import verify_libs
 
 
 def main():
-    print ('For now skipping this entire suite '
-          'TESTCASE_GBP_PR_PC_PA_SHARED_INTEG* ...')
-    sys.exit(1)
     # Run the Testcases:
     test = test_gbp_pr_pc_pa_shared_func()
     if test.test_gbp_pr_pc_pa_shared_func_1() == 0:
@@ -35,7 +32,7 @@ def main():
         test.cleanup(tc_name='TESTCASE_GBP_PR_PC_PA_SHARED_INTEG_4')
     test.cleanup()
     utils_libs.report_results('test_gbp_pr_pc_pa_shared_func',
-                              'test_results.txt')
+                              'test_results_admin.txt')
     sys.exit(1)
 
 
@@ -70,7 +67,7 @@ class test_gbp_pr_pc_pa_shared_func(object):
 
     def cleanup(self, tc_name=''):
         if tc_name != '':
-            self._log.info('Testcase %s: FAILED' % (tc_name))
+            self._log.info('%s: FAILED' % (tc_name))
         for obj in ['rule', 'classifier', 'action']:
             self.gbpcfg.gbp_del_all_anyobj(obj)
 
@@ -160,6 +157,7 @@ class test_gbp_pr_pc_pa_shared_func(object):
                 "# Step 4: Verify Policy Rule with shared=False, Failed")
             return 0
         self._log.info("\n## TESTCASE_GBP_PR_PC_PA_SHARED_INTEG_1: PASSED")
+        self.cleanup()
         return 1
 
     def test_gbp_pr_pc_pa_shared_func_2(self):
@@ -242,7 +240,7 @@ class test_gbp_pr_pc_pa_shared_func(object):
             "\n## Step 4A: Update the Policy Rule with PC & PA which "
             "are with shared=False ##")
         if self.gbpcfg.gbp_policy_cfg_all(
-                1,
+                2,
                 'rule',
                 rule_uuid,
                 classifier=obj_uuid_false['classifier'],
@@ -250,7 +248,7 @@ class test_gbp_pr_pc_pa_shared_func(object):
             self._log.info(
                 "# Step 4A: Updating Policy Rule(shared=True) by attributes "
                 "PA+PC(shared=False) DID NOT Fail")
-            # return 0  ##<< we have a bug for this
+            return 0
         self._log.info(
             "\n## Step 4B: Verify the Policy Rule initial attributes "
             "PA,PC,shared=True ##")
@@ -271,7 +269,7 @@ class test_gbp_pr_pc_pa_shared_func(object):
             "\n## Step 5A: Update the Policy Rule's shared=False  along "
             "with PC+PA(shared=False) ##")
         if self.gbpcfg.gbp_policy_cfg_all(
-                1,
+                2,
                 'rule',
                 rule_uuid,
                 classifier=obj_uuid_false['classifier'],
@@ -297,6 +295,7 @@ class test_gbp_pr_pc_pa_shared_func(object):
                 "# Step 5B: Verify Policy Rule with shared=False, Failed")
             return 0
         self._log.info("\n## TESTCASE_GBP_PR_PC_PA_SHARED_INTEG_2: PASSED")
+        self.cleanup()
         return 1
 
     def test_gbp_pr_pc_pa_shared_func_3(self):
@@ -415,6 +414,7 @@ class test_gbp_pr_pc_pa_shared_func(object):
                 "# Step 4B: Verify Policy Rule with shared=True, Failed")
             return 0
         self._log.info("\n## TESTCASE_GBP_PR_PC_PA_SHARED_INTEG_3: PASSED")
+        self.cleanup()
         return 1
 
     def test_gbp_pr_pc_pa_shared_func_4(self):
@@ -519,17 +519,17 @@ class test_gbp_pr_pc_pa_shared_func(object):
         # Update Policy Action and Classifier with shared=False and verify it
         # failed to upudate
         self._log.info(
-            "\n## Step 5A: Update the Policy Action with shared=True\n")
+            "\n## Step 5A: Update the Policy Action with shared=False\n")
         if self.gbpcfg.gbp_policy_cfg_all(
                 2, 'action', self.act_uuid, shared=False) != 0:
             self._log.info(
-                "# Step 5A: Update of Policy Action shared=Failed "
+                "# Step 5A: Update of Policy Action shared=False "
                 "DID NOT Fail")
             return 0
         self._log.info(
-            "\n## Step 5B: Update the Policy Classifer with shared=True\n")
+            "\n## Step 5B: Update the Policy Classifer with shared=False\n")
         if self.gbpcfg.gbp_policy_cfg_all(
-                2, 'classifier', self.cls_uuid, shared=False) == 0:
+                2, 'classifier', self.cls_uuid, shared=False) != 0:
             self._log.info(
                 "# Step 5B: Update of Policy Classifier shared=False "
                 "DID NOT Fail")
@@ -539,15 +539,16 @@ class test_gbp_pr_pc_pa_shared_func(object):
                 1, 'action', self.act_uuid, shared='True') == 0:
             self._log.info(
                 "# Step 6: Policy Action verify shows that shared "
-                "attribute has become False")
+                "attribute changed to False")
             return 0
         if self.gbpverify.gbp_policy_verify_all(
                 1, 'classifier', self.cls_uuid, shared='True') == 0:
             self._log.info(
                 "# Step 6: Policy Classifier verify shows that shared "
-                "attribute become False")
+                "attribute changed to False")
             return 0
         self._log.info("\n## TESTCASE_GBP_PR_PC_PA_SHARED_INTEG_4: PASSED")
+        self.cleanup()
         return 1
 
 
