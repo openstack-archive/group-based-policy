@@ -13,6 +13,7 @@
 from neutron.api import extensions
 from neutron.api.v2 import attributes as attr
 from neutron.common import exceptions as nexc
+from oslo.config import cfg
 
 from gbpservice.neutron.extensions import group_policy as gp
 from gbpservice.neutron.services.grouppolicy.common import exceptions as gp_exc
@@ -21,6 +22,24 @@ PROXY_TYPE_L2 = 'l2'
 PROXY_TYPE_L3 = 'l3'
 DEFAULT_PROXY_TYPE = PROXY_TYPE_L3
 PROXY_GROUP = 'proxy_group'
+
+opts = [
+    cfg.StrOpt('default_proxy_ip_pool',
+               default='192.168.0.0/16',
+               help=_("Proxy IP pool for implicitly created default "
+                      "L3 policies, from which subnets are allocated for "
+                      "policy target groups with proxy_group_id set to a "
+                      "valid value.")),
+    cfg.IntOpt('default_proxy_subnet_prefix_length',
+               default=28,
+               help=_("Proxy Subnet prefix length for implicitly created "
+                      "default L3 polices, controlling size of subnets "
+                      "allocated for policy target groups with proxy_group_id "
+                      "set to a valid value.")),
+]
+
+cfg.CONF.register_opts(opts, "group_policy_proxy_group")
+PROXY_CONF = cfg.CONF.group_policy_proxy_group
 
 
 class ProxyGroupBadRequest(gp_exc.GroupPolicyBadRequest):
@@ -62,12 +81,14 @@ EXTENDED_ATTRIBUTES_2_0 = {
     gp.L3_POLICIES: {
         'proxy_ip_pool': {'allow_post': True, 'allow_put': False,
                           'validate': {'type:subnet': None},
-                          'default': '192.168.0.0/16', 'is_visible': True},
-        'proxy_subnet_prefix_length': {'allow_post': True, 'allow_put': True,
-                                       'convert_to': attr.convert_to_int,
-                                       # for ipv4 legal values are 2 to 30
-                                       # for ipv6 legal values are 2 to 127
-                                       'default': 29, 'is_visible': True},
+                          'default': PROXY_CONF.default_proxy_ip_pool,
+                          'is_visible': True},
+        'proxy_subnet_prefix_length': {
+            'allow_post': True, 'allow_put': True,
+            'convert_to': attr.convert_to_int,
+            'default': attr.convert_to_int(
+                PROXY_CONF.default_proxy_subnet_prefix_length),
+            'is_visible': True},
         # Proxy IP version is the same as the standard L3 pool ip version
     },
     gp.POLICY_TARGETS: {
