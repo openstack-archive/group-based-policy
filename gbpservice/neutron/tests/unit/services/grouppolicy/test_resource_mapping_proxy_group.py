@@ -182,13 +182,44 @@ class ResourceMappingProxyGroupGBPTestCase(
             self.assertEqual(expected_chain_length, chain_length)
 
 
+class TestProxyGroupSubnetPrefixRMD(ResourceMappingProxyGroupGBPTestCase):
+
+    def setUp(self):
+        config.cfg.CONF.set_override(
+                'default_proxy_subnet_prefix_length', '26',
+                group='group_policy_proxy_group')
+        config.cfg.CONF.set_override(
+                'default_proxy_ip_pool', '192.168.1.0/24',
+                group='group_policy_proxy_group')
+        super(TestProxyGroupSubnetPrefixRMD, self).setUp()
+
+    def test_proxy_group_updated_prefix_length(self):
+        l3p = self.create_l3_policy(ip_pool='11.0.0.0/8')['l3_policy']
+        self.assertEqual('192.168.1.0/24', l3p['proxy_ip_pool'])
+        self.assertEqual(26, l3p['proxy_subnet_prefix_length'])
+
+        l2p = self.create_l2_policy(l3_policy_id=l3p['id'])['l2_policy']
+        ptg = self.create_policy_target_group(
+            l2_policy_id=l2p['id'])['policy_target_group']
+
+        l2p2 = self.create_l2_policy(l3_policy_id=l3p['id'])['l2_policy']
+        ptg_proxy = self.create_policy_target_group(
+            proxied_group_id=ptg['id'],
+            l2_policy_id=l2p2['id'])['policy_target_group']
+
+        subnet = self._get_object('subnets', ptg_proxy['subnets'][0],
+                                  self.api)['subnet']
+        self.assertEqual(str(l3p['proxy_subnet_prefix_length']),
+                         subnet['cidr'].split('/')[1])
+
+
 class TestProxyGroupRMD(ResourceMappingProxyGroupGBPTestCase,
                         test_gp_ext.ExtensionDriverTestCaseMixin):
 
     def test_proxy_group_extension(self):
         l3p = self.create_l3_policy(ip_pool='11.0.0.0/8')['l3_policy']
         self.assertEqual('192.168.0.0/16', l3p['proxy_ip_pool'])
-        self.assertEqual(29, l3p['proxy_subnet_prefix_length'])
+        self.assertEqual(28, l3p['proxy_subnet_prefix_length'])
 
         l2p = self.create_l2_policy(l3_policy_id=l3p['id'])['l2_policy']
         ptg = self.create_policy_target_group(
@@ -200,7 +231,7 @@ class TestProxyGroupRMD(ResourceMappingProxyGroupGBPTestCase,
         # Verify Default L3P pool mapping on show
         l3p = self.show_l3_policy(l3p['id'])['l3_policy']
         self.assertEqual('192.168.0.0/16', l3p['proxy_ip_pool'])
-        self.assertEqual(29, l3p['proxy_subnet_prefix_length'])
+        self.assertEqual(28, l3p['proxy_subnet_prefix_length'])
 
         l2p2 = self.create_l2_policy(l3_policy_id=l3p['id'])['l2_policy']
         ptg_proxy = self.create_policy_target_group(
@@ -452,7 +483,7 @@ class TestL3Policy(ResourceMappingProxyGroupGBPTestCase,
 
     def test_implicit_l3p_proxy_pool(self):
         default_proxy_pool = '192.168.0.0/16'
-        default_proxy_subnet_prefix_length = 29
+        default_proxy_subnet_prefix_length = 28
         l2p = self.create_l2_policy()['l2_policy']
         l3p = self.show_l3_policy(l2p['l3_policy_id'])['l3_policy']
         self.assertEqual(default_proxy_pool, l3p['proxy_ip_pool'])
