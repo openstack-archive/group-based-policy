@@ -23,7 +23,7 @@ class ExtensionDriverTestCaseMixin(object):
     def test_proxy_group_extension(self):
         l3p = self.create_l3_policy()['l3_policy']
         self.assertEqual('192.168.0.0/16', l3p['proxy_ip_pool'])
-        self.assertEqual(29, l3p['proxy_subnet_prefix_length'])
+        self.assertEqual(28, l3p['proxy_subnet_prefix_length'])
 
         l2p = self.create_l2_policy(l3_policy_id=l3p['id'])['l2_policy']
         ptg = self.create_policy_target_group(
@@ -35,7 +35,7 @@ class ExtensionDriverTestCaseMixin(object):
         # Verify Default L3P pool mapping on show
         l3p = self.show_l3_policy(l3p['id'])['l3_policy']
         self.assertEqual('192.168.0.0/16', l3p['proxy_ip_pool'])
-        self.assertEqual(29, l3p['proxy_subnet_prefix_length'])
+        self.assertEqual(28, l3p['proxy_subnet_prefix_length'])
 
         ptg_proxy = self.create_policy_target_group(
             proxied_group_id=ptg['id'])['policy_target_group']
