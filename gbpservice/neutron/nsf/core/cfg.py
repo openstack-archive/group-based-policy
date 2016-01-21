@@ -1,6 +1,6 @@
 from oslo.config import cfg
 
-SERVER='rpc'
+SERVER = 'rpc'
 
 OPTS = [
     cfg.IntOpt(
@@ -31,7 +31,7 @@ OPTS = [
     ),
     cfg.IntOpt(
         'workers',
-        default=2,
+        default=1,
         help=_('#of workers to create.')
     ),
     cfg.StrOpt(
@@ -42,12 +42,12 @@ OPTS = [
     ),
     cfg.StrOpt(
         'modules_dir',
-        default='gbpservice.neutron.nsf.modules',
+        default='gbpservice.neutron.nsf.core.test',
         help=_('Modules path to import ')
     ),
     cfg.IntOpt(
         'evs_polling_interval',
-        default=2*60,
+        default=2 * 60,
         help=_('Polling interval for events in seconds ')
     )
 ]

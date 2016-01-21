@@ -1,7 +1,9 @@
 import os
 import sys
 
+
 class RoundRobin(object):
+
     def __init__(self, workers):
         self._workers = workers
         self._rridx = 0
@@ -9,7 +11,7 @@ class RoundRobin(object):
 
     def _rr(self):
         item = self._workers[self._rridx]
-        self._rridx = (self._rridx + 1)%(self._rrsize)
+        self._rridx = (self._rridx + 1) % (self._rrsize)
         return item
 
     def get(self, rsrcid):
@@ -18,7 +20,9 @@ class RoundRobin(object):
     def rem(self, rsrcid):
         pass
 
+
 class StickyRoundRobin(object):
+
     def __init__(self, workers):
         self._workers = workers
         self._assoc = {}
@@ -27,7 +31,7 @@ class StickyRoundRobin(object):
 
     def _rr(self):
         item = self._workers[self._rridx]
-        self._rridx = (self._rridx + 1)%(self._rrsize)
+        self._rridx = (self._rridx + 1) % (self._rrsize)
         return item
 
     def get(self, rsrcid):

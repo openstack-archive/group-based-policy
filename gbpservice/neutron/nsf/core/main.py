@@ -89,7 +89,7 @@ class PeriodicTask(periodic_task.PeriodicTasks):
     @periodic_task.periodic_task(spacing=1)
     def periodic_sync_task(self, context):
         LOG.debug(_("Periodic sync task invoked !"))
-        #self._sc.timeout()
+        # self._sc.timeout()
 
 
 class Event(object):
@@ -106,7 +106,9 @@ class Event(object):
         self.poll_event = False  # Not to be used by user
         self.worker_attached = None  # Not to be used by user
 
+
 class EventCache(object):
+
     def __init__(self, sc):
         self._sc = sc
         self._cache = []
@@ -133,24 +135,34 @@ class EventCache(object):
         self._sc.unlock()
         return evs
 
+
 class Serializer(object):
+
     def __init__(self, sc):
         self._sc = sc
-        self._serializer_map = {} #{'pid':{'binding_key':{'in_use':True, 'queue':[]}}}
+        self._serializer_map = {}
+            #{'pid':{'binding_key':{'in_use':True, 'queue':[]}}}
 
-    def add(self, ev):
-        queued=False
+    def serialize(self, ev):
+        queued = False
         self._sc.lock()
         if ev.worker_attached not in self._serializer_map:
             self._serializer_map[ev.worker_attached] = {}
         mapp = self._serializer_map[ev.worker_attached]
         if ev.binding_key in mapp.keys():
-            queued=True
+            queued = True
             mapp[ev.binding_key]['queue'].append(ev)
         else:
             mapp[ev.binding_key] = {'in_use': True, 'queue': []}
         self._sc.unlock()
         return queued
+
+    def deserialize(self, ev):
+        self._sc.lock()
+        mapp = self._serializer_map[ev.worker_attached][ev.binding_key]
+        if mapp['queue'] == []:
+            del self._serializer_map[ev.worker_attached][ev.binding_key]
+        self._sc.unlock()
 
     def copy(self):
         self._sc.lock()
@@ -158,17 +170,15 @@ class Serializer(object):
         self._sc.unlock()
         return copy
 
-    def rem(self, ev):
+    def remove(self, ev):
         self._sc.lock()
-        self._serializer_map[ev.worker_attached][ev.binding_key]['queue'].remove(ev)
-        if self._serializer_map[ev.worker_attached][ev.binding_key]['queue'] == []:
-            del self._serializer_map[ev.worker_attached][ev.binding_key]
-
+        self._serializer_map[ev.worker_attached][
+            ev.binding_key]['queue'].remove(ev)
         self._sc.unlock()
 
 
 class PollWorker(object):
-            
+
     def __init__(self, sc, qu, eh, batch=-1):
         self._sc = sc
         self._cache = EventCache(sc)
@@ -195,16 +205,17 @@ class PollWorker(object):
             return None
 
     def fill(self):
-        #Get some events from queue into cache
-        for i in range(0,10):
+        # Get some events from queue into cache
+        for i in range(0, 10):
             ev = self._get()
-            if ev: self._cache.add(ev)
-    
+            if ev:
+                self._cache.add(ev)
+
     def peek(self, idx, count):
         cache = self._cache.copy()
         qlen = len(cache)
         pull = qlen if (idx + count) > qlen else count
-        return cache[idx:(idx+pull)], pull
+        return cache[idx:(idx + pull)], pull
 
     def event_done(self, ev):
         self.rem(ev)
@@ -219,21 +230,23 @@ class PollWorker(object):
         self.event_done(ev) if ev.id == 'POLL_EVENT_DONE' else self.event(ev)
 
     def poll(self):
-        #Fill the cache first
+        # Fill the cache first
         self.fill()
-        #Peek the events from cache
-        evs,count = self.peek(0, self._batch)
+        # Peek the events from cache
+        evs, count = self.peek(0, self._batch)
         for ev in evs:
             self.process(ev)
         self._procidx = (self._procidx + count) % (self._batch)
 
+
 class EventWorker(object):
+
     def __init__(self, sc, qu, eh):
         self._tpool = core_tp.ThreadPool()
         self._evq = qu
         self._eh = eh
         self._sc = sc
-    
+
     def _get(self):
         # Check if any event can be pulled from serialize_map - this evs may be
         # waiting long enough
@@ -247,7 +260,6 @@ class EventWorker(object):
                 ev = self._sc.serialize(ev)
         return ev
 
-   
     def run(self, qu):
         while True:
             ev = self._get()
@@ -258,11 +270,11 @@ class EventWorker(object):
                 else:
                     self._tpool.dispatch(eh.handle_poll_event, ev)
             time.sleep(0)  # Yield the CPU
-    
+
     '''
     def _get_ev(self):
         return self._evq.get()
-    
+
     def run(self, qu):
         while True:
             ev = self._get_ev()
@@ -276,13 +288,14 @@ class EventWorker(object):
             time.sleep(0)  # Yield the CPU
     '''
 
+
 class EventHandlers(object):
 
     def __init__(self):
         self._ehs = {}
 
     def register(self, ev):
-        if self._ehs.has_key(ev.id):
+        if ev.id in self._ehs.keys():
             self._ehs[ev.id].extend([ev])
         else:
             self._ehs[ev.id] = [ev]
@@ -304,6 +317,7 @@ class ServiceController(object):
 
     def lock(self):
         self._lock.acquire()
+
     def unlock(self):
         self._lock.release()
 
@@ -316,16 +330,17 @@ class ServiceController(object):
         qu = mapp[ev.binding_key]['queue']
         for elem in qu:
             if elem.key == ev.key:
-                self._serializer.rem(elem)
+                self._serializer.remove(elem)
                 break
- 
+        self._serializer.deserialize(ev)
+
     def serialize(self, ev):
         if not ev.serialize:
             return ev
-        if not self._serializer.add(ev):
+        if not self._serializer.serialize(ev):
             return ev
         return None
-        
+
     def serialize_get(self):
         smap = self._serializer.copy()
         for mapp in smap.values():
@@ -347,7 +362,7 @@ class ServiceController(object):
         workers = [tuple() for w in range(0, wc)]
 
         for w in range(0, wc):
-            #qu = LookAheadQueue()
+            # qu = LookAheadQueue()
             qu = Queue()
             evworker = EventWorker(self, qu, self.ehs)
             proc = Process(target=evworker.run, args=(qu,))
@@ -356,7 +371,7 @@ class ServiceController(object):
         return workers
 
     def poll_init(self):
-        #qu = LookAheadQueue()
+        # qu = LookAheadQueue()
         qu = Queue()
         ph = PollWorker(self, qu, self.ehs)
         return ph
@@ -374,7 +389,7 @@ class ServiceController(object):
         self.ehs = EventHandlers()
         self.rpc_agents = RpcAgents()
         self.modules = self.modules_init(self.modules)
-        #self.workers, self.timer_worker = self.workers_init()
+        # self.workers, self.timer_worker = self.workers_init()
         self.workers = self.workers_init()
         self.pollhandler = self.poll_init()
         self.loadbalancer = getattr(
@@ -393,7 +408,7 @@ class ServiceController(object):
 
         self.rpc_agents.launch()
 
-        #self.timer_worker[0].start()
+        # self.timer_worker[0].start()
         for w in self.workers:
             w[0].start()
 
@@ -438,7 +453,7 @@ def modules_import():
     # os.path.realpath(__file__)
     base_module = __import__(cfg.CONF.modules_dir,
                              globals(), locals(), ['modules'], -1)
-    #modules_dir = os.getcwd() + "/../modules"
+    # modules_dir = os.getcwd() + "/../modules"
     modules_dir = base_module.__path__[0]
     syspath = sys.path
     sys.path = [modules_dir] + syspath
@@ -453,7 +468,7 @@ def modules_import():
             module = __import__(cfg.CONF.modules_dir,
                                 globals(), locals(), [fname[:-3]], -1)
             modules += [eval('module.%s' % (fname[:-3]))]
-            #modules += [__import__(fname[:-3])]
+            # modules += [__import__(fname[:-3])]
     sys.path = syspath
     return modules
 

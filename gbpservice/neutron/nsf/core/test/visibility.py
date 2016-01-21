@@ -5,17 +5,14 @@ import json
 import time
 
 from neutron.openstack.common import log as logging
-from sc.visibility_ahmed.core.main import ServiceController
-from sc.visibility_ahmed.core.main import Event
-from sc.visibility_ahmed.core.main import RpcAgent
+from gbservice.neutron.nsf.core.main import ServiceController
+from gbservice.neutron.nsf.core.main import Event
+from gbservice.neutron.nsf.core.main import RpcAgent
 from oslo.config import cfg
 from neutron.common import rpc as n_rpc
-from sc.visibility_ahmed.db import oc_service_manager_db as svc_mgr_db
-from sc.visibility_ahmed.lib import constants
+from gbservice.neutron.nsf.db import oc_service_manager_db as svc_mgr_db
+from gbservice.neutron.nsf.lib import constants
 from neutron.openstack.common import periodic_task
-from sc.visibility_ahmed.filebeat_configure import Filebeat
-from sc.visibility_ahmed.logs.rsyslog_configure import RSyslogConfigure
-from sc.visibility_ahmed.stats.stats_driver import OCStatsDriver
 
 LOG = logging.getLogger(__name__)
 
@@ -23,11 +20,11 @@ LOG = logging.getLogger(__name__)
 def rpc_init(sc, conf):
     rpcmgr = RpcManager(conf, sc)
     agent = RpcAgent(
-            sc,
-            host=cfg.CONF.host,
-            topic=constants.VISIBILITY_RPC_TOPIC,
-            manager=rpcmgr
-            )
+        sc,
+        host=cfg.CONF.host,
+        topic=constants.VISIBILITY_RPC_TOPIC,
+        manager=rpcmgr
+    )
     sc.register_rpc_agents([agent])
 
 
@@ -45,8 +42,8 @@ def module_init(sc, conf):
 
 
 def unit_test(conf, sc):
-    for i in range(0,1):
-    	test_service_create(conf, sc)
+    for i in range(0, 1):
+        test_service_create(conf, sc)
 
 
 def test_service_create(conf, sc):
@@ -54,44 +51,53 @@ def test_service_create(conf, sc):
     Write the unit test logic here
     '''
     service1 = {'id': 'sc2f2b13-e284-44b1-9d9a-2597e216271a',
-        'tenant': '40af8c0695dd49b7a4980bd1b47e1a1b',
-        'servicechain': 'sc2f2b13-e284-44b1-9d9a-2597e2161c',
-        'servicefunction': 'sf2f2b13-e284-44b1-9d9a-2597e216561d',
-        'vip_id': '13948da4-8dd9-44c6-adef-03a6d8063daa',
-        'service_vendor': 'haproxy',
-        'service_type': 'loadbalancer',
-        'ip': '192.168.20.199'
-	}
+                'tenant': '40af8c0695dd49b7a4980bd1b47e1a1b',
+                'servicechain': 'sc2f2b13-e284-44b1-9d9a-2597e2161c',
+                'servicefunction': 'sf2f2b13-e284-44b1-9d9a-2597e216561d',
+                'vip_id': '13948da4-8dd9-44c6-adef-03a6d8063daa',
+                'service_vendor': 'haproxy',
+                'service_type': 'loadbalancer',
+                'ip': '192.168.20.199'
+                }
     # Collector(service).create()
-    ev = sc.event(id='SERVICE_CREATE', data=service1, binding_key=service1['id'], key=service1['id'], serialize=True)
+    ev = sc.event(id='SERVICE_CREATE', data=service1,
+                  binding_key=service1['id'],
+                  key=service1['id'], serialize=True)
     sc.rpc_event(ev)
     service2 = {'id': 'sc2f2b13-e284-44b1-9d9a-2597e216272a',
-        'tenant': '40af8c0695dd49b7a4980bd1b47e1a2b',
-        'servicechain': 'sc2f2b13-e284-44b1-9d9a-2597e216562c',
-        'servicefunction': 'sf2f2b13-e284-44b1-9d9a-2597e216562d',
-        'mac_address': 'fa:16:3e:3f:93:05',
-        'service_vendor': 'vyos',
-        'service_type': 'firewall',
-        'ip': '192.168.20.197'
-    }
-    ev = sc.event(id='SERVICE_CREATE', data=service2, binding_key=service2['id'], key=service2['id'], serialize=True)
+                'tenant': '40af8c0695dd49b7a4980bd1b47e1a2b',
+                'servicechain': 'sc2f2b13-e284-44b1-9d9a-2597e216562c',
+                'servicefunction': 'sf2f2b13-e284-44b1-9d9a-2597e216562d',
+                'mac_address': 'fa:16:3e:3f:93:05',
+                'service_vendor': 'vyos',
+                'service_type': 'firewall',
+                'ip': '192.168.20.197'
+                }
+    ev = sc.event(id='SERVICE_CREATE', data=service2,
+                  binding_key=service2['id'],
+                  key=service2['id'], serialize=True)
     sc.rpc_event(ev)
     service3 = {'id': 'sc2f2b13-e284-44b1-9d9a-2597e216273a',
-            'tenant': '40af8c0695dd49b7a4980bd1b47e1a2b',
-            'servicechain': 'sc2f2b13-e284-44b1-9d9a-2597e216563c',
-            'servicefunction': 'sf2f2b13-e284-44b1-9d9a-2597e216563d',
-            'mac_address': 'fa:16:3e:3f:93:05',
-            'service_vendor': 'vyos',
-            'service_type': 'vpn',
-            'ip': '192.168.20.197'
-    }
+                'tenant': '40af8c0695dd49b7a4980bd1b47e1a2b',
+                'servicechain': 'sc2f2b13-e284-44b1-9d9a-2597e216563c',
+                'servicefunction': 'sf2f2b13-e284-44b1-9d9a-2597e216563d',
+                'mac_address': 'fa:16:3e:3f:93:05',
+                'service_vendor': 'vyos',
+                'service_type': 'vpn',
+                'ip': '192.168.20.197'
+                }
 
-    ev = sc.event(id='SERVICE_CREATE', data=service3, binding_key=service3['id'], key=service3['id'], serialize=True)
+    ev = sc.event(id='SERVICE_CREATE', data=service3,
+                  binding_key=service3['id'],
+                  key=service3['id'], serialize=True)
     sc.rpc_event(ev)
-    
+
     time.sleep(5)
-    ev = sc.event(id='SERVICE_DELETE', data=service1, binding_key=service1['id'], key=service1['id'], serialize=True)
+    ev = sc.event(id='SERVICE_DELETE', data=service1,
+                  binding_key=service1['id'],
+                  key=service1['id'], serialize=True)
     sc.rpc_event(ev)
+
 
 class Collector(object):
 
@@ -99,11 +105,13 @@ class Collector(object):
         self._service = service
 
     def create(self):
-        RSyslogConfigure().configure_rsyslog_as_client(**self._service)
-        Filebeat(**self._service).configure()
+        pass
+        # RSyslogConfigure().configure_rsyslog_as_client(**self._service)
+        # Filebeat(**self._service).configure()
 
     def delete(self):
-        Filebeat(**self._service).delete_configure()
+        pass
+        # Filebeat(**self._service).delete_configure()
 
 
 class RpcManager(n_rpc.RpcCallback):
@@ -115,30 +123,32 @@ class RpcManager(n_rpc.RpcCallback):
         self._sc = sc
 
     def service_created(self, context, **kwargs):
-    	# service = kwargs.get('service')
-    	service = ast.literal_eval(json.dumps(kwargs.get('arg')))
-    	Collector(service).create()
-    	ev = self._sc.event(id='SERVICE_CREATE', data=service, handler=None)
-        self._sc.rpc_event(ev, service['id'])
+        pass
+        # service = kwargs.get('service')
+        # service = ast.literal_eval(json.dumps(kwargs.get('arg')))
+        # Collector(service).create()
+        # ev = self._sc.event(id='SERVICE_CREATE', data=service, handler=None)
+        # self._sc.rpc_event(ev, service['id'])
 
     def service_deleted(self, context, **kwargs):
-	    # service = kwargs.get('service')
-	    service = ast.literal_eval(json.dumps(kwargs.get('arg')))
-	    # Collector(service).delete()
-	    ev = self._sc.event(id='SERVICE_DELETE', data=service, handler=None)
-	    self._sc.rpc_event(ev, service['id'])
+        pass
+        # service = kwargs.get('service')
+        # service = ast.literal_eval(json.dumps(kwargs.get('arg')))
+        # Collector(service).delete()
+        # ev = self._sc.event(id='SERVICE_DELETE', data=service, handler=None)
+        # self._sc.rpc_event(ev, service['id'])
 
 
 class Agent(object):
 
     def __init__(self, sc):
-	    self._sc = sc
+        self._sc = sc
 
     def handle_poll_event(self, ev):
         self._handle_poll_event(ev)
 
     def handle_event(self, ev):
-        LOG.debug("Process ID :%d" %(os.getpid()))
+        LOG.debug("Process ID :%d" % (os.getpid()))
         if ev.id == 'SERVICE_CREATE':
             self._handle_create_event(ev)
         elif ev.id == 'SERVICE_DELETE':
@@ -162,5 +172,6 @@ class Agent(object):
         '''
         Driver logic here
         '''
+        LOG.debug("Poll event", ev)
         # stats_driver = OCStatsDriver()
-        # stats_driver.get_and_store_stats(**ev.data)	
+        # stats_driver.get_and_store_stats(**ev.data)

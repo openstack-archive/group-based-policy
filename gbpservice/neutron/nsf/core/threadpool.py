@@ -8,11 +8,13 @@ import os
 import sys
 import threading
 
+
 def _thread_done(gt, *args, **kwargs):
     kwargs['pool'].thread_done(kwargs['thread'])
 
 
 class Thread(object):
+
     def __init__(self, thread, pool):
         self.thread = thread
         self.thread.link(_thread_done, pool=pool, thread=self)
@@ -28,6 +30,7 @@ class Thread(object):
 
 
 class ThreadPool(object):
+
     def __init__(self, thread_pool_size=10):
         self.pool = greenpool.GreenPool(thread_pool_size)
         self.threads = []
