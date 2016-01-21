@@ -2,6 +2,7 @@ import os
 import time
 import sys
 import copy
+import threading
 
 import eventlet
 eventlet.monkey_patch()
@@ -177,7 +178,20 @@ class Serializer(object):
         self._sc.unlock()
 
 
-class PollWorker(object):
+class PollWorker(threading.Thread):
+
+    def __init__(self, sc):
+        threading.Thread.__init__(self)
+        self._sc = sc
+        self.name = 'Polling_Thread'
+
+    def run(self):
+        while True:
+            self._sc.timeout()
+            time.sleep(cfg.CONF.evs_polling_interval)
+
+
+class PollHandler(object):
 
     def __init__(self, sc, qu, eh, batch=-1):
         self._sc = sc
@@ -239,7 +253,7 @@ class PollWorker(object):
         self._procidx = (self._procidx + count) % (self._batch)
 
 
-class EventWorker(object):
+class EventHandler(object):
 
     def __init__(self, sc, qu, eh):
         self._tpool = core_tp.ThreadPool()
@@ -364,7 +378,7 @@ class ServiceController(object):
         for w in range(0, wc):
             # qu = LookAheadQueue()
             qu = Queue()
-            evworker = EventWorker(self, qu, self.ehs)
+            evworker = EventHandler(self, qu, self.ehs)
             proc = Process(target=evworker.run, args=(qu,))
             proc.daemon = True
             workers[w] = workers[w] + (proc, qu, evworker)
@@ -373,7 +387,7 @@ class ServiceController(object):
     def poll_init(self):
         # qu = LookAheadQueue()
         qu = Queue()
-        ph = PollWorker(self, qu, self.ehs)
+        ph = PollHandler(self, qu, self.ehs)
         return ph
 
     def modules_init(self, modules):
@@ -389,8 +403,8 @@ class ServiceController(object):
         self.ehs = EventHandlers()
         self.rpc_agents = RpcAgents()
         self.modules = self.modules_init(self.modules)
-        # self.workers, self.timer_worker = self.workers_init()
         self.workers = self.workers_init()
+        self.poll_worker = PollWorker(self)
         self.pollhandler = self.poll_init()
         self.loadbalancer = getattr(
             globals()['core_lb'], cfg.CONF.RpcLoadBalancer)(self.workers)
@@ -406,11 +420,12 @@ class ServiceController(object):
         # for m in self.modules:
         # m.run()
 
-        self.rpc_agents.launch()
-
+        
         # self.timer_worker[0].start()
         for w in self.workers:
             w[0].start()
+		self.rpc_agents.launch()
+        self.poll_worker.start()
 
     def rpc_event(self, event):
         worker = self.loadbalancer.get(event.binding_key)
@@ -486,5 +501,4 @@ def main():
     sc = ServiceController(cfg.CONF, modules)
     sc.start()
     sc.unit_test()
-    sc.poll()
     sc.wait()
