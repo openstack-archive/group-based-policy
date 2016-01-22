@@ -112,8 +112,9 @@ class Collector(object):
         # Filebeat(**self._service).delete_configure()
 
 
-class RpcManager(n_rpc.RpcCallback):
+class RpcManager(object):
     RPC_API_VERSION = '1.0'
+    target = messaging.Target(version=RPC_API_VERSION)
 
     def __init__(self, conf, sc):
         super(RpcManager, self).__init__()
