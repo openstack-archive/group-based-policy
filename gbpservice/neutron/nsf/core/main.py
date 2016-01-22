@@ -35,13 +35,6 @@ from neutron.openstack.common import service as os_service
 
 LOG = logging.getLogger(__name__)
 
-
-class RpcManager(n_rpc.RpcCallback):
-
-    def __init__(self, conf):
-        super(RpcManager, self).__init__()
-
-
 class RpcAgent(n_rpc.Service):
 
     def __init__(self, sc, host=None, topic=None, manager=None):
@@ -405,7 +398,7 @@ class ServiceController(object):
         self.modules = self.modules_init(self.modules)
         self.workers = self.workers_init()
         self.poll_worker = PollWorker(self)
-        self.pollhandler = self.poll_init()
+        # self.pollhandler = self.poll_init()
         self.loadbalancer = getattr(
             globals()['core_lb'], cfg.CONF.RpcLoadBalancer)(self.workers)
 
@@ -420,11 +413,10 @@ class ServiceController(object):
         # for m in self.modules:
         # m.run()
 
-        
         # self.timer_worker[0].start()
         for w in self.workers:
             w[0].start()
-		self.rpc_agents.launch()
+        self.rpc_agents.launch()
         self.poll_worker.start()
 
     def rpc_event(self, event):

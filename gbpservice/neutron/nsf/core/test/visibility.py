@@ -5,24 +5,22 @@ import json
 import time
 
 from neutron.openstack.common import log as logging
-from gbservice.neutron.nsf.core.main import ServiceController
-from gbservice.neutron.nsf.core.main import Event
-from gbservice.neutron.nsf.core.main import RpcAgent
+from gbpservice.neutron.nsf.core.main import ServiceController
+from gbpservice.neutron.nsf.core.main import Event
+from gbpservice.neutron.nsf.core.main import RpcAgent
 from oslo.config import cfg
 from neutron.common import rpc as n_rpc
-from gbservice.neutron.nsf.db import oc_service_manager_db as svc_mgr_db
-from gbservice.neutron.nsf.lib import constants
-from neutron.openstack.common import periodic_task
 
 LOG = logging.getLogger(__name__)
 
+VISIBILITY_RPC_TOPIC = "visiblity_topic"
 
 def rpc_init(sc, conf):
     rpcmgr = RpcManager(conf, sc)
     agent = RpcAgent(
         sc,
         host=cfg.CONF.host,
-        topic=constants.VISIBILITY_RPC_TOPIC,
+        topic=VISIBILITY_RPC_TOPIC,
         manager=rpcmgr
     )
     sc.register_rpc_agents([agent])
@@ -30,9 +28,9 @@ def rpc_init(sc, conf):
 
 def events_init(sc):
     evs = [
-        Event(id='SERVICE_CREATE', data=None, handler=Agent(sc)),
-        Event(id='SERVICE_DELETE', data=None, handler=Agent(sc)),
-        Event(id='POLL_EVENT', data=None, handler=Agent(sc))]
+        Event(id='SERVICE_CREATE', handler=Agent(sc)),
+        Event(id='SERVICE_DELETE', handler=Agent(sc)),
+        Event(id='POLL_EVENT', handler=Agent(sc))]
     sc.register_events(evs)
 
 
@@ -127,7 +125,7 @@ class RpcManager(n_rpc.RpcCallback):
         # service = kwargs.get('service')
         # service = ast.literal_eval(json.dumps(kwargs.get('arg')))
         # Collector(service).create()
-        # ev = self._sc.event(id='SERVICE_CREATE', data=service, handler=None)
+        # ev = self._sc.event(id='SERVICE_CREATE', data=service)
         # self._sc.rpc_event(ev, service['id'])
 
     def service_deleted(self, context, **kwargs):
@@ -172,6 +170,6 @@ class Agent(object):
         '''
         Driver logic here
         '''
-        LOG.debug("Poll event", ev)
+        LOG.debug("Poll event %(s)" %(ev))
         # stats_driver = OCStatsDriver()
         # stats_driver.get_and_store_stats(**ev.data)
