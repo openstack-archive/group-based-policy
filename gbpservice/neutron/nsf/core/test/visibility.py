@@ -4,11 +4,12 @@ import ast
 import json
 import time
 
-from neutron.openstack.common import log as logging
+from oslo_log import log as logging
 from gbpservice.neutron.nsf.core.main import ServiceController
 from gbpservice.neutron.nsf.core.main import Event
 from gbpservice.neutron.nsf.core.main import RpcAgent
-from oslo.config import cfg
+from oslo_config import cfg
+import oslo_messaging as messaging
 from neutron.common import rpc as n_rpc
 
 LOG = logging.getLogger(__name__)
@@ -171,6 +172,6 @@ class Agent(object):
         '''
         Driver logic here
         '''
-        LOG.debug("Poll event %(s)" %(ev))
+        LOG.debug("Poll event %(s)" %(str(ev)))
         # stats_driver = OCStatsDriver()
         # stats_driver.get_and_store_stats(**ev.data)

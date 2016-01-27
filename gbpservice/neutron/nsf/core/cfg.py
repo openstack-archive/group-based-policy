@@ -1,4 +1,4 @@
-from oslo.config import cfg
+from oslo_config import cfg
 
 SERVER = 'rpc'
 
@@ -47,7 +47,7 @@ OPTS = [
     ),
     cfg.IntOpt(
         'evs_polling_interval',
-        default=2 * 60,
+        default=1,
         help=_('Polling interval for events in seconds ')
     )
 ]

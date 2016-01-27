@@ -10,12 +10,12 @@ eventlet.monkey_patch()
 from multiprocessing.queues import Queue
 from Queue import Empty, Full
 
-from oslo.config import cfg
+from oslo_config import cfg
 
 from neutron.agent.common import config
 from neutron.common import config as common_config
 
-from neutron.openstack.common import log as logging
+from oslo_log import log as logging
 
 from gbpservice.neutron.nsf.core import cfg as core_cfg
 from gbpservice.neutron.nsf.core import lb as core_lb
@@ -26,14 +26,15 @@ if core_cfg.SERVER == 'rpc':
 if core_cfg.SERVER == 'unix':
     from gbpservice.neutron.nsf.core import unix as n_rpc
 
-from neutron.openstack.common import periodic_task
+from oslo_service import periodic_task
 
 from multiprocessing import Process, Queue, Lock
 import multiprocessing as multiprocessing
 
-from neutron.openstack.common import service as os_service
+from oslo_service import service as os_service
 
 LOG = logging.getLogger(__name__)
+
 
 class RpcAgent(n_rpc.Service):
 
@@ -66,7 +67,7 @@ class RpcAgents(object):
 
     def launch(self):
         for s in self.services:
-            l = os_service.launch(s)
+            l = os_service.launch(cfg.CONF, s)
             self.launchers.extend([l])
 
     def wait(self):
@@ -77,7 +78,7 @@ class RpcAgents(object):
 class PeriodicTask(periodic_task.PeriodicTasks):
 
     def __init__(self, sc):
-        super(PeriodicTask, self).__init__()
+        super(PeriodicTask, self).__init__(cfg.CONF)
         self._sc = sc
 
     @periodic_task.periodic_task(spacing=1)
@@ -398,7 +399,7 @@ class ServiceController(object):
         self.modules = self.modules_init(self.modules)
         self.workers = self.workers_init()
         self.poll_worker = PollWorker(self)
-        # self.pollhandler = self.poll_init()
+        self.pollhandler = self.poll_init()
         self.loadbalancer = getattr(
             globals()['core_lb'], cfg.CONF.RpcLoadBalancer)(self.workers)
 
