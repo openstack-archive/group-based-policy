@@ -172,6 +172,6 @@ class Agent(object):
         '''
         Driver logic here
         '''
-        LOG.debug("Poll event %(s)" %(str(ev)))
+        LOG.debug("Poll event (%s)" %(str(ev)))
         # stats_driver = OCStatsDriver()
         # stats_driver.get_and_store_stats(**ev.data)
