@@ -2209,7 +2209,7 @@ class TestExternalSegment(ApicMappingTestCase):
         self.assertIsNotNone(es['subnet_id'])
         subnet = self._get_object('subnets', es['subnet_id'],
             self.api)['subnet']
-        self.assertEqual('169.254.0.0/25', subnet['cidr'])
+        self.assertEqual('169.254.0.0/16', subnet['cidr'])
         owner = es['tenant_id'] if not shared else self.common_tenant
         prs = "NAT-allow-%s" % es['id']
         if self.nat_enabled:
