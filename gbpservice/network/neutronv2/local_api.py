@@ -186,7 +186,7 @@ class LocalAPI(object):
             self._delete_resource(self._core_plugin,
                                   plugin_context, 'port', port_id)
         except n_exc.PortNotFound:
-            LOG.warn(_('Port %s already deleted'), port_id)
+            LOG.warning(_('Port %s already deleted'), port_id)
 
     def _get_subnet(self, plugin_context, subnet_id):
         return self._get_resource(self._core_plugin, plugin_context, 'subnet',
@@ -210,7 +210,7 @@ class LocalAPI(object):
             self._delete_resource(self._core_plugin, plugin_context, 'subnet',
                                   subnet_id)
         except n_exc.SubnetNotFound:
-            LOG.warn(_('Subnet %s already deleted'), subnet_id)
+            LOG.warning(_('Subnet %s already deleted'), subnet_id)
 
     def _get_network(self, plugin_context, network_id):
         return self._get_resource(self._core_plugin, plugin_context, 'network',
@@ -230,7 +230,7 @@ class LocalAPI(object):
             self._delete_resource(self._core_plugin, plugin_context,
                                   'network', network_id)
         except n_exc.NetworkNotFound:
-            LOG.warn(_('Network %s already deleted'), network_id)
+            LOG.warning(_('Network %s already deleted'), network_id)
 
     def _get_router(self, plugin_context, router_id):
         return self._get_resource(self._l3_plugin, plugin_context, 'router',
@@ -259,8 +259,8 @@ class LocalAPI(object):
             self._l3_plugin.remove_router_interface(plugin_context, router_id,
                                                     interface_info)
         except l3.RouterInterfaceNotFoundForSubnet:
-            LOG.warn(_('Router interface already deleted for subnet %s'),
-                     interface_info)
+            LOG.warning(_('Router interface already deleted for subnet %s'),
+                        interface_info)
 
     def _add_router_gw_interface(self, plugin_context, router_id, gw_info):
         return self._l3_plugin.update_router(
@@ -278,7 +278,7 @@ class LocalAPI(object):
             self._delete_resource(self._l3_plugin, plugin_context, 'router',
                                   router_id)
         except l3.RouterNotFound:
-            LOG.warn(_('Router %s already deleted'), router_id)
+            LOG.warning(_('Router %s already deleted'), router_id)
 
     def _get_sg(self, plugin_context, sg_id):
         return self._get_resource(
@@ -302,7 +302,7 @@ class LocalAPI(object):
             self._delete_resource(self._core_plugin, plugin_context,
                                   'security_group', sg_id)
         except ext_sg.SecurityGroupNotFound:
-            LOG.warn(_('Security Group %s already deleted'), sg_id)
+            LOG.warning(_('Security Group %s already deleted'), sg_id)
 
     def _get_sg_rule(self, plugin_context, sg_rule_id):
         return self._get_resource(
@@ -319,7 +319,7 @@ class LocalAPI(object):
             return self._create_resource(self._core_plugin, plugin_context,
                                          'security_group_rule', attrs)
         except ext_sg.SecurityGroupRuleExists as ex:
-            LOG.warn(_('Security Group already exists %s'), ex.message)
+            LOG.warning(_('Security Group already exists %s'), ex.message)
             return
 
     def _update_sg_rule(self, plugin_context, sg_rule_id, attrs):
@@ -332,7 +332,8 @@ class LocalAPI(object):
             self._delete_resource(self._core_plugin, plugin_context,
                                   'security_group_rule', sg_rule_id)
         except ext_sg.SecurityGroupRuleNotFound:
-            LOG.warn(_('Security Group Rule %s already deleted'), sg_rule_id)
+            LOG.warning(_('Security Group Rule %s already deleted'),
+                        sg_rule_id)
 
     def _get_fip(self, plugin_context, fip_id):
         return self._get_resource(
@@ -356,7 +357,7 @@ class LocalAPI(object):
             self._delete_resource(self._l3_plugin, plugin_context,
                                   'floatingip', fip_id)
         except l3.FloatingIPNotFound:
-            LOG.warn(_('Floating IP %s Already deleted'), fip_id)
+            LOG.warning(_('Floating IP %s Already deleted'), fip_id)
 
     def _get_l2_policy(self, plugin_context, l2p_id):
         return self._get_resource(self._group_policy_plugin, plugin_context,
@@ -380,7 +381,7 @@ class LocalAPI(object):
             self._delete_resource(self._group_policy_plugin,
                                   plugin_context, 'l2_policy', l2p_id, False)
         except gp_ext.L2PolicyNotFound:
-            LOG.warn(_('L2 Policy %s already deleted'), l2p_id)
+            LOG.warning(_('L2 Policy %s already deleted'), l2p_id)
 
     def _get_l3_policy(self, plugin_context, l3p_id):
         return self._get_resource(self._group_policy_plugin, plugin_context,
@@ -404,7 +405,7 @@ class LocalAPI(object):
             self._delete_resource(self._group_policy_plugin,
                                   plugin_context, 'l3_policy', l3p_id, False)
         except gp_ext.L3PolicyNotFound:
-            LOG.warn(_('L3 Policy %s already deleted'), l3p_id)
+            LOG.warning(_('L3 Policy %s already deleted'), l3p_id)
 
     def _get_external_segment(self, plugin_context, es_id):
         return self._get_resource(self._group_policy_plugin, plugin_context,
@@ -428,7 +429,7 @@ class LocalAPI(object):
             self._delete_resource(self._group_policy_plugin, plugin_context,
                                   'external_segment', es_id, False)
         except gp_ext.ExternalSegmentNotFound:
-            LOG.warn(_('External Segment %s already deleted'), es_id)
+            LOG.warning(_('External Segment %s already deleted'), es_id)
 
     def _get_external_policy(self, plugin_context, ep_id):
         return self._get_resource(self._group_policy_plugin, plugin_context,
@@ -452,7 +453,7 @@ class LocalAPI(object):
             self._delete_resource(self._group_policy_plugin, plugin_context,
                                   'external_policy', ep_id, False)
         except gp_ext.ExternalPolicyNotFound:
-            LOG.warn(_('External Policy %s already deleted'), ep_id)
+            LOG.warning(_('External Policy %s already deleted'), ep_id)
 
     def _get_policy_rule_set(self, plugin_context, prs_id):
         return self._get_resource(self._group_policy_plugin, plugin_context,
@@ -476,7 +477,7 @@ class LocalAPI(object):
             self._delete_resource(self._group_policy_plugin, plugin_context,
                                   'policy_rule_set', prs_id, False)
         except gp_ext.PolicyRuleSetNotFound:
-            LOG.warn(_('Policy Rule Set %s already deleted'), prs_id)
+            LOG.warning(_('Policy Rule Set %s already deleted'), prs_id)
 
     def _get_servicechain_instance(self, plugin_context, sci_id):
         return self._get_resource(self._servicechain_plugin, plugin_context,
@@ -501,7 +502,7 @@ class LocalAPI(object):
             self._delete_resource(self._servicechain_plugin, plugin_context,
                                   'servicechain_instance', sci_id, False)
         except sc_ext.ServiceChainInstanceNotFound:
-            LOG.warn(_("servicechain %s already deleted"), sci_id)
+            LOG.warning(_("servicechain %s already deleted"), sci_id)
 
     def _get_servicechain_spec(self, plugin_context, scs_id):
         return self._get_resource(self._servicechain_plugin, plugin_context,
@@ -525,7 +526,7 @@ class LocalAPI(object):
             self._delete_resource(self._servicechain_plugin, plugin_context,
                                   'servicechain_spec', scs_id)
         except sc_ext.ServiceChainSpecNotFound:
-            LOG.warn(_("servicechain spec %s already deleted"), scs_id)
+            LOG.warning(_("servicechain spec %s already deleted"), scs_id)
 
     def _get_policy_target(self, plugin_context, pt_id):
         return self._get_resource(self._group_policy_plugin, plugin_context,
@@ -549,7 +550,7 @@ class LocalAPI(object):
             self._delete_resource(self._group_policy_plugin, plugin_context,
                                   'policy_target', pt_id, False)
         except gp_ext.PolicyTargetNotFound:
-            LOG.warn(_('Policy Rule Set %s already deleted'), pt_id)
+            LOG.warning(_('Policy Rule Set %s already deleted'), pt_id)
 
     def _get_policy_target_group(self, plugin_context, ptg_id):
         return self._get_resource(self._group_policy_plugin, plugin_context,
@@ -574,4 +575,4 @@ class LocalAPI(object):
             self._delete_resource(self._group_policy_plugin, plugin_context,
                                   'policy_target_group', ptg_id)
         except sc_ext.ServiceChainSpecNotFound:
-            LOG.warn(_("Policy Target Group %s already deleted"), ptg_id)
+            LOG.warning(_("Policy Target Group %s already deleted"), ptg_id)

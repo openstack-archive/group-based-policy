@@ -119,8 +119,8 @@ class TrafficStitchingPlumber(plumber_base.NodePlumberBase):
                         context, part_context, info['consumer'],
                         jump_ptg, 'consumer')
                 else:
-                    LOG.warn(_("Unsupported plumbing type %s"),
-                             info['plumbing_type'])
+                    LOG.warning(_("Unsupported plumbing type %s"),
+                                info['plumbing_type'])
                 # Replace current "provider" with jump ptg if needed
                 provider = jump_ptg or provider
 
