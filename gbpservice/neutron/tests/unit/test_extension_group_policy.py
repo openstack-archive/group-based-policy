@@ -459,6 +459,14 @@ class GroupPolicyExtensionTestCase(test_extensions_base.ExtensionTestCase):
 
         self._test_create_policy_action(data, expected_value)
 
+    def test_non_string_action_type(self):
+        data = {'policy_action': self.get_create_policy_action_attrs()}
+        data['policy_action']['action_type'] = True
+        res = self.api.post(_get_path(POLICY_ACTIONS_URI, fmt=self.fmt),
+                            self.serialize(data),
+                            content_type='application/%s' % self.fmt)
+        self.assertEqual(exc.HTTPBadRequest.code, res.status_int)
+
     def test_list_policy_actions(self):
         policy_action_id = _uuid()
         expected_value = [{'tenant_id': _uuid(),

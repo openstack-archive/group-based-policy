@@ -236,10 +236,10 @@ def convert_protocol(value):
 
 
 def convert_action_to_case_insensitive(value):
-    if value is None:
-        return
-    else:
+    try:
         return value.lower()
+    except AttributeError:
+        LOG.debug("Value %s is not a string", value)
 
 
 def convert_port_to_string(value):
