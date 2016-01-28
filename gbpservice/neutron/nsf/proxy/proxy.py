@@ -3,123 +3,133 @@ import threading
 import os
 import sys
 import time
-from gbservice.neutron.nsf.core.threadpool import ThreadPool
-from gbpservice.neutron.nsf.proxy import cfg as proxy_cfg
+import argparse
+import ConfigParser
+from gbpservice.neutron.nsf_ahmed.core.threadpool import ThreadPool
 
+class Configuration(object):
+    def __init__(self, filee):
+        config = ConfigParser.ConfigParser()
+        config.read(filee)
 
-class TcpClient:
+        self.thread_pool_size = config.getint('OPTIONS', 'thread_pool_size')
+        self.unix_bind_path = config.get('OPTIONS', 'unix_bind_path')
+        self.rest_server_address = config.get('OPTIONS', 'rest_server_address')
+        self.rest_server_port = config.getint('OPTIONS', 'rest_server_port')
+        self.max_connections = config.getint('OPTIONS', 'max_connections')
 
-    def __init__(self):
-        # Create a TCP/IP socket
-        self.loop = True
-        # self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self.sock = socket.socket()
-        # Connect the socket to the port where the server is listening
-        self.server_address = (
-            proxy_cfg.rest_server_address, proxy_cfg.rest_server_port)
+        import pdb;pdb.set_trace()
 
-    def connect(self):
-        print >>sys.stderr, 'connecting to %s port %s' % self.server_address
-        self.sock.settimeout(1)
-        try:
-            self.sock.connect(self.server_address)
-        except socket.error, exc:
-            print "Caught exception socket.error : %s" % exc
-            return False
-        return True
-
-    def send(self, msg):
-        try:
-            self.sock.sendall(msg)
-        except socket.error, exc:
-            # print "Caught exception socket.error : %s" % exc
-            self.sock.close()
-
-    def close(self):
-        self.loop = False
-        self.sock.close()
-
-    def recv(self, arg, **kwargs):
-        server = kwargs.get('server')
-        client = kwargs.get('client')
-        while self.loop:
-            try:
-                msg = self.sock.recv(16)
-                if msg:
-                    client.send(msg)
-
-                else:
-                    server.close(client, self)
-                    return False
-            except socket.error, exc:
-                server.close(client, self)
-                return False
-
-
-class ThreadedServer(object):
-
-    def __init__(self):
-        server_address = proxy_cfg.unix_bind_path
-        self.threadpool = ThreadPool(proxy_cfg.thread_pool_size)
+class UnixServer(object):
+    def __init__(self, conf, proxy):
+        self.proxy = proxy
+        self.bind_path = conf.unix_bind_path
+        self.max_connections = conf.max_connections
         # Make sure the socket does not already exist
         try:
-            os.unlink(server_address)
+            os.unlink(self.bind_path)
         except OSError:
-            if os.path.exists(server_address):
+            if os.path.exists(self.bind_path):
                 raise
 
         # Create a UDS socket
-        self.sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        self.socket = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
 
         # Bind the socket to the port
-        print >>sys.stderr, 'starting up on %s' % server_address
-        self.sock.bind(server_address)
-
-    def recv(self, tcpclient,  client):
-        return tcpclient.recv(None, server=self, client=client)
+        print >>sys.stderr, 'starting up on %s' % self.bind_path
+        self.socket.bind(self.bind_path)
 
     def listen(self):
-        self.sock.listen(5)
-        while True:
-            client, address = self.sock.accept()
-            self.threadpool.dispatch(self.listenToClient, client, address)
+        self.socket.listen(self.max_connections)
+        client, address = self.socket.accept()
+        self.proxy.new_client(client, address)
 
-    def listenToClient(self, client, address):
-        size = 16
-        tcpclient = TcpClient()
-        tcpclient.connect()
-        recv_thread = threading.Thread(
-            target=self.recv, args=(tcpclient, client,))
-        recv_thread.start()
-        while tcpclient.loop:
+class TcpClient(object):
+    def __init__(self, conf, proxy):
+        self.proxy = proxy
+        self.server_address = conf.rest_server_address
+        self.server_port = conf.rest_server_port
+        # Connect the socket to the port where the server is listening
+        self.server = (self.server_address, self.server_port)
+
+    def connect(self):
+        sock = socket.socket()
+        print >>sys.stderr, 'connecting to %s port %s' % self.server
+        sock.settimeout(5)
+        try:
+            sock.connect(self.server)
+        except socket.error, exc:
+            print "Caught exception socket.error : %s" % exc
+            return sock,False
+        return sock,True
+
+class ProxyConnection(object):
+    def __init__(self, proxy, unixclient, tcpclient):
+        self.proxy = proxy
+        self.unixclient = unixclient
+        self.tcpclient  = tcpclient
+        self.loop = True
+
+    def proxy_unix(self, unixsocket, tcpsocket, **kwargs):
+        while self.loop:
             try:
-                data = client.recv(size)
+                data = unixsocket.recv(16)
                 if data:
-                    tcpclient.send(data)
-                    print data
-                else:
-                    tcpclient.close()
-                    recv_thread.join()
-                    client.close()
-                    return False
+                    tcpsocket.send(data)
+            except socket.error, exc:
+                print "Unix client socket exception",socket.error,exc
+                unixsocket.close()
+                tcpsocket.close()
+                self.loop = False
 
-            except:
-                print "error"
-                tcpclient.close()
-                recv_thread.join()
-                client.close()
-                return False
-        tcpclient.close()
-        client.close()
-        return False
+    def proxy_tcp(self, unixsocket, tcpsocket, **kwargs):
+         while self.loop:
+            try:
+                data = tcpsocket.recv(16)
+                if data:
+                    unixsocket.send(data)
+            except socket.error, exc:
+                print "TCP Client socket exception",socket.error,exc
+                unixsocket.close()
+                tcpsocket.close()
+                self.loop = False
+       
+    def run(self, arg, **kwargs):
+        unixsocket = self.unixclient
+        tcpsocket,connected  = self.tcpclient.connect()
 
-    def close(self, client, tcpclient):
-        print "closing"
-        tcpclient.close()
-        client.close()
-        self.threadpool.stop()
-        return False
+        if not connected:
+            print "Client could not connect to server - Closing the unix side connection"
+            unixsocket.close()
+            tcpsocket.close()
+        else:
+            self.proxy.proxy(self, unixsocket, tcpsocket)
+        
+class Proxy(object):
+    def __init__(self, conf):
+        self.conf = conf
+        self.tpool = ThreadPool(conf.thread_pool_size)
+        #Be a server and wait for connections from the client
+        self.server = UnixServer(conf, self)
+        self.client = TcpClient(conf, self)
 
+    def start(self):
+        while True:
+            self.server.listen()
 
-def main():
-    ThreadedServer().listen()
+    def new_client(self, socket, address):
+        self.tpool.dispatch(ProxyConnection(self, socket, self.client).run, socket)
+
+    def proxy(self, pc, unixsocket, tcpsocket):
+        self.tpool.dispatch(pc.proxy_tcp, unixsocket, tcpsocket)
+        self.tpool.dispatch(pc.proxy_unix, unixsocket, tcpsocket)
+
+def main(argv):
+    parser = argparse.ArgumentParser()
+    parser.add_argument('-config-file', "--config-file", action="store", dest='config_file')
+    args = parser.parse_args(sys.argv[1:])
+    conf = Configuration(args.config_file)
+    Proxy(conf).start()
+
+if __name__ == "__main__":
+    main(sys.argv[1:])

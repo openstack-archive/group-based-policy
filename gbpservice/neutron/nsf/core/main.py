@@ -20,13 +20,14 @@ from oslo_log import log as logging
 from gbpservice.neutron.nsf.core import cfg as core_cfg
 from gbpservice.neutron.nsf.core import lb as core_lb
 from gbpservice.neutron.nsf.core import threadpool as core_tp
+from gbpservice.neutron.nsf.core import periodic_task as core_periodic_task
 
 if core_cfg.SERVER == 'rpc':
     from neutron.common import rpc as n_rpc
 if core_cfg.SERVER == 'unix':
     from gbpservice.neutron.nsf.core import unix as n_rpc
 
-from oslo_service import periodic_task
+from oslo_service import periodic_task as oslo_periodic_task
 
 from multiprocessing import Process, Queue, Lock
 import multiprocessing as multiprocessing
@@ -44,16 +45,15 @@ class RpcAgent(n_rpc.Service):
 
     def start(self):
         super(RpcAgent, self).start()
-        '''
+
         self.tg.add_timer(
-            #cfg.CONF.evs_polling_interval,
+            # cfg.CONF.evs_polling_interval,
             cfg.CONF.periodic_interval,
             # self.manager.run_periodic_tasks,
             self.periodic_task.run_periodic_tasks,
             None,
             None
         )
-        '''
 
 
 class RpcAgents(object):
@@ -75,16 +75,16 @@ class RpcAgents(object):
             l.wait()
 
 
-class PeriodicTask(periodic_task.PeriodicTasks):
+class PeriodicTask(oslo_periodic_task.PeriodicTasks):
 
     def __init__(self, sc):
         super(PeriodicTask, self).__init__(cfg.CONF)
         self._sc = sc
 
-    @periodic_task.periodic_task(spacing=1)
+    @oslo_periodic_task.periodic_task(spacing=1)
     def periodic_sync_task(self, context):
         LOG.debug(_("Periodic sync task invoked !"))
-        # self._sc.timeout()
+        self._sc.timeout()
 
 
 class Event(object):
@@ -98,8 +98,10 @@ class Event(object):
         self.key = kwargs.get('key')
         self.data = kwargs.get('data') if 'data' in kwargs else None
         self.handler = kwargs.get('handler') if 'handler' in kwargs else None
-        self.poll_event = False  # Not to be used by user
+        self.poll_event = None  # Not to be used by user
         self.worker_attached = None  # Not to be used by user
+        self.last_run = None #Not to be used by user
+        self.max_times = -1 #Not to be used by user
 
 
 class EventCache(object):
@@ -189,6 +191,7 @@ class PollHandler(object):
 
     def __init__(self, sc, qu, eh, batch=-1):
         self._sc = sc
+        self._eh = eh
         self._cache = EventCache(sc)
         self._pollq = qu
         self._procidx = 0
@@ -228,12 +231,33 @@ class PollHandler(object):
     def event_done(self, ev):
         self.rem(ev)
 
+    def _cancelled(self, ev):
+        ev.poll_event = 'POLL_EVENT_CANCELLED'
+        self.event_done(ev)
+        self._sc.rpc_event(ev)
+
+    def _sched(self, ev):
+        eh = self._eh.get(ev)
+        if isinstance(eh, core_periodic_task.PeriodicTasks):
+            if eh.check_timedout(ev):
+                self._sc.rpc_event(ev)
+                return ev
+        else:
+            self._sc.rpc_event(ev)
+            return ev
+        return None
+
     def event(self, ev):
         ev1 = copy.deepcopy(ev)
         ev1.serialize = False
-        ev1.poll_event = True
-        self._sc.rpc_event(ev1)
-
+        ev1.poll_event = 'POLL_EVENT_CANCELLED' if ev1.max_times == 0 else 'POLL_EVENT'
+        if ev1.poll_event == 'POLL_EVENT_CANCELLED':
+            self._cancelled(ev1)
+        else:
+            if self._sched(ev1):
+                ev.max_times -= 1
+                ev.last_run = ev1.last_run
+    
     def process(self, ev):
         self.event_done(ev) if ev.id == 'POLL_EVENT_DONE' else self.event(ev)
 
@@ -268,6 +292,23 @@ class EventHandler(object):
                 ev = self._sc.serialize(ev)
         return ev
 
+    def _cancelled(self, eh, ev):
+        try:
+            self._sc.poll_event_done(ev)
+            eh.poll_event_cancel(ev)
+        except AttributeError:
+            print "Cancel method is not implemented by the handler"
+
+    def _sched(self, eh, ev):
+        if isinstance(eh, core_periodic_task.PeriodicTasks):
+            peh = eh.get_periodic_event_handler(ev)
+            if peh:
+                self._tpool.dispatch(peh, eh, ev)
+            else:
+                self._tpool.dispatch(eh.handle_poll_event, ev)
+        else:
+            self._tpool.dispatch(eh.handle_poll_event, ev)
+
     def run(self, qu):
         while True:
             ev = self._get()
@@ -276,7 +317,10 @@ class EventHandler(object):
                 if not ev.poll_event:
                     self._tpool.dispatch(eh.handle_event, ev)
                 else:
-                    self._tpool.dispatch(eh.handle_poll_event, ev)
+                    if ev.poll_event == 'POLL_EVENT_CANCELLED':
+                        self._cancelled(eh, ev)
+                    else:
+                        self._sched(eh, ev)
             time.sleep(0)  # Yield the CPU
 
     '''
@@ -398,7 +442,7 @@ class ServiceController(object):
         self.rpc_agents = RpcAgents()
         self.modules = self.modules_init(self.modules)
         self.workers = self.workers_init()
-        self.poll_worker = PollWorker(self)
+        #self.poll_worker = PollWorker(self)
         self.pollhandler = self.poll_init()
         self.loadbalancer = getattr(
             globals()['core_lb'], cfg.CONF.RpcLoadBalancer)(self.workers)
@@ -418,7 +462,7 @@ class ServiceController(object):
         for w in self.workers:
             w[0].start()
         self.rpc_agents.launch()
-        self.poll_worker.start()
+        #self.poll_worker.start()
 
     def rpc_event(self, event):
         worker = self.loadbalancer.get(event.binding_key)
@@ -426,7 +470,8 @@ class ServiceController(object):
         qu = worker[1]
         qu.put(event)
 
-    def poll_event(self, event):
+    def poll_event(self, event, max_times=sys.maxint):
+        event.max_times = max_times
         self.pollhandler.add(event)
 
     def poll_event_done(self, event):
