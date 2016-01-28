@@ -1133,6 +1133,14 @@ class TestL2Policy(ApicMappingTestCase):
                     l2_policy_id=l2p['id'])['policy_target_group']
                 self.assertEqual(ptg['subnets'], [sub['id']])
 
+    def test_reject_l3p_update(self):
+        l2p = self.create_l2_policy()['l2_policy']
+        new_l3p = self.create_l3_policy()['l3_policy']
+        res = self.update_l2_policy(l2p['id'], l3_policy_id=new_l3p['id'],
+                                    expected_res_status=400)
+        self.assertEqual('L3PolicyUpdateOfL2PolicyNotSupported',
+                         res['NeutronError']['type'])
+
 
 class TestL3Policy(ApicMappingTestCase):
 

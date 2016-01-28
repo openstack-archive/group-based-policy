@@ -772,6 +772,9 @@ class ApicMappingDriver(api.ResourceMappingDriver,
             self.name_mapper.has_valid_name(context.current)
 
     def update_l2_policy_precommit(self, context):
+        if (context.current['l3_policy_id'] !=
+                context.original['l3_policy_id']):
+            raise gpexc.L3PolicyUpdateOfL2PolicyNotSupported()
         self._reject_apic_name_change(context)
         if not self.name_mapper._is_apic_reference(context.current):
             self._reject_non_shared_net_on_shared_l2p(context)
