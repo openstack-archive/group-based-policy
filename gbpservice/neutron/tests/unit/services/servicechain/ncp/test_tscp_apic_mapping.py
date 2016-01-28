@@ -927,7 +927,7 @@ class TestProxyGroup(ApicMappingStitchingPlumberGBPTestCase):
         self.mgr.ensure_bd_created_on_apic.assert_called_once_with(
             ptg['tenant_id'], 'Shd-' + ptg['id'], ctx_owner=l3p['tenant_id'],
             ctx_name=l3p['id'], allow_broadcast=False, unicast_route=False,
-            transaction=mock.ANY)
+            transaction=mock.ANY, enforce_subnet_check=False)
         # Proxied PTG moved
         expected_calls = [
             # Proxy created on L2P
@@ -1191,7 +1191,7 @@ class TestProxyGroup(ApicMappingStitchingPlumberGBPTestCase):
         self.mgr.ensure_bd_created_on_apic.assert_called_once_with(
             'non-admin', 'Shd-' + ptg['id'], ctx_owner=l3p['tenant_id'],
             ctx_name=l3p['id'], allow_broadcast=False, unicast_route=False,
-            transaction=mock.ANY)
+            transaction=mock.ANY, enforce_subnet_check=False)
         # Proxied PTG moved
         expected_calls = [
             # Proxy created on L2P

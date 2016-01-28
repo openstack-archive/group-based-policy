@@ -2149,7 +2149,8 @@ class ApicMappingDriver(api.ResourceMappingDriver,
             # Create shadow BD to host the proxied EPG
             self.apic_manager.ensure_bd_created_on_apic(
                 tenant, bd_name, ctx_owner=ctx_owner, ctx_name=l3_policy_name,
-                allow_broadcast=is_l2, unicast_route=False, transaction=trs)
+                allow_broadcast=is_l2, unicast_route=False, transaction=trs,
+                enforce_subnet_check=False)
             # Move current PTG to different BD
             self.apic_manager.ensure_epg_created(
                 tenant, ptg_name, bd_owner=tenant, bd_name=bd_name,
