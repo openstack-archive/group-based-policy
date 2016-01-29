@@ -1,3 +1,4 @@
+import select
 import socket
 import threading
 import os
@@ -6,6 +7,9 @@ import time
 import argparse
 import ConfigParser
 from gbpservice.neutron.nsf_ahmed.core.threadpool import ThreadPool
+
+CHANNEL_IDLE_TIME=30 #In seconds
+IDLE_TIME_OUT=None
 
 class Configuration(object):
     def __init__(self, filee):
@@ -17,8 +21,6 @@ class Configuration(object):
         self.rest_server_address = config.get('OPTIONS', 'rest_server_address')
         self.rest_server_port = config.getint('OPTIONS', 'rest_server_port')
         self.max_connections = config.getint('OPTIONS', 'max_connections')
-
-        import pdb;pdb.set_trace()
 
 class UnixServer(object):
     def __init__(self, conf, proxy):
@@ -38,9 +40,9 @@ class UnixServer(object):
         # Bind the socket to the port
         print >>sys.stderr, 'starting up on %s' % self.bind_path
         self.socket.bind(self.bind_path)
+        self.socket.listen(self.max_connections)
 
     def listen(self):
-        self.socket.listen(self.max_connections)
         client, address = self.socket.accept()
         self.proxy.new_client(client, address)
 
@@ -55,7 +57,7 @@ class TcpClient(object):
     def connect(self):
         sock = socket.socket()
         print >>sys.stderr, 'connecting to %s port %s' % self.server
-        sock.settimeout(5)
+        sock.settimeout(CHANNEL_IDLE_TIME)
         try:
             sock.connect(self.server)
         except socket.error, exc:
@@ -70,41 +72,48 @@ class ProxyConnection(object):
         self.tcpclient  = tcpclient
         self.loop = True
 
+    def _close(self, unixsocket, tcpsocket):
+        if unixsocket:
+            unixsocket.close()
+        if tcpsocket:
+            tcpsocket.close()
+    
     def proxy_unix(self, unixsocket, tcpsocket, **kwargs):
-        while self.loop:
+        unixsocket.settimeout(MIN_IDLE_TIME)
+        while True:
             try:
                 data = unixsocket.recv(16)
                 if data:
                     tcpsocket.send(data)
-            except socket.error, exc:
-                print "Unix client socket exception",socket.error,exc
-                unixsocket.close()
-                tcpsocket.close()
-                self.loop = False
+                else:
+                    self._close(unixsocket, None)
+            except socket.error:
+                self._close(unixsocket, None)
+                break
 
     def proxy_tcp(self, unixsocket, tcpsocket, **kwargs):
-         while self.loop:
+        tcpsocket.settimeout(MIN_IDLE_TIME)
+        while True:
             try:
                 data = tcpsocket.recv(16)
                 if data:
                     unixsocket.send(data)
-            except socket.error, exc:
-                print "TCP Client socket exception",socket.error,exc
-                unixsocket.close()
-                tcpsocket.close()
-                self.loop = False
-       
-    def run(self, arg, **kwargs):
+                else:
+                    self._close(unixsocket, None)
+            except socket.error:
+                self._close(None, tcpsocket)
+                break
+
+   def run(self, arg, **kwargs):
         unixsocket = self.unixclient
         tcpsocket,connected  = self.tcpclient.connect()
 
         if not connected:
-            print "Client could not connect to server - Closing the unix side connection"
             unixsocket.close()
             tcpsocket.close()
         else:
             self.proxy.proxy(self, unixsocket, tcpsocket)
-        
+
 class Proxy(object):
     def __init__(self, conf):
         self.conf = conf
@@ -115,10 +124,11 @@ class Proxy(object):
 
     def start(self):
         while True:
+            print "Listening for unix client connections"
             self.server.listen()
 
     def new_client(self, socket, address):
-        self.tpool.dispatch(ProxyConnection(self, socket, self.client).run, socket)
+        ProxyConnection(self, socket, self.client).run(socket)
 
     def proxy(self, pc, unixsocket, tcpsocket):
         self.tpool.dispatch(pc.proxy_tcp, unixsocket, tcpsocket)
