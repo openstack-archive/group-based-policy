@@ -2397,7 +2397,7 @@ class ApicMappingDriver(api.ResourceMappingDriver,
                      'name': sn_name,
                      'network_id': extnet['id'],
                      'ip_version': es['ip_version'],
-                     'cidr': ('169.254.0.0/25' if es['ip_version'] == 4
+                     'cidr': ('169.254.0.0/16' if es['ip_version'] == 4
                               else 'fe80::/64'),
                      'enable_dhcp': False,
                      'gateway_ip': attributes.ATTR_NOT_SPECIFIED,
