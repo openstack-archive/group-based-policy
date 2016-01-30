@@ -1676,7 +1676,8 @@ class ApicMappingDriver(api.ResourceMappingDriver,
             # external policies to external segment
             eps = context._plugin.get_external_policies(
                 context._plugin_context,
-                filters={'id': es['external_policies']})
+                filters={'id': es['external_policies'],
+                         'tenant_id': [context.current['tenant_id']]})
             for ep in eps:
                 self._plug_external_policy_to_segment(context, ep,
                     [es['id']], ep['provided_policy_rule_sets'],
