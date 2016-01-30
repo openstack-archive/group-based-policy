@@ -2573,6 +2573,96 @@ class TestExternalSegment(ApicMappingTestCase):
         self.assertEqual('169.254.0.2',
                          l3p['external_segments'][es['id']][0])
 
+    def test_plug_l3p_to_es_with_multi_ep(self):
+        tenants = (['tenant_a', 'tenant_b', 'tenant_c']
+                   if self.nat_enabled else ['tenant_a'])
+
+        self._mock_external_dict([('supported', '192.168.0.2/24')])
+        es_list = [
+            self.create_external_segment(
+                name='supported', cidr='192.168.0.0/24', shared=True,
+                expected_res_status=201,
+                external_routes=[{
+                    'destination': '128.0.0.0/16',
+                    'nexthop': '192.168.0.254'}])['external_segment']
+            for x in range(2)]
+
+        ep_list = []
+        for x in range(len(tenants)):
+            ep = self.create_external_policy(
+                name=(x < 2 and APIC_EXTERNAL_EPG or 'other-ext-epg'),
+                external_segments=[e['id'] for e in es_list],
+                tenant_id=tenants[x],
+                expected_res_status=201)['external_policy']
+            ep_list.append(ep)
+
+        mgr = self.driver.apic_manager
+        mgr.ensure_external_epg_created.reset_mock()
+        mgr.set_contract_for_external_epg.reset_mock()
+
+        ep = ep_list[0]
+        l3p = self.create_l3_policy(
+            shared=False,
+            tenant_id=tenants[0],
+            expected_res_status=201)['l3_policy']
+        if self.pre_l3out and not self.nat_enabled:
+            self._update_pre_l3out_info(l3p)
+        l3p = self.update_l3_policy(l3p['id'],
+            external_segments={x['id']: [] for x in es_list},
+            tenant_id=l3p['tenant_id'],
+            is_admin_context=True,
+            expected_res_status=200)['l3_policy']
+
+        expected_create_calls = []
+        expected_assoc_calls = []
+        expected_contract_calls = []
+
+        if self.nat_enabled:
+            for es in es_list:
+                if not self.pre_l3out:
+                    expected_create_calls.append(
+                        mock.call(es['id'], subnet='0.0.0.0/0',
+                                  external_epg='default-%s' % es['id'],
+                                  owner=self.common_tenant,
+                                  transaction=mock.ANY))
+
+                expected_create_calls.append(
+                    mock.call("Shd-%s-%s" % (l3p['id'], es['id']),
+                        subnet='128.0.0.0/16',
+                        external_epg="Shd-%s-%s" % (l3p['id'], ep['id']),
+                        owner=l3p['tenant_id'],
+                        transaction=mock.ANY))
+                expected_assoc_calls.append(
+                    mock.call(l3p['tenant_id'],
+                              "Shd-%s-%s" % (l3p['id'], es['id']),
+                              "Shd-%s-%s" % (l3p['id'], ep['id']),
+                              "NAT-epg-%s" % es['id'],
+                              target_owner=self.common_tenant,
+                              transaction=mock.ANY))
+                l3out = es['name' if self.pre_l3out else 'id']
+                l3out_owner = (APIC_PRE_L3OUT_TENANT
+                    if self.pre_l3out else self.common_tenant)
+                nat_contract = "NAT-allow-%s" % es['id']
+                ext_epg = (ep['name']
+                    if self.pre_l3out else ('default-%s' % es['id']))
+                expected_contract_calls.append(
+                    mock.call(l3out, nat_contract,
+                              external_epg=ext_epg,
+                              owner=l3out_owner,
+                              provided=True, transaction=mock.ANY))
+                expected_contract_calls.append(
+                    mock.call(l3out, nat_contract,
+                              external_epg=ext_epg,
+                              owner=l3out_owner,
+                              provided=False, transaction=mock.ANY))
+
+        self._check_call_list(expected_create_calls,
+                              mgr.ensure_external_epg_created.call_args_list)
+        self._check_call_list(expected_assoc_calls,
+            mgr.associate_external_epg_to_nat_epg.call_args_list)
+        self._check_call_list(expected_contract_calls,
+            mgr.set_contract_for_external_epg.call_args_list)
+
 
 class TestExternalSegmentNoNat(TestExternalSegment):
     def setUp(self):
