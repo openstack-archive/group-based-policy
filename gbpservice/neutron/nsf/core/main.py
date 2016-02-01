@@ -21,6 +21,7 @@ from gbpservice.neutron.nsf.core import cfg as core_cfg
 from gbpservice.neutron.nsf.core import lb as core_lb
 from gbpservice.neutron.nsf.core import threadpool as core_tp
 from gbpservice.neutron.nsf.core import periodic_task as core_periodic_task
+from gbpservice.neutron.nsf.core import queue as core_queue
 
 if core_cfg.SERVER == 'rpc':
     from neutron.common import rpc as n_rpc
@@ -100,37 +101,27 @@ class Event(object):
         self.handler = kwargs.get('handler') if 'handler' in kwargs else None
         self.poll_event = None  # Not to be used by user
         self.worker_attached = None  # Not to be used by user
-        self.last_run = None #Not to be used by user
-        self.max_times = -1 #Not to be used by user
+        self.last_run = None  # Not to be used by user
+        self.max_times = -1  # Not to be used by user
 
 
 class EventCache(object):
 
     def __init__(self, sc):
         self._sc = sc
-        self._cache = []
+        self._cache = core_queue.Queue(sc)
 
     def rem(self, ev):
-        self._sc.lock()
-        self._cache.remove(ev)
-        self._sc.unlock()
+        self._cache.remove([ev])
 
     def rem_multi(self, evs):
-        self._sc.lock()
-        for ev in evs:
-            self._cache.remove(ev)
-        self._sc.unlock()
+        self._cache.remove(evs)
 
     def add(self, ev):
-        self._sc.lock()
-        self._cache.append(ev)
-        self._sc.unlock()
+        self._cache.put(ev)
 
     def copy(self):
-        self._sc.lock()
-        evs = self._cache[:]
-        self._sc.unlock()
-        return evs
+        return self._cache.copy()
 
 
 class Serializer(object):
@@ -250,14 +241,15 @@ class PollHandler(object):
     def event(self, ev):
         ev1 = copy.deepcopy(ev)
         ev1.serialize = False
-        ev1.poll_event = 'POLL_EVENT_CANCELLED' if ev1.max_times == 0 else 'POLL_EVENT'
+        ev1.poll_event = \
+            'POLL_EVENT_CANCELLED' if ev1.max_times == 0 else 'POLL_EVENT'
         if ev1.poll_event == 'POLL_EVENT_CANCELLED':
             self._cancelled(ev1)
         else:
             if self._sched(ev1):
                 ev.max_times -= 1
                 ev.last_run = ev1.last_run
-    
+
     def process(self, ev):
         self.event_done(ev) if ev.id == 'POLL_EVENT_DONE' else self.event(ev)
 
@@ -442,7 +434,7 @@ class ServiceController(object):
         self.rpc_agents = RpcAgents()
         self.modules = self.modules_init(self.modules)
         self.workers = self.workers_init()
-        #self.poll_worker = PollWorker(self)
+        # self.poll_worker = PollWorker(self)
         self.pollhandler = self.poll_init()
         self.loadbalancer = getattr(
             globals()['core_lb'], cfg.CONF.RpcLoadBalancer)(self.workers)
@@ -462,7 +454,7 @@ class ServiceController(object):
         for w in self.workers:
             w[0].start()
         self.rpc_agents.launch()
-        #self.poll_worker.start()
+        # self.poll_worker.start()
 
     def rpc_event(self, event):
         worker = self.loadbalancer.get(event.binding_key)
@@ -495,6 +487,15 @@ class ServiceController(object):
 
     def event(self, **kwargs):
         return Event(**kwargs)
+
+    def init_complete(self):
+        for module in self.modules:
+            try:
+                import pdb
+                pdb.set_trace()
+                module.init_complete(self, self._conf)
+            except AttributeError:
+                print "Module does not implement init_complete method"
 
     def unit_test(self):
         for module in self.modules:
@@ -538,5 +539,6 @@ def main():
 
     sc = ServiceController(cfg.CONF, modules)
     sc.start()
-    sc.unit_test()
+    sc.init_complete()
+    # sc.unit_test()
     sc.wait()
