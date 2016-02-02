@@ -6,12 +6,27 @@ import sys
 import time
 import argparse
 import ConfigParser
-from gbpservice.neutron.nsf_ahmed.core.threadpool import ThreadPool
+import Queue
+import threading
+from Queue import Empty
 
-CHANNEL_IDLE_TIME=30 #In seconds
-IDLE_TIME_OUT=None
+# Queue of proxy connections which workers will handle
+ConnQ = Queue.Queue(maxsize=0)
+
+tcp_open_connection_count = 0
+tcp_close_connection_count = 0
+
+
+class ConnectionIdleTimeOut(Exception):
+
+    '''
+    Exception raised when connection is idle for configured timeout
+    '''
+    pass
+
 
 class Configuration(object):
+
     def __init__(self, filee):
         config = ConfigParser.ConfigParser()
         config.read(filee)
@@ -21,8 +36,17 @@ class Configuration(object):
         self.rest_server_address = config.get('OPTIONS', 'rest_server_address')
         self.rest_server_port = config.getint('OPTIONS', 'rest_server_port')
         self.max_connections = config.getint('OPTIONS', 'max_connections')
+        self.worker_threads = config.getint('OPTIONS', 'worker_threads')
+        self.connect_max_wait_timeout = config.getfloat(
+            'OPTIONS', 'connect_max_wait_timeout')
+        self.idle_max_wait_timeout = config.getfloat(
+            'OPTIONS', 'idle_max_wait_timeout')
+        self.idle_min_wait_timeout = config.getfloat(
+            'OPTIONS', 'idle_min_wait_timeout')
+
 
 class UnixServer(object):
+
     def __init__(self, conf, proxy):
         self.proxy = proxy
         self.bind_path = conf.unix_bind_path
@@ -46,8 +70,11 @@ class UnixServer(object):
         client, address = self.socket.accept()
         self.proxy.new_client(client, address)
 
+
 class TcpClient(object):
+
     def __init__(self, conf, proxy):
+        self.conf = conf
         self.proxy = proxy
         self.server_address = conf.rest_server_address
         self.server_port = conf.rest_server_port
@@ -57,86 +84,137 @@ class TcpClient(object):
     def connect(self):
         sock = socket.socket()
         print >>sys.stderr, 'connecting to %s port %s' % self.server
-        sock.settimeout(CHANNEL_IDLE_TIME)
+        sock.settimeout(self.conf.connect_max_wait_timeout)
         try:
             sock.connect(self.server)
         except socket.error, exc:
             print "Caught exception socket.error : %s" % exc
-            return sock,False
-        return sock,True
+            return sock, False
+        return sock, True
+
+
+class Connection(object):
+
+    def __init__(self, conf, socket):
+        self._socket = socket
+        self._idle_wait = conf.idle_min_wait_timeout
+        self._idle_timeout = conf.idle_max_wait_timeout
+        self._idle_count_max = (self._idle_timeout / self._idle_wait)
+        self._idle_count = 0
+
+    def _tick(self):
+        self._idle_count += 1
+
+    def _timedout(self):
+        if self._idle_count > self._idle_count_max:
+            raise ConnectionTimedOut
+
+    def idle(self):
+        self._tick()
+        self._timedout()
+
+    def idle_reset(self):
+        self._idle_count = 0
+
+    def recv(self):
+        self._socket.settimeout(self._idle_wait)
+        try:
+            data = self._socket.recv(16)
+            if data and len(data):
+                self.idle_reset()
+                return data
+            self.idle()
+        except socket.timeout:
+            self.idle()
+        return None
+
+    def send(self, data):
+        self._socket.send(data)
+
+    def close(self):
+        self._socket.close()
+
+    def identify(self):
+        return self._socket.fileno()
+
 
 class ProxyConnection(object):
-    def __init__(self, proxy, unixclient, tcpclient):
-        self.proxy = proxy
-        self.unixclient = unixclient
-        self.tcpclient  = tcpclient
-        self.loop = True
 
-    def _close(self, unixsocket, tcpsocket):
-        if unixsocket:
-            unixsocket.close()
-        if tcpsocket:
-            tcpsocket.close()
-    
-    def proxy_unix(self, unixsocket, tcpsocket, **kwargs):
-        unixsocket.settimeout(MIN_IDLE_TIME)
+    def __init__(self, conf, unix_socket, tcp_socket):
+        self._unix_conn = Connection(conf, unix_socket)
+        self._tcp_conn = Connection(conf, tcp_socket)
+
+    def close(self):
+        self._unix_conn.close()
+        self._tcp_conn.close()
+
+    def _proxy(self, rxconn, txconn):
+        data = rxconn.recv()
+        if data:
+            txconn.send(data)
+
+    def run(self):
+        try:
+            self._proxy(self._unix_conn, self._tcp_conn)
+            self._proxy(self._tcp_conn, self._unix_conn)
+            return True
+        except:
+            self._unix_conn.close()
+            self._tcp_conn.close()
+            return False
+
+    def identify(self):
+        return '%d:%d' % (
+            self._unix_conn.identify(),
+            self._tcp_conn.identify())
+
+
+class Worker(object):
+
+    def run(self):
         while True:
             try:
-                data = unixsocket.recv(16)
-                if data:
-                    tcpsocket.send(data)
-                else:
-                    self._close(unixsocket, None)
-            except socket.error:
-                self._close(unixsocket, None)
-                break
+                pc = ConnQ.get()
+                if pc.run():
+                    ConnQ.put(pc)
+            except Empty:
+                pass
+            time.sleep(0)
 
-    def proxy_tcp(self, unixsocket, tcpsocket, **kwargs):
-        tcpsocket.settimeout(MIN_IDLE_TIME)
-        while True:
-            try:
-                data = tcpsocket.recv(16)
-                if data:
-                    unixsocket.send(data)
-                else:
-                    self._close(unixsocket, None)
-            except socket.error:
-                self._close(None, tcpsocket)
-                break
-
-   def run(self, arg, **kwargs):
-        unixsocket = self.unixclient
-        tcpsocket,connected  = self.tcpclient.connect()
-
-        if not connected:
-            unixsocket.close()
-            tcpsocket.close()
-        else:
-            self.proxy.proxy(self, unixsocket, tcpsocket)
 
 class Proxy(object):
+
     def __init__(self, conf):
         self.conf = conf
-        self.tpool = ThreadPool(conf.thread_pool_size)
-        #Be a server and wait for connections from the client
+        # Be a server and wait for connections from the client
         self.server = UnixServer(conf, self)
         self.client = TcpClient(conf, self)
 
     def start(self):
+        for i in range(self.conf.worker_threads):
+            t = threading.Thread(target=Worker().run)
+            t.daemon = True
+            t.start()
         while True:
-            print "Listening for unix client connections"
+            # print "Listening for unix client connections"
             self.server.listen()
 
-    def new_client(self, socket, address):
-        ProxyConnection(self, socket, self.client).run(socket)
+    def new_client(self, unixsocket, address):
+        # Establish connection with the tcp server
+        tcpsocket, connected = self.client.connect()
+        if not connected:
+            print "Proxy -> Could not connect with tcp server"
+            unixsocket.close()
+            tcpsocket.close()
+        else:
+            pc = ProxyConnection(self.conf, unixsocket, tcpsocket)
+            ConnQ.put(pc)
 
-    def proxy(self, pc, unixsocket, tcpsocket):
-        self.tpool.dispatch(pc.proxy_tcp, unixsocket, tcpsocket)
-        self.tpool.dispatch(pc.proxy_unix, unixsocket, tcpsocket)
 
 def main(argv):
     parser = argparse.ArgumentParser()
-    parser.add_argument('-config-file', "--config-file", action="store", dest='config_file')
+    parser.add_argument(
+        '-config-file', "--config-file", action="store", dest='config_file')
     args = parser.parse_args(sys.argv[1:])
     conf = Configuration(args.config_file)
     Proxy(conf).start()

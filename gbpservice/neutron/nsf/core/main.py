@@ -427,7 +427,7 @@ class ServiceController(object):
             except AttributeError as s:
                 print(module.__dict__)
                 raise AttributeError(module.__file__ + ': ' + str(s))
-            return modules
+        return modules
 
     def _init(self):
         self.ehs = EventHandlers()
