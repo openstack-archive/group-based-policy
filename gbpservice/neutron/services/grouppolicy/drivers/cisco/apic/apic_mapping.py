@@ -733,10 +733,11 @@ class ApicMappingDriver(api.ResourceMappingDriver,
                 self.apic_manager.ensure_epg_created(tenant, epg,
                                                      bd_owner=bd_owner,
                                                      bd_name=l2_policy)
-                self._configure_epg_service_contract(
-                    context, context.current, l2p, epg, transaction=trs)
-                self._configure_epg_implicit_contract(
-                    context, context.current, l2p, epg, transaction=trs)
+                if not self.name_mapper._is_apic_reference(l2_policy_object):
+                    self._configure_epg_service_contract(
+                        context, context.current, l2p, epg, transaction=trs)
+                    self._configure_epg_implicit_contract(
+                        context, context.current, l2p, epg, transaction=trs)
 
             l3p = context._plugin.get_l3_policy(
                 context._plugin_context, l2_policy_object['l3_policy_id'])

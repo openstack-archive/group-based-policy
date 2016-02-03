@@ -1060,6 +1060,26 @@ class TestPolicyTargetGroup(ApicMappingTestCase):
         self.assertNotEqual(sub_ptg_1, sub_ptg_2)
         self.assertFalse(sub_ptg_1 & sub_ptg_2)
 
+    def test_preexisting_l2p_no_service_contracts(self):
+        # Circumvent name validation
+        self.driver.name_mapper.has_valid_name = (
+            self.driver.name_mapper._is_apic_reference)
+        self.driver.name_mapper.tenant = mock.Mock(
+            return_value=self._tenant_id)
+        self.driver.name_mapper.dn_manager.decompose_bridge_domain = mock.Mock(
+            return_value=['preexisting'])
+        self.driver._configure_epg_service_contract = mock.Mock()
+        self.driver._configure_epg_implicit_contract = mock.Mock()
+        l2p = self.create_l2_policy(name='apic:preexisting')['l2_policy']
+        self.create_policy_target_group(l2_policy_id=l2p['id'])
+        self.assertFalse(self.driver._configure_epg_service_contract.called)
+        self.assertFalse(self.driver._configure_epg_implicit_contract.called)
+
+        # Use non-preexisting L2P
+        self.create_policy_target_group()
+        self.assertTrue(self.driver._configure_epg_service_contract.called)
+        self.assertTrue(self.driver._configure_epg_implicit_contract.called)
+
     def _create_explicit_subnet_ptg(self, cidr, shared=False):
         l2p = self.create_l2_policy(name="l2p", shared=shared)
         l2p_id = l2p['l2_policy']['id']
