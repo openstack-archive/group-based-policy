@@ -16,11 +16,11 @@ import time
 from heatclient import client as heat_client
 from heatclient import exc as heat_exc
 from keystoneclient.v2_0 import client as keyclient
-from neutron.common import log
 from neutron.db import model_base
 from neutron import manager
 from neutron.plugins.common import constants as pconst
 from oslo_config import cfg
+from oslo_log import helpers as log
 from oslo_log import log as logging
 from oslo_serialization import jsonutils
 import sqlalchemy as sa
@@ -69,11 +69,11 @@ class ServiceChainInstanceStack(model_base.BASEV2):
 
 class SimpleChainDriver(object):
 
-    @log.log
+    @log.log_method_call
     def initialize(self):
         pass
 
-    @log.log
+    @log.log_method_call
     def create_servicechain_node_precommit(self, context):
         if context.current['service_profile_id'] is None:
             if context.current['service_type'] not in sc_supported_type:
@@ -82,11 +82,11 @@ class SimpleChainDriver(object):
             LOG.warning(_('Both service_profile_id and service_type are'
                           'specified, service_type will be ignored.'))
 
-    @log.log
+    @log.log_method_call
     def create_servicechain_node_postcommit(self, context):
         pass
 
-    @log.log
+    @log.log_method_call
     def update_servicechain_node_precommit(self, context):
         if (context.original['config'] != context.current['config']):
             filters = {'servicechain_spec': context.original[
@@ -96,31 +96,31 @@ class SimpleChainDriver(object):
             if sc_instances:
                 raise exc.NodeUpdateNotSupported()
 
-    @log.log
+    @log.log_method_call
     def update_servicechain_node_postcommit(self, context):
         pass
 
-    @log.log
+    @log.log_method_call
     def delete_servicechain_node_precommit(self, context):
         pass
 
-    @log.log
+    @log.log_method_call
     def delete_servicechain_node_postcommit(self, context):
         pass
 
-    @log.log
+    @log.log_method_call
     def create_servicechain_spec_precommit(self, context):
         pass
 
-    @log.log
+    @log.log_method_call
     def create_servicechain_spec_postcommit(self, context):
         pass
 
-    @log.log
+    @log.log_method_call
     def update_servicechain_spec_precommit(self, context):
         pass
 
-    @log.log
+    @log.log_method_call
     def update_servicechain_spec_postcommit(self, context):
         if context.original['nodes'] != context.current['nodes']:
             filters = {'servicechain_spec': [context.original['id']]}
@@ -131,19 +131,19 @@ class SimpleChainDriver(object):
                                                    sc_instance,
                                                    context._sc_spec)
 
-    @log.log
+    @log.log_method_call
     def delete_servicechain_spec_precommit(self, context):
         pass
 
-    @log.log
+    @log.log_method_call
     def delete_servicechain_spec_postcommit(self, context):
         pass
 
-    @log.log
+    @log.log_method_call
     def create_servicechain_instance_precommit(self, context):
         pass
 
-    @log.log
+    @log.log_method_call
     def create_servicechain_instance_postcommit(self, context):
         sc_instance = context.current
         sc_spec_ids = sc_instance.get('servicechain_specs')
@@ -154,11 +154,11 @@ class SimpleChainDriver(object):
             self._create_servicechain_instance_stacks(context, sc_node_ids,
                                                       sc_instance, sc_spec)
 
-    @log.log
+    @log.log_method_call
     def update_servicechain_instance_precommit(self, context):
         pass
 
-    @log.log
+    @log.log_method_call
     def update_servicechain_instance_postcommit(self, context):
         original_spec_ids = context.original.get('servicechain_specs')
         new_spec_ids = context.current.get('servicechain_specs')
@@ -169,37 +169,37 @@ class SimpleChainDriver(object):
                 self._update_servicechain_instance(context, context.current,
                                                    newspec)
 
-    @log.log
+    @log.log_method_call
     def delete_servicechain_instance_precommit(self, context):
         pass
 
-    @log.log
+    @log.log_method_call
     def delete_servicechain_instance_postcommit(self, context):
         self._delete_servicechain_instance_stacks(context._plugin_context,
                                                   context.current['id'])
 
-    @log.log
+    @log.log_method_call
     def create_service_profile_precommit(self, context):
         if context.current['service_type'] not in sc_supported_type:
             raise exc.InvalidServiceTypeForReferenceDriver()
 
-    @log.log
+    @log.log_method_call
     def create_service_profile_postcommit(self, context):
         pass
 
-    @log.log
+    @log.log_method_call
     def update_service_profile_precommit(self, context):
         pass
 
-    @log.log
+    @log.log_method_call
     def update_service_profile_postcommit(self, context):
         pass
 
-    @log.log
+    @log.log_method_call
     def delete_service_profile_precommit(self, context):
         pass
 
-    @log.log
+    @log.log_method_call
     def delete_service_profile_postcommit(self, context):
         pass
 

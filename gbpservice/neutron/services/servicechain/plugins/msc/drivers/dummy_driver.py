@@ -10,107 +10,107 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-from neutron.common import log
+from oslo_log import helpers as log
 
 
 class NoopDriver(object):
 
-    @log.log
+    @log.log_method_call
     def initialize(self):
         pass
 
-    @log.log
+    @log.log_method_call
     def create_servicechain_node_precommit(self, context):
         pass
 
-    @log.log
+    @log.log_method_call
     def create_servicechain_node_postcommit(self, context):
         pass
 
-    @log.log
+    @log.log_method_call
     def update_servicechain_node_precommit(self, context):
         pass
 
-    @log.log
+    @log.log_method_call
     def update_servicechain_node_postcommit(self, context):
         pass
 
-    @log.log
+    @log.log_method_call
     def delete_servicechain_node_precommit(self, context):
         pass
 
-    @log.log
+    @log.log_method_call
     def delete_servicechain_node_postcommit(self, context):
         pass
 
-    @log.log
+    @log.log_method_call
     def create_servicechain_spec_precommit(self, context):
         pass
 
-    @log.log
+    @log.log_method_call
     def create_servicechain_spec_postcommit(self, context):
         pass
 
-    @log.log
+    @log.log_method_call
     def update_servicechain_spec_precommit(self, context):
         pass
 
-    @log.log
+    @log.log_method_call
     def update_servicechain_spec_postcommit(self, context):
         pass
 
-    @log.log
+    @log.log_method_call
     def delete_servicechain_spec_precommit(self, context):
         pass
 
-    @log.log
+    @log.log_method_call
     def delete_servicechain_spec_postcommit(self, context):
         pass
 
-    @log.log
+    @log.log_method_call
     def create_servicechain_instance_precommit(self, context):
         pass
 
-    @log.log
+    @log.log_method_call
     def create_servicechain_instance_postcommit(self, context):
         pass
 
-    @log.log
+    @log.log_method_call
     def update_servicechain_instance_precommit(self, context):
         pass
 
-    @log.log
+    @log.log_method_call
     def update_servicechain_instance_postcommit(self, context):
         pass
 
-    @log.log
+    @log.log_method_call
     def delete_servicechain_instance_precommit(self, context):
         pass
 
-    @log.log
+    @log.log_method_call
     def delete_servicechain_instance_postcommit(self, context):
         pass
 
-    @log.log
+    @log.log_method_call
     def create_service_profile_precommit(self, context):
         pass
 
-    @log.log
+    @log.log_method_call
     def create_service_profile_postcommit(self, context):
         pass
 
-    @log.log
+    @log.log_method_call
     def update_service_profile_precommit(self, context):
         pass
 
-    @log.log
+    @log.log_method_call
     def update_service_profile_postcommit(self, context):
         pass
 
-    @log.log
+    @log.log_method_call
     def delete_service_profile_precommit(self, context):
         pass
 
-    @log.log
+    @log.log_method_call
     def delete_service_profile_postcommit(self, context):
         pass
