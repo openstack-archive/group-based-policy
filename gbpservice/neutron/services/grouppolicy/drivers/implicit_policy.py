@@ -10,9 +10,9 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-from neutron.common import log
 from neutron.db import model_base
 from oslo_config import cfg
+from oslo_log import helpers as log
 from oslo_log import log as logging
 from oslo_utils import excutils
 import sqlalchemy as sa
@@ -85,7 +85,7 @@ class ImplicitPolicyDriver(api.PolicyDriver, local_api.LocalAPI):
     when the default value of None is specified.
     """
 
-    @log.log
+    @log.log_method_call
     def initialize(self):
         gpip = cfg.CONF.group_policy_implicit_policy
         gpconf = cfg.CONF.group_policy
@@ -101,12 +101,12 @@ class ImplicitPolicyDriver(api.PolicyDriver, local_api.LocalAPI):
             gpproxy.default_proxy_subnet_prefix_length)
         self._default_es_name = gpip.default_external_segment_name
 
-    @log.log
+    @log.log_method_call
     def create_policy_target_group_postcommit(self, context):
         if not context.current['l2_policy_id']:
             self._use_implicit_l2_policy(context)
 
-    @log.log
+    @log.log_method_call
     def update_policy_target_group_postcommit(self, context):
         old_l2p_id = context.original['l2_policy_id']
         new_l2p_id = context.current['l2_policy_id']
@@ -115,17 +115,17 @@ class ImplicitPolicyDriver(api.PolicyDriver, local_api.LocalAPI):
             if not new_l2p_id:
                 self._use_implicit_l2_policy(context)
 
-    @log.log
+    @log.log_method_call
     def delete_policy_target_group_postcommit(self, context):
         l2p_id = context.current['l2_policy_id']
         self._cleanup_l2_policy(context, l2p_id)
 
-    @log.log
+    @log.log_method_call
     def create_l2_policy_postcommit(self, context):
         if not context.current['l3_policy_id']:
             self._use_implicit_l3_policy(context)
 
-    @log.log
+    @log.log_method_call
     def update_l2_policy_postcommit(self, context):
         old_l3p_id = context.original['l3_policy_id']
         new_l3p_id = context.current['l3_policy_id']
@@ -134,12 +134,12 @@ class ImplicitPolicyDriver(api.PolicyDriver, local_api.LocalAPI):
             if not new_l3p_id:
                 self._use_implicit_l3_policy(context)
 
-    @log.log
+    @log.log_method_call
     def delete_l2_policy_postcommit(self, context):
         l3p_id = context.current['l3_policy_id']
         self._cleanup_l3_policy(context, l3p_id)
 
-    @log.log
+    @log.log_method_call
     def create_external_segment_precommit(self, context):
         # REVISIT(ivar): find a better way to retrieve the default ES
         if self._default_es_name == context.current['name']:
@@ -150,16 +150,16 @@ class ImplicitPolicyDriver(api.PolicyDriver, local_api.LocalAPI):
                 raise exc.DefaultExternalSegmentAlreadyExists(
                     es_name=self._default_es_name)
 
-    @log.log
+    @log.log_method_call
     def create_external_policy_postcommit(self, context):
         if not context.current['external_segments']:
             self._use_implicit_external_segment(context)
 
-    @log.log
+    @log.log_method_call
     def update_external_policy_postcommit(self, context):
         pass
 
-    @log.log
+    @log.log_method_call
     def create_l3_policy_precommit(self, context):
         if self._default_l3p_name == context.current['name']:
             LOG.debug("Creating default L3 policy: %s", context.current)
@@ -173,12 +173,12 @@ class ImplicitPolicyDriver(api.PolicyDriver, local_api.LocalAPI):
                 raise exc.DefaultL3PolicyAlreadyExists(
                     l3p_name=self._default_l3p_name)
 
-    @log.log
+    @log.log_method_call
     def create_l3_policy_postcommit(self, context):
         if not context.current['external_segments']:
             self._use_implicit_external_segment(context)
 
-    @log.log
+    @log.log_method_call
     def update_l3_policy_postcommit(self, context):
         pass
 

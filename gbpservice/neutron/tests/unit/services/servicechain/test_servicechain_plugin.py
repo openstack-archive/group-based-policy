@@ -34,8 +34,6 @@ SC_PLUGIN_KLASS = (
 class ServiceChainPluginTestCase(test_servicechain_db.ServiceChainDbTestCase):
 
     def setUp(self, core_plugin=None, sc_plugin=None, gp_plugin=None):
-        if not sc_plugin:
-            sc_plugin = SC_PLUGIN_KLASS
         super(ServiceChainPluginTestCase, self).setUp(core_plugin=core_plugin,
                                                       sc_plugin=sc_plugin,
                                                       gp_plugin=gp_plugin)
