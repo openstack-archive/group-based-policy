@@ -10,6 +10,9 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+from neutron._i18n import _LE
+from neutron._i18n import _LI
+from neutron._i18n import _LW
 from neutron.api.v2 import attributes as attr
 from neutron import manager
 from oslo_config import cfg
@@ -44,8 +47,8 @@ class TrafficStitchingPlumber(plumber_base.NodePlumberBase):
 
         # Verify that proxy_group extension is loaded
         if pg_ext.PROXY_GROUP not in cfg.CONF.group_policy.extension_drivers:
-            LOG.error(_("proxy_group GBP driver extension is mandatory for "
-                        "traffic stitching plumber."))
+            LOG.error(_LE("proxy_group GBP driver extension is mandatory for "
+                          "traffic stitching plumber."))
             raise exc.GroupPolicyDeploymentError()
 
     @property
@@ -81,7 +84,7 @@ class TrafficStitchingPlumber(plumber_base.NodePlumberBase):
                     management, 'management')
                 # Create proper PTs based on the service type
                 jump_ptg = None
-                LOG.info(_("Plumbing service of type '%s'"),
+                LOG.info(_LI("Plumbing service of type '%s'"),
                          info['plumbing_type'])
                 if info['plumbing_type'] == common.PLUMBING_TYPE_ENDPOINT:
                     # No stitching needed, only provider side PT is created.
@@ -119,7 +122,7 @@ class TrafficStitchingPlumber(plumber_base.NodePlumberBase):
                         context, part_context, info['consumer'],
                         jump_ptg, 'consumer')
                 else:
-                    LOG.warning(_("Unsupported plumbing type %s"),
+                    LOG.warning(_LW("Unsupported plumbing type %s"),
                                 info['plumbing_type'])
                 # Replace current "provider" with jump ptg if needed
                 provider = jump_ptg or provider
