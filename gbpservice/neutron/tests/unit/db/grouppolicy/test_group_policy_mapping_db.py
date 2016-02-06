@@ -27,7 +27,8 @@ from gbpservice.neutron.tests.unit.db.grouppolicy import (
 
 class GroupPolicyMappingDBTestPlugin(gpmdb.GroupPolicyMappingDbPlugin):
 
-    supported_extension_aliases = ['group-policy', 'group-policy-mapping']
+    supported_extension_aliases = ['group-policy', 'group-policy-mapping',
+            'availability_zone', 'agent']
     path_prefix = "/grouppolicy"
 
 

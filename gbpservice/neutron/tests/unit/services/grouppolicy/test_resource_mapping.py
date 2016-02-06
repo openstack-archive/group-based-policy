@@ -59,7 +59,12 @@ class NoL3NatSGTestPlugin(
         test_l3.TestNoL3NatPlugin,
         test_securitygroup.SecurityGroupTestPlugin):
 
-    _supported_extension_aliases = ["external-net", "security-group"]
+    # Note that this plugin does not actually support the 'availability_zone',
+    # and 'agent' extensions. We add it here to keep the extensions'
+    # framework happy, and since we don't exercise those extensions in the
+    # UTs its okay.
+    supported_extension_aliases = ["external-net", "security-group",
+            'availability_zone', 'agent']
 
 
 CORE_PLUGIN = ('gbpservice.neutron.tests.unit.services.grouppolicy.'
