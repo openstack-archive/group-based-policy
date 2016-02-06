@@ -29,7 +29,8 @@ class API(object):
         obj_method = getattr(neutron, action)
         return obj_method(resource_id)[resource]
 
-    def _list_resources(self, context, resource, filters={}):
+    def _list_resources(self, context, resource, filters=None):
+        filters = filters or {}
         resources = resource + 's'
         action = 'list_' + resources
         neutron = client.get_client(context)
@@ -54,7 +55,8 @@ class API(object):
     def show_network(self, context, net_id):
         return self._show_resource(context, 'network', net_id)
 
-    def list_networks(self, context, filters={}):
+    def list_networks(self, context, filters=None):
+        filters = filters or {}
         return self._list_resources(context, 'network', filters)
 
     def update_network(self, context, net_id, network):
@@ -69,7 +71,8 @@ class API(object):
     def show_subnet(self, context, subnet_id):
         return self._show_resource(context, 'subnet', subnet_id)
 
-    def list_subnets(self, context, filters={}):
+    def list_subnets(self, context, filters=None):
+        filters = filters or {}
         return self._list_resources(context, 'subnet', filters)
 
     def update_subnet(self, context, subnet_id, subnet):
@@ -84,7 +87,8 @@ class API(object):
     def show_port(self, context, port_id):
         return self._show_resource(context, 'port', port_id)
 
-    def list_ports(self, context, filters={}):
+    def list_ports(self, context, filters=None):
+        filters = filters or {}
         return self._list_resources(context, 'port', filters)
 
     def update_port(self, context, port_id, port):
@@ -99,7 +103,8 @@ class API(object):
     def show_security_group(self, context, sg_id):
         return self._show_resource(context, 'security_group', sg_id)
 
-    def list_security_groups(self, context, filters={}):
+    def list_security_groups(self, context, filters=None):
+        filters = filters or {}
         return self._list_resources(context, 'security_group', filters)
 
     def update_security_group(self, context, sg_id, sg):
@@ -114,7 +119,8 @@ class API(object):
     def show_security_group_rule(self, context, rule_id):
         return self._show_resource(context, 'security_group_rule', rule_id)
 
-    def list_security_group_rules(self, context, filters={}):
+    def list_security_group_rules(self, context, filters=None):
+        filters = filters or {}
         return self._list_resources(context, 'security_group_rule', filters)
 
     # REVISIT(yi): update_security_group_rule not supported in neutron yet
@@ -133,7 +139,8 @@ class API(object):
     def show_router(self, context, router_id):
         return self._show_resource(context, 'router', router_id)
 
-    def list_routers(self, context, filters={}):
+    def list_routers(self, context, filters=None):
+        filters = filters or {}
         return self._list_resources(context, 'router', filters)
 
     def update_router(self, context, router_id, router):

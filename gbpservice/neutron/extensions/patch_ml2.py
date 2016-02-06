@@ -49,7 +49,7 @@ def delete_network(self, context, id):
     attempt = 0
     while True:
         attempt += 1
-        LOG.info(_("Attempt %(attempt)s to delete network %(net)s"),
+        LOG.info(i18n._LI("Attempt %(attempt)s to delete network %(net)s"),
                  {'attempt': attempt, 'net': id})
         if attempt > 100:
             raise InfiniteLoopError()
@@ -150,7 +150,7 @@ def delete_subnet(self, context, id):
     attempt = 0
     while True:
         attempt += 1
-        LOG.info(_("Attempt %(attempt)s to delete subnet %(subnet)s"),
+        LOG.info(i18n._LI("Attempt %(attempt)s to delete subnet %(subnet)s"),
                  {'attempt': attempt, 'subnet': id})
         if attempt > 100:
             raise InfiniteLoopError()

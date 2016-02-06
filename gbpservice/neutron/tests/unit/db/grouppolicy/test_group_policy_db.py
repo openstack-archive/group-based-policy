@@ -261,7 +261,12 @@ class GroupPolicyDBTestBase(ApiManagerMixin):
 
 class GroupPolicyDBTestPlugin(gpdb.GroupPolicyDbPlugin):
 
-    supported_extension_aliases = ['group-policy']
+    # Note that this plugin does not actually support the 'availability_zone',
+    # and 'agent' extensions. We add it here to keep the extensions'
+    # framework happy, and since we don't exercise those extensions in the
+    # UTs its okay.
+    supported_extension_aliases = ['group-policy', 'availability_zone',
+            'agent']
     path_prefix = "/grouppolicy"
 
 
@@ -271,7 +276,12 @@ DB_GP_PLUGIN_KLASS = (GroupPolicyDBTestPlugin.__module__ + '.' +
 
 class ServiceChainDBTestPlugin(svcchain_db.ServiceChainDbPlugin):
 
-    supported_extension_aliases = ['servicechain']
+    # Note that this plugin does not actually support the 'availability_zone',
+    # and 'agent' extensions. We add it here to keep the extensions'
+    # framework happy, and since we don't exercise those extensions in the
+    # UTs its okay.
+    supported_extension_aliases = ['servicechain', 'availability_zone',
+            'agent']
     path_prefix = "/servicechain"
 
 
@@ -380,7 +390,7 @@ class TestGroupResources(GroupPolicyDbTestCase):
         req = self.new_delete_request('policy_targets', pt_id)
         res = req.get_response(self.ext_api)
 
-        self.assertEqual(res.status_int, webob.exc.HTTPNoContent.code)
+        self.assertEqual(webob.exc.HTTPNoContent.code, res.status_int)
         self.assertRaises(gpolicy.PolicyTargetNotFound,
                           self.plugin.get_policy_target, ctx, pt_id)
 
@@ -519,7 +529,7 @@ class TestGroupResources(GroupPolicyDbTestCase):
 
         req = self.new_delete_request('policy_target_groups', ptg_id)
         res = req.get_response(self.ext_api)
-        self.assertEqual(res.status_int, webob.exc.HTTPNoContent.code)
+        self.assertEqual(webob.exc.HTTPNoContent.code, res.status_int)
         self.assertRaises(gpolicy.PolicyTargetGroupNotFound,
                           self.plugin.get_policy_target_group, ctx, ptg_id)
 
@@ -567,7 +577,7 @@ class TestGroupResources(GroupPolicyDbTestCase):
 
         req = self.new_delete_request('l2_policies', l2p_id)
         res = req.get_response(self.ext_api)
-        self.assertEqual(res.status_int, webob.exc.HTTPNoContent.code)
+        self.assertEqual(webob.exc.HTTPNoContent.code, res.status_int)
         self.assertRaises(gpolicy.L2PolicyNotFound, self.plugin.get_l2_policy,
                           ctx, l2p_id)
 
@@ -704,7 +714,7 @@ class TestGroupResources(GroupPolicyDbTestCase):
 
         req = self.new_delete_request('l3_policies', l3p_id)
         res = req.get_response(self.ext_api)
-        self.assertEqual(res.status_int, webob.exc.HTTPNoContent.code)
+        self.assertEqual(webob.exc.HTTPNoContent.code, res.status_int)
         self.assertRaises(gpolicy.L3PolicyNotFound, self.plugin.get_l3_policy,
                           ctx, l3p_id)
 
@@ -914,7 +924,7 @@ class TestGroupResources(GroupPolicyDbTestCase):
 
         req = self.new_delete_request('policy_classifiers', pc_id)
         res = req.get_response(self.ext_api)
-        self.assertEqual(res.status_int, webob.exc.HTTPNoContent.code)
+        self.assertEqual(webob.exc.HTTPNoContent.code, res.status_int)
         self.assertRaises(gpolicy.PolicyClassifierNotFound,
                           self.plugin.get_policy_classifier, ctx, pc_id)
 
@@ -985,7 +995,7 @@ class TestGroupResources(GroupPolicyDbTestCase):
 
         req = self.new_delete_request('policy_actions', pa_id)
         res = req.get_response(self.ext_api)
-        self.assertEqual(res.status_int, webob.exc.HTTPNoContent.code)
+        self.assertEqual(webob.exc.HTTPNoContent.code, res.status_int)
         self.assertRaises(gpolicy.PolicyActionNotFound,
                           self.plugin.get_policy_action, ctx, pa_id)
 
@@ -1094,7 +1104,7 @@ class TestGroupResources(GroupPolicyDbTestCase):
 
         req = self.new_delete_request('policy_rules', pr_id)
         res = req.get_response(self.ext_api)
-        self.assertEqual(res.status_int, webob.exc.HTTPNoContent.code)
+        self.assertEqual(webob.exc.HTTPNoContent.code, res.status_int)
         self.assertRaises(gpolicy.PolicyRuleNotFound,
                           self.plugin.get_policy_rule, ctx, pr_id)
 
@@ -1225,7 +1235,7 @@ class TestGroupResources(GroupPolicyDbTestCase):
 
         req = self.new_delete_request('policy_rule_sets', prs_id)
         res = req.get_response(self.ext_api)
-        self.assertEqual(res.status_int, webob.exc.HTTPNoContent.code)
+        self.assertEqual(webob.exc.HTTPNoContent.code, res.status_int)
         self.assertRaises(gpolicy.PolicyRuleSetNotFound,
                           self.plugin.get_policy_rule_set, ctx, prs_id)
 
@@ -1292,14 +1302,14 @@ class TestGroupResources(GroupPolicyDbTestCase):
         data = {'policy_rule_set': {'child_policy_rule_sets': [nephew['id']]}}
         req = self.new_update_request('policy_rule_sets', data, child['id'])
         res = req.get_response(self.ext_api)
-        self.assertEqual(res.status_int, webob.exc.HTTPBadRequest.code)
+        self.assertEqual(webob.exc.HTTPBadRequest.code, res.status_int)
 
     def test_prs_parent_no_loop(self):
         prs = self.create_policy_rule_set()['policy_rule_set']
         data = {'policy_rule_set': {'child_policy_rule_sets': [prs['id']]}}
         req = self.new_update_request('policy_rule_sets', data, prs['id'])
         res = req.get_response(self.ext_api)
-        self.assertEqual(res.status_int, webob.exc.HTTPBadRequest.code)
+        self.assertEqual(webob.exc.HTTPBadRequest.code, res.status_int)
 
     def _test_create_and_show(self, type, attrs, expected=None):
         plural = cm.get_resource_plural(type)
@@ -1430,7 +1440,7 @@ class TestGroupResources(GroupPolicyDbTestCase):
 
         req = self.new_delete_request('external_policies', ep_id)
         res = req.get_response(self.ext_api)
-        self.assertEqual(res.status_int, webob.exc.HTTPNoContent.code)
+        self.assertEqual(webob.exc.HTTPNoContent.code, res.status_int)
         self.assertRaises(gpolicy.ExternalPolicyNotFound,
                           self.plugin.get_external_policy, ctx, ep_id)
 
@@ -1441,7 +1451,7 @@ class TestGroupResources(GroupPolicyDbTestCase):
 
         req = self.new_delete_request('external_segments', ep_id)
         res = req.get_response(self.ext_api)
-        self.assertEqual(res.status_int, webob.exc.HTTPNoContent.code)
+        self.assertEqual(webob.exc.HTTPNoContent.code, res.status_int)
         self.assertRaises(gpolicy.ExternalSegmentNotFound,
                           self.plugin.get_external_segment, ctx, ep_id)
 
@@ -1452,7 +1462,7 @@ class TestGroupResources(GroupPolicyDbTestCase):
 
         req = self.new_delete_request('nat_pools', ep_id)
         res = req.get_response(self.ext_api)
-        self.assertEqual(res.status_int, webob.exc.HTTPNoContent.code)
+        self.assertEqual(webob.exc.HTTPNoContent.code, res.status_int)
         self.assertRaises(gpolicy.NATPoolNotFound,
                           self.plugin.get_nat_pool, ctx, ep_id)
 

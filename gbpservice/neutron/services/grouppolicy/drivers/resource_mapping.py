@@ -13,16 +13,18 @@
 import netaddr
 import operator
 
+from neutron._i18n import _LE
+from neutron._i18n import _LW
 from neutron.api.v2 import attributes
 from neutron.common import constants as const
 from neutron.common import exceptions as n_exc
-from neutron.common import log
 from neutron import context as n_context
 from neutron.db import model_base
 from neutron.db import models_v2
 from neutron.extensions import l3 as ext_l3
 from neutron.extensions import securitygroup as ext_sg
 from oslo_config import cfg
+from oslo_log import helpers as log
 from oslo_log import log as logging
 import sqlalchemy as sa
 
@@ -116,7 +118,7 @@ class ResourceMappingDriver(api.PolicyDriver, local_api.LocalAPI,
     policy resources to various other neutron resources.
     """
 
-    @log.log
+    @log.log_method_call
     def initialize(self):
         self._cached_agent_notifier = None
 
@@ -197,7 +199,7 @@ class ResourceMappingDriver(api.PolicyDriver, local_api.LocalAPI,
                         router_id=router_id,
                         tenant_id=context.current['tenant_id'])
 
-    @log.log
+    @log.log_method_call
     def create_policy_target_precommit(self, context):
         self._validate_cluster_id(context)
         if not context.current['policy_target_group_id']:
@@ -222,7 +224,7 @@ class ResourceMappingDriver(api.PolicyDriver, local_api.LocalAPI,
             if pts:
                 exc.OnlyOneGroupDefaultGatewayAllowed(group_id=group_id)
 
-    @log.log
+    @log.log_method_call
     def create_policy_target_postcommit(self, context):
         if not context.current['port_id']:
             self._use_implicit_port(context)
@@ -281,9 +283,9 @@ class ResourceMappingDriver(api.PolicyDriver, local_api.LocalAPI,
                                             context, l2_policy_id)
         fip_ids = []
         if not external_segments:
-            LOG.error(_("Network Service Policy to allocate Floating IP "
-                        "could not be applied because l3policy does "
-                        "not have an attached external segment"))
+            LOG.error(_LE("Network Service Policy to allocate Floating IP "
+                          "could not be applied because l3policy does "
+                          "not have an attached external segment"))
             return fip_ids
         tenant_id = context.current['tenant_id']
 
@@ -325,7 +327,7 @@ class ResourceMappingDriver(api.PolicyDriver, local_api.LocalAPI,
                     no_subnet_pools = []
                     break
                 except n_exc.IpAddressGenerationFailure as ex:
-                    LOG.warning(_("Floating allocation failed: %s"),
+                    LOG.warning(_LW("Floating allocation failed: %s"),
                                 ex.message)
         for nat_pool in no_subnet_pools:
             # Use old allocation method
@@ -334,32 +336,32 @@ class ResourceMappingDriver(api.PolicyDriver, local_api.LocalAPI,
                     context._plugin_context, tenant_id, ext_net_id, fixed_port)
                 break
             except n_exc.IpAddressGenerationFailure as ex:
-                LOG.warning(_("Floating allocation failed: %s"),
+                LOG.warning(_LW("Floating allocation failed: %s"),
                             ex.message)
         return fip_id
 
-    @log.log
+    @log.log_method_call
     def update_policy_target_precommit(self, context):
         self._validate_cluster_id(context)
         if (context.current['policy_target_group_id'] !=
             context.original['policy_target_group_id']):
             raise exc.PolicyTargetGroupUpdateOfPolicyTargetNotSupported()
 
-    @log.log
+    @log.log_method_call
     def update_policy_target_postcommit(self, context):
         if context.current['cluster_id'] != context.original['cluster_id']:
             self._update_cluster_membership(
                 context, new_cluster_id=context.current['cluster_id'],
                 old_cluster_id=context.original['cluster_id'])
 
-    @log.log
+    @log.log_method_call
     def delete_policy_target_precommit(self, context):
         self._validate_pt_in_use_by_cluster(context)
         context.fips = self._get_pt_floating_ip_mapping(
                     context._plugin_context.session,
                     context.current['id'])
 
-    @log.log
+    @log.log_method_call
     def delete_policy_target_postcommit(self, context):
         sg_list = self._generate_list_of_sg_from_ptg(
             context, context.current['policy_target_group_id'])
@@ -373,14 +375,14 @@ class ResourceMappingDriver(api.PolicyDriver, local_api.LocalAPI,
             self._unset_proxy_gateway_routes(context, context.current)
         self._cleanup_port(context._plugin_context, port_id)
 
-    @log.log
+    @log.log_method_call
     def create_policy_target_group_precommit(self, context):
         self._reject_cross_tenant_ptg_l2p(context)
         self._validate_ptg_subnets(context)
         self._validate_nat_pool_for_nsp(context)
         self._validate_proxy_ptg(context)
 
-    @log.log
+    @log.log_method_call
     def create_policy_target_group_postcommit(self, context):
         # REVISIT(ivar) this validates the PTG L2P after the IPD creates it
         # (which happens in the postcommit phase)
@@ -454,9 +456,10 @@ class ResourceMappingDriver(api.PolicyDriver, local_api.LocalAPI,
                                 filters={'name': [
                                         gpip.default_external_segment_name]}))
                 if not external_segments:
-                    LOG.error(_("Network Service Policy to allocate Floating "
-                                "IP could not be associated because l3policy "
-                                "does not have an attached external segment"))
+                    LOG.error(_LE(
+                        "Network Service Policy to allocate Floating "
+                        "IP could not be associated because l3policy "
+                        "does not have an attached external segment"))
                     raise exc.NSPRequiresES()
                 for es in external_segments:
                     if not es['nat_pools']:
@@ -478,9 +481,9 @@ class ResourceMappingDriver(api.PolicyDriver, local_api.LocalAPI,
                 free_ip = self._get_last_free_ip(context._plugin_context,
                                                  context.current['subnets'])
                 if not free_ip:
-                    LOG.error(_("Reserving IP Addresses failed for Network "
-                                "Service Policy. No more IP Addresses on "
-                                "subnet"))
+                    LOG.error(_LE("Reserving IP Addresses failed for Network "
+                                  "Service Policy. No more IP Addresses on "
+                                  "subnet"))
                     return
                 # TODO(Magesh):Fetch subnet from PTG to which NSP is attached
                 self._remove_ip_from_allocation_pool(
@@ -550,7 +553,7 @@ class ResourceMappingDriver(api.PolicyDriver, local_api.LocalAPI,
             self._delete_pt_floating_ip_mapping(
                 context._plugin_context.session, pt)
 
-    @log.log
+    @log.log_method_call
     def update_policy_target_group_precommit(self, context):
         if set(context.original['subnets']) - set(context.current['subnets']):
             raise exc.PolicyTargetGroupSubnetRemovalNotSupported()
@@ -561,7 +564,7 @@ class ResourceMappingDriver(api.PolicyDriver, local_api.LocalAPI,
             context.original['network_service_policy_id']):
             self._validate_nat_pool_for_nsp(context)
 
-    @log.log
+    @log.log_method_call
     def update_policy_target_group_postcommit(self, context):
         # Three conditions where SG association needs to be changed
         # (a) list of policy_targets change
@@ -639,14 +642,14 @@ class ResourceMappingDriver(api.PolicyDriver, local_api.LocalAPI,
             if new_nsp:
                 self._handle_network_service_policy(context)
 
-    @log.log
+    @log.log_method_call
     def delete_policy_target_group_precommit(self, context):
         context.nsp_cleanup_ipaddress = self._get_ptg_policy_ipaddress_mapping(
             context._plugin_context.session, context.current['id'])
         context.nsp_cleanup_fips = self._get_ptg_policy_fip_mapping(
             context._plugin_context.session, context.current['id'])
 
-    @log.log
+    @log.log_method_call
     def delete_policy_target_group_postcommit(self, context):
         self._cleanup_network_service_policy(context,
                                              context.current,
@@ -678,7 +681,7 @@ class ResourceMappingDriver(api.PolicyDriver, local_api.LocalAPI,
 
             self._stitch_ptg_to_l3p(context, proxied, l3p, proxied['subnets'])
 
-    @log.log
+    @log.log_method_call
     def create_l2_policy_precommit(self, context):
         self._reject_cross_tenant_l2p_l3p(context)
         self._reject_non_shared_net_on_shared_l2p(context)
@@ -686,12 +689,12 @@ class ResourceMappingDriver(api.PolicyDriver, local_api.LocalAPI,
         if not context.current['inject_default_route']:
             raise exc.UnsettingInjectDefaultRouteOfL2PolicyNotSupported()
 
-    @log.log
+    @log.log_method_call
     def create_l2_policy_postcommit(self, context):
         if not context.current['network_id']:
             self._use_implicit_network(context)
 
-    @log.log
+    @log.log_method_call
     def update_l2_policy_precommit(self, context):
         if (context.current['inject_default_route'] !=
             context.original['inject_default_route']):
@@ -702,20 +705,20 @@ class ResourceMappingDriver(api.PolicyDriver, local_api.LocalAPI,
         self._reject_cross_tenant_l2p_l3p(context)
         self._reject_non_shared_net_on_shared_l2p(context)
 
-    @log.log
+    @log.log_method_call
     def update_l2_policy_postcommit(self, context):
         pass
 
-    @log.log
+    @log.log_method_call
     def delete_l2_policy_precommit(self, context):
         pass
 
-    @log.log
+    @log.log_method_call
     def delete_l2_policy_postcommit(self, context):
         network_id = context.current['network_id']
         self._cleanup_network(context._plugin_context, network_id)
 
-    @log.log
+    @log.log_method_call
     def create_l3_policy_precommit(self, context):
         curr = context.current
         if len(curr['routers']) > 1:
@@ -745,7 +748,7 @@ class ResourceMappingDriver(api.PolicyDriver, local_api.LocalAPI,
             raise exc.MultipleESPerL3PolicyNotSupported()
         self._reject_invalid_router_access(context)
 
-    @log.log
+    @log.log_method_call
     def create_l3_policy_postcommit(self, context):
         if not context.current['routers']:
             self._use_implicit_router(context)
@@ -756,7 +759,7 @@ class ResourceMappingDriver(api.PolicyDriver, local_api.LocalAPI,
             self._set_l3p_external_routes(context)
         self._process_new_l3p_ip_pool(context, context.current['ip_pool'])
 
-    @log.log
+    @log.log_method_call
     def update_l3_policy_precommit(self, context):
         if context.current['routers'] != context.original['routers']:
             raise exc.L3PolicyRoutersUpdateNotSupported()
@@ -767,7 +770,7 @@ class ResourceMappingDriver(api.PolicyDriver, local_api.LocalAPI,
         self._reject_invalid_router_access(context)
         self._validate_in_use_by_nsp(context)
 
-    @log.log
+    @log.log_method_call
     def update_l3_policy_postcommit(self, context):
         new, old = context.current, context.original
         if new['external_segments'] != old['external_segments']:
@@ -786,29 +789,29 @@ class ResourceMappingDriver(api.PolicyDriver, local_api.LocalAPI,
                                       for x in added))
                 self._set_l3p_external_routes(context, removed=removed)
 
-    @log.log
+    @log.log_method_call
     def delete_l3_policy_precommit(self, context):
         pass
 
-    @log.log
+    @log.log_method_call
     def delete_l3_policy_postcommit(self, context):
         for router_id in context.current['routers']:
             self._cleanup_router(context._plugin_context, router_id)
         self._process_remove_l3p_ip_pool(context, context.current['ip_pool'])
 
-    @log.log
+    @log.log_method_call
     def create_policy_classifier_precommit(self, context):
         pass
 
-    @log.log
+    @log.log_method_call
     def create_policy_classifier_postcommit(self, context):
         pass
 
-    @log.log
+    @log.log_method_call
     def update_policy_classifier_precommit(self, context):
         pass
 
-    @log.log
+    @log.log_method_call
     def update_policy_classifier_postcommit(self, context):
         policy_rules = (context._plugin.get_policy_classifier(
                 context._plugin_context,
@@ -825,51 +828,51 @@ class ResourceMappingDriver(api.PolicyDriver, local_api.LocalAPI,
             self._update_policy_rule_sg_rules(context, pr_sets,
                 policy_rule, context.original, context.current)
 
-    @log.log
+    @log.log_method_call
     def delete_policy_classifier_precommit(self, context):
         pass
 
-    @log.log
+    @log.log_method_call
     def delete_policy_classifier_postcommit(self, context):
         pass
 
-    @log.log
+    @log.log_method_call
     def create_policy_action_precommit(self, context):
         pass
 
-    @log.log
+    @log.log_method_call
     def create_policy_action_postcommit(self, context):
         pass
 
-    @log.log
+    @log.log_method_call
     def update_policy_action_precommit(self, context):
         pass
 
-    @log.log
+    @log.log_method_call
     def update_policy_action_postcommit(self, context):
         pass
 
-    @log.log
+    @log.log_method_call
     def delete_policy_action_precommit(self, context):
         pass
 
-    @log.log
+    @log.log_method_call
     def delete_policy_action_postcommit(self, context):
         pass
 
-    @log.log
+    @log.log_method_call
     def create_policy_rule_precommit(self, context):
         pass
 
-    @log.log
+    @log.log_method_call
     def create_policy_rule_postcommit(self, context):
         pass
 
-    @log.log
+    @log.log_method_call
     def update_policy_rule_precommit(self, context):
         pass
 
-    @log.log
+    @log.log_method_call
     def update_policy_rule_postcommit(self, context):
         old_classifier_id = context.original['policy_classifier_id']
         new_classifier_id = context.current['policy_classifier_id']
@@ -887,7 +890,7 @@ class ResourceMappingDriver(api.PolicyDriver, local_api.LocalAPI,
                 self._apply_policy_rule_set_rules(context, prs,
                                                   [context.current])
 
-    @log.log
+    @log.log_method_call
     def delete_policy_rule_precommit(self, context):
         # REVISIT(ivar): This will be removed once navigability issue is
         # solved (bug/1384397)
@@ -895,18 +898,18 @@ class ResourceMappingDriver(api.PolicyDriver, local_api.LocalAPI,
             context._plugin._get_policy_rule_policy_rule_sets(
                 context._plugin_context, context.current['id']))
 
-    @log.log
+    @log.log_method_call
     def delete_policy_rule_postcommit(self, context):
         for prs in context._plugin.get_policy_rule_sets(
                 context._plugin_context,
                 filters={'id': context.current['policy_rule_sets']}):
             self._remove_policy_rule_set_rules(context, prs, [context.current])
 
-    @log.log
+    @log.log_method_call
     def create_policy_rule_set_precommit(self, context):
         self._reject_shared(context.current, 'policy_rule_set')
 
-    @log.log
+    @log.log_method_call
     def create_policy_rule_set_postcommit(self, context):
         # creating SGs
         policy_rule_set_id = context.current['id']
@@ -925,11 +928,11 @@ class ResourceMappingDriver(api.PolicyDriver, local_api.LocalAPI,
             self._recompute_policy_rule_sets(
                 context, context.current['child_policy_rule_sets'])
 
-    @log.log
+    @log.log_method_call
     def update_policy_rule_set_precommit(self, context):
         self._reject_shared(context.current, 'policy_rule_set')
 
-    @log.log
+    @log.log_method_call
     def update_policy_rule_set_postcommit(self, context):
         # Update policy_rule_set rules
         old_rules = set(context.original['policy_rules'])
@@ -949,14 +952,14 @@ class ResourceMappingDriver(api.PolicyDriver, local_api.LocalAPI,
                             set(context.current['child_policy_rule_sets']))
             self._recompute_policy_rule_sets(context, to_recompute)
 
-    @log.log
+    @log.log_method_call
     def delete_policy_rule_set_precommit(self, context):
         mapping = self._get_policy_rule_set_sg_mapping(
             context._plugin_context.session, context.current['id'])
         context._rmd_sg_list_temp = [mapping['provided_sg_id'],
                                      mapping['consumed_sg_id']]
 
-    @log.log
+    @log.log_method_call
     def delete_policy_rule_set_postcommit(self, context):
         # Disassociate SGs
         sg_list = context._rmd_sg_list_temp
@@ -971,7 +974,7 @@ class ResourceMappingDriver(api.PolicyDriver, local_api.LocalAPI,
         for sg in sg_list:
             self._delete_sg(context._plugin_context, sg)
 
-    @log.log
+    @log.log_method_call
     def create_network_service_policy_precommit(self, context):
         self._validate_nsp_parameters(context)
 
@@ -1333,7 +1336,7 @@ class ResourceMappingDriver(api.PolicyDriver, local_api.LocalAPI,
                 context.set_port_id(port_id)
                 return
             except n_exc.IpAddressGenerationFailure as ex:
-                LOG.warning(_("No more address available in subnet %s"),
+                LOG.warning(_LW("No more address available in subnet %s"),
                             subnet['id'])
                 last = ex
         raise last
@@ -1343,7 +1346,7 @@ class ResourceMappingDriver(api.PolicyDriver, local_api.LocalAPI,
             try:
                 self._delete_port(plugin_context, port_id)
             except n_exc.PortNotFound:
-                LOG.warning(_("Port %s is missing") % port_id)
+                LOG.warning(_LW("Port %s is missing") % port_id)
 
     def _plug_router_to_external_segment(self, context, es_dict):
         es_list = context._plugin.get_external_segments(
@@ -1537,7 +1540,7 @@ class ResourceMappingDriver(api.PolicyDriver, local_api.LocalAPI,
                 self._add_router_interface(plugin_context, router_id,
                                            interface_info)
             except n_exc.BadRequest:
-                LOG.exception(_("Adding subnet to router failed"))
+                LOG.exception(_LE("Adding subnet to router failed"))
                 raise exc.GroupPolicyInternalError()
 
     def _generate_subnets_from_cidrs(self, context, l2p, l3p, cidrs,
@@ -1578,7 +1581,7 @@ class ResourceMappingDriver(api.PolicyDriver, local_api.LocalAPI,
                             context._plugin_context, subnet_id, router_id)
                 except n_exc.InvalidInput:
                     # This exception is not expected.
-                    LOG.exception(_("adding subnet to router failed"))
+                    LOG.exception(_LE("adding subnet to router failed"))
                     for subnet_id in subnet_ids:
                         self._delete_subnet(context._plugin_context, subnet_id)
                     raise exc.GroupPolicyInternalError()
@@ -1627,7 +1630,7 @@ class ResourceMappingDriver(api.PolicyDriver, local_api.LocalAPI,
         except n_exc.InvalidInput:
             # This exception is not expected.
             # TODO(ivar): find a better way to rollback
-            LOG.exception(_("adding subnet to router failed"))
+            LOG.exception(_LE("adding subnet to router failed"))
             for subnet_id in subnet_ids:
                 self._delete_subnet(context._plugin_context, subnet_id)
                 raise exc.GroupPolicyInternalError()
@@ -1916,7 +1919,7 @@ class ResourceMappingDriver(api.PolicyDriver, local_api.LocalAPI,
             pt = context._plugin.get_policy_target(context._plugin_context,
                                                    pt_id)
         except gp_ext.PolicyTargetNotFound:
-            LOG.warning(_("PT %s doesn't exist anymore"), pt_id)
+            LOG.warning(_LW("PT %s doesn't exist anymore"), pt_id)
             return
         try:
             port_id = pt['port_id']
@@ -1926,14 +1929,14 @@ class ResourceMappingDriver(api.PolicyDriver, local_api.LocalAPI,
             port[ext_sg.SECURITYGROUPS] = new_sg_list
             self._update_port(context._plugin_context, port_id, port)
         except n_exc.PortNotFound:
-            LOG.warning(_("Port %s is missing") % port_id)
+            LOG.warning(_LW("Port %s is missing") % port_id)
 
     def _disassoc_sgs_from_pt(self, context, pt_id, sg_list):
         try:
             pt = context._plugin.get_policy_target(context._plugin_context,
                                                    pt_id)
         except gp_ext.PolicyTargetNotFound:
-            LOG.warning(_("PT %s doesn't exist anymore"), pt_id)
+            LOG.warning(_LW("PT %s doesn't exist anymore"), pt_id)
             return
         port_id = pt['port_id']
         self._disassoc_sgs_from_port(context._plugin_context, port_id, sg_list)
@@ -1946,7 +1949,7 @@ class ResourceMappingDriver(api.PolicyDriver, local_api.LocalAPI,
             port[ext_sg.SECURITYGROUPS] = new_sg_list
             self._update_port(plugin_context, port_id, port)
         except n_exc.PortNotFound:
-            LOG.warning(_("Port %s is missing") % port_id)
+            LOG.warning(_LW("Port %s is missing") % port_id)
 
     def _generate_list_of_sg_from_ptg(self, context, ptg_id):
         ptg = context._plugin.get_policy_target_group(
@@ -2541,7 +2544,7 @@ class ResourceMappingDriver(api.PolicyDriver, local_api.LocalAPI,
     def _update_cluster_membership(self, context, new_cluster_id=None,
                                    old_cluster_id=None):
         if ("allowed-address-pairs" in
-                self._core_plugin._supported_extension_aliases):
+                self._core_plugin.supported_extension_aliases):
             curr_port = self._get_port(
                     context._plugin_context, context.current['port_id'])
             curr_pairs = curr_port['allowed_address_pairs']
