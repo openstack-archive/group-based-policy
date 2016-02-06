@@ -12,10 +12,10 @@
 
 import time
 
-from neutron.common import log
 from neutron.db import model_base
 from neutron.plugins.common import constants as pconst
 from oslo_config import cfg
+from oslo_log import helpers as log
 from oslo_log import log as logging
 from oslo_serialization import jsonutils
 import sqlalchemy as sa
@@ -116,16 +116,16 @@ class HeatNodeDriver(driver_base.NodeDriverBase):
                                             'OS::Neutron::Firewall',
                                             'OS::Neutron::FirewallPolicy']}
 
-    @log.log
+    @log.log_method_call
     def initialize(self, name):
         self.initialized = True
         self._name = name
 
-    @log.log
+    @log.log_method_call
     def get_plumbing_info(self, context):
         pass
 
-    @log.log
+    @log.log_method_call
     def validate_create(self, context):
         if context.current_profile is None:
             raise ServiceProfileRequired()
@@ -138,7 +138,7 @@ class HeatNodeDriver(driver_base.NodeDriverBase):
         self._validate_service_config(context.current_node['config'],
                                       service_type)
 
-    @log.log
+    @log.log_method_call
     def validate_update(self, context):
         if not context.original_node:  # PT create/delete notifications
             return
@@ -179,7 +179,7 @@ class HeatNodeDriver(driver_base.NodeDriverBase):
                 raise HeatResourceMissing(resource=resource_name,
                                           servicetype=service_type)
 
-    @log.log
+    @log.log_method_call
     def create(self, context):
         heatclient = self._get_heat_client(context.plugin_context)
 
@@ -197,7 +197,7 @@ class HeatNodeDriver(driver_base.NodeDriverBase):
             context.plugin_session, context.current_node['id'],
             context.instance['id'], stack['stack']['id'])
 
-    @log.log
+    @log.log_method_call
     def delete(self, context):
         stack_ids = self._get_node_instance_stacks(context.plugin_session,
                                                    context.current_node['id'],
@@ -213,7 +213,7 @@ class HeatNodeDriver(driver_base.NodeDriverBase):
                                                context.current_node['id'],
                                                context.instance['id'])
 
-    @log.log
+    @log.log_method_call
     def update(self, context):
         heatclient = self._get_heat_client(context.plugin_context)
 
@@ -227,25 +227,25 @@ class HeatNodeDriver(driver_base.NodeDriverBase):
                                 heatclient, stack.stack_id, 'update')
             heatclient.update(stack.stack_id, stack_template, stack_params)
 
-    @log.log
+    @log.log_method_call
     def update_policy_target_added(self, context, policy_target):
         if context.current_profile['service_type'] == pconst.LOADBALANCER:
             self.update(context)
 
-    @log.log
+    @log.log_method_call
     def update_policy_target_removed(self, context, policy_target):
         if context.current_profile['service_type'] == pconst.LOADBALANCER:
             self.update(context)
 
-    @log.log
+    @log.log_method_call
     def update_node_consumer_ptg_added(self, context, policy_target_group):
         pass
 
-    @log.log
+    @log.log_method_call
     def update_node_consumer_ptg_removed(self, context, policy_target_group):
         pass
 
-    @log.log
+    @log.log_method_call
     def notify_chain_parameters_updated(self, context):
         self.update(context)
 

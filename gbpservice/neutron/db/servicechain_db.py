@@ -12,12 +12,12 @@
 
 import ast
 
-from neutron.common import log
 from neutron.db import common_db_mixin
 from neutron.db import model_base
 from neutron.db import models_v2
 from neutron import manager
 from neutron.plugins.common import constants as pconst
+from oslo_log import helpers as log
 from oslo_log import log as logging
 from oslo_serialization import jsonutils
 from oslo_utils import uuidutils
@@ -255,7 +255,7 @@ class ServiceChainDbPlugin(schain.ServiceChainPluginBase,
         if service_type not in schain.sc_supported_type:
             raise schain.ServiceTypeNotSupported(sc_service_type=service_type)
 
-    @log.log
+    @log.log_method_call
     def create_servicechain_node(self, context, servicechain_node):
         node = servicechain_node['servicechain_node']
         tenant_id = self._get_tenant_id_for_create(context, node)
@@ -269,7 +269,7 @@ class ServiceChainDbPlugin(schain.ServiceChainPluginBase,
             context.session.add(node_db)
         return self._make_sc_node_dict(node_db)
 
-    @log.log
+    @log.log_method_call
     def update_servicechain_node(self, context, servicechain_node_id,
                                  servicechain_node, set_params=False):
         node = servicechain_node['servicechain_node']
@@ -287,7 +287,7 @@ class ServiceChainDbPlugin(schain.ServiceChainPluginBase,
                     set_params=set_params)
         return self._make_sc_node_dict(node_db)
 
-    @log.log
+    @log.log_method_call
     def delete_servicechain_node(self, context, servicechain_node_id):
         with context.session.begin(subtransactions=True):
             node_db = self._get_servicechain_node(context,
@@ -297,13 +297,13 @@ class ServiceChainDbPlugin(schain.ServiceChainPluginBase,
                                     node_id=servicechain_node_id)
             context.session.delete(node_db)
 
-    @log.log
+    @log.log_method_call
     def get_servicechain_node(self, context, servicechain_node_id,
                               fields=None):
         node = self._get_servicechain_node(context, servicechain_node_id)
         return self._make_sc_node_dict(node, fields)
 
-    @log.log
+    @log.log_method_call
     def get_servicechain_nodes(self, context, filters=None, fields=None,
                                sorts=None, limit=None, marker=None,
                                page_reverse=False):
@@ -316,7 +316,7 @@ class ServiceChainDbPlugin(schain.ServiceChainPluginBase,
                                     marker_obj=marker_obj,
                                     page_reverse=page_reverse)
 
-    @log.log
+    @log.log_method_call
     def get_servicechain_nodes_count(self, context, filters=None):
         return self._get_collection_count(context, ServiceChainNode,
                                           filters=filters)
@@ -419,7 +419,7 @@ class ServiceChainDbPlugin(schain.ServiceChainPluginBase,
                     result.append(sci)
             return result
 
-    @log.log
+    @log.log_method_call
     def create_servicechain_spec(self, context, servicechain_spec,
                                  set_params=True):
         spec = servicechain_spec['servicechain_spec']
@@ -435,7 +435,7 @@ class ServiceChainDbPlugin(schain.ServiceChainPluginBase,
             context.session.add(spec_db)
         return self._make_sc_spec_dict(spec_db)
 
-    @log.log
+    @log.log_method_call
     def update_servicechain_spec(self, context, spec_id,
                                  servicechain_spec, set_params=True):
         spec = servicechain_spec['servicechain_spec']
@@ -447,7 +447,7 @@ class ServiceChainDbPlugin(schain.ServiceChainPluginBase,
             spec_db.update(spec)
         return self._make_sc_spec_dict(spec_db)
 
-    @log.log
+    @log.log_method_call
     def delete_servicechain_spec(self, context, spec_id):
         policy_actions = self._grouppolicy_plugin.get_policy_actions(
                                 context, filters={"action_value": [spec_id]})
@@ -460,13 +460,13 @@ class ServiceChainDbPlugin(schain.ServiceChainPluginBase,
                 raise schain.ServiceChainSpecInUse(spec_id=spec_id)
             context.session.delete(spec_db)
 
-    @log.log
+    @log.log_method_call
     def get_servicechain_spec(self, context, spec_id,
                               fields=None):
         spec = self._get_servicechain_spec(context, spec_id)
         return self._make_sc_spec_dict(spec, fields)
 
-    @log.log
+    @log.log_method_call
     def get_servicechain_specs(self, context, filters=None, fields=None,
                                sorts=None, limit=None, marker=None,
                                page_reverse=False):
@@ -479,12 +479,12 @@ class ServiceChainDbPlugin(schain.ServiceChainPluginBase,
                                     marker_obj=marker_obj,
                                     page_reverse=page_reverse)
 
-    @log.log
+    @log.log_method_call
     def get_servicechain_specs_count(self, context, filters=None):
         return self._get_collection_count(context, ServiceChainSpec,
                                           filters=filters)
 
-    @log.log
+    @log.log_method_call
     def create_servicechain_instance(self, context, servicechain_instance):
         instance = servicechain_instance['servicechain_instance']
         tenant_id = self._get_tenant_id_for_create(context, instance)
@@ -514,7 +514,7 @@ class ServiceChainDbPlugin(schain.ServiceChainPluginBase,
             context.session.add(instance_db)
         return self._make_sc_instance_dict(instance_db)
 
-    @log.log
+    @log.log_method_call
     def update_servicechain_instance(self, context, servicechain_instance_id,
                                      servicechain_instance):
         instance = servicechain_instance['servicechain_instance']
@@ -526,19 +526,19 @@ class ServiceChainDbPlugin(schain.ServiceChainPluginBase,
             instance_db.update(instance)
         return self._make_sc_instance_dict(instance_db)
 
-    @log.log
+    @log.log_method_call
     def delete_servicechain_instance(self, context, servicechain_instance_id):
         with context.session.begin(subtransactions=True):
             instance_db = self._get_servicechain_instance(
                 context, servicechain_instance_id)
             context.session.delete(instance_db)
 
-    @log.log
+    @log.log_method_call
     def get_servicechain_instance(self, context, sc_instance_id, fields=None):
         instance_db = self._get_servicechain_instance(context, sc_instance_id)
         return self._make_sc_instance_dict(instance_db, fields)
 
-    @log.log
+    @log.log_method_call
     def get_servicechain_instances(self, context, filters=None, fields=None,
                                    sorts=None, limit=None, marker=None,
                                    page_reverse=False):
@@ -551,17 +551,17 @@ class ServiceChainDbPlugin(schain.ServiceChainPluginBase,
                                     marker_obj=marker_obj,
                                     page_reverse=page_reverse)
 
-    @log.log
+    @log.log_method_call
     def get_servicechain_instances_count(self, context, filters=None):
         return self._get_collection_count(context, ServiceChainInstance,
                                           filters=filters)
 
-    @log.log
+    @log.log_method_call
     def get_service_profiles_count(self, context, filters=None):
         return self._get_collection_count(context, ServiceProfile,
                                           filters=filters)
 
-    @log.log
+    @log.log_method_call
     def create_service_profile(self, context, service_profile):
         profile = service_profile['service_profile']
         tenant_id = self._get_tenant_id_for_create(context, profile)
@@ -577,7 +577,7 @@ class ServiceChainDbPlugin(schain.ServiceChainPluginBase,
             context.session.add(profile_db)
         return self._make_service_profile_dict(profile_db)
 
-    @log.log
+    @log.log_method_call
     def update_service_profile(self, context, service_profile_id,
                                service_profile):
         profile = service_profile['service_profile']
@@ -587,7 +587,7 @@ class ServiceChainDbPlugin(schain.ServiceChainPluginBase,
             profile_db.update(profile)
         return self._make_service_profile_dict(profile_db)
 
-    @log.log
+    @log.log_method_call
     def delete_service_profile(self, context, service_profile_id):
         with context.session.begin(subtransactions=True):
             profile_db = self._get_service_profile(context,
@@ -597,13 +597,13 @@ class ServiceChainDbPlugin(schain.ServiceChainPluginBase,
                     profile_id=service_profile_id)
             context.session.delete(profile_db)
 
-    @log.log
+    @log.log_method_call
     def get_service_profile(self, context, service_profile_id, fields=None):
         profile_db = self._get_service_profile(
             context, service_profile_id)
         return self._make_service_profile_dict(profile_db, fields)
 
-    @log.log
+    @log.log_method_call
     def get_service_profiles(self, context, filters=None, fields=None,
                              sorts=None, limit=None, marker=None,
                              page_reverse=False):

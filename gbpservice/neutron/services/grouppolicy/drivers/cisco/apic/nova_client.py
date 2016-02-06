@@ -10,8 +10,7 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-from keystoneclient import auth as ks_auth
-from keystoneclient import session as ks_session
+from keystoneauth1 import loading as ks_loading
 from neutron.notifiers import nova as n_nova
 from novaclient import client as nclient
 from novaclient import exceptions as nova_exceptions
@@ -25,30 +24,14 @@ class NovaClient:
 
     def __init__(self):
 
-        auth = ks_auth.load_from_conf_options(cfg.CONF, 'nova')
-        endpoint_override = None
-
-        if not auth:
-
-            if cfg.CONF.nova_admin_tenant_id:
-                endpoint_override = "%s/%s" % (cfg.CONF.nova_url,
-                                               cfg.CONF.nova_admin_tenant_id)
-
-            auth = n_nova.DefaultAuthPlugin(
-                auth_url=cfg.CONF.nova_admin_auth_url,
-                username=cfg.CONF.nova_admin_username,
-                password=cfg.CONF.nova_admin_password,
-                tenant_id=cfg.CONF.nova_admin_tenant_id,
-                tenant_name=cfg.CONF.nova_admin_tenant_name,
-                endpoint_override=endpoint_override)
-
-        session = ks_session.Session.load_from_conf_options(
+        auth = ks_loading.load_auth_from_conf_options(cfg.CONF, 'nova')
+        session = ks_loading.load_session_from_conf_options(
             cfg.CONF, 'nova', auth=auth)
-        novaclient_cls = nclient.get_client_class(n_nova.NOVA_API_VERSION)
 
-        self.nclient = novaclient_cls(
-            session=session,
-            region_name=cfg.CONF.nova.region_name)
+        self.nclient = nclient.Client(
+            n_nova.NOVA_API_VERSION, session=session,
+            region_name=cfg.CONF.nova.region_name,
+            endpoint_type=cfg.CONF.nova.endpoint_type)
 
     def get_server(self, server_id):
         try:

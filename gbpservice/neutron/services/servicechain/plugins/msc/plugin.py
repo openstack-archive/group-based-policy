@@ -10,8 +10,8 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-from neutron.common import log
 from neutron.plugins.common import constants as pconst
+from oslo_log import helpers as log
 from oslo_log import log as logging
 from oslo_utils import excutils
 
@@ -41,7 +41,7 @@ class ServiceChainPlugin(servicechain_db.ServiceChainDbPlugin,
         super(ServiceChainPlugin, self).__init__()
         self.driver_manager.initialize()
 
-    @log.log
+    @log.log_method_call
     def create_servicechain_node(self, context, servicechain_node):
         session = context.session
         with session.begin(subtransactions=True):
@@ -65,7 +65,7 @@ class ServiceChainPlugin(servicechain_db.ServiceChainDbPlugin,
 
         return result
 
-    @log.log
+    @log.log_method_call
     def update_servicechain_node(self, context, servicechain_node_id,
                                  servicechain_node):
         session = context.session
@@ -89,7 +89,7 @@ class ServiceChainPlugin(servicechain_db.ServiceChainDbPlugin,
 
         return updated_sc_node
 
-    @log.log
+    @log.log_method_call
     def delete_servicechain_node(self, context, servicechain_node_id):
         session = context.session
         with session.begin(subtransactions=True):
@@ -110,7 +110,7 @@ class ServiceChainPlugin(servicechain_db.ServiceChainDbPlugin,
                             "for servicechain_node %s"),
                           servicechain_node_id)
 
-    @log.log
+    @log.log_method_call
     def create_servicechain_spec(self, context, servicechain_spec):
         session = context.session
         with session.begin(subtransactions=True):
@@ -133,7 +133,7 @@ class ServiceChainPlugin(servicechain_db.ServiceChainDbPlugin,
 
         return result
 
-    @log.log
+    @log.log_method_call
     def update_servicechain_spec(self, context, servicechain_spec_id,
                                  servicechain_spec):
         session = context.session
@@ -156,7 +156,7 @@ class ServiceChainPlugin(servicechain_db.ServiceChainDbPlugin,
 
         return updated_sc_spec
 
-    @log.log
+    @log.log_method_call
     def delete_servicechain_spec(self, context, servicechain_spec_id):
         session = context.session
         with session.begin(subtransactions=True):
@@ -176,7 +176,7 @@ class ServiceChainPlugin(servicechain_db.ServiceChainDbPlugin,
                             "for servicechain_spec %s"),
                           servicechain_spec_id)
 
-    @log.log
+    @log.log_method_call
     def create_servicechain_instance(self, context, servicechain_instance):
         session = context.session
         with session.begin(subtransactions=True):
@@ -201,7 +201,7 @@ class ServiceChainPlugin(servicechain_db.ServiceChainDbPlugin,
 
         return result
 
-    @log.log
+    @log.log_method_call
     def update_servicechain_instance(self, context,
                                      servicechain_instance_id,
                                      servicechain_instance):
@@ -223,7 +223,7 @@ class ServiceChainPlugin(servicechain_db.ServiceChainDbPlugin,
             sc_context)
         return updated_sc_instance
 
-    @log.log
+    @log.log_method_call
     def delete_servicechain_instance(self, context, servicechain_instance_id):
         session = context.session
         with session.begin(subtransactions=True):
@@ -245,7 +245,7 @@ class ServiceChainPlugin(servicechain_db.ServiceChainDbPlugin,
                             "for servicechain_instance %s"),
                           servicechain_instance_id)
 
-    @log.log
+    @log.log_method_call
     def create_service_profile(self, context, service_profile):
         session = context.session
         with session.begin(subtransactions=True):
@@ -271,7 +271,7 @@ class ServiceChainPlugin(servicechain_db.ServiceChainDbPlugin,
 
         return result
 
-    @log.log
+    @log.log_method_call
     def update_service_profile(self, context, service_profile_id,
                                service_profile):
         session = context.session
@@ -293,7 +293,7 @@ class ServiceChainPlugin(servicechain_db.ServiceChainDbPlugin,
             sc_context)
         return updated_profile
 
-    @log.log
+    @log.log_method_call
     def delete_service_profile(self, context, service_profile_id):
         session = context.session
         with session.begin(subtransactions=True):

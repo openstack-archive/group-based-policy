@@ -36,6 +36,7 @@ from gbpservice.neutron.services.servicechain.plugins.ncp.node_drivers import (
 from gbpservice.neutron.tests.unit.services.servicechain import (
     test_servicechain_plugin as test_base)
 
+
 SC_PLUGIN_KLASS = (
     "gbpservice.neutron.services.servicechain.plugins.ncp.plugin."
     "NodeCompositionPlugin")
