@@ -12,6 +12,7 @@
 
 from keystoneclient import exceptions as k_exceptions
 from keystoneclient.v2_0 import client as keyclient
+from neutron._i18n import _LE
 from oslo_config import cfg
 from oslo_log import log as logging
 from oslo_utils import excutils
@@ -76,10 +77,10 @@ class AdminOwnedResourcesApicTSCP(tscp.TrafficStitchingPlumber):
             return tenant.id
         except k_exceptions.NotFound:
             with excutils.save_and_reraise_exception(reraise=True):
-                LOG.error(_('No tenant with name %s exists.'), tenant)
+                LOG.error(_LE('No tenant with name %s exists.'), tenant)
         except k_exceptions.NoUniqueMatch:
             with excutils.save_and_reraise_exception(reraise=True):
-                LOG.error(_('Multiple tenants matches found for %s'), tenant)
+                LOG.error(_LE('Multiple tenants matches found for %s'), tenant)
 
     def _get_resource_owner_context(self, context):
         resource_owner_context = context.elevated()
