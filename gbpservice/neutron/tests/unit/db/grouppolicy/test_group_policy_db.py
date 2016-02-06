@@ -261,7 +261,8 @@ class GroupPolicyDBTestBase(ApiManagerMixin):
 
 class GroupPolicyDBTestPlugin(gpdb.GroupPolicyDbPlugin):
 
-    supported_extension_aliases = ['group-policy']
+    supported_extension_aliases = ['group-policy', 'availability_zone',
+            'agent']
     path_prefix = "/grouppolicy"
 
 

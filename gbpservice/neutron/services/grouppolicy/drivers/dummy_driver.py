@@ -10,7 +10,7 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-from neutron.common import log
+from oslo_log import helpers as log
 
 from gbpservice.neutron.services.grouppolicy import (
     group_policy_driver_api as api)
@@ -18,222 +18,222 @@ from gbpservice.neutron.services.grouppolicy import (
 
 class NoopDriver(api.PolicyDriver):
 
-    @log.log
+    @log.log_method_call
     def initialize(self):
         pass
 
-    @log.log
+    @log.log_method_call
     def create_policy_target_precommit(self, context):
         pass
 
-    @log.log
+    @log.log_method_call
     def create_policy_target_postcommit(self, context):
         pass
 
-    @log.log
+    @log.log_method_call
     def update_policy_target_precommit(self, context):
         pass
 
-    @log.log
+    @log.log_method_call
     def update_policy_target_postcommit(self, context):
         pass
 
-    @log.log
+    @log.log_method_call
     def delete_policy_target_precommit(self, context):
         pass
 
-    @log.log
+    @log.log_method_call
     def delete_policy_target_postcommit(self, context):
         pass
 
-    @log.log
+    @log.log_method_call
     def create_policy_target_group_precommit(self, context):
         pass
 
-    @log.log
+    @log.log_method_call
     def create_policy_target_group_postcommit(self, context):
         pass
 
-    @log.log
+    @log.log_method_call
     def update_policy_target_group_precommit(self, context):
         pass
 
-    @log.log
+    @log.log_method_call
     def update_policy_target_group_postcommit(self, context):
         pass
 
-    @log.log
+    @log.log_method_call
     def delete_policy_target_group_precommit(self, context):
         pass
 
-    @log.log
+    @log.log_method_call
     def delete_policy_target_group_postcommit(self, context):
         pass
 
-    @log.log
+    @log.log_method_call
     def create_l2_policy_precommit(self, context):
         pass
 
-    @log.log
+    @log.log_method_call
     def create_l2_policy_postcommit(self, context):
         pass
 
-    @log.log
+    @log.log_method_call
     def update_l2_policy_precommit(self, context):
         pass
 
-    @log.log
+    @log.log_method_call
     def update_l2_policy_postcommit(self, context):
         pass
 
-    @log.log
+    @log.log_method_call
     def delete_l2_policy_precommit(self, context):
         pass
 
-    @log.log
+    @log.log_method_call
     def delete_l2_policy_postcommit(self, context):
         pass
 
-    @log.log
+    @log.log_method_call
     def create_l3_policy_precommit(self, context):
         pass
 
-    @log.log
+    @log.log_method_call
     def create_l3_policy_postcommit(self, context):
         pass
 
-    @log.log
+    @log.log_method_call
     def update_l3_policy_precommit(self, context):
         pass
 
-    @log.log
+    @log.log_method_call
     def update_l3_policy_postcommit(self, context):
         pass
 
-    @log.log
+    @log.log_method_call
     def delete_l3_policy_precommit(self, context):
         pass
 
-    @log.log
+    @log.log_method_call
     def delete_l3_policy_postcommit(self, context):
         pass
 
-    @log.log
+    @log.log_method_call
     def create_network_service_policy_precommit(self, context):
         pass
 
-    @log.log
+    @log.log_method_call
     def create_network_service_policy_postcommit(self, context):
         pass
 
-    @log.log
+    @log.log_method_call
     def update_network_service_policy_precommit(self, context):
         pass
 
-    @log.log
+    @log.log_method_call
     def update_network_service_policy_postcommit(self, context):
         pass
 
-    @log.log
+    @log.log_method_call
     def delete_network_service_policy_precommit(self, context):
         pass
 
-    @log.log
+    @log.log_method_call
     def delete_network_service_policy_postcommit(self, context):
         pass
 
-    @log.log
+    @log.log_method_call
     def create_policy_classifier_precommit(self, context):
         pass
 
-    @log.log
+    @log.log_method_call
     def create_policy_classifier_postcommit(self, context):
         pass
 
-    @log.log
+    @log.log_method_call
     def update_policy_classifier_precommit(self, context):
         pass
 
-    @log.log
+    @log.log_method_call
     def update_policy_classifier_postcommit(self, context):
         pass
 
-    @log.log
+    @log.log_method_call
     def delete_policy_classifier_precommit(self, context):
         pass
 
-    @log.log
+    @log.log_method_call
     def delete_policy_classifier_postcommit(self, context):
         pass
 
-    @log.log
+    @log.log_method_call
     def create_policy_action_precommit(self, context):
         pass
 
-    @log.log
+    @log.log_method_call
     def create_policy_action_postcommit(self, context):
         pass
 
-    @log.log
+    @log.log_method_call
     def update_policy_action_precommit(self, context):
         pass
 
-    @log.log
+    @log.log_method_call
     def update_policy_action_postcommit(self, context):
         pass
 
-    @log.log
+    @log.log_method_call
     def delete_policy_action_precommit(self, context):
         pass
 
-    @log.log
+    @log.log_method_call
     def delete_policy_action_postcommit(self, context):
         pass
 
-    @log.log
+    @log.log_method_call
     def create_policy_rule_precommit(self, context):
         pass
 
-    @log.log
+    @log.log_method_call
     def create_policy_rule_postcommit(self, context):
         pass
 
-    @log.log
+    @log.log_method_call
     def update_policy_rule_precommit(self, context):
         pass
 
-    @log.log
+    @log.log_method_call
     def update_policy_rule_postcommit(self, context):
         pass
 
-    @log.log
+    @log.log_method_call
     def delete_policy_rule_precommit(self, context):
         pass
 
-    @log.log
+    @log.log_method_call
     def delete_policy_rule_postcommit(self, context):
         pass
 
-    @log.log
+    @log.log_method_call
     def create_policy_rule_set_precommit(self, context):
         pass
 
-    @log.log
+    @log.log_method_call
     def create_policy_rule_set_postcommit(self, context):
         pass
 
-    @log.log
+    @log.log_method_call
     def update_policy_rule_set_precommit(self, context):
         pass
 
-    @log.log
+    @log.log_method_call
     def update_policy_rule_set_postcommit(self, context):
         pass
 
-    @log.log
+    @log.log_method_call
     def delete_policy_rule_set_precommit(self, context):
         pass
 
-    @log.log
+    @log.log_method_call
     def delete_policy_rule_set_postcommit(self, context):
         pass
