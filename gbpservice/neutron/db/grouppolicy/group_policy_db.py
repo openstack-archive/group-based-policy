@@ -12,11 +12,11 @@
 
 import netaddr
 from neutron.api.v2 import attributes as attr
-from neutron.common import log
 from neutron import context
 from neutron.db import common_db_mixin
 from neutron.db import model_base
 from neutron.db import models_v2
+from oslo_log import helpers as log
 from oslo_log import log as logging
 from oslo_utils import uuidutils
 import sqlalchemy as sa
@@ -1134,7 +1134,7 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
                 raise gpolicy.SubnetPrefixLengthExceedsIpPool(
                     ip_pool=ip_pool, subnet_size=new_prefix_length)
 
-    @log.log
+    @log.log_method_call
     def create_policy_target(self, context, policy_target):
         pt = policy_target['policy_target']
         tenant_id = self._get_tenant_id_for_create(context, pt)
@@ -1147,7 +1147,7 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
             context.session.add(pt_db)
         return self._make_policy_target_dict(pt_db)
 
-    @log.log
+    @log.log_method_call
     def update_policy_target(self, context, policy_target_id, policy_target):
         pt = policy_target['policy_target']
         with context.session.begin(subtransactions=True):
@@ -1155,18 +1155,18 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
             pt_db.update(pt)
         return self._make_policy_target_dict(pt_db)
 
-    @log.log
+    @log.log_method_call
     def delete_policy_target(self, context, policy_target_id):
         with context.session.begin(subtransactions=True):
             pt_db = self._get_policy_target(context, policy_target_id)
             context.session.delete(pt_db)
 
-    @log.log
+    @log.log_method_call
     def get_policy_target(self, context, policy_target_id, fields=None):
         pt = self._get_policy_target(context, policy_target_id)
         return self._make_policy_target_dict(pt, fields)
 
-    @log.log
+    @log.log_method_call
     def get_policy_targets(self, context, filters=None, fields=None,
                            sorts=None, limit=None, marker=None,
                            page_reverse=False):
@@ -1179,12 +1179,12 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
                                     marker_obj=marker_obj,
                                     page_reverse=page_reverse)
 
-    @log.log
+    @log.log_method_call
     def get_policy_targets_count(self, context, filters=None):
         return self._get_collection_count(context, PolicyTarget,
                                           filters=filters)
 
-    @log.log
+    @log.log_method_call
     def create_policy_target_group(self, context, policy_target_group):
         ptg = policy_target_group['policy_target_group']
         tenant_id = self._get_tenant_id_for_create(context, ptg)
@@ -1202,7 +1202,7 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
             self._process_policy_rule_sets_for_ptg(context, ptg_db, ptg)
         return self._make_policy_target_group_dict(ptg_db)
 
-    @log.log
+    @log.log_method_call
     def update_policy_target_group(self, context, policy_target_group_id,
                                    policy_target_group):
         ptg = policy_target_group['policy_target_group']
@@ -1213,7 +1213,7 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
             ptg_db.update(ptg)
         return self._make_policy_target_group_dict(ptg_db)
 
-    @log.log
+    @log.log_method_call
     def delete_policy_target_group(self, context, policy_target_group_id):
         with context.session.begin(subtransactions=True):
             ptg_db = self._get_policy_target_group(
@@ -1231,13 +1231,13 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
             # other resources.
             context.session.delete(ptg_db)
 
-    @log.log
+    @log.log_method_call
     def get_policy_target_group(self, context, policy_target_group_id,
                                 fields=None):
         ptg = self._get_policy_target_group(context, policy_target_group_id)
         return self._make_policy_target_group_dict(ptg, fields)
 
-    @log.log
+    @log.log_method_call
     def get_policy_target_groups(self, context, filters=None, fields=None,
                                  sorts=None, limit=None, marker=None,
                                  page_reverse=False):
@@ -1250,12 +1250,12 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
                                     marker_obj=marker_obj,
                                     page_reverse=page_reverse)
 
-    @log.log
+    @log.log_method_call
     def get_policy_target_groups_count(self, context, filters=None):
         return self._get_collection_count(context, PolicyTargetGroup,
                                           filters=filters)
 
-    @log.log
+    @log.log_method_call
     def create_l2_policy(self, context, l2_policy):
         l2p = l2_policy['l2_policy']
         tenant_id = self._get_tenant_id_for_create(context, l2p)
@@ -1270,7 +1270,7 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
             context.session.add(l2p_db)
         return self._make_l2_policy_dict(l2p_db)
 
-    @log.log
+    @log.log_method_call
     def update_l2_policy(self, context, l2_policy_id, l2_policy):
         l2p = l2_policy['l2_policy']
         with context.session.begin(subtransactions=True):
@@ -1278,7 +1278,7 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
             l2p_db.update(l2p)
         return self._make_l2_policy_dict(l2p_db)
 
-    @log.log
+    @log.log_method_call
     def delete_l2_policy(self, context, l2_policy_id):
         with context.session.begin(subtransactions=True):
             l2p_db = self._get_l2_policy(context, l2_policy_id)
@@ -1286,12 +1286,12 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
                 raise gpolicy.L2PolicyInUse(l2_policy_id=l2_policy_id)
             context.session.delete(l2p_db)
 
-    @log.log
+    @log.log_method_call
     def get_l2_policy(self, context, l2_policy_id, fields=None):
         l2p = self._get_l2_policy(context, l2_policy_id)
         return self._make_l2_policy_dict(l2p, fields)
 
-    @log.log
+    @log.log_method_call
     def get_l2_policies(self, context, filters=None, fields=None,
                         sorts=None, limit=None, marker=None,
                         page_reverse=False):
@@ -1304,12 +1304,12 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
                                     marker_obj=marker_obj,
                                     page_reverse=page_reverse)
 
-    @log.log
+    @log.log_method_call
     def get_l2_policies_count(self, context, filters=None):
         return self._get_collection_count(context, L2Policy,
                                           filters=filters)
 
-    @log.log
+    @log.log_method_call
     def create_l3_policy(self, context, l3_policy):
         l3p = l3_policy['l3_policy']
         tenant_id = self._get_tenant_id_for_create(context, l3p)
@@ -1332,7 +1332,7 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
                 context.session.add(l3p_db)
         return self._make_l3_policy_dict(l3p_db)
 
-    @log.log
+    @log.log_method_call
     def update_l3_policy(self, context, l3_policy_id, l3_policy):
         l3p = l3_policy['l3_policy']
         with context.session.begin(subtransactions=True):
@@ -1348,7 +1348,7 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
             l3p_db.update(l3p)
         return self._make_l3_policy_dict(l3p_db)
 
-    @log.log
+    @log.log_method_call
     def delete_l3_policy(self, context, l3_policy_id):
         with context.session.begin(subtransactions=True):
             l3p_db = self._get_l3_policy(context, l3_policy_id)
@@ -1356,12 +1356,12 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
                 raise gpolicy.L3PolicyInUse(l3_policy_id=l3_policy_id)
             context.session.delete(l3p_db)
 
-    @log.log
+    @log.log_method_call
     def get_l3_policy(self, context, l3_policy_id, fields=None):
         l3p = self._get_l3_policy(context, l3_policy_id)
         return self._make_l3_policy_dict(l3p, fields)
 
-    @log.log
+    @log.log_method_call
     def get_l3_policies(self, context, filters=None, fields=None,
                         sorts=None, limit=None, marker=None,
                         page_reverse=False):
@@ -1374,12 +1374,12 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
                                     marker_obj=marker_obj,
                                     page_reverse=page_reverse)
 
-    @log.log
+    @log.log_method_call
     def get_l3_policies_count(self, context, filters=None):
         return self._get_collection_count(context, L3Policy,
                                           filters=filters)
 
-    @log.log
+    @log.log_method_call
     def create_network_service_policy(self, context, network_service_policy):
         nsp = network_service_policy['network_service_policy']
         tenant_id = self._get_tenant_id_for_create(context, nsp)
@@ -1394,7 +1394,7 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
                 context, nsp_db, nsp)
         return self._make_network_service_policy_dict(nsp_db)
 
-    @log.log
+    @log.log_method_call
     def update_network_service_policy(
         self, context, network_service_policy_id, network_service_policy):
         nsp = network_service_policy['network_service_policy']
@@ -1407,7 +1407,7 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
             nsp_db.update(nsp)
         return self._make_network_service_policy_dict(nsp_db)
 
-    @log.log
+    @log.log_method_call
     def delete_network_service_policy(
         self, context, network_service_policy_id):
         with context.session.begin(subtransactions=True):
@@ -1418,14 +1418,14 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
                         network_service_policy_id=network_service_policy_id)
             context.session.delete(nsp_db)
 
-    @log.log
+    @log.log_method_call
     def get_network_service_policy(
             self, context, network_service_policy_id, fields=None):
         nsp = self._get_network_service_policy(
             context, network_service_policy_id)
         return self._make_network_service_policy_dict(nsp, fields)
 
-    @log.log
+    @log.log_method_call
     def get_network_service_policies(
             self, context, filters=None, fields=None, sorts=None, limit=None,
             marker=None, page_reverse=False):
@@ -1438,12 +1438,12 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
                                     marker_obj=marker_obj,
                                     page_reverse=page_reverse)
 
-    @log.log
+    @log.log_method_call
     def get_network_service_policies_count(self, context, filters=None):
         return self._get_collection_count(context, NetworkServicePolicy,
                                           filters=filters)
 
-    @log.log
+    @log.log_method_call
     def create_policy_classifier(self, context, policy_classifier):
         pc = policy_classifier['policy_classifier']
         tenant_id = self._get_tenant_id_for_create(context, pc)
@@ -1462,7 +1462,7 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
             context.session.add(pc_db)
         return self._make_policy_classifier_dict(pc_db)
 
-    @log.log
+    @log.log_method_call
     def update_policy_classifier(self, context, policy_classifier_id,
                                  policy_classifier):
         pc = policy_classifier['policy_classifier']
@@ -1478,7 +1478,7 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
             pc_db.update(pc)
         return self._make_policy_classifier_dict(pc_db)
 
-    @log.log
+    @log.log_method_call
     def delete_policy_classifier(self, context, policy_classifier_id):
         with context.session.begin(subtransactions=True):
             pc_db = self._get_policy_classifier(context, policy_classifier_id)
@@ -1489,13 +1489,13 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
                     policy_classifier_id=policy_classifier_id)
             context.session.delete(pc_db)
 
-    @log.log
+    @log.log_method_call
     def get_policy_classifier(self, context, policy_classifier_id,
                               fields=None):
         pc = self._get_policy_classifier(context, policy_classifier_id)
         return self._make_policy_classifier_dict(pc, fields)
 
-    @log.log
+    @log.log_method_call
     def get_policy_classifiers(self, context, filters=None, fields=None,
                                sorts=None, limit=None, marker=None,
                                page_reverse=False):
@@ -1508,12 +1508,12 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
                                     marker_obj=marker_obj,
                                     page_reverse=page_reverse)
 
-    @log.log
+    @log.log_method_call
     def get_policy_classifiers_count(self, context, filters=None):
         return self._get_collection_count(context, PolicyClassifier,
                                           filters=filters)
 
-    @log.log
+    @log.log_method_call
     def create_policy_action(self, context, policy_action):
         pa = policy_action['policy_action']
         tenant_id = self._get_tenant_id_for_create(context, pa)
@@ -1528,7 +1528,7 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
             context.session.add(pa_db)
         return self._make_policy_action_dict(pa_db)
 
-    @log.log
+    @log.log_method_call
     def update_policy_action(self, context, policy_action_id, policy_action):
         pa = policy_action['policy_action']
         with context.session.begin(subtransactions=True):
@@ -1536,7 +1536,7 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
             pa_db.update(pa)
         return self._make_policy_action_dict(pa_db)
 
-    @log.log
+    @log.log_method_call
     def delete_policy_action(self, context, policy_action_id):
         with context.session.begin(subtransactions=True):
             pa_db = self._get_policy_action(context, policy_action_id)
@@ -1546,12 +1546,12 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
                     policy_action_id=policy_action_id)
             context.session.delete(pa_db)
 
-    @log.log
+    @log.log_method_call
     def get_policy_action(self, context, id, fields=None):
         pa = self._get_policy_action(context, id)
         return self._make_policy_action_dict(pa, fields)
 
-    @log.log
+    @log.log_method_call
     def get_policy_actions(self, context, filters=None, fields=None,
                            sorts=None, limit=None, marker=None,
                            page_reverse=False):
@@ -1564,12 +1564,12 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
                                     marker_obj=marker_obj,
                                     page_reverse=page_reverse)
 
-    @log.log
+    @log.log_method_call
     def get_policy_actions_count(self, context, filters=None):
         return self._get_collection_count(context, PolicyAction,
                                           filters=filters)
 
-    @log.log
+    @log.log_method_call
     def create_policy_rule(self, context, policy_rule):
         pr = policy_rule['policy_rule']
         tenant_id = self._get_tenant_id_for_create(context, pr)
@@ -1585,7 +1585,7 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
                                        pr['policy_actions'])
         return self._make_policy_rule_dict(pr_db)
 
-    @log.log
+    @log.log_method_call
     def update_policy_rule(self, context, policy_rule_id, policy_rule):
         pr = policy_rule['policy_rule']
         with context.session.begin(subtransactions=True):
@@ -1597,7 +1597,7 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
             pr_db.update(pr)
         return self._make_policy_rule_dict(pr_db)
 
-    @log.log
+    @log.log_method_call
     def delete_policy_rule(self, context, policy_rule_id):
         with context.session.begin(subtransactions=True):
             pr_db = self._get_policy_rule(context, policy_rule_id)
@@ -1607,12 +1607,12 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
                 raise gpolicy.PolicyRuleInUse(policy_rule_id=policy_rule_id)
             context.session.delete(pr_db)
 
-    @log.log
+    @log.log_method_call
     def get_policy_rule(self, context, policy_rule_id, fields=None):
         pr = self._get_policy_rule(context, policy_rule_id)
         return self._make_policy_rule_dict(pr, fields)
 
-    @log.log
+    @log.log_method_call
     def get_policy_rules(self, context, filters=None, fields=None,
                          sorts=None, limit=None, marker=None,
                          page_reverse=False):
@@ -1625,12 +1625,12 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
                                     marker_obj=marker_obj,
                                     page_reverse=page_reverse)
 
-    @log.log
+    @log.log_method_call
     def get_policy_rules_count(self, context, filters=None):
         return self._get_collection_count(context, PolicyRule,
                                           filters=filters)
 
-    @log.log
+    @log.log_method_call
     def create_policy_rule_set(self, context, policy_rule_set):
         prs = policy_rule_set['policy_rule_set']
         tenant_id = self._get_tenant_id_for_create(context, prs)
@@ -1647,7 +1647,7 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
                 context, prs_db, prs['child_policy_rule_sets'])
         return self._make_policy_rule_set_dict(prs_db)
 
-    @log.log
+    @log.log_method_call
     def update_policy_rule_set(self, context, policy_rule_set_id,
                                policy_rule_set):
         prs = policy_rule_set['policy_rule_set']
@@ -1664,7 +1664,7 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
             prs_db.update(prs)
         return self._make_policy_rule_set_dict(prs_db)
 
-    @log.log
+    @log.log_method_call
     def delete_policy_rule_set(self, context, policy_rule_set_id):
         with context.session.begin(subtransactions=True):
             prs_db = self._get_policy_rule_set(context, policy_rule_set_id)
@@ -1683,12 +1683,12 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
                                                  policy_rule_set_id)
             context.session.delete(prs_db)
 
-    @log.log
+    @log.log_method_call
     def get_policy_rule_set(self, context, policy_rule_set_id, fields=None):
         prs = self._get_policy_rule_set(context, policy_rule_set_id)
         return self._make_policy_rule_set_dict(prs, fields)
 
-    @log.log
+    @log.log_method_call
     def get_policy_rule_sets(self, context, filters=None, fields=None,
                              sorts=None, limit=None, marker=None,
                              page_reverse=False):
@@ -1701,12 +1701,12 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
                                     marker_obj=marker_obj,
                                     page_reverse=page_reverse)
 
-    @log.log
+    @log.log_method_call
     def get_policy_rule_sets_count(self, context, filters=None):
         return self._get_collection_count(context, PolicyRuleSet,
                                           filters=filters)
 
-    @log.log
+    @log.log_method_call
     def create_external_policy(self, context, external_policy):
         ep = external_policy['external_policy']
         tenant_id = self._get_tenant_id_for_create(context, ep)
@@ -1722,7 +1722,7 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
             self._process_policy_rule_sets_for_ep(context, ep_db, ep)
         return self._make_external_policy_dict(ep_db)
 
-    @log.log
+    @log.log_method_call
     def update_external_policy(self, context, external_policy_id,
                                external_policy):
         ep = external_policy['external_policy']
@@ -1737,7 +1737,7 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
             ep_db.update(ep)
         return self._make_external_policy_dict(ep_db)
 
-    @log.log
+    @log.log_method_call
     def get_external_policies(self, context, filters=None, fields=None,
                               sorts=None, limit=None, marker=None,
                               page_reverse=False):
@@ -1750,25 +1750,25 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
                                     marker_obj=marker_obj,
                                     page_reverse=page_reverse)
 
-    @log.log
+    @log.log_method_call
     def get_external_policies_count(self, context, filters=None):
         return self._get_collection_count(context, ExternalPolicy,
                                           filters=filters)
 
-    @log.log
+    @log.log_method_call
     def get_external_policy(self, context, external_policy_id, fields=None):
         ep = self._get_external_policy(
             context, external_policy_id)
         return self._make_external_policy_dict(ep, fields)
 
-    @log.log
+    @log.log_method_call
     def delete_external_policy(self, context, external_policy_id):
         with context.session.begin(subtransactions=True):
             ep_db = self._get_external_policy(
                 context, external_policy_id)
             context.session.delete(ep_db)
 
-    @log.log
+    @log.log_method_call
     def create_external_segment(self, context, external_segment):
         es = external_segment['external_segment']
         tenant_id = self._get_tenant_id_for_create(context, es)
@@ -1784,7 +1784,7 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
                 self._process_segment_ers(context, es_db, es)
         return self._make_external_segment_dict(es_db)
 
-    @log.log
+    @log.log_method_call
     def update_external_segment(self, context, external_segment_id,
                                 external_segment):
         es = external_segment['external_segment']
@@ -1797,7 +1797,7 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
             es_db.update(es)
         return self._make_external_segment_dict(es_db)
 
-    @log.log
+    @log.log_method_call
     def get_external_segments(self, context, filters=None, fields=None,
                               sorts=None, limit=None, marker=None,
                               page_reverse=False):
@@ -1810,25 +1810,25 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
                                     marker_obj=marker_obj,
                                     page_reverse=page_reverse)
 
-    @log.log
+    @log.log_method_call
     def get_external_segments_count(self, context, filters=None):
         return self._get_collection_count(context, ExternalSegment,
                                           filters=filters)
 
-    @log.log
+    @log.log_method_call
     def get_external_segment(self, context, external_segment_id, fields=None):
         es = self._get_external_segment(
             context, external_segment_id)
         return self._make_external_segment_dict(es, fields)
 
-    @log.log
+    @log.log_method_call
     def delete_external_segment(self, context, external_segment_id):
         with context.session.begin(subtransactions=True):
             es_db = self._get_external_segment(
                 context, external_segment_id)
             context.session.delete(es_db)
 
-    @log.log
+    @log.log_method_call
     def create_nat_pool(self, context, nat_pool):
         np = nat_pool['nat_pool']
         tenant_id = self._get_tenant_id_for_create(context, np)
@@ -1842,7 +1842,7 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
             context.session.add(np_db)
         return self._make_nat_pool_dict(np_db)
 
-    @log.log
+    @log.log_method_call
     def update_nat_pool(self, context, nat_pool_id, nat_pool):
         np = nat_pool['nat_pool']
         with context.session.begin(subtransactions=True):
@@ -1851,7 +1851,7 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
             np_db.update(np)
         return self._make_nat_pool_dict(np_db)
 
-    @log.log
+    @log.log_method_call
     def get_nat_pools(self, context, filters=None, fields=None,
                       sorts=None, limit=None, marker=None,
                       page_reverse=False):
@@ -1864,16 +1864,16 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
                                     marker_obj=marker_obj,
                                     page_reverse=page_reverse)
 
-    @log.log
+    @log.log_method_call
     def get_nat_pools_count(self, context, filters=None):
         return self._get_collection_count(context, NATPool, filters=filters)
 
-    @log.log
+    @log.log_method_call
     def get_nat_pool(self, context, nat_pool_id, fields=None):
         np = self._get_nat_pool(context, nat_pool_id)
         return self._make_nat_pool_dict(np, fields)
 
-    @log.log
+    @log.log_method_call
     def delete_nat_pool(self, context, nat_pool_id):
         with context.session.begin(subtransactions=True):
             np_db = self._get_nat_pool(context, nat_pool_id)

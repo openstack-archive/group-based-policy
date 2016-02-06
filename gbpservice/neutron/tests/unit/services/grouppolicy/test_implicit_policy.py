@@ -64,19 +64,19 @@ class TestImplicitL2Policy(ImplicitPolicyTestCase):
         # policy.
         req = self.new_delete_request('policy_target_groups', ptg1_id)
         res = req.get_response(self.ext_api)
-        self.assertEqual(res.status_int, webob.exc.HTTPNoContent.code)
+        self.assertEqual(webob.exc.HTTPNoContent.code, res.status_int)
         req = self.new_show_request('l2_policies', l2p1_id, fmt=self.fmt)
         res = req.get_response(self.ext_api)
-        self.assertEqual(res.status_int, webob.exc.HTTPNotFound.code)
+        self.assertEqual(webob.exc.HTTPNotFound.code, res.status_int)
 
         # Verify deleting 2nd policy_target group does cleanup its L2
         # policy.
         req = self.new_delete_request('policy_target_groups', ptg2_id)
         res = req.get_response(self.ext_api)
-        self.assertEqual(res.status_int, webob.exc.HTTPNoContent.code)
+        self.assertEqual(webob.exc.HTTPNoContent.code, res.status_int)
         req = self.new_show_request('l2_policies', l2p2_id, fmt=self.fmt)
         res = req.get_response(self.ext_api)
-        self.assertEqual(res.status_int, webob.exc.HTTPNotFound.code)
+        self.assertEqual(webob.exc.HTTPNotFound.code, res.status_int)
 
     def test_implicit_shared_lifecycle_negative(self):
         # Create PTG non shared
@@ -103,10 +103,10 @@ class TestImplicitL2Policy(ImplicitPolicyTestCase):
         # Verify deleting policy_target group does not cleanup L2 policy.
         req = self.new_delete_request('policy_target_groups', ptg_id)
         res = req.get_response(self.ext_api)
-        self.assertEqual(res.status_int, webob.exc.HTTPNoContent.code)
+        self.assertEqual(webob.exc.HTTPNoContent.code, res.status_int)
         req = self.new_show_request('l2_policies', l2p_id, fmt=self.fmt)
         res = req.get_response(self.ext_api)
-        self.assertEqual(res.status_int, webob.exc.HTTPOk.code)
+        self.assertEqual(webob.exc.HTTPOk.code, res.status_int)
 
     def test_delete_from_implicit(self):
         # Create policy_target group with explicit L2 policy.
@@ -122,7 +122,7 @@ class TestImplicitL2Policy(ImplicitPolicyTestCase):
         # Verify old L2 policy was not cleaned up.
         req = self.new_show_request('l2_policies', l2p1_id, fmt=self.fmt)
         res = req.get_response(self.ext_api)
-        self.assertEqual(res.status_int, webob.exc.HTTPOk.code)
+        self.assertEqual(webob.exc.HTTPOk.code, res.status_int)
 
 
 class TestImplicitL3Policy(ImplicitPolicyTestCase):
@@ -151,18 +151,18 @@ class TestImplicitL3Policy(ImplicitPolicyTestCase):
         # Verify deleting 1st L2 policy does not cleanup L3 policy.
         req = self.new_delete_request('l2_policies', l2p1_id)
         res = req.get_response(self.ext_api)
-        self.assertEqual(res.status_int, webob.exc.HTTPNoContent.code)
+        self.assertEqual(webob.exc.HTTPNoContent.code, res.status_int)
         req = self.new_show_request('l3_policies', l3p_id, fmt=self.fmt)
         res = req.get_response(self.ext_api)
-        self.assertEqual(res.status_int, webob.exc.HTTPOk.code)
+        self.assertEqual(webob.exc.HTTPOk.code, res.status_int)
 
         # Verify deleting last L2 policy does cleanup L3 policy.
         req = self.new_delete_request('l2_policies', l2p2_id)
         res = req.get_response(self.ext_api)
-        self.assertEqual(res.status_int, webob.exc.HTTPNoContent.code)
+        self.assertEqual(webob.exc.HTTPNoContent.code, res.status_int)
         req = self.new_show_request('l3_policies', l3p_id, fmt=self.fmt)
         res = req.get_response(self.ext_api)
-        self.assertEqual(res.status_int, webob.exc.HTTPNotFound.code)
+        self.assertEqual(webob.exc.HTTPNotFound.code, res.status_int)
 
     def test_impicit_lifecycle(self):
         self._test_implicit_lifecycle()
@@ -181,10 +181,10 @@ class TestImplicitL3Policy(ImplicitPolicyTestCase):
         # Verify deleting L2 policy does not cleanup L3 policy.
         req = self.new_delete_request('l2_policies', l2p_id)
         res = req.get_response(self.ext_api)
-        self.assertEqual(res.status_int, webob.exc.HTTPNoContent.code)
+        self.assertEqual(webob.exc.HTTPNoContent.code, res.status_int)
         req = self.new_show_request('l3_policies', l3p_id, fmt=self.fmt)
         res = req.get_response(self.ext_api)
-        self.assertEqual(res.status_int, webob.exc.HTTPOk.code)
+        self.assertEqual(webob.exc.HTTPOk.code, res.status_int)
 
     def test_unowned_default_lifecycle(self):
         # Create L2 policy with unowned default L3 policy.
@@ -197,10 +197,10 @@ class TestImplicitL3Policy(ImplicitPolicyTestCase):
         # Verify deleting L2 policy does not cleanup L3 policy.
         req = self.new_delete_request('l2_policies', l2p_id)
         res = req.get_response(self.ext_api)
-        self.assertEqual(res.status_int, webob.exc.HTTPNoContent.code)
+        self.assertEqual(webob.exc.HTTPNoContent.code, res.status_int)
         req = self.new_show_request('l3_policies', l3p_id, fmt=self.fmt)
         res = req.get_response(self.ext_api)
-        self.assertEqual(res.status_int, webob.exc.HTTPOk.code)
+        self.assertEqual(webob.exc.HTTPOk.code, res.status_int)
 
     def test_single_default_policy(self):
         # Verify only one default L3 policy can be created per tenant.
@@ -230,15 +230,15 @@ class TestImplicitL3Policy(ImplicitPolicyTestCase):
         # Verify old L3 policy was cleaned up
         req = self.new_show_request('l3_policies', l3p1_id, fmt=self.fmt)
         res = req.get_response(self.ext_api)
-        self.assertEqual(res.status_int, webob.exc.HTTPNotFound.code)
+        self.assertEqual(webob.exc.HTTPNotFound.code, res.status_int)
 
         # Verify deleting L2 policy does not cleanup new L3 policy.
         req = self.new_delete_request('l2_policies', l2p_id)
         res = req.get_response(self.ext_api)
-        self.assertEqual(res.status_int, webob.exc.HTTPNoContent.code)
+        self.assertEqual(webob.exc.HTTPNoContent.code, res.status_int)
         req = self.new_show_request('l3_policies', l3p2_id, fmt=self.fmt)
         res = req.get_response(self.ext_api)
-        self.assertEqual(res.status_int, webob.exc.HTTPOk.code)
+        self.assertEqual(webob.exc.HTTPOk.code, res.status_int)
 
     def test_update_to_implicit(self):
         # Create L2 policy with explicit L3 policy.
@@ -262,15 +262,15 @@ class TestImplicitL3Policy(ImplicitPolicyTestCase):
         # Verify old L3 policy was not cleaned up.
         req = self.new_show_request('l3_policies', l3p1_id, fmt=self.fmt)
         res = req.get_response(self.ext_api)
-        self.assertEqual(res.status_int, webob.exc.HTTPOk.code)
+        self.assertEqual(webob.exc.HTTPOk.code, res.status_int)
 
         # Verify deleting L2 policy does cleanup new L3 policy.
         req = self.new_delete_request('l2_policies', l2p_id)
         res = req.get_response(self.ext_api)
-        self.assertEqual(res.status_int, webob.exc.HTTPNoContent.code)
+        self.assertEqual(webob.exc.HTTPNoContent.code, res.status_int)
         req = self.new_show_request('l3_policies', l3p2_id, fmt=self.fmt)
         res = req.get_response(self.ext_api)
-        self.assertEqual(res.status_int, webob.exc.HTTPNotFound.code)
+        self.assertEqual(webob.exc.HTTPNotFound.code, res.status_int)
 
 
 class TestImplicitExternalSegment(ImplicitPolicyTestCase):

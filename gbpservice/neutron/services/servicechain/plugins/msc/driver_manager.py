@@ -10,6 +10,8 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+from neutron._i18n import _LE
+from neutron._i18n import _LI
 from oslo_config import cfg
 from oslo_log import log
 import stevedore
@@ -37,14 +39,14 @@ class DriverManager(stevedore.named.NamedExtensionManager):
         # the order in which the drivers are called.
         self.ordered_drivers = []
 
-        LOG.info(_("Configured servicechain driver names: %s"),
+        LOG.info(_LI("Configured servicechain driver names: %s"),
                  cfg.CONF.servicechain.servicechain_drivers)
         super(DriverManager,
               self).__init__(
                   'gbpservice.neutron.servicechain.servicechain_drivers',
                   cfg.CONF.servicechain.servicechain_drivers,
                   invoke_on_load=True, name_order=True)
-        LOG.info(_("Loaded servicechain driver names: %s"), self.names())
+        LOG.info(_LI("Loaded servicechain driver names: %s"), self.names())
         self._register_drivers()
 
     def _register_drivers(self):
@@ -56,14 +58,14 @@ class DriverManager(stevedore.named.NamedExtensionManager):
         for ext in self:
             self.drivers[ext.name] = ext
             self.ordered_drivers.append(ext)
-        LOG.info(_("Registered servicechain drivers: %s"),
+        LOG.info(_LI("Registered servicechain drivers: %s"),
                  [driver.name for driver in self.ordered_drivers])
 
     def initialize(self):
         # ServiceChain bulk operations requires each driver to support them
         self.native_bulk_support = True
         for driver in self.ordered_drivers:
-            LOG.info(_("Initializing servicechain driver '%s'"), driver.name)
+            LOG.info(_LI("Initializing servicechain driver '%s'"), driver.name)
             driver.obj.initialize()
             self.native_bulk_support &= getattr(driver.obj,
                                                 'native_bulk_support', True)
@@ -88,7 +90,7 @@ class DriverManager(stevedore.named.NamedExtensionManager):
             except Exception:
                 # This is an internal failure.
                 LOG.exception(
-                    _("ServiceChain driver '%(name)s' failed in %(method)s"),
+                    _LE("ServiceChain driver '%(name)s' failed in %(method)s"),
                     {'name': driver.name, 'method': method_name}
                 )
                 error = True
