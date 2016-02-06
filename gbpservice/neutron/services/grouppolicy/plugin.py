@@ -12,12 +12,14 @@
 
 import netaddr
 
+from neutron._i18n import _LE
+from neutron._i18n import _LW
 from neutron.api.v2 import attributes as nattr
-from neutron.common import log
 from neutron import context as n_ctx
 from neutron.extensions import portbindings
 from neutron import manager as n_manager
 from neutron.plugins.common import constants as pconst
+from oslo_log import helpers as log
 from oslo_log import log as logging
 from oslo_utils import excutils
 
@@ -65,7 +67,7 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
         plugins = n_manager.NeutronManager.get_service_plugins()
         servicechain_plugin = plugins.get(pconst.SERVICECHAIN)
         if not servicechain_plugin:
-            LOG.error(_("No Servicechain service plugin found."))
+            LOG.error(_LE("No Servicechain service plugin found."))
             raise gp_exc.GroupPolicyDeploymentError()
         return servicechain_plugin
 
@@ -328,7 +330,7 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
         else:
             return result
 
-    @log.log
+    @log.log_method_call
     def create_policy_target(self, context, policy_target):
         session = context.session
         with session.begin(subtransactions=True):
@@ -348,8 +350,8 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
                 policy_context)
         except Exception:
             with excutils.save_and_reraise_exception():
-                LOG.exception(_("create_policy_target_postcommit "
-                                "failed, deleting policy_target %s"),
+                LOG.exception(_LE("create_policy_target_postcommit "
+                                  "failed, deleting policy_target %s"),
                               result['id'])
                 self.delete_policy_target(context, result['id'])
 
@@ -357,7 +359,7 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
         result.pop('port_attributes', None)
         return result
 
-    @log.log
+    @log.log_method_call
     def update_policy_target(self, context, policy_target_id, policy_target):
         session = context.session
         with session.begin(subtransactions=True):
@@ -381,7 +383,7 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
             policy_context)
         return updated_policy_target
 
-    @log.log
+    @log.log_method_call
     def delete_policy_target(self, context, policy_target_id):
         session = context.session
         with session.begin(subtransactions=True):
@@ -397,8 +399,8 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
             self.policy_driver_manager.delete_policy_target_postcommit(
                 policy_context)
         except Exception:
-            LOG.exception(_("delete_policy_target_postcommit failed "
-                            "for policy_target %s"),
+            LOG.exception(_LE("delete_policy_target_postcommit failed "
+                              "for policy_target %s"),
                           policy_target_id)
 
     def get_policy_target(self, context, policy_target_id, fields=None):
@@ -425,7 +427,7 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
                     filtered_results.append(filtered)
         return [self._fields(result, fields) for result in filtered_results]
 
-    @log.log
+    @log.log_method_call
     def create_policy_target_group(self, context, policy_target_group):
         session = context.session
         with session.begin(subtransactions=True):
@@ -446,14 +448,14 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
                 policy_context)
         except Exception:
             with excutils.save_and_reraise_exception():
-                LOG.exception(_("create_policy_target_group_postcommit "
-                                "failed, deleting policy_target_group %s"),
+                LOG.exception(_LE("create_policy_target_group_postcommit "
+                                  "failed, deleting policy_target_group %s"),
                               result['id'])
                 self.delete_policy_target_group(context, result['id'])
 
         return result
 
-    @log.log
+    @log.log_method_call
     def update_policy_target_group(self, context, policy_target_group_id,
                                    policy_target_group):
         session = context.session
@@ -492,7 +494,7 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
 
         return updated_policy_target_group
 
-    @log.log
+    @log.log_method_call
     def delete_policy_target_group(self, context, policy_target_group_id):
         session = context.session
         with session.begin(subtransactions=True):
@@ -523,7 +525,7 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
                 self.delete_policy_target_group(
                     context, policy_target_group['proxy_group_id'])
             except gpex.PolicyTargetGroupNotFound:
-                LOG.warning(_('PTG %s already deleted'),
+                LOG.warning(_LW('PTG %s already deleted'),
                             policy_target_group['proxy_group_id'])
 
         with session.begin(subtransactions=True):
@@ -541,8 +543,8 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
             self.policy_driver_manager.delete_policy_target_group_postcommit(
                 policy_context)
         except Exception:
-            LOG.exception(_("delete_policy_target_group_postcommit failed "
-                            "for policy_target_group %s"),
+            LOG.exception(_LE("delete_policy_target_group_postcommit failed "
+                              "for policy_target_group %s"),
                           policy_target_group_id)
 
     def get_policy_target_group(self, context, policy_target_group_id,
@@ -571,7 +573,7 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
                     filtered_results.append(filtered)
         return [self._fields(result, fields) for result in results]
 
-    @log.log
+    @log.log_method_call
     def create_l2_policy(self, context, l2_policy):
         session = context.session
         with session.begin(subtransactions=True):
@@ -589,13 +591,14 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
                 policy_context)
         except Exception:
             with excutils.save_and_reraise_exception():
-                LOG.exception(_("create_l2_policy_postcommit "
-                                "failed, deleting l2_policy %s"), result['id'])
+                LOG.exception(_LE("create_l2_policy_postcommit "
+                                  "failed, deleting l2_policy %s"),
+                              result['id'])
                 self.delete_l2_policy(context, result['id'])
 
         return result
 
-    @log.log
+    @log.log_method_call
     def update_l2_policy(self, context, l2_policy_id, l2_policy):
         session = context.session
         with session.begin(subtransactions=True):
@@ -617,7 +620,7 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
             policy_context)
         return updated_l2_policy
 
-    @log.log
+    @log.log_method_call
     def delete_l2_policy(self, context, l2_policy_id):
         session = context.session
         with session.begin(subtransactions=True):
@@ -633,9 +636,8 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
             self.policy_driver_manager.delete_l2_policy_postcommit(
                 policy_context)
         except Exception:
-            LOG.exception(_("delete_l2_policy_postcommit failed "
-                            "for l2_policy %s"),
-                          l2_policy_id)
+            LOG.exception(_LE("delete_l2_policy_postcommit failed "
+                              "for l2_policy %s"), l2_policy_id)
 
     def get_l2_policy(self, context, l2_policy_id, fields=None):
         session = context.session
@@ -661,7 +663,7 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
                     filtered_results.append(filtered)
         return [self._fields(result, fields) for result in results]
 
-    @log.log
+    @log.log_method_call
     def create_network_service_policy(self, context, network_service_policy):
         session = context.session
         with session.begin(subtransactions=True):
@@ -683,14 +685,15 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
                 policy_context)
         except Exception:
             with excutils.save_and_reraise_exception():
-                LOG.exception(_("create_network_service_policy_postcommit "
-                                "failed, deleting network_service_policy %s"),
-                              result['id'])
+                LOG.exception(_LE(
+                    "create_network_service_policy_postcommit "
+                    "failed, deleting network_service_policy %s"),
+                    result['id'])
                 self.delete_network_service_policy(context, result['id'])
 
         return result
 
-    @log.log
+    @log.log_method_call
     def update_network_service_policy(self, context, network_service_policy_id,
                                       network_service_policy):
         session = context.session
@@ -718,7 +721,7 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
             policy_context)
         return updated_network_service_policy
 
-    @log.log
+    @log.log_method_call
     def delete_network_service_policy(
         self, context, network_service_policy_id):
         session = context.session
@@ -736,9 +739,9 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
             pdm = self.policy_driver_manager
             pdm.delete_network_service_policy_postcommit(policy_context)
         except Exception:
-            LOG.exception(_("delete_network_service_policy_postcommit failed "
-                            "for network_service_policy %s"),
-                          network_service_policy_id)
+            LOG.exception(_LE(
+                "delete_network_service_policy_postcommit failed "
+                "for network_service_policy %s"), network_service_policy_id)
 
     def get_network_service_policy(self, context, network_service_policy_id,
                                    fields=None):
@@ -767,7 +770,7 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
                     filtered_results.append(filtered)
         return [self._fields(result, fields) for result in results]
 
-    @log.log
+    @log.log_method_call
     def create_l3_policy(self, context, l3_policy):
         session = context.session
         with session.begin(subtransactions=True):
@@ -787,13 +790,14 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
                 policy_context)
         except Exception:
             with excutils.save_and_reraise_exception():
-                LOG.exception(_("create_l3_policy_postcommit "
-                                "failed, deleting l3_policy %s"), result['id'])
+                LOG.exception(_LE("create_l3_policy_postcommit "
+                                  "failed, deleting l3_policy %s"),
+                              result['id'])
                 self.delete_l3_policy(context, result['id'])
 
         return result
 
-    @log.log
+    @log.log_method_call
     def update_l3_policy(self, context, l3_policy_id, l3_policy):
         session = context.session
         with session.begin(subtransactions=True):
@@ -817,7 +821,7 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
             policy_context)
         return updated_l3_policy
 
-    @log.log
+    @log.log_method_call
     def delete_l3_policy(self, context, l3_policy_id, check_unused=False):
         session = context.session
         with session.begin(subtransactions=True):
@@ -837,9 +841,8 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
             self.policy_driver_manager.delete_l3_policy_postcommit(
                 policy_context)
         except Exception:
-            LOG.exception(_("delete_l3_policy_postcommit failed "
-                            "for l3_policy %s"),
-                          l3_policy_id)
+            LOG.exception(_LE("delete_l3_policy_postcommit failed "
+                              "for l3_policy %s"), l3_policy_id)
         return True
 
     def get_l3_policy(self, context, l3_policy_id, fields=None):
@@ -866,7 +869,7 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
                     filtered_results.append(filtered)
         return [self._fields(result, fields) for result in results]
 
-    @log.log
+    @log.log_method_call
     def create_policy_classifier(self, context, policy_classifier):
         session = context.session
         with session.begin(subtransactions=True):
@@ -887,14 +890,14 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
                 policy_context)
         except Exception:
             with excutils.save_and_reraise_exception():
-                LOG.exception(_(
+                LOG.exception(_LE(
                     "policy_driver_manager.create_policy_classifier_postcommit"
                     " failed, deleting policy_classifier %s"), result['id'])
                 self.delete_policy_classifier(context, result['id'])
 
         return result
 
-    @log.log
+    @log.log_method_call
     def update_policy_classifier(self, context, id, policy_classifier):
         session = context.session
         with session.begin(subtransactions=True):
@@ -918,7 +921,7 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
             policy_context)
         return updated_policy_classifier
 
-    @log.log
+    @log.log_method_call
     def delete_policy_classifier(self, context, id):
         session = context.session
         with session.begin(subtransactions=True):
@@ -934,9 +937,8 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
             self.policy_driver_manager.delete_policy_classifier_postcommit(
                 policy_context)
         except Exception:
-            LOG.exception(_("delete_policy_classifier_postcommit failed "
-                            "for policy_classifier %s"),
-                          id)
+            LOG.exception(_LE("delete_policy_classifier_postcommit failed "
+                              "for policy_classifier %s"), id)
 
     def get_policy_classifier(self, context, policy_classifier_id,
                               fields=None):
@@ -964,7 +966,7 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
                     filtered_results.append(filtered)
         return [self._fields(result, fields) for result in results]
 
-    @log.log
+    @log.log_method_call
     def create_policy_action(self, context, policy_action):
         session = context.session
         with session.begin(subtransactions=True):
@@ -985,14 +987,14 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
                 policy_context)
         except Exception:
             with excutils.save_and_reraise_exception():
-                LOG.exception(_(
+                LOG.exception(_LE(
                     "policy_driver_manager.create_policy_action_postcommit "
                     "failed, deleting policy_action %s"), result['id'])
                 self.delete_policy_action(context, result['id'])
 
         return result
 
-    @log.log
+    @log.log_method_call
     def update_policy_action(self, context, id, policy_action):
         session = context.session
         with session.begin(subtransactions=True):
@@ -1017,7 +1019,7 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
             policy_context)
         return updated_policy_action
 
-    @log.log
+    @log.log_method_call
     def delete_policy_action(self, context, id):
         session = context.session
         with session.begin(subtransactions=True):
@@ -1032,9 +1034,8 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
             self.policy_driver_manager.delete_policy_action_postcommit(
                 policy_context)
         except Exception:
-            LOG.exception(_("delete_policy_action_postcommit failed "
-                            "for policy_action %s"),
-                          id)
+            LOG.exception(_LE("delete_policy_action_postcommit failed "
+                              "for policy_action %s"), id)
 
     def get_policy_action(self, context, policy_action_id, fields=None):
         session = context.session
@@ -1060,7 +1061,7 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
                     filtered_results.append(filtered)
         return [self._fields(result, fields) for result in results]
 
-    @log.log
+    @log.log_method_call
     def create_policy_rule(self, context, policy_rule):
         session = context.session
         with session.begin(subtransactions=True):
@@ -1080,14 +1081,14 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
                 policy_context)
         except Exception:
             with excutils.save_and_reraise_exception():
-                LOG.exception(_(
+                LOG.exception(_LE(
                     "policy_driver_manager.create_policy_rule_postcommit"
                     " failed, deleting policy_rule %s"), result['id'])
                 self.delete_policy_rule(context, result['id'])
 
         return result
 
-    @log.log
+    @log.log_method_call
     def update_policy_rule(self, context, id, policy_rule):
         session = context.session
         with session.begin(subtransactions=True):
@@ -1110,7 +1111,7 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
             policy_context)
         return updated_policy_rule
 
-    @log.log
+    @log.log_method_call
     def delete_policy_rule(self, context, id):
         session = context.session
         with session.begin(subtransactions=True):
@@ -1126,9 +1127,8 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
             self.policy_driver_manager.delete_policy_rule_postcommit(
                 policy_context)
         except Exception:
-            LOG.exception(_("delete_policy_rule_postcommit failed "
-                            "for policy_rule %s"),
-                          id)
+            LOG.exception(_LE("delete_policy_rule_postcommit failed "
+                              "for policy_rule %s"), id)
 
     def get_policy_rule(self, context, policy_rule_id, fields=None):
         session = context.session
@@ -1154,7 +1154,7 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
                     filtered_results.append(filtered)
         return [self._fields(result, fields) for result in results]
 
-    @log.log
+    @log.log_method_call
     def create_policy_rule_set(self, context, policy_rule_set):
         session = context.session
         with session.begin(subtransactions=True):
@@ -1175,14 +1175,14 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
                 policy_context)
         except Exception:
             with excutils.save_and_reraise_exception():
-                LOG.exception(_(
+                LOG.exception(_LE(
                     "policy_driver_manager.create_policy_rule_set_postcommit "
                     "failed, deleting policy_rule_set %s"), result['id'])
                 self.delete_policy_rule_set(context, result['id'])
 
         return result
 
-    @log.log
+    @log.log_method_call
     def update_policy_rule_set(self, context, id, policy_rule_set):
         session = context.session
         with session.begin(subtransactions=True):
@@ -1206,7 +1206,7 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
             policy_context)
         return updated_policy_rule_set
 
-    @log.log
+    @log.log_method_call
     def delete_policy_rule_set(self, context, id):
         session = context.session
         with session.begin(subtransactions=True):
@@ -1221,9 +1221,8 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
             self.policy_driver_manager.delete_policy_rule_set_postcommit(
                 policy_context)
         except Exception:
-            LOG.exception(_("delete_policy_rule_set_postcommit failed "
-                            "for policy_rule_set %s"),
-                          id)
+            LOG.exception(_LE("delete_policy_rule_set_postcommit failed "
+                              "for policy_rule_set %s"), id)
 
     def get_policy_rule_set(self, context, policy_rule_set_id, fields=None):
         session = context.session
@@ -1249,7 +1248,7 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
                     filtered_results.append(filtered)
         return [self._fields(result, fields) for result in results]
 
-    @log.log
+    @log.log_method_call
     def create_external_segment(self, context, external_segment):
         session = context.session
         with session.begin(subtransactions=True):
@@ -1273,14 +1272,14 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
              create_external_segment_postcommit(policy_context))
         except Exception:
             with excutils.save_and_reraise_exception():
-                LOG.exception(_("create_external_segment_postcommit "
-                                "failed, deleting external_segment "
-                                "%s"), result['id'])
+                LOG.exception(_LE("create_external_segment_postcommit "
+                                  "failed, deleting external_segment "
+                                  "%s"), result['id'])
                 self.delete_external_segment(context, result['id'])
 
         return result
 
-    @log.log
+    @log.log_method_call
     def update_external_segment(self, context, external_segment_id,
                                 external_segment):
         session = context.session
@@ -1310,7 +1309,7 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
             policy_context)
         return updated_external_segment
 
-    @log.log
+    @log.log_method_call
     def delete_external_segment(self, context, external_segment_id):
         session = context.session
         with session.begin(subtransactions=True):
@@ -1328,8 +1327,8 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
             (self.policy_driver_manager.
              delete_external_segment_postcommit(policy_context))
         except Exception:
-            LOG.exception(_("delete_external_segment_postcommit failed "
-                            "for external_segment %s"),
+            LOG.exception(_LE("delete_external_segment_postcommit failed "
+                              "for external_segment %s"),
                           external_segment_id)
         return True
 
@@ -1358,7 +1357,7 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
                     filtered_results.append(filtered)
         return [self._fields(result, fields) for result in results]
 
-    @log.log
+    @log.log_method_call
     def create_external_policy(self, context, external_policy):
         session = context.session
         with session.begin(subtransactions=True):
@@ -1379,14 +1378,14 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
              create_external_policy_postcommit(policy_context))
         except Exception:
             with excutils.save_and_reraise_exception():
-                LOG.exception(_("create_external_policy_postcommit "
-                                "failed, deleting external_policy "
-                                "%s"), result['id'])
+                LOG.exception(_LE("create_external_policy_postcommit "
+                                  "failed, deleting external_policy "
+                                  "%s"), result['id'])
                 self.delete_external_policy(context, result['id'])
 
         return result
 
-    @log.log
+    @log.log_method_call
     def update_external_policy(self, context, external_policy_id,
                                external_policy):
         session = context.session
@@ -1413,7 +1412,7 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
             policy_context)
         return updated_external_policy
 
-    @log.log
+    @log.log_method_call
     def delete_external_policy(self, context, external_policy_id,
                                check_unused=False):
         session = context.session
@@ -1430,9 +1429,8 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
             self.policy_driver_manager.delete_external_policy_postcommit(
                 policy_context)
         except Exception:
-            LOG.exception(_("delete_external_policy_postcommit failed "
-                            "for external_policy %s"),
-                          external_policy_id)
+            LOG.exception(_LE("delete_external_policy_postcommit failed "
+                              "for external_policy %s"), external_policy_id)
 
     def get_external_policy(self, context, external_policy_id, fields=None):
         session = context.session
@@ -1459,7 +1457,7 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
                     filtered_results.append(filtered)
         return [self._fields(result, fields) for result in results]
 
-    @log.log
+    @log.log_method_call
     def create_nat_pool(self, context, nat_pool):
         session = context.session
         with session.begin(subtransactions=True):
@@ -1477,13 +1475,14 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
              create_nat_pool_postcommit(policy_context))
         except Exception:
             with excutils.save_and_reraise_exception():
-                LOG.exception(_("create_nat_pool_postcommit failed, deleting "
-                                "nat_pool %s"), result['id'])
+                LOG.exception(_LE(
+                    "create_nat_pool_postcommit failed, deleting "
+                    "nat_pool %s"), result['id'])
                 self.delete_nat_pool(context, result['id'])
 
         return result
 
-    @log.log
+    @log.log_method_call
     def update_nat_pool(self, context, nat_pool_id, nat_pool):
         session = context.session
         with session.begin(subtransactions=True):
@@ -1504,7 +1503,7 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
         self.policy_driver_manager.update_nat_pool_postcommit(policy_context)
         return updated_nat_pool
 
-    @log.log
+    @log.log_method_call
     def delete_nat_pool(self, context, nat_pool_id, check_unused=False):
         session = context.session
         with session.begin(subtransactions=True):
@@ -1519,8 +1518,8 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
             self.policy_driver_manager.delete_nat_pool_postcommit(
                 policy_context)
         except Exception:
-            LOG.exception(_("delete_nat_pool_postcommit failed "
-                            "for nat_pool %s"),
+            LOG.exception(_LE("delete_nat_pool_postcommit failed "
+                              "for nat_pool %s"),
                           nat_pool_id)
 
     def get_nat_pool(self, context, nat_pool_id, fields=None):

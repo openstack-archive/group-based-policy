@@ -10,6 +10,8 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+from neutron._i18n import _LE
+from neutron._i18n import _LI
 from oslo_config import cfg
 from oslo_log import log
 import stevedore
@@ -62,14 +64,14 @@ class PolicyDriverManager(stevedore.named.NamedExtensionManager):
         self.ordered_policy_drivers = []
         self.reverse_ordered_policy_drivers = []
 
-        LOG.info(_("Configured policy driver names: %s"),
+        LOG.info(_LI("Configured policy driver names: %s"),
                  cfg.CONF.group_policy.policy_drivers)
         super(PolicyDriverManager,
               self).__init__('gbpservice.neutron.group_policy.policy_drivers',
                              cfg.CONF.group_policy.policy_drivers,
                              invoke_on_load=True,
                              name_order=True)
-        LOG.info(_("Loaded policy driver names: %s"), self.names())
+        LOG.info(_LI("Loaded policy driver names: %s"), self.names())
         self._register_policy_drivers()
 
     def _register_policy_drivers(self):
@@ -83,7 +85,7 @@ class PolicyDriverManager(stevedore.named.NamedExtensionManager):
             self.ordered_policy_drivers.append(ext)
 
         self.reverse_ordered_policy_drivers = self.ordered_policy_drivers[::-1]
-        LOG.info(_("Registered policy drivers: %s"),
+        LOG.info(_LI("Registered policy drivers: %s"),
                  [driver.name for driver in self.ordered_policy_drivers])
 
     def initialize(self):
@@ -93,7 +95,7 @@ class PolicyDriverManager(stevedore.named.NamedExtensionManager):
         # set it to True such that the drivers can override it.
         self.native_bulk_support = False
         for driver in self.ordered_policy_drivers:
-            LOG.info(_("Initializing policy driver '%s'"), driver.name)
+            LOG.info(_LI("Initializing policy driver '%s'"), driver.name)
             driver.obj.initialize()
             self.native_bulk_support &= getattr(driver.obj,
                                                 'native_bulk_support', True)
@@ -122,7 +124,7 @@ class PolicyDriverManager(stevedore.named.NamedExtensionManager):
             except Exception:
                 # This is an internal failure.
                 LOG.exception(
-                    _("Policy driver '%(name)s' failed in %(method)s"),
+                    _LE("Policy driver '%(name)s' failed in %(method)s"),
                     {'name': driver.name, 'method': method_name}
                 )
                 error = True

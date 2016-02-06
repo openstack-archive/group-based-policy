@@ -10,6 +10,7 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+from neutron._i18n import _LI
 from neutron.common import exceptions as n_exc
 from oslo_config import cfg
 from oslo_log import log as logging
@@ -32,12 +33,13 @@ class NodeDriverManager(stevedore.named.NamedExtensionManager):
         # Ordered list of node drivers.
         self.ordered_drivers = []
         names = cfg.CONF.node_composition_plugin.node_drivers
-        LOG.info(_("Configured service chain node driver names: %s"), names)
+        LOG.info(_LI("Configured service chain node driver names: %s"), names)
         super(NodeDriverManager,
               self).__init__(
                   'gbpservice.neutron.servicechain.ncp_drivers', names,
                   invoke_on_load=True, name_order=True)
-        LOG.info(_("Loaded service chain node driver names: %s"), self.names())
+        LOG.info(_LI(
+            "Loaded service chain node driver names: %s"), self.names())
         self._register_drivers()
 
     def _register_drivers(self):
@@ -45,14 +47,14 @@ class NodeDriverManager(stevedore.named.NamedExtensionManager):
         for ext in self:
             self.drivers[ext.name] = ext
             self.ordered_drivers.append(ext)
-        LOG.info(_("Registered service chain node drivers: %s"),
+        LOG.info(_LI("Registered service chain node drivers: %s"),
                  [driver.name for driver in self.ordered_drivers])
 
     def initialize(self):
         """Initialize all the service chain node drivers."""
         self.native_bulk_support = True
         for driver in self.ordered_drivers:
-            LOG.info(_("Initializing service chain node drivers '%s'"),
+            LOG.info(_LI("Initializing service chain node drivers '%s'"),
                      driver.name)
             driver.obj.initialize(driver.name)
             self.native_bulk_support &= getattr(driver.obj,

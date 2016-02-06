@@ -16,11 +16,13 @@ import time
 from heatclient import client as heat_client
 from heatclient import exc as heat_exc
 from keystoneclient.v2_0 import client as keyclient
-from neutron.common import log
+from neutron._i18n import _LE
+from neutron._i18n import _LW
 from neutron.db import model_base
 from neutron import manager
 from neutron.plugins.common import constants as pconst
 from oslo_config import cfg
+from oslo_log import helpers as log
 from oslo_log import log as logging
 from oslo_serialization import jsonutils
 import sqlalchemy as sa
@@ -69,24 +71,24 @@ class ServiceChainInstanceStack(model_base.BASEV2):
 
 class SimpleChainDriver(object):
 
-    @log.log
+    @log.log_method_call
     def initialize(self):
         pass
 
-    @log.log
+    @log.log_method_call
     def create_servicechain_node_precommit(self, context):
         if context.current['service_profile_id'] is None:
             if context.current['service_type'] not in sc_supported_type:
                 raise exc.InvalidServiceTypeForReferenceDriver()
         elif context.current['service_type']:
-            LOG.warning(_('Both service_profile_id and service_type are'
-                          'specified, service_type will be ignored.'))
+            LOG.warning(_LW('Both service_profile_id and service_type are'
+                            'specified, service_type will be ignored.'))
 
-    @log.log
+    @log.log_method_call
     def create_servicechain_node_postcommit(self, context):
         pass
 
-    @log.log
+    @log.log_method_call
     def update_servicechain_node_precommit(self, context):
         if (context.original['config'] != context.current['config']):
             filters = {'servicechain_spec': context.original[
@@ -96,31 +98,31 @@ class SimpleChainDriver(object):
             if sc_instances:
                 raise exc.NodeUpdateNotSupported()
 
-    @log.log
+    @log.log_method_call
     def update_servicechain_node_postcommit(self, context):
         pass
 
-    @log.log
+    @log.log_method_call
     def delete_servicechain_node_precommit(self, context):
         pass
 
-    @log.log
+    @log.log_method_call
     def delete_servicechain_node_postcommit(self, context):
         pass
 
-    @log.log
+    @log.log_method_call
     def create_servicechain_spec_precommit(self, context):
         pass
 
-    @log.log
+    @log.log_method_call
     def create_servicechain_spec_postcommit(self, context):
         pass
 
-    @log.log
+    @log.log_method_call
     def update_servicechain_spec_precommit(self, context):
         pass
 
-    @log.log
+    @log.log_method_call
     def update_servicechain_spec_postcommit(self, context):
         if context.original['nodes'] != context.current['nodes']:
             filters = {'servicechain_spec': [context.original['id']]}
@@ -131,19 +133,19 @@ class SimpleChainDriver(object):
                                                    sc_instance,
                                                    context._sc_spec)
 
-    @log.log
+    @log.log_method_call
     def delete_servicechain_spec_precommit(self, context):
         pass
 
-    @log.log
+    @log.log_method_call
     def delete_servicechain_spec_postcommit(self, context):
         pass
 
-    @log.log
+    @log.log_method_call
     def create_servicechain_instance_precommit(self, context):
         pass
 
-    @log.log
+    @log.log_method_call
     def create_servicechain_instance_postcommit(self, context):
         sc_instance = context.current
         sc_spec_ids = sc_instance.get('servicechain_specs')
@@ -154,11 +156,11 @@ class SimpleChainDriver(object):
             self._create_servicechain_instance_stacks(context, sc_node_ids,
                                                       sc_instance, sc_spec)
 
-    @log.log
+    @log.log_method_call
     def update_servicechain_instance_precommit(self, context):
         pass
 
-    @log.log
+    @log.log_method_call
     def update_servicechain_instance_postcommit(self, context):
         original_spec_ids = context.original.get('servicechain_specs')
         new_spec_ids = context.current.get('servicechain_specs')
@@ -169,37 +171,37 @@ class SimpleChainDriver(object):
                 self._update_servicechain_instance(context, context.current,
                                                    newspec)
 
-    @log.log
+    @log.log_method_call
     def delete_servicechain_instance_precommit(self, context):
         pass
 
-    @log.log
+    @log.log_method_call
     def delete_servicechain_instance_postcommit(self, context):
         self._delete_servicechain_instance_stacks(context._plugin_context,
                                                   context.current['id'])
 
-    @log.log
+    @log.log_method_call
     def create_service_profile_precommit(self, context):
         if context.current['service_type'] not in sc_supported_type:
             raise exc.InvalidServiceTypeForReferenceDriver()
 
-    @log.log
+    @log.log_method_call
     def create_service_profile_postcommit(self, context):
         pass
 
-    @log.log
+    @log.log_method_call
     def update_service_profile_precommit(self, context):
         pass
 
-    @log.log
+    @log.log_method_call
     def update_service_profile_postcommit(self, context):
         pass
 
-    @log.log
+    @log.log_method_call
     def delete_service_profile_precommit(self, context):
         pass
 
-    @log.log
+    @log.log_method_call
     def delete_service_profile_postcommit(self, context):
         pass
 
@@ -242,7 +244,7 @@ class SimpleChainDriver(object):
         stack_template = sc_node.get('config')
         # TODO(magesh):Raise an exception ??
         if not stack_template:
-            LOG.error(_("Service Config is not defined for the service"
+            LOG.error(_LE("Service Config is not defined for the service"
                         " chain Node"))
             return
         stack_template = jsonutils.loads(stack_template)
@@ -335,22 +337,24 @@ class SimpleChainDriver(object):
                 elif stack.stack_status == 'DELETE_FAILED':
                     heatclient.delete(stack_id)
             except Exception:
-                LOG.exception(_("Service Chain Instance cleanup may not have "
-                                "happened because Heat API request failed "
-                                "while waiting for the stack %(stack)s to be "
-                                "deleted"), {'stack': stack_id})
+                LOG.exception(_LE(
+                    "Service Chain Instance cleanup may not have "
+                    "happened because Heat API request failed "
+                    "while waiting for the stack %(stack)s to be "
+                    "deleted"), {'stack': stack_id})
                 return
             else:
                 time.sleep(STACK_DELETE_RETRY_WAIT)
                 stack_delete_retries = stack_delete_retries - 1
                 if stack_delete_retries == 0:
-                    LOG.warning(_("Resource cleanup for service chain instance"
-                                  " is not completed within %(wait)s seconds"
-                                  " as deletion of Stack %(stack)s is not"
-                                  " completed"),
-                                {'wait': (STACK_DELETE_RETRIES *
-                                          STACK_DELETE_RETRY_WAIT),
-                                 'stack': stack_id})
+                    LOG.warning(_LW(
+                        "Resource cleanup for service chain instance"
+                        " is not completed within %(wait)s seconds"
+                        " as deletion of Stack %(stack)s is not"
+                        " completed"),
+                        {'wait': (STACK_DELETE_RETRIES *
+                                  STACK_DELETE_RETRY_WAIT),
+                         'stack': stack_id})
                     return
                 else:
                     continue
@@ -409,12 +413,12 @@ class SimpleChainDriver(object):
         plugins = manager.NeutronManager.get_service_plugins()
         grouppolicy_plugin = plugins.get(pconst.GROUP_POLICY)
         if not grouppolicy_plugin:
-            LOG.error(_("No Grouppolicy service plugin found."))
+            LOG.error(_LE("No Grouppolicy service plugin found."))
             raise exc.ServiceChainDeploymentError()
         return grouppolicy_plugin
 
 
-class HeatClient:
+class HeatClient(object):
 
     def __init__(self, context, password=None):
         api_version = "1"
@@ -447,8 +451,9 @@ class HeatClient:
         try:
             self.stacks.delete(stack_id)
         except heat_exc.HTTPNotFound:
-            LOG.warning(_("Stack %(stack)s created by service chain driver is "
-                          "not found at cleanup"), {'stack': stack_id})
+            LOG.warning(_LW(
+                "Stack %(stack)s created by service chain driver is "
+                "not found at cleanup"), {'stack': stack_id})
 
     def get(self, stack_id):
         return self.stacks.get(stack_id)
