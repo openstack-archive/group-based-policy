@@ -59,7 +59,7 @@ class ServiceChainExtensionTestCase(test_extensions_base.ExtensionTestCase):
         self.instance.create_servicechain_node.assert_called_once_with(
             mock.ANY, servicechain_node=default_data)
 
-        self.assertEqual(res.status_int, exc.HTTPCreated.code)
+        self.assertEqual(exc.HTTPCreated.code, res.status_int)
         res = self.deserialize(res)
         self.assertIn('servicechain_node', res)
         self.assertEqual(expected_value, res['servicechain_node'])
@@ -101,7 +101,7 @@ class ServiceChainExtensionTestCase(test_extensions_base.ExtensionTestCase):
 
         self.instance.get_servicechain_nodes.assert_called_once_with(
             mock.ANY, fields=mock.ANY, filters=mock.ANY)
-        self.assertEqual(res.status_int, exc.HTTPOk.code)
+        self.assertEqual(exc.HTTPOk.code, res.status_int)
         res = self.deserialize(res)
         self.assertIn('servicechain_nodes', res)
         self.assertEqual(expected_value, res['servicechain_nodes'])
@@ -118,7 +118,7 @@ class ServiceChainExtensionTestCase(test_extensions_base.ExtensionTestCase):
 
         self.instance.get_servicechain_node.assert_called_once_with(
             mock.ANY, servicechain_node_id, fields=mock.ANY)
-        self.assertEqual(res.status_int, exc.HTTPOk.code)
+        self.assertEqual(exc.HTTPOk.code, res.status_int)
         res = self.deserialize(res)
         self.assertIn('servicechain_node', res)
         self.assertEqual(expected_value, res['servicechain_node'])
@@ -138,7 +138,7 @@ class ServiceChainExtensionTestCase(test_extensions_base.ExtensionTestCase):
 
         self.instance.update_servicechain_node.assert_called_once_with(
             mock.ANY, servicechain_node_id, servicechain_node=update_data)
-        self.assertEqual(res.status_int, exc.HTTPOk.code)
+        self.assertEqual(exc.HTTPOk.code, res.status_int)
         res = self.deserialize(res)
         self.assertIn('servicechain_node', res)
         self.assertEqual(expected_value, res['servicechain_node'])
@@ -158,7 +158,7 @@ class ServiceChainExtensionTestCase(test_extensions_base.ExtensionTestCase):
 
         self.instance.create_servicechain_spec.assert_called_once_with(
             mock.ANY, servicechain_spec=default_data)
-        self.assertEqual(res.status_int, exc.HTTPCreated.code)
+        self.assertEqual(exc.HTTPCreated.code, res.status_int)
         res = self.deserialize(res)
         self.assertIn('servicechain_spec', res)
         self.assertEqual(expected_value, res['servicechain_spec'])
@@ -197,7 +197,7 @@ class ServiceChainExtensionTestCase(test_extensions_base.ExtensionTestCase):
 
         self.instance.get_servicechain_specs.assert_called_once_with(
             mock.ANY, fields=mock.ANY, filters=mock.ANY)
-        self.assertEqual(res.status_int, exc.HTTPOk.code)
+        self.assertEqual(exc.HTTPOk.code, res.status_int)
         res = self.deserialize(res)
         self.assertIn('servicechain_specs', res)
         self.assertEqual(expected_value, res['servicechain_specs'])
@@ -213,7 +213,7 @@ class ServiceChainExtensionTestCase(test_extensions_base.ExtensionTestCase):
 
         self.instance.get_servicechain_spec.assert_called_once_with(
             mock.ANY, servicechain_spec_id, fields=mock.ANY)
-        self.assertEqual(res.status_int, exc.HTTPOk.code)
+        self.assertEqual(exc.HTTPOk.code, res.status_int)
         res = self.deserialize(res)
         self.assertIn('servicechain_spec', res)
         self.assertEqual(expected_value, res['servicechain_spec'])
@@ -233,7 +233,7 @@ class ServiceChainExtensionTestCase(test_extensions_base.ExtensionTestCase):
 
         self.instance.update_servicechain_spec.assert_called_once_with(
             mock.ANY, servicechain_spec_id, servicechain_spec=update_data)
-        self.assertEqual(res.status_int, exc.HTTPOk.code)
+        self.assertEqual(exc.HTTPOk.code, res.status_int)
         res = self.deserialize(res)
         self.assertIn('servicechain_spec', res)
         self.assertEqual(expected_value, res['servicechain_spec'])
@@ -254,7 +254,7 @@ class ServiceChainExtensionTestCase(test_extensions_base.ExtensionTestCase):
 
         self.instance.create_servicechain_instance.assert_called_once_with(
             mock.ANY, servicechain_instance=default_data)
-        self.assertEqual(res.status_int, exc.HTTPCreated.code)
+        self.assertEqual(exc.HTTPCreated.code, res.status_int)
         res = self.deserialize(res)
         self.assertIn('servicechain_instance', res)
         self.assertEqual(expected_value, res['servicechain_instance'])
@@ -299,7 +299,7 @@ class ServiceChainExtensionTestCase(test_extensions_base.ExtensionTestCase):
 
         self.instance.get_servicechain_instances.assert_called_once_with(
             mock.ANY, fields=mock.ANY, filters=mock.ANY)
-        self.assertEqual(res.status_int, exc.HTTPOk.code)
+        self.assertEqual(exc.HTTPOk.code, res.status_int)
         res = self.deserialize(res)
         self.assertIn('servicechain_instances', res)
         self.assertEqual(expected_value, res['servicechain_instances'])
@@ -315,7 +315,7 @@ class ServiceChainExtensionTestCase(test_extensions_base.ExtensionTestCase):
 
         self.instance.get_servicechain_instance.assert_called_once_with(
             mock.ANY, servicechain_instance_id, fields=mock.ANY)
-        self.assertEqual(res.status_int, exc.HTTPOk.code)
+        self.assertEqual(exc.HTTPOk.code, res.status_int)
         res = self.deserialize(res)
         self.assertIn('servicechain_instance', res)
         self.assertEqual(expected_value, res['servicechain_instance'])
@@ -336,7 +336,7 @@ class ServiceChainExtensionTestCase(test_extensions_base.ExtensionTestCase):
         self.instance.update_servicechain_instance.assert_called_once_with(
             mock.ANY, servicechain_instance_id,
             servicechain_instance=update_data)
-        self.assertEqual(res.status_int, exc.HTTPOk.code)
+        self.assertEqual(exc.HTTPOk.code, res.status_int)
         res = self.deserialize(res)
         self.assertIn('servicechain_instance', res)
         self.assertEqual(expected_value, res['servicechain_instance'])

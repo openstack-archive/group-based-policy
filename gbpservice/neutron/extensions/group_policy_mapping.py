@@ -10,6 +10,7 @@
 #  License for the specific language governing permissions and limitations
 #  under the License.
 
+from neutron.api import extensions
 from neutron.api.v2 import attributes as attr
 
 from gbpservice.neutron.extensions import group_policy as gp
@@ -52,7 +53,7 @@ EXTENDED_ATTRIBUTES_2_0 = {
 }
 
 
-class Group_policy_mapping(object):
+class Group_policy_mapping(extensions.ExtensionDescriptor):
 
     @classmethod
     def get_name(cls):
@@ -79,3 +80,7 @@ class Group_policy_mapping(object):
             return EXTENDED_ATTRIBUTES_2_0
         else:
             return {}
+
+    @classmethod
+    def get_plugin_interface(cls):
+        return gp.GroupPolicyPluginBase

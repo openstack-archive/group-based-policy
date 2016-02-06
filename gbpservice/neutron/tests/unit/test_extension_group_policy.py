@@ -472,7 +472,7 @@ class GroupPolicyExtensionTestCase(test_extensions_base.ExtensionTestCase):
         instance.get_policy_actions.assert_called_once_with(mock.ANY,
                                                             fields=mock.ANY,
                                                             filters=mock.ANY)
-        self.assertEqual(res.status_int, exc.HTTPOk.code)
+        self.assertEqual(exc.HTTPOk.code, res.status_int)
 
     def test_get_policy_action(self):
         policy_action_id = _uuid()
@@ -488,7 +488,7 @@ class GroupPolicyExtensionTestCase(test_extensions_base.ExtensionTestCase):
         instance.get_policy_action.assert_called_once_with(mock.ANY,
                                                            policy_action_id,
                                                            fields=mock.ANY)
-        self.assertEqual(res.status_int, exc.HTTPOk.code)
+        self.assertEqual(exc.HTTPOk.code, res.status_int)
         res = self.deserialize(res)
         self.assertIn('policy_action', res)
         self.assertEqual(expected_value, res['policy_action'])
@@ -510,7 +510,7 @@ class GroupPolicyExtensionTestCase(test_extensions_base.ExtensionTestCase):
 
         instance.update_policy_action.assert_called_once_with(
             mock.ANY, policy_action_id, policy_action=update_data)
-        self.assertEqual(res.status_int, exc.HTTPOk.code)
+        self.assertEqual(exc.HTTPOk.code, res.status_int)
         res = self.deserialize(res)
         self.assertIn('policy_action', res)
         self.assertEqual(expected_value, res['policy_action'])
@@ -566,7 +566,7 @@ class GroupPolicyExtensionTestCase(test_extensions_base.ExtensionTestCase):
 
         instance.get_policy_classifiers.assert_called_once_with(
             mock.ANY, fields=mock.ANY, filters=mock.ANY)
-        self.assertEqual(res.status_int, exc.HTTPOk.code)
+        self.assertEqual(exc.HTTPOk.code, res.status_int)
 
     def test_get_policy_classifier(self):
         policy_classifier_id = _uuid()
@@ -581,7 +581,7 @@ class GroupPolicyExtensionTestCase(test_extensions_base.ExtensionTestCase):
 
         instance.get_policy_classifier.assert_called_once_with(
             mock.ANY, policy_classifier_id, fields=mock.ANY)
-        self.assertEqual(res.status_int, exc.HTTPOk.code)
+        self.assertEqual(exc.HTTPOk.code, res.status_int)
         res = self.deserialize(res)
         self.assertIn('policy_classifier', res)
         self.assertEqual(expected_value, res['policy_classifier'])
@@ -603,7 +603,7 @@ class GroupPolicyExtensionTestCase(test_extensions_base.ExtensionTestCase):
 
         instance.update_policy_classifier.assert_called_once_with(
             mock.ANY, policy_classifier_id, policy_classifier=update_data)
-        self.assertEqual(res.status_int, exc.HTTPOk.code)
+        self.assertEqual(exc.HTTPOk.code, res.status_int)
         res = self.deserialize(res)
         self.assertIn('policy_classifier', res)
         self.assertEqual(expected_value, res['policy_classifier'])
@@ -661,7 +661,7 @@ class GroupPolicyExtensionTestCase(test_extensions_base.ExtensionTestCase):
         instance.get_policy_rules.assert_called_once_with(mock.ANY,
                                                           fields=mock.ANY,
                                                           filters=mock.ANY)
-        self.assertEqual(res.status_int, exc.HTTPOk.code)
+        self.assertEqual(exc.HTTPOk.code, res.status_int)
 
     def test_get_policy_rule(self):
         policy_rule_id = _uuid()
@@ -676,7 +676,7 @@ class GroupPolicyExtensionTestCase(test_extensions_base.ExtensionTestCase):
 
         instance.get_policy_rule.assert_called_once_with(
             mock.ANY, policy_rule_id, fields=mock.ANY)
-        self.assertEqual(res.status_int, exc.HTTPOk.code)
+        self.assertEqual(exc.HTTPOk.code, res.status_int)
         res = self.deserialize(res)
         self.assertIn('policy_rule', res)
         self.assertEqual(expected_value, res['policy_rule'])
@@ -698,7 +698,7 @@ class GroupPolicyExtensionTestCase(test_extensions_base.ExtensionTestCase):
 
         instance.update_policy_rule.assert_called_once_with(
             mock.ANY, policy_rule_id, policy_rule=update_data)
-        self.assertEqual(res.status_int, exc.HTTPOk.code)
+        self.assertEqual(exc.HTTPOk.code, res.status_int)
         res = self.deserialize(res)
         self.assertIn('policy_rule', res)
         self.assertEqual(expected_value, res['policy_rule'])
@@ -717,7 +717,7 @@ class GroupPolicyExtensionTestCase(test_extensions_base.ExtensionTestCase):
                             content_type='application/%s' % self.fmt)
         self.instance.create_policy_rule_set.assert_called_once_with(
             mock.ANY, policy_rule_set=default_data)
-        self.assertEqual(res.status_int, exc.HTTPCreated.code)
+        self.assertEqual(exc.HTTPCreated.code, res.status_int)
         res = self.deserialize(res)
         self.assertIn('policy_rule_set', res)
         self.assertEqual(expected_value, res['policy_rule_set'])
@@ -754,7 +754,7 @@ class GroupPolicyExtensionTestCase(test_extensions_base.ExtensionTestCase):
 
         instance.get_policy_rule_sets.assert_called_once_with(
             mock.ANY, fields=mock.ANY, filters=mock.ANY)
-        self.assertEqual(res.status_int, exc.HTTPOk.code)
+        self.assertEqual(exc.HTTPOk.code, res.status_int)
 
     def test_get_policy_rule_set(self):
         policy_rule_set_id = _uuid()
@@ -769,7 +769,7 @@ class GroupPolicyExtensionTestCase(test_extensions_base.ExtensionTestCase):
 
         instance.get_policy_rule_set.assert_called_once_with(
             mock.ANY, policy_rule_set_id, fields=mock.ANY)
-        self.assertEqual(res.status_int, exc.HTTPOk.code)
+        self.assertEqual(exc.HTTPOk.code, res.status_int)
         res = self.deserialize(res)
         self.assertIn('policy_rule_set', res)
         self.assertEqual(expected_value, res['policy_rule_set'])
@@ -791,7 +791,7 @@ class GroupPolicyExtensionTestCase(test_extensions_base.ExtensionTestCase):
 
         instance.update_policy_rule_set.assert_called_once_with(
             mock.ANY, policy_rule_set_id, policy_rule_set=update_data)
-        self.assertEqual(res.status_int, exc.HTTPOk.code)
+        self.assertEqual(exc.HTTPOk.code, res.status_int)
         res = self.deserialize(res)
         self.assertIn('policy_rule_set', res)
         self.assertEqual(expected_value, res['policy_rule_set'])
@@ -1053,12 +1053,12 @@ class TestGroupPolicyAttributeConverters(base.BaseTestCase):
             gp.convert_action_to_case_insensitive('ALLOW'), 'allow')
         self.assertEqual(gp.convert_action_to_case_insensitive('In'), 'in')
         self.assertEqual(gp.convert_action_to_case_insensitive('bi'), 'bi')
-        self.assertEqual(gp.convert_action_to_case_insensitive(''), '')
+        self.assertEqual('', gp.convert_action_to_case_insensitive(''))
 
     def test_convert_port_to_string(self):
         self.assertEqual(gp.convert_port_to_string(100), '100')
         self.assertEqual(gp.convert_port_to_string('200'), '200')
-        self.assertEqual(gp.convert_port_to_string(''), '')
+        self.assertEqual('', gp.convert_port_to_string(''))
 
     def test_convert_protocol_check_valid_protocols(self):
         self.assertEqual(gp.convert_protocol('tcp'), n_consts.PROTO_NAME_TCP)

@@ -11,6 +11,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from neutron._i18n import _LE
+from neutron._i18n import _LI
 from neutron.common import exceptions as n_exc
 from oslo_config import cfg
 from oslo_log import log
@@ -30,14 +32,14 @@ class ExtensionManager(stevedore.named.NamedExtensionManager):
         # the order in which the drivers are called.
         self.ordered_ext_drivers = []
 
-        LOG.info(_("Configured extension driver names: %s"),
+        LOG.info(_LI("Configured extension driver names: %s"),
                  cfg.CONF.group_policy.extension_drivers)
         super(ExtensionManager, self).__init__(
             'gbpservice.neutron.group_policy.extension_drivers',
             cfg.CONF.group_policy.extension_drivers,
             invoke_on_load=True,
             name_order=True)
-        LOG.info(_("Loaded extension driver names: %s"), self.names())
+        LOG.info(_LI("Loaded extension driver names: %s"), self.names())
         self._register_drivers()
 
     def _register_drivers(self):
@@ -48,13 +50,13 @@ class ExtensionManager(stevedore.named.NamedExtensionManager):
         """
         for ext in self:
             self.ordered_ext_drivers.append(ext)
-        LOG.info(_("Registered extension drivers: %s"),
+        LOG.info(_LI("Registered extension drivers: %s"),
                  [driver.name for driver in self.ordered_ext_drivers])
 
     def initialize(self):
         # Initialize each driver in the list.
         for driver in self.ordered_ext_drivers:
-            LOG.info(_("Initializing extension driver '%s'"), driver.name)
+            LOG.info(_LI("Initializing extension driver '%s'"), driver.name)
             driver.obj.initialize()
 
     def extension_aliases(self):
@@ -62,7 +64,7 @@ class ExtensionManager(stevedore.named.NamedExtensionManager):
         for driver in self.ordered_ext_drivers:
             alias = driver.obj.extension_alias
             exts.append(alias)
-            LOG.info(_("Got %(alias)s extension from driver '%(drv)s'"),
+            LOG.info(_LI("Got %(alias)s extension from driver '%(drv)s'"),
                      {'alias': alias, 'drv': driver.name})
         return exts
 
@@ -76,7 +78,7 @@ class ExtensionManager(stevedore.named.NamedExtensionManager):
                 raise
             except Exception:
                 LOG.exception(
-                    _("Extension driver '%(name)s' failed in %(method)s"),
+                    _LE("Extension driver '%(name)s' failed in %(method)s"),
                     {'name': driver.name, 'method': method_name}
                 )
 
