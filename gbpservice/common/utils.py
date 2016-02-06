@@ -12,6 +12,8 @@
 
 import contextlib
 
+from neutron._i18n import _
+from neutron._i18n import _LE
 from neutron import context as n_ctx
 from oslo_config import cfg
 from oslo_log import log as logging
@@ -19,6 +21,7 @@ from oslo_utils import importutils
 from stevedore import driver
 
 LOG = logging.getLogger(__name__)
+cfg.CONF.import_group('keystone_authtoken', 'keystonemiddleware.auth_token')
 
 
 @contextlib.contextmanager
@@ -49,8 +52,8 @@ def load_plugin(namespace, plugin):
         try:
             plugin_class = importutils.import_class(plugin)
         except ImportError as e2:
-            LOG.exception(_("Error loading plugin by name, %s"), e1)
-            LOG.exception(_("Error loading plugin by class, %s"), e2)
+            LOG.exception(_LE("Error loading plugin by name, %s"), e1)
+            LOG.exception(_LE("Error loading plugin by class, %s"), e2)
             raise ImportError(_("Plugin not found."))
     return plugin_class()
 

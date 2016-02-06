@@ -59,7 +59,22 @@ class NoL3NatSGTestPlugin(
         test_l3.TestNoL3NatPlugin,
         test_securitygroup.SecurityGroupTestPlugin):
 
-    _supported_extension_aliases = ["external-net", "security-group"]
+    # Note that this plugin does not actually support the 'availability_zone',
+    # and 'agent' extensions. We add it here to keep the extensions'
+    # framework happy, and since we don't exercise those extensions in the
+    # UTs its okay.
+    supported_extension_aliases = ["external-net", "security-group",
+            'availability_zone', 'agent']
+    # Note that the following private attribute definition should not
+    # be required, however the following line of code in the resource
+    # mapping driver requires it:
+    # https://git.io/v2O8G
+    # hence we add it to this test plugin. In general, this is not a
+    # good thing since the Neutron plugin contract only requires definition
+    # of the "supported_extension_aliases" property. This currently works
+    # since the ML2 plugin also defines the private property
+    # "_supported_extensions_aliases".
+    _supported_extension_aliases = supported_extension_aliases
 
 
 CORE_PLUGIN = ('gbpservice.neutron.tests.unit.services.grouppolicy.'
@@ -566,10 +581,10 @@ class TestPolicyTarget(ResourceMappingTestCase, TestClusterIdMixin):
         # Verify deleting policy_target cleans up port.
         req = self.new_delete_request('policy_targets', pt_id)
         res = req.get_response(self.ext_api)
-        self.assertEqual(res.status_int, webob.exc.HTTPNoContent.code)
+        self.assertEqual(webob.exc.HTTPNoContent.code, res.status_int)
         req = self.new_show_request('ports', port_id, fmt=self.fmt)
         res = req.get_response(self.api)
-        self.assertEqual(res.status_int, webob.exc.HTTPNotFound.code)
+        self.assertEqual(webob.exc.HTTPNotFound.code, res.status_int)
 
     def test_explicit_port_lifecycle(self):
         # Create policy_target group.
@@ -590,10 +605,10 @@ class TestPolicyTarget(ResourceMappingTestCase, TestClusterIdMixin):
             # Verify deleting policy_target does not cleanup port.
             req = self.new_delete_request('policy_targets', pt_id)
             res = req.get_response(self.ext_api)
-            self.assertEqual(res.status_int, webob.exc.HTTPNoContent.code)
+            self.assertEqual(webob.exc.HTTPNoContent.code, res.status_int)
             req = self.new_show_request('ports', port_id, fmt=self.fmt)
             res = req.get_response(self.api)
-            self.assertEqual(res.status_int, webob.exc.HTTPOk.code)
+            self.assertEqual(webob.exc.HTTPOk.code, res.status_int)
 
     def test_explicit_port_deleted(self):
         # Create policy_target group.
@@ -612,11 +627,11 @@ class TestPolicyTarget(ResourceMappingTestCase, TestClusterIdMixin):
 
             req = self.new_delete_request('ports', port_id)
             res = req.get_response(self.api)
-            self.assertEqual(res.status_int, webob.exc.HTTPNoContent.code)
+            self.assertEqual(webob.exc.HTTPNoContent.code, res.status_int)
             # Verify deleting policy_target does not cleanup port.
             req = self.new_delete_request('policy_targets', pt_id)
             res = req.get_response(self.ext_api)
-            self.assertEqual(res.status_int, webob.exc.HTTPNoContent.code)
+            self.assertEqual(webob.exc.HTTPNoContent.code, res.status_int)
 
     def test_missing_ptg_rejected(self):
         data = self.create_policy_target(
@@ -923,10 +938,10 @@ class TestPolicyTargetGroup(ResourceMappingTestCase):
         # Verify deleting policy_target group cleans up subnet.
         req = self.new_delete_request('policy_target_groups', ptg_id)
         res = req.get_response(self.ext_api)
-        self.assertEqual(res.status_int, webob.exc.HTTPNoContent.code)
+        self.assertEqual(webob.exc.HTTPNoContent.code, res.status_int)
         req = self.new_show_request('subnets', subnet_id, fmt=self.fmt)
         res = req.get_response(self.api)
-        self.assertEqual(res.status_int, webob.exc.HTTPNotFound.code)
+        self.assertEqual(webob.exc.HTTPNotFound.code, res.status_int)
 
         # TODO(rkukura): Verify implicit subnet was removed as router
         # interface.
@@ -966,10 +981,10 @@ class TestPolicyTargetGroup(ResourceMappingTestCase):
             # Verify deleting policy_target group does not cleanup subnet.
             req = self.new_delete_request('policy_target_groups', ptg_id)
             res = req.get_response(self.ext_api)
-            self.assertEqual(res.status_int, webob.exc.HTTPNoContent.code)
+            self.assertEqual(webob.exc.HTTPNoContent.code, res.status_int)
             req = self.new_show_request('subnets', subnet_id, fmt=self.fmt)
             res = req.get_response(self.api)
-            self.assertEqual(res.status_int, webob.exc.HTTPOk.code)
+            self.assertEqual(webob.exc.HTTPOk.code, res.status_int)
 
             # TODO(rkukura): Verify explicit subnet was removed as
             # router interface.
@@ -1002,7 +1017,7 @@ class TestPolicyTargetGroup(ResourceMappingTestCase):
                 req = self.new_update_request('policy_target_groups', data,
                                               ptg_id)
                 res = req.get_response(self.ext_api)
-                self.assertEqual(res.status_int, webob.exc.HTTPOk.code)
+                self.assertEqual(webob.exc.HTTPOk.code, res.status_int)
 
     def test_add_subnet_negative(self):
         # Create L2P
@@ -1114,7 +1129,7 @@ class TestPolicyTargetGroup(ResourceMappingTestCase):
                 {'provided_policy_rule_sets': {policy_rule_set_id: None}}}
         req = self.new_update_request('policy_target_groups', data, ptg_id)
         res = req.get_response(self.ext_api)
-        self.assertEqual(res.status_int, webob.exc.HTTPOk.code)
+        self.assertEqual(webob.exc.HTTPOk.code, res.status_int)
 
     def test_default_security_group_egress_rules(self):
         # Create PTG and retrieve self subnet
@@ -1348,10 +1363,10 @@ class TestL2Policy(ResourceMappingTestCase):
         # Verify deleting L2 policy cleans up network.
         req = self.new_delete_request('l2_policies', l2p_id)
         res = req.get_response(self.ext_api)
-        self.assertEqual(res.status_int, webob.exc.HTTPNoContent.code)
+        self.assertEqual(webob.exc.HTTPNoContent.code, res.status_int)
         req = self.new_show_request('networks', network_id, fmt=self.fmt)
         res = req.get_response(self.api)
-        self.assertEqual(res.status_int, webob.exc.HTTPNotFound.code)
+        self.assertEqual(webob.exc.HTTPNotFound.code, res.status_int)
 
     def _test_explicit_network_lifecycle(self, shared=False):
         # Create L2 policy with explicit network.
@@ -1365,10 +1380,10 @@ class TestL2Policy(ResourceMappingTestCase):
             # Verify deleting L2 policy does not cleanup network.
             req = self.new_delete_request('l2_policies', l2p_id)
             res = req.get_response(self.ext_api)
-            self.assertEqual(res.status_int, webob.exc.HTTPNoContent.code)
+            self.assertEqual(webob.exc.HTTPNoContent.code, res.status_int)
             req = self.new_show_request('networks', network_id, fmt=self.fmt)
             res = req.get_response(self.api)
-            self.assertEqual(res.status_int, webob.exc.HTTPOk.code)
+            self.assertEqual(webob.exc.HTTPOk.code, res.status_int)
 
     def test_implicit_network_lifecycle(self):
         self._test_implicit_network_lifecycle()
@@ -1467,10 +1482,10 @@ class TestL3Policy(ResourceMappingTestCase):
         # Verify deleting L3 policy cleans up router.
         req = self.new_delete_request('l3_policies', l3p_id)
         res = req.get_response(self.ext_api)
-        self.assertEqual(res.status_int, webob.exc.HTTPNoContent.code)
+        self.assertEqual(webob.exc.HTTPNoContent.code, res.status_int)
         req = self.new_show_request('routers', router_id, fmt=self.fmt)
         res = req.get_response(self.ext_api)
-        self.assertEqual(res.status_int, webob.exc.HTTPNotFound.code)
+        self.assertEqual(webob.exc.HTTPNotFound.code, res.status_int)
 
     def test_explicit_router_lifecycle(self):
         # Create L3 policy with explicit router.
@@ -1487,10 +1502,10 @@ class TestL3Policy(ResourceMappingTestCase):
             # Verify deleting L3 policy does not cleanup router.
             req = self.new_delete_request('l3_policies', l3p_id)
             res = req.get_response(self.ext_api)
-            self.assertEqual(res.status_int, webob.exc.HTTPNoContent.code)
+            self.assertEqual(webob.exc.HTTPNoContent.code, res.status_int)
             req = self.new_show_request('routers', router_id, fmt=self.fmt)
             res = req.get_response(self.ext_api)
-            self.assertEqual(res.status_int, webob.exc.HTTPOk.code)
+            self.assertEqual(webob.exc.HTTPOk.code, res.status_int)
 
     def test_multiple_routers_rejected(self):
         # Verify update l3 policy with explicit router rejected.
@@ -1890,7 +1905,7 @@ class TestPolicyRuleSet(ResourceMappingTestCase):
                 {'provided_policy_rule_sets': {policy_rule_set2_id: None}}}
         req = self.new_update_request('policy_target_groups', data, ptg2_id)
         res = req.get_response(self.ext_api)
-        self.assertEqual(res.status_int, webob.exc.HTTPOk.code)
+        self.assertEqual(webob.exc.HTTPOk.code, res.status_int)
         # set ptg1 to provide policy_rule_set1 and consume policy_rule_set2
         # policy_rule_set2 now maps to SG which has ptg2's subnet as CIDR on
         # rules
@@ -1898,7 +1913,7 @@ class TestPolicyRuleSet(ResourceMappingTestCase):
                 {'consumed_policy_rule_sets': {policy_rule_set2_id: None}}}
         req = self.new_update_request('policy_target_groups', data, ptg1_id)
         res = req.get_response(self.ext_api)
-        self.assertEqual(res.status_int, webob.exc.HTTPOk.code)
+        self.assertEqual(webob.exc.HTTPOk.code, res.status_int)
         port_id = pt1['policy_target']['port_id']
         res = self.new_show_request('ports', port_id)
         port = self.deserialize(self.fmt, res.get_response(self.api))
@@ -1952,7 +1967,7 @@ class TestPolicyRuleSet(ResourceMappingTestCase):
                 {'policy_classifier_id': classifier2_id}}
         req = self.new_update_request('policy_rules', data, policy_rule_id)
         res = req.get_response(self.ext_api)
-        self.assertEqual(res.status_int, webob.exc.HTTPOk.code)
+        self.assertEqual(webob.exc.HTTPOk.code, res.status_int)
         port_id = pt['policy_target']['port_id']
         res = self.new_show_request('ports', port_id)
         port = self.deserialize(self.fmt, res.get_response(self.api))
@@ -2000,7 +2015,7 @@ class TestPolicyRuleSet(ResourceMappingTestCase):
         req = self.new_update_request('policy_classifiers', data,
             classifier_id)
         res = req.get_response(self.ext_api)
-        self.assertEqual(res.status_int, webob.exc.HTTPOk.code)
+        self.assertEqual(webob.exc.HTTPOk.code, res.status_int)
         port_id = pt['policy_target']['port_id']
         res = self.new_show_request('ports', port_id)
         port = self.deserialize(self.fmt, res.get_response(self.api))
@@ -2041,7 +2056,7 @@ class TestPolicyRuleSet(ResourceMappingTestCase):
         req = self.new_update_request('policy_classifiers', data,
             classifier_id)
         res = req.get_response(self.ext_api)
-        self.assertEqual(res.status_int, webob.exc.HTTPOk.code)
+        self.assertEqual(webob.exc.HTTPOk.code, res.status_int)
 
         self._verify_prs_rules(policy_rule_set_id)
 
@@ -2568,7 +2583,7 @@ class TestServiceChain(ResourceMappingTestCase):
             self._verify_prs_rules(prs2['id'])
             sc_instances_new = self._list(SERVICECHAIN_INSTANCES)
             self.assertEqual(sc_instances, sc_instances_new)
-            self.assertEqual(sc_instance_update.call_args_list, [])
+            self.assertEqual([], sc_instance_update.call_args_list)
 
         # update with a new redirect ruleset and verify that the instance is
         # updated with the new classifier
@@ -2605,7 +2620,7 @@ class TestServiceChain(ResourceMappingTestCase):
         self._verify_prs_rules(prs2['id'])
         sc_instances_new = self._list(SERVICECHAIN_INSTANCES)
         self.assertEqual([], sc_instances_new['servicechain_instances'])
-        self.assertEqual(sc_instance_update.call_args_list, [])
+        self.assertEqual([], sc_instance_update.call_args_list)
 
         # Verify that PTG update removing prs cleansup the chain instances
         self._verify_ptg_prs_unset_cleansup_chain(provider_ptg, [prs1['id']])
@@ -2656,7 +2671,7 @@ class TestServiceChain(ResourceMappingTestCase):
             expected_provider_ptg_ids = set([provider_ptg, provider_ptg_new])
             self.assertEqual(expected_provider_ptg_ids,
                              sc_instances_provider_ptg_ids)
-            self.assertEqual(sc_instance_update.call_args_list, [])
+            self.assertEqual([], sc_instance_update.call_args_list)
 
     def test_action_spec_value_update(self):
         scs1_id = self._create_servicechain_spec()
@@ -3070,7 +3085,7 @@ class TestServiceChain(ResourceMappingTestCase):
         req = self.new_delete_request(
             'policy_target_groups', provider_ptg1_id)
         res = req.get_response(self.ext_api)
-        self.assertEqual(res.status_int, webob.exc.HTTPNoContent.code)
+        self.assertEqual(webob.exc.HTTPNoContent.code, res.status_int)
         sc_instances = self._list(SERVICECHAIN_INSTANCES)
         self.assertEqual(1, len(sc_instances['servicechain_instances']))
 
@@ -3234,13 +3249,13 @@ class TestServiceChain(ResourceMappingTestCase):
         req = self.new_delete_request(
             'policy_target_groups', consumer_ptg1_id)
         res = req.get_response(self.ext_api)
-        self.assertEqual(res.status_int, webob.exc.HTTPNoContent.code)
+        self.assertEqual(webob.exc.HTTPNoContent.code, res.status_int)
         sc_instances = self._list(SERVICECHAIN_INSTANCES)
         self.assertEqual(2, len(sc_instances['servicechain_instances']))
 
         req = self.new_delete_request('policy_target_groups', provider_ptg1_id)
         res = req.get_response(self.ext_api)
-        self.assertEqual(res.status_int, webob.exc.HTTPNoContent.code)
+        self.assertEqual(webob.exc.HTTPNoContent.code, res.status_int)
         sc_instances = self._list(SERVICECHAIN_INSTANCES)
         self.assertEqual(1, len(sc_instances['servicechain_instances']))
         sc_instance = sc_instances['servicechain_instances'][0]
@@ -4002,7 +4017,7 @@ class TestNetworkServicePolicy(ResourceMappingTestCase):
                             expected_res_status=webob.exc.HTTPCreated.code)
                 req = self.new_delete_request('nat_pools', nat_pool['id'])
                 res = req.get_response(self.ext_api)
-                self.assertEqual(res.status_int, webob.exc.HTTPNoContent.code)
+                self.assertEqual(webob.exc.HTTPNoContent.code, res.status_int)
 
     def test_update_nsp_nat_pool_after_pt_create(self):
         routes = [{'destination': '0.0.0.0/0', 'nexthop': None}]
