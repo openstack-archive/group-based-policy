@@ -69,7 +69,12 @@ class ServiceChainDBTestBase(test_group_policy_db.GroupPolicyDBTestBase):
 
 class ServiceChainDBTestPlugin(svcchain_db.ServiceChainDbPlugin):
 
-    supported_extension_aliases = ['servicechain']
+    # Note that this plugin does not actually support the 'availability_zone',
+    # and 'agent' extensions. We add it here to keep the extensions'
+    # framework happy, and since we don't exercise those extensions in the
+    # UTs its okay.
+    supported_extension_aliases = ['servicechain', 'availability_zone',
+            'agent']
     path_prefix = "/servicechain"
 
 DB_GP_PLUGIN_KLASS = (ServiceChainDBTestPlugin.__module__ + '.' +

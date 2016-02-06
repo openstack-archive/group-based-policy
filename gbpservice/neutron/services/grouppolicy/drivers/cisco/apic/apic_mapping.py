@@ -2620,7 +2620,8 @@ class ApicMappingDriver(api.ResourceMappingDriver,
                              attributes.ATTR_NOT_SPECIFIED,
                              'dns_nameservers': attributes.ATTR_NOT_SPECIFIED,
                              'host_routes':
-                             attributes.ATTR_NOT_SPECIFIED}
+                             attributes.ATTR_NOT_SPECIFIED,
+                             'tenant_id': es['tenant_id']}
                     subnet = self._create_subnet(context._plugin_context,
                             attrs)
                     if not subnet:
