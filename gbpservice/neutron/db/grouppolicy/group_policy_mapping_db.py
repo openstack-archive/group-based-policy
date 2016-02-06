@@ -10,8 +10,8 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-from neutron.common import log
 from neutron.db import model_base
+from oslo_log import helpers as log
 from oslo_log import log as logging
 from oslo_utils import uuidutils
 import sqlalchemy as sa
@@ -251,7 +251,7 @@ class GroupPolicyMappingDbPlugin(gpdb.GroupPolicyDbPlugin):
                     attribute='allowed_address_pairs',
                     reason='read only attribute')
 
-    @log.log
+    @log.log_method_call
     def create_policy_target(self, context, policy_target):
         pt = policy_target['policy_target']
         tenant_id = self._get_tenant_id_for_create(context, pt)
@@ -269,12 +269,12 @@ class GroupPolicyMappingDbPlugin(gpdb.GroupPolicyDbPlugin):
         return self._make_policy_target_dict(
             pt_db, port_attributes=pt.get('port_attributes', {}))
 
-    @log.log
+    @log.log_method_call
     def get_policy_targets_count(self, context, filters=None):
         return self._get_collection_count(context, PolicyTargetMapping,
                                           filters=filters)
 
-    @log.log
+    @log.log_method_call
     def get_policy_targets(self, context, filters=None, fields=None,
                            sorts=None, limit=None, marker=None,
                            page_reverse=False):
@@ -287,7 +287,7 @@ class GroupPolicyMappingDbPlugin(gpdb.GroupPolicyDbPlugin):
                                     marker_obj=marker_obj,
                                     page_reverse=page_reverse)
 
-    @log.log
+    @log.log_method_call
     def create_policy_target_group(self, context, policy_target_group):
         ptg = policy_target_group['policy_target_group']
         tenant_id = self._get_tenant_id_for_create(context, ptg)
@@ -312,7 +312,7 @@ class GroupPolicyMappingDbPlugin(gpdb.GroupPolicyDbPlugin):
             self._process_policy_rule_sets_for_ptg(context, ptg_db, ptg)
         return self._make_policy_target_group_dict(ptg_db)
 
-    @log.log
+    @log.log_method_call
     def update_policy_target_group(self, context, policy_target_group_id,
                                    policy_target_group):
         ptg = policy_target_group['policy_target_group']
@@ -343,7 +343,7 @@ class GroupPolicyMappingDbPlugin(gpdb.GroupPolicyDbPlugin):
             ptg_db.update(ptg)
         return self._make_policy_target_group_dict(ptg_db)
 
-    @log.log
+    @log.log_method_call
     def create_l2_policy(self, context, l2_policy):
         l2p = l2_policy['l2_policy']
         tenant_id = self._get_tenant_id_for_create(context, l2p)
@@ -360,7 +360,7 @@ class GroupPolicyMappingDbPlugin(gpdb.GroupPolicyDbPlugin):
             context.session.add(l2p_db)
         return self._make_l2_policy_dict(l2p_db)
 
-    @log.log
+    @log.log_method_call
     def get_l2_policies(self, context, filters=None, fields=None,
                         sorts=None, limit=None, marker=None,
                         page_reverse=False):
@@ -373,12 +373,12 @@ class GroupPolicyMappingDbPlugin(gpdb.GroupPolicyDbPlugin):
                                     marker_obj=marker_obj,
                                     page_reverse=page_reverse)
 
-    @log.log
+    @log.log_method_call
     def get_l2_policies_count(self, context, filters=None):
         return self._get_collection_count(context, L2PolicyMapping,
                                           filters=filters)
 
-    @log.log
+    @log.log_method_call
     def create_l3_policy(self, context, l3_policy):
         l3p = l3_policy['l3_policy']
         self.validate_ip_pool(l3p.get('ip_pool', None), l3p['ip_version'])
@@ -409,7 +409,7 @@ class GroupPolicyMappingDbPlugin(gpdb.GroupPolicyDbPlugin):
             context.session.add(l3p_db)
         return self._make_l3_policy_dict(l3p_db)
 
-    @log.log
+    @log.log_method_call
     def update_l3_policy(self, context, l3_policy_id, l3_policy):
         l3p = l3_policy['l3_policy']
         with context.session.begin(subtransactions=True):
@@ -443,7 +443,7 @@ class GroupPolicyMappingDbPlugin(gpdb.GroupPolicyDbPlugin):
             l3p_db.update(l3p)
         return self._make_l3_policy_dict(l3p_db)
 
-    @log.log
+    @log.log_method_call
     def create_external_segment(self, context, external_segment):
         es = external_segment['external_segment']
         tenant_id = self._get_tenant_id_for_create(context, es)
@@ -460,7 +460,7 @@ class GroupPolicyMappingDbPlugin(gpdb.GroupPolicyDbPlugin):
                 self._process_segment_ers(context, es_db, es)
         return self._make_external_segment_dict(es_db)
 
-    @log.log
+    @log.log_method_call
     def get_external_segments(self, context, filters=None, fields=None,
                               sorts=None, limit=None, marker=None,
                               page_reverse=False):
@@ -477,7 +477,7 @@ class GroupPolicyMappingDbPlugin(gpdb.GroupPolicyDbPlugin):
         return self._get_collection_count(context, ExternalSegmentMapping,
                                           filters=filters)
 
-    @log.log
+    @log.log_method_call
     def create_nat_pool(self, context, nat_pool):
         np = nat_pool['nat_pool']
         tenant_id = self._get_tenant_id_for_create(context, np)
@@ -492,7 +492,7 @@ class GroupPolicyMappingDbPlugin(gpdb.GroupPolicyDbPlugin):
             context.session.add(np_db)
         return self._make_nat_pool_dict(np_db)
 
-    @log.log
+    @log.log_method_call
     def get_nat_pools(self, context, filters=None, fields=None,
                       sorts=None, limit=None, marker=None,
                       page_reverse=False):

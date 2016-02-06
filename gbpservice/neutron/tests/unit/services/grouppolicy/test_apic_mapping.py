@@ -227,7 +227,7 @@ class TestPolicyTarget(ApicMappingTestCase):
                 policy_target_group_id=ptg['id'], port_id=port['port']['id'])
             res = self.new_delete_request('ports', port['port']['id'],
                                           self.fmt).get_response(self.api)
-            self.assertEqual(res.status_int, webob.exc.HTTPNoContent.code)
+            self.assertEqual(webob.exc.HTTPNoContent.code, res.status_int)
             self.delete_policy_target(pt['policy_target']['id'],
                                       expected_res_status=404)
 
@@ -1487,7 +1487,7 @@ class TestL3Policy(ApicMappingTestCase):
             expected_res_status=200)['l3_policy']
         req = self.new_delete_request('l3_policies', l3p['id'], self.fmt)
         res = req.get_response(self.ext_api)
-        self.assertEqual(res.status_int, webob.exc.HTTPNoContent.code)
+        self.assertEqual(webob.exc.HTTPNoContent.code, res.status_int)
 
         mgr = self.driver.apic_manager
         owner = self.common_tenant if shared_es else es1['tenant_id']
@@ -1525,7 +1525,7 @@ class TestL3Policy(ApicMappingTestCase):
             expected_res_status=200)['l3_policy']
         req = self.new_delete_request('l3_policies', l3p['id'], self.fmt)
         res = req.get_response(self.ext_api)
-        self.assertEqual(res.status_int, webob.exc.HTTPNoContent.code)
+        self.assertEqual(webob.exc.HTTPNoContent.code, res.status_int)
 
         expected_delete_calls = []
         if not self.pre_l3out:
@@ -1761,7 +1761,7 @@ class TestL3Policy(ApicMappingTestCase):
 
         res = self.new_delete_request('policy_target_groups', ptg['id'],
                                       self.fmt).get_response(self.ext_api)
-        self.assertEqual(res.status_int, webob.exc.HTTPNoContent.code)
+        self.assertEqual(webob.exc.HTTPNoContent.code, res.status_int)
 
     def test_multi_es_with_ptg_1(self):
         self._test_multi_es_with_ptg(False)
