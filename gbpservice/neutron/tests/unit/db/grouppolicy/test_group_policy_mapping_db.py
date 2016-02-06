@@ -27,7 +27,8 @@ from gbpservice.neutron.tests.unit.db.grouppolicy import (
 
 class GroupPolicyMappingDBTestPlugin(gpmdb.GroupPolicyMappingDbPlugin):
 
-    supported_extension_aliases = ['group-policy', 'group-policy-mapping']
+    supported_extension_aliases = ['group-policy', 'group-policy-mapping'] + (
+        tgpdb.UNSUPPORTED_REQUIRED_EXTS)
     path_prefix = "/grouppolicy"
 
 
@@ -77,7 +78,7 @@ class TestMappedGroupResourceAttrs(GroupPolicyMappingDbTestCase):
             self.assertEqual(port_id, res['policy_target']['port_id'])
             req = self.new_delete_request('policy_targets', pt_id)
             res = req.get_response(self.ext_api)
-            self.assertEqual(res.status_int, webob.exc.HTTPNoContent.code)
+            self.assertEqual(webob.exc.HTTPNoContent.code, res.status_int)
 
     def test_create_delete_policy_target_group_with_subnets(self):
         with self.subnet(cidr='10.10.1.0/24') as subnet1:
@@ -95,7 +96,7 @@ class TestMappedGroupResourceAttrs(GroupPolicyMappingDbTestCase):
                                  sorted(res['policy_target_group']['subnets']))
                 req = self.new_delete_request('policy_target_groups', ptg_id)
                 res = req.get_response(self.ext_api)
-                self.assertEqual(res.status_int, webob.exc.HTTPNoContent.code)
+                self.assertEqual(webob.exc.HTTPNoContent.code, res.status_int)
 
     def test_update_policy_target_group_subnets(self):
         with self.subnet(cidr='10.10.1.0/24') as subnet1:
@@ -131,8 +132,8 @@ class TestMappedGroupResourceAttrs(GroupPolicyMappingDbTestCase):
                     req = self.new_delete_request('policy_target_groups',
                                                   ptg_id)
                     res = req.get_response(self.ext_api)
-                    self.assertEqual(
-                        res.status_int, webob.exc.HTTPNoContent.code)
+                    self.assertEqual(webob.exc.HTTPNoContent.code,
+                                     res.status_int)
 
     def test_create_delete_l2_policy_with_network(self):
         with self.network() as network:
@@ -145,7 +146,7 @@ class TestMappedGroupResourceAttrs(GroupPolicyMappingDbTestCase):
             self.assertEqual(network_id, res['l2_policy']['network_id'])
             req = self.new_delete_request('l2_policies', l2p_id)
             res = req.get_response(self.ext_api)
-            self.assertEqual(res.status_int, webob.exc.HTTPNoContent.code)
+            self.assertEqual(webob.exc.HTTPNoContent.code, res.status_int)
 
     def test_create_delete_l3_policy_with_routers(self):
         with self.router() as router1:
@@ -163,7 +164,7 @@ class TestMappedGroupResourceAttrs(GroupPolicyMappingDbTestCase):
                                  sorted(res['l3_policy']['routers']))
                 req = self.new_delete_request('l3_policies', l3p_id)
                 res = req.get_response(self.ext_api)
-                self.assertEqual(res.status_int, webob.exc.HTTPNoContent.code)
+                self.assertEqual(webob.exc.HTTPNoContent.code, res.status_int)
 
     def test_update_l3_policy_routers(self):
         with self.router() as router1:
@@ -194,8 +195,8 @@ class TestMappedGroupResourceAttrs(GroupPolicyMappingDbTestCase):
                     # the resource(s) that are created.
                     req = self.new_delete_request('l3_policies', l3p_id)
                     res = req.get_response(self.ext_api)
-                    self.assertEqual(res.status_int,
-                                     webob.exc.HTTPNoContent.code)
+                    self.assertEqual(webob.exc.HTTPNoContent.code,
+                                     res.status_int)
 
     def test_create_delete_es_with_subnet(self):
         with self.subnet(cidr='10.10.1.0/24') as subnet:
@@ -210,7 +211,7 @@ class TestMappedGroupResourceAttrs(GroupPolicyMappingDbTestCase):
             self.assertEqual(subnet_id, res['external_segment']['subnet_id'])
             req = self.new_delete_request('external_segments', es_id)
             res = req.get_response(self.ext_api)
-            self.assertEqual(res.status_int, webob.exc.HTTPNoContent.code)
+            self.assertEqual(webob.exc.HTTPNoContent.code, res.status_int)
 
     def test_list_policy_targets(self):
         with self.port() as port1:

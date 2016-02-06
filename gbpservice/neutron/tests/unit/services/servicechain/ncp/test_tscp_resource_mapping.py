@@ -189,7 +189,11 @@ class TestImplicitServiceChains(ResourceMappingStitchingPlumberGBPTestCase,
         for target in targets:
             pt = self.show_policy_target(
                 target.policy_target_id)['policy_target']
-            # Being service targets, port filter and hybrid plug will be false
             port = self._bind_port_to_host(pt['port_id'], 'host')['port']
             self.assertTrue(port['binding:vif_details']['port_filter'])
-            self.assertTrue(port['binding:vif_details']['ovs_hybrid_plug'])
+            # REVISIT: On account of the following commit:
+            # https://git.io/v2czD
+            # the hybrid plugging is disabled. Assuming that we are just
+            # checking for the default value here, this should be fine. Else we
+            # need to revisit.
+            self.assertFalse(port['binding:vif_details']['ovs_hybrid_plug'])
