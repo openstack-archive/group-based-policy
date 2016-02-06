@@ -10,9 +10,13 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+import netaddr
+from neutron.callbacks import events
+from neutron.callbacks import registry
+from neutron.callbacks import resources
+from neutron.common import constants as l3_constants
 from neutron.db import l3_db
 from neutron.db import securitygroups_db
-from neutron import manager
 
 
 # Monkey patch create floatingip to allow subnet_id to be specified.
@@ -81,7 +85,7 @@ l3_db.L3_NAT_dbonly_mixin.create_floatingip = create_floatingip
 # REVISIT(ivar): Monkey patch to allow explicit router_id to be set in Neutron
 # for Floating Ip creation (for internal calls only). Once we split the server,
 # this could be part of a GBP Neutron L3 driver.
-def get_assoc_data(self, context, fip, floating_network_id):
+def _get_assoc_data(self, context, fip, floating_network_id):
     (internal_port, internal_subnet_id,
      internal_ip_address) = self._internal_fip_assoc_data(context, fip)
     if fip.get('router_id'):
@@ -95,7 +99,40 @@ def get_assoc_data(self, context, fip, floating_network_id):
 
     return fip['port_id'], internal_ip_address, router_id
 
-l3_db.L3_NAT_dbonly_mixin.get_assoc_data = get_assoc_data
+
+def _update_fip_assoc(self, context, fip, floatingip_db, external_port):
+    previous_router_id = floatingip_db.router_id
+    port_id, internal_ip_address, router_id = (
+        self._check_and_get_fip_assoc(context, fip, floatingip_db))
+    floatingip_db.update({'fixed_ip_address': internal_ip_address,
+                          'fixed_port_id': port_id,
+                          'router_id': router_id,
+                          'last_known_router_id': previous_router_id})
+    next_hop = None
+    if router_id:
+        router = self._get_router(context.elevated(), router_id)
+        gw_port = router.gw_port
+        if gw_port:
+            for fixed_ip in gw_port.fixed_ips:
+                addr = netaddr.IPAddress(fixed_ip.ip_address)
+                if addr.version == l3_constants.IP_VERSION_4:
+                    next_hop = fixed_ip.ip_address
+                    break
+    args = {'fixed_ip_address': internal_ip_address,
+            'fixed_port_id': port_id,
+            'router_id': router_id,
+            'last_known_router_id': previous_router_id,
+            'floating_ip_address': floatingip_db.floating_ip_address,
+            'floating_network_id': floatingip_db.floating_network_id,
+            'next_hop': next_hop,
+            'context': context}
+    registry.notify(resources.FLOATING_IP,
+                    events.AFTER_UPDATE,
+                    self._update_fip_assoc,
+                    **args)
+
+l3_db.L3_NAT_dbonly_mixin._get_assoc_data = _get_assoc_data
+l3_db.L3_NAT_dbonly_mixin._update_fip_assoc = _update_fip_assoc
 
 
 # REVISIT(ivar): Neutron adds a tenant filter on SG lookup for a given port,
@@ -130,9 +167,3 @@ def _get_security_groups_on_port(self, context, port):
 
 securitygroups_db.SecurityGroupDbMixin._get_security_groups_on_port = (
     _get_security_groups_on_port)
-
-
-def _load_flavors_manager(self):
-    pass
-
-manager.NeutronManager._load_flavors_manager = _load_flavors_manager

@@ -13,6 +13,7 @@
 import requests
 from requests import auth
 
+from neutron._i18n import _LI
 from oslo_config import cfg
 from oslo_log import log as logging
 from oslo_serialization import jsonutils
@@ -52,13 +53,13 @@ class OdlManager(object):
 
     def __init__(self):
 
-        LOG.info(_("Configured ODL username: %s"),
+        LOG.info(_LI("Configured ODL username: %s"),
                  cfg.CONF.odl_driver.odl_username)
-        LOG.info(_("Configured ODL password: %s"),
+        LOG.info(_LI("Configured ODL password: %s"),
                  cfg.CONF.odl_driver.odl_password)
-        LOG.info(_("Configured ODL host: %s"),
+        LOG.info(_LI("Configured ODL host: %s"),
                  cfg.CONF.odl_driver.odl_host)
-        LOG.info(_("Configured ODL port: %s"),
+        LOG.info(_LI("Configured ODL port: %s"),
                  cfg.CONF.odl_driver.odl_port)
 
         self._username = cfg.CONF.odl_driver.odl_username

@@ -12,10 +12,11 @@
 
 from keystoneclient import exceptions as k_exceptions
 from keystoneclient.v2_0 import client as k_client
-from neutron.common import log
+from neutron._i18n import _LE
 from neutron.db import model_base
 from neutron.db import models_v2
 from oslo_config import cfg
+from oslo_log import helpers as log
 from oslo_log import log as logging
 from oslo_serialization import jsonutils
 from oslo_utils import excutils
@@ -80,7 +81,7 @@ class ChainMappingDriver(api.PolicyDriver, local_api.LocalAPI,
     policy resources to various service chain constructs.
     """
 
-    @log.log
+    @log.log_method_call
     def initialize(self):
         self._cached_agent_notifier = None
         self.chain_owner = ChainMappingDriver.chain_tenant_id(reraise=True)
@@ -97,10 +98,10 @@ class ChainMappingDriver(api.PolicyDriver, local_api.LocalAPI,
                 return tenant.id
             except k_exceptions.NotFound:
                 with excutils.save_and_reraise_exception(reraise=reraise):
-                    LOG.error(_('No tenant with name %s exists.'), tenant)
+                    LOG.error(_LE('No tenant with name %s exists.'), tenant)
             except k_exceptions.NoUniqueMatch:
                 with excutils.save_and_reraise_exception(reraise=reraise):
-                    LOG.error(_('Multiple tenants matches found for %s'),
+                    LOG.error(_LE('Multiple tenants matches found for %s'),
                               tenant)
 
     @staticmethod
@@ -119,7 +120,7 @@ class ChainMappingDriver(api.PolicyDriver, local_api.LocalAPI,
             return k_client.Client(username=user, password=pwd,
                                    auth_url=auth_url)
 
-    @log.log
+    @log.log_method_call
     def create_policy_target_postcommit(self, context):
         if not context._plugin._is_service_target(context._plugin_context,
                                                   context.current['id']):
@@ -134,12 +135,12 @@ class ChainMappingDriver(api.PolicyDriver, local_api.LocalAPI,
                     chain_context, context.current,
                     mapping.servicechain_instance_id)
 
-    @log.log
+    @log.log_method_call
     def delete_policy_target_precommit(self, context):
         context._is_service_target = context._plugin._is_service_target(
             context._plugin_context, context.current['id'])
 
-    @log.log
+    @log.log_method_call
     def delete_policy_target_postcommit(self, context):
         if not context._is_service_target:
             mappings = self._get_ptg_servicechain_mapping(
@@ -153,11 +154,11 @@ class ChainMappingDriver(api.PolicyDriver, local_api.LocalAPI,
                     chain_context, context.current,
                     mapping.servicechain_instance_id)
 
-    @log.log
+    @log.log_method_call
     def create_policy_target_group_precommit(self, context):
         self._validate_ptg_prss(context, context.current)
 
-    @log.log
+    @log.log_method_call
     def create_policy_target_group_postcommit(self, context):
         if (context.current['provided_policy_rule_sets'] and not
             context.current.get('proxied_group_id')):
@@ -166,12 +167,12 @@ class ChainMappingDriver(api.PolicyDriver, local_api.LocalAPI,
                 providing_ptg=context.current)
         self._handle_prs_added(context)
 
-    @log.log
+    @log.log_method_call
     def update_policy_target_group_precommit(self, context):
         self._validate_ptg_prss(context, context.current)
         self._stash_ptg_modified_chains(context)
 
-    @log.log
+    @log.log_method_call
     def update_policy_target_group_postcommit(self, context):
         #Update service chain instance when any ruleset is changed
         orig = context.original
@@ -193,19 +194,19 @@ class ChainMappingDriver(api.PolicyDriver, local_api.LocalAPI,
                 providing_ptg=context.current)
         self._handle_prs_updated(context)
 
-    @log.log
+    @log.log_method_call
     def delete_policy_target_group_precommit(self, context):
         pass
 
-    @log.log
+    @log.log_method_call
     def delete_policy_target_group_postcommit(self, context):
         self._handle_prs_removed(context)
 
-    @log.log
+    @log.log_method_call
     def update_policy_classifier_postcommit(self, context):
         self._handle_classifier_update_notification(context)
 
-    @log.log
+    @log.log_method_call
     def create_policy_action_precommit(self, context):
         spec_id = context.current['action_value']
         if spec_id:
@@ -215,15 +216,15 @@ class ChainMappingDriver(api.PolicyDriver, local_api.LocalAPI,
                 if not spec.get('shared', False):
                     self._reject_shared(context.current, 'policy_action')
 
-    @log.log
+    @log.log_method_call
     def update_policy_action_postcommit(self, context):
         self._handle_redirect_spec_id_update(context)
 
-    @log.log
+    @log.log_method_call
     def create_policy_rule_precommit(self, context):
         self._reject_multiple_redirects_in_rule(context)
 
-    @log.log
+    @log.log_method_call
     def update_policy_rule_precommit(self, context):
         self._reject_multiple_redirects_in_rule(context)
         old_redirect = self._get_redirect_action(context, context.original)
@@ -237,7 +238,7 @@ class ChainMappingDriver(api.PolicyDriver, local_api.LocalAPI,
                 # Make sure the PRS can have a new redirect action
                 self._validate_new_prs_redirect(context, prs)
 
-    @log.log
+    @log.log_method_call
     def update_policy_rule_postcommit(self, context):
         old_classifier_id = context.original['policy_classifier_id']
         new_classifier_id = context.current['policy_classifier_id']
@@ -260,17 +261,17 @@ class ChainMappingDriver(api.PolicyDriver, local_api.LocalAPI,
             if old_redirect_policy_actions or new_redirect_policy_actions:
                 self._handle_redirect_action(context, policy_rule_sets)
 
-    @log.log
+    @log.log_method_call
     def create_policy_rule_set_precommit(self, context):
         self._reject_multiple_redirects_in_prs(context)
 
-    @log.log
+    @log.log_method_call
     def create_policy_rule_set_postcommit(self, context):
         if context.current['child_policy_rule_sets']:
             self._handle_redirect_action(
                 context, context.current['child_policy_rule_sets'])
 
-    @log.log
+    @log.log_method_call
     def update_policy_rule_set_precommit(self, context):
         self._reject_multiple_redirects_in_prs(context)
         # If a redirect action is added (from 0 to one) we have to validate
@@ -283,7 +284,7 @@ class ChainMappingDriver(api.PolicyDriver, local_api.LocalAPI,
         if new_red_count > old_red_count:
             self._validate_new_prs_redirect(context, context.current)
 
-    @log.log
+    @log.log_method_call
     def update_policy_rule_set_postcommit(self, context):
         # Handle any Redirects from the current Policy Rule Set
         self._handle_redirect_action(context, [context.current['id']])
@@ -297,21 +298,21 @@ class ChainMappingDriver(api.PolicyDriver, local_api.LocalAPI,
                 self._handle_redirect_action(
                     context, context.current['child_policy_rule_sets'])
 
-    @log.log
+    @log.log_method_call
     def delete_policy_rule_set_postcommit(self, context):
         if context.current['child_policy_rule_sets']:
             self._handle_redirect_action(
                 context, context.current['child_policy_rule_sets'])
 
-    @log.log
+    @log.log_method_call
     def create_external_policy_postcommit(self, context):
         self._handle_prs_added(context)
 
-    @log.log
+    @log.log_method_call
     def update_external_policy_postcommit(self, context):
         self._handle_prs_updated(context)
 
-    @log.log
+    @log.log_method_call
     def delete_external_policy_postcommit(self, context):
         self._handle_prs_removed(context)
 

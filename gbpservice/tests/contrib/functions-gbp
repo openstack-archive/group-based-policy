@@ -10,7 +10,7 @@ XTRACE=$(set +o | grep xtrace)
 
 function prepare_gbp_devstack {
     cd $TOP_DIR
-    sudo git checkout stable/liberty
+    sudo git checkout master
     sudo cp $CONTRIB_DIR/devstack/local.conf $TOP_DIR/local.conf
     sudo cp $CONTRIB_DIR/devstack/exercises/*.sh $TOP_DIR/exercises/
     sudo cp $CONTRIB_DIR/devstack/lib/* $TOP_DIR/lib/

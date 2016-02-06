@@ -10,7 +10,7 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-from neutron.common import log
+from oslo_log import helpers as log
 
 from gbpservice.neutron.services.servicechain.plugins.ncp import plumber_base
 
@@ -19,14 +19,14 @@ class NoopPlumber(plumber_base.NodePlumberBase):
 
     initialized = False
 
-    @log.log
+    @log.log_method_call
     def initialize(self):
         self.initialized = True
 
-    @log.log
+    @log.log_method_call
     def plug_services(self, context, deployment):
         self._sort_deployment(deployment)
 
-    @log.log
+    @log.log_method_call
     def unplug_services(self, context, deployment):
         self._sort_deployment(deployment)

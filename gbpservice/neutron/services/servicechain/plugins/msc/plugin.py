@@ -10,8 +10,9 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-from neutron.common import log
+from neutron._i18n import _LE
 from neutron.plugins.common import constants as pconst
+from oslo_log import helpers as log
 from oslo_log import log as logging
 from oslo_utils import excutils
 
@@ -41,7 +42,7 @@ class ServiceChainPlugin(servicechain_db.ServiceChainDbPlugin,
         super(ServiceChainPlugin, self).__init__()
         self.driver_manager.initialize()
 
-    @log.log
+    @log.log_method_call
     def create_servicechain_node(self, context, servicechain_node):
         session = context.session
         with session.begin(subtransactions=True):
@@ -58,14 +59,14 @@ class ServiceChainPlugin(servicechain_db.ServiceChainDbPlugin,
                 sc_context)
         except Exception:
             with excutils.save_and_reraise_exception():
-                LOG.error(_("driver_manager.create_servicechain_postcommit "
-                            "failed, deleting servicechain_node %s"),
+                LOG.error(_LE("driver_manager.create_servicechain_postcommit "
+                              "failed, deleting servicechain_node %s"),
                           result['id'])
                 self.delete_servicechain_node(context, result['id'])
 
         return result
 
-    @log.log
+    @log.log_method_call
     def update_servicechain_node(self, context, servicechain_node_id,
                                  servicechain_node):
         session = context.session
@@ -89,7 +90,7 @@ class ServiceChainPlugin(servicechain_db.ServiceChainDbPlugin,
 
         return updated_sc_node
 
-    @log.log
+    @log.log_method_call
     def delete_servicechain_node(self, context, servicechain_node_id):
         session = context.session
         with session.begin(subtransactions=True):
@@ -106,11 +107,11 @@ class ServiceChainPlugin(servicechain_db.ServiceChainDbPlugin,
             self.driver_manager.delete_servicechain_node_postcommit(
                 sc_context)
         except Exception:
-            LOG.exception(_("delete_servicechain_node_postcommit failed "
+            LOG.exception(_LE("delete_servicechain_node_postcommit failed "
                             "for servicechain_node %s"),
                           servicechain_node_id)
 
-    @log.log
+    @log.log_method_call
     def create_servicechain_spec(self, context, servicechain_spec):
         session = context.session
         with session.begin(subtransactions=True):
@@ -126,14 +127,14 @@ class ServiceChainPlugin(servicechain_db.ServiceChainDbPlugin,
             self.driver_manager.create_servicechain_spec_postcommit(sc_context)
         except Exception:
             with excutils.save_and_reraise_exception():
-                LOG.error(_("driver_manager.create_servicechain_postcommit "
-                            "failed, deleting servicechain_spec %s"),
+                LOG.error(_LE("driver_manager.create_servicechain_postcommit "
+                              "failed, deleting servicechain_spec %s"),
                           result['id'])
                 self.delete_servicechain_spec(context, result['id'])
 
         return result
 
-    @log.log
+    @log.log_method_call
     def update_servicechain_spec(self, context, servicechain_spec_id,
                                  servicechain_spec):
         session = context.session
@@ -156,7 +157,7 @@ class ServiceChainPlugin(servicechain_db.ServiceChainDbPlugin,
 
         return updated_sc_spec
 
-    @log.log
+    @log.log_method_call
     def delete_servicechain_spec(self, context, servicechain_spec_id):
         session = context.session
         with session.begin(subtransactions=True):
@@ -172,11 +173,11 @@ class ServiceChainPlugin(servicechain_db.ServiceChainDbPlugin,
         try:
             self.driver_manager.delete_servicechain_spec_postcommit(sc_context)
         except Exception:
-            LOG.exception(_("delete_servicechain_spec_postcommit failed "
+            LOG.exception(_LE("delete_servicechain_spec_postcommit failed "
                             "for servicechain_spec %s"),
                           servicechain_spec_id)
 
-    @log.log
+    @log.log_method_call
     def create_servicechain_instance(self, context, servicechain_instance):
         session = context.session
         with session.begin(subtransactions=True):
@@ -193,7 +194,7 @@ class ServiceChainPlugin(servicechain_db.ServiceChainDbPlugin,
                 sc_context)
         except Exception:
             with excutils.save_and_reraise_exception():
-                LOG.error(_(
+                LOG.error(_LE(
                     "driver_manager.create_servicechain_instance_postcommit "
                     "failed, deleting servicechain_instance %s"),
                           result['id'])
@@ -201,7 +202,7 @@ class ServiceChainPlugin(servicechain_db.ServiceChainDbPlugin,
 
         return result
 
-    @log.log
+    @log.log_method_call
     def update_servicechain_instance(self, context,
                                      servicechain_instance_id,
                                      servicechain_instance):
@@ -223,7 +224,7 @@ class ServiceChainPlugin(servicechain_db.ServiceChainDbPlugin,
             sc_context)
         return updated_sc_instance
 
-    @log.log
+    @log.log_method_call
     def delete_servicechain_instance(self, context, servicechain_instance_id):
         session = context.session
         with session.begin(subtransactions=True):
@@ -241,11 +242,11 @@ class ServiceChainPlugin(servicechain_db.ServiceChainDbPlugin,
             self.driver_manager.delete_servicechain_instance_postcommit(
                 sc_context)
         except Exception:
-            LOG.exception(_("delete_servicechain_instance_postcommit failed "
+            LOG.exception(_LE("delete_servicechain_instance_postcommit failed "
                             "for servicechain_instance %s"),
                           servicechain_instance_id)
 
-    @log.log
+    @log.log_method_call
     def create_service_profile(self, context, service_profile):
         session = context.session
         with session.begin(subtransactions=True):
@@ -263,15 +264,14 @@ class ServiceChainPlugin(servicechain_db.ServiceChainDbPlugin,
                 sc_context)
         except Exception:
             with excutils.save_and_reraise_exception():
-                LOG.error(_(
+                LOG.error(_LE(
                     "driver_manager.create_service_profile_postcommit "
-                    "failed, deleting service_profile %s"),
-                          result['id'])
+                    "failed, deleting service_profile %s"), result['id'])
                 self.delete_service_profile(context, result['id'])
 
         return result
 
-    @log.log
+    @log.log_method_call
     def update_service_profile(self, context, service_profile_id,
                                service_profile):
         session = context.session
@@ -293,7 +293,7 @@ class ServiceChainPlugin(servicechain_db.ServiceChainDbPlugin,
             sc_context)
         return updated_profile
 
-    @log.log
+    @log.log_method_call
     def delete_service_profile(self, context, service_profile_id):
         session = context.session
         with session.begin(subtransactions=True):
@@ -310,6 +310,6 @@ class ServiceChainPlugin(servicechain_db.ServiceChainDbPlugin,
             self.driver_manager.delete_service_profile_postcommit(
                 sc_context)
         except Exception:
-            LOG.exception(_("delete_service_profile_postcommit failed "
+            LOG.exception(_LE("delete_service_profile_postcommit failed "
                             "for service_profile %s"),
                           service_profile_id)
