@@ -30,15 +30,28 @@ from gbpservice.neutron.services.servicechain.plugins.ncp import (
     context as ncp_context)
 from gbpservice.neutron.services.servicechain.plugins.ncp import (
     exceptions as exc)
+from gbpservice.neutron.services.servicechain.plugins.ncp import (
+    plugin as ncp_plugin)
 import gbpservice.neutron.services.servicechain.plugins.ncp.config  # noqa
 from gbpservice.neutron.services.servicechain.plugins.ncp.node_drivers import (
     dummy_driver as dummy_driver)
 from gbpservice.neutron.tests.unit.services.servicechain import (
     test_servicechain_plugin as test_base)
 
-SC_PLUGIN_KLASS = (
-    "gbpservice.neutron.services.servicechain.plugins.ncp.plugin."
-    "NodeCompositionPlugin")
+
+class ServiceChainNCPTestPlugin(ncp_plugin.NodeCompositionPlugin):
+
+    # Note that this plugin does not actually support the 'availability_zone',
+    # and 'agent' extensions. We add it here to keep the extensions'
+    # framework happy, and since we don't exercise those extensions in the
+    # UTs its okay.
+    supported_extension_aliases = ['servicechain', 'availability_zone',
+            'agent']
+    path_prefix = "/servicechain"
+
+
+SC_PLUGIN_KLASS = (ServiceChainNCPTestPlugin.__module__ + '.' +
+                   ServiceChainNCPTestPlugin.__name__)
 CORE_PLUGIN = ('gbpservice.neutron.tests.unit.services.grouppolicy.'
                'test_resource_mapping.NoL3NatSGTestPlugin')
 GP_PLUGIN_KLASS = (
