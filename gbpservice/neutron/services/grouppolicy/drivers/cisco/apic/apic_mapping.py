@@ -2182,8 +2182,11 @@ class ApicMappingDriver(api.ResourceMappingDriver,
 
     def _get_l2p_subnets(self, plugin_context, l2p_id):
         l2p = self.gbp_plugin.get_l2_policy(plugin_context, l2p_id)
+        return self._get_l2ps_subnets(plugin_context, [l2p])
+
+    def _get_l2ps_subnets(self, plugin_context, l2ps):
         return self._core_plugin.get_subnets(
-            plugin_context, {'network_id': [l2p['network_id']]})
+            plugin_context, {'network_id': [x['network_id'] for x in l2ps]})
 
     def _configure_implicit_contract(self, context, l2p, transaction=None):
         with self.apic_manager.apic.transaction(transaction) as trs:
@@ -2974,3 +2977,10 @@ class ApicMappingDriver(api.ResourceMappingDriver,
                     rule_name, owner=tenant, transaction=trs,
                     entry=apic_manager.CP_ENTRY + '-' + str(x), **entry)
                 x += 1
+
+    def _get_l3p_allocated_subnets(self, context, l3p_id):
+        l2ps = self._get_l2_policies(context._plugin_context,
+                                     {'l3_policy_id': [l3p_id]})
+        subnets = [x['cidr'] for x in
+                   self._get_l2ps_subnets(context._plugin_context, l2ps)]
+        return subnets
