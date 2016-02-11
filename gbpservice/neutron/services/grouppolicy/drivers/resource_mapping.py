@@ -1443,10 +1443,8 @@ class ResourceMappingDriver(api.PolicyDriver, local_api.LocalAPI,
             l3p['proxy_subnet_prefix_length'] if is_proxy
             else l3p['subnet_prefix_length'])
         l3p_id = l3p['id']
-        ptgs = context._plugin._get_l3p_ptgs(
-            context._plugin_context.elevated(), l3p_id)
         allocated = netaddr.IPSet(
-            iterable=self._get_ptg_cidrs(context, None, ptg_dicts=ptgs))
+            iterable=self._get_l3p_allocated_subnets(context, l3p_id))
         available = pool - allocated
         available.compact()
 
@@ -2568,3 +2566,8 @@ class ResourceMappingDriver(api.PolicyDriver, local_api.LocalAPI,
         master_mac = master_port['mac_address']
         master_ips = [x['ip_address'] for x in master_port['fixed_ips']]
         return master_mac, master_ips
+
+    def _get_l3p_allocated_subnets(self, context, l3p_id):
+        ptgs = context._plugin._get_l3p_ptgs(
+            context._plugin_context.elevated(), l3p_id)
+        return self._get_ptg_cidrs(context, None, ptg_dicts=ptgs)
