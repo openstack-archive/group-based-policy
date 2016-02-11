@@ -1121,6 +1121,22 @@ class TestL2Policy(ApicMappingTestCase):
                     l2_policy_id=l2p['id'])['policy_target_group']
                 self.assertEqual(ptg['subnets'], [sub['id']])
 
+    def test_subnet_deallocated(self):
+        l2p = self.create_l2_policy()['l2_policy']
+        ptg = self.create_policy_target_group(
+            l2_policy_id=l2p['id'])['policy_target_group']
+        subnet = netaddr.IPSet(
+            [self._show_subnet(x)['subnet']['cidr'] for x in ptg['subnets']])
+        self.delete_policy_target_group(ptg['id'])
+
+        l2p2 = self.create_l2_policy()['l2_policy']
+        ptg = self.create_policy_target_group(
+            l2_policy_id=l2p2['id'])['policy_target_group']
+
+        subnet2 = netaddr.IPSet(
+            [self._show_subnet(x)['subnet']['cidr'] for x in ptg['subnets']])
+        self.assertFalse(subnet & subnet2)
+
 
 class TestL3Policy(ApicMappingTestCase):
 
