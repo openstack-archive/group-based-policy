@@ -33,6 +33,7 @@ from oslo_config import cfg
 
 sys.modules["apicapi"] = mock.Mock()
 
+from gbpservice.neutron.plugins.ml2.drivers.grouppolicy.apic import driver
 from gbpservice.neutron.services.grouppolicy import (
     group_policy_context as p_context)
 from gbpservice.neutron.services.grouppolicy import config
@@ -58,6 +59,11 @@ AGENT_CONF = {'alive': True, 'binary': 'somebinary',
               'topic': 'sometopic', 'agent_type': AGENT_TYPE,
               'configurations': {'opflex_networks': None,
                                  'bridge_mappings': {'physnet1': 'br-eth1'}}}
+AGENT_TYPE_DVS = driver.AGENT_TYPE_DVS
+AGENT_CONF_DVS = {'alive': True, 'binary': 'somebinary',
+                  'topic': 'sometopic', 'agent_type': AGENT_TYPE_DVS,
+                  'configurations':
+                      {'bridge_mappings': {'physnet1': 'br-eth1'}}}
 
 
 def echo(context, string, prefix=''):
@@ -98,9 +104,6 @@ class ApicMappingTestCase(
         }
         mock.patch('gbpservice.neutron.services.grouppolicy.drivers.cisco.'
                    'apic.apic_mapping.ApicMappingDriver._setup_rpc').start()
-        host_agents = mock.patch('neutron.plugins.ml2.driver_context.'
-                                 'PortContext.host_agents').start()
-        host_agents.return_value = [self.agent_conf]
         nova_client = mock.patch(
             'gbpservice.neutron.services.grouppolicy.drivers.cisco.'
             'apic.nova_client.NovaClient.get_server').start()
@@ -199,7 +202,15 @@ class ApicMappingTestCase(
             shared=shared)['policy_rule']
 
     def _bind_port_to_host(self, port_id, host):
-        data = {'port': {'binding:host_id': host, 'device_owner': 'compute:',
+        data = {'port': {'binding:host_id': host,
+                         'device_owner': 'compute:',
+                         'device_id': 'someid'}}
+        return super(ApicMappingTestCase, self)._bind_port_to_host(
+            port_id, host, data=data)
+
+    def _bind_dhcp_port_to_host(self, port_id, host):
+        data = {'port': {'binding:host_id': host,
+                         'device_owner': 'network:dhcp',
                          'device_id': 'someid'}}
         return super(ApicMappingTestCase, self)._bind_port_to_host(
             port_id, host, data=data)
@@ -220,9 +231,7 @@ class TestPolicyTarget(ApicMappingTestCase):
             self._bind_port_to_host(port['port']['id'], 'h1')
             pt = self.create_policy_target(
                 policy_target_group_id=ptg['id'], port_id=port['port']['id'])
-            self.new_delete_request(
-                'policy_targets', pt['policy_target']['id'],
-                self.fmt).get_response(self.ext_api)
+            self.delete_policy_target(pt['policy_target']['id'])
             self.assertTrue(self.driver.notifier.port_update.called)
 
     def test_policy_target_delete_no_port(self):
@@ -809,6 +818,106 @@ class TestPolicyTarget(ApicMappingTestCase):
         self.assertEqual(2, len(entries))
         self.assertEqual('1.1.1.1', entries[0].ha_ip_address)
         self.assertEqual('1.1.1.1', entries[1].ha_ip_address)
+
+
+class TestPolicyTargetDvs(ApicMappingTestCase):
+
+    def setUp(self):
+        super(TestPolicyTargetDvs, self).setUp()
+        self.driver.apic_manager.app_profile_name = mocked.APIC_AP
+        mapper = self.driver.name_mapper
+        mapper.name_mapper.policy_taget_group.return_value = 'ptg1'
+
+    def _pg_name(self, project, profile, network):
+        return (str(project) + '|' + str(profile) + '|' + network)
+
+    def test_bind_port_dvs(self):
+        self.agent_conf = AGENT_CONF_DVS
+        l3p_fake = self.create_l3_policy(name='myl3')['l3_policy']
+        l2p_fake = self.create_l2_policy(
+            name='myl2', l3_policy_id=l3p_fake['id'])['l2_policy']
+        ptg = self.create_policy_target_group(
+            name="ptg1", l2_policy_id=l2p_fake['id'])['policy_target_group']
+        pt = self.create_policy_target(
+            policy_target_group_id=ptg['id'])['policy_target']
+        newp1 = self._bind_port_to_host(pt['port_id'], 'h1')
+        vif_details = newp1['port']['binding:vif_details']
+        self.assertIsNotNone(vif_details.get('dvs_port_group'))
+        pg = self._pg_name(ptg['tenant_id'], mocked.APIC_AP, ptg['name'])
+        self.assertEqual(pg, vif_details.get('dvs_port_group'))
+
+    def test_bind_port_dvs_with_opflex_different_hosts(self):
+        self.agent_conf = AGENT_CONF_DVS
+        l3p_fake = self.create_l3_policy(name='myl3')['l3_policy']
+        l2p_fake = self.create_l2_policy(
+            name='myl2', l3_policy_id=l3p_fake['id'])['l2_policy']
+        ptg = self.create_policy_target_group(
+            name="ptg1", l2_policy_id=l2p_fake['id'])['policy_target_group']
+        pt1 = self.create_policy_target(
+            policy_target_group_id=ptg['id'])['policy_target']
+        newp1 = self._bind_port_to_host(pt1['port_id'], 'h1')
+        vif_details = newp1['port']['binding:vif_details']
+        self.assertIsNotNone(vif_details.get('dvs_port_group'))
+        pg = self._pg_name(ptg['tenant_id'], mocked.APIC_AP, ptg['name'])
+        self.assertEqual(pg, vif_details.get('dvs_port_group'))
+        self.agent_conf = AGENT_CONF
+        pt2 = self.create_policy_target(
+            policy_target_group_id=ptg['id'])['policy_target']
+        newp2 = self._bind_port_to_host(pt2['port_id'], 'h2')
+        vif_details = newp2['port']['binding:vif_details']
+        self.assertIsNone(vif_details.get('dvs_port_group'))
+
+    def test_bind_ports_opflex_same_host(self):
+        l3p_fake = self.create_l3_policy(name='myl3')['l3_policy']
+        l2p_fake = self.create_l2_policy(
+            name='myl2', l3_policy_id=l3p_fake['id'])['l2_policy']
+        ptg = self.create_policy_target_group(
+            name="ptg1", l2_policy_id=l2p_fake['id'])['policy_target_group']
+
+        pt1 = self.create_policy_target(
+            policy_target_group_id=ptg['id'])['policy_target']
+        newp1 = self._bind_port_to_host(pt1['port_id'], 'h1')
+        vif_details = newp1['port']['binding:vif_details']
+        self.assertIsNone(vif_details.get('dvs_port_group'))
+
+        pt2 = self.create_policy_target(
+            policy_target_group_id=ptg['id'])['policy_target']
+        newp2 = self._bind_port_to_host(pt2['port_id'], 'h1')
+        vif_details = newp2['port']['binding:vif_details']
+        self.assertIsNone(vif_details.get('dvs_port_group'))
+
+    def test_bind_ports_dvs_with_opflex_same_host(self):
+        self.agent_conf = AGENT_CONF_DVS
+        l3p_fake = self.create_l3_policy(name='myl3')['l3_policy']
+        l2p_fake = self.create_l2_policy(
+            name='myl2', l3_policy_id=l3p_fake['id'])['l2_policy']
+        ptg = self.create_policy_target_group(
+            name="ptg1", l2_policy_id=l2p_fake['id'])['policy_target_group']
+        pt1 = self.create_policy_target(
+            policy_target_group_id=ptg['id'])['policy_target']
+        newp1 = self._bind_port_to_host(pt1['port_id'], 'h1')
+        vif_details = newp1['port']['binding:vif_details']
+        self.assertIsNotNone(vif_details.get('dvs_port_group'))
+
+        self.agent_conf = AGENT_CONF
+        pt2 = self.create_policy_target(
+            policy_target_group_id=ptg['id'])['policy_target']
+        newp2 = self._bind_dhcp_port_to_host(pt2['port_id'], 'h1')
+        vif_details = newp2['port']['binding:vif_details']
+        self.assertIsNone(vif_details.get('dvs_port_group'))
+
+    def test_bind_port_dvs_shared(self):
+        self.agent_conf = AGENT_CONF_DVS
+        ptg = self.create_policy_target_group(shared=True,
+            name="ptg1")['policy_target_group']
+        pt = self.create_policy_target(
+            policy_target_group_id=ptg['id'])['policy_target']
+        newp1 = self._bind_port_to_host(pt['port_id'], 'h1')
+        vif_details = newp1['port']['binding:vif_details']
+        self.assertIsNotNone(vif_details.get('dvs_port_group'))
+        pg = self._pg_name(amap.apic_manager.TENANT_COMMON,
+                           mocked.APIC_AP, ptg['name'])
+        self.assertEqual(pg, vif_details.get('dvs_port_group'))
 
 
 class TestPolicyTargetGroup(ApicMappingTestCase):
