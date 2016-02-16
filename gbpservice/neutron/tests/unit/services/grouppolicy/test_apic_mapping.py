@@ -33,6 +33,7 @@ from oslo_config import cfg
 
 sys.modules["apicapi"] = mock.Mock()
 
+from gbpservice.neutron.plugins.ml2.drivers.grouppolicy.apic import driver
 from gbpservice.neutron.services.grouppolicy import (
     group_policy_context as p_context)
 from gbpservice.neutron.services.grouppolicy import config
@@ -58,6 +59,12 @@ AGENT_CONF = {'alive': True, 'binary': 'somebinary',
               'topic': 'sometopic', 'agent_type': AGENT_TYPE,
               'configurations': {'opflex_networks': None,
                                  'bridge_mappings': {'physnet1': 'br-eth1'}}}
+AGENT_CONF_DVS = {'alive': True, 'binary': 'somebinary',
+                  'topic': 'sometopic', 'agent_type': AGENT_TYPE,
+                  'configurations':
+                      {'hypervisor_type': driver.HYPERVISOR_VCENTER,
+                       'opflex_networks': None,
+                       'bridge_mappings': {'physnet1': 'br-eth1'}}}
 
 
 def echo(context, string, prefix=''):
@@ -89,7 +96,9 @@ class ApicMappingTestCase(
         config.cfg.CONF.set_override('enable_security_group', False,
                                      group='SECURITYGROUP')
         n_rpc.create_connection = mock.Mock()
-        amap.ApicMappingDriver.get_apic_manager = mock.Mock()
+        self.apic_mapping_mock = mock.patch(
+            'gbpservice.neutron.services.grouppolicy.drivers.cisco.apic.'
+            'apic_mapping.ApicMappingDriver.get_apic_manager').start()()
         self.set_up_mocks()
         ml2_opts = {
             'mechanism_drivers': ['apic_gbp'],
@@ -98,9 +107,6 @@ class ApicMappingTestCase(
         }
         mock.patch('gbpservice.neutron.services.grouppolicy.drivers.cisco.'
                    'apic.apic_mapping.ApicMappingDriver._setup_rpc').start()
-        host_agents = mock.patch('neutron.plugins.ml2.driver_context.'
-                                 'PortContext.host_agents').start()
-        host_agents.return_value = [self.agent_conf]
         nova_client = mock.patch(
             'gbpservice.neutron.services.grouppolicy.drivers.cisco.'
             'apic.nova_client.NovaClient.get_server').start()
@@ -192,7 +198,15 @@ class ApicMappingTestCase(
             shared=shared)['policy_rule']
 
     def _bind_port_to_host(self, port_id, host):
-        data = {'port': {'binding:host_id': host, 'device_owner': 'compute:',
+        data = {'port': {'binding:host_id': host,
+                         'device_owner': 'compute:nova',
+                         'device_id': 'someid'}}
+        return super(ApicMappingTestCase, self)._bind_port_to_host(
+            port_id, host, data=data)
+
+    def _bind_net_port_to_host(self, port_id, host):
+        data = {'port': {'binding:host_id': host,
+                         'device_owner': 'network:dhcp',
                          'device_id': 'someid'}}
         return super(ApicMappingTestCase, self)._bind_port_to_host(
             port_id, host, data=data)
@@ -802,6 +816,143 @@ class TestPolicyTarget(ApicMappingTestCase):
         self.assertEqual(2, len(entries))
         self.assertEqual('1.1.1.1', entries[0].ha_ip_address)
         self.assertEqual('1.1.1.1', entries[1].ha_ip_address)
+
+
+class TestPolicyTargetDvs(ApicMappingTestCase):
+
+    def _pg_name(self, project, profile, network):
+        return (str(project) + '|' + str(profile) + '|' + network)
+
+    def test_bind_port_dvs(self):
+        self.agent_conf = AGENT_CONF_DVS
+        self.apic_mapping_mock.app_profile_name = mocked.APIC_AP
+        ptg = self.create_policy_target_group(
+            name="ptg1")['policy_target_group']
+        subnet = self._get_object('subnets', ptg['subnets'][0], self.api)
+        with self.port(subnet=subnet) as port:
+            newp1 = self._bind_port_to_host(port['port']['id'], 'h1')
+            pt = self.create_policy_target(
+                policy_target_group_id=ptg['id'], port_id=port['port']['id'])
+            self.new_delete_request(
+                'policy_targets', pt['policy_target']['id'],
+                self.fmt).get_response(self.ext_api)
+            self.assertTrue(self.driver.notifier.port_update.called)
+            vif_det = newp1['port']['binding:vif_details']
+            self.assertIsNotNone(vif_det.get('dvs_port_group', None))
+            pg = self._pg_name(ptg['tenant_id'], mocked.APIC_AP, ptg['name'])
+            self.assertEqual(pg, vif_det.get('dvs_port_group'))
+
+    def test_bind_port_dvs_with_opflex_diff_hosts(self):
+        self.agent_conf = AGENT_CONF_DVS
+        self.apic_mapping_mock.app_profile_name = mocked.APIC_AP
+        ptg = self.create_policy_target_group(
+            name="ptg1")['policy_target_group']
+        subnet = self._get_object('subnets', ptg['subnets'][0], self.api)
+        with self.port(subnet=subnet) as port1:
+            newp1 = self._bind_port_to_host(port1['port']['id'], 'h1')
+            pt1 = self.create_policy_target(
+                policy_target_group_id=ptg['id'], port_id=port1['port']['id'])
+            self.new_delete_request(
+                'policy_targets', pt1['policy_target']['id'],
+                self.fmt).get_response(self.ext_api)
+            self.assertTrue(self.driver.notifier.port_update.called)
+            vif_det = newp1['port']['binding:vif_details']
+            self.assertIsNotNone(vif_det.get('dvs_port_group', None))
+            pg = self._pg_name(ptg['tenant_id'], mocked.APIC_AP, ptg['name'])
+            self.assertEqual(pg, vif_det.get('dvs_port_group'))
+
+            with self.port(subnet=subnet) as port2:
+                self.agent_conf = AGENT_CONF
+                newp2 = self._bind_port_to_host(port2['port']['id'], 'h2')
+                pt2 = self.create_policy_target(
+                    policy_target_group_id=ptg['id'],
+                    port_id=port2['port']['id'])
+                self.new_delete_request(
+                    'policy_targets', pt2['policy_target']['id'],
+                    self.fmt).get_response(self.ext_api)
+                self.assertTrue(self.driver.notifier.port_update.called)
+                vif_det = newp2['port']['binding:vif_details']
+                self.assertIsNone(vif_det.get('dvs_port_group', None))
+
+    def test_bind_ports_opflex_same_host(self):
+        self.apic_mapping_mock.app_profile_name = mocked.APIC_AP
+        ptg = self.create_policy_target_group(
+            name="ptg1")['policy_target_group']
+        subnet = self._get_object('subnets', ptg['subnets'][0], self.api)
+        with self.port(subnet=subnet) as port1:
+            newp1 = self._bind_port_to_host(port1['port']['id'], 'h1')
+            pt1 = self.create_policy_target(
+                policy_target_group_id=ptg['id'], port_id=port1['port']['id'])
+            self.new_delete_request(
+                'policy_targets', pt1['policy_target']['id'],
+                self.fmt).get_response(self.ext_api)
+            self.assertTrue(self.driver.notifier.port_update.called)
+            vif_det = newp1['port']['binding:vif_details']
+            self.assertIsNone(vif_det.get('dvs_port_group', None))
+
+            with self.port(subnet=subnet) as port2:
+                newp2 = self._bind_net_port_to_host(port2['port']['id'], 'h1')
+                pt2 = self.create_policy_target(
+                    policy_target_group_id=ptg['id'],
+                    port_id=port2['port']['id'])
+                self.new_delete_request(
+                    'policy_targets', pt2['policy_target']['id'],
+                    self.fmt).get_response(self.ext_api)
+                self.assertTrue(self.driver.notifier.port_update.called)
+                vif_det = newp2['port']['binding:vif_details']
+                self.assertIsNone(vif_det.get('dvs_port_group', None))
+
+    def test_bind_ports_dvs_with_opflex_same_host(self):
+        self.agent_conf = AGENT_CONF_DVS
+        self.apic_mapping_mock.app_profile_name = mocked.APIC_AP
+        ptg = self.create_policy_target_group(
+            name="ptg1")['policy_target_group']
+        subnet = self._get_object('subnets', ptg['subnets'][0], self.api)
+        with self.port(subnet=subnet) as port1:
+            newp1 = self._bind_port_to_host(port1['port']['id'], 'h1')
+            pt1 = self.create_policy_target(
+                policy_target_group_id=ptg['id'], port_id=port1['port']['id'])
+            self.new_delete_request(
+                'policy_targets', pt1['policy_target']['id'],
+                self.fmt).get_response(self.ext_api)
+            self.assertTrue(self.driver.notifier.port_update.called)
+            vif_det = newp1['port']['binding:vif_details']
+            self.assertIsNotNone(vif_det.get('dvs_port_group', None))
+            pg = self._pg_name(ptg['tenant_id'], mocked.APIC_AP, ptg['name'])
+            self.assertEqual(pg, vif_det.get('dvs_port_group'))
+
+            self.agent_conf = AGENT_CONF
+            with self.port(subnet=subnet) as port2:
+                newp2 = self._bind_net_port_to_host(port2['port']['id'], 'h1')
+                pt2 = self.create_policy_target(
+                    policy_target_group_id=ptg['id'],
+                    port_id=port2['port']['id'])
+                self.new_delete_request(
+                    'policy_targets', pt2['policy_target']['id'],
+                    self.fmt).get_response(self.ext_api)
+                self.assertTrue(self.driver.notifier.port_update.called)
+                vif_det = newp2['port']['binding:vif_details']
+                self.assertIsNone(vif_det.get('dvs_port_group', None))
+
+    def test_bind_port_dvs_shared(self):
+        self.agent_conf = AGENT_CONF_DVS
+        self.apic_mapping_mock.app_profile_name = mocked.APIC_AP
+        ptg = self.create_policy_target_group(shared=True,
+            name="ptg1")['policy_target_group']
+        subnet = self._get_object('subnets', ptg['subnets'][0], self.api)
+        with self.port(subnet=subnet) as port:
+            newp1 = self._bind_port_to_host(port['port']['id'], 'h1')
+            pt = self.create_policy_target(
+                policy_target_group_id=ptg['id'], port_id=port['port']['id'])
+            self.new_delete_request(
+                'policy_targets', pt['policy_target']['id'],
+                self.fmt).get_response(self.ext_api)
+            self.assertTrue(self.driver.notifier.port_update.called)
+            vif_det = newp1['port']['binding:vif_details']
+            self.assertIsNotNone(vif_det.get('dvs_port_group', None))
+            pg = self._pg_name(amap.apic_manager.TENANT_COMMON,
+                               mocked.APIC_AP, ptg['name'])
+            self.assertEqual(pg, vif_det.get('dvs_port_group'))
 
 
 class TestPolicyTargetGroup(ApicMappingTestCase):
