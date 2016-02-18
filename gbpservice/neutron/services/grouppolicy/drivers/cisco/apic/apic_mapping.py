@@ -13,6 +13,7 @@
 import copy
 import netaddr
 
+from apic_ml2.neutron.db import l3out_vlan_allocation as l3out_vlan_alloc
 from apic_ml2.neutron.db import port_ha_ipaddress_binding as ha_ip_db
 from apic_ml2.neutron.plugins.ml2.drivers.cisco.apic import apic_model
 from apic_ml2.neutron.plugins.ml2.drivers.cisco.apic import config
@@ -147,6 +148,11 @@ class PreExistingL3OutHasIncorrectVrf(gpexc.GroupPolicyBadRequest):
                 "%(l3p)s.")
 
 
+class ASRVlanRangeNotFound(gpexc.GroupPolicyBadRequest):
+    message = _("No vlan range is specified for L3Out %(l3out)s "
+                "when router_type is ASR.")
+
+
 REVERSE_PREFIX = 'reverse-'
 SHADOW_PREFIX = 'Shd-'
 SERVICE_PREFIX = 'Svc-'
@@ -211,6 +217,9 @@ class ApicMappingDriver(api.ResourceMappingDriver,
         self.enable_dhcp_opt = self.apic_manager.enable_optimized_dhcp
         self.enable_metadata_opt = self.apic_manager.enable_optimized_metadata
         self._gbp_plugin = None
+        self.l3out_vlan_alloc = l3out_vlan_alloc.L3outVlanAlloc()
+        self.l3out_vlan_alloc.sync_vlan_allocations(
+            self.apic_manager.ext_net_dict)
 
     def _setup_rpc_listeners(self):
         self.endpoints = [rpc.GBPServerRpcCallback(self)]
@@ -478,6 +487,9 @@ class ApicMappingDriver(api.ResourceMappingDriver,
                 filters={'id': l3_policy['external_segments'].keys()})
         for es in ess:
             if not self._is_nat_enabled_on_es(es):
+                continue
+            ext_info = self.apic_manager.ext_net_dict.get(es['name'])
+            if ext_info and self._is_asr_router_type(ext_info):
                 continue
             nat_epg_name = self._get_nat_epg_for_es(context, es)
             nat_epg_tenant = self.apic_manager.apic.fvTenant.name(
@@ -1175,6 +1187,7 @@ class ApicMappingDriver(api.ResourceMappingDriver,
                     if hp_net.cidr == net.cidr:
                         raise HostPoolSubnetOverlap(host_pool_cidr=hp_net.cidr,
                                                     es=es['name'])
+            self._check_asr_setting(es)
         else:
             LOG.warning(UNMANAGED_SEGMENT % context.current['id'])
 
@@ -1646,8 +1659,22 @@ class ApicMappingDriver(api.ResourceMappingDriver,
                 self.apic_manager.ensure_external_routed_network_created(
                     es_name, owner=es_tenant, context=l3_policy,
                     transaction=trs)
+
+            is_details_needed = False
             if not is_shadow and not pre_existing:
                 encap = ext_info.get('encap')  # No encap if None
+                is_details_needed = True
+
+            # if there is a router_type (like ASR) then we have to flesh
+            # out this shadow L3 out in APIC
+            if (is_shadow and self._is_asr_router_type(ext_info) and
+                not self._is_pre_existing(es)):
+                    vlan_id = self.l3out_vlan_alloc.reserve_vlan(
+                        es['name'], context.current['id'])
+                    encap = 'vlan-' + str(vlan_id)
+                    is_details_needed = True
+
+            if is_details_needed:
                 switch = ext_info['switch']
                 module, sport = ext_info['port'].split('/')
                 router_id = ext_info['router_id']
@@ -1663,6 +1690,7 @@ class ApicMappingDriver(api.ResourceMappingDriver,
                         es_name, switch, route['nexthop'] or default_gateway,
                         owner=es_tenant,
                         subnet=route['destination'], transaction=trs)
+
             if not is_shadow and nat_enabled:
                 # set L3-out for NAT-BD
                 self.apic_manager.set_l3out_for_bd(es_tenant,
@@ -1707,6 +1735,12 @@ class ApicMappingDriver(api.ResourceMappingDriver,
                                 context, es['name'])
                             if pre_existing else es_name),
                             transaction=trs)
+                    # if there is a router_type (like ASR) then we have to
+                    # release the vlan associated with this shadow L3out
+                    ext_info = self.apic_manager.ext_net_dict.get(es['name'])
+                    if is_shadow and self._is_asr_router_type(ext_info):
+                        self.l3out_vlan_alloc.release_vlan(
+                            es['name'], context.current['id'])
 
     def _build_routes_dict(self, routes):
         result = {}
@@ -1781,7 +1815,7 @@ class ApicMappingDriver(api.ResourceMappingDriver,
                             context._plugin_context, es, ep,
                             provided_prs, consumed_prs, [], [],
                             l3policy_obj, transaction=trs)
-                    if is_shadow:
+                    if is_shadow and not self._is_asr_router_type(ext_info):
                         # set up link to NAT EPG
                         self.apic_manager.associate_external_epg_to_nat_epg(
                             es_tenant, es_name, ep_name,
@@ -2928,6 +2962,17 @@ class ApicMappingDriver(api.ResourceMappingDriver,
             opt = ext_info.get('preexisting', 'false')
             return opt.lower() in ['true', 'yes', '1']
         return False
+
+    def _is_asr_router_type(self, ext_info):
+        router_type = ext_info.get('router_type')
+        return router_type and router_type.lower() == 'asr'
+
+    def _check_asr_setting(self, es):
+        ext_info = self.apic_manager.ext_net_dict.get(es['name'])
+        if ext_info and self._is_asr_router_type(ext_info):
+            vlan_range = ext_info.get('vlan_range')
+            if not vlan_range:
+                raise ASRVlanRangeNotFound(l3out=es['name'])
 
     def _query_l3out_info(self, l3out_name, tenant_id):
         info = {'l3out_tenant': tenant_id}
