@@ -89,7 +89,7 @@ class ApicMappingTestCase(
         config.cfg.CONF.set_override('enable_security_group', False,
                                      group='SECURITYGROUP')
         n_rpc.create_connection = mock.Mock()
-        amap.ApicMappingDriver.get_apic_manager = mock.Mock()
+        amap.ApicMappingDriver.get_apic_manager = mock.MagicMock()
         self.set_up_mocks()
         ml2_opts = {
             'mechanism_drivers': ['apic_gbp'],
@@ -154,7 +154,9 @@ class ApicMappingTestCase(
         self.driver.apic_manager.apic.fvCtx.name = echo2
         self._db_plugin = n_db.NeutronDbPluginV2()
 
-    def _build_external_dict(self, name, cidr_exposed):
+        self.driver.l3out_vlan_alloc = mock.Mock()
+
+    def _build_external_dict(self, name, cidr_exposed, is_asr_mode=False):
         ext_info = {
             'enable_nat': 'True' if self.nat_enabled else 'False'
         }
@@ -169,13 +171,18 @@ class ApicMappingTestCase(
                 'router_id': APIC_EXTERNAL_RID,
                 'gateway_ip': str(netaddr.IPNetwork(cidr_exposed)[1]),
                 'cidr_exposed': cidr_exposed})
+
+        if is_asr_mode:
+            ext_info['router_type'] = 'ASR'
+            ext_info['vlan_range'] = '2000:2010'
+
         return {name: ext_info}
 
-    def _mock_external_dict(self, data):
+    def _mock_external_dict(self, data, is_asr_mode=False):
         self.driver.apic_manager.ext_net_dict = {}
         for x in data:
             self.driver.apic_manager.ext_net_dict.update(
-                self._build_external_dict(x[0], x[1]))
+                self._build_external_dict(x[0], x[1], is_asr_mode=is_asr_mode))
 
     def _create_simple_policy_rule(self, direction='bi', protocol='tcp',
                                    port_range=80, shared=False,
@@ -1280,9 +1287,11 @@ class TestL3Policy(ApicMappingTestCase):
             router_ports[0]['fixed_ips'][0]['subnet_id'] == subnet['id'] or
             router_ports[1]['fixed_ips'][0]['subnet_id'] == subnet['id'])
 
-    def _test_l3p_plugged_to_es_at_creation(self, shared_es, shared_l3p):
+    def _test_l3p_plugged_to_es_at_creation(self, shared_es,
+                                            shared_l3p, is_asr_mode=False):
         # Verify L3P is correctly plugged to ES on APIC during create
-        self._mock_external_dict([('supported', '192.168.0.2/24')])
+        self._mock_external_dict([('supported', '192.168.0.2/24')],
+                                 is_asr_mode)
         es = self.create_external_segment(
             name='supported', cidr='192.168.0.0/24',
             shared=shared_es,
@@ -1327,24 +1336,57 @@ class TestL3Policy(ApicMappingTestCase):
                           transaction=mock.ANY)]
         self._check_call_list(expected_l3out_calls,
                 mgr.ensure_external_routed_network_created.call_args_list)
-        expected_route_calls = [
-            mock.call(es['id'], mocked.APIC_EXT_SWITCH, '192.168.0.254',
-                      owner=owner, subnet='0.0.0.0/0',
-                      transaction=mock.ANY),
-            mock.call(es['id'], mocked.APIC_EXT_SWITCH, '192.168.0.1',
-                      owner=owner, subnet='128.0.0.0/16',
-                      transaction=mock.ANY)]
+
         if not self.pre_l3out:
-            mgr.set_domain_for_external_routed_network.assert_called_once_with(
-                es['id'], owner=owner, transaction=mock.ANY)
-            mgr.ensure_logical_node_profile_created.assert_called_once_with(
-                es['id'], mocked.APIC_EXT_SWITCH, mocked.APIC_EXT_MODULE,
-                mocked.APIC_EXT_PORT, mocked.APIC_EXT_ENCAP, '192.168.0.2/24',
-                owner=owner, router_id=APIC_EXTERNAL_RID,
-                transaction=mock.ANY)
+            expected_set_domain_calls = [
+                mock.call(es['id'], owner=owner, transaction=mock.ANY)]
+            expected_logic_node_calls = [
+                mock.call(es['id'], mocked.APIC_EXT_SWITCH,
+                          mocked.APIC_EXT_MODULE, mocked.APIC_EXT_PORT,
+                          mocked.APIC_EXT_ENCAP, '192.168.0.2/24',
+                          owner=owner, router_id=APIC_EXTERNAL_RID,
+                          transaction=mock.ANY)]
+            expected_route_calls = [
+                mock.call(es['id'], mocked.APIC_EXT_SWITCH, '192.168.0.254',
+                          owner=owner, subnet='0.0.0.0/0',
+                          transaction=mock.ANY),
+                mock.call(es['id'], mocked.APIC_EXT_SWITCH, '192.168.0.1',
+                          owner=owner, subnet='128.0.0.0/16',
+                          transaction=mock.ANY)]
+
+            if is_asr_mode and self.nat_enabled:
+                (self.driver.l3out_vlan_alloc.
+                    reserve_vlan.assert_called_once_with(
+                        es['name'], l3p['id']))
+
+                expected_set_domain_calls.append(
+                    mock.call("Shd-%s-%s" % (l3p['id'], es['id']),
+                              owner=owner, transaction=mock.ANY))
+                expected_logic_node_calls.append(
+                    mock.call("Shd-%s-%s" % (l3p['id'], es['id']),
+                              mocked.APIC_EXT_SWITCH, mocked.APIC_EXT_MODULE,
+                              mocked.APIC_EXT_PORT, mock.ANY, '192.168.0.2/24',
+                              owner=owner, router_id=APIC_EXTERNAL_RID,
+                              transaction=mock.ANY))
+                expected_route_calls.append(
+                    mock.call("Shd-%s-%s" % (l3p['id'], es['id']),
+                              mocked.APIC_EXT_SWITCH, '192.168.0.254',
+                              owner=owner, subnet='0.0.0.0/0',
+                              transaction=mock.ANY))
+                expected_route_calls.append(
+                    mock.call("Shd-%s-%s" % (l3p['id'], es['id']),
+                              mocked.APIC_EXT_SWITCH, '192.168.0.1',
+                              owner=owner, subnet='128.0.0.0/16',
+                              transaction=mock.ANY))
+
+            self._check_call_list(expected_set_domain_calls,
+                mgr.set_domain_for_external_routed_network.call_args_list)
+            self._check_call_list(expected_logic_node_calls,
+                mgr.ensure_logical_node_profile_created.call_args_list)
             self._check_call_list(expected_route_calls,
                 mgr.ensure_static_route_created.call_args_list)
         else:
+            self.assertFalse(self.driver.l3out_vlan_alloc.reserve_vlan.called)
             self.assertFalse(mgr.set_domain_for_external_routed_network.called)
             self.assertFalse(mgr.ensure_logical_node_profile_created.called)
             self.assertFalse(mgr.ensure_static_route_created.called)
@@ -1368,9 +1410,16 @@ class TestL3Policy(ApicMappingTestCase):
         self._test_l3p_plugged_to_es_at_creation(shared_es=False,
                                                  shared_l3p=False)
 
-    def _test_l3p_plugged_to_es_at_update(self, shared_es, shared_l3p):
+    def test_l3p_plugged_to_es_at_creation_asr_mode(self):
+        self._test_l3p_plugged_to_es_at_creation(shared_es=False,
+                                                 shared_l3p=False,
+                                                 is_asr_mode=True)
+
+    def _test_l3p_plugged_to_es_at_update(self, shared_es,
+                                          shared_l3p, is_asr_mode=False):
         # Verify L3P is correctly plugged to ES on APIC during update
-        self._mock_external_dict([('supported', '192.168.0.2/24')])
+        self._mock_external_dict([('supported', '192.168.0.2/24')],
+                                 is_asr_mode)
         es = self.create_external_segment(
             name='supported', cidr='192.168.0.0/24',
             shared=shared_es,
@@ -1415,23 +1464,59 @@ class TestL3Policy(ApicMappingTestCase):
             mgr.ensure_external_routed_network_created.call_args_list)
 
         if not self.pre_l3out:
-            mgr.set_domain_for_external_routed_network.assert_called_once_with(
-                es['id'], owner=owner, transaction=mock.ANY)
-            mgr.ensure_logical_node_profile_created.assert_called_once_with(
-                es['id'], mocked.APIC_EXT_SWITCH, mocked.APIC_EXT_MODULE,
-                mocked.APIC_EXT_PORT, mocked.APIC_EXT_ENCAP, '192.168.0.2/24',
-                owner=owner, router_id=APIC_EXTERNAL_RID,
-                transaction=mock.ANY)
-
+            expected_set_domain_calls = [
+                mock.call(es['id'], owner=owner, transaction=mock.ANY)]
+            expected_logic_node_calls = [
+                mock.call(es['id'], mocked.APIC_EXT_SWITCH,
+                          mocked.APIC_EXT_MODULE, mocked.APIC_EXT_PORT,
+                          mocked.APIC_EXT_ENCAP, '192.168.0.2/24',
+                          owner=owner, router_id=APIC_EXTERNAL_RID,
+                          transaction=mock.ANY)]
             expected_route_calls = [
-                mock.call(es['id'], mocked.APIC_EXT_SWITCH, '192.168.0.254',
-                          owner=owner, subnet='0.0.0.0/0',
+                mock.call(es['id'], mocked.APIC_EXT_SWITCH,
+                          '192.168.0.254', owner=owner, subnet='0.0.0.0/0',
                           transaction=mock.ANY),
                 mock.call(es['id'], mocked.APIC_EXT_SWITCH, '192.168.0.1',
                           owner=owner, subnet='128.0.0.0/16',
                           transaction=mock.ANY)]
+
+            if is_asr_mode and self.nat_enabled:
+                (self.driver.l3out_vlan_alloc.
+                    reserve_vlan.assert_called_once_with(
+                        es['name'], l3p['id']))
+
+                expected_set_domain_calls.append(
+                    mock.call("Shd-%s-%s" % (l3p['id'], es['id']),
+                              owner=owner, transaction=mock.ANY))
+                expected_logic_node_calls.append(
+                    mock.call("Shd-%s-%s" % (l3p['id'], es['id']),
+                              mocked.APIC_EXT_SWITCH, mocked.APIC_EXT_MODULE,
+                              mocked.APIC_EXT_PORT, mock.ANY, '192.168.0.2/24',
+                              owner=owner, router_id=APIC_EXTERNAL_RID,
+                              transaction=mock.ANY))
+                expected_route_calls.append(
+                    mock.call("Shd-%s-%s" % (l3p['id'], es['id']),
+                              mocked.APIC_EXT_SWITCH, '192.168.0.254',
+                              owner=owner, subnet='0.0.0.0/0',
+                              transaction=mock.ANY))
+                expected_route_calls.append(
+                    mock.call("Shd-%s-%s" % (l3p['id'], es['id']),
+                              mocked.APIC_EXT_SWITCH, '192.168.0.1',
+                              owner=owner, subnet='128.0.0.0/16',
+                              transaction=mock.ANY))
+
+            self._check_call_list(expected_set_domain_calls,
+                mgr.set_domain_for_external_routed_network.call_args_list)
+            self._check_call_list(expected_logic_node_calls,
+                mgr.ensure_logical_node_profile_created.call_args_list)
             self._check_call_list(expected_route_calls,
                 mgr.ensure_static_route_created.call_args_list)
+        else:
+            self.assertFalse(self.driver.l3out_vlan_alloc.reserve_vlan.called)
+            self.assertFalse(mgr.set_domain_for_external_routed_network.called)
+            self.assertFalse(mgr.ensure_logical_node_profile_created.called)
+            self.assertFalse(mgr.ensure_static_route_created.called)
+
         if self.nat_enabled:
             mgr.set_l3out_for_bd.assert_called_once_with(owner,
                 "NAT-bd-%s" % es['id'],
@@ -1451,9 +1536,16 @@ class TestL3Policy(ApicMappingTestCase):
         self._test_l3p_plugged_to_es_at_update(shared_es=False,
                                                shared_l3p=False)
 
-    def _test_l3p_unplugged_from_es_on_delete(self, shared_es, shared_l3p):
+    def test_l3p_plugged_to_es_at_update_asr_mode(self):
+        self._test_l3p_plugged_to_es_at_update(shared_es=False,
+                                               shared_l3p=False,
+                                               is_asr_mode=True)
+
+    def _test_l3p_unplugged_from_es_on_delete(self, shared_es,
+                                              shared_l3p, is_asr_mode=False):
         self._mock_external_dict([('supported1', '192.168.0.2/24'),
-                                 ('supported2', '192.168.1.2/24')])
+                                 ('supported2', '192.168.1.2/24')],
+                                 is_asr_mode)
         es1 = self.create_external_segment(
             name='supported1', cidr='192.168.0.0/24', shared=shared_es,
             external_routes=[{'destination': '0.0.0.0/0',
@@ -1496,8 +1588,13 @@ class TestL3Policy(ApicMappingTestCase):
                 "NAT-bd-%s" % es1['id'],
                 es1['name' if self.pre_l3out else 'id'], transaction=mock.ANY)
 
+        if is_asr_mode and self.nat_enabled:
+            self.driver.l3out_vlan_alloc.release_vlan.assert_called_once_with(
+                es1['name'], l3p['id'])
+
         mgr.delete_external_routed_network.reset_mock()
         mgr.unset_l3out_for_bd.reset_mock()
+        self.driver.l3out_vlan_alloc.release_vlan.reset_mock()
 
         # Verify correct deletion for 2 ESs
         l3p = self.create_l3_policy(
@@ -1540,6 +1637,13 @@ class TestL3Policy(ApicMappingTestCase):
             self._check_call_list(
                 expected_unset_calls, mgr.unset_l3out_for_bd.call_args_list)
 
+        if is_asr_mode and self.nat_enabled:
+            expected_release_vlan_calls = [mock.call(es1['name'], l3p['id']),
+                                           mock.call(es2['name'], l3p['id'])]
+            self._check_call_list(
+                expected_release_vlan_calls,
+                self.driver.l3out_vlan_alloc.release_vlan.call_args_list)
+
     # Although the naming convention used here has been chosen poorly,
     # I'm separating the tests in order to get the mock re-set.
     def test_l3p_unplugged_from_es_on_delete_1(self):
@@ -1554,9 +1658,16 @@ class TestL3Policy(ApicMappingTestCase):
         self._test_l3p_unplugged_from_es_on_delete(shared_es=False,
                                                    shared_l3p=False)
 
-    def _test_l3p_unplugged_from_es_on_update(self, shared_es, shared_l3p):
+    def test_l3p_unplugged_from_es_on_delete_asr_mode(self):
+        self._test_l3p_unplugged_from_es_on_delete(shared_es=False,
+                                                   shared_l3p=False,
+                                                   is_asr_mode=True)
+
+    def _test_l3p_unplugged_from_es_on_update(self, shared_es,
+                                              shared_l3p, is_asr_mode=False):
         self._mock_external_dict([('supported1', '192.168.0.2/24'),
-                                 ('supported2', '192.168.1.2/24')])
+                                 ('supported2', '192.168.1.2/24')],
+                                 is_asr_mode)
         es1 = self.create_external_segment(
             name='supported1', cidr='192.168.0.0/24', shared=shared_es,
             external_routes=[{'destination': '0.0.0.0/0',
@@ -1584,6 +1695,7 @@ class TestL3Policy(ApicMappingTestCase):
         mgr.set_domain_for_external_routed_network.reset_mock()
         mgr.ensure_logical_node_profile_created.reset_mock()
         mgr.ensure_static_route_created.reset_mock()
+        self.driver.l3out_vlan_alloc.reserve_vlan.reset_mock()
 
         l3p = self.update_l3_policy(
             l3p['id'], tenant_id=l3p['tenant_id'], expected_res_status=200,
@@ -1600,6 +1712,11 @@ class TestL3Policy(ApicMappingTestCase):
         self._check_call_list(
             expected_delete_calls,
             mgr.delete_external_routed_network.call_args_list)
+
+        if is_asr_mode and self.nat_enabled:
+            self.driver.l3out_vlan_alloc.release_vlan.assert_called_once_with(
+                es1['name'], l3p['id'])
+
         expected_l3out_calls = []
         if self.nat_enabled:
             expected_l3out_calls = [
@@ -1617,23 +1734,47 @@ class TestL3Policy(ApicMappingTestCase):
                           transaction=mock.ANY)]
         self._check_call_list(expected_l3out_calls,
             mgr.ensure_external_routed_network_created.call_args_list)
+
         if not self.pre_l3out:
-            mgr.set_domain_for_external_routed_network.assert_called_once_with(
-                es2['id'], owner=owner, transaction=mock.ANY)
-            mgr.ensure_logical_node_profile_created.assert_called_once_with(
-                es2['id'], mocked.APIC_EXT_SWITCH, mocked.APIC_EXT_MODULE,
-                mocked.APIC_EXT_PORT, mocked.APIC_EXT_ENCAP, '192.168.1.2/24',
-                owner=owner, router_id=APIC_EXTERNAL_RID,
-                transaction=mock.ANY)
+            expected_set_domain_calls = [
+                mock.call(es2['id'], owner=owner, transaction=mock.ANY)]
+            expected_logic_node_calls = [
+                mock.call(es2['id'], mocked.APIC_EXT_SWITCH,
+                          mocked.APIC_EXT_MODULE, mocked.APIC_EXT_PORT,
+                          mocked.APIC_EXT_ENCAP, '192.168.1.2/24',
+                          owner=owner, router_id=APIC_EXTERNAL_RID,
+                          transaction=mock.ANY)]
+            if is_asr_mode and self.nat_enabled:
+                (self.driver.l3out_vlan_alloc.
+                    reserve_vlan.assert_called_once_with(
+                        es2['name'], l3p['id']))
+
+                expected_set_domain_calls.append(
+                    mock.call("Shd-%s-%s" % (l3p['id'], es2['id']),
+                              owner=owner, transaction=mock.ANY))
+                expected_logic_node_calls.append(
+                    mock.call("Shd-%s-%s" % (l3p['id'], es2['id']),
+                              mocked.APIC_EXT_SWITCH, mocked.APIC_EXT_MODULE,
+                              mocked.APIC_EXT_PORT, mock.ANY, '192.168.1.2/24',
+                              owner=owner, router_id=APIC_EXTERNAL_RID,
+                              transaction=mock.ANY))
+
+            self._check_call_list(expected_set_domain_calls,
+                mgr.set_domain_for_external_routed_network.call_args_list)
+            self._check_call_list(expected_logic_node_calls,
+                mgr.ensure_logical_node_profile_created.call_args_list)
         else:
             self.assertFalse(mgr.set_domain_for_external_routed_network.called)
             self.assertFalse(mgr.ensure_logical_node_profile_created.called)
+
         self.assertFalse(mgr.ensure_static_route_created.called)
+
         if self.nat_enabled:
             mgr.unset_l3out_for_bd.assert_called_once_with(owner,
                 "NAT-bd-%s" % es1['id'],
                 es1['name' if self.pre_l3out else 'id'], transaction=mock.ANY)
 
+        self.driver.l3out_vlan_alloc.release_vlan.reset_mock()
         mgr.delete_external_routed_network.reset_mock()
         mgr.unset_l3out_for_bd.reset_mock()
         self.update_l3_policy(
@@ -1668,6 +1809,13 @@ class TestL3Policy(ApicMappingTestCase):
             self._check_call_list(
                 expected_unset_calls, mgr.unset_l3out_for_bd.call_args_list)
 
+        if is_asr_mode and self.nat_enabled:
+            expected_release_vlan_calls = [mock.call(es1['name'], l3p['id']),
+                                           mock.call(es2['name'], l3p['id'])]
+            self._check_call_list(
+                expected_release_vlan_calls,
+                self.driver.l3out_vlan_alloc.release_vlan.call_args_list)
+
     # Although the naming convention used here has been chosen poorly,
     # I'm separating the tests in order to get the mock re-set.
     def test_l3p_unplugged_from_es_on_update_1(self):
@@ -1681,6 +1829,11 @@ class TestL3Policy(ApicMappingTestCase):
     def test_l3p_unplugged_from_es_on_update_3(self):
         self._test_l3p_unplugged_from_es_on_update(shared_es=False,
                                                    shared_l3p=False)
+
+    def test_l3p_unplugged_from_es_on_update_asr_mode(self):
+        self._test_l3p_unplugged_from_es_on_update(shared_es=False,
+                                                   shared_l3p=False,
+                                                   is_asr_mode=True)
 
     def test_verify_unsupported_es_noop(self):
         # Verify L3P is correctly plugged to ES on APIC during update
@@ -2211,6 +2364,20 @@ class TestExternalSegment(ApicMappingTestCase):
             es['id'], expected_res_status=400, port_address_translation=True)
         self.assertEqual('PATNotSupportedByApicDriver',
                          res['NeutronError']['type'])
+
+    def test_asr_invalid_vlan_range_rejected(self):
+        self._mock_external_dict([('supported', '192.168.0.2/24')],
+                                 is_asr_mode=True)
+        self.driver.l3out_vlan_alloc.l3out_vlan_ranges = {}
+        res = self.create_external_segment(
+            name='supported', expected_res_status=400)
+        self.assertEqual('ASRBadVlanRange', res['NeutronError']['type'])
+
+        ext_info = self.driver.apic_manager.ext_net_dict.get('supported')
+        del ext_info['vlan_range']
+        res = self.create_external_segment(
+            name='supported', expected_res_status=400)
+        self.assertEqual('ASRVlanRangeNotFound', res['NeutronError']['type'])
 
     def _test_create_delete(self, shared=False):
         mgr = self.driver.apic_manager
