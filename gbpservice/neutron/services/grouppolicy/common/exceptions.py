@@ -313,3 +313,8 @@ class PolicyTargetInUse(GroupPolicyBadRequest):
 
 class InvalidClusterPtg(GroupPolicyBadRequest):
     message = _("Inter PTG clustering disallowed.")
+
+
+class NatPoolInUseByPort(exceptions.InUse, GroupPolicyException):
+    message = _("Ports or floating IP addresses are using the subnet "
+                "corresponding to Nat Pool.")

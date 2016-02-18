@@ -1175,6 +1175,8 @@ class ResourceMappingDriver(api.PolicyDriver, local_api.LocalAPI,
         nsps_using_nat_pool = self._get_nsps_using_nat_pool(context)
         if nsps_using_nat_pool:
             raise exc.NatPoolinUseByNSP()
+        self._check_nat_pool_subnet_in_use(context._plugin_context,
+                                           context.current)
 
     def delete_nat_pool_postcommit(self, context):
         if context.current['subnet_id']:
@@ -2571,3 +2573,13 @@ class ResourceMappingDriver(api.PolicyDriver, local_api.LocalAPI,
         ptgs = context._plugin._get_l3p_ptgs(
             context._plugin_context.elevated(), l3p_id)
         return self._get_ptg_cidrs(context, None, ptg_dicts=ptgs)
+
+    def _check_nat_pool_subnet_in_use(self, plugin_context, nat_pool):
+        if not self._subnet_is_owned(plugin_context.session,
+                                     nat_pool['subnet_id']):
+            return
+        # check if there are any ports with an address in nat-pool subnet
+        ports = self._get_ports(plugin_context.elevated(),
+            filters={'fixed_ips': {'subnet_id': [nat_pool['subnet_id']]}})
+        if ports:
+            raise exc.NatPoolInUseByPort()
