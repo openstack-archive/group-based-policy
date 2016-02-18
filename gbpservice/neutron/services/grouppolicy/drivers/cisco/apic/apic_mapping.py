@@ -202,8 +202,8 @@ class ApicMappingDriver(api.ResourceMappingDriver,
 
     def initialize(self):
         super(ApicMappingDriver, self).initialize()
-        self._setup_rpc_listeners()
         self._setup_rpc()
+        self._setup_rpc_listeners()
         self.apic_manager = ApicMappingDriver.get_apic_manager()
         self.name_mapper = name_manager.ApicNameManager(self.apic_manager)
         self.enable_dhcp_opt = self.apic_manager.enable_optimized_dhcp
@@ -211,7 +211,7 @@ class ApicMappingDriver(api.ResourceMappingDriver,
         self._gbp_plugin = None
 
     def _setup_rpc_listeners(self):
-        self.endpoints = [rpc.GBPServerRpcCallback(self)]
+        self.endpoints = [rpc.GBPServerRpcCallback(self, self.notifier)]
         self.topic = rpc.TOPIC_OPFLEX
         self.conn = n_rpc.create_connection(new=True)
         self.conn.create_consumer(self.topic, self.endpoints,
@@ -253,6 +253,10 @@ class ApicMappingDriver(api.ResourceMappingDriver,
         details = {'l3_policy_id': kwargs['vrf_id']}
         self._add_vrf_details(context, details)
         return details
+
+    # RPC Method
+    def request_vrf_details(self, context, **kwargs):
+        return self.get_vrf_details(context, **kwargs)
 
     # RPC Method
     def get_gbp_details(self, context, **kwargs):
@@ -390,6 +394,10 @@ class ApicMappingDriver(api.ResourceMappingDriver,
                       {'device': kwargs.get('device'), 'error': e.message})
             details = {'device': kwargs.get('device')}
         return details
+
+    # RPC Method
+    def request_gbp_details(self, context, **kwargs):
+        return self.get_gbp_details(context, **kwargs)
 
     def _allocate_snat_ip_for_host_and_ext_net(self, context, host, network,
                                                es_name):
