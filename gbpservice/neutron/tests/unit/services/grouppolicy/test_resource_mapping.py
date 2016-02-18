@@ -4297,6 +4297,27 @@ class TestNatPool(ResourceMappingTestCase):
         self.assertEqual('ESSubnetRequiredForNatPool',
                          result['NeutronError']['type'])
 
+    def test_delete_with_fip_allocated(self):
+        with self.network(router__external=True) as net:
+            with self.subnet(cidr='192.168.0.0/31', enable_dhcp=False,
+                             network=net) as sub:
+                es = self.create_external_segment(
+                    name="default",
+                    subnet_id=sub['subnet']['id'])['external_segment']
+                nat_pool = self.create_nat_pool(
+                    external_segment_id=es['id'],
+                    ip_version=4, ip_pool='192.168.1.0/24')['nat_pool']
+                fip_data = {'floatingip': {
+                                'tenant_id': net['network']['tenant_id'],
+                                'floating_network_id': net['network']['id']}}
+                for i in range(2):
+                    self._l3_plugin.create_floatingip(
+                        nctx.get_admin_context(), fip_data)
+                res = self.delete_nat_pool(nat_pool['id'],
+                    expected_res_status=409)
+                self.assertEqual('NatPoolInUseByPort',
+                                 res['NeutronError']['type'])
+
 
 class TestFloatingIpMonkeyPatch(ResourceMappingTestCase,
                                 test_l3.L3NatTestCaseMixin):
