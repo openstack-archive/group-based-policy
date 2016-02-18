@@ -111,7 +111,8 @@ class ApicMappingTestCase(
             'tenant_network_types': ['opflex']
         }
         mock.patch('gbpservice.neutron.services.grouppolicy.drivers.cisco.'
-                   'apic.apic_mapping.ApicMappingDriver._setup_rpc').start()
+                   'apic.apic_mapping.ApicMappingDriver.'
+                   '_setup_rpc_listeners').start()
         nova_client = mock.patch(
             'gbpservice.neutron.services.grouppolicy.drivers.cisco.'
             'apic.nova_client.NovaClient.get_server').start()
@@ -418,6 +419,11 @@ class TestPolicyTarget(ApicMappingTestCase):
 
         mapping = self.driver.get_gbp_details(context.get_admin_context(),
             device='tap%s' % pt1['port_id'], host='h1')
+        req_mapping = self.driver.request_endpoint_details(
+            context.get_admin_context(),
+            request={'device': 'tap%s' % pt1['port_id'], 'host': 'h1',
+                     'timestamp': 0, 'request_id': 'request_id'})
+        self.assertEqual(mapping, req_mapping['gbp_details'])
         self.assertEqual(pt1['port_id'], mapping['port_id'])
         self.assertEqual(ptg['id'], mapping['endpoint_group_name'])
         self.assertEqual('someid', mapping['vm-name'])
@@ -447,6 +453,10 @@ class TestPolicyTarget(ApicMappingTestCase):
         self.assertEqual("192.168.200.2",
             mapping['host_snat_ips'][0]['host_snat_ip'])
         self.assertEqual(24, mapping['host_snat_ips'][0]['prefixlen'])
+
+        # Verify Neutron details
+        self.assertEqual(pt1['port_id'],
+                         req_mapping['neutron_details']['port_id'])
 
         # Create event on a second host to verify that the SNAT
         # port gets created for this second host
@@ -856,8 +866,15 @@ class TestPolicyTarget(ApicMappingTestCase):
         details = self.driver.get_gbp_details(
             context.get_admin_context(), device='tap%s' % 'randomid',
             host='h1')
+        req_details = self.driver.request_endpoint_details(
+            context.get_admin_context(),
+            request={'device': 'tap%s' % 'randomid', 'host': 'h1',
+                     'timestamp': 0, 'request_id': 'request_id'})
         # device was not found
-        self.assertEqual(None, details)
+        self.assertTrue('port_id' not in details)
+        self.assertEqual(details, req_details['gbp_details'])
+        self.assertTrue('port_id' not in req_details['neutron_details'])
+
         ptg = self.create_policy_target_group()['policy_target_group']
         pt1 = self.create_policy_target(
             policy_target_group_id=ptg['id'])['policy_target']
@@ -866,8 +883,13 @@ class TestPolicyTarget(ApicMappingTestCase):
         details = self.driver.get_gbp_details(
             context.get_admin_context(), device='tap%s' % pt1['port_id'],
             host='h1')
-        # device was not found
+        req_details = self.driver.request_endpoint_details(
+            context.get_admin_context(),
+            request={'device': 'tap%s' % pt1['port_id'], 'host': 'h1',
+                     'timestamp': 0, 'request_id': 'request_id'})
+        # An exception occurred
         self.assertEqual({'device': 'tap%s' % pt1['port_id']}, details)
+        self.assertIsNone(req_details)
 
     def test_get_gbp_proxy_details(self):
         l3p_fake = self.create_l3_policy(name='myl3')['l3_policy']
