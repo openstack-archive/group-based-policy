@@ -97,7 +97,8 @@ class ApicMappingTestCase(
             'tenant_network_types': ['opflex']
         }
         mock.patch('gbpservice.neutron.services.grouppolicy.drivers.cisco.'
-                   'apic.apic_mapping.ApicMappingDriver._setup_rpc').start()
+                   'apic.apic_mapping.ApicMappingDriver.'
+                   '_setup_rpc_listeners').start()
         host_agents = mock.patch('neutron.plugins.ml2.driver_context.'
                                  'PortContext.host_agents').start()
         host_agents.return_value = [self.agent_conf]
@@ -613,7 +614,7 @@ class TestPolicyTarget(ApicMappingTestCase):
             context.get_admin_context(), device='tap%s' % 'randomid',
             host='h1')
         # device was not found
-        self.assertEqual(None, details)
+        self.assertTrue('port_id' not in details)
         ptg = self.create_policy_target_group()['policy_target_group']
         pt1 = self.create_policy_target(
             policy_target_group_id=ptg['id'])['policy_target']
@@ -622,7 +623,7 @@ class TestPolicyTarget(ApicMappingTestCase):
         details = self.driver.get_gbp_details(
             context.get_admin_context(), device='tap%s' % pt1['port_id'],
             host='h1')
-        # device was not found
+        # An exception occurred
         self.assertEqual({'device': 'tap%s' % pt1['port_id']}, details)
 
     def test_get_gbp_proxy_details(self):
