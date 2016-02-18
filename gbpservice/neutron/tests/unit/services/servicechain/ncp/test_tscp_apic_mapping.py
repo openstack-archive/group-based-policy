@@ -990,7 +990,17 @@ class TestProxyGroup(ApicMappingStitchingPlumberGBPTestCase):
         self._get_object('subnets', proxy['subnets'][0], self.api,
                          expected_res_status=404)
 
-    def _test_get_gbp_details(self, admin_proxy=False):
+    def _test_get_gbp_details(self, admin_proxy=False, async=False):
+        def request_wrapper(*args, **kwargs):
+            kwargs['timestamp'] = 0
+            kwargs['request_id'] = 'some_id'
+            result = self.driver.request_endpoint_details(*args,
+                                                          request=kwargs)
+            if result:
+                return result.get('gbp_details')
+
+        gbp_details = {False: self.driver.get_gbp_details,
+                       True: request_wrapper}
         ptg = self.create_policy_target_group(
             name="ptg1")['policy_target_group']
         pt1 = self.create_policy_target(
@@ -1046,7 +1056,7 @@ class TestProxyGroup(ApicMappingStitchingPlumberGBPTestCase):
         def echo(name):
             return name
         self.mgr.apic.fvTenant.name = echo
-        mapping = self.driver.get_gbp_details(
+        mapping = gbp_details[async](
             context.get_admin_context(),
             device='tap%s' % proxy_gw['port_id'], host='h2')
 
@@ -1064,13 +1074,13 @@ class TestProxyGroup(ApicMappingStitchingPlumberGBPTestCase):
             group_default_gateway=True,
             tenant_id=ptg['tenant_id'])['policy_target']
         self._bind_port_to_host(pt2['port_id'], 'h2')
-        mapping = self.driver.get_gbp_details(
+        mapping = gbp_details[async](
             context.get_admin_context(),
             device='tap%s' % group_default_gw['port_id'], host='h2')
         self.assertTrue(mapping['promiscuous_mode'])
 
         # No extra IPs for the failover since it doesn't own the master IP
-        mapping = self.driver.get_gbp_details(
+        mapping = gbp_details[async](
             context.get_admin_context(),
             device='tap%s' % proxy_gw_failover['port_id'], host='h2')
         self.assertEqual(0, len(mapping['extra_ips'] or []))
@@ -1084,7 +1094,7 @@ class TestProxyGroup(ApicMappingStitchingPlumberGBPTestCase):
             self.driver.ha_ip_handler.set_port_id_for_ha_ipaddress(
                 proxy_gw_failover['port_id'], x['ip_address'])
 
-        mapping = self.driver.get_gbp_details(
+        mapping = gbp_details[async](
             context.get_admin_context(),
             device='tap%s' % proxy_gw_failover['port_id'], host='h2')
         self.assertEqual(
@@ -1102,6 +1112,12 @@ class TestProxyGroup(ApicMappingStitchingPlumberGBPTestCase):
 
     def test_get_gbp_details_admin(self):
         self._test_get_gbp_details(True)
+
+    def test_get_gbp_details_async(self):
+        self._test_get_gbp_details(False, True)
+
+    def test_get_gbp_details_admin_async(self):
+        self._test_get_gbp_details(True, True)
 
     def test_cluster_promiscuous_mode(self):
         ptg = self.create_policy_target_group(
