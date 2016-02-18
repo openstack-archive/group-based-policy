@@ -202,8 +202,8 @@ class ApicMappingDriver(api.ResourceMappingDriver,
 
     def initialize(self):
         super(ApicMappingDriver, self).initialize()
-        self._setup_rpc_listeners()
         self._setup_rpc()
+        self._setup_rpc_listeners()
         self.apic_manager = ApicMappingDriver.get_apic_manager()
         self.name_mapper = name_manager.ApicNameManager(self.apic_manager)
         self.enable_dhcp_opt = self.apic_manager.enable_optimized_dhcp
@@ -211,7 +211,7 @@ class ApicMappingDriver(api.ResourceMappingDriver,
         self._gbp_plugin = None
 
     def _setup_rpc_listeners(self):
-        self.endpoints = [rpc.GBPServerRpcCallback(self)]
+        self.endpoints = [rpc.GBPServerRpcCallback(self, self.notifier)]
         self.topic = rpc.TOPIC_OPFLEX
         self.conn = n_rpc.create_connection(new=True)
         self.conn.create_consumer(self.topic, self.endpoints,
@@ -255,6 +255,10 @@ class ApicMappingDriver(api.ResourceMappingDriver,
         return details
 
     # RPC Method
+    def request_vrf_details(self, context, **kwargs):
+        return self.get_vrf_details(context, **kwargs)
+
+    # RPC Method
     def get_gbp_details(self, context, **kwargs):
         try:
             port_id = self._core_plugin._device_to_port_id(
@@ -266,7 +270,7 @@ class ApicMappingDriver(api.ResourceMappingDriver,
                               "%(agent_id)s not found in database"),
                             {'device': port_id,
                              'agent_id': kwargs.get('agent_id')})
-                return
+                return {'device': kwargs.get('device')}
             port = port_context.current
             # retrieve PTG from a given Port
             ptg, pt = self._port_id_to_ptg(context, port['id'])
@@ -286,7 +290,7 @@ class ApicMappingDriver(api.ResourceMappingDriver,
 
             l2p = self._network_id_to_l2p(context, port['network_id'])
             if not ptg and not l2p:
-                return
+                return {'device': kwargs.get('device')}
 
             l2_policy_id = l2p['id']
             if ptg:
@@ -390,6 +394,18 @@ class ApicMappingDriver(api.ResourceMappingDriver,
                       {'device': kwargs.get('device'), 'error': e.message})
             details = {'device': kwargs.get('device')}
         return details
+
+    # RPC Method
+    def request_gbp_details(self, context, **kwargs):
+        LOG.debug("Request GBP details: %s", kwargs)
+        kwargs.update(kwargs['request'])
+        result = {'device': kwargs['device'],
+                  'timestamp': kwargs['timestamp'],
+                  'request_id': kwargs['request_id']}
+        result['gbp_details'] = self.get_gbp_details(context, **kwargs)
+        from neutron.plugins.ml2 import rpc as neu_rpc
+        result['neutron_details'] = neu_rpc.RpcCallbacks(None, None).get_device_details(context, **kwargs)
+        return result
 
     def _allocate_snat_ip_for_host_and_ext_net(self, context, host, network,
                                                es_name):
