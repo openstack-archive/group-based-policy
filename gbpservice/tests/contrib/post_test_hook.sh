@@ -1,5 +1,6 @@
 #!/bin/bash
 
+exit 0
 source functions-gbp
 
 set -x
