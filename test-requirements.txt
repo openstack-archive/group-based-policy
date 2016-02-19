@@ -8,7 +8,7 @@ setuptools>=19.2
 -e git+https://git.openstack.org/openstack/python-heatclient@stable/mitaka#egg=heatclient
 -e git+https://git.openstack.org/openstack/python-keystoneclient@stable/mitaka#egg=keystoneclient
 hacking<0.11,>=0.10.0
-
+Routes==2.2 # Workaround until bugfix 1563028 is backported to mitaka neutron
 cliff>=1.15.0 # Apache-2.0
 coverage>=3.6 # Apache-2.0
 fixtures>=1.3.1 # Apache-2.0/BSD
