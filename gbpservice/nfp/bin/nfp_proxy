@@ -1,0 +1,7 @@
+#!/usr/bin/python2
+
+import sys
+from gbpservice.nfp.proxy_agent.proxy.proxy import main
+
+if __name__ == "__main__":
+   sys.exit(main(sys.argv[1:]))
