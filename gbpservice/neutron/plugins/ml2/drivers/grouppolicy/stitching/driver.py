@@ -10,6 +10,7 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+from neutron._i18n import _LE
 from neutron.extensions import portbindings
 from neutron.plugins.ml2 import driver_api as api
 from neutron.plugins.ml2.drivers.openvswitch.mech_driver import (
@@ -31,7 +32,10 @@ class TrafficStitchingMechanismGBPDriver(base.OpenvswitchMechanismDriver):
 
     def try_to_bind_segment_for_agent(self, context, segment, agent):
         vif_details = self.vif_details
+        LOG.error(_LE("vif_details: %s"), vif_details)
+        LOG.error(_LE("seg: %s"), segment)
         if self.check_segment_for_agent(segment, agent):
+            LOG.error(_LE("pt_name: %s"), context.current['name'])
             if context.current['name'].startswith(
                     'pt_' + plumber_base.SERVICE_TARGET_NAME_PREFIX):
                 vif_details = {portbindings.CAP_PORT_FILTER: False,
