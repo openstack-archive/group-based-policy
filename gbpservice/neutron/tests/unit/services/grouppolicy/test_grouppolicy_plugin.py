@@ -304,6 +304,28 @@ class TestL3Policy(GroupPolicyPluginTestCase):
         self.assertEqual('InvalidL3PExternalIPAddress',
                          res['NeutronError']['type'])
 
+    def test_multiple_es_negative(self):
+        attrs = {'external_routes': [{'destination': '0.0.0.0/0',
+                                      'nexthop': '172.1.1.1'}],
+                 'cidr': '172.1.1.0/24'}
+        es = self.create_external_segment(**attrs)['external_segment']
+        another_es = self.create_external_segment(**attrs)['external_segment']
+
+        res = self.create_l3_policy(
+            external_segments={es['id']: [], another_es['id']: []},
+            expected_res_status=400)
+        self.assertEqual('IdenticalExternalRoute',
+                         res['NeutronError']['type'])
+
+        l3p = self.create_l3_policy(
+            external_segments={es['id']: []},
+            expected_res_status=201)['l3_policy']
+        res = self.update_l3_policy(l3p['id'],
+            external_segments={es['id']: [], another_es['id']: []},
+            expected_res_status=400)
+        self.assertEqual('IdenticalExternalRoute',
+                         res['NeutronError']['type'])
+
 
 class TestL2Policy(GroupPolicyPluginTestCase):
 
@@ -709,6 +731,23 @@ class TestExternalSegment(GroupPolicyPluginTestCase):
         res = self.update_external_segment(
             es['id'], expected_res_status=400, **attrs)
         self.assertEqual('ExternalRouteOverlapsWithL3PIpPool',
+                         res['NeutronError']['type'])
+
+    def test_identical_routes_negative(self):
+        attrs = {'external_routes': [{'destination': '0.0.0.0/0',
+                                      'nexthop': '172.1.0.1'}],
+                 'cidr': '172.1.0.0/24'}
+        es1 = self.create_external_segment(**attrs)['external_segment']
+        es2 = self.create_external_segment()['external_segment']
+
+        self.create_l3_policy(
+            external_segments={es1['id']: [], es2['id']: []},
+            expected_res_status=201)
+
+        del attrs['cidr']
+        res = self.update_external_segment(
+            es2['id'], expected_res_status=400, **attrs)
+        self.assertEqual('IdenticalExternalRoute',
                          res['NeutronError']['type'])
 
 

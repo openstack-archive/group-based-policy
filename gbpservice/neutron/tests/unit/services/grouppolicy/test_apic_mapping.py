@@ -2789,12 +2789,13 @@ class TestExternalSegment(ApicMappingTestCase):
                    if self.nat_enabled else ['tenant_a'])
 
         self._mock_external_dict([('supported', '192.168.0.2/24')])
+        ext_routes = ['128.0.0.0/24', '128.0.1.0/24']
         es_list = [
             self.create_external_segment(
                 name='supported', cidr='192.168.0.0/24', shared=True,
                 expected_res_status=201,
                 external_routes=[{
-                    'destination': '128.0.0.0/16',
+                    'destination': ext_routes[x],
                     'nexthop': '192.168.0.254'}])['external_segment']
             for x in range(2)]
 
@@ -2839,7 +2840,7 @@ class TestExternalSegment(ApicMappingTestCase):
 
                 expected_create_calls.append(
                     mock.call("Shd-%s-%s" % (l3p['id'], es['id']),
-                        subnet='128.0.0.0/16',
+                        subnet=es['external_routes'][0]['destination'],
                         external_epg="Shd-%s-%s" % (l3p['id'], ep['id']),
                         owner=l3p['tenant_id'],
                         transaction=mock.ANY))
@@ -3470,12 +3471,13 @@ class TestExternalPolicy(ApicMappingTestCase):
                    if self.nat_enabled else ['tenant_a'])
 
         self._mock_external_dict([('supported', '192.168.0.2/24')])
+        ext_routes = ['128.0.0.0/24', '128.0.1.0/24']
         es_list = [
             self.create_external_segment(
                 name='supported', cidr='192.168.0.0/24', shared=True,
                 expected_res_status=201,
                 external_routes=[{
-                    'destination': '128.0.0.0/16',
+                    'destination': ext_routes[x],
                     'nexthop': '192.168.0.254'}])['external_segment']
             for x in range(2)]
 
@@ -3515,13 +3517,14 @@ class TestExternalPolicy(ApicMappingTestCase):
                                 transaction=mock.ANY))
                     expected_calls.append(
                         mock.call("Shd-%s-%s" % (l3p['id'], es['id']),
-                            subnet='128.0.0.0/16',
+                            subnet=es['external_routes'][0]['destination'],
                             external_epg=("Shd-%s-%s" % (l3p['id'], ep['id'])),
                             owner=tenants[x],
                             transaction=mock.ANY))
                 elif not self.pre_l3out:
                     expected_calls.append(
-                        mock.call(es['id'], subnet='128.0.0.0/16',
+                        mock.call(es['id'],
+                            subnet=es['external_routes'][0]['destination'],
                             external_epg=ep['id'], owner=self.common_tenant,
                             transaction=mock.ANY))
             self._check_call_list(expected_calls,
