@@ -318,3 +318,9 @@ class InvalidClusterPtg(GroupPolicyBadRequest):
 class NatPoolInUseByPort(exceptions.InUse, GroupPolicyException):
     message = _("Ports or floating IP addresses are using the subnet "
                 "corresponding to Nat Pool.")
+
+
+class IdenticalExternalRoute(GroupPolicyBadRequest):
+    message = _("External segments %(es1)s and %(es2)s cannot have "
+                "identical external route CIDR %(cidr)s if associated "
+                "with a common L3 policy.")
