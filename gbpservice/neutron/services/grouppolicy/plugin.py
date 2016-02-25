@@ -241,6 +241,12 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
                         raise gp_exc.ExternalRouteOverlapsWithL3PIpPool(
                             destination=added_dest, l3p_id=l3p['id'],
                             es_id=current['id'])
+                    es_list = [current]
+                    es_list.extend(self.get_external_segments(
+                        context.elevated(),
+                        filters={'id': [e for e in l3p['external_segments']
+                                        if e != current['id']]}))
+                    self._validate_identical_external_routes(es_list)
             # Verify NH in ES pool
             added_nexthop = netaddr.IPSet(x[1] for x in added if x[1])
             es_subnet = netaddr.IPSet([current['cidr']])
@@ -285,6 +291,23 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
                             raise gp_exc.InvalidL3PExternalIPAddress(
                                 ip=addr, es_id=es['id'], l3p_id=current['id'],
                                 es_cidr=cidr)
+            es_list_all = self.get_external_segments(
+                context.elevated(),
+                filters={'id': current['external_segments'].keys()})
+            self._validate_identical_external_routes(es_list_all)
+
+    def _validate_identical_external_routes(self, es_list):
+        if len(es_list) < 2:
+            return
+        route_dict = {netaddr.IPNetwork(route['destination']).cidr: es
+                      for es in es_list[1:]
+                      for route in es['external_routes']}
+        for route in es_list[0]['external_routes']:
+            cidr = netaddr.IPNetwork(route['destination']).cidr
+            if cidr in route_dict:
+                raise gp_exc.IdenticalExternalRoute(
+                    es1=es_list[0]['id'], es2=route_dict[cidr]['id'],
+                    cidr=cidr)
 
     def _validate_action_value(self, context, action):
         if action.get('action_type') == gp_cts.GP_ACTION_REDIRECT:
