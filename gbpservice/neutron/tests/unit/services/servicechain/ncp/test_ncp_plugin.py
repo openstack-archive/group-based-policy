@@ -30,17 +30,28 @@ from gbpservice.neutron.services.servicechain.plugins.ncp import (
     context as ncp_context)
 from gbpservice.neutron.services.servicechain.plugins.ncp import (
     exceptions as exc)
+from gbpservice.neutron.services.servicechain.plugins.ncp import (
+    plugin as ncp_plugin)
 import gbpservice.neutron.services.servicechain.plugins.ncp.config  # noqa
 from gbpservice.neutron.services.servicechain.plugins.ncp.node_drivers import (
     dummy_driver as dummy_driver)
+from gbpservice.neutron.tests.unit.db.grouppolicy import test_group_policy_db
+from gbpservice.neutron.tests.unit.services.grouppolicy import (
+    test_resource_mapping as test_gp_driver)
 from gbpservice.neutron.tests.unit.services.servicechain import (
     test_servicechain_plugin as test_base)
 
-SC_PLUGIN_KLASS = (
-    "gbpservice.neutron.services.servicechain.plugins.ncp.plugin."
-    "NodeCompositionPlugin")
-CORE_PLUGIN = ('gbpservice.neutron.tests.unit.services.grouppolicy.'
-               'test_resource_mapping.NoL3NatSGTestPlugin')
+
+class ServiceChainNCPTestPlugin(ncp_plugin.NodeCompositionPlugin):
+
+    supported_extension_aliases = ['servicechain'] + (
+        test_group_policy_db.UNSUPPORTED_REQUIRED_EXTS)
+    path_prefix = "/servicechain"
+
+
+SC_PLUGIN_KLASS = (ServiceChainNCPTestPlugin.__module__ + '.' +
+                   ServiceChainNCPTestPlugin.__name__)
+CORE_PLUGIN = test_gp_driver.CORE_PLUGIN
 GP_PLUGIN_KLASS = (
     "gbpservice.neutron.services.grouppolicy.plugin.GroupPolicyPlugin"
 )

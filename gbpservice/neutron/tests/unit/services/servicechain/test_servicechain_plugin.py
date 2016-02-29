@@ -18,26 +18,36 @@ from neutron import context as n_ctx
 from oslo_config import cfg
 from oslo_serialization import jsonutils
 
+from gbpservice.neutron.services.servicechain.plugins.msc import (
+    plugin as msc_plugin)
 from gbpservice.neutron.services.servicechain.plugins.msc import context
 from gbpservice.neutron.tests.unit.db.grouppolicy import (
     test_servicechain_db as test_servicechain_db)
+from gbpservice.neutron.tests.unit.db.grouppolicy import test_group_policy_db
 
 cfg.CONF.import_opt(
     'servicechain_drivers',
     'gbpservice.neutron.services.servicechain.plugins.msc.config',
     group='servicechain')
-SC_PLUGIN_KLASS = (
-    "gbpservice.neutron.services.servicechain.plugins.msc.plugin."
-    "ServiceChainPlugin")
+
+
+class ServiceChainMSCTestPlugin(msc_plugin.ServiceChainPlugin):
+
+    supported_extension_aliases = ['servicechain'] + (
+        test_group_policy_db.UNSUPPORTED_REQUIRED_EXTS)
+    path_prefix = "/servicechain"
+
+
+SC_PLUGIN_KLASS = (ServiceChainMSCTestPlugin.__module__ + '.' +
+                   ServiceChainMSCTestPlugin.__name__)
 
 
 class ServiceChainPluginTestCase(test_servicechain_db.ServiceChainDbTestCase):
 
     def setUp(self, core_plugin=None, sc_plugin=None, gp_plugin=None):
-        if not sc_plugin:
-            sc_plugin = SC_PLUGIN_KLASS
         super(ServiceChainPluginTestCase, self).setUp(core_plugin=core_plugin,
-                                                      sc_plugin=sc_plugin,
+                                                      sc_plugin=sc_plugin or
+                                                      SC_PLUGIN_KLASS,
                                                       gp_plugin=gp_plugin)
 
 

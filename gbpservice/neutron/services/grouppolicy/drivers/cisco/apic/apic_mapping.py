@@ -19,6 +19,9 @@ from apic_ml2.neutron.plugins.ml2.drivers.cisco.apic import apic_model
 from apic_ml2.neutron.plugins.ml2.drivers.cisco.apic import config
 from apicapi import apic_manager
 from keystoneclient.v2_0 import client as keyclient
+from neutron._i18n import _LE
+from neutron._i18n import _LI
+from neutron._i18n import _LW
 from neutron.agent.linux import dhcp
 from neutron.api.v2 import attributes
 from neutron.common import constants as n_constants
@@ -260,7 +263,7 @@ class ApicMappingDriver(api.ResourceMappingDriver,
                     port = self._get_port(context, new_id)
                     ip_owner_info['port'] = port['id']
                 except n_exc.PortNotFound:
-                    LOG.warning(_("Proxied port %s could not be found"),
+                    LOG.warning(_LW("Proxied port %s could not be found"),
                                 new_id)
         return super(ApicMappingDriver, self).update_ip_owner(ip_owner_info)
 
@@ -278,7 +281,7 @@ class ApicMappingDriver(api.ResourceMappingDriver,
             port_context = self._core_plugin.get_bound_port_context(
                 context, port_id, kwargs['host'])
             if not port_context:
-                LOG.warning(_("Device %(device)s requested by agent "
+                LOG.warning(_LW("Device %(device)s requested by agent "
                               "%(agent_id)s not found in database"),
                             {'device': port_id,
                              'agent_id': kwargs.get('agent_id')})
@@ -298,7 +301,7 @@ class ApicMappingDriver(api.ResourceMappingDriver,
                     ptg, pt = self._port_id_to_ptg(context, port['id'])
                     switched = True
                 except n_exc.PortNotFound:
-                    LOG.warning(_("Proxied port %s could not be found"),
+                    LOG.warning(_LW("Proxied port %s could not be found"),
                                 new_id)
 
             l2p = self._network_id_to_l2p(context, port['network_id'])
@@ -395,14 +398,14 @@ class ApicMappingDriver(api.ResourceMappingDriver,
                                     host_snat_ips)
                         ptg = proxied
                 else:
-                    LOG.info(_("Active master has changed for PT %s"),
+                    LOG.info(_LI("Active master has changed for PT %s"),
                              pt['id'])
                     # There's no master mac even if a cluster_id is set.
                     # Active chain head must have changed in a concurrent
                     # operation, get out of here
                     pass
         except Exception as e:
-            LOG.error(_("An exception has occurred while retrieving device "
+            LOG.error(_LE("An exception has occurred while retrieving device "
                         "gbp details for %(device)s with error %(error)s"),
                       {'device': kwargs.get('device'), 'error': e.message})
             details = {'device': kwargs.get('device')}
@@ -415,7 +418,7 @@ class ApicMappingDriver(api.ResourceMappingDriver,
                 filters={'name': [HOST_SNAT_POOL],
                          'network_id': [network['id']]})
         if not snat_subnets:
-            LOG.info(_("Subnet for host-SNAT-pool could not be found "
+            LOG.info(_LI("Subnet for host-SNAT-pool could not be found "
                        "for external network %(net_id)s. SNAT will not "
                        "function on this network"), {'net_id': network['id']})
             return {}
@@ -442,7 +445,7 @@ class ApicMappingDriver(api.ResourceMappingDriver,
                 if port and port['fixed_ips'][0]:
                     snat_ip = port['fixed_ips'][0]['ip_address']
                 else:
-                    LOG.warning(_("SNAT-port creation failed for subnet "
+                    LOG.warning(_LW("SNAT-port creation failed for subnet "
                                   "%(subnet_id)s on external network "
                                   "%(net_id)s. SNAT will not function on"
                                   "host %(host)s for this network"),
@@ -892,7 +895,7 @@ class ApicMappingDriver(api.ResourceMappingDriver,
                 # parent method the notification will not be done
                 self._notify_port_update(context._plugin_context, port['id'])
         except n_exc.PortNotFound:
-            LOG.warning(_("Port %s is missing") % context.current['port_id'])
+            LOG.warning(_LW("Port %s is missing") % context.current['port_id'])
             return
 
     def delete_policy_target_group_precommit(self, context):
@@ -1362,7 +1365,7 @@ class ApicMappingDriver(api.ResourceMappingDriver,
     def process_port_deleted(self, context, port):
         # do nothing for floating-ip ports
         if port['device_owner'] == n_constants.DEVICE_OWNER_FLOATINGIP:
-            LOG.debug(_("Ignoring floating-ip port %s") % port['id'])
+            LOG.debug("Ignoring floating-ip port %s", port['id'])
             return
         try:
             self.gbp_plugin.delete_policy_target(
@@ -1496,8 +1499,8 @@ class ApicMappingDriver(api.ResourceMappingDriver,
         is_shadow = bool(l3policy_obj)
         ext_info = self.apic_manager.ext_net_dict.get(es['name'])
         if not ext_info:
-            LOG.warning(_("External Segment %s is not managed by APIC "
-                        "mapping driver.") % es['id'])
+            LOG.warning(_LW("External Segment %s is not managed by APIC "
+                            "mapping driver.") % es['id'])
             return
         pre_existing = (False if is_shadow else self._is_pre_existing(es))
         pfx = self._get_shadow_prefix(plugin_context, is_shadow, l3policy_obj)
@@ -2560,7 +2563,7 @@ class ApicMappingDriver(api.ResourceMappingDriver,
                                            interface_info)
             except n_exc.BadRequest:
                 self._delete_port(plugin_context, port['id'])
-                LOG.exception(_("Adding subnet to router with "
+                LOG.exception(_LE("Adding subnet to router with "
                                 "explicit port failed"))
 
     def _detach_router_from_subnets(self, plugin_context, router_id, sn_ids):
@@ -2602,8 +2605,8 @@ class ApicMappingDriver(api.ResourceMappingDriver,
             if not (l3out_info.get('vrf_name') and
                     l3out_info.get('vrf_tenant')):
                 LOG.warning(
-                       _("External routed network %s doesn't have private "
-                         "network set") % es['name'])
+                    _LW("External routed network %s doesn't have private "
+                        "network set") % es['name'])
                 return
             es_tenant = l3out_info['l3out_tenant']
             nat_vrf_name = self.name_mapper.name_mapper.pre_existing(
@@ -2638,7 +2641,7 @@ class ApicMappingDriver(api.ResourceMappingDriver,
                 self.apic_manager.ensure_subnet_created_on_apic(nat_epg_tenant,
                     nat_bd_name, gw + '/' + plen, transaction=trs)
                 if not es['subnet_id']:
-                    LOG.warning(_("No associated subnet found for"
+                    LOG.warning(_LW("No associated subnet found for"
                         "external segment %(es_id)s. SNAT "
                         "will not function for this network"),
                         {'es_id': es['id']})
@@ -2662,11 +2665,12 @@ class ApicMappingDriver(api.ResourceMappingDriver,
                              attributes.ATTR_NOT_SPECIFIED,
                              'dns_nameservers': attributes.ATTR_NOT_SPECIFIED,
                              'host_routes':
-                             attributes.ATTR_NOT_SPECIFIED}
+                             attributes.ATTR_NOT_SPECIFIED,
+                             'tenant_id': es['tenant_id']}
                     subnet = self._create_subnet(context._plugin_context,
                             attrs)
                     if not subnet:
-                        LOG.warning(_("Subnet %(pool) creation failed for "
+                        LOG.warning(_LW("Subnet %(pool) creation failed for "
                             "external network %(net_id)s. SNAT "
                             "will not function for this network"),
                             {'pool': HOST_SNAT_POOL,
@@ -2698,8 +2702,8 @@ class ApicMappingDriver(api.ResourceMappingDriver,
             if not (l3out_info.get('vrf_name') and
                     l3out_info.get('vrf_tenant')):
                 LOG.warning(
-                       _("External routed network %s doesn't have private "
-                         "network set") % es['name'])
+                       _LW("External routed network %s doesn't have private "
+                           "network set") % es['name'])
                 return
             es_tenant = l3out_info['l3out_tenant']
             nat_vrf_name = self.name_mapper.name_mapper.pre_existing(

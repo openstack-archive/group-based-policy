@@ -69,7 +69,8 @@ class ServiceChainDBTestBase(test_group_policy_db.GroupPolicyDBTestBase):
 
 class ServiceChainDBTestPlugin(svcchain_db.ServiceChainDbPlugin):
 
-    supported_extension_aliases = ['servicechain']
+    supported_extension_aliases = ['servicechain'] + (
+        test_group_policy_db.UNSUPPORTED_REQUIRED_EXTS)
     path_prefix = "/servicechain"
 
 DB_GP_PLUGIN_KLASS = (ServiceChainDBTestPlugin.__module__ + '.' +
@@ -200,7 +201,7 @@ class TestServiceChainResources(ServiceChainDbTestCase):
 
         req = self.new_delete_request('servicechain_specs', scs_id)
         res = req.get_response(self.ext_api)
-        self.assertEqual(res.status_int, webob.exc.HTTPNoContent.code)
+        self.assertEqual(webob.exc.HTTPNoContent.code, res.status_int)
 
         # After deleting the Service Chain Spec, node delete should succeed
         req = self.new_delete_request('servicechain_nodes', scn_id)
@@ -335,7 +336,7 @@ class TestServiceChainResources(ServiceChainDbTestCase):
 
         req = self.new_delete_request('servicechain_instances', sci_id)
         res = req.get_response(self.ext_api)
-        self.assertEqual(res.status_int, webob.exc.HTTPNoContent.code)
+        self.assertEqual(webob.exc.HTTPNoContent.code, res.status_int)
         self.assertRaises(service_chain.ServiceChainInstanceNotFound,
                           self.plugin.get_servicechain_instance,
                           ctx, sci_id)
@@ -343,7 +344,7 @@ class TestServiceChainResources(ServiceChainDbTestCase):
         # Deleting the spec should succeed after the instance is deleted
         req = self.new_delete_request('servicechain_specs', scs_id)
         res = req.get_response(self.ext_api)
-        self.assertEqual(res.status_int, webob.exc.HTTPNoContent.code)
+        self.assertEqual(webob.exc.HTTPNoContent.code, res.status_int)
         self.assertRaises(service_chain.ServiceChainSpecNotFound,
                           self.plugin.get_servicechain_spec, ctx, scs_id)
 
@@ -530,12 +531,12 @@ class TestServiceChainResources(ServiceChainDbTestCase):
 
         req = self.new_delete_request('servicechain_nodes', scn_id)
         res = req.get_response(self.ext_api)
-        self.assertEqual(res.status_int, webob.exc.HTTPNoContent.code)
+        self.assertEqual(webob.exc.HTTPNoContent.code, res.status_int)
 
         # After deleting the Service Chain Spec, node delete should succeed
         req = self.new_delete_request('service_profiles', sp_id)
         res = req.get_response(self.ext_api)
-        self.assertEqual(res.status_int, webob.exc.HTTPNoContent.code)
+        self.assertEqual(webob.exc.HTTPNoContent.code, res.status_int)
         self.assertRaises(service_chain.ServiceProfileNotFound,
                           self.plugin.get_service_profile,
                           ctx, sp_id)

@@ -10,7 +10,7 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-from neutron.common import log
+from oslo_log import helpers as log
 
 from gbpservice.neutron.services.servicechain.plugins.ncp import driver_base
 
@@ -19,52 +19,52 @@ class NoopNodeDriver(driver_base.NodeDriverBase):
 
     initialized = False
 
-    @log.log
+    @log.log_method_call
     def initialize(self, name):
         self.initialized = True
         self._name = name
 
-    @log.log
+    @log.log_method_call
     def get_plumbing_info(self, context):
         pass
 
-    @log.log
+    @log.log_method_call
     def validate_create(self, context):
         pass
 
-    @log.log
+    @log.log_method_call
     def validate_update(self, context):
         pass
 
-    @log.log
+    @log.log_method_call
     def create(self, context):
         pass
 
-    @log.log
+    @log.log_method_call
     def delete(self, context):
         pass
 
-    @log.log
+    @log.log_method_call
     def update(self, context):
         pass
 
-    @log.log
+    @log.log_method_call
     def update_policy_target_added(self, context, policy_target):
         pass
 
-    @log.log
+    @log.log_method_call
     def update_policy_target_removed(self, context, policy_target):
         pass
 
-    @log.log
+    @log.log_method_call
     def update_node_consumer_ptg_added(self, context, policy_target_group):
         pass
 
-    @log.log
+    @log.log_method_call
     def update_node_consumer_ptg_removed(self, context, policy_target_group):
         pass
 
-    @log.log
+    @log.log_method_call
     def notify_chain_parameters_updated(self, context):
         pass
 
