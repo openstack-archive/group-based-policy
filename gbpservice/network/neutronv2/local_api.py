@@ -255,12 +255,28 @@ class LocalAPI(object):
 
     def _remove_router_interface(self, plugin_context, router_id,
                                  interface_info):
+        # To detach Router interface either port ID or Subnet ID is mandatory
+        key = 'port_id' if 'port_id' in interface_info else 'subnet_id'
+        fixed_ips_filter = {key: [interface_info.get(key)]}
+        filters = {'device_id': [router_id],
+                   'fixed_ips': fixed_ips_filter}
+        ports = self._get_ports(plugin_context, filters=filters)
+
         try:
             self._l3_plugin.remove_router_interface(plugin_context, router_id,
                                                     interface_info)
         except l3.RouterInterfaceNotFoundForSubnet:
             LOG.warn(_('Router interface already deleted for subnet %s'),
                      interface_info)
+            return
+        else:
+            # The DHCP agent is not getting this event for the router
+            # interface port delete triggered by L3 Plugin. So we are
+            # sending the notification here
+            if cfg.CONF.dhcp_agent_notification and ports:
+                self._dhcp_agent_notifier.notify(plugin_context,
+                                                 {'port': ports[0]},
+                                                 'port' + '.delete.end')
 
     def _add_router_gw_interface(self, plugin_context, router_id, gw_info):
         return self._l3_plugin.update_router(
