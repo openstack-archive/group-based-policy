@@ -88,6 +88,9 @@ class ApicMappingTestCase(
         cfg.CONF.register_opts(sg_cfg.security_group_opts, 'SECURITYGROUP')
         config.cfg.CONF.set_override('enable_security_group', False,
                                      group='SECURITYGROUP')
+        cfg.CONF.set_override('path_mtu', 1000, group='ml2')
+        cfg.CONF.set_override('segment_mtu', 1000, group='ml2')
+        cfg.CONF.set_override('advertise_mtu', True)
         n_rpc.create_connection = mock.Mock()
         amap.ApicMappingDriver.get_apic_manager = mock.MagicMock()
         self.set_up_mocks()
@@ -345,6 +348,7 @@ class TestPolicyTarget(ApicMappingTestCase):
         self.assertEqual("192.168.200.3",
             mapping['host_snat_ips'][0]['host_snat_ip'])
         self.assertEqual(24, mapping['host_snat_ips'][0]['prefixlen'])
+        self.assertEqual(1000, mapping['interface_mtu'])
 
     def test_snat_pool_subnet_deletion(self):
         self._mock_external_dict([('supported', '192.168.0.2/24')])
