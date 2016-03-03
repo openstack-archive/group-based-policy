@@ -228,6 +228,7 @@ class ApicMappingDriver(api.ResourceMappingDriver,
         self.l3out_vlan_alloc = l3out_vlan_alloc.L3outVlanAlloc()
         self.l3out_vlan_alloc.sync_vlan_allocations(
             self.apic_manager.ext_net_dict)
+        self.advertise_mtu = cfg.CONF.advertise_mtu
 
     def _setup_rpc_listeners(self):
         self.endpoints = [rpc.GBPServerRpcCallback(self)]
@@ -404,9 +405,13 @@ class ApicMappingDriver(api.ResourceMappingDriver,
                     # Active chain head must have changed in a concurrent
                     # operation, get out of here
                     pass
+            if self.advertise_mtu:
+                network = self._get_network(context, port['network_id'])
+                if network.get('mtu'):
+                    details['interface_mtu'] = network['mtu']
         except Exception as e:
             LOG.error(_LE("An exception has occurred while retrieving device "
-                        "gbp details for %(device)s with error %(error)s"),
+                          "gbp details for %(device)s with error %(error)s"),
                       {'device': kwargs.get('device'), 'error': e.message})
             details = {'device': kwargs.get('device')}
         return details
