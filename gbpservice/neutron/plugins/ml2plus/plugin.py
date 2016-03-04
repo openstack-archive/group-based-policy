@@ -21,6 +21,7 @@ from neutron.plugins.ml2 import managers as ml2_managers
 from neutron.plugins.ml2 import plugin as ml2_plugin
 from neutron.quota import resource_registry
 from oslo_log import log
+from sqlalchemy import inspect
 
 from gbpservice.neutron.plugins.ml2plus import managers
 
@@ -69,6 +70,22 @@ class Ml2PlusPlugin(ml2_plugin.Ml2Plugin):
         self.add_agent_status_check(self.agent_health_check)
         self._verify_service_plugins_requirements()
         LOG.info(_LI("Modular L2 Plugin (extended) initialization complete"))
+
+    def _ml2_md_extend_network_dict(self, result, netdb):
+        session = inspect(netdb).session
+        with session.begin(subtransactions=True):
+            self.extension_manager.extend_network_dict(session, netdb, result)
+
+    def _ml2_md_extend_port_dict(self, result, portdb):
+        session = inspect(portdb).session
+        with session.begin(subtransactions=True):
+            self.extension_manager.extend_port_dict(session, portdb, result)
+
+    def _ml2_md_extend_subnet_dict(self, result, subnetdb):
+        session = inspect(subnetdb).session
+        with session.begin(subtransactions=True):
+            self.extension_manager.extend_subnet_dict(
+                session, subnetdb, result)
 
     def create_network(self, context, network):
         self._ensure_tenant(context, network[attributes.NETWORK])
