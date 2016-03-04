@@ -228,10 +228,9 @@ class APICNameMapper(object):
             {'id': router_id}).fetchone().name
 
     @mapper(NAME_TYPE_POLICY_TARGET_GROUP)
-    def policy_target_group(self, context, policy_target_group_id):
-        epg = context._plugin.get_policy_target_group(context._plugin_context,
-                                                 policy_target_group_id)
-        return epg['name']
+    def policy_target_group(self, session, policy_target_group_id,
+                            policy_target_group_name=None):
+        return policy_target_group_name
 
     @mapper(NAME_TYPE_L3_POLICY)
     def l3_policy(self, context, l3_policy_id):
