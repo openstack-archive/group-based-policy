@@ -17,6 +17,7 @@ from oslo_log import log
 import stevedore
 
 from gbpservice.neutron.services.grouppolicy.common import exceptions as gp_exc
+from gbpservice.neutron.services.grouppolicy import group_policy_driver_api
 
 
 LOG = log.getLogger(__name__)
@@ -134,6 +135,16 @@ class PolicyDriverManager(stevedore.named.NamedExtensionManager):
             raise gp_exc.GroupPolicyDriverError(
                 method=method_name
             )
+
+    def ensure_tenant(self, plugin_context, tenant_id):
+        for driver in self.ordered_policy_drivers:
+            if isinstance(driver.obj, group_policy_driver_api.PolicyDriver):
+                try:
+                    driver.obj.ensure_tenant(plugin_context, tenant_id)
+                except Exception:
+                    LOG.exception(_LE("Policy driver '%s' failed in "
+                                      "ensure_tenant"), driver.name)
+                    raise gp_exc.GroupPolicyDriverError(method="ensure_tenant")
 
     def create_policy_target_precommit(self, context):
         self._call_on_drivers("create_policy_target_precommit", context)

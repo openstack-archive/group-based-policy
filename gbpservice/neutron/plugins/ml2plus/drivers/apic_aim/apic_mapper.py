@@ -23,6 +23,13 @@ LOG = None
 NAME_TYPE_TENANT = 'tenant'
 NAME_TYPE_NETWORK = 'network'
 NAME_TYPE_POLICY_TARGET_GROUP = 'policy_target_group'
+NAME_TYPE_L3_POLICY = 'l3_policy'
+NAME_TYPE_L2_POLICY = 'l2_policy'
+NAME_TYPE_POLICY_RULE_SET = 'policy_rule_set'
+NAME_TYPE_POLICY_RULE = 'policy_rule'
+NAME_TYPE_EXTERNAL_SEGMENT = 'external_segment'
+NAME_TYPE_EXTERNAL_POLICY = 'external_policy'
+NAME_TYPE_NAT_POOL = 'nat_pool'
 
 MAX_APIC_NAME_LENGTH = 46
 
@@ -128,6 +135,48 @@ class APICNameMapper(object):
     def policy_target_group(self, session, policy_target_group_id,
                             policy_target_group_name=None):
         return policy_target_group_name
+
+    @mapper(NAME_TYPE_L3_POLICY)
+    def l3_policy(self, context, l3_policy_id):
+        l3_policy = context._plugin.get_l3_policy(context._plugin_context,
+                                                  l3_policy_id)
+        return l3_policy['name']
+
+    @mapper(NAME_TYPE_L2_POLICY)
+    def l2_policy(self, context, l2_policy_id):
+        l2_policy = context._plugin.get_l2_policy(context._plugin_context,
+                                                  l2_policy_id)
+        return l2_policy['name']
+
+    @mapper(NAME_TYPE_POLICY_RULE_SET)
+    def policy_rule_set(self, context, policy_rule_set_id):
+        policy_rule_set = context._plugin.get_policy_rule_set(
+            context._plugin_context, policy_rule_set_id)
+        return policy_rule_set['name']
+
+    @mapper(NAME_TYPE_POLICY_RULE)
+    def policy_rule(self, context, policy_rule_id):
+        policy_rule = context._plugin.get_policy_rule(context._plugin_context,
+                                                      policy_rule_id)
+        return policy_rule['name']
+
+    @mapper(NAME_TYPE_EXTERNAL_SEGMENT)
+    def external_segment(self, context, external_segment_id):
+        external_segment = context._plugin.get_external_segment(
+            context._plugin_context, external_segment_id)
+        return external_segment['name']
+
+    @mapper(NAME_TYPE_EXTERNAL_POLICY)
+    def external_policy(self, context, external_policy_id):
+        external_policy = context._plugin.get_external_policy(
+            context._plugin_context, external_policy_id)
+        return external_policy['name']
+
+    @mapper(NAME_TYPE_NAT_POOL)
+    def nat_pool(self, context, nat_pool_id):
+        nat_pool = context._plugin.get_nat_pool(context._plugin_context,
+                                                nat_pool_id)
+        return nat_pool['name']
 
     def delete_apic_name(self, session, object_id):
         self.db.delete_apic_name(session, object_id)
