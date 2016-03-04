@@ -23,5 +23,5 @@ WebTest>=2.0
 oslotest<1.6.0,>=1.5.1 # Apache-2.0
 tempest-lib<0.5.0,>=0.4.0
 
--e git+https://github.com/noironetworks/python-opflex-agent.git#egg=opflexagent
--e git+https://github.com/noironetworks/apic-ml2-driver.git#egg=neutron_ml2_driver_apic
+-e git+https://github.com/noironetworks/python-opflex-agent.git@stable/kilo#egg=neutron_opflex_agent
+-e git+https://github.com/noironetworks/apic-ml2-driver.git@kilo#egg=neutron_ml2_driver_apic
