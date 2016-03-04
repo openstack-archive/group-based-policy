@@ -34,6 +34,15 @@ from gbpservice.neutron.services.grouppolicy.common import exceptions as exc
 LOG = logging.getLogger(__name__)
 
 
+class dummy_context_mgr(object):
+
+    def __enter__(self):
+        return None
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        return False
+
+
 class LocalAPI(object):
     """API for interacting with the neutron Plugins directly."""
 
@@ -92,10 +101,11 @@ class LocalAPI(object):
         return self._cached_agent_notifier
 
     def _create_resource(self, plugin, context, resource, attrs,
-                         do_notify=True):
+                         do_notify=True, clean_session=True):
         # REVISIT(rkukura): Do create.start notification?
         # REVISIT(rkukura): Check authorization?
-        with utils.clean_session(context.session):
+        with utils.clean_session(context.session) if clean_session else (
+            dummy_context_mgr()):
             reservation = None
             if plugin in [self._group_policy_plugin,
                     self._servicechain_plugin]:
@@ -134,10 +144,11 @@ class LocalAPI(object):
         return obj
 
     def _update_resource(self, plugin, context, resource, resource_id, attrs,
-                         do_notify=True):
+                         do_notify=True, clean_session=True):
         # REVISIT(rkukura): Do update.start notification?
         # REVISIT(rkukura): Check authorization?
-        with utils.clean_session(context.session):
+        with utils.clean_session(context.session) if clean_session else (
+            dummy_context_mgr()):
             obj_getter = getattr(plugin, 'get_' + resource)
             orig_obj = obj_getter(context, resource_id)
             action = 'update_' + resource
@@ -154,10 +165,11 @@ class LocalAPI(object):
         return obj
 
     def _delete_resource(self, plugin, context, resource, resource_id,
-                         do_notify=True):
+                         do_notify=True, clean_session=True):
         # REVISIT(rkukura): Do delete.start notification?
         # REVISIT(rkukura): Check authorization?
-        with utils.clean_session(context.session):
+        with utils.clean_session(context.session) if clean_session else (
+            dummy_context_mgr()):
             obj_getter = getattr(plugin, 'get_' + resource)
             obj = obj_getter(context, resource_id)
             action = 'delete_' + resource
@@ -172,14 +184,18 @@ class LocalAPI(object):
                                                      {resource: obj},
                                                      resource + '.delete.end')
 
-    def _get_resource(self, plugin, context, resource, resource_id):
-        with utils.clean_session(context.session):
+    def _get_resource(self, plugin, context, resource, resource_id,
+                      clean_session=True):
+        with utils.clean_session(context.session) if clean_session else (
+            dummy_context_mgr()):
             obj_getter = getattr(plugin, 'get_' + resource)
             obj = obj_getter(context, resource_id)
         return obj
 
-    def _get_resources(self, plugin, context, resource_plural, filters=None):
-        with utils.clean_session(context.session):
+    def _get_resources(self, plugin, context, resource_plural, filters=None,
+                       clean_session=True):
+        with utils.clean_session(context.session) if clean_session else (
+            dummy_context_mgr()):
             obj_getter = getattr(plugin, 'get_' + resource_plural)
             obj = obj_getter(context, filters)
         return obj
@@ -191,71 +207,80 @@ class LocalAPI(object):
     # neutronclient is also a possibility, but presents significant
     # issues to unit testing as well as overhead and failure modes.
 
-    def _get_port(self, plugin_context, port_id):
+    def _get_port(self, plugin_context, port_id, clean_session=True):
         return self._get_resource(self._core_plugin, plugin_context, 'port',
-                                  port_id)
+                                  port_id, clean_session=clean_session)
 
-    def _get_ports(self, plugin_context, filters=None):
+    def _get_ports(self, plugin_context, filters=None, clean_session=True):
         filters = filters or {}
         return self._get_resources(self._core_plugin, plugin_context, 'ports',
-                                   filters)
+                                   filters, clean_session=clean_session)
 
-    def _create_port(self, plugin_context, attrs):
+    def _create_port(self, plugin_context, attrs, clean_session=True):
         return self._create_resource(self._core_plugin, plugin_context, 'port',
-                                     attrs)
+                                     attrs, clean_session=clean_session)
 
-    def _update_port(self, plugin_context, port_id, attrs):
+    def _update_port(self, plugin_context, port_id, attrs, clean_session=True):
         return self._update_resource(self._core_plugin, plugin_context, 'port',
-                                     port_id, attrs)
+                                     port_id, attrs,
+                                     clean_session=clean_session)
 
-    def _delete_port(self, plugin_context, port_id):
+    def _delete_port(self, plugin_context, port_id, clean_session=True):
         try:
             self._delete_resource(self._core_plugin,
-                                  plugin_context, 'port', port_id)
+                                  plugin_context, 'port', port_id,
+                                  clean_session=clean_session)
         except n_exc.PortNotFound:
             LOG.warning(_LW('Port %s already deleted'), port_id)
 
-    def _get_subnet(self, plugin_context, subnet_id):
+    def _get_subnet(self, plugin_context, subnet_id, clean_session=True):
         return self._get_resource(self._core_plugin, plugin_context, 'subnet',
-                                  subnet_id)
+                                  subnet_id, clean_session=clean_session)
 
-    def _get_subnets(self, plugin_context, filters=None):
+    def _get_subnets(self, plugin_context, filters=None, clean_session=True):
         filters = filters or {}
         return self._get_resources(self._core_plugin, plugin_context,
-                                   'subnets', filters)
+                                   'subnets', filters,
+                                   clean_session=clean_session)
 
-    def _create_subnet(self, plugin_context, attrs):
+    def _create_subnet(self, plugin_context, attrs, clean_session=True):
         return self._create_resource(self._core_plugin, plugin_context,
-                                     'subnet', attrs)
+                                     'subnet', attrs,
+                                     clean_session=clean_session)
 
-    def _update_subnet(self, plugin_context, subnet_id, attrs):
+    def _update_subnet(self, plugin_context, subnet_id, attrs,
+                       clean_session=True):
         return self._update_resource(self._core_plugin, plugin_context,
-                                     'subnet', subnet_id, attrs)
+                                     'subnet', subnet_id, attrs,
+                                     clean_session=clean_session)
 
-    def _delete_subnet(self, plugin_context, subnet_id):
+    def _delete_subnet(self, plugin_context, subnet_id, clean_session=True):
         try:
             self._delete_resource(self._core_plugin, plugin_context, 'subnet',
-                                  subnet_id)
+                                  subnet_id, clean_session=clean_session)
         except n_exc.SubnetNotFound:
             LOG.warning(_LW('Subnet %s already deleted'), subnet_id)
 
-    def _get_network(self, plugin_context, network_id):
+    def _get_network(self, plugin_context, network_id, clean_session=True):
         return self._get_resource(self._core_plugin, plugin_context, 'network',
-                                  network_id)
+                                  network_id, clean_session=clean_session)
 
-    def _get_networks(self, plugin_context, filters=None):
+    def _get_networks(self, plugin_context, filters=None, clean_session=True):
         filters = filters or {}
         return self._get_resources(
-            self._core_plugin, plugin_context, 'networks', filters)
+            self._core_plugin, plugin_context, 'networks', filters,
+            clean_session=clean_session)
 
-    def _create_network(self, plugin_context, attrs):
+    def _create_network(self, plugin_context, attrs, clean_session=True):
         return self._create_resource(self._core_plugin, plugin_context,
-                                     'network', attrs)
+                                     'network', attrs, True,
+                                     clean_session=clean_session)
 
-    def _delete_network(self, plugin_context, network_id):
+    def _delete_network(self, plugin_context, network_id, clean_session=True):
         try:
             self._delete_resource(self._core_plugin, plugin_context,
-                                  'network', network_id)
+                                  'network', network_id,
+                                  clean_session=clean_session)
         except n_exc.NetworkNotFound:
             LOG.warning(_LW('Network %s already deleted'), network_id)
 
@@ -323,57 +348,66 @@ class LocalAPI(object):
         except l3.RouterNotFound:
             LOG.warning(_LW('Router %s already deleted'), router_id)
 
-    def _get_sg(self, plugin_context, sg_id):
+    def _get_sg(self, plugin_context, sg_id, clean_session=True):
         return self._get_resource(
-            self._core_plugin, plugin_context, 'security_group', sg_id)
+            self._core_plugin, plugin_context, 'security_group', sg_id,
+            clean_session=clean_session)
 
-    def _get_sgs(self, plugin_context, filters=None):
+    def _get_sgs(self, plugin_context, filters=None, clean_session=True):
         filters = filters or {}
         return self._get_resources(
-            self._core_plugin, plugin_context, 'security_groups', filters)
+            self._core_plugin, plugin_context, 'security_groups', filters,
+            clean_session=clean_session)
 
-    def _create_sg(self, plugin_context, attrs):
+    def _create_sg(self, plugin_context, attrs, clean_session=True):
         return self._create_resource(self._core_plugin, plugin_context,
-                                     'security_group', attrs)
+                                     'security_group', attrs,
+                                     clean_session=clean_session)
 
-    def _update_sg(self, plugin_context, sg_id, attrs):
+    def _update_sg(self, plugin_context, sg_id, attrs, clean_session=True):
         return self._update_resource(self._core_plugin, plugin_context,
-                                     'security_group', sg_id, attrs)
+                                     'security_group', sg_id, attrs,
+                                     clean_session=clean_session)
 
-    def _delete_sg(self, plugin_context, sg_id):
+    def _delete_sg(self, plugin_context, sg_id, clean_session=True):
         try:
             self._delete_resource(self._core_plugin, plugin_context,
-                                  'security_group', sg_id)
+                                  'security_group', sg_id,
+                                  clean_session=clean_session)
         except ext_sg.SecurityGroupNotFound:
             LOG.warning(_LW('Security Group %s already deleted'), sg_id)
 
-    def _get_sg_rule(self, plugin_context, sg_rule_id):
+    def _get_sg_rule(self, plugin_context, sg_rule_id, clean_session=True):
         return self._get_resource(
             self._core_plugin, plugin_context, 'security_group_rule',
-            sg_rule_id)
+            sg_rule_id, clean_session=clean_session)
 
-    def _get_sg_rules(self, plugin_context, filters=None):
+    def _get_sg_rules(self, plugin_context, filters=None, clean_session=True):
         filters = filters or {}
         return self._get_resources(
-            self._core_plugin, plugin_context, 'security_group_rules', filters)
+            self._core_plugin, plugin_context, 'security_group_rules', filters,
+            clean_session=clean_session)
 
-    def _create_sg_rule(self, plugin_context, attrs):
+    def _create_sg_rule(self, plugin_context, attrs, clean_session=True):
         try:
             return self._create_resource(self._core_plugin, plugin_context,
-                                         'security_group_rule', attrs)
+                                         'security_group_rule', attrs,
+                                         clean_session=clean_session)
         except ext_sg.SecurityGroupRuleExists as ex:
             LOG.warning(_LW('Security Group already exists %s'), ex.message)
             return
 
-    def _update_sg_rule(self, plugin_context, sg_rule_id, attrs):
+    def _update_sg_rule(self, plugin_context, sg_rule_id, attrs,
+                        clean_session=True):
         return self._update_resource(self._core_plugin, plugin_context,
                                      'security_group_rule', sg_rule_id,
-                                     attrs)
+                                     attrs, clean_session=clean_session)
 
-    def _delete_sg_rule(self, plugin_context, sg_rule_id):
+    def _delete_sg_rule(self, plugin_context, sg_rule_id, clean_session=True):
         try:
             self._delete_resource(self._core_plugin, plugin_context,
-                                  'security_group_rule', sg_rule_id)
+                                  'security_group_rule', sg_rule_id,
+                                  clean_session=clean_session)
         except ext_sg.SecurityGroupRuleNotFound:
             LOG.warning(_LW('Security Group Rule %s already deleted'),
                         sg_rule_id)
@@ -402,51 +436,65 @@ class LocalAPI(object):
         except l3.FloatingIPNotFound:
             LOG.warning(_LW('Floating IP %s Already deleted'), fip_id)
 
-    def _get_l2_policy(self, plugin_context, l2p_id):
+    def _get_l2_policy(self, plugin_context, l2p_id, clean_session=True):
         return self._get_resource(self._group_policy_plugin, plugin_context,
-                                  'l2_policy', l2p_id)
+                                  'l2_policy', l2p_id,
+                                  clean_session=clean_session)
 
-    def _get_l2_policies(self, plugin_context, filters=None):
+    def _get_l2_policies(self, plugin_context, filters=None,
+                         clean_session=True):
         filters = filters or {}
         return self._get_resources(self._group_policy_plugin, plugin_context,
-                                   'l2_policies', filters)
+                                   'l2_policies', filters,
+                                   clean_session=clean_session)
 
-    def _create_l2_policy(self, plugin_context, attrs):
+    def _create_l2_policy(self, plugin_context, attrs, clean_session=True):
         return self._create_resource(self._group_policy_plugin, plugin_context,
-                                     'l2_policy', attrs, False)
+                                     'l2_policy', attrs, False,
+                                     clean_session=clean_session)
 
-    def _update_l2_policy(self, plugin_context, l2p_id, attrs):
+    def _update_l2_policy(self, plugin_context, l2p_id, attrs,
+                          clean_session=True):
         return self._update_resource(self._group_policy_plugin, plugin_context,
-                                     'l2_policy', l2p_id, attrs, False)
+                                     'l2_policy', l2p_id, attrs, False,
+                                     clean_session=clean_session)
 
-    def _delete_l2_policy(self, plugin_context, l2p_id):
+    def _delete_l2_policy(self, plugin_context, l2p_id, clean_session=True):
         try:
             self._delete_resource(self._group_policy_plugin,
-                                  plugin_context, 'l2_policy', l2p_id, False)
+                                  plugin_context, 'l2_policy', l2p_id, False,
+                                  clean_session=clean_session)
         except gp_ext.L2PolicyNotFound:
             LOG.warning(_LW('L2 Policy %s already deleted'), l2p_id)
 
-    def _get_l3_policy(self, plugin_context, l3p_id):
+    def _get_l3_policy(self, plugin_context, l3p_id, clean_session=True):
         return self._get_resource(self._group_policy_plugin, plugin_context,
-                                  'l3_policy', l3p_id)
+                                  'l3_policy', l3p_id,
+                                  clean_session=clean_session)
 
-    def _get_l3_policies(self, plugin_context, filters=None):
+    def _get_l3_policies(self, plugin_context, filters=None,
+                         clean_session=True):
         filters = filters or {}
         return self._get_resources(self._group_policy_plugin, plugin_context,
-                                   'l3_policies', filters)
+                                   'l3_policies', filters,
+                                   clean_session=clean_session)
 
-    def _create_l3_policy(self, plugin_context, attrs):
+    def _create_l3_policy(self, plugin_context, attrs, clean_session=True):
         return self._create_resource(self._group_policy_plugin, plugin_context,
-                                     'l3_policy', attrs, False)
+                                     'l3_policy', attrs, False,
+                                     clean_session=clean_session)
 
-    def _update_l3_policy(self, plugin_context, l3p_id, attrs):
+    def _update_l3_policy(self, plugin_context, l3p_id, attrs,
+                          clean_session=True):
         return self._update_resource(self._group_policy_plugin, plugin_context,
-                                     'l3_policy', l3p_id, attrs, False)
+                                     'l3_policy', l3p_id, attrs, False,
+                                     clean_session=clean_session)
 
-    def _delete_l3_policy(self, plugin_context, l3p_id):
+    def _delete_l3_policy(self, plugin_context, l3p_id, clean_session=True):
         try:
             self._delete_resource(self._group_policy_plugin,
-                                  plugin_context, 'l3_policy', l3p_id, False)
+                                  plugin_context, 'l3_policy', l3p_id, False,
+                                  clean_session=clean_session)
         except gp_ext.L3PolicyNotFound:
             LOG.warning(_LW('L3 Policy %s already deleted'), l3p_id)
 
@@ -571,51 +619,67 @@ class LocalAPI(object):
         except sc_ext.ServiceChainSpecNotFound:
             LOG.warning(_LW("servicechain spec %s already deleted"), scs_id)
 
-    def _get_policy_target(self, plugin_context, pt_id):
+    def _get_policy_target(self, plugin_context, pt_id, clean_session=True):
         return self._get_resource(self._group_policy_plugin, plugin_context,
-                                  'policy_target', pt_id)
+                                  'policy_target', pt_id,
+                                  clean_session=clean_session)
 
-    def _get_policy_targets(self, plugin_context, filters=None):
+    def _get_policy_targets(self, plugin_context, filters=None,
+                            clean_session=True):
         filters = filters or {}
         return self._get_resources(self._group_policy_plugin, plugin_context,
-                                   'policy_targets', filters)
+                                   'policy_targets', filters,
+                                   clean_session=clean_session)
 
-    def _create_policy_target(self, plugin_context, attrs):
+    def _create_policy_target(self, plugin_context, attrs, clean_session=True):
         return self._create_resource(self._group_policy_plugin, plugin_context,
-                                     'policy_target', attrs, False)
+                                     'policy_target', attrs, False,
+                                     clean_session=clean_session)
 
-    def _update_policy_target(self, plugin_context, pt_id, attrs):
+    def _update_policy_target(self, plugin_context, pt_id, attrs,
+                              clean_session=True):
         return self._update_resource(self._group_policy_plugin, plugin_context,
-                                     'policy_target', pt_id, attrs, False)
+                                     'policy_target', pt_id, attrs, False,
+                                     clean_session=clean_session)
 
-    def _delete_policy_target(self, plugin_context, pt_id):
+    def _delete_policy_target(self, plugin_context, pt_id, clean_session=True):
         try:
             self._delete_resource(self._group_policy_plugin, plugin_context,
-                                  'policy_target', pt_id, False)
+                                  'policy_target', pt_id, False,
+                                  clean_session=clean_session)
         except gp_ext.PolicyTargetNotFound:
             LOG.warning(_LW('Policy Rule Set %s already deleted'), pt_id)
 
-    def _get_policy_target_group(self, plugin_context, ptg_id):
+    def _get_policy_target_group(self, plugin_context, ptg_id,
+                                 clean_session=True):
         return self._get_resource(self._group_policy_plugin, plugin_context,
-                                  'policy_target_group', ptg_id)
+                                  'policy_target_group', ptg_id,
+                                  clean_session=clean_session)
 
-    def _get_policy_target_groups(self, plugin_context, filters=None):
+    def _get_policy_target_groups(self, plugin_context, filters=None,
+                                  clean_session=True):
         filters = filters or {}
         return self._get_resources(self._group_policy_plugin, plugin_context,
-                                   'policy_target_groups', filters)
+                                   'policy_target_groups', filters,
+                                   clean_session=clean_session)
 
-    def _create_policy_target_group(self, plugin_context, attrs):
+    def _create_policy_target_group(self, plugin_context, attrs,
+                                    clean_session=True):
         return self._create_resource(self._group_policy_plugin, plugin_context,
-                                     'policy_target_group', attrs, False)
+                                     'policy_target_group', attrs, False,
+                                     clean_session=clean_session)
 
-    def _update_policy_target_group(self, plugin_context, ptg_id, attrs):
+    def _update_policy_target_group(self, plugin_context, ptg_id, attrs,
+                                    clean_session=True):
         return self._update_resource(self._group_policy_plugin, plugin_context,
                                      'policy_target_group', ptg_id, attrs,
-                                     False)
+                                     False, clean_session=clean_session)
 
-    def _delete_policy_target_group(self, plugin_context, ptg_id):
+    def _delete_policy_target_group(self, plugin_context, ptg_id,
+                                    clean_session=True):
         try:
             self._delete_resource(self._group_policy_plugin, plugin_context,
-                                  'policy_target_group', ptg_id)
+                                  'policy_target_group', ptg_id,
+                                  clean_session=clean_session)
         except sc_ext.ServiceChainSpecNotFound:
             LOG.warning(_LW("Policy Target Group %s already deleted"), ptg_id)
