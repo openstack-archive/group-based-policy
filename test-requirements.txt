@@ -31,3 +31,4 @@ pylint==1.4.5 # GNU GPL v2
 reno>=0.1.1 # Apache2
 
 -e git+https://github.com/noironetworks/python-opflex-agent.git@sumit/mitaka-sync#egg=python-opflexagent-agent
+-e git+https://github.com/noironetworks/aci-integration-module.git@sumit-filter-model#egg=aci-integration-module
