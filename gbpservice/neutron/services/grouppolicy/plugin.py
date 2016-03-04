@@ -619,6 +619,7 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
                               result['id'])
                 self.delete_l2_policy(context, result['id'])
 
+        result = self.get_l2_policy(context, result['id'])
         return result
 
     @log.log_method_call
@@ -641,6 +642,8 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
 
         self.policy_driver_manager.update_l2_policy_postcommit(
             policy_context)
+
+        updated_l2_policy = self.get_l2_policy(context, l2_policy_id)
         return updated_l2_policy
 
     @log.log_method_call

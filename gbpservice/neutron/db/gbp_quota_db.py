@@ -10,6 +10,7 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+import sys
 from neutron.common import exceptions as nexcp
 from neutron import context
 from neutron.db import common_db_mixin
@@ -18,17 +19,29 @@ from neutron.quota import resource as quota_resource
 
 
 QUOTA_DRIVER = driver.DbQuotaDriver
+COMMON_DB_MIXIN = common_db_mixin.CommonDbMixin()
 
 DB_CLASS_TO_RESOURCE_NAMES = {}
 
 
-class GBPQuotaBase(common_db_mixin.CommonDbMixin):
+class GBPQuotaBase(object):
 
     def __init__(self, *args, **kwargs):
         super(GBPQuotaBase, self).__init__(*args, **kwargs)
 
         tenant_id = kwargs['tenant_id']
-        ctx = context.Context(user_id=None, tenant_id=tenant_id)
+        i = 1
+        not_found = True
+        try:
+            while not_found:
+                for val in sys._getframe(i).f_locals.itervalues():
+                    if isinstance(val, context.Context):
+                        ctx = val
+                        not_found = False
+                        break
+                i = i + 1
+        except:
+            raise Exception
         class_name = self.__class__.__name__
         resource = DB_CLASS_TO_RESOURCE_NAMES[class_name]
         d = {resource: quota_resource.CountableResource(resource, None,
@@ -37,6 +50,6 @@ class GBPQuotaBase(common_db_mixin.CommonDbMixin):
                                                         tenant_id)[resource]
         if resource_quota == -1:
             return
-        count = self._get_collection_count(ctx, self.__class__)
+        count = COMMON_DB_MIXIN._get_collection_count(ctx, self.__class__)
         if count >= resource_quota:
             raise nexcp.OverQuota(overs=[resource])
