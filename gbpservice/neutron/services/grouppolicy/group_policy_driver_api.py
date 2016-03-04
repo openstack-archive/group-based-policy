@@ -1260,6 +1260,23 @@ class PolicyDriver(object):
         """
         pass
 
+    # REVISIT(rkukura): Is this needed for all operations, or just for
+    # create operations? If its needed for all operations, should the
+    # method be specific to the resource and operation, and include
+    # the request data (i.e. update_network_pretransaction(self,
+    # data))?
+    def ensure_tenant(self, plugin_context, tenant_id):
+        """Ensure tenant known before creating resource.
+
+        :param plugin_context: Plugin request context.
+        :param tenant_id: Tenant owning resource about to be created.
+
+        Called before the start of a transaction creating any new core
+        resource, allowing any needed tenant-specific processing to be
+        performed.
+        """
+        pass
+
 
 @six.add_metaclass(abc.ABCMeta)
 class ExtensionDriver(object):
