@@ -156,6 +156,16 @@ class GroupPolicyMappingDbPlugin(gpdb.GroupPolicyDbPlugin):
             for assoc in assocs:
                 context.session.delete(assoc)
 
+    def _remove_subnets_from_policy_target_group(self, context, ptg_id):
+        with context.session.begin(subtransactions=True):
+            ptg_db = self._get_policy_target_group(context, ptg_id)
+            assocs = (context.session.query(PTGToSubnetAssociation).
+                      filter_by(policy_target_group_id=ptg_id).all())
+            ptg_db.update({'subnets': []})
+            for assoc in assocs:
+                context.session.delete(assoc)
+        return []
+
     def _set_network_for_l2_policy(self, context, l2p_id, network_id):
         with context.session.begin(subtransactions=True):
             l2p_db = self._get_l2_policy(context, l2p_id)
