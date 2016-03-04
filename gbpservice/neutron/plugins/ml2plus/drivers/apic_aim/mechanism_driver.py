@@ -17,6 +17,7 @@ from aim import aim_manager
 from aim.api import resource as aim_resource
 from aim import context as aim_context
 from keystoneclient.v2_0 import client as keyclient
+from neutron._i18n import _LE
 from neutron._i18n import _LI
 from neutron.db import models_v2
 from oslo_config import cfg
@@ -61,6 +62,10 @@ class ApicMechanismDriver(driver_api.MechanismDriver):
 
         ap = aim_resource.ApplicationProfile(tenant_name=str(tenant_name),
                                              name=AP_NAME)
+
+        LOG.error(_LE("App profile tenant_name %(name)s, app_prof %(ap)s"),
+                  {'name': tenant_name, 'ap': AP_NAME})
+
         if not self.aim.get(aim_ctx, ap):
             self.aim.create(aim_ctx, ap)
 
