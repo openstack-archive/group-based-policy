@@ -480,6 +480,7 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
                               result['id'])
                 self.delete_policy_target(context, result['id'])
 
+        result = self.get_policy_target(context, result['id'])
         # Strip the extra port attributes
         result.pop('port_attributes', None)
         return result
@@ -569,6 +570,7 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
                               result['id'])
                 self.delete_policy_target_group(context, result['id'])
 
+        result = self.get_policy_target_group(context, result['id'])
         return result
 
     @log.log_method_call
@@ -608,6 +610,8 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
         self.policy_driver_manager.update_policy_target_group_postcommit(
             policy_context)
 
+        updated_policy_target_group = self.get_policy_target_group(
+            context, policy_target_group_id)
         return updated_policy_target_group
 
     @log.log_method_call
@@ -704,6 +708,7 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
                               result['id'])
                 self.delete_l2_policy(context, result['id'])
 
+        result = self.get_l2_policy(context, result['id'])
         return result
 
     @log.log_method_call
@@ -726,6 +731,8 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
 
         self.policy_driver_manager.update_l2_policy_postcommit(
             policy_context)
+
+        updated_l2_policy = self.get_l2_policy(context, l2_policy_id)
         return updated_l2_policy
 
     @log.log_method_call
@@ -790,6 +797,7 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
                     result['id'])
                 self.delete_network_service_policy(context, result['id'])
 
+        result = self.get_network_service_policy(context, result['id'])
         return result
 
     @log.log_method_call
@@ -883,6 +891,7 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
                               result['id'])
                 self.delete_l3_policy(context, result['id'])
 
+        result = self.get_l3_policy(context, result['id'])
         return result
 
     @log.log_method_call
@@ -974,6 +983,7 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
                     " failed, deleting policy_classifier %s"), result['id'])
                 self.delete_policy_classifier(context, result['id'])
 
+        result = self.get_policy_classifier(context, result['id'])
         return result
 
     @log.log_method_call
@@ -1061,6 +1071,7 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
                     "failed, deleting policy_action %s"), result['id'])
                 self.delete_policy_action(context, result['id'])
 
+        result = self.get_policy_action(context, result['id'])
         return result
 
     @log.log_method_call
@@ -1146,6 +1157,7 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
                     " failed, deleting policy_rule %s"), result['id'])
                 self.delete_policy_rule(context, result['id'])
 
+        result = self.get_policy_rule(context, result['id'])
         return result
 
     @log.log_method_call
@@ -1231,6 +1243,7 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
                     "failed, deleting policy_rule_set %s"), result['id'])
                 self.delete_policy_rule_set(context, result['id'])
 
+        result = self.get_policy_rule_set(context, result['id'])
         return result
 
     @log.log_method_call
@@ -1319,6 +1332,7 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
                                   "%s"), result['id'])
                 self.delete_external_segment(context, result['id'])
 
+        result = self.get_external_segment(context, result['id'])
         return result
 
     @log.log_method_call
@@ -1415,6 +1429,7 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
                                   "%s"), result['id'])
                 self.delete_external_policy(context, result['id'])
 
+        result = self.get_external_policy(context, result['id'])
         return result
 
     @log.log_method_call
@@ -1502,6 +1517,7 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
                     "nat_pool %s"), result['id'])
                 self.delete_nat_pool(context, result['id'])
 
+        result = self.get_nat_pool(context, result['id'])
         return result
 
     @log.log_method_call
