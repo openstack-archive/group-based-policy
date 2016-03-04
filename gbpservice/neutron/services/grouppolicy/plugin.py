@@ -480,9 +480,7 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
                               result['id'])
                 self.delete_policy_target(context, result['id'])
 
-        # Strip the extra port attributes
-        result.pop('port_attributes', None)
-        return result
+        return self.get_policy_target(context, result['id'])
 
     @log.log_method_call
     def update_policy_target(self, context, policy_target_id, policy_target):
@@ -507,7 +505,7 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
 
         self.policy_driver_manager.update_policy_target_postcommit(
             policy_context)
-        return updated_policy_target
+        return self.get_policy_target(context, policy_target_id)
 
     @log.log_method_call
     def delete_policy_target(self, context, policy_target_id):
@@ -569,7 +567,7 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
                               result['id'])
                 self.delete_policy_target_group(context, result['id'])
 
-        return result
+        return self.get_policy_target_group(context, result['id'])
 
     @log.log_method_call
     def update_policy_target_group(self, context, policy_target_group_id,
@@ -608,7 +606,7 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
         self.policy_driver_manager.update_policy_target_group_postcommit(
             policy_context)
 
-        return updated_policy_target_group
+        return self.get_policy_target_group(context, policy_target_group_id)
 
     @log.log_method_call
     def delete_policy_target_group(self, context, policy_target_group_id):
@@ -704,7 +702,7 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
                               result['id'])
                 self.delete_l2_policy(context, result['id'])
 
-        return result
+        return self.get_l2_policy(context, result['id'])
 
     @log.log_method_call
     def update_l2_policy(self, context, l2_policy_id, l2_policy):
@@ -726,7 +724,8 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
 
         self.policy_driver_manager.update_l2_policy_postcommit(
             policy_context)
-        return updated_l2_policy
+
+        return self.get_l2_policy(context, l2_policy_id)
 
     @log.log_method_call
     def delete_l2_policy(self, context, l2_policy_id):
@@ -790,7 +789,7 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
                     result['id'])
                 self.delete_network_service_policy(context, result['id'])
 
-        return result
+        return self.get_network_service_policy(context, result['id'])
 
     @log.log_method_call
     def update_network_service_policy(self, context, network_service_policy_id,
@@ -818,7 +817,8 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
 
         self.policy_driver_manager.update_network_service_policy_postcommit(
             policy_context)
-        return updated_network_service_policy
+        return self.get_network_service_policy(context,
+                                               network_service_policy_id)
 
     @log.log_method_call
     def delete_network_service_policy(
@@ -883,7 +883,7 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
                               result['id'])
                 self.delete_l3_policy(context, result['id'])
 
-        return result
+        return self.get_l3_policy(context, result['id'])
 
     @log.log_method_call
     def update_l3_policy(self, context, l3_policy_id, l3_policy):
@@ -907,7 +907,7 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
 
         self.policy_driver_manager.update_l3_policy_postcommit(
             policy_context)
-        return updated_l3_policy
+        return self.get_l3_policy(context, l3_policy_id)
 
     @log.log_method_call
     def delete_l3_policy(self, context, l3_policy_id, check_unused=False):
@@ -974,7 +974,7 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
                     " failed, deleting policy_classifier %s"), result['id'])
                 self.delete_policy_classifier(context, result['id'])
 
-        return result
+        return self.get_policy_classifier(context, result['id'])
 
     @log.log_method_call
     def update_policy_classifier(self, context, id, policy_classifier):
@@ -998,7 +998,7 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
 
         self.policy_driver_manager.update_policy_classifier_postcommit(
             policy_context)
-        return updated_policy_classifier
+        return self.get_policy_classifier(context, id)
 
     @log.log_method_call
     def delete_policy_classifier(self, context, id):
@@ -1061,7 +1061,7 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
                     "failed, deleting policy_action %s"), result['id'])
                 self.delete_policy_action(context, result['id'])
 
-        return result
+        return self.get_policy_action(context, result['id'])
 
     @log.log_method_call
     def update_policy_action(self, context, id, policy_action):
@@ -1086,7 +1086,7 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
 
         self.policy_driver_manager.update_policy_action_postcommit(
             policy_context)
-        return updated_policy_action
+        return self.get_policy_action(context, id)
 
     @log.log_method_call
     def delete_policy_action(self, context, id):
@@ -1146,7 +1146,7 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
                     " failed, deleting policy_rule %s"), result['id'])
                 self.delete_policy_rule(context, result['id'])
 
-        return result
+        return self.get_policy_rule(context, result['id'])
 
     @log.log_method_call
     def update_policy_rule(self, context, id, policy_rule):
@@ -1169,7 +1169,7 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
 
         self.policy_driver_manager.update_policy_rule_postcommit(
             policy_context)
-        return updated_policy_rule
+        return self.get_policy_rule(context, id)
 
     @log.log_method_call
     def delete_policy_rule(self, context, id):
@@ -1231,7 +1231,7 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
                     "failed, deleting policy_rule_set %s"), result['id'])
                 self.delete_policy_rule_set(context, result['id'])
 
-        return result
+        return self.get_policy_rule_set(context, result['id'])
 
     @log.log_method_call
     def update_policy_rule_set(self, context, id, policy_rule_set):
@@ -1255,7 +1255,7 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
 
         self.policy_driver_manager.update_policy_rule_set_postcommit(
             policy_context)
-        return updated_policy_rule_set
+        return self.get_policy_rule_set(context, id)
 
     @log.log_method_call
     def delete_policy_rule_set(self, context, id):
@@ -1319,7 +1319,7 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
                                   "%s"), result['id'])
                 self.delete_external_segment(context, result['id'])
 
-        return result
+        return self.get_external_segment(context, result['id'])
 
     @log.log_method_call
     def update_external_segment(self, context, external_segment_id,
@@ -1349,7 +1349,7 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
 
         self.policy_driver_manager.update_external_segment_postcommit(
             policy_context)
-        return updated_external_segment
+        return self.get_external_segment(context, external_segment_id)
 
     @log.log_method_call
     def delete_external_segment(self, context, external_segment_id):
@@ -1415,7 +1415,7 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
                                   "%s"), result['id'])
                 self.delete_external_policy(context, result['id'])
 
-        return result
+        return self.get_external_policy(context, result['id'])
 
     @log.log_method_call
     def update_external_policy(self, context, external_policy_id,
@@ -1442,7 +1442,7 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
 
         self.policy_driver_manager.update_external_policy_postcommit(
             policy_context)
-        return updated_external_policy
+        return self.get_external_policy(context, external_policy_id)
 
     @log.log_method_call
     def delete_external_policy(self, context, external_policy_id,
@@ -1502,7 +1502,7 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
                     "nat_pool %s"), result['id'])
                 self.delete_nat_pool(context, result['id'])
 
-        return result
+        return self.get_nat_pool(context, result['id'])
 
     @log.log_method_call
     def update_nat_pool(self, context, nat_pool_id, nat_pool):
@@ -1523,7 +1523,7 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
              update_nat_pool_precommit(policy_context))
 
         self.policy_driver_manager.update_nat_pool_postcommit(policy_context)
-        return updated_nat_pool
+        return self.get_nat_pool(context, nat_pool_id)
 
     @log.log_method_call
     def delete_nat_pool(self, context, nat_pool_id, check_unused=False):
