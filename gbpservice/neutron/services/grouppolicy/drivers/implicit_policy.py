@@ -78,14 +78,7 @@ class OwnedL3Policy(model_base.BASEV2):
                              nullable=False, primary_key=True)
 
 
-class ImplicitPolicyDriver(api.PolicyDriver, local_api.LocalAPI):
-    """Implicit Policy driver for Group Policy plugin.
-
-    This driver ensures that the l2_policy_id attribute of
-    PolicyTargetGroup references an L2Policy instance and that the
-    l3_policy_id attribute of L2Policy references an L3Policy instance
-    when the default value of None is specified.
-    """
+class ImplicitPolicyBase(api.PolicyDriver, local_api.LocalAPI):
 
     @log.log_method_call
     def initialize(self):
@@ -102,6 +95,135 @@ class ImplicitPolicyDriver(api.PolicyDriver, local_api.LocalAPI):
         self._default_proxy_subnet_prefix_length = (
             gpproxy.default_proxy_subnet_prefix_length)
         self._default_es_name = gpip.default_external_segment_name
+
+    def _create_implicit_l3_policy(self, context, clean_session=True):
+        tenant_id = context.current['tenant_id']
+        filter = {'tenant_id': [tenant_id],
+                  'name': [self._default_l3p_name]}
+        l3ps = self._get_l3_policies(context._plugin_context, filter,
+                                     clean_session)
+        l3p = l3ps and l3ps[0]
+        if not l3p:
+            attrs = {'tenant_id': tenant_id,
+                     'name': self._default_l3p_name,
+                     'description': _("Implicitly created L3 policy"),
+                     'ip_version': self._default_ip_version,
+                     'ip_pool': self._default_ip_pool,
+                     'shared': context.current.get('shared', False),
+                     'subnet_prefix_length':
+                     self._default_subnet_prefix_length}
+            if self._proxy_group_enabled:
+                attrs['proxy_ip_pool'] = (
+                    self._default_proxy_ip_pool)
+                attrs['proxy_subnet_prefix_length'] = (
+                    self._default_proxy_subnet_prefix_length)
+            try:
+                l3p = self._create_l3_policy(context._plugin_context, attrs,
+                                             clean_session)
+                self._mark_l3_policy_owned(context._plugin_context.session,
+                                           l3p['id'])
+            except exc.DefaultL3PolicyAlreadyExists:
+                with excutils.save_and_reraise_exception(
+                        reraise=False) as ctxt:
+                    LOG.debug("Possible concurrent creation of default L3 "
+                              "policy for tenant %s", tenant_id)
+                    l3ps = self._get_l3_policies(context._plugin_context,
+                                                 filter, clean_session)
+                    l3p = l3ps and l3ps[0]
+                    if not l3p:
+                        LOG.warning(_LW(
+                            "Caught DefaultL3PolicyAlreadyExists, "
+                            "but default L3 policy not concurrently "
+                            "created for tenant %s"), tenant_id)
+                        ctxt.reraise = True
+            except exc.OverlappingIPPoolsInSameTenantNotAllowed:
+                with excutils.save_and_reraise_exception():
+                    LOG.info(_LI("Caught "
+                                 "OverlappingIPPoolsinSameTenantNotAllowed "
+                                 "during creation of default L3 policy for "
+                                 "tenant %s"), tenant_id)
+        context.current['l3_policy_id'] = l3p['id']
+
+    def _use_implicit_l3_policy(self, context):
+        self._create_implicit_l3_policy(context)
+        context.set_l3_policy_id(context.current['l3_policy_id'])
+
+    def _create_implicit_l2_policy(self, context, clean_session=True):
+        attrs = {'tenant_id': context.current['tenant_id'],
+                 'name': context.current['name'],
+                 'description': _("Implicitly created L2 policy"),
+                 'l3_policy_id': None,
+                 'shared': context.current.get('shared', False),
+                 'network_id': None}
+        if context.current.get('proxied_group_id'):
+            # The L3P has to be the same as the proxied group
+            group = context._plugin.get_policy_target_group(
+                context._plugin_context, context.current['proxied_group_id'])
+            l2p = context._plugin.get_l2_policy(
+                context._plugin_context, group['l2_policy_id'])
+            attrs['l3_policy_id'] = l2p['l3_policy_id']
+
+        l2p = self._create_l2_policy(context._plugin_context, attrs,
+                                     clean_session)
+        context.current['l2_policy_id'] = l2p['id']
+        self._mark_l2_policy_owned(context._plugin_context.session, l2p['id'])
+
+    def _use_implicit_l2_policy(self, context):
+        self._create_implicit_l2_policy(context)
+        context.set_l2_policy_id(context.current['l2_policy_id'])
+
+    def _mark_l2_policy_owned(self, session, l2p_id):
+        with session.begin(subtransactions=True):
+            owned = OwnedL2Policy(l2_policy_id=l2p_id)
+            session.add(owned)
+
+    def _l2_policy_is_owned(self, session, l2p_id):
+        with session.begin(subtransactions=True):
+            return (session.query(OwnedL2Policy).
+                    filter_by(l2_policy_id=l2p_id).
+                    first() is not None)
+
+    def _mark_l3_policy_owned(self, session, l3p_id):
+        with session.begin(subtransactions=True):
+            owned = OwnedL3Policy(l3_policy_id=l3p_id)
+            session.add(owned)
+
+    def _l3_policy_is_owned(self, session, l3p_id):
+        with session.begin(subtransactions=True):
+            return (session.query(OwnedL3Policy).
+                    filter_by(l3_policy_id=l3p_id).
+                    first() is not None)
+
+    def _cleanup_l3_policy(self, context, l3p_id, clean_session=True):
+        if self._l3_policy_is_owned(context._plugin_context.session, l3p_id):
+            # REVISIT(rkukura): Add check_unused parameter to
+            # local_api._delete_l3_policy()?
+            context._plugin.delete_l3_policy(context._plugin_context, l3p_id,
+                                             check_unused=True)
+
+    def _cleanup_l2_policy(self, context, l2p_id, clean_session=True):
+        if self._l2_policy_is_owned(context._plugin_context.session, l2p_id):
+            try:
+                self._delete_l2_policy(context._plugin_context, l2p_id,
+                                       clean_session)
+            except gbp_ext.L2PolicyInUse:
+                LOG.info(_LI(
+                    "Cannot delete implicit L2 Policy %s because it's "
+                    "in use."), l2p_id)
+
+
+class ImplicitPolicyDriver(ImplicitPolicyBase):
+    """Implicit Policy driver for Group Policy plugin.
+
+    This driver ensures that the l2_policy_id attribute of
+    PolicyTargetGroup references an L2Policy instance and that the
+    l3_policy_id attribute of L2Policy references an L3Policy instance
+    when the default value of None is specified.
+    """
+
+    @log.log_method_call
+    def initialize(self):
+        super(ImplicitPolicyDriver, self).initialize()
 
     @log.log_method_call
     def create_policy_target_group_postcommit(self, context):
@@ -184,82 +306,6 @@ class ImplicitPolicyDriver(api.PolicyDriver, local_api.LocalAPI):
     def update_l3_policy_postcommit(self, context):
         pass
 
-    def _use_implicit_l2_policy(self, context):
-        attrs = {'tenant_id': context.current['tenant_id'],
-                 'name': context.current['name'],
-                 'description': _("Implicitly created L2 policy"),
-                 'l3_policy_id': None,
-                 'shared': context.current.get('shared', False),
-                 'network_id': None}
-        if context.current.get('proxied_group_id'):
-            # The L3P has to be the same as the proxied group
-            group = context._plugin.get_policy_target_group(
-                context._plugin_context, context.current['proxied_group_id'])
-            l2p = context._plugin.get_l2_policy(
-                context._plugin_context, group['l2_policy_id'])
-            attrs['l3_policy_id'] = l2p['l3_policy_id']
-
-        l2p = self._create_l2_policy(context._plugin_context, attrs)
-        l2p_id = l2p['id']
-        self._mark_l2_policy_owned(context._plugin_context.session, l2p_id)
-        context.set_l2_policy_id(l2p_id)
-
-    def _cleanup_l2_policy(self, context, l2p_id):
-        if self._l2_policy_is_owned(context._plugin_context.session, l2p_id):
-            try:
-                self._delete_l2_policy(context._plugin_context, l2p_id)
-            except gbp_ext.L2PolicyInUse:
-                LOG.info(_LI(
-                    "Cannot delete implicit L2 Policy %s because it's "
-                    "in use."), l2p_id)
-
-    def _use_implicit_l3_policy(self, context):
-        tenant_id = context.current['tenant_id']
-        filter = {'tenant_id': [tenant_id],
-                  'name': [self._default_l3p_name]}
-        l3ps = self._get_l3_policies(context._plugin_context, filter)
-        l3p = l3ps and l3ps[0]
-        if not l3p:
-            attrs = {'tenant_id': tenant_id,
-                     'name': self._default_l3p_name,
-                     'description': _("Implicitly created L3 policy"),
-                     'ip_version': self._default_ip_version,
-                     'ip_pool': self._default_ip_pool,
-                     'shared': context.current.get('shared', False),
-                     'subnet_prefix_length':
-                     self._default_subnet_prefix_length}
-            if self._proxy_group_enabled:
-                attrs['proxy_ip_pool'] = (
-                    self._default_proxy_ip_pool)
-                attrs['proxy_subnet_prefix_length'] = (
-                    self._default_proxy_subnet_prefix_length)
-            try:
-                l3p = self._create_l3_policy(context._plugin_context, attrs)
-                self._mark_l3_policy_owned(context._plugin_context.session,
-                                           l3p['id'])
-            except exc.DefaultL3PolicyAlreadyExists:
-                with excutils.save_and_reraise_exception(
-                        reraise=False) as ctxt:
-                    LOG.debug("Possible concurrent creation of default L3 "
-                              "policy for tenant %s", tenant_id)
-                    l3ps = self._get_l3_policies(context._plugin_context,
-                                                 filter)
-                    l3p = l3ps and l3ps[0]
-                    if not l3p:
-                        LOG.warning(_LW(
-                            "Caught DefaultL3PolicyAlreadyExists, "
-                            "but default L3 policy not concurrently "
-                            "created for tenant %s"), tenant_id)
-                        ctxt.reraise = True
-            except exc.OverlappingIPPoolsInSameTenantNotAllowed:
-                with excutils.save_and_reraise_exception():
-                    LOG.info(_LI("Caught "
-                                 "OverlappingIPPoolsinSameTenantNotAllowed "
-                                 "during creation of default L3 policy for "
-                                 "tenant %s"), tenant_id)
-        context.current['l3_policy_id'] = l3p['id']
-        context.set_l3_policy_id(l3p['id'])
-
     def _use_implicit_external_segment(self, context):
         if not self._default_es_name:
             return
@@ -278,32 +324,3 @@ class ImplicitPolicyDriver(api.PolicyDriver, local_api.LocalAPI):
         if default:
             # Set default ES
             context.set_external_segment(default['id'])
-
-    def _cleanup_l3_policy(self, context, l3p_id):
-        if self._l3_policy_is_owned(context._plugin_context.session, l3p_id):
-            # REVISIT(rkukura): Add check_unused parameter to
-            # local_api._delete_l3_policy()?
-            context._plugin.delete_l3_policy(context._plugin_context, l3p_id,
-                                             check_unused=True)
-
-    def _mark_l2_policy_owned(self, session, l2p_id):
-        with session.begin(subtransactions=True):
-            owned = OwnedL2Policy(l2_policy_id=l2p_id)
-            session.add(owned)
-
-    def _l2_policy_is_owned(self, session, l2p_id):
-        with session.begin(subtransactions=True):
-            return (session.query(OwnedL2Policy).
-                    filter_by(l2_policy_id=l2p_id).
-                    first() is not None)
-
-    def _mark_l3_policy_owned(self, session, l3p_id):
-        with session.begin(subtransactions=True):
-            owned = OwnedL3Policy(l3_policy_id=l3p_id)
-            session.add(owned)
-
-    def _l3_policy_is_owned(self, session, l3p_id):
-        with session.begin(subtransactions=True):
-            return (session.query(OwnedL3Policy).
-                    filter_by(l3_policy_id=l3p_id).
-                    first() is not None)
