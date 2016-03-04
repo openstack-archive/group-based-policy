@@ -110,8 +110,328 @@ class CidrInUse(exc.GroupPolicyInternalError):
     message = _("CIDR %(cidr)s in-use within L3 policy %(l3p_id)s")
 
 
-class ResourceMappingDriver(api.PolicyDriver, local_api.LocalAPI,
-                            nsp_manager.NetworkServicePolicyMappingMixin):
+class OwnedResourcesOperations(object):
+
+    def _mark_port_owned(self, session, port_id):
+        with session.begin(subtransactions=True):
+            owned = OwnedPort(port_id=port_id)
+            session.add(owned)
+
+    def _port_is_owned(self, session, port_id):
+        with session.begin(subtransactions=True):
+            return (session.query(OwnedPort).
+                    filter_by(port_id=port_id).
+                    first() is not None)
+
+    def _mark_subnet_owned(self, session, subnet_id):
+        with session.begin(subtransactions=True):
+            owned = OwnedSubnet(subnet_id=subnet_id)
+            session.add(owned)
+
+    def _subnet_is_owned(self, session, subnet_id):
+        with session.begin(subtransactions=True):
+            return (session.query(OwnedSubnet).
+                    filter_by(subnet_id=subnet_id).
+                    first() is not None)
+
+    def _mark_network_owned(self, session, network_id):
+        with session.begin(subtransactions=True):
+            owned = OwnedNetwork(network_id=network_id)
+            session.add(owned)
+
+    def _network_is_owned(self, session, network_id):
+        with session.begin(subtransactions=True):
+            return (session.query(OwnedNetwork).
+                    filter_by(network_id=network_id).
+                    first() is not None)
+
+    def _mark_router_owned(self, session, router_id):
+        with session.begin(subtransactions=True):
+            owned = OwnedRouter(router_id=router_id)
+            session.add(owned)
+
+    def _router_is_owned(self, session, router_id):
+        with session.begin(subtransactions=True):
+            return (session.query(OwnedRouter).
+                    filter_by(router_id=router_id).
+                    first() is not None)
+
+
+class ImplicitResourceOperations(local_api.LocalAPI):
+
+    def _create_implicit_network(self, context, clean_session=True, **kwargs):
+        attrs = {'tenant_id': context.current['tenant_id'],
+                 'name': context.current['name'], 'admin_state_up': True,
+                 'shared': context.current.get('shared', False)}
+        attrs.update(**kwargs)
+        network = self._create_network(context._plugin_context, attrs,
+                                       clean_session)
+        network_id = network['id']
+        self._mark_network_owned(context._plugin_context.session, network_id)
+        return network
+
+    def _use_implicit_network(self, context, clean_session=True):
+        network = self._create_implicit_network(
+            context, clean_session, name='l2p_' + context.current['name'])
+        context.set_network_id(network['id'])
+
+    def _cleanup_network(self, plugin_context, network_id, clean_session=True):
+        if self._network_is_owned(plugin_context.session, network_id):
+            self._delete_network(plugin_context, network_id, clean_session)
+
+    def _generate_subnets_from_cidrs(self, context, l2p, l3p, cidrs,
+                                     subnet_specifics, clean_session=True):
+        for usable_cidr in cidrs:
+            try:
+                attrs = {'tenant_id': context.current['tenant_id'],
+                         'name': 'ptg_' + context.current['name'],
+                         'network_id': l2p['network_id'],
+                         'ip_version': l3p['ip_version'],
+                         'cidr': usable_cidr,
+                         'enable_dhcp': True,
+                         'gateway_ip': attributes.ATTR_NOT_SPECIFIED,
+                         'allocation_pools': attributes.ATTR_NOT_SPECIFIED,
+                         'dns_nameservers': (
+                             cfg.CONF.resource_mapping.dns_nameservers or
+                             attributes.ATTR_NOT_SPECIFIED),
+                         'host_routes': attributes.ATTR_NOT_SPECIFIED}
+                attrs.update(subnet_specifics)
+                subnet = self._create_subnet(
+                    context._plugin_context, attrs,
+                    clean_session=clean_session)
+                yield subnet
+            except n_exc.BadRequest:
+                # This is expected (CIDR overlap within network) until
+                # we have a proper subnet allocation algorithm. We
+                # ignore the exception and repeat with the next CIDR.
+                pass
+
+    def _get_ptg_cidrs(self, context, ptgs, ptg_dicts=None,
+                       clean_session=True):
+        cidrs = []
+        if ptg_dicts:
+            ptgs = ptg_dicts
+        else:
+            ptgs = context._plugin.get_policy_target_groups(
+                context._plugin_context.elevated(), filters={'id': ptgs})
+        subnets = []
+        for ptg in ptgs:
+            subnets.extend(ptg['subnets'])
+
+        if subnets:
+            cidrs = [x['cidr'] for x in self._get_subnets(
+                context._plugin_context.elevated(), {'id': subnets},
+                clean_session=clean_session)]
+        return cidrs
+
+    def _get_l3p_allocated_subnets(self, context, l3p_id, clean_session=True):
+        ptgs = context._plugin._get_l3p_ptgs(
+            context._plugin_context.elevated(), l3p_id)
+        return self._get_ptg_cidrs(context, None, ptg_dicts=ptgs,
+                                   clean_session=clean_session)
+
+    def _validate_and_add_subnet(self, context, subnet, l3p_id,
+                                 clean_session=True):
+        subnet_id = subnet['id']
+        session = context._plugin_context.session
+        with utils.clean_session(session) if clean_session else (
+            local_api.dummy_context_mgr()):
+            with session.begin(subtransactions=True):
+                LOG.debug("starting validate_and_add_subnet transaction for "
+                          "subnet %s", subnet_id)
+                ptgs = context._plugin._get_l3p_ptgs(
+                    context._plugin_context.elevated(), l3p_id)
+                allocated = netaddr.IPSet(
+                    iterable=self._get_ptg_cidrs(context, None,
+                                                 ptg_dicts=ptgs,
+                                                 clean_session=clean_session))
+                cidr = subnet['cidr']
+                if cidr in allocated:
+                    LOG.debug("CIDR %s in-use for L3P %s, allocated: %s",
+                              cidr, l3p_id, allocated)
+                    raise CidrInUse(cidr=cidr, l3p_id=l3p_id)
+                context.add_subnet(subnet_id)
+                LOG.debug("ending validate_and_add_subnet transaction for "
+                          "subnet %s", subnet_id)
+
+    def _use_l2_proxy_implicit_subnets(self, context,
+                                       subnet_specifics, l2p, l3p,
+                                       clean_session=True):
+        LOG.debug("allocate subnets for L2 Proxy %s",
+                  context.current['id'])
+        proxied = context._plugin.get_policy_target_group(
+            context._plugin_context, context.current['proxied_group_id'])
+        subnets = self._get_subnets(context._plugin_context,
+                                    {'id': proxied['subnets']},
+                                    clean_session=clean_session)
+        # Use the same subnets as the Proxied PTG
+        generator = self._generate_subnets_from_cidrs(
+            context, l2p, l3p, [x['cidr'] for x in subnets],
+            subnet_specifics, clean_session=clean_session)
+        # Unroll the generator
+        subnets = [x for x in generator]
+        subnet_ids = [x['id'] for x in subnets]
+        for subnet_id in subnet_ids:
+            self._mark_subnet_owned(
+                context._plugin_context.session, subnet_id)
+            context.add_subnet(subnet_id)
+        return subnets
+
+    def _use_normal_implicit_subnet(self, context, is_proxy, prefix_len,
+                                    subnet_specifics, l2p, l3p,
+                                    clean_session=True):
+        LOG.debug("allocate subnets for L3 Proxy or normal PTG %s",
+                  context.current['id'])
+
+        # REVISIT(rkukura): The folowing is a temporary allocation
+        # algorithm that should be replaced with use of a neutron
+        # subnet pool.
+
+        pool = netaddr.IPSet(
+            iterable=[l3p['proxy_ip_pool'] if is_proxy else
+                      l3p['ip_pool']])
+        prefixlen = prefix_len or (
+            l3p['proxy_subnet_prefix_length'] if is_proxy
+            else l3p['subnet_prefix_length'])
+        l3p_id = l3p['id']
+        allocated = netaddr.IPSet(
+            iterable=self._get_l3p_allocated_subnets(
+                context, l3p_id, clean_session=clean_session))
+        available = pool - allocated
+        available.compact()
+
+        for cidr in sorted(available.iter_cidrs(),
+                           key=operator.attrgetter('prefixlen'),
+                           reverse=True):
+            if prefixlen < cidr.prefixlen:
+                # Close the loop, no remaining subnet is big enough
+                # for this allocation
+                break
+            generator = self._generate_subnets_from_cidrs(
+                context, l2p, l3p, cidr.subnet(prefixlen),
+                subnet_specifics, clean_session=clean_session)
+            for subnet in generator:
+                LOG.debug("Trying subnet %s for PTG %s", subnet,
+                          context.current['id'])
+                subnet_id = subnet['id']
+                try:
+                    self._mark_subnet_owned(context._plugin_context.session,
+                                            subnet_id)
+                    self._validate_and_add_subnet(context, subnet, l3p_id,
+                                                  clean_session=clean_session)
+                    LOG.debug("Using subnet %s for PTG %s", subnet,
+                              context.current['id'])
+                    return [subnet]
+                except CidrInUse:
+                    # This exception is expected when a concurrent
+                    # request has beat this one to calling
+                    # _validate_and_add_subnet() using the same
+                    # available CIDR. We delete the subnet and try the
+                    # next available CIDR.
+                    self._delete_subnet(context._plugin_context,
+                                        subnet['id'],
+                                        clean_session=clean_session)
+                except n_exc.InvalidInput:
+                    # This exception is not expected. We catch this
+                    # here so that it isn't caught below and handled
+                    # as if the CIDR is already in use.
+                    self._delete_subnet(context._plugin_context,
+                                        subnet['id'],
+                                        clean_session=clean_session)
+                    raise exc.GroupPolicyInternalError()
+        raise exc.NoSubnetAvailable()
+
+    def _use_implicit_subnet(self, context, is_proxy=False, prefix_len=None,
+                             subnet_specifics=None, clean_session=True):
+        subnet_specifics = subnet_specifics or {}
+        l2p_id = context.current['l2_policy_id']
+        l2p = context._plugin.get_l2_policy(context._plugin_context, l2p_id)
+        l3p_id = l2p['l3_policy_id']
+        l3p = context._plugin.get_l3_policy(context._plugin_context, l3p_id)
+        if (is_proxy and
+                context.current['proxy_type'] == proxy_ext.PROXY_TYPE_L2):
+            # In case of L2 proxy
+            return self._use_l2_proxy_implicit_subnets(
+                context, subnet_specifics, l2p, l3p,
+                clean_session=clean_session)
+        else:
+            # In case of non proxy PTG or L3 Proxy
+            return self._use_normal_implicit_subnet(
+                context, is_proxy, prefix_len, subnet_specifics, l2p, l3p,
+                clean_session=clean_session)
+
+    def _cleanup_subnet(self, plugin_context, subnet_id, router_id=None,
+                        clean_session=True):
+        interface_info = {'subnet_id': subnet_id}
+        if router_id:
+            try:
+                self._remove_router_interface(plugin_context, router_id,
+                                              interface_info)
+            except ext_l3.RouterInterfaceNotFoundForSubnet:
+                LOG.debug("Ignoring RouterInterfaceNotFoundForSubnet cleaning "
+                          "up subnet: %s", subnet_id)
+        if self._subnet_is_owned(plugin_context.session, subnet_id):
+            self._delete_subnet(plugin_context, subnet_id,
+                                clean_session=clean_session)
+
+    def _get_default_security_group(self, plugin_context, ptg_id,
+                                    tenant_id, clean_session=True):
+        port_name = DEFAULT_SG_PREFIX % ptg_id
+        filters = {'name': [port_name], 'tenant_id': [tenant_id]}
+        default_group = self._get_sgs(plugin_context, filters,
+                                      clean_session=clean_session)
+        return default_group[0]['id'] if default_group else None
+
+    def _use_implicit_port(self, context, subnets=None, clean_session=True):
+        ptg_id = context.current['policy_target_group_id']
+        ptg = context._plugin.get_policy_target_group(
+            context._plugin_context, ptg_id)
+        l2p_id = ptg['l2_policy_id']
+        l2p = context._plugin.get_l2_policy(context._plugin_context, l2p_id)
+        sg_id = self._get_default_security_group(
+            context._plugin_context, ptg_id, context.current['tenant_id'],
+            clean_session=clean_session)
+        last = exc.NoSubnetAvailable()
+        subnets = subnets or self._get_subnets(context._plugin_context,
+                                               {'id': ptg['subnets']},
+                                               clean_session=clean_session)
+        for subnet in subnets:
+            try:
+                attrs = {'tenant_id': context.current['tenant_id'],
+                         'name': 'pt_' + context.current['name'],
+                         'network_id': l2p['network_id'],
+                         'mac_address': attributes.ATTR_NOT_SPECIFIED,
+                         'fixed_ips': [{'subnet_id': subnet['id']}],
+                         'device_id': '',
+                         'device_owner': '',
+                         'security_groups': [sg_id] if sg_id else None,
+                         'admin_state_up': True}
+                if context.current.get('group_default_gateway'):
+                    attrs['fixed_ips'][0]['ip_address'] = subnet['gateway_ip']
+                attrs.update(context.current.get('port_attributes', {}))
+                port = self._create_port(context._plugin_context, attrs,
+                                         clean_session=clean_session)
+                port_id = port['id']
+                self._mark_port_owned(context._plugin_context.session, port_id)
+                context.set_port_id(port_id)
+                return
+            except n_exc.IpAddressGenerationFailure as ex:
+                LOG.warning(_LW("No more address available in subnet %s"),
+                            subnet['id'])
+                last = ex
+        raise last
+
+    def _cleanup_port(self, plugin_context, port_id):
+        if self._port_is_owned(plugin_context.session, port_id):
+            try:
+                self._delete_port(plugin_context, port_id)
+            except n_exc.PortNotFound:
+                LOG.warning(_LW("Port %s is missing") % port_id)
+
+
+class ResourceMappingDriver(api.PolicyDriver, ImplicitResourceOperations,
+                            nsp_manager.NetworkServicePolicyMappingMixin,
+                            OwnedResourcesOperations):
     """Resource Mapping driver for Group Policy plugin.
 
     This driver implements group policy semantics by mapping group
@@ -1299,49 +1619,6 @@ class ResourceMappingDriver(api.PolicyDriver, local_api.LocalAPI,
         l3p = context._plugin.get_l3_policy(context._plugin_context, l3p_id)
         return l3p
 
-    def _use_implicit_port(self, context, subnets=None):
-        ptg_id = context.current['policy_target_group_id']
-        ptg = context._plugin.get_policy_target_group(
-            context._plugin_context, ptg_id)
-        l2p_id = ptg['l2_policy_id']
-        l2p = context._plugin.get_l2_policy(context._plugin_context, l2p_id)
-        sg_id = self._get_default_security_group(
-            context._plugin_context, ptg_id, context.current['tenant_id'])
-        last = exc.NoSubnetAvailable()
-        subnets = subnets or self._get_subnets(context._plugin_context,
-                                               {'id': ptg['subnets']})
-        for subnet in subnets:
-            try:
-                attrs = {'tenant_id': context.current['tenant_id'],
-                         'name': 'pt_' + context.current['name'],
-                         'network_id': l2p['network_id'],
-                         'mac_address': attributes.ATTR_NOT_SPECIFIED,
-                         'fixed_ips': [{'subnet_id': subnet['id']}],
-                         'device_id': '',
-                         'device_owner': '',
-                         'security_groups': [sg_id] if sg_id else None,
-                         'admin_state_up': True}
-                if context.current.get('group_default_gateway'):
-                    attrs['fixed_ips'][0]['ip_address'] = subnet['gateway_ip']
-                attrs.update(context.current.get('port_attributes', {}))
-                port = self._create_port(context._plugin_context, attrs)
-                port_id = port['id']
-                self._mark_port_owned(context._plugin_context.session, port_id)
-                context.set_port_id(port_id)
-                return
-            except n_exc.IpAddressGenerationFailure as ex:
-                LOG.warning(_LW("No more address available in subnet %s"),
-                            subnet['id'])
-                last = ex
-        raise last
-
-    def _cleanup_port(self, plugin_context, port_id):
-        if self._port_is_owned(plugin_context.session, port_id):
-            try:
-                self._delete_port(plugin_context, port_id)
-            except n_exc.PortNotFound:
-                LOG.warning(_LW("Port %s is missing") % port_id)
-
     def _plug_router_to_external_segment(self, context, es_dict):
         es_list = context._plugin.get_external_segments(
             context._plugin_context, filters={'id': es_dict.keys()})
@@ -1386,125 +1663,6 @@ class ResourceMappingDriver(api.PolicyDriver, local_api.LocalAPI,
                 self._remove_router_gw_interface(context._plugin_context,
                                                  router_id, interface_info)
 
-    def _use_implicit_subnet(self, context, is_proxy=False, prefix_len=None,
-                             subnet_specifics=None):
-        subnet_specifics = subnet_specifics or {}
-        l2p_id = context.current['l2_policy_id']
-        l2p = context._plugin.get_l2_policy(context._plugin_context, l2p_id)
-        l3p_id = l2p['l3_policy_id']
-        l3p = context._plugin.get_l3_policy(context._plugin_context, l3p_id)
-        if (is_proxy and
-                context.current['proxy_type'] == proxy_ext.PROXY_TYPE_L2):
-            # In case of L2 proxy
-            return self._use_l2_proxy_implicit_subnets(
-                context, subnet_specifics, l2p, l3p)
-        else:
-            # In case of non proxy PTG or L3 Proxy
-            return self._use_normal_implicit_subnet(
-                context, is_proxy, prefix_len, subnet_specifics, l2p, l3p)
-
-    def _use_l2_proxy_implicit_subnets(self, context,
-                                       subnet_specifics, l2p, l3p):
-        LOG.debug("allocate subnets for L2 Proxy %s",
-                  context.current['id'])
-        proxied = context._plugin.get_policy_target_group(
-            context._plugin_context, context.current['proxied_group_id'])
-        subnets = self._get_subnets(context._plugin_context,
-                                    {'id': proxied['subnets']})
-        # Use the same subnets as the Proxied PTG
-        generator = self._generate_subnets_from_cidrs(
-            context, l2p, l3p, [x['cidr'] for x in subnets],
-            subnet_specifics)
-        # Unroll the generator
-        subnets = [x for x in generator]
-        subnet_ids = [x['id'] for x in subnets]
-        for subnet_id in subnet_ids:
-            self._mark_subnet_owned(
-                context._plugin_context.session, subnet_id)
-            context.add_subnet(subnet_id)
-        return subnets
-
-    def _use_normal_implicit_subnet(self, context, is_proxy, prefix_len,
-                                    subnet_specifics, l2p, l3p):
-        LOG.debug("allocate subnets for L3 Proxy or normal PTG %s",
-                  context.current['id'])
-
-        # REVISIT(rkukura): The folowing is a temporary allocation
-        # algorithm that should be replaced with use of a neutron
-        # subnet pool.
-
-        pool = netaddr.IPSet(
-            iterable=[l3p['proxy_ip_pool'] if is_proxy else
-                      l3p['ip_pool']])
-        prefixlen = prefix_len or (
-            l3p['proxy_subnet_prefix_length'] if is_proxy
-            else l3p['subnet_prefix_length'])
-        l3p_id = l3p['id']
-        allocated = netaddr.IPSet(
-            iterable=self._get_l3p_allocated_subnets(context, l3p_id))
-        available = pool - allocated
-        available.compact()
-
-        for cidr in sorted(available.iter_cidrs(),
-                           key=operator.attrgetter('prefixlen'),
-                           reverse=True):
-            if prefixlen < cidr.prefixlen:
-                # Close the loop, no remaining subnet is big enough
-                # for this allocation
-                break
-            generator = self._generate_subnets_from_cidrs(
-                context, l2p, l3p, cidr.subnet(prefixlen),
-                subnet_specifics)
-            for subnet in generator:
-                LOG.debug("Trying subnet %s for PTG %s", subnet,
-                          context.current['id'])
-                subnet_id = subnet['id']
-                try:
-                    self._mark_subnet_owned(context._plugin_context.session,
-                                            subnet_id)
-                    self._validate_and_add_subnet(context, subnet,
-                                                  l3p_id)
-                    LOG.debug("Using subnet %s for PTG %s", subnet,
-                              context.current['id'])
-                    return [subnet]
-                except CidrInUse:
-                    # This exception is expected when a concurrent
-                    # request has beat this one to calling
-                    # _validate_and_add_subnet() using the same
-                    # available CIDR. We delete the subnet and try the
-                    # next available CIDR.
-                    self._delete_subnet(context._plugin_context,
-                                        subnet['id'])
-                except n_exc.InvalidInput:
-                    # This exception is not expected. We catch this
-                    # here so that it isn't caught below and handled
-                    # as if the CIDR is already in use.
-                    self._delete_subnet(context._plugin_context,
-                                        subnet['id'])
-                    raise exc.GroupPolicyInternalError()
-        raise exc.NoSubnetAvailable()
-
-    def _validate_and_add_subnet(self, context, subnet, l3p_id):
-        subnet_id = subnet['id']
-        session = context._plugin_context.session
-        with utils.clean_session(session):
-            with session.begin(subtransactions=True):
-                LOG.debug("starting validate_and_add_subnet transaction for "
-                          "subnet %s", subnet_id)
-                ptgs = context._plugin._get_l3p_ptgs(
-                    context._plugin_context.elevated(), l3p_id)
-                allocated = netaddr.IPSet(
-                    iterable=self._get_ptg_cidrs(context, None,
-                                                 ptg_dicts=ptgs))
-                cidr = subnet['cidr']
-                if cidr in allocated:
-                    LOG.debug("CIDR %s in-use for L3P %s, allocated: %s",
-                              cidr, l3p_id, allocated)
-                    raise CidrInUse(cidr=cidr, l3p_id=l3p_id)
-                context.add_subnet(subnet_id)
-                LOG.debug("ending validate_and_add_subnet transaction for "
-                          "subnet %s", subnet_id)
-
     def _use_implicit_nat_pool_subnet(self, context):
         es = context._plugin.get_external_segment(
             context._plugin_context, context.current['external_segment_id'])
@@ -1534,32 +1692,6 @@ class ResourceMappingDriver(api.PolicyDriver, local_api.LocalAPI,
             except n_exc.BadRequest:
                 LOG.exception(_LE("Adding subnet to router failed"))
                 raise exc.GroupPolicyInternalError()
-
-    def _generate_subnets_from_cidrs(self, context, l2p, l3p, cidrs,
-                                     subnet_specifics):
-        for usable_cidr in cidrs:
-            try:
-                attrs = {'tenant_id': context.current['tenant_id'],
-                         'name': 'ptg_' + context.current['name'],
-                         'network_id': l2p['network_id'],
-                         'ip_version': l3p['ip_version'],
-                         'cidr': usable_cidr,
-                         'enable_dhcp': True,
-                         'gateway_ip': attributes.ATTR_NOT_SPECIFIED,
-                         'allocation_pools': attributes.ATTR_NOT_SPECIFIED,
-                         'dns_nameservers': (
-                             cfg.CONF.resource_mapping.dns_nameservers or
-                             attributes.ATTR_NOT_SPECIFIED),
-                         'host_routes': attributes.ATTR_NOT_SPECIFIED}
-                attrs.update(subnet_specifics)
-                subnet = self._create_subnet(context._plugin_context,
-                                             attrs)
-                yield subnet
-            except n_exc.BadRequest:
-                # This is expected (CIDR overlap within network) until
-                # we have a proper subnet allocation algorithm. We
-                # ignore the exception and repeat with the next CIDR.
-                pass
 
     def _stitch_ptg_to_l3p(self, context, ptg, l3p, subnet_ids):
         if l3p['routers']:
@@ -1626,37 +1758,6 @@ class ResourceMappingDriver(api.PolicyDriver, local_api.LocalAPI,
             for subnet_id in subnet_ids:
                 self._delete_subnet(context._plugin_context, subnet_id)
                 raise exc.GroupPolicyInternalError()
-
-    def _cleanup_subnet(self, plugin_context, subnet_id, router_id):
-        interface_info = {'subnet_id': subnet_id}
-        if router_id:
-            try:
-                self._remove_router_interface(plugin_context, router_id,
-                                              interface_info)
-            except ext_l3.RouterInterfaceNotFoundForSubnet:
-                LOG.debug("Ignoring RouterInterfaceNotFoundForSubnet cleaning "
-                          "up subnet: %s", subnet_id)
-        if self._subnet_is_owned(plugin_context.session, subnet_id):
-            self._delete_subnet(plugin_context, subnet_id)
-
-    def _create_implicit_network(self, context, **kwargs):
-        attrs = {'tenant_id': context.current['tenant_id'],
-                 'name': context.current['name'], 'admin_state_up': True,
-                 'shared': context.current.get('shared', False)}
-        attrs.update(**kwargs)
-        network = self._create_network(context._plugin_context, attrs)
-        network_id = network['id']
-        self._mark_network_owned(context._plugin_context.session, network_id)
-        return network
-
-    def _use_implicit_network(self, context):
-        network = self._create_implicit_network(
-            context, name='l2p_' + context.current['name'])
-        context.set_network_id(network['id'])
-
-    def _cleanup_network(self, plugin_context, network_id):
-        if self._network_is_owned(plugin_context.session, network_id):
-            self._delete_network(plugin_context, network_id)
 
     def _use_implicit_router(self, context, router_name=None):
         attrs = {'tenant_id': context.current['tenant_id'],
@@ -1805,50 +1906,6 @@ class ResourceMappingDriver(api.PolicyDriver, local_api.LocalAPI,
             attrs.update({"floating_ip_address": floating_ip_address})
         fip = self._create_fip(plugin_context, attrs)
         return fip['id']
-
-    def _mark_port_owned(self, session, port_id):
-        with session.begin(subtransactions=True):
-            owned = OwnedPort(port_id=port_id)
-            session.add(owned)
-
-    def _port_is_owned(self, session, port_id):
-        with session.begin(subtransactions=True):
-            return (session.query(OwnedPort).
-                    filter_by(port_id=port_id).
-                    first() is not None)
-
-    def _mark_subnet_owned(self, session, subnet_id):
-        with session.begin(subtransactions=True):
-            owned = OwnedSubnet(subnet_id=subnet_id)
-            session.add(owned)
-
-    def _subnet_is_owned(self, session, subnet_id):
-        with session.begin(subtransactions=True):
-            return (session.query(OwnedSubnet).
-                    filter_by(subnet_id=subnet_id).
-                    first() is not None)
-
-    def _mark_network_owned(self, session, network_id):
-        with session.begin(subtransactions=True):
-            owned = OwnedNetwork(network_id=network_id)
-            session.add(owned)
-
-    def _network_is_owned(self, session, network_id):
-        with session.begin(subtransactions=True):
-            return (session.query(OwnedNetwork).
-                    filter_by(network_id=network_id).
-                    first() is not None)
-
-    def _mark_router_owned(self, session, router_id):
-        with session.begin(subtransactions=True):
-            owned = OwnedRouter(router_id=router_id)
-            session.add(owned)
-
-    def _router_is_owned(self, session, router_id):
-        with session.begin(subtransactions=True):
-            return (session.query(OwnedRouter).
-                    filter_by(router_id=router_id).
-                    first() is not None)
 
     def _set_policy_rule_set_sg_mapping(
         self, session, policy_rule_set_id, consumed_sg_id, provided_sg_id):
@@ -2155,13 +2212,6 @@ class ResourceMappingDriver(api.PolicyDriver, local_api.LocalAPI,
                 context._plugin_context, filters={'id': child_rule_ids})
             self._apply_policy_rule_set_rules(context, child, child_rules)
 
-    def _get_default_security_group(self, plugin_context, ptg_id,
-                                    tenant_id):
-        port_name = DEFAULT_SG_PREFIX % ptg_id
-        filters = {'name': [port_name], 'tenant_id': [tenant_id]}
-        default_group = self._get_sgs(plugin_context, filters)
-        return default_group[0]['id'] if default_group else None
-
     def _update_default_security_group(self, plugin_context, ptg_id,
                                        tenant_id, subnets=None):
 
@@ -2208,22 +2258,6 @@ class ResourceMappingDriver(api.PolicyDriver, local_api.LocalAPI,
                                                  tenant_id)
         if sg_id:
             self._delete_sg(plugin_context, sg_id)
-
-    def _get_ptg_cidrs(self, context, ptgs, ptg_dicts=None):
-        cidrs = []
-        if ptg_dicts:
-            ptgs = ptg_dicts
-        else:
-            ptgs = context._plugin.get_policy_target_groups(
-                context._plugin_context.elevated(), filters={'id': ptgs})
-        subnets = []
-        for ptg in ptgs:
-            subnets.extend(ptg['subnets'])
-
-        if subnets:
-            cidrs = [x['cidr'] for x in self._get_subnets(
-                context._plugin_context.elevated(), {'id': subnets})]
-        return cidrs
 
     def _get_ep_cidrs(self, context, eps):
         cidrs = []
@@ -2568,11 +2602,6 @@ class ResourceMappingDriver(api.PolicyDriver, local_api.LocalAPI,
         master_mac = master_port['mac_address']
         master_ips = [x['ip_address'] for x in master_port['fixed_ips']]
         return master_mac, master_ips
-
-    def _get_l3p_allocated_subnets(self, context, l3p_id):
-        ptgs = context._plugin._get_l3p_ptgs(
-            context._plugin_context.elevated(), l3p_id)
-        return self._get_ptg_cidrs(context, None, ptg_dicts=ptgs)
 
     def _check_nat_pool_subnet_in_use(self, plugin_context, nat_pool):
         if not self._subnet_is_owned(plugin_context.session,
