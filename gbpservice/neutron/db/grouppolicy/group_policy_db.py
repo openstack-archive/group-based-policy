@@ -150,8 +150,9 @@ class ESToL3PAssociation(model_base.BASEV2):
                                   primary_key=True)
 
 
-class L3Policy(gquota.GBPQuotaBase, model_base.BASEV2, models_v2.HasId,
+class L3Policy(model_base.BASEV2, models_v2.HasId,
                models_v2.HasTenant):
+    #           models_v2.HasTenant, gquota.GBPQuotaBase):
     """Represents a L3 Policy with a non-overlapping IP address space."""
     __tablename__ = 'gp_l3_policies'
     type = sa.Column(sa.String(15))

@@ -619,6 +619,7 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
                               result['id'])
                 self.delete_l2_policy(context, result['id'])
 
+        result = self.get_l2_policy(context, result['id'])
         return result
 
     @log.log_method_call
