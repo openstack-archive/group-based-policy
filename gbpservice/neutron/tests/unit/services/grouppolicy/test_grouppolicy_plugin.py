@@ -57,7 +57,7 @@ def get_status_for_test(self, context):
     getattr(context, resource_name)['status_details'] = NEW_STATUS_DETAILS
 
 
-class GroupPolicyPluginTestCase(tgpmdb.GroupPolicyMappingDbTestCase):
+class GroupPolicyPluginTestBase(tgpmdb.GroupPolicyMappingDbTestCase):
 
     def setUp(self, core_plugin=None, gp_plugin=None, ml2_options=None,
               sc_plugin=None):
@@ -67,28 +67,9 @@ class GroupPolicyPluginTestCase(tgpmdb.GroupPolicyMappingDbTestCase):
         for opt, val in ml2_opts.items():
             cfg.CONF.set_override(opt, val, 'ml2')
         core_plugin = core_plugin or test_plugin.PLUGIN_NAME
-        super(GroupPolicyPluginTestCase, self).setUp(core_plugin=core_plugin,
+        super(GroupPolicyPluginTestBase, self).setUp(core_plugin=core_plugin,
                                                      gp_plugin=gp_plugin,
                                                      sc_plugin=sc_plugin)
-
-    def test_reverse_on_delete(self):
-        manager = self.plugin.policy_driver_manager
-        ctx = context.get_admin_context()
-        drivers = manager.ordered_policy_drivers
-        first, second = mock.Mock(), mock.Mock()
-        first.obj, second.obj = FakeDriver(), FakeDriver()
-        try:
-            manager.ordered_policy_drivers = [first, second]
-            manager.reverse_ordered_policy_drivers = [second, first]
-            ordered_obj = [first.obj, second.obj]
-            ctx.call_order = []
-            manager._call_on_drivers('nodelete', ctx)
-            self.assertEqual(ordered_obj, ctx.call_order)
-            ctx.call_order = []
-            manager._call_on_drivers('delete', ctx)
-            self.assertEqual(ordered_obj[::-1], ctx.call_order)
-        finally:
-            manager.ordered_policy_drivers = drivers
 
     def _create_l2_policy_on_shared(self, **kwargs):
         l3p = self.create_l3_policy(shared=True)['l3_policy']
@@ -170,6 +151,28 @@ class GroupPolicyPluginTestCase(tgpmdb.GroupPolicyMappingDbTestCase):
             raise webob.exc.HTTPClientError(code=res.status_int)
 
         return self.deserialize(self.fmt, res)
+
+
+class GroupPolicyPluginTestCase(GroupPolicyPluginTestBase):
+
+    def test_reverse_on_delete(self):
+        manager = self.plugin.policy_driver_manager
+        ctx = context.get_admin_context()
+        drivers = manager.ordered_policy_drivers
+        first, second = mock.Mock(), mock.Mock()
+        first.obj, second.obj = FakeDriver(), FakeDriver()
+        try:
+            manager.ordered_policy_drivers = [first, second]
+            manager.reverse_ordered_policy_drivers = [second, first]
+            ordered_obj = [first.obj, second.obj]
+            ctx.call_order = []
+            manager._call_on_drivers('nodelete', ctx)
+            self.assertEqual(ordered_obj, ctx.call_order)
+            ctx.call_order = []
+            manager._call_on_drivers('delete', ctx)
+            self.assertEqual(ordered_obj[::-1], ctx.call_order)
+        finally:
+            manager.ordered_policy_drivers = drivers
 
 
 class TestL3Policy(GroupPolicyPluginTestCase):
@@ -947,8 +950,18 @@ class TestResourceStatusChange(GroupPolicyPluginTestCase):
             resource = self.create_policy_rule(policy_classifier_id=pc_id)
         else:
             resource = getattr(self, "create_" + resource_singular)()
-        self.assertIsNone(resource[resource_singular]['status'])
-        self.assertIsNone(resource[resource_singular]['status_details'])
+        self.assertEqual(NEW_STATUS, resource[resource_singular]['status'])
+        self.assertEqual(NEW_STATUS_DETAILS,
+                         resource[resource_singular]['status_details'])
+
+        # Reset status directly in the DB to test that GET works
+        reset_status = {resource_singular: {'status': None,
+                                            'status_details': None}}
+        neutron_context = context.Context('', self._tenant_id)
+        getattr(gpmdb.GroupPolicyMappingDbPlugin,
+                "update_" + resource_singular)(
+                    self._gbp_plugin, neutron_context,
+                    resource[resource_singular]['id'], reset_status)
 
         req = self.new_show_request(
             resource_name, resource[resource_singular]['id'], fmt=self.fmt,
@@ -960,7 +973,6 @@ class TestResourceStatusChange(GroupPolicyPluginTestCase):
             self.assertEqual(NEW_STATUS_DETAILS,
                              res[resource_singular]['status_details'])
         elif not gplugin.STATUS_SET.intersection(set(fields)):
-            neutron_context = context.Context('', self._tenant_id)
             db_obj = getattr(
                 gpmdb.GroupPolicyMappingDbPlugin, "get_" + resource_singular)(
                 self._gbp_plugin, neutron_context,
@@ -991,7 +1003,15 @@ class TestResourceStatusChange(GroupPolicyPluginTestCase):
                     getattr(self, create_method)(),
                     getattr(self, create_method)()]
 
+        neutron_context = context.Context('', self._tenant_id)
+        reset_status = {resource_singular: {'status': None,
+                                            'status_details': None}}
         for obj in objs:
+            # Reset status directly in the DB to test that GET works
+            getattr(gpmdb.GroupPolicyMappingDbPlugin,
+                    "update_" + resource_singular)(
+                        self._gbp_plugin, neutron_context,
+                        obj[resource_singular]['id'], reset_status)
             req = self.new_show_request(
                 resource_name, obj[resource_singular]['id'], fmt=self.fmt,
                 fields=fields)
@@ -1002,7 +1022,6 @@ class TestResourceStatusChange(GroupPolicyPluginTestCase):
                 self.assertEqual(NEW_STATUS_DETAILS,
                                  res[resource_singular]['status_details'])
             elif not gplugin.STATUS_SET.intersection(set(fields)):
-                neutron_context = context.Context('', self._tenant_id)
                 db_obj = getattr(
                     gpmdb.GroupPolicyMappingDbPlugin,
                     "get_" + resource_singular)(
