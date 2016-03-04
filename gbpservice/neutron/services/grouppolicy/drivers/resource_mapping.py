@@ -110,8 +110,79 @@ class CidrInUse(exc.GroupPolicyInternalError):
     message = _("CIDR %(cidr)s in-use within L3 policy %(l3p_id)s")
 
 
-class ResourceMappingDriver(api.PolicyDriver, local_api.LocalAPI,
-                            nsp_manager.NetworkServicePolicyMappingMixin):
+class OwnedResourcesOperations(object):
+
+    def _mark_port_owned(self, session, port_id):
+        with session.begin(subtransactions=True):
+            owned = OwnedPort(port_id=port_id)
+            session.add(owned)
+
+    def _port_is_owned(self, session, port_id):
+        with session.begin(subtransactions=True):
+            return (session.query(OwnedPort).
+                    filter_by(port_id=port_id).
+                    first() is not None)
+
+    def _mark_subnet_owned(self, session, subnet_id):
+        with session.begin(subtransactions=True):
+            owned = OwnedSubnet(subnet_id=subnet_id)
+            session.add(owned)
+
+    def _subnet_is_owned(self, session, subnet_id):
+        with session.begin(subtransactions=True):
+            return (session.query(OwnedSubnet).
+                    filter_by(subnet_id=subnet_id).
+                    first() is not None)
+
+    def _mark_network_owned(self, session, network_id):
+        with session.begin(subtransactions=True):
+            owned = OwnedNetwork(network_id=network_id)
+            session.add(owned)
+
+    def _network_is_owned(self, session, network_id):
+        with session.begin(subtransactions=True):
+            return (session.query(OwnedNetwork).
+                    filter_by(network_id=network_id).
+                    first() is not None)
+
+    def _mark_router_owned(self, session, router_id):
+        with session.begin(subtransactions=True):
+            owned = OwnedRouter(router_id=router_id)
+            session.add(owned)
+
+    def _router_is_owned(self, session, router_id):
+        with session.begin(subtransactions=True):
+            return (session.query(OwnedRouter).
+                    filter_by(router_id=router_id).
+                    first() is not None)
+
+
+class ImplicitResourceOperations(local_api.LocalAPI):
+
+    def _create_implicit_network(self, context, clean_session=True, **kwargs):
+        attrs = {'tenant_id': context.current['tenant_id'],
+                 'name': context.current['name'], 'admin_state_up': True,
+                 'shared': context.current.get('shared', False)}
+        attrs.update(**kwargs)
+        network = self._create_network(context._plugin_context, attrs,
+                                       clean_session)
+        network_id = network['id']
+        self._mark_network_owned(context._plugin_context.session, network_id)
+        return network
+
+    def _use_implicit_network(self, context, clean_session=True):
+        network = self._create_implicit_network(
+            context, clean_session, name='l2p_' + context.current['name'])
+        context.set_network_id(network['id'])
+
+    def _cleanup_network(self, plugin_context, network_id, clean_session=True):
+        if self._network_is_owned(plugin_context.session, network_id):
+            self._delete_network(plugin_context, network_id, clean_session)
+
+
+class ResourceMappingDriver(api.PolicyDriver, ImplicitResourceOperations,
+                            nsp_manager.NetworkServicePolicyMappingMixin,
+                            OwnedResourcesOperations):
     """Resource Mapping driver for Group Policy plugin.
 
     This driver implements group policy semantics by mapping group
@@ -1647,25 +1718,6 @@ class ResourceMappingDriver(api.PolicyDriver, local_api.LocalAPI,
         if self._subnet_is_owned(plugin_context.session, subnet_id):
             self._delete_subnet(plugin_context, subnet_id)
 
-    def _create_implicit_network(self, context, **kwargs):
-        attrs = {'tenant_id': context.current['tenant_id'],
-                 'name': context.current['name'], 'admin_state_up': True,
-                 'shared': context.current.get('shared', False)}
-        attrs.update(**kwargs)
-        network = self._create_network(context._plugin_context, attrs)
-        network_id = network['id']
-        self._mark_network_owned(context._plugin_context.session, network_id)
-        return network
-
-    def _use_implicit_network(self, context):
-        network = self._create_implicit_network(
-            context, name='l2p_' + context.current['name'])
-        context.set_network_id(network['id'])
-
-    def _cleanup_network(self, plugin_context, network_id):
-        if self._network_is_owned(plugin_context.session, network_id):
-            self._delete_network(plugin_context, network_id)
-
     def _use_implicit_router(self, context, router_name=None):
         attrs = {'tenant_id': context.current['tenant_id'],
                  'name': router_name or ('l3p_' + context.current['name']),
@@ -1813,50 +1865,6 @@ class ResourceMappingDriver(api.PolicyDriver, local_api.LocalAPI,
             attrs.update({"floating_ip_address": floating_ip_address})
         fip = self._create_fip(plugin_context, attrs)
         return fip['id']
-
-    def _mark_port_owned(self, session, port_id):
-        with session.begin(subtransactions=True):
-            owned = OwnedPort(port_id=port_id)
-            session.add(owned)
-
-    def _port_is_owned(self, session, port_id):
-        with session.begin(subtransactions=True):
-            return (session.query(OwnedPort).
-                    filter_by(port_id=port_id).
-                    first() is not None)
-
-    def _mark_subnet_owned(self, session, subnet_id):
-        with session.begin(subtransactions=True):
-            owned = OwnedSubnet(subnet_id=subnet_id)
-            session.add(owned)
-
-    def _subnet_is_owned(self, session, subnet_id):
-        with session.begin(subtransactions=True):
-            return (session.query(OwnedSubnet).
-                    filter_by(subnet_id=subnet_id).
-                    first() is not None)
-
-    def _mark_network_owned(self, session, network_id):
-        with session.begin(subtransactions=True):
-            owned = OwnedNetwork(network_id=network_id)
-            session.add(owned)
-
-    def _network_is_owned(self, session, network_id):
-        with session.begin(subtransactions=True):
-            return (session.query(OwnedNetwork).
-                    filter_by(network_id=network_id).
-                    first() is not None)
-
-    def _mark_router_owned(self, session, router_id):
-        with session.begin(subtransactions=True):
-            owned = OwnedRouter(router_id=router_id)
-            session.add(owned)
-
-    def _router_is_owned(self, session, router_id):
-        with session.begin(subtransactions=True):
-            return (session.query(OwnedRouter).
-                    filter_by(router_id=router_id).
-                    first() is not None)
 
     def _set_policy_rule_set_sg_mapping(
         self, session, policy_rule_set_id, consumed_sg_id, provided_sg_id):
