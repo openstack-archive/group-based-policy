@@ -565,8 +565,10 @@ class NodeCompositionPluginTestCase(
         # Verify notification issued for created PT in the provider
         pt = self.create_policy_target(
             policy_target_group_id=provider['id'])['policy_target']
+        pt['port_attributes'] = {}
         self.assertEqual(1, add.call_count)
         add.assert_called_with(mock.ANY, pt)
+        del pt['port_attributes']
 
         # Verify notification issued for deleted PT in the provider
         self.delete_policy_target(pt['id'])
