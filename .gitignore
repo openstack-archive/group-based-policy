@@ -54,3 +54,6 @@ ChangeLog
 *~
 .*.swp
 .*sw?
+
+# Pycharm
+.idea
