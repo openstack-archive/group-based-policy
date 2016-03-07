@@ -152,6 +152,9 @@ class PolicyDriverManager(stevedore.named.NamedExtensionManager):
         self._call_on_drivers("delete_policy_target_postcommit", context,
                               continue_on_failure=True)
 
+    def get_policy_target_status(self, context):
+        self._call_on_drivers("get_policy_target_status", context)
+
     def create_policy_target_group_precommit(self, context):
         self._call_on_drivers("create_policy_target_group_precommit", context)
 
@@ -170,6 +173,9 @@ class PolicyDriverManager(stevedore.named.NamedExtensionManager):
     def delete_policy_target_group_postcommit(self, context):
         self._call_on_drivers("delete_policy_target_group_postcommit", context,
                               continue_on_failure=True)
+
+    def get_policy_target_group_status(self, context):
+        self._call_on_drivers("get_policy_target_group_status", context)
 
     def create_l2_policy_precommit(self, context):
         self._call_on_drivers("create_l2_policy_precommit", context)
@@ -190,6 +196,9 @@ class PolicyDriverManager(stevedore.named.NamedExtensionManager):
         self._call_on_drivers("delete_l2_policy_postcommit", context,
                               continue_on_failure=True)
 
+    def get_l2_policy_status(self, context):
+        self._call_on_drivers("get_l2_policy_status", context)
+
     def create_l3_policy_precommit(self, context):
         self._call_on_drivers("create_l3_policy_precommit", context)
 
@@ -208,6 +217,9 @@ class PolicyDriverManager(stevedore.named.NamedExtensionManager):
     def delete_l3_policy_postcommit(self, context):
         self._call_on_drivers("delete_l3_policy_postcommit", context,
                               continue_on_failure=True)
+
+    def get_l3_policy_status(self, context):
+        self._call_on_drivers("get_l3_policy_status", context)
 
     def create_network_service_policy_precommit(self, context):
         self._call_on_drivers(
@@ -234,6 +246,9 @@ class PolicyDriverManager(stevedore.named.NamedExtensionManager):
             "delete_network_service_policy_postcommit", context,
             continue_on_failure=True)
 
+    def get_network_service_policy_status(self, context):
+        self._call_on_drivers("get_network_service_policy_status", context)
+
     def create_policy_classifier_precommit(self, context):
         self._call_on_drivers("create_policy_classifier_precommit", context)
 
@@ -252,6 +267,9 @@ class PolicyDriverManager(stevedore.named.NamedExtensionManager):
     def delete_policy_classifier_postcommit(self, context):
         self._call_on_drivers("delete_policy_classifier_postcommit", context,
                               continue_on_failure=True)
+
+    def get_policy_classifier_status(self, context):
+        self._call_on_drivers("get_policy_classifier_status", context)
 
     def create_policy_action_precommit(self, context):
         self._call_on_drivers("create_policy_action_precommit", context)
@@ -272,6 +290,9 @@ class PolicyDriverManager(stevedore.named.NamedExtensionManager):
         self._call_on_drivers("delete_policy_action_postcommit", context,
                               continue_on_failure=True)
 
+    def get_policy_action_status(self, context):
+        self._call_on_drivers("get_policy_action_status", context)
+
     def create_policy_rule_precommit(self, context):
         self._call_on_drivers("create_policy_rule_precommit", context)
 
@@ -291,6 +312,9 @@ class PolicyDriverManager(stevedore.named.NamedExtensionManager):
         self._call_on_drivers("delete_policy_rule_postcommit", context,
                               continue_on_failure=True)
 
+    def get_policy_rule_status(self, context):
+        self._call_on_drivers("get_policy_rule_status", context)
+
     def create_policy_rule_set_precommit(self, context):
         self._call_on_drivers("create_policy_rule_set_precommit", context)
 
@@ -309,6 +333,9 @@ class PolicyDriverManager(stevedore.named.NamedExtensionManager):
     def delete_policy_rule_set_postcommit(self, context):
         self._call_on_drivers("delete_policy_rule_set_postcommit", context,
                               continue_on_failure=True)
+
+    def get_policy_rule_set_status(self, context):
+        self._call_on_drivers("get_policy_rule_set_status", context)
 
     def create_external_segment_precommit(self, context):
         self._call_on_drivers("create_external_segment_precommit",
@@ -334,6 +361,9 @@ class PolicyDriverManager(stevedore.named.NamedExtensionManager):
         self._call_on_drivers("delete_external_segment_postcommit",
                               context, continue_on_failure=True)
 
+    def get_external_segment_status(self, context):
+        self._call_on_drivers("get_external_segment_status", context)
+
     def create_external_policy_precommit(self, context):
         self._call_on_drivers("create_external_policy_precommit",
                               context)
@@ -358,6 +388,9 @@ class PolicyDriverManager(stevedore.named.NamedExtensionManager):
         self._call_on_drivers("delete_external_policy_postcommit",
                               context, continue_on_failure=True)
 
+    def get_external_policy_status(self, context):
+        self._call_on_drivers("get_external_policy_status", context)
+
     def create_nat_pool_precommit(self, context):
         self._call_on_drivers("create_nat_pool_precommit", context)
 
@@ -376,3 +409,6 @@ class PolicyDriverManager(stevedore.named.NamedExtensionManager):
     def delete_nat_pool_postcommit(self, context):
         self._call_on_drivers("delete_nat_pool_postcommit", context,
                               continue_on_failure=True)
+
+    def get_nat_pool_status(self, context):
+        self._call_on_drivers("get_nat_pool_status", context)
