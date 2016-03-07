@@ -332,6 +332,24 @@ class GroupPolicyMappingDbPlugin(gpdb.GroupPolicyDbPlugin):
         return self._make_policy_target_group_dict(ptg_db)
 
     @log.log_method_call
+    def get_policy_target_groups_count(self, context, filters=None):
+        return self._get_collection_count(context, PolicyTargetGroupMapping,
+                                          filters=filters)
+
+    @log.log_method_call
+    def get_policy_target_groups(self, context, filters=None, fields=None,
+                           sorts=None, limit=None, marker=None,
+                           page_reverse=False):
+        marker_obj = self._get_marker_obj(context, 'policy_target_group',
+                                          limit, marker)
+        return self._get_collection(context, PolicyTargetGroupMapping,
+                                    self._make_policy_target_group_dict,
+                                    filters=filters, fields=fields,
+                                    sorts=sorts, limit=limit,
+                                    marker_obj=marker_obj,
+                                    page_reverse=page_reverse)
+
+    @log.log_method_call
     def create_l2_policy(self, context, l2_policy):
         l2p = l2_policy['l2_policy']
         tenant_id = self._get_tenant_id_for_create(context, l2p)

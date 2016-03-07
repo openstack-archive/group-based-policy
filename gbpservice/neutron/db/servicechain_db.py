@@ -36,6 +36,17 @@ MAX_IPV4_SUBNET_PREFIX_LENGTH = 31
 MAX_IPV6_SUBNET_PREFIX_LENGTH = 127
 
 
+class BaseSCResource(models_v2.HasId, models_v2.HasTenant):
+    name = sa.Column(sa.String(255))
+    description = sa.Column(sa.String(255))
+    status = sa.Column(sa.String(length=16), nullable=True)
+    status_details = sa.Column(sa.String(length=4096), nullable=True)
+
+
+class BaseSharedSCResource(BaseSCResource):
+    shared = sa.Column(sa.Boolean)
+
+
 class SpecNodeAssociation(model_base.BASEV2):
     """Models one to many providing relation between Specs and Nodes."""
     __tablename__ = 'sc_spec_node_associations'
@@ -58,29 +69,22 @@ class InstanceSpecAssociation(model_base.BASEV2):
     position = sa.Column(sa.Integer)
 
 
-class ServiceChainNode(model_base.BASEV2, models_v2.HasId,
-                       models_v2.HasTenant):
+class ServiceChainNode(model_base.BASEV2, BaseSharedSCResource):
     """ServiceChain Node"""
     __tablename__ = 'sc_nodes'
-    name = sa.Column(sa.String(255))
-    description = sa.Column(sa.String(255))
     config = sa.Column(sa.TEXT)
     specs = orm.relationship(SpecNodeAssociation,
                              backref="nodes",
                              cascade='all, delete, delete-orphan')
-    shared = sa.Column(sa.Boolean)
     service_type = sa.Column(sa.String(50), nullable=True)
     service_profile_id = sa.Column(
         sa.String(36), sa.ForeignKey('service_profiles.id'),
         nullable=True)
 
 
-class ServiceChainInstance(model_base.BASEV2,
-                           models_v2.HasId, models_v2.HasTenant):
+class ServiceChainInstance(model_base.BASEV2, BaseSCResource):
     """Service chain instances"""
     __tablename__ = 'sc_instances'
-    name = sa.Column(sa.String(255))
-    description = sa.Column(sa.String(255))
     config_param_values = sa.Column(sa.String(4096))
     specs = orm.relationship(
         InstanceSpecAssociation,
@@ -103,13 +107,10 @@ class ServiceChainInstance(model_base.BASEV2,
                               nullable=True)
 
 
-class ServiceChainSpec(model_base.BASEV2, models_v2.HasId,
-                       models_v2.HasTenant):
+class ServiceChainSpec(model_base.BASEV2, BaseSharedSCResource):
     """ ServiceChain Spec
     """
     __tablename__ = 'sc_specs'
-    name = sa.Column(sa.String(255))
-    description = sa.Column(sa.String(255))
     nodes = orm.relationship(
         SpecNodeAssociation,
         backref='specs', cascade='all, delete, delete-orphan',
@@ -119,18 +120,13 @@ class ServiceChainSpec(model_base.BASEV2, models_v2.HasId,
     instances = orm.relationship(InstanceSpecAssociation,
                                  backref="specs",
                                  cascade='all, delete, delete-orphan')
-    shared = sa.Column(sa.Boolean)
 
 
-class ServiceProfile(model_base.BASEV2, models_v2.HasId,
-                     models_v2.HasTenant):
+class ServiceProfile(model_base.BASEV2, BaseSharedSCResource):
     """ Service Profile
     """
     __tablename__ = 'service_profiles'
-    name = sa.Column(sa.String(255))
-    description = sa.Column(sa.String(255))
     vendor = sa.Column(sa.String(50))
-    shared = sa.Column(sa.Boolean)
     # Not using ENUM for less painful upgrades. Validation will happen at the
     # API level
     insertion_mode = sa.Column(sa.String(50))
@@ -188,26 +184,28 @@ class ServiceChainDbPlugin(schain.ServiceChainPluginBase,
             raise schain.ServiceProfileNotFound(
                 profile_id=profile_id)
 
+    def _populate_common_fields_in_dict(self, db_ref):
+        res = {'id': db_ref['id'],
+               'tenant_id': db_ref['tenant_id'],
+               'name': db_ref['name'],
+               'description': db_ref['description'],
+               'status': db_ref['status'],
+               'status_details': db_ref['status_details'],
+               'shared': db_ref.get('shared', False)}
+        return res
+
     def _make_sc_node_dict(self, sc_node, fields=None):
-        res = {'id': sc_node['id'],
-               'tenant_id': sc_node['tenant_id'],
-               'name': sc_node['name'],
-               'description': sc_node['description'],
-               'service_profile_id': sc_node['service_profile_id'],
-               'service_type': sc_node['service_type'],
-               'config': sc_node['config'],
-               'shared': sc_node['shared']}
+        res = self._populate_common_fields_in_dict(sc_node)
+        res['service_profile_id'] = sc_node['service_profile_id']
+        res['service_type'] = sc_node['service_type']
+        res['config'] = sc_node['config']
         res['servicechain_specs'] = [sc_spec['servicechain_spec_id']
                                      for sc_spec in sc_node['specs']]
         return self._fields(res, fields)
 
     def _make_sc_spec_dict(self, spec, fields=None):
-        res = {'id': spec['id'],
-               'tenant_id': spec['tenant_id'],
-               'name': spec['name'],
-               'description': spec['description'],
-               'config_param_names': spec.get('config_param_names'),
-               'shared': spec['shared']}
+        res = self._populate_common_fields_in_dict(spec)
+        res['config_param_names'] = spec.get('config_param_names')
         res['nodes'] = [sc_node['node_id'] for sc_node in spec['nodes']]
         res['instances'] = [x['servicechain_instance_id'] for x in
                             spec['instances']]
@@ -222,21 +220,19 @@ class ServiceChainDbPlugin(schain.ServiceChainPluginBase,
                'provider_ptg_id': instance['provider_ptg_id'],
                'consumer_ptg_id': instance['consumer_ptg_id'],
                'management_ptg_id': instance['management_ptg_id'],
-               'classifier_id': instance['classifier_id']}
+               'classifier_id': instance['classifier_id'],
+               'status': instance['status'],
+               'status_details': instance['status_details']}
         res['servicechain_specs'] = [sc_spec['servicechain_spec_id']
                                     for sc_spec in instance['specs']]
         return self._fields(res, fields)
 
     def _make_service_profile_dict(self, profile, fields=None):
-        res = {'id': profile['id'],
-               'tenant_id': profile['tenant_id'],
-               'name': profile['name'],
-               'description': profile['description'],
-               'shared': profile['shared'],
-               'service_type': profile['service_type'],
-               'service_flavor': profile['service_flavor'],
-               'vendor': profile['vendor'],
-               'insertion_mode': profile['insertion_mode']}
+        res = self._populate_common_fields_in_dict(profile)
+        res['service_type'] = profile['service_type']
+        res['service_flavor'] = profile['service_flavor']
+        res['vendor'] = profile['vendor']
+        res['insertion_mode'] = profile['insertion_mode']
         res['nodes'] = [node['id'] for node in profile['nodes']]
         return self._fields(res, fields)
 
@@ -253,9 +249,11 @@ class ServiceChainDbPlugin(schain.ServiceChainPluginBase,
             node_db = ServiceChainNode(
                 id=uuidutils.generate_uuid(), tenant_id=tenant_id,
                 name=node['name'], description=node['description'],
-                service_profile_id=node['service_profile_id'],
-                service_type=node['service_type'],
-                config=node['config'], shared=node['shared'])
+                service_profile_id=node.get('service_profile_id'),
+                service_type=node.get('service_type'),
+                config=node['config'], shared=node['shared'],
+                status=node.get('status'),
+                status_details=node.get('status_details'))
             context.session.add(node_db)
         return self._make_sc_node_dict(node_db)
 
@@ -419,7 +417,10 @@ class ServiceChainDbPlugin(schain.ServiceChainPluginBase,
                                        tenant_id=tenant_id,
                                        name=spec['name'],
                                        description=spec['description'],
-                                       shared=spec['shared'])
+                                       shared=spec['shared'],
+                                       status=spec.get('status'),
+                                       status_details=
+                                       spec.get('status_details'))
             self._process_nodes_for_spec(context, spec_db, spec,
                                          set_params=set_params)
             context.session.add(spec_db)
@@ -479,11 +480,11 @@ class ServiceChainDbPlugin(schain.ServiceChainPluginBase,
         instance = servicechain_instance['servicechain_instance']
         tenant_id = self._get_tenant_id_for_create(context, instance)
         with context.session.begin(subtransactions=True):
-            if not instance['management_ptg_id']:
+            if not instance.get('management_ptg_id'):
                 management_groups = (
                     self._grouppolicy_plugin.get_policy_target_groups(
                         context, {'service_management': [True],
-                                  'tenant_id': [instance['tenant_id']]}))
+                                  'tenant_id': [instance.get('tenant_id')]}))
                 if not management_groups:
                     # Fall back on shared service management
                     management_groups = (
@@ -496,10 +497,12 @@ class ServiceChainDbPlugin(schain.ServiceChainPluginBase,
                 tenant_id=tenant_id, name=instance['name'],
                 description=instance['description'],
                 config_param_values=instance['config_param_values'],
-                provider_ptg_id=instance['provider_ptg_id'],
-                consumer_ptg_id=instance['consumer_ptg_id'],
-                management_ptg_id=instance['management_ptg_id'],
-                classifier_id=instance['classifier_id'])
+                provider_ptg_id=instance.get('provider_ptg_id'),
+                consumer_ptg_id=instance.get('consumer_ptg_id'),
+                management_ptg_id=instance.get('management_ptg_id'),
+                classifier_id=instance.get('classifier_id'),
+                status=instance.get('status'),
+                status_details=instance.get('status_details'))
             self._process_specs_for_instance(context, instance_db, instance)
             context.session.add(instance_db)
         return self._make_sc_instance_dict(instance_db)
@@ -559,11 +562,13 @@ class ServiceChainDbPlugin(schain.ServiceChainPluginBase,
             profile_db = ServiceProfile(
                 id=uuidutils.generate_uuid(), tenant_id=tenant_id,
                 name=profile['name'], description=profile['description'],
-                service_type=profile['service_type'],
-                insertion_mode=profile['insertion_mode'],
-                vendor=profile['vendor'],
-                service_flavor=profile['service_flavor'],
-                shared=profile['shared'])
+                service_type=profile.get('service_type'),
+                insertion_mode=profile.get('insertion_mode'),
+                vendor=profile.get('vendor'),
+                service_flavor=profile.get('service_flavor'),
+                shared=profile.get('shared'),
+                status=profile.get('status'),
+                status_details=profile.get('status_details'))
             context.session.add(profile_db)
         return self._make_service_profile_dict(profile_db)
 
