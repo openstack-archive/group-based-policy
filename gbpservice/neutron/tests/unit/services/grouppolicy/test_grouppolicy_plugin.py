@@ -17,7 +17,10 @@ from neutron.tests.unit.plugins.ml2 import test_plugin
 from oslo_config import cfg
 import webob.exc
 
+from gbpservice.neutron.db.grouppolicy import group_policy_mapping_db as gpmdb
 from gbpservice.neutron.extensions import group_policy as gpolicy
+from gbpservice.neutron.services.grouppolicy.drivers import dummy_driver
+from gbpservice.neutron.services.grouppolicy import plugin as gplugin
 from gbpservice.neutron.tests.unit.db.grouppolicy import (
     test_group_policy_db as tgpdb)
 from gbpservice.neutron.tests.unit.db.grouppolicy import (
@@ -41,6 +44,17 @@ class FakeDriver(object):
 
     def __getattr__(self, item):
         return self._fill_order
+
+
+NEW_STATUS = 'new_status'
+NEW_STATUS_DETAILS = 'new_status_details'
+
+
+def get_status_for_test(self, context):
+    resource_name = [item for item in context.__dict__.keys()
+     if item.startswith('_original')][0][len('_original'):]
+    getattr(context, resource_name)['status'] = NEW_STATUS
+    getattr(context, resource_name)['status_details'] = NEW_STATUS_DETAILS
 
 
 class GroupPolicyPluginTestCase(tgpmdb.GroupPolicyMappingDbTestCase):
@@ -913,6 +927,97 @@ class TestPolicyTarget(GroupPolicyPluginTestCase):
 
     def test_cross_tenant_admin(self):
         self._test_cross_tenant(True)
+
+
+class TestResourceStatusChange(GroupPolicyPluginTestCase):
+
+    def setUp(self, core_plugin=None, gp_plugin=None, ml2_options=None,
+              sc_plugin=None):
+        for resource_name in gpolicy.RESOURCE_ATTRIBUTE_MAP:
+            method_name = "get_" + self._get_resource_singular(
+                resource_name) + "_status"
+            setattr(dummy_driver.NoopDriver, method_name, get_status_for_test)
+        super(TestResourceStatusChange, self).setUp(
+            core_plugin=core_plugin, gp_plugin=gp_plugin, sc_plugin=sc_plugin)
+
+    def _test_status_change_on_get(self, resource_name, fields=None):
+        resource_singular = self._get_resource_singular(resource_name)
+        if resource_name == 'policy_rules':
+            pc_id = self.create_policy_classifier()['policy_classifier']['id']
+            resource = self.create_policy_rule(policy_classifier_id=pc_id)
+        else:
+            resource = getattr(self, "create_" + resource_singular)()
+        self.assertIsNone(resource[resource_singular]['status'])
+        self.assertIsNone(resource[resource_singular]['status_details'])
+
+        req = self.new_show_request(
+            resource_name, resource[resource_singular]['id'], fmt=self.fmt,
+            fields=fields)
+        res = self.deserialize(self.fmt, req.get_response(self.ext_api))
+
+        if not fields:
+            self.assertEqual(NEW_STATUS, res[resource_singular]['status'])
+            self.assertEqual(NEW_STATUS_DETAILS,
+                             res[resource_singular]['status_details'])
+        elif not gplugin.STATUS_SET.intersection(set(fields)):
+            neutron_context = context.Context('', self._tenant_id)
+            db_obj = getattr(
+                gpmdb.GroupPolicyMappingDbPlugin, "get_" + resource_singular)(
+                self._gbp_plugin, neutron_context,
+                resource[resource_singular]['id'])
+            self.assertIsNone(db_obj['status'])
+            self.assertIsNone(db_obj['status_details'])
+
+    def test_status_change_on_get(self):
+        for resource_name in gpolicy.RESOURCE_ATTRIBUTE_MAP:
+            self._test_status_change_on_get(resource_name)
+
+    def test_no_status_change_on_get(self):
+        # We explicitly populate the fields list with no status attributes
+        for resource_name in gpolicy.RESOURCE_ATTRIBUTE_MAP:
+            self._test_status_change_on_get(resource_name,
+                                            fields=['name'])
+
+    def _test_status_change_on_list(self, resource_name, fields=None):
+        resource_singular = self._get_resource_singular(resource_name)
+        if resource_name == 'policy_rules':
+            pc_id = self.create_policy_classifier()['policy_classifier']['id']
+            objs = [self.create_policy_rule(policy_classifier_id=pc_id),
+                    self.create_policy_rule(policy_classifier_id=pc_id),
+                    self.create_policy_rule(policy_classifier_id=pc_id)]
+        else:
+            create_method = "create_" + resource_singular
+            objs = [getattr(self, create_method)(),
+                    getattr(self, create_method)(),
+                    getattr(self, create_method)()]
+
+        for obj in objs:
+            req = self.new_show_request(
+                resource_name, obj[resource_singular]['id'], fmt=self.fmt,
+                fields=fields)
+            res = self.deserialize(self.fmt, req.get_response(self.ext_api))
+
+            if not fields:
+                self.assertEqual(NEW_STATUS, res[resource_singular]['status'])
+                self.assertEqual(NEW_STATUS_DETAILS,
+                                 res[resource_singular]['status_details'])
+            elif not gplugin.STATUS_SET.intersection(set(fields)):
+                neutron_context = context.Context('', self._tenant_id)
+                db_obj = getattr(
+                    gpmdb.GroupPolicyMappingDbPlugin,
+                    "get_" + resource_singular)(
+                    self._gbp_plugin, neutron_context,
+                    obj[resource_singular]['id'])
+                self.assertIsNone(db_obj['status'])
+                self.assertIsNone(db_obj['status_details'])
+
+    def test_status_change_on_list(self):
+        for resource_name in gpolicy.RESOURCE_ATTRIBUTE_MAP:
+            self._test_status_change_on_list(resource_name)
+
+    def test_no_status_change_on_list(self):
+        for resource_name in gpolicy.RESOURCE_ATTRIBUTE_MAP:
+            self._test_status_change_on_list(resource_name, fields=['name'])
 
 
 class TestPolicyAction(GroupPolicyPluginTestCase):
