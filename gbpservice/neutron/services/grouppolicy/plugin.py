@@ -426,12 +426,40 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
                               "for policy_target %s"),
                           policy_target_id)
 
+    def _get_status_from_drivers(self, context, context_name, resource_name,
+                                resource_id, resource):
+        result = resource
+        status = resource['status']
+        status_details = resource['status_details']
+        policy_context = getattr(p_context, context_name)(
+            self, context, resource, resource)
+        getattr(self.policy_driver_manager,
+                "get_" + resource_name + "_status")(policy_context)
+        _resource = getattr(policy_context, "_" + resource_name)
+        updated_status = _resource['status']
+        updated_status_details = _resource['status_details']
+        if status != updated_status or (
+                    status_details != updated_status_details):
+            new_status = {'policy_target':
+                              {'status': updated_status,
+                               'status_details': updated_status_details}}
+            session = context.session
+            with session.begin(subtransactions=True):
+                result = super(
+                    GroupPolicyPlugin, self).update_policy_target(
+                    context, _resource['id'], new_status)
+        return result
+
     def get_policy_target(self, context, policy_target_id, fields=None):
         session = context.session
         with session.begin(subtransactions=True):
             result = super(GroupPolicyPlugin, self).get_policy_target(
                 context, policy_target_id, None)
             self.extension_manager.extend_policy_target_dict(session, result)
+
+        result = self._get_status_from_drivers(
+            context, 'PolicyTargetContext', 'policy_target', policy_target_id,
+            result)
         return self._fields(result, fields)
 
     def get_policy_targets(self, context, filters=None, fields=None,
@@ -448,7 +476,14 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
                 filtered = self._filter_extended_result(result, filters)
                 if filtered:
                     filtered_results.append(filtered)
-        return [self._fields(result, fields) for result in filtered_results]
+        new_filtered_results = []
+        for result in filtered_results:
+            result = self._get_status_from_drivers(
+                context, 'PolicyTargetContext', 'policy_target', result['id'],
+                result)
+            new_filtered_results.append(result)
+        return [self._fields(result, fields) for result in
+                new_filtered_results]
 
     @log.log_method_call
     def create_policy_target_group(self, context, policy_target_group):

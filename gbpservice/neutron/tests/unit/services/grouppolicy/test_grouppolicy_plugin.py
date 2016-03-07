@@ -18,6 +18,7 @@ from oslo_config import cfg
 import webob.exc
 
 from gbpservice.neutron.extensions import group_policy as gpolicy
+from gbpservice.neutron.services.grouppolicy.drivers import dummy_driver
 from gbpservice.neutron.tests.unit.db.grouppolicy import (
     test_group_policy_db as tgpdb)
 from gbpservice.neutron.tests.unit.db.grouppolicy import (
@@ -41,6 +42,17 @@ class FakeDriver(object):
 
     def __getattr__(self, item):
         return self._fill_order
+
+
+NEW_STATUS = 'new_status'
+NEW_STATUS_DETAILS = 'new_status_details'
+
+
+def get_status_for_test(self, context):
+    resource_name = [item for item in context.__dict__.keys()
+     if item.startswith('_original')][0][len('_original'):]
+    getattr(context, resource_name)['status'] = NEW_STATUS
+    getattr(context, resource_name)['status_details'] = NEW_STATUS_DETAILS
 
 
 class GroupPolicyPluginTestCase(tgpmdb.GroupPolicyMappingDbTestCase):
@@ -913,6 +925,37 @@ class TestPolicyTarget(GroupPolicyPluginTestCase):
 
     def test_cross_tenant_admin(self):
         self._test_cross_tenant(True)
+
+
+class TestPolicyTargetStatusChange(GroupPolicyPluginTestCase):
+
+    def setUp(self, core_plugin=None, gp_plugin=None, ml2_options=None,
+              sc_plugin=None):
+        dummy_driver.NoopDriver.get_policy_target_status = (
+            get_status_for_test)
+        super(TestPolicyTargetStatusChange, self).setUp(
+            core_plugin=core_plugin, gp_plugin=gp_plugin, sc_plugin=sc_plugin)
+
+    def test_status_change(self):
+        ptg_id = self.create_policy_target_group()['policy_target_group']['id']
+        pt = self.create_policy_target(policy_target_group_id=ptg_id)
+        self.assertIsNone(pt['policy_target']['status'])
+        self.assertIsNone(pt['policy_target']['status_details'])
+
+        req = self.new_show_request(
+            'policy_targets', pt['policy_target']['id'], fmt=self.fmt)
+        res = self.deserialize(self.fmt, req.get_response(self.ext_api))
+
+        self.assertEqual(NEW_STATUS, res['policy_target']['status'])
+        self.assertEqual(NEW_STATUS_DETAILS,
+                         res['policy_target']['status_details'])
+
+    def test_list_policy_targets(self):
+        pts = [self.create_policy_target(name='pt1', description='pt'),
+               self.create_policy_target(name='pt2', description='pt'),
+               self.create_policy_target(name='pt3', description='pt')]
+        self._test_list_resources('policy_target', pts,
+                                  query_params='description=pt')
 
 
 class TestPolicyAction(GroupPolicyPluginTestCase):
