@@ -540,6 +540,15 @@ class TestServiceChainResources(ServiceChainDbTestCase):
                           ctx, sp_id)
 
 
+class TestServiceChainStatusAttributesForResources(
+    test_group_policy_db.TestStatusAttributesForResources):
+
+    def test_set_status_attrs(self):
+        for resource_name in service_chain.RESOURCE_ATTRIBUTE_MAP:
+            self._test_set_status_attrs(self._get_resource_singular(
+                resource_name), self._sc_plugin)
+
+
 class TestQuotasForServiceChain(ServiceChainDbTestCase):
 
     def setUp(self, core_plugin=None, sc_plugin=None,
