@@ -21,21 +21,6 @@ class GroupPolicyContext(object):
         self._plugin_context = plugin_context
 
 
-class BaseResouceContext(GroupPolicyContext):
-    def __init__(self, plugin, plugin_context, resource, original=None):
-        super(BaseResouceContext, self).__init__(plugin, plugin_context)
-        self._resource = resource
-        self._original = original
-
-    @property
-    def current(self):
-        return self._resource
-
-    @property
-    def original(self):
-        return self._original
-
-
 class PolicyTargetContext(GroupPolicyContext, api.PolicyTargetContext):
 
     def __init__(self, plugin, plugin_context, policy_target,
@@ -259,7 +244,21 @@ class PolicyRuleSetContext(GroupPolicyContext, api.PolicyRuleSetContext):
         return self._original_policy_rule_set
 
 
-class ExternalSegmentContext(BaseResouceContext, api.ExternalSegmentContext):
+class ExternalSegmentContext(GroupPolicyContext, api.ExternalSegmentContext):
+
+    def __init__(self, plugin, plugin_context, external_segment,
+                 original_external_segment=None):
+        super(ExternalSegmentContext, self).__init__(plugin, plugin_context)
+        self._external_segment = external_segment
+        self._original_external_segment = original_external_segment
+
+    @property
+    def current(self):
+        return self._external_segment
+
+    @property
+    def original(self):
+        return self._original_external_segment
 
     def add_subnet(self, subnet_id):
         self._plugin._set_subnet_to_es(self._plugin_context,
@@ -267,7 +266,21 @@ class ExternalSegmentContext(BaseResouceContext, api.ExternalSegmentContext):
         self.current['subnet_id'] = subnet_id
 
 
-class ExternalPolicyContext(BaseResouceContext, api.ExternalPolicyContext):
+class ExternalPolicyContext(GroupPolicyContext, api.ExternalPolicyContext):
+
+    def __init__(self, plugin, plugin_context, external_policy,
+                 original_external_policy=None):
+        super(ExternalPolicyContext, self).__init__(plugin, plugin_context)
+        self._external_policy = external_policy
+        self._original_external_policy = original_external_policy
+
+    @property
+    def current(self):
+        return self._external_policy
+
+    @property
+    def original(self):
+        return self._original_external_policy
 
     def set_external_segment(self, external_segment_id):
         external_segmets = [external_segment_id]
@@ -277,5 +290,18 @@ class ExternalPolicyContext(BaseResouceContext, api.ExternalPolicyContext):
             {'external_policy': {'external_segments': external_segmets}})
 
 
-class NatPoolContext(BaseResouceContext, api.NatPoolContext):
-    pass
+class NatPoolContext(GroupPolicyContext, api.NatPoolContext):
+
+    def __init__(self, plugin, plugin_context, nat_pool,
+                 original_nat_pool=None):
+        super(NatPoolContext, self).__init__(plugin, plugin_context)
+        self._nat_pool = nat_pool
+        self._original_nat_pool = original_nat_pool
+
+    @property
+    def current(self):
+        return self._nat_pool
+
+    @property
+    def original(self):
+        return self._original_nat_pool
