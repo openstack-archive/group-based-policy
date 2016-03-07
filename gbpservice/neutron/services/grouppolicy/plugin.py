@@ -23,6 +23,7 @@ from oslo_log import helpers as log
 from oslo_log import log as logging
 from oslo_utils import excutils
 
+from gbpservice.common import utils as gbp_utils
 from gbpservice.neutron.db.grouppolicy import group_policy_db as gpdb
 from gbpservice.neutron.db.grouppolicy import group_policy_mapping_db
 from gbpservice.neutron.extensions import group_policy as gpex
@@ -39,6 +40,9 @@ from gbpservice.neutron.services.servicechain.plugins.ncp import (
 
 
 LOG = logging.getLogger(__name__)
+STATUS = 'status'
+STATUS_DETAILS = 'status_details'
+STATUS_SET = set([STATUS, STATUS_DETAILS])
 
 
 class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
@@ -336,6 +340,80 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
                         res_type=primary_type, res_id=primary['id'],
                         ref_type=reference_type, ref_id=reference['id'])
 
+    def _get_status_from_drivers(self, context, context_name, resource_name,
+                                 resource_id, resource):
+        result = resource
+        status = resource['status']
+        status_details = resource['status_details']
+        policy_context = getattr(p_context, context_name)(
+            self, context, resource, resource)
+        getattr(self.policy_driver_manager,
+                "get_" + resource_name + "_status")(policy_context)
+        _resource = getattr(policy_context, "_" + resource_name)
+        updated_status = _resource['status']
+        updated_status_details = _resource['status_details']
+        if status != updated_status or (
+                    status_details != updated_status_details):
+            new_status = {resource_name: {'status': updated_status,
+                                          'status_details':
+                                          updated_status_details}}
+            session = context.session
+            with session.begin(subtransactions=True):
+                result = getattr(super(GroupPolicyPlugin, self),
+                                 "update_" + resource_name)(
+                    context, _resource['id'], new_status)
+        return result
+
+    def _get_resource(self, context, resource_name, resource_id,
+                      gbp_context_name, fields=None):
+        session = context.session
+        with session.begin(subtransactions=True):
+            get_method = "".join(['get_', resource_name])
+            result = getattr(super(GroupPolicyPlugin, self), get_method)(
+                context, resource_id, fields=fields)
+            extend_resources_method = "".join(['extend_', resource_name,
+                                               '_dict'])
+            getattr(self.extension_manager, extend_resources_method)(
+                session, result)
+
+        # Invoke drivers only if status attributes are requested
+        if not fields or STATUS_SET.intersection(set(fields)):
+            result = self._get_status_from_drivers(
+                context, gbp_context_name, resource_name, resource_id, result)
+        return self._fields(result, fields)
+
+    def _get_resources(self, context, resource_name, gbp_context_name,
+                       filters=None, fields=None, sorts=None, limit=None,
+                       marker=None, page_reverse=False):
+        session = context.session
+        with session.begin(subtransactions=True):
+            resource_plural = gbp_utils.get_resource_plural(resource_name)
+            get_resources_method = "".join(['get_', resource_plural])
+            results = getattr(super(GroupPolicyPlugin, self),
+                              get_resources_method)(
+                context, filters, None, sorts, limit, marker, page_reverse)
+            filtered_results = []
+            for result in results:
+                extend_resources_method = "".join(['extend_', resource_name,
+                                                   '_dict'])
+                getattr(self.extension_manager, extend_resources_method)(
+                    session, result)
+                filtered = self._filter_extended_result(result, filters)
+                if filtered:
+                    filtered_results.append(filtered)
+
+        new_filtered_results = []
+        # Invoke drivers only if status attributes are requested
+        if not fields or STATUS_SET.intersection(set(fields)):
+            for result in filtered_results:
+                result = self._get_status_from_drivers(
+                    context, gbp_context_name, resource_name, result['id'],
+                    result)
+                new_filtered_results.append(result)
+        new_filtered_results = new_filtered_results or filtered_results
+        return [self._fields(result, fields) for result in
+                new_filtered_results]
+
     def __init__(self):
         self.extension_manager = ext_manager.ExtensionManager()
         self.policy_driver_manager = manager.PolicyDriverManager()
@@ -437,29 +515,19 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
                               "for policy_target %s"),
                           policy_target_id)
 
+    @log.log_method_call
     def get_policy_target(self, context, policy_target_id, fields=None):
-        session = context.session
-        with session.begin(subtransactions=True):
-            result = super(GroupPolicyPlugin, self).get_policy_target(
-                context, policy_target_id, None)
-            self.extension_manager.extend_policy_target_dict(session, result)
-        return self._fields(result, fields)
+        return self._get_resource(context, 'policy_target', policy_target_id,
+                                  'PolicyTargetContext', fields=fields)
 
+    @log.log_method_call
     def get_policy_targets(self, context, filters=None, fields=None,
                            sorts=None, limit=None, marker=None,
                            page_reverse=False):
-        session = context.session
-        with session.begin(subtransactions=True):
-            results = super(GroupPolicyPlugin, self).get_policy_targets(
-                context, filters, None, sorts, limit, marker, page_reverse)
-            filtered_results = []
-            for result in results:
-                self.extension_manager.extend_policy_target_dict(
-                    session, result)
-                filtered = self._filter_extended_result(result, filters)
-                if filtered:
-                    filtered_results.append(filtered)
-        return [self._fields(result, fields) for result in filtered_results]
+        return self._get_resources(
+            context, 'policy_target', 'PolicyTargetContext',
+            filters=filters, fields=fields, sorts=sorts, limit=limit,
+            marker=marker, page_reverse=page_reverse)
 
     @log.log_method_call
     def create_policy_target_group(self, context, policy_target_group):
@@ -581,31 +649,21 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
                               "for policy_target_group %s"),
                           policy_target_group_id)
 
+    @log.log_method_call
     def get_policy_target_group(self, context, policy_target_group_id,
                                 fields=None):
-        session = context.session
-        with session.begin(subtransactions=True):
-            result = super(GroupPolicyPlugin, self).get_policy_target_group(
-                context, policy_target_group_id, None)
-            self.extension_manager.extend_policy_target_group_dict(session,
-                                                                   result)
-        return self._fields(result, fields)
+        return self._get_resource(context, 'policy_target_group',
+                                  policy_target_group_id,
+                                  'PolicyTargetGroupContext', fields=fields)
 
+    @log.log_method_call
     def get_policy_target_groups(self, context, filters=None, fields=None,
                                  sorts=None, limit=None, marker=None,
                                  page_reverse=False):
-        session = context.session
-        with session.begin(subtransactions=True):
-            results = super(GroupPolicyPlugin, self).get_policy_target_groups(
-                context, filters, None, sorts, limit, marker, page_reverse)
-            filtered_results = []
-            for result in results:
-                self.extension_manager.extend_policy_target_group_dict(
-                    session, result)
-                filtered = self._filter_extended_result(result, filters)
-                if filtered:
-                    filtered_results.append(filtered)
-        return [self._fields(result, fields) for result in results]
+        return self._get_resources(
+            context, 'policy_target_group', 'PolicyTargetGroupContext',
+            filters=filters, fields=fields, sorts=sorts, limit=limit,
+            marker=marker, page_reverse=page_reverse)
 
     @log.log_method_call
     def create_l2_policy(self, context, l2_policy):
@@ -673,29 +731,20 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
             LOG.exception(_LE("delete_l2_policy_postcommit failed "
                               "for l2_policy %s"), l2_policy_id)
 
+    @log.log_method_call
     def get_l2_policy(self, context, l2_policy_id, fields=None):
-        session = context.session
-        with session.begin(subtransactions=True):
-            result = super(GroupPolicyPlugin, self).get_l2_policy(
-                context, l2_policy_id, None)
-            self.extension_manager.extend_l2_policy_dict(session, result)
-        return self._fields(result, fields)
+        return self._get_resource(context, 'l2_policy',
+                                  l2_policy_id,
+                                  'L2PolicyContext', fields=fields)
 
+    @log.log_method_call
     def get_l2_policies(self, context, filters=None, fields=None,
                         sorts=None, limit=None, marker=None,
                         page_reverse=False):
-        session = context.session
-        with session.begin(subtransactions=True):
-            results = super(GroupPolicyPlugin, self).get_l2_policies(
-                context, filters, None, sorts, limit, marker, page_reverse)
-            filtered_results = []
-            for result in results:
-                self.extension_manager.extend_l2_policy_dict(
-                    session, result)
-                filtered = self._filter_extended_result(result, filters)
-                if filtered:
-                    filtered_results.append(filtered)
-        return [self._fields(result, fields) for result in results]
+        return self._get_resources(
+            context, 'l2_policy', 'L2PolicyContext',
+            filters=filters, fields=fields, sorts=sorts, limit=limit,
+            marker=marker, page_reverse=page_reverse)
 
     @log.log_method_call
     def create_network_service_policy(self, context, network_service_policy):
@@ -777,32 +826,21 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
                 "delete_network_service_policy_postcommit failed "
                 "for network_service_policy %s"), network_service_policy_id)
 
+    @log.log_method_call
     def get_network_service_policy(self, context, network_service_policy_id,
                                    fields=None):
-        session = context.session
-        with session.begin(subtransactions=True):
-            result = super(GroupPolicyPlugin, self).get_network_service_policy(
-                context, network_service_policy_id, None)
-            self.extension_manager.extend_network_service_policy_dict(session,
-                                                                      result)
-        return self._fields(result, fields)
+        return self._get_resource(context, 'network_service_policy',
+                                  network_service_policy_id,
+                                  'NetworkServicePolicyContext', fields=fields)
 
+    @log.log_method_call
     def get_network_service_policies(self, context, filters=None, fields=None,
                                      sorts=None, limit=None, marker=None,
                                      page_reverse=False):
-        session = context.session
-        with session.begin(subtransactions=True):
-            results = super(GroupPolicyPlugin,
-                            self).get_network_service_policies(
-                context, filters, None, sorts, limit, marker, page_reverse)
-            filtered_results = []
-            for result in results:
-                self.extension_manager.extend_network_service_policy_dict(
-                    session, result)
-                filtered = self._filter_extended_result(result, filters)
-                if filtered:
-                    filtered_results.append(filtered)
-        return [self._fields(result, fields) for result in results]
+        return self._get_resources(
+            context, 'network_service_policy', 'NetworkServicePolicyContext',
+            filters=filters, fields=fields, sorts=sorts, limit=limit,
+            marker=marker, page_reverse=page_reverse)
 
     @log.log_method_call
     def create_l3_policy(self, context, l3_policy):
@@ -879,29 +917,20 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
                               "for l3_policy %s"), l3_policy_id)
         return True
 
+    @log.log_method_call
     def get_l3_policy(self, context, l3_policy_id, fields=None):
-        session = context.session
-        with session.begin(subtransactions=True):
-            result = super(GroupPolicyPlugin, self).get_l3_policy(
-                context, l3_policy_id, None)
-            self.extension_manager.extend_l3_policy_dict(session, result)
-        return self._fields(result, fields)
+        return self._get_resource(context, 'l3_policy',
+                                  l3_policy_id,
+                                  'L3PolicyContext', fields=fields)
 
+    @log.log_method_call
     def get_l3_policies(self, context, filters=None, fields=None,
                         sorts=None, limit=None, marker=None,
                         page_reverse=False):
-        session = context.session
-        with session.begin(subtransactions=True):
-            results = super(GroupPolicyPlugin, self).get_l3_policies(
-                context, filters, None, sorts, limit, marker, page_reverse)
-            filtered_results = []
-            for result in results:
-                self.extension_manager.extend_l3_policy_dict(
-                    session, result)
-                filtered = self._filter_extended_result(result, filters)
-                if filtered:
-                    filtered_results.append(filtered)
-        return [self._fields(result, fields) for result in results]
+        return self._get_resources(
+            context, 'l3_policy', 'L3PolicyContext',
+            filters=filters, fields=fields, sorts=sorts, limit=limit,
+            marker=marker, page_reverse=page_reverse)
 
     @log.log_method_call
     def create_policy_classifier(self, context, policy_classifier):
@@ -974,31 +1003,21 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
             LOG.exception(_LE("delete_policy_classifier_postcommit failed "
                               "for policy_classifier %s"), id)
 
+    @log.log_method_call
     def get_policy_classifier(self, context, policy_classifier_id,
                               fields=None):
-        session = context.session
-        with session.begin(subtransactions=True):
-            result = super(GroupPolicyPlugin, self).get_policy_classifier(
-                context, policy_classifier_id, None)
-            self.extension_manager.extend_policy_classifier_dict(session,
-                                                                 result)
-        return self._fields(result, fields)
+        return self._get_resource(context, 'policy_classifier',
+                                  policy_classifier_id,
+                                  'PolicyClassifierContext', fields=fields)
 
+    @log.log_method_call
     def get_policy_classifiers(self, context, filters=None, fields=None,
                                sorts=None, limit=None, marker=None,
                                page_reverse=False):
-        session = context.session
-        with session.begin(subtransactions=True):
-            results = super(GroupPolicyPlugin, self).get_policy_classifiers(
-                context, filters, None, sorts, limit, marker, page_reverse)
-            filtered_results = []
-            for result in results:
-                self.extension_manager.extend_policy_classifier_dict(
-                    session, result)
-                filtered = self._filter_extended_result(result, filters)
-                if filtered:
-                    filtered_results.append(filtered)
-        return [self._fields(result, fields) for result in results]
+        return self._get_resources(
+            context, 'policy_classifier', 'PolicyClassifierContext',
+            filters=filters, fields=fields, sorts=sorts, limit=limit,
+            marker=marker, page_reverse=page_reverse)
 
     @log.log_method_call
     def create_policy_action(self, context, policy_action):
@@ -1071,29 +1090,20 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
             LOG.exception(_LE("delete_policy_action_postcommit failed "
                               "for policy_action %s"), id)
 
+    @log.log_method_call
     def get_policy_action(self, context, policy_action_id, fields=None):
-        session = context.session
-        with session.begin(subtransactions=True):
-            result = super(GroupPolicyPlugin, self).get_policy_action(
-                context, policy_action_id, None)
-            self.extension_manager.extend_policy_action_dict(session, result)
-        return self._fields(result, fields)
+        return self._get_resource(context, 'policy_action',
+                                  policy_action_id,
+                                  'PolicyActionContext', fields=fields)
 
+    @log.log_method_call
     def get_policy_actions(self, context, filters=None, fields=None,
                            sorts=None, limit=None, marker=None,
                            page_reverse=False):
-        session = context.session
-        with session.begin(subtransactions=True):
-            results = super(GroupPolicyPlugin, self).get_policy_actions(
-                context, filters, None, sorts, limit, marker, page_reverse)
-            filtered_results = []
-            for result in results:
-                self.extension_manager.extend_policy_action_dict(
-                    session, result)
-                filtered = self._filter_extended_result(result, filters)
-                if filtered:
-                    filtered_results.append(filtered)
-        return [self._fields(result, fields) for result in results]
+        return self._get_resources(
+            context, 'policy_action', 'PolicyActionContext',
+            filters=filters, fields=fields, sorts=sorts, limit=limit,
+            marker=marker, page_reverse=page_reverse)
 
     @log.log_method_call
     def create_policy_rule(self, context, policy_rule):
@@ -1164,29 +1174,20 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
             LOG.exception(_LE("delete_policy_rule_postcommit failed "
                               "for policy_rule %s"), id)
 
+    @log.log_method_call
     def get_policy_rule(self, context, policy_rule_id, fields=None):
-        session = context.session
-        with session.begin(subtransactions=True):
-            result = super(GroupPolicyPlugin, self).get_policy_rule(
-                context, policy_rule_id, None)
-            self.extension_manager.extend_policy_rule_dict(session, result)
-        return self._fields(result, fields)
+        return self._get_resource(context, 'policy_rule',
+                                  policy_rule_id,
+                                  'PolicyRuleContext', fields=fields)
 
+    @log.log_method_call
     def get_policy_rules(self, context, filters=None, fields=None,
                          sorts=None, limit=None, marker=None,
                          page_reverse=False):
-        session = context.session
-        with session.begin(subtransactions=True):
-            results = super(GroupPolicyPlugin, self).get_policy_rules(
-                context, filters, None, sorts, limit, marker, page_reverse)
-            filtered_results = []
-            for result in results:
-                self.extension_manager.extend_policy_rule_dict(
-                    session, result)
-                filtered = self._filter_extended_result(result, filters)
-                if filtered:
-                    filtered_results.append(filtered)
-        return [self._fields(result, fields) for result in results]
+        return self._get_resources(
+            context, 'policy_rule', 'PolicyRuleContext',
+            filters=filters, fields=fields, sorts=sorts, limit=limit,
+            marker=marker, page_reverse=page_reverse)
 
     @log.log_method_call
     def create_policy_rule_set(self, context, policy_rule_set):
@@ -1258,29 +1259,20 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
             LOG.exception(_LE("delete_policy_rule_set_postcommit failed "
                               "for policy_rule_set %s"), id)
 
+    @log.log_method_call
     def get_policy_rule_set(self, context, policy_rule_set_id, fields=None):
-        session = context.session
-        with session.begin(subtransactions=True):
-            result = super(GroupPolicyPlugin, self).get_policy_rule_set(
-                context, policy_rule_set_id, None)
-            self.extension_manager.extend_policy_rule_set_dict(session, result)
-        return self._fields(result, fields)
+        return self._get_resource(context, 'policy_rule_set',
+                                  policy_rule_set_id,
+                                  'PolicyRuleSetContext', fields=fields)
 
+    @log.log_method_call
     def get_policy_rule_sets(self, context, filters=None, fields=None,
                              sorts=None, limit=None, marker=None,
                              page_reverse=False):
-        session = context.session
-        with session.begin(subtransactions=True):
-            results = super(GroupPolicyPlugin, self).get_policy_rule_sets(
-                context, filters, None, sorts, limit, marker, page_reverse)
-            filtered_results = []
-            for result in results:
-                self.extension_manager.extend_policy_rule_set_dict(
-                    session, result)
-                filtered = self._filter_extended_result(result, filters)
-                if filtered:
-                    filtered_results.append(filtered)
-        return [self._fields(result, fields) for result in results]
+        return self._get_resources(
+            context, 'policy_rule_set', 'PolicyRuleSetContext',
+            filters=filters, fields=fields, sorts=sorts, limit=limit,
+            marker=marker, page_reverse=page_reverse)
 
     @log.log_method_call
     def create_external_segment(self, context, external_segment):
@@ -1366,30 +1358,20 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
                           external_segment_id)
         return True
 
+    @log.log_method_call
     def get_external_segment(self, context, external_segment_id, fields=None):
-        session = context.session
-        with session.begin(subtransactions=True):
-            result = super(GroupPolicyPlugin, self).get_external_segment(
-                context, external_segment_id, None)
-            self.extension_manager.extend_external_segment_dict(session,
-                                                                result)
-        return self._fields(result, fields)
+        return self._get_resource(context, 'external_segment',
+                                  external_segment_id,
+                                  'ExternalSegmentContext', fields=fields)
 
+    @log.log_method_call
     def get_external_segments(self, context, filters=None, fields=None,
                               sorts=None, limit=None, marker=None,
                               page_reverse=False):
-        session = context.session
-        with session.begin(subtransactions=True):
-            results = super(GroupPolicyPlugin, self).get_external_segments(
-                context, filters, None, sorts, limit, marker, page_reverse)
-            filtered_results = []
-            for result in results:
-                self.extension_manager.extend_external_segment_dict(
-                    session, result)
-                filtered = self._filter_extended_result(result, filters)
-                if filtered:
-                    filtered_results.append(filtered)
-        return [self._fields(result, fields) for result in results]
+        return self._get_resources(
+            context, 'external_segment', 'ExternalSegmentContext',
+            filters=filters, fields=fields, sorts=sorts, limit=limit,
+            marker=marker, page_reverse=page_reverse)
 
     @log.log_method_call
     def create_external_policy(self, context, external_policy):
@@ -1466,30 +1448,20 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
             LOG.exception(_LE("delete_external_policy_postcommit failed "
                               "for external_policy %s"), external_policy_id)
 
+    @log.log_method_call
     def get_external_policy(self, context, external_policy_id, fields=None):
-        session = context.session
-        with session.begin(subtransactions=True):
-            result = super(GroupPolicyPlugin, self).get_external_policy(
-                context, external_policy_id, None)
-            self.extension_manager.extend_external_policy_dict(session,
-                                                               result)
-        return self._fields(result, fields)
+        return self._get_resource(context, 'external_policy',
+                                  external_policy_id,
+                                  'ExternalPolicyContext', fields=fields)
 
+    @log.log_method_call
     def get_external_policies(self, context, filters=None, fields=None,
                               sorts=None, limit=None, marker=None,
                               page_reverse=False):
-        session = context.session
-        with session.begin(subtransactions=True):
-            results = super(GroupPolicyPlugin, self).get_external_policies(
-                context, filters, None, sorts, limit, marker, page_reverse)
-            filtered_results = []
-            for result in results:
-                self.extension_manager.extend_external_policy_dict(
-                    session, result)
-                filtered = self._filter_extended_result(result, filters)
-                if filtered:
-                    filtered_results.append(filtered)
-        return [self._fields(result, fields) for result in results]
+        return self._get_resources(
+            context, 'external_policy', 'ExternalPolicyContext',
+            filters=filters, fields=fields, sorts=sorts, limit=limit,
+            marker=marker, page_reverse=page_reverse)
 
     @log.log_method_call
     def create_nat_pool(self, context, nat_pool):
@@ -1556,29 +1528,20 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
                               "for nat_pool %s"),
                           nat_pool_id)
 
+    @log.log_method_call
     def get_nat_pool(self, context, nat_pool_id, fields=None):
-        session = context.session
-        with session.begin(subtransactions=True):
-            result = super(GroupPolicyPlugin, self).get_nat_pool(
-                context, nat_pool_id, None)
-            self.extension_manager.extend_nat_pool_dict(session, result)
-        return self._fields(result, fields)
+        return self._get_resource(context, 'nat_pool',
+                                  nat_pool_id,
+                                  'NatPoolContext', fields=fields)
 
+    @log.log_method_call
     def get_nat_pools(self, context, filters=None, fields=None,
                       sorts=None, limit=None, marker=None,
                       page_reverse=False):
-        session = context.session
-        with session.begin(subtransactions=True):
-            results = super(GroupPolicyPlugin, self).get_nat_pools(
-                context, filters, None, sorts, limit, marker, page_reverse)
-            filtered_results = []
-            for result in results:
-                self.extension_manager.extend_nat_pool_dict(
-                    session, result)
-                filtered = self._filter_extended_result(result, filters)
-                if filtered:
-                    filtered_results.append(filtered)
-        return [self._fields(result, fields) for result in results]
+        return self._get_resources(
+            context, 'nat_pool', 'NatPoolContext',
+            filters=filters, fields=fields, sorts=sorts, limit=limit,
+            marker=marker, page_reverse=page_reverse)
 
     def _is_port_bound(self, port_id):
         # REVISIT(ivar): This operation shouldn't be done within a DB lock
