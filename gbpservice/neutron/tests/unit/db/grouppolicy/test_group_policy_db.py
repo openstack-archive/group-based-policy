@@ -240,6 +240,12 @@ class GroupPolicyDBTestBase(ApiManagerMixin):
 
         return resource_plural
 
+    def _get_resource_singular(self, resource_plural):
+        if resource_plural.endswith('ies'):
+            return resource_plural.replace('ies', 'y')
+        else:
+            return resource_plural[:-1]
+
     def _test_list_resources(self, resource, items,
                              neutron_context=None,
                              query_params=None):
@@ -323,6 +329,7 @@ class GroupPolicyDbTestCase(GroupPolicyDBTestBase,
 
         plugins = manager.NeutronManager.get_service_plugins()
         self._gbp_plugin = plugins.get(constants.GROUP_POLICY)
+        self._sc_plugin = plugins.get(constants.SERVICECHAIN)
 
 
 class TestGroupResources(GroupPolicyDbTestCase):
@@ -1612,3 +1619,52 @@ class TestQuotasForGBP(GroupPolicyDbTestCase):
                           self.create_external_segment)
         self.assertRaises(webob.exc.HTTPClientError,
                           self.create_nat_pool)
+
+
+class TestStatusAttributesForResources(GroupPolicyDbTestCase):
+
+    def _test_set_status_attrs(self, resource_name, plugin_ref):
+        all_statuses = []
+        status_details = 'something'
+        none_status_dict = {resource_name: {'status': None,
+                                            'status_details': None}}
+        for status in gp_constants.STATUS_STATES:
+            status_dict = {'status': status,
+                           'status_details': status_details}
+            all_statuses.append(status_dict)
+        operation_name = ''.join(['get_create_', resource_name,
+                                  '_default_attrs'])
+        attrs = {resource_name: cm.__getattribute__(operation_name)()}
+
+        if resource_name == 'policy_rule':
+            pc_id = self.create_policy_classifier()['policy_classifier']['id']
+            attrs[resource_name]['policy_classifier_id'] = pc_id
+
+        for status in all_statuses:
+            attrs[resource_name]['status'] = status['status']
+            attrs[resource_name]['status_details'] = (
+                status['status_details'])
+
+            update_dict = {resource_name: status}
+
+            neutron_context = context.Context('', self._tenant_id)
+            operation_name = ''.join(['create_', resource_name])
+            res = plugin_ref.__getattribute__(operation_name)(
+                neutron_context, attrs)
+            self.assertEqual(status['status'], res['status'])
+            self.assertEqual(status_details, res['status_details'])
+            operation_name = ''.join(['update_', resource_name])
+            res = plugin_ref.__getattribute__(operation_name)(
+                neutron_context, res['id'], none_status_dict)
+            self.assertIsNone(res['status'])
+            self.assertIsNone(res['status_details'])
+            operation_name = ''.join(['update_', resource_name])
+            res = plugin_ref.__getattribute__(operation_name)(
+                neutron_context, res['id'], update_dict)
+            self.assertEqual(status['status'], res['status'])
+            self.assertEqual(status_details, res['status_details'])
+
+    def test_set_status_attrs(self):
+        for resource_name in gpolicy.RESOURCE_ATTRIBUTE_MAP:
+            self._test_set_status_attrs(self._get_resource_singular(
+                resource_name), self._gbp_plugin)
