@@ -35,19 +35,18 @@ MAX_IPV6_SUBNET_PREFIX_LENGTH = 127
 ADDRESS_NOT_SPECIFIED = ''
 
 
-class HasNameDescription(object):
+class BaseGbpResource(models_v2.HasId, models_v2.HasTenant):
     name = sa.Column(sa.String(255))
     description = sa.Column(sa.String(255))
+    status = sa.Column(sa.String(length=16), nullable=True)
+    status_details = sa.Column(sa.String(length=4096), nullable=True)
 
 
-class BaseSharedGbpResource(models_v2.HasId, models_v2.HasTenant,
-                            HasNameDescription):
+class BaseSharedGbpResource(BaseGbpResource):
     shared = sa.Column(sa.Boolean)
-    pass
 
 
-class PolicyTarget(gquota.GBPQuotaBase, model_base.BASEV2, models_v2.HasId,
-                   models_v2.HasTenant):
+class PolicyTarget(gquota.GBPQuotaBase, model_base.BASEV2, BaseGbpResource):
     """Lowest unit of abstraction on which a policy is applied."""
     __tablename__ = 'gp_policy_targets'
     type = sa.Column(sa.String(15))
@@ -89,7 +88,7 @@ class PTGToPRSConsumingAssociation(model_base.BASEV2):
 
 
 class PolicyTargetGroup(gquota.GBPQuotaBase, model_base.BASEV2,
-                        models_v2.HasId, models_v2.HasTenant):
+                        BaseSharedGbpResource):
     """It is a collection of policy_targets."""
     __tablename__ = 'gp_policy_target_groups'
     type = sa.Column(sa.String(15))
@@ -97,8 +96,6 @@ class PolicyTargetGroup(gquota.GBPQuotaBase, model_base.BASEV2,
         'polymorphic_on': type,
         'polymorphic_identity': 'base'
     }
-    name = sa.Column(sa.String(255))
-    description = sa.Column(sa.String(255))
     policy_targets = orm.relationship(PolicyTarget,
                                       backref='policy_target_group')
     l2_policy_id = sa.Column(sa.String(36),
@@ -113,12 +110,10 @@ class PolicyTargetGroup(gquota.GBPQuotaBase, model_base.BASEV2,
     consumed_policy_rule_sets = orm.relationship(
         PTGToPRSConsumingAssociation,
         backref='consuming_policy_target_group', cascade='all, delete-orphan')
-    shared = sa.Column(sa.Boolean)
     service_management = sa.Column(sa.Boolean)
 
 
-class L2Policy(gquota.GBPQuotaBase, model_base.BASEV2, models_v2.HasId,
-               models_v2.HasTenant):
+class L2Policy(gquota.GBPQuotaBase, model_base.BASEV2, BaseSharedGbpResource):
     """Represents a L2 Policy for a collection of policy_target_groups."""
     __tablename__ = 'gp_l2_policies'
     type = sa.Column(sa.String(15))
@@ -126,8 +121,6 @@ class L2Policy(gquota.GBPQuotaBase, model_base.BASEV2, models_v2.HasId,
         'polymorphic_on': type,
         'polymorphic_identity': 'base'
     }
-    name = sa.Column(sa.String(255))
-    description = sa.Column(sa.String(255))
     policy_target_groups = orm.relationship(PolicyTargetGroup,
                                             backref='l2_policy')
     l3_policy_id = sa.Column(sa.String(36),
@@ -135,7 +128,6 @@ class L2Policy(gquota.GBPQuotaBase, model_base.BASEV2, models_v2.HasId,
                              nullable=True)
     inject_default_route = sa.Column(sa.Boolean, default=True,
                                      server_default=sa.sql.true())
-    shared = sa.Column(sa.Boolean)
 
 
 class ESToL3PAssociation(model_base.BASEV2):
@@ -150,8 +142,7 @@ class ESToL3PAssociation(model_base.BASEV2):
                                   primary_key=True)
 
 
-class L3Policy(gquota.GBPQuotaBase, model_base.BASEV2, models_v2.HasId,
-               models_v2.HasTenant):
+class L3Policy(gquota.GBPQuotaBase, model_base.BASEV2, BaseSharedGbpResource):
     """Represents a L3 Policy with a non-overlapping IP address space."""
     __tablename__ = 'gp_l3_policies'
     type = sa.Column(sa.String(15))
@@ -159,13 +150,11 @@ class L3Policy(gquota.GBPQuotaBase, model_base.BASEV2, models_v2.HasId,
         'polymorphic_on': type,
         'polymorphic_identity': 'base'
     }
-    name = sa.Column(sa.String(255))
     description = sa.Column(sa.String(255))
     ip_version = sa.Column(sa.Integer, nullable=False)
     ip_pool = sa.Column(sa.String(64), nullable=False)
     subnet_prefix_length = sa.Column(sa.Integer, nullable=False)
     l2_policies = orm.relationship(L2Policy, backref='l3_policy')
-    shared = sa.Column(sa.Boolean)
     external_segments = orm.relationship(
         ESToL3PAssociation, backref='l3_policies',
         cascade='all, delete-orphan')
@@ -219,12 +208,10 @@ class PolicyRuleActionAssociation(model_base.BASEV2):
                                  primary_key=True)
 
 
-class PolicyRule(gquota.GBPQuotaBase, model_base.BASEV2, models_v2.HasId,
-                 models_v2.HasTenant):
+class PolicyRule(gquota.GBPQuotaBase, model_base.BASEV2,
+                 BaseSharedGbpResource):
     """Represents a Group Policy Rule."""
     __tablename__ = 'gp_policy_rules'
-    name = sa.Column(sa.String(255))
-    description = sa.Column(sa.String(255))
     enabled = sa.Column(sa.Boolean)
     policy_classifier_id = sa.Column(sa.String(36),
                                      sa.ForeignKey(
@@ -236,15 +223,12 @@ class PolicyRule(gquota.GBPQuotaBase, model_base.BASEV2, models_v2.HasId,
     policy_rule_sets = orm.relationship(PRSToPRAssociation,
                                         backref='policy_rule', lazy="joined",
                                         cascade='all, delete-orphan')
-    shared = sa.Column(sa.Boolean)
 
 
-class PolicyClassifier(gquota.GBPQuotaBase, model_base.BASEV2, models_v2.HasId,
-                       models_v2.HasTenant):
+class PolicyClassifier(gquota.GBPQuotaBase, model_base.BASEV2,
+                       BaseSharedGbpResource):
     """Represents a Group Policy Classifier."""
     __tablename__ = 'gp_policy_classifiers'
-    name = sa.Column(sa.String(255))
-    description = sa.Column(sa.String(255))
     protocol = sa.Column(sa.String(50), nullable=True)
     port_range_min = sa.Column(sa.Integer)
     port_range_max = sa.Column(sa.Integer)
@@ -254,15 +238,12 @@ class PolicyClassifier(gquota.GBPQuotaBase, model_base.BASEV2, models_v2.HasId,
                                   name='direction'))
     policy_rules = orm.relationship(PolicyRule,
                                     backref='gp_policy_classifiers')
-    shared = sa.Column(sa.Boolean)
 
 
-class PolicyAction(gquota.GBPQuotaBase, model_base.BASEV2, models_v2.HasId,
-                   models_v2.HasTenant):
+class PolicyAction(gquota.GBPQuotaBase, model_base.BASEV2,
+                   BaseSharedGbpResource):
     """Represents a Group Policy Action."""
     __tablename__ = 'gp_policy_actions'
-    name = sa.Column(sa.String(255))
-    description = sa.Column(sa.String(255))
     action_type = sa.Column(sa.Enum(gp_constants.GP_ACTION_ALLOW,
                                     gp_constants.GP_ACTION_REDIRECT,
                                     name='action_type'))
@@ -272,7 +253,6 @@ class PolicyAction(gquota.GBPQuotaBase, model_base.BASEV2, models_v2.HasId,
     action_value = sa.Column(sa.String(36), nullable=True)
     policy_rules = orm.relationship(PolicyRuleActionAssociation,
                                     cascade='all', backref='gp_policy_actions')
-    shared = sa.Column(sa.Boolean)
 
 
 class EPToPRSProvidingAssociation(model_base.BASEV2):
@@ -326,6 +306,8 @@ class PolicyRuleSet(gquota.GBPQuotaBase, model_base.BASEV2,
         EPToPRSConsumingAssociation,
         backref='consumed_policy_rule_set', lazy="joined", cascade='all')
     shared = sa.Column(sa.Boolean)
+    status = sa.Column(sa.String(length=16), nullable=True)
+    status_details = sa.Column(sa.String(length=4096), nullable=True)
 
 
 class NATPool(gquota.GBPQuotaBase, model_base.BASEV2, BaseSharedGbpResource):
@@ -821,24 +803,32 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
                             l3_policy_id=l3p_db['id'], allocated_address=ip)
                         l3p_db.external_segments.append(assoc)
 
+    def _populate_common_fields_in_dict(self, db_ref):
+        res = {'id': db_ref['id'],
+               'tenant_id': db_ref['tenant_id'],
+               'name': db_ref['name'],
+               'description': db_ref['description'],
+               'status': db_ref['status'],
+               'status_details': db_ref['status_details'],
+               'shared': db_ref.get('shared', False)}
+        return res
+
     def _make_policy_target_dict(self, pt, fields=None):
         res = {'id': pt['id'],
                'tenant_id': pt['tenant_id'],
                'name': pt['name'],
                'description': pt['description'],
+               'status': pt['status'],
+               'status_details': pt['status_details'],
                'policy_target_group_id': pt['policy_target_group_id'],
                'cluster_id': pt['cluster_id']}
         return self._fields(res, fields)
 
     def _make_policy_target_group_dict(self, ptg, fields=None):
-        res = {'id': ptg['id'],
-               'tenant_id': ptg['tenant_id'],
-               'name': ptg['name'],
-               'description': ptg['description'],
-               'l2_policy_id': ptg['l2_policy_id'],
-               'network_service_policy_id': ptg['network_service_policy_id'],
-               'shared': ptg.get('shared', False),
-               'service_management': ptg.get('service_management', False)}
+        res = self._populate_common_fields_in_dict(ptg)
+        res['l2_policy_id'] = ptg['l2_policy_id']
+        res['network_service_policy_id'] = ptg['network_service_policy_id']
+        res['service_management'] = ptg.get('service_management', False)
         res['policy_targets'] = [
             pt['id'] for pt in ptg['policy_targets']]
         res['provided_policy_rule_sets'] = (
@@ -850,27 +840,18 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
         return self._fields(res, fields)
 
     def _make_l2_policy_dict(self, l2p, fields=None):
-        res = {'id': l2p['id'],
-               'tenant_id': l2p['tenant_id'],
-               'name': l2p['name'],
-               'description': l2p['description'],
-               'l3_policy_id': l2p['l3_policy_id'],
-               'inject_default_route': l2p.get('inject_default_route', True),
-               'shared': l2p.get('shared', False), }
+        res = self._populate_common_fields_in_dict(l2p)
+        res['l3_policy_id'] = l2p['l3_policy_id']
+        res['inject_default_route'] = l2p.get('inject_default_route', True)
         res['policy_target_groups'] = [
             ptg['id'] for ptg in l2p['policy_target_groups']]
         return self._fields(res, fields)
 
     def _make_l3_policy_dict(self, l3p, fields=None):
-        res = {'id': l3p['id'],
-               'tenant_id': l3p['tenant_id'],
-               'name': l3p['name'],
-               'description': l3p['description'],
-               'ip_version': l3p['ip_version'],
-               'ip_pool': l3p['ip_pool'],
-               'subnet_prefix_length':
-               l3p['subnet_prefix_length'],
-               'shared': l3p.get('shared', False), }
+        res = self._populate_common_fields_in_dict(l3p)
+        res['ip_version'] = l3p['ip_version']
+        res['ip_pool'] = l3p['ip_pool']
+        res['subnet_prefix_length'] = l3p['subnet_prefix_length']
         res['l2_policies'] = [l2p['id']
                               for l2p in l3p['l2_policies']]
         es_dict = {}
@@ -883,11 +864,7 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
         return self._fields(res, fields)
 
     def _make_network_service_policy_dict(self, nsp, fields=None):
-        res = {'id': nsp['id'],
-               'tenant_id': nsp['tenant_id'],
-               'name': nsp['name'],
-               'description': nsp['description'],
-               'shared': nsp.get('shared', False), }
+        res = self._populate_common_fields_in_dict(nsp)
         res['policy_target_groups'] = [
             ptg['id'] for ptg in nsp['policy_target_groups']]
         params = []
@@ -900,41 +877,29 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
         return self._fields(res, fields)
 
     def _make_policy_classifier_dict(self, pc, fields=None):
+        res = self._populate_common_fields_in_dict(pc)
         port_range = self._get_port_range_from_min_max_ports(
             pc['port_range_min'],
             pc['port_range_max'])
-        res = {'id': pc['id'],
-               'tenant_id': pc['tenant_id'],
-               'name': pc['name'],
-               'description': pc['description'],
-               'protocol': pc['protocol'],
-               'port_range': port_range,
-               'direction': pc['direction'],
-               'shared': pc.get('shared', False), }
+        res['protocol'] = pc['protocol']
+        res['port_range'] = port_range,
+        res['direction'] = pc['direction']
         res['policy_rules'] = [pr['id']
                                for pr in pc['policy_rules']]
         return self._fields(res, fields)
 
     def _make_policy_action_dict(self, pa, fields=None):
-        res = {'id': pa['id'],
-               'tenant_id': pa['tenant_id'],
-               'name': pa['name'],
-               'description': pa['description'],
-               'action_type': pa['action_type'],
-               'action_value': pa['action_value'],
-               'shared': pa.get('shared', False), }
+        res = self._populate_common_fields_in_dict(pa)
+        res['action_type'] = pa['action_type']
+        res['action_value'] = pa['action_value']
         res['policy_rules'] = [pr['policy_rule_id'] for
                                pr in pa['policy_rules']]
         return self._fields(res, fields)
 
     def _make_policy_rule_dict(self, pr, fields=None):
-        res = {'id': pr['id'],
-               'tenant_id': pr['tenant_id'],
-               'name': pr['name'],
-               'description': pr['description'],
-               'enabled': pr['enabled'],
-               'policy_classifier_id': pr['policy_classifier_id'],
-               'shared': pr.get('shared', False), }
+        res = self._populate_common_fields_in_dict(pr)
+        res['enabled'] = pr['enabled']
+        res['policy_classifier_id'] = pr['policy_classifier_id']
         res['policy_actions'] = [pa['policy_action_id']
                                  for pa in pr['policy_actions']]
         res['policy_rule_sets'] = [prs['policy_rule_set_id'] for prs in
@@ -942,11 +907,7 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
         return self._fields(res, fields)
 
     def _make_policy_rule_set_dict(self, prs, fields=None):
-        res = {'id': prs['id'],
-               'tenant_id': prs['tenant_id'],
-               'name': prs['name'],
-               'description': prs['description'],
-               'shared': prs.get('shared', False), }
+        res = self._populate_common_fields_in_dict(prs)
         if prs['parent']:
             res['parent_id'] = prs['parent']['id']
         else:
@@ -985,14 +946,10 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
         return self._fields(res, fields)
 
     def _make_external_segment_dict(self, es, fields=None):
-        res = {'id': es['id'],
-               'tenant_id': es['tenant_id'],
-               'name': es['name'],
-               'description': es['description'],
-               'shared': es.get('shared', False),
-               'ip_version': es['ip_version'],
-               'cidr': es['cidr'],
-               'port_address_translation': es['port_address_translation']}
+        res = self._populate_common_fields_in_dict(es)
+        res['ip_version'] = es['ip_version']
+        res['cidr'] = es['cidr']
+        res['port_address_translation'] = es['port_address_translation']
         res['external_routes'] = [{'destination': er['destination'],
                                    'nexthop': er['nexthop']} for er in
                                   es['external_routes']]
@@ -1006,11 +963,7 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
         return self._fields(res, fields)
 
     def _make_external_policy_dict(self, ep, fields=None):
-        res = {'id': ep['id'],
-               'tenant_id': ep['tenant_id'],
-               'name': ep['name'],
-               'description': ep['description'],
-               'shared': ep.get('shared', False), }
+        res = self._populate_common_fields_in_dict(ep)
         res['external_segments'] = [
             es['external_segment_id']
             for es in ep['external_segments']]
@@ -1023,14 +976,10 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
         return self._fields(res, fields)
 
     def _make_nat_pool_dict(self, np, fields=None):
-        res = {'id': np['id'],
-               'tenant_id': np['tenant_id'],
-               'name': np['name'],
-               'description': np['description'],
-               'shared': np.get('shared', False),
-               'ip_version': np['ip_version'],
-               'ip_pool': np['ip_pool'],
-               'external_segment_id': np['external_segment_id']}
+        res = self._populate_common_fields_in_dict(np)
+        res['ip_version'] = np['ip_version']
+        res['ip_pool'] = np['ip_pool']
+        res['external_segment_id'] = np['external_segment_id']
         return self._fields(res, fields)
 
     def _get_ptgs_for_providing_policy_rule_set(self, context,
