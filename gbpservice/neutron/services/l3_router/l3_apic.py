@@ -15,17 +15,17 @@
 
 from neutron.common import constants as q_const
 from neutron import context as n_ctx
-from neutron.db import db_base_plugin_v2
+from neutron.db import common_db_mixin
 from neutron.db import extraroute_db
-from neutron.db import l3_dvr_db
+from neutron.db import l3_gwmode_db
 from neutron.extensions import l3
 from neutron import manager
 from neutron.plugins.common import constants
 
 
-class ApicGBPL3ServicePlugin(db_base_plugin_v2.NeutronDbPluginV2,
-        l3_dvr_db.L3_NAT_with_dvr_db_mixin,
-        extraroute_db.ExtraRoute_db_mixin):
+class ApicGBPL3ServicePlugin(common_db_mixin.CommonDbMixin,
+        extraroute_db.ExtraRoute_db_mixin,
+        l3_gwmode_db.L3_NAT_db_mixin):
 
     supported_extension_aliases = ["router", "ext-gw-mode", "extraroute"]
 
@@ -37,18 +37,20 @@ class ApicGBPL3ServicePlugin(db_base_plugin_v2.NeutronDbPluginV2,
         filters = {'device_id': [router_id],
                    'device_owner': [q_const.DEVICE_OWNER_ROUTER_INTF],
                    'fixed_ips': {'subnet_id': [subnet_id]}}
-        ports = self.get_ports(context.elevated(), filters=filters)
+        ports = self._core_plugin.get_ports(context.elevated(),
+                                            filters=filters)
         return ports[0]['id']
 
     def _update_router_gw_info(self, context, router_id, info, router=None):
         super(ApicGBPL3ServicePlugin, self)._update_router_gw_info(
             context, router_id, info, router)
-        if 'network_id' in info:
+        if info and 'network_id' in info:
             filters = {'device_id': [router_id],
                        'device_owner': [q_const.DEVICE_OWNER_ROUTER_GW],
                        'network_id': [info['network_id']]}
-            ports = self.get_ports(context.elevated(), filters=filters)
-            manager.NeutronManager.get_plugin().update_port_status(
+            ports = self._core_plugin.get_ports(context.elevated(),
+                                                filters=filters)
+            self._core_plugin.update_port_status(
                 context, ports[0]['id'], q_const.PORT_STATUS_ACTIVE)
 
     @staticmethod
@@ -69,7 +71,7 @@ class ApicGBPL3ServicePlugin(db_base_plugin_v2.NeutronDbPluginV2,
         return self._apic_gbp
 
     def add_router_interface(self, context, router_id, interface_info):
-        super(ApicGBPL3ServicePlugin, self).add_router_interface(
+        port = super(ApicGBPL3ServicePlugin, self).add_router_interface(
             context, router_id, interface_info)
         if 'subnet_id' in interface_info:
             port_id = self._get_port_id_for_router_interface(
@@ -77,8 +79,9 @@ class ApicGBPL3ServicePlugin(db_base_plugin_v2.NeutronDbPluginV2,
         else:
             port_id = interface_info['port_id']
 
-        manager.NeutronManager.get_plugin().update_port_status(context,
-                port_id, q_const.PORT_STATUS_ACTIVE)
+        self._core_plugin.update_port_status(context,
+            port_id, q_const.PORT_STATUS_ACTIVE)
+        return port
 
     def remove_router_interface(self, context, router_id, interface_info):
         if 'subnet_id' in interface_info:
@@ -87,8 +90,8 @@ class ApicGBPL3ServicePlugin(db_base_plugin_v2.NeutronDbPluginV2,
         else:
             port_id = interface_info['port_id']
 
-        manager.NeutronManager.get_plugin().update_port_status(context,
-                port_id, q_const.PORT_STATUS_DOWN)
+        self._core_plugin.update_port_status(context,
+            port_id, q_const.PORT_STATUS_DOWN)
         super(ApicGBPL3ServicePlugin, self).remove_router_interface(
             context, router_id, interface_info)
 
