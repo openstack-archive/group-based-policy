@@ -27,10 +27,13 @@ For help using or hacking on GBP, you can send mail to
 <mailto:openstack-dev@lists.openstack.org>.
 
 Acronyms used in code for brevity:
-    PT:  Policy Target
-    PTG: Policy Target Group
-    PR:  Policy Rule
-    PRS: Policy Rule Set
-    L2P: L2 Policy
-    L3P: L3 Policy
-    NSP: Network Service Policy
+
+- PT:  Policy Target
+- PTG: Policy Target Group
+- PR:  Policy Rule
+- PRS: Policy Rule Set
+- L2P: L2 Policy
+- L3P: L3 Policy
+- NSP: Network Service Policy
+- EP: External Policy
+- ES: External Segment
