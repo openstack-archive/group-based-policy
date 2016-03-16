@@ -14,11 +14,12 @@
 import copy
 import sys
 
-from apic_ml2.neutron.db import port_ha_ipaddress_binding as ha_ip_db
 import mock
 import netaddr
 import webob.exc
 
+from apic_ml2.neutron.db import port_ha_ipaddress_binding as ha_ip_db
+from apicapi import apic_mapper
 from neutron.agent import securitygroups_rpc as sg_cfg
 from neutron.common import rpc as n_rpc
 from neutron import context
@@ -144,7 +145,7 @@ class ApicMappingTestCase(
             self.orig_query_l3out_info = self.driver._query_l3out_info
             self.driver._query_l3out_info = mock.Mock()
             self.driver._query_l3out_info.return_value = {
-                'l3out_tenant': APIC_PRE_L3OUT_TENANT,
+                'l3out_tenant': apic_mapper.ApicName(APIC_PRE_L3OUT_TENANT),
                 'vrf_name': APIC_PRE_VRF,
                 'vrf_tenant': APIC_PRE_VRF_TENANT}
 
@@ -196,12 +197,6 @@ class ApicMappingTestCase(
                          'device_id': 'someid'}}
         return super(ApicMappingTestCase, self)._bind_port_to_host(
             port_id, host, data=data)
-
-    def _update_pre_l3out_info(self, l3p):
-        rv = self.driver._query_l3out_info.return_value
-        rv['vrf_name'] = l3p['id']
-        rv['vrf_tenant'] = (self.common_tenant if l3p['shared']
-                            else l3p['tenant_id'])
 
 
 class TestPolicyTarget(ApicMappingTestCase):
@@ -1175,12 +1170,8 @@ class TestL3Policy(ApicMappingTestCase):
         self._mock_external_dict([('supported', '192.168.0.2/24')])
         es = self.create_external_segment(name='supported',
             cidr='192.168.0.0/24', shared=shared_es)['external_segment']
-        l3p = self.create_l3_policy(expected_res_status=201)['l3_policy']
-        if self.pre_l3out and not self.nat_enabled:
-            self._update_pre_l3out_info(l3p)
-        l3p = self.update_l3_policy(l3p['id'],
-            external_segments={es['id']: ['']},
-            expected_res_status=200)['l3_policy']
+        self.create_l3_policy(external_segments={es['id']: ['']},
+            expected_res_status=201)['l3_policy']
         res = self.create_l3_policy(
             external_segments={es['id']: ['']},
             expected_res_status=201 if self.nat_enabled else 400)
@@ -1233,16 +1224,9 @@ class TestL3Policy(ApicMappingTestCase):
         self._mock_external_dict([('supported', '192.168.0.2/24')])
         es = self.create_external_segment(
             name='supported', cidr='192.168.0.0/24')['external_segment']
-        if self.pre_l3out and not self.nat_enabled:
-            l3p = self.create_l3_policy(expected_res_status=201)['l3_policy']
-            self._update_pre_l3out_info(l3p)
-            l3p = self.update_l3_policy(l3p['id'],
-                external_segments={es['id']: ['169.254.0.42']},
-                expected_res_status=200)['l3_policy']
-        else:
-            l3p = self.create_l3_policy(
-                external_segments={es['id']: ['169.254.0.42']},
-                expected_res_status=201)['l3_policy']
+        l3p = self.create_l3_policy(
+            external_segments={es['id']: ['169.254.0.42']},
+            expected_res_status=201)['l3_policy']
         l2p = self.create_l2_policy(l3_policy_id=l3p['id'])['l2_policy']
         ptg = self.create_policy_target_group(
             l2_policy_id=l2p['id'])['policy_target_group']
@@ -1279,19 +1263,12 @@ class TestL3Policy(ApicMappingTestCase):
                              {'destination': '128.0.0.0/16',
                               'nexthop': None}])['external_segment']
 
-        exp_err = self.pre_l3out and not self.nat_enabled
         # Create with explicit address
-        res = self.create_l3_policy(
+        l3p = self.create_l3_policy(
             shared=shared_l3p,
             tenant_id=es['tenant_id'] if not shared_es else 'another_tenant',
             external_segments={es['id']: []},
-            expected_res_status=400 if exp_err else 201)
-        if exp_err:
-            self.assertEqual('PreExistingL3OutHasIncorrectVrf',
-                             res['NeutronError']['type'])
-            return
-        else:
-            l3p = res['l3_policy']
+            expected_res_status=201)['l3_policy']
 
         self.assertEqual(1, len(l3p['external_segments'][es['id']]))
         self.assertEqual('169.254.0.2', l3p['external_segments'][es['id']][0])
@@ -1299,6 +1276,7 @@ class TestL3Policy(ApicMappingTestCase):
         owner = self.common_tenant if shared_es else es['tenant_id']
         l3p_owner = self.common_tenant if shared_l3p else l3p['tenant_id']
         mgr = self.driver.apic_manager
+        call_name = mgr.ensure_external_routed_network_created
         if self.nat_enabled:
             expected_l3out_calls = [
                 mock.call("Shd-%s-%s" % (l3p['id'], es['id']),
@@ -1313,8 +1291,13 @@ class TestL3Policy(ApicMappingTestCase):
             expected_l3out_calls = [
                 mock.call(es['id'], owner=owner, context=l3p['id'],
                           transaction=mock.ANY)]
-        self._check_call_list(expected_l3out_calls,
-                mgr.ensure_external_routed_network_created.call_args_list)
+        else:
+            call_name = mgr.set_context_for_external_routed_network
+            expected_l3out_calls = [
+                mock.call(APIC_PRE_L3OUT_TENANT, es['name'], l3p['id'],
+                          transaction=mock.ANY)]
+        self._check_call_list(expected_l3out_calls, call_name.call_args_list)
+
         expected_route_calls = [
             mock.call(es['id'], mocked.APIC_EXT_SWITCH, '192.168.0.254',
                       owner=owner, subnet='0.0.0.0/0',
@@ -1371,11 +1354,7 @@ class TestL3Policy(ApicMappingTestCase):
         l3p = self.create_l3_policy(
             expected_res_status=201,
             tenant_id=es['tenant_id'] if not shared_es else 'another_tenant',
-            shared=shared_l3p)['l3_policy']
-        if self.pre_l3out and not self.nat_enabled:
-            self._update_pre_l3out_info(l3p)
-        l3p = self.update_l3_policy(
-            l3p['id'], tenant_id=l3p['tenant_id'], expected_res_status=200,
+            shared=shared_l3p,
             external_segments={es['id']: []})['l3_policy']
         self.assertEqual(1, len(l3p['external_segments'][es['id']]))
         self.assertEqual('169.254.0.2', l3p['external_segments'][es['id']][0])
@@ -1384,6 +1363,7 @@ class TestL3Policy(ApicMappingTestCase):
         owner = self.common_tenant if shared_es else es['tenant_id']
         l3p_owner = self.common_tenant if shared_l3p else l3p['tenant_id']
         expected_l3out_calls = []
+        call_name = mgr.ensure_external_routed_network_created
         if self.nat_enabled:
             expected_l3out_calls = [
                 mock.call("Shd-%s-%s" % (l3p['id'], es['id']),
@@ -1399,8 +1379,12 @@ class TestL3Policy(ApicMappingTestCase):
             expected_l3out_calls = [
                 mock.call(es['id'], owner=owner, context=l3p['id'],
                           transaction=mock.ANY)]
-        self._check_call_list(expected_l3out_calls,
-            mgr.ensure_external_routed_network_created.call_args_list)
+        else:
+            call_name = mgr.set_context_for_external_routed_network
+            expected_l3out_calls = [
+                mock.call(APIC_PRE_L3OUT_TENANT, es['name'], l3p['id'],
+                          transaction=mock.ANY)]
+        self._check_call_list(expected_l3out_calls, call_name.call_args_list)
 
         if not self.pre_l3out:
             mgr.set_domain_for_external_routed_network.assert_called_once_with(
@@ -1454,18 +1438,16 @@ class TestL3Policy(ApicMappingTestCase):
 
         l3p = self.create_l3_policy(shared=shared_l3p,
             tenant_id=es1['tenant_id'] if not shared_es else 'another_tenant',
-            expected_res_status=201)['l3_policy']
-        if self.pre_l3out and not self.nat_enabled:
-            self._update_pre_l3out_info(l3p)
-        l3p = self.update_l3_policy(l3p['id'],
             external_segments={es1['id']: ['169.254.0.3']},
-            tenant_id=l3p['tenant_id'],
-            expected_res_status=200)['l3_policy']
+            expected_res_status=201)['l3_policy']
+
+        mgr = self.driver.apic_manager
+        mgr.set_context_for_external_routed_network.reset_mock()
+
         req = self.new_delete_request('l3_policies', l3p['id'], self.fmt)
         res = req.get_response(self.ext_api)
         self.assertEqual(res.status_int, webob.exc.HTTPNoContent.code)
 
-        mgr = self.driver.apic_manager
         owner = self.common_tenant if shared_es else es1['tenant_id']
         l3p_owner = self.common_tenant if shared_l3p else l3p['tenant_id']
         expected_delete_calls = []
@@ -1483,6 +1465,10 @@ class TestL3Policy(ApicMappingTestCase):
             mgr.unset_l3out_for_bd.assert_called_once_with(owner,
                 "NAT-bd-%s" % es1['id'],
                 es1['name' if self.pre_l3out else 'id'], transaction=mock.ANY)
+        if self.pre_l3out and not self.nat_enabled:
+            call_name = mgr.set_context_for_external_routed_network
+            call_name.assert_called_once_with(APIC_PRE_L3OUT_TENANT,
+                es1['name'], None, transaction=mock.ANY)
 
         mgr.delete_external_routed_network.reset_mock()
         mgr.unset_l3out_for_bd.reset_mock()
@@ -1491,14 +1477,10 @@ class TestL3Policy(ApicMappingTestCase):
         l3p = self.create_l3_policy(
             shared=shared_l3p,
             tenant_id=es1['tenant_id'] if not shared_es else 'another_tenant',
-            expected_res_status=201)['l3_policy']
-        if self.pre_l3out and not self.nat_enabled:
-            self._update_pre_l3out_info(l3p)
-        l3p = self.update_l3_policy(l3p['id'],
             external_segments={es1['id']: ['169.254.0.3'],
                                es2['id']: ['169.254.0.3']},
-            tenant_id=l3p['tenant_id'],
-            expected_res_status=200)['l3_policy']
+            expected_res_status=201)['l3_policy']
+        mgr.set_context_for_external_routed_network.reset_mock()
         req = self.new_delete_request('l3_policies', l3p['id'], self.fmt)
         res = req.get_response(self.ext_api)
         self.assertEqual(res.status_int, webob.exc.HTTPNoContent.code)
@@ -1527,6 +1509,15 @@ class TestL3Policy(ApicMappingTestCase):
                     transaction=mock.ANY)]
             self._check_call_list(
                 expected_unset_calls, mgr.unset_l3out_for_bd.call_args_list)
+        if self.pre_l3out and not self.nat_enabled:
+            expected_calls = [
+                mock.call(APIC_PRE_L3OUT_TENANT,
+                    es1['name'], None, transaction=mock.ANY),
+                mock.call(APIC_PRE_L3OUT_TENANT,
+                    es2['name'], None, transaction=mock.ANY)]
+            self._check_call_list(
+                expected_calls,
+                mgr.set_context_for_external_routed_network.call_args_list)
 
     # Although the naming convention used here has been chosen poorly,
     # I'm separating the tests in order to get the mock re-set.
@@ -1557,13 +1548,8 @@ class TestL3Policy(ApicMappingTestCase):
         l3p = self.create_l3_policy(
             tenant_id=es1['tenant_id'] if not shared_es else 'another_tenant',
             shared=shared_l3p,
-            expected_res_status=201)['l3_policy']
-        if self.pre_l3out and not self.nat_enabled:
-            self._update_pre_l3out_info(l3p)
-        l3p = self.update_l3_policy(l3p['id'],
             external_segments={es1['id']: ['169.254.0.3']},
-            tenant_id=l3p['tenant_id'],
-            expected_res_status=200)['l3_policy']
+            expected_res_status=201)['l3_policy']
 
         mgr = self.driver.apic_manager
         owner = self.common_tenant if shared_es else es1['tenant_id']
@@ -1572,6 +1558,7 @@ class TestL3Policy(ApicMappingTestCase):
         mgr.set_domain_for_external_routed_network.reset_mock()
         mgr.ensure_logical_node_profile_created.reset_mock()
         mgr.ensure_static_route_created.reset_mock()
+        mgr.set_context_for_external_routed_network.reset_mock()
 
         l3p = self.update_l3_policy(
             l3p['id'], tenant_id=l3p['tenant_id'], expected_res_status=200,
@@ -1588,6 +1575,16 @@ class TestL3Policy(ApicMappingTestCase):
         self._check_call_list(
             expected_delete_calls,
             mgr.delete_external_routed_network.call_args_list)
+        if self.pre_l3out and not self.nat_enabled:
+            expected_calls = [
+                mock.call(APIC_PRE_L3OUT_TENANT,
+                    es1['name'], None, transaction=mock.ANY),
+                mock.call(APIC_PRE_L3OUT_TENANT,
+                    es2['name'], l3p['id'], transaction=mock.ANY)]
+            self._check_call_list(
+                expected_calls,
+                mgr.set_context_for_external_routed_network.call_args_list)
+
         expected_l3out_calls = []
         if self.nat_enabled:
             expected_l3out_calls = [
@@ -1628,6 +1625,7 @@ class TestL3Policy(ApicMappingTestCase):
             l3p['id'], expected_res_status=200, tenant_id=l3p['tenant_id'],
             external_segments={es1['id']: ['169.254.0.5'],
                                es2['id']: ['169.254.0.6']})
+        mgr.set_context_for_external_routed_network.reset_mock()
         self.update_l3_policy(
             l3p['id'], tenant_id=l3p['tenant_id'],
             expected_res_status=200, external_segments={})
@@ -1655,6 +1653,15 @@ class TestL3Policy(ApicMappingTestCase):
                     transaction=mock.ANY)]
             self._check_call_list(
                 expected_unset_calls, mgr.unset_l3out_for_bd.call_args_list)
+        if self.pre_l3out and not self.nat_enabled:
+            expected_calls = [
+                mock.call(APIC_PRE_L3OUT_TENANT,
+                    es1['name'], None, transaction=mock.ANY),
+                mock.call(APIC_PRE_L3OUT_TENANT,
+                    es2['name'], None, transaction=mock.ANY)]
+            self._check_call_list(
+                expected_calls,
+                mgr.set_context_for_external_routed_network.call_args_list)
 
     # Although the naming convention used here has been chosen poorly,
     # I'm separating the tests in order to get the mock re-set.
@@ -1694,12 +1701,9 @@ class TestL3Policy(ApicMappingTestCase):
             name='supported1', cidr='192.168.0.0/24')['external_segment']
         es2 = self.create_external_segment(
             name='supported2', cidr='192.168.1.0/24')['external_segment']
-        l3p = self.create_l3_policy(expected_res_status=201)['l3_policy']
-        if self.pre_l3out and not self.nat_enabled:
-            self._update_pre_l3out_info(l3p)
-        l3p = self.update_l3_policy(l3p['id'],
+        l3p = self.create_l3_policy(
             external_segments={es1['id']: []},
-            expected_res_status=200)['l3_policy']
+            expected_res_status=201)['l3_policy']
 
         self.assertEqual(['169.254.0.2'], l3p['external_segments'][es1['id']])
 
@@ -1724,12 +1728,9 @@ class TestL3Policy(ApicMappingTestCase):
             name='supported1', cidr='192.168.0.0/24')['external_segment']
         es2 = self.create_external_segment(shared=shared_es,
             name='supported2', cidr='192.168.1.0/24')['external_segment']
-        l3p = self.create_l3_policy(expected_res_status=201)['l3_policy']
-        if self.pre_l3out and not self.nat_enabled:
-            self._update_pre_l3out_info(l3p)
-        l3p = self.update_l3_policy(l3p['id'],
+        l3p = self.create_l3_policy(
             external_segments={es1['id']: [], es2['id']: []},
-            expected_res_status=200)['l3_policy']
+            expected_res_status=201)['l3_policy']
         l2p = self.create_l2_policy(l3_policy_id=l3p['id'])['l2_policy']
         ptg = self.create_policy_target_group(name="ptg",
             l2_policy_id=l2p['id'],
@@ -2338,13 +2339,8 @@ class TestExternalSegment(ApicMappingTestCase):
             l3p = self.create_l3_policy(
                 shared=False,
                 tenant_id=tenants[x],
-                expected_res_status=201)['l3_policy']
-            if self.pre_l3out and not self.nat_enabled:
-                self._update_pre_l3out_info(l3p)
-            l3p = self.update_l3_policy(l3p['id'],
                 external_segments={es['id']: []},
-                tenant_id=tenants[x],
-                expected_res_status=200)['l3_policy']
+                expected_res_status=201)['l3_policy']
             l3p_list.append(l3p)
 
         # Attach external policy
@@ -2459,13 +2455,8 @@ class TestExternalSegment(ApicMappingTestCase):
             l3p = self.create_l3_policy(
                 shared=False,
                 tenant_id=tenants[x],
-                expected_res_status=201)['l3_policy']
-            if self.pre_l3out and not self.nat_enabled:
-                self._update_pre_l3out_info(l3p)
-            l3p = self.update_l3_policy(l3p['id'],
                 external_segments={es['id']: []},
-                tenant_id=tenants[x],
-                expected_res_status=200)['l3_policy']
+                expected_res_status=201)['l3_policy']
             l3p_list.append(l3p)
 
         # Attach external policies
@@ -2609,14 +2600,8 @@ class TestExternalSegment(ApicMappingTestCase):
         l3p = self.create_l3_policy(
             shared=False,
             tenant_id=tenants[0],
-            expected_res_status=201)['l3_policy']
-        if self.pre_l3out and not self.nat_enabled:
-            self._update_pre_l3out_info(l3p)
-        l3p = self.update_l3_policy(l3p['id'],
             external_segments={x['id']: [] for x in es_list},
-            tenant_id=l3p['tenant_id'],
-            is_admin_context=True,
-            expected_res_status=200)['l3_policy']
+            expected_res_status=201)['l3_policy']
 
         expected_create_calls = []
         expected_assoc_calls = []
@@ -2675,9 +2660,9 @@ class TestExternalSegmentNoNat(TestExternalSegment):
 
 
 class TestExternalSegmentPreL3Out(TestExternalSegment):
-    def setUp(self):
-        super(TestExternalSegmentPreL3Out, self).setUp(
-            pre_existing_l3out=True)
+    def setUp(self, **kwargs):
+        kwargs['pre_existing_l3out'] = True
+        super(TestExternalSegmentPreL3Out, self).setUp(**kwargs)
 
     def test_query_l3out_info(self):
         self.driver._query_l3out_info = self.orig_query_l3out_info
@@ -2700,11 +2685,26 @@ class TestExternalSegmentPreL3Out(TestExternalSegment):
         self._check_call_list(
             expected_calls, mgr.apic.l3extOut.get_subtree.call_args_list)
 
+    def test_l3out_tenant(self):
+        self._mock_external_dict([('supported', '192.168.0.2/24')])
 
-class TestExternalSegmentNoNatPreL3Out(TestExternalSegment):
+        self.driver._query_l3out_info.return_value['l3out_tenant'] = (
+            apic_mapper.ApicName('some_other_tenant'))
+        res = self.create_external_segment(name='supported',
+            tenant_id='a_tenant', cidr='192.168.0.2/24',
+            expected_res_status=400)
+        self.assertEqual('PreExistingL3OutInIncorrectTenant',
+                         res['NeutronError']['type'])
+
+        self.create_external_segment(name='supported',
+            tenant_id='some_other_tenant', cidr='192.168.0.2/24',
+            expected_res_status=201)
+
+
+class TestExternalSegmentNoNatPreL3Out(TestExternalSegmentPreL3Out):
     def setUp(self):
         super(TestExternalSegmentNoNatPreL3Out, self).setUp(
-            nat_enabled=False, pre_existing_l3out=True)
+            nat_enabled=False)
 
 
 class TestExternalPolicy(ApicMappingTestCase):
@@ -2782,13 +2782,8 @@ class TestExternalPolicy(ApicMappingTestCase):
             l3p = self.create_l3_policy(
                 shared=False,
                 tenant_id=shared_es and 'another' or es_list[x]['tenant_id'],
-                expected_res_status=201)['l3_policy']
-            if self.pre_l3out and not self.nat_enabled:
-                self._update_pre_l3out_info(l3p)
-            l3p = self.update_l3_policy(l3p['id'],
                 external_segments={es_list[x]['id']: []},
-                tenant_id=l3p['tenant_id'],
-                expected_res_status=200)['l3_policy']
+                expected_res_status=201)['l3_policy']
             l3p_list.append(l3p)
 
         ep = self.create_external_policy(
@@ -2869,13 +2864,8 @@ class TestExternalPolicy(ApicMappingTestCase):
             l3p = self.create_l3_policy(
                 shared=False,
                 tenant_id=shared_es and 'another' or es_list[x]['tenant_id'],
-                expected_res_status=201)['l3_policy']
-            if self.pre_l3out and not self.nat_enabled:
-                self._update_pre_l3out_info(l3p)
-            l3p = self.update_l3_policy(l3p['id'],
                 external_segments={es_list[x]['id']: []},
-                tenant_id=l3p['tenant_id'],
-                expected_res_status=200)['l3_policy']
+                expected_res_status=201)['l3_policy']
             l3p_list.append(l3p)
 
         ep = self.create_external_policy(
@@ -2996,13 +2986,8 @@ class TestExternalPolicy(ApicMappingTestCase):
             l3p = self.create_l3_policy(
                 shared=False,
                 tenant_id=shared_es and 'another' or es_list[x]['tenant_id'],
-                expected_res_status=201)['l3_policy']
-            if self.pre_l3out and not self.nat_enabled:
-                self._update_pre_l3out_info(l3p)
-            l3p = self.update_l3_policy(l3p['id'],
                 external_segments={es_list[x]['id']: []},
-                tenant_id=l3p['tenant_id'],
-                expected_res_status=200)['l3_policy']
+                expected_res_status=201)['l3_policy']
             l3p_list.append(l3p)
         prov = self._create_policy_rule_set_on_shared(
             shared=shared_prs,
@@ -3088,13 +3073,8 @@ class TestExternalPolicy(ApicMappingTestCase):
             l3p = self.create_l3_policy(
                 shared=False,
                 tenant_id=shared_es and 'another' or es_list[x]['tenant_id'],
-                expected_res_status=201)['l3_policy']
-            if self.pre_l3out and not self.nat_enabled:
-                self._update_pre_l3out_info(l3p)
-            l3p = self.update_l3_policy(l3p['id'],
                 external_segments={es_list[x]['id']: []},
-                tenant_id=l3p['tenant_id'],
-                expected_res_status=200)['l3_policy']
+                expected_res_status=201)['l3_policy']
             l3p_list.append(l3p)
         prov = self._create_policy_rule_set_on_shared(
             shared=shared_prs, tenant_id=es_list[0]['tenant_id'] if not (
@@ -3279,13 +3259,8 @@ class TestExternalPolicy(ApicMappingTestCase):
             l3p = self.create_l3_policy(
                 shared=False,
                 tenant_id=tenants[x],
-                expected_res_status=201)['l3_policy']
-            if self.pre_l3out and not self.nat_enabled:
-                self._update_pre_l3out_info(l3p)
-            l3p = self.update_l3_policy(l3p['id'],
                 external_segments={x['id']: [] for x in es_list},
-                tenant_id=l3p['tenant_id'],
-                expected_res_status=200)['l3_policy']
+                expected_res_status=201)['l3_policy']
             l3p_list.append(l3p)
 
         # create external-policy
