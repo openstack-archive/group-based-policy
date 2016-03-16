@@ -137,14 +137,9 @@ class PreExistingL3OutNotFound(gpexc.GroupPolicyBadRequest):
 
 
 class PreExistingL3OutInIncorrectTenant(gpexc.GroupPolicyBadRequest):
-    message = _("Tenant %(tenant)s of existing External Routed Network "
-                "%(l3out)s is not compatible with external-segment %(es)s.")
-
-
-class PreExistingL3OutHasIncorrectVrf(gpexc.GroupPolicyBadRequest):
-    message = _("Private Network %(vrf)s associated with existing External "
-                "Routed Network %(l3out)s is not compatible with L3-policy "
-                "%(l3p)s.")
+    message = _("APIC tenant '%(l3out_tenant)s' of existing External Routed "
+                "Network '%(l3out)s' does not match the APIC tenant "
+                "'%(es_tenant)s' to which external-segment '%(es)s' maps.")
 
 
 REVERSE_PREFIX = 'reverse-'
@@ -184,10 +179,6 @@ class ApicMappingDriver(api.ResourceMappingDriver,
             network_config = {
                 'vlan_ranges': cfg.CONF.ml2_type_vlan.network_vlan_ranges,
                 'vni_ranges': cfg.CONF.ml2_type_vxlan.vni_ranges,
-                'switch_dict': config.create_switch_dictionary(),
-                'vpc_dict': config.create_vpc_dictionary(),
-                'external_network_dict':
-                    config.create_external_network_dictionary(),
             }
             apic_system_id = cfg.CONF.apic_system_id
             keyclient_param = keyclient if client else None
@@ -1640,6 +1631,17 @@ class ApicMappingDriver(api.ResourceMappingDriver,
                 self.apic_manager.ensure_external_routed_network_created(
                     es_name, owner=es_tenant, context=l3_policy,
                     transaction=trs)
+            # Associate pre-existing, no-NAT L3-out with L3policy
+            if pre_existing and not nat_enabled:
+                mapped_es = self.name_mapper.name_mapper.pre_existing(
+                    context._plugin_context, es['name'])
+                l3out_info = self._query_l3out_info(mapped_es,
+                    self.name_mapper.tenant(es))
+                if l3out_info:
+                    mapped_tenant = l3out_info['l3out_tenant']
+                    self.apic_manager.set_context_for_external_routed_network(
+                        mapped_tenant, mapped_es, l3_policy, transaction=trs)
+
             if not is_shadow and not pre_existing:
                 encap = ext_info.get('encap')  # No encap if None
                 switch = ext_info['switch']
@@ -1688,12 +1690,25 @@ class ApicMappingDriver(api.ResourceMappingDriver,
         # remove shadow external-networks
         if nat_enabled and not is_shadow:
             self._unplug_l3p_from_es(context, es, True)
+        set_ctx = self.apic_manager.set_context_for_external_routed_network
         if (is_shadow or
             not [x for x in es['l3_policies'] if x != context.current['id']]):
                 with self.apic_manager.apic.transaction() as trs:
                     if is_shadow or not pre_existing:
                         self.apic_manager.delete_external_routed_network(
                             es_name, owner=es_tenant, transaction=trs)
+
+                    # Dissociate L3policy from pre-existing, no-NAT L3-out
+                    if pre_existing and not nat_enabled:
+                        mapped_es = self.name_mapper.name_mapper.pre_existing(
+                            context._plugin_context, es['name'])
+                        l3out_info = self._query_l3out_info(mapped_es,
+                            self.name_mapper.tenant(es))
+                        if l3out_info:
+                            mapped_tenant = l3out_info['l3out_tenant']
+                            set_ctx(mapped_tenant, mapped_es, None,
+                                    transaction=trs)
+
                     if nat_enabled and not is_shadow:
                         self.apic_manager.unset_l3out_for_bd(es_tenant,
                             self._get_nat_bd_for_es(context, es),
@@ -1998,14 +2013,6 @@ class ApicMappingDriver(api.ResourceMappingDriver,
                         self.name_mapper.tenant(es))
                     if not l3out_info:
                         raise PreExistingL3OutNotFound(l3out=es['name'])
-                    vrf_name = self.apic_manager.apic.fvCtx.name(
-                        self.name_mapper.l3_policy(context, l3p))
-                    vrf_tenant = self._tenant_by_sharing_policy(l3p)
-                    if (l3out_info.get('vrf_name') != vrf_name or
-                        l3out_info.get('vrf_tenant') != vrf_tenant):
-                            raise PreExistingL3OutHasIncorrectVrf(
-                                vrf=l3out_info.get('vrf_name'),
-                                l3out=es['name'], l3p=l3p['name'])
 
     def _get_ptg_by_subnet(self, plugin_context, subnet_id):
         ptgass = (plugin_context.session.query(gpdb.PTGToSubnetAssociation).
@@ -2974,12 +2981,13 @@ class ApicMappingDriver(api.ResourceMappingDriver,
             self.name_mapper.tenant(es))
         if not l3out_info:
             raise PreExistingL3OutNotFound(l3out=es['name'])
-        es_tenant = self._tenant_by_sharing_policy(es)
+        l3out_info['l3out_tenant'] = str(l3out_info['l3out_tenant'])
+        es_tenant = str(self._tenant_by_sharing_policy(es))
         if (es_tenant != l3out_info['l3out_tenant'] and
             l3out_info['l3out_tenant'] != apic_manager.TENANT_COMMON):
                 raise PreExistingL3OutInIncorrectTenant(
-                    tenant=l3out_info['l3out_tenant'], l3out=es['name'],
-                    es=es['name'])
+                    l3out_tenant=l3out_info['l3out_tenant'],
+                    l3out=es['name'], es=es['name'], es_tenant=es_tenant)
 
     def _create_tenant_filter(self, rule_name, tenant, entries=None,
                               transaction=None):
