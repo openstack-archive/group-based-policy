@@ -29,6 +29,7 @@ from neutron import manager
 from neutron.openstack.common import lockutils
 from neutron.openstack.common import log as logging
 from neutron.plugins.ml2.drivers.cisco.apic import apic_model
+from neutron.plugins.ml2.drivers.cisco.apic import config  # noqa 
 from opflexagent import constants as ofcst
 from opflexagent import rpc
 from oslo.config import cfg
