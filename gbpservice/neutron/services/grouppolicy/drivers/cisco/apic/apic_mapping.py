@@ -16,6 +16,7 @@ import netaddr
 from apic_ml2.neutron.db import l3out_vlan_allocation as l3out_vlan_alloc
 from apic_ml2.neutron.db import port_ha_ipaddress_binding as ha_ip_db
 from apic_ml2.neutron.plugins.ml2.drivers.cisco.apic import apic_model
+from apic_ml2.neutron.plugins.ml2.drivers.cisco.apic import config  # noqa
 from apicapi import apic_manager
 from keystoneclient.v2_0 import client as keyclient
 from neutron.agent.linux import dhcp
