@@ -42,6 +42,7 @@ from gbpservice.neutron.services.grouppolicy import (
 from gbpservice.neutron.services.grouppolicy import config
 from gbpservice.neutron.services.grouppolicy.drivers.cisco.apic import (
     apic_mapping as amap)
+from gbpservice.neutron.services.l3_router import l3_apic
 from gbpservice.neutron.tests.unit.services.grouppolicy import (
     test_resource_mapping as test_rmd)
 
@@ -124,6 +125,7 @@ class ApicMappingTestCase(
         plugin.is_agent_down = mock.Mock(return_value=False)
         self.driver = manager.NeutronManager.get_service_plugins()[
             'GROUP_POLICY'].policy_driver_manager.policy_drivers['apic'].obj
+        self.l3plugin = l3_apic.ApicGBPL3ServicePlugin()
         amap.ApicMappingDriver.get_base_synchronizer = mock.Mock()
         self.driver.name_mapper.name_mapper = mock.Mock()
         self.driver.name_mapper.name_mapper.tenant = echo
@@ -4145,12 +4147,11 @@ class TestNatPool(ApicMappingTestCase):
             self.api)['subnet']
 
         fip_dict = {'floating_network_id': subnet['network_id']}
-        fip_id = self.driver.create_floatingip_in_nat_pool(
+        fip = self.l3plugin.create_floatingip(
             context.get_admin_context(),
-            es['tenant_id'], {'floatingip': fip_dict})
-        self.assertIsNotNone(fip_id)
-        fip = self._get_object(
-            'floatingips', fip_id, self.ext_api)['floatingip']
+            {'floatingip': fip_dict,
+             'tenant_id': es['tenant_id']})
+        self.assertIsNotNone(fip)
         self.assertTrue(
             netaddr.IPAddress(fip['floating_ip_address']) in
             netaddr.IPNetwork('192.168.1.0/24'))
