@@ -13,7 +13,9 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+from neutron._i18n import _LW
 from neutron.common import constants as q_const
+from neutron.common import exceptions as n_exc
 from neutron import context as n_ctx
 from neutron.db import common_db_mixin
 from neutron.db import extraroute_db
@@ -21,6 +23,9 @@ from neutron.db import l3_gwmode_db
 from neutron.extensions import l3
 from neutron import manager
 from neutron.plugins.common import constants
+from oslo_log import log as logging
+
+LOG = logging.getLogger(__name__)
 
 
 class ApicGBPL3ServicePlugin(common_db_mixin.CommonDbMixin,
@@ -101,9 +106,19 @@ class ApicGBPL3ServicePlugin(common_db_mixin.CommonDbMixin,
         fip = floatingip['floatingip']
         if self.apic_gbp and not fip.get('subnet_id'):
             tenant_id = self._get_tenant_id_for_create(context, fip)
-            fip_id = self.apic_gbp.create_floatingip_in_nat_pool(context,
-                tenant_id, floatingip)
-            res = self.get_floatingip(context, fip_id) if fip_id else None
+            for nat_pool in self.apic_gbp.nat_pool_iterator(context,
+                    tenant_id, floatingip):
+                if not nat_pool:
+                    continue
+                fip['subnet_id'] = nat_pool['subnet_id']
+                try:
+                    res = super(ApicGBPL3ServicePlugin,
+                                self).create_floatingip(context, floatingip)
+                except n_exc.IpAddressGenerationFailure as ex:
+                    LOG.warning(_LW("Floating allocation failed: %s"),
+                                ex.message)
+                if res:
+                    break
         if not res:
             res = super(ApicGBPL3ServicePlugin, self).create_floatingip(
                 context, floatingip)
