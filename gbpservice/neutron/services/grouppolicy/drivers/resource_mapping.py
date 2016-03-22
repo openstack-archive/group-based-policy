@@ -298,47 +298,36 @@ class ResourceMappingDriver(api.PolicyDriver, local_api.LocalAPI,
             ext_sub = self._get_subnet(context._plugin_context,
                                        es['subnet_id'])
             ext_net_id = ext_sub['network_id']
-            fip_id = self._allocate_floating_ip_in_ext_seg(
-                context, tenant_id, es, ext_net_id, fixed_port,
-                router_id=l3p.get('routers', [None])[0])
+            fip_id = None
+            for nat_pool in self._gen_nat_pool_in_ext_seg(
+                context, tenant_id, es):
+                try:
+                    fip_id = self._create_floatingip(
+                        context._plugin_context, tenant_id, ext_net_id,
+                        fixed_port, subnet_id=nat_pool['subnet_id'],
+                        router_id=l3p.get('routers', [None])[0])
+                    # FIP allocated, no need to try further allocation
+                    break
+                except n_exc.IpAddressGenerationFailure as ex:
+                    LOG.warning(_LW("Floating allocation failed: %s"),
+                                ex.message)
             if fip_id:
                 fip_ids.append(fip_id)
         return fip_ids
 
-    def _allocate_floating_ip_in_ext_seg(self, context, tenant_id,
-                                         es, ext_net_id, fixed_port,
-                                         router_id=None):
+    def _gen_nat_pool_in_ext_seg(self, context, tenant_id, es):
         nat_pools = context._plugin.get_nat_pools(
             context._plugin_context.elevated(), {'id': es['nat_pools']})
         no_subnet_pools = []
-        fip_id = None
         for nat_pool in nat_pools:
             # For backward compatibility
             if not nat_pool['subnet_id']:
                 no_subnet_pools.append(nat_pool)
             else:
-                try:
-                    fip_id = self._create_floatingip(
-                        context._plugin_context, tenant_id, ext_net_id,
-                        fixed_port, subnet_id=nat_pool['subnet_id'],
-                        router_id=router_id)
-                    # FIP allocated, empty the no subnet pools to avoid
-                    # further allocation
-                    no_subnet_pools = []
-                    break
-                except n_exc.IpAddressGenerationFailure as ex:
-                    LOG.warning(_LW("Floating allocation failed: %s"),
-                                ex.message)
+                yield nat_pool
         for nat_pool in no_subnet_pools:
             # Use old allocation method
-            try:
-                fip_id = self._create_floatingip(
-                    context._plugin_context, tenant_id, ext_net_id, fixed_port)
-                break
-            except n_exc.IpAddressGenerationFailure as ex:
-                LOG.warning(_LW("Floating allocation failed: %s"),
-                            ex.message)
-        return fip_id
+            yield nat_pool
 
     @log.log_method_call
     def update_policy_target_precommit(self, context):
