@@ -394,6 +394,40 @@ class TestPolicyTarget(ApicMappingTestCase):
                 admin_ctx, filters=subnet_filter)
         self.assertEqual(0, len(internal_subnets))
 
+    def test_snat_port_ip_loss(self):
+        self._mock_external_dict([('supported', '192.168.0.2/24')])
+        self.driver.apic_manager.ext_net_dict[
+                'supported']['host_pool_cidr'] = '192.168.200.1/24'
+        es = self.create_external_segment(name='supported',
+            cidr='192.168.0.2/24', shared=False)['external_segment']
+        admin_ctx = context.get_admin_context()
+        ext_net_id = self._db_plugin.get_subnet(
+                admin_ctx, es['subnet_id'])['network_id']
+
+        l3p = self.create_l3_policy(name='myl3',
+            external_segments={es['id']: ['']})['l3_policy']
+        l2p = self.create_l2_policy(name='myl2',
+                                    l3_policy_id=l3p['id'])['l2_policy']
+        ptg = self.create_policy_target_group(
+            name="ptg1", l2_policy_id=l2p['id'])['policy_target_group']
+        pt1 = self.create_policy_target(
+            policy_target_group_id=ptg['id'])['policy_target']
+        self._bind_port_to_host(pt1['port_id'], 'h1')
+
+        mapping = self.driver.get_gbp_details(admin_ctx,
+            device='tap%s' % pt1['port_id'], host='h1')
+        self.assertEqual(1, len(mapping['host_snat_ips']))
+
+        snat_ports = self._db_plugin.get_ports(admin_ctx,
+            filters={'name': [amap.HOST_SNAT_POOL_PORT],
+                     'network_id': [ext_net_id],
+                     'device_id': ['h1']})
+        self._db_plugin.update_port(admin_ctx,
+            snat_ports[0]['id'], {'port': {'fixed_ips': []}})
+        mapping = self.driver.get_gbp_details(admin_ctx,
+            device='tap%s' % pt1['port_id'], host='h1')
+        self.assertEqual(0, len(mapping['host_snat_ips']))
+
     def test_ip_address_owner_update(self):
         l3p = self.create_l3_policy(name='myl3')['l3_policy']
         l2p = self.create_l2_policy(name='myl2',

@@ -396,9 +396,10 @@ class ApicMappingDriver(api.ResourceMappingDriver,
                     # operation, get out of here
                     pass
         except Exception as e:
-            LOG.error(_LE("An exception has occurred while retrieving device "
-                        "gbp details for %(device)s with error %(error)s"),
-                      {'device': kwargs.get('device'), 'error': e.message})
+            LOG.exception(
+                _LE("An exception has occurred while retrieving device "
+                    "gbp details for %(device)s with error %(error)s"),
+                {'device': kwargs.get('device'), 'error': e.message})
             details = {'device': kwargs.get('device')}
         return details
 
@@ -433,7 +434,7 @@ class ApicMappingDriver(api.ResourceMappingDriver,
                          'fixed_ips': [{'subnet_id': snat_subnets[0]['id']}],
                          'admin_state_up': False}
                 port = self._create_port(context, attrs)
-                if port and port['fixed_ips'][0]:
+                if port and port['fixed_ips']:
                     snat_ip = port['fixed_ips'][0]['ip_address']
                 else:
                     LOG.warning(_LW("SNAT-port creation failed for subnet "
@@ -443,8 +444,13 @@ class ApicMappingDriver(api.ResourceMappingDriver,
                                 {'subnet_id': snat_subnets[0]['id'],
                                  'net_id': network['id'], 'host': host})
                     return {}
-            else:
+            elif snat_ports[0]['fixed_ips']:
                 snat_ip = snat_ports[0]['fixed_ips'][0]['ip_address']
+            else:
+                LOG.warning(_LW("SNAT-port for external network %(net)s "
+                              "on host %(host)s doesn't have an IP-address"),
+                            {'net': network['id'], 'host': host})
+                return {}
 
             return {'external_segment_name': es_name,
                     'host_snat_ip': snat_ip,
