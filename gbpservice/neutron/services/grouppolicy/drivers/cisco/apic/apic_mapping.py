@@ -1364,8 +1364,8 @@ class ApicMappingDriver(api.ResourceMappingDriver,
         except AttributeError:
             pass
 
-    def create_floatingip_in_nat_pool(self, context, tenant_id, floatingip):
-        """Create floating-ip in NAT pool associated with external-network"""
+    def get_nat_pool(self, context, tenant_id, floatingip):
+        """get NAT pool for floating IP associated with external-network"""
         fip = floatingip['floatingip']
         f_net_id = fip['floating_network_id']
         subnets = self._get_subnets(context.elevated(),
@@ -1373,15 +1373,13 @@ class ApicMappingDriver(api.ResourceMappingDriver,
         ext_seg = self.gbp_plugin.get_external_segments(context.elevated(),
             {'subnet_id': [s['id'] for s in subnets]}) if subnets else []
         if not ext_seg:
-            return None
+            yield None
         context._plugin = self.gbp_plugin
         context._plugin_context = context
         for es in ext_seg:
-            fip_id = self._allocate_floating_ip_in_ext_seg(context,
-                tenant_id, es, f_net_id, fip.get('port_id'))
-            if fip_id:
-                return fip_id
-        raise n_exc.IpAddressGenerationFailure(net_id=f_net_id)
+            for nat_pool in self._get_nat_pool_in_ext_seg(context,
+                tenant_id, es, f_net_id, fip.get('port_id')):
+                yield nat_pool
 
     def _apply_policy_rule_set_rules(
             self, context, policy_rule_set, policy_rules, transaction=None):
