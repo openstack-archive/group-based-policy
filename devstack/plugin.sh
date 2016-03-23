@@ -36,9 +36,10 @@ if is_service_enabled group-policy; then
         gbp_configure_nova
         gbp_configure_heat
         gbp_configure_neutron
-#        install_apic_ml2
-#        install_aim
-#        init_aim
+        install_apic_ml2
+        install_aim
+        init_aim
+	install_opflex
         install_gbpclient
         install_gbpservice
         init_gbpservice
