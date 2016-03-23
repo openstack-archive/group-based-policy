@@ -1,1 +1,13 @@
 NEUTRON_CREATE_INITIAL_NETWORKS="False"
+
+ENABLE_APIC_AIM=${ENABLE_APIC_AIM:-False}
+
+if [[ $ENABLE_APIC_AIM = True ]]; then
+    echo_summary "Overriding defaults for apic_aim"
+
+    Q_PLUGIN=${Q_PLUGIN:-ml2}
+    Q_ML2_TENANT_NETWORK_TYPE=${Q_ML2_TENANT_NETWORK_TYPE:-opflex}
+    Q_ML2_PLUGIN_TYPE_DRIVERS=${Q_ML2_PLUGIN_TYPE_DRIVERS:-local,vlan,opflex}
+    Q_ML2_PLUGIN_MECHANISM_DRIVERS=${Q_ML2_PLUGIN_MECHANISM_DRIVERS:-apic_aim}
+    Q_ML2_PLUGIN_EXT_DRIVERS=${Q_ML2_PLUGIN_EXT_DRIVERS-apic_aim,port_security}
+fi

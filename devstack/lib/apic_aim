@@ -1,0 +1,49 @@
+function install_apic_aim {
+    echo_summary "Installing apic_aim"
+
+    install_apic_ml2
+    install_aim
+    install_opflex
+}
+
+function configure_apic_aim {
+    echo_summary "Configuring apic_aim"
+
+    # devstack/lib/neutron_plugins/ml2 does not allow overriding
+    # Q_PLUGIN_CLASS in override_defaults, so do it here instread
+    iniset $NEUTRON_CONF DEFAULT core_plugin ml2plus
+
+    iniset /$Q_PLUGIN_CONF_FILE apic_aim_auth auth_plugin v3password
+    iniset /$Q_PLUGIN_CONF_FILE apic_aim_auth auth_url $KEYSTONE_SERVICE_URI_V3
+    iniset /$Q_PLUGIN_CONF_FILE apic_aim_auth username admin
+    iniset /$Q_PLUGIN_CONF_FILE apic_aim_auth password $ADMIN_PASSWORD
+    iniset /$Q_PLUGIN_CONF_FILE apic_aim_auth user_domain_name default
+    iniset /$Q_PLUGIN_CONF_FILE apic_aim_auth project_domain_name default
+    iniset /$Q_PLUGIN_CONF_FILE apic_aim_auth project_name admin
+
+    init_aim
+}
+
+function install_aim {
+    git_clone $AIM_REPO $AIM_DIR $AIM_BRANCH
+    mv $AIM_DIR/test-requirements.txt $AIM_DIR/_test-requirements.txt
+    setup_develop $AIM_DIR
+    mv $AIM_DIR/_test-requirements.txt $AIM_DIR/test-requirements.txt
+}
+
+function init_aim {
+    aim -c $NEUTRON_CONF db-migration upgrade
+}
+
+function install_opflex {
+    git_clone $OPFLEX_REPO $OPFLEX_DIR $OPFLEX_BRANCH
+    mv $OPFLEX_DIR/test-requirements.txt $OPFLEX_DIR/_test-requirements.txt
+    touch  $OPFLEX_DIR/setup.cfg
+    setup_develop $OPFLEX_DIR
+    mv $OPFLEX_DIR/_test-requirements.txt $OPFLEX_DIR/test-requirements.txt
+}
+
+# Tell emacs to use shell-script-mode
+## Local variables:
+## mode: shell-script
+## End:

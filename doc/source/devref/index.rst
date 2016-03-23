@@ -46,6 +46,7 @@ GBP Design
    shared-resources
    traffic-stitching-plumber-model
    traffic-stitching-plumber-placement-type
+   apic-aim-ml2-driver
 
 Module Reference
 ----------------
