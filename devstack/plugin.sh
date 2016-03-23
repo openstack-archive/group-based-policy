@@ -60,9 +60,10 @@ if is_service_enabled group-policy; then
         gbp_configure_neutron
         [[ $ENABLE_NFP = True ]] && echo_summary "Configuring $NFP"
         [[ $ENABLE_NFP = True ]] && nfp_configure_neutron
-#        install_apic_ml2
-#        install_aim
-#        init_aim
+        install_apic_ml2
+        install_aim
+        init_aim
+	install_opflex
         install_gbpclient
         install_gbpservice
         [[ $ENABLE_NFP = True ]] && install_nfpgbpservice

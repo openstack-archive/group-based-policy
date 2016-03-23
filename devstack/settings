@@ -21,6 +21,7 @@ GBPHEAT_REPO=${GBPHEAT_REPO:-${GIT_BASE}/openstack/group-based-policy-automation
 GBPHEAT_BRANCH=${GBPHEAT_BRANCH:-master}
 AIM_BRANCH=${AIM_BRANCH:-master}
 APICML2_BRANCH=${APICML2_BRANCH:-master}
+OPFLEX_BRANCH=${OPFLEX_BRANCH:-master}
 
 # Enable necessary services, including group-policy (and disable others)
 disable_service n-net
