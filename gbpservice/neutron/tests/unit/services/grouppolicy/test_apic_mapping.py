@@ -34,8 +34,6 @@ from neutron import manager
 from opflexagent import constants as ocst
 from oslo_config import cfg
 
-sys.modules["apicapi"] = mock.Mock()
-
 from gbpservice.neutron.plugins.ml2.drivers.grouppolicy.apic import driver
 from gbpservice.neutron.services.grouppolicy import (
     group_policy_context as p_context)
@@ -94,6 +92,9 @@ class ApicMappingTestCase(
 
     def setUp(self, sc_plugin=None, nat_enabled=True,
               pre_existing_l3out=False):
+        self.saved_apicapi = sys.modules["apicapi"]
+        sys.modules["apicapi"] = mock.Mock()
+
         self.agent_conf = AGENT_CONF
         cfg.CONF.register_opts(sg_cfg.security_group_opts, 'SECURITYGROUP')
         config.cfg.CONF.set_override('enable_security_group', False,
@@ -214,6 +215,10 @@ l3extRsPathL3OutAtt": {"attributes": {"encap": "vlan-999"}}}]}}]}}, {\
         self.driver.apic_manager.apic.fvTenant.name = echo2
         self.driver.apic_manager.apic.fvCtx.name = echo2
         self._db_plugin = n_db.NeutronDbPluginV2()
+
+    def tearDown(self):
+        sys.modules["apicapi"] = self.saved_apicapi
+        super(ApicMappingTestCase, self).tearDown()
 
     def _build_external_dict(self, name, cidr_exposed, is_asr_mode=False):
         ext_info = {
