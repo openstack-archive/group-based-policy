@@ -26,6 +26,8 @@ AIM_REPO=http://github.com/noironetworks/aci-integration-module.git
 AIM_DIR=$DEST/aim
 APICML2_REPO=http://github.com/noironetworks/apic-ml2-driver.git
 APICML2_DIR=$DEST/apic_ml2
+OPFLEX_REPO=http://github.com/noironetworks/python-opflex-agent.git
+OPFLEX_DIR=$DEST/opflexagent
 
 # Save trace setting
 XTRACE=$(set +o | grep xtrace)
@@ -79,17 +81,6 @@ function install_gbpui {
     cd $GBPUI_DIR
     python $HORIZON_DIR/manage.py collectstatic --noinput
     mv $GBPUI_DIR/_test-requirements.txt $GBPUI_DIR/test-requirements.txt
-}
-
-function install_aim {
-    git_clone $AIM_REPO $AIM_DIR $AIM_BRANCH
-    mv $AIM_DIR/test-requirements.txt $AIM_DIR/_test-requirements.txt
-    setup_develop $AIM_DIR
-    mv $AIM_DIR/_test-requirements.txt $AIM_DIR/test-requirements.txt
-}
-
-function init_aim {
-    aim -c $NEUTRON_CONF db-migration upgrade
 }
 
 function install_apic_ml2 {
