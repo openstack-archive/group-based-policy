@@ -27,6 +27,7 @@ os-testr>=0.4.1 # Apache-2.0
 ddt>=1.0.1 # MIT
 pylint==1.4.5 # GNU GPL v2
 reno>=0.1.1 # Apache2
+pyOpenSSL>=0.13.0,<=0.15.1
 
 # Since version numbers for these are specified in
 # https://git.openstack.org/cgit/openstack/requirements/plain/upper-constraints.txt,
@@ -35,3 +36,4 @@ python-heatclient
 python-keystoneclient
 
 -e git+https://github.com/noironetworks/python-opflex-agent.git@master#egg=python-opflexagent-agent
+-e git+https://github.com/noironetworks/aci-integration-module.git#egg=aci-integration-module

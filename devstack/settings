@@ -1,5 +1,8 @@
 # Make sure the plugin name in local.conf is "gbp", as in: enable_plugin gbp <remote> <branch>
 source $DEST/gbp/devstack/lib/gbp
+
+[[ $ENABLE_APIC_AIM = True ]] && source $DEST/gbp/devstack/lib/apic_aim
+
 ENABLE_NFP=${ENABLE_NFP:-False}
 [[ $ENABLE_NFP = True ]] && source $DEST/gbp/devstack/lib/nfp
 [[ $ENABLE_NFP = True ]] && DISABLE_BUILD_IMAGE=${DISABLE_BUILD_IMAGE:-False}
@@ -21,14 +24,20 @@ GBPHEAT_REPO=${GBPHEAT_REPO:-${GIT_BASE}/openstack/group-based-policy-automation
 GBPHEAT_BRANCH=${GBPHEAT_BRANCH:-master}
 AIM_BRANCH=${AIM_BRANCH:-master}
 APICML2_BRANCH=${APICML2_BRANCH:-master}
+OPFLEX_BRANCH=${OPFLEX_BRANCH:-master}
 
 # Enable necessary services, including group-policy (and disable others)
 disable_service n-net
 enable_service n-novnc
 enable_service q-svc
-enable_service q-agt
+if [[ $ENABLE_APIC_AIM = True ]]; then
+   disable_service q-agt
+   disable_service q-l3
+else
+   enable_service q-agt
+   enable_service q-l3
+fi
 enable_service q-dhcp
-enable_service q-l3
 enable_service q-fwaas
 enable_service q-lbaas
 enable_service q-meta
