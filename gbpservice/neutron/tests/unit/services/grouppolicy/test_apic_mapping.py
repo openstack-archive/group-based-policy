@@ -32,8 +32,6 @@ from neutron import manager
 from opflexagent import constants as ocst
 from oslo_config import cfg
 
-sys.modules["apicapi"] = mock.Mock()
-
 from gbpservice.neutron.plugins.ml2.drivers.grouppolicy.apic import driver
 from gbpservice.neutron.services.grouppolicy import (
     group_policy_context as p_context)
@@ -158,6 +156,13 @@ class ApicMappingTestCase(
         self._db_plugin = n_db.NeutronDbPluginV2()
 
         self.driver.l3out_vlan_alloc = mock.Mock()
+
+        self.saved_apicapi = sys.modules["apicapi"]
+        sys.modules["apicapi"] = mock.Mock()
+
+    def tearDown(self):
+        sys.modules["apicapi"] = self.saved_apicapi
+        super(ApicMappingTestCase, self).tearDown()
 
     def _build_external_dict(self, name, cidr_exposed, is_asr_mode=False):
         ext_info = {
