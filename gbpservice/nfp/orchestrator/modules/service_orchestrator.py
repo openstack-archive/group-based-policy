@@ -456,6 +456,7 @@ class ServiceOrchestrator(nfp_api.NfpEventHandler):
             traceback.print_tb(tb)
 
     def handle_poll_event(self, event):
+        nfp_logging.store_logging_context(**event.context)
         LOG.info(_LI("Service Orchestrator received poll event %(id)s"),
                  {'id': event.id})
         try:
@@ -885,7 +886,7 @@ class ServiceOrchestrator(nfp_api.NfpEventHandler):
         nfp_context = event.data
         nfp_core_context.store_nfp_context(nfp_context)
         network_function = nfp_context['network_function']
-	network_function['description'] = str(network_function['description'])
+	    network_function['description'] = str(network_function['description'])
         network_function_details = self.get_network_function_details(
             network_function['id'])
         nfp_context['heat_stack_id'] = self.config_driver.apply_heat_config(
@@ -1132,7 +1133,7 @@ class ServiceOrchestrator(nfp_api.NfpEventHandler):
             network_function['id'],
             updated_network_function)
         self._controller.event_complete(event)
-	nfp_core_context.clear_nfp_context()
+	    nfp_core_context.clear_nfp_context()
 
     def check_for_user_config_complete(self, event):
         nfp_context = event.data
