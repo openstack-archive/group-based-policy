@@ -1,0 +1,11 @@
+# Make sure the plugin name in local.conf is "gbp/gbpservice/nfp", as in: enable_plugin gbp/gbpservice/nfp <remote> <branch>
+source $DEST/gbp/gbpservice/nfp/devstack/lib/nfp
+
+
+# Preferred git mirror
+
+
+NFPSERVICE_REPO=https://git.openstack.org/openstack/group-based-policy
+NFPSERVICE_BRANCH=refs/changes/85/298385/44
+
+enable_service nfp-group-policy,orchestrator,proxy,proxy_agent,base_configurator
