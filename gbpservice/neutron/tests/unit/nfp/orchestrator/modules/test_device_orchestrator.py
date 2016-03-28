@@ -444,8 +444,6 @@ class DeviceOrchestratorTestCase(unittest.TestCase):
         event_id = 'DEVICE_BEING_DELETED'
         orig_event_data['reference_count'] -= 1
 
-        #mock_delete_nsd.assert_called_with(ndo_handler.db_session,
-        #                                   self.event.data['id'])
         ndo_handler._create_event.assert_called_with(event_id=event_id,
                                              event_data=orig_event_data,
                                              is_poll_event=True,
