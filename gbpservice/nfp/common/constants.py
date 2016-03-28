@@ -10,6 +10,10 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+FIREWALL = 'firewall'
+LOADBALANCER = 'loadbalancer'
+VPN = 'vpn'
+
 GBP_MODE = "gbp"
 NEUTRON_MODE = "neutron"
 NOVA_MODE = "nova"
@@ -57,3 +61,7 @@ CONFIG_TAG_RESOURCE_MAP = {
     CUSTOM_JSON: 'custom_json'}
 
 LOADBALANCER_RPC_API_VERSION = "2.0"
+HEALTHMONITOR_RESOURCE = 'healthmonitor'
+INTERFACE_RESOURCE = 'interfaces'
+ROUTES_RESOURCE = 'routes'
+MANAGEMENT_INTERFACE_NAME = 'mgmt_interface'
