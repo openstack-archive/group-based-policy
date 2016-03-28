@@ -375,6 +375,7 @@ class DeviceOrchestrator(object):
         network_function_instance = nfd_request['network_function_instance']
         service_vendor = nfd_request['service_details'].get('service_vendor')
         service_details = nfd_request['service_details']
+        device_data['name'] = network_function_instance['name']
         device_data['share_existing_device'] = (
                                     nfd_request.get('share_existing_device'))
         device_data['management_network_info'] = (
@@ -401,9 +402,9 @@ class DeviceOrchestrator(object):
         if service_details:
             device_data['service_details'] = service_details
         if nsi_port_info[0]['port_model'] == nfp_constants.GBP_PORT:
-            device_data['network_model'] = nfp_constants.GBP_NETWORK
+            device_data['network_model'] = nfp_constants.GBP_MODE
         else:
-            device_data['network_model'] = nfp_constants.NEUTRON_NETWORK
+            device_data['network_model'] = nfp_constants.NEUTRON_MODE
         return device_data
 
     def _get_nsf_db_resource(self, resource_name, resource_id):
