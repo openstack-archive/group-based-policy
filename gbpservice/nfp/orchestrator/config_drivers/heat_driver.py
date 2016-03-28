@@ -49,3 +49,14 @@ class HeatDriver(object):
     def handle_consumer_ptg_removed(self, network_function_details,
                                     policy_target_group):
         pass
+
+    def handle_policy_target_operations(self, network_function_details,
+                                     policy_target):
+        pass
+
+    def handle_consumer_ptg_operations(self, network_function_details,
+                                    policy_target_group):
+        pass
+
+    def parse_template_config_string(self, config_str):
+        pass
