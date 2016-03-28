@@ -1,0 +1,31 @@
+heat_template_version: 2013-05-23
+
+description: Template to deploy firewall
+
+resources:
+    sc_firewall:
+        type: OS::Neutron::Firewall
+
+        properties:
+            description: "{'insert_type': 'east_west', 'vm_management_ip': u'192.168.20.138', 'provider_ptg_info': ['fa:16:3e:28:7d:b2']}"
+
+            firewall_policy_id: { get_resource: sc_firewall_policy }
+            name: "serviceVM_infra_FW"
+
+    sc_firewall_policy:
+        type: OS::Neutron::FirewallPolicy
+        properties:
+            name: ""
+            firewall_rules: [{ get_resource: sc_firewall_rule1 } , { get_resource: sc_firewall_rule2 }]
+    sc_firewall_rule1:
+        type: OS::Neutron::FirewallRule
+        properties:
+            name: "Rule_1"
+            action: "allow"
+            protocol: "udp" 
+    sc_firewall_rule2:
+        type: OS::Neutron::FirewallRule
+        properties:
+            name: "Rule_2"
+            action: "allow"
+            protocol: "icmp"
