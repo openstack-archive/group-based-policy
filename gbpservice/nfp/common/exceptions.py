@@ -109,3 +109,24 @@ class NetworkFunctionDeviceNotFound(NotFound):
 
 class NFPPortNotFound(NotFound):
     message = _("NFP Port %(port_id)s could not be found")
+
+
+class RequiredDataNotProvided(NFPException):
+    message = _("The required data %(required_data)s is missing in "
+                "%(request)s")
+
+
+class IncompleteData(NFPException):
+    message = _("Data passed is incomplete")
+
+
+class NotSupported(NFPException):
+    message = _("Feature is not supported")
+
+
+class ComputePolicyNotSupported(NotSupported):
+    message = _("Compute policy %(compute_policy)s is not supported")
+
+
+class HotplugNotSupported(NotSupported):
+    message = _("Vendor %(vendor)s doesn't support hotplug feature")
