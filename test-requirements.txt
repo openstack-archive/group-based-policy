@@ -35,3 +35,4 @@ python-heatclient
 python-keystoneclient
 
 -e git+https://github.com/noironetworks/python-opflex-agent.git@stable/liberty#egg=python-opflexagent-agent
+-e git+https://git.openstack.org/openstack/python-group-based-policy-client@stable/liberty#egg=gbpclient
