@@ -198,8 +198,8 @@ def get_create_policy_rule_set_attrs():
             'tenant_id': _uuid(),
             'child_policy_rule_sets': [_uuid()],
             'policy_rules': [_uuid()],
-            'consuming_policy_target_groups': [],
-            'consuming_external_policies': [],
+            'consuming_policy_target_groups': [_uuid()],
+            'consuming_external_policies': [_uuid()],
             'shared': False}
 
 
