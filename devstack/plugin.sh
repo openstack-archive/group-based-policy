@@ -1,4 +1,7 @@
 GBP="Group-Based Policy"
+if [[ $ENABLE_NFP = True ]]; then
+    NFP="Network Function Plugin"
+fi
 
 function gbp_configure_nova {
     iniset $NOVA_CONF neutron allow_duplicate_networks "True"
@@ -29,8 +32,14 @@ function gbp_configure_neutron {
 if is_service_enabled group-policy; then
     if [[ "$1" == "stack" && "$2" == "pre-install" ]]; then
         echo_summary "Preparing $GBP"
+        if [[ $ENABLE_NFP = True ]]; then
+            echo_summary "Preparing $NFP"
+        fi
     elif [[ "$1" == "stack" && "$2" == "install" ]]; then
         echo_summary "Installing $GBP"
+        if [[ $ENABLE_NFP = True ]]; then
+            echo_summary "Installing $NFP"
+        fi
     elif [[ "$1" == "stack" && "$2" == "post-config" ]]; then
         echo_summary "Configuring $GBP"
         gbp_configure_nova
@@ -45,9 +54,22 @@ if is_service_enabled group-policy; then
         install_gbpheat
         install_gbpui
         stop_apache_server
-	start_apache_server
+	    start_apache_server
+        if [[ $ENABLE_NFP = True ]]; then
+            echo_summary "Configuring $NFP"
+            #nfp_configure_neutron
+            install_nfpgbpservice
+            init_nfpgbpservice
+        fi
     elif [[ "$1" == "stack" && "$2" == "extra" ]]; then
         echo_summary "Initializing $GBP"
+        if [[ $ENABLE_NFP = True ]]; then
+            echo_summary "Initializing $NFP"
+            assign_user_role_credential
+            create_nfp_gbp_resources
+            get_router_namespace
+            copy_nfp_files_and_start_process
+        fi
     fi
 
     if [[ "$1" == "unstack" ]]; then
