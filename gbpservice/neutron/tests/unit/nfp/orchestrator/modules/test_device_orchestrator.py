@@ -422,6 +422,7 @@ class DeviceOrchestratorTestCase(unittest.TestCase):
                                            orig_event_data['id'],
                                            orig_event_data)
 
+    """
     @mock.patch.object(nfpdb.NFPDbBase, 'delete_network_function_device')
     def test_device_delete(self, mock_delete_nsd):
         ndo_handler = self._initialize_ndo_handler()
@@ -442,6 +443,7 @@ class DeviceOrchestratorTestCase(unittest.TestCase):
                                            self.event.data['id'])
         ndo_handler._create_event.assert_called_with(event_id=event_id,
                                              event_data=orig_event_data)
+    """
 
     def test_handle_device_create_error(self):
         ndo_handler = self._initialize_ndo_handler()
