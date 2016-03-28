@@ -186,6 +186,8 @@ def get_create_policy_rule_set_default_attrs():
             'description': '',
             'child_policy_rule_sets': [],
             'policy_rules': [],
+            'consuming_policy_target_groups': [],
+            'consuming_external_policies': [],
             'shared': False}
 
 
@@ -196,6 +198,8 @@ def get_create_policy_rule_set_attrs():
             'tenant_id': _uuid(),
             'child_policy_rule_sets': [_uuid()],
             'policy_rules': [_uuid()],
+            'consuming_policy_target_groups': [],
+            'consuming_external_policies': [],
             'shared': False}
 
 
