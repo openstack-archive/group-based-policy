@@ -10,8 +10,12 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-NFP_NSO_TOPIC = "nfp-service-orchestrator"
-NFP_NODE_DRIVER_CALLBACK_TOPIC = "nfp-node-driver-callbacks"
-NFP_NDO_CONFIGURATOR_TOPIC = "nfp-ndo-configurator"
-NFP_CONFIGURATOR_NDO_TOPIC = "nfp-configurator-ndo"
-NFP_NSO_CONFIGURATOR_TOPIC = "nfp-configurator-nso"
+CONFIG_AGENT_PROXY = 'nfp-config-agent-proxy'
+FW_NFP_PLUGIN_TOPIC = 'q-firewall-plugin'
+LB_NFP_PLUGIN_TOPIC = 'n-lbaas-plugin'
+VPN_NFP_PLUGIN_TOPIC = 'vpn_plugin'
+DEVICE_ORCHESTRATOR_TOPIC = 'nfp-configurator-ndo'
+SERVICE_ORCHESTRATOR_TOPIC = 'nfp-configurator-nso'
+FW_NFP_CONFIGAGENT_TOPIC = 'nfp-firewall-agent'
+LB_NFP_CONFIGAGENT_TOPIC = 'nfp-lbaas-agent'
+VPN_NFP_CONFIGAGENT_TOPIC = 'nfp-vpn_agent'
