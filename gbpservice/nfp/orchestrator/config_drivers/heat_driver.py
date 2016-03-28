@@ -22,6 +22,9 @@ class HeatDriver(object):
     def is_config_complete(self, stack_id, tenant_id):
         pass
 
+    def check_config_complete(self, event):
+        pass
+
     def is_config_delete_complete(self, stack_id, tenant_id):
         pass
 
@@ -48,4 +51,15 @@ class HeatDriver(object):
 
     def handle_consumer_ptg_removed(self, network_function_details,
                                     policy_target_group):
+        pass
+
+    def handle_policy_target_operations(self, network_function_details,
+                                     policy_target):
+        pass
+
+    def handle_consumer_ptg_operations(self, network_function_details,
+                                    policy_target_group):
+        pass
+
+    def parse_template_config_string(self, config_str):
         pass
