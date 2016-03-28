@@ -10,30 +10,5 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-GBP_MODE = "gbp"
-NEUTRON_MODE = "neutron"
-
-NEUTRON_PORT = "neutron_port"
-GBP_PORT = "gbp_policy_target"
-
-NEUTRON_NETWORK = "neutron_network"
-GBP_NETWORK = "gbp_group"
-
-PROVIDER = "provider"
-CONSUMER = "consumer"
-MANAGEMENT = "management"
-MONITOR = "monitoring"
-
-ACTIVE_PORT = "ACTIVE"
-STANDBY_PORT = "STANDBY"
-MASTER_PORT = "MASTER"
-STANDALONE_PORT = "STANDALONE"
-
-ACTIVE = "ACTIVE"
-PENDING_CREATE = "PENDING_CREATE"
-PENDING_UPDATE = "PENDING_UPDATE"
-PENDING_DELETE = "PENDING_DELETE"
-ERROR = "ERROR"
-
-COMPLETED = "COMPLETED"
-IN_PROGRESS = "IN_PROGRESS"
+NFP_NSO_TOPIC = "nfp-service-orchestrator"
+NFP_NODE_DRIVER_CALLBACK_TOPIC = "nfp-node-driver-callbacks"
