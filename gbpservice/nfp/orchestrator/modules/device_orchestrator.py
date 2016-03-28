@@ -19,6 +19,7 @@ from gbpservice.nfp.common import constants as nfp_constants
 from gbpservice.nfp.common import topics as nsf_topics
 from gbpservice.nfp.core.event import Event
 from gbpservice.nfp.core.poll import poll_event_desc
+from gbpservice.nfp.core.poll import PollEventDesc
 from gbpservice.nfp.core.rpc import RpcAgent
 from gbpservice.nfp.lib import transport
 from gbpservice.nfp.orchestrator.db import api as nfp_db_api
@@ -49,7 +50,7 @@ def events_init(controller, config, device_orchestrator):
               'DEVICE_HEALTHY', 'CONFIGURE_DEVICE',
               'DEVICE_CONFIGURED', "DELETE_CONFIGURATION",
               'DELETE_NETWORK_FUNCTION_DEVICE',
-              'DELETE_CONFIGURATION_COMPLETED',
+              'DELETE_CONFIGURATION_COMPLETED', 'DEVICE_BEING_DELETED',
               'DEVICE_NOT_REACHABLE', 'DEVICE_CONFIGURATION_FAILED']
     events_to_register = []
     for event in events:
@@ -134,7 +135,7 @@ class RpcHandler(object):
                            event_data=event_data)
 
 
-class DeviceOrchestrator(object):
+class DeviceOrchestrator(PollEventDesc):
     """device Orchestrator For Network Services
 
     This class handles the orchestration of Network Function Device lifecycle.
@@ -205,7 +206,6 @@ class DeviceOrchestrator(object):
         event_handler_mapping = {
             "CREATE_NETWORK_FUNCTION_DEVICE": (
                 self.create_network_function_device),
-            "DEVICE_SPAWNING": self.check_device_is_up,
             "DEVICE_UP": self.perform_health_check,
             "DEVICE_HEALTHY": self.plug_interfaces,
             "CONFIGURE_DEVICE": self.create_device_configuration,
@@ -233,16 +233,6 @@ class DeviceOrchestrator(object):
             return event_handler_mapping[event_id]
 
     def handle_event(self, event):
-        try:
-            event_handler = self.event_method_mapping(event.id)
-            event_handler(event)
-        except Exception as e:
-            LOG.exception(_LE("Unhandled exception in handle event for event: "
-                            "%(event_id)s %(error)s"), {'event_id': event.id,
-                                                        'error': e})
-
-    def handle_poll_event(self, event):
-        LOG.debug("NSO handle_poll_event called for event ID: %s" % (event.id))
         try:
             event_handler = self.event_method_mapping(event.id)
             event_handler(event)
@@ -291,6 +281,21 @@ class DeviceOrchestrator(object):
                                is_internal_event=True)
             self._update_network_function_device_db(device,
                                                     'DEVICE_NOT_UP')
+        if ev.id == 'DEVICE_BEING_DELETED':
+            LOG.info(_LI("Device is not deleted completely."
+                         " Continuing further cleanup of resources."
+                         " Possibly there could be stale port resources"
+                         " on Compute"))
+            device = ev.data
+            orchestration_driver = self._get_orchestration_driver(
+                                                device['service_vendor'])
+            device_id = device['id']
+            del device['id']
+            orchestration_driver.delete_network_function_device(device)
+            self._delete_network_function_device_db(device_id)
+            # DEVICE_DELETED event for NSO
+            self._create_event(event_id='DEVICE_DELETED',
+                               event_data=device)
 
     def _update_device_status(self, device, state, status_desc=None):
         device['status'] = state
@@ -493,8 +498,6 @@ class DeviceOrchestrator(object):
         is_device_up = (
             orchestration_driver.get_network_function_device_status(device))
         if is_device_up == nfp_constants.ACTIVE:
-            self._controller.poll_event_done(event)
-
             # create event DEVICE_UP
             self._create_event(event_id='DEVICE_UP',
                                event_data=device,
@@ -503,8 +506,6 @@ class DeviceOrchestrator(object):
                                                    'DEVICE_UP')
             return STOP_POLLING
         elif is_device_up == nfp_constants.ERROR:
-            self._controller.poll_event_done(event)
-
             # create event DEVICE_NOT_UP
             self._create_event(event_id='DEVICE_NOT_UP',
                                event_data=device,
@@ -710,15 +711,37 @@ class DeviceOrchestrator(object):
         device_ref_count = device['reference_count']
         if device_ref_count <= 0:
             orchestration_driver.delete_network_function_device(device)
-            self._delete_network_function_device_db(device['id'])
+            self._create_event(event_id='DEVICE_BEING_DELETED',
+                               event_data=device,
+                               is_poll_event=True,
+                               original_event=event)
         else:
             desc = 'Network Service Device can be reuse'
             self._update_network_function_device_db(device,
                                                     device['status'],
                                                     desc)
-        # DEVICE_DELETED event for NSO
-        self._create_event(event_id='DEVICE_DELETED',
-                           event_data=device)
+            # DEVICE_DELETED event for NSO
+            self._create_event(event_id='DEVICE_DELETED',
+                               event_data=device)
+
+    @poll_event_desc(event='DEVICE_BEING_DELETED', spacing=2)
+    def check_device_deleted(self, event):
+        device = event.data
+        orchestration_driver = self._get_orchestration_driver(
+            device['service_vendor'])
+        status = orchestration_driver.get_network_function_device_status(
+                        device, ignore_failure=True)
+        if not status:
+            device_id = device['id']
+            del device['id']
+            orchestration_driver.delete_network_function_device(device)
+            self._delete_network_function_device_db(device_id)
+            # DEVICE_DELETED event for NSO
+            self._create_event(event_id='DEVICE_DELETED',
+                               event_data=device)
+            return STOP_POLLING
+        else:
+            return CONTINUE_POLLING
 
     # Error Handling
     def handle_device_create_error(self, event):
