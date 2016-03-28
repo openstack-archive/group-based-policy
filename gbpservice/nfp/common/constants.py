@@ -12,6 +12,7 @@
 
 GBP_MODE = "gbp"
 NEUTRON_MODE = "neutron"
+NOVA_MODE = "nova"
 
 NEUTRON_PORT = "neutron_port"
 GBP_PORT = "gbp_policy_target"
@@ -35,5 +36,18 @@ PENDING_UPDATE = "PENDING_UPDATE"
 PENDING_DELETE = "PENDING_DELETE"
 ERROR = "ERROR"
 
+HEAT_CONFIG_TAG = 'heat_config'
+CONFIG_INIT_TAG = 'config_init'
+ANSIBLE_TAG = 'ansible'
+
 COMPLETED = "COMPLETED"
 IN_PROGRESS = "IN_PROGRESS"
+
+CONFIG_SCRIPT = 'config_script'
+
+CONFIG_TAG_RESOURCE_MAP = {
+    HEAT_CONFIG_TAG: 'heat',
+    CONFIG_INIT_TAG: 'config_init',
+    ANSIBLE_TAG: 'ansible'}
+
+LOADBALANCER_RPC_API_VERSION = "2.0"
