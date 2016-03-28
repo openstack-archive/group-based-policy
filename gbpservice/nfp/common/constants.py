@@ -28,6 +28,12 @@ PROVIDER = "provider"
 CONSUMER = "consumer"
 MANAGEMENT = "management"
 MONITOR = "monitoring"
+GATEWAY_TYPE = "gateway"
+ENDPOINT_TYPE = "endpoint"
+
+CREATE = "create"
+UPDATE = "update"
+DELETE = "delete"
 
 ACTIVE_PORT = "ACTIVE"
 STANDBY_PORT = "STANDBY"
@@ -66,3 +72,9 @@ HEALTHMONITOR_RESOURCE = 'healthmonitor'
 INTERFACE_RESOURCE = 'interfaces'
 ROUTES_RESOURCE = 'routes'
 MANAGEMENT_INTERFACE_NAME = 'mgmt_interface'
+
+VYOS_VENDOR = 'vyos'
+HAPROXY_VENDOR = 'haproxy'
+HAPROXY_LBAASV2 = 'haproxy_lbaasv2'
+NFP_VENDOR = 'nfp'
+L3_INSERTION_MODE = "l3"
