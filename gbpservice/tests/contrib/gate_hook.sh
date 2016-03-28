@@ -9,6 +9,7 @@ set -x
 trap prepare_logs ERR
 
 prepare_gbp_devstack
+prepare_nfp_devstack
 $TOP_DIR/stack.sh
 
 # Use devstack functions to install mysql and psql servers
