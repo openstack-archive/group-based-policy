@@ -1273,10 +1273,10 @@ class TestPolicyTargetGroup(ResourceMappingTestCase):
         for shared in [True, False]:
             res = self.create_policy_target_group(
                 name="ptg1", tenant_id='other', l2_policy_id=l2p_id,
-                shared=shared, expected_res_status=400)
+                shared=shared, expected_res_status=500)
 
             self.assertEqual(
-                'CrossTenantPolicyTargetGroupL2PolicyNotSupported',
+                'GroupPolicyDriverError',
                 res['NeutronError']['type'])
 
     def _test_cross_tenant_prs(self, admin=False):
@@ -1440,9 +1440,11 @@ class TestL2Policy(ResourceMappingTestCase):
             res = self.create_l2_policy(name="l2p1", tenant_id='other',
                                         l3_policy_id=l3p['l3_policy']['id'],
                                         shared=shared,
-                                        expected_res_status=400)
-            self.assertEqual('CrossTenantL2PolicyL3PolicyNotSupported',
-                             res['NeutronError']['type'])
+                                        expected_res_status=201)
+
+            self.assertEqual('l2p1', res['l2_policy']['name'])
+            #self.assertEqual('CrossTenantL2PolicyL3PolicyNotSupported',
+            #                 res['NeutronError']['type'])
 
         with self.network() as network:
             network_id = network['network']['id']
