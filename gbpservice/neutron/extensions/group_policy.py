@@ -643,6 +643,14 @@ RESOURCE_ATTRIBUTE_MAP = {
                          'default': None, 'validate': {'type:uuid_list': None},
                          'convert_to': attr.convert_none_to_empty_list,
                          'is_visible': True},
+        'consuming_policy_target_groups': {
+            'allow_post': True, 'allow_put': True, 'default': None,
+            'validate': {'type:uuid_list': None},
+            'convert_to': attr.convert_none_to_empty_list, 'is_visible': True},
+        'consuming_external_policies': {
+            'allow_post': True, 'allow_put': True,
+            'default': None, 'validate': {'type:uuid_list': None},
+            'convert_to': attr.convert_none_to_empty_list, 'is_visible': True},
         attr.SHARED: {'allow_post': True, 'allow_put': True,
                       'default': False, 'convert_to': attr.convert_to_boolean,
                       'is_visible': True, 'required_by_policy': True,
