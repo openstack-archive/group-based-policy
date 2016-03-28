@@ -257,7 +257,7 @@ def parse_service_flavor_string(service_flavor_str):
         service_details['service_vendor'] = service_flavor_str
     else:
         service_flavor_dict = dict(item.split('=') for item
-                               in service_flavor_str.split(','))
+                                   in service_flavor_str.split(','))
         service_details = {key.strip(): value.strip() for key, value
                            in service_flavor_dict.iteritems()}
     return service_details
