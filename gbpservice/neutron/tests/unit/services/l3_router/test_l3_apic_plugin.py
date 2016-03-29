@@ -62,7 +62,7 @@ class TestCiscoApicL3Plugin(apic_map.ApicMappingTestCase):
         # Create our plugin, but mock some superclass and
         # core plugin methods
         self.plugin = l3_apic.ApicGBPL3ServicePlugin()
-        self.plugin.apic_gbp._notify_port_update = mock.Mock()
+        self.plugin._apic_driver._notify_port_update = mock.Mock()
 
         self.plugin._core_plugin.get_ports = mock.Mock(
             return_value=[self.port])
@@ -139,10 +139,11 @@ class TestCiscoApicL3Plugin(apic_map.ApicMappingTestCase):
                         'create_floatingip',
                         new=mock.Mock(return_value=self.floatingip)):
             # create floating-ip with mapped port
-            self.plugin.create_floatingip(self.context,
-                                          {'floatingip': self.floatingip})
-            self.plugin.apic_gbp._notify_port_update.assert_called_once_with(
-                mock.ANY, PORT)
+            plugin = self.plugin
+            plugin.create_floatingip(self.context,
+                                     {'floatingip': self.floatingip})
+            plugin._apic_driver._notify_port_update.assert_called_once_with(
+                PORT)
 
     def test_floatingip_port_notify_on_reassociate(self):
         with mock.patch('neutron.db.l3_db.L3_NAT_db_mixin.'
@@ -153,26 +154,28 @@ class TestCiscoApicL3Plugin(apic_map.ApicMappingTestCase):
             self.plugin.update_floatingip(self.context, FLOATINGIP,
                                           {'floatingip': new_fip})
             self._check_call_list(
-                [mock.call(mock.ANY, PORT),
-                 mock.call(mock.ANY, 'port-another')],
-                self.plugin.apic_gbp._notify_port_update.call_args_list)
+                [mock.call(PORT),
+                 mock.call('port-another')],
+                self.plugin._apic_driver._notify_port_update.call_args_list)
 
     def test_floatingip_port_notify_on_disassociate(self):
         with mock.patch('neutron.db.l3_db.L3_NAT_db_mixin.'
                         'update_floatingip',
                         new=mock.Mock(return_value=self.floatingip)):
             # dissociate mapped port
-            self.plugin.update_floatingip(self.context, FLOATINGIP,
-                                          {'floatingip': {}})
-            self.plugin.apic_gbp._notify_port_update.assert_called_once_with(
-                mock.ANY, PORT)
+            plugin = self.plugin
+            plugin.update_floatingip(self.context, FLOATINGIP,
+                                     {'floatingip': {}})
+            plugin._apic_driver._notify_port_update.assert_any_call(
+                PORT)
 
     def test_floatingip_port_notify_on_delete(self):
         with mock.patch('neutron.db.l3_db.L3_NAT_db_mixin.delete_floatingip'):
             # delete
-            self.plugin.delete_floatingip(self.context, FLOATINGIP)
-            self.plugin.apic_gbp._notify_port_update.assert_called_once_with(
-                mock.ANY, PORT)
+            plugin = self.plugin
+            plugin.delete_floatingip(self.context, FLOATINGIP)
+            plugin._apic_driver._notify_port_update.assert_called_once_with(
+                PORT)
 
     def test_floatingip_status(self):
         with mock.patch('neutron.db.l3_db.L3_NAT_db_mixin.'
