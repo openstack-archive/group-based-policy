@@ -5,8 +5,6 @@
 setuptools>=19.2
 -e git+https://git.openstack.org/openstack/neutron.git@stable/mitaka#egg=neutron
 -e git+https://github.com/noironetworks/apic-ml2-driver.git@master#egg=apic_ml2
--e git+https://git.openstack.org/openstack/python-heatclient@stable/mitaka#egg=heatclient
--e git+https://git.openstack.org/openstack/python-keystoneclient@stable/mitaka#egg=keystoneclient
 hacking<0.11,>=0.10.0
 
 cliff>=1.15.0 # Apache-2.0
@@ -29,5 +27,11 @@ tempest-lib>=0.13.0 # Apache-2.0
 ddt>=1.0.1 # MIT
 pylint==1.4.5 # GNU GPL v2
 reno>=0.1.1 # Apache2
+
+# Since version numbers for these are specified in
+# https://git.openstack.org/cgit/openstack/requirements/plain/upper-constraints.txt,
+#  they cannot be refernced as GIT URLs
+python-heatclient
+python-keystoneclient
 
 -e git+https://github.com/noironetworks/python-opflex-agent.git@sumit/mitaka-sync#egg=python-opflexagent-agent
