@@ -353,7 +353,7 @@ class ChainMappingDriver(api.PolicyDriver, local_api.LocalAPI,
                 for sci in self._get_chains_by_prs(context, added):
                     chain_context = self._get_chain_admin_context(
                         context._plugin_context, instance_id=sci)
-                    self._notify_sc_consumer_removed(
+                    self._notify_sc_consumer_added(
                         chain_context, context.current, sci)
 
     def _handle_redirect_spec_id_update(self, context):
