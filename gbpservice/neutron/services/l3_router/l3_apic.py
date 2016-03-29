@@ -19,8 +19,9 @@ from neutron.db import common_db_mixin
 from neutron.db import extraroute_db
 from neutron.db import l3_gwmode_db
 from neutron.extensions import l3
-from neutron import manager
 from neutron.plugins.common import constants
+
+from apic_ml2.neutron.services.l3_router import apic_driver_api as api
 
 
 class ApicGBPL3ServicePlugin(common_db_mixin.CommonDbMixin,
@@ -31,15 +32,7 @@ class ApicGBPL3ServicePlugin(common_db_mixin.CommonDbMixin,
 
     def __init__(self):
         super(ApicGBPL3ServicePlugin, self).__init__()
-        self._apic_gbp = None
-
-    def _get_port_id_for_router_interface(self, context, router_id, subnet_id):
-        filters = {'device_id': [router_id],
-                   'device_owner': [q_const.DEVICE_OWNER_ROUTER_INTF],
-                   'fixed_ips': {'subnet_id': [subnet_id]}}
-        ports = self._core_plugin.get_ports(context.elevated(),
-                                            filters=filters)
-        return ports[0]['id']
+        self._apic_driver = apic_driver.ApicGBPL3Driver(self)
 
     def _update_router_gw_info(self, context, router_id, info, router=None):
         super(ApicGBPL3ServicePlugin, self)._update_router_gw_info(
@@ -62,99 +55,40 @@ class ApicGBPL3ServicePlugin(common_db_mixin.CommonDbMixin,
         """Returns string description of the plugin."""
         return _("L3 Router Service Plugin for basic L3 using the APIC")
 
-    @property
-    def apic_gbp(self):
-        if not self._apic_gbp:
-            self._apic_gbp = manager.NeutronManager.get_service_plugins()[
-                'GROUP_POLICY'].policy_driver_manager.policy_drivers[
-                'apic'].obj
-        return self._apic_gbp
-
     def add_router_interface(self, context, router_id, interface_info):
         port = super(ApicGBPL3ServicePlugin, self).add_router_interface(
             context, router_id, interface_info)
-        if 'subnet_id' in interface_info:
-            port_id = self._get_port_id_for_router_interface(
-                context, router_id, interface_info['subnet_id'])
-        else:
-            port_id = interface_info['port_id']
-
-        self._core_plugin.update_port_status(context,
-            port_id, q_const.PORT_STATUS_ACTIVE)
-        return port
+        return self._apic_driver.add_router_interface_postcommit(
+            context, router_id, interface_info
+        )
 
     def remove_router_interface(self, context, router_id, interface_info):
-        if 'subnet_id' in interface_info:
-            port_id = self._get_port_id_for_router_interface(
-                context, router_id, interface_info['subnet_id'])
-        else:
-            port_id = interface_info['port_id']
-
-        self._core_plugin.update_port_status(context,
-            port_id, q_const.PORT_STATUS_DOWN)
+        self._apic_driver.remove_router_interface_precommit(
+            context, router_id, interface_info)
         super(ApicGBPL3ServicePlugin, self).remove_router_interface(
             context, router_id, interface_info)
 
     # Floating IP API
     def create_floatingip(self, context, floatingip):
-        res = None
-        fip = floatingip['floatingip']
-        if self.apic_gbp and not fip.get('subnet_id'):
-            tenant_id = self._get_tenant_id_for_create(context, fip)
-            fip_id = self.apic_gbp.create_floatingip_in_nat_pool(context,
-                tenant_id, floatingip)
-            res = self.get_floatingip(context, fip_id) if fip_id else None
+        fip_context = api.FipContext(floatingip)
+        res = self._apic_driver.create_floatingip_precommit(context, fip_context)
         if not res:
             res = super(ApicGBPL3ServicePlugin, self).create_floatingip(
                 context, floatingip)
-        port_id = floatingip.get('floatingip', {}).get('port_id')
-        self._notify_port_update(port_id)
-        if res:
-            res['status'] = self._update_floatingip_status(context, res['id'])
-        return res
+        self._apic_driver.create_floatingip_postcommit(context, fip_context)
 
     def update_floatingip(self, context, id, floatingip):
-        port_id = [self._get_port_mapped_to_floatingip(context, id)]
+        fip_context = api.FipContext(floatingip)
+        self._apic_driver.update_floatingip_precommit(context, id, fip_context)
         res = super(ApicGBPL3ServicePlugin, self).update_floatingip(
             context, id, floatingip)
-        port_id.append(floatingip.get('floatingip', {}).get('port_id'))
-        for p in port_id:
-            self._notify_port_update(p)
-        status = self._update_floatingip_status(context, id)
-        if res:
-            res['status'] = status
+        self._apic_driver.update_floatingip_postcommit(context, id, fip_context)
         return res
 
     def delete_floatingip(self, context, id):
-        port_id = self._get_port_mapped_to_floatingip(context, id)
+        fip_context = api.FipContext(floatingip)
+        self._apic_driver.delete_floatingip_precommit(context, id, fip_context)
         res = super(ApicGBPL3ServicePlugin, self).delete_floatingip(
                 context, id)
-        self._notify_port_update(port_id)
+        self._apic_driver.delete_floatingip_postcommit(context, id, fip_context)
         return res
-
-    def _get_port_mapped_to_floatingip(self, context, fip_id):
-        try:
-            fip = self.get_floatingip(context, fip_id)
-            return fip.get('port_id')
-        except l3.FloatingIPNotFound:
-            pass
-        return None
-
-    def _notify_port_update(self, port_id):
-        context = n_ctx.get_admin_context()
-        if self.apic_gbp and port_id:
-            self.apic_gbp._notify_port_update(context, port_id)
-            ptg, _ = self.apic_gbp._port_id_to_ptg(context, port_id)
-            if ptg:
-                self.apic_gbp._notify_head_chain_ports(ptg['id'])
-
-    def _update_floatingip_status(self, context, fip_id):
-        status = q_const.FLOATINGIP_STATUS_DOWN
-        try:
-            fip = self.get_floatingip(context, fip_id)
-            if fip.get('port_id'):
-                status = q_const.FLOATINGIP_STATUS_ACTIVE
-            self.update_floatingip_status(context, fip_id, status)
-        except l3.FloatingIPNotFound:
-            pass
-        return status
