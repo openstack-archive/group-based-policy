@@ -12,6 +12,7 @@
 
 import copy
 import netaddr
+import re
 
 from apic_ml2.neutron.db import l3out_vlan_allocation as l3out_vlan_alloc
 from apic_ml2.neutron.db import port_ha_ipaddress_binding as ha_ip_db
@@ -37,6 +38,7 @@ from opflexagent import rpc
 from oslo_concurrency import lockutils
 from oslo_config import cfg
 from oslo_log import log as logging
+from oslo_serialization import jsonutils
 
 from gbpservice.neutron.db.grouppolicy import group_policy_mapping_db as gpdb
 from gbpservice.neutron.extensions import driver_proxy_group as proxy_group
@@ -1617,6 +1619,123 @@ class ApicMappingDriver(api.ResourceMappingDriver,
             db_utils = gpdb.GroupPolicyMappingDbPlugin()
             return db_utils._make_policy_target_group_dict(ptg)
 
+    def _trim_keys_from_dict(self, dictionary, lst_keys, encap, l3p_name):
+        for key in lst_keys:
+            try:
+                del dictionary[key]
+            except KeyError:
+                pass
+        try:
+            # remove the default value parameter and replace encap
+
+            if (dictionary.get('targetDscp') and
+                    dictionary['targetDscp'] == 'unspecified'):
+                del dictionary['targetDscp']
+            if dictionary.get('addr') and dictionary['addr'] == '0.0.0.0':
+                del dictionary['addr']
+            if dictionary.get('encap'):
+                if dictionary['encap'] == 'unknown':
+                    del dictionary['encap']
+                elif dictionary['encap'].startswith('vlan-'):
+                    dictionary['encap'] = encap
+
+            # this is for l3extRsEctx case that it
+            # doesn't allow tDn being present
+            if dictionary.get('tnFvCtxName') is not None:
+                del dictionary['tDn']
+                dictionary['tnFvCtxName'] = l3p_name
+
+            # this is for l3extRsNdIfPol case that it
+            # doesn't allow tDn being present
+            if dictionary.get('tnNdIfPolName') is not None:
+                del dictionary['tDn']
+
+            # this is for l3extRsDampeningPol/l3extRsInterleakPol case that it
+            # doesn't allow tDn being present
+            if dictionary.get('tnRtctrlProfileName') is not None:
+                del dictionary['tDn']
+
+            # this is for ospfRsIfPol case that it
+            # doesn't allow tDn being present
+            if dictionary.get('tnOspfIfPolName') is not None:
+                del dictionary['tDn']
+
+            # this is for l3extRs[I|E]ngressQosDppPol case that it
+            # doesn't allow tDn being present
+            if dictionary.get('tnQosDppPolName') is not None:
+                del dictionary['tDn']
+
+            # this is for bfdRsIfPol case that it
+            # doesn't allow tDn being present
+            if dictionary.get('tnBfdIfPolName') is not None:
+                del dictionary['tDn']
+
+            # this is for bgpRsPeerPfxPol case that it
+            # doesn't allow tDn being present
+            if dictionary.get('tnBgpPeerPfxPolName') is not None:
+                del dictionary['tDn']
+
+            # this is for eigrpRsIfPol case that it
+            # doesn't allow tDn being present
+            if dictionary.get('tnEigrpIfPolName') is not None:
+                del dictionary['tDn']
+        except KeyError:
+            pass
+
+        for value in dictionary.values():
+            if isinstance(value, dict):
+                self._trim_keys_from_dict(value, lst_keys, encap, l3p_name)
+            elif isinstance(value, list):
+                for element in value:
+                    if isinstance(element, dict):
+                        self._trim_keys_from_dict(element, lst_keys,
+                                                  encap, l3p_name)
+        return dictionary
+
+    def _clone_l3out(self, context, es, es_name, encap):
+        pre_es_name = self.name_mapper.name_mapper.pre_existing(
+            context, es['name'])
+        l3out_info = self._query_l3out_info(pre_es_name,
+            self.name_mapper.tenant(es), return_full=True)
+
+        old_tenant = self.apic_manager.apic.fvTenant.rn(
+            l3out_info['l3out_tenant'])
+        new_tenant = self.apic_manager.apic.fvTenant.rn(
+            context.current.get('tenant_id'))
+        old_l3_out = self.apic_manager.apic.l3extOut.rn(
+            pre_es_name)
+        new_l3_out = self.apic_manager.apic.l3extOut.rn(es_name)
+
+        request = {}
+        request['children'] = l3out_info['l3out']
+        request['attributes'] = {"rn": new_l3_out}
+
+        # trim the request
+        lst_keys = (['l3extInstP', 'l3extRtBDToOut',
+                     'l3extExtEncapAllocator',
+                     'l3extRsOutToBDPublicSubnetHolder', 'modTs',
+                     'uid', 'lcOwn', 'monPolDn', 'forceResolve',
+                     'rType', 'state', 'stateQual', 'tCl', 'tType',
+                     'type', 'tContextDn', 'tRn', 'tag', 'name',
+                     'configIssues'])
+        request = self._trim_keys_from_dict(request, lst_keys,
+            encap, context.current.get('name'))
+
+        final_req = {}
+        final_req['l3extOut'] = request
+        request_json = jsonutils.dumps(final_req)
+        if old_tenant != new_tenant:
+            request_json = re.sub(old_tenant, new_tenant,
+                request_json)
+        request_json = re.sub(old_l3_out, new_l3_out, request_json)
+        request_json = re.sub('{},*', '', request_json)
+
+        self.apic_manager.apic.post_body(
+            self.apic_manager.apic.l3extOut.mo,
+            request_json,
+            context.current.get('tenant_id'),
+            str(es_name))
+
     def _plug_l3p_to_es(self, context, es, is_shadow=False):
         l3_policy = (self.name_mapper.l3_policy(context, context.current)
                      if (not self._is_nat_enabled_on_es(es) or is_shadow) else
@@ -1654,7 +1773,15 @@ class ApicMappingDriver(api.ResourceMappingDriver,
         with self.apic_manager.apic.transaction() as trs:
             # Create External Routed Network connected to the proper
             # L3 Context
-            if is_shadow or not pre_existing:
+
+            is_l3out_creation_needed = True
+            if pre_existing:
+                is_l3out_creation_needed = False
+            if (is_shadow and self._is_asr_router_type(ext_info) and
+                self._is_pre_existing(es)):
+                is_l3out_creation_needed = False
+
+            if is_l3out_creation_needed:
                 self.apic_manager.ensure_external_routed_network_created(
                     es_name, owner=es_tenant, context=l3_policy,
                     transaction=trs)
@@ -1676,18 +1803,22 @@ class ApicMappingDriver(api.ResourceMappingDriver,
 
             # if there is a router_type (like ASR) then we have to flesh
             # out this shadow L3 out in APIC
-            if (is_shadow and self._is_asr_router_type(ext_info) and
-                not self._is_pre_existing(es)):
-                    vlan_id = self.l3out_vlan_alloc.reserve_vlan(
-                        es['name'], context.current['id'])
-                    encap = 'vlan-' + str(vlan_id)
-                    is_details_needed = True
+            if is_shadow and self._is_asr_router_type(ext_info):
+                vlan_id = self.l3out_vlan_alloc.reserve_vlan(
+                    es['name'], context.current['id'])
+                encap = 'vlan-' + str(vlan_id)
+                is_details_needed = True
 
             if is_details_needed:
-                switch = ext_info['switch']
-                module, sport = ext_info['port'].split('/')
-                router_id = ext_info['router_id']
-                default_gateway = ext_info['gateway_ip']
+                if self._is_pre_existing(es):
+                    self._clone_l3out(context, es, es_name, encap)
+                    return
+                else:
+                    switch = ext_info['switch']
+                    module, sport = ext_info['port'].split('/')
+                    router_id = ext_info['router_id']
+                    default_gateway = ext_info['gateway_ip']
+
                 self.apic_manager.set_domain_for_external_routed_network(
                     es_name, owner=es_tenant, transaction=trs)
                 self.apic_manager.ensure_logical_node_profile_created(
@@ -2991,7 +3122,7 @@ class ApicMappingDriver(api.ResourceMappingDriver,
             elif not self.l3out_vlan_alloc.l3out_vlan_ranges.get(es['name']):
                 raise ASRBadVlanRange(l3out=es['name'])
 
-    def _query_l3out_info(self, l3out_name, tenant_id):
+    def _query_l3out_info(self, l3out_name, tenant_id, return_full=False):
         info = {'l3out_tenant': tenant_id}
         l3out_children = self.apic_manager.apic.l3extOut.get_subtree(
             info['l3out_tenant'], l3out_name)
@@ -3011,6 +3142,8 @@ class ApicMappingDriver(api.ResourceMappingDriver,
                     info['vrf_tenant'] = ctx_dn[1][3:]
                 if ctx_dn[2].startswith('ctx-'):
                     info['vrf_name'] = ctx_dn[2][4:]
+        if return_full:
+            info['l3out'] = l3out_children
         return info
 
     def _check_pre_existing_es(self, context, es):
