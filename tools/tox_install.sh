@@ -23,19 +23,4 @@ if [ "$CONSTRAINTS_FILE" != "unconstrained" ]; then
     install_cmd="$install_cmd -c$CONSTRAINTS_FILE"
 fi
 
-if [ $tempest_installed -eq 0 ]; then
-    echo "Tempest already installed; using existing package"
-elif [ -x "$ZUUL_CLONER" ]; then
-    export ZUUL_BRANCH=${ZUUL_BRANCH-$BRANCH}
-    pushd /tmp
-    $ZUUL_CLONER --cache-dir \
-        /opt/git \
-        git://git.openstack.org \
-        openstack/tempest
-    $install_cmd -e openstack/tempest
-    popd
-else
-    $install_cmd -U -egit+https://git.openstack.org/openstack/tempest#egg=tempest
-fi
-
 $install_cmd -U $*
