@@ -29,6 +29,7 @@ from neutron import context
 from neutron.db import api as db_api
 from neutron.db import db_base_plugin_v2 as n_db
 from neutron.db import model_base
+from neutron.extensions import portbindings
 from neutron import manager
 from opflexagent import constants as ocst
 from oslo_config import cfg
@@ -65,6 +66,8 @@ AGENT_TYPE_DVS = driver.AGENT_TYPE_DVS
 AGENT_CONF_DVS = {'alive': True, 'binary': 'somebinary',
                   'topic': 'sometopic', 'agent_type': AGENT_TYPE_DVS,
                   'configurations': {'opflex_networks': None}}
+
+BOOKED_PORT_VALUE = 'myBookedPort'
 
 
 def echo(context, string, prefix=''):
@@ -867,13 +870,77 @@ class TestPolicyTarget(ApicMappingTestCase):
         self.assertEqual('1.1.1.1', entries[1].ha_ip_address)
 
 
+class FakeNetworkContext(object):
+    """To generate network context for testing purposes only."""
+
+    def __init__(self, network, segments):
+        self._network = network
+        self._segments = segments
+        self._plugin_context = mock.Mock()
+
+    @property
+    def current(self):
+        return self._network
+
+    @property
+    def network_segments(self):
+        return self._segments
+
+
+class FakePortContext(object):
+    """To generate port context for testing purposes only."""
+
+    def __init__(self, port, network):
+        self._port = port
+        self._network = network
+        self._plugin = mock.Mock()
+        self._plugin_context = mock.Mock()
+        self._plugin.get_ports.return_value = []
+        if network.network_segments:
+            self._bound_segment = network.network_segments[0]
+        else:
+            self._bound_segment = None
+
+        self.current = self._port
+        self.original = self._port
+        self.network = self._network
+        self.top_bound_segment = self._bound_segment
+        self.host = self._port.get(portbindings.HOST_ID)
+        self.original_host = None
+        self._binding = mock.Mock()
+        self._binding.segment = self._bound_segment
+
+    def set_binding(self, segment_id, vif_type, cap_port_filter):
+        pass
+
+
 class TestPolicyTargetDvs(ApicMappingTestCase):
 
     def setUp(self):
         super(TestPolicyTargetDvs, self).setUp()
         self.driver.apic_manager.app_profile_name = mocked.APIC_AP
+        plugin = manager.NeutronManager.get_plugin()
+        self.ml2 = plugin.mechanism_manager.mech_drivers['apic_gbp'].obj
+        self.ml2._dvs_notifier = mock.MagicMock()
+        self.ml2.dvs_notifier.bind_port_call = mock.Mock(
+            return_value=BOOKED_PORT_VALUE)
         mapper = self.driver.name_mapper
         mapper.name_mapper.policy_taget_group.return_value = 'ptg1'
+
+    def _verify_dvs_notifier(self, notifier, port, host):
+            # can't use getattr() with mock, so use eval instead
+            try:
+                dvs_mock = eval('self.ml2.dvs_notifier.' + notifier)
+            except Exception:
+                self.assertTrue(False,
+                                "The method " + notifier + " was not called")
+                return
+
+            self.assertTrue(dvs_mock.called)
+            a1, a2, a3, a4 = dvs_mock.call_args[0]
+            self.assertEqual(a1['id'], port['id'])
+            self.assertEqual(a2['id'], port['id'])
+            self.assertEqual(a4, host)
 
     def _pg_name(self, project, profile, network):
         return (str(project) + '|' + str(profile) + '|' + network)
@@ -889,30 +956,49 @@ class TestPolicyTargetDvs(ApicMappingTestCase):
             policy_target_group_id=ptg['id'])['policy_target']
         newp1 = self._bind_port_to_host(pt['port_id'], 'h1')
         vif_details = newp1['port']['binding:vif_details']
-        self.assertIsNotNone(vif_details.get('dvs_port_group'))
+        self.assertIsNotNone(vif_details.get('dvs_port_group_name'))
         pg = self._pg_name(ptg['tenant_id'], mocked.APIC_AP, ptg['name'])
-        self.assertEqual(pg, vif_details.get('dvs_port_group'))
+        self.assertEqual(pg, vif_details.get('dvs_port_group_name'))
+        port_key = newp1['port']['binding:vif_details'].get('dvs_port_key')
+        self.assertIsNotNone(port_key)
+        self.assertEqual(port_key, BOOKED_PORT_VALUE)
+        self._verify_dvs_notifier('update_postcommit_port_call',
+                                  newp1['port'], 'h1')
+        net_ctx = FakeNetworkContext(mock.Mock(), [mock.Mock()])
+        port_ctx = FakePortContext(newp1['port'], net_ctx)
+        self.ml2.delete_port_postcommit(port_ctx)
+        self._verify_dvs_notifier('delete_port_call', newp1['port'], 'h1')
 
     def test_bind_port_dvs_with_opflex_different_hosts(self):
-        self.agent_conf = AGENT_CONF_DVS
         l3p_fake = self.create_l3_policy(name='myl3')['l3_policy']
         l2p_fake = self.create_l2_policy(
             name='myl2', l3_policy_id=l3p_fake['id'])['l2_policy']
         ptg = self.create_policy_target_group(
             name="ptg1", l2_policy_id=l2p_fake['id'])['policy_target_group']
-        pt1 = self.create_policy_target(
-            policy_target_group_id=ptg['id'])['policy_target']
-        newp1 = self._bind_port_to_host(pt1['port_id'], 'h1')
-        vif_details = newp1['port']['binding:vif_details']
-        self.assertIsNotNone(vif_details.get('dvs_port_group'))
-        pg = self._pg_name(ptg['tenant_id'], mocked.APIC_AP, ptg['name'])
-        self.assertEqual(pg, vif_details.get('dvs_port_group'))
         self.agent_conf = AGENT_CONF
         pt2 = self.create_policy_target(
             policy_target_group_id=ptg['id'])['policy_target']
         newp2 = self._bind_port_to_host(pt2['port_id'], 'h2')
         vif_details = newp2['port']['binding:vif_details']
-        self.assertIsNone(vif_details.get('dvs_port_group'))
+        self.assertIsNone(vif_details.get('dvs_port_group_name'))
+        pt1 = self.create_policy_target(
+            policy_target_group_id=ptg['id'])['policy_target']
+        self.agent_conf = AGENT_CONF_DVS
+        self.ml2._dvs_notifier.reset_mock()
+        newp1 = self._bind_port_to_host(pt1['port_id'], 'h2')
+        port_key = newp1['port']['binding:vif_details'].get('dvs_port_key')
+        self.assertIsNotNone(port_key)
+        self.assertEqual(port_key, BOOKED_PORT_VALUE)
+        vif_details = newp1['port']['binding:vif_details']
+        self.assertIsNotNone(vif_details.get('dvs_port_group_name'))
+        pg = self._pg_name(ptg['tenant_id'], mocked.APIC_AP, ptg['name'])
+        self.assertEqual(pg, vif_details.get('dvs_port_group_name'))
+        self._verify_dvs_notifier('update_postcommit_port_call',
+                                  newp1['port'], 'h2')
+        net_ctx = FakeNetworkContext(mock.Mock(), [mock.Mock()])
+        port_ctx = FakePortContext(newp1['port'], net_ctx)
+        self.ml2.delete_port_postcommit(port_ctx)
+        self._verify_dvs_notifier('delete_port_call', newp1['port'], 'h2')
 
     def test_bind_ports_opflex_same_host(self):
         l3p_fake = self.create_l3_policy(name='myl3')['l3_policy']
@@ -925,13 +1011,31 @@ class TestPolicyTargetDvs(ApicMappingTestCase):
             policy_target_group_id=ptg['id'])['policy_target']
         newp1 = self._bind_port_to_host(pt1['port_id'], 'h1')
         vif_details = newp1['port']['binding:vif_details']
-        self.assertIsNone(vif_details.get('dvs_port_group'))
+        self.assertIsNone(vif_details.get('dvs_port_group_name'))
+        port_key = newp1['port']['binding:vif_details'].get('dvs_port_key')
+        self.assertIsNone(port_key)
+        dvs_mock = self.ml2.dvs_notifier.update_postcommit_port_call
+        dvs_mock.assert_not_called()
+        net_ctx = FakeNetworkContext(mock.Mock(), [mock.Mock()])
+        port_ctx = FakePortContext(newp1['port'], net_ctx)
+        self.ml2.delete_port_postcommit(port_ctx)
+        dvs_mock = self.ml2.dvs_notifier.delete_port_call
+        dvs_mock.assert_not_called()
+        self.ml2.dvs_notifier.reset_mock()
 
         pt2 = self.create_policy_target(
             policy_target_group_id=ptg['id'])['policy_target']
         newp2 = self._bind_port_to_host(pt2['port_id'], 'h1')
         vif_details = newp2['port']['binding:vif_details']
-        self.assertIsNone(vif_details.get('dvs_port_group'))
+        self.assertIsNone(vif_details.get('dvs_port_group_name'))
+        port_key = newp2['port']['binding:vif_details'].get('dvs_port_key')
+        self.assertIsNone(port_key)
+        dvs_mock.assert_not_called()
+        net_ctx = FakeNetworkContext(mock.Mock(), [mock.Mock()])
+        port_ctx = FakePortContext(newp2['port'], net_ctx)
+        self.ml2.delete_port_postcommit(port_ctx)
+        dvs_mock = self.ml2.dvs_notifier.delete_port_call
+        dvs_mock.assert_not_called()
 
     def test_bind_ports_dvs_with_opflex_same_host(self):
         self.agent_conf = AGENT_CONF_DVS
@@ -944,14 +1048,33 @@ class TestPolicyTargetDvs(ApicMappingTestCase):
             policy_target_group_id=ptg['id'])['policy_target']
         newp1 = self._bind_port_to_host(pt1['port_id'], 'h1')
         vif_details = newp1['port']['binding:vif_details']
-        self.assertIsNotNone(vif_details.get('dvs_port_group'))
+        self.assertIsNotNone(vif_details.get('dvs_port_group_name'))
+        port_key = newp1['port']['binding:vif_details'].get('dvs_port_key')
+        self.assertIsNotNone(port_key)
+        self.assertEqual(port_key, BOOKED_PORT_VALUE)
+        self._verify_dvs_notifier('update_postcommit_port_call',
+                                  newp1['port'], 'h1')
+        net_ctx = FakeNetworkContext(mock.Mock(), [mock.Mock()])
+        port_ctx = FakePortContext(newp1['port'], net_ctx)
+        self.ml2.delete_port_postcommit(port_ctx)
+        self._verify_dvs_notifier('delete_port_call', newp1['port'], 'h1')
+        self.ml2.dvs_notifier.reset_mock()
 
         self.agent_conf = AGENT_CONF
         pt2 = self.create_policy_target(
             policy_target_group_id=ptg['id'])['policy_target']
         newp2 = self._bind_dhcp_port_to_host(pt2['port_id'], 'h1')
         vif_details = newp2['port']['binding:vif_details']
-        self.assertIsNone(vif_details.get('dvs_port_group'))
+        self.assertIsNone(vif_details.get('dvs_port_group_name'))
+        port_key = newp2['port']['binding:vif_details'].get('dvs_port_key')
+        self.assertIsNone(port_key)
+        dvs_mock = self.ml2.dvs_notifier.update_postcommit_port_call
+        dvs_mock.assert_not_called()
+        net_ctx = FakeNetworkContext(mock.Mock(), [mock.Mock()])
+        port_ctx = FakePortContext(newp2['port'], net_ctx)
+        self.ml2.delete_port_postcommit(port_ctx)
+        dvs_mock = self.ml2.dvs_notifier.delete_port_call
+        dvs_mock.assert_not_called()
 
     def test_bind_port_dvs_shared(self):
         self.agent_conf = AGENT_CONF_DVS
@@ -961,10 +1084,19 @@ class TestPolicyTargetDvs(ApicMappingTestCase):
             policy_target_group_id=ptg['id'])['policy_target']
         newp1 = self._bind_port_to_host(pt['port_id'], 'h1')
         vif_details = newp1['port']['binding:vif_details']
-        self.assertIsNotNone(vif_details.get('dvs_port_group'))
+        self.assertIsNotNone(vif_details.get('dvs_port_group_name'))
         pg = self._pg_name(amap.apic_manager.TENANT_COMMON,
                            mocked.APIC_AP, ptg['name'])
-        self.assertEqual(pg, vif_details.get('dvs_port_group'))
+        self.assertEqual(pg, vif_details.get('dvs_port_group_name'))
+        port_key = newp1['port']['binding:vif_details'].get('dvs_port_key')
+        self.assertIsNotNone(port_key)
+        self.assertEqual(port_key, BOOKED_PORT_VALUE)
+        self._verify_dvs_notifier('update_postcommit_port_call',
+                                  newp1['port'], 'h1')
+        net_ctx = FakeNetworkContext(mock.Mock(), [mock.Mock()])
+        port_ctx = FakePortContext(newp1['port'], net_ctx)
+        self.ml2.delete_port_postcommit(port_ctx)
+        self._verify_dvs_notifier('delete_port_call', newp1['port'], 'h1')
 
 
 class TestPolicyTargetGroup(ApicMappingTestCase):
