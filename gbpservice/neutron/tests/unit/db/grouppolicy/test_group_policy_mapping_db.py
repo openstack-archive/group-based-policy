@@ -43,18 +43,20 @@ SC_PLUGIN_KLASS = (
 class GroupPolicyMappingDbTestCase(tgpdb.GroupPolicyDbTestCase,
                                    test_l3.L3NatTestCaseMixin):
 
-    def setUp(self, core_plugin=None, gp_plugin=None, service_plugins=None,
-              sc_plugin=None):
+    def setUp(self, core_plugin=None, gp_plugin=None,
+              service_plugins=None, sc_plugin=None):
         testlib_api.SqlTestCase._TABLES_ESTABLISHED = False
         if not gp_plugin:
             gp_plugin = DB_GP_PLUGIN_KLASS
         if not service_plugins:
             service_plugins = {
-                'l3_plugin_name': "router", 'gp_plugin_name': gp_plugin,
+                'l3_plugin_name': "router",
+                'qos_plugin_name': "qos",
+                'gp_plugin_name': gp_plugin,
                 'servicechain_plugin': sc_plugin or SC_PLUGIN_KLASS}
         super(GroupPolicyMappingDbTestCase, self).setUp(
-            core_plugin=core_plugin, gp_plugin=gp_plugin,
-            service_plugins=service_plugins
+            core_plugin=core_plugin,
+            gp_plugin=gp_plugin, service_plugins=service_plugins
         )
         engine = db_api.get_engine()
         model_base.BASEV2.metadata.create_all(engine)
