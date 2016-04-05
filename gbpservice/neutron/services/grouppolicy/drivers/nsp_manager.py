@@ -60,6 +60,25 @@ class PolicyTargetFloatingIPMapping(model_base.BASEV2):
                               primary_key=True)
 
 
+class ServicePolicyQosPolicyMapping(model_base.BASEV2):
+    """Mapping of a NSP to a Neutron QoS Policy."""
+    __tablename__ = 'gpm_qos_policy_mappings'
+    service_policy_id = sa.Column(
+        sa.String(36),
+        sa.ForeignKey('gp_network_service_policies.id',
+                      ondelete='CASCADE'),
+        nullable=False,
+        primary_key=True
+    )
+    qos_policy_id = sa.Column(
+        sa.String(36),
+        sa.ForeignKey('qos_policies.id',
+                      ondelete='CASCADE'),
+        nullable=False,
+        primary_key=True
+    )
+
+
 class NetworkServicePolicyMappingMixin(object):
 
     def _set_policy_ipaddress_mapping(self, session, service_policy_id,
@@ -132,3 +151,20 @@ class NetworkServicePolicyMappingMixin(object):
                     policy_target_id=policy_target_id).all()
             for fip_mapping in fip_mappings:
                 session.delete(fip_mapping)
+
+    def _get_nsp_qos_mapping(self, session, service_policy_id):
+        with session.begin(subtransactions=True):
+            return (session.query(ServicePolicyQosPolicyMapping).
+                    filter_by(service_policy_id=service_policy_id).first())
+
+    def _set_nsp_qos_mapping(self, session, service_policy_id, qos_policy_id):
+        with session.begin(subtransactions=True):
+            mapping = ServicePolicyQosPolicyMapping(
+                service_policy_id=service_policy_id,
+                qos_policy_id=qos_policy_id)
+            session.add(mapping)
+
+    def _delete_nsp_qos_mapping(self, session, mapping):
+        if mapping:
+            with session.begin(subtransactions=True):
+                session.delete(mapping)
