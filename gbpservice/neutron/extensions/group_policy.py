@@ -204,6 +204,8 @@ gp_supported_protocols = [None, n_constants.PROTO_NAME_TCP,
 gp_network_service_param_types = [
     gp_constants.GP_NETWORK_SVC_PARAM_TYPE_IP_SINGLE,
     gp_constants.GP_NETWORK_SVC_PARAM_TYPE_IP_POOL,
+    gp_constants.GP_NETWORK_SVC_PARAM_TYPE_QOS_MAXRATE,
+    gp_constants.GP_NETWORK_SVC_PARAM_TYPE_QOS_BURSTRATE,
     gp_constants.GP_NETWORK_SVC_PARAM_TYPE_STRING]
 gp_network_service_param_keys = [
     gp_constants.GP_NETWORK_SVC_PARAM_TYPE,
@@ -212,6 +214,7 @@ gp_network_service_param_keys = [
 gp_network_service_param_values = [
     gp_constants.GP_NETWORK_SVC_PARAM_VALUE_SELF_SUBNET,
     gp_constants.GP_NETWORK_SVC_PARAM_VALUE_NAT_POOL]
+# GP_NETWORK_SVC_PARAM_TYPE_QOS_MAXRATE/BURSTRATE expect numerical param_values.
 
 
 # Group Policy input value conversion and validation functions
