@@ -89,10 +89,11 @@ class AIMBaseTestCase(test_nr_base.CommonNeutronBaseTestCase,
         amap.ApicMappingDriver.get_apic_manager = mock.Mock()
         self.db_session = db_api.get_session()
         self.initialize_db_config(self.db_session)
+        service_plugins = {}
         super(AIMBaseTestCase, self).setUp(
             policy_drivers=policy_drivers, core_plugin=core_plugin,
             ml2_options=ml2_opts, l3_plugin=l3_plugin,
-            sc_plugin=sc_plugin)
+            service_plugins=service_plugins, sc_plugin=sc_plugin)
         config.cfg.CONF.set_override('network_vlan_ranges',
                                      ['physnet1:1000:1099'],
                                      group='ml2_type_vlan')
