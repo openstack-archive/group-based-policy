@@ -57,6 +57,18 @@ class LocalAPI(object):
         return l3_plugin
 
     @property
+    def _qos_plugin(self):
+        # Probably as well:
+        # REVISIT(rkukura): Need initialization method after all
+        # plugins are loaded to grab and store plugin.
+        plugins = manager.NeutronManager.get_service_plugins()
+        qos_plugin = plugins.get(pconst.QOS)
+        if not qos_plugin:
+            LOG.error(_LE("No QoS service plugin found."))
+            raise exc.GroupPolicyDeploymentError()
+        return qos_plugin
+
+    @property
     def _group_policy_plugin(self):
         # REVISIT(rkukura): Need initialization method after all
         # plugins are loaded to grab and store plugin.
@@ -107,6 +119,21 @@ class LocalAPI(object):
                         context, {resource: obj}, resource + '.create.end')
         return obj
 
+    # temporary workaround for QoS rules since the resource
+    # name is inconsistent with the expected method name
+    def _create_resource_alternative(self, plugin, context, resource,
+                                     param, attrs):
+        # REVISIT(rkukura): Do create.start notification?
+        # REVISIT(rkukura): Check authorization?
+        # REVISIT(rkukura): Do quota?
+        with utils.clean_session(context.session):
+            action = 'create_' + resource
+            obj_creator = getattr(plugin, action)
+            resource = "bandwidth_limit_rule"\
+                if resource == "policy_bandwidth_limit_rule" else resource
+            obj = obj_creator(context, param, {resource: attrs})
+        return obj
+
     def _update_resource(self, plugin, context, resource, resource_id, attrs,
                          do_notify=True):
         # REVISIT(rkukura): Do update.start notification?
@@ -137,6 +164,27 @@ class LocalAPI(object):
             action = 'delete_' + resource
             obj_deleter = getattr(plugin, action)
             obj_deleter(context, resource_id)
+            if do_notify:
+                self._nova_notifier.send_network_change(action, {},
+                                                        {resource: obj})
+                # REVISIT(rkukura): Do delete.end notification?
+                if cfg.CONF.dhcp_agent_notification:
+                    self._dhcp_agent_notifier.notify(context,
+                                                     {resource: obj},
+                                                     resource + '.delete.end')
+
+    # temporary workaround for QoS rules since the resource
+    # name is inconsistent with the expected method name
+    def _delete_resource_alt(self, plugin, context, resource, resource_id,
+                             second_id, do_notify=True):
+        # REVISIT(rkukura): Do delete.start notification?
+        # REVISIT(rkukura): Check authorization?
+        with utils.clean_session(context.session):
+            obj_getter = getattr(plugin, 'get_' + resource)
+            obj = obj_getter(context, resource_id, second_id)
+            action = 'delete_' + resource
+            obj_deleter = getattr(plugin, action)
+            obj_deleter(context, resource_id, second_id)
             if do_notify:
                 self._nova_notifier.send_network_change(action, {},
                                                         {resource: obj})
@@ -375,6 +423,62 @@ class LocalAPI(object):
                                   'floatingip', fip_id)
         except l3.FloatingIPNotFound:
             LOG.warning(_LW('Floating IP %s Already deleted'), fip_id)
+
+    def _get_qos_policy(self, plugin_context, qos_policy_id):
+        return self._get_resource(self._qos_plugin, plugin_context,
+                                  'policy', qos_policy_id)
+
+    def _get_qos_policies(self, plugin_context, filters=None):
+        filters = filters or {}
+        return self._get_resources(self._qos_plugin, plugin_context,
+                                   'policies', filters)
+
+    def _create_qos_policy(self, plugin_context, attrs):
+        # TODO(igordcard): for QoS: attrs=qos_policy_id; do_notify=attrs
+        return self._create_resource(self._qos_plugin, plugin_context,
+                                     'policy', attrs)
+
+    def _update_qos_policy(self, plugin_context, qos_policy_id, attrs):
+        return self._update_resource(self._qos_plugin, plugin_context,
+                                     'policy', qos_policy_id, attrs)
+
+    def _delete_qos_policy(self, plugin_context, qos_policy_id):
+        try:
+            self._delete_resource(self._qos_plugin,
+                                  plugin_context, 'policy', qos_policy_id)
+        except n_exc.QosPolicyNotFound:
+            LOG.warning(_LW('QoS Policy %s already deleted'), qos_policy_id)
+
+    def _get_qos_rule(self, plugin_context, qos_rule_id, qos_policy_id):
+        return self._get_resource(self._qos_plugin, plugin_context,
+                                  'policy_bandwidth_limit_rule',
+                                  qos_rule_id, qos_policy_id)
+
+    def _get_qos_rules(self, plugin_context, filters=None):
+        filters = filters or {}
+        return self._get_resources(self._qos_plugin, plugin_context,
+                                   'policy_bandwidth_limit_rules', filters)
+
+    def _create_qos_rule(self, plugin_context, qos_policy_id, attrs):
+        return self._create_resource_alternative(self._qos_plugin,
+                                                 plugin_context,
+                                                 'policy_bandwidth_limit_rule',
+                                                 qos_policy_id, attrs)
+
+    def _update_qos_rule(self, plugin_context,
+                         qos_rule_id, qos_policy_id, attrs):
+        return self._update_resource(self._qos_plugin, plugin_context,
+                                     'policy_bandwidth_limit_rule',
+                                     qos_rule_id, qos_policy_id, attrs)
+
+    def _delete_qos_rule(self, plugin_context, rule_id, qos_policy_id):
+        try:
+            self._delete_resource_alt(self._qos_plugin,
+                                      plugin_context,
+                                      'policy_bandwidth_limit_rule',
+                                      rule_id, qos_policy_id)
+        except n_exc.QosRuleNotFound:
+            LOG.warning(_LW('QoS Rule %s already deleted'), rule_id)
 
     def _get_l2_policy(self, plugin_context, l2p_id):
         return self._get_resource(self._group_policy_plugin, plugin_context,
