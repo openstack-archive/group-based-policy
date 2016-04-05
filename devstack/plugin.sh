@@ -23,6 +23,8 @@ function gbp_configure_neutron {
     iniset $NEUTRON_CONF quotas quota_security_group_rule "-1"
     iniset $NEUTRON_CONF quotas quota_router "-1"
     iniset $NEUTRON_CONF quotas quota_floatingip "-1"
+    iniset $NEUTRON_CONF agent extensions "qos"
+    iniset $Q_PLUGIN_CONF_PATH/$Q_PLUGIN_CONF_FILENAME ml2 extension_drivers "port_security,qos"
 }
 
 # Process contract
