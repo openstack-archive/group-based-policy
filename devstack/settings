@@ -8,7 +8,7 @@ ENABLE_NFP=${ENABLE_NFP:-False}
 [[ $ENABLE_NFP = True ]] && DISABLE_BUILD_IMAGE=${DISABLE_BUILD_IMAGE:-False}
 
 # Enable necessary Neutron plugins, including group_policy and ncp
-Q_SERVICE_PLUGIN_CLASSES=neutron.services.l3_router.l3_router_plugin.L3RouterPlugin,group_policy,ncp
+Q_SERVICE_PLUGIN_CLASSES=neutron.services.l3_router.l3_router_plugin.L3RouterPlugin,neutron.services.qos.qos_plugin.QoSPlugin,group_policy,ncp
 
 # Preferred git mirror
 GIT_BASE=${GIT_BASE:-https://git.openstack.org}

@@ -22,6 +22,7 @@ from neutron.common import constants as cst
 from neutron import context as nctx
 from neutron.db import api as db_api
 from neutron.db import model_base
+from neutron.db.qos import models as qos_models
 from neutron.extensions import external_net as external_net
 from neutron.extensions import securitygroup as ext_sg
 from neutron import manager
@@ -81,7 +82,8 @@ CORE_PLUGIN = ('gbpservice.neutron.tests.unit.services.grouppolicy.'
 class ResourceMappingTestCase(test_plugin.GroupPolicyPluginTestCase):
 
     def setUp(self, policy_drivers=None,
-              core_plugin=n_test_plugin.PLUGIN_NAME, ml2_options=None,
+              core_plugin=n_test_plugin.PLUGIN_NAME,
+              ml2_options=None,
               sc_plugin=None):
         policy_drivers = policy_drivers or ['implicit_policy',
                                             'resource_mapping',
@@ -194,6 +196,25 @@ class ResourceMappingTestCase(test_plugin.GroupPolicyPluginTestCase):
         ctx = nctx.get_admin_context()
         return (resource_mapping.ResourceMappingDriver.
                 _get_policy_rule_set_sg_mapping(ctx.session, prs_id))
+
+    def _get_nsp_qosp_mapping(self, nsp_id):
+        ctx = nctx.get_admin_context()
+        with ctx.session.begin(subtransactions=True):
+            return (ctx.session.query(
+                nsp_manager.ServicePolicyQosPolicyMapping).
+                    filter_by(service_policy_id=nsp_id).first())
+
+    def _get_qos_policy(self, qos_policy_id):
+        ctx = nctx.get_admin_context()
+        with ctx.session.begin(subtransactions=True):
+            return (ctx.session.query(qos_models.QosPolicy).
+                    filter_by(id=qos_policy_id).first())
+
+    def _get_qos_rules(self, qos_policy_id):
+        ctx = nctx.get_admin_context()
+        with ctx.session.begin(subtransactions=True):
+            return (ctx.session.query(qos_models.QosBandwidthLimitRule).
+                    filter_by(qos_policy_id=qos_policy_id).all())
 
     def _create_ssh_allow_rule(self):
         return self._create_tcp_allow_rule('22')
@@ -3837,6 +3858,24 @@ class TestNetworkServicePolicy(ResourceMappingTestCase):
                 {"type": "ip_single", "value": "self_subnet", "name": "vip"},
                 {"type": "ip_single", "value": "self_subnet", "name": "vip"}],
             expected_res_status=webob.exc.HTTPBadRequest.code)
+        self.create_network_service_policy(
+            network_service_params=[
+                {"type": gconst.GP_NETWORK_SVC_PARAM_TYPE_QOS_MAX,
+                 "value": "abcd", "name": "qos"}],
+            expected_res_status=webob.exc.HTTPBadRequest.code)
+        self.create_network_service_policy(
+            network_service_params=[
+                {"type": gconst.GP_NETWORK_SVC_PARAM_TYPE_QOS_BURST,
+                 "value": "1000", "name": "qos"}],
+            expected_res_status=webob.exc.HTTPBadRequest.code)
+        self.create_network_service_policy(
+            network_service_params=[
+                {"type": gconst.GP_NETWORK_SVC_PARAM_TYPE_QOS_MAX,
+                 "value": "1000", "name": "qos"},
+                {"type": gconst.GP_NETWORK_SVC_PARAM_TYPE_QOS_MAX,
+                 "value": "2000", "name": "qos"}
+            ],
+            expected_res_status=webob.exc.HTTPBadRequest.code)
 
     def test_nsp_cleanup_on_unset(self):
         ptg = self.create_policy_target_group(
@@ -4246,6 +4285,161 @@ class TestNetworkServicePolicy(ResourceMappingTestCase):
         self._verify_update_ptg_with_nsp(ptg['id'], nsp['id'], subnet)
         self._verify_update_ptg_with_nsp(ptg['id'], nsp2['id'], subnet)
         self._verify_update_ptg_with_nsp(ptg['id'], nsp['id'], subnet)
+
+    def test_nsp_creation_for_qos_both_rates(self):
+        nsp = self._create_nsp_with_qos_both_rates()
+        qos_rules = self._create_nsp(nsp)
+        self._verify_qos_rule(qos_rules, 1337, 2674)
+
+    def test_nsp_creation_for_qos_maxrate(self):
+        nsp = self._create_nsp_with_qos_maxrate()
+        qos_rules = self._create_nsp(nsp)
+        self._verify_qos_rule(qos_rules, 1337)
+
+    def test_nsp_deletion_for_qos_maxrate(self):
+        nsp = self._create_nsp_with_qos_maxrate()
+
+        # before deleting anything, get all needed IDs
+        mapping = self._get_nsp_qosp_mapping(nsp['id'])
+        qos_policy_id = mapping['qos_policy_id']
+
+        self.delete_network_service_policy(
+            nsp['id'],
+            expected_res_status=webob.exc.HTTPNoContent.code)
+
+        self.show_network_service_policy(
+            nsp['id'],
+            expected_res_status=webob.exc.HTTPNotFound.code)
+
+        mapping = self._get_nsp_qosp_mapping(nsp['id'])
+        qosp = self._get_qos_policy(qos_policy_id)
+        qos_rules = self._get_qos_rules(qos_policy_id)
+
+        # verify everything is gone
+        self.assertIsNone(mapping)
+        self.assertIsNone(qosp)
+        self.assertEqual([], qos_rules)
+
+    def test_create_ptg_with_ports_existing_nsp(self):
+        nsp = self._create_nsp_with_qos_both_rates()
+        mapping = self._get_nsp_qosp_mapping(nsp['id'])
+        ptg = self.create_policy_target_group(
+            name="ptg1",
+            network_service_policy_id=nsp['id'],
+            expected_res_status=webob.exc.HTTPCreated.code
+        )['policy_target_group']
+
+        pt1 = self.create_policy_target(
+            policy_target_group_id=ptg['id'])['policy_target']
+        pt2 = self.create_policy_target(
+            policy_target_group_id=ptg['id'])['policy_target']
+
+        port1 = self._get_object('ports', pt1['port_id'],
+                                 self.api)['port']
+        port2 = self._get_object('ports', pt2['port_id'],
+                                 self.api)['port']
+
+        # verify that the respective ports acquired the expected QoS Policy
+        self.assertEqual(mapping['qos_policy_id'], port1['qos_policy_id'])
+        self.assertEqual(mapping['qos_policy_id'], port2['qos_policy_id'])
+
+    def test_update_ptg_with_ports_add_nsp(self):
+        nsp = self._create_nsp_with_qos_both_rates()
+        mapping = self._get_nsp_qosp_mapping(nsp['id'])
+        ptg = self.create_policy_target_group(
+            name="ptg1")['policy_target_group']
+
+        pt1 = self.create_policy_target(
+            policy_target_group_id=ptg['id'])['policy_target']
+        pt2 = self.create_policy_target(
+            policy_target_group_id=ptg['id'])['policy_target']
+
+        self.update_policy_target_group(
+            ptg['id'],
+            network_service_policy_id = nsp['id'],
+            expected_res_status = webob.exc.HTTPOk.code)
+
+        port1 = self._get_object('ports', pt1['port_id'],
+                                 self.api)['port']
+        port2 = self._get_object('ports', pt2['port_id'],
+                                 self.api)['port']
+
+        # verify that the respective ports acquired the expected QoS Policy
+        self.assertEqual(mapping['qos_policy_id'], port1['qos_policy_id'])
+        self.assertEqual(mapping['qos_policy_id'], port2['qos_policy_id'])
+
+    def test_update_ptg_with_ports_remove_nsp(self):
+        nsp = self._create_nsp_with_qos_both_rates()
+        ptg = self.create_policy_target_group(
+            name="ptg1",
+            network_service_policy_id=nsp['id'],
+            expected_res_status=webob.exc.HTTPCreated.code
+        )['policy_target_group']
+
+        pt1 = self.create_policy_target(
+            policy_target_group_id=ptg['id'])['policy_target']
+        pt2 = self.create_policy_target(
+            policy_target_group_id=ptg['id'])['policy_target']
+
+        self.update_policy_target_group(
+            ptg['id'],
+            network_service_policy_id=None,
+            expected_res_status=webob.exc.HTTPOk.code)
+
+        port1 = self._get_object('ports', pt1['port_id'],
+                                 self.api)['port']
+        port2 = self._get_object('ports', pt2['port_id'],
+                                 self.api)['port']
+
+        # verify that the respective ports don't have a QoS Policy assigned
+        self.assertIsNone(port1['qos_policy_id'])
+        self.assertIsNone(port2['qos_policy_id'])
+
+    def _create_nsp(self, nsp):
+        # check if mapping was successfully created
+        mapping = self._get_nsp_qosp_mapping(nsp['id'])
+        qos_policy_id = mapping['qos_policy_id']
+
+        # check if qos policy is correctly created
+        qosp = self._get_qos_policy(qos_policy_id)
+        self._verify_qos_policy(qosp)
+
+        # check if respective qos rule is correctly created
+        qos_rules = self._get_qos_rules(qos_policy_id)
+        return qos_rules
+
+    def _create_nsp_with_qos_maxrate(self):
+        return self.create_network_service_policy(
+            name="testname",
+            network_service_params=[
+                {"type": gconst.GP_NETWORK_SVC_PARAM_TYPE_QOS_MAX,
+                 "value": "1337",
+                 "name": "maxrate_only"}],
+            expected_res_status=webob.exc.HTTPCreated.code)[
+            'network_service_policy']
+
+    def _create_nsp_with_qos_both_rates(self):
+        return self.create_network_service_policy(
+            name="testname",
+            network_service_params=[
+                {"type": gconst.GP_NETWORK_SVC_PARAM_TYPE_QOS_BURST,
+                 "value": "2674",
+                 "name": "burstrate"},
+                {"type": gconst.GP_NETWORK_SVC_PARAM_TYPE_QOS_MAX,
+                 "value": "1337",
+                 "name": "maxrate"}],
+            expected_res_status=webob.exc.HTTPCreated.code)[
+            'network_service_policy']
+
+    def _verify_qos_policy(self, qos_policy):
+        self.assertEqual("gbp_testname", qos_policy['name'])
+
+    def _verify_qos_rule(self, qos_rules, max, burst=0):
+        self.assertEqual(1, len(qos_rules))
+        single_qos_rule = qos_rules[0]
+        self.assertEqual(1337, single_qos_rule['max_kbps'])
+        if burst:
+            self.assertEqual(2674, single_qos_rule['max_burst_kbps'])
 
     def _verify_update_ptg_with_nsp(self, ptg_id, nsp_id, ptg_subnet_no_nsp):
         ptg_subnet_id = ptg_subnet_no_nsp['id']
