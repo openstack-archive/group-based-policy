@@ -59,11 +59,12 @@ def get_status_for_test(self, context):
 
 class GroupPolicyPluginTestBase(tgpmdb.GroupPolicyMappingDbTestCase):
 
-    def setUp(self, core_plugin=None, gp_plugin=None, ml2_options=None,
-              sc_plugin=None):
+    def setUp(self, core_plugin=None, gp_plugin=None,
+              ml2_options=None, sc_plugin=None):
         if not gp_plugin:
             gp_plugin = GP_PLUGIN_KLASS
         ml2_opts = ml2_options or {'mechanism_drivers': ['openvswitch']}
+        ml2_opts['extension_drivers'] = ['qos']
         for opt, val in ml2_opts.items():
             cfg.CONF.set_override(opt, val, 'ml2')
         core_plugin = core_plugin or test_plugin.PLUGIN_NAME
