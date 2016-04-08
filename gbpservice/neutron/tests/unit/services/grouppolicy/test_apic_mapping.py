@@ -33,7 +33,6 @@ from neutron.extensions import portbindings
 from neutron import manager
 from opflexagent import constants as ocst
 from oslo_config import cfg
-from oslo_serialization import jsonutils
 
 sys.modules["apicapi"] = mock.Mock()
 
@@ -111,8 +110,7 @@ class ApicMappingTestCase(
             'tenant_network_types': ['opflex']
         }
         mock.patch('gbpservice.neutron.services.grouppolicy.drivers.cisco.'
-                   'apic.apic_mapping.ApicMappingDriver.'
-                   '_setup_rpc_listeners').start()
+                   'apic.apic_mapping.ApicMappingDriver._setup_rpc').start()
         nova_client = mock.patch(
             'gbpservice.neutron.services.grouppolicy.drivers.cisco.'
             'apic.nova_client.NovaClient.get_server').start()
@@ -205,31 +203,17 @@ class ApicMappingTestCase(
                             {u'attributes':
                              {u'dn': u'uni/tn-common/out-supported/rsectx',
                               u'tDn': u'', u'tnFvCtxName': u'default'}}}])}
-            self.trimmed_l3out = [{}, {}, {}, {},
-               {u'l3extRsNdIfPol':
-               {u'tnNdIfPolName': u''}},
-               {u'l3extRsDampeningPol':
-                {u'tnRtctrlProfileName': u''}},
-               {u'ospfRsIfPol': {u'tnOspfIfPolName': u''}},
-               {u'l3extRsEngressQosDppPol':
-                {u'tnQosDppPolName': u''}},
-               {u'bfdRsIfPol': {u'tnBfdIfPolName': u''}},
-               {u'bgpRsPeerPfxPol': {u'tnBgpPeerPfxPolName': u''}},
-               {u'eigrpRsIfPol': {u'tnEigrpIfPolName': u''}},
-               {u'l3extLNodeP':
-                {u'attributes':
-                 {u'dn': u'uni/tn-test-tenant/out-Shd-Sub/lnodep-Leaf3-4_NP'},
-                 u'children': [{u'l3extLIfP':
-                     {u'children': [{u'l3extRsPathL3OutAtt':
-                                     {u'attributes':
-                                      {u'ifInstT':
-                                       u'sub-interface',
-                                       u'encap': 'vlan-999'
-                                       }}}]}}]}},
-               {u'l3extRsEctx':
-                {u'attributes':
-                 {u'dn': u'uni/tn-test-tenant/out-Shd-Sub/rsectx',
-                  u'tnFvCtxName': u'myl3p'}}}]
+            self.trimmed_l3out = u'{"l3extOut": {"attributes": {"rn": "Shd-Sub\
+"}, "children": [    {"l3extRsNdIfPol": {"tnNdIfPolName": ""}}, \
+{"l3extRsDampeningPol": {"tnRtctrlProfileName": ""}}, {"ospfRsIfPol": \
+{"tnOspfIfPolName": ""}}, {"l3extRsEngressQosDppPol": {"tnQosDppPolName": ""}}\
+, {"bfdRsIfPol": {"tnBfdIfPolName": ""}}, {"bgpRsPeerPfxPol": \
+{"tnBgpPeerPfxPolName": ""}}, {"eigrpRsIfPol": {"tnEigrpIfPolName": ""}}, \
+{"l3extLNodeP": {"attributes": {"dn": "uni/tn-test-tenant/out-Shd-Sub/\
+lnodep-Leaf3-4_NP"}, "children": [{"l3extLIfP": {"children": [{"\
+l3extRsPathL3OutAtt": {"attributes": {"ifInstT": "sub-interface", "encap": \
+"vlan-999"}}}]}}]}}, {"l3extRsEctx": {"attributes": {"dn": "uni/tn-test-tenant\
+/out-Shd-Sub/rsectx", "tnFvCtxName": "myl3p"}}}]}}'
             self.driver.apic_manager.apic.fvTenant.rn = echo2
             self.driver.apic_manager.apic.l3extOut.rn = echo2
             self.driver.l3out_vlan_alloc.reserve_vlan.return_value = 999
@@ -419,11 +403,6 @@ class TestPolicyTarget(ApicMappingTestCase):
 
         mapping = self.driver.get_gbp_details(context.get_admin_context(),
             device='tap%s' % pt1['port_id'], host='h1')
-        req_mapping = self.driver.request_endpoint_details(
-            context.get_admin_context(),
-            request={'device': 'tap%s' % pt1['port_id'], 'host': 'h1',
-                     'timestamp': 0, 'request_id': 'request_id'})
-        self.assertEqual(mapping, req_mapping['gbp_details'])
         self.assertEqual(pt1['port_id'], mapping['port_id'])
         self.assertEqual(ptg['id'], mapping['endpoint_group_name'])
         self.assertEqual('someid', mapping['vm-name'])
@@ -454,10 +433,6 @@ class TestPolicyTarget(ApicMappingTestCase):
             mapping['host_snat_ips'][0]['host_snat_ip'])
         self.assertEqual(24, mapping['host_snat_ips'][0]['prefixlen'])
 
-        # Verify Neutron details
-        self.assertEqual(pt1['port_id'],
-                         req_mapping['neutron_details']['port_id'])
-
         # Create event on a second host to verify that the SNAT
         # port gets created for this second host
         pt2 = self.create_policy_target(
@@ -475,67 +450,6 @@ class TestPolicyTarget(ApicMappingTestCase):
         self.assertEqual("192.168.200.3",
             mapping['host_snat_ips'][0]['host_snat_ip'])
         self.assertEqual(24, mapping['host_snat_ips'][0]['prefixlen'])
-
-    def test_get_snat_ip_for_vrf(self):
-        TEST_VRF1 = 'testvrf1'
-        TEST_VRF2 = 'testvrf2'
-        self._mock_external_dict([('supported', '192.168.0.2/24')])
-        self.driver.apic_manager.ext_net_dict[
-                'supported']['host_pool_cidr'] = '192.168.200.1/24'
-        es = self.create_external_segment(name='supported',
-            cidr='192.168.0.2/24',
-            expected_res_status=201, shared=False)['external_segment']
-        self.create_nat_pool(external_segment_id=es['id'],
-                             ip_pool='20.20.20.0/24')
-        l3p = self.create_l3_policy(name='myl3',
-            external_segments={es['id']: ['']})['l3_policy']
-        l2p = self.create_l2_policy(name='myl2',
-                                    l3_policy_id=l3p['id'])['l2_policy']
-        nsp = self.create_network_service_policy(
-            network_service_params=[
-                {"type": "ip_pool", "value": "nat_pool", "name": "test"}])[
-            'network_service_policy']
-        ptg = self.create_policy_target_group(
-            name="ptg1", l2_policy_id=l2p['id'],
-            network_service_policy_id=nsp['id'])['policy_target_group']
-        pt1 = self.create_policy_target(
-            policy_target_group_id=ptg['id'])['policy_target']
-        self._bind_port_to_host(pt1['port_id'], 'h1')
-
-        subnet = self._db_plugin.get_subnet(context.get_admin_context(),
-                                            es['subnet_id'])
-        network = self._db_plugin.get_network(context.get_admin_context(),
-                                              subnet['network_id'])
-        details = self.driver.get_snat_ip_for_vrf(context.get_admin_context(),
-            TEST_VRF1, network, es_name=es['name'])
-        self.assertEqual(es['name'],
-            details['external_segment_name'])
-        self.assertEqual("192.168.200.1",
-            details['gateway_ip'])
-        self.assertEqual("192.168.200.2",
-            details['host_snat_ip'])
-        self.assertEqual(24, details['prefixlen'])
-
-        # Verify that the same VRF returns the same SNAT IP
-        details2 = self.driver.get_snat_ip_for_vrf(context.get_admin_context(),
-            TEST_VRF1, network, es_name=es['name'])
-        self.assertEqual(details, details2)
-
-        # Create event on a second VRF to verify that the SNAT
-        # port gets created for this second VRF
-        pt2 = self.create_policy_target(
-            policy_target_group_id=ptg['id'])['policy_target']
-        self._bind_port_to_host(pt2['port_id'], 'h1')
-
-        details = self.driver.get_snat_ip_for_vrf(context.get_admin_context(),
-            TEST_VRF2, network, es_name = es['name'])
-        self.assertEqual(es['name'],
-            details['external_segment_name'])
-        self.assertEqual("192.168.200.1",
-            details['gateway_ip'])
-        self.assertEqual("192.168.200.3",
-            details['host_snat_ip'])
-        self.assertEqual(24, details['prefixlen'])
 
     def test_snat_pool_subnet_deletion(self):
         self._mock_external_dict([('supported', '192.168.0.2/24')])
@@ -866,15 +780,8 @@ class TestPolicyTarget(ApicMappingTestCase):
         details = self.driver.get_gbp_details(
             context.get_admin_context(), device='tap%s' % 'randomid',
             host='h1')
-        req_details = self.driver.request_endpoint_details(
-            context.get_admin_context(),
-            request={'device': 'tap%s' % 'randomid', 'host': 'h1',
-                     'timestamp': 0, 'request_id': 'request_id'})
         # device was not found
-        self.assertTrue('port_id' not in details)
-        self.assertEqual(details, req_details['gbp_details'])
-        self.assertTrue('port_id' not in req_details['neutron_details'])
-
+        self.assertEqual(None, details)
         ptg = self.create_policy_target_group()['policy_target_group']
         pt1 = self.create_policy_target(
             policy_target_group_id=ptg['id'])['policy_target']
@@ -883,13 +790,8 @@ class TestPolicyTarget(ApicMappingTestCase):
         details = self.driver.get_gbp_details(
             context.get_admin_context(), device='tap%s' % pt1['port_id'],
             host='h1')
-        req_details = self.driver.request_endpoint_details(
-            context.get_admin_context(),
-            request={'device': 'tap%s' % pt1['port_id'], 'host': 'h1',
-                     'timestamp': 0, 'request_id': 'request_id'})
-        # An exception occurred
+        # device was not found
         self.assertEqual({'device': 'tap%s' % pt1['port_id']}, details)
-        self.assertIsNone(req_details)
 
     def test_get_gbp_proxy_details(self):
         l3p_fake = self.create_l3_policy(name='myl3')['l3_policy']
@@ -1083,6 +985,29 @@ class TestPolicyTarget(ApicMappingTestCase):
         self.assertEqual(2, len(entries))
         self.assertEqual('1.1.1.1', entries[0].ha_ip_address)
         self.assertEqual('1.1.1.1', entries[1].ha_ip_address)
+
+    def test_explicit_end_of_chain(self):
+        self.driver._notify_port_update = mock.Mock()
+        ptg = self.create_policy_target_group(
+            name="ptg1")['policy_target_group']
+        pt1 = self.create_policy_target(
+            policy_target_group_id=ptg['id'])['policy_target']
+        ptg2 = self.create_policy_target_group(
+            name="ptg2",
+            description='opflex_eoc:' + pt1['port_id'],
+            is_admin_context=True)['policy_target_group']
+        self.create_policy_target(policy_target_group_id=ptg2['id'])
+        # pt1 notified
+        self.driver._notify_port_update.assert_called_once_with(
+            mock.ANY, pt1['port_id'])
+
+    def test_explicit_eoc_raises(self):
+        ptg = self.create_policy_target_group(
+            name="ptg1")['policy_target_group']
+        self.create_policy_target_group(
+            name="ptg2", description='opflex_eoc:', expected_res_status=400)
+        self.update_policy_target_group(
+            ptg['id'], description='opflex_eoc:', expected_res_status=400)
 
 
 class TestPolicyTargetVlanNetwork(ApicMappingVlanTestCase,
@@ -2147,23 +2072,6 @@ class TestL3Policy(ApicMappingTestCase):
             router_ports[0]['fixed_ips'][0]['subnet_id'] == subnet['id'] or
             router_ports[1]['fixed_ips'][0]['subnet_id'] == subnet['id'])
 
-    def _wrap_up_l3out_request(self, l3out_str, l3p_id, es_id, l3p_owner):
-        # try to simulate what the implementation does here also for UT purpose
-
-        request = {}
-        request['children'] = self.trimmed_l3out
-        request['attributes'] = {'rn': u'Shd-Sub'}
-
-        final_req = {}
-        final_req['l3extOut'] = request
-        final_req = jsonutils.dumps(final_req)
-        final_req = re.sub('Shd-Sub',
-            l3out_str % (l3p_id, es_id), final_req)
-        final_req = re.sub('test-tenant', l3p_owner, final_req)
-        final_req = re.sub('{},*', '', final_req)
-
-        return final_req
-
     def _test_l3p_plugged_to_es_at_creation(self, shared_es,
                                             shared_l3p, is_edge_nat=False):
         # Verify L3P is correctly plugged to ES on APIC during create
@@ -2188,11 +2096,9 @@ class TestL3Policy(ApicMappingTestCase):
         self.assertEqual(1, len(l3p['external_segments'][es['id']]))
         self.assertEqual('169.254.0.2', l3p['external_segments'][es['id']][0])
 
-        l2ps = [self.create_l2_policy(name='myl2p-%s' % x,
-                                      tenant_id=l3p['tenant_id'],
-                                      shared=shared_l3p,
-                                      l3_policy_id=l3p['id'])['l2_policy']
-                for x in range(0, 3)]
+        if is_edge_nat:
+            l2p = self.create_l2_policy(name='myl2p',
+                                        l3_policy_id=l3p['id'])['l2_policy']
 
         owner = self.common_tenant if shared_es else es['tenant_id']
         l3p_owner = self.common_tenant if shared_l3p else l3p['tenant_id']
@@ -2249,22 +2155,22 @@ class TestL3Policy(ApicMappingTestCase):
             if is_edge_nat and self.nat_enabled:
                 expected_set_domain_calls.append(
                     mock.call(l3out_str % (l3p['id'], es['id']),
-                              owner=l3p_owner, transaction=mock.ANY))
+                              owner=owner, transaction=mock.ANY))
                 expected_logic_node_calls.append(
                     mock.call(l3out_str % (l3p['id'], es['id']),
                               mocked.APIC_EXT_SWITCH, mocked.APIC_EXT_MODULE,
                               mocked.APIC_EXT_PORT, mock.ANY, '192.168.0.2/24',
-                              owner=l3p_owner, router_id=APIC_EXTERNAL_RID,
+                              owner=owner, router_id=APIC_EXTERNAL_RID,
                               transaction=mock.ANY))
                 expected_route_calls.append(
                     mock.call(l3out_str % (l3p['id'], es['id']),
                               mocked.APIC_EXT_SWITCH, '192.168.0.254',
-                              owner=l3p_owner, subnet='0.0.0.0/0',
+                              owner=owner, subnet='0.0.0.0/0',
                               transaction=mock.ANY))
                 expected_route_calls.append(
                     mock.call(l3out_str % (l3p['id'], es['id']),
                               mocked.APIC_EXT_SWITCH, '192.168.0.1',
-                              owner=l3p_owner, subnet='128.0.0.0/16',
+                              owner=owner, subnet='128.0.0.0/16',
                               transaction=mock.ANY))
 
             self._check_call_list(expected_set_domain_calls,
@@ -2275,9 +2181,8 @@ class TestL3Policy(ApicMappingTestCase):
                 mgr.ensure_static_route_created.call_args_list)
         else:
             if is_edge_nat and self.nat_enabled:
-                final_req = self._wrap_up_l3out_request(l3out_str,
-                                                        l3p['id'], es['id'],
-                                                        l3p_owner)
+                final_req = re.sub('Shd-Sub',
+                    l3out_str % (l3p['id'], es['id']), self.trimmed_l3out)
                 mgr.apic.post_body.assert_called_once_with(
                     mgr.apic.l3extOut.mo, final_req, l3p_owner,
                     l3out_str % (l3p['id'], es['id']))
@@ -2285,24 +2190,18 @@ class TestL3Policy(ApicMappingTestCase):
             self.assertFalse(mgr.ensure_logical_node_profile_created.called)
             self.assertFalse(mgr.ensure_static_route_created.called)
 
-        expected_set_l3out_for_bd_calls = []
         if self.nat_enabled:
-            expected_set_l3out_for_bd_calls.append(
+            expected_set_l3out_for_bd_calls = [
                 mock.call(owner, "NAT-bd-%s" % es['id'],
                           es['name' if self.pre_l3out else 'id'],
-                          transaction=mock.ANY))
+                          transaction=mock.ANY)]
             if is_edge_nat:
-                expected_set_l3out_for_bd_calls.extend([
+                expected_set_l3out_for_bd_calls.append(
                     mock.call(l3p_owner, l2p['id'],
                               l3out_str % (l3p['id'], es['id']),
-                              transaction=mock.ANY) for l2p in l2ps])
-        else:
-            expected_set_l3out_for_bd_calls.extend([
-                mock.call(l3p_owner, l2p['id'],
-                          es['name' if self.pre_l3out else 'id'],
-                          transaction=mock.ANY) for l2p in l2ps])
-        self._check_call_list(expected_set_l3out_for_bd_calls,
-            mgr.set_l3out_for_bd.call_args_list)
+                              transaction=mock.ANY))
+            self._check_call_list(expected_set_l3out_for_bd_calls,
+                mgr.set_l3out_for_bd.call_args_list)
 
     # Although the naming convention used here has been chosen poorly,
     # I'm separating the tests in order to get the mock re-set.
@@ -2318,17 +2217,7 @@ class TestL3Policy(ApicMappingTestCase):
         self._test_l3p_plugged_to_es_at_creation(shared_es=False,
                                                  shared_l3p=False)
 
-    def test_l3p_plugged_to_es_at_creation_edge_nat_mode_1(self):
-        self._test_l3p_plugged_to_es_at_creation(shared_es=True,
-                                                 shared_l3p=False,
-                                                 is_edge_nat=True)
-
-    def test_l3p_plugged_to_es_at_creation_edge_nat_mode_2(self):
-        self._test_l3p_plugged_to_es_at_creation(shared_es=True,
-                                                 shared_l3p=True,
-                                                 is_edge_nat=True)
-
-    def test_l3p_plugged_to_es_at_creation_edge_nat_mode_3(self):
+    def test_l3p_plugged_to_es_at_creation_edge_nat_mode(self):
         self._test_l3p_plugged_to_es_at_creation(shared_es=False,
                                                  shared_l3p=False,
                                                  is_edge_nat=True)
@@ -2346,23 +2235,19 @@ class TestL3Policy(ApicMappingTestCase):
                              {'destination': '128.0.0.0/16',
                               'nexthop': None}])['external_segment']
 
+        # Create with explicit address
         l3p = self.create_l3_policy(
             name='myl3p',
             expected_res_status=201,
             tenant_id=es['tenant_id'] if not shared_es else 'another_tenant',
-            shared=shared_l3p)['l3_policy']
-        l2ps = [self.create_l2_policy(name='myl2p-%s' % x,
-                                      tenant_id=l3p['tenant_id'],
-                                      shared=shared_l3p,
-                                      l3_policy_id=l3p['id'])['l2_policy']
-                for x in range(0, 3)]
-
-        # update L3P with ES
-        l3p = self.update_l3_policy(l3p['id'], tenant_id=l3p['tenant_id'],
-            external_segments={es['id']: []},
-            expected_res_status=200)['l3_policy']
+            shared=shared_l3p,
+            external_segments={es['id']: []})['l3_policy']
         self.assertEqual(1, len(l3p['external_segments'][es['id']]))
         self.assertEqual('169.254.0.2', l3p['external_segments'][es['id']][0])
+
+        if is_edge_nat:
+            l2p = self.create_l2_policy(name='myl2p',
+                                        l3_policy_id=l3p['id'])['l2_policy']
 
         mgr = self.driver.apic_manager
         owner = self.common_tenant if shared_es else es['tenant_id']
@@ -2420,22 +2305,22 @@ class TestL3Policy(ApicMappingTestCase):
             if is_edge_nat and self.nat_enabled:
                 expected_set_domain_calls.append(
                     mock.call(l3out_str % (l3p['id'], es['id']),
-                              owner=l3p_owner, transaction=mock.ANY))
+                              owner=owner, transaction=mock.ANY))
                 expected_logic_node_calls.append(
                     mock.call(l3out_str % (l3p['id'], es['id']),
                               mocked.APIC_EXT_SWITCH, mocked.APIC_EXT_MODULE,
                               mocked.APIC_EXT_PORT, mock.ANY, '192.168.0.2/24',
-                              owner=l3p_owner, router_id=APIC_EXTERNAL_RID,
+                              owner=owner, router_id=APIC_EXTERNAL_RID,
                               transaction=mock.ANY))
                 expected_route_calls.append(
                     mock.call(l3out_str % (l3p['id'], es['id']),
                               mocked.APIC_EXT_SWITCH, '192.168.0.254',
-                              owner=l3p_owner, subnet='0.0.0.0/0',
+                              owner=owner, subnet='0.0.0.0/0',
                               transaction=mock.ANY))
                 expected_route_calls.append(
                     mock.call(l3out_str % (l3p['id'], es['id']),
                               mocked.APIC_EXT_SWITCH, '192.168.0.1',
-                              owner=l3p_owner, subnet='128.0.0.0/16',
+                              owner=owner, subnet='128.0.0.0/16',
                               transaction=mock.ANY))
 
             self._check_call_list(expected_set_domain_calls,
@@ -2446,9 +2331,8 @@ class TestL3Policy(ApicMappingTestCase):
                 mgr.ensure_static_route_created.call_args_list)
         else:
             if is_edge_nat and self.nat_enabled:
-                final_req = self._wrap_up_l3out_request(l3out_str,
-                                                        l3p['id'], es['id'],
-                                                        l3p_owner)
+                final_req = re.sub('Shd-Sub',
+                    l3out_str % (l3p['id'], es['id']), self.trimmed_l3out)
                 mgr.apic.post_body.assert_called_once_with(
                     mgr.apic.l3extOut.mo, final_req, l3p_owner,
                     l3out_str % (l3p['id'], es['id']))
@@ -2456,24 +2340,18 @@ class TestL3Policy(ApicMappingTestCase):
             self.assertFalse(mgr.ensure_logical_node_profile_created.called)
             self.assertFalse(mgr.ensure_static_route_created.called)
 
-        expected_set_l3out_for_bd_calls = []
         if self.nat_enabled:
-            expected_set_l3out_for_bd_calls.append(
+            expected_set_l3out_for_bd_calls = [
                 mock.call(owner, "NAT-bd-%s" % es['id'],
                           es['name' if self.pre_l3out else 'id'],
-                          transaction=mock.ANY))
+                          transaction=mock.ANY)]
             if is_edge_nat:
-                expected_set_l3out_for_bd_calls.extend([
+                expected_set_l3out_for_bd_calls.append(
                     mock.call(l3p_owner, l2p['id'],
-                              l3out_str % (l3p['id'], es['id'])
-                              ) for l2p in l2ps])
-        else:
-            expected_set_l3out_for_bd_calls.extend([
-                mock.call(l3p_owner, l2p['id'],
-                          es['name' if self.pre_l3out else 'id'])
-                for l2p in l2ps])
-        self._check_call_list(expected_set_l3out_for_bd_calls,
-            mgr.set_l3out_for_bd.call_args_list)
+                              l3out_str % (l3p['id'], es['id']),
+                              transaction=mock.ANY))
+            self._check_call_list(expected_set_l3out_for_bd_calls,
+                mgr.set_l3out_for_bd.call_args_list)
 
     # Although the naming convention used here has been chosen poorly,
     # I'm separating the tests in order to get the mock re-set.
@@ -2489,17 +2367,7 @@ class TestL3Policy(ApicMappingTestCase):
         self._test_l3p_plugged_to_es_at_update(shared_es=False,
                                                shared_l3p=False)
 
-    def test_l3p_plugged_to_es_at_update_edge_nat_mode_1(self):
-        self._test_l3p_plugged_to_es_at_update(shared_es=True,
-                                               shared_l3p=False,
-                                               is_edge_nat=True)
-
-    def test_l3p_plugged_to_es_at_update_edge_nat_mode_2(self):
-        self._test_l3p_plugged_to_es_at_update(shared_es=True,
-                                               shared_l3p=True,
-                                               is_edge_nat=True)
-
-    def test_l3p_plugged_to_es_at_update_edge_nat_mode_3(self):
+    def test_l3p_plugged_to_es_at_update_edge_nat_mode(self):
         self._test_l3p_plugged_to_es_at_update(shared_es=False,
                                                shared_l3p=False,
                                                is_edge_nat=True)
@@ -2634,17 +2502,7 @@ class TestL3Policy(ApicMappingTestCase):
         self._test_l3p_unplugged_from_es_on_delete(shared_es=False,
                                                    shared_l3p=False)
 
-    def test_l3p_unplugged_from_es_on_delete_edge_nat_mode_1(self):
-        self._test_l3p_unplugged_from_es_on_delete(shared_es=True,
-                                                   shared_l3p=False,
-                                                   is_edge_nat=True)
-
-    def test_l3p_unplugged_from_es_on_delete_edge_nat_mode_2(self):
-        self._test_l3p_unplugged_from_es_on_delete(shared_es=True,
-                                                   shared_l3p=True,
-                                                   is_edge_nat=True)
-
-    def test_l3p_unplugged_from_es_on_delete_edge_nat_mode_3(self):
+    def test_l3p_unplugged_from_es_on_delete_edge_nat_mode(self):
         self._test_l3p_unplugged_from_es_on_delete(shared_es=False,
                                                    shared_l3p=False,
                                                    is_edge_nat=True)
@@ -2670,11 +2528,9 @@ class TestL3Policy(ApicMappingTestCase):
             external_segments={es1['id']: ['169.254.0.3']},
             expected_res_status=201)['l3_policy']
 
-        l2ps = [self.create_l2_policy(name='myl2p-%s' % x,
-                                      tenant_id=l3p['tenant_id'],
-                                      shared=shared_l3p,
-                                      l3_policy_id=l3p['id'])['l2_policy']
-                for x in range(0, 3)]
+        if is_edge_nat:
+            l2p = self.create_l2_policy(name='myl2p',
+                                        l3_policy_id=l3p['id'])['l2_policy']
 
         mgr = self.driver.apic_manager
         owner = self.common_tenant if shared_es else es1['tenant_id']
@@ -2715,24 +2571,19 @@ class TestL3Policy(ApicMappingTestCase):
                 expected_calls,
                 mgr.set_context_for_external_routed_network.call_args_list)
 
-        expected_unset_l3out_for_bd_calls = []
         if self.nat_enabled:
+            expected_unset_l3out_for_bd_calls = []
             if is_edge_nat:
-                expected_unset_l3out_for_bd_calls.extend([
+                expected_unset_l3out_for_bd_calls.append(
                     mock.call(l3p_owner, l2p['id'],
-                              l3out_str % (l3p['id'], es1['id'])
-                              ) for l2p in l2ps])
+                              l3out_str % (l3p['id'], es1['id']),
+                              transaction=mock.ANY))
             expected_unset_l3out_for_bd_calls.append(
                 mock.call(owner, "NAT-bd-%s" % es1['id'],
                           es1['name' if self.pre_l3out else 'id'],
                           transaction=mock.ANY))
-        else:
-            expected_unset_l3out_for_bd_calls.extend([
-                mock.call(l3p_owner, l2p['id'],
-                          es1['name' if self.pre_l3out else 'id'])
-                for l2p in l2ps])
-        self._check_call_list(expected_unset_l3out_for_bd_calls,
-            mgr.unset_l3out_for_bd.call_args_list)
+            self._check_call_list(expected_unset_l3out_for_bd_calls,
+                mgr.unset_l3out_for_bd.call_args_list)
 
         if is_edge_nat and self.nat_enabled:
             self.driver.l3out_vlan_alloc.release_vlan.assert_called_once_with(
@@ -2774,12 +2625,12 @@ class TestL3Policy(ApicMappingTestCase):
             if is_edge_nat and self.nat_enabled:
                 expected_set_domain_calls.append(
                     mock.call(l3out_str % (l3p['id'], es2['id']),
-                              owner=l3p_owner, transaction=mock.ANY))
+                              owner=owner, transaction=mock.ANY))
                 expected_logic_node_calls.append(
                     mock.call(l3out_str % (l3p['id'], es2['id']),
                               mocked.APIC_EXT_SWITCH, mocked.APIC_EXT_MODULE,
                               mocked.APIC_EXT_PORT, mock.ANY, '192.168.1.2/24',
-                              owner=l3p_owner, router_id=APIC_EXTERNAL_RID,
+                              owner=owner, router_id=APIC_EXTERNAL_RID,
                               transaction=mock.ANY))
 
             self._check_call_list(expected_set_domain_calls,
@@ -2788,9 +2639,9 @@ class TestL3Policy(ApicMappingTestCase):
                 mgr.ensure_logical_node_profile_created.call_args_list)
         else:
             if is_edge_nat and self.nat_enabled:
-                final_req = self._wrap_up_l3out_request(l3out_str,
-                                                        l3p['id'], es2['id'],
-                                                        l3p_owner)
+                final_req = re.sub('Shd-Sub',
+                    l3out_str % (l3p['id'], es2['id']),
+                    self.trimmed_l3out)
                 mgr.apic.post_body.assert_called_once_with(
                     mgr.apic.l3extOut.mo, final_req, l3p_owner,
                     l3out_str % (l3p['id'], es2['id']))
@@ -2799,24 +2650,19 @@ class TestL3Policy(ApicMappingTestCase):
 
         self.assertFalse(mgr.ensure_static_route_created.called)
 
-        expected_set_l3out_for_bd_calls = []
         if self.nat_enabled:
+            expected_set_l3out_for_bd_calls = []
             expected_set_l3out_for_bd_calls.append(
                 mock.call(owner, "NAT-bd-%s" % es2['id'],
                           es2['name' if self.pre_l3out else 'id'],
                           transaction=mock.ANY))
             if is_edge_nat:
-                expected_set_l3out_for_bd_calls.extend([
+                expected_set_l3out_for_bd_calls.append(
                     mock.call(l3p_owner, l2p['id'],
-                              l3out_str % (l3p['id'], es2['id'])
-                              ) for l2p in l2ps])
-        else:
-            expected_set_l3out_for_bd_calls.extend([
-                mock.call(l3p_owner, l2p['id'],
-                          es2['name' if self.pre_l3out else 'id'])
-                for l2p in l2ps])
-        self._check_call_list(expected_set_l3out_for_bd_calls,
-            mgr.set_l3out_for_bd.call_args_list)
+                              l3out_str % (l3p['id'], es2['id']),
+                              transaction=mock.ANY))
+            self._check_call_list(expected_set_l3out_for_bd_calls,
+                mgr.set_l3out_for_bd.call_args_list)
 
         self.driver.l3out_vlan_alloc.release_vlan.reset_mock()
         mgr.delete_external_routed_network.reset_mock()
@@ -2843,17 +2689,17 @@ class TestL3Policy(ApicMappingTestCase):
         self._check_call_list(
             expected_delete_calls,
             mgr.delete_external_routed_network.call_args_list)
-        expected_unset_l3out_for_bd_calls = []
         if self.nat_enabled:
+            expected_unset_l3out_for_bd_calls = []
             if is_edge_nat:
-                expected_unset_l3out_for_bd_calls.extend([
+                expected_unset_l3out_for_bd_calls.append(
                     mock.call(l3p_owner, l2p['id'],
-                              l3out_str % (l3p['id'], es1['id'])
-                              ) for l2p in l2ps])
-                expected_unset_l3out_for_bd_calls.extend([
+                              l3out_str % (l3p['id'], es1['id']),
+                              transaction=mock.ANY))
+                expected_unset_l3out_for_bd_calls.append(
                     mock.call(l3p_owner, l2p['id'],
-                              l3out_str % (l3p['id'], es2['id'])
-                              ) for l2p in l2ps])
+                              l3out_str % (l3p['id'], es2['id']),
+                              transaction=mock.ANY))
             expected_unset_l3out_for_bd_calls.append(
                 mock.call(owner, "NAT-bd-%s" % es1['id'],
                           es1['name' if self.pre_l3out else 'id'],
@@ -2862,17 +2708,8 @@ class TestL3Policy(ApicMappingTestCase):
                 mock.call(owner, "NAT-bd-%s" % es2['id'],
                           es2['name' if self.pre_l3out else 'id'],
                           transaction=mock.ANY))
-        else:
-            expected_unset_l3out_for_bd_calls.extend([
-                    mock.call(l3p_owner, l2p['id'],
-                              es1['name' if self.pre_l3out else 'id'])
-                    for l2p in l2ps])
-            expected_unset_l3out_for_bd_calls.extend([
-                mock.call(l3p_owner, l2p['id'],
-                          es2['name' if self.pre_l3out else 'id'])
-                for l2p in l2ps])
-        self._check_call_list(expected_unset_l3out_for_bd_calls,
-            mgr.unset_l3out_for_bd.call_args_list)
+            self._check_call_list(expected_unset_l3out_for_bd_calls,
+                mgr.unset_l3out_for_bd.call_args_list)
 
         if self.pre_l3out and not self.nat_enabled:
             expected_calls = [
@@ -2905,17 +2742,7 @@ class TestL3Policy(ApicMappingTestCase):
         self._test_l3p_unplugged_from_es_on_update(shared_es=False,
                                                    shared_l3p=False)
 
-    def test_l3p_unplugged_from_es_on_update_edge_nat_mode_1(self):
-        self._test_l3p_unplugged_from_es_on_update(shared_es=True,
-                                                   shared_l3p=False,
-                                                   is_edge_nat=True)
-
-    def test_l3p_unplugged_from_es_on_update_edge_nat_mode_2(self):
-        self._test_l3p_unplugged_from_es_on_update(shared_es=True,
-                                                   shared_l3p=True,
-                                                   is_edge_nat=True)
-
-    def test_l3p_unplugged_from_es_on_update_edge_nat_mode_3(self):
+    def test_l3p_unplugged_from_es_on_update_edge_nat_mode(self):
         self._test_l3p_unplugged_from_es_on_update(shared_es=False,
                                                    shared_l3p=False,
                                                    is_edge_nat=True)
@@ -3729,11 +3556,8 @@ class TestExternalSegment(ApicMappingTestCase):
     def test_route_update_remove_2(self):
         self._test_route_update_remove(shared_es=False)
 
-    def test_route_update_remove_edge_nat_mode_1(self):
+    def test_route_update_remove_edge_nat_mode(self):
         self._test_route_update_remove(shared_es=True, is_edge_nat=True)
-
-    def test_route_update_remove_edge_nat_mode_2(self):
-        self._test_route_update_remove(shared_es=False, is_edge_nat=True)
 
     def _test_route_update_add(self, shared_es, is_edge_nat=False):
         # Verify routes are updated correctly
@@ -3876,11 +3700,8 @@ class TestExternalSegment(ApicMappingTestCase):
     def test_route_update_add_2(self):
         self._test_route_update_add(shared_es=False)
 
-    def test_route_update_add_edge_nat_mode_1(self):
+    def test_route_update_add_edge_nat_mode(self):
         self._test_route_update_add(shared_es=True, is_edge_nat=True)
-
-    def test_route_update_add_edge_nat_mode_2(self):
-        self._test_route_update_add(shared_es=False, is_edge_nat=True)
 
     def test_es_create_no_cidr_with_routes(self):
         self._mock_external_dict([('supported', '192.168.0.2/24')])
@@ -4045,7 +3866,7 @@ class TestExternalSegmentPreL3Out(TestExternalSegment):
                u'children': [{u'l3extLIfP':
                               {u'children': [{u'l3extRsPathL3OutAtt':
                                               {u'attributes':
-                                               {u'ifInstT': u'l3-port'
+                                               {u'ifInstT': u'ext-svi'
                                                 }}}]}}]}}])
         res = self.create_external_segment(
             name='supported', expected_res_status=400)
@@ -4262,10 +4083,7 @@ class TestExternalPolicy(ApicMappingTestCase):
     def test_creation_no_prs_2(self):
         self._test_creation_no_prs(shared_es=False)
 
-    def test_creation_no_prs_edge_nat_mode_1(self):
-        self._test_creation_no_prs(shared_es=True, is_edge_nat=True)
-
-    def test_creation_no_prs_edge_nat_mode_2(self):
+    def test_creation_no_prs_edge_nat_mode(self):
         self._test_creation_no_prs(shared_es=False, is_edge_nat=True)
 
     def _test_update_no_prs(self, shared_es, is_edge_nat=False):
@@ -4394,10 +4212,7 @@ class TestExternalPolicy(ApicMappingTestCase):
     def test_update_no_prs_2(self):
         self._test_update_no_prs(shared_es=False)
 
-    def test_update_no_prs_edge_nat_mode_1(self):
-        self._test_update_no_prs(shared_es=True, is_edge_nat=True)
-
-    def test_update_no_prs_edge_nat_mode_2(self):
+    def test_update_no_prs_edge_nat_mode(self):
         self._test_update_no_prs(shared_es=False, is_edge_nat=True)
 
     def _test_create_with_prs(self, shared_es, shared_prs, is_edge_nat=False):
@@ -4491,19 +4306,7 @@ class TestExternalPolicy(ApicMappingTestCase):
     def test_create_with_prs_4(self):
         self._test_create_with_prs(shared_es=False, shared_prs=True)
 
-    def test_create_with_prs_edge_nat_mode_1(self):
-        self._test_create_with_prs(shared_es=True, shared_prs=True,
-                                   is_edge_nat=True)
-
-    def test_create_with_prs_edge_nat_mode_2(self):
-        self._test_create_with_prs(shared_es=True, shared_prs=False,
-                                   is_edge_nat=True)
-
-    def test_create_with_prs_edge_nat_mode_3(self):
-        self._test_create_with_prs(shared_es=False, shared_prs=False,
-                                   is_edge_nat=True)
-
-    def test_create_with_prs_edge_nat_mode_4(self):
+    def test_create_with_prs_edge_nat_mode(self):
         self._test_create_with_prs(shared_es=False, shared_prs=True,
                                    is_edge_nat=True)
 
@@ -4636,19 +4439,7 @@ class TestExternalPolicy(ApicMappingTestCase):
     def test_update_add_prs_4(self):
         self._test_update_add_prs(shared_es=False, shared_prs=True)
 
-    def test_update_add_prs_edge_nat_mode_1(self):
-        self._test_update_add_prs(shared_es=True, shared_prs=True,
-                                  is_edge_nat=True)
-
-    def test_update_add_prs_edge_nat_mode_2(self):
-        self._test_update_add_prs(shared_es=True, shared_prs=False,
-                                  is_edge_nat=True)
-
-    def test_update_add_prs_edge_nat_mode_3(self):
-        self._test_update_add_prs(shared_es=False, shared_prs=False,
-                                  is_edge_nat=True)
-
-    def test_update_add_prs_edge_nat_mode_4(self):
+    def test_update_add_prs_edge_nat_mode(self):
         self._test_update_add_prs(shared_es=False, shared_prs=True,
                                   is_edge_nat=True)
 

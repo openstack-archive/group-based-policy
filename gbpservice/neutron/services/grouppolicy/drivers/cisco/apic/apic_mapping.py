@@ -40,7 +40,6 @@ from neutron import manager
 from neutron.plugins.common import constants as p_const
 from neutron.plugins.ml2 import driver_api as n_api
 from neutron.plugins.ml2 import models as ml2_models
-from neutron.plugins.ml2 import rpc as neu_rpc
 from opflexagent import constants as ofcst
 from opflexagent import rpc
 from oslo_concurrency import lockutils
@@ -167,8 +166,9 @@ class EdgeNatBadVlanRange(gpexc.GroupPolicyBadRequest):
 
 
 class EdgeNatWrongL3OutIFType(gpexc.GroupPolicyBadRequest):
-    message = _("L3Out %(l3out)s can only support routed sub-interfaces and "
-                "SVI in the interface profiles when edge_nat is enabled.")
+    message = _("L3Out %(l3out)s can only support routed "
+                "sub-interfaces in the interface profiles when edge_nat"
+                "is enabled.")
 
 
 class EdgeNatWrongL3OutAuthTypeForBGP(gpexc.GroupPolicyBadRequest):
@@ -196,6 +196,11 @@ class ExplicitPortOverlap(gpexc.GroupPolicyBadRequest):
                 '%(ip)s has overlapping IP or MAC address with another port '
                 'in network %(net)s')
 
+
+class AdminOnlyOperation(gpexc.GroupPolicyBadRequest):
+    message = _("This operation is reserved to admins")
+
+
 REVERSE_PREFIX = 'reverse-'
 SHADOW_PREFIX = 'Shd-'
 AUTO_PREFIX = 'Auto-'
@@ -212,6 +217,7 @@ REVERTIBLE_PROTOCOLS = [n_constants.PROTO_NAME_TCP.lower(),
                         n_constants.PROTO_NAME_UDP.lower(),
                         n_constants.PROTO_NAME_ICMP.lower()]
 PROXY_PORT_PREFIX = "opflex_proxy:"
+EOC_PREFIX = "opflex_eoc:"
 ICMP_REPLY_TYPES = ['echo-rep', 'dst-unreach', 'src-quench', 'time-exceeded']
 
 
@@ -262,8 +268,8 @@ class ApicMappingDriver(api.ResourceMappingDriver,
 
     def initialize(self):
         super(ApicMappingDriver, self).initialize()
-        self._setup_rpc()
         self._setup_rpc_listeners()
+        self._setup_rpc()
         self.apic_manager = ApicMappingDriver.get_apic_manager()
         self.name_mapper = name_manager.ApicNameManager(self.apic_manager)
         self.enable_dhcp_opt = self.apic_manager.enable_optimized_dhcp
@@ -275,7 +281,7 @@ class ApicMappingDriver(api.ResourceMappingDriver,
             self.apic_manager.ext_net_dict)
 
     def _setup_rpc_listeners(self):
-        self.endpoints = [rpc.GBPServerRpcCallback(self, self.notifier)]
+        self.endpoints = [rpc.GBPServerRpcCallback(self)]
         self.topic = rpc.TOPIC_OPFLEX
         self.conn = n_rpc.create_connection(new=True)
         self.conn.create_consumer(self.topic, self.endpoints,
@@ -318,208 +324,171 @@ class ApicMappingDriver(api.ResourceMappingDriver,
         self._add_vrf_details(context, details)
         return details
 
-    def request_vrf_details(self, context, **kwargs):
-        return self.get_vrf_details(context, **kwargs)
-
-    # RPC Method
-    def _get_gbp_details(self, context, **kwargs):
-        port_id = self._core_plugin._device_to_port_id(
-            context, kwargs['device'])
-        port_context = self._core_plugin.get_bound_port_context(
-            context, port_id, kwargs['host'])
-        if not port_context:
-            LOG.warning(_LW("Device %(device)s requested by agent "
-                            "%(agent_id)s not found in database"),
-                        {'device': port_id,
-                         'agent_id': kwargs.get('agent_id')})
-            return {'device': kwargs.get('device')}
-        port = port_context.current
-        # retrieve PTG from a given Port
-        ptg, pt = self._port_id_to_ptg(context, port['id'])
-        context._plugin = self.gbp_plugin
-        context._plugin_context = context
-        switched = False
-        if pt and pt['description'].startswith(PROXY_PORT_PREFIX):
-            new_id = pt['description'].replace(
-                PROXY_PORT_PREFIX, '').rstrip(' ')
-            try:
-                LOG.debug("Replace port %s with port %s", port_id, new_id)
-                port = self._get_port(context, new_id)
-                ptg, pt = self._port_id_to_ptg(context, port['id'])
-                switched = True
-            except n_exc.PortNotFound:
-                LOG.warning(_LW("Proxied port %s could not be found"),
-                            new_id)
-
-        l2p = self._network_id_to_l2p(context, port['network_id'])
-        if not l2p and self._ptg_needs_shadow_network(context, ptg):
-            l2p = self._get_l2_policy(context._plugin_context,
-                                      ptg['l2_policy_id'])
-        if not ptg and not l2p:
-            return None
-
-        l2_policy_id = l2p['id']
-        if ptg:
-            ptg_tenant = self._tenant_by_sharing_policy(ptg)
-            endpoint_group_name = self.name_mapper.policy_target_group(
-                context, ptg)
-        else:
-            ptg_tenant = self._tenant_by_sharing_policy(l2p)
-            endpoint_group_name = self.name_mapper.l2_policy(
-                context, l2p, prefix=SHADOW_PREFIX)
-
-        def is_port_promiscuous(port):
-            if (pt and pt.get('cluster_id') and
-                    pt.get('cluster_id') != pt['id']):
-                master = self._get_policy_target(context, pt['cluster_id'])
-                if master.get('group_default_gateway'):
-                    return True
-            return (port['device_owner'] in PROMISCUOUS_TYPES or
-                    port['name'].endswith(PROMISCUOUS_SUFFIX)) or (
-                        pt and pt.get('group_default_gateway'))
-        details = {'device': kwargs.get('device'),
-                   'port_id': port_id,
-                   'mac_address': port['mac_address'],
-                   'app_profile_name': str(
-                       self.apic_manager.app_profile_name),
-                   'l2_policy_id': l2_policy_id,
-                   'l3_policy_id': l2p['l3_policy_id'],
-                   'tenant_id': port['tenant_id'],
-                   'host': port[portbindings.HOST_ID],
-                   'ptg_tenant': self.apic_manager.apic.fvTenant.name(
-                       ptg_tenant),
-                   'endpoint_group_name': str(endpoint_group_name),
-                   'promiscuous_mode': is_port_promiscuous(port),
-                   'extra_ips': [],
-                   'floating_ip': [],
-                   'ip_mapping': [],
-                   # Put per mac-address extra info
-                   'extra_details': {}}
-        if switched:
-            details['fixed_ips'] = port['fixed_ips']
-        if port['device_owner'].startswith('compute:') and port[
-                'device_id']:
-            vm = nclient.NovaClient().get_server(port['device_id'])
-            details['vm-name'] = vm.name if vm else port['device_id']
-        l3_policy = context._plugin.get_l3_policy(context,
-                                                  l2p['l3_policy_id'])
-        own_addr = set()
-        if pt:
-            own_addr = set(self._get_owned_addresses(context,
-                                                     pt['port_id']))
-        own_addr |= set(self._get_owned_addresses(context, port_id))
-        (details['floating_ip'], details['ip_mapping'],
-            details['host_snat_ips']) = (
-                self._get_ip_mapping_details(
-                    context, port['id'], l3_policy, pt=pt,
-                    owned_addresses=own_addr, host=kwargs['host']))
-        self._add_network_details(context, port, details, pt=pt,
-                                  owned=own_addr, inject_default_route=
-                                  l2p['inject_default_route'])
-        self._add_vrf_details(context, details)
-        if self._is_pt_chain_head(context, pt, ptg, owned_ips=own_addr):
-            # is a relevant proxy_gateway, push all the addresses from this
-            # chain to this PT
-            extra_map = details
-            master_mac = self._is_master_owner(context, pt,
-                                               owned_ips=own_addr)
-            if master_mac:
-                extra_map = details['extra_details'].setdefault(
-                    master_mac, {'extra_ips': [], 'floating_ip': [],
-                        'ip_mapping': [], 'host_snat_ips': []})
-            if bool(master_mac) == bool(pt['cluster_id']):
-                l3_policy = context._plugin.get_l3_policy(
-                    context, l2p['l3_policy_id'])
-                while ptg['proxied_group_id']:
-                    proxied = self.gbp_plugin.get_policy_target_group(
-                        context, ptg['proxied_group_id'])
-                    for port in self._get_ptg_ports(proxied):
-                        extra_map['extra_ips'].extend(
-                            [x['ip_address'] for x in port['fixed_ips'] +
-                             port.get('allowed_address_pairs', [])])
-                        (fips, ipms, host_snat_ips) = (
-                            self._get_ip_mapping_details(
-                                context, port['id'], l3_policy,
-                                host=kwargs['host']))
-                        extra_map['floating_ip'].extend(fips)
-                        if not extra_map['ip_mapping']:
-                            extra_map['ip_mapping'].extend(ipms)
-                        if not extra_map['host_snat_ips']:
-                            extra_map['host_snat_ips'].extend(
-                                host_snat_ips)
-                    ptg = proxied
-            else:
-                LOG.info(_LI("Active master has changed for PT %s"),
-                         pt['id'])
-                # There's no master mac even if a cluster_id is set.
-                # Active chain head must have changed in a concurrent
-                # operation, get out of here
-                pass
-        return details
-
-    def get_snat_ip_for_vrf(self, context, vrf_id, network, es_name=None):
-        """Allocate SNAT IP for a VRF for an external network."""
-        # This API supports getting SNAT IPs per VRF and populating
-        # the dictionary eithe rwith the network name, or the name
-        # of the external segment
-        if es_name is None:
-            es_name = network.get('name')
-        return self._allocate_snat_ip(context, vrf_id, network, es_name)
-
     # RPC Method
     def get_gbp_details(self, context, **kwargs):
         try:
-            return self._get_gbp_details(context, **kwargs)
+            port_id = self._core_plugin._device_to_port_id(
+                context, kwargs['device'])
+            port_context = self._core_plugin.get_bound_port_context(
+                context, port_id, kwargs['host'])
+            if not port_context:
+                LOG.warning(_LW("Device %(device)s requested by agent "
+                              "%(agent_id)s not found in database"),
+                            {'device': port_id,
+                             'agent_id': kwargs.get('agent_id')})
+                return
+            port = port_context.current
+            # retrieve PTG from a given Port
+            ptg, pt = self._port_id_to_ptg(context, port['id'])
+            context._plugin = self.gbp_plugin
+            context._plugin_context = context
+            switched = False
+            if pt and pt['description'].startswith(PROXY_PORT_PREFIX):
+                new_id = pt['description'].replace(
+                    PROXY_PORT_PREFIX, '').rstrip(' ')
+                try:
+                    LOG.debug("Replace port %s with port %s", port_id, new_id)
+                    port = self._get_port(context, new_id)
+                    ptg, pt = self._port_id_to_ptg(context, port['id'])
+                    switched = True
+                except n_exc.PortNotFound:
+                    LOG.warning(_LW("Proxied port %s could not be found"),
+                                new_id)
+
+            l2p = self._network_id_to_l2p(context, port['network_id'])
+            if not l2p and self._ptg_needs_shadow_network(context, ptg):
+                l2p = self._get_l2_policy(context._plugin_context,
+                                          ptg['l2_policy_id'])
+            if not ptg and not l2p:
+                return
+
+            l2_policy_id = l2p['id']
+            if ptg:
+                ptg_tenant = self._tenant_by_sharing_policy(ptg)
+                endpoint_group_name = self.name_mapper.policy_target_group(
+                    context, ptg)
+            else:
+                ptg_tenant = self._tenant_by_sharing_policy(l2p)
+                endpoint_group_name = self.name_mapper.l2_policy(
+                    context, l2p, prefix=SHADOW_PREFIX)
+
+            def is_port_promiscuous(port):
+                if (pt and pt.get('cluster_id') and
+                        pt.get('cluster_id') != pt['id']):
+                    master = self._get_policy_target(context, pt['cluster_id'])
+                    if master.get('group_default_gateway'):
+                        return True
+                return (port['device_owner'] in PROMISCUOUS_TYPES or
+                        port['name'].endswith(PROMISCUOUS_SUFFIX)) or (
+                            pt and pt.get('group_default_gateway'))
+            details = {'device': kwargs.get('device'),
+                       'port_id': port_id,
+                       'mac_address': port['mac_address'],
+                       'app_profile_name': str(
+                           self.apic_manager.app_profile_name),
+                       'l2_policy_id': l2_policy_id,
+                       'l3_policy_id': l2p['l3_policy_id'],
+                       'tenant_id': port['tenant_id'],
+                       'host': port[portbindings.HOST_ID],
+                       'ptg_tenant': self.apic_manager.apic.fvTenant.name(
+                           ptg_tenant),
+                       'endpoint_group_name': str(endpoint_group_name),
+                       'promiscuous_mode': is_port_promiscuous(port),
+                       'extra_ips': [],
+                       'floating_ip': [],
+                       'ip_mapping': [],
+                       # Put per mac-address extra info
+                       'extra_details': {}}
+            if switched:
+                details['fixed_ips'] = port['fixed_ips']
+            if port['device_owner'].startswith('compute:') and port[
+                    'device_id']:
+                vm = nclient.NovaClient().get_server(port['device_id'])
+                details['vm-name'] = vm.name if vm else port['device_id']
+            l3_policy = context._plugin.get_l3_policy(context,
+                                                      l2p['l3_policy_id'])
+            own_addr = set()
+            if pt:
+                own_addr = set(self._get_owned_addresses(context,
+                                                         pt['port_id']))
+            own_addr |= set(self._get_owned_addresses(context, port_id))
+            (details['floating_ip'], details['ip_mapping'],
+                details['host_snat_ips']) = (
+                    self._get_ip_mapping_details(
+                        context, port['id'], l3_policy, pt=pt,
+                        owned_addresses=own_addr, host=kwargs['host']))
+            self._add_network_details(context, port, details, pt=pt,
+                                      owned=own_addr, inject_default_route=
+                                      l2p['inject_default_route'])
+            self._add_vrf_details(context, details)
+            if self._is_pt_chain_head(context, pt, ptg, owned_ips=own_addr):
+                # is a relevant proxy_gateway, push all the addresses from this
+                # chain to this PT
+                extra_map = details
+                master_mac = self._is_master_owner(context, pt,
+                                                   owned_ips=own_addr)
+                if master_mac:
+                    extra_map = details['extra_details'].setdefault(
+                        master_mac, {'extra_ips': [], 'floating_ip': [],
+                            'ip_mapping': [], 'host_snat_ips': []})
+                if bool(master_mac) == bool(pt['cluster_id']):
+                    l3_policy = context._plugin.get_l3_policy(
+                        context, l2p['l3_policy_id'])
+                    while ptg['proxied_group_id']:
+                        proxied = self.gbp_plugin.get_policy_target_group(
+                            context, ptg['proxied_group_id'])
+                        for port in self._get_ptg_ports(proxied):
+                            extra_map['extra_ips'].extend(
+                                [x['ip_address'] for x in port['fixed_ips']])
+                            (fips, ipms, host_snat_ips) = (
+                                self._get_ip_mapping_details(
+                                    context, port['id'], l3_policy,
+                                    host=kwargs['host']))
+                            extra_map['floating_ip'].extend(fips)
+                            if not extra_map['ip_mapping']:
+                                extra_map['ip_mapping'].extend(ipms)
+                            if not extra_map['host_snat_ips']:
+                                extra_map['host_snat_ips'].extend(
+                                    host_snat_ips)
+                        ptg = proxied
+                else:
+                    LOG.info(_LI("Active master has changed for PT %s"),
+                             pt['id'])
+                    # There's no master mac even if a cluster_id is set.
+                    # Active chain head must have changed in a concurrent
+                    # operation, get out of here
+                    pass
         except Exception as e:
-            LOG.error(_LE(
-                "An exception has occurred while retrieving device "
-                "gbp details for %s"), kwargs.get('device'))
-            LOG.exception(e)
+            LOG.exception(
+                _LE("An exception has occurred while retrieving device "
+                    "gbp details for %(device)s with error %(error)s"),
+                {'device': kwargs.get('device'), 'error': e.message})
             details = {'device': kwargs.get('device')}
         return details
 
-    # RPC Method
-    def request_endpoint_details(self, context, **kwargs):
-        try:
-            LOG.debug("Request GBP details: %s", kwargs)
-            kwargs.update(kwargs['request'])
-            result = {'device': kwargs['device'],
-                      'timestamp': kwargs['timestamp'],
-                      'request_id': kwargs['request_id'],
-                      'gbp_details': None,
-                      'neutron_details': None}
-            result['gbp_details'] = self._get_gbp_details(context, **kwargs)
-            result['neutron_details'] = neu_rpc.RpcCallbacks(
-                None, None).get_device_details(context, **kwargs)
-            return result
-        except Exception as e:
-            LOG.error(_LE("An exception has occurred while requesting device "
-                          "gbp details for %s"), kwargs.get('device'))
-            LOG.exception(e)
-            return None
-
-    def _allocate_snat_ip(self, context, host_or_vrf, network, es_name):
+    def _allocate_snat_ip_for_host_and_ext_net(self, context, host, network,
+                                               es_name):
         """Allocate SNAT IP for a host for an external network."""
         snat_subnets = self._get_subnets(context,
                 filters={'name': [HOST_SNAT_POOL],
                          'network_id': [network['id']]})
         if not snat_subnets:
-            LOG.info(_LI("Subnet for SNAT-pool could not be found "
-                        "for external network %(net_id)s. SNAT will not "
-                        "function on this network"), {'net_id': network['id']})
+            LOG.info(_LI("Subnet for host-SNAT-pool could not be found "
+                       "for external network %(net_id)s. SNAT will not "
+                       "function on this network"), {'net_id': network['id']})
             return {}
         else:
             snat_ports = self._get_ports(context,
                     filters={'name': [HOST_SNAT_POOL_PORT],
                              'network_id': [network['id']],
-                             'device_id': [host_or_vrf]})
+                             'device_id': [host]})
             snat_ip = None
             if not snat_ports:
                 # Note that the following port is created for only getting
                 # an IP assignment in the
-                attrs = {'device_id': host_or_vrf,
+                attrs = {'device_id': host,
                          'device_owner': DEVICE_OWNER_SNAT_PORT,
-                         'binding:host_id': host_or_vrf,
+                         'binding:host_id': host,
                          'binding:vif_type': portbindings.VIF_TYPE_UNBOUND,
                          'tenant_id': network['tenant_id'],
                          'name': HOST_SNAT_POOL_PORT,
@@ -534,21 +503,18 @@ class ApicMappingDriver(api.ResourceMappingDriver,
                     LOG.warning(_LW("SNAT-port creation failed for subnet "
                                   "%(subnet_id)s on external network "
                                   "%(net_id)s. SNAT will not function on"
-                                  "host or vrf %(host_or_vrf)s for this "
-                                  "network"),
+                                  "host %(host)s for this network"),
                                 {'subnet_id': snat_subnets[0]['id'],
-                                 'net_id': network['id'],
-                                 'host_or_vrf': host_or_vrf})
+                                 'net_id': network['id'], 'host': host})
                     return {}
             elif snat_ports[0]['fixed_ips']:
                 snat_ip = snat_ports[0]['fixed_ips'][0]['ip_address']
             else:
                 LOG.warning(_LW("SNAT-port %(port)s for external network "
-                              "%(net)s on host or VRF %(host_or_vrf)s doesn't "
-                              "have an IP-address"),
+                              "%(net)s on host %(host)s doesn't have an "
+                              "IP-address"),
                             {'port': snat_ports[0]['id'],
-                             'net': network['id'],
-                             'host_or_vrf': host_or_vrf})
+                             'net': network['id'], 'host': host})
                 return {}
 
             return {'external_segment_name': es_name,
@@ -576,8 +542,7 @@ class ApicMappingDriver(api.ResourceMappingDriver,
             for port in ports:
                 # Whenever a owned address belongs to a port, steal its FIPs
                 if owned_addresses & set([x['ip_address'] for x in
-                                          port['fixed_ips'] + port.get(
-                                              'allowed_address_pairs', [])]):
+                                          port['fixed_ips']]):
                     fips_filter.append(port['id'])
 
         fips = self._get_fips(context, filters={'port_id': fips_filter})
@@ -611,7 +576,7 @@ class ApicMappingDriver(api.ResourceMappingDriver,
                         ext_net_id)
                 if host:
                     host_snat_ip_allocation = (
-                        self._allocate_snat_ip(
+                        self._allocate_snat_ip_for_host_and_ext_net(
                             context._plugin_context, host, ext_network,
                             es['name']))
                     if host_snat_ip_allocation:
@@ -841,6 +806,10 @@ class ApicMappingDriver(api.ResourceMappingDriver,
                     context._plugin_context, context.current['id'])
                 db_group.l2_policy_id = proxied['l2_policy_id']
                 context.current['l2_policy_id'] = proxied['l2_policy_id']
+            if context.current['description']:
+                if (EOC_PREFIX in context.current['description']
+                        and not context._plugin_context.is_admin):
+                    raise AdminOnlyOperation()
             else:
                 self.name_mapper.has_valid_name(context.current)
 
@@ -936,8 +905,7 @@ class ApicMappingDriver(api.ResourceMappingDriver,
                     context._plugin_context, context.current['id'],
                     subnets, [], transaction=trs)
 
-                # query all the ESs for this VRF, connect BD to corresponding
-                # (shadow) L3Outs for no-NAT and edge-NAT cases.
+                # query all the ESs under this vrf
                 if l3_policy_object['external_segments']:
                     ess = context._plugin.get_external_segments(
                         context._plugin_context,
@@ -946,19 +914,12 @@ class ApicMappingDriver(api.ResourceMappingDriver,
                     for es in ess:
                         ext_info = self.apic_manager.ext_net_dict.get(
                             es['name'])
-                        nat_enabled = self._is_nat_enabled_on_es(es)
-                        is_edge_nat = (nat_enabled and ext_info and
-                                       self._is_edge_nat(ext_info))
-                        if not nat_enabled or is_edge_nat:
+                        if (ext_info and self._is_edge_nat(ext_info) and
+                            self._is_nat_enabled_on_es(es)):
                             es_name = self.name_mapper.external_segment(
                                 context, es,
                                 prefix=self._get_shadow_prefix(context,
-                                    is_edge_nat, l3_policy_object,
-                                    is_edge_nat=is_edge_nat))
-                            if not is_edge_nat and self._is_pre_existing(es):
-                                nm = self.name_mapper.name_mapper
-                                es_name = nm.pre_existing(
-                                    context._plugin_context, es['name'])
+                                    True, l3_policy_object, is_edge_nat=True))
                             self.apic_manager.set_l3out_for_bd(tenant,
                                     l2_policy, es_name, transaction=trs)
 
@@ -1175,6 +1136,11 @@ class ApicMappingDriver(api.ResourceMappingDriver,
                  context.current['subnets']):
                 raise ExplicitSubnetAssociationNotSupported()
             self._reject_shared_update(context, 'policy_target_group')
+            if (context.current['description'] !=
+                    context.original['description']):
+                if (EOC_PREFIX in context.current['description']
+                        and not context._plugin_context.is_admin):
+                    raise AdminOnlyOperation()
 
     def update_policy_target_group_postcommit(self, context):
         if not self.name_mapper._is_apic_reference(context.current):
@@ -1830,7 +1796,7 @@ class ApicMappingDriver(api.ResourceMappingDriver,
                                                   encap, l3p_name)
         return req_dict
 
-    def _clone_l3out(self, context, es, es_name, es_tenant, encap):
+    def _clone_l3out(self, context, es, es_name, encap):
         pre_es_name = self.name_mapper.name_mapper.pre_existing(
             context, es['name'])
         l3out_info = self._query_l3out_info(pre_es_name,
@@ -1838,8 +1804,10 @@ class ApicMappingDriver(api.ResourceMappingDriver,
 
         old_tenant = self.apic_manager.apic.fvTenant.rn(
             l3out_info['l3out_tenant'])
-        new_tenant = self.apic_manager.apic.fvTenant.rn(es_tenant)
-        old_l3_out = self.apic_manager.apic.l3extOut.rn(pre_es_name)
+        new_tenant = self.apic_manager.apic.fvTenant.rn(
+            context.current.get('tenant_id'))
+        old_l3_out = self.apic_manager.apic.l3extOut.rn(
+            pre_es_name)
         new_l3_out = self.apic_manager.apic.l3extOut.rn(es_name)
 
         request = {}
@@ -1854,9 +1822,8 @@ class ApicMappingDriver(api.ResourceMappingDriver,
                  'rType', 'state', 'stateQual', 'tCl', 'tType',
                  'type', 'tContextDn', 'tRn', 'tag', 'name',
                  'configIssues'])
-        vrf = self.apic_manager.apic.fvCtx.name(
-            context.current.get('name'))
-        request = self._trim_keys_from_dict(request, keys, encap, vrf)
+        request = self._trim_keys_from_dict(request, keys,
+            encap, context.current.get('name'))
 
         final_req = {}
         final_req['l3extOut'] = request
@@ -1869,7 +1836,7 @@ class ApicMappingDriver(api.ResourceMappingDriver,
         self.apic_manager.apic.post_body(
             self.apic_manager.apic.l3extOut.mo,
             request_json,
-            es_tenant,
+            context.current.get('tenant_id'),
             str(es_name))
 
     def _plug_l3p_to_es(self, context, es, is_shadow=False):
@@ -1903,8 +1870,6 @@ class ApicMappingDriver(api.ResourceMappingDriver,
         es_name = self.name_mapper.external_segment(context, es,
             prefix=self._get_shadow_prefix(context,
                 is_shadow, context.current, self._is_edge_nat(ext_info)))
-        es_name_pre = self.name_mapper.name_mapper.pre_existing(
-            context._plugin_context, es['name'])
         es_tenant = self._get_tenant_for_shadow(is_shadow, context.current, es)
         nat_enabled = self._is_nat_enabled_on_es(es)
         pre_existing = False if is_shadow else self._is_pre_existing(es)
@@ -1927,12 +1892,14 @@ class ApicMappingDriver(api.ResourceMappingDriver,
                     transaction=trs)
             # Associate pre-existing, no-NAT L3-out with L3policy
             if pre_existing and not nat_enabled:
-                l3out_info = self._query_l3out_info(es_name_pre,
+                mapped_es = self.name_mapper.name_mapper.pre_existing(
+                    context._plugin_context, es['name'])
+                l3out_info = self._query_l3out_info(mapped_es,
                     self.name_mapper.tenant(es))
                 if l3out_info:
                     mapped_tenant = l3out_info['l3out_tenant']
                     self.apic_manager.set_context_for_external_routed_network(
-                        mapped_tenant, es_name_pre, l3_policy, transaction=trs)
+                        mapped_tenant, mapped_es, l3_policy, transaction=trs)
 
             is_details_needed = False
             if not is_shadow and not pre_existing:
@@ -1949,7 +1916,7 @@ class ApicMappingDriver(api.ResourceMappingDriver,
 
             if is_details_needed:
                 if self._is_pre_existing(es):
-                    self._clone_l3out(context, es, es_name, es_tenant, encap)
+                    self._clone_l3out(context, es, es_name, encap)
                 else:
                     switch = ext_info['switch']
                     module, sport = ext_info['port'].split('/')
@@ -1973,10 +1940,9 @@ class ApicMappingDriver(api.ResourceMappingDriver,
                     l2ps = self._get_l2_policies(context._plugin_context,
                         {'id': context.current['l2_policies']})
                     for l2p in l2ps:
-                        self.apic_manager.set_l3out_for_bd(
-                            self._tenant_by_sharing_policy(l2p),
+                        self.apic_manager.set_l3out_for_bd(es_tenant,
                             self.name_mapper.l2_policy(context, l2p),
-                            es_name)
+                            es_name, transaction=trs)
 
             if not is_shadow and nat_enabled:
                 # set L3-out for NAT-BD
@@ -1985,29 +1951,19 @@ class ApicMappingDriver(api.ResourceMappingDriver,
                     (self.name_mapper.name_mapper.pre_existing(
                         context, es['name']) if pre_existing else es_name),
                     transaction=trs)
-        if not is_shadow:
-            if nat_enabled:
-                # create shadow external-networks
-                self._plug_l3p_to_es(context, es, True)
-                # create shadow external EPGs indirectly by re-plugging
-                # external policies to external segment
-                eps = context._plugin.get_external_policies(
-                    context._plugin_context,
-                    filters={'id': es['external_policies'],
-                             'tenant_id': [context.current['tenant_id']]})
-                for ep in eps:
-                    self._plug_external_policy_to_segment(context, ep,
-                        [es['id']], ep['provided_policy_rule_sets'],
-                        ep['consumed_policy_rule_sets'])
-            else:
-                # Associate BDs of the VRF to L3-out
-                l2ps = self._get_l2_policies(context._plugin_context,
-                    {'id': context.current['l2_policies']})
-                for l2p in l2ps:
-                    self.apic_manager.set_l3out_for_bd(
-                        self._tenant_by_sharing_policy(l2p),
-                        self.name_mapper.l2_policy(context, l2p),
-                        es_name_pre if pre_existing else es_name)
+        if nat_enabled and not is_shadow:
+            # create shadow external-networks
+            self._plug_l3p_to_es(context, es, True)
+            # create shadow external EPGs indirectly by re-plugging
+            # external policies to external segment
+            eps = context._plugin.get_external_policies(
+                context._plugin_context,
+                filters={'id': es['external_policies'],
+                         'tenant_id': [context.current['tenant_id']]})
+            for ep in eps:
+                self._plug_external_policy_to_segment(context, ep,
+                    [es['id']], ep['provided_policy_rule_sets'],
+                    ep['consumed_policy_rule_sets'])
 
     def _unplug_l3p_from_es(self, context, es, is_shadow=False):
         is_edge_nat = False
@@ -2017,24 +1973,12 @@ class ApicMappingDriver(api.ResourceMappingDriver,
         es_name = self.name_mapper.external_segment(context, es,
             prefix=self._get_shadow_prefix(context,
                 is_shadow, context.current, is_edge_nat))
-        es_name_pre = self.name_mapper.name_mapper.pre_existing(
-            context._plugin_context, es['name'])
         es_tenant = self._get_tenant_for_shadow(is_shadow, context.current, es)
         nat_enabled = self._is_nat_enabled_on_es(es)
         pre_existing = False if is_shadow else self._is_pre_existing(es)
-        if not is_shadow:
-            if nat_enabled:
-                # remove shadow external-networks
-                self._unplug_l3p_from_es(context, es, True)
-            else:
-                # Dissociate BDs of the VRF from L3-out
-                l2ps = self._get_l2_policies(context._plugin_context,
-                    {'id': context.current['l2_policies']})
-                for l2p in l2ps:
-                    self.apic_manager.unset_l3out_for_bd(
-                        self._tenant_by_sharing_policy(l2p),
-                        self.name_mapper.l2_policy(context, l2p),
-                        es_name_pre if pre_existing else es_name)
+        # remove shadow external-networks
+        if nat_enabled and not is_shadow:
+            self._unplug_l3p_from_es(context, es, True)
         set_ctx = self.apic_manager.set_context_for_external_routed_network
         if (is_shadow or
             not [x for x in es['l3_policies'] if x != context.current['id']]):
@@ -2045,11 +1989,13 @@ class ApicMappingDriver(api.ResourceMappingDriver,
 
                     # Dissociate L3policy from pre-existing, no-NAT L3-out
                     if pre_existing and not nat_enabled:
-                        l3out_info = self._query_l3out_info(es_name_pre,
+                        mapped_es = self.name_mapper.name_mapper.pre_existing(
+                            context._plugin_context, es['name'])
+                        l3out_info = self._query_l3out_info(mapped_es,
                             self.name_mapper.tenant(es))
                         if l3out_info:
                             mapped_tenant = l3out_info['l3out_tenant']
-                            set_ctx(mapped_tenant, es_name_pre, None,
+                            set_ctx(mapped_tenant, mapped_es, None,
                                     transaction=trs)
 
                     if nat_enabled and not is_shadow:
@@ -2068,10 +2014,9 @@ class ApicMappingDriver(api.ResourceMappingDriver,
                         l2ps = self._get_l2_policies(context._plugin_context,
                             {'id': context.current['l2_policies']})
                         for l2p in l2ps:
-                            self.apic_manager.unset_l3out_for_bd(
-                                self._tenant_by_sharing_policy(l2p),
+                            self.apic_manager.unset_l3out_for_bd(es_tenant,
                                 self.name_mapper.l2_policy(context, l2p),
-                                es_name)
+                                es_name, transaction=trs)
 
     def _build_routes_dict(self, routes):
         result = {}
@@ -3137,6 +3082,9 @@ class ApicMappingDriver(api.ResourceMappingDriver,
     def _notify_head_chain_ports(self, ptg_id):
         context = nctx.get_admin_context()
         ptg = self.gbp_plugin.get_policy_target_group(context, ptg_id)
+        explicit_eoc_id = self._extract_ptg_explicit_eoc(context, ptg)
+        if explicit_eoc_id:
+            self._notify_port_update(context, explicit_eoc_id)
         # to avoid useless double notification exit now if no proxy
         if not ptg.get('proxy_group_id'):
             return
@@ -3243,7 +3191,13 @@ class ApicMappingDriver(api.ResourceMappingDriver,
             return opt.lower() in ['true', 'yes', '1']
         return False
 
-    def _is_pt_chain_head(self, plugin_context, pt, ptg=None, owned_ips=None):
+    def _is_pt_chain_head(self, plugin_context, pt, ptg=None, owned_ips=None,
+                          port_id=None):
+        if pt and port_id:
+            if bool(self._get_policy_target_groups(
+                        plugin_context,
+                        filters={'description': [EOC_PREFIX + port_id]})):
+                return True
         if pt:
             ptg = ptg or self._get_policy_target_group(
                 plugin_context, pt['policy_target_group_id'])
@@ -3269,7 +3223,7 @@ class ApicMappingDriver(api.ResourceMappingDriver,
                          owned_ips=None):
         """Verifies if the port owns the master address.
 
-        Returns the master MAC address or False
+        Returns the master port address or False
         """
         if pt['cluster_id']:
             master_pt = master_pt or self._get_pt_cluster_master(
@@ -3281,9 +3235,8 @@ class ApicMappingDriver(api.ResourceMappingDriver,
             master_port = self._get_port(plugin_context, master_pt['port_id'])
             master_addresses = set([x['ip_address'] for x in
                                     master_port['fixed_ips']])
-            master_mac = master_port['mac_address']
             if bool(owned_addresses & master_addresses):
-                return master_mac
+                return master_port
         return False
 
     def _get_owned_addresses(self, plugin_context, port_id):
@@ -3360,8 +3313,7 @@ class ApicMappingDriver(api.ResourceMappingDriver,
             l3out_str = str(l3out_info['l3out'])
             for match in re.finditer("u'ifInstT': u'([^']+)'",
                                      l3out_str):
-                if (match.group(1) != 'sub-interface' and
-                        match.group(1) != 'ext-svi'):
+                if match.group(1) != 'sub-interface':
                     raise EdgeNatWrongL3OutIFType(l3out=es['name'])
             for match in re.finditer("u'authType': u'([^']+)'",
                                      l3out_str):
@@ -3673,3 +3625,13 @@ class ApicMappingDriver(api.ResourceMappingDriver,
         for ip in fixed_ips:
             ip.pop('subnet_id', None)
         return fixed_ips
+
+    def _extract_ptg_explicit_eoc(self, plugin_context, ptg):
+        """Extract PTG End of Chain
+
+        Given a PTG, retrieves the explicit End of the Chain from its
+        description and returns a Neutron port
+        :return: Neutron port or None
+        """
+        if EOC_PREFIX in ptg.get('description', ''):
+            return ptg['description'][len(EOC_PREFIX):]
