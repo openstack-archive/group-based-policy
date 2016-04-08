@@ -809,13 +809,6 @@ class TestApicChains(ApicMappingStitchingPlumberGBPTestCase,
 
 class TestProxyGroup(ApicMappingStitchingPlumberGBPTestCase):
 
-    def _get_pts_addresses(self, pts):
-        addresses = []
-        for pt in pts:
-            port = self._get_object('ports', pt['port_id'], self.api)['port']
-            addresses.extend([x['ip_address'] for x in port['fixed_ips']])
-        return addresses
-
     def _proxy_tenant(self, ptg, admin_proxy):
         return 'admin' if admin_proxy else ptg['tenant_id']
 
@@ -926,7 +919,7 @@ class TestProxyGroup(ApicMappingStitchingPlumberGBPTestCase):
         # Shadow BD created
         self.mgr.ensure_bd_created_on_apic.assert_called_once_with(
             ptg['tenant_id'], 'Shd-' + ptg['id'], ctx_owner=l3p['tenant_id'],
-            ctx_name=l3p['id'], allow_broadcast=False, unicast_route=False,
+            ctx_name=l3p['id'], allow_broadcast=True, unicast_route=False,
             transaction=mock.ANY, enforce_subnet_check=False)
         # Proxied PTG moved
         expected_calls = [
@@ -1217,7 +1210,7 @@ class TestProxyGroup(ApicMappingStitchingPlumberGBPTestCase):
         # Shadow BD created in non-admin tenant
         self.mgr.ensure_bd_created_on_apic.assert_called_once_with(
             'non-admin', 'Shd-' + ptg['id'], ctx_owner=l3p['tenant_id'],
-            ctx_name=l3p['id'], allow_broadcast=False, unicast_route=False,
+            ctx_name=l3p['id'], allow_broadcast=True, unicast_route=False,
             transaction=mock.ANY, enforce_subnet_check=False)
         # Proxied PTG moved
         expected_calls = [
