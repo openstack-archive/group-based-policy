@@ -537,6 +537,24 @@ class TestPolicyTarget(ApicMappingTestCase):
             details['host_snat_ip'])
         self.assertEqual(24, details['prefixlen'])
 
+    def test_get_gbp_details_extra_ips_explicit_eoc(self):
+        ptg = self.create_policy_target_group(
+            name="ptg1")['policy_target_group']
+        pt1 = self.create_policy_target(
+            policy_target_group_id=ptg['id'])['policy_target']
+        ptg2 = self.create_policy_target_group(
+            name="ptg2",
+            description='opflex_eoc:' + pt1['port_id'],
+            is_admin_context=True)['policy_target_group']
+        pt2 = self.create_policy_target(
+            policy_target_group_id=ptg2['id'])['policy_target']
+        mapping = self.driver.get_gbp_details(context.get_admin_context(),
+            device='tap%s' % pt1['port_id'], host='h2')
+
+        # Extra ip set for pt2
+        ips = self._get_pts_addresses([pt2])
+        self.assertEqual(set(ips), set(mapping['extra_ips']))
+
     def test_snat_pool_subnet_deletion(self):
         self._mock_external_dict([('supported', '192.168.0.2/24')])
         self.driver.apic_manager.ext_net_dict[
@@ -1083,6 +1101,29 @@ class TestPolicyTarget(ApicMappingTestCase):
         self.assertEqual(2, len(entries))
         self.assertEqual('1.1.1.1', entries[0].ha_ip_address)
         self.assertEqual('1.1.1.1', entries[1].ha_ip_address)
+
+    def test_explicit_end_of_chain(self):
+        self.driver._notify_port_update = mock.Mock()
+        ptg = self.create_policy_target_group(
+            name="ptg1")['policy_target_group']
+        pt1 = self.create_policy_target(
+            policy_target_group_id=ptg['id'])['policy_target']
+        ptg2 = self.create_policy_target_group(
+            name="ptg2",
+            description='opflex_eoc:' + pt1['port_id'],
+            is_admin_context=True)['policy_target_group']
+        self.create_policy_target(policy_target_group_id=ptg2['id'])
+        # pt1 notified
+        self.driver._notify_port_update.assert_called_once_with(
+            mock.ANY, pt1['port_id'])
+
+    def test_explicit_eoc_raises(self):
+        ptg = self.create_policy_target_group(
+            name="ptg1")['policy_target_group']
+        self.create_policy_target_group(
+            name="ptg2", description='opflex_eoc:', expected_res_status=400)
+        self.update_policy_target_group(
+            ptg['id'], description='opflex_eoc:', expected_res_status=400)
 
 
 class TestPolicyTargetVlanNetwork(ApicMappingVlanTestCase,
