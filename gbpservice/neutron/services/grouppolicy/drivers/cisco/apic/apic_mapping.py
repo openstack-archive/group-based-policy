@@ -196,6 +196,11 @@ class ExplicitPortOverlap(gpexc.GroupPolicyBadRequest):
                 '%(ip)s has overlapping IP or MAC address with another port '
                 'in network %(net)s')
 
+
+class AdminOnlyOperation(gpexc.GroupPolicyBadRequest):
+    message = _("This operation is reserved to admins")
+
+
 REVERSE_PREFIX = 'reverse-'
 SHADOW_PREFIX = 'Shd-'
 AUTO_PREFIX = 'Auto-'
@@ -212,6 +217,7 @@ REVERTIBLE_PROTOCOLS = [n_constants.PROTO_NAME_TCP.lower(),
                         n_constants.PROTO_NAME_UDP.lower(),
                         n_constants.PROTO_NAME_ICMP.lower()]
 PROXY_PORT_PREFIX = "opflex_proxy:"
+EOC_PREFIX = "opflex_eoc:"
 ICMP_REPLY_TYPES = ['echo-rep', 'dst-unreach', 'src-quench', 'time-exceeded']
 
 
@@ -415,22 +421,37 @@ class ApicMappingDriver(api.ResourceMappingDriver,
                                       owned=own_addr, inject_default_route=
                                       l2p['inject_default_route'])
             self._add_vrf_details(context, details)
-            if self._is_pt_chain_head(context, pt, ptg, owned_ips=own_addr):
+            if self._is_pt_chain_head(context, pt, ptg, owned_ips=own_addr,
+                                      port_id=port_id):
                 # is a relevant proxy_gateway, push all the addresses from this
                 # chain to this PT
                 extra_map = details
-                master_mac = self._is_master_owner(context, pt,
+                master_port = self._is_master_owner(context, pt,
                                                    owned_ips=own_addr)
-                if master_mac:
+                if master_port:
                     extra_map = details['extra_details'].setdefault(
-                        master_mac, {'extra_ips': [], 'floating_ip': [],
-                            'ip_mapping': [], 'host_snat_ips': []})
-                if bool(master_mac) == bool(pt['cluster_id']):
+                        master_port['mac_address'], {'extra_ips': [],
+                                                     'floating_ip': [],
+                                                     'ip_mapping': [],
+                                                     'host_snat_ips': []})
+                if bool(master_port) == bool(pt['cluster_id']):
                     l3_policy = context._plugin.get_l3_policy(
                         context, l2p['l3_policy_id'])
-                    while ptg['proxied_group_id']:
+                    proxied_ptgs = []
+                    while ptg.get('proxied_group_id'):
                         proxied = self.gbp_plugin.get_policy_target_group(
                             context, ptg['proxied_group_id'])
+                        proxied_ptgs.append(proxied)
+                        ptg = proxied
+                    # Retrieve PTGs explicitly proxied
+                    descriptions = [EOC_PREFIX + port_id]
+                    if master_port:
+                        # Also retrieve groups proxied by master of the cluster
+                        descriptions.append(EOC_PREFIX + master_port['id'])
+                    proxied_ptgs.extend(
+                        self._get_policy_target_groups(
+                            context, filters={'description': descriptions}))
+                    for proxied in proxied_ptgs:
                         for port in self._get_ptg_ports(proxied):
                             extra_map['extra_ips'].extend(
                                 [x['ip_address'] for x in port['fixed_ips']])
@@ -444,7 +465,6 @@ class ApicMappingDriver(api.ResourceMappingDriver,
                             if not extra_map['host_snat_ips']:
                                 extra_map['host_snat_ips'].extend(
                                     host_snat_ips)
-                        ptg = proxied
                 else:
                     LOG.info(_LI("Active master has changed for PT %s"),
                              pt['id'])
@@ -800,6 +820,10 @@ class ApicMappingDriver(api.ResourceMappingDriver,
                     context._plugin_context, context.current['id'])
                 db_group.l2_policy_id = proxied['l2_policy_id']
                 context.current['l2_policy_id'] = proxied['l2_policy_id']
+            if context.current['description']:
+                if (EOC_PREFIX in context.current['description']
+                        and not context._plugin_context.is_admin):
+                    raise AdminOnlyOperation()
             else:
                 self.name_mapper.has_valid_name(context.current)
 
@@ -1126,6 +1150,11 @@ class ApicMappingDriver(api.ResourceMappingDriver,
                  context.current['subnets']):
                 raise ExplicitSubnetAssociationNotSupported()
             self._reject_shared_update(context, 'policy_target_group')
+            if (context.current['description'] !=
+                    context.original['description']):
+                if (EOC_PREFIX in context.current['description']
+                        and not context._plugin_context.is_admin):
+                    raise AdminOnlyOperation()
 
     def update_policy_target_group_postcommit(self, context):
         if not self.name_mapper._is_apic_reference(context.current):
@@ -3067,6 +3096,9 @@ class ApicMappingDriver(api.ResourceMappingDriver,
     def _notify_head_chain_ports(self, ptg_id):
         context = nctx.get_admin_context()
         ptg = self.gbp_plugin.get_policy_target_group(context, ptg_id)
+        explicit_eoc_id = self._extract_ptg_explicit_eoc(context, ptg)
+        if explicit_eoc_id:
+            self._notify_port_update(context, explicit_eoc_id)
         # to avoid useless double notification exit now if no proxy
         if not ptg.get('proxy_group_id'):
             return
@@ -3173,7 +3205,13 @@ class ApicMappingDriver(api.ResourceMappingDriver,
             return opt.lower() in ['true', 'yes', '1']
         return False
 
-    def _is_pt_chain_head(self, plugin_context, pt, ptg=None, owned_ips=None):
+    def _is_pt_chain_head(self, plugin_context, pt, ptg=None, owned_ips=None,
+                          port_id=None):
+        if pt and port_id:
+            if bool(self._get_policy_target_groups(
+                        plugin_context,
+                        filters={'description': [EOC_PREFIX + port_id]})):
+                return True
         if pt:
             ptg = ptg or self._get_policy_target_group(
                 plugin_context, pt['policy_target_group_id'])
@@ -3199,7 +3237,7 @@ class ApicMappingDriver(api.ResourceMappingDriver,
                          owned_ips=None):
         """Verifies if the port owns the master address.
 
-        Returns the master MAC address or False
+        Returns the master port address or False
         """
         if pt['cluster_id']:
             master_pt = master_pt or self._get_pt_cluster_master(
@@ -3211,9 +3249,8 @@ class ApicMappingDriver(api.ResourceMappingDriver,
             master_port = self._get_port(plugin_context, master_pt['port_id'])
             master_addresses = set([x['ip_address'] for x in
                                     master_port['fixed_ips']])
-            master_mac = master_port['mac_address']
             if bool(owned_addresses & master_addresses):
-                return master_mac
+                return master_port
         return False
 
     def _get_owned_addresses(self, plugin_context, port_id):
@@ -3602,3 +3639,13 @@ class ApicMappingDriver(api.ResourceMappingDriver,
         for ip in fixed_ips:
             ip.pop('subnet_id', None)
         return fixed_ips
+
+    def _extract_ptg_explicit_eoc(self, plugin_context, ptg):
+        """Extract PTG End of Chain
+
+        Given a PTG, retrieves the explicit End of the Chain from its
+        description and returns a Neutron port
+        :return: Neutron port or None
+        """
+        if EOC_PREFIX in ptg.get('description', ''):
+            return ptg['description'][len(EOC_PREFIX):]
