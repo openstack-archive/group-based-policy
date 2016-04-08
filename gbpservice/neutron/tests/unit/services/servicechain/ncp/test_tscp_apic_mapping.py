@@ -809,13 +809,6 @@ class TestApicChains(ApicMappingStitchingPlumberGBPTestCase,
 
 class TestProxyGroup(ApicMappingStitchingPlumberGBPTestCase):
 
-    def _get_pts_addresses(self, pts):
-        addresses = []
-        for pt in pts:
-            port = self._get_object('ports', pt['port_id'], self.api)['port']
-            addresses.extend([x['ip_address'] for x in port['fixed_ips']])
-        return addresses
-
     def _proxy_tenant(self, ptg, admin_proxy):
         return 'admin' if admin_proxy else ptg['tenant_id']
 
