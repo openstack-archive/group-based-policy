@@ -190,7 +190,9 @@ class ApicMappingTestCase(
                   u'children': [{u'l3extLIfP':
                                  {u'children': [{u'l3extRsPathL3OutAtt':
                                                  {u'attributes':
-                                                  {u'encap': u'vlan-3101'}}}]}}
+                                                  {u'encap': u'vlan-3101',
+                                                   u'ifInstT': u'sub-interface'
+                                                   }}}]}}
                                 ]}},
                            {u'l3extRsEctx':
                             {u'attributes':
@@ -204,9 +206,9 @@ class ApicMappingTestCase(
 {"tnBgpPeerPfxPolName": ""}}, {"eigrpRsIfPol": {"tnEigrpIfPolName": ""}}, \
 {"l3extLNodeP": {"attributes": {"dn": "uni/tn-test-tenant/out-Shd-Sub/\
 lnodep-Leaf3-4_NP"}, "children": [{"l3extLIfP": {"children": [{"\
-l3extRsPathL3OutAtt": {"attributes": {"encap": "vlan-999"}}}]}}]}}, {\
-"l3extRsEctx": {"attributes": {"dn": "uni/tn-test-tenant/out-Shd-Sub/rsectx", \
-"tnFvCtxName": "myl3p"}}}]}}'
+l3extRsPathL3OutAtt": {"attributes": {"ifInstT": "sub-interface", "encap": \
+"vlan-999"}}}]}}]}}, {"l3extRsEctx": {"attributes": {"dn": "uni/tn-test-tenant\
+/out-Shd-Sub/rsectx", "tnFvCtxName": "myl3p"}}}]}}'
             self.driver.apic_manager.apic.fvTenant.rn = echo2
             self.driver.apic_manager.apic.l3extOut.rn = echo2
             self.driver.l3out_vlan_alloc.reserve_vlan.return_value = 999
@@ -3224,6 +3226,79 @@ class TestExternalSegmentPreL3Out(TestExternalSegment):
         self.create_external_segment(name='supported',
             tenant_id='some_other_tenant', cidr='192.168.0.2/24',
             expected_res_status=201)
+
+    def test_asr_wrong_L3out_IF_type_rejected(self):
+        self._mock_external_dict([('supported', '192.168.0.2/24')],
+                                 is_asr_mode=True)
+        self.driver._query_l3out_info.return_value['l3out'] = (
+            [{u'l3extLNodeP':
+              {u'attributes':
+               {u'dn': u'uni/tn-common/out-supported/lnodep-Leaf3-4_NP'},
+               u'children': [{u'l3extLIfP':
+                              {u'children': [{u'l3extRsPathL3OutAtt':
+                                              {u'attributes':
+                                               {u'ifInstT': u'ext-svi'
+                                                }}}]}}]}}])
+        res = self.create_external_segment(
+            name='supported', expected_res_status=400)
+        self.assertEqual('ASRWrongL3OutIFType', res['NeutronError']['type'])
+
+    def test_asr_wrong_L3out_OSPF_Auth_type_rejected(self):
+        self._mock_external_dict([('supported', '192.168.0.2/24')],
+                                 is_asr_mode=True)
+        self.driver._query_l3out_info.return_value['l3out'] = (
+            [{u'l3extLNodeP':
+              {u'attributes':
+               {u'dn': u'uni/tn-common/out-supported/lnodep-Leaf3-4_NP'},
+               u'children': [{u'l3extLIfP':
+                              {u'children': [{u'ospfIfP':
+                                              {u'attributes':
+                                               {u'authType': u'simple'
+                                                }}}]}}]}}])
+        res = self.create_external_segment(
+            name='supported', expected_res_status=400)
+        self.assertEqual('ASRWrongL3OutAuthTypeForOSPF',
+                         res['NeutronError']['type'])
+
+    def test_asr_wrong_L3out_BGP_Auth_type_rejected(self):
+        self._mock_external_dict([('supported', '192.168.0.2/24')],
+                                 is_asr_mode=True)
+        self.driver._query_l3out_info.return_value['l3out'] = (
+            [{u'l3extLNodeP':
+              {u'attributes':
+               {u'dn': u'uni/tn-common/out-supported/lnodep-Leaf3-4_NP'},
+               u'children': [{u'l3extLIfP':
+                              {u'children': [{u'l3extRsNodeL3OutAtt':
+                                              {u'attributes':
+                                               {u'type': u'sha1'}}},
+                                             {u'bfdIfP':
+                                              {u'attributes':
+                                               {u'type': u'sha1'}}},
+                                             {u'l3extRsNodeL3OutAtt':
+                                              {u'attributes':
+                                               {u'type': u'sha1'}}}]}}]}}])
+        res = self.create_external_segment(
+            name='supported', expected_res_status=400)
+        self.assertEqual('ASRWrongL3OutAuthTypeForBGP',
+                         res['NeutronError']['type'])
+
+        # try again with a good input
+        self.driver._query_l3out_info.return_value['l3out'] = (
+            [{u'l3extLNodeP':
+              {u'attributes':
+               {u'dn': u'uni/tn-common/out-supported/lnodep-Leaf3-4_NP'},
+               u'children': [{u'l3extLIfP':
+                              {u'children': [{u'l3extRsNodeL3OutAtt':
+                                              {u'attributes':
+                                               {u'type': u'sha1'}}},
+                                             {u'bfdIfP':
+                                              {u'attributes':
+                                               {u'type': u'none'}}},
+                                             {u'l3extRsNodeL3OutAtt':
+                                              {u'attributes':
+                                               {u'type': u'sha1'}}}]}}]}}])
+        res = self.create_external_segment(
+            name='supported', expected_res_status=201)
 
 
 class TestExternalSegmentNoNatPreL3Out(TestExternalSegmentPreL3Out):
