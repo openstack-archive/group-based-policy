@@ -155,6 +155,21 @@ class ASRBadVlanRange(gpexc.GroupPolicyBadRequest):
                 "when router_type is ASR.")
 
 
+class ASRWrongL3OutIFType(gpexc.GroupPolicyBadRequest):
+    message = _("L3Out %(l3out)s can only support routed "
+                "sub-interfaces in the interface profiles when router_type "
+                "is ASR.")
+
+
+class ASRWrongL3OutAuthTypeForBGP(gpexc.GroupPolicyBadRequest):
+    message = _("L3Out %(l3out)s can only support no authentication "
+                "for BGP interface profile when router_type is ASR.")
+
+
+class ASRWrongL3OutAuthTypeForOSPF(gpexc.GroupPolicyBadRequest):
+    message = _("L3Out %(l3out)s can only support no authentication "
+                "for OSPF interface profile when router_type is ASR.")
+
 REVERSE_PREFIX = 'reverse-'
 SHADOW_PREFIX = 'Shd-'
 SERVICE_PREFIX = 'Svc-'
@@ -3126,10 +3141,13 @@ class ApicMappingDriver(api.ResourceMappingDriver,
     def _check_pre_existing_es(self, context, es):
         if not self._is_pre_existing(es):
             return
+        ext_info = self.apic_manager.ext_net_dict.get(es['name'])
+        is_asr_router = self._is_asr_router_type(ext_info)
         l3out_info = self._query_l3out_info(
             self.name_mapper.name_mapper.pre_existing(
                 context, es['name']),
-            self.name_mapper.tenant(es))
+            self.name_mapper.tenant(es),
+            return_full=is_asr_router)
         if not l3out_info:
             raise PreExistingL3OutNotFound(l3out=es['name'])
         l3out_info['l3out_tenant'] = str(l3out_info['l3out_tenant'])
@@ -3139,6 +3157,22 @@ class ApicMappingDriver(api.ResourceMappingDriver,
                 raise PreExistingL3OutInIncorrectTenant(
                     l3out_tenant=l3out_info['l3out_tenant'],
                     l3out=es['name'], es=es['name'], es_tenant=es_tenant)
+        if is_asr_router:
+            l3out_str = str(l3out_info['l3out'])
+            for match in re.finditer("u'ifInstT': u'([^']+)'",
+                                     l3out_str):
+                if match.group(1) != 'sub-interface':
+                    raise ASRWrongL3OutIFType(l3out=es['name'])
+            for match in re.finditer("u'authType': u'([^']+)'",
+                                     l3out_str):
+                if match.group(1) != 'none':
+                    raise ASRWrongL3OutAuthTypeForOSPF(l3out=es['name'])
+            for match in re.finditer(
+                "u'bfdIfP': {u'attributes': {((?!u'attributes': {).)*u'type':"
+                " u'([^']+)'",
+                l3out_str):
+                if match.group(2) == 'sha1':
+                    raise ASRWrongL3OutAuthTypeForBGP(l3out=es['name'])
 
     def _create_tenant_filter(self, rule_name, tenant, entries=None,
                               transaction=None):
