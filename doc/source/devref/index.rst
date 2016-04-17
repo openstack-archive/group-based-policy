@@ -31,16 +31,21 @@ GBP Design
 .. toctree::
    :maxdepth: 3
 
-   gbp_resource_model
-   gbp_plugin_and_driver_architecture
-   gbp_driver_extensions
-   implicit_mapping_policy_driver
-   resource_mapping_policy_driver
-   gbp_external_connectivity
-   gbp_service_chaining_model
-   gbp_node_composition_plugin_and_driver_architecture
-   gbp_traffic_stitching_plumber
-
+   abstraction
+   development.environment
+   extension-drivers
+   external-connectivity
+   floating-ip-support
+   group-policy-apic-driver
+   heat-support
+   images
+   odl-policy-driver
+   policy-target-cluster-id
+   service-chain-abstractions
+   service-chain-driver
+   shared-resources
+   traffic-stitching-plumber-model
+   traffic-stitching-plumber-placement-type
 
 Module Reference
 ----------------
