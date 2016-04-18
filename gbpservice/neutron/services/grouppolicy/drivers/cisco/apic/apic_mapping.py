@@ -145,33 +145,34 @@ class PreExistingL3OutInIncorrectTenant(gpexc.GroupPolicyBadRequest):
                 "'%(es_tenant)s' to which external-segment '%(es)s' maps.")
 
 
-class ASRVlanRangeNotFound(gpexc.GroupPolicyBadRequest):
+class EdgeNatVlanRangeNotFound(gpexc.GroupPolicyBadRequest):
     message = _("No vlan range is specified for L3Out %(l3out)s "
-                "when router_type is ASR.")
+                "when edge_nat is enabled.")
 
 
-class ASRBadVlanRange(gpexc.GroupPolicyBadRequest):
+class EdgeNatBadVlanRange(gpexc.GroupPolicyBadRequest):
     message = _("Bad vlan range is specified for L3Out %(l3out)s "
-                "when router_type is ASR.")
+                "when edge_nat is enabled.")
 
 
-class ASRWrongL3OutIFType(gpexc.GroupPolicyBadRequest):
+class EdgeNatWrongL3OutIFType(gpexc.GroupPolicyBadRequest):
     message = _("L3Out %(l3out)s can only support routed "
-                "sub-interfaces in the interface profiles when router_type "
-                "is ASR.")
+                "sub-interfaces in the interface profiles when edge_nat"
+                "is enabled.")
 
 
-class ASRWrongL3OutAuthTypeForBGP(gpexc.GroupPolicyBadRequest):
+class EdgeNatWrongL3OutAuthTypeForBGP(gpexc.GroupPolicyBadRequest):
     message = _("L3Out %(l3out)s can only support no authentication "
-                "for BGP interface profile when router_type is ASR.")
+                "for BGP interface profile when edge_nat is enabled.")
 
 
-class ASRWrongL3OutAuthTypeForOSPF(gpexc.GroupPolicyBadRequest):
+class EdgeNatWrongL3OutAuthTypeForOSPF(gpexc.GroupPolicyBadRequest):
     message = _("L3Out %(l3out)s can only support no authentication "
-                "for OSPF interface profile when router_type is ASR.")
+                "for OSPF interface profile when edge_nat is enabled.")
 
 REVERSE_PREFIX = 'reverse-'
 SHADOW_PREFIX = 'Shd-'
+AUTO_PREFIX = 'Auto-'
 SERVICE_PREFIX = 'Svc-'
 IMPLICIT_PREFIX = 'implicit-'
 ANY_PREFIX = 'any-'
@@ -501,7 +502,7 @@ class ApicMappingDriver(api.ResourceMappingDriver,
             if not self._is_nat_enabled_on_es(es):
                 continue
             ext_info = self.apic_manager.ext_net_dict.get(es['name'])
-            if ext_info and self._is_asr_router_type(ext_info):
+            if ext_info and self._is_edge_nat(ext_info):
                 continue
             nat_epg_name = self._get_nat_epg_for_es(context, es)
             nat_epg_tenant = self.apic_manager.apic.fvTenant.name(
@@ -1195,7 +1196,7 @@ class ApicMappingDriver(api.ResourceMappingDriver,
                     if hp_net.cidr == net.cidr:
                         raise HostPoolSubnetOverlap(host_pool_cidr=hp_net.cidr,
                                                     es=es['name'])
-            self._check_asr_setting(es)
+            self._check_edge_nat_setting(es)
         else:
             LOG.warn(UNMANAGED_SEGMENT % context.current['id'])
 
@@ -1772,9 +1773,10 @@ class ApicMappingDriver(api.ResourceMappingDriver,
             # don't need to explicitly create the shadow l3out in this case
             # because we are going to query APIC then use the pre-existing
             # l3out as a template then clone it accordingly
-            if (is_shadow and self._is_asr_router_type(ext_info) and
-                self._is_pre_existing(es)):
-                is_l3out_creation_needed = False
+            if is_shadow and self._is_edge_nat(ext_info):
+                es_name = str(es_name).replace(SHADOW_PREFIX, AUTO_PREFIX, 1)
+                if self._is_pre_existing(es):
+                    is_l3out_creation_needed = False
 
             if is_l3out_creation_needed:
                 self.apic_manager.ensure_external_routed_network_created(
@@ -1796,9 +1798,9 @@ class ApicMappingDriver(api.ResourceMappingDriver,
                 encap = ext_info.get('encap')  # No encap if None
                 is_details_needed = True
 
-            # if there is a router_type (like ASR) then we have to flesh
+            # if its edge nat then we have to flesh
             # out this shadow L3 out in APIC
-            if is_shadow and self._is_asr_router_type(ext_info):
+            if is_shadow and self._is_edge_nat(ext_info):
                 vlan_id = self.l3out_vlan_alloc.reserve_vlan(
                     es['name'], context.current['id'])
                 encap = 'vlan-' + str(vlan_id)
@@ -1851,6 +1853,9 @@ class ApicMappingDriver(api.ResourceMappingDriver,
         es_name = self.name_mapper.external_segment(context, es,
             prefix=self._get_shadow_prefix(context,
                 is_shadow, context.current))
+        ext_info = self.apic_manager.ext_net_dict.get(es['name'])
+        if is_shadow and self._is_edge_nat(ext_info):
+            es_name = str(es_name).replace(SHADOW_PREFIX, AUTO_PREFIX, 1)
         es_tenant = self._get_tenant_for_shadow(is_shadow, context.current, es)
         nat_enabled = self._is_nat_enabled_on_es(es)
         pre_existing = False if is_shadow else self._is_pre_existing(es)
@@ -1883,10 +1888,9 @@ class ApicMappingDriver(api.ResourceMappingDriver,
                                 context, es['name'])
                             if pre_existing else es_name),
                             transaction=trs)
-                    # if there is a router_type (like ASR) then we have to
-                    # release the vlan associated with this shadow L3out
-                    ext_info = self.apic_manager.ext_net_dict.get(es['name'])
-                    if is_shadow and self._is_asr_router_type(ext_info):
+                    # if if its edge nat then we have to release
+                    # the vlan associated with this shadow L3out
+                    if is_shadow and self._is_edge_nat(ext_info):
                         self.l3out_vlan_alloc.release_vlan(
                             es['name'], context.current['id'])
 
@@ -1963,7 +1967,7 @@ class ApicMappingDriver(api.ResourceMappingDriver,
                             context._plugin_context, es, ep,
                             provided_prs, consumed_prs, [], [],
                             l3policy_obj, transaction=trs)
-                    if is_shadow and not self._is_asr_router_type(ext_info):
+                    if is_shadow and not self._is_edge_nat(ext_info):
                         # set up link to NAT EPG
                         self.apic_manager.associate_external_epg_to_nat_epg(
                             es_tenant, es_name, ep_name,
@@ -3103,18 +3107,18 @@ class ApicMappingDriver(api.ResourceMappingDriver,
             return opt.lower() in ['true', 'yes', '1']
         return False
 
-    def _is_asr_router_type(self, ext_info):
-        router_type = ext_info.get('router_type')
-        return router_type and router_type.lower() == 'asr'
+    def _is_edge_nat(self, ext_info):
+        opt = ext_info.get('edge_nat', 'false')
+        return opt.lower() in ['true', 'yes', '1']
 
-    def _check_asr_setting(self, es):
+    def _check_edge_nat_setting(self, es):
         ext_info = self.apic_manager.ext_net_dict.get(es['name'])
-        if ext_info and self._is_asr_router_type(ext_info):
+        if ext_info and self._is_edge_nat(ext_info):
             vlan_range = ext_info.get('vlan_range')
             if not vlan_range:
-                raise ASRVlanRangeNotFound(l3out=es['name'])
+                raise EdgeNatVlanRangeNotFound(l3out=es['name'])
             elif not self.l3out_vlan_alloc.l3out_vlan_ranges.get(es['name']):
-                raise ASRBadVlanRange(l3out=es['name'])
+                raise EdgeNatBadVlanRange(l3out=es['name'])
 
     def _query_l3out_info(self, l3out_name, tenant_id, return_full=False):
         info = {'l3out_tenant': tenant_id}
@@ -3144,12 +3148,12 @@ class ApicMappingDriver(api.ResourceMappingDriver,
         if not self._is_pre_existing(es):
             return
         ext_info = self.apic_manager.ext_net_dict.get(es['name'])
-        is_asr_router = self._is_asr_router_type(ext_info)
+        is_edge_nat = self._is_edge_nat(ext_info)
         l3out_info = self._query_l3out_info(
             self.name_mapper.name_mapper.pre_existing(
                 context, es['name']),
             self.name_mapper.tenant(es),
-            return_full=is_asr_router)
+            return_full=is_edge_nat)
         if not l3out_info:
             raise PreExistingL3OutNotFound(l3out=es['name'])
         l3out_info['l3out_tenant'] = str(l3out_info['l3out_tenant'])
@@ -3159,22 +3163,22 @@ class ApicMappingDriver(api.ResourceMappingDriver,
                 raise PreExistingL3OutInIncorrectTenant(
                     l3out_tenant=l3out_info['l3out_tenant'],
                     l3out=es['name'], es=es['name'], es_tenant=es_tenant)
-        if is_asr_router:
+        if is_edge_nat:
             l3out_str = str(l3out_info['l3out'])
             for match in re.finditer("u'ifInstT': u'([^']+)'",
                                      l3out_str):
                 if match.group(1) != 'sub-interface':
-                    raise ASRWrongL3OutIFType(l3out=es['name'])
+                    raise EdgeNatWrongL3OutIFType(l3out=es['name'])
             for match in re.finditer("u'authType': u'([^']+)'",
                                      l3out_str):
                 if match.group(1) != 'none':
-                    raise ASRWrongL3OutAuthTypeForOSPF(l3out=es['name'])
+                    raise EdgeNatWrongL3OutAuthTypeForOSPF(l3out=es['name'])
             for match in re.finditer(
                 "u'bfdIfP': {u'attributes': {((?!u'attributes': {).)*u'type':"
                 " u'([^']+)'",
                 l3out_str):
-                if match.group(2) == 'sha1':
-                    raise ASRWrongL3OutAuthTypeForBGP(l3out=es['name'])
+                if match.group(2) != 'none':
+                    raise EdgeNatWrongL3OutAuthTypeForBGP(l3out=es['name'])
 
     def _create_tenant_filter(self, rule_name, tenant, entries=None,
                               transaction=None):
