@@ -217,7 +217,7 @@ l3extRsPathL3OutAtt": {"attributes": {"ifInstT": "sub-interface", "encap": \
         self.driver.apic_manager.apic.fvCtx.name = echo2
         self._db_plugin = n_db.NeutronDbPluginV2()
 
-    def _build_external_dict(self, name, cidr_exposed, is_asr_mode=False):
+    def _build_external_dict(self, name, cidr_exposed, is_edge_nat=False):
         ext_info = {
             'enable_nat': 'True' if self.nat_enabled else 'False'
         }
@@ -233,17 +233,17 @@ l3extRsPathL3OutAtt": {"attributes": {"ifInstT": "sub-interface", "encap": \
                 'gateway_ip': str(netaddr.IPNetwork(cidr_exposed)[1]),
                 'cidr_exposed': cidr_exposed})
 
-        if is_asr_mode:
-            ext_info['router_type'] = 'ASR'
+        if is_edge_nat:
+            ext_info['edge_nat'] = 'true'
             ext_info['vlan_range'] = '2000:2010'
 
         return {name: ext_info}
 
-    def _mock_external_dict(self, data, is_asr_mode=False):
+    def _mock_external_dict(self, data, is_edge_nat=False):
         self.driver.apic_manager.ext_net_dict = {}
         for x in data:
             self.driver.apic_manager.ext_net_dict.update(
-                self._build_external_dict(x[0], x[1], is_asr_mode=is_asr_mode))
+                self._build_external_dict(x[0], x[1], is_edge_nat=is_edge_nat))
 
     def _create_simple_policy_rule(self, direction='bi', protocol='tcp',
                                    port_range=80, shared=False,
@@ -1595,10 +1595,10 @@ class TestL3Policy(ApicMappingTestCase):
             router_ports[1]['fixed_ips'][0]['subnet_id'] == subnet['id'])
 
     def _test_l3p_plugged_to_es_at_creation(self, shared_es,
-                                            shared_l3p, is_asr_mode=False):
+                                            shared_l3p, is_edge_nat=False):
         # Verify L3P is correctly plugged to ES on APIC during create
         self._mock_external_dict([('supported', '192.168.0.2/24')],
-                                 is_asr_mode)
+                                 is_edge_nat)
         es = self.create_external_segment(
             name='supported', cidr='192.168.0.0/24',
             shared=shared_es,
@@ -1622,11 +1622,14 @@ class TestL3Policy(ApicMappingTestCase):
         l3p_owner = self.common_tenant if shared_l3p else l3p['tenant_id']
         mgr = self.driver.apic_manager
         call_name = mgr.ensure_external_routed_network_created
+        l3out_str = "Shd-%s-%s"
+        if is_edge_nat:
+            l3out_str = "Auto-%s-%s"
         if self.nat_enabled:
             expected_l3out_calls = []
-            if not is_asr_mode or not self.pre_l3out:
+            if not is_edge_nat or not self.pre_l3out:
                 expected_l3out_calls.append(
-                    mock.call("Shd-%s-%s" % (l3p['id'], es['id']),
+                    mock.call(l3out_str % (l3p['id'], es['id']),
                               owner=l3p_owner, context=l3p['id'],
                               transaction=mock.ANY))
             if not self.pre_l3out:
@@ -1645,7 +1648,7 @@ class TestL3Policy(ApicMappingTestCase):
                           transaction=mock.ANY)]
         self._check_call_list(expected_l3out_calls, call_name.call_args_list)
 
-        if is_asr_mode and self.nat_enabled:
+        if is_edge_nat and self.nat_enabled:
                 (self.driver.l3out_vlan_alloc.
                     reserve_vlan.assert_called_once_with(
                         es['name'], l3p['id']))
@@ -1667,23 +1670,23 @@ class TestL3Policy(ApicMappingTestCase):
                           owner=owner, subnet='128.0.0.0/16',
                           transaction=mock.ANY)]
 
-            if is_asr_mode and self.nat_enabled:
+            if is_edge_nat and self.nat_enabled:
                 expected_set_domain_calls.append(
-                    mock.call("Shd-%s-%s" % (l3p['id'], es['id']),
+                    mock.call(l3out_str % (l3p['id'], es['id']),
                               owner=owner, transaction=mock.ANY))
                 expected_logic_node_calls.append(
-                    mock.call("Shd-%s-%s" % (l3p['id'], es['id']),
+                    mock.call(l3out_str % (l3p['id'], es['id']),
                               mocked.APIC_EXT_SWITCH, mocked.APIC_EXT_MODULE,
                               mocked.APIC_EXT_PORT, mock.ANY, '192.168.0.2/24',
                               owner=owner, router_id=APIC_EXTERNAL_RID,
                               transaction=mock.ANY))
                 expected_route_calls.append(
-                    mock.call("Shd-%s-%s" % (l3p['id'], es['id']),
+                    mock.call(l3out_str % (l3p['id'], es['id']),
                               mocked.APIC_EXT_SWITCH, '192.168.0.254',
                               owner=owner, subnet='0.0.0.0/0',
                               transaction=mock.ANY))
                 expected_route_calls.append(
-                    mock.call("Shd-%s-%s" % (l3p['id'], es['id']),
+                    mock.call(l3out_str % (l3p['id'], es['id']),
                               mocked.APIC_EXT_SWITCH, '192.168.0.1',
                               owner=owner, subnet='128.0.0.0/16',
                               transaction=mock.ANY))
@@ -1695,12 +1698,12 @@ class TestL3Policy(ApicMappingTestCase):
             self._check_call_list(expected_route_calls,
                 mgr.ensure_static_route_created.call_args_list)
         else:
-            if is_asr_mode and self.nat_enabled:
+            if is_edge_nat and self.nat_enabled:
                 final_req = re.sub('Shd-Sub',
-                    "Shd-%s-%s" % (l3p['id'], es['id']), self.trimmed_l3out)
+                    l3out_str % (l3p['id'], es['id']), self.trimmed_l3out)
                 mgr.apic.post_body.assert_called_once_with(
                     mgr.apic.l3extOut.mo, final_req, l3p_owner,
-                    "Shd-%s-%s" % (l3p['id'], es['id']))
+                    l3out_str % (l3p['id'], es['id']))
             self.assertFalse(mgr.set_domain_for_external_routed_network.called)
             self.assertFalse(mgr.ensure_logical_node_profile_created.called)
             self.assertFalse(mgr.ensure_static_route_created.called)
@@ -1727,13 +1730,13 @@ class TestL3Policy(ApicMappingTestCase):
     def test_l3p_plugged_to_es_at_creation_asr_mode(self):
         self._test_l3p_plugged_to_es_at_creation(shared_es=False,
                                                  shared_l3p=False,
-                                                 is_asr_mode=True)
+                                                 is_edge_nat=True)
 
     def _test_l3p_plugged_to_es_at_update(self, shared_es,
-                                          shared_l3p, is_asr_mode=False):
+                                          shared_l3p, is_edge_nat=False):
         # Verify L3P is correctly plugged to ES on APIC during update
         self._mock_external_dict([('supported', '192.168.0.2/24')],
-                                 is_asr_mode)
+                                 is_edge_nat)
         es = self.create_external_segment(
             name='supported', cidr='192.168.0.0/24',
             shared=shared_es,
@@ -1755,12 +1758,15 @@ class TestL3Policy(ApicMappingTestCase):
         mgr = self.driver.apic_manager
         owner = self.common_tenant if shared_es else es['tenant_id']
         l3p_owner = self.common_tenant if shared_l3p else l3p['tenant_id']
+        l3out_str = "Shd-%s-%s"
+        if is_edge_nat:
+            l3out_str = "Auto-%s-%s"
         expected_l3out_calls = []
         call_name = mgr.ensure_external_routed_network_created
         if self.nat_enabled:
-            if not is_asr_mode or not self.pre_l3out:
+            if not is_edge_nat or not self.pre_l3out:
                 expected_l3out_calls.append(
-                    mock.call("Shd-%s-%s" % (l3p['id'], es['id']),
+                    mock.call(l3out_str % (l3p['id'], es['id']),
                               owner=l3p_owner, context=l3p['id'],
                               transaction=mock.ANY))
             if not self.pre_l3out:
@@ -1780,7 +1786,7 @@ class TestL3Policy(ApicMappingTestCase):
                           transaction=mock.ANY)]
         self._check_call_list(expected_l3out_calls, call_name.call_args_list)
 
-        if is_asr_mode and self.nat_enabled:
+        if is_edge_nat and self.nat_enabled:
                 (self.driver.l3out_vlan_alloc.
                     reserve_vlan.assert_called_once_with(
                         es['name'], l3p['id']))
@@ -1802,23 +1808,23 @@ class TestL3Policy(ApicMappingTestCase):
                           owner=owner, subnet='128.0.0.0/16',
                           transaction=mock.ANY)]
 
-            if is_asr_mode and self.nat_enabled:
+            if is_edge_nat and self.nat_enabled:
                 expected_set_domain_calls.append(
-                    mock.call("Shd-%s-%s" % (l3p['id'], es['id']),
+                    mock.call(l3out_str % (l3p['id'], es['id']),
                               owner=owner, transaction=mock.ANY))
                 expected_logic_node_calls.append(
-                    mock.call("Shd-%s-%s" % (l3p['id'], es['id']),
+                    mock.call(l3out_str % (l3p['id'], es['id']),
                               mocked.APIC_EXT_SWITCH, mocked.APIC_EXT_MODULE,
                               mocked.APIC_EXT_PORT, mock.ANY, '192.168.0.2/24',
                               owner=owner, router_id=APIC_EXTERNAL_RID,
                               transaction=mock.ANY))
                 expected_route_calls.append(
-                    mock.call("Shd-%s-%s" % (l3p['id'], es['id']),
+                    mock.call(l3out_str % (l3p['id'], es['id']),
                               mocked.APIC_EXT_SWITCH, '192.168.0.254',
                               owner=owner, subnet='0.0.0.0/0',
                               transaction=mock.ANY))
                 expected_route_calls.append(
-                    mock.call("Shd-%s-%s" % (l3p['id'], es['id']),
+                    mock.call(l3out_str % (l3p['id'], es['id']),
                               mocked.APIC_EXT_SWITCH, '192.168.0.1',
                               owner=owner, subnet='128.0.0.0/16',
                               transaction=mock.ANY))
@@ -1830,12 +1836,12 @@ class TestL3Policy(ApicMappingTestCase):
             self._check_call_list(expected_route_calls,
                 mgr.ensure_static_route_created.call_args_list)
         else:
-            if is_asr_mode and self.nat_enabled:
+            if is_edge_nat and self.nat_enabled:
                 final_req = re.sub('Shd-Sub',
-                    "Shd-%s-%s" % (l3p['id'], es['id']), self.trimmed_l3out)
+                    l3out_str % (l3p['id'], es['id']), self.trimmed_l3out)
                 mgr.apic.post_body.assert_called_once_with(
                     mgr.apic.l3extOut.mo, final_req, l3p_owner,
-                    "Shd-%s-%s" % (l3p['id'], es['id']))
+                    l3out_str % (l3p['id'], es['id']))
             self.assertFalse(mgr.set_domain_for_external_routed_network.called)
             self.assertFalse(mgr.ensure_logical_node_profile_created.called)
             self.assertFalse(mgr.ensure_static_route_created.called)
@@ -1862,13 +1868,13 @@ class TestL3Policy(ApicMappingTestCase):
     def test_l3p_plugged_to_es_at_update_asr_mode(self):
         self._test_l3p_plugged_to_es_at_update(shared_es=False,
                                                shared_l3p=False,
-                                               is_asr_mode=True)
+                                               is_edge_nat=True)
 
     def _test_l3p_unplugged_from_es_on_delete(self, shared_es,
-                                              shared_l3p, is_asr_mode=False):
+                                              shared_l3p, is_edge_nat=False):
         self._mock_external_dict([('supported1', '192.168.0.2/24'),
                                  ('supported2', '192.168.1.2/24')],
-                                 is_asr_mode)
+                                 is_edge_nat)
         es1 = self.create_external_segment(
             name='supported1', cidr='192.168.0.0/24', shared=shared_es,
             external_routes=[{'destination': '0.0.0.0/0',
@@ -1898,8 +1904,11 @@ class TestL3Policy(ApicMappingTestCase):
             expected_delete_calls.append(
                 mock.call(es1['id'], owner=owner, transaction=mock.ANY))
         if self.nat_enabled:
+            l3out_str = "Shd-%s-%s"
+            if is_edge_nat:
+                l3out_str = "Auto-%s-%s"
             expected_delete_calls.append(
-                mock.call("Shd-%s-%s" % (l3p['id'], es1['id']),
+                mock.call(l3out_str % (l3p['id'], es1['id']),
                     owner=l3p_owner, transaction=mock.ANY))
         self._check_call_list(
             expected_delete_calls,
@@ -1913,7 +1922,7 @@ class TestL3Policy(ApicMappingTestCase):
             call_name.assert_called_once_with(APIC_PRE_L3OUT_TENANT,
                 es1['name'], None, transaction=mock.ANY)
 
-        if is_asr_mode and self.nat_enabled:
+        if is_edge_nat and self.nat_enabled:
             self.driver.l3out_vlan_alloc.release_vlan.assert_called_once_with(
                 es1['name'], l3p['id'])
 
@@ -1939,10 +1948,13 @@ class TestL3Policy(ApicMappingTestCase):
                 mock.call(es1['id'], owner=owner, transaction=mock.ANY),
                 mock.call(es2['id'], owner=owner, transaction=mock.ANY)])
         if self.nat_enabled:
+            l3out_str = "Shd-%s-%s"
+            if is_edge_nat:
+                l3out_str = "Auto-%s-%s"
             expected_delete_calls.extend([
-                mock.call("Shd-%s-%s" % (l3p['id'], es1['id']),
+                mock.call(l3out_str % (l3p['id'], es1['id']),
                      owner=l3p_owner, transaction=mock.ANY),
-                mock.call("Shd-%s-%s" % (l3p['id'], es2['id']),
+                mock.call(l3out_str % (l3p['id'], es2['id']),
                      owner=l3p_owner, transaction=mock.ANY)])
         self._check_call_list(
             expected_delete_calls,
@@ -1967,7 +1979,7 @@ class TestL3Policy(ApicMappingTestCase):
                 expected_calls,
                 mgr.set_context_for_external_routed_network.call_args_list)
 
-        if is_asr_mode and self.nat_enabled:
+        if is_edge_nat and self.nat_enabled:
             expected_release_vlan_calls = [mock.call(es1['name'], l3p['id']),
                                            mock.call(es2['name'], l3p['id'])]
             self._check_call_list(
@@ -1991,13 +2003,13 @@ class TestL3Policy(ApicMappingTestCase):
     def test_l3p_unplugged_from_es_on_delete_asr_mode(self):
         self._test_l3p_unplugged_from_es_on_delete(shared_es=False,
                                                    shared_l3p=False,
-                                                   is_asr_mode=True)
+                                                   is_edge_nat=True)
 
     def _test_l3p_unplugged_from_es_on_update(self, shared_es,
-                                              shared_l3p, is_asr_mode=False):
+                                              shared_l3p, is_edge_nat=False):
         self._mock_external_dict([('supported1', '192.168.0.2/24'),
                                  ('supported', '192.168.1.2/24')],
-                                 is_asr_mode)
+                                 is_edge_nat)
         es1 = self.create_external_segment(
             name='supported1', cidr='192.168.0.0/24', shared=shared_es,
             external_routes=[{'destination': '0.0.0.0/0',
@@ -2028,14 +2040,16 @@ class TestL3Policy(ApicMappingTestCase):
         l3p = self.update_l3_policy(
             l3p['id'], tenant_id=l3p['tenant_id'], expected_res_status=200,
             external_segments={es2['id']: ['169.254.0.4']})['l3_policy']
-
+        l3out_str = "Shd-%s-%s"
+        if is_edge_nat:
+            l3out_str = "Auto-%s-%s"
         expected_delete_calls = []
         if not self.pre_l3out:
             expected_delete_calls.append(
                 mock.call(es1['id'], owner=owner, transaction=mock.ANY))
         if self.nat_enabled:
             expected_delete_calls.append(
-                mock.call("Shd-%s-%s" % (l3p['id'], es1['id']),
+                mock.call(l3out_str % (l3p['id'], es1['id']),
                     owner=l3p_owner, transaction=mock.ANY))
         self._check_call_list(
             expected_delete_calls,
@@ -2050,15 +2064,15 @@ class TestL3Policy(ApicMappingTestCase):
                 expected_calls,
                 mgr.set_context_for_external_routed_network.call_args_list)
 
-        if is_asr_mode and self.nat_enabled:
+        if is_edge_nat and self.nat_enabled:
             self.driver.l3out_vlan_alloc.release_vlan.assert_called_once_with(
                 es1['name'], l3p['id'])
 
         expected_l3out_calls = []
         if self.nat_enabled:
-            if not is_asr_mode or not self.pre_l3out:
+            if not is_edge_nat or not self.pre_l3out:
                 expected_l3out_calls.append(
-                    mock.call("Shd-%s-%s" % (l3p['id'], es2['id']),
+                    mock.call(l3out_str % (l3p['id'], es2['id']),
                               owner=l3p_owner, context=l3p['id'],
                               transaction=mock.ANY))
             if not self.pre_l3out:
@@ -2073,7 +2087,7 @@ class TestL3Policy(ApicMappingTestCase):
         self._check_call_list(expected_l3out_calls,
             mgr.ensure_external_routed_network_created.call_args_list)
 
-        if is_asr_mode and self.nat_enabled:
+        if is_edge_nat and self.nat_enabled:
                 (self.driver.l3out_vlan_alloc.
                     reserve_vlan.assert_called_once_with(
                         es2['name'], l3p['id']))
@@ -2087,12 +2101,12 @@ class TestL3Policy(ApicMappingTestCase):
                           mocked.APIC_EXT_ENCAP, '192.168.1.2/24',
                           owner=owner, router_id=APIC_EXTERNAL_RID,
                           transaction=mock.ANY)]
-            if is_asr_mode and self.nat_enabled:
+            if is_edge_nat and self.nat_enabled:
                 expected_set_domain_calls.append(
-                    mock.call("Shd-%s-%s" % (l3p['id'], es2['id']),
+                    mock.call(l3out_str % (l3p['id'], es2['id']),
                               owner=owner, transaction=mock.ANY))
                 expected_logic_node_calls.append(
-                    mock.call("Shd-%s-%s" % (l3p['id'], es2['id']),
+                    mock.call(l3out_str % (l3p['id'], es2['id']),
                               mocked.APIC_EXT_SWITCH, mocked.APIC_EXT_MODULE,
                               mocked.APIC_EXT_PORT, mock.ANY, '192.168.1.2/24',
                               owner=owner, router_id=APIC_EXTERNAL_RID,
@@ -2103,12 +2117,13 @@ class TestL3Policy(ApicMappingTestCase):
             self._check_call_list(expected_logic_node_calls,
                 mgr.ensure_logical_node_profile_created.call_args_list)
         else:
-            if is_asr_mode and self.nat_enabled:
+            if is_edge_nat and self.nat_enabled:
                 final_req = re.sub('Shd-Sub',
-                    "Shd-%s-%s" % (l3p['id'], es2['id']), self.trimmed_l3out)
+                    l3out_str % (l3p['id'], es2['id']),
+                    self.trimmed_l3out)
                 mgr.apic.post_body.assert_called_once_with(
                     mgr.apic.l3extOut.mo, final_req, l3p_owner,
-                    "Shd-%s-%s" % (l3p['id'], es2['id']))
+                    l3out_str % (l3p['id'], es2['id']))
             self.assertFalse(mgr.set_domain_for_external_routed_network.called)
             self.assertFalse(mgr.ensure_logical_node_profile_created.called)
 
@@ -2137,9 +2152,9 @@ class TestL3Policy(ApicMappingTestCase):
                 mock.call(es2['id'], owner=owner, transaction=mock.ANY)])
         if self.nat_enabled:
             expected_delete_calls.extend([
-                mock.call("Shd-%s-%s" % (l3p['id'], es1['id']),
+                mock.call(l3out_str % (l3p['id'], es1['id']),
                      owner=l3p_owner, transaction=mock.ANY),
-                mock.call("Shd-%s-%s" % (l3p['id'], es2['id']),
+                mock.call(l3out_str % (l3p['id'], es2['id']),
                      owner=l3p_owner, transaction=mock.ANY)])
         self._check_call_list(
             expected_delete_calls,
@@ -2164,7 +2179,7 @@ class TestL3Policy(ApicMappingTestCase):
                 expected_calls,
                 mgr.set_context_for_external_routed_network.call_args_list)
 
-        if is_asr_mode and self.nat_enabled:
+        if is_edge_nat and self.nat_enabled:
             expected_release_vlan_calls = [mock.call(es1['name'], l3p['id']),
                                            mock.call(es2['name'], l3p['id'])]
             self._check_call_list(
@@ -2188,7 +2203,7 @@ class TestL3Policy(ApicMappingTestCase):
     def test_l3p_unplugged_from_es_on_update_asr_mode(self):
         self._test_l3p_unplugged_from_es_on_update(shared_es=False,
                                                    shared_l3p=False,
-                                                   is_asr_mode=True)
+                                                   is_edge_nat=True)
 
     def test_verify_unsupported_es_noop(self):
         # Verify L3P is correctly plugged to ES on APIC during update
@@ -2716,17 +2731,18 @@ class TestExternalSegment(ApicMappingTestCase):
 
     def test_asr_invalid_vlan_range_rejected(self):
         self._mock_external_dict([('supported', '192.168.0.2/24')],
-                                 is_asr_mode=True)
+                                 is_edge_nat=True)
         self.driver.l3out_vlan_alloc.l3out_vlan_ranges = {}
         res = self.create_external_segment(
             name='supported', expected_res_status=400)
-        self.assertEqual('ASRBadVlanRange', res['NeutronError']['type'])
+        self.assertEqual('EdgeNatBadVlanRange', res['NeutronError']['type'])
 
         ext_info = self.driver.apic_manager.ext_net_dict.get('supported')
         del ext_info['vlan_range']
         res = self.create_external_segment(
             name='supported', expected_res_status=400)
-        self.assertEqual('ASRVlanRangeNotFound', res['NeutronError']['type'])
+        self.assertEqual('EdgeNatVlanRangeNotFound',
+                         res['NeutronError']['type'])
 
     def _test_create_delete(self, shared=False):
         mgr = self.driver.apic_manager
@@ -3229,7 +3245,7 @@ class TestExternalSegmentPreL3Out(TestExternalSegment):
 
     def test_asr_wrong_L3out_IF_type_rejected(self):
         self._mock_external_dict([('supported', '192.168.0.2/24')],
-                                 is_asr_mode=True)
+                                 is_edge_nat=True)
         self.driver._query_l3out_info.return_value['l3out'] = (
             [{u'l3extLNodeP':
               {u'attributes':
@@ -3241,11 +3257,12 @@ class TestExternalSegmentPreL3Out(TestExternalSegment):
                                                 }}}]}}]}}])
         res = self.create_external_segment(
             name='supported', expected_res_status=400)
-        self.assertEqual('ASRWrongL3OutIFType', res['NeutronError']['type'])
+        self.assertEqual('EdgeNatWrongL3OutIFType',
+                         res['NeutronError']['type'])
 
     def test_asr_wrong_L3out_OSPF_Auth_type_rejected(self):
         self._mock_external_dict([('supported', '192.168.0.2/24')],
-                                 is_asr_mode=True)
+                                 is_edge_nat=True)
         self.driver._query_l3out_info.return_value['l3out'] = (
             [{u'l3extLNodeP':
               {u'attributes':
@@ -3257,12 +3274,12 @@ class TestExternalSegmentPreL3Out(TestExternalSegment):
                                                 }}}]}}]}}])
         res = self.create_external_segment(
             name='supported', expected_res_status=400)
-        self.assertEqual('ASRWrongL3OutAuthTypeForOSPF',
+        self.assertEqual('EdgeNatWrongL3OutAuthTypeForOSPF',
                          res['NeutronError']['type'])
 
     def test_asr_wrong_L3out_BGP_Auth_type_rejected(self):
         self._mock_external_dict([('supported', '192.168.0.2/24')],
-                                 is_asr_mode=True)
+                                 is_edge_nat=True)
         self.driver._query_l3out_info.return_value['l3out'] = (
             [{u'l3extLNodeP':
               {u'attributes':
@@ -3279,7 +3296,7 @@ class TestExternalSegmentPreL3Out(TestExternalSegment):
                                                {u'type': u'sha1'}}}]}}]}}])
         res = self.create_external_segment(
             name='supported', expected_res_status=400)
-        self.assertEqual('ASRWrongL3OutAuthTypeForBGP',
+        self.assertEqual('EdgeNatWrongL3OutAuthTypeForBGP',
                          res['NeutronError']['type'])
 
         # try again with a good input
