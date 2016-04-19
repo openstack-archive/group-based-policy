@@ -33,4 +33,4 @@ reno>=0.1.1 # Apache2
 python-heatclient
 python-keystoneclient
 
--e git+https://github.com/noironetworks/python-opflex-agent.git@sumit/mitaka-sync#egg=python-opflexagent-agent
+-e git+https://github.com/noironetworks/python-opflex-agent.git@master#egg=python-opflexagent-agent
