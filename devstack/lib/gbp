@@ -48,7 +48,8 @@ function install_gbpservice {
     mv $GBPSERVICE_DIR/test-requirements.txt $GBPSERVICE_DIR/_test-requirements.txt
     setup_develop $GBPSERVICE_DIR
     mv -f $NEUTRON_CONF_DIR/policy.json $NEUTRON_CONF_DIR/policy.json.original 2>/dev/null; true
-    cp -f $GBPSERVICE_DIR/etc/policy.json $NEUTRON_CONF_DIR/policy.json
+    cp -f $GBPSERVICE_DIR/etc/policy.json $Q_POLICY_FILE
+    sed -i 's/"context_is_admin":  "role:admin"/"context_is_admin":  "role:admin or user_name:neutron"/g' $Q_POLICY_FILE
     mv $GBPSERVICE_DIR/_test-requirements.txt $GBPSERVICE_DIR/test-requirements.txt
 }
 
