@@ -237,6 +237,10 @@ class ApicMappingDriver(api.ResourceMappingDriver,
         self.l3out_vlan_alloc = l3out_vlan_alloc.L3outVlanAlloc()
         self.l3out_vlan_alloc.sync_vlan_allocations(
             self.apic_manager.ext_net_dict)
+        self.apic_l3out_trim_attribute_list = (
+            self.apic_manager.apic_l3out_trim_attribute_list)
+        self.apic_l3out_trim_tDn_list = (
+            self.apic_manager.apic_l3out_trim_tDn_list)
 
     def _setup_rpc_listeners(self):
         self.endpoints = [rpc.GBPServerRpcCallback(self)]
@@ -1665,20 +1669,9 @@ class ApicMappingDriver(api.ResourceMappingDriver,
         # doesn't allow tDn being present
         if self._trim_tDn_from_dict(req_dict, 'tnFvCtxName'):
             req_dict['tnFvCtxName'] = l3p_name
-        # this is for l3extRsNdIfPol case
-        self._trim_tDn_from_dict(req_dict, 'tnNdIfPolName')
-        # this is for l3extRsDampeningPol/l3extRsInterleakPol case
-        self._trim_tDn_from_dict(req_dict, 'tnRtctrlProfileName')
-        # this is for ospfRsIfPol case
-        self._trim_tDn_from_dict(req_dict, 'tnOspfIfPolName')
-        # this is for l3extRs[I|E]ngressQosDppPol case
-        self._trim_tDn_from_dict(req_dict, 'tnQosDppPolName')
-        # this is for bfdRsIfPol case
-        self._trim_tDn_from_dict(req_dict, 'tnBfdIfPolName')
-        # this is for bgpRsPeerPfxPol case
-        self._trim_tDn_from_dict(req_dict, 'tnBgpPeerPfxPolName')
-        # this is for eigrpRsIfPol case
-        self._trim_tDn_from_dict(req_dict, 'tnEigrpIfPolName')
+
+        for item in self.apic_l3out_trim_tDn_list:
+            self._trim_tDn_from_dict(req_dict, item)
 
         for value in req_dict.values():
             if isinstance(value, dict):
@@ -1709,15 +1702,9 @@ class ApicMappingDriver(api.ResourceMappingDriver,
         request['attributes'] = {"rn": new_l3_out}
 
         # trim the request
-        keys = (['l3extInstP', 'l3extRtBDToOut',
-                 'l3extExtEncapAllocator',
-                 'l3extRsOutToBDPublicSubnetHolder', 'modTs',
-                 'uid', 'lcOwn', 'monPolDn', 'forceResolve',
-                 'rType', 'state', 'stateQual', 'tCl', 'tType',
-                 'type', 'tContextDn', 'tRn', 'tag', 'name',
-                 'configIssues'])
-        request = self._trim_keys_from_dict(request, keys,
-            encap, context.current.get('name'))
+        request = self._trim_keys_from_dict(request,
+            self.apic_l3out_trim_attribute_list, encap,
+            context.current.get('name'))
 
         final_req = {}
         final_req['l3extOut'] = request

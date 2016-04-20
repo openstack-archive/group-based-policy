@@ -214,6 +214,18 @@ l3extRsPathL3OutAtt": {"attributes": {"ifInstT": "sub-interface", "encap": \
             self.driver.apic_manager.apic.fvTenant.rn = echo2
             self.driver.apic_manager.apic.l3extOut.rn = echo2
             self.driver.l3out_vlan_alloc.reserve_vlan.return_value = 999
+            self.driver.apic_l3out_trim_attribute_list = [
+                        'l3extInstP', 'l3extRtBDToOut',
+                        'l3extExtEncapAllocator',
+                        'l3extRsOutToBDPublicSubnetHolder', 'modTs', 'uid',
+                        'lcOwn', 'monPolDn', 'forceResolve', 'rType', 'state',
+                        'stateQual', 'tCl', 'tType', 'type', 'tContextDn',
+                        'tRn', 'tag', 'name', 'configIssues']
+            self.driver.apic_l3out_trim_tDn_list = [
+                        'tnNdIfPolName', 'tnRtctrlProfileName',
+                        'tnOspfIfPolName', 'tnQosDppPolName',
+                        'tnBfdIfPolName', 'tnBgpPeerPfxPolName',
+                        'tnEigrpIfPolName']
 
         self.driver.apic_manager.apic.fvTenant.name = echo2
         self.driver.apic_manager.apic.fvCtx.name = echo2
