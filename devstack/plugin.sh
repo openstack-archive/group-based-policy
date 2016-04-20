@@ -10,7 +10,7 @@ function gbp_configure_heat {
 }
 
 function gbp_configure_neutron {
-    iniset $NEUTRON_CONF group_policy policy_drivers "implicit_policy,resource_mapping"
+    iniset $NEUTRON_CONF group_policy policy_drivers "implicit_policy,resource_mapping,chain_mapping"
     iniset $NEUTRON_CONF group_policy extension_drivers "proxy_group"
     iniset $NEUTRON_CONF servicechain servicechain_drivers "simplechain_driver"
     iniset $NEUTRON_CONF node_composition_plugin node_plumber "stitching_plumber"
