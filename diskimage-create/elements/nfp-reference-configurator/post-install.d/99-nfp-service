@@ -1,0 +1,11 @@
+#!/bin/bash
+
+#apt-get install -y --force-yes python-pip
+apt-get install -y --force-yes python-pecan
+#pip install pecan==1.0.2
+apt-get install -y --force-yes oslo.serialization oslo.log python-yaml
+
+ls -lR /home/ubuntu/
+#cd ${TMP_MOUNT_PATH}/home/ubuntu/reference_configurator/api/ &&  python setup.py develop
+cd /home/ubuntu/reference_configurator/api/ &&  python setup.py develop
+
