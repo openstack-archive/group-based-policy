@@ -1,0 +1,40 @@
+
+Fresh Installation Steps:
+=========================
+
+(1) Clone stable mitaka devstack.
+    # git clone https://git.openstack.org/openstack-dev/devstack -b stable/mitaka
+
+(2) Get NFP local.conf and configure it.
+    # cd devstack
+    # cp /opt/stack/gbp/devstack/local.conf.nfp ./local.conf
+    # Edit local.conf to point HOST_IP to the devstack setup IP address
+
+(3) Install devstack.
+    # ./stack.sh
+
+(4) Create a test chain with the service VM.
+    # cd /opt/stack/gbp/devstack/exercises/nfp_service
+    # bash fw_base_vm.sh
+
+(5) Login to the UI, create a member in the consumer and provider groups.
+
+(6) Test firewall with traffic from consumer VM.
+
+(7) Delete the test chain.
+    # cd /opt/stack/gbp/devstack/exercises/nfp_service
+    # bash fw_base_vm_clean.sh
+
+Re-installation Steps:
+======================
+
+(1) Follow these steps for cleanup.
+    # cd devstack
+    # ./unstack.sh
+    # ./clean.sh
+    # sudo rm -rf /opt/stack
+    # cd ..
+    # sudo rm -rf devstack
+
+(2) Follow the fresh installation steps.
+
