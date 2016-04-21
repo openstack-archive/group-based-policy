@@ -17,6 +17,7 @@ import oslo_serialization.jsonutils as jsonutils
 import pecan
 from pecan import rest
 import webtest
+import zlib
 
 from gbpservice.nfp.base_configurator.api import root_controller
 
@@ -24,18 +25,18 @@ ERROR = 'error'
 UNHANDLED = 'unhandled'
 FAILURE = 'failure'
 
-"""This class contains  unittest cases for REST server of configurator.
-
-This class tests success and failure cases for all the HTTP requests which
-are implemented in REST server. run_tests.sh file is used for running all
-the tests in this class. All the methods of this class started with test
-prefix called and on success it will print ok and on failure it will
-print the error trace.
-
-"""
-
 
 class ControllerTestCase(unittest.TestCase, rest.RestController):
+
+    """This class contains  unittest cases for REST server of configurator.
+
+    This class tests success and failure cases for all the HTTP requests which
+    are implemented in REST server. run_tests.sh file is used for running all
+    the tests in this class. All the methods of this class started with test
+    prefix called and on success it will print ok and on failure it will
+    print the error trace.
+
+    """
 
     def setUp(self):
         """Standard method of TestCase to setup environment before each test.
@@ -53,13 +54,13 @@ class ControllerTestCase(unittest.TestCase, rest.RestController):
                      'config': [{'resource': 'heat',
                                  'resource_data': {'some_data': 'some_value'}}]
                      }
-        self.data_error = {'info': {'service_type': 'firewall',
-                                    'service_vendor': '',
-                                    'context': {'foo': 'foo'}},
-                           'config': [{'resource': 'non-heat',
-                                       'resource_data': {
-                                            'some_data': 'some_value'}}]
-                           }
+        self.data_non_heat = {'info': {'service_type': 'firewall',
+                                       'service_vendor': '',
+                                       'context': {'foo': 'foo'}},
+                              'config': [{'resource': 'non-heat',
+                                          'resource_data': {
+                                                'some_data': 'some_value'}}]
+                              }
 
     def post_create_network_function_config_with_heat(self):
         """Tests HTTP post request create_network_function_device_config.
@@ -70,8 +71,9 @@ class ControllerTestCase(unittest.TestCase, rest.RestController):
 
         response = self.app.post(
                 '/v1/nfp/create_network_function_config',
-                jsonutils.dumps(self.data))
-        self.assertEqual(response.status_code, 204)
+                zlib.compress(jsonutils.dumps(self.data)),
+                content_type='application/octet-stream')
+        self.assertEqual(response.status_code, 200)
 
     def post_create_network_function_config_with_others(self):
         """Tests HTTP post request create_network_function_device_config.
@@ -82,8 +84,9 @@ class ControllerTestCase(unittest.TestCase, rest.RestController):
 
         response = self.app.post(
                 '/v1/nfp/create_network_function_config',
-                jsonutils.dumps(self.data_error))
-        self.assertEqual(response.status_code, 204)
+                zlib.compress(jsonutils.dumps(self.data_non_heat)),
+                content_type='application/octet-stream')
+        self.assertEqual(response.status_code, 200)
 
     def post_delete_network_function_config_with_heat(self):
         """Tests HTTP post request delete_network_function_device_config.
@@ -94,8 +97,9 @@ class ControllerTestCase(unittest.TestCase, rest.RestController):
 
         response = self.app.post(
                 '/v1/nfp/delete_network_function_config',
-                jsonutils.dumps(self.data))
-        self.assertEqual(response.status_code, 204)
+                zlib.compress(jsonutils.dumps(self.data)),
+                content_type='application/octet-stream')
+        self.assertEqual(response.status_code, 200)
 
     def post_delete_network_function_config_with_others(self):
         """Tests HTTP post request delete_network_function_device_config.
@@ -106,8 +110,9 @@ class ControllerTestCase(unittest.TestCase, rest.RestController):
 
         response = self.app.post(
                 '/v1/nfp/delete_network_function_config',
-                jsonutils.dumps(self.data_error))
-        self.assertEqual(response.status_code, 204)
+                zlib.compress(jsonutils.dumps(self.data_non_heat)),
+                content_type='application/octet-stream')
+        self.assertEqual(response.status_code, 200)
 
     def test_get_notifications(self):
         """Tests HTTP get request get_notifications.
@@ -142,7 +147,8 @@ class ControllerTestCase(unittest.TestCase, rest.RestController):
         self.post_delete_network_function_config_with_others()
         response = self.app.get(
                 '/v1/nfp/get_notifications')
-        response_expected = ast.literal_eval(response.text)
+        response_str = zlib.decompress(response.body)
+        response_expected = ast.literal_eval(response_str)
         self.assertEqual(response_expected[0], response_unhandled)
         self.assertEqual(response_expected[1], response_unhandled)
         self.assertEqual(response_expected[2], response_error)
