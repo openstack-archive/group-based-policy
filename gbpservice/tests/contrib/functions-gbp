@@ -28,6 +28,7 @@ function prepare_nfp_devstack {
     cd $TOP_DIR
     sudo cp $CONTRIB_DIR/devstack/local-nfp.conf $TOP_DIR/local.conf
     sudo cp -r $CONTRIB_DIR/devstack/nfp-templates $TOP_DIR
+    sudo rm -rf $TOP_DIR/exercises/fw_vm_lb.sh
     sudo cp $CONTRIB_DIR/devstack/nfp $TOP_DIR/lib/
     sed -i 's/source $TOP_DIR\/lib\/dstat/source $TOP_DIR\/lib\/dstat\nsource $TOP_DIR\/lib\/nfp/g' stack.sh
     sed -i 's/# Restore\/close logging file descriptors/nfp_setup $TOP_DIR\n# Restore\/close logging file descriptors/g' stack.sh
