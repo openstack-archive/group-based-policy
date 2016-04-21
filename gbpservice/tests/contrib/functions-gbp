@@ -13,6 +13,7 @@ function prepare_gbp_devstack {
     sudo git checkout stable/mitaka
     sudo cp $CONTRIB_DIR/devstack/local.conf $TOP_DIR/local.conf
     sudo cp $CONTRIB_DIR/devstack/exercises/*.sh $TOP_DIR/exercises/
+    sudo rm -rf $TOP_DIR/exercises/fw_vm_lb.sh
     sudo cp $CONTRIB_DIR/devstack/lib/* $TOP_DIR/lib/
     sudo cp -r $CONTRIB_DIR/devstack/gbp-templates $TOP_DIR
     sudo sed -i 's/DEST=\/opt\/stack/DEST=\/opt\/stack\/new/g' $TOP_DIR/stackrc
