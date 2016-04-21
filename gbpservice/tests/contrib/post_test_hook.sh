@@ -34,6 +34,6 @@ python suite_non_admin_run.py upstream
 gbpfunc_non_admin_exit_code=$?
 
 # Prepare the log files for Jenkins to upload
-prepare_logs
+prepare_logs ERR
 
 exit $(($exercises_exit_code+$gbpfunc_admin_exit_code+$gbpfunc_non_admin_exit_code))
