@@ -1,0 +1,8 @@
+#!/bin/bash
+
+apt-get install -y --force-yes python-pecan
+apt-get install -y --force-yes oslo.serialization oslo.log python-yaml
+
+ls -lR /home/ubuntu/
+cd /home/ubuntu/reference_configurator/api/ &&  python setup.py develop
+
