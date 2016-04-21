@@ -1,8 +1,47 @@
 #!/bin/bash
-#
+
+NFPSERVICE_DIR=$DEST/gbp
+DISK_IMAGE_DIR=$DEST/gbp/gbpservice/tests/contrib
+TOP_DIR=$PWD
+
+NEUTRON_CONF_DIR=/etc/neutron
+NEUTRON_CONF=$NEUTRON_CONF_DIR/neutron.conf
+
+NFP_CONF_DIR=/etc/nfp
+echo "TOP-DIR-NFP : $PWD"
+
+function prepare_nfp_image_builder {
+    #setup_develop $NFPSERVICE_DIR
+    sudo -H -E pip install -r $DISK_IMAGE_DIR/diskimage-create/requirements.txt
+    sudo apt-get install -y --force-yes qemu-utils
+}
+
+function init_nfpgbpservice {
+    # Run GBP db migrations
+    gbp-db-manage --config-file $NEUTRON_CONF --config-file /$Q_PLUGIN_CONF_FILE upgrade head
+    iniset $NEUTRON_CONF DEFAULT policy_dirs $NFP_CONF_DIR
+}
+
+function install_nfpgbpservice {
+    git_clone $GBPSERVICE_REPO $NFPSERVICE_DIR $GBPSERVICE_BRANCH
+    mv $NFPSERVICE_DIR/test-requirements.txt $NFPSERVICE_DIR/_test-requirements.txt
+    setup_develop $NFPSERVICE_DIR
+    mv -f $NEUTRON_CONF_DIR/policy.json $NEUTRON_CONF_DIR/policy.json.original 2>/dev/null; true
+    cp -f $NFPSERVICE_DIR/etc/policy.json $NEUTRON_CONF_DIR/policy.json
+    mv $NFPSERVICE_DIR/_test-requirements.txt $NFPSERVICE_DIR/test-requirements.txt
+}
+
+function create_nfp_image {
+    TOP_DIR=$TOP_DIR
+    sudo python $DISK_IMAGE_DIR/diskimage-create/disk_image_create.py $DISK_IMAGE_DIR/diskimage-create/conf.json
+    BUILT_IMAGE_PATH=$(cat /tmp/nfp_image_path)
+    upload_image file://$BUILT_IMAGE_PATH $TOKEN
+
+    openstack --os-cloud=devstack-admin flavor create --ram 512 --disk 3 --vcpus 1 m1.nfp-tiny
+}
 
 function assign_user_role_credential {
-    TOP_DIR=$1
+    TOP_DIR=$TOP_DIR
     source $TOP_DIR/openrc admin admin
     #set -x
     serviceTenantID=`keystone tenant-list | grep "service" | awk '{print $2}'`
@@ -13,7 +52,7 @@ function assign_user_role_credential {
 }
 
 function namespace_delete {
-    TOP_DIR=$1
+    TOP_DIR=$TOP_DIR
     source $TOP_DIR/openrc neutron service
     #Deletion namespace
     NFP_P=`sudo ip netns | grep "nfp-proxy"`
@@ -40,7 +79,7 @@ function namespace_delete {
 }
 
 function namespace_create {
-    TOP_DIR=$1
+    TOP_DIR=$TOP_DIR
     #doing it in namespace_delete, so no need to do it again
     #source $1/openrc neutron service
     SERVICE_MGMT_NET="l2p_svc_management_ptg"
@@ -118,9 +157,9 @@ function namespace_create {
 }
 
 function create_nfp_gbp_resources {
-   TOP_DIR=$1
+   TOP_DIR=$TOP_DIR
    source $TOP_DIR/openrc neutron service
-   DISABLE_BUILD_IMAGE=True
+
    if [[ $DISABLE_BUILD_IMAGE = False ]]; then
        IMAGE_PATH=$(cat /tmp/nfp_image_path)
        IMAGE_NAME=`basename "$IMAGE_PATH"`
@@ -137,7 +176,7 @@ function create_nfp_gbp_resources {
 }
 
 function get_router_namespace {
-    TOP_DIR=$1
+    TOP_DIR=$TOP_DIR
     source $TOP_DIR/openrc neutron service
 
     GROUP="svc_management_ptg"
@@ -149,7 +188,7 @@ function get_router_namespace {
 }
 
 function copy_nfp_files_and_start_process {
-    TOP_DIR=$1
+    TOP_DIR=$TOP_DIR
     cd /opt/stack/gbp/gbpservice/nfp
     sudo cp -r  bin/nfp /usr/bin/
     sudo chmod +x /usr/bin/nfp
@@ -193,10 +232,4 @@ function copy_nfp_files_and_start_process {
     gbp-db-manage --config-file /etc/neutron/neutron.conf upgrade head
     sleep 2
     echo "Configuration success ... "
-}
-function nfp_setup {
-    assign_user_role_credential $1
-    create_nfp_gbp_resources $1
-    get_router_namespace $1
-    copy_nfp_files_and_start_process $1
 }
