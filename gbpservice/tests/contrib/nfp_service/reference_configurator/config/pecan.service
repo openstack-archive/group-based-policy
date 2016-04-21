@@ -1,0 +1,14 @@
+[Unit]
+Description=Pecan REST Server
+After=network.target auditd.service
+
+[Service]
+Type=forking
+Restart=always
+ExecStart=/usr/local/lib/python2.7/dist-packages/gbpservice/tests/contrib/nfp_service/reference_configurator/bin/nfp-pecan
+KillMode=process
+Restart=on-failure
+
+[Install]
+Alias=pecan.service
+
