@@ -24,7 +24,7 @@ TOP_DIR=$(cd $EXERCISE_DIR/..; pwd)
 source $TOP_DIR/openrc neutron service
 
 # Service chain node and spec creation
-gbp servicechain-node-create --service-profile lb_profile --template-file $EXERCISE_DIR/nfp-templates/haproxy.template LB-NODE
+gbp servicechain-node-create --service-profile base_mode_lb --template-file $TOP_DIR/nfp-templates/haproxy.template LB-NODE
 gbp servicechain-spec-create --nodes "LB-NODE" lb_chainspec
 
 # REDIRECT action, classifier, rule and rule-set
