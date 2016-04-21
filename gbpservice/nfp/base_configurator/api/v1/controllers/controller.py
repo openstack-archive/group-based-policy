@@ -14,10 +14,11 @@ import oslo_serialization.jsonutils as jsonutils
 
 from oslo_log import log as logging
 import pecan
-from pecan import rest
 import requests
 import subprocess
 import time
+
+from gbpservice.nfp.base_configurator.api.base_controller import BaseController
 
 LOG = logging.getLogger(__name__)
 TOPIC = 'configurator'
@@ -37,7 +38,7 @@ notifications = []
 cache_ips = set()
 
 
-class Controller(rest.RestController):
+class Controller(BaseController):
 
     def __init__(self, method_name):
         try:
@@ -64,8 +65,8 @@ class Controller(rest.RestController):
         response = {'info': {'service_type': service_type,
                              'context': context},
                     'notification': [{
-                          'resource': resource,
-                          'data': data}]
+                        'resource': resource,
+                        'data': data}]
                     }
 
         notifications.append(response)
