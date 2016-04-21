@@ -629,12 +629,19 @@ class NFPNodeDriver(driver_base.NodeDriverBase):
         service_flavor_str = context.current_profile['service_flavor']
         service_details = self._parse_service_flavor_string(service_flavor_str)
         service_targets = context.get_service_targets()
+        LOG.info(_LI("context.current %(cont)s "), {'cont': context.current})
+        LOG.info(_LI("context.original %(cont)s "), {'cont': context.original})
+        LOG.info(_LI("1. service_targets = %(service_target)s"),
+                {'service_target': service_targets})
         # Bug with NCP. For create, its not setting service targets in context
         if not service_targets:
             service_targets = context.get_service_targets(update=True)
+            LOG.info(_LI("2. service_targets = %(service_target)s"),
+                    {'service_target': service_targets})
 
         if not service_targets:
-            return {}
+            raise Exception("Service Targets are not created for the Node")
+            #return {}
 
         for service_target in service_targets:
             if service_target.relationship == nfp_constants.CONSUMER:
