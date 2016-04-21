@@ -1,0 +1,4 @@
+pep8>=1.5.7
+pytz
+diskimage-builder>=1.15.0
+dib-utils>=0.0.8
