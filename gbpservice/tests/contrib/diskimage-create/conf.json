@@ -1,0 +1,13 @@
+{
+    "dib":
+        {
+            "image_size_in_GB": 3,
+            "ram_size": 512,
+            "cache_path": "~/.cache/image-create",
+            "elements": ["nfp-reference-configurator"]
+        },
+    "ubuntu_release":
+        {
+            "release": "wily"
+        }
+}
