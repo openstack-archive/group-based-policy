@@ -72,9 +72,10 @@ class Controller(BaseController):
         notifications.append(response)
 
     def _verify_vm_reachability(self, vm_ip, vm_port):
+        #return True
         reachable = False
         command = 'nc ' + vm_ip + ' ' + vm_port + ' -z'
-        for _ in range(self.max_retries):
+        for _ in range(60): #self.max_retries):
             try:
                 subprocess.check_output(command, stderr=subprocess.STDOUT,
                                         shell=True)
@@ -162,6 +163,7 @@ class Controller(BaseController):
                 LOG.info(msg)
                 device_ip = context['device_ip']
                 ip = str(device_ip)
+                #time.sleep(50)
                 is_vm_reachable = self._verify_vm_reachability(ip,
                                                                self.vm_port)
                 if is_vm_reachable:
