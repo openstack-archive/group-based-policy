@@ -1,0 +1,47 @@
+# Make sure the plugin name in local.conf is "gbp", as in: enable_plugin gbp <remote> <branch>
+source $DEST/gbp/devstack/lib/gbp
+ENABLE_NFP=${ENABLE_NFP:-False}
+[[ $ENABLE_NFP = True ]] && source $DEST/gbp/devstack/lib/nfp
+[[ $ENABLE_NFP = True ]] && DISABLE_BUILD_IMAGE=${DISABLE_BUILD_IMAGE:-False}
+
+# Enable necessary Neutron plugins, including group_policy and ncp
+Q_SERVICE_PLUGIN_CLASSES=neutron.services.l3_router.l3_router_plugin.L3RouterPlugin,group_policy,ncp
+
+# Preferred git mirror
+GIT_BASE=${GIT_BASE:-https://git.openstack.org}
+
+# Git repositories needed to deploy GBP:
+GBPSERVICE_REPO=${GBPSERVICE_REPO:-${GIT_BASE}/openstack/group-based-policy.git}
+GBPSERVICE_BRANCH=${GBPSERVICE_BRANCH:-stable/mitaka}
+GBPCLIENT_REPO=${GBPCLIENT_REPO:-${GIT_BASE}/openstack/python-group-based-policy-client.git}
+GBPCLIENT_BRANCH=${GBPCLIENT_BRANCH:-stable/mitaka}
+GBPUI_REPO=${GBPUI_REPO:-${GIT_BASE}/openstack/group-based-policy-ui.git}
+GBPUI_BRANCH=${GBPUI_BRANCH:-stable/mitaka}
+GBPHEAT_REPO=${GBPHEAT_REPO:-${GIT_BASE}/openstack/group-based-policy-automation.git}
+GBPHEAT_BRANCH=${GBPHEAT_BRANCH:-stable/mitaka}
+AIM_BRANCH=${AIM_BRANCH:-master}
+APICML2_BRANCH=${APICML2_BRANCH:-stable/mitaka}
+
+# Enable necessary services, including group-policy (and disable others)
+disable_service n-net
+enable_service n-novnc
+enable_service q-svc
+enable_service q-agt
+enable_service q-dhcp
+enable_service q-l3
+enable_service q-fwaas
+enable_service q-lbaas
+enable_service q-meta
+enable_service neutron
+enable_service group-policy
+disable_service tempest
+ENABLED_SERVICES+=,heat,h-api,h-api-cfn,h-api-cw,h-eng
+# NFP services
+enable_service nfp_orchestrator,nfp_proxy,nfp_proxy_agent,nfp_base_configurator
+
+# Deployment preferences
+SYSLOG=${SYSLOG:-True}
+
+# Skip exercises by default (can be overridden in local.conf)
+SKIP_EXERCISES=${SKIP_EXERCISES:-volumes,trove,swift,sahara,euca,bundle,boot_from_volume,aggregates,zaqar,client-env,neutron-adv-test,floating_ips,client-args,horizon,sec_groups,gbp_servicechain,gbp_heat}
+
