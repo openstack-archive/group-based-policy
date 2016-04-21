@@ -1,0 +1,14 @@
+[Unit]
+Description=Pecan REST Server
+After=network.target auditd.service
+
+[Service]
+Type=forking
+Restart=always
+ExecStart=/home/ubuntu/reference_configurator/bin/nfp-pecan
+KillMode=process
+Restart=on-failure
+
+[Install]
+Alias=pecan.service
+
