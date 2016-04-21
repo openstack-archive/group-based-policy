@@ -12,6 +12,7 @@ function prepare_gbp_devstack {
     cd $TOP_DIR
     sudo git checkout stable/mitaka
     sudo cp $CONTRIB_DIR/devstack/local.conf $TOP_DIR/local.conf
+    # remove fw_vm_lb later
     sudo cp $CONTRIB_DIR/devstack/exercises/*.sh $TOP_DIR/exercises/
     sudo cp $CONTRIB_DIR/devstack/lib/* $TOP_DIR/lib/
     sudo cp -r $CONTRIB_DIR/devstack/gbp-templates $TOP_DIR
