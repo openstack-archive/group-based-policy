@@ -42,8 +42,8 @@ function confirm_server_active {
     fi
 }
 
-gbp service-profile-create --vendor heat_based_node_driver --insertion-mode l3 --servicetype FIREWALL fw-profile
-gbp service-profile-create --vendor heat_based_node_driver --insertion-mode l3 --servicetype LOADBALANCER lb-profile
+gbp service-profile-create --service-flavor service_vendor=vyos,device_type=None --vendor NFP --insertion-mode l3 --servicetype FIREWALL fw-profile
+gbp service-profile-create --service-flavor service_vendor=haproxy,device_type=None --vendor NFP --insertion-mode l3 --servicetype LOADBALANCER lb-profile
 
 gbp  servicechain-node-create loadbalancer-node --template-file $TOP_DIR/gbp-templates/firewall-lb-servicechain/lb.template --service-profile lb-profile
 gbp  servicechain-node-create firewall-node --template-file $TOP_DIR/gbp-templates/firewall-lb-servicechain/fw.template  --service-profile fw-profile
