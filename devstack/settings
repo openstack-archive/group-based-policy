@@ -1,5 +1,8 @@
 # Make sure the plugin name in local.conf is "gbp", as in: enable_plugin gbp <remote> <branch>
 source $DEST/gbp/devstack/lib/gbp
+ENABLE_NFP=${ENABLE_NFP:-False}
+[[ $ENABLE_NFP = True ]] && source $DEST/gbp/devstack/lib/nfp
+[[ $ENABLE_NFP = True ]] && DISABLE_BUILD_IMAGE=${DISABLE_BUILD_IMAGE:-False}
 
 # Enable necessary Neutron plugins, including group_policy and ncp
 Q_SERVICE_PLUGIN_CLASSES=neutron.services.l3_router.l3_router_plugin.L3RouterPlugin,group_policy,ncp
@@ -33,6 +36,8 @@ enable_service neutron
 enable_service group-policy
 disable_service tempest
 ENABLED_SERVICES+=,heat,h-api,h-api-cfn,h-api-cw,h-eng
+# NFP services
+enable_service nfp_orchestrator,nfp_proxy,nfp_proxy_agent,nfp_base_configurator
 
 # Deployment preferences
 SYSLOG=${SYSLOG:-True}
