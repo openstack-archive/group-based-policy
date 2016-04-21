@@ -39,7 +39,7 @@
                 "lb_method": "ROUND_ROBIN",
                 "monitors": [{"Ref":"HttpHM"}],
                 "name": "Haproxy pool",
-		"provider": "loadbalancer",
+		"provider": "haproxy",
                 "protocol": "HTTP",
                 "subnet_id": {"Ref":"Subnet"},
                 "vip": {
