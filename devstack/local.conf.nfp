@@ -1,0 +1,25 @@
+[[local|localrc]]
+DEST=/opt/stack
+
+# Logging
+LOGFILE=$DEST/logs/stack.sh.log
+VERBOSE=True
+LOG_COLOR=False
+SCREEN_LOGDIR=$DEST/logs/screen
+
+# Credentials
+ADMIN_PASSWORD=mysecret
+MYSQL_PASSWORD=mysqlsecret
+RABBIT_PASSWORD=myrabbitsecret
+SERVICE_PASSWORD=$ADMIN_PASSWORD
+SERVICE_TOKEN=admin
+HOST_IP=
+
+GBPSERVICE_BRANCH=refs/changes/45/309145/103
+enable_plugin gbp https://git.openstack.org/openstack/group-based-policy $GBPSERVICE_BRANCH
+ENABLE_NFP=True
+
+#e.g IMAGE_URLS+=http://192.168.6.1/images/cirros-0.3.0-x86_64-disk.img #image extenson should be .img OR img.gz
+#IMAGE_URLS+=
+
+DISABLE_BUILD_IMAGE=False
