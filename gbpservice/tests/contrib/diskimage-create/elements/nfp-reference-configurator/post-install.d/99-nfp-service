@@ -1,0 +1,8 @@
+#!/bin/bash
+
+apt-get install -y --force-yes python-pecan
+apt-get install -y --force-yes oslo.serialization oslo.log python-yaml
+
+ls -lR /home/ubuntu/
+cd /usr/local/lib/python2.7/dist-packages/gbpservice/nfp/pecan/api &&  python setup.py develop
+
