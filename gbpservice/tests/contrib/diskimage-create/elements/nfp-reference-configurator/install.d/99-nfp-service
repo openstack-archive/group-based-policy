@@ -1,0 +1,36 @@
+#! /bin/bash
+set -eu
+
+# copy the reference_configurator and pecan folders to VM at 
+# /usr/local/lib/python2.7/dist-packages/
+
+cd /usr/local/lib/python2.7/dist-packages/
+
+service_path='gbpservice/tests/contrib/nfp_service'
+pecan_path='gbpservice/nfp'
+mkdir -p $service_path
+mkdir -p $pecan_path
+
+find gbpservice/ -type d -exec touch {}/__init__.py \;
+mv /root/reference_configurator $service_path/
+mv /root/pecan $pecan_path/
+
+cd $service_path
+PWD=`pwd`
+ls -lR $PWD/
+
+# copy the pecan.service file
+cp -L $PWD/reference_configurator/config/pecan.service /etc/systemd/system/pecan.service
+chmod 777 /etc/systemd/system/pecan.service
+ls -l /etc/systemd/system/pecan.service
+
+cp -L $PWD/reference_configurator/config/pecan.service /etc/systemd/system/multi-user.target.wants/pecan.service
+chmod 755 /etc/systemd/system/multi-user.target.wants/pecan.service
+ls -l /etc/systemd/system/multi-user.target.wants/pecan.service
+
+# make pecan service to launch during each system boot
+cp -rL $PWD/reference_configurator/bin/nfp-pecan /usr/bin/nfp-pecan
+chmod 777 /usr/bin/nfp-pecan
+ls -l /usr/bin/nfp-pecan
+chmod 777 $PWD/reference_configurator/bin/nfp-pecan
+ls -l $PWD/reference_configurator/bin/nfp-pecan
