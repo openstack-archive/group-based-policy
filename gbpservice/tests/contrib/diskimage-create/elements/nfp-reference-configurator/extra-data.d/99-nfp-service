@@ -1,0 +1,7 @@
+#! /bin/bash
+set -eu
+
+# copy the reference_configurator folder to VM at /root/
+cp -rL ${SERVICE_GIT_PATH}/reference_configurator ${TMP_MOUNT_PATH}/root/
+ls -lR ${TMP_MOUNT_PATH}/root/
+
