@@ -1,0 +1,5 @@
+#! /bin/bash
+set -eu
+
+ssh-keygen -t rsa -N "" -f ${SSH_RSS_KEY}
+sudo cat ${SSH_RSS_KEY}.pub
