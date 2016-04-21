@@ -1,0 +1,4 @@
+#!/bin/sh
+script='/home/ubuntu/reference_configurator/api/config.py'
+pecan serve $script &
+
