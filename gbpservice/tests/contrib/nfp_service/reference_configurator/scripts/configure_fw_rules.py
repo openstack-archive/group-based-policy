@@ -84,6 +84,12 @@ class ConfigureIPtables(object):
                 LOG.error(_LE("Unable to add rule to chain due to: %(output)s")
                           % {'output': output})
             count = count + 1
+        ps = Popen(["iptables", "-A", "testchain", "-m", "state", "--state",
+                    "ESTABLISHED,RELATED", "-j", "ACCEPT"], stdout=PIPE)
+        output = ps.communicate()[0]
+        if output:
+            LOG.error(_LE("Unable to add rule to chain due to: %(output)s")
+                      % {'output': output})
 
 
 def main():
