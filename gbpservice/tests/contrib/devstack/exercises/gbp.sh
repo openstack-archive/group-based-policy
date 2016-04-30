@@ -115,6 +115,14 @@ gbp policy-target-delete web-pt-1
 gbp policy-target-delete client-pt-1
 gbp policy-target-delete client-pt-2
 
+# The following tests fixed IP assignment for PTs
+WEB_SUBNET=$(gbp ptg-show web | grep subnets | awk '{print $4}')
+WEB_GW_IP=$(neutron subnet-show $WEB_SUBNET | grep gateway_ip | awk '{print $4}')
+FIXED_IP="${WEB_GW_IP}0"
+gbp pt-create --policy-target-group web --fixed-ip subnet_id=$WEB_SUBNET,ip_address=$FIXED_IP pt-fixed-ip
+neutron port-show pt_pt-fixed-ip
+gbp pt-delete pt-fixed-ip
+
 gbp group-delete  web
 gbp group-delete  client-1
 gbp group-delete  client-2
