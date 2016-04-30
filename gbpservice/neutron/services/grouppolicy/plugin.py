@@ -353,8 +353,18 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
         else:
             return result
 
+    def _add_fixed_ips_to_port_attributes(self, policy_target):
+        if 'fixed_ips' in policy_target['policy_target'] and (
+                policy_target['policy_target']['fixed_ips'] is not (
+                    nattr.ATTR_NOT_SPECIFIED)):
+            policy_target['policy_target'].update(
+                    {'port_attributes': policy_target[
+                        'policy_target']['fixed_ips']})
+
+
     @log.log_method_call
     def create_policy_target(self, context, policy_target):
+        self._add_fixed_ips_to_port_attributes(policy_target)
         session = context.session
         with session.begin(subtransactions=True):
             result = super(GroupPolicyPlugin,
@@ -384,6 +394,7 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
 
     @log.log_method_call
     def update_policy_target(self, context, policy_target_id, policy_target):
+        self._add_fixed_ips_to_port_attributes(policy_target)
         session = context.session
         with session.begin(subtransactions=True):
             original_policy_target = self.get_policy_target(context,
