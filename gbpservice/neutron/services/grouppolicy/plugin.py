@@ -355,6 +355,10 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
 
     @log.log_method_call
     def create_policy_target(self, context, policy_target):
+        if 'fixed_ips' in policy_target['policy_target']:
+            policy_target['policy_target'].update(
+                    {'port_attributes': policy_target[
+                        'policy_target']['fixed_ips']})
         session = context.session
         with session.begin(subtransactions=True):
             result = super(GroupPolicyPlugin,
@@ -384,6 +388,10 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
 
     @log.log_method_call
     def update_policy_target(self, context, policy_target_id, policy_target):
+        if 'fixed_ips' in policy_target['policy_target']:
+            policy_target['policy_target'].update(
+                    {'port_attributes': policy_target[
+                        'policy_target']['fixed_ips']})
         session = context.session
         with session.begin(subtransactions=True):
             original_policy_target = self.get_policy_target(context,

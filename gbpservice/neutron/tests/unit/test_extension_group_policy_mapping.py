@@ -56,11 +56,22 @@ class GroupPolicyMappingExtTestCase(tgp.GroupPolicyExtensionTestCase):
     def get_create_policy_target_default_attrs(self):
         attrs = cm.get_create_policy_target_default_attrs()
         attrs.update({'port_id': None})
+        attrs.update({'fixed_ips': []})
         return attrs
 
     def get_create_policy_target_attrs(self):
         attrs = cm.get_create_policy_target_attrs()
         attrs.update({'port_id': tgp._uuid()})
+        fixed_ips = [{'subnet_id': '00000000-ffff-ffff-ffff-000000000000',
+                      'ip_address': '11.1.1.1'}]
+        attrs.update({'fixed_ips': fixed_ips})
+        return attrs
+
+    def get_update_policy_target_attrs(self):
+        attrs = cm.get_update_policy_target_attrs()
+        fixed_ips = [{'subnet_id': '00000000-ffff-ffff-ffff-000000000000',
+                      'ip_address': '11.1.1.1'}]
+        attrs.update({'fixed_ips': fixed_ips})
         return attrs
 
     def get_create_policy_target_group_default_attrs(self):
