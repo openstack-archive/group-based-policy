@@ -583,6 +583,29 @@ class TestPolicyTarget(ResourceMappingTestCase, TestClusterIdMixin):
         res = req.get_response(self.api)
         self.assertEqual(webob.exc.HTTPNotFound.code, res.status_int)
 
+    def test_create_policy_target_with_fixed_ip(self):
+        l3p = self.create_l3_policy(name="l3p1", ip_pool='10.0.0.0/8')
+        l3p_id = l3p['l3_policy']['id']
+        l2p = self.create_l2_policy(name="l2p1", l3_policy_id=l3p_id)
+        l2p_id = l2p['l2_policy']['id']
+        network_id = l2p['l2_policy']['network_id']
+        req = self.new_show_request('networks', network_id)
+        network = self.deserialize(self.fmt, req.get_response(self.api))
+        with self.subnet(network=network, cidr='10.10.1.0/24') as subnet1:
+            fixed_ips = [{'subnet_id': subnet1['subnet']['id'],
+                          'ip_address': '10.10.1.5'}]
+            ptg = self.create_policy_target_group(
+                l2_policy_id=l2p_id,
+                subnets=[subnet1['subnet']['id']])['policy_target_group']
+            pt = self.create_policy_target(
+                policy_target_group_id=ptg['id'],
+                fixed_ips=fixed_ips)['policy_target']
+            port = self._get_object('ports', pt['port_id'],
+                                    self.api)['port']
+            self.assertEqual(1, len(port['fixed_ips']))
+            ip = port['fixed_ips'][0]['ip_address']
+            self.assertEqual('10.10.1.5', ip)
+
     def test_explicit_port_lifecycle(self):
         # Create policy_target group.
         ptg = self.create_policy_target_group(name="ptg1")

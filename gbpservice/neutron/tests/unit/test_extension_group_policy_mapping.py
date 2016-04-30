@@ -10,6 +10,9 @@
 #  License for the specific language governing permissions and limitations
 #  under the License.
 
+import copy
+
+from neutron.api.v2 import attributes as nattr
 from neutron.plugins.common import constants
 
 from gbpservice.neutron.extensions import group_policy as gp
@@ -61,6 +64,16 @@ class GroupPolicyMappingExtTestCase(tgp.GroupPolicyExtensionTestCase):
     def get_create_policy_target_attrs(self):
         attrs = cm.get_create_policy_target_attrs()
         attrs.update({'port_id': tgp._uuid()})
+        fixed_ips = [{'subnet_id': '00000000-ffff-ffff-ffff-000000000000',
+                      'ip_address': '11.1.1.1'}]
+        attrs.update({'fixed_ips': fixed_ips})
+        return attrs
+
+    def get_update_policy_target_attrs(self):
+        attrs = cm.get_update_policy_target_attrs()
+        fixed_ips = [{'subnet_id': '00000000-ffff-ffff-ffff-000000000000',
+                      'ip_address': '11.1.1.1'}]
+        attrs.update({'fixed_ips': fixed_ips})
         return attrs
 
     def get_create_policy_target_group_default_attrs(self):
@@ -112,3 +125,16 @@ class GroupPolicyMappingExtTestCase(tgp.GroupPolicyExtensionTestCase):
         attrs = cm.get_create_external_segment_attrs()
         attrs.update({'subnet_id': tgp._uuid()})
         return attrs
+
+    def test_create_policy_target_with_defaults(self):
+        policy_target_id = tgp._uuid()
+        data = {'policy_target': {'policy_target_group_id': tgp._uuid(),
+                                  'tenant_id': tgp._uuid()}}
+        default_attrs = self.get_create_policy_target_default_attrs()
+        default_data = copy.copy(data)
+        default_data['policy_target'].update(default_attrs)
+        expected_value = dict(default_data['policy_target'])
+        expected_value['id'] = policy_target_id
+        expected_value['fixed_ips'] = nattr.ATTR_NOT_SPECIFIED
+
+        self._test_create_policy_target(data, expected_value, default_data)
