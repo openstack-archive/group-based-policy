@@ -14,6 +14,7 @@ import copy
 import re
 
 import mock
+from neutron.api.v2 import attributes as nattr
 from neutron.openstack.common import uuidutils
 from neutron.plugins.common import constants
 from neutron.tests import base
@@ -83,12 +84,19 @@ class GroupPolicyExtensionTestCase(test_api_v2_extension.ExtensionTestCase):
         res = self.api.post(_get_path(POLICY_TARGETS_URI, fmt=self.fmt),
                             self.serialize(data),
                             content_type='application/%s' % self.fmt)
-        self.instance.create_policy_target.assert_called_once_with(
-            mock.ANY, policy_target=default_data)
         self.assertEqual(exc.HTTPCreated.code, res.status_int)
         res = self.deserialize(res)
         self.assertIn('policy_target', res)
+        if 'fixed_ips' in expected_value and (
+                str(res['policy_target']['fixed_ips']) ==
+                str(nattr.ATTR_NOT_SPECIFIED)):
+            default_data['policy_target']['fixed_ips'] = (
+                    nattr.ATTR_NOT_SPECIFIED)
+            expected_value['fixed_ips'] = res['policy_target']['fixed_ips']
+
         self.assertEqual(expected_value, res['policy_target'])
+        self.instance.create_policy_target.assert_called_once_with(
+            mock.ANY, policy_target=default_data)
 
     def test_create_policy_target_with_defaults(self):
         policy_target_id = _uuid()
