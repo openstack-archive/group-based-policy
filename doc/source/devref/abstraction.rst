@@ -382,6 +382,12 @@ The following defines the mapping to Neutron resources using attribute extension
         'port_id': {'allow_post': True, 'allow_put': False,
                     'validate': {'type:uuid_or_none': None},
                     'is_visible': True, 'default': None},
+        'fixed_ips': {'allow_post': True, 'allow_put': True,
+                      'default': attr.ATTR_NOT_SPECIFIED,
+                      'convert_list_to': attr.convert_kvp_list_to_dict,
+                      'validate': {'type:fixed_ips': None},
+                      'enforce_policy': True,
+                      'is_visible': True},
     },
     gp.POLICY_TARGET_GROUPS: {
         'subnets': {'allow_post': True, 'allow_put': True,

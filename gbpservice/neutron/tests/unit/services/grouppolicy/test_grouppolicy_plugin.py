@@ -972,4 +972,5 @@ class TestGroupPolicyPluginGroupResources(
 
 class TestGroupPolicyPluginMappedGroupResourceAttrs(
         GroupPolicyPluginTestCase, tgpmdb.TestMappedGroupResourceAttrs):
+
     pass
