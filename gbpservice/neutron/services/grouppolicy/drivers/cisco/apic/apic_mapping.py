@@ -19,7 +19,10 @@ from apic_ml2.neutron.db import port_ha_ipaddress_binding as ha_ip_db
 from apic_ml2.neutron.plugins.ml2.drivers.cisco.apic import apic_model
 from apic_ml2.neutron.plugins.ml2.drivers.cisco.apic import config  # noqa
 from apicapi import apic_manager
-from keystoneclient.v2_0 import client as keyclient
+from apicapi import apic_mapper
+from keystoneclient.auth.identity.generic import password as keypassword
+from keystoneclient import client as keyclient
+from keystoneclient import session as keysession
 from neutron._i18n import _LE
 from neutron._i18n import _LI
 from neutron._i18n import _LW
@@ -214,13 +217,25 @@ class ApicMappingDriver(api.ResourceMappingDriver,
             }
             apic_system_id = cfg.CONF.apic_system_id
             keyclient_param = keyclient if client else None
-            keystone_authtoken = (cfg.CONF.keystone_authtoken if client else
-                                  None)
+            keystone_authtoken = None
+            session = None
+            if client:
+                keystone_authtoken = cfg.CONF.keystone_authtoken
+                pass_params = (
+                    apic_mapper.APICNameMapper.get_key_password_params(
+                        keystone_authtoken))
+                admin_auth = keypassword.Password(
+                    auth_url=pass_params[0],
+                    username=pass_params[1], password=pass_params[2],
+                    tenant_name=pass_params[3],
+                    user_domain_id='Default', project_domain_id='Default')
+                session = keysession.Session(auth=admin_auth)
             ApicMappingDriver.manager = apic_manager.APICManager(
                 apic_model.ApicDbModel(), logging, network_config, apic_config,
                 keyclient_param, keystone_authtoken, apic_system_id,
                 default_apic_model=('apic_ml2.neutron.plugins.ml2.drivers.'
-                                    'cisco.apic.apic_model'))
+                                    'cisco.apic.apic_model'),
+                keysession=session)
             ApicMappingDriver.manager.ensure_infra_created_on_apic()
             ApicMappingDriver.manager.ensure_bgp_pod_policy_created_on_apic()
         return ApicMappingDriver.manager
