@@ -84,15 +84,17 @@ class ApicMappingTestCase(
         mocked.ControllerMixin, mocked.ConfigMixin):
 
     def setUp(self, sc_plugin=None, nat_enabled=True,
-              pre_existing_l3out=False):
-        self.agent_conf = AGENT_CONF
+              pre_existing_l3out=False, default_agent_conf=True,
+              ml2_options=None):
+        if default_agent_conf:
+            self.agent_conf = AGENT_CONF
         cfg.CONF.register_opts(sg_cfg.security_group_opts, 'SECURITYGROUP')
         config.cfg.CONF.set_override('enable_security_group', False,
                                      group='SECURITYGROUP')
         n_rpc.create_connection = mock.Mock()
         amap.ApicMappingDriver.get_apic_manager = mock.Mock()
         self.set_up_mocks()
-        ml2_opts = {
+        ml2_opts = ml2_options or {
             'mechanism_drivers': ['apic_gbp'],
             'type_drivers': ['opflex'],
             'tenant_network_types': ['opflex']
@@ -141,6 +143,8 @@ class ApicMappingTestCase(
         self.common_tenant = amap.apic_manager.TENANT_COMMON
         self.nat_enabled = nat_enabled
         self.pre_l3out = pre_existing_l3out
+        self.non_apic_network = False
+
         if self.pre_l3out:
             self.orig_query_l3out_info = self.driver._query_l3out_info
             self.driver._query_l3out_info = mock.Mock()
@@ -199,11 +203,42 @@ class ApicMappingTestCase(
             port_id, host, data=data)
 
 
+class ApicMappingVlanTestCase(ApicMappingTestCase):
+
+    def setUp(self, **kwargs):
+        config.cfg.CONF.set_override(
+            'network_vlan_ranges', ['physnet1:100:200'], group='ml2_type_vlan')
+        kwargs['ml2_options'] = {
+            'mechanism_drivers': ['apic_gbp', 'openvswitch'],
+            'type_drivers': ['vlan'],
+            'tenant_network_types': ['vlan']
+        }
+        kwargs['default_agent_conf'] = False
+        super(ApicMappingVlanTestCase, self).setUp(**kwargs)
+        self.non_apic_network = True
+
+    def _get_ptg_shadow_net(self, ptg):
+        net = self._list_resource('networks', self.api,
+            tenant_id=ptg['tenant_id'],
+            name=self.driver._get_ptg_shadow_network_name(ptg))
+        net = net['networks']
+        if net:
+            return net[0]
+
+    def _get_ptg_shadow_subnet(self, ptg):
+        shadow_net = self._get_ptg_shadow_net(ptg)
+        if shadow_net:
+            return shadow_net['subnets'][0]
+
+
 class TestPolicyTarget(ApicMappingTestCase):
 
     def test_policy_target_port_deleted_on_apic(self):
         ptg = self.create_policy_target_group()['policy_target_group']
-        subnet = self._get_object('subnets', ptg['subnets'][0], self.api)
+        subnet = self._get_object('subnets',
+            self._get_ptg_shadow_subnet(ptg) if self.non_apic_network
+                else ptg['subnets'][0],
+            self.api)
         with self.port(subnet=subnet) as port:
             self._bind_port_to_host(port['port']['id'], 'h1')
             pt = self.create_policy_target(
@@ -215,7 +250,10 @@ class TestPolicyTarget(ApicMappingTestCase):
 
     def test_policy_target_delete_no_port(self):
         ptg = self.create_policy_target_group()['policy_target_group']
-        subnet = self._get_object('subnets', ptg['subnets'][0], self.api)
+        subnet = self._get_object('subnets',
+            self._get_ptg_shadow_subnet(ptg) if self.non_apic_network
+                else ptg['subnets'][0],
+            self.api)
         with self.port(subnet=subnet) as port:
             self._bind_port_to_host(port['port']['id'], 'h1')
             pt = self.create_policy_target(
@@ -237,7 +275,10 @@ class TestPolicyTarget(ApicMappingTestCase):
         # No notification needed
         self.assertFalse(self.driver.notifier.port_update.called)
         self.driver.notifier.port_update.reset_mock()
-        subnet = self._get_object('subnets', ptg['subnets'][0], self.api)
+        subnet = self._get_object('subnets',
+            self._get_ptg_shadow_subnet(ptg) if self.non_apic_network
+                else ptg['subnets'][0],
+            self.api)
         with self.port(subnet=subnet) as port:
             # Create EP with bound port
             port = self._bind_port_to_host(port['port']['id'], 'h1')
@@ -293,7 +334,9 @@ class TestPolicyTarget(ApicMappingTestCase):
         self.assertEqual('someid', mapping['vm-name'])
         self.assertTrue(mapping['enable_dhcp_optimization'])
         self.assertEqual(1, len(mapping['subnets']))
-        self.assertEqual(ptg['subnets'][0], mapping['subnets'][0]['id'])
+        subnet = self._get_object('subnets', ptg['subnets'][0], self.api)
+        self.assertEqual(subnet['subnet']['cidr'],
+                         mapping['subnets'][0]['cidr'])
         self.assertEqual(1, len(mapping['floating_ip']))
         fip = mapping['floating_ip'][0]
         self.assertEqual(pt1['port_id'], fip['port_id'])
@@ -373,6 +416,9 @@ class TestPolicyTarget(ApicMappingTestCase):
                                     l3_policy_id=l3p['id'])['l2_policy']
         ptg = self.create_policy_target_group(
             name="ptg1", l2_policy_id=l2p['id'])['policy_target_group']
+        net_id = (self._get_ptg_shadow_net(ptg)['id']
+                  if self.non_apic_network else l2p['network_id'])
+
         pt1 = self.create_policy_target(
             policy_target_group_id=ptg['id'])['policy_target']
         pt2 = self.create_policy_target(
@@ -387,7 +433,7 @@ class TestPolicyTarget(ApicMappingTestCase):
         self.driver.ip_address_owner_update(context.get_admin_context(),
             ip_owner_info=ip_owner_info, host='h1')
         obj = self.driver.ha_ip_handler.get_port_for_ha_ipaddress(
-            '1.2.3.4', l2p['network_id'])
+            '1.2.3.4', net_id)
         self.assertEqual(pt1['port_id'], obj['port_id'])
         self.driver._notify_port_update.assert_called_with(mock.ANY,
             pt1['port_id'])
@@ -398,7 +444,7 @@ class TestPolicyTarget(ApicMappingTestCase):
         self.driver.ip_address_owner_update(context.get_admin_context(),
             ip_owner_info=ip_owner_info, host='h2')
         obj = self.driver.ha_ip_handler.get_port_for_ha_ipaddress(
-            '1.2.3.4', l2p['network_id'])
+            '1.2.3.4', net_id)
         self.assertEqual(pt2['port_id'], obj['port_id'])
         exp_calls = [
             mock.call(mock.ANY, pt1['port_id']),
@@ -421,6 +467,12 @@ class TestPolicyTarget(ApicMappingTestCase):
                                self.api)
         with self.port(subnet=sub, device_owner='network:dhcp',
                        tenant_id='onetenant') as dhcp:
+            if self.non_apic_network:
+                shadow_sub = self._get_object('subnets',
+                        self._get_ptg_shadow_subnet(ptg), self.api)
+                with self.port(subnet=shadow_sub, tenant_id='onetenant',
+                               device_owner='network:dhcp'):
+                    pass
             dhcp = dhcp['port']
             details = self.driver.get_gbp_details(
                 context.get_admin_context(),
@@ -471,6 +523,12 @@ class TestPolicyTarget(ApicMappingTestCase):
 
         with self.port(subnet=sub, device_owner='network:dhcp',
                        tenant_id='onetenant') as dhcp:
+            if self.non_apic_network:
+                shadow_sub = self._get_object('subnets',
+                        self._get_ptg_shadow_subnet(ptg), self.api)
+                with self.port(subnet=shadow_sub, tenant_id='onetenant',
+                               device_owner='network:dhcp'):
+                    pass
             dhcp = dhcp['port']
             details = self.driver.get_gbp_details(
                 context.get_admin_context(),
@@ -560,6 +618,13 @@ class TestPolicyTarget(ApicMappingTestCase):
 
         with self.port(subnet=sub, device_owner='network:dhcp',
                        tenant_id='onetenant') as dhcp:
+            if self.non_apic_network:
+                shadow_sub = self._get_object('subnets',
+                        self._get_ptg_shadow_subnet(ptg), self.api)
+                with self.port(subnet=shadow_sub, tenant_id='onetenant',
+                               device_owner='network:dhcp'):
+                    pass
+
             dhcp = dhcp['port']
             details = self.driver.get_gbp_details(
                 context.get_admin_context(),
@@ -665,18 +730,21 @@ class TestPolicyTarget(ApicMappingTestCase):
     def test_explicit_port(self):
         with self.network() as net:
             with self.subnet(network=net) as sub:
+                l2p = self.create_l2_policy(
+                    network_id=net['network']['id'])['l2_policy']
+                ptg = self.create_policy_target_group(
+                        l2_policy_id=l2p['id'])['policy_target_group']
+                if self.non_apic_network:
+                    sub = self._get_object('subnets',
+                        self._get_ptg_shadow_subnet(ptg), self.api)
                 with self.port(subnet=sub) as port:
                     self._bind_port_to_host(port['port']['id'], 'h1')
-                    l2p = self.create_l2_policy(
-                        network_id=net['network']['id'])['l2_policy']
-                    ptg = self.create_policy_target_group(
-                        l2_policy_id=l2p['id'])['policy_target_group']
                     self.create_policy_target(
                         port_id=port['port']['id'],
                         policy_target_group_id=ptg['id'])
                     self.assertTrue(self.driver.notifier.port_update.called)
 
-    def test_port_notified_on_changed_ptg(self):
+    def test_port_update_changed_ptg(self):
         ptg = self.create_policy_target_group()['policy_target_group']
         ptg2 = self.create_policy_target_group(
             l2_policy_id=ptg['l2_policy_id'])['policy_target_group']
@@ -684,9 +752,17 @@ class TestPolicyTarget(ApicMappingTestCase):
             policy_target_group_id=ptg['id'])['policy_target']
         self._bind_port_to_host(pt['port_id'], 'h1')
 
-        self.driver.notifier.port_update.reset_mock()
-        self.update_policy_target(pt['id'], policy_target_group_id=ptg2['id'])
-        self.assertTrue(self.driver.notifier.port_update.called)
+        if not self.non_apic_network:
+            self.driver.notifier.port_update.reset_mock()
+            self.update_policy_target(pt['id'],
+                                      policy_target_group_id=ptg2['id'])
+            self.assertTrue(self.driver.notifier.port_update.called)
+        else:
+            res = self.update_policy_target(pt['id'],
+                                            policy_target_group_id=ptg2['id'],
+                                            expected_res_status=400)
+            self.assertEqual('PTGChangeDisallowedWithNonOpFlexNetwork',
+                             res['NeutronError']['type'])
 
     def test_update_ptg_failed(self):
         ptg = self.create_policy_target_group()['policy_target_group']
@@ -697,7 +773,9 @@ class TestPolicyTarget(ApicMappingTestCase):
         res = self.update_policy_target(
             pt['id'], policy_target_group_id=ptg2['id'],
             expected_res_status=400)
-        self.assertEqual('InvalidPortForPTG', res['NeutronError']['type'])
+        exp = ('PTGChangeDisallowedWithNonOpFlexNetwork'
+               if self.non_apic_network else 'InvalidPortForPTG')
+        self.assertEqual(exp, res['NeutronError']['type'])
 
     def test_port_notified_on_subnet_change(self):
         ptg = self.create_policy_target_group()['policy_target_group']
@@ -708,6 +786,8 @@ class TestPolicyTarget(ApicMappingTestCase):
         subnet = self._get_object('subnets', ptg['subnets'][0], self.api)
         subnet2 = copy.deepcopy(subnet)
         subnet2['subnet']['gateway_ip'] = '10.0.0.254'
+        subnet2['subnet']['allocation_pools'] = [{
+            'start': '10.0.0.2', 'end': '10.0.0.250'}]
 
         self.driver.apic_manager.reset_mock()
         self.driver.notifier.port_update.reset_mock()
@@ -785,6 +865,246 @@ class TestPolicyTarget(ApicMappingTestCase):
         self.assertEqual(2, len(entries))
         self.assertEqual('1.1.1.1', entries[0].ha_ip_address)
         self.assertEqual('1.1.1.1', entries[1].ha_ip_address)
+
+
+class TestPolicyTargetVlanNetwork(ApicMappingVlanTestCase,
+                                  TestPolicyTarget):
+
+    def test_shadow_port(self):
+        ptg1 = self.create_policy_target_group(
+            name="ptg1")['policy_target_group']
+        pt1 = self.create_policy_target(
+            policy_target_group_id=ptg1['id'])['policy_target']
+        shadow_port = self._get_object('ports', pt1['port_id'],
+                                       self.api)['port']
+
+        subnet = self._get_object('subnets', ptg1['subnets'][0], self.api)
+        ports = self._list_resource('ports',
+            self.api, network_id=subnet['subnet']['network_id'])['ports']
+        self.assertEqual(1, len(ports))
+        self.assertEqual(shadow_port['mac_address'], ports[0]['mac_address'])
+        self.assertEqual(len(shadow_port['fixed_ips']),
+                         len(ports[0]['fixed_ips']))
+        self.assertEqual(shadow_port['fixed_ips'][0]['ip_address'],
+                         ports[0]['fixed_ips'][0]['ip_address'])
+
+        self.delete_policy_target(pt1['id'])
+        self._get_object('ports', pt1['port_id'], self.api,
+                         expected_res_status=404)
+        self._get_object('ports', ports[0]['id'], self.api,
+                         expected_res_status=404)
+
+    def test_shadow_port_for_explicit_port(self):
+        ptg1 = self.create_policy_target_group()['policy_target_group']
+        shadow_subnet1 = self._get_object('subnets',
+                                          self._get_ptg_shadow_subnet(ptg1),
+                                          self.api)
+        subnet = self._get_object('subnets', ptg1['subnets'][0], self.api)
+
+        with self.port(subnet=shadow_subnet1) as p:
+            port1 = p['port']
+
+        pt1 = self.create_policy_target(policy_target_group_id=ptg1['id'],
+            port_id=port1['id'])['policy_target']
+
+        subnet = self._get_object('subnets', ptg1['subnets'][0], self.api)
+        ports = self._list_resource('ports',
+            self.api, network_id=subnet['subnet']['network_id'])['ports']
+        self.assertEqual(1, len(ports))
+        self.assertEqual(port1['mac_address'], ports[0]['mac_address'])
+        self.assertEqual(len(port1['fixed_ips']),
+                         len(ports[0]['fixed_ips']))
+        self.assertEqual(port1['fixed_ips'][0]['ip_address'],
+                         ports[0]['fixed_ips'][0]['ip_address'])
+
+        self.delete_policy_target(pt1['id'])
+        self._get_object('ports', pt1['port_id'], self.api,
+                         expected_res_status=200)
+        self._get_object('ports', ports[0]['id'], self.api,
+                         expected_res_status=404)
+
+    def test_explicit_port_wrong_network(self):
+        ptg1 = self.create_policy_target_group()['policy_target_group']
+        subnet = self._get_object('subnets', ptg1['subnets'][0], self.api)
+
+        with self.port(subnet=subnet) as port1:
+            res = self.create_policy_target(policy_target_group_id=ptg1['id'],
+                port_id=port1['port']['id'], expected_res_status=400)
+            self.assertEqual('ExplicitPortInWrongNetwork',
+                             res['NeutronError']['type'])
+
+    def test_explicit_port_overlap_address(self):
+        ptg1 = self.create_policy_target_group(
+            name="ptg1")['policy_target_group']
+        subnet = self._get_object('subnets', ptg1['subnets'][0], self.api)
+        shadow_subnet1 = self._get_object('subnets',
+                                          self._get_ptg_shadow_subnet(ptg1),
+                                          self.api)
+        with self.port(subnet=shadow_subnet1) as p:
+            shadow_port1 = p
+        ips = shadow_port1['port']['fixed_ips']
+        ips[0].pop('subnet_id', None)
+        with self.port(subnet=subnet, fixed_ips=ips) as p:
+            res = self.create_policy_target(
+                policy_target_group_id=ptg1['id'],
+                port_id=shadow_port1['port']['id'], expected_res_status=400)
+            self.assertEqual('ExplicitPortOverlap',
+                             res['NeutronError']['type'])
+            res = self.new_delete_request('ports', p['port']['id'],
+                                          self.fmt).get_response(self.api)
+            self.assertEqual(webob.exc.HTTPNoContent.code, res.status_int)
+
+        with self.port(subnet=subnet,
+                       mac_address=shadow_port1['port']['mac_address']) as p:
+            res = self.create_policy_target(
+                policy_target_group_id=ptg1['id'],
+                port_id=shadow_port1['port']['id'], expected_res_status=400)
+            self.assertEqual('ExplicitPortOverlap',
+                             res['NeutronError']['type'])
+
+    def test_path_static_binding_implicit_port(self):
+        mgr = self.driver.apic_manager
+
+        ptg1 = self.create_policy_target_group(
+            name="ptg1")['policy_target_group']
+        pt1 = self.create_policy_target(
+            policy_target_group_id=ptg1['id'])['policy_target']
+
+        self._bind_port_to_host(pt1['port_id'], 'h1')
+        port_ctx = self.driver._core_plugin.get_bound_port_context(
+            context.get_admin_context(), pt1['port_id'])
+        seg_id = port_ctx.bottom_bound_segment['segmentation_id']
+
+        mgr.ensure_path_created_for_port.assert_called_once_with(
+            ptg1['tenant_id'], ptg1['id'], 'h1', seg_id,
+            bd_name=ptg1['l2_policy_id'])
+
+        # move port to different host
+        mgr.ensure_path_created_for_port.reset_mock()
+        self._bind_port_to_host(pt1['port_id'], 'h2')
+        mgr.ensure_path_deleted_for_port.assert_called_once_with(
+            ptg1['tenant_id'], ptg1['id'], 'h1')
+        mgr.ensure_path_created_for_port.assert_called_once_with(
+            ptg1['tenant_id'], ptg1['id'], 'h2', seg_id,
+            bd_name=ptg1['l2_policy_id'])
+
+        # create another PT, bind to same host and then delete it
+        mgr.ensure_path_created_for_port.reset_mock()
+        mgr.ensure_path_deleted_for_port.reset_mock()
+        pt2 = self.create_policy_target(
+            policy_target_group_id=ptg1['id'])['policy_target']
+        self._bind_port_to_host(pt2['port_id'], 'h2')
+        mgr.ensure_path_created_for_port.assert_called_once_with(
+            ptg1['tenant_id'], ptg1['id'], 'h2', seg_id,
+            bd_name=ptg1['l2_policy_id'])
+
+        self.delete_policy_target(pt2['id'])
+        mgr.ensure_path_deleted_for_port.assert_not_called()
+
+        # delete PT
+        mgr.ensure_path_deleted_for_port.reset_mock()
+        self.delete_policy_target(pt1['id'])
+        mgr.ensure_path_deleted_for_port.assert_called_once_with(
+            ptg1['tenant_id'], ptg1['id'], 'h2')
+
+    def test_path_static_binding_explicit_port(self):
+        mgr = self.driver.apic_manager
+
+        ptg1 = self.create_policy_target_group(
+            name="ptg1")['policy_target_group']
+        shadow_subnet1 = self._get_object('subnets',
+                                          self._get_ptg_shadow_subnet(ptg1),
+                                          self.api)
+        with self.port(subnet=shadow_subnet1) as port:
+            port1 = port
+        port1 = self._bind_port_to_host(port1['port']['id'], 'h1')
+        port_ctx = self.driver._core_plugin.get_bound_port_context(
+            context.get_admin_context(), port1['port']['id'])
+        seg_id = port_ctx.bottom_bound_segment['segmentation_id']
+        mgr.ensure_path_created_for_port.assert_not_called()
+
+        # Assign port to a PT
+        pt1 = self.create_policy_target(
+            policy_target_group_id=ptg1['id'],
+            port_id=port1['port']['id'])['policy_target']
+        mgr.ensure_path_created_for_port.assert_called_once_with(
+            ptg1['tenant_id'], ptg1['id'], 'h1', seg_id,
+            bd_name=ptg1['l2_policy_id'])
+
+        # move port to different host
+        mgr.ensure_path_created_for_port.reset_mock()
+        self._bind_port_to_host(pt1['port_id'], 'h2')
+        mgr.ensure_path_deleted_for_port.assert_called_once_with(
+            ptg1['tenant_id'], ptg1['id'], 'h1')
+        mgr.ensure_path_created_for_port.assert_called_once_with(
+            ptg1['tenant_id'], ptg1['id'], 'h2', seg_id,
+            bd_name=ptg1['l2_policy_id'])
+
+        # create another port & PT, bind to same host and then delete port
+        mgr.ensure_path_created_for_port.reset_mock()
+        mgr.ensure_path_deleted_for_port.reset_mock()
+        with self.port(subnet=shadow_subnet1) as port:
+            port2 = port
+        pt2 = self.create_policy_target(
+            policy_target_group_id=ptg1['id'],
+            port_id=port2['port']['id'])['policy_target']
+        self._bind_port_to_host(pt2['port_id'], 'h2')
+        mgr.ensure_path_created_for_port.assert_called_once_with(
+            ptg1['tenant_id'], ptg1['id'], 'h2', seg_id,
+            bd_name=ptg1['l2_policy_id'])
+
+        res = self.new_delete_request('ports', port2['port']['id'],
+                                      self.fmt).get_response(self.api)
+        self.assertEqual(webob.exc.HTTPNoContent.code, res.status_int)
+        mgr.ensure_path_deleted_for_port.assert_not_called()
+
+        # Delete PT
+        mgr.ensure_path_deleted_for_port.reset_mock()
+        self.delete_policy_target(pt1['id'])
+        mgr.ensure_path_deleted_for_port.assert_called_once_with(
+            ptg1['tenant_id'], ptg1['id'], 'h2')
+
+    def test_path_static_binding_for_non_pt(self):
+        mgr = self.driver.apic_manager
+
+        ptg1 = self.create_policy_target_group(
+            name="ptg1")['policy_target_group']
+        subnet = self._get_object('subnets', ptg1['subnets'][0], self.api)
+
+        with self.port(subnet=subnet) as port:
+            port1 = port
+        with self.port(subnet=subnet) as port:
+            port2 = port
+
+        # bind first port
+        port1 = self._bind_port_to_host(port1['port']['id'], 'h1')
+        port_ctx = self.driver._core_plugin.get_bound_port_context(
+            context.get_admin_context(), port1['port']['id'])
+        seg_id = port_ctx.bottom_bound_segment['segmentation_id']
+        mgr.ensure_path_created_for_port.assert_called_once_with(
+            ptg1['tenant_id'], 'Shd-%s' % ptg1['l2_policy_id'], 'h1',
+            seg_id, bd_name=ptg1['l2_policy_id'])
+
+        # bind second port
+        mgr.ensure_path_created_for_port.reset_mock()
+        port2 = self._bind_port_to_host(port2['port']['id'], 'h1')
+        mgr.ensure_path_created_for_port.assert_called_once_with(
+            ptg1['tenant_id'], 'Shd-%s' % ptg1['l2_policy_id'], 'h1',
+            seg_id, bd_name=ptg1['l2_policy_id'])
+
+        # delete second port
+        res = self.new_delete_request('ports', port2['port']['id'],
+                                      self.fmt).get_response(self.api)
+        self.assertEqual(webob.exc.HTTPNoContent.code, res.status_int)
+        mgr.ensure_path_deleted_for_port.assert_not_called()
+
+        # delete first port
+        mgr.ensure_path_deleted_for_port.reset_mock()
+        res = self.new_delete_request('ports', port1['port']['id'],
+                                      self.fmt).get_response(self.api)
+        self.assertEqual(webob.exc.HTTPNoContent.code, res.status_int)
+        mgr.ensure_path_deleted_for_port.assert_called_once_with(
+            ptg1['tenant_id'], 'Shd-%s' % ptg1['l2_policy_id'], 'h1')
 
 
 class TestPolicyTargetGroup(ApicMappingTestCase):
@@ -1043,17 +1363,116 @@ class TestPolicyTargetGroup(ApicMappingTestCase):
         self.assertNotEqual(sub_ptg_1, sub_ptg_2)
         self.assertFalse(sub_ptg_1 & sub_ptg_2)
 
-    def _create_explicit_subnet_ptg(self, cidr, shared=False):
+    def _create_explicit_subnet_ptg(self, cidr, shared=False, alloc_pool=None):
         l2p = self.create_l2_policy(name="l2p", shared=shared)
         l2p_id = l2p['l2_policy']['id']
         network_id = l2p['l2_policy']['network_id']
         network = self._get_object('networks', network_id, self.api)
-        with self.subnet(network=network, cidr=cidr):
+        pool = alloc_pool or [{'start': '10.0.0.2', 'end': '10.0.0.250'}]
+        with self.subnet(network=network, cidr=cidr,
+                         allocation_pools=pool):
             # The subnet creation in the proper network causes the subnet ID
             # to be added to the PTG
             return self.create_policy_target_group(
                 name="ptg1", l2_policy_id=l2p_id,
                 shared=shared)['policy_target_group']
+
+
+class TestPolicyTargetGroupVlanNetwork(ApicMappingVlanTestCase,
+                                       TestPolicyTargetGroup):
+
+    def _test_shadow_network(self, shared):
+        ptg1 = self.create_policy_target_group(
+            name='ptg1', shared=shared)['policy_target_group']
+        l2p = self.show_l2_policy(ptg1['l2_policy_id'])['l2_policy']
+        net = self._get_object('networks', l2p['network_id'],
+                               self.api)['network']
+        subnet1 = self._get_object('subnets', net['subnets'][0],
+                                   self.api)['subnet']
+
+        shadow_net1 = self._get_ptg_shadow_net(ptg1)
+        self.assertIsNotNone(shadow_net1)
+        self.assertEqual(ptg1['tenant_id'], shadow_net1['tenant_id'])
+        self.assertEqual(shared, shadow_net1['shared'])
+        self.assertEqual(1, len(shadow_net1['subnets']))
+
+        shadow_subnet1 = self._get_object('subnets',
+            shadow_net1['subnets'][0], self.api)['subnet']
+        self.assertEqual(subnet1['cidr'], shadow_subnet1['cidr'])
+        self.assertEqual(ptg1['tenant_id'], shadow_subnet1['tenant_id'])
+
+        self.delete_policy_target_group(ptg1['id'])
+        self._get_object('subnets', shadow_subnet1['id'], self.api,
+                         expected_res_status=404)
+        self._get_object('networks', shadow_net1['id'], self.api,
+                         expected_res_status=404)
+
+    def test_shadow_network(self):
+        self._test_shadow_network(False)
+
+    def test_shadow_network_shared(self):
+        self._test_shadow_network(True)
+
+    def _test_shadow_subnet(self, shared):
+        ptg1 = self.create_policy_target_group(
+            name='ptg1', shared=shared)['policy_target_group']
+        l2p = self.show_l2_policy(ptg1['l2_policy_id'])['l2_policy']
+        net = self._get_object('networks', l2p['network_id'],
+                               self.api)['network']
+        subnet1 = self._get_object('subnets', net['subnets'][0],
+                                   self.api)['subnet']
+
+        shadow_net1 = self._get_ptg_shadow_net(ptg1)
+
+        with self.subnet(cidr='20.0.0.0/26',
+                         network={'network': net}) as subnet2:
+            subnet2 = subnet2['subnet']
+            shadow_subnets = self._list_resource(
+                'subnets', self.api, network_id=shadow_net1['id'])['subnets']
+            shadow_subnets = sorted(shadow_subnets, key=lambda x: x['cidr'])
+            self.assertEqual(2, len(shadow_subnets))
+            self.assertEqual(subnet1['cidr'], shadow_subnets[0]['cidr'])
+            self.assertEqual(subnet2['cidr'], shadow_subnets[1]['cidr'])
+            self.assertTrue(shadow_subnets[0]['enable_dhcp'])
+            self.assertTrue(shadow_subnets[1]['enable_dhcp'])
+
+            subnet1 = self._update_resource(subnet1['id'], 'subnet',
+                expected_res_status=200, api=self.api,
+                enable_dhcp=False)['subnet']
+            self.assertFalse(subnet1['enable_dhcp'])
+            shadow_subnets = self._list_resource(
+                'subnets', self.api, network_id=shadow_net1['id'])['subnets']
+            shadow_subnets = sorted(shadow_subnets, key=lambda x: x['cidr'])
+            self.assertFalse(shadow_subnets[0]['enable_dhcp'])
+
+        self.delete_policy_target_group(ptg1['id'])
+        shadow_subnets = self._list_resource('subnets', self.api,
+            network_id=shadow_net1['id'], expected_res_status=200)['subnets']
+        self.assertEqual([], shadow_subnets)
+
+    def test_shadow_subnet(self):
+        self._test_shadow_subnet(False)
+
+    def test_shadow_subnet_shared(self):
+        self._test_shadow_subnet(True)
+
+    def test_dhcp_port_disabled_in_shadow(self):
+        ptg1 = self.create_policy_target_group(
+            name='ptg1')['policy_target_group']
+        shadow_net1 = self._get_ptg_shadow_net(ptg1)
+        shadow_subnet1 = self._get_object('subnets',
+            shadow_net1['subnets'][0], self.api)
+
+        with self.port(subnet=shadow_subnet1,
+                       device_owner='network:dhcp') as port:
+            port = self._get_object('ports', port['port']['id'], self.api)
+            self.assertFalse(port['port']['admin_state_up'])
+
+            self._update_resource(port['port']['id'], 'port',
+                expected_res_status=200, api=self.api,
+                admin_state_up=True)
+            port = self._get_object('ports', port['port']['id'], self.api)
+            self.assertFalse(port['port']['admin_state_up'])
 
 
 class TestL2Policy(ApicMappingTestCase):

@@ -69,16 +69,13 @@ class APICMechanismGBPDriver(mech_agent.AgentMechanismDriverBase):
         return self._apic_gbp
 
     def create_port_postcommit(self, context):
-        self.apic_gbp.process_port_added(
-            context._plugin_context, context.current)
+        self.apic_gbp.process_port_added(context)
 
     def update_port_postcommit(self, context):
-        self.apic_gbp.process_port_changed(context._plugin_context,
-                                           context.original, context.current)
+        self.apic_gbp.process_port_changed(context)
 
     def delete_port_precommit(self, context):
-        self.apic_gbp.process_pre_port_deleted(context._plugin_context,
-                                               context.current)
+        self.apic_gbp.process_pre_port_deleted(context)
 
     def delete_port_postcommit(self, context):
         self.apic_gbp.process_port_deleted(context._plugin_context,
