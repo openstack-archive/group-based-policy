@@ -102,7 +102,7 @@ class ApiManagerMixin(object):
 
     def _update_resource(
             self, id, type, expected_res_status=None, is_admin_context=False,
-            **kwargs):
+            api=None, **kwargs):
         plural = cm.get_resource_plural(type)
         data = {type: kwargs}
         tenant_id = kwargs.pop('tenant_id', self._tenant_id)
@@ -111,7 +111,7 @@ class ApiManagerMixin(object):
         req.environ['neutron.context'] = context.Context(
             '', tenant_id if not is_admin_context else self._tenant_id,
             is_admin_context)
-        res = req.get_response(self.ext_api)
+        res = req.get_response(api or self.ext_api)
 
         if expected_res_status:
             self.assertEqual(res.status_int, expected_res_status)
@@ -147,6 +147,23 @@ class ApiManagerMixin(object):
 
     def _get_object(self, type, id, api, expected_res_status=None):
         req = self.new_show_request(type, id, self.fmt)
+        res = req.get_response(api)
+
+        if expected_res_status:
+            self.assertEqual(res.status_int, expected_res_status)
+        elif res.status_int >= webob.exc.HTTPClientError.code:
+            raise webob.exc.HTTPClientError(code=res.status_int)
+        return self.deserialize(self.fmt, res)
+
+    def _list_resource(self, plural, api, is_admin_context=False,
+                       expected_res_status=None, tenant_id=None,
+                       **kwargs):
+        param_str = '&'.join(['%s=%s' % (k, v)
+                              for k, v in kwargs.iteritems()])
+        req = self.new_list_request(plural, self.fmt,
+                                    params=param_str or None)
+        req.environ['neutron.context'] = context.Context(
+            '', tenant_id or self._tenant_id, is_admin_context)
         res = req.get_response(api)
 
         if expected_res_status:
