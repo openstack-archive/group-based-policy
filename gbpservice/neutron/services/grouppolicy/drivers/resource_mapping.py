@@ -201,10 +201,13 @@ class ResourceMappingDriver(api.PolicyDriver, local_api.LocalAPI,
 
     @log.log_method_call
     def create_policy_target_precommit(self, context):
+        self._check_create_policy_target(context)
+
+    def _check_create_policy_target(self, context, verify_port_subnet=True):
         self._validate_cluster_id(context)
         if not context.current['policy_target_group_id']:
             raise exc.PolicyTargetRequiresPolicyTargetGroup()
-        if context.current['port_id']:
+        if context.current['port_id'] and verify_port_subnet:
             # Validate if explicit port's subnet
             # is same as the subnet of PTG.
             self._validate_pt_port_subnets(context)
