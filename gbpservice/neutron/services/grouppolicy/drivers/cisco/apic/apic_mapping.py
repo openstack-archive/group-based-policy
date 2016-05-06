@@ -29,7 +29,11 @@ from neutron.common import topics
 from neutron import context as nctx
 from neutron.db import db_base_plugin_v2 as n_db
 from neutron.extensions import portbindings
+from neutron.extensions import providernet
 from neutron import manager
+from neutron.plugins.common import constants as p_const
+from neutron.plugins.ml2 import driver_api as n_api
+from neutron.plugins.ml2 import models as ml2_models
 from opflexagent import constants as ofcst
 from opflexagent import rpc
 from oslo_concurrency import lockutils
@@ -170,6 +174,22 @@ class EdgeNatWrongL3OutAuthTypeForOSPF(gpexc.GroupPolicyBadRequest):
     message = _("L3Out %(l3out)s can only support no authentication "
                 "for OSPF interface profile when edge_nat is enabled.")
 
+
+class ExplicitPortInWrongNetwork(gpexc.GroupPolicyBadRequest):
+    message = _('Explicit port %(port)s for PT %(pt)s is in '
+                'wrong network %(net)s, expected %(exp_net)s')
+
+
+class PTGChangeDisallowedWithNonOpFlexNetwork(gpexc.GroupPolicyBadRequest):
+    message = _('Policy target group for policy target cannot be changed '
+                'when using network of type other than %(net_type)s')
+
+
+class ExplicitPortOverlap(gpexc.GroupPolicyBadRequest):
+    message = _('Explicit port %(port)s, MAC address %(mac)s, IP address '
+                '%(ip)s has overlapping IP or MAC address with another port '
+                'in network %(net)s')
+
 REVERSE_PREFIX = 'reverse-'
 SHADOW_PREFIX = 'Shd-'
 AUTO_PREFIX = 'Auto-'
@@ -230,6 +250,7 @@ class ApicMappingDriver(api.ResourceMappingDriver,
         self.name_mapper = name_manager.ApicNameManager(self.apic_manager)
         self.enable_dhcp_opt = self.apic_manager.enable_optimized_dhcp
         self.enable_metadata_opt = self.apic_manager.enable_optimized_metadata
+        self.nat_enabled = self.apic_manager.use_vmm
         self._gbp_plugin = None
         self.l3out_vlan_alloc = l3out_vlan_alloc.L3outVlanAlloc()
         self.l3out_vlan_alloc.sync_vlan_allocations(
@@ -310,6 +331,9 @@ class ApicMappingDriver(api.ResourceMappingDriver,
                     LOG.warn(_("Proxied port %s could not be found"), new_id)
 
             l2p = self._network_id_to_l2p(context, port['network_id'])
+            if not l2p and self._ptg_needs_shadow_network(context, ptg):
+                l2p = self._get_l2_policy(context._plugin_context,
+                                          ptg['l2_policy_id'])
             if not ptg and not l2p:
                 return
 
@@ -613,8 +637,8 @@ class ApicMappingDriver(api.ResourceMappingDriver,
         for pt in pts:
             self._notify_head_chain_ports(pt['policy_target_group_id'])
 
-    def process_port_added(self, plugin_context, port):
-        pass
+    def process_port_added(self, context):
+        self._disable_port_on_shadow_subnet(context)
 
     def create_policy_action_precommit(self, context):
         pass
@@ -690,22 +714,33 @@ class ApicMappingDriver(api.ResourceMappingDriver,
                 self._apply_policy_rule_set_rules(
                     context, context.current, rules, transaction=trs)
 
-    def create_policy_target_postcommit(self, context):
-        if not context.current['port_id']:
-            ptg = self.gbp_plugin.get_policy_target_group(
-                context._plugin_context,
-                context.current['policy_target_group_id'])
-            subnets = self._get_subnets(
-                context._plugin_context, {'id': ptg['subnets']})
-            owned = []
-            reserved = []
-            for subnet in subnets:
-                if not subnet['name'].startswith(APIC_OWNED_RES):
-                    owned.append(subnet)
-                elif subnet['name'] == APIC_OWNED_RES + ptg['id']:
-                    reserved.append(subnet)
+    def create_policy_target_precommit(self, context):
+        ptg = self._get_policy_target_group(
+            context._plugin_context,
+            context.current['policy_target_group_id'])
+        shadow_net = self._get_ptg_shadow_network(context, ptg)
 
-            self._use_implicit_port(context, subnets=reserved or owned)
+        super(ApicMappingDriver, self)._check_create_policy_target(
+            context, verify_port_subnet=not bool(shadow_net))
+        if shadow_net and context.current['port_id']:
+            self._check_explicit_port(context, ptg, shadow_net)
+
+    def create_policy_target_postcommit(self, context):
+        ptg = self.gbp_plugin.get_policy_target_group(
+            context._plugin_context,
+            context.current['policy_target_group_id'])
+        subnets = self._get_subnets(
+            context._plugin_context, {'id': ptg['subnets']})
+        owned = []
+        reserved = []
+        for subnet in subnets:
+            if not subnet['name'].startswith(APIC_OWNED_RES):
+                owned.append(subnet)
+            elif subnet['name'] == APIC_OWNED_RES + ptg['id']:
+                reserved.append(subnet)
+        self._create_implicit_and_shadow_ports(context, ptg,
+            implicit_subnets=reserved or owned)
+
         self._update_cluster_membership(
             context, new_cluster_id=context.current['cluster_id'])
         port = self._get_port(context._plugin_context,
@@ -789,6 +824,7 @@ class ApicMappingDriver(api.ResourceMappingDriver,
                                 (x, '') for x in proxied[
                                     'consumed_policy_rule_sets'])}})
                 context.current.update(updated)
+            self._create_ptg_shadow_network(context, context.current)
 
     def create_l2_policy_precommit(self, context):
         if not self.name_mapper._is_apic_reference(context.current):
@@ -886,15 +922,12 @@ class ApicMappingDriver(api.ResourceMappingDriver,
         for fip in context.fips:
             self._delete_fip(context._plugin_context, fip.floatingip_id)
         try:
+            self._delete_implicit_and_shadow_ports(context)
             if context.current['port_id']:
-                port = self._core_plugin.get_port(context._plugin_context,
-                                                  context.current['port_id'])
-                # Delete Neutron's port
-                port_id = context.current['port_id']
-                self._cleanup_port(context._plugin_context, port_id)
                 # Notify the agent. If the port has been deleted by the
                 # parent method the notification will not be done
-                self._notify_port_update(context._plugin_context, port['id'])
+                self._notify_port_update(context._plugin_context,
+                                         context.current['port_id'])
         except n_exc.PortNotFound:
             LOG.warn(_("Port %s is missing") % context.current['port_id'])
             return
@@ -938,6 +971,7 @@ class ApicMappingDriver(api.ResourceMappingDriver,
             for subnet in subnets:
                 self._cleanup_subnet(context._plugin_context, subnet['id'],
                                      None)
+            self._delete_ptg_shadow_network(context, context.current)
             self._unset_any_contract(context.current)
 
     def delete_l2_policy_precommit(self, context):
@@ -1004,6 +1038,10 @@ class ApicMappingDriver(api.ResourceMappingDriver,
         self._validate_cluster_id(context)
         if (context.original['policy_target_group_id'] !=
                 context.current['policy_target_group_id']):
+            if self._is_supported_non_opflex_port(context,
+                                                context.current['port_id']):
+                raise PTGChangeDisallowedWithNonOpFlexNetwork(
+                    net_type=ofcst.TYPE_OPFLEX)
             if context.current['policy_target_group_id']:
                 self._validate_pt_port_subnets(context)
 
@@ -1330,11 +1368,12 @@ class ApicMappingDriver(api.ResourceMappingDriver,
         self._manage_nat_pool_subnet(context, context.current, None)
 
     def process_subnet_changed(self, context, old, new):
-        if old['gateway_ip'] != new['gateway_ip']:
-            l2p = self._network_id_to_l2p(context, new['network_id'])
-            if l2p:
+        l2p = self._network_id_to_l2p(context, new['network_id'])
+        if l2p:
+            if old['gateway_ip'] != new['gateway_ip']:
                 # Is GBP owned, reflect on APIC
                 self._manage_l2p_subnets(context, l2p['id'], [new], [old])
+            self._sync_shadow_subnets(context, l2p, old, new)
         # notify ports in the subnet
         ptg_ids = self.gbp_plugin._get_ptgs_for_subnet(context, old['id'])
         pts = self.gbp_plugin.get_policy_targets(
@@ -1349,30 +1388,40 @@ class ApicMappingDriver(api.ResourceMappingDriver,
         if l2p:
             self._sync_epg_subnets(context, l2p)
             self._manage_l2p_subnets(context, l2p['id'], [subnet], [])
+            self._sync_shadow_subnets(context, l2p, None, subnet)
 
     def process_subnet_deleted(self, context, subnet):
         l2p = self._network_id_to_l2p(context, subnet['network_id'])
         if l2p:
             self._manage_l2p_subnets(context, l2p['id'], [], [subnet])
+            self._sync_shadow_subnets(context, l2p, subnet, None)
 
-    def process_port_changed(self, context, old, new):
-        pass
+    def process_port_changed(self, context):
+        self._disable_port_on_shadow_subnet(context)
+        if (context.original_host != context.host or
+                context.original_bottom_bound_segment !=
+                context.bottom_bound_segment):
+            self._delete_path_static_binding_if_reqd(context, True)
+            self._create_path_static_binding_if_reqd(context)
 
-    def process_pre_port_deleted(self, context, port):
-        pt = self._port_id_to_pt(context, port['id'])
+    def process_pre_port_deleted(self, context):
+        pt = self._port_id_to_pt(context._plugin_context,
+                                 context.current['id'])
         if pt:
             context.policy_target_id = pt['id']
 
-    def process_port_deleted(self, context, port):
+    def process_port_deleted(self, context):
+        port = context.current
         # do nothing for floating-ip ports
         if port['device_owner'] == n_constants.DEVICE_OWNER_FLOATINGIP:
             LOG.debug(_("Ignoring floating-ip port %s") % port['id'])
             return
         try:
             self.gbp_plugin.delete_policy_target(
-                context, context.policy_target_id)
+                context._plugin_context, context.policy_target_id)
         except AttributeError:
             pass
+        self._delete_path_static_binding_if_reqd(context, False)
 
     def nat_pool_iterator(self, context, tenant_id, floatingip):
         """Get NAT pool for floating IP associated with external-network."""
@@ -3048,6 +3097,8 @@ class ApicMappingDriver(api.ResourceMappingDriver,
     def _is_nat_enabled_on_es(self, es):
         ext_info = self.apic_manager.ext_net_dict.get(es['name'])
         if ext_info:
+            if not self.nat_enabled and not self._is_edge_nat(ext_info):
+                return False
             opt = ext_info.get('enable_nat', 'true')
             return opt.lower() in ['true', 'yes', '1']
         return False
@@ -3199,3 +3250,285 @@ class ApicMappingDriver(api.ResourceMappingDriver,
         subnets = [x['cidr'] for x in
                    self._get_l2ps_subnets(context._plugin_context, l2ps)]
         return subnets
+
+    def _is_supported_non_opflex_network_type(self, net_type):
+        return net_type in [p_const.TYPE_VLAN]
+
+    def _is_supported_non_opflex_network(self, network):
+        return self._is_supported_non_opflex_network_type(
+            network[providernet.NETWORK_TYPE])
+
+    def _is_supported_non_opflex_port(self, context, port_id):
+        port = self._get_port(context._plugin_context, port_id)
+        network = self._get_network(context._plugin_context,
+                                    port['network_id'])
+        return self._is_supported_non_opflex_network(network)
+
+    def _ptg_needs_shadow_network(self, context, ptg):
+        net = self._l2p_id_to_network(context._plugin_context,
+                                      ptg['l2_policy_id'])
+        return self._is_supported_non_opflex_network(net)
+
+    def _get_ptg_shadow_network_name(self, ptg):
+        return '%sptg_%s_%s' % (APIC_OWNED, ptg['name'], ptg['id'])
+
+    def _shadow_network_id_to_ptg(self, context, network_id):
+        network = self._get_network(context._plugin_context, network_id)
+        if network['name'].startswith(APIC_OWNED + 'ptg_'):
+            ptg_id = network['name'].split('_')[-1]
+            return self._get_policy_target_group(context._plugin_context,
+                                                 ptg_id)
+
+    def _get_ptg_shadow_network(self, context, ptg):
+        networks = self._get_networks(context._plugin_context,
+            filters={'name': [self._get_ptg_shadow_network_name(ptg)],
+                     'tenant_id': [ptg['tenant_id']]})
+        return networks[0] if networks else None
+
+    def _create_ptg_shadow_network(self, context, ptg):
+        if not self._ptg_needs_shadow_network(context, ptg):
+            return
+        shadow_net = self._get_ptg_shadow_network(context, ptg)
+        if not shadow_net:
+            attrs = {'tenant_id': ptg['tenant_id'],
+                     'name': self._get_ptg_shadow_network_name(ptg),
+                     'admin_state_up': True,
+                     'shared': ptg.get('shared', False)}
+            shadow_net = self._create_network(context._plugin_context, attrs)
+            l2p = self._get_l2_policy(context._plugin_context,
+                                      ptg['l2_policy_id'])
+            for sub_id in ptg['subnets']:
+                sub = self._get_subnet(context._plugin_context, sub_id)
+                self._sync_shadow_subnets(context._plugin_context, l2p, None,
+                                          sub, ptg=ptg)
+
+    def _sync_shadow_subnets(self, plugin_context, l2p, old, new, ptg=None):
+        network = self._get_network(plugin_context, l2p['network_id'])
+        if not self._is_supported_non_opflex_network(network):
+            return
+        ref_subnet = new or old
+        admin_ctx = plugin_context.elevated()
+        ptgs = [ptg] if ptg else self._get_policy_target_groups(admin_ctx,
+            filters={'id': l2p['policy_target_groups']})
+        if new:
+            attrs = {'enable_dhcp': ref_subnet['enable_dhcp'],
+                     'gateway_ip': ref_subnet['gateway_ip'],
+                     'allocation_pools': ref_subnet['allocation_pools'],
+                     'dns_nameservers': ref_subnet['dns_nameservers'],
+                     'host_routes': ref_subnet['host_routes']}
+            if not old:
+                attrs.update({
+                    'ip_version': ref_subnet['ip_version'],
+                    'cidr': ref_subnet['cidr']})
+        for grp in ptgs:
+            admin_ctx._plugin_context = admin_ctx
+            shadow_net = self._get_ptg_shadow_network(admin_ctx, grp)
+            if not shadow_net:
+                continue
+            shadow_subnet = self._get_subnets(admin_ctx,
+                filters={'cidr': [ref_subnet['cidr']],
+                         'network_id': [shadow_net['id']]})
+            try:
+                if old and not new:
+                    if shadow_subnet:
+                        self._delete_subnet(plugin_context,
+                                            shadow_subnet[0]['id'])
+                elif new and not old:
+                    attrs.update({
+                        'tenant_id': shadow_net['tenant_id'],
+                        'name': '%ssub_%s' % (APIC_OWNED, ref_subnet['id']),
+                        'network_id': shadow_net['id']})
+                    self._create_subnet(plugin_context, copy.deepcopy(attrs))
+                else:
+                    if shadow_subnet:
+                        self._update_subnet(plugin_context,
+                                            shadow_subnet[0]['id'],
+                                            copy.deepcopy(attrs))
+            except Exception:
+                LOG.exception(
+                    _('Shadow subnet operation for group %s failed'),
+                    grp['id'])
+                raise
+
+    def _disable_port_on_shadow_subnet(self, context):
+        """Disable certain kinds of ports in shadow-network."""
+        port = context.current
+        if (port['device_owner'] == n_constants.DEVICE_OWNER_DHCP and
+                port['admin_state_up'] is True and
+                self._shadow_network_id_to_ptg(context, port['network_id'])):
+            self._update_port(context._plugin_context.elevated(),
+                              port['id'],
+                              {'admin_state_up': False})
+
+    def _delete_ptg_shadow_network(self, context, ptg):
+        shadow_net = self._get_ptg_shadow_network(context, ptg)
+        if shadow_net:
+            self._delete_network(context._plugin_context, shadow_net['id'])
+
+    def _check_explicit_port(self, context, ptg, shadow_net):
+        pt = context.current
+        shadow_port = self._get_port(context._plugin_context,
+                                     pt['port_id'])
+        if shadow_port['network_id'] != shadow_net['id']:
+            raise ExplicitPortInWrongNetwork(port=shadow_port['id'],
+                pt=pt['id'], net=shadow_port['network_id'],
+                exp_net=shadow_net['id'])
+
+        # check overlapping IP/MAC address in L2P network
+        l2p = self._get_l2_policy(context._plugin_context, ptg['l2_policy_id'])
+        shadow_ips = [i['ip_address'] for i in shadow_port['fixed_ips']
+                      if i.get('ip_address')]
+        ip_overlap_ports = self._get_ports(context._plugin_context,
+            filters={'network_id': [l2p['network_id']],
+                     'fixed_ips': {'ip_address': shadow_ips}})
+        mac_overlap_ports = self._get_ports(context._plugin_context,
+            filters={'network_id': [l2p['network_id']],
+                     'mac_address': [shadow_port['mac_address']]})
+        if ip_overlap_ports or mac_overlap_ports:
+            raise ExplicitPortOverlap(net=l2p['network_id'],
+                                      port=shadow_port['id'],
+                                      ip=shadow_ips,
+                                      mac=shadow_port['mac_address'])
+
+    def _create_implicit_and_shadow_ports(self, context, ptg,
+                                          implicit_subnets=None):
+        shadow_net = self._get_ptg_shadow_network(context, ptg)
+        pt = context.current
+        pt_port_id = pt['port_id']
+        if not shadow_net:
+            if not pt_port_id:
+                self._use_implicit_port(context, implicit_subnets)
+            return
+
+        # Always create an "implicit" port in the L2P network. If PT had
+        # a port originally, then treat that port as the "shadow" port,
+        # else create the shadow port in the shadow network. In both cases,
+        # associate the shadow port to the PT.
+        context.current['port_attributes'] = {'device_owner': 'apic',
+                                              'device_id': pt['id']}
+
+        if pt_port_id:
+            shadow_port = self._get_port(context._plugin_context, pt_port_id)
+            context.current['port_attributes'].update({
+                'fixed_ips': self._strip_subnet(shadow_port['fixed_ips']),
+                'mac_address': shadow_port['mac_address']})
+
+        self._use_implicit_port(context, implicit_subnets)
+
+        if pt_port_id:
+            # set this again because _use_implicit_port() will update it
+            # to the newly created port
+            context.set_port_id(pt_port_id)
+            port_ctx = self._core_plugin.get_bound_port_context(
+                context._plugin_context, pt_port_id)
+            if port_ctx:
+                self._create_path_static_binding_if_reqd(port_ctx)
+        else:
+            implicit_port = self._get_port(context._plugin_context,
+                                           pt['port_id'])
+            shadow_subnets = self._get_subnets(
+                context._plugin_context,
+                filters={'network_id': [shadow_net['id']]})
+            context.current['port_attributes'] = {
+                'network_id': shadow_net['id'],
+                'fixed_ips': self._strip_subnet(implicit_port['fixed_ips']),
+                'mac_address': implicit_port['mac_address']}
+            self._use_implicit_port(context, shadow_subnets)
+
+    def _delete_implicit_and_shadow_ports(self, context):
+        pt = context.current
+        if pt['port_id']:
+            owned = self._port_is_owned(context._plugin_context.session,
+                                        pt['port_id'])
+            if owned:
+                self._cleanup_port(context._plugin_context, pt['port_id'])
+            else:
+                port_ctx = self._core_plugin.get_bound_port_context(
+                    context._plugin_context, pt['port_id'])
+                if port_ctx:
+                    self._delete_path_static_binding_if_reqd(port_ctx, False)
+        ptg = self._get_policy_target_group(context._plugin_context,
+                                            pt['policy_target_group_id'])
+        if self._ptg_needs_shadow_network(context, ptg):
+            l2p = self._get_l2_policy(context._plugin_context,
+                                      ptg['l2_policy_id'])
+            implicit_ports = self._get_ports(context._plugin_context,
+                filters={'device_owner': ['apic'],
+                         'device_id': [pt['id']],
+                         'network_id': [l2p['network_id']]})
+            for p in implicit_ports:
+                self._cleanup_port(context._plugin_context, p['id'])
+
+    def _get_static_binding_info_for_port(self, context, use_original):
+        bound_seg = (context.original_bottom_bound_segment if use_original else
+                     context.bottom_bound_segment)
+        if not bound_seg or not self._is_supported_non_opflex_network_type(
+                bound_seg.get(n_api.NETWORK_TYPE)):
+            return
+        port = context.original if use_original else context.current
+        ptg = self._shadow_network_id_to_ptg(context, port['network_id'])
+        if ptg:
+            port_in_shadow_network = True
+            l2p = self._get_l2_policy(context._plugin_context,
+                                      ptg['l2_policy_id'])
+        else:
+            port_in_shadow_network = False
+            l2p = self._network_id_to_l2p(context._plugin_context,
+                                          port['network_id'])
+        if ptg:
+            ptg_tenant = self._tenant_by_sharing_policy(ptg)
+            endpoint_group_name = self.name_mapper.policy_target_group(
+                context, ptg)
+        elif l2p:
+            ptg_tenant = self._tenant_by_sharing_policy(l2p)
+            endpoint_group_name = self.name_mapper.l2_policy(
+                context, l2p, prefix=SHADOW_PREFIX)
+        else:
+            return
+        return {'tenant': ptg_tenant,
+                'epg': endpoint_group_name,
+                'bd': self.name_mapper.l2_policy(context, l2p),
+                'host': use_original and context.original_host or context.host,
+                'segment': bound_seg,
+                'in_shadow_network': port_in_shadow_network}
+
+    def _create_path_static_binding_if_reqd(self, context):
+        bind_info = self._get_static_binding_info_for_port(context, False)
+        if bind_info:
+            if bind_info['in_shadow_network']:
+                pt = self._port_id_to_pt(context._plugin_context,
+                                         context.current['id'])
+                if not pt:
+                    # ignore ports in shadow network that are not associated
+                    # with a PT
+                    return
+            LOG.info(_('Creating static path binding for port '
+                       '%(port)s, %(info)s'),
+                     {'port': context.current['id'], 'info': bind_info})
+            self.apic_manager.ensure_path_created_for_port(
+                bind_info['tenant'], bind_info['epg'], bind_info['host'],
+                bind_info['segment'][n_api.SEGMENTATION_ID],
+                bd_name=bind_info['bd'])
+
+    def _delete_path_static_binding_if_reqd(self, context, use_original):
+        bind_info = self._get_static_binding_info_for_port(
+            context, use_original)
+        if bind_info:
+            bound_port_count = nctx.get_admin_context().session.query(
+                ml2_models.PortBindingLevel).filter_by(
+                    host=bind_info['host'],
+                    segment_id=bind_info['segment'][n_api.ID]).filter(
+                        ml2_models.PortBindingLevel.port_id !=
+                        context.current['id']).count()
+            if not bound_port_count:
+                # last port belonging to ACI EPG on this host was removed
+                LOG.info(_('Deleting static path binding for port '
+                           '%(port)s, %(info)s'),
+                         {'port': context.current['id'], 'info': bind_info})
+                self.apic_manager.ensure_path_deleted_for_port(
+                    bind_info['tenant'], bind_info['epg'], bind_info['host'])
+
+    def _strip_subnet(self, fixed_ips):
+        for ip in fixed_ips:
+            ip.pop('subnet_id', None)
+        return fixed_ips
