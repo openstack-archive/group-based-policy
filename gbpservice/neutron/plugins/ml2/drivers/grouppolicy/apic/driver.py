@@ -197,12 +197,10 @@ class APICMechanismGBPDriver(api.MechanismDriver):
         return self._dvs_notifier
 
     def create_port_postcommit(self, context):
-        self.apic_gbp.process_port_added(
-            context._plugin_context, context.current)
+        self.apic_gbp.process_port_added(context)
 
     def update_port_postcommit(self, context):
-        self.apic_gbp.process_port_changed(context._plugin_context,
-                                           context.original, context.current)
+        self.apic_gbp.process_port_changed(context)
         port = context.current
         if (port.get('binding:vif_details') and
                 port['binding:vif_details'].get('dvs_port_group_name')) and (
@@ -215,12 +213,10 @@ class APICMechanismGBPDriver(api.MechanismDriver):
             )
 
     def delete_port_precommit(self, context):
-        self.apic_gbp.process_pre_port_deleted(context._plugin_context,
-                                               context.current)
+        self.apic_gbp.process_pre_port_deleted(context)
 
     def delete_port_postcommit(self, context):
-        self.apic_gbp.process_port_deleted(context._plugin_context,
-                                           context.current)
+        self.apic_gbp.process_port_deleted(context)
         port = context.current
         if (port.get('binding:vif_details') and
                 port['binding:vif_details'].get('dvs_port_group_name')) and (
