@@ -21,7 +21,7 @@ from oslo_utils import importutils
 from stevedore import driver
 
 LOG = logging.getLogger(__name__)
-cfg.CONF.import_group('keystone_authtoken', 'keystonemiddleware.auth_token')
+#cfg.CONF.import_group('keystone_authtoken', 'keystonemiddleware.auth_token')
 
 
 @contextlib.contextmanager

@@ -31,7 +31,7 @@ from gbpservice.neutron.services.servicechain.common import exceptions as exc
 
 
 LOG = logging.getLogger(__name__)
-cfg.CONF.import_group('keystone_authtoken', 'keystonemiddleware.auth_token')
+#cfg.CONF.import_group('keystone_authtoken', 'keystonemiddleware.auth_token')
 
 service_chain_opts = [
     cfg.IntOpt('stack_delete_retries',
