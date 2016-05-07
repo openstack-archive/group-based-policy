@@ -4,7 +4,7 @@
 
 setuptools>=19.2
 -e git+https://git.openstack.org/openstack/neutron.git@stable/mitaka#egg=neutron
--e git+https://github.com/noironetworks/apic-ml2-driver.git@master#egg=apic_ml2
+-e git+https://github.com/noironetworks/apic-ml2-driver.git@451dabdcb0a39dba745deecf0b75b30b96754e23#egg=apic_ml2
 hacking<0.11,>=0.10.0
 
 cliff>=1.15.0 # Apache-2.0
