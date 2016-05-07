@@ -191,9 +191,7 @@ class TestImplicitServiceChains(ResourceMappingStitchingPlumberGBPTestCase,
                 target.policy_target_id)['policy_target']
             port = self._bind_port_to_host(pt['port_id'], 'host')['port']
             self.assertTrue(port['binding:vif_details']['port_filter'])
-            # REVISIT: On account of the following commit:
-            # https://git.io/v2czD
-            # the hybrid plugging is disabled. Assuming that we are just
-            # checking for the default value here, this should be fine. Else we
-            # need to revisit.
-            self.assertFalse(port['binding:vif_details']['ovs_hybrid_plug'])
+            # This change sets hybrid VIF plugging to True by default again
+            # https://github.com/openstack/neutron/commit/
+            # eca893be5b770c41cfc570dc016a41c30c2cdf23
+            self.assertTrue(port['binding:vif_details']['ovs_hybrid_plug'])
