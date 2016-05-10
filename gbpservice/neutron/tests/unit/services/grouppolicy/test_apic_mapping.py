@@ -3386,8 +3386,9 @@ class TestExternalPolicy(ApicMappingTestCase):
         self.assertEqual('SharedExternalPolicyUnsupported',
                          res['NeutronError']['type'])
 
-    def _test_creation_no_prs(self, shared_es):
-        self._mock_external_dict([('supported', '192.168.0.2/24')])
+    def _test_creation_no_prs(self, shared_es, is_edge_nat=False):
+        self._mock_external_dict([('supported', '192.168.0.2/24')],
+                                 is_edge_nat)
         es_list = [
             self.create_external_segment(
                 name='supported', cidr='192.168.0.0/24', shared=shared_es,
@@ -3416,6 +3417,9 @@ class TestExternalPolicy(ApicMappingTestCase):
                  else self.common_tenant)
         l3p_owner = l3p_list[0]['tenant_id']
         expected_create_calls = []
+        sub_str = "Shd-%s-%s"
+        if is_edge_nat:
+            sub_str = "Auto-%s-%s"
         for x in range(len(es_list)):
             es = es_list[x]
             l3p = l3p_list[x]
@@ -3426,9 +3430,9 @@ class TestExternalPolicy(ApicMappingTestCase):
                         external_epg="default-%s" % es['id'], owner=owner,
                         transaction=mock.ANY))
                 expected_create_calls.append(
-                    mock.call("Shd-%s-%s" % (l3p['id'], es['id']),
+                    mock.call(sub_str % (l3p['id'], es['id']),
                     subnet='128.0.0.0/16',
-                    external_epg=("Shd-%s-%s" % (l3p['id'], ep['id'])),
+                    external_epg=(sub_str % (l3p['id'], ep['id'])),
                     owner=l3p_owner,
                     transaction=mock.ANY))
             elif not self.pre_l3out:
@@ -3468,8 +3472,12 @@ class TestExternalPolicy(ApicMappingTestCase):
     def test_creation_no_prs_2(self):
         self._test_creation_no_prs(shared_es=False)
 
-    def _test_update_no_prs(self, shared_es):
-        self._mock_external_dict([('supported', '192.168.0.2/24')])
+    def test_creation_no_prs_edge_nat_mode(self):
+        self._test_creation_no_prs(shared_es=False, is_edge_nat=True)
+
+    def _test_update_no_prs(self, shared_es, is_edge_nat=False):
+        self._mock_external_dict([('supported', '192.168.0.2/24')],
+                                 is_edge_nat)
         es_list = [
             self.create_external_segment(
                 name='supported', cidr='192.168.0.0/24', shared=shared_es,
@@ -3499,6 +3507,9 @@ class TestExternalPolicy(ApicMappingTestCase):
                  else self.common_tenant)
         l3p_owner = l3p_list[0]['tenant_id']
         expected_create_calls = []
+        sub_str = "Shd-%s-%s"
+        if is_edge_nat:
+            sub_str = "Auto-%s-%s"
         for x in range(len(es_list)):
             es = es_list[x]
             l3p = l3p_list[x]
@@ -3509,9 +3520,9 @@ class TestExternalPolicy(ApicMappingTestCase):
                             external_epg="default-%s" % es['id'],
                             owner=owner, transaction=mock.ANY))
                 expected_create_calls.append(
-                    mock.call("Shd-%s-%s" % (l3p['id'], es['id']),
+                    mock.call(sub_str % (l3p['id'], es['id']),
                          subnet='128.0.0.0/16',
-                         external_epg="Shd-%s-%s" % (l3p['id'], ep['id']),
+                         external_epg=sub_str % (l3p['id'], ep['id']),
                          owner=l3p_owner, transaction=mock.ANY))
             elif not self.pre_l3out:
                 expected_create_calls.append(
@@ -3556,9 +3567,9 @@ class TestExternalPolicy(ApicMappingTestCase):
                         mock.call(es['id'], owner=owner,
                         external_epg="default-%s" % es['id']))
                 expected_create_calls.append(
-                    mock.call("Shd-%s-%s" % (l3p['id'], es['id']),
+                    mock.call(sub_str % (l3p['id'], es['id']),
                          owner=l3p_owner,
-                         external_epg="Shd-%s-%s" % (l3p['id'], ep['id'])))
+                         external_epg=sub_str % (l3p['id'], ep['id'])))
             elif not self.pre_l3out:
                 expected_create_calls.append(
                     mock.call(es['id'], owner=owner, external_epg=ep['id']))
@@ -3590,8 +3601,12 @@ class TestExternalPolicy(ApicMappingTestCase):
     def test_update_no_prs_2(self):
         self._test_update_no_prs(shared_es=False)
 
-    def _test_create_with_prs(self, shared_es, shared_prs):
-        self._mock_external_dict([('supported', '192.168.0.2/24')])
+    def test_update_no_prs_edge_nat_mode(self):
+        self._test_update_no_prs(shared_es=False, is_edge_nat=True)
+
+    def _test_create_with_prs(self, shared_es, shared_prs, is_edge_nat=False):
+        self._mock_external_dict([('supported', '192.168.0.2/24')],
+                                 is_edge_nat)
         es_list = [
             self.create_external_segment(
                 name='supported', cidr='192.168.0.0/24', shared=shared_es,
@@ -3650,14 +3665,17 @@ class TestExternalPolicy(ApicMappingTestCase):
                     provided=False, owner=ext_epg_tenant,
                     transaction=mock.ANY))
             if nat:
+                sub_str = "Shd-%s-%s"
+                if is_edge_nat:
+                    sub_str = "Auto-%s-%s"
                 expected_calls.append(
-                    mock.call("Shd-%s-%s" % (l3p['id'], es['id']), prov['id'],
-                        external_epg=("Shd-%s-%s" % (l3p['id'], ep['id'])),
+                    mock.call(sub_str % (l3p['id'], es['id']), prov['id'],
+                        external_epg=(sub_str % (l3p['id'], ep['id'])),
                         provided=True, owner=l3p_owner,
                         transaction=mock.ANY))
                 expected_calls.append(
-                    mock.call("Shd-%s-%s" % (l3p['id'], es['id']), cons['id'],
-                        external_epg=("Shd-%s-%s" % (l3p['id'], ep['id'])),
+                    mock.call(sub_str % (l3p['id'], es['id']), cons['id'],
+                        external_epg=(sub_str % (l3p['id'], ep['id'])),
                         provided=False, owner=l3p_owner,
                         transaction=mock.ANY))
         self._check_call_list(expected_calls,
@@ -3677,8 +3695,13 @@ class TestExternalPolicy(ApicMappingTestCase):
     def test_create_with_prs_4(self):
         self._test_create_with_prs(shared_es=False, shared_prs=True)
 
-    def _test_update_add_prs(self, shared_es, shared_prs):
-        self._mock_external_dict([('supported', '192.168.0.2/24')])
+    def test_create_with_prs_edge_nat_mode(self):
+        self._test_create_with_prs(shared_es=False, shared_prs=True,
+                                   is_edge_nat=True)
+
+    def _test_update_add_prs(self, shared_es, shared_prs, is_edge_nat=False):
+        self._mock_external_dict([('supported', '192.168.0.2/24')],
+                                 is_edge_nat)
         es_list = [
             self.create_external_segment(
                 name='supported', cidr='192.168.0.0/24', shared=shared_es,
@@ -3716,6 +3739,9 @@ class TestExternalPolicy(ApicMappingTestCase):
         l3p_owner = l3p_list[0]['tenant_id']
         expected_calls = []
         nat = self.nat_enabled
+        sub_str = "Shd-%s-%s"
+        if is_edge_nat:
+            sub_str = "Auto-%s-%s"
         for x in range(len(es_list)):
             es = es_list[x]
             l3p = l3p_list[x]
@@ -3738,13 +3764,13 @@ class TestExternalPolicy(ApicMappingTestCase):
                     transaction=mock.ANY))
             if nat:
                 expected_calls.append(
-                    mock.call("Shd-%s-%s" % (l3p['id'], es['id']), prov['id'],
-                        external_epg=("Shd-%s-%s" % (l3p['id'], ep['id'])),
+                    mock.call(sub_str % (l3p['id'], es['id']), prov['id'],
+                        external_epg=(sub_str % (l3p['id'], ep['id'])),
                         provided=True, owner=l3p_owner,
                         transaction=mock.ANY))
                 expected_calls.append(
-                    mock.call("Shd-%s-%s" % (l3p['id'], es['id']), cons['id'],
-                        external_epg=("Shd-%s-%s" % (l3p['id'], ep['id'])),
+                    mock.call(sub_str % (l3p['id'], es['id']), cons['id'],
+                        external_epg=(sub_str % (l3p['id'], ep['id'])),
                         provided=False, owner=l3p_owner,
                         transaction=mock.ANY))
         self._check_call_list(expected_calls,
@@ -3760,13 +3786,13 @@ class TestExternalPolicy(ApicMappingTestCase):
             l3p = l3p_list[x]
             if nat:
                 expected_calls.append(
-                    mock.call("Shd-%s-%s" % (l3p['id'], es['id']), prov['id'],
-                        external_epg=("Shd-%s-%s" % (l3p['id'], ep['id'])),
+                    mock.call(sub_str % (l3p['id'], es['id']), prov['id'],
+                        external_epg=(sub_str % (l3p['id'], ep['id'])),
                         provided=True, owner=l3p_owner,
                         transaction=mock.ANY))
                 expected_calls.append(
-                    mock.call("Shd-%s-%s" % (l3p['id'], es['id']), cons['id'],
-                        external_epg=("Shd-%s-%s" % (l3p['id'], ep['id'])),
+                    mock.call(sub_str % (l3p['id'], es['id']), cons['id'],
+                        external_epg=(sub_str % (l3p['id'], ep['id'])),
                         provided=False, owner=l3p_owner,
                         transaction=mock.ANY))
             else:
@@ -3801,6 +3827,10 @@ class TestExternalPolicy(ApicMappingTestCase):
 
     def test_update_add_prs_4(self):
         self._test_update_add_prs(shared_es=False, shared_prs=True)
+
+    def test_update_add_prs_edge_nat_mode(self):
+        self._test_update_add_prs(shared_es=False, shared_prs=True,
+                                  is_edge_nat=True)
 
     def test_update_add_prs_unsupported(self):
         self._mock_external_dict([('supported', '192.168.0.2/24')])
