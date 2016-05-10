@@ -1502,7 +1502,8 @@ class ApicMappingDriver(api.ResourceMappingDriver,
                      "mapping driver.") % es['id'])
             return
         pre_existing = (False if is_shadow else self._is_pre_existing(es))
-        pfx = self._get_shadow_prefix(plugin_context, is_shadow, l3policy_obj)
+        pfx = self._get_shadow_prefix(plugin_context, is_shadow, l3policy_obj,
+                                      self._is_edge_nat(ext_info))
         plugin_context._plugin = self.gbp_plugin
         plugin_context._plugin_context = plugin_context
 
@@ -1721,7 +1722,6 @@ class ApicMappingDriver(api.ResourceMappingDriver,
                 request_json)
         request_json = re.sub(old_l3_out, new_l3_out, request_json)
         request_json = re.sub('{},*', '', request_json)
-
         self.apic_manager.apic.post_body(
             self.apic_manager.apic.l3extOut.mo,
             request_json,
@@ -1758,7 +1758,7 @@ class ApicMappingDriver(api.ResourceMappingDriver,
 
         es_name = self.name_mapper.external_segment(context, es,
             prefix=self._get_shadow_prefix(context,
-                is_shadow, context.current))
+                is_shadow, context.current, self._is_edge_nat(ext_info)))
         es_tenant = self._get_tenant_for_shadow(is_shadow, context.current, es)
         nat_enabled = self._is_nat_enabled_on_es(es)
         pre_existing = False if is_shadow else self._is_pre_existing(es)
@@ -1771,10 +1771,9 @@ class ApicMappingDriver(api.ResourceMappingDriver,
             # don't need to explicitly create the shadow l3out in this case
             # because we are going to query APIC then use the pre-existing
             # l3out as a template then clone it accordingly
-            if is_shadow and self._is_edge_nat(ext_info):
-                es_name = str(es_name).replace(SHADOW_PREFIX, AUTO_PREFIX, 1)
-                if self._is_pre_existing(es):
-                    is_l3out_creation_needed = False
+            if (is_shadow and self._is_edge_nat(ext_info) and
+                self._is_pre_existing(es)):
+                is_l3out_creation_needed = False
 
             if is_l3out_creation_needed:
                 self.apic_manager.ensure_external_routed_network_created(
@@ -1848,12 +1847,13 @@ class ApicMappingDriver(api.ResourceMappingDriver,
                     ep['consumed_policy_rule_sets'])
 
     def _unplug_l3p_from_es(self, context, es, is_shadow=False):
+        is_edge_nat = False
+        if is_shadow:
+            ext_info = self.apic_manager.ext_net_dict.get(es['name'])
+            is_edge_nat = self._is_edge_nat(ext_info)
         es_name = self.name_mapper.external_segment(context, es,
             prefix=self._get_shadow_prefix(context,
-                is_shadow, context.current))
-        ext_info = self.apic_manager.ext_net_dict.get(es['name'])
-        if is_shadow and self._is_edge_nat(ext_info):
-            es_name = str(es_name).replace(SHADOW_PREFIX, AUTO_PREFIX, 1)
+                is_shadow, context.current, is_edge_nat))
         es_tenant = self._get_tenant_for_shadow(is_shadow, context.current, es)
         nat_enabled = self._is_nat_enabled_on_es(es)
         pre_existing = False if is_shadow else self._is_pre_existing(es)
@@ -1907,23 +1907,22 @@ class ApicMappingDriver(api.ResourceMappingDriver,
         if segments:
             added_ess = context._plugin.get_external_segments(
                 context._plugin_context, filters={'id': segments})
-            ep_name_orig = self.name_mapper.external_policy(context, ep,
-                prefix=self._get_shadow_prefix(
-                    context, is_shadow, l3policy_obj))
             for es in added_ess:
                 ext_info = self.apic_manager.ext_net_dict.get(es['name'])
                 if not ext_info:
                     LOG.warn(UNMANAGED_SEGMENT % es['id'])
                     continue
-                ep_name = ep_name_orig
+                pfx = self._get_shadow_prefix(context, is_shadow, l3policy_obj,
+                                              self._is_edge_nat(ext_info))
+                ep_name = self.name_mapper.external_policy(context, ep,
+                    prefix=pfx)
                 pre_existing = (False if is_shadow else
                                 self._is_pre_existing(es))
                 pre_existing_epg = False
                 nat_enabled = self._is_nat_enabled_on_es(es)
                 if not pre_existing:
                     es_name = self.name_mapper.external_segment(context,
-                        es, prefix=self._get_shadow_prefix(
-                            context, is_shadow, l3policy_obj))
+                        es, prefix=pfx)
                     es_tenant = self._get_tenant_for_shadow(is_shadow,
                         l3policy_obj, es)
                     if nat_enabled and not is_shadow:
@@ -1965,13 +1964,16 @@ class ApicMappingDriver(api.ResourceMappingDriver,
                             context._plugin_context, es, ep,
                             provided_prs, consumed_prs, [], [],
                             l3policy_obj, transaction=trs)
-                    if is_shadow and not self._is_edge_nat(ext_info):
-                        # set up link to NAT EPG
-                        self.apic_manager.associate_external_epg_to_nat_epg(
-                            es_tenant, es_name, ep_name,
-                            self._get_nat_epg_for_es(context, es),
-                            target_owner=self._tenant_by_sharing_policy(es),
-                            transaction=trs)
+                    if is_shadow:
+                        if not self._is_edge_nat(ext_info):
+                            # set up link to NAT EPG
+                            (self.apic_manager.
+                             associate_external_epg_to_nat_epg(
+                                 es_tenant, es_name, ep_name,
+                                 self._get_nat_epg_for_es(context, es),
+                                 target_owner=self._tenant_by_sharing_policy(
+                                     es),
+                                 transaction=trs))
                     elif nat_enabled:
                         # 'real' external EPGs provide and consume
                         # allow-all contract when NAT is enabled
@@ -2004,15 +2006,15 @@ class ApicMappingDriver(api.ResourceMappingDriver,
         if segments:
             added_ess = context._plugin.get_external_segments(
                 context._plugin_context, filters={'id': segments})
-            ep_name_orig = self.name_mapper.external_policy(context, ep,
-                prefix=self._get_shadow_prefix(context,
-                    is_shadow, l3policy_obj))
             for es in added_ess:
                 ext_info = self.apic_manager.ext_net_dict.get(es['name'])
                 if not ext_info:
                     LOG.warn(UNMANAGED_SEGMENT % es['id'])
                     continue
-                ep_name = ep_name_orig
+                pfx = self._get_shadow_prefix(context, is_shadow, l3policy_obj,
+                                              self._is_edge_nat(ext_info))
+                ep_name = self.name_mapper.external_policy(context, ep,
+                                                           prefix=pfx)
                 pre_existing = (False if is_shadow else
                                 self._is_pre_existing(es))
                 pre_existing_epg = False
@@ -2030,8 +2032,7 @@ class ApicMappingDriver(api.ResourceMappingDriver,
 
                 if not pre_existing:
                     es_name = self.name_mapper.external_segment(context, es,
-                        prefix=self._get_shadow_prefix(context,
-                            is_shadow, l3policy_obj))
+                        prefix=pfx)
                     es_tenant = self._get_tenant_for_shadow(is_shadow,
                         l3policy_obj, es)
                     if nat_enabled and not is_shadow:
@@ -2089,7 +2090,8 @@ class ApicMappingDriver(api.ResourceMappingDriver,
         removed = old_routes - new_routes
 
         pre_existing = (False if is_shadow else self._is_pre_existing(es))
-        pfx = self._get_shadow_prefix(context, is_shadow, l3policy_obj)
+        pfx = self._get_shadow_prefix(context, is_shadow, l3policy_obj,
+                                      self._is_edge_nat(ext_info))
         if not is_shadow and not pre_existing:
             switch = ext_info['switch']
             default_gateway = ext_info['gateway_ip']
@@ -2234,9 +2236,13 @@ class ApicMappingDriver(api.ResourceMappingDriver,
         return ("NAT-allow-%s" %
             self.name_mapper.external_segment(context, es))
 
-    def _get_shadow_prefix(self, context, is_shadow, l3_obj):
+    def _get_shadow_prefix(self, context, is_shadow, l3_obj,
+                           is_edge_nat=False):
+        prefix = SHADOW_PREFIX
+        if is_edge_nat:
+            prefix = AUTO_PREFIX
         return (is_shadow and
-            ('%s%s-' % (SHADOW_PREFIX,
+            ('%s%s-' % (prefix,
                 str(self.name_mapper.l3_policy(context, l3_obj))))
             or '')
 
