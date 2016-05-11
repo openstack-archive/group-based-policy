@@ -72,11 +72,14 @@ def _get_ptg_or_ep(context, group_id):
     if group_id:
         groups = get_gbp_plugin().get_policy_target_groups(
                                     context, filters = {'id': [group_id]})
+        if not groups:
+            groups = get_gbp_plugin().get_external_policies(
+                                    context, filters = {'id': [group_id]})
+            if groups:
+                is_group_external = True
         if groups:
             group = groups[0]
-        else:
-            group = get_gbp_plugin().get_external_policy(context, group_id)
-            is_group_external = True
+
     return (group, is_group_external)
 
 
