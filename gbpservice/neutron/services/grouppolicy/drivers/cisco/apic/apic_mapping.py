@@ -2160,9 +2160,14 @@ class ApicMappingDriver(api.ResourceMappingDriver,
         removed = old_routes - new_routes
 
         pre_existing = (False if is_shadow else self._is_pre_existing(es))
+        is_edge_nat = self._is_edge_nat(ext_info)
         pfx = self._get_shadow_prefix(context, is_shadow, l3policy_obj,
-                                      self._is_edge_nat(ext_info))
-        if not is_shadow and not pre_existing:
+                                      is_edge_nat)
+
+        is_static_route_adjustment_needed = (
+            (not is_shadow and not pre_existing) or
+            (is_shadow and is_edge_nat and not self._is_pre_existing(es)))
+        if is_static_route_adjustment_needed:
             switch = ext_info['switch']
             default_gateway = ext_info['gateway_ip']
             nexthop = lambda h: h if h else default_gateway
@@ -2197,7 +2202,7 @@ class ApicMappingDriver(api.ResourceMappingDriver,
             for route in removed:
                 if route[0] not in new_routes_dict:
                     # Remove Route completely
-                    if not is_shadow and not pre_existing:
+                    if is_static_route_adjustment_needed:
                         self.apic_manager.ensure_static_route_deleted(
                             es_name, switch, route[0], owner=es_tenant,
                             transaction=trs)
@@ -2211,14 +2216,14 @@ class ApicMappingDriver(api.ResourceMappingDriver,
                                 es_name, external_epg=ep, owner=es_tenant,
                                 subnets=[route[0]], transaction=trs)
                 else:
-                    if not is_shadow and not pre_existing:
+                    if is_static_route_adjustment_needed:
                         # Only remove nexthop
                         self.apic_manager.ensure_next_hop_deleted(
                             es_name, switch, route[0], nexthop(route[1]),
                             owner=es_tenant, transaction=trs)
             for route in added:
                 # Create Static Route on External Routed Network
-                if not is_shadow and not pre_existing:
+                if is_static_route_adjustment_needed:
                     self.apic_manager.ensure_static_route_created(
                         es_name, switch, nexthop(route[1]),
                         owner=es_tenant, subnet=route[0], transaction=trs)
