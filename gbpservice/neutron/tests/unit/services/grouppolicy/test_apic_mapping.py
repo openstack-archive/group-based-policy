@@ -3253,9 +3253,10 @@ class TestExternalSegment(ApicMappingTestCase):
         self.assertFalse(mgr.ensure_external_epg_created.called)
         self.assertFalse(mgr.ensure_next_hop_deleted.called)
 
-    def _test_route_update_remove(self, shared_es):
+    def _test_route_update_remove(self, shared_es, is_edge_nat=False):
         # Verify routes are updated correctly
-        self._mock_external_dict([('supported', '192.168.0.2/24')])
+        self._mock_external_dict([('supported', '192.168.0.2/24')],
+                                 is_edge_nat)
         es = self.create_external_segment(
             name='supported', cidr='192.168.0.0/24', shared=shared_es,
             external_routes=[{'destination': '0.0.0.0/0',
@@ -3295,11 +3296,26 @@ class TestExternalSegment(ApicMappingTestCase):
                                      external_routes=[
                                          {'destination': '0.0.0.0/0',
                                           'nexthop': '192.168.0.254'}])
+        sub_str = "Shd-%s-%s"
+        if is_edge_nat:
+            sub_str = "Auto-%s-%s"
         mgr = self.driver.apic_manager
         if not self.pre_l3out:
-            mgr.ensure_static_route_deleted.assert_called_with(
-                es['id'], mocked.APIC_EXT_SWITCH, '128.0.0.0/16',
-                owner=owner, transaction=mock.ANY)
+            expected_delete_calls = []
+            expected_delete_calls.append(
+                mock.call(es['id'], mocked.APIC_EXT_SWITCH,
+                          '128.0.0.0/16', owner=owner, transaction=mock.ANY))
+            if self.nat_enabled and is_edge_nat:
+                for x in range(len(tenants)):
+                    l3p = l3p_list[x]
+                    l3out = sub_str % (l3p['id'], es['id'])
+                    tenant = tenants[x]
+                    expected_delete_calls.append(
+                        mock.call(l3out, mocked.APIC_EXT_SWITCH,
+                                  '128.0.0.0/16', owner=tenant,
+                                  transaction=mock.ANY))
+            self._check_call_list(expected_delete_calls,
+                mgr.ensure_static_route_deleted.call_args_list)
         else:
             self.assertFalse(mgr.ensure_static_route_deleted.called)
         expected_delete_calls = []
@@ -3310,8 +3326,8 @@ class TestExternalSegment(ApicMappingTestCase):
             ext_epg = ep['id']
             tenant = APIC_PRE_L3OUT_TENANT if self.pre_l3out else owner
             if self.nat_enabled:
-                l3out = "Shd-%s-%s" % (l3p['id'], es['id'])
-                ext_epg = "Shd-%s-%s" % (l3p['id'], ext_epg)
+                l3out = sub_str % (l3p['id'], es['id'])
+                ext_epg = sub_str % (l3p['id'], ext_epg)
                 tenant = tenants[x]
             expected_delete_calls.append(
                 mock.call(l3out, subnets=['128.0.0.0/16'],
@@ -3333,13 +3349,32 @@ class TestExternalSegment(ApicMappingTestCase):
                                          {'destination': '0.0.0.0/0',
                                           'nexthop': None}])
         if not self.pre_l3out:
-            mgr.ensure_next_hop_deleted.assert_called_with(
-                es['id'], mocked.APIC_EXT_SWITCH, '0.0.0.0/0', '192.168.0.254',
-                owner=owner, transaction=mock.ANY)
+            expected_delete_calls = []
+            expected_create_calls = []
+            expected_delete_calls.append(
+                mock.call(es['id'], mocked.APIC_EXT_SWITCH, '0.0.0.0/0',
+                          '192.168.0.254', owner=owner, transaction=mock.ANY))
             # Being the new nexthop 'None', the default one is used
-            mgr.ensure_static_route_created.assert_called_with(
-                es['id'], mocked.APIC_EXT_SWITCH, '192.168.0.1',
-                subnet='0.0.0.0/0', owner=owner, transaction=mock.ANY)
+            expected_create_calls.append(
+                mock.call(es['id'], mocked.APIC_EXT_SWITCH, '192.168.0.1',
+                subnet='0.0.0.0/0', owner=owner, transaction=mock.ANY))
+            if self.nat_enabled and is_edge_nat:
+                for x in range(len(tenants)):
+                    l3p = l3p_list[x]
+                    l3out = sub_str % (l3p['id'], es['id'])
+                    tenant = tenants[x]
+                    expected_delete_calls.append(
+                        mock.call(l3out, mocked.APIC_EXT_SWITCH, '0.0.0.0/0',
+                                  '192.168.0.254', owner=tenant,
+                                  transaction=mock.ANY))
+                    expected_create_calls.append(
+                        mock.call(l3out, mocked.APIC_EXT_SWITCH, '192.168.0.1',
+                                  subnet='0.0.0.0/0', owner=tenant,
+                                  transaction=mock.ANY))
+            self._check_call_list(expected_delete_calls,
+                mgr.ensure_next_hop_deleted.call_args_list)
+            self._check_call_list(expected_create_calls,
+                mgr.ensure_static_route_created.call_args_list)
         else:
             self.assertFalse(mgr.ensure_static_route_created.called)
             self.assertFalse(mgr.ensure_next_hop_deleted.called)
@@ -3352,8 +3387,8 @@ class TestExternalSegment(ApicMappingTestCase):
             ext_epg = ep['id']
             tenant = APIC_PRE_L3OUT_TENANT if self.pre_l3out else owner
             if self.nat_enabled:
-                l3out = "Shd-%s-%s" % (l3p['id'], es['id'])
-                ext_epg = "Shd-%s-%s" % (l3p['id'], ext_epg)
+                l3out = sub_str % (l3p['id'], es['id'])
+                ext_epg = sub_str % (l3p['id'], ext_epg)
                 tenant = tenants[x]
             expected_delete_calls.append(
                 mock.call(l3out, subnet='0.0.0.0/0',
@@ -3373,9 +3408,13 @@ class TestExternalSegment(ApicMappingTestCase):
     def test_route_update_remove_2(self):
         self._test_route_update_remove(shared_es=False)
 
-    def _test_route_update_add(self, shared_es):
+    def test_route_update_remove_edge_nat_mode(self):
+        self._test_route_update_remove(shared_es=True, is_edge_nat=True)
+
+    def _test_route_update_add(self, shared_es, is_edge_nat=False):
         # Verify routes are updated correctly
-        self._mock_external_dict([('supported', '192.168.0.2/24')])
+        self._mock_external_dict([('supported', '192.168.0.2/24')],
+                                 is_edge_nat)
         es = self.create_external_segment(
             name='supported', cidr='192.168.0.0/24', shared=shared_es,
             external_routes=[], expected_res_status=201)['external_segment']
@@ -3403,17 +3442,33 @@ class TestExternalSegment(ApicMappingTestCase):
                  expected_res_status=201)['external_policy']
                for x in xrange(len(tenants))]
         mgr = self.driver.apic_manager
+        mgr.ensure_static_route_created.reset_mock()
         mgr.ensure_external_epg_created.reset_mock()
         owner = es['tenant_id'] if not shared_es else self.common_tenant
         self.update_external_segment(es['id'], expected_res_status=200,
                                      external_routes=[
                                          {'destination': '128.0.0.0/16',
                                           'nexthop': '192.168.0.254'}])
-
+        sub_str = "Shd-%s-%s"
+        if is_edge_nat:
+            sub_str = "Auto-%s-%s"
         if not self.pre_l3out:
-            mgr.ensure_static_route_created.assert_called_with(
-                es['id'], mocked.APIC_EXT_SWITCH, '192.168.0.254',
-                subnet='128.0.0.0/16', owner=owner, transaction=mock.ANY)
+            expected_create_calls = []
+            expected_create_calls.append(
+                mock.call(es['id'], mocked.APIC_EXT_SWITCH,
+                          '192.168.0.254', subnet='128.0.0.0/16',
+                          owner=owner, transaction=mock.ANY))
+            if self.nat_enabled and is_edge_nat:
+                for x in range(len(tenants)):
+                    l3p = l3p_list[x]
+                    l3out = sub_str % (l3p['id'], es['id'])
+                    tenant = tenants[x]
+                    expected_create_calls.append(
+                        mock.call(l3out, mocked.APIC_EXT_SWITCH,
+                                  '192.168.0.254', subnet='128.0.0.0/16',
+                                  owner=tenant, transaction=mock.ANY))
+            self._check_call_list(expected_create_calls,
+                mgr.ensure_static_route_created.call_args_list)
         else:
             self.assertFalse(mgr.ensure_static_route_created.called)
 
@@ -3425,8 +3480,8 @@ class TestExternalSegment(ApicMappingTestCase):
             ext_epg = ep['id']
             tenant = APIC_PRE_L3OUT_TENANT if self.pre_l3out else owner
             if self.nat_enabled:
-                l3out = "Shd-%s-%s" % (l3p['id'], es['id'])
-                ext_epg = "Shd-%s-%s" % (l3p['id'], ext_epg)
+                l3out = sub_str % (l3p['id'], es['id'])
+                ext_epg = sub_str % (l3p['id'], ext_epg)
                 tenant = tenants[x]
             expected_create_calls.append(
                 mock.call(l3out, subnet='128.0.0.0/16',
@@ -3450,9 +3505,22 @@ class TestExternalSegment(ApicMappingTestCase):
                                           'nexthop': None}])
 
         if not self.pre_l3out:
-            mgr.ensure_static_route_created.assert_called_with(
-                es['id'], mocked.APIC_EXT_SWITCH, '192.168.0.1',
-                subnet='0.0.0.0/0', owner=owner, transaction=mock.ANY)
+            expected_create_calls = []
+            expected_create_calls.append(
+                mock.call(es['id'], mocked.APIC_EXT_SWITCH,
+                          '192.168.0.1', subnet='0.0.0.0/0',
+                          owner=owner, transaction=mock.ANY))
+            if self.nat_enabled and is_edge_nat:
+                for x in range(len(tenants)):
+                    l3p = l3p_list[x]
+                    l3out = sub_str % (l3p['id'], es['id'])
+                    tenant = tenants[x]
+                    expected_create_calls.append(
+                        mock.call(l3out, mocked.APIC_EXT_SWITCH, '192.168.0.1',
+                                  subnet='0.0.0.0/0', owner=tenant,
+                                  transaction=mock.ANY))
+            self._check_call_list(expected_create_calls,
+                mgr.ensure_static_route_created.call_args_list)
         else:
             self.assertFalse(mgr.ensure_static_route_created.called)
         expected_create_calls = []
@@ -3463,8 +3531,8 @@ class TestExternalSegment(ApicMappingTestCase):
             ext_epg = ep['id']
             tenant = APIC_PRE_L3OUT_TENANT if self.pre_l3out else owner
             if self.nat_enabled:
-                l3out = "Shd-%s-%s" % (l3p['id'], es['id'])
-                ext_epg = "Shd-%s-%s" % (l3p['id'], ext_epg)
+                l3out = sub_str % (l3p['id'], es['id'])
+                ext_epg = sub_str % (l3p['id'], ext_epg)
                 tenant = tenants[x]
             expected_create_calls.append(
                 mock.call(l3out, subnet='0.0.0.0/0',
@@ -3483,6 +3551,9 @@ class TestExternalSegment(ApicMappingTestCase):
 
     def test_route_update_add_2(self):
         self._test_route_update_add(shared_es=False)
+
+    def test_route_update_add_edge_nat_mode(self):
+        self._test_route_update_add(shared_es=True, is_edge_nat=True)
 
     def test_es_create_no_cidr_with_routes(self):
         self._mock_external_dict([('supported', '192.168.0.2/24')])
