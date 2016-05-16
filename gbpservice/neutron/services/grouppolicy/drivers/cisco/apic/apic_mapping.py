@@ -18,6 +18,8 @@ from apic_ml2.neutron.db import l3out_vlan_allocation as l3out_vlan_alloc
 from apic_ml2.neutron.db import port_ha_ipaddress_binding as ha_ip_db
 from apic_ml2.neutron.plugins.ml2.drivers.cisco.apic import apic_model
 from apic_ml2.neutron.plugins.ml2.drivers.cisco.apic import config  # noqa
+from apic_ml2.neutron.plugins.ml2.drivers.cisco.apic import (
+    nova_client as nclient)
 from apicapi import apic_manager
 from apicapi import apic_mapper
 from keystoneclient.auth.identity.generic import password as keypassword
@@ -56,8 +58,6 @@ from gbpservice.neutron.services.grouppolicy.drivers import (
     resource_mapping as api)
 from gbpservice.neutron.services.grouppolicy.drivers.cisco.apic import (
     name_manager as name_manager)
-from gbpservice.neutron.services.grouppolicy.drivers.cisco.apic import (
-    nova_client as nclient)
 from gbpservice.neutron.services.grouppolicy import group_policy_context
 
 
