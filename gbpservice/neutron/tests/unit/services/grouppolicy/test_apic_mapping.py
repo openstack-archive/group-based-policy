@@ -112,8 +112,8 @@ class ApicMappingTestCase(
         mock.patch('gbpservice.neutron.services.grouppolicy.drivers.cisco.'
                    'apic.apic_mapping.ApicMappingDriver._setup_rpc').start()
         nova_client = mock.patch(
-            'gbpservice.neutron.services.grouppolicy.drivers.cisco.'
-            'apic.nova_client.NovaClient.get_server').start()
+            'apic_ml2.neutron.plugins.ml2.drivers.cisco.apic.'
+            'nova_client.NovaClient.get_server').start()
         vm = mock.Mock()
         vm.name = 'someid'
         nova_client.return_value = vm
