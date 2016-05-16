@@ -36,7 +36,7 @@ class NovaClient(object):
 
     def get_server(self, server_id):
         try:
-            return self.client.servers.get(server_id)
+            return self.nclient.servers.get(server_id)
         except nova_exceptions.NotFound:
             LOG.warning(_LW("Nova returned NotFound for server: %s"),
                         server_id)
