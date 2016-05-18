@@ -159,8 +159,8 @@ class ChainMappingDriver(api.PolicyDriver, local_api.LocalAPI,
 
     @log.log
     def create_policy_target_group_postcommit(self, context):
-        if (context.current['provided_policy_rule_sets'] and not
-            context.current.get('proxied_group_id')):
+        if (context.current['provided_policy_rule_sets'] and
+                self._is_group_chainable(context, context.current)):
             self._handle_redirect_action(
                 context, context.current['provided_policy_rule_sets'],
                 providing_ptg=context.current)
@@ -185,9 +185,9 @@ class ChainMappingDriver(api.PolicyDriver, local_api.LocalAPI,
         self._cleanup_redirect_action(context)
         # If the spec is changed, then update the chain with new spec
         # If redirect is newly added, create the chain
-        if self._is_redirect_in_policy_rule_sets(
-                context, new_provided_policy_rule_sets) and not (
-                    context.current.get('proxied_group_id')):
+        if (self._is_redirect_in_policy_rule_sets(
+                context, new_provided_policy_rule_sets) and
+                self._is_group_chainable(context, context.current)):
             self._handle_redirect_action(
                 context, curr['provided_policy_rule_sets'],
                 providing_ptg=context.current)
@@ -496,7 +496,7 @@ class ChainMappingDriver(api.PolicyDriver, local_api.LocalAPI,
                     # REVISIT(Magesh): There are concurrency issues here with
                     # concurrent updates to the same PRS, Policy Rule or Action
                     # value
-                    if not ptg_providing_prs.get('proxied_group_id'):
+                    if self._is_group_chainable(context, ptg_providing_prs):
                         self._create_or_update_chain(
                             context, ptg_providing_prs['id'],
                             SCI_CONSUMER_NOT_AVAILABLE, spec_id,
@@ -748,9 +748,10 @@ class ChainMappingDriver(api.PolicyDriver, local_api.LocalAPI,
     def _validate_ptg_prss(self, context, ptg):
         # If the PTG is providing a redirect PRS, it can't provide any more
         # redirect rules
-        if self._prss_redirect_rules(context._plugin_context.session,
-                                     ptg['provided_policy_rule_sets']) > 1:
-                raise exc.PTGAlreadyProvidingRedirectPRS(ptg_id=ptg['id'])
+        if self._is_group_chainable(context, ptg):
+            if self._prss_redirect_rules(context._plugin_context.session,
+                                         ptg['provided_policy_rule_sets']) > 1:
+                    raise exc.PTGAlreadyProvidingRedirectPRS(ptg_id=ptg['id'])
 
     def _handle_classifier_update_notification(self, context):
         # Invoke Service chain update notify hook if protocol or port or
@@ -808,3 +809,16 @@ class ChainMappingDriver(api.PolicyDriver, local_api.LocalAPI,
                          provider_ptg_ids=prs[
                              'providing_policy_target_groups'])])
         return result
+
+    def _is_group_chainable(self, context, group):
+        """Determines whether a group should trigger a chain.
+
+        Non chainable groups:
+        - Proxy groups;
+
+        :param context:
+        :param group:
+        :return: boolean
+        """
+        return (not group.get('proxied_group_id') and
+                group.get('enforce_service_chains', True) is True)
