@@ -37,11 +37,26 @@ class ExtensionDriverTestCaseMixin(object):
         self.assertEqual('192.168.0.0/16', l3p['proxy_ip_pool'])
         self.assertEqual(28, l3p['proxy_subnet_prefix_length'])
 
+        # No proxy
+        ptg_proxy = self.create_policy_target_group()['policy_target_group']
+        self.assertTrue(ptg_proxy['enforce_service_chains'])
+        ptg_proxy = self.show_policy_target_group(
+            ptg_proxy['id'])['policy_target_group']
+        self.assertTrue(ptg_proxy['enforce_service_chains'])
+        ptg_proxy = self.create_policy_target_group(
+            enforce_service_chains=False,
+            is_admin_context=True)['policy_target_group']
+        self.assertFalse(ptg_proxy['enforce_service_chains'])
+        ptg_proxy = self.show_policy_target_group(
+            ptg_proxy['id'])['policy_target_group']
+        self.assertFalse(ptg_proxy['enforce_service_chains'])
+
         ptg_proxy = self.create_policy_target_group(
             proxied_group_id=ptg['id'])['policy_target_group']
         self.assertIsNone(ptg_proxy['proxy_group_id'])
         self.assertEqual(ptg['id'], ptg_proxy['proxied_group_id'])
         self.assertEqual('l3', ptg_proxy['proxy_type'])
+        self.assertFalse(ptg_proxy['enforce_service_chains'])
 
         # Verify relationship added
         ptg = self.show_policy_target_group(ptg['id'])['policy_target_group']
