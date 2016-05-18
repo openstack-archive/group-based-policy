@@ -430,6 +430,20 @@ class ResourceMappingTestCase(test_plugin.GroupPolicyPluginTestCase):
         scs_id = spec['servicechain_spec']['id']
         return scs_id
 
+    def _create_simple_policy_rule(self, direction='bi', protocol='tcp',
+                                   port_range=80, shared=False,
+                                   action_type='allow', action_value=None):
+        cls = self.create_policy_classifier(
+            direction=direction, protocol=protocol,
+            port_range=port_range, shared=shared)['policy_classifier']
+
+        action = self.create_policy_action(
+            action_type=action_type, shared=shared,
+            action_value=action_value)['policy_action']
+        return self.create_policy_rule(
+            policy_classifier_id=cls['id'], policy_actions=[action['id']],
+            shared=shared)['policy_rule']
+
 
 class TestClusterIdMixin(object):
 
@@ -1351,6 +1365,35 @@ class TestPolicyTargetGroup(ResourceMappingTestCase):
                                         expected_res_status=400)
         self._unbind_port(port['port']['id'])
         self.delete_policy_target_group(ptg['id'], expected_res_status=204)
+
+    def test_ptg_only_participate_one_prs_when_redirect(self):
+        redirect_rule = self._create_simple_policy_rule(action_type='redirect')
+        simple_rule = self._create_simple_policy_rule()
+        prs_r = self.create_policy_rule_set(
+            policy_rules=[redirect_rule['id']])['policy_rule_set']
+        prs = self.create_policy_rule_set(
+            policy_rules=[simple_rule['id']])['policy_rule_set']
+
+        # Creating PTG with provided redirect and multiple PRS fails
+        self.create_policy_target_group(
+            provided_policy_rule_sets={prs_r['id']: '', prs['id']: ''},
+            consumed_policy_rule_sets={prs['id']: ''},
+            expected_res_status=201)
+
+        action = self.create_policy_action(
+            action_type='redirect')['policy_action']
+        res = self.update_policy_rule(
+            simple_rule['id'], policy_actions=[action['id']],
+            expected_res_status=400)
+        self.assertEqual('PTGAlreadyProvidingRedirectPRS',
+                         res['NeutronError']['type'])
+        # Verify everythin is fine for non chainable PTGs
+        with mock.patch.object(
+                chain_mapping.ChainMappingDriver, '_is_group_chainable',
+                return_value=False):
+            self.update_policy_rule(
+                simple_rule['id'], policy_actions=[action['id']],
+                expected_res_status=200)
 
 
 class TestL2Policy(ResourceMappingTestCase):

@@ -274,20 +274,6 @@ class ApicMappingTestCase(
             self.driver.apic_manager.ext_net_dict.update(
                 self._build_external_dict(x[0], x[1], is_edge_nat=is_edge_nat))
 
-    def _create_simple_policy_rule(self, direction='bi', protocol='tcp',
-                                   port_range=80, shared=False,
-                                   action_type='allow', action_value=None):
-        cls = self.create_policy_classifier(
-            direction=direction, protocol=protocol,
-            port_range=port_range, shared=shared)['policy_classifier']
-
-        action = self.create_policy_action(
-            action_type=action_type, shared=shared,
-            action_value=action_value)['policy_action']
-        return self.create_policy_rule(
-            policy_classifier_id=cls['id'], policy_actions=[action['id']],
-            shared=shared)['policy_rule']
-
     def _bind_port_to_host(self, port_id, host):
         data = {'port': {'binding:host_id': host,
                          'device_owner': 'compute:',
