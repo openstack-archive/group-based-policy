@@ -4,7 +4,7 @@
 
 setuptools>=19.2
 -e git+https://github.com/openstack/neutron.git@stable/liberty#egg=neutron
--e git+https://github.com/noironetworks/apic-ml2-driver.git@master#egg=apic_ml2
+-e git+https://github.com/noironetworks/apic-ml2-driver.git@liberty#egg=apic_ml2
 -e git+https://github.com/openstack/python-heatclient@stable/liberty#egg=heatclient
 -e git+https://github.com/openstack/python-keystoneclient@stable/liberty#egg=keystoneclient
 hacking>=0.9.2,<0.10
@@ -31,4 +31,4 @@ pylint==1.4.4 # GNU GPL v2
 reno>=0.1.1 # Apache2
 
 
--e git+https://github.com/noironetworks/python-opflex-agent.git@master#egg=python-opflexagent-agent
+-e git+https://github.com/noironetworks/python-opflex-agent.git@stable/liberty#egg=python-opflexagent-agent
