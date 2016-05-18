@@ -59,6 +59,12 @@ class ProxyGroupDriver(api.ExtensionDriver):
                     policy_target_group_id=result['id']).one())
                 record.proxy_type = data['proxy_type']
                 result['proxy_type'] = data['proxy_type']
+            # Proxy PTGs can't have chains enforced
+            data['enforce_service_chains'] = False
+            record = (session.query(db.GroupProxyMapping).filter_by(
+                policy_target_group_id=result['id']).one())
+            record.enforce_service_chains = data['enforce_service_chains']
+            result['enforce_service_chains'] = data['enforce_service_chains']
         elif attributes.is_attr_set(data.get('proxy_type')):
             raise driver_proxy_group.ProxyTypeSetWithoutProxiedPTG()
 

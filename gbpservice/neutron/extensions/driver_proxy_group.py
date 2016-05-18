@@ -74,6 +74,11 @@ EXTENDED_ATTRIBUTES_2_0 = {
             'allow_post': False, 'allow_put': False,
             'validate': {'type:uuid_or_none': None}, 'is_visible': True,
             'enforce_policy': True},
+        'enforce_service_chains': {
+            'allow_post': True, 'allow_put': False, 'default': True,
+            'convert_to': attr.convert_to_boolean,
+            'is_visible': True, 'required_by_policy': True,
+            'enforce_policy': True},
         # TODO(ivar): The APIs should allow the creation of a group with a
         # custom subnet prefix length. It may be useful for both the proxy
         # groups and traditional ones.
