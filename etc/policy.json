@@ -215,6 +215,7 @@
     "create_policy_target_group": "",
     "create_policy_target_group:shared": "rule:admin_only",
     "create_policy_target_group:service_management": "rule:admin_only",
+    "create_policy_target_group:enforce_service_chains": "rule:admin_only",
     "get_policy_target_group": "rule:admin_or_owner or rule:shared_ptg",
     "update_policy_target_group:shared": "rule:admin_only",
 
