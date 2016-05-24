@@ -870,6 +870,24 @@ class ApicMappingDriver(api.ResourceMappingDriver,
                     context._plugin_context, context.current['id'],
                     subnets, [], transaction=trs)
 
+                # query all the ESs under this vrf
+                if l3_policy_object['external_segments']:
+                    ess = context._plugin.get_external_segments(
+                        context._plugin_context,
+                        filters={'id':
+                                 l3_policy_object['external_segments'].keys()})
+                    for es in ess:
+                        ext_info = self.apic_manager.ext_net_dict.get(
+                            es['name'])
+                        if (ext_info and self._is_edge_nat(ext_info) and
+                            self._is_nat_enabled_on_es(es)):
+                            es_name = self.name_mapper.external_segment(
+                                context, es,
+                                prefix=self._get_shadow_prefix(context,
+                                    True, l3_policy_object, is_edge_nat=True))
+                            self.apic_manager.set_l3out_for_bd(tenant,
+                                    l2_policy, es_name, transaction=trs)
+
     def update_l2_policy_postcommit(self, context):
         pass
 
@@ -1859,24 +1877,32 @@ class ApicMappingDriver(api.ResourceMappingDriver,
             if is_details_needed:
                 if self._is_pre_existing(es):
                     self._clone_l3out(context, es, es_name, encap)
-                    return
                 else:
                     switch = ext_info['switch']
                     module, sport = ext_info['port'].split('/')
                     router_id = ext_info['router_id']
                     default_gateway = ext_info['gateway_ip']
 
-                self.apic_manager.set_domain_for_external_routed_network(
-                    es_name, owner=es_tenant, transaction=trs)
-                self.apic_manager.ensure_logical_node_profile_created(
-                    es_name, switch, module, sport, encap,
-                    exposed, owner=es_tenant,
-                    router_id=router_id, transaction=trs)
-                for route in es['external_routes']:
-                    self.apic_manager.ensure_static_route_created(
-                        es_name, switch, route['nexthop'] or default_gateway,
-                        owner=es_tenant,
-                        subnet=route['destination'], transaction=trs)
+                    self.apic_manager.set_domain_for_external_routed_network(
+                        es_name, owner=es_tenant, transaction=trs)
+                    self.apic_manager.ensure_logical_node_profile_created(
+                        es_name, switch, module, sport, encap,
+                        exposed, owner=es_tenant,
+                        router_id=router_id, transaction=trs)
+                    for route in es['external_routes']:
+                        self.apic_manager.ensure_static_route_created(
+                            es_name, switch,
+                            route['nexthop'] or default_gateway,
+                            owner=es_tenant,
+                            subnet=route['destination'], transaction=trs)
+
+                if is_shadow:
+                    l2ps = self._get_l2_policies(context._plugin_context,
+                        {'id': context.current['l2_policies']})
+                    for l2p in l2ps:
+                        self.apic_manager.set_l3out_for_bd(es_tenant,
+                            self.name_mapper.l2_policy(context, l2p),
+                            es_name, transaction=trs)
 
             if not is_shadow and nat_enabled:
                 # set L3-out for NAT-BD
@@ -1944,6 +1970,13 @@ class ApicMappingDriver(api.ResourceMappingDriver,
                     if is_shadow and self._is_edge_nat(ext_info):
                         self.l3out_vlan_alloc.release_vlan(
                             es['name'], context.current['id'])
+
+                        l2ps = self._get_l2_policies(context._plugin_context,
+                            {'id': context.current['l2_policies']})
+                        for l2p in l2ps:
+                            self.apic_manager.unset_l3out_for_bd(es_tenant,
+                                self.name_mapper.l2_policy(context, l2p),
+                                es_name, transaction=trs)
 
     def _build_routes_dict(self, routes):
         result = {}
