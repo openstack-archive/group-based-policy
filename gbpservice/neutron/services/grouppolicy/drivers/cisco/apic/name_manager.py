@@ -62,7 +62,7 @@ class ApicNameManager(object):
             map_type = self.gbp_to_apic[obj_type]
             parts = getattr(self.dn_manager, 'decompose_%s' % map_type)(
                 self._extract_apic_reference(obj))
-            result = parts[-1]
+            result = self.name_mapper.pre_existing(context, parts[-1])
         else:
             result = getattr(self.name_mapper, obj_type)(context, obj['id'],
                                                          prefix=prefix)
