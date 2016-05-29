@@ -3271,6 +3271,109 @@ class TestServiceChain(ResourceMappingTestCase):
 
         self._verify_ptg_delete_cleanup_chain(provider_ptg2_id)
 
+    def test_servicechain_deletion_on_prs_update(self):
+        allow_policy_rule1 = self._create_ssh_allow_rule()
+
+        allow_policy_rule_set = self.create_policy_rule_set(
+            expected_res_status=201,
+            policy_rules=[allow_policy_rule1['id']],
+            child_policy_rule_sets=[])['policy_rule_set']
+
+        self._verify_prs_rules(allow_policy_rule_set['id'])
+
+        scs_id = self._create_servicechain_spec()
+        _, _, redirect_policy_rule_id = self._create_tcp_redirect_rule(
+            "20:90", scs_id)
+
+        redirect_policy_rule_set = self.create_policy_rule_set(
+            name='redirect_prs', policy_rules=[redirect_policy_rule_id])
+        redirect_policy_rule_set_id = redirect_policy_rule_set[
+            'policy_rule_set']['id']
+        self._verify_prs_rules(redirect_policy_rule_set_id)
+
+        sc_node_list_req = self.new_list_request(SERVICECHAIN_INSTANCES)
+        res = sc_node_list_req.get_response(self.ext_api)
+        sc_instances = self.deserialize(self.fmt, res)
+        self.assertEqual(len(sc_instances['servicechain_instances']), 0)
+
+        provider_ptg = self.create_policy_target_group(
+            provided_policy_rule_sets={redirect_policy_rule_set_id: None,
+            allow_policy_rule_set['id']: None})[
+            'policy_target_group']
+        consumer_ptg = self.create_policy_target_group(
+            consumed_policy_rule_sets={redirect_policy_rule_set_id: None,
+            allow_policy_rule_set['id']: None})[
+            'policy_target_group']
+
+        sc_node_list_req = self.new_list_request(SERVICECHAIN_INSTANCES)
+        res = sc_node_list_req.get_response(self.ext_api)
+        sc_instances = self.deserialize(self.fmt, res)
+        self.assertEqual(len(sc_instances['servicechain_instances']), 1)
+        sc_instance = sc_instances['servicechain_instances'][0]
+        self._assert_proper_chain_instance(sc_instance, provider_ptg['id'],
+            consumer_ptg['id'], [scs_id])
+
+        allow_policy_rule2 = self._create_http_allow_rule()
+        # Add allow rule in allow policy rule set
+        self.update_policy_rule_set(allow_policy_rule_set['id'],
+            expected_res_status=200,
+            policy_rules=[allow_policy_rule1['id'], allow_policy_rule2['id']])
+        self._verify_prs_rules(allow_policy_rule_set['id'])
+
+        # service chain instance will be there
+        sc_node_list_req = self.new_list_request(SERVICECHAIN_INSTANCES)
+        res = sc_node_list_req.get_response(self.ext_api)
+        sc_instances = self.deserialize(self.fmt, res)
+        self.assertEqual(len(sc_instances['servicechain_instances']), 1)
+
+        # Remove allow rule from allow policy rule set
+        self.update_policy_rule_set(allow_policy_rule_set['id'],
+            expected_res_status=200,
+            policy_rules=[allow_policy_rule2['id']])
+        self._verify_prs_rules(allow_policy_rule_set['id'])
+
+        # service chain instance will be there
+        sc_node_list_req = self.new_list_request(SERVICECHAIN_INSTANCES)
+        res = sc_node_list_req.get_response(self.ext_api)
+        sc_instances = self.deserialize(self.fmt, res)
+        self.assertEqual(len(sc_instances['servicechain_instances']), 1)
+
+        # Add allow rule in redirect policy rule set
+        self.update_policy_rule_set(redirect_policy_rule_set_id,
+            expected_res_status=200,
+            policy_rules=[allow_policy_rule2['id'], redirect_policy_rule_id])
+        self._verify_prs_rules(redirect_policy_rule_set_id)
+
+        # service chain instance will be there
+        sc_node_list_req = self.new_list_request(SERVICECHAIN_INSTANCES)
+        res = sc_node_list_req.get_response(self.ext_api)
+        sc_instances = self.deserialize(self.fmt, res)
+        self.assertEqual(len(sc_instances['servicechain_instances']), 1)
+
+        # Remove redirect rule from redirect policy rule set
+        self.update_policy_rule_set(redirect_policy_rule_set_id,
+            expected_res_status=200,
+            policy_rules=[allow_policy_rule2['id']])
+        self._verify_prs_rules(redirect_policy_rule_set_id)
+
+        # service chain instance will not be there
+        sc_node_list_req = self.new_list_request(SERVICECHAIN_INSTANCES)
+        res = sc_node_list_req.get_response(self.ext_api)
+        sc_instances = self.deserialize(self.fmt, res)
+        self.assertEqual(len(sc_instances['servicechain_instances']), 0)
+
+        # Add redirect rule in redirect policy rule set
+        self.update_policy_rule_set(redirect_policy_rule_set_id,
+            expected_res_status=200,
+            policy_rules=[allow_policy_rule2['id'], redirect_policy_rule_id])
+        self._verify_prs_rules(redirect_policy_rule_set_id)
+
+        # service chain instance will be there
+        sc_node_list_req = self.new_list_request(SERVICECHAIN_INSTANCES)
+        res = sc_node_list_req.get_response(self.ext_api)
+        sc_instances = self.deserialize(self.fmt, res)
+        self.assertEqual(len(sc_instances['servicechain_instances']), 1)
+
 
 class TestServiceChainAdminOwner(TestServiceChain):
 
