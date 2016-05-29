@@ -286,8 +286,26 @@ class ChainMappingDriver(api.PolicyDriver, local_api.LocalAPI,
 
     @log.log_method_call
     def update_policy_rule_set_postcommit(self, context):
+        if (not context.original['child_policy_rule_sets']) and\
+                (not context.current['child_policy_rule_sets']):
+            # Finds out redirect rule added/removed from prs.
+            # If redirect action is not added/removed then, no need to
+            # create/update service chain instance
+            old_red_count = self._multiple_pr_redirect_action_number(
+                context._plugin_context.session,
+                context.original['policy_rules'])
+            new_red_count = self._multiple_pr_redirect_action_number(
+                context._plugin_context.session,
+                context.current['policy_rules'])
+            if (new_red_count == 0) and (old_red_count == 0):
+                return
+            redirect_rule_updated = self.check_redirect_rule_updated(
+                context)
+            if not redirect_rule_updated:
+                return
         # Handle any Redirects from the current Policy Rule Set
         self._handle_redirect_action(context, [context.current['id']])
+
         # Handle Update/Delete of Redirects for any child Rule Sets
         if (set(context.original['child_policy_rule_sets']) !=
                 set(context.current['child_policy_rule_sets'])):
@@ -315,6 +333,35 @@ class ChainMappingDriver(api.PolicyDriver, local_api.LocalAPI,
     @log.log_method_call
     def delete_external_policy_postcommit(self, context):
         self._handle_prs_removed(context)
+
+    def check_redirect_rule_updated(self, context):
+        original_policy_rules = context.original['policy_rules']
+        current_policy_rules = context.current['policy_rules']
+        original_redirect_rule_id = None
+        policy_rules = context._plugin.get_policy_rules(
+            context._plugin_context,
+            filters={'id': original_policy_rules})
+        for policy_rule in policy_rules:
+            original_redirect_policy_action = self._get_redirect_action(
+                context, policy_rule)
+            if original_redirect_policy_action:
+                original_redirect_rule_id = policy_rule['id']
+                break
+        if original_redirect_rule_id not in current_policy_rules:
+            return True
+        current_redirect_rule_id = None
+        policy_rules = context._plugin.get_policy_rules(
+            context._plugin_context,
+            filters={'id': current_policy_rules})
+        for policy_rule in policy_rules:
+            current_redirect_policy_action = self._get_redirect_action(
+                context, policy_rule)
+            if current_redirect_policy_action:
+                current_redirect_rule_id = policy_rule['id']
+                break
+        if current_redirect_rule_id not in original_policy_rules:
+            return True
+        return False
 
     def _handle_prs_added(self, context):
         # Expecting either a PTG or EP context
