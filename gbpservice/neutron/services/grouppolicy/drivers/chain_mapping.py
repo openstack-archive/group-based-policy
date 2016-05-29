@@ -286,8 +286,17 @@ class ChainMappingDriver(api.PolicyDriver, local_api.LocalAPI,
 
     @log.log_method_call
     def update_policy_rule_set_postcommit(self, context):
-        # Handle any Redirects from the current Policy Rule Set
-        self._handle_redirect_action(context, [context.current['id']])
+        # Finds out redirect rule added/removed from prs.
+        # If redirect action is not added/removed then, no need to
+        # create/update service chain instance
+        old_red_count = self._multiple_pr_redirect_action_number(
+            context._plugin_context.session, context.original['policy_rules'])
+        new_red_count = self._multiple_pr_redirect_action_number(
+            context._plugin_context.session, context.current['policy_rules'])
+        if new_red_count != old_red_count:
+            # Handle any Redirects from the current Policy Rule Set
+            self._handle_redirect_action(context, [context.current['id']])
+
         # Handle Update/Delete of Redirects for any child Rule Sets
         if (set(context.original['child_policy_rule_sets']) !=
                 set(context.current['child_policy_rule_sets'])):
