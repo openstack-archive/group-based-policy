@@ -33,6 +33,7 @@ from neutron.extensions import portbindings
 from neutron import manager
 from opflexagent import constants as ocst
 from oslo_config import cfg
+from oslo_serialization import jsonutils
 
 sys.modules["apicapi"] = mock.Mock()
 
@@ -203,17 +204,31 @@ class ApicMappingTestCase(
                             {u'attributes':
                              {u'dn': u'uni/tn-common/out-supported/rsectx',
                               u'tDn': u'', u'tnFvCtxName': u'default'}}}])}
-            self.trimmed_l3out = u'{"l3extOut": {"attributes": {"rn": "Shd-Sub\
-"}, "children": [    {"l3extRsNdIfPol": {"tnNdIfPolName": ""}}, \
-{"l3extRsDampeningPol": {"tnRtctrlProfileName": ""}}, {"ospfRsIfPol": \
-{"tnOspfIfPolName": ""}}, {"l3extRsEngressQosDppPol": {"tnQosDppPolName": ""}}\
-, {"bfdRsIfPol": {"tnBfdIfPolName": ""}}, {"bgpRsPeerPfxPol": \
-{"tnBgpPeerPfxPolName": ""}}, {"eigrpRsIfPol": {"tnEigrpIfPolName": ""}}, \
-{"l3extLNodeP": {"attributes": {"dn": "uni/tn-test-tenant/out-Shd-Sub/\
-lnodep-Leaf3-4_NP"}, "children": [{"l3extLIfP": {"children": [{"\
-l3extRsPathL3OutAtt": {"attributes": {"ifInstT": "sub-interface", "encap": \
-"vlan-999"}}}]}}]}}, {"l3extRsEctx": {"attributes": {"dn": "uni/tn-test-tenant\
-/out-Shd-Sub/rsectx", "tnFvCtxName": "myl3p"}}}]}}'
+            self.trimmed_l3out = [{}, {}, {}, {},
+               {u'l3extRsNdIfPol':
+               {u'tnNdIfPolName': u''}},
+               {u'l3extRsDampeningPol':
+                {u'tnRtctrlProfileName': u''}},
+               {u'ospfRsIfPol': {u'tnOspfIfPolName': u''}},
+               {u'l3extRsEngressQosDppPol':
+                {u'tnQosDppPolName': u''}},
+               {u'bfdRsIfPol': {u'tnBfdIfPolName': u''}},
+               {u'bgpRsPeerPfxPol': {u'tnBgpPeerPfxPolName': u''}},
+               {u'eigrpRsIfPol': {u'tnEigrpIfPolName': u''}},
+               {u'l3extLNodeP':
+                {u'attributes':
+                 {u'dn': u'uni/tn-test-tenant/out-Shd-Sub/lnodep-Leaf3-4_NP'},
+                 u'children': [{u'l3extLIfP':
+                     {u'children': [{u'l3extRsPathL3OutAtt':
+                                     {u'attributes':
+                                      {u'ifInstT':
+                                       u'sub-interface',
+                                       u'encap': 'vlan-999'
+                                       }}}]}}]}},
+               {u'l3extRsEctx':
+                {u'attributes':
+                 {u'dn': u'uni/tn-test-tenant/out-Shd-Sub/rsectx',
+                  u'tnFvCtxName': u'myl3p'}}}]
             self.driver.apic_manager.apic.fvTenant.rn = echo2
             self.driver.apic_manager.apic.l3extOut.rn = echo2
             self.driver.l3out_vlan_alloc.reserve_vlan.return_value = 999
@@ -2082,6 +2097,22 @@ class TestL3Policy(ApicMappingTestCase):
             router_ports[0]['fixed_ips'][0]['subnet_id'] == subnet['id'] or
             router_ports[1]['fixed_ips'][0]['subnet_id'] == subnet['id'])
 
+    def _wrap_up_l3out_request(self, l3out_str, l3p_id, es_id):
+        # try to simulate what the implementation does here also for UT purpose
+
+        request = {}
+        request['children'] = self.trimmed_l3out
+        request['attributes'] = {'rn': u'Shd-Sub'}
+
+        final_req = {}
+        final_req['l3extOut'] = request
+        final_req = jsonutils.dumps(final_req)
+        final_req = re.sub('Shd-Sub',
+            l3out_str % (l3p_id, es_id), final_req)
+        final_req = re.sub('{},*', '', final_req)
+
+        return final_req
+
     def _test_l3p_plugged_to_es_at_creation(self, shared_es,
                                             shared_l3p, is_edge_nat=False):
         # Verify L3P is correctly plugged to ES on APIC during create
@@ -2193,8 +2224,8 @@ class TestL3Policy(ApicMappingTestCase):
                 mgr.ensure_static_route_created.call_args_list)
         else:
             if is_edge_nat and self.nat_enabled:
-                final_req = re.sub('Shd-Sub',
-                    l3out_str % (l3p['id'], es['id']), self.trimmed_l3out)
+                final_req = self._wrap_up_l3out_request(l3out_str,
+                                                        l3p['id'], es['id'])
                 mgr.apic.post_body.assert_called_once_with(
                     mgr.apic.l3extOut.mo, final_req, l3p_owner,
                     l3out_str % (l3p['id'], es['id']))
@@ -2353,8 +2384,8 @@ class TestL3Policy(ApicMappingTestCase):
                 mgr.ensure_static_route_created.call_args_list)
         else:
             if is_edge_nat and self.nat_enabled:
-                final_req = re.sub('Shd-Sub',
-                    l3out_str % (l3p['id'], es['id']), self.trimmed_l3out)
+                final_req = self._wrap_up_l3out_request(l3out_str,
+                                                        l3p['id'], es['id'])
                 mgr.apic.post_body.assert_called_once_with(
                     mgr.apic.l3extOut.mo, final_req, l3p_owner,
                     l3out_str % (l3p['id'], es['id']))
@@ -2674,9 +2705,8 @@ class TestL3Policy(ApicMappingTestCase):
                 mgr.ensure_logical_node_profile_created.call_args_list)
         else:
             if is_edge_nat and self.nat_enabled:
-                final_req = re.sub('Shd-Sub',
-                    l3out_str % (l3p['id'], es2['id']),
-                    self.trimmed_l3out)
+                final_req = self._wrap_up_l3out_request(l3out_str,
+                                                        l3p['id'], es2['id'])
                 mgr.apic.post_body.assert_called_once_with(
                     mgr.apic.l3extOut.mo, final_req, l3p_owner,
                     l3out_str % (l3p['id'], es2['id']))
