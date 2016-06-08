@@ -13,6 +13,8 @@
 import netaddr
 import operator
 
+from keystoneclient import exceptions as k_exceptions
+from keystoneclient.v2_0 import client as k_client
 from neutron._i18n import _LE
 from neutron._i18n import _LW
 from neutron.api.v2 import attributes
@@ -26,6 +28,7 @@ from neutron.extensions import securitygroup as ext_sg
 from oslo_config import cfg
 from oslo_log import helpers as log
 from oslo_log import log as logging
+from oslo_utils import excutils
 import sqlalchemy as sa
 
 from gbpservice.common import utils
@@ -441,6 +444,7 @@ class ResourceMappingDriver(api.PolicyDriver, ImplicitResourceOperations,
     @log.log_method_call
     def initialize(self):
         self._cached_agent_notifier = None
+        self._resource_owner_tenant_id = None
 
     def _reject_shared(self, object, type):
         if object.get('shared'):
@@ -457,6 +461,12 @@ class ResourceMappingDriver(api.PolicyDriver, ImplicitResourceOperations,
                     CrossTenantPolicyTargetGroupL2PolicyNotSupported())
 
     def _reject_cross_tenant_l2p_l3p(self, context):
+        if context.current['tenant_id'] == self.resource_owner_tenant_id:
+            # Relax cross tenancy condition when current tenant id is admin.
+            # Relaxing when l2policy tenant id is of admin, to address the
+            # case for proxy group where l2policy belongs to admin tenant
+            # but l3policy belongs to user tenant.
+            return
         # Can't create non shared L2p on a shared L3p
         if context.current['l3_policy_id']:
             l3p = context._plugin.get_l3_policy(
@@ -464,6 +474,31 @@ class ResourceMappingDriver(api.PolicyDriver, ImplicitResourceOperations,
                 context.current['l3_policy_id'])
             if l3p['tenant_id'] != context.current['tenant_id']:
                 raise exc.CrossTenantL2PolicyL3PolicyNotSupported()
+
+    @property
+    def resource_owner_tenant_id(self):
+        if not self._resource_owner_tenant_id:
+            self._resource_owner_tenant_id = (
+                self._get_resource_owner_tenant_id())
+        return self._resource_owner_tenant_id
+
+    def _get_resource_owner_tenant_id(self):
+        # Returns service tenant id, which specified in neutron conf
+        try:
+            user, pwd, tenant, auth_url = utils.get_keystone_creds()
+            keystoneclient = k_client.Client(username=user, password=pwd,
+                                             auth_url=auth_url)
+            tenant = keystoneclient.tenants.find(name=tenant)
+            return tenant.id
+        except k_exceptions.NotFound:
+            with excutils.save_and_reraise_exception(reraise=True):
+                LOG.error(_LE('No tenant with name %s exists.'), tenant)
+        except k_exceptions.NoUniqueMatch:
+            with excutils.save_and_reraise_exception(reraise=True):
+                LOG.error(_LE('Multiple tenants matches found for %s'), tenant)
+        except k_exceptions.AuthorizationFailure:
+            LOG.error(_LE("User: %(user)s dont have permissions"),
+                     {'user': user})
 
     def _reject_non_shared_net_on_shared_l2p(self, context):
         if context.current.get('shared') and context.current['network_id']:
