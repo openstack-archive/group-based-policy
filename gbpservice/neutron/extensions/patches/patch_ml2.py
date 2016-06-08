@@ -132,6 +132,7 @@ def delete_network(self, context, id):
     self.notifier.network_delete(context, id)
 
 plugin.Ml2Plugin.delete_network = delete_network
+LOG.debug("Patched delete_network")
 
 
 # REVISIT(rkukura): Related to bug 1510327, also limit the retry loop
@@ -232,3 +233,4 @@ def delete_subnet(self, context, id):
         LOG.error(_("mechanism_manager.delete_subnet_postcommit failed"))
 
 plugin.Ml2Plugin.delete_subnet = delete_subnet
+LOG.debug("Patched delete_subnet")
