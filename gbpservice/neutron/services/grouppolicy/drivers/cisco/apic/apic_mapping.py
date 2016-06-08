@@ -1800,8 +1800,9 @@ class ApicMappingDriver(api.ResourceMappingDriver,
                  'rType', 'state', 'stateQual', 'tCl', 'tType',
                  'type', 'tContextDn', 'tRn', 'tag', 'name',
                  'configIssues'])
-        request = self._trim_keys_from_dict(request, keys,
-            encap, context.current.get('name'))
+        vrf = self.apic_manager.apic.fvCtx.name(
+            context.current.get('name'))
+        request = self._trim_keys_from_dict(request, keys, encap, vrf)
 
         final_req = {}
         final_req['l3extOut'] = request
