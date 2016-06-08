@@ -27,7 +27,6 @@ import six
 
 import gbpservice.neutron.extensions
 from gbpservice.neutron.extensions import patch  # noqa
-from gbpservice.neutron.extensions import patch_ml2  # noqa
 from gbpservice.neutron.services.grouppolicy.common import (
     constants as gp_constants)
 
@@ -42,6 +41,13 @@ constants.EXT_TO_SERVICE_MAPPING['gp'] = constants.GROUP_POLICY
 constants.ALLOWED_SERVICES.append(constants.GROUP_POLICY)
 
 LOG = logging.getLogger(__name__)
+try:
+    from neutron.common import topics
+    topics.REPORTS
+    LOG.debug("Detected Fuel installation, not patching ML2")
+except Exception:
+    from gbpservice.neutron.extensions import patch_ml2  # noqa
+    LOG.debug("Patching ML2")
 
 
 # Group Policy Exceptions
