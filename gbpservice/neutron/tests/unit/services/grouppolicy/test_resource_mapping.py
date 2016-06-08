@@ -935,6 +935,11 @@ class TestPolicyTargetGroupWithoutDNSConfiguration(ResourceMappingTestCase):
 
 class TestPolicyTargetGroup(ResourceMappingTestCase):
 
+    def setUp(self):
+        config.cfg.CONF.set_override(
+                'extension_drivers', ['proxy_group'], group='group_policy')
+        super(TestPolicyTargetGroup, self).setUp()
+
     def _test_implicit_subnet_lifecycle(self, shared=False):
         # Use explicit L2 policy so network and subnet not deleted
         # with policy_target group.
@@ -1311,6 +1316,17 @@ class TestPolicyTargetGroup(ResourceMappingTestCase):
     def test_cross_tenant_prs_admin(self):
         self._test_cross_tenant_prs(admin=True)
 
+    def test_cross_tenant_l2p(self):
+        l2p = self.create_l2_policy(name="l2p1", tenant_id='anothertenant')
+        l2p_id = l2p['l2_policy']['id']
+
+        data = {'policy_target_group': {'l2_policy_id': l2p_id,
+            'tenant_id': 'admin'}}
+        req = self.new_create_request('policy_target_groups', data)
+        data = self.deserialize(self.fmt, req.get_response(self.ext_api))
+        self.assertEqual('CrossTenantPolicyTargetGroupL2PolicyNotSupported',
+                         data['NeutronError']['type'])
+
     def test_l2p_update_rejected(self):
         # Create two l2 policies.
         l2p1 = self.create_l2_policy(name="l2p1")
@@ -1440,9 +1456,8 @@ class TestL2Policy(ResourceMappingTestCase):
             res = self.create_l2_policy(name="l2p1", tenant_id='other',
                                         l3_policy_id=l3p['l3_policy']['id'],
                                         shared=shared,
-                                        expected_res_status=400)
-            self.assertEqual('CrossTenantL2PolicyL3PolicyNotSupported',
-                             res['NeutronError']['type'])
+                                        expected_res_status=201)
+            self.assertEqual('l2p1', res['l2_policy']['name'])
 
         with self.network() as network:
             network_id = network['network']['id']
