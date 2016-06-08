@@ -95,6 +95,12 @@ class ResourceMappingTestCase(test_plugin.GroupPolicyPluginTestCase):
         plugins = manager.NeutronManager.get_service_plugins()
         self._gbp_plugin = plugins.get(pconst.GROUP_POLICY)
         self._l3_plugin = plugins.get(pconst.L3_ROUTER_NAT)
+        self.saved_keystone_client = resource_mapping.k_client.Client
+        resource_mapping.k_client.Client = mock.Mock()
+
+    def tearDown(self):
+        resource_mapping.k_client.Client = self.saved_keystone_client
+        super(ResourceMappingTestCase, self).tearDown()
 
     def get_plugin_context(self):
         return self._plugin, self._context
@@ -1298,6 +1304,17 @@ class TestPolicyTargetGroup(ResourceMappingTestCase):
 
     def test_cross_tenant_prs_admin(self):
         self._test_cross_tenant_prs(admin=True)
+
+    def test_cross_tenant_l2p(self):
+        l2p = self.create_l2_policy(name="l2p1", tenant_id='anothertenant')
+        l2p_id = l2p['l2_policy']['id']
+
+        data = {'policy_target_group': {'l2_policy_id': l2p_id,
+            'tenant_id': 'admin'}}
+        req = self.new_create_request('policy_target_groups', data)
+        data = self.deserialize(self.fmt, req.get_response(self.ext_api))
+        self.assertEqual('CrossTenantPolicyTargetGroupL2PolicyNotSupported',
+                         data['NeutronError']['type'])
 
     def test_l2p_update_rejected(self):
         # Create two l2 policies.
