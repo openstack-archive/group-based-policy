@@ -552,6 +552,8 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
             context, policy_target_group_id,
             {'policy_target_group': {'provided_policy_rule_sets': {},
                                      'consumed_policy_rule_sets': {}}})
+        policy_context.current['provided_policy_rule_sets'] = []
+        policy_context.current['consumed_policy_rule_sets'] = []
 
         # Proxy PTGs must be deleted before the group itself
         if policy_target_group.get('proxy_group_id'):
