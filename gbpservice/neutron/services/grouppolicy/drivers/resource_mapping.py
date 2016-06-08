@@ -128,6 +128,10 @@ class ResourceMappingDriver(api.PolicyDriver, local_api.LocalAPI,
                                             driver='resource_mapping')
 
     def _reject_cross_tenant_ptg_l2p(self, context):
+        if context.current.get('proxied_group_id'):
+            # Relax for proxy group
+            return
+
         if context.current['l2_policy_id']:
             l2p = context._plugin.get_l2_policy(
                 context._plugin_context, context.current['l2_policy_id'])
@@ -137,6 +141,9 @@ class ResourceMappingDriver(api.PolicyDriver, local_api.LocalAPI,
                     CrossTenantPolicyTargetGroupL2PolicyNotSupported())
 
     def _reject_cross_tenant_l2p_l3p(self, context):
+        if context._plugin_context.tenant_id == context.current['tenant_id']:
+            # Relax for proxy group
+            return
         # Can't create non shared L2p on a shared L3p
         if context.current['l3_policy_id']:
             l3p = context._plugin.get_l3_policy(
