@@ -137,6 +137,12 @@ class ResourceMappingDriver(api.PolicyDriver, local_api.LocalAPI,
                     CrossTenantPolicyTargetGroupL2PolicyNotSupported())
 
     def _reject_cross_tenant_l2p_l3p(self, context):
+        if context._plugin_context.tenant_id == context.current['tenant_id']:
+            # Relax cross tenancy condition when current tenant id is admin.
+            # Relaxing when l2policy tenant id is of admin, to address the
+            # case for proxy group where l2policy belongs to admin tenant
+            # but l3policy belongs to user tenant.
+            return
         # Can't create non shared L2p on a shared L3p
         if context.current['l3_policy_id']:
             l3p = context._plugin.get_l3_policy(
