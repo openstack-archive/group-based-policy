@@ -107,6 +107,7 @@ class ResourceMappingTestCase(test_plugin.GroupPolicyPluginTestCase):
         plugins = manager.NeutronManager.get_service_plugins()
         self._gbp_plugin = plugins.get(pconst.GROUP_POLICY)
         self._l3_plugin = plugins.get(pconst.L3_ROUTER_NAT)
+        resource_mapping.k_client.Client = mock.Mock()
 
     def get_plugin_context(self):
         return self._plugin, self._context
@@ -935,6 +936,11 @@ class TestPolicyTargetGroupWithoutDNSConfiguration(ResourceMappingTestCase):
 
 class TestPolicyTargetGroup(ResourceMappingTestCase):
 
+    def setUp(self):
+        config.cfg.CONF.set_override(
+                'extension_drivers', ['proxy_group'], group='group_policy')
+        super(TestPolicyTargetGroup, self).setUp()
+
     def _test_implicit_subnet_lifecycle(self, shared=False):
         # Use explicit L2 policy so network and subnet not deleted
         # with policy_target group.
@@ -1310,6 +1316,17 @@ class TestPolicyTargetGroup(ResourceMappingTestCase):
 
     def test_cross_tenant_prs_admin(self):
         self._test_cross_tenant_prs(admin=True)
+
+    def test_cross_tenant_l2p(self):
+        l2p = self.create_l2_policy(name="l2p1", tenant_id='anothertenant')
+        l2p_id = l2p['l2_policy']['id']
+
+        data = {'policy_target_group': {'l2_policy_id': l2p_id,
+            'tenant_id': 'admin'}}
+        req = self.new_create_request('policy_target_groups', data)
+        data = self.deserialize(self.fmt, req.get_response(self.ext_api))
+        self.assertEqual('CrossTenantPolicyTargetGroupL2PolicyNotSupported',
+                         data['NeutronError']['type'])
 
     def test_l2p_update_rejected(self):
         # Create two l2 policies.
