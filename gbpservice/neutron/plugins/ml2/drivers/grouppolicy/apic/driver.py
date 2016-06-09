@@ -13,6 +13,9 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+import copy
+
+from neutron.common import constants as n_constants
 from neutron import context as nctx
 from neutron.extensions import portbindings
 from neutron import manager
@@ -112,16 +115,21 @@ class APICMechanismGBPDriver(api.MechanismDriver):
             network = self.apic_gbp._get_network(context._plugin_context,
                                                  network_id)
             project_name = self.apic_gbp._tenant_by_sharing_policy(network)
+            apic_tenant_name = self.apic_gbp.apic_manager.apic.fvTenant.name(
+                project_name)
             profile = self.apic_gbp.apic_manager.app_profile_name
             # Use default security groups from MD
             vif_details = {portbindings.CAP_PORT_FILTER: False}
-            vif_details['dvs_port_group_name'] = (str(project_name) +
+            vif_details['dvs_port_group_name'] = (apic_tenant_name +
                                              '|' + str(profile) +
                                              '|' + str(ptg_name))
+            currentcopy = copy.copy(context.current)
+            currentcopy['portgroup_name'] = (
+                vif_details['dvs_port_group_name'])
             booked_port_key = None
             if self.dvs_notifier:
                 booked_port_key = self.dvs_notifier.bind_port_call(
-                    context.current,
+                    currentcopy,
                     context.network.network_segments,
                     context.network.current,
                     context.host
@@ -129,7 +137,8 @@ class APICMechanismGBPDriver(api.MechanismDriver):
             if booked_port_key:
                 vif_details['dvs_port_key'] = booked_port_key
             context.set_binding(segment[api.ID],
-                                VIF_TYPE_DVS, vif_details)
+                                VIF_TYPE_DVS, vif_details,
+                                n_constants.PORT_STATUS_ACTIVE)
             return True
         else:
             return False
