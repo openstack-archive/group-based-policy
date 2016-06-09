@@ -1,0 +1,9 @@
+Code-Review+2: Amit Bose <amitbose@gmail.com>
+Code-Review+2: Sumit Naiksatam <sumitnaiksatam@gmail.com>
+Workflow+1: Sumit Naiksatam <sumitnaiksatam@gmail.com>
+Verified+2: Jenkins
+Submitted-by: Jenkins
+Submitted-at: Thu, 09 Jun 2016 21:42:28 +0000
+Reviewed-on: https://review.openstack.org/327877
+Project: openstack/group-based-policy
+Branch: refs/heads/stable/kilo
