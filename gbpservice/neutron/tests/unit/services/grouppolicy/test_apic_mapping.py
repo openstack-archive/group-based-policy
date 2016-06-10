@@ -3815,7 +3815,7 @@ class TestExternalSegmentPreL3Out(TestExternalSegment):
                u'children': [{u'l3extLIfP':
                               {u'children': [{u'l3extRsPathL3OutAtt':
                                               {u'attributes':
-                                               {u'ifInstT': u'ext-svi'
+                                               {u'ifInstT': u'l3-port'
                                                 }}}]}}]}}])
         res = self.create_external_segment(
             name='supported', expected_res_status=400)
