@@ -160,9 +160,8 @@ class EdgeNatBadVlanRange(gpexc.GroupPolicyBadRequest):
 
 
 class EdgeNatWrongL3OutIFType(gpexc.GroupPolicyBadRequest):
-    message = _("L3Out %(l3out)s can only support routed "
-                "sub-interfaces in the interface profiles when edge_nat"
-                "is enabled.")
+    message = _("L3Out %(l3out)s can only support routed sub-interfaces and "
+                "SVI in the interface profiles when edge_nat is enabled.")
 
 
 class EdgeNatWrongL3OutAuthTypeForBGP(gpexc.GroupPolicyBadRequest):
@@ -3265,7 +3264,8 @@ class ApicMappingDriver(api.ResourceMappingDriver,
             l3out_str = str(l3out_info['l3out'])
             for match in re.finditer("u'ifInstT': u'([^']+)'",
                                      l3out_str):
-                if match.group(1) != 'sub-interface':
+                if (match.group(1) != 'sub-interface' and
+                        match.group(1) != 'ext-svi'):
                     raise EdgeNatWrongL3OutIFType(l3out=es['name'])
             for match in re.finditer("u'authType': u'([^']+)'",
                                      l3out_str):
