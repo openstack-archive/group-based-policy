@@ -13,7 +13,6 @@
 import netaddr
 from neutron.api.v2 import attributes as attr
 from neutron import context
-from neutron.db import common_db_mixin
 from neutron.db import model_base
 from neutron.db import models_v2
 from oslo_log import helpers as log
@@ -23,6 +22,7 @@ import sqlalchemy as sa
 from sqlalchemy import orm
 from sqlalchemy.orm import exc
 
+from gbpservice.common import neutron_patches as common_db_mixin
 from gbpservice.neutron.db import gbp_quota_db as gquota
 from gbpservice.neutron.extensions import group_policy as gpolicy
 from gbpservice.neutron.services.grouppolicy.common import (

@@ -13,7 +13,6 @@
 import ast
 
 from neutron._i18n import _LE
-from neutron.db import common_db_mixin
 from neutron.db import model_base
 from neutron.db import models_v2
 from neutron import manager
@@ -27,6 +26,7 @@ from sqlalchemy.ext.orderinglist import ordering_list
 from sqlalchemy import orm
 from sqlalchemy.orm import exc
 
+from gbpservice.common import neutron_patches as common_db_mixin
 from gbpservice.neutron.db import gbp_quota_db as gquota
 from gbpservice.neutron.extensions import servicechain as schain
 from gbpservice.neutron.services.servicechain.common import exceptions as s_exc

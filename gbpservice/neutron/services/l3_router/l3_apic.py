@@ -16,11 +16,12 @@
 from neutron._i18n import _LW
 from neutron.common import constants as q_const
 from neutron.common import exceptions as n_exc
-from neutron.db import common_db_mixin
 from neutron.db import extraroute_db
 from neutron.db import l3_gwmode_db
 from neutron.plugins.common import constants
 from oslo_log import log as logging
+
+from gbpservice.common import neutron_patches as common_db_mixin
 
 LOG = logging.getLogger(__name__)
 

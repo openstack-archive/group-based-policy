@@ -12,10 +12,10 @@
 
 from neutron.common import exceptions as nexcp
 from neutron import context
-from neutron.db import common_db_mixin
 from neutron.db.quota import driver
 from neutron.quota import resource as quota_resource
 
+from gbpservice.common import neutron_patches as common_db_mixin
 
 QUOTA_DRIVER = driver.DbQuotaDriver
 
