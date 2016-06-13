@@ -1360,7 +1360,9 @@ class ResourceMappingDriver(api.PolicyDriver, local_api.LocalAPI,
 
     def _create_router_gw_for_external_segment(self, plugin_context, es,
                                                es_dict, router_id):
-        subnet = self._get_subnet(plugin_context, es['subnet_id'])
+        # In general, external segment's subnet is created by admin
+        admin_context = n_context.get_admin_context()
+        subnet = self._get_subnet(admin_context, es['subnet_id'])
         external_fixed_ips = [
             {'subnet_id': es['subnet_id'], 'ip_address': x}
             if x else {'subnet_id': es['subnet_id']}
