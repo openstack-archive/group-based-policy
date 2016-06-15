@@ -46,8 +46,10 @@ def upgrade(active_plugins=None, options=None):
                           remote_cols=['id'])
     with migration.remove_fks_from_table(
                                 'gpm_service_policy_ipaddress_mappings'):
+        pk_constraint = inspector.get_pk_constraint(
+                'gpm_service_policy_ipaddress_mappings')
         op.drop_constraint(
-                None,
+                pk_constraint['name'],
                 table_name='gpm_service_policy_ipaddress_mappings',
                 type_='primary')
         op.create_primary_key(
