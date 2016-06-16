@@ -466,6 +466,67 @@ class TestPolicyTarget(ApicMappingTestCase):
             mapping['host_snat_ips'][0]['host_snat_ip'])
         self.assertEqual(24, mapping['host_snat_ips'][0]['prefixlen'])
 
+    def test_get_snat_ip_for_vrf(self):
+        TEST_VRF1 = 'testvrf1'
+        TEST_VRF2 = 'testvrf2'
+        self._mock_external_dict([('supported', '192.168.0.2/24')])
+        self.driver.apic_manager.ext_net_dict[
+                'supported']['host_pool_cidr'] = '192.168.200.1/24'
+        es = self.create_external_segment(name='supported',
+            cidr='192.168.0.2/24',
+            expected_res_status=201, shared=False)['external_segment']
+        self.create_nat_pool(external_segment_id=es['id'],
+                             ip_pool='20.20.20.0/24')
+        l3p = self.create_l3_policy(name='myl3',
+            external_segments={es['id']: ['']})['l3_policy']
+        l2p = self.create_l2_policy(name='myl2',
+                                    l3_policy_id=l3p['id'])['l2_policy']
+        nsp = self.create_network_service_policy(
+            network_service_params=[
+                {"type": "ip_pool", "value": "nat_pool", "name": "test"}])[
+            'network_service_policy']
+        ptg = self.create_policy_target_group(
+            name="ptg1", l2_policy_id=l2p['id'],
+            network_service_policy_id=nsp['id'])['policy_target_group']
+        pt1 = self.create_policy_target(
+            policy_target_group_id=ptg['id'])['policy_target']
+        self._bind_port_to_host(pt1['port_id'], 'h1')
+
+        subnet = self._db_plugin.get_subnet(context.get_admin_context(),
+                                            es['subnet_id'])
+        network = self._db_plugin.get_network(context.get_admin_context(),
+                                              subnet['network_id'])
+        details = self.driver.get_snat_ip_for_vrf(context.get_admin_context(),
+            TEST_VRF1, network, es_name=es['name'])
+        self.assertEqual(es['name'],
+            details['external_segment_name'])
+        self.assertEqual("192.168.200.1",
+            details['gateway_ip'])
+        self.assertEqual("192.168.200.2",
+            details['host_snat_ip'])
+        self.assertEqual(24, details['prefixlen'])
+
+        # Verify that the same VRF returns the same SNAT IP
+        details2 = self.driver.get_snat_ip_for_vrf(context.get_admin_context(),
+            TEST_VRF1, network, es_name=es['name'])
+        self.assertEqual(details, details2)
+
+        # Create event on a second VRF to verify that the SNAT
+        # port gets created for this second VRF
+        pt2 = self.create_policy_target(
+            policy_target_group_id=ptg['id'])['policy_target']
+        self._bind_port_to_host(pt2['port_id'], 'h1')
+
+        details = self.driver.get_snat_ip_for_vrf(context.get_admin_context(),
+            TEST_VRF2, network, es_name = es['name'])
+        self.assertEqual(es['name'],
+            details['external_segment_name'])
+        self.assertEqual("192.168.200.1",
+            details['gateway_ip'])
+        self.assertEqual("192.168.200.3",
+            details['host_snat_ip'])
+        self.assertEqual(24, details['prefixlen'])
+
     def test_snat_pool_subnet_deletion(self):
         self._mock_external_dict([('supported', '192.168.0.2/24')])
         self.driver.apic_manager.ext_net_dict[
