@@ -887,7 +887,8 @@ class ApicMappingDriver(api.ResourceMappingDriver,
                     context._plugin_context, context.current['id'],
                     subnets, [], transaction=trs)
 
-                # query all the ESs under this vrf
+                # query all the ESs for this VRF, connect BD to corresponding
+                # (shadow) L3Outs for no-NAT and edge-NAT cases.
                 if l3_policy_object['external_segments']:
                     ess = context._plugin.get_external_segments(
                         context._plugin_context,
@@ -896,12 +897,19 @@ class ApicMappingDriver(api.ResourceMappingDriver,
                     for es in ess:
                         ext_info = self.apic_manager.ext_net_dict.get(
                             es['name'])
-                        if (ext_info and self._is_edge_nat(ext_info) and
-                            self._is_nat_enabled_on_es(es)):
+                        nat_enabled = self._is_nat_enabled_on_es(es)
+                        is_edge_nat = (nat_enabled and ext_info and
+                                       self._is_edge_nat(ext_info))
+                        if not nat_enabled or is_edge_nat:
                             es_name = self.name_mapper.external_segment(
                                 context, es,
                                 prefix=self._get_shadow_prefix(context,
-                                    True, l3_policy_object, is_edge_nat=True))
+                                    is_edge_nat, l3_policy_object,
+                                    is_edge_nat=is_edge_nat))
+                            if not is_edge_nat and self._is_pre_existing(es):
+                                nm = self.name_mapper.name_mapper
+                                es_name = nm.pre_existing(
+                                    context._plugin_context, es['name'])
                             self.apic_manager.set_l3out_for_bd(tenant,
                                     l2_policy, es_name, transaction=trs)
 
@@ -1848,6 +1856,8 @@ class ApicMappingDriver(api.ResourceMappingDriver,
         es_name = self.name_mapper.external_segment(context, es,
             prefix=self._get_shadow_prefix(context,
                 is_shadow, context.current, self._is_edge_nat(ext_info)))
+        es_name_pre = self.name_mapper.name_mapper.pre_existing(
+            context._plugin_context, es['name'])
         es_tenant = self._get_tenant_for_shadow(is_shadow, context.current, es)
         nat_enabled = self._is_nat_enabled_on_es(es)
         pre_existing = False if is_shadow else self._is_pre_existing(es)
@@ -1870,14 +1880,12 @@ class ApicMappingDriver(api.ResourceMappingDriver,
                     transaction=trs)
             # Associate pre-existing, no-NAT L3-out with L3policy
             if pre_existing and not nat_enabled:
-                mapped_es = self.name_mapper.name_mapper.pre_existing(
-                    context._plugin_context, es['name'])
-                l3out_info = self._query_l3out_info(mapped_es,
+                l3out_info = self._query_l3out_info(es_name_pre,
                     self.name_mapper.tenant(es))
                 if l3out_info:
                     mapped_tenant = l3out_info['l3out_tenant']
                     self.apic_manager.set_context_for_external_routed_network(
-                        mapped_tenant, mapped_es, l3_policy, transaction=trs)
+                        mapped_tenant, es_name_pre, l3_policy, transaction=trs)
 
             is_details_needed = False
             if not is_shadow and not pre_existing:
@@ -1929,19 +1937,29 @@ class ApicMappingDriver(api.ResourceMappingDriver,
                     (self.name_mapper.name_mapper.pre_existing(
                         context, es['name']) if pre_existing else es_name),
                     transaction=trs)
-        if nat_enabled and not is_shadow:
-            # create shadow external-networks
-            self._plug_l3p_to_es(context, es, True)
-            # create shadow external EPGs indirectly by re-plugging
-            # external policies to external segment
-            eps = context._plugin.get_external_policies(
-                context._plugin_context,
-                filters={'id': es['external_policies'],
-                         'tenant_id': [context.current['tenant_id']]})
-            for ep in eps:
-                self._plug_external_policy_to_segment(context, ep,
-                    [es['id']], ep['provided_policy_rule_sets'],
-                    ep['consumed_policy_rule_sets'])
+        if not is_shadow:
+            if nat_enabled:
+                # create shadow external-networks
+                self._plug_l3p_to_es(context, es, True)
+                # create shadow external EPGs indirectly by re-plugging
+                # external policies to external segment
+                eps = context._plugin.get_external_policies(
+                    context._plugin_context,
+                    filters={'id': es['external_policies'],
+                             'tenant_id': [context.current['tenant_id']]})
+                for ep in eps:
+                    self._plug_external_policy_to_segment(context, ep,
+                        [es['id']], ep['provided_policy_rule_sets'],
+                        ep['consumed_policy_rule_sets'])
+            else:
+                # Associate BDs of the VRF to L3-out
+                l2ps = self._get_l2_policies(context._plugin_context,
+                    {'id': context.current['l2_policies']})
+                for l2p in l2ps:
+                    self.apic_manager.set_l3out_for_bd(
+                        self._tenant_by_sharing_policy(l2p),
+                        self.name_mapper.l2_policy(context, l2p),
+                        es_name_pre if pre_existing else es_name)
 
     def _unplug_l3p_from_es(self, context, es, is_shadow=False):
         is_edge_nat = False
@@ -1951,12 +1969,24 @@ class ApicMappingDriver(api.ResourceMappingDriver,
         es_name = self.name_mapper.external_segment(context, es,
             prefix=self._get_shadow_prefix(context,
                 is_shadow, context.current, is_edge_nat))
+        es_name_pre = self.name_mapper.name_mapper.pre_existing(
+            context._plugin_context, es['name'])
         es_tenant = self._get_tenant_for_shadow(is_shadow, context.current, es)
         nat_enabled = self._is_nat_enabled_on_es(es)
         pre_existing = False if is_shadow else self._is_pre_existing(es)
-        # remove shadow external-networks
-        if nat_enabled and not is_shadow:
-            self._unplug_l3p_from_es(context, es, True)
+        if not is_shadow:
+            if nat_enabled:
+                # remove shadow external-networks
+                self._unplug_l3p_from_es(context, es, True)
+            else:
+                # Dissociate BDs of the VRF from L3-out
+                l2ps = self._get_l2_policies(context._plugin_context,
+                    {'id': context.current['l2_policies']})
+                for l2p in l2ps:
+                    self.apic_manager.unset_l3out_for_bd(
+                        self._tenant_by_sharing_policy(l2p),
+                        self.name_mapper.l2_policy(context, l2p),
+                        es_name_pre if pre_existing else es_name)
         set_ctx = self.apic_manager.set_context_for_external_routed_network
         if (is_shadow or
             not [x for x in es['l3_policies'] if x != context.current['id']]):
@@ -1967,13 +1997,11 @@ class ApicMappingDriver(api.ResourceMappingDriver,
 
                     # Dissociate L3policy from pre-existing, no-NAT L3-out
                     if pre_existing and not nat_enabled:
-                        mapped_es = self.name_mapper.name_mapper.pre_existing(
-                            context._plugin_context, es['name'])
-                        l3out_info = self._query_l3out_info(mapped_es,
+                        l3out_info = self._query_l3out_info(es_name_pre,
                             self.name_mapper.tenant(es))
                         if l3out_info:
                             mapped_tenant = l3out_info['l3out_tenant']
-                            set_ctx(mapped_tenant, mapped_es, None,
+                            set_ctx(mapped_tenant, es_name_pre, None,
                                     transaction=trs)
 
                     if nat_enabled and not is_shadow:
