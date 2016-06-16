@@ -456,14 +456,22 @@ class ApicMappingDriver(api.ResourceMappingDriver,
             details = {'device': kwargs.get('device')}
         return details
 
-    def _allocate_snat_ip_for_host_and_ext_net(self, context, host, network,
-                                               es_name):
-        """Allocate SNAT IP for a host for an external network."""
+    def get_snat_ip_for_vrf(self, context, vrf_id, network, es_name=None):
+        """Allocate SNAT IP for a VRF for an external network."""
+        # This API supports getting SNAT IPs per VRF and populating
+        # the dictionary eithe rwith the network name, or the name
+        # of the external segment
+        if es_name is None:
+            es_name = network.get('name')
+        return self._allocate_snat_ip(context, vrf_id, network, es_name)
+
+    def _allocate_snat_ip(self, context, host_or_vrf, network, es_name):
+        """Allocate SNAT IP for a host or VRF for an external network."""
         snat_subnets = self._get_subnets(context,
                 filters={'name': [HOST_SNAT_POOL],
                          'network_id': [network['id']]})
         if not snat_subnets:
-            LOG.info(_("Subnet for host-SNAT-pool could not be found "
+            LOG.info(_("Subnet for SNAT-pool could not be found "
                        "for external network %(net_id)s. SNAT will not "
                        "function on this network"), {'net_id': network['id']})
             return {}
@@ -471,14 +479,14 @@ class ApicMappingDriver(api.ResourceMappingDriver,
             snat_ports = self._get_ports(context,
                     filters={'name': [HOST_SNAT_POOL_PORT],
                              'network_id': [network['id']],
-                             'device_id': [host]})
+                             'device_id': [host_or_vrf]})
             snat_ip = None
             if not snat_ports:
                 # Note that the following port is created for only getting
                 # an IP assignment in the
-                attrs = {'device_id': host,
+                attrs = {'device_id': host_or_vrf,
                          'device_owner': DEVICE_OWNER_SNAT_PORT,
-                         'binding:host_id': host,
+                         'binding:host_id': host_or_vrf,
                          'binding:vif_type': portbindings.VIF_TYPE_UNBOUND,
                          'tenant_id': network['tenant_id'],
                          'name': HOST_SNAT_POOL_PORT,
@@ -493,18 +501,21 @@ class ApicMappingDriver(api.ResourceMappingDriver,
                     LOG.warning(_("SNAT-port creation failed for subnet "
                                   "%(subnet_id)s on external network "
                                   "%(net_id)s. SNAT will not function on"
-                                  "host %(host)s for this network"),
+                                  "host or vrf %(host_or_vrf)s for this "
+                                  "network"),
                                 {'subnet_id': snat_subnets[0]['id'],
-                                 'net_id': network['id'], 'host': host})
+                                 'net_id': network['id'],
+                                 'host_or_vrf': host_or_vrf})
                     return {}
             elif snat_ports[0]['fixed_ips']:
                 snat_ip = snat_ports[0]['fixed_ips'][0]['ip_address']
             else:
                 LOG.warning(_("SNAT-port %(port)s for external network "
-                              "%(net)s on host %(host)s doesn't have an "
-                              "IP-address"),
+                              "%(net)s on host or VRF %(host_or_vrf)s doesn't "
+                              "have an IP-address"),
                             {'port': snat_ports[0]['id'],
-                             'net': network['id'], 'host': host})
+                             'net': network['id'],
+                             'host_or_vrf': host_or_vrf})
                 return {}
 
             return {'external_segment_name': es_name,
@@ -566,7 +577,7 @@ class ApicMappingDriver(api.ResourceMappingDriver,
                         ext_net_id)
                 if host:
                     host_snat_ip_allocation = (
-                        self._allocate_snat_ip_for_host_and_ext_net(
+                        self._allocate_snat_ip(
                             context._plugin_context, host, ext_network,
                             es['name']))
                     if host_snat_ip_allocation:
