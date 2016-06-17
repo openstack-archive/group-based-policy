@@ -995,6 +995,15 @@ class TestProxyGroup(ApicMappingStitchingPlumberGBPTestCase):
             name="ptg1")['policy_target_group']
         pt1 = self.create_policy_target(
             policy_target_group_id=ptg['id'])['policy_target']
+        data = {'allowed_address_pairs':
+                [{'ip_address': '170.166.0.1'},
+                 {'ip_address': '170.166.0.2'}]}
+        # Create EP with bound port
+        port = self.driver._update_port(context.get_admin_context(),
+                                        pt1['port_id'], data)
+        self.assertEqual(['170.166.0.1', '170.166.0.2'],
+                         [x['ip_address'] for x in
+                          port['allowed_address_pairs']])
         self._bind_port_to_host(pt1['port_id'], 'h1')
         pt2 = self.create_policy_target(
             policy_target_group_id=ptg['id'])['policy_target']
@@ -1043,7 +1052,8 @@ class TestProxyGroup(ApicMappingStitchingPlumberGBPTestCase):
 
         # Verify extra addresses
         ips = self._get_pts_addresses([pt1, pt2])
-        self.assertEqual(set(ips), set(mapping['extra_ips']))
+        self.assertEqual(set(ips + ['170.166.0.1', '170.166.0.2']),
+                         set(mapping['extra_ips']))
         self.assertEqual(ptg['tenant_id'], mapping['ptg_tenant'])
         self.assertEqual(1, len(mapping['ip_mapping']))
         # No SNAT subnet
@@ -1078,8 +1088,9 @@ class TestProxyGroup(ApicMappingStitchingPlumberGBPTestCase):
             context.get_admin_context(),
             device='tap%s' % proxy_gw_failover['port_id'], host='h2')
         self.assertEqual(
-            set(ips), set(mapping['extra_details'][master_port['mac_address']][
-                'extra_ips']))
+            set(ips + ['170.166.0.1', '170.166.0.2']),
+            set(mapping['extra_details'][master_port['mac_address']][
+                    'extra_ips']))
         self.assertEqual(
             [{'mac_address': master_port['mac_address'],
              'ip_address': master_port['fixed_ips'][0]['ip_address'],
