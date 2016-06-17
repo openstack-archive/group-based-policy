@@ -424,7 +424,8 @@ class ApicMappingDriver(api.ResourceMappingDriver,
                             context, ptg['proxied_group_id'])
                         for port in self._get_ptg_ports(proxied):
                             extra_map['extra_ips'].extend(
-                                [x['ip_address'] for x in port['fixed_ips']])
+                                [x['ip_address'] for x in port['fixed_ips'] +
+                                 port.get('allowed_address_pairs', [])])
                             (fips, ipms, host_snat_ips) = (
                                 self._get_ip_mapping_details(
                                     context, port['id'], l3_policy,
@@ -538,7 +539,8 @@ class ApicMappingDriver(api.ResourceMappingDriver,
             for port in ports:
                 # Whenever a owned address belongs to a port, steal its FIPs
                 if owned_addresses & set([x['ip_address'] for x in
-                                          port['fixed_ips']]):
+                                          port['fixed_ips'] + port.get(
+                                              'allowed_address_pairs', [])]):
                     fips_filter.append(port['id'])
 
         fips = self._get_fips(context, filters={'port_id': fips_filter})
