@@ -13,6 +13,7 @@
 from neutron._i18n import _LE
 from neutron._i18n import _LI
 from neutron.plugins.common import constants as pconst
+from neutron.quota import resource_registry
 from oslo_config import cfg
 from oslo_log import helpers as log
 from oslo_log import log as logging
@@ -43,6 +44,11 @@ class NodeCompositionPlugin(servicechain_db.ServiceChainDbPlugin,
     supported_extension_aliases = ["servicechain"]
     path_prefix = gp_cts.GBP_PREFIXES[pconst.SERVICECHAIN]
 
+    @resource_registry.tracked_resources(
+        servicechain_node=servicechain_db.ServiceChainNode,
+        servicechain_spec=servicechain_db.ServiceChainSpec,
+        servicechain_instance=servicechain_db.ServiceChainInstance,
+        service_profile=servicechain_db.ServiceProfile)
     def __init__(self):
         self.driver_manager = manager.NodeDriverManager()
         super(NodeCompositionPlugin, self).__init__()
