@@ -18,7 +18,6 @@ from neutron.api.v2 import resource_helper
 from neutron.common import constants as n_constants
 from neutron.common import exceptions as nexc
 from neutron.plugins.common import constants
-from neutron.quota import resource_registry
 from neutron.services import service_base
 from oslo_config import cfg
 from oslo_log import log as logging
@@ -870,16 +869,10 @@ class Group_policy(extensions.ExtensionDescriptor):
         plural_mappings = resource_helper.build_plural_mappings(
             special_mappings, RESOURCE_ATTRIBUTE_MAP)
         attr.PLURALS.update(plural_mappings)
-        for resource_name in ['l3_policy', 'l2_policy', 'policy_target_group',
-                              'policy_target', 'policy_classifier',
-                              'policy_action', 'policy_rule',
-                              'policy_rule_set', 'external_policy',
-                              'external_segment', 'nat_pool',
-                              'network_service_policy']:
-            resource_registry.register_resource_by_name(resource_name)
         return resource_helper.build_resource_info(plural_mappings,
                                                    RESOURCE_ATTRIBUTE_MAP,
-                                                   constants.GROUP_POLICY)
+                                                   constants.GROUP_POLICY,
+                                                   register_quota=True)
 
     @classmethod
     def get_plugin_interface(cls):
