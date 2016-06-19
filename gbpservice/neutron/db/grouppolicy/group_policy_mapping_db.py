@@ -17,7 +17,6 @@ from oslo_log import log as logging
 import sqlalchemy as sa
 from sqlalchemy import orm
 
-from gbpservice.neutron.db import gbp_quota_db as gquota
 from gbpservice.neutron.db.grouppolicy import group_policy_db as gpdb
 from gbpservice.neutron.extensions import group_policy as gpolicy
 from gbpservice.neutron.services.grouppolicy.common import exceptions
@@ -94,17 +93,6 @@ class NATPoolMapping(gpdb.NATPool):
     __mapper_args__ = {'polymorphic_identity': 'mapping'}
     subnet_id = sa.Column(sa.String(36), sa.ForeignKey('subnets.id'),
                           nullable=True, unique=True)
-
-
-gquota.DB_CLASS_TO_RESOURCE_NAMES[L3PolicyMapping.__name__] = 'l3_policy'
-gquota.DB_CLASS_TO_RESOURCE_NAMES[L2PolicyMapping.__name__] = 'l2_policy'
-gquota.DB_CLASS_TO_RESOURCE_NAMES[PolicyTargetGroupMapping.__name__] = (
-    'policy_target_group')
-gquota.DB_CLASS_TO_RESOURCE_NAMES[PolicyTargetMapping.__name__] = (
-    'policy_target')
-gquota.DB_CLASS_TO_RESOURCE_NAMES[ExternalSegmentMapping.__name__] = (
-    'external_segment')
-gquota.DB_CLASS_TO_RESOURCE_NAMES[NATPoolMapping.__name__] = 'nat_pool'
 
 
 class GroupPolicyMappingDbPlugin(gpdb.GroupPolicyDbPlugin):

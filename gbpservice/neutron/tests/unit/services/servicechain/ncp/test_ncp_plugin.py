@@ -790,6 +790,27 @@ class TestQuotasForServiceChain(test_base.ServiceChainPluginTestCase):
                               group='QUOTAS')
         super(TestQuotasForServiceChain, self).tearDown()
 
+    def test_servicechain_node_quota(self):
+        self.create_servicechain_node()
+        self.assertRaises(webob.exc.HTTPClientError,
+                          self.create_servicechain_node)
+
+    def test_servicechain_spec_quota(self):
+        self.create_servicechain_spec()
+        self.assertRaises(webob.exc.HTTPClientError,
+                          self.create_servicechain_spec)
+
+    def test_servicechain_instance_quota(self):
+        self.create_servicechain_instance()
+        self.assertRaises(webob.exc.HTTPClientError,
+                          self.create_servicechain_instance)
+
+    def test_service_profile(self):
+        self.create_service_profile(service_type=pconst.FIREWALL)
+        self.assertRaises(webob.exc.HTTPClientError,
+                          self.create_service_profile,
+                          service_type=pconst.FIREWALL)
+
     def test_quota_implicit_service_instance(self):
         prof = self.create_service_profile(
             service_type='LOADBALANCER',
