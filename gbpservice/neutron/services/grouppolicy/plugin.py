@@ -19,6 +19,7 @@ from neutron import context as n_ctx
 from neutron.extensions import portbindings
 from neutron import manager as n_manager
 from neutron.plugins.common import constants as pconst
+from neutron.quota import resource_registry
 from oslo_log import helpers as log
 from oslo_log import log as logging
 from oslo_utils import excutils
@@ -336,6 +337,19 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
                         res_type=primary_type, res_id=primary['id'],
                         ref_type=reference_type, ref_id=reference['id'])
 
+    @resource_registry.tracked_resources(
+        l3_policy=group_policy_mapping_db.L3PolicyMapping,
+        l2_policy=group_policy_mapping_db.L2PolicyMapping,
+        policy_target=group_policy_mapping_db.PolicyTargetMapping,
+        policy_target_group=group_policy_mapping_db.PolicyTargetGroupMapping,
+        policy_classifier=gpdb.PolicyClassifier,
+        policy_action=gpdb.PolicyAction,
+        policy_rule=gpdb.PolicyRule,
+        policy_rule_set=gpdb.PolicyRuleSet,
+        external_policy=gpdb.ExternalPolicy,
+        external_segment=group_policy_mapping_db.ExternalSegmentMapping,
+        nat_pool=group_policy_mapping_db.NATPoolMapping,
+        network_service_policy=gpdb.NetworkServicePolicy)
     def __init__(self):
         self.extension_manager = ext_manager.ExtensionManager()
         self.policy_driver_manager = manager.PolicyDriverManager()
@@ -552,8 +566,6 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
             context, policy_target_group_id,
             {'policy_target_group': {'provided_policy_rule_sets': {},
                                      'consumed_policy_rule_sets': {}}})
-        policy_context.current['provided_policy_rule_sets'] = []
-        policy_context.current['consumed_policy_rule_sets'] = []
 
         # Proxy PTGs must be deleted before the group itself
         if policy_target_group.get('proxy_group_id'):
