@@ -17,7 +17,6 @@ from neutron.api.v2 import attributes as attr
 from neutron.api.v2 import resource_helper
 from neutron.common import exceptions as nexc
 from neutron.plugins.common import constants
-from neutron.quota import resource_registry
 from neutron.services import service_base
 from oslo_config import cfg
 from oslo_log import log as logging
@@ -278,12 +277,10 @@ class Servicechain(extensions.ExtensionDescriptor):
         plural_mappings = resource_helper.build_plural_mappings(
             {}, RESOURCE_ATTRIBUTE_MAP)
         attr.PLURALS.update(plural_mappings)
-        for resource_name in ['servicechain_node', 'servicechain_spec',
-                              'servicechain_instance', 'service_profile']:
-            resource_registry.register_resource_by_name(resource_name)
         return resource_helper.build_resource_info(plural_mappings,
                                                    RESOURCE_ATTRIBUTE_MAP,
-                                                   constants.SERVICECHAIN)
+                                                   constants.SERVICECHAIN,
+                                                   register_quota=True)
 
     @classmethod
     def get_plugin_interface(cls):
