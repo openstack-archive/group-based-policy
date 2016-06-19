@@ -21,8 +21,10 @@ from neutron.extensions import securitygroup as ext_sg
 from neutron import manager
 from neutron.notifiers import nova
 from neutron.plugins.common import constants as pconst
+from neutron import quota
 from oslo_config import cfg
 from oslo_log import log as logging
+from oslo_utils import excutils
 
 from gbpservice.common import utils
 from gbpservice.neutron.extensions import group_policy as gp_ext
@@ -95,9 +97,34 @@ class LocalAPI(object):
         # REVISIT(rkukura): Check authorization?
         # REVISIT(rkukura): Do quota?
         with utils.clean_session(context.session):
+            reservation = None
+            if plugin in [self._group_policy_plugin,
+                    self._servicechain_plugin]:
+                reservation = quota.QUOTAS.make_reservation(
+                        context, context.tenant_id, {resource: 1}, plugin)
             action = 'create_' + resource
             obj_creator = getattr(plugin, action)
-            obj = obj_creator(context, {resource: attrs})
+            try:
+                obj = obj_creator(context, {resource: attrs})
+            except Exception:
+                # In case of failure the plugin will always raise an
+                # exception. Cancel the reservation
+                with excutils.save_and_reraise_exception():
+                    if reservation:
+                        quota.QUOTAS.cancel_reservation(
+                                context, reservation.reservation_id)
+            if reservation:
+                quota.QUOTAS.commit_reservation(
+                        context, reservation.reservation_id)
+                # At this point the implicit resource creation is successfully,
+                # so we should be calling:
+                # resource_registry.set_resources_dirty(context)
+                # to appropriately notify the quota engine. However, the above
+                # call creates a new transaction and we want to avoid that.
+                # Moreover, it can be safely assumed that any implicit resource
+                # creation via this local_api is always is response to an explicit
+                # resource creation request, and hence the above method will
+                # be executed in the API layer.
             if do_notify:
                 self._nova_notifier.send_network_change(action, {},
                                                         {resource: obj})
