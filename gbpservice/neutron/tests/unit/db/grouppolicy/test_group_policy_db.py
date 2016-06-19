@@ -24,7 +24,6 @@ from neutron.plugins.common import constants
 from neutron import policy
 from neutron.tests.unit.api import test_extensions
 from neutron.tests.unit.db import test_db_base_plugin_v2
-from oslo_config import cfg
 from oslo_utils import importutils
 from oslo_utils import uuidutils
 
@@ -1539,93 +1538,3 @@ class TestGroupResources(GroupPolicyDbTestCase):
                                     expected_res_status=400)
         self.assertEqual('IpAddressOverlappingInExternalSegment',
                          res['NeutronError']['type'])
-
-
-class TestQuotasForGBP(GroupPolicyDbTestCase):
-
-    def setUp(self, core_plugin=None, gp_plugin=None, service_plugins=None,
-              ext_mgr=None):
-        cfg.CONF.set_override('quota_l3_policy', 1, group='QUOTAS')
-        cfg.CONF.set_override('quota_l2_policy', 1, group='QUOTAS')
-        cfg.CONF.set_override('quota_policy_target_group', 1, group='QUOTAS')
-        cfg.CONF.set_override('quota_policy_target', 1, group='QUOTAS')
-        cfg.CONF.set_override('quota_policy_action', 1, group='QUOTAS')
-        cfg.CONF.set_override('quota_policy_classifier', 1, group='QUOTAS')
-        cfg.CONF.set_override('quota_policy_rule', 1, group='QUOTAS')
-        cfg.CONF.set_override('quota_policy_rule_set', 1, group='QUOTAS')
-        cfg.CONF.set_override('quota_network_service_policy', 1,
-                              group='QUOTAS')
-        cfg.CONF.set_override('quota_external_policy', 1, group='QUOTAS')
-        cfg.CONF.set_override('quota_external_segment', 1, group='QUOTAS')
-        cfg.CONF.set_override('quota_nat_pool', 1, group='QUOTAS')
-        super(TestQuotasForGBP, self).setUp(
-            core_plugin=core_plugin, gp_plugin=gp_plugin,
-            service_plugins=service_plugins, ext_mgr=ext_mgr)
-
-    def tearDown(self):
-        cfg.CONF.set_override('quota_l3_policy', -1, group='QUOTAS')
-        cfg.CONF.set_override('quota_l2_policy', -1, group='QUOTAS')
-        cfg.CONF.set_override('quota_policy_target_group', -1, group='QUOTAS')
-        cfg.CONF.set_override('quota_policy_target', -1, group='QUOTAS')
-        cfg.CONF.set_override('quota_policy_action', -1, group='QUOTAS')
-        cfg.CONF.set_override('quota_policy_classifier', -1, group='QUOTAS')
-        cfg.CONF.set_override('quota_policy_rule', -1, group='QUOTAS')
-        cfg.CONF.set_override('quota_policy_rule_set', -1, group='QUOTAS')
-        cfg.CONF.set_override('quota_network_service_policy', -1,
-                              group='QUOTAS')
-        cfg.CONF.set_override('quota_external_policy', -1, group='QUOTAS')
-        cfg.CONF.set_override('quota_external_segment', -1, group='QUOTAS')
-        cfg.CONF.set_override('quota_nat_pool', -1, group='QUOTAS')
-        super(TestQuotasForGBP, self).tearDown()
-
-    def test_group_resources_quota(self):
-        ptg_id = self.create_policy_target_group()['policy_target_group']['id']
-        self.create_policy_target(policy_target_group_id=ptg_id)
-        self.assertRaises(webob.exc.HTTPClientError,
-                          self.create_policy_target,
-                          policy_target_group_id=ptg_id)
-        self.assertRaises(webob.exc.HTTPClientError,
-                          self.create_policy_target_group)
-
-    def test_l3policy_quota(self):
-        self.create_l3_policy()
-        self.assertRaises(webob.exc.HTTPClientError,
-                          self.create_l3_policy)
-
-    def test_l2policy_quota(self):
-        self.create_l2_policy()
-        self.assertRaises(webob.exc.HTTPClientError,
-                          self.create_l2_policy)
-
-    def test_policy_resources_quota(self):
-        pa_id = self.create_policy_action()['policy_action']['id']
-        pc_id = self.create_policy_classifier()['policy_classifier']['id']
-        pr_id = self.create_policy_rule(
-            policy_classifier_id=pc_id,
-            policy_actions=[pa_id])['policy_rule']['id']
-        self.create_policy_rule_set(policy_rules=[pr_id])
-        self.assertRaises(webob.exc.HTTPClientError,
-                          self.create_policy_action)
-        self.assertRaises(webob.exc.HTTPClientError,
-                          self.create_policy_classifier)
-        self.assertRaises(webob.exc.HTTPClientError,
-                          self.create_policy_rule,
-                          policy_classifier_id=pc_id,
-                          policy_actions=[pa_id])
-        self.assertRaises(webob.exc.HTTPClientError,
-                          self.create_policy_rule_set,
-                          policy_rules=[pr_id])
-        self.create_network_service_policy()
-        self.assertRaises(webob.exc.HTTPClientError,
-                          self.create_network_service_policy)
-
-    def test_external_connectivity_resources_quota(self):
-        self.create_external_policy()
-        self.create_external_segment()
-        self.create_nat_pool()
-        self.assertRaises(webob.exc.HTTPClientError,
-                          self.create_external_policy)
-        self.assertRaises(webob.exc.HTTPClientError,
-                          self.create_external_segment)
-        self.assertRaises(webob.exc.HTTPClientError,
-                          self.create_nat_pool)
