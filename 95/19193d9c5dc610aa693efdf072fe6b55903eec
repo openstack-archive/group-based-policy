@@ -1,0 +1,10 @@
+Code-Review+1: Amit Bose <amitbose@gmail.com>
+Code-Review+2: Hemanth Ravi <hemanth.ravi@oneconvergence.com>
+Code-Review+2: Ivar Lazzaro <ivarlazzaro@gmail.com>
+Workflow+1: Ivar Lazzaro <ivarlazzaro@gmail.com>
+Verified+2: Jenkins
+Submitted-by: Jenkins
+Submitted-at: Tue, 21 Jun 2016 18:48:04 +0000
+Reviewed-on: https://review.openstack.org/331462
+Project: openstack/group-based-policy
+Branch: refs/heads/master
