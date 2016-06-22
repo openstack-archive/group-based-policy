@@ -1801,7 +1801,7 @@ class ApicMappingDriver(api.ResourceMappingDriver,
                                                   encap, l3p_name)
         return req_dict
 
-    def _clone_l3out(self, context, es, es_name, encap):
+    def _clone_l3out(self, context, es, es_name, es_tenant, encap):
         pre_es_name = self.name_mapper.name_mapper.pre_existing(
             context, es['name'])
         l3out_info = self._query_l3out_info(pre_es_name,
@@ -1809,10 +1809,8 @@ class ApicMappingDriver(api.ResourceMappingDriver,
 
         old_tenant = self.apic_manager.apic.fvTenant.rn(
             l3out_info['l3out_tenant'])
-        new_tenant = self.apic_manager.apic.fvTenant.rn(
-            context.current.get('tenant_id'))
-        old_l3_out = self.apic_manager.apic.l3extOut.rn(
-            pre_es_name)
+        new_tenant = self.apic_manager.apic.fvTenant.rn(es_tenant)
+        old_l3_out = self.apic_manager.apic.l3extOut.rn(pre_es_name)
         new_l3_out = self.apic_manager.apic.l3extOut.rn(es_name)
 
         request = {}
@@ -1842,7 +1840,7 @@ class ApicMappingDriver(api.ResourceMappingDriver,
         self.apic_manager.apic.post_body(
             self.apic_manager.apic.l3extOut.mo,
             request_json,
-            context.current.get('tenant_id'),
+            es_tenant,
             str(es_name))
 
     def _plug_l3p_to_es(self, context, es, is_shadow=False):
@@ -1922,7 +1920,7 @@ class ApicMappingDriver(api.ResourceMappingDriver,
 
             if is_details_needed:
                 if self._is_pre_existing(es):
-                    self._clone_l3out(context, es, es_name, encap)
+                    self._clone_l3out(context, es, es_name, es_tenant, encap)
                 else:
                     switch = ext_info['switch']
                     module, sport = ext_info['port'].split('/')
