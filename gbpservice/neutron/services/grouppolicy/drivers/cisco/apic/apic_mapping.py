@@ -32,6 +32,7 @@ from neutron.common import rpc as n_rpc
 from neutron.common import topics
 from neutron import context as nctx
 from neutron.db import db_base_plugin_v2 as n_db
+from neutron.db import model_base
 from neutron.extensions import portbindings
 from neutron.extensions import providernet
 from neutron import manager
@@ -45,6 +46,7 @@ from oslo_concurrency import lockutils
 from oslo_config import cfg
 from oslo_log import log as logging
 from oslo_serialization import jsonutils
+import sqlalchemy as sa
 
 from gbpservice.neutron.db.grouppolicy import group_policy_mapping_db as gpdb
 from gbpservice.neutron.extensions import driver_proxy_group as proxy_group
@@ -194,6 +196,16 @@ class ExplicitPortOverlap(gpexc.GroupPolicyBadRequest):
                 '%(ip)s has overlapping IP or MAC address with another port '
                 'in network %(net)s')
 
+
+class TenantSpecificNatEpg(model_base.BASEV2):
+    """Tenants that use a specific NAT EPG for an external segment."""
+    __tablename__ = 'gp_apic_tenant_specific_nat_epg'
+    external_segment_id = sa.Column(
+        sa.String(36), sa.ForeignKey('gp_external_segments.id',
+                                     ondelete='CASCADE'),
+        primary_key=True)
+    tenant_id = sa.Column(sa.String(36), primary_key=True)
+
 REVERSE_PREFIX = 'reverse-'
 SHADOW_PREFIX = 'Shd-'
 AUTO_PREFIX = 'Auto-'
@@ -267,6 +279,7 @@ class ApicMappingDriver(api.ResourceMappingDriver,
         self.enable_dhcp_opt = self.apic_manager.enable_optimized_dhcp
         self.enable_metadata_opt = self.apic_manager.enable_optimized_metadata
         self.nat_enabled = self.apic_manager.use_vmm
+        self.per_tenant_nat_epg = self.apic_manager.per_tenant_nat_epg
         self._gbp_plugin = None
         self.l3out_vlan_alloc = l3out_vlan_alloc.L3outVlanAlloc()
         self.l3out_vlan_alloc.sync_vlan_allocations(
@@ -593,9 +606,10 @@ class ApicMappingDriver(api.ResourceMappingDriver,
             ext_info = self.apic_manager.ext_net_dict.get(es['name'])
             if ext_info and self._is_edge_nat(ext_info):
                 continue
-            nat_epg_name = self._get_nat_epg_for_es(context, es)
+            nat_epg_tenant, nat_epg_name = self._determine_nat_epg_for_es(
+                context, es, l3_policy)
             nat_epg_tenant = self.apic_manager.apic.fvTenant.name(
-                self._tenant_by_sharing_policy(es))
+                nat_epg_tenant)
             fips_in_es = []
 
             if es['subnet_id']:
@@ -616,7 +630,10 @@ class ApicMappingDriver(api.ResourceMappingDriver,
             if not fips_in_es:
                 ipms.append({'external_segment_name': es['name'],
                              'nat_epg_name': nat_epg_name,
-                             'nat_epg_tenant': nat_epg_tenant})
+                             'nat_epg_tenant': nat_epg_tenant,
+                             'next_hop_ep_tenant': (
+                                self.apic_manager.apic.fvTenant.name(
+                                    self._tenant_by_sharing_policy(es)))})
             for f in fips_in_es:
                 f['nat_epg_name'] = nat_epg_name
                 f['nat_epg_tenant'] = nat_epg_tenant
@@ -1893,9 +1910,10 @@ class ApicMappingDriver(api.ResourceMappingDriver,
                     l3p_id=context.current['id'], es_id=es['id'])
             context.set_external_fixed_ips(es['id'], [ip])
 
+        is_edge_nat = self._is_edge_nat(ext_info)
         es_name = self.name_mapper.external_segment(context, es,
             prefix=self._get_shadow_prefix(context,
-                is_shadow, context.current, self._is_edge_nat(ext_info)))
+                is_shadow, context.current, is_edge_nat))
         es_name_pre = self.name_mapper.name_mapper.pre_existing(
             context._plugin_context, es['name'])
         es_tenant = self._get_tenant_for_shadow(is_shadow, context.current, es)
@@ -1910,8 +1928,7 @@ class ApicMappingDriver(api.ResourceMappingDriver,
             # don't need to explicitly create the shadow l3out in this case
             # because we are going to query APIC then use the pre-existing
             # l3out as a template then clone it accordingly
-            if (is_shadow and self._is_edge_nat(ext_info) and
-                self._is_pre_existing(es)):
+            if (is_shadow and is_edge_nat and self._is_pre_existing(es)):
                 is_l3out_creation_needed = False
 
             if is_l3out_creation_needed:
@@ -1934,7 +1951,7 @@ class ApicMappingDriver(api.ResourceMappingDriver,
 
             # if its edge nat then we have to flesh
             # out this shadow L3 out in APIC
-            if is_shadow and self._is_edge_nat(ext_info):
+            if is_shadow and is_edge_nat:
                 vlan_id = self.l3out_vlan_alloc.reserve_vlan(
                     es['name'], context.current['id'])
                 encap = 'vlan-' + str(vlan_id)
@@ -1971,13 +1988,18 @@ class ApicMappingDriver(api.ResourceMappingDriver,
                             self.name_mapper.l2_policy(context, l2p),
                             es_name)
 
-            if not is_shadow and nat_enabled:
-                # set L3-out for NAT-BD
-                self.apic_manager.set_l3out_for_bd(es_tenant,
-                    self._get_nat_bd_for_es(context, es),
-                    (self.name_mapper.name_mapper.pre_existing(
-                        context, es['name']) if pre_existing else es_name),
-                    transaction=trs)
+            if nat_enabled:
+                if not is_shadow:
+                    # set L3-out for NAT-BD
+                    self.apic_manager.set_l3out_for_bd(es_tenant,
+                        self._get_nat_bd_for_es(context, es),
+                        (self.name_mapper.name_mapper.pre_existing(
+                            context, es['name']) if pre_existing else es_name),
+                        transaction=trs)
+                elif not is_edge_nat:
+                    # create tenant-specific NAT EPG if required
+                    self._create_tenant_specific_nat_epg(context, es,
+                        context.current, transaction=trs)
         if not is_shadow:
             if nat_enabled:
                 # create shadow external-networks
@@ -2019,6 +2041,10 @@ class ApicMappingDriver(api.ResourceMappingDriver,
             if nat_enabled:
                 # remove shadow external-networks
                 self._unplug_l3p_from_es(context, es, True)
+                if not is_edge_nat:
+                    # remove tenant-specific NAT EPG if required
+                    self._remove_tenant_specific_nat_epg(context, es,
+                                                         context.current)
             else:
                 # Dissociate BDs of the VRF from L3-out
                 l2ps = self._get_l2_policies(context._plugin_context,
@@ -2140,13 +2166,14 @@ class ApicMappingDriver(api.ResourceMappingDriver,
                             l3policy_obj, transaction=trs)
                     if is_shadow:
                         if not self._is_edge_nat(ext_info):
+                            nat_epg_tenant, nat_epg_name = (
+                                self._determine_nat_epg_for_es(
+                                    context, es, l3policy_obj))
                             # set up link to NAT EPG
                             (self.apic_manager.
                              associate_external_epg_to_nat_epg(
                                  es_tenant, es_name, ep_name,
-                                 self._get_nat_epg_for_es(context, es),
-                                 target_owner=self._tenant_by_sharing_policy(
-                                     es),
+                                 nat_epg_name, target_owner=nat_epg_tenant,
                                  transaction=trs))
                     elif nat_enabled:
                         # 'real' external EPGs provide and consume
@@ -3665,3 +3692,98 @@ class ApicMappingDriver(api.ResourceMappingDriver,
         for ip in fixed_ips:
             ip.pop('subnet_id', None)
         return fixed_ips
+
+    def _determine_nat_epg_for_es(self, context, es, tenant_obj):
+        nat_epg_name = self._get_nat_epg_for_es(context, es)
+        nat_epg_tenant = None
+        if (es['shared'] and
+            self._tenant_uses_specific_nat_epg(context, es, tenant_obj)):
+                nat_epg_tenant = self.name_mapper.tenant(tenant_obj)
+        nat_epg_tenant = nat_epg_tenant or self._tenant_by_sharing_policy(es)
+        return nat_epg_tenant, nat_epg_name
+
+    def _tenant_uses_specific_nat_epg(self, context, es, tenant_obj):
+        session = context._plugin_context.session
+        cnt = session.query(TenantSpecificNatEpg).filter_by(
+            external_segment_id = es['id']).filter_by(
+                tenant_id = tenant_obj['tenant_id']).count()
+        return bool(cnt)
+
+    def _create_tenant_specific_nat_epg(self, context, es, l3_policy,
+                                        transaction=None):
+        if not es['shared']:
+            return
+
+        l3ps = self._get_l3_policies(context._plugin_context.elevated(),
+            filters={'id': [l3p for l3p in es['l3_policies']
+                            if l3p != l3_policy['id']],
+                     'tenant_id': [l3_policy['tenant_id']]})
+        if l3ps:
+            # there are other L3Ps from this tenant - don't explicitly create
+            # tenant-specific NAT EPG so that we continue using whatever
+            # those L3Ps were using
+            return
+
+        uses_specific_nat_epg = self._tenant_uses_specific_nat_epg(
+            context, es, l3_policy)
+        if uses_specific_nat_epg or not self.per_tenant_nat_epg:
+            return
+
+        nat_bd_name = self._get_nat_bd_for_es(context, es)
+        nat_epg_name = self._get_nat_epg_for_es(context, es)
+        nat_contract = self._get_nat_contract_for_es(context, es)
+        nat_epg_tenant = self.name_mapper.tenant(l3_policy)
+        es_tenant = self._tenant_by_sharing_policy(es)
+
+        with self.apic_manager.apic.transaction(transaction) as trs:
+            self.apic_manager.ensure_epg_created(
+                nat_epg_tenant, nat_epg_name, bd_name=nat_bd_name,
+                bd_owner=es_tenant, transaction=trs)
+            self.apic_manager.set_contract_for_epg(
+                nat_epg_tenant, nat_epg_name, nat_contract,
+                transaction=trs)
+            self.apic_manager.set_contract_for_epg(
+                nat_epg_tenant, nat_epg_name, nat_contract, provider=True,
+                transaction=trs)
+        session = context._plugin_context.session
+        with session.begin(subtransactions=True):
+            db_obj = TenantSpecificNatEpg(
+                external_segment_id=es['id'], tenant_id=l3_policy['tenant_id'])
+            session.add(db_obj)
+        LOG.debug('Created tenant-specific NAT EPG (%(tenant)s, %(epg)s) for '
+                  'external segment %(es)s',
+                  {'tenant': nat_epg_tenant, 'epg': nat_epg_name,
+                   'es': es['id']})
+
+    def _remove_tenant_specific_nat_epg(self, context, es, l3_policy,
+                                        transaction=None):
+        if not es['shared']:
+            return
+        uses_specific_nat_epg = self._tenant_uses_specific_nat_epg(
+            context, es, l3_policy)
+        if not uses_specific_nat_epg:
+            return
+
+        # remove NAT EPG if this is last L3P from this tenant
+        l3ps = self._get_l3_policies(context._plugin_context.elevated(),
+            filters={'id': [l3p for l3p in es['l3_policies']
+                            if l3p != l3_policy['id']],
+                     'tenant_id': [l3_policy['tenant_id']]})
+        if not l3ps:
+            session = context._plugin_context.session
+            with session.begin(subtransactions=True):
+                db_obj = session.query(TenantSpecificNatEpg).filter_by(
+                    external_segment_id = es['id']).filter_by(
+                        tenant_id = l3_policy['tenant_id']).first()
+                if db_obj:
+                    session.delete(db_obj)
+
+            nat_epg_name = self._get_nat_epg_for_es(context, es)
+            nat_epg_tenant = self.name_mapper.tenant(l3_policy)
+            self.apic_manager.delete_epg_for_network(
+                nat_epg_tenant, nat_epg_name, transaction=transaction)
+
+            LOG.debug('Removed tenant-specific NAT EPG (%(tenant)s, %(epg)s) '
+                      'for external segment %(es)s',
+                      {'tenant': nat_epg_tenant, 'epg': nat_epg_name,
+                       'es': es['id']})

@@ -103,7 +103,11 @@ class ApicMappingTestCase(
         config.cfg.CONF.set_override('enable_security_group', False,
                                      group='SECURITYGROUP')
         n_rpc.create_connection = mock.Mock()
-        amap.ApicMappingDriver.get_apic_manager = mock.MagicMock()
+        amap.ApicMappingDriver.get_apic_manager = mock.Mock(
+            return_value=mock.MagicMock(
+                name_mapper=mock.Mock(),
+                ext_net_dict={},
+                per_tenant_nat_epg=False))
         self.set_up_mocks()
         ml2_opts = ml2_options or {
             'mechanism_drivers': ['apic_gbp'],
@@ -143,8 +147,6 @@ class ApicMappingTestCase(
         self.driver.name_mapper.name_mapper.external_policy = echo
         self.driver.name_mapper.name_mapper.external_segment = echo
         self.driver.name_mapper.name_mapper.pre_existing = echo
-        self.driver.apic_manager = mock.Mock(name_mapper=mock.Mock(),
-                                             ext_net_dict={})
         self.driver.apic_manager.apic.transaction = self.fake_transaction
         self.driver.notifier = mock.Mock()
         self.driver.apic_manager.ext_net_dict = {}
@@ -393,13 +395,13 @@ class TestPolicyTarget(ApicMappingTestCase):
         self.assertEqual(l3p['tenant_id'], details['vrf_tenant'])
         self.assertEqual(l3p['id'], details['vrf_name'])
 
-    def test_get_gbp_details(self):
+    def _do_test_get_gbp_details(self):
         self._mock_external_dict([('supported', '192.168.0.2/24')])
         self.driver.apic_manager.ext_net_dict[
                 'supported']['host_pool_cidr'] = '192.168.200.1/24'
         es = self.create_external_segment(name='supported',
             cidr='192.168.0.2/24',
-            expected_res_status=201, shared=False)['external_segment']
+            expected_res_status=201, shared=True)['external_segment']
         self.create_nat_pool(external_segment_id=es['id'],
                              ip_pool='20.20.20.0/24')
         l3p = self.create_l3_policy(name='myl3',
@@ -436,7 +438,10 @@ class TestPolicyTarget(ApicMappingTestCase):
         fip = mapping['floating_ip'][0]
         self.assertEqual(pt1['port_id'], fip['port_id'])
         self.assertEqual("NAT-epg-%s" % es['id'], fip['nat_epg_name'])
-        self.assertEqual(es['tenant_id'], fip['nat_epg_tenant'])
+        self.assertEqual(
+            (es['tenant_id'] if self.driver.per_tenant_nat_epg
+                else self.common_tenant),
+            fip['nat_epg_tenant'])
 
         self.assertEqual(l3p['tenant_id'], mapping['vrf_tenant'])
         self.assertEqual(l3p['id'], mapping['vrf_name'])
@@ -475,6 +480,13 @@ class TestPolicyTarget(ApicMappingTestCase):
         self.assertEqual("192.168.200.3",
             mapping['host_snat_ips'][0]['host_snat_ip'])
         self.assertEqual(24, mapping['host_snat_ips'][0]['prefixlen'])
+
+    def test_get_gbp_details(self):
+        self._do_test_get_gbp_details()
+
+    def test_get_gbp_details_ptne(self):
+        self.driver.per_tenant_nat_epg = True
+        self._do_test_get_gbp_details()
 
     def test_get_snat_ip_for_vrf(self):
         TEST_VRF1 = 'testvrf1'
@@ -2148,8 +2160,12 @@ class TestL3Policy(ApicMappingTestCase):
                               'nexthop': '192.168.0.254'},
                              {'destination': '128.0.0.0/16',
                               'nexthop': None}])['external_segment']
+        owner = self.common_tenant if shared_es else es['tenant_id']
 
-        # Create with explicit address
+        mgr = self.driver.apic_manager
+        mgr.ensure_epg_created.reset_mock()
+        mgr.set_contract_for_epg.reset_mock()
+
         l3p = self.create_l3_policy(
             name='myl3p',
             shared=shared_l3p,
@@ -2160,15 +2176,37 @@ class TestL3Policy(ApicMappingTestCase):
         self.assertEqual(1, len(l3p['external_segments'][es['id']]))
         self.assertEqual('169.254.0.2', l3p['external_segments'][es['id']][0])
 
+        expected_epg_calls = []
+        expected_contract_calls = []
+        expected_nat_epg_tenant = owner
+        if self.nat_enabled and shared_es and self.driver.per_tenant_nat_epg:
+            expected_epg_calls.append(
+                mock.call(l3p['tenant_id'], "NAT-epg-%s" % es['id'],
+                    bd_name="NAT-bd-%s" % es['id'], bd_owner=owner,
+                    transaction=mock.ANY))
+            expected_contract_calls.extend([
+                mock.call(l3p['tenant_id'], "NAT-epg-%s" % es['id'],
+                    "NAT-allow-%s" % es['id'], transaction=mock.ANY),
+                mock.call(l3p['tenant_id'], "NAT-epg-%s" % es['id'],
+                    "NAT-allow-%s" % es['id'], provider=True,
+                    transaction=mock.ANY)])
+            expected_nat_epg_tenant = l3p['tenant_id']
+        self._check_call_list(expected_epg_calls,
+            mgr.ensure_epg_created.call_args_list)
+        self._check_call_list(expected_contract_calls,
+            mgr.set_contract_for_epg.call_args_list)
+        ctx = context.get_admin_context()
+        ctx._plugin_context = ctx
+        self.assertEqual((expected_nat_epg_tenant, "NAT-epg-%s" % es['id']),
+            self.driver._determine_nat_epg_for_es(ctx, es, l3p))
+
         l2ps = [self.create_l2_policy(name='myl2p-%s' % x,
                                       tenant_id=l3p['tenant_id'],
                                       shared=shared_l3p,
                                       l3_policy_id=l3p['id'])['l2_policy']
                 for x in range(0, 3)]
 
-        owner = self.common_tenant if shared_es else es['tenant_id']
         l3p_owner = self.common_tenant if shared_l3p else l3p['tenant_id']
-        mgr = self.driver.apic_manager
         call_name = mgr.ensure_external_routed_network_created
         l3out_str = "Shd-%s-%s"
         if is_edge_nat:
@@ -2305,6 +2343,16 @@ class TestL3Policy(ApicMappingTestCase):
                                                  shared_l3p=False,
                                                  is_edge_nat=True)
 
+    def test_l3p_plugged_to_es_at_creation_ptne_1(self):
+        self.driver.per_tenant_nat_epg = True
+        self._test_l3p_plugged_to_es_at_creation(shared_es=True,
+                                                 shared_l3p=False)
+
+    def test_l3p_plugged_to_es_at_creation_ptne_2(self):
+        self.driver.per_tenant_nat_epg = True
+        self._test_l3p_plugged_to_es_at_creation(shared_es=True,
+                                                 shared_l3p=True)
+
     def _test_l3p_plugged_to_es_at_update(self, shared_es,
                                           shared_l3p, is_edge_nat=False):
         # Verify L3P is correctly plugged to ES on APIC during update
@@ -2329,6 +2377,10 @@ class TestL3Policy(ApicMappingTestCase):
                                       l3_policy_id=l3p['id'])['l2_policy']
                 for x in range(0, 3)]
 
+        mgr = self.driver.apic_manager
+        mgr.ensure_epg_created.reset_mock()
+        mgr.set_contract_for_epg.reset_mock()
+
         # update L3P with ES
         l3p = self.update_l3_policy(l3p['id'], tenant_id=l3p['tenant_id'],
             external_segments={es['id']: []},
@@ -2336,7 +2388,6 @@ class TestL3Policy(ApicMappingTestCase):
         self.assertEqual(1, len(l3p['external_segments'][es['id']]))
         self.assertEqual('169.254.0.2', l3p['external_segments'][es['id']][0])
 
-        mgr = self.driver.apic_manager
         owner = self.common_tenant if shared_es else es['tenant_id']
         l3p_owner = self.common_tenant if shared_l3p else l3p['tenant_id']
         l3out_str = "Shd-%s-%s"
@@ -2447,6 +2498,30 @@ class TestL3Policy(ApicMappingTestCase):
         self._check_call_list(expected_set_l3out_for_bd_calls,
             mgr.set_l3out_for_bd.call_args_list)
 
+        expected_epg_calls = []
+        expected_contract_calls = []
+        expected_nat_epg_tenant = owner
+        if self.nat_enabled and shared_es and self.driver.per_tenant_nat_epg:
+            expected_epg_calls.append(
+                mock.call(l3p['tenant_id'], "NAT-epg-%s" % es['id'],
+                    bd_name="NAT-bd-%s" % es['id'], bd_owner=owner,
+                    transaction=mock.ANY))
+            expected_contract_calls.extend([
+                mock.call(l3p['tenant_id'], "NAT-epg-%s" % es['id'],
+                    "NAT-allow-%s" % es['id'], transaction=mock.ANY),
+                mock.call(l3p['tenant_id'], "NAT-epg-%s" % es['id'],
+                    "NAT-allow-%s" % es['id'], provider=True,
+                    transaction=mock.ANY)])
+            expected_nat_epg_tenant = l3p['tenant_id']
+        self._check_call_list(expected_epg_calls,
+            mgr.ensure_epg_created.call_args_list)
+        self._check_call_list(expected_contract_calls,
+            mgr.set_contract_for_epg.call_args_list)
+        ctx = context.get_admin_context()
+        ctx._plugin_context = ctx
+        self.assertEqual((expected_nat_epg_tenant, "NAT-epg-%s" % es['id']),
+            self.driver._determine_nat_epg_for_es(ctx, es, l3p))
+
     # Although the naming convention used here has been chosen poorly,
     # I'm separating the tests in order to get the mock re-set.
     def test_l3p_plugged_to_es_at_update_1(self):
@@ -2475,6 +2550,16 @@ class TestL3Policy(ApicMappingTestCase):
         self._test_l3p_plugged_to_es_at_update(shared_es=False,
                                                shared_l3p=False,
                                                is_edge_nat=True)
+
+    def test_l3p_plugged_to_es_at_update_ptne_1(self):
+        self.driver.per_tenant_nat_epg = True
+        self._test_l3p_plugged_to_es_at_update(shared_es=True,
+                                               shared_l3p=False)
+
+    def test_l3p_plugged_to_es_at_update_ptne_2(self):
+        self.driver.per_tenant_nat_epg = True
+        self._test_l3p_plugged_to_es_at_update(shared_es=True,
+                                               shared_l3p=True)
 
     def _test_l3p_unplugged_from_es_on_delete(self, shared_es,
                                               shared_l3p, is_edge_nat=False):
@@ -2536,6 +2621,18 @@ class TestL3Policy(ApicMappingTestCase):
         mgr.unset_l3out_for_bd.reset_mock()
         self.driver.l3out_vlan_alloc.release_vlan.reset_mock()
 
+        expected_epg_calls = []
+        if self.nat_enabled and shared_es and self.driver.per_tenant_nat_epg:
+            expected_epg_calls.append(
+                mock.call(l3p['tenant_id'], "NAT-epg-%s" % es1['id'],
+                    transaction=mock.ANY))
+        self._check_call_list(expected_epg_calls,
+            mgr.delete_epg_for_network.call_args_list)
+        ctx = context.get_admin_context()
+        ctx._plugin_context = ctx
+        self.assertEqual((owner, "NAT-epg-%s" % es1['id']),
+            self.driver._determine_nat_epg_for_es(ctx, es1, l3p))
+
         # Verify correct deletion for 2 ESs
         l3p = self.create_l3_policy(
             shared=shared_l3p,
@@ -2544,6 +2641,7 @@ class TestL3Policy(ApicMappingTestCase):
                                es2['id']: ['169.254.0.3']},
             expected_res_status=201)['l3_policy']
         mgr.set_context_for_external_routed_network.reset_mock()
+        mgr.delete_epg_for_network.reset_mock()
         req = self.new_delete_request('l3_policies', l3p['id'], self.fmt)
         res = req.get_response(self.ext_api)
         self.assertEqual(res.status_int, webob.exc.HTTPNoContent.code)
@@ -2592,6 +2690,15 @@ class TestL3Policy(ApicMappingTestCase):
                 expected_release_vlan_calls,
                 self.driver.l3out_vlan_alloc.release_vlan.call_args_list)
 
+        if self.nat_enabled and shared_es and self.driver.per_tenant_nat_epg:
+            expected_epg_calls.append(
+                mock.call(l3p['tenant_id'], "NAT-epg-%s" % es2['id'],
+                    transaction=mock.ANY))
+        self._check_call_list(expected_epg_calls,
+            mgr.delete_epg_for_network.call_args_list)
+        self.assertEqual((owner, "NAT-epg-%s" % es2['id']),
+            self.driver._determine_nat_epg_for_es(ctx, es2, l3p))
+
     # Although the naming convention used here has been chosen poorly,
     # I'm separating the tests in order to get the mock re-set.
     def test_l3p_unplugged_from_es_on_delete_1(self):
@@ -2620,6 +2727,16 @@ class TestL3Policy(ApicMappingTestCase):
         self._test_l3p_unplugged_from_es_on_delete(shared_es=False,
                                                    shared_l3p=False,
                                                    is_edge_nat=True)
+
+    def test_l3p_unplugged_from_es_on_delete_ptne_1(self):
+        self.per_tenant_nat_epg = True
+        self._test_l3p_unplugged_from_es_on_delete(shared_es=True,
+                                                   shared_l3p=False)
+
+    def test_l3p_unplugged_from_es_on_delete_ptne_2(self):
+        self.per_tenant_nat_epg = True
+        self._test_l3p_unplugged_from_es_on_delete(shared_es=True,
+                                                   shared_l3p=True)
 
     def _test_l3p_unplugged_from_es_on_update(self, shared_es,
                                               shared_l3p, is_edge_nat=False):
@@ -2790,6 +2907,18 @@ class TestL3Policy(ApicMappingTestCase):
         self._check_call_list(expected_set_l3out_for_bd_calls,
             mgr.set_l3out_for_bd.call_args_list)
 
+        expected_epg_calls = []
+        if self.nat_enabled and shared_es and self.driver.per_tenant_nat_epg:
+            expected_epg_calls.append(
+                mock.call(l3p['tenant_id'], "NAT-epg-%s" % es1['id'],
+                    transaction=mock.ANY))
+        self._check_call_list(expected_epg_calls,
+            mgr.delete_epg_for_network.call_args_list)
+        ctx = context.get_admin_context()
+        ctx._plugin_context = ctx
+        self.assertEqual((owner, "NAT-epg-%s" % es1['id']),
+            self.driver._determine_nat_epg_for_es(ctx, es1, l3p))
+
         self.driver.l3out_vlan_alloc.release_vlan.reset_mock()
         mgr.delete_external_routed_network.reset_mock()
         mgr.unset_l3out_for_bd.reset_mock()
@@ -2798,6 +2927,7 @@ class TestL3Policy(ApicMappingTestCase):
             external_segments={es1['id']: ['169.254.0.5'],
                                es2['id']: ['169.254.0.6']})
         mgr.set_context_for_external_routed_network.reset_mock()
+        mgr.delete_epg_for_network.reset_mock()
         self.update_l3_policy(
             l3p['id'], tenant_id=l3p['tenant_id'],
             expected_res_status=200, external_segments={})
@@ -2863,6 +2993,15 @@ class TestL3Policy(ApicMappingTestCase):
                 expected_release_vlan_calls,
                 self.driver.l3out_vlan_alloc.release_vlan.call_args_list)
 
+        if self.nat_enabled and shared_es and self.driver.per_tenant_nat_epg:
+            expected_epg_calls.append(
+                mock.call(l3p['tenant_id'], "NAT-epg-%s" % es2['id'],
+                    transaction=mock.ANY))
+        self._check_call_list(expected_epg_calls,
+            mgr.delete_epg_for_network.call_args_list)
+        self.assertEqual((owner, "NAT-epg-%s" % es2['id']),
+            self.driver._determine_nat_epg_for_es(ctx, es2, l3p))
+
     # Although the naming convention used here has been chosen poorly,
     # I'm separating the tests in order to get the mock re-set.
     def test_l3p_unplugged_from_es_on_update_1(self):
@@ -2891,6 +3030,16 @@ class TestL3Policy(ApicMappingTestCase):
         self._test_l3p_unplugged_from_es_on_update(shared_es=False,
                                                    shared_l3p=False,
                                                    is_edge_nat=True)
+
+    def test_l3p_unplugged_from_es_on_update_ptne_1(self):
+        self.driver.per_tenant_nat_epg = True
+        self._test_l3p_unplugged_from_es_on_update(shared_es=True,
+                                                   shared_l3p=False)
+
+    def test_l3p_unplugged_from_es_on_update_ptne_2(self):
+        self.driver.per_tenant_nat_epg = True
+        self._test_l3p_unplugged_from_es_on_update(shared_es=True,
+                                                   shared_l3p=True)
 
     def test_verify_unsupported_es_noop(self):
         # Verify L3P is correctly plugged to ES on APIC during update
@@ -2960,6 +3109,107 @@ class TestL3Policy(ApicMappingTestCase):
 
     def test_multi_es_with_ptg_2(self):
         self._test_multi_es_with_ptg(True)
+
+    def test_multi_l3p_ptne(self):
+        self.driver.per_tenant_nat_epg = True
+
+        self._mock_external_dict([('supported', '192.168.0.2/24')])
+        es = self.create_external_segment(
+            name='supported', shared=True)['external_segment']
+
+        mgr = self.driver.apic_manager
+        mgr.ensure_epg_created.reset_mock()
+
+        l3ps = []
+        for x in range(0, 3 if self.nat_enabled else 1):
+            l3ps.append(self.create_l3_policy(
+                            name='myl3p-%s' % x, tenant_id='another_tenant',
+                            external_segments={es['id']: []},
+                            expected_res_status=201)['l3_policy'])
+            if self.nat_enabled:
+                mgr.ensure_epg_created.assert_called_once_with(
+                    'another_tenant', "NAT-epg-%s" % es['id'],
+                    bd_name="NAT-bd-%s" % es['id'],
+                    bd_owner=self.common_tenant, transaction=mock.ANY)
+            else:
+                mgr.ensure_epg_created.assert_not_called()
+
+        for l3p in l3ps[:-1]:
+            self.delete_l3_policy(l3p['id'], tenant_id=l3p['tenant_id'])
+            mgr.delete_epg_for_network.assert_not_called()
+        self.delete_l3_policy(l3ps[-1]['id'], tenant_id=l3ps[-1]['tenant_id'])
+        if self.nat_enabled:
+            mgr.delete_epg_for_network.assert_called_once_with(
+                'another_tenant', "NAT-epg-%s" % es['id'],
+                transaction=mock.ANY)
+        else:
+            mgr.delete_epg_for_network.assert_not_called()
+
+    def test_ptne_upgrade(self):
+        # Simulate "upgrade" - tenants existing before upgrade should
+        # continue using non-specific NAT EPG where as new ones use
+        # specific NAT EPGs
+        self._mock_external_dict([('supported', '192.168.0.2/24')])
+        es = self.create_external_segment(
+            name='supported', shared=True)['external_segment']
+
+        mgr = self.driver.apic_manager
+        mgr.ensure_epg_created.reset_mock()
+        ctx = context.get_admin_context()
+        ctx._plugin_context = ctx
+
+        l3p_a_1 = self.create_l3_policy(
+            name='myl3p-a-1', tenant_id='tenant_a',
+            external_segments={es['id']: []})['l3_policy']
+        mgr.ensure_epg_created.assert_not_called()
+        self.assertEqual((self.common_tenant, "NAT-epg-%s" % es['id']),
+            self.driver._determine_nat_epg_for_es(ctx, es, l3p_a_1))
+
+        # "Upgrade" and change to per-tenant NAT EPG
+        self.driver.per_tenant_nat_epg = True
+
+        if self.nat_enabled:
+            l3p_a_2 = self.create_l3_policy(
+                name='myl3p-a-2', tenant_id='tenant_a',
+                external_segments={es['id']: []})['l3_policy']
+            mgr.ensure_epg_created.assert_not_called()
+            self.assertEqual((self.common_tenant, "NAT-epg-%s" % es['id']),
+                self.driver._determine_nat_epg_for_es(ctx, es, l3p_a_2))
+            self.delete_l3_policy(l3p_a_2['id'],
+                                  tenant_id=l3p_a_2['tenant_id'])
+
+        self.assertEqual((self.common_tenant, "NAT-epg-%s" % es['id']),
+            self.driver._determine_nat_epg_for_es(ctx, es, l3p_a_1))
+        self.delete_l3_policy(l3p_a_1['id'], tenant_id=l3p_a_1['tenant_id'])
+        mgr.delete_epg_for_network.assert_not_called()
+
+        l3p_a_3 = self.create_l3_policy(
+            name='myl3p-a-3', tenant_id='tenant_a',
+            external_segments={es['id']: []})['l3_policy']
+        if self.nat_enabled:
+            mgr.ensure_epg_created.assert_called_once_with(
+                'tenant_a', "NAT-epg-%s" % es['id'],
+                bd_name="NAT-bd-%s" % es['id'], bd_owner=self.common_tenant,
+                transaction=mock.ANY)
+            self.assertEqual(('tenant_a', "NAT-epg-%s" % es['id']),
+                self.driver._determine_nat_epg_for_es(ctx, es, l3p_a_3))
+        else:
+            mgr.ensure_epg_created.assert_not_called()
+        self.delete_l3_policy(l3p_a_3['id'], tenant_id=l3p_a_3['tenant_id'])
+        mgr.ensure_epg_created.reset_mock()
+
+        l3p_b_1 = self.create_l3_policy(
+            name='myl3p-b-1', tenant_id='tenant_b',
+            external_segments={es['id']: []})['l3_policy']
+        if self.nat_enabled:
+            mgr.ensure_epg_created.assert_called_once_with(
+                'tenant_b', "NAT-epg-%s" % es['id'],
+                bd_name="NAT-bd-%s" % es['id'], bd_owner=self.common_tenant,
+                transaction=mock.ANY)
+            self.assertEqual(('tenant_b', "NAT-epg-%s" % es['id']),
+                self.driver._determine_nat_epg_for_es(ctx, es, l3p_b_1))
+        else:
+            mgr.ensure_epg_created.assert_not_called()
 
 
 class TestL3PolicyNoNat(TestL3Policy):
@@ -3875,7 +4125,7 @@ class TestExternalSegment(ApicMappingTestCase):
         self.assertEqual('169.254.0.2',
                          l3p['external_segments'][es['id']][0])
 
-    def test_plug_l3p_to_es_with_multi_ep(self):
+    def _do_test_plug_l3p_to_es_with_multi_ep(self):
         tenants = (['tenant_a', 'tenant_b', 'tenant_c']
                    if self.nat_enabled else ['tenant_a'])
 
@@ -3934,7 +4184,9 @@ class TestExternalSegment(ApicMappingTestCase):
                               "Shd-%s-%s" % (l3p['id'], es['id']),
                               "Shd-%s-%s" % (l3p['id'], ep['id']),
                               "NAT-epg-%s" % es['id'],
-                              target_owner=self.common_tenant,
+                              target_owner=(l3p['tenant_id']
+                                            if self.driver.per_tenant_nat_epg
+                                            else self.common_tenant),
                               transaction=mock.ANY))
                 l3out = es['name' if self.pre_l3out else 'id']
                 l3out_owner = (APIC_PRE_L3OUT_TENANT
@@ -3959,6 +4211,13 @@ class TestExternalSegment(ApicMappingTestCase):
             mgr.associate_external_epg_to_nat_epg.call_args_list)
         self._check_call_list(expected_contract_calls,
             mgr.set_contract_for_external_epg.call_args_list)
+
+    def test_plug_l3p_to_es_with_multi_ep(self):
+        self._do_test_plug_l3p_to_es_with_multi_ep()
+
+    def test_plug_l3p_to_es_with_multi_ep_ptne(self):
+        self.driver.per_tenant_nat_epg = True
+        self._do_test_plug_l3p_to_es_with_multi_ep()
 
 
 class TestExternalSegmentNoNat(TestExternalSegment):
