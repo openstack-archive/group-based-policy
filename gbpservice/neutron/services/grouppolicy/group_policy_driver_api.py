@@ -578,6 +578,16 @@ class PolicyDriver(object):
         """
         pass
 
+    def get_policy_target_status(self, context):
+        """Get most recent status of a policy_target.
+
+        :param context: PolicyTargetContext instance describing the current
+        state of the policy_target, prior to the call to this get. Driver
+        can update the status and status_details. This status change will be
+        reflected as the new status and status_details of the resource.
+        """
+        pass
+
     def create_policy_target_group_precommit(self, context):
         """Allocate resources for a new policy_target_group.
 
@@ -627,6 +637,17 @@ class PolicyDriver(object):
         :param context: PolicyTargetGroupContext instance describing the
         current state of the policy_target_group, prior to the call to delete
         it.
+        """
+        pass
+
+    def get_policy_target_group_status(self, context):
+        """Get most recent status of a policy_target_group.
+
+        :param context: PolicyTargetGroupContext instance describing the
+        current state of the policy_target_group, prior to the call to this
+        get.
+        Driver can update the status and status_details. This status change
+        will be reflected as the new status and status_details of the resource.
         """
         pass
 
@@ -680,6 +701,16 @@ class PolicyDriver(object):
         """
         pass
 
+    def get_l2_policy_status(self, context):
+        """Get most recent status of a l2_policy.
+
+        :param context: L2PolicyContext instance describing the current
+        state of the l2_policy, prior to the call to this get.
+        Driver can update the status and status_details. This status change
+        will be reflected as the new status and status_details of the resource.
+        """
+        pass
+
     def create_l3_policy_precommit(self, context):
         """Allocate resources for a new l3_policy.
 
@@ -727,6 +758,16 @@ class PolicyDriver(object):
 
         :param context: L3PolicyContext instance describing the current
         state of the l3_policy, prior to the call to delete it.
+        """
+        pass
+
+    def get_l3_policy_status(self, context):
+        """Get most recent status of a l3_policy.
+
+        :param context: L3PolicyContext instance describing the current
+        state of the l3_policy, prior to the call to this get.
+        Driver can update the status and status_details. This status change
+        will be reflected as the new status and status_details of the resource.
         """
         pass
 
@@ -780,6 +821,16 @@ class PolicyDriver(object):
         """
         pass
 
+    def get_policy_classifier_status(self, context):
+        """Get most recent status of a policy_classifier.
+
+        :param context: PolicyClassifierContext instance describing the current
+        state of the policy_classifier, prior to the call to this get.
+        Driver can update the status and status_details. This status change
+        will be reflected as the new status and status_details of the resource.
+        """
+        pass
+
     def create_policy_action_precommit(self, context):
         """Allocate resources for a new policy_action.
 
@@ -827,6 +878,16 @@ class PolicyDriver(object):
 
         :param context: PolicyActionContext instance describing the current
         state of the policy_action, prior to the call to delete it.
+        """
+        pass
+
+    def get_policy_action_status(self, context):
+        """Get most recent status of a policy_action.
+
+        :param context: PolicyActionContext instance describing the current
+        state of the policy_action, prior to the call to this get.
+        Driver can update the status and status_details. This status change
+        will be reflected as the new status and status_details of the resource.
         """
         pass
 
@@ -880,6 +941,16 @@ class PolicyDriver(object):
         """
         pass
 
+    def get_policy_rule_status(self, context):
+        """Get most recent status of a policy_rule.
+
+        :param context: PolicyRuleContext instance describing the current
+        state of the policy_rule, prior to the call to this get.
+        Driver can update the status and status_details. This status change
+        will be reflected as the new status and status_details of the resource.
+        """
+        pass
+
     def create_policy_rule_set_precommit(self, context):
         """Allocate resources for a new policy_rule_set.
 
@@ -927,6 +998,16 @@ class PolicyDriver(object):
 
         :param context: PolicyRuleSetContext instance describing the current
         state of the policy_rule_set, prior to the call to delete it.
+        """
+        pass
+
+    def get_policy_rule_set_status(self, context):
+        """Get most recent status of a policy_rule_set.
+
+        :param context: PolicyRuleSetContext instance describing the current
+        state of the policy_rule_set, prior to the call to this get.
+        Driver can update the status and status_details. This status change
+        will be reflected as the new status and status_details of the resource.
         """
         pass
 
@@ -982,6 +1063,17 @@ class PolicyDriver(object):
         """
         pass
 
+    def get_network_service_policy_status(self, context):
+        """Get most recent status of a network_service_policy.
+
+        :param context: NetworkServicePolicyContext instance describing the
+        current state of the network_service_policy, prior to the call to this
+        get.
+        Driver can update the status and status_details. This status change
+        will be reflected as the new status and status_details of the resource.
+        """
+        pass
+
     def create_external_segment_precommit(self, context):
         """Allocate resources for a new network service policy.
 
@@ -1031,6 +1123,16 @@ class PolicyDriver(object):
         :param context: ExternalSegmentContext instance describing the
         current state of the ExternalSegment, prior to the call to
         delete it.
+        """
+        pass
+
+    def get_external_segment_status(self, context):
+        """Get most recent status of a external_segment.
+
+        :param context: ExternalSegmentContext instance describing the
+        current state of the external_segment, prior to the call to this get.
+        Driver can update the status and status_details. This status change
+        will be reflected as the new status and status_details of the resource.
         """
         pass
 
@@ -1086,6 +1188,16 @@ class PolicyDriver(object):
         """
         pass
 
+    def get_external_policy_status(self, context):
+        """Get most recent status of a external_policy.
+
+        :param context: ExternalPolicyContext instance describing the
+        current state of the external_policy, prior to the call to this get.
+        Driver can update the status and status_details. This status change
+        will be reflected as the new status and status_details of the resource.
+        """
+        pass
+
     def create_nat_pool_precommit(self, context):
         """Allocate resources for a new network service policy.
 
@@ -1135,6 +1247,16 @@ class PolicyDriver(object):
         :param context: NatPoolContext instance describing the
         current state of the NatPool, prior to the call to
         delete it.
+        """
+        pass
+
+    def get_nat_pool_status(self, context):
+        """Get most recent status of a nat_pool.
+
+        :param context: NatPoolContext instance describing the
+        current state of the nat_pool, prior to the call to this get.
+        Driver can update the status and status_details. This status change
+        will be reflected as the new status and status_details of the resource.
         """
         pass
 
