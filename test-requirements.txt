@@ -6,6 +6,9 @@ setuptools>=19.2
 -e git+https://git.openstack.org/openstack/neutron.git@stable/mitaka#egg=neutron
 -e git+https://github.com/noironetworks/apic-ml2-driver.git@master#egg=apic_ml2
 -e git+https://git.openstack.org/openstack/python-group-based-policy-client@master#egg=gbpclient
+-e git+https://git.openstack.org/openstack/neutron-vpnaas@stable/mitaka#egg=neutron-vpnaas
+-e git+https://git.openstack.org/openstack/neutron-lbaas@stable/mitaka#egg=neutron-lbaas
+-e git+https://git.openstack.org/openstack/neutron-fwaas@stable/mitaka#egg=neutron-fwaas
 hacking<0.11,>=0.10.0
 
 cliff>=1.15.0 # Apache-2.0
