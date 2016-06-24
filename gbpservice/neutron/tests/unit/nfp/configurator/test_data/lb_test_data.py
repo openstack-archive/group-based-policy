@@ -464,6 +464,17 @@ class AssertionData(object):
                                (key2, value2)
                             ])
     """
+
+    create_vip_data = {"frnt:7a755739-1bbb-4211-9130-b6c82d9169a5":
+                       {"option": {"tcplog": True},
+                        "bind": "42.0.0.14:22",
+                        "mode": "tcp",
+                        "default_backend":
+                            "bck:6350c0fd-07f8-46ff-b797-62acd23760de",
+                        "provider_interface_mac": "aa:bb:cc:dd:ee:ff"
+                        }
+                       }
+    """
     create_vip_data = {"frnt:7a755739-1bbb-4211-9130-b6c82d9169a5":
                        OrderedDict([
                         ("provider_interface_mac", "aa:bb:cc:dd:ee:ff"),
@@ -473,9 +484,20 @@ class AssertionData(object):
                         ("option", {"tcplog": True}),
                         ("mode", "tcp")])
                        }
+    """
+
     create_vip_url = 'http://192.168.100.149:1234/frontend'
     create_vip_resources = 'backend/bck:6350c0fd-07f8-46ff-b797-62acd23760de'
 
+    update_vip_data = {"option": {"tcplog": True},
+                       "bind": "42.0.0.14:22",
+                       "mode": "tcp",
+                       "default_backend":
+                           "bck:6350c0fd-07f8-46ff-b797-62acd23760de",
+                       "provider_interface_mac": "aa:bb:cc:dd:ee:ff"
+                       }
+
+    """
     update_vip_data = OrderedDict(
                         [("provider_interface_mac", "aa:bb:cc:dd:ee:ff"),
                          ("bind", "42.0.0.14:22"),
@@ -484,6 +506,7 @@ class AssertionData(object):
                          ("option", {"tcplog": True}),
                          ("mode", "tcp")]
                         )
+    """
     update_vip_url = ('http://192.168.100.149:1234/frontend/frnt:'
                       '7a755739-1bbb-4211-9130-b6c82d9169a5')
 
