@@ -1944,9 +1944,10 @@ class ApicMappingDriver(api.ResourceMappingDriver,
                     l2ps = self._get_l2_policies(context._plugin_context,
                         {'id': context.current['l2_policies']})
                     for l2p in l2ps:
-                        self.apic_manager.set_l3out_for_bd(es_tenant,
+                        self.apic_manager.set_l3out_for_bd(
+                            self._tenant_by_sharing_policy(l2p),
                             self.name_mapper.l2_policy(context, l2p),
-                            es_name, transaction=trs)
+                            es_name)
 
             if not is_shadow and nat_enabled:
                 # set L3-out for NAT-BD
@@ -2038,9 +2039,10 @@ class ApicMappingDriver(api.ResourceMappingDriver,
                         l2ps = self._get_l2_policies(context._plugin_context,
                             {'id': context.current['l2_policies']})
                         for l2p in l2ps:
-                            self.apic_manager.unset_l3out_for_bd(es_tenant,
+                            self.apic_manager.unset_l3out_for_bd(
+                                self._tenant_by_sharing_policy(l2p),
                                 self.name_mapper.l2_policy(context, l2p),
-                                es_name, transaction=trs)
+                                es_name)
 
     def _build_routes_dict(self, routes):
         result = {}
