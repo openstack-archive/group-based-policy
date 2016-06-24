@@ -1,0 +1,113 @@
+#!/bin/sh
+
+PATH=/sbin:/usr/sbin:/bin:/usr/bin
+DESC="NFP CONFIGURATOR agent"
+PROJECT_NAME=nfp
+NAME=${PROJECT_NAME}_configurator
+DAEMON_ARGS="--config-file=/etc/nfp_configurator.ini"
+#!/bin/sh
+if [ -z "${DAEMON}" ] ; then
+    DAEMON=/usr/bin/${PROJECT_NAME}
+fi
+PIDFILE=/var/run/${PROJECT_NAME}/${NAME}.pid
+if [ -z "${SCRIPTNAME}" ] ; then
+    SCRIPTNAME=/etc/init.d/${NAME}
+fi
+if [ -z "${SYSTEM_USER}" ] ; then
+    SYSTEM_USER=root
+fi
+if [ -z "${SYSTEM_USER}" ] ; then
+    SYSTEM_GROUP=root
+fi
+if [ "${SYSTEM_USER}" != "root" ] ; then
+    STARTDAEMON_CHUID="--chuid ${SYSTEM_USER}:${SYSTEM_GROUP}"
+fi
+if [ -z "${CONFIG_FILE}" ] ; then
+    CONFIG_FILE=/etc/init/nfp_configurator.conf
+fi
+LOGFILE=/var/log/${PROJECT_NAME}/${NAME}.log
+DAEMON_ARGS="${DAEMON_ARGS} --config-file=${CONFIG_FILE}"
+
+# If ran as root, create /var/lock/X, /var/run/X, /var/lib/X and /var/log/X as needed
+if [ `whoami` = "root" ] ; then
+    for i in lock run log; do
+        mkdir -p /var/$i/${PROJECT_NAME}
+        chown ${SYSTEM_USER} /var/$i/${PROJECT_NAME}
+    done
+fi
+
+# This defines init_is_upstart which we use later on (+ more...)
+. /lib/lsb/init-functions
+
+# Manage log options: logfile and/or syslog, depending on user's choosing
+#[ -r /etc/default/$NAME ] && . /etc/default/$NAME
+DAEMON_ARGS="$DAEMON_ARGS --log-file=$LOGFILE"
+
+
+do_start() {
+    start-stop-daemon --start --quiet --background ${STARTDAEMON_CHUID} --make-pidfile --pidfile ${PIDFILE} --startas $DAEMON \
+            --test > /dev/null || return 1
+    start-stop-daemon --start --quiet --background ${STARTDAEMON_CHUID} --make-pidfile --pidfile ${PIDFILE} --startas $DAEMON \
+            -- $DAEMON_ARGS || return 2
+}
+
+do_stop() {
+    start-stop-daemon --stop --quiet --retry=TERM/30/KILL/5 --pidfile $PIDFILE
+    RETVAL=$?
+    rm -f $PIDFILE
+    return "$RETVAL"
+}
+
+do_systemd_start() {
+    exec $DAEMON $DAEMON_ARGS
+}
+
+case "$1" in
+start)
+    init_is_upstart > /dev/null 2>&1 && exit 1
+    log_daemon_msg "Starting $DESC" "$NAME"
+    do_start
+    case $? in
+        0|1) log_end_msg 0 ;;
+        2) log_end_msg 1 ;;
+    esac
+;;
+stop)
+    init_is_upstart > /dev/null 2>&1 && exit 0
+    log_daemon_msg "Stopping $DESC" "$NAME"
+    do_stop
+    case $? in
+        0|1) log_end_msg 0 ;;
+        2) log_end_msg 1 ;;
+    esac
+;;
+status)
+    status_of_proc "$DAEMON" "$NAME" && exit 0 || exit $?
+;;
+systemd-start)
+    do_systemd_start
+;;
+restart|force-reload)
+    init_is_upstart > /dev/null 2>&1 && exit 1
+    log_daemon_msg "Restarting $DESC" "$NAME"
+    do_stop
+    case $? in
+    0|1)
+        do_start
+        case $? in
+            0) log_end_msg 0 ;;
+            1) log_end_msg 1 ;; # Old process is still running
+            *) log_end_msg 1 ;; # Failed to start
+        esac
+    ;;
+    *) log_end_msg 1 ;; # Failed to stop
+    esac
+;;
+*)
+    echo "Usage: $SCRIPTNAME {start|stop|status|restart|force-reload|systemd-start}" >&2
+    exit 3
+;;
+esac
+
+exit 0
+
