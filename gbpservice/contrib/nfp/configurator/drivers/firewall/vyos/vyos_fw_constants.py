@@ -10,15 +10,9 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-""" Dummy class to satisfy driver dependency of VPN agent
-    in order to preserve integrity of unit tests.
-"""
+VYOS = 'vyos'
+CONFIGURATION_SERVER_PORT = '8888'
+REST_TIMEOUT = 120
+request_url = "http://%s:%s/%s"
 
-
-class BaseDriver(object):
-
-    def __init__(self, conf):
-        pass
-
-    def register_agent_object_with_driver(self, name, agent_obj):
-        setattr(BaseDriver, name, agent_obj)
+INTERFACE_NOT_FOUND = "INTERFACE NOT FOUND"
