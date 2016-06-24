@@ -2487,12 +2487,11 @@ class ApicMappingDriver(api.ResourceMappingDriver,
         bd_name = self.name_mapper.policy_target_group(
                 context, proxied, prefix=SHADOW_PREFIX)
         ptg_name = self.name_mapper.policy_target_group(context, proxied)
-        is_l2 = context.current['proxy_type'] == proxy_group.PROXY_TYPE_L2
         with self.apic_manager.apic.transaction(None) as trs:
             # Create shadow BD to host the proxied EPG
             self.apic_manager.ensure_bd_created_on_apic(
                 tenant, bd_name, ctx_owner=ctx_owner, ctx_name=l3_policy_name,
-                allow_broadcast=is_l2, unicast_route=False, transaction=trs,
+                allow_broadcast=True, unicast_route=False, transaction=trs,
                 enforce_subnet_check=False)
             # Move current PTG to different BD
             self.apic_manager.ensure_epg_created(
