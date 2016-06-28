@@ -14,8 +14,7 @@ Fresh Installation Steps:
     # rm local.conf.zip
 
 (3) Configure local.conf
-    # Edit local.conf to point HOST_IP to the devstack setup IP address
-    # Modify the GBPSERVICE_BRANCH to point to the top patch in devstack changeset
+    # Modify the GBPSERVICE_BRANCH to point to the top patch in devstack changeset refs/changes/45/309145
 
 (4) Install devstack.
     # ./stack.sh

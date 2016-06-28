@@ -1,0 +1,5 @@
+#!/bin/bash
+
+# start docker and load the configurator image
+docker daemon --raw-logs &
+docker load -i /usr/share/configurator/docker/images/configurator-docker

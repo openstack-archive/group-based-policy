@@ -1,0 +1,7 @@
+#!/bin/bash
+
+
+set -eu
+set -o xtrace
+apt-get install ubuntu-cloud-keyring
+echo "deb http://localhost/ /haproxy/" > /etc/apt/sources.list.d/haproxy-agent-debs.list
