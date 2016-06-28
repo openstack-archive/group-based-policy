@@ -1,0 +1,9 @@
+Code-Review+2: Sumit Naiksatam <sumitnaiksatam@gmail.com>
+Code-Review+2: Ivar Lazzaro <ivarlazzaro@gmail.com>
+Workflow+1: Ivar Lazzaro <ivarlazzaro@gmail.com>
+Verified+2: Jenkins
+Submitted-by: Jenkins
+Submitted-at: Tue, 28 Jun 2016 04:14:38 +0000
+Reviewed-on: https://review.openstack.org/334697
+Project: openstack/group-based-policy
+Branch: refs/heads/stable/liberty
