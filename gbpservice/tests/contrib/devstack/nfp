@@ -10,7 +10,7 @@ function prepare_nfp_image_builder {
 
 function create_nfp_image {
     TOP_DIR=$1
-    sudo python $DISK_IMAGE_DIR/diskimage-create/disk_image_create.py $DISK_IMAGE_DIR/diskimage-create/conf.json
+    sudo python $DISK_IMAGE_DIR/diskimage-create/disk_image_create.py $DISK_IMAGE_DIR/diskimage-create/configurator_conf.json
     BUILT_IMAGE_PATH=$(cat /tmp/nfp_image_path)
     upload_image file://$BUILT_IMAGE_PATH
 
