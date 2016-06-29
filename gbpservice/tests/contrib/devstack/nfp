@@ -10,8 +10,8 @@ function prepare_nfp_image_builder {
 
 function create_nfp_image {
     TOP_DIR=$1
-    sudo python $DISK_IMAGE_DIR/diskimage-create/disk_image_create.py $DISK_IMAGE_DIR/diskimage-create/conf.json
-    BUILT_IMAGE_PATH=$(cat /tmp/nfp_image_path)
+    sudo python $DISK_IMAGE_DIR/diskimage-create/disk_image_create.py $DISK_IMAGE_DIR/diskimage-create/ref_configurator_conf.json
+    BUILT_IMAGE_PATH=$(cat $DISK_IMAGE_DIR/diskimage-create/output/last_built_image_path)
     upload_image file://$BUILT_IMAGE_PATH
 
     openstack --os-cloud=devstack-admin flavor create --ram 512 --disk 3 --vcpus 1 m1.nfp-tiny
@@ -136,7 +136,7 @@ function namespace_create {
 function create_nfp_gbp_resources {
    TOP_DIR=$1
    source $TOP_DIR/openrc neutron service
-   IMAGE_PATH=$(cat /tmp/nfp_image_path)
+   IMAGE_PATH=$(cat $DISK_IMAGE_DIR/diskimage-create/output/last_built_image_path)
    IMAGE_NAME=`basename "$IMAGE_PATH"`
    IMAGE_NAME_FLAT="${IMAGE_NAME%.*}"
    FLAVOR=m1.nfp-tiny
