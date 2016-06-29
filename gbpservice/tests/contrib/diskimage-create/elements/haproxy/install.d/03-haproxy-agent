@@ -1,0 +1,7 @@
+#!/bin/bash
+
+# install haproxy agent
+apt-get  -y --force-yes  install haproxy-agent
+
+# replace keepalived.conf with ours
+#cd /etc/keepalived/ && rm -f keepalived.conf && wget http://$REPO_HOST_IP/haproxy/keepalived.conf
