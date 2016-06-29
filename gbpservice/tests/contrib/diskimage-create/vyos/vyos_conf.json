@@ -1,0 +1,7 @@
+{
+    "packer":
+        {
+            "image_size":4,
+            "vyos_pswd":"oc@sc!23;)"
+        }
+}
