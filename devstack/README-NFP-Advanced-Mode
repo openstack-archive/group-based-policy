@@ -1,0 +1,51 @@
+
+Fresh Installation Steps:
+=========================
+
+(1) Clone stable mitaka devstack.
+    # git clone https://git.openstack.org/openstack-dev/devstack -b stable/mitaka
+
+(2) Get local.conf.nfp from NFP devstack patch and copy to devstack directory
+    as local.conf
+    # cd devstack/
+    # wget -O local.conf.zip https://review.openstack.org/cat/335405,41,devstack/local.conf.nfp
+    # unzip local.conf.zip
+    # mv local.conf*.nfp local.conf
+    # rm local.conf.zip
+
+(3) Configure local.conf
+    # Modify NFP_DEVSTACK_MODE to 'advanced'
+    # Configure following external network details,
+      EXT_NET_GATEWAY=
+      EXT_NET_ALLOCATION_POOL_START=
+      EXT_NET_ALLOCATION_POOL_END=
+      EXT_NET_CIDR= 
+    # Configure the Configurator VM image path(optional),
+    # If configured, install step uploads the specified image
+    # If not configured, install step will build a new one and upload it
+      ConfiguratorQcow2Image=
+    # Configure the Service VM image paths(optional),
+    # If configured, install step uploads the specified images
+    # If not configured, install step ignores uploading these service images
+      VyosQcow2Image=
+      HaproxyQcow2Image=
+    # Configure PUBLIC_INTERFACE with the public interface name
+    # Modify the GBPSERVICE_BRANCH to point to the top patch in devstack changeset refs/changes/05/335405
+
+(4) Install devstack.
+    # ./stack.sh
+
+
+Re-installation Steps:
+======================
+
+(1) Follow these steps for cleanup.
+    # cd devstack
+    # ./unstack.sh
+    # ./clean.sh
+    # sudo rm -rf /opt/stack
+    # cd ..
+    # sudo rm -rf devstack
+
+(2) Follow the fresh installation steps.
+
