@@ -1,0 +1,9 @@
+#!/bin/bash
+
+set -eu
+set -o xtrace
+
+# remove cloud-init package. It was giving issues while VM bootUp
+apt-get --force-yes -y --purge remove cloud-init
+# reinstall ssh, ssh was giving issues after removing cloud-init
+apt-get --reinstall install openssh-server openssh-client
