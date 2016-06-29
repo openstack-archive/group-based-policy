@@ -2,9 +2,8 @@
     "dib":
         {
             "image_size_in_GB": 3,
-            "ram_size": 512,
             "cache_path": "~/.cache/image-create",
-            "elements": ["nfp-reference-configurator"]
+            "elements": ["nfp-reference-configurator", "dhcp-all-interfaces", "devuser"]
         },
     "ubuntu_release":
         {
