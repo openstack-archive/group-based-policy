@@ -1,0 +1,13 @@
+{
+    "dib":
+        {
+            "image_size_in_GB": 3,
+            "cache_path": "~/.cache/image-create",
+            "elements": ["haproxy", "root-passwd", "rm-cloud-init"],
+            "root_password": "b2N2eW9zdm0="
+        },
+    "ubuntu_release":
+        {
+            "release": "trusty"
+        }
+}
