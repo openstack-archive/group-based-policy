@@ -13,13 +13,39 @@ MYSQL_PASSWORD=mysqlsecret
 RABBIT_PASSWORD=myrabbitsecret
 SERVICE_PASSWORD=$ADMIN_PASSWORD
 SERVICE_TOKEN=admin
-HOST_IP=
 
-GBPSERVICE_BRANCH=refs/changes/30/344030/20
-enable_plugin gbp https://git.openstack.org/openstack/group-based-policy $GBPSERVICE_BRANCH
+# NFP Service
 ENABLE_NFP=True
+GBPSERVICE_REPO=https://git.openstack.org/openstack/group-based-policy.git
+GBPSERVICE_BRANCH=refs/changes/36/349236/2
+# Edit NFP_DEVSTACK_MODE with either 'base' or 'advanced'
+if [[ $ENABLE_NFP = True ]]; then
+    NFP_DEVSTACK_MODE=base
 
-#e.g IMAGE_URLS+=http://192.168.6.1/images/cirros-0.3.0-x86_64-disk.img #image extenson should be .img OR img.gz
-#IMAGE_URLS+=
+    if [[ $NFP_DEVSTACK_MODE = advanced ]]; then
+        # External Network
+        EXT_NET_GATEWAY=
+        EXT_NET_ALLOCATION_POOL_START=
+        EXT_NET_ALLOCATION_POOL_END=
+        EXT_NET_CIDR=
 
-DISABLE_BUILD_IMAGE=False
+        # Configurator image path option, its optional
+        # If configured, install step uploads the specified image
+        # If not configured, install step will build a new one and upload it
+        ConfiguratorQcow2Image=
+        # Service VM image path options, they are optional
+        # If configured, install step uploads the specified images
+        # If not configured, install step ignores uploading these service images
+        VyosQcow2Image=
+        HaproxyQcow2Image=
+
+        # Make sure that your public interface is not attached to any bridge.
+        PUBLIC_INTERFACE=
+
+        enable_plugin neutron-vpnaas https://git.openstack.org/openstack/neutron-vpnaas stable/mitaka
+        enable_plugin ceilometer https://git.openstack.org/openstack/ceilometer.git stable/mitaka
+
+    fi
+fi
+enable_plugin gbp $GBPSERVICE_REPO $GBPSERVICE_BRANCH
+
