@@ -1,0 +1,4 @@
+#!/bin/sh
+
+# on the safer side, stop the docker
+service docker stop
