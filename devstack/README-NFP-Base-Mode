@@ -13,11 +13,7 @@ Fresh Installation Steps:
     # mv local.conf*.nfp local.conf
     # rm local.conf.zip
 
-(3) Configure local.conf
-    # Edit local.conf to point HOST_IP to the devstack setup IP address
-    # Modify the GBPSERVICE_BRANCH to point to the top patch in devstack changeset
-
-(4) Install devstack.
+(3) Install devstack.
     # ./stack.sh
 
 
@@ -52,8 +48,8 @@ Steps to test Base Mode:
 (4) Delete members created in the consumer and provider groups in step 2.
 
 (5) Delete the test chain.
-     # cd /opt/stack/gbp/devstack/exercises/nfp_service
-     # bash lb_base_clean.sh
+    # cd /opt/stack/gbp/devstack/exercises/nfp_service
+    # bash lb_base_clean.sh
 
 
 Steps to test Base Mode with VM:
@@ -74,6 +70,6 @@ Steps to test Base Mode with VM:
 (5) Delete members created in the consumer and provider groups in step 2.
 
 (6) Delete the test chain.
-     # cd /opt/stack/gbp/devstack/exercises/nfp_service
-     # bash fw_base_vm_clean.sh
+    # cd /opt/stack/gbp/devstack/exercises/nfp_service
+    # bash fw_base_vm_clean.sh
 
