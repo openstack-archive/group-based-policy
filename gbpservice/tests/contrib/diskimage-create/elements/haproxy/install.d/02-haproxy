@@ -1,0 +1,4 @@
+#!/bin/bash
+
+# install haproxy of specific version
+apt-get  -y --force-yes  install haproxy=1.4.24-2
