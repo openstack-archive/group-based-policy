@@ -13,6 +13,7 @@
 import mock
 from neutron.common import config  # noqa
 from neutron import context as n_context
+from neutron.plugins.common import constants as pconst
 from oslo_config import cfg
 
 from gbpservice.neutron.services.servicechain.plugins.ncp import model
@@ -86,6 +87,38 @@ class TrafficStitchingPlumberTestCase(base.NodeCompositionPluginTestCase):
         provider = self.show_policy_target_group(
             provider['id'])['policy_target_group']
         self.assertIsNone(provider['proxy_group_id'])
+
+    def get_plumbing_info_base(self, context):
+        service_type = context.current_profile['service_type']
+        plumbing_request = {'management': [], 'provider': [{}],
+                            'consumer': [{}]}
+
+        if service_type in [pconst.FIREWALL]:
+            plumbing_request['plumbing_type'] = 'gateway'
+        else:
+            plumbing_request = {}
+        return plumbing_request
+
+    def test_get_service_targets_in_chain(self):
+        context = n_context.get_admin_context()
+        self.driver.get_plumbing_info = self.get_plumbing_info_base
+        lb_prof = self._create_service_profile(
+            service_type='LOADBALANCER',
+            vendor=self.SERVICE_PROFILE_VENDOR)['service_profile']
+        lb_node = self.create_servicechain_node(
+            service_profile_id=lb_prof['id'],
+            config=self.DEFAULT_LB_CONFIG)['servicechain_node']
+        fw_prof = self._create_service_profile(
+            service_type='FIREWALL',
+            vendor=self.SERVICE_PROFILE_VENDOR)['service_profile']
+        fw_node = self.create_servicechain_node(
+            service_profile_id=fw_prof['id'],
+            config='{}')['servicechain_node']
+
+        self._create_chain_with_nodes([fw_node['id'], lb_node['id']])
+
+        targets = model.get_service_targets(context.session)
+        self.assertEqual(2, len(targets))
 
     def test_ptg_delete(self):
         self.driver.get_plumbing_info.return_value = {
