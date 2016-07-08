@@ -6,8 +6,6 @@ set -x
 
 trap prepare_logs ERR
 
-rm -rf $TOP_DIR/exercises/*
-cp $TOP_DIR/exercises-nfp/* $TOP_DIR/exercises/
 # Run exercise scripts
 $TOP_DIR/exercise.sh
 exercises_exit_code=$?
