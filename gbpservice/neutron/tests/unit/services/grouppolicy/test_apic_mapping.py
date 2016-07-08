@@ -3681,9 +3681,10 @@ class TestExternalSegment(ApicMappingTestCase):
         self.assertEqual('EdgeNatVlanRangeNotFound',
                          res['NeutronError']['type'])
 
-    def _test_create_delete(self, shared=False):
+    def _test_create_delete(self, shared=False, is_edge_nat=False):
         mgr = self.driver.apic_manager
-        self._mock_external_dict([('supported', '192.168.0.2/24')])
+        self._mock_external_dict([('supported', '192.168.0.2/24')],
+                                 is_edge_nat)
         mgr.ext_net_dict['supported']['host_pool_cidr'] = '192.168.200.1/24'
         es = self.create_external_segment(name='supported',
             cidr='192.168.0.2/24',
@@ -3710,24 +3711,33 @@ class TestExternalSegment(ApicMappingTestCase):
                 mgr.ensure_context_enforced.assert_called_with(
                     owner=owner, ctx_id=ctx,
                     transaction=mock.ANY)
-            mgr.ensure_bd_created_on_apic(
-                owner, "NAT-bd-%s" % es['id'], ctx_owner=ctx_owner,
-                ctx_name=ctx, transaction=mock.ANY)
-            mgr.ensure_epg_created.assert_called_with(
-                owner, "NAT-epg-%s" % es['id'], bd_name="NAT-bd-%s" % es['id'],
-                transaction=mock.ANY)
+            if not is_edge_nat:
+                mgr.ensure_bd_created_on_apic(
+                    owner, "NAT-bd-%s" % es['id'], ctx_owner=ctx_owner,
+                    ctx_name=ctx, transaction=mock.ANY)
+                mgr.ensure_epg_created.assert_called_with(
+                    owner, "NAT-epg-%s" % es['id'],
+                    bd_name="NAT-bd-%s" % es['id'],
+                    transaction=mock.ANY)
+            else:
+                self.assertFalse(mgr.ensure_bd_created_on_apic.called)
+                self.assertFalse(mgr.ensure_epg_created.called)
             mgr.create_tenant_filter.assert_called_with(
                 prs, owner=contract_owner,
                 entry="allow-all", transaction=mock.ANY)
             mgr.manage_contract_subject_bi_filter.assert_called_with(
                 prs, prs, prs, owner=contract_owner, transaction=mock.ANY)
-            expected_calls = [
-                mock.call(owner, "NAT-epg-%s" % es['id'], prs,
-                          transaction=mock.ANY),
-                mock.call(owner, "NAT-epg-%s" % es['id'], prs,
-                          provider=True, transaction=mock.ANY)]
-            self._check_call_list(expected_calls,
-                mgr.set_contract_for_epg.call_args_list)
+            if not is_edge_nat:
+                expected_calls = [
+                    mock.call(owner, "NAT-epg-%s" % es['id'], prs,
+                              transaction=mock.ANY),
+                    mock.call(owner, "NAT-epg-%s" % es['id'], prs,
+                              provider=True, transaction=mock.ANY)]
+                self._check_call_list(expected_calls,
+                    mgr.set_contract_for_epg.call_args_list)
+            else:
+                self.assertFalse(mgr.ensure_subnet_created_on_apic.called)
+                self.assertFalse(mgr.set_contract_for_epg.called)
             ctx = context.get_admin_context()
             internal_subnets = self._db_plugin.get_subnets(
                     ctx, filters={'name': [amap.HOST_SNAT_POOL]})
@@ -3735,6 +3745,7 @@ class TestExternalSegment(ApicMappingTestCase):
         else:
             self.assertFalse(mgr.ensure_bd_created_on_apic.called)
             self.assertFalse(mgr.ensure_epg_created.called)
+            self.assertFalse(mgr.ensure_subnet_created_on_apic.called)
             self.assertFalse(mgr.create_tenant_filter.called)
             self.assertFalse(mgr.manage_contract_subject_bi_filter.called)
             self.assertFalse(mgr.set_contract_for_epg.called)
@@ -3756,10 +3767,14 @@ class TestExternalSegment(ApicMappingTestCase):
             else:
                 mgr.ensure_context_deleted.assert_called_with(
                     ctx_owner, ctx, transaction=mock.ANY)
-            mgr.delete_bd_on_apic.assert_called_with(
-                owner, "NAT-bd-%s" % es['id'], transaction=mock.ANY)
-            mgr.delete_epg_for_network.assert_called_with(
-                owner, "NAT-epg-%s" % es['id'], transaction=mock.ANY)
+            if not is_edge_nat:
+                mgr.delete_bd_on_apic.assert_called_with(
+                    owner, "NAT-bd-%s" % es['id'], transaction=mock.ANY)
+                mgr.delete_epg_for_network.assert_called_with(
+                    owner, "NAT-epg-%s" % es['id'], transaction=mock.ANY)
+            else:
+                self.assertFalse(mgr.delete_bd_on_apic.called)
+                self.assertFalse(mgr.delete_epg_for_network.called)
             mgr.delete_contract.assert_called_with(
                 prs, owner=contract_owner, transaction=mock.ANY)
             mgr.delete_tenant_filter.assert_called_with(
@@ -3775,6 +3790,12 @@ class TestExternalSegment(ApicMappingTestCase):
 
     def test_create_delete_shared(self):
         self._test_create_delete(True)
+
+    def test_create_delete_unshared_edge_nat(self):
+        self._test_create_delete(False, is_edge_nat=True)
+
+    def test_create_delete_shared_edge_nat(self):
+        self._test_create_delete(True, is_edge_nat=True)
 
     def test_update_unsupported_noop(self):
         self._mock_external_dict([('supported', '192.168.0.2/24')])
@@ -5149,8 +5170,9 @@ class TestNatPool(ApicMappingTestCase):
         self.assertEqual('NatPoolOverlapsApicSubnet',
                          res['NeutronError']['type'])
 
-    def _test_nat_bd_subnet_created_deleted(self, shared):
-        self._mock_external_dict([('supported', '192.168.0.2/24')])
+    def _test_nat_bd_subnet_created_deleted(self, shared, is_edge_nat=False):
+        self._mock_external_dict([('supported', '192.168.0.2/24')],
+                                 is_edge_nat)
         es = self.create_external_segment(name='supported',
             expected_res_status=webob.exc.HTTPCreated.code,
             shared=shared)['external_segment']
@@ -5161,7 +5183,7 @@ class TestNatPool(ApicMappingTestCase):
         owner = es['tenant_id'] if not shared else self.common_tenant
         mgr = self.driver.apic_manager
 
-        if self.nat_enabled:
+        if self.nat_enabled and not is_edge_nat:
             mgr.ensure_subnet_created_on_apic.assert_called_with(
                 owner, "NAT-bd-%s" % es['id'], '192.168.1.1/24')
         else:
@@ -5169,21 +5191,28 @@ class TestNatPool(ApicMappingTestCase):
 
         self.delete_nat_pool(nat_pool['id'],
             expected_res_status=webob.exc.HTTPNoContent.code)
-        if self.nat_enabled:
+        if self.nat_enabled and not is_edge_nat:
             mgr.ensure_subnet_deleted_on_apic.assert_called_with(
                 owner, "NAT-bd-%s" % es['id'], '192.168.1.1/24')
         else:
             self.assertFalse(mgr.ensure_subnet_deleted_on_apic.called)
 
-    def test_nat_bd_subnet_create_delete_1(self):
+    def test_nat_bd_subnet_create_delete_unshared(self):
         self._test_nat_bd_subnet_created_deleted(False)
 
-    def test_nat_bd_subnet_create_delete_2(self):
+    def test_nat_bd_subnet_create_delete_shared(self):
         self._test_nat_bd_subnet_created_deleted(True)
 
-    def _test_nat_bd_subnet_updated(self, shared):
+    def test_nat_bd_subnet_create_delete_unshared_edge_nat(self):
+        self._test_nat_bd_subnet_created_deleted(False, is_edge_nat=True)
+
+    def test_nat_bd_subnet_create_delete_shared_edge_nat(self):
+        self._test_nat_bd_subnet_created_deleted(True, is_edge_nat=True)
+
+    def _test_nat_bd_subnet_updated(self, shared, is_edge_nat=False):
         self._mock_external_dict([('supported', '192.168.0.2/24'),
-                                  ('supported1', '192.168.10.2/24')])
+                                  ('supported1', '192.168.10.2/24')],
+                                 is_edge_nat)
         es1 = self.create_external_segment(name='supported',
             expected_res_status=webob.exc.HTTPCreated.code,
             shared=shared)['external_segment']
@@ -5201,7 +5230,7 @@ class TestNatPool(ApicMappingTestCase):
         nat_pool = self.update_nat_pool(nat_pool['id'],
             external_segment_id=es2['id'],
             expected_res_status=webob.exc.HTTPOk.code)['nat_pool']
-        if self.nat_enabled:
+        if self.nat_enabled and not is_edge_nat:
             mgr.ensure_subnet_deleted_on_apic.assert_called_with(
                 owner, "NAT-bd-%s" % es1['id'], '192.168.1.1/24')
             mgr.ensure_subnet_created_on_apic.assert_called_with(
@@ -5210,11 +5239,17 @@ class TestNatPool(ApicMappingTestCase):
             self.assertFalse(mgr.ensure_subnet_created_on_apic.called)
             self.assertFalse(mgr.ensure_subnet_deleted_on_apic.called)
 
-    def test_nat_bd_subnet_update_1(self):
+    def test_nat_bd_subnet_update_unshared(self):
         self._test_nat_bd_subnet_updated(False)
 
-    def test_nat_bd_subnet_update_2(self):
+    def test_nat_bd_subnet_update_shared(self):
         self._test_nat_bd_subnet_updated(True)
+
+    def test_nat_bd_subnet_update_unshared_edge_nat(self):
+        self._test_nat_bd_subnet_updated(False, is_edge_nat=True)
+
+    def test_nat_bd_subnet_update_shared_edge_nat(self):
+        self._test_nat_bd_subnet_updated(True, is_edge_nat=True)
 
     def _test_create_fip(self, shared):
         self._mock_external_dict([('supported', '192.168.0.2/24')])

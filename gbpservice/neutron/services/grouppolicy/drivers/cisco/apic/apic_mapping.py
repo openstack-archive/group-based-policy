@@ -2976,16 +2976,19 @@ class ApicMappingDriver(api.ResourceMappingDriver,
                     owner=nat_vrf_tenant, ctx_id=nat_vrf_name,
                     transaction=trs)
             # create NAT EPG, BD for external segment and connect to NAT VRF
-            self.apic_manager.ensure_bd_created_on_apic(
-                nat_epg_tenant, nat_bd_name, ctx_owner=nat_vrf_tenant,
-                ctx_name=nat_vrf_name, transaction=trs)
-            self.apic_manager.ensure_epg_created(
-                nat_epg_tenant, nat_epg_name, bd_name=nat_bd_name,
-                transaction=trs)
+            if not self._is_edge_nat(ext_info):
+                self.apic_manager.ensure_bd_created_on_apic(
+                    nat_epg_tenant, nat_bd_name, ctx_owner=nat_vrf_tenant,
+                    ctx_name=nat_vrf_name, transaction=trs)
+                self.apic_manager.ensure_epg_created(
+                    nat_epg_tenant, nat_epg_name, bd_name=nat_bd_name,
+                    transaction=trs)
             gw, plen = ext_info.get('host_pool_cidr', '/').split('/', 1)
             if gw and plen:
-                self.apic_manager.ensure_subnet_created_on_apic(nat_epg_tenant,
-                    nat_bd_name, gw + '/' + plen, transaction=trs)
+                if not self._is_edge_nat(ext_info):
+                    self.apic_manager.ensure_subnet_created_on_apic(
+                        nat_epg_tenant, nat_bd_name, gw + '/' + plen,
+                        transaction=trs)
                 if not es['subnet_id']:
                     LOG.warning(_("No associated subnet found for"
                         "external segment %(es_id)s. SNAT "
@@ -3021,11 +3024,13 @@ class ApicMappingDriver(api.ResourceMappingDriver,
                             {'pool': HOST_SNAT_POOL,
                              'net_id': es_net_id})
             # make EPG use allow-everything contract
-            self.apic_manager.set_contract_for_epg(
-                nat_epg_tenant, nat_epg_name, nat_contract, transaction=trs)
-            self.apic_manager.set_contract_for_epg(
-                nat_epg_tenant, nat_epg_name, nat_contract, provider=True,
-                transaction=trs)
+            if not self._is_edge_nat(ext_info):
+                self.apic_manager.set_contract_for_epg(
+                    nat_epg_tenant, nat_epg_name, nat_contract,
+                    transaction=trs)
+                self.apic_manager.set_contract_for_epg(
+                    nat_epg_tenant, nat_epg_name, nat_contract, provider=True,
+                    transaction=trs)
 
     def _delete_nat_epg_for_es(self, context, es):
         nat_bd_name = self._get_nat_bd_for_es(context, es)
@@ -3057,10 +3062,12 @@ class ApicMappingDriver(api.ResourceMappingDriver,
 
         with self.apic_manager.apic.transaction() as trs:
             # delete NAT EPG, BD
-            self.apic_manager.delete_bd_on_apic(
-                nat_epg_tenant, nat_bd_name, transaction=trs)
-            self.apic_manager.delete_epg_for_network(
-                nat_epg_tenant, nat_epg_name, transaction=trs)
+            if not self._is_edge_nat(
+                self.apic_manager.ext_net_dict[es['name']]):
+                self.apic_manager.delete_bd_on_apic(
+                    nat_epg_tenant, nat_bd_name, transaction=trs)
+                self.apic_manager.delete_epg_for_network(
+                    nat_epg_tenant, nat_epg_name, transaction=trs)
             # delete NAT VRF if required
             if not pre_existing:
                 self.apic_manager.ensure_context_deleted(
@@ -3128,14 +3135,18 @@ class ApicMappingDriver(api.ResourceMappingDriver,
 
     def _manage_nat_pool_subnet(self, context, old, new):
         if old and old.get('ext_seg') and old.get('subnet'):
-            if self._is_nat_enabled_on_es(old['ext_seg']):
+            if (self._is_nat_enabled_on_es(old['ext_seg']) and
+                not self._is_edge_nat(
+                    self.apic_manager.ext_net_dict[old['ext_seg']['name']])):
                 tenant_name = self._tenant_by_sharing_policy(old['ext_seg'])
                 nat_bd_name = self._get_nat_bd_for_es(context, old['ext_seg'])
                 self.apic_manager.ensure_subnet_deleted_on_apic(tenant_name,
                     nat_bd_name, self._gateway_ip(old['subnet']))
 
         if new and new.get('ext_seg') and new.get('subnet'):
-            if self._is_nat_enabled_on_es(new['ext_seg']):
+            if (self._is_nat_enabled_on_es(new['ext_seg']) and
+                not self._is_edge_nat(
+                    self.apic_manager.ext_net_dict[new['ext_seg']['name']])):
                 tenant_name = self._tenant_by_sharing_policy(new['ext_seg'])
                 nat_bd_name = self._get_nat_bd_for_es(context, new['ext_seg'])
                 self.apic_manager.ensure_subnet_created_on_apic(tenant_name,
