@@ -10,11 +10,7 @@ trap prepare_logs ERR
 $TOP_DIR/exercise.sh
 exercises_exit_code=$?
 
-source $TOP_DIR/lib/nfp
-delete_nfp_gbp_resources $TOP_DIR
-
 # Check if exercises left any resources undeleted
-check_residual_resources neutron service
 check_residual_resources admin admin
 check_residual_resources admin demo
 check_residual_resources demo demo
