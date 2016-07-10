@@ -204,6 +204,12 @@ class GroupPolicyMappingDbPlugin(gpdb.GroupPolicyDbPlugin):
             context, l3p_id, l3p_klass=L3PolicyMapping,
             ptg_klass=PolicyTargetGroupMapping, l2p_klass=L2PolicyMapping)
 
+    def get_l3p_id_from_router_id(self, context, router_id):
+        mapping = context.session.query(L3PolicyRouterAssociation).filter_by(
+            router_id=router_id)
+        if mapping.count():
+            return mapping.one()['l3_policy_id']
+
     def _set_db_np_subnet(self, context, nat_pool, subnet_id):
         with context.session.begin(subtransactions=True):
             nat_pool['subnet_id'] = subnet_id
