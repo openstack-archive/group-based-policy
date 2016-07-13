@@ -17,7 +17,6 @@ from neutron import context as nctx
 from neutron.db import api as db_api
 from neutron.db import model_base
 from neutron.tests.unit.extensions import test_l3
-from neutron.tests.unit import testlib_api
 
 from gbpservice.neutron.db.grouppolicy import group_policy_mapping_db as gpmdb
 from gbpservice.neutron.services.grouppolicy.common import exceptions as gpexc
@@ -45,7 +44,6 @@ class GroupPolicyMappingDbTestCase(tgpdb.GroupPolicyDbTestCase,
 
     def setUp(self, core_plugin=None, gp_plugin=None, service_plugins=None,
               sc_plugin=None):
-        testlib_api.SqlTestCase._TABLES_ESTABLISHED = False
         if not gp_plugin:
             gp_plugin = DB_GP_PLUGIN_KLASS
         if not service_plugins:
