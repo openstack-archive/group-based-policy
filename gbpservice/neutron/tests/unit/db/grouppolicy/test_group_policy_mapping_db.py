@@ -55,7 +55,7 @@ class GroupPolicyMappingDbTestCase(tgpdb.GroupPolicyDbTestCase,
             service_plugins=service_plugins
         )
         engine = db_api.get_engine()
-        model_base.BASEV2.metadata.create_all(engine)
+        #model_base.BASEV2.metadata.create_all(engine)
 
 
 class TestMappedGroupResources(GroupPolicyMappingDbTestCase,

@@ -47,7 +47,7 @@ class CommonNeutronBaseTestCase(test_plugin.GroupPolicyPluginTestBase):
                                                      ml2_options=ml2_options,
                                                      sc_plugin=sc_plugin)
         engine = db_api.get_engine()
-        model_base.BASEV2.metadata.create_all(engine)
+        #model_base.BASEV2.metadata.create_all(engine)
         res = mock.patch('neutron.db.l3_db.L3_NAT_dbonly_mixin.'
                          '_check_router_needs_rescheduling').start()
         res.return_value = None

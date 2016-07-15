@@ -79,7 +79,7 @@ class ApicAimTestCase(test_plugin.NeutronDbPluginV2TestCase):
         ksc_client.Client = FakeKeystoneClient
 
         engine = db_api.get_engine()
-        aim_model_base.Base.metadata.create_all(engine)
+        #aim_model_base.Base.metadata.create_all(engine)
 
         self.plugin = manager.NeutronManager.get_plugin()
         self.plugin.start_rpc_listeners()

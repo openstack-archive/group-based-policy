@@ -146,7 +146,7 @@ class NodeCompositionPluginTestCase(
             gp_plugin=gp_plugin or GP_PLUGIN_KLASS,
             sc_plugin=SC_PLUGIN_KLASS)
         engine = db_api.get_engine()
-        model_base.BASEV2.metadata.create_all(engine)
+        #model_base.BASEV2.metadata.create_all(engine)
         self.driver = self.sc_plugin.driver_manager.ordered_drivers[0].obj
 
     def _create_simple_chain(self):
@@ -799,7 +799,7 @@ class TestQuotasForServiceChain(test_base.ServiceChainPluginTestCase):
             gp_plugin=gp_plugin or GP_PLUGIN_KLASS,
             sc_plugin=SC_PLUGIN_KLASS)
         engine = db_api.get_engine()
-        model_base.BASEV2.metadata.create_all(engine)
+        #model_base.BASEV2.metadata.create_all(engine)
         self.driver = self.sc_plugin.driver_manager.ordered_drivers[0].obj
         cfg.CONF.set_override('quota_servicechain_node', 1,
                               group='QUOTAS')

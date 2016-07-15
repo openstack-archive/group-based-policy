@@ -64,7 +64,7 @@ class AIMBaseTestCase(test_nr_base.CommonNeutronBaseTestCase):
         self._neutron_admin_context = nctx.get_admin_context()
 
         engine = db_api.get_engine()
-        aim_model_base.Base.metadata.create_all(engine)
+        #aim_model_base.Base.metadata.create_all(engine)
         self._aim = aim_manager.AimManager()
         self._aim_context = aim_context.AimContext(
             self._neutron_context.session)

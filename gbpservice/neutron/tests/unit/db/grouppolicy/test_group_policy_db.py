@@ -341,7 +341,7 @@ class GroupPolicyDbTestCase(GroupPolicyDBTestBase,
             ext_mgr = extensions.PluginAwareExtensionManager.get_instance()
             self.ext_api = test_extensions.setup_extensions_middleware(ext_mgr)
         engine = db_api.get_engine()
-        model_base.BASEV2.metadata.create_all(engine)
+        #model_base.BASEV2.metadata.create_all(engine)
 
         plugins = manager.NeutronManager.get_service_plugins()
         self._gbp_plugin = plugins.get(constants.GROUP_POLICY)

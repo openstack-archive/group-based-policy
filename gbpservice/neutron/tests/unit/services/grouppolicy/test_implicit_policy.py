@@ -31,7 +31,7 @@ class ImplicitPolicyTestCase(
                               group='group_policy')
         super(ImplicitPolicyTestCase, self).setUp()
         engine = db_api.get_engine()
-        model_base.BASEV2.metadata.create_all(engine)
+        #model_base.BASEV2.metadata.create_all(engine)
 
 
 class TestImplicitL2Policy(ImplicitPolicyTestCase):

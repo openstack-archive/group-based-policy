@@ -127,7 +127,7 @@ class ApicMappingTestCase(
             policy_drivers=['implicit_policy', 'apic', 'chain_mapping'],
             ml2_options=ml2_opts, sc_plugin=sc_plugin)
         engine = db_api.get_engine()
-        model_base.BASEV2.metadata.create_all(engine)
+        #model_base.BASEV2.metadata.create_all(engine)
         plugin = manager.NeutronManager.get_plugin()
         plugin.remove_networks_from_down_agents = mock.Mock()
         plugin.is_agent_down = mock.Mock(return_value=False)
