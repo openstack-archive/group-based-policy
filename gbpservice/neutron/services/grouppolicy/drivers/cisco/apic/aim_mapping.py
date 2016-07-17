@@ -24,6 +24,8 @@ from gbpservice.neutron.extensions import group_policy as gpolicy
 from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import (
     mechanism_driver as aim_md)
 from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import model
+from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim.extensions import (
+    cisco_apic)
 from gbpservice.neutron.services.grouppolicy.common import exceptions as gpexc
 from gbpservice.neutron.services.grouppolicy.drivers import (
     neutron_resources as nrd)
@@ -225,6 +227,28 @@ class AIMMappingDriver(nrd.CommonNeutronBase):
                 context._plugin_context, l2p_id)
             if not l2p_db['policy_target_groups']:
                 self._cleanup_l2_policy(context, l2p_id, clean_session=False)
+
+    def extend_policy_target_group_dict(self, session, result):
+        LOG.info(_LI("AIM Mapping Driver extending dict for PTG: %s"), result)
+
+        tenant_id = result['tenant_id']
+        tenant_name = self.name_mapper.tenant(session, tenant_id)
+        LOG.info(_LI("Mapped tenant_id %(id)s to %(apic_name)s"),
+                 {'id': tenant_id, 'apic_name': tenant_name})
+
+        id = result['id']
+        name = result['name']
+
+        aim_ctx = aim_context.AimContext(session)
+        epg_name = self.name_mapper.policy_target_group(session, id, name)
+        epg = aim_resource.EndpointGroup(tenant_name=tenant_name,
+                                         name=epg_name,
+                                         app_profile_name=aim_md.AP_NAME)
+        epg = self.aim.get(aim_ctx, epg)
+        if epg:
+            LOG.debug("got EPG with DN: %s", epg.dn)
+
+            result[cisco_apic.DIST_NAMES] = {cisco_apic.EPG: epg.dn}
 
     @log.log_method_call
     def create_policy_target_precommit(self, context):
