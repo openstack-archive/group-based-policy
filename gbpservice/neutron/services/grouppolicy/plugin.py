@@ -470,6 +470,7 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
                                                            result)
             self.policy_driver_manager.create_policy_target_precommit(
                 policy_context)
+            result = self.get_policy_target(context, result['id'])
 
         try:
             self.policy_driver_manager.create_policy_target_postcommit(
@@ -481,7 +482,7 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
                               result['id'])
                 self.delete_policy_target(context, result['id'])
 
-        return self.get_policy_target(context, result['id'])
+        return result
 
     @log.log_method_call
     def update_policy_target(self, context, policy_target_id, policy_target):
@@ -503,10 +504,11 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
                 original_policy_target=original_policy_target)
             self.policy_driver_manager.update_policy_target_precommit(
                 policy_context)
+            result = self.get_policy_target(context, policy_target_id)
 
         self.policy_driver_manager.update_policy_target_postcommit(
             policy_context)
-        return self.get_policy_target(context, policy_target_id)
+        return result
 
     @log.log_method_call
     def delete_policy_target(self, context, policy_target_id):
@@ -559,6 +561,7 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
                 self, context, result)
             self.policy_driver_manager.create_policy_target_group_precommit(
                 policy_context)
+            result = self.get_policy_target_group(context, result['id'])
 
         try:
             self.policy_driver_manager.create_policy_target_group_postcommit(
@@ -570,7 +573,7 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
                               result['id'])
                 self.delete_policy_target_group(context, result['id'])
 
-        return self.get_policy_target_group(context, result['id'])
+        return result
 
     @log.log_method_call
     def update_policy_target_group(self, context, policy_target_group_id,
@@ -605,11 +608,13 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
                 original_policy_target_group=original_policy_target_group)
             self.policy_driver_manager.update_policy_target_group_precommit(
                 policy_context)
+            result = self.get_policy_target_group(context,
+                                                  policy_target_group_id)
 
         self.policy_driver_manager.update_policy_target_group_postcommit(
             policy_context)
 
-        return self.get_policy_target_group(context, policy_target_group_id)
+        return result
 
     @log.log_method_call
     def delete_policy_target_group(self, context, policy_target_group_id):
@@ -695,6 +700,7 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
             policy_context = p_context.L2PolicyContext(self, context, result)
             self.policy_driver_manager.create_l2_policy_precommit(
                 policy_context)
+            result = self.get_l2_policy(context, result['id'])
 
         try:
             self.policy_driver_manager.create_l2_policy_postcommit(
@@ -706,7 +712,7 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
                               result['id'])
                 self.delete_l2_policy(context, result['id'])
 
-        return self.get_l2_policy(context, result['id'])
+        return result
 
     @log.log_method_call
     def update_l2_policy(self, context, l2_policy_id, l2_policy):
@@ -725,11 +731,12 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
                 original_l2_policy=original_l2_policy)
             self.policy_driver_manager.update_l2_policy_precommit(
                 policy_context)
+            result = self.get_l2_policy(context, l2_policy_id)
 
         self.policy_driver_manager.update_l2_policy_postcommit(
             policy_context)
 
-        return self.get_l2_policy(context, l2_policy_id)
+        return result
 
     @log.log_method_call
     def delete_l2_policy(self, context, l2_policy_id):
@@ -783,6 +790,7 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
             pdm = self.policy_driver_manager
             pdm.create_network_service_policy_precommit(
                 policy_context)
+            result = self.get_network_service_policy(context, result['id'])
 
         try:
             pdm.create_network_service_policy_postcommit(
@@ -795,7 +803,7 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
                     result['id'])
                 self.delete_network_service_policy(context, result['id'])
 
-        return self.get_network_service_policy(context, result['id'])
+        return result
 
     @log.log_method_call
     def update_network_service_policy(self, context, network_service_policy_id,
@@ -820,11 +828,12 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
                 original_network_service_policy)
             self.policy_driver_manager.update_network_service_policy_precommit(
                 policy_context)
+            result = self.get_network_service_policy(context,
+                                                     network_service_policy_id)
 
         self.policy_driver_manager.update_network_service_policy_postcommit(
             policy_context)
-        return self.get_network_service_policy(context,
-                                               network_service_policy_id)
+        return result
 
     @log.log_method_call
     def delete_network_service_policy(
@@ -879,6 +888,7 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
                                                        result)
             self.policy_driver_manager.create_l3_policy_precommit(
                 policy_context)
+            result = self.get_l3_policy(context, result['id'])
 
         try:
             self.policy_driver_manager.create_l3_policy_postcommit(
@@ -890,7 +900,7 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
                               result['id'])
                 self.delete_l3_policy(context, result['id'])
 
-        return self.get_l3_policy(context, result['id'])
+        return result
 
     @log.log_method_call
     def update_l3_policy(self, context, l3_policy_id, l3_policy):
@@ -911,10 +921,11 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
                 original_l3_policy=original_l3_policy)
             self.policy_driver_manager.update_l3_policy_precommit(
                 policy_context)
+            result = self.get_l3_policy(context, l3_policy_id)
 
         self.policy_driver_manager.update_l3_policy_postcommit(
             policy_context)
-        return self.get_l3_policy(context, l3_policy_id)
+        return result
 
     @log.log_method_call
     def delete_l3_policy(self, context, l3_policy_id, check_unused=False):
@@ -972,6 +983,7 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
                                                                result)
             self.policy_driver_manager.create_policy_classifier_precommit(
                 policy_context)
+            result = self.get_policy_classifier(context, result['id'])
 
         try:
             self.policy_driver_manager.create_policy_classifier_postcommit(
@@ -983,7 +995,7 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
                     " failed, deleting policy_classifier %s"), result['id'])
                 self.delete_policy_classifier(context, result['id'])
 
-        return self.get_policy_classifier(context, result['id'])
+        return result
 
     @log.log_method_call
     def update_policy_classifier(self, context, id, policy_classifier):
@@ -1004,10 +1016,11 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
                 original_policy_classifier=original_policy_classifier)
             self.policy_driver_manager.update_policy_classifier_precommit(
                 policy_context)
+            result = self.get_policy_classifier(context, id)
 
         self.policy_driver_manager.update_policy_classifier_postcommit(
             policy_context)
-        return self.get_policy_classifier(context, id)
+        return result
 
     @log.log_method_call
     def delete_policy_classifier(self, context, id):
@@ -1060,6 +1073,7 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
                                                            result)
             self.policy_driver_manager.create_policy_action_precommit(
                 policy_context)
+            result = self.get_policy_action(context, result['id'])
 
         try:
             self.policy_driver_manager.create_policy_action_postcommit(
@@ -1071,7 +1085,7 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
                     "failed, deleting policy_action %s"), result['id'])
                 self.delete_policy_action(context, result['id'])
 
-        return self.get_policy_action(context, result['id'])
+        return result
 
     @log.log_method_call
     def update_policy_action(self, context, id, policy_action):
@@ -1093,10 +1107,11 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
                 original_policy_action=original_policy_action)
             self.policy_driver_manager.update_policy_action_precommit(
                 policy_context)
+            result = self.get_policy_action(context, id)
 
         self.policy_driver_manager.update_policy_action_postcommit(
             policy_context)
-        return self.get_policy_action(context, id)
+        return result
 
     @log.log_method_call
     def delete_policy_action(self, context, id):
@@ -1146,6 +1161,7 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
                                                          result)
             self.policy_driver_manager.create_policy_rule_precommit(
                 policy_context)
+            result = self.get_policy_rule(context, result['id'])
 
         try:
             self.policy_driver_manager.create_policy_rule_postcommit(
@@ -1157,7 +1173,7 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
                     " failed, deleting policy_rule %s"), result['id'])
                 self.delete_policy_rule(context, result['id'])
 
-        return self.get_policy_rule(context, result['id'])
+        return result
 
     @log.log_method_call
     def update_policy_rule(self, context, id, policy_rule):
@@ -1177,10 +1193,11 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
                 original_policy_rule=original_policy_rule)
             self.policy_driver_manager.update_policy_rule_precommit(
                 policy_context)
+            result = self.get_policy_rule(context, id)
 
         self.policy_driver_manager.update_policy_rule_postcommit(
             policy_context)
-        return self.get_policy_rule(context, id)
+        return result
 
     @log.log_method_call
     def delete_policy_rule(self, context, id):
@@ -1232,6 +1249,7 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
                 self, context, result)
             self.policy_driver_manager.create_policy_rule_set_precommit(
                 policy_context)
+            result = self.get_policy_rule_set(context, result['id'])
 
         try:
             self.policy_driver_manager.create_policy_rule_set_postcommit(
@@ -1243,7 +1261,7 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
                     "failed, deleting policy_rule_set %s"), result['id'])
                 self.delete_policy_rule_set(context, result['id'])
 
-        return self.get_policy_rule_set(context, result['id'])
+        return result
 
     @log.log_method_call
     def update_policy_rule_set(self, context, id, policy_rule_set):
@@ -1264,10 +1282,11 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
                 original_policy_rule_set=original_policy_rule_set)
             self.policy_driver_manager.update_policy_rule_set_precommit(
                 policy_context)
+            result = self.get_policy_rule_set(context, id)
 
         self.policy_driver_manager.update_policy_rule_set_postcommit(
             policy_context)
-        return self.get_policy_rule_set(context, id)
+        return result
 
     @log.log_method_call
     def delete_policy_rule_set(self, context, id):
@@ -1321,6 +1340,7 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
             # Validate the routes after the drivers had the chance to fill
             # the cidr field.
             self._validate_routes(context, result)
+            result = self.get_external_segment(context, result['id'])
 
         try:
             (self.policy_driver_manager.
@@ -1332,7 +1352,7 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
                                   "%s"), result['id'])
                 self.delete_external_segment(context, result['id'])
 
-        return self.get_external_segment(context, result['id'])
+        return result
 
     @log.log_method_call
     def update_external_segment(self, context, external_segment_id,
@@ -1359,10 +1379,11 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
                 original_external_segment)
             (self.policy_driver_manager.
              update_external_segment_precommit(policy_context))
+            result = self.get_external_segment(context, external_segment_id)
 
         self.policy_driver_manager.update_external_segment_postcommit(
             policy_context)
-        return self.get_external_segment(context, external_segment_id)
+        return result
 
     @log.log_method_call
     def delete_external_segment(self, context, external_segment_id):
@@ -1418,6 +1439,7 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
                 self, context, result)
             (self.policy_driver_manager.
              create_external_policy_precommit(policy_context))
+            result = self.get_external_policy(context, result['id'])
 
         try:
             (self.policy_driver_manager.
@@ -1429,7 +1451,7 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
                                   "%s"), result['id'])
                 self.delete_external_policy(context, result['id'])
 
-        return self.get_external_policy(context, result['id'])
+        return result
 
     @log.log_method_call
     def update_external_policy(self, context, external_policy_id,
@@ -1453,10 +1475,11 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
                 original_external_policy)
             (self.policy_driver_manager.
              update_external_policy_precommit(policy_context))
+            result = self.get_external_policy(context, external_policy_id)
 
         self.policy_driver_manager.update_external_policy_postcommit(
             policy_context)
-        return self.get_external_policy(context, external_policy_id)
+        return result
 
     @log.log_method_call
     def delete_external_policy(self, context, external_policy_id,
@@ -1506,6 +1529,7 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
             policy_context = p_context.NatPoolContext(self, context, result)
             (self.policy_driver_manager.
              create_nat_pool_precommit(policy_context))
+            result = self.get_nat_pool(context, result['id'])
 
         try:
             (self.policy_driver_manager.
@@ -1517,7 +1541,7 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
                     "nat_pool %s"), result['id'])
                 self.delete_nat_pool(context, result['id'])
 
-        return self.get_nat_pool(context, result['id'])
+        return result
 
     @log.log_method_call
     def update_nat_pool(self, context, nat_pool_id, nat_pool):
@@ -1536,9 +1560,10 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
                 self, context, updated_nat_pool, original_nat_pool)
             (self.policy_driver_manager.
              update_nat_pool_precommit(policy_context))
+            result = self.get_nat_pool(context, nat_pool_id)
 
         self.policy_driver_manager.update_nat_pool_postcommit(policy_context)
-        return self.get_nat_pool(context, nat_pool_id)
+        return result
 
     @log.log_method_call
     def delete_nat_pool(self, context, nat_pool_id, check_unused=False):
