@@ -23,7 +23,11 @@ from oslo_log import log as logging
 from gbpservice.neutron.extensions import group_policy as gpolicy
 from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import (
     mechanism_driver as aim_md)
+from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim.extensions import (
+    cisco_apic)
 from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import model
+from gbpservice.neutron.services.grouppolicy.common import (
+    constants as gp_const)
 from gbpservice.neutron.services.grouppolicy.common import exceptions as gpexc
 from gbpservice.neutron.services.grouppolicy.drivers import (
     neutron_resources as nrd)
@@ -63,93 +67,6 @@ class AIMMappingDriver(nrd.CommonNeutronBase):
     def name_mapper(self):
         return self.aim_mech_driver.name_mapper
 
-    def _aim_tenant_name(self, context):
-        session = context._plugin_context.session
-        tenant_id = context.current['tenant_id']
-        tenant_name = self.name_mapper.tenant(session, tenant_id)
-        LOG.info(_LI("Mapped tenant_id %(id)s to %(apic_name)s"),
-                 {'id': tenant_id, 'apic_name': tenant_name})
-        return tenant_name
-
-    def _aim_endpoint_group(self, context, bd_name=None, bd_tenant_name=None):
-        session = context._plugin_context.session
-        tenant_name = self._aim_tenant_name(context)
-        id = context.current['id']
-        name = context.current['name']
-        epg_name = self.name_mapper.policy_target_group(session, id, name)
-        LOG.info(_LI("Mapped ptg_id %(id)s with name %(name)s to "
-                     "%(apic_name)s"),
-                 {'id': id, 'name': name, 'apic_name': epg_name})
-
-        epg = aim_resource.EndpointGroup(tenant_name=str(tenant_name),
-                                         name=str(epg_name),
-                                         app_profile_name=aim_md.AP_NAME,
-                                         bd_name=bd_name,
-                                         bd_tenant_name=bd_tenant_name)
-        return epg
-
-    def _aim_bridge_domain(self, context, network_id, network_name):
-        session = context._plugin_context.session
-        tenant_name = self._aim_tenant_name(context)
-        bd_name = self.name_mapper.network(session, network_id, network_name)
-        LOG.info(_LI("Mapped network_id %(id)s with name %(name)s to "
-                     "%(apic_name)s"),
-                 {'id': network_id, 'name': network_name,
-                  'apic_name': bd_name})
-
-        bd = aim_resource.BridgeDomain(tenant_name=str(tenant_name),
-                                       name=str(bd_name))
-        return bd
-
-    def _get_l2p_subnets(self, context, l2p_id, clean_session=False):
-        plugin_context = context._plugin_context
-        l2p = context._plugin.get_l2_policy(plugin_context, l2p_id)
-        # REVISIT: The following should be a get_subnets call via local API
-        return self._core_plugin.get_subnets_by_network(
-            plugin_context, l2p['network_id'])
-
-    def _sync_ptg_subnets(self, context, l2p):
-        l2p_subnets = [x['id'] for x in
-                       self._get_l2p_subnets(context, l2p['id'])]
-        ptgs = context._plugin.get_policy_target_groups(
-            nctx.get_admin_context(), {'l2_policy_id': [l2p['id']]})
-        for sub in l2p_subnets:
-            # Add to PTG
-            for ptg in ptgs:
-                if sub not in ptg['subnets']:
-                    try:
-                        (context._plugin.
-                         _add_subnet_to_policy_target_group(
-                             nctx.get_admin_context(), ptg['id'], sub))
-                    except gpolicy.PolicyTargetGroupNotFound as e:
-                        LOG.warning(e)
-
-    def _use_implicit_subnet(self, context, force_add=False,
-                             clean_session=False):
-        """Implicit subnet for AIM.
-
-        The first PTG in a L2P will allocate a new subnet from the L3P.
-        Any subsequent PTG in the same L2P will use the same subnet.
-        Additional subnets will be allocated as and when the currently used
-        subnet runs out of IP addresses.
-        """
-        l2p_id = context.current['l2_policy_id']
-        with lockutils.lock(l2p_id, external=True):
-            subs = self._get_l2p_subnets(context, l2p_id)
-            subs = set([x['id'] for x in subs])
-            added = []
-            if not subs or force_add:
-                l2p = context._plugin.get_l2_policy(context._plugin_context,
-                                                    l2p_id)
-                name = APIC_OWNED + l2p['name']
-                added = super(
-                    AIMMappingDriver, self)._use_implicit_subnet(
-                        context, subnet_specifics={'name': name},
-                        is_proxy=False, clean_session=clean_session)
-            context.add_subnets(subs - set(context.current['subnets']))
-            for subnet in added:
-                self._sync_ptg_subnets(context, l2p)
-
     @log.log_method_call
     def ensure_tenant(self, plugin_context, tenant_id):
         self.aim_mech_driver.ensure_tenant(plugin_context, tenant_id)
@@ -183,9 +100,11 @@ class AIMMappingDriver(nrd.CommonNeutronBase):
 
         bd_name = str(self.name_mapper.network(
             session, net['id'], net['name']))
-        bd_tenant_name = str(self._aim_tenant_name(context))
+        bd_tenant_name = str(self._aim_tenant_name(
+            session, context.current['tenant_id']))
 
-        epg = self._aim_endpoint_group(context, bd_name, bd_tenant_name)
+        epg = self._aim_endpoint_group(session, context.current, bd_name,
+                                       bd_tenant_name)
         self.aim.create(aim_ctx, epg)
 
     @log.log_method_call
@@ -201,7 +120,7 @@ class AIMMappingDriver(nrd.CommonNeutronBase):
         session = context._plugin_context.session
 
         aim_ctx = aim_context.AimContext(session)
-        epg = self._aim_endpoint_group(context)
+        epg = self._aim_endpoint_group(session, context.current)
         self.aim.delete(aim_ctx, epg)
         self.name_mapper.delete_apic_name(session, context.current['id'])
 
@@ -225,6 +144,18 @@ class AIMMappingDriver(nrd.CommonNeutronBase):
                 context._plugin_context, l2p_id)
             if not l2p_db['policy_target_groups']:
                 self._cleanup_l2_policy(context, l2p_id, clean_session=False)
+
+    @log.log_method_call
+    def extend_policy_target_group_dict(self, session, result):
+        epg = self._get_aim_endpoint_group(session, result)
+        if epg:
+            result[cisco_apic.DIST_NAMES] = {cisco_apic.EPG: epg.dn}
+
+    @log.log_method_call
+    def get_policy_target_group_status(self, context):
+        session = context._plugin_context.session
+        epg = self._get_aim_endpoint_group(session, context.current)
+        context.current['status'] = self._map_aim_status(session, epg)
 
     @log.log_method_call
     def create_policy_target_precommit(self, context):
@@ -285,3 +216,119 @@ class AIMMappingDriver(nrd.CommonNeutronBase):
         # rn = self.mapper.tenant_filter(tenant, pr_id)
         # tf = aim_resource.TenantFilter(tenant_rn=tenant, rn=rn)
         # self.aim.delete(aim_context, tf)
+
+    def _aim_tenant_name(self, session, tenant_id):
+        tenant_name = self.name_mapper.tenant(session, tenant_id)
+        LOG.debug("Mapped tenant_id %(id)s to %(apic_name)s",
+                  {'id': tenant_id, 'apic_name': tenant_name})
+        return tenant_name
+
+    def _aim_endpoint_group(self, session, ptg, bd_name=None,
+                            bd_tenant_name=None):
+        # This returns a new AIM EPG resource
+        tenant_id = ptg['tenant_id']
+        tenant_name = self._aim_tenant_name(session, tenant_id)
+        id = ptg['id']
+        name = ptg['name']
+        epg_name = self.name_mapper.policy_target_group(session, id, name)
+        LOG.debug("Mapped ptg_id %(id)s with name %(name)s to %(apic_name)s",
+                  {'id': id, 'name': name, 'apic_name': epg_name})
+        kwargs = {'tenant_name': str(tenant_name),
+                  'name': str(epg_name),
+                  'app_profile_name': aim_md.AP_NAME}
+        if bd_name:
+            kwargs['bd_name'] = bd_name
+        if bd_tenant_name:
+            kwargs['bd_tenant_name'] = bd_tenant_name
+
+        epg = aim_resource.EndpointGroup(**kwargs)
+        return epg
+
+    def _get_aim_endpoint_group(self, session, ptg):
+        # This gets an EPG from the AIM DB
+        epg = self._aim_endpoint_group(session, ptg)
+        aim_ctx = aim_context.AimContext(session)
+        epg_fetched = self.aim.get(aim_ctx, epg)
+        if epg:
+            LOG.debug("No EPG found in AIM DB")
+        else:
+            LOG.debug("Got epg: %s", epg_fetched.__dict__)
+        return epg_fetched
+
+    def _aim_bridge_domain(self, session, tenant_id, network_id, network_name):
+        # This returns a new AIM BD resource
+        tenant_name = self._aim_tenant_name(session, tenant_id)
+        bd_name = self.name_mapper.network(session, network_id, network_name)
+        LOG.info(_LI("Mapped network_id %(id)s with name %(name)s to "
+                     "%(apic_name)s"),
+                 {'id': network_id, 'name': network_name,
+                  'apic_name': bd_name})
+
+        bd = aim_resource.BridgeDomain(tenant_name=str(tenant_name),
+                                       name=str(bd_name))
+        return bd
+
+    def _get_l2p_subnets(self, context, l2p_id, clean_session=False):
+        plugin_context = context._plugin_context
+        l2p = context._plugin.get_l2_policy(plugin_context, l2p_id)
+        # REVISIT: The following should be a get_subnets call via local API
+        return self._core_plugin.get_subnets_by_network(
+            plugin_context, l2p['network_id'])
+
+    def _sync_ptg_subnets(self, context, l2p):
+        l2p_subnets = [x['id'] for x in
+                       self._get_l2p_subnets(context, l2p['id'])]
+        ptgs = context._plugin.get_policy_target_groups(
+            nctx.get_admin_context(), {'l2_policy_id': [l2p['id']]})
+        for sub in l2p_subnets:
+            # Add to PTG
+            for ptg in ptgs:
+                if sub not in ptg['subnets']:
+                    try:
+                        (context._plugin.
+                         _add_subnet_to_policy_target_group(
+                             nctx.get_admin_context(), ptg['id'], sub))
+                    except gpolicy.PolicyTargetGroupNotFound as e:
+                        LOG.warning(e)
+
+    def _use_implicit_subnet(self, context, force_add=False,
+                             clean_session=False):
+        """Implicit subnet for AIM.
+
+        The first PTG in a L2P will allocate a new subnet from the L3P.
+        Any subsequent PTG in the same L2P will use the same subnet.
+        Additional subnets will be allocated as and when the currently used
+        subnet runs out of IP addresses.
+        """
+        l2p_id = context.current['l2_policy_id']
+        with lockutils.lock(l2p_id, external=True):
+            subs = self._get_l2p_subnets(context, l2p_id)
+            subs = set([x['id'] for x in subs])
+            added = []
+            if not subs or force_add:
+                l2p = context._plugin.get_l2_policy(context._plugin_context,
+                                                    l2p_id)
+                name = APIC_OWNED + l2p['name']
+                added = super(
+                    AIMMappingDriver, self)._use_implicit_subnet(
+                        context, subnet_specifics={'name': name},
+                        is_proxy=False, clean_session=clean_session)
+            context.add_subnets(subs - set(context.current['subnets']))
+            for subnet in added:
+                self._sync_ptg_subnets(context, l2p)
+
+    def _map_aim_status(self, session, aim_resoure):
+        # Note that this implementation assumes that this driver
+        # is the only policy driver configured, and no merging
+        # with any previous status is required.
+        aim_ctx = aim_context.AimContext(session)
+        aim_status = self.aim.get_status(aim_ctx, aim_resource)
+        if not aim_status:
+            # REVIST(Sumit)
+            return gp_const.STATUS_BUILD
+        if aim_status.is_error():
+            return gp_const.STATUS_ERROR
+        elif aim_status.is_build():
+            return gp_const.STATUS_BUILD
+        else:
+            return gp_const.STATUS_ACTIVE

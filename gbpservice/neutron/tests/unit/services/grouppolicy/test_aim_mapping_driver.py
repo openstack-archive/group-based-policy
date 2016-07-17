@@ -38,6 +38,8 @@ ML2PLUS_PLUGIN = 'gbpservice.neutron.plugins.ml2plus.plugin.Ml2PlusPlugin'
 
 
 class AIMBaseTestCase(test_nr_base.CommonNeutronBaseTestCase):
+    _extension_drivers = ['aim_extension']
+    _extension_path = None
 
     def setUp(self, policy_drivers=None, core_plugin=None, ml2_options=None,
               sc_plugin=None, **kwargs):

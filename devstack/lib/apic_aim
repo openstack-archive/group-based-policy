@@ -11,6 +11,8 @@ function configure_apic_aim {
 
     # devstack/lib/neutron_plugins/ml2 does not allow overriding
     # Q_PLUGIN_CLASS in override_defaults, so do it here instread
+
+    # Neutron Configuration for AIM
     iniset $NEUTRON_CONF DEFAULT core_plugin ml2plus
 
     iniset /$Q_PLUGIN_CONF_FILE apic_aim_auth auth_plugin v3password
@@ -20,6 +22,13 @@ function configure_apic_aim {
     iniset /$Q_PLUGIN_CONF_FILE apic_aim_auth user_domain_name default
     iniset /$Q_PLUGIN_CONF_FILE apic_aim_auth project_domain_name default
     iniset /$Q_PLUGIN_CONF_FILE apic_aim_auth project_name admin
+
+    # GBP Configuration for AIM
+    # Policy drivers (REVISIT: chain_mapping might needed to be added later)
+    iniset $NEUTRON_CONF group_policy policy_drivers "aim_mapping"
+    # Extension drivers (REVISIT: proxy_group might needed to be added later)
+    iniset $NEUTRON_CONF group_policy extension_drivers "aim_extension"
+    # Service Chain (REVISIT: not overriding any defaults yet)
 
     init_aim
 }
