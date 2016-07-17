@@ -12,7 +12,7 @@
 
 import os
 
-from neutron.common import config  # noqa
+from neutron.common import config as neutron_config  # noqa
 from neutron.db import model_base
 import sqlalchemy as sa
 
@@ -32,14 +32,17 @@ class ExtensionDriverTestBase(test_plugin.GroupPolicyPluginTestCase):
     _extension_drivers = ['test']
     _extension_path = os.path.dirname(os.path.abspath(test_ext.__file__))
 
-    def setUp(self):
+    def setUp(self, policy_drivers=None, core_plugin=None,
+              ml2_options=None, sc_plugin=None):
         config.cfg.CONF.set_override('extension_drivers',
                                      self._extension_drivers,
                                      group='group_policy')
         if self._extension_path:
             config.cfg.CONF.set_override(
                 'api_extensions_path', self._extension_path)
-        super(ExtensionDriverTestBase, self).setUp()
+        super(ExtensionDriverTestBase, self).setUp(
+            core_plugin=core_plugin, ml2_options=ml2_options,
+            sc_plugin=sc_plugin)
 
 
 class ExtensionDriverTestCase(ExtensionDriverTestBase):
