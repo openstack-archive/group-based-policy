@@ -346,8 +346,7 @@ class GroupPolicyMappingDbPlugin(gpdb.GroupPolicyDbPlugin):
         return self._get_collection_count(context, PolicyTargetGroupMapping,
                                           filters=filters)
 
-    @log.log_method_call
-    def get_policy_target_groups(self, context, filters=None, fields=None,
+    def _get_policy_target_groups(self, context, filters=None, fields=None,
                            sorts=None, limit=None, marker=None,
                            page_reverse=False):
         marker_obj = self._get_marker_obj(context, 'policy_target_group',
@@ -358,6 +357,13 @@ class GroupPolicyMappingDbPlugin(gpdb.GroupPolicyDbPlugin):
                                     sorts=sorts, limit=limit,
                                     marker_obj=marker_obj,
                                     page_reverse=page_reverse)
+
+    @log.log_method_call
+    def get_policy_target_groups(self, context, filters=None, fields=None,
+                           sorts=None, limit=None, marker=None,
+                           page_reverse=False):
+        return self._get_policy_target_groups(
+            context, filters, fields, sorts, limit, marker, page_reverse)
 
     @log.log_method_call
     def create_l2_policy(self, context, l2_policy):
