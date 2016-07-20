@@ -177,6 +177,10 @@ class ResourceMappingDriver(api.PolicyDriver, local_api.LocalAPI,
         except k_exceptions.AuthorizationFailure:
             LOG.error(_("User: %(user)s dont have permissions"),
                      {'user': user})
+        except k_exceptions.Unauthorized:
+            LOG.error(_("Wrong credentials: user: %(user)s, password: %(pwd)s"
+                        "tenant: %(tenant)s"),
+                     {'user': user, 'pwd': pwd, 'tenant': tenant})
 
     def _reject_non_shared_net_on_shared_l2p(self, context):
         if context.current.get('shared') and context.current['network_id']:
