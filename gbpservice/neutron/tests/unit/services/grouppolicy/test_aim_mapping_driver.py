@@ -95,14 +95,6 @@ class AIMBaseTestCase(test_nr_base.CommonNeutronBaseTestCase,
                     'aim_mapping'].obj.name_mapper)
         return self._name_mapper
 
-
-class TestL2Policy(test_nr_base.TestL2Policy, AIMBaseTestCase):
-
-    pass
-
-
-class TestPolicyTargetGroup(AIMBaseTestCase):
-
     def _test_aim_resource_status(self, aim_resource_obj, gbp_resource):
         aim_status = self.aim_mgr.get_status(self._aim_context,
                                              aim_resource_obj)
@@ -112,6 +104,14 @@ class TestPolicyTargetGroup(AIMBaseTestCase):
             self.assertEqual(gp_const.STATUS_BUILD, gbp_resource['status'])
         else:
             self.assertEqual(gp_const.STATUS_ACTIVE, gbp_resource['status'])
+
+
+class TestL2Policy(test_nr_base.TestL2Policy, AIMBaseTestCase):
+
+    pass
+
+
+class TestPolicyTargetGroup(AIMBaseTestCase):
 
     def test_policy_target_group_lifecycle_implicit_l2p(self):
         ptg = self.create_policy_target_group(
@@ -140,6 +140,8 @@ class TestPolicyTargetGroup(AIMBaseTestCase):
         self.assertEqual(aim_epg_name, aim_epgs[0].name)
         self.assertEqual(aim_tenant_name, aim_epgs[0].tenant_name)
 
+        self.assertEqual(aim_epgs[0].dn,
+                         ptg['apic:distinguished_names']['EndpointGroup'])
         self._test_aim_resource_status(aim_epgs[0], ptg)
         self.assertEqual(aim_epgs[0].dn,
                          ptg_show['apic:distinguished_names']['EndpointGroup'])
@@ -165,7 +167,8 @@ class TestPolicyTargetGroup(AIMBaseTestCase):
         ptg = self.create_policy_target_group(
             name="ptg1", l2_policy_id=l2p_id)['policy_target_group']
         ptg_id = ptg['id']
-        self.show_policy_target_group(ptg_id, expected_res_status=200)
+        ptg_show = self.show_policy_target_group(
+            ptg_id, expected_res_status=200)['policy_target_group']
         self.assertEqual(l2p_id, ptg['l2_policy_id'])
         self.show_l2_policy(ptg['l2_policy_id'], expected_res_status=200)
         req = self.new_show_request('subnets', ptg['subnets'][0], fmt=self.fmt)
@@ -187,7 +190,11 @@ class TestPolicyTargetGroup(AIMBaseTestCase):
         self.assertEqual(aim_epg_name, aim_epgs[0].name)
         self.assertEqual(aim_tenant_name, aim_epgs[0].tenant_name)
 
+        self.assertEqual(aim_epgs[0].dn,
+                         ptg['apic:distinguished_names']['EndpointGroup'])
         self._test_aim_resource_status(aim_epgs[0], ptg)
+        self.assertEqual(aim_epgs[0].dn,
+                         ptg_show['apic:distinguished_names']['EndpointGroup'])
 
         self.delete_policy_target_group(ptg_id, expected_res_status=204)
         self.show_policy_target_group(ptg_id, expected_res_status=404)
@@ -360,8 +367,7 @@ class TestPolicyTargetRollback(AIMBaseTestCase):
 
 class TestPolicyRule(AIMBaseTestCase):
 
-    def _test_policy_rule_lifecycle(self):
-        # TODO(Sumit): Enable this test when the AIM driver is ready
+    def test_policy_rule_lifecycle(self):
         action1 = self.create_policy_action(
             action_type='redirect')['policy_action']
         classifier = self.create_policy_classifier(
@@ -374,19 +380,21 @@ class TestPolicyRule(AIMBaseTestCase):
         pr_id = pr['id']
         self.show_policy_rule(pr_id, expected_res_status=200)
 
-        tenant = pr['tenant_id']
         pr_id = pr['id']
         pr_name = pr['name']
-        rn = self._aim_mapper.tenant_filter(tenant, pr_id, name=pr_name)
-        aim_pr = self.aim_mgr.find(
-            self._aim_context, aim_resource.TenantFilter, rn=rn)
-        self.assertEqual(1, len(aim_pr))
-        self.assertEqual(rn, aim_pr[0].rn)
-        self.assertEqual(tenant, aim_pr[0].tenant_rn)
+        aim_filter_name = str(self.name_mapper.policy_rule(
+            self._neutron_context.session, pr_id, pr_name))
+        aim_tenant_name = str(self.name_mapper.tenant(
+            self._neutron_context.session, self._tenant_id))
+        aim_filters = self.aim_mgr.find(
+            self._aim_context, aim_resource.Filter, name=aim_filter_name)
+        self.assertEqual(1, len(aim_filters))
+        self.assertEqual(aim_filter_name, aim_filters[0].name)
+        self.assertEqual(aim_tenant_name, aim_filters[0].tenant_name)
 
         self.delete_policy_rule(pr_id, expected_res_status=204)
         self.show_policy_rule(pr_id, expected_res_status=404)
 
-        aim_pr = self.aim_mgr.find(
-            self._aim_context, aim_resource.TenantFilter, rn=rn)
-        self.assertEqual(0, len(aim_pr))
+        aim_filters = self.aim_mgr.find(
+            self._aim_context, aim_resource.Filter, name=aim_filter_name)
+        self.assertEqual(0, len(aim_filters))
