@@ -104,14 +104,17 @@ class TestL2PolicyRollback(CommonNeutronBaseTestCase):
             'GROUP_POLICY'].policy_driver_manager.policy_drivers['dummy'].obj
 
     def test_l2_policy_create_fail(self):
+        orig_func = self.dummy_driver.create_l2_policy_precommit
         self.dummy_driver.create_l2_policy_precommit = mock.Mock(
             side_effect=Exception)
         self.create_l2_policy(name="l2p1", expected_res_status=500)
         self.assertEqual([], self._plugin.get_networks(self._context))
         self.assertEqual([], self._gbp_plugin.get_l2_policies(self._context))
         self.assertEqual([], self._gbp_plugin.get_l3_policies(self._context))
+        self.dummy_driver.create_l2_policy_precommit = orig_func
 
     def test_l2_policy_update_fail(self):
+        orig_func = self.dummy_driver.update_l2_policy_precommit
         self.dummy_driver.update_l2_policy_precommit = mock.Mock(
             side_effect=Exception)
         l2p = self.create_l2_policy(name="l2p1")
@@ -121,8 +124,10 @@ class TestL2PolicyRollback(CommonNeutronBaseTestCase):
         new_l2p = self.show_l2_policy(l2p_id, expected_res_status=200)
         self.assertEqual(l2p['l2_policy']['name'],
                          new_l2p['l2_policy']['name'])
+        self.dummy_driver.update_l2_policy_precommit = orig_func
 
     def test_l2_policy_delete_fail(self):
+        orig_func = self.dummy_driver.delete_l2_policy_precommit
         self.dummy_driver.delete_l2_policy_precommit = mock.Mock(
             side_effect=Exception)
         l2p = self.create_l2_policy(name="l2p1")
@@ -135,3 +140,4 @@ class TestL2PolicyRollback(CommonNeutronBaseTestCase):
         self.assertIsNotNone(res['network']['id'])
         self.show_l3_policy(l3p_id, expected_res_status=200)
         self.show_l2_policy(l2p_id, expected_res_status=200)
+        self.dummy_driver.delete_l2_policy_precommit = orig_func
