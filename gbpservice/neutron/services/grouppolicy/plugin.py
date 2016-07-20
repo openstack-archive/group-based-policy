@@ -343,7 +343,6 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
 
     def _get_status_from_drivers(self, context, context_name, resource_name,
                                  resource_id, resource):
-        result = resource
         status = resource['status']
         status_details = resource['status_details']
         policy_context = getattr(p_context, context_name)(
@@ -360,10 +359,12 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
                                           updated_status_details}}
             session = context.session
             with session.begin(subtransactions=True):
-                result = getattr(super(GroupPolicyPlugin, self),
-                                 "update_" + resource_name)(
-                    context, _resource['id'], new_status)
-        return result
+                getattr(super(GroupPolicyPlugin, self),
+                        "update_" + resource_name)(
+                            context, _resource['id'], new_status)
+            resource['status'] = updated_status
+            resource['status_details'] = status_details
+        return resource
 
     def _get_resource(self, context, resource_name, resource_id,
                       gbp_context_name, fields=None):
@@ -412,7 +413,7 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
                     result)
                 new_filtered_results.append(result)
         new_filtered_results = new_filtered_results or filtered_results
-        return [self._fields(result, fields) for result in
+        return [self._fields(nfresult, fields) for nfresult in
                 new_filtered_results]
 
     @resource_registry.tracked_resources(
