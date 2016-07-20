@@ -18,9 +18,8 @@ import requests
 import subprocess
 import time
 
-from gbpservice.nfp.base_configurator import base_controller
+from gbpservice.nfp.pecan import base_controller
 
-BaseController = base_controller.BaseController
 LOG = logging.getLogger(__name__)
 TOPIC = 'configurator'
 NFP_SERVICE_LIST = ['heat', 'ansible']
@@ -32,7 +31,7 @@ notifications = []
 cache_ips = set()
 
 
-class Controller(BaseController):
+class Controller(base_controller.BaseController):
 
     """Implements all the APIs Invoked by HTTP requests.
 
