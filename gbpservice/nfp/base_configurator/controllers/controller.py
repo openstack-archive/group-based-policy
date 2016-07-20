@@ -18,7 +18,7 @@ import requests
 import subprocess
 import time
 
-from gbpservice.nfp.base_configurator.base_controller import BaseController
+from gbpservice.nfp.pecan import base_controller
 
 LOG = logging.getLogger(__name__)
 TOPIC = 'configurator'
@@ -31,7 +31,7 @@ notifications = []
 cache_ips = set()
 
 
-class Controller(BaseController):
+class Controller(base_controller.BaseController):
 
     """Implements all the APIs Invoked by HTTP requests.
 
