@@ -181,7 +181,8 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
 
         epg = aim_resource.EndpointGroup(tenant_name=tenant_name,
                                          app_profile_name=AP_NAME,
-                                         name=bd_name)
+                                         name=bd_name,
+                                         bd_name=bd_name)
         epg = self.aim.get(aim_ctx, epg)
         LOG.debug("got EPG with DN: %s", epg.dn)
 

@@ -118,6 +118,19 @@ class TestApicExtension(ApicAimTestCase):
         net_id = net['id']
         self._verify_network_dist_names(net)
 
+        # TODO(rkukura): When AIM adds find_by_dn() or equivalent,
+        # enable the following:
+        #
+        # Verify AIM resources.
+        # aim_bd = self.aim_mgr.find_by_dn(
+        #     self.aim_ctx, aim_resource.BridgeDomain,
+        #     net['apic:distinguished_names']['BridgeDomain'])
+        # aim_epg = self.aim_mgr.find_by_dn(
+        #     self.aim_ctx, aim_resource.EndpointGroup,
+        #     net['apic:distinguished_names']['EndpointGroup'])
+        # self.assertEqual(aim_bd.name, aim_epg.name)
+        # self.assertEqual(aim_bd.name, aim_epg.bd_name)
+
         # Test show.
         res = self._show('networks', net_id)['network']
         self._verify_network_dist_names(res)
