@@ -60,12 +60,23 @@ class APICNameMapper(object):
     def mapper(name_type):
         """Wrapper to land all the common operations between mappers."""
         def wrap(func):
-            def inner(inst, session, resource_id, resource_name=None):
+            def inner(inst, session, resource_id, resource_name=None,
+                      prefix=None):
+                # REVISIT(Bob): Optional argument for reserving characters in
+                # the prefix?
                 saved_name = inst.db.get_apic_name(session,
                                                    resource_id,
                                                    name_type)
                 if saved_name:
                     result = saved_name[0]
+                    # REVISIT(Sumit): Should this name mapper be aware of
+                    # this prefixing logic, or should we instead prepend
+                    # the prefix at the point from where this is being
+                    # invoked. The latter approach has the disadvantage
+                    # of having to replicate the logic in many places.
+                    if prefix:
+                        result = prefix + result
+                        result = truncate(result, MAX_APIC_NAME_LENGTH)
                     return result
                 name = ''
                 try:
@@ -155,10 +166,9 @@ class APICNameMapper(object):
         return policy_rule_set['name']
 
     @mapper(NAME_TYPE_POLICY_RULE)
-    def policy_rule(self, context, policy_rule_id):
-        policy_rule = context._plugin.get_policy_rule(context._plugin_context,
-                                                      policy_rule_id)
-        return policy_rule['name']
+    def policy_rule(self, context, policy_rule_id,
+                    policy_rule_name=None):
+        return policy_rule_name
 
     @mapper(NAME_TYPE_EXTERNAL_SEGMENT)
     def external_segment(self, context, external_segment_id):
