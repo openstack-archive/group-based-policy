@@ -27,6 +27,8 @@ from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import model
 from gbpservice.neutron.services.grouppolicy.common import (
     constants as gp_const)
 from gbpservice.neutron.services.grouppolicy import config
+from gbpservice.neutron.services.grouppolicy.drivers.cisco.apic import (
+    apic_mapping_lib as alib)
 from gbpservice.neutron.tests.unit.plugins.ml2plus import (
     test_apic_aim as test_aim_md)
 from gbpservice.neutron.tests.unit.services.grouppolicy import (
@@ -46,7 +48,12 @@ class AIMBaseTestCase(test_nr_base.CommonNeutronBaseTestCase,
     def setUp(self, policy_drivers=None, core_plugin=None, ml2_options=None,
               sc_plugin=None, **kwargs):
         core_plugin = core_plugin or ML2PLUS_PLUGIN
-        policy_drivers = policy_drivers or ['aim_mapping']
+        # The dummy driver configured here is meant to be the second driver
+        # invoked and helps in rollback testing. We mock the dummy driver
+        # methods to raise an exception and validate that DB operations
+        # performed up until that point (including those in the aim_mapping)
+        # driver are rolled back.
+        policy_drivers = policy_drivers or ['aim_mapping', 'dummy']
         ml2_opts = ml2_options or {'mechanism_drivers': ['logger', 'apic_aim'],
                                    'extension_drivers': ['apic_aim'],
                                    'type_drivers': ['opflex', 'local', 'vlan'],
@@ -95,14 +102,6 @@ class AIMBaseTestCase(test_nr_base.CommonNeutronBaseTestCase,
                     'aim_mapping'].obj.name_mapper)
         return self._name_mapper
 
-
-class TestL2Policy(test_nr_base.TestL2Policy, AIMBaseTestCase):
-
-    pass
-
-
-class TestPolicyTargetGroup(AIMBaseTestCase):
-
     def _test_aim_resource_status(self, aim_resource_obj, gbp_resource):
         aim_status = self.aim_mgr.get_status(self._aim_context,
                                              aim_resource_obj)
@@ -112,6 +111,14 @@ class TestPolicyTargetGroup(AIMBaseTestCase):
             self.assertEqual(gp_const.STATUS_BUILD, gbp_resource['status'])
         else:
             self.assertEqual(gp_const.STATUS_ACTIVE, gbp_resource['status'])
+
+
+class TestL2Policy(test_nr_base.TestL2Policy, AIMBaseTestCase):
+
+    pass
+
+
+class TestPolicyTargetGroup(AIMBaseTestCase):
 
     def test_policy_target_group_lifecycle_implicit_l2p(self):
         ptg = self.create_policy_target_group(
@@ -140,10 +147,14 @@ class TestPolicyTargetGroup(AIMBaseTestCase):
         self.assertEqual(aim_epg_name, aim_epgs[0].name)
         self.assertEqual(aim_tenant_name, aim_epgs[0].tenant_name)
 
+        self.assertEqual(aim_epgs[0].dn,
+                         ptg['apic:distinguished_names']['EndpointGroup'])
         self._test_aim_resource_status(aim_epgs[0], ptg)
         self.assertEqual(aim_epgs[0].dn,
                          ptg_show['apic:distinguished_names']['EndpointGroup'])
         self._test_aim_resource_status(aim_epgs[0], ptg_show)
+
+        # TODO(Sumit): Test update
 
         self.delete_policy_target_group(ptg_id, expected_res_status=204)
         self.show_policy_target_group(ptg_id, expected_res_status=404)
@@ -165,7 +176,8 @@ class TestPolicyTargetGroup(AIMBaseTestCase):
         ptg = self.create_policy_target_group(
             name="ptg1", l2_policy_id=l2p_id)['policy_target_group']
         ptg_id = ptg['id']
-        self.show_policy_target_group(ptg_id, expected_res_status=200)
+        ptg_show = self.show_policy_target_group(
+            ptg_id, expected_res_status=200)['policy_target_group']
         self.assertEqual(l2p_id, ptg['l2_policy_id'])
         self.show_l2_policy(ptg['l2_policy_id'], expected_res_status=200)
         req = self.new_show_request('subnets', ptg['subnets'][0], fmt=self.fmt)
@@ -187,7 +199,13 @@ class TestPolicyTargetGroup(AIMBaseTestCase):
         self.assertEqual(aim_epg_name, aim_epgs[0].name)
         self.assertEqual(aim_tenant_name, aim_epgs[0].tenant_name)
 
+        self.assertEqual(aim_epgs[0].dn,
+                         ptg['apic:distinguished_names']['EndpointGroup'])
         self._test_aim_resource_status(aim_epgs[0], ptg)
+        self.assertEqual(aim_epgs[0].dn,
+                         ptg_show['apic:distinguished_names']['EndpointGroup'])
+
+        # TODO(Sumit): Test update
 
         self.delete_policy_target_group(ptg_id, expected_res_status=204)
         self.show_policy_target_group(ptg_id, expected_res_status=404)
@@ -226,11 +244,11 @@ class TestPolicyTargetGroup(AIMBaseTestCase):
 class TestPolicyTargetGroupRollback(AIMBaseTestCase):
 
     def test_policy_target_group_create_fail(self):
-        # REVISIT(Sumit): This exception should be raised from the deepest
-        # point. Currently this is the deepest point.
+        orig_func = self._gbp_plugin.policy_driver_manager.policy_drivers[
+            'dummy'].obj.create_policy_target_group_precommit
         self._gbp_plugin.policy_driver_manager.policy_drivers[
-            'aim_mapping'].obj._validate_and_add_subnet = mock.Mock(
-                side_effect=Exception)
+            'dummy'].obj.create_policy_target_group_precommit = (
+                mock.Mock(side_effect=Exception))
         self.create_policy_target_group(name="ptg1", expected_res_status=500)
         self.assertEqual([], self._plugin.get_subnets(self._context))
         self.assertEqual([], self._plugin.get_networks(self._context))
@@ -238,12 +256,15 @@ class TestPolicyTargetGroupRollback(AIMBaseTestCase):
             self._context))
         self.assertEqual([], self._gbp_plugin.get_l2_policies(self._context))
         self.assertEqual([], self._gbp_plugin.get_l3_policies(self._context))
+        # restore mock
+        self._gbp_plugin.policy_driver_manager.policy_drivers[
+            'dummy'].obj.create_policy_target_group_precommit = orig_func
 
     def test_policy_target_group_update_fail(self):
-        # REVISIT(Sumit): This exception should be raised from the deepest
-        # point. Currently this is the deepest point.
+        orig_func = self._gbp_plugin.policy_driver_manager.policy_drivers[
+            'dummy'].obj.update_policy_target_group_precommit
         self._gbp_plugin.policy_driver_manager.policy_drivers[
-            'aim_mapping'].obj.update_policy_target_group_precommit = (
+            'dummy'].obj.update_policy_target_group_precommit = (
                 mock.Mock(side_effect=Exception))
         ptg = self.create_policy_target_group(name="ptg1")
         ptg_id = ptg['policy_target_group']['id']
@@ -253,12 +274,15 @@ class TestPolicyTargetGroupRollback(AIMBaseTestCase):
                                                 expected_res_status=200)
         self.assertEqual(ptg['policy_target_group']['name'],
                          new_ptg['policy_target_group']['name'])
+        # restore mock
+        self._gbp_plugin.policy_driver_manager.policy_drivers[
+            'dummy'].obj.update_policy_target_group_precommit = orig_func
 
     def test_policy_target_group_delete_fail(self):
-        # REVISIT(Sumit): This exception should be raised from the deepest
-        # point. Currently this is the deepest point.
+        orig_func = self._gbp_plugin.policy_driver_manager.policy_drivers[
+            'dummy'].obj.delete_l3_policy_precommit
         self._gbp_plugin.policy_driver_manager.policy_drivers[
-            'aim_mapping'].obj.delete_l3_policy_precommit = mock.Mock(
+            'dummy'].obj.delete_l3_policy_precommit = mock.Mock(
                 side_effect=Exception)
         ptg = self.create_policy_target_group(name="ptg1")
         ptg_id = ptg['policy_target_group']['id']
@@ -273,6 +297,9 @@ class TestPolicyTargetGroupRollback(AIMBaseTestCase):
         self.show_policy_target_group(ptg_id, expected_res_status=200)
         self.show_l2_policy(l2p_id, expected_res_status=200)
         self.show_l3_policy(l3p_id, expected_res_status=200)
+        # restore mock
+        self._gbp_plugin.policy_driver_manager.policy_drivers[
+            'dummy'].obj.delete_l3_policy_precommit = orig_func
 
 
 class TestPolicyTarget(AIMBaseTestCase):
@@ -305,10 +332,10 @@ class TestPolicyTarget(AIMBaseTestCase):
 class TestPolicyTargetRollback(AIMBaseTestCase):
 
     def test_policy_target_create_fail(self):
-        # REVISIT(Sumit): This exception should be raised from the deepest
-        # point. Currently this is the deepest point.
+        orig_func = self._gbp_plugin.policy_driver_manager.policy_drivers[
+            'dummy'].obj.create_policy_target_precommit
         self._gbp_plugin.policy_driver_manager.policy_drivers[
-            'aim_mapping'].obj._mark_port_owned = mock.Mock(
+            'dummy'].obj.create_policy_target_precommit = mock.Mock(
                 side_effect=Exception)
         ptg_id = self.create_policy_target_group(
             name="ptg1")['policy_target_group']['id']
@@ -318,12 +345,15 @@ class TestPolicyTargetRollback(AIMBaseTestCase):
         self.assertEqual([],
                          self._gbp_plugin.get_policy_targets(self._context))
         self.assertEqual([], self._plugin.get_ports(self._context))
+        # restore mock
+        self._gbp_plugin.policy_driver_manager.policy_drivers[
+            'dummy'].obj.create_policy_target_precommit = orig_func
 
     def test_policy_target_update_fail(self):
-        # REVISIT(Sumit): This exception should be raised from the deepest
-        # point. Currently this is the deepest point.
+        orig_func = self._gbp_plugin.policy_driver_manager.policy_drivers[
+            'dummy'].obj.update_policy_target_precommit
         self._gbp_plugin.policy_driver_manager.policy_drivers[
-            'aim_mapping'].obj.update_policy_target_precommit = mock.Mock(
+            'dummy'].obj.update_policy_target_precommit = mock.Mock(
                 side_effect=Exception)
         ptg = self.create_policy_target_group(
             name="ptg1")['policy_target_group']
@@ -335,10 +365,16 @@ class TestPolicyTargetRollback(AIMBaseTestCase):
                                   name="new name")
         new_pt = self.show_policy_target(pt_id, expected_res_status=200)
         self.assertEqual(pt['name'], new_pt['policy_target']['name'])
+        # restore mock
+        self._gbp_plugin.policy_driver_manager.policy_drivers[
+            'dummy'].obj.update_policy_target_precommit = orig_func
 
     def test_policy_target_delete_fail(self):
-        # REVISIT(Sumit): This exception should be raised from the deepest
-        # point. Currently this is the deepest point.
+        orig_func = self._gbp_plugin.policy_driver_manager.policy_drivers[
+            'dummy'].obj.delete_policy_target_precommit
+        self._gbp_plugin.policy_driver_manager.policy_drivers[
+            'dummy'].obj.delete_policy_target_precommit = mock.Mock(
+                side_effect=Exception)
         self._gbp_plugin.policy_driver_manager.policy_drivers[
             'aim_mapping'].obj._delete_port = mock.Mock(
                 side_effect=Exception)
@@ -356,12 +392,33 @@ class TestPolicyTargetRollback(AIMBaseTestCase):
         req = self.new_show_request('ports', port_id, fmt=self.fmt)
         res = self.deserialize(self.fmt, req.get_response(self.api))
         self.assertIsNotNone(res['port']['id'])
+        # restore mock
+        self._gbp_plugin.policy_driver_manager.policy_drivers[
+            'dummy'].obj.update_policy_target_precommit = orig_func
 
 
-class TestPolicyRule(AIMBaseTestCase):
+class TestPolicyRuleBase(AIMBaseTestCase):
 
-    def _test_policy_rule_lifecycle(self):
-        # TODO(Sumit): Enable this test when the AIM driver is ready
+    def _test_policy_rule_create_update_result(self, aim_tenant_name,
+                                               aim_filter_name,
+                                               aim_reverse_filter_name):
+        for filter_name in [aim_filter_name, aim_reverse_filter_name]:
+            aim_filters = self.aim_mgr.find(
+                self._aim_context, aim_resource.Filter, name=filter_name)
+            self.assertEqual(1, len(aim_filters))
+            self.assertEqual(filter_name, aim_filters[0].name)
+            self.assertEqual(aim_tenant_name, aim_filters[0].tenant_name)
+            aim_filter_entries = self.aim_mgr.find(
+                self._aim_context, aim_resource.FilterEntry,
+                tenant_name=aim_filters[0].tenant_name,
+                filter_name=aim_filters[0].name)
+            self.assertEqual(1, len(aim_filter_entries))
+            self.assertEqual('os-entry-0', aim_filter_entries[0].name)
+
+
+class TestPolicyRule(TestPolicyRuleBase):
+
+    def test_policy_rule_lifecycle(self):
         action1 = self.create_policy_action(
             action_type='redirect')['policy_action']
         classifier = self.create_policy_classifier(
@@ -372,21 +429,134 @@ class TestPolicyRule(AIMBaseTestCase):
             name="pr1", policy_classifier_id=classifier['id'],
             policy_actions=[action1['id']])['policy_rule']
         pr_id = pr['id']
+        pr_name = pr['name']
         self.show_policy_rule(pr_id, expected_res_status=200)
 
-        tenant = pr['tenant_id']
-        pr_id = pr['id']
-        pr_name = pr['name']
-        rn = self._aim_mapper.tenant_filter(tenant, pr_id, name=pr_name)
-        aim_pr = self.aim_mgr.find(
-            self._aim_context, aim_resource.TenantFilter, rn=rn)
-        self.assertEqual(1, len(aim_pr))
-        self.assertEqual(rn, aim_pr[0].rn)
-        self.assertEqual(tenant, aim_pr[0].tenant_rn)
+        aim_filter_name = str(self.name_mapper.policy_rule(
+            self._neutron_context.session, pr_id, pr_name))
+        aim_reverse_filter_name = str(self.name_mapper.policy_rule(
+            self._neutron_context.session, pr_id, pr_name,
+            prefix=alib.REVERSE_PREFIX))
+        aim_tenant_name = str(self.name_mapper.tenant(
+            self._neutron_context.session, self._tenant_id))
+        self._test_policy_rule_create_update_result(
+            aim_tenant_name, aim_filter_name, aim_reverse_filter_name)
+
+        pr_name = 'new name'
+        self.update_policy_rule(pr_id, expected_res_status=200,
+                                name=pr_name)
+        aim_filter_name = str(self.name_mapper.policy_rule(
+            self._neutron_context.session, pr_id, pr_name))
+        aim_reverse_filter_name = str(self.name_mapper.policy_rule(
+            self._neutron_context.session, pr_id, pr_name,
+            prefix=alib.REVERSE_PREFIX))
+        self._test_policy_rule_create_update_result(
+            aim_tenant_name, aim_filter_name, aim_reverse_filter_name)
 
         self.delete_policy_rule(pr_id, expected_res_status=204)
         self.show_policy_rule(pr_id, expected_res_status=404)
 
-        aim_pr = self.aim_mgr.find(
-            self._aim_context, aim_resource.TenantFilter, rn=rn)
-        self.assertEqual(0, len(aim_pr))
+        for filter_name in [aim_filter_name, aim_reverse_filter_name]:
+            aim_filters = self.aim_mgr.find(
+                self._aim_context, aim_resource.Filter, name=filter_name)
+            self.assertEqual(0, len(aim_filters))
+
+
+class TestPolicyRuleRollback(TestPolicyRuleBase):
+
+    def test_policy_rule_create_fail(self):
+        orig_func = self._gbp_plugin.policy_driver_manager.policy_drivers[
+            'dummy'].obj.create_policy_rule_precommit
+        self._gbp_plugin.policy_driver_manager.policy_drivers[
+            'dummy'].obj.create_policy_rule_precommit = mock.Mock(
+                side_effect=Exception)
+        action1 = self.create_policy_action(
+            action_type='redirect')['policy_action']
+        classifier = self.create_policy_classifier(
+            protocol='TCP', port_range="22",
+            direction='bi')['policy_classifier']
+
+        self.create_policy_rule(
+            name="pr1", policy_classifier_id=classifier['id'],
+            policy_actions=[action1['id']], expected_res_status=500)
+
+        self.assertEqual([],
+                         self._gbp_plugin.get_policy_rules(self._context))
+        aim_filters = self.aim_mgr.find(
+            self._aim_context, aim_resource.Filter)
+        self.assertEqual(0, len(aim_filters))
+        aim_filter_entries = self.aim_mgr.find(
+            self._aim_context, aim_resource.FilterEntry)
+        self.assertEqual(0, len(aim_filter_entries))
+        # restore mock
+        self._gbp_plugin.policy_driver_manager.policy_drivers[
+            'dummy'].obj.create_policy_rule_precommit = orig_func
+
+    def test_policy_rule_update_fail(self):
+        orig_func = self._gbp_plugin.policy_driver_manager.policy_drivers[
+            'dummy'].obj.update_policy_rule_precommit
+        self._gbp_plugin.policy_driver_manager.policy_drivers[
+            'dummy'].obj.update_policy_rule_precommit = mock.Mock(
+                side_effect=Exception)
+        action1 = self.create_policy_action(
+            action_type='redirect')['policy_action']
+        classifier = self.create_policy_classifier(
+            protocol='TCP', port_range="22",
+            direction='bi')['policy_classifier']
+
+        pr = self.create_policy_rule(
+            name="pr1", policy_classifier_id=classifier['id'],
+            policy_actions=[action1['id']])['policy_rule']
+
+        aim_filter_name = str(self.name_mapper.policy_rule(
+            self._neutron_context.session, pr['id'], pr['name']))
+        aim_reverse_filter_name = str(self.name_mapper.policy_rule(
+            self._neutron_context.session, pr['id'], pr['name'],
+            prefix=alib.REVERSE_PREFIX))
+
+        self.update_policy_rule(pr['id'], expected_res_status=500,
+                                name='new name')
+        aim_filters = self.aim_mgr.find(
+            self._aim_context, aim_resource.Filter, name=aim_filter_name)
+        self.assertEqual(1, len(aim_filters))
+        aim_filters = self.aim_mgr.find(
+            self._aim_context, aim_resource.Filter,
+            name=aim_reverse_filter_name)
+        self.assertEqual(1, len(aim_filters))
+
+        # restore mock
+        self._gbp_plugin.policy_driver_manager.policy_drivers[
+            'dummy'].obj.create_policy_rule_precommit = orig_func
+
+    def test_policy_rule_delete_fail(self):
+        orig_func = self._gbp_plugin.policy_driver_manager.policy_drivers[
+            'dummy'].obj.delete_policy_rule_precommit
+        self._gbp_plugin.policy_driver_manager.policy_drivers[
+            'dummy'].obj.delete_policy_rule_precommit = mock.Mock(
+                side_effect=Exception)
+        action1 = self.create_policy_action(
+            action_type='redirect')['policy_action']
+        classifier = self.create_policy_classifier(
+            protocol='TCP', port_range="22",
+            direction='bi')['policy_classifier']
+
+        pr = self.create_policy_rule(
+            name="pr1", policy_classifier_id=classifier['id'],
+            policy_actions=[action1['id']])['policy_rule']
+        pr_id = pr['id']
+        pr_name = pr['name']
+
+        self.delete_policy_rule(pr_id, expected_res_status=500)
+        aim_filter_name = str(self.name_mapper.policy_rule(
+            self._neutron_context.session, pr_id, pr_name))
+        aim_reverse_filter_name = str(self.name_mapper.policy_rule(
+            self._neutron_context.session, pr_id, pr_name,
+            prefix=alib.REVERSE_PREFIX))
+        aim_tenant_name = str(self.name_mapper.tenant(
+            self._neutron_context.session, self._tenant_id))
+        self._test_policy_rule_create_update_result(
+            aim_tenant_name, aim_filter_name, aim_reverse_filter_name)
+
+        # restore mock
+        self._gbp_plugin.policy_driver_manager.policy_drivers[
+            'dummy'].obj.delete_policy_rule_precommit = orig_func
