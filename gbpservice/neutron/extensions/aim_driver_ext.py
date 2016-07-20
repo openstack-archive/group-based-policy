@@ -23,6 +23,10 @@ EXTENDED_ATTRIBUTES_2_0 = {
         DIST_NAMES: {
             'allow_post': False, 'allow_put': False, 'is_visible': True},
     },
+    gp.POLICY_RULES: {
+        DIST_NAMES: {
+            'allow_post': False, 'allow_put': False, 'is_visible': True},
+    },
 }
 
 
