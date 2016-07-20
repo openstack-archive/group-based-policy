@@ -13,6 +13,9 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+from aim import aim_manager
+from aim.api import resource as aim_resource
+from aim import context as aim_context
 from aim.db import model_base as aim_model_base
 from keystoneclient.v3 import client as ksc_client
 from neutron import context
@@ -85,10 +88,17 @@ class ApicAimTestCase(test_plugin.NeutronDbPluginV2TestCase):
         self.plugin.start_rpc_listeners()
         self.driver = self.plugin.mechanism_manager.mech_drivers[
             'apic_aim'].obj
+        self.aim_mgr = aim_manager.AimManager()
 
     def tearDown(self):
         ksc_client.Client = self.saved_keystone_client
         super(ApicAimTestCase, self).tearDown()
+
+    def _find_by_dn(self, dn, cls):
+        session = db_api.get_session()
+        aim_ctx = aim_context.AimContext(session)
+        resource = cls.from_dn(dn)
+        return self.aim_mgr.get(aim_ctx, resource)
 
 
 class TestApicExtension(ApicAimTestCase):
@@ -117,6 +127,16 @@ class TestApicExtension(ApicAimTestCase):
         net = self._make_network(self.fmt, 'net1', True)['network']
         net_id = net['id']
         self._verify_network_dist_names(net)
+
+        # Verify AIM resources.
+        aim_bd = self._find_by_dn(
+            net['apic:distinguished_names']['BridgeDomain'],
+            aim_resource.BridgeDomain)
+        aim_epg = self._find_by_dn(
+            net['apic:distinguished_names']['EndpointGroup'],
+            aim_resource.EndpointGroup)
+        self.assertEqual(aim_bd.name, aim_epg.name)
+        self.assertEqual(aim_bd.name, aim_epg.bd_name)
 
         # Test show.
         res = self._show('networks', net_id)['network']
