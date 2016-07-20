@@ -140,6 +140,8 @@ class TestPolicyTargetGroup(AIMBaseTestCase):
         self.assertEqual(aim_epg_name, aim_epgs[0].name)
         self.assertEqual(aim_tenant_name, aim_epgs[0].tenant_name)
 
+        self.assertEqual(aim_epgs[0].dn,
+                         ptg['apic:distinguished_names']['EndpointGroup'])
         self._test_aim_resource_status(aim_epgs[0], ptg)
         self.assertEqual(aim_epgs[0].dn,
                          ptg_show['apic:distinguished_names']['EndpointGroup'])
@@ -165,7 +167,8 @@ class TestPolicyTargetGroup(AIMBaseTestCase):
         ptg = self.create_policy_target_group(
             name="ptg1", l2_policy_id=l2p_id)['policy_target_group']
         ptg_id = ptg['id']
-        self.show_policy_target_group(ptg_id, expected_res_status=200)
+        ptg_show = self.show_policy_target_group(
+            ptg_id, expected_res_status=200)['policy_target_group']
         self.assertEqual(l2p_id, ptg['l2_policy_id'])
         self.show_l2_policy(ptg['l2_policy_id'], expected_res_status=200)
         req = self.new_show_request('subnets', ptg['subnets'][0], fmt=self.fmt)
@@ -187,7 +190,11 @@ class TestPolicyTargetGroup(AIMBaseTestCase):
         self.assertEqual(aim_epg_name, aim_epgs[0].name)
         self.assertEqual(aim_tenant_name, aim_epgs[0].tenant_name)
 
+        self.assertEqual(aim_epgs[0].dn,
+                         ptg['apic:distinguished_names']['EndpointGroup'])
         self._test_aim_resource_status(aim_epgs[0], ptg)
+        self.assertEqual(aim_epgs[0].dn,
+                         ptg_show['apic:distinguished_names']['EndpointGroup'])
 
         self.delete_policy_target_group(ptg_id, expected_res_status=204)
         self.show_policy_target_group(ptg_id, expected_res_status=404)
