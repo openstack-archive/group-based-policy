@@ -23,7 +23,6 @@ from gbpservice.nfp.pecan import constants
 
 setattr(pecan, 'mode', constants.base)
 
-from gbpservice.nfp.pecan.api import root_controller
 
 ERROR = 'error'
 UNHANDLED = 'unhandled'
@@ -49,6 +48,8 @@ class ControllerTestCase(base.BaseTestCase, rest.RestController):
         test cases before execution of each test case.
         """
         super(ControllerTestCase, self).setUp()
+        from gbpservice.nfp.pecan.api import root_controller
+        reload(root_controller)
         RootController = root_controller.RootController()
         self.app = webtest.TestApp(pecan.make_app(RootController))
         self.data = {'info': {'service_type': 'firewall',
