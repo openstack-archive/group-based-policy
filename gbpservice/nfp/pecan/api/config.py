@@ -59,3 +59,16 @@ logging = {
                  }
                  }
 }
+cloud_services = [
+    {'service_name': 'configurator',
+     'topic': 'configurator',
+     'reporting_interval': '10',  # in seconds
+     'apis': ['CONFIGURATION']
+     },
+
+    {'service_name': 'visibility',
+     'topic': 'visibility',
+     'reporting_interval': '10',  # in seconds
+     'apis': ['VISIBILITY']
+     },
+]

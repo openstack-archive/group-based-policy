@@ -13,14 +13,18 @@
 
 BASE_CONTROLLER = 'base_controller'
 REFERENCE_CONTROLLER = 'reference_controller'
+ADVANCED_CONTROLLER = 'advanced_controller'
 
 
 controllers = {
     BASE_CONTROLLER: 'gbpservice.nfp.base_configurator.controllers',
     REFERENCE_CONTROLLER: ('gbpservice.tests.contrib'
-                           '.nfp_service.reference_configurator.controllers')
+                           '.nfp_service.reference_configurator.controllers'),
+    ADVANCED_CONTROLLER: ('gbpservice.contrib.nfp.configurator'
+                          '.advanced_controller')
 }
 
 base_with_vm = 'base_with_vm'
 base = 'base'
-modes = [base, base_with_vm]
+advanced = 'advanced'
+modes = [base, base_with_vm, advanced]
