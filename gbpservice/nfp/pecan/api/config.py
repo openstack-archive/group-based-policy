@@ -59,3 +59,10 @@ logging = {
                  }
                  }
 }
+cloud_services = [
+    {'service_name': 'configurator',
+     'topic': 'configurator',
+     'reporting_interval': '10',  # in seconds
+     'apis': ['CONFIGURATION']
+     }
+]
