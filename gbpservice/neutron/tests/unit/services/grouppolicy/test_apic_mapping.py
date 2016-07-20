@@ -41,6 +41,8 @@ from gbpservice.neutron.services.grouppolicy import (
 from gbpservice.neutron.services.grouppolicy import config
 from gbpservice.neutron.services.grouppolicy.drivers.cisco.apic import (
     apic_mapping as amap)
+from gbpservice.neutron.services.grouppolicy.drivers.cisco.apic import (
+    apic_mapping_lib as alib)
 from gbpservice.neutron.services.l3_router import l3_apic
 from gbpservice.neutron.tests.unit.services.grouppolicy import (
     test_resource_mapping as test_rmd)
@@ -3369,7 +3371,7 @@ class TestPolicyRuleSet(ApicMappingTestCase):
                       owner=ctr['tenant_id'], transaction=mock.ANY,
                       unset=False, rule_owner=rule_owner),
             mock.call(ctr['id'], ctr['id'],
-                      amap.REVERSE_PREFIX + rules[out]['id'],
+                      alib.REVERSE_PREFIX + rules[out]['id'],
                       owner=ctr['tenant_id'], transaction=mock.ANY,
                       unset=False, rule_owner=rule_owner)]
         self._check_call_list(
@@ -3381,7 +3383,7 @@ class TestPolicyRuleSet(ApicMappingTestCase):
                       owner=ctr['tenant_id'], transaction=mock.ANY,
                       unset=False, rule_owner=rule_owner),
             mock.call(ctr['id'], ctr['id'],
-                      amap.REVERSE_PREFIX + rules[in_d]['id'],
+                      alib.REVERSE_PREFIX + rules[in_d]['id'],
                       owner=ctr['tenant_id'], transaction=mock.ANY,
                       unset=False, rule_owner=rule_owner)]
         self._check_call_list(
@@ -3401,11 +3403,11 @@ class TestPolicyRuleSet(ApicMappingTestCase):
             transaction=mock.ANY, unset=False,
             rule_owner=rule_owner)
         mgr.manage_contract_subject_in_filter.call_happened_with(
-            ctr['id'], ctr['id'], amap.REVERSE_PREFIX + rules[bi]['id'],
+            ctr['id'], ctr['id'], alib.REVERSE_PREFIX + rules[bi]['id'],
             owner=ctr['tenant_id'], transaction=mock.ANY, unset=False,
             rule_owner=rule_owner)
         mgr.manage_contract_subject_out_filter.call_happened_with(
-            ctr['id'], ctr['id'], amap.REVERSE_PREFIX + rules[bi]['id'],
+            ctr['id'], ctr['id'], alib.REVERSE_PREFIX + rules[bi]['id'],
             owner=ctr['tenant_id'], transaction=mock.ANY, unset=False,
             rule_owner=rule_owner)
 
@@ -3524,13 +3526,13 @@ class TestPolicyRule(ApicMappingTestCase):
             mock.call(pr['id'], owner=tenant, entry='os-entry-0', etherT='ip',
                       prot='tcp', dToPort=88, dFromPort=88,
                       transaction=mock.ANY),
-            mock.call(amap.REVERSE_PREFIX + pr['id'], owner=tenant,
+            mock.call(alib.REVERSE_PREFIX + pr['id'], owner=tenant,
                       entry='os-entry-0', etherT='ip', prot='tcp', sToPort=88,
                       sFromPort=88, tcpRules='est', transaction=mock.ANY),
             mock.call(pr1['id'], owner=tenant, entry='os-entry-0',
                       etherT='ip', prot='udp', dToPort=53, dFromPort=53,
                       transaction=mock.ANY),
-            mock.call(amap.REVERSE_PREFIX + pr1['id'], owner=tenant,
+            mock.call(alib.REVERSE_PREFIX + pr1['id'], owner=tenant,
                       entry='os-entry-0', etherT='ip', prot='udp', sToPort=53,
                       sFromPort=53, transaction=mock.ANY),
             mock.call(pr2['id'], owner=tenant, entry='os-entry-0',
@@ -3561,7 +3563,7 @@ class TestPolicyRule(ApicMappingTestCase):
         mgr = self.driver.apic_manager
         expected_calls = [
             mock.call(pr['id'], owner=tenant, transaction=mock.ANY),
-            mock.call(amap.REVERSE_PREFIX + pr['id'], owner=tenant,
+            mock.call(alib.REVERSE_PREFIX + pr['id'], owner=tenant,
                       transaction=mock.ANY)]
         self._check_call_list(
             expected_calls, mgr.delete_tenant_filter.call_args_list)
@@ -3570,7 +3572,7 @@ class TestPolicyRule(ApicMappingTestCase):
         self.delete_policy_rule(pr1['id'], expected_res_status=204)
         expected_calls = [
             mock.call(pr1['id'], owner=tenant, transaction=mock.ANY),
-            mock.call(amap.REVERSE_PREFIX + pr1['id'], owner=tenant,
+            mock.call(alib.REVERSE_PREFIX + pr1['id'], owner=tenant,
                       transaction=mock.ANY)]
         self._check_call_list(
             expected_calls, mgr.delete_tenant_filter.call_args_list)
@@ -3611,10 +3613,10 @@ class TestPolicyRule(ApicMappingTestCase):
                       entry='os-entry-0', transaction=mock.ANY),
             mock.call(pr2['id'], owner='test-tenant', etherT='ip', prot='udp',
                       entry='os-entry-0', transaction=mock.ANY),
-            mock.call(amap.REVERSE_PREFIX + pr1['id'], owner='common',
+            mock.call(alib.REVERSE_PREFIX + pr1['id'], owner='common',
                       etherT='ip', prot='udp', entry='os-entry-0',
                       transaction=mock.ANY),
-            mock.call(amap.REVERSE_PREFIX + pr2['id'], owner='test-tenant',
+            mock.call(alib.REVERSE_PREFIX + pr2['id'], owner='test-tenant',
                       etherT='ip', prot='udp', entry='os-entry-0',
                       transaction=mock.ANY)]
         self._check_call_list(
@@ -3622,9 +3624,9 @@ class TestPolicyRule(ApicMappingTestCase):
         expected_calls = [
             mock.call(pr1['id'], owner='common', transaction=mock.ANY),
             mock.call(pr2['id'], owner='test-tenant', transaction=mock.ANY),
-            mock.call(amap.REVERSE_PREFIX + pr1['id'], owner='common',
+            mock.call(alib.REVERSE_PREFIX + pr1['id'], owner='common',
                       transaction=mock.ANY),
-            mock.call(amap.REVERSE_PREFIX + pr2['id'], owner='test-tenant',
+            mock.call(alib.REVERSE_PREFIX + pr2['id'], owner='test-tenant',
                       transaction=mock.ANY)]
         self._check_call_list(
             expected_calls, mgr.delete_tenant_filter.call_args_list)
@@ -3645,9 +3647,9 @@ class TestPolicyRule(ApicMappingTestCase):
         expected_calls = [
             mock.call(pr1['id'], owner='common', transaction=mock.ANY),
             mock.call(pr2['id'], owner='test-tenant', transaction=mock.ANY),
-            mock.call(amap.REVERSE_PREFIX + pr1['id'], owner='common',
+            mock.call(alib.REVERSE_PREFIX + pr1['id'], owner='common',
                       transaction=mock.ANY),
-            mock.call(amap.REVERSE_PREFIX + pr2['id'], owner='test-tenant',
+            mock.call(alib.REVERSE_PREFIX + pr2['id'], owner='test-tenant',
                       transaction=mock.ANY)]
         self._check_call_list(
             expected_calls, mgr.delete_tenant_filter.call_args_list)
@@ -3663,9 +3665,9 @@ class TestPolicyRule(ApicMappingTestCase):
         expected_calls = [
             mock.call(pr1['id'], owner='common', transaction=mock.ANY),
             mock.call(pr2['id'], owner='test-tenant', transaction=mock.ANY),
-            mock.call(amap.REVERSE_PREFIX + pr1['id'], owner='common',
+            mock.call(alib.REVERSE_PREFIX + pr1['id'], owner='common',
                       transaction=mock.ANY),
-            mock.call(amap.REVERSE_PREFIX + pr2['id'], owner='test-tenant',
+            mock.call(alib.REVERSE_PREFIX + pr2['id'], owner='test-tenant',
                       transaction=mock.ANY)]
         self._check_call_list(
             expected_calls, mgr.delete_tenant_filter.call_args_list)
@@ -3674,10 +3676,10 @@ class TestPolicyRule(ApicMappingTestCase):
                       entry='os-entry-0', transaction=mock.ANY),
             mock.call(pr2['id'], owner='test-tenant', etherT='ip', prot='tcp',
                       entry='os-entry-0', transaction=mock.ANY),
-            mock.call(amap.REVERSE_PREFIX + pr1['id'], owner='common',
+            mock.call(alib.REVERSE_PREFIX + pr1['id'], owner='common',
                       etherT='ip', prot='tcp', tcpRules='est',
                       entry='os-entry-0', transaction=mock.ANY),
-            mock.call(amap.REVERSE_PREFIX + pr2['id'], owner='test-tenant',
+            mock.call(alib.REVERSE_PREFIX + pr2['id'], owner='test-tenant',
                       etherT='ip', prot='tcp', tcpRules='est',
                       entry='os-entry-0', transaction=mock.ANY)]
         self._check_call_list(
@@ -3706,13 +3708,13 @@ class TestPolicyRule(ApicMappingTestCase):
             mgr.manage_contract_subject_in_filter.call_args_list)
         # SET Reverse PR1 and PR2 OUT
         expected_calls = [
-            mock.call(prs1['id'], prs1['id'], amap.REVERSE_PREFIX + pr1['id'],
+            mock.call(prs1['id'], prs1['id'], alib.REVERSE_PREFIX + pr1['id'],
                       owner='test-tenant', transaction=mock.ANY, unset=False,
                       rule_owner='common'),
-            mock.call(prs2['id'], prs2['id'], amap.REVERSE_PREFIX + pr1['id'],
+            mock.call(prs2['id'], prs2['id'], alib.REVERSE_PREFIX + pr1['id'],
                       owner='test-tenant', transaction=mock.ANY, unset=False,
                       rule_owner='common'),
-            mock.call(prs2['id'], prs2['id'], amap.REVERSE_PREFIX + pr2['id'],
+            mock.call(prs2['id'], prs2['id'], alib.REVERSE_PREFIX + pr2['id'],
                       owner='test-tenant', transaction=mock.ANY, unset=False,
                       rule_owner='test-tenant')
         ]
@@ -3728,23 +3730,23 @@ class TestPolicyRule(ApicMappingTestCase):
         expected_calls = [
             mock.call(pr['id'], owner=tenant, entry='os-entry-0', etherT='ip',
                       prot='icmp', transaction=mock.ANY),
-            mock.call(amap.REVERSE_PREFIX + pr['id'], owner=tenant,
+            mock.call(alib.REVERSE_PREFIX + pr['id'], owner=tenant,
                       entry=mock.ANY, etherT='ip', icmpv4T='echo-rep',
                       prot='icmp', transaction=mock.ANY),
-            mock.call(amap.REVERSE_PREFIX + pr['id'], owner=tenant,
+            mock.call(alib.REVERSE_PREFIX + pr['id'], owner=tenant,
                       entry=mock.ANY, etherT='ip', icmpv4T='dst-unreach',
                       prot='icmp', transaction=mock.ANY),
-            mock.call(amap.REVERSE_PREFIX + pr['id'], owner=tenant,
+            mock.call(alib.REVERSE_PREFIX + pr['id'], owner=tenant,
                       entry=mock.ANY, etherT='ip', icmpv4T='src-quench',
                       prot='icmp', transaction=mock.ANY),
-            mock.call(amap.REVERSE_PREFIX + pr['id'], owner=tenant,
+            mock.call(alib.REVERSE_PREFIX + pr['id'], owner=tenant,
                       entry=mock.ANY, etherT='ip', icmpv4T='time-exceeded',
                       prot='icmp', transaction=mock.ANY)]
         # verify that entry is always different
         found = set()
         for call in mgr.create_tenant_filter.call_args_list:
             # Only for reverse filters
-            if call[0][0].startswith(amap.REVERSE_PREFIX):
+            if call[0][0].startswith(alib.REVERSE_PREFIX):
                 self.assertFalse(call[1]['entry'] in found)
                 found.add(call[1]['entry'])
 

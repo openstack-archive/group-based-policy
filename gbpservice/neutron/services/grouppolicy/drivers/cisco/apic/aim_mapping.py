@@ -29,11 +29,18 @@ from gbpservice.neutron.services.grouppolicy.common import (
 from gbpservice.neutron.services.grouppolicy.common import exceptions as gpexc
 from gbpservice.neutron.services.grouppolicy.drivers import (
     neutron_resources as nrd)
+from gbpservice.neutron.services.grouppolicy.drivers.cisco.apic import (
+    apic_mapping_lib as alib)
 from gbpservice.neutron.services.grouppolicy import plugin as gbp_plugin
 
 
 LOG = logging.getLogger(__name__)
 APIC_OWNED = 'apic_owned_'
+FORWARD = 'Forward'
+REVERSE = 'Reverse'
+FILTER_DIRECTIONS = {FORWARD: False, REVERSE: True}
+FORWARD_FILTER_ENTRIES = 'Forward-FilterEntries'
+REVERSE_FILTER_ENTRIES = 'Reverse-FilterEntries'
 
 
 class ExplicitSubnetAssociationNotSupported(gpexc.GroupPolicyBadRequest):
@@ -190,33 +197,65 @@ class AIMMappingDriver(nrd.CommonNeutronBase):
 
     @log.log_method_call
     def create_policy_rule_precommit(self, context):
-        pass
-        # TODO(sumit): uncomment the following when AIM supports TenantFilter
-        # aim_context = aim_manager.AimContext(context._plugin_context.session)
-        # tenant = context.current['tenant_id']
-        # pr_id = context.current['id']
-        # pr_name = context.current['name']
-        # rn = self.mapper.tenant_filter(tenant, pr_id, name=pr_name)
-        # tf = aim_resource.TenantFilter(tenant_rn=tenant, rn=rn)
-        # self.aim.create(aim_context, tf)
-        # pr_db = context._plugin_context.session.query(
-        #    gpdb.PolicyRule).get(context.current['id'])
-        # context._plugin_context.session.expunge(pr_db)
-        # TODO(sumit): uncomment the following line when the GBP resource
-        # is appropriately extended to hold AIM references
-        # pr_db['aim_id'] = rn
-        # context._plugin_context.session.add(pr_db)
+        entries = alib.get_filter_entries_for_policy_rule(context)
+        if entries['forward_rules']:
+            session = context._plugin_context.session
+            aim_ctx = aim_context.AimContext(session)
+            aim_filter = self._aim_filter(session, context.current)
+            self.aim.create(aim_ctx, aim_filter)
+            self._create_aim_filter_entries(session, aim_ctx, aim_filter,
+                                            entries['forward_rules'])
+            if entries['reverse_rules']:
+                # Also create reverse rule
+                aim_filter = self._aim_filter(session, context.current,
+                                              reverse_prefix=True)
+                self.aim.create(aim_ctx, aim_filter)
+                self._create_aim_filter_entries(session, aim_ctx, aim_filter,
+                                                entries['reverse_rules'])
+
+    @log.log_method_call
+    def update_policy_rule_precommit(self, context):
+        self.delete_policy_rule_precommit(context)
+        self.create_policy_rule_precommit(context)
 
     @log.log_method_call
     def delete_policy_rule_precommit(self, context):
-        pass
-        # TODO(sumit): uncomment the following when AIM supports TenantFilter
-        # aim_context = aim_manager.AimContext(context._plugin_context.session)
-        # tenant = context.current['tenant_id']
-        # pr_id = context.current['id']
-        # rn = self.mapper.tenant_filter(tenant, pr_id)
-        # tf = aim_resource.TenantFilter(tenant_rn=tenant, rn=rn)
-        # self.aim.delete(aim_context, tf)
+        session = context._plugin_context.session
+        aim_ctx = aim_context.AimContext(session)
+        aim_filter = self._aim_filter(session, context.current)
+        aim_filter_entries = self.aim.find(
+            aim_ctx, aim_resource.FilterEntry,
+            tenant_name=aim_filter.tenant_name,
+            filter_name=aim_filter.name)
+        for entry in aim_filter_entries:
+            self.aim.delete(aim_ctx, entry)
+        self.aim.delete(aim_ctx, aim_filter)
+        aim_reverse_filter = self._aim_filter(
+            session, context.current, reverse_prefix=True)
+        if aim_reverse_filter:
+            aim_reverse_filter_entries = self.aim.find(
+                aim_ctx, aim_resource.FilterEntry,
+                tenant_name=aim_reverse_filter.tenant_name,
+                filter_name=aim_reverse_filter.name)
+            for entry in aim_reverse_filter_entries:
+                self.aim.delete(aim_ctx, entry)
+            self.aim.delete(aim_ctx, aim_reverse_filter)
+        self.name_mapper.delete_apic_name(session, context.current['id'])
+
+    @log.log_method_call
+    def extend_policy_rule_dict(self, session, result):
+        result[cisco_apic.DIST_NAMES] = {}
+        aim_filter_entries = self._get_aim_filter_entries(session, result)
+        for k, v in aim_filter_entries.iteritems():
+            dn_list = []
+            for entry in v:
+                dn_list.append(entry.dn)
+            if k == FORWARD:
+                result[cisco_apic.DIST_NAMES].update(
+                    {FORWARD_FILTER_ENTRIES: dn_list})
+            else:
+                result[cisco_apic.DIST_NAMES].update(
+                    {REVERSE_FILTER_ENTRIES: dn_list})
 
     def _aim_tenant_name(self, session, tenant_id):
         tenant_name = self.name_mapper.tenant(session, tenant_id)
@@ -255,6 +294,79 @@ class AIMMappingDriver(nrd.CommonNeutronBase):
         else:
             LOG.debug("Got epg: %s", epg_fetched.__dict__)
         return epg_fetched
+
+    def _aim_filter(self, session, pr, reverse_prefix=False):
+        # This returns a new AIM Filter resource
+        tenant_id = pr['tenant_id']
+        tenant_name = self._aim_tenant_name(session, tenant_id)
+        id = pr['id']
+        name = pr['name']
+        if reverse_prefix:
+            filter_name = self.name_mapper.policy_rule(
+                session, id, resource_name=name, prefix=alib.REVERSE_PREFIX)
+        else:
+            filter_name = self.name_mapper.policy_rule(session, id,
+                                                       resource_name=name)
+        LOG.debug("Mapped policy_rule_id %(id)s with name %(name)s to",
+                  "%(apic_name)s",
+                  {'id': id, 'name': name, 'apic_name': filter_name})
+        kwargs = {'tenant_name': str(tenant_name),
+                  'name': str(filter_name)}
+
+        aim_filter = aim_resource.Filter(**kwargs)
+        return aim_filter
+
+    def _aim_filter_entry(self, session, aim_filter, filter_entry_name,
+                          filter_entry_attrs):
+        # This returns a new AIM FilterEntry resource
+        tenant_name = aim_filter.tenant_name
+        filter_name = aim_filter.name
+        kwargs = {'tenant_name': tenant_name,
+                  'filter_name': filter_name,
+                  'name': filter_entry_name}
+        kwargs.update(filter_entry_attrs)
+
+        aim_filter_entry = aim_resource.FilterEntry(**kwargs)
+        return aim_filter_entry
+
+    def _create_aim_filter_entries(self, session, aim_ctx, aim_filter,
+                                   filter_entries):
+        for k, v in filter_entries.iteritems():
+            aim_filter_entry = self._aim_filter_entry(
+                session, aim_filter, k, v)
+            self.aim.create(aim_ctx, aim_filter_entry)
+
+    def _get_aim_filters(self, session, policy_rule):
+        # This gets the Forward and Reverse Filters from the AIM DB
+        aim_ctx = aim_context.AimContext(session)
+        filters = {}
+        for k, v in FILTER_DIRECTIONS.iteritems():
+            aim_filter = self._aim_filter(session, policy_rule, v)
+            aim_filter_fetched = self.aim.get(aim_ctx, aim_filter)
+            if not aim_filter_fetched:
+                LOG.debug("No %s Filter found in AIM DB", k)
+            else:
+                LOG.debug("Got %s Filter: %s",
+                          (aim_filter_fetched.__dict__, k))
+            filters[k] = aim_filter_fetched
+        return filters
+
+    def _get_aim_filter_entries(self, session, policy_rule):
+        # This gets the Forward and Reverse FilterEntries from the AIM DB
+        aim_ctx = aim_context.AimContext(session)
+        filters = self._get_aim_filters(session, policy_rule)
+        filters_entries = {}
+        for k, v in filters.iteritems():
+            aim_filter_entries = self.aim.find(
+                aim_ctx, aim_resource.FilterEntry,
+                tenant_name=v.tenant_name, filter_name=v.name)
+            if not aim_filter_entries:
+                LOG.debug("No %s FilterEntry found in AIM DB", k)
+            else:
+                LOG.debug("Got %s FilterEntry: %s",
+                          (aim_filter_entries, k))
+            filters_entries[k] = aim_filter_entries
+        return filters_entries
 
     def _aim_bridge_domain(self, session, tenant_id, network_id, network_name):
         # This returns a new AIM BD resource
