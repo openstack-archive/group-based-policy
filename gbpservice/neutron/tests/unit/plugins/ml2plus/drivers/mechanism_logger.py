@@ -35,3 +35,65 @@ class LoggerPlusMechanismDriver(driver_api.MechanismDriver,
 
     def ensure_tenant(self, plugin_context, tenant_id):
         LOG.info(_LI("ensure_tenant called with tenant_id %s"), tenant_id)
+
+    def _log_subnetpool_call(self, method_name, context):
+        LOG.info(_("%(method)s called with subnetpool settings %(current)s "
+                   "(original settings %(original)s)"),
+                 {'method': method_name,
+                  'current': context.current,
+                  'original': context.original})
+
+    def create_subnetpool_precommit(self, context):
+        self._log_subnetpool_call("create_subnetpool_precommit",
+                                  context)
+
+    def create_subnetpool_postcommit(self, context):
+        self._log_subnetpool_call("create_subnetpool_postcommit",
+                                  context)
+
+    def update_subnetpool_precommit(self, context):
+        self._log_subnetpool_call("update_subnetpool_precommit",
+                                  context)
+
+    def update_subnetpool_postcommit(self, context):
+        self._log_subnetpool_call("update_subnetpool_postcommit",
+                                  context)
+
+    def delete_subnetpool_precommit(self, context):
+        self._log_subnetpool_call("delete_subnetpool_precommit",
+                                  context)
+
+    def delete_subnetpool_postcommit(self, context):
+        self._log_subnetpool_call("delete_subnetpool_postcommit",
+                                  context)
+
+    def _log_address_scope_call(self, method_name, context):
+        LOG.info(_("%(method)s called with address_scope settings %(current)s "
+                   "(original settings %(original)s)"),
+                 {'method': method_name,
+                  'current': context.current,
+                  'original': context.original})
+
+    def create_address_scope_precommit(self, context):
+        self._log_address_scope_call("create_address_scope_precommit",
+                                     context)
+
+    def create_address_scope_postcommit(self, context):
+        self._log_address_scope_call("create_address_scope_postcommit",
+                                     context)
+
+    def update_address_scope_precommit(self, context):
+        self._log_address_scope_call("update_address_scope_precommit",
+                                     context)
+
+    def update_address_scope_postcommit(self, context):
+        self._log_address_scope_call("update_address_scope_postcommit",
+                                     context)
+
+    def delete_address_scope_precommit(self, context):
+        self._log_address_scope_call("delete_address_scope_precommit",
+                                     context)
+
+    def delete_address_scope_postcommit(self, context):
+        self._log_address_scope_call("delete_address_scope_postcommit",
+                                     context)
