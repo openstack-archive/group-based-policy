@@ -4,6 +4,7 @@
 
 setuptools>=19.2
 -e git+https://git.openstack.org/openstack/neutron.git@stable/mitaka#egg=neutron
+-e git+https://github.com/noironetworks/python-opflex-agent.git@master#egg=python-opflexagent-agent
 -e git+https://github.com/noironetworks/apic-ml2-driver.git@master#egg=apic_ml2
 -e git+https://git.openstack.org/openstack/python-group-based-policy-client@master#egg=gbpclient
 hacking<0.11,>=0.10.0
@@ -35,5 +36,4 @@ pyOpenSSL>=0.13.0,<=0.15.1
 python-heatclient
 python-keystoneclient
 
--e git+https://github.com/noironetworks/python-opflex-agent.git@master#egg=python-opflexagent-agent
 -e git+https://github.com/noironetworks/aci-integration-module.git#egg=aci-integration-module
