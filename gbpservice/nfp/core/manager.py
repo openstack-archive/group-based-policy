@@ -170,7 +170,7 @@ class NfpResourceManager(NfpProcessManager, NfpEventManager):
         g_executor.event_complete(event.result, event=event.desc.uuid)
 
     def _scheduled_event_graph(self, event):
-        if event.graph:
+        if type(event.graph) == bool:
             # Cache the event object
             self._event_cache[event.desc.uuid] = event
         else:

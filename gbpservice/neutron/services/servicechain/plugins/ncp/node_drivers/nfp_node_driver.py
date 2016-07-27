@@ -350,12 +350,16 @@ class NFPNodeDriver(driver_base.NodeDriverBase):
             raise e
 
     def create(self, context):
-        context._plugin_context = self._get_resource_owner_context(
-            context._plugin_context)
-        network_function_id = self._create_network_function(context)
-        self._set_node_instance_network_function_map(
-            context.plugin_session, context.current_node['id'],
-            context.instance['id'], network_function_id)
+        try:
+            context._plugin_context = self._get_resource_owner_context(
+                context._plugin_context)
+            network_function_id = self._create_network_function(context)
+            self._set_node_instance_network_function_map(
+                context.plugin_session, context.current_node['id'],
+                context.instance['id'], network_function_id)
+        except Exception as e:
+            self.sc_node_count -= 1
+            raise e
 
         # Check for NF status in a separate thread
         LOG.debug("Spawning thread for nf ACTIVE poll")
@@ -707,7 +711,6 @@ class NFPNodeDriver(driver_base.NodeDriverBase):
         for spec in current_specs:
             node_list.extend(spec['nodes'])
 
-        self.sc_node_count = len(node_list)
         for node_id in node_list:
             node_info = context.sc_plugin.get_servicechain_node(
                 context.plugin_context, node_id)
@@ -733,6 +736,8 @@ class NFPNodeDriver(driver_base.NodeDriverBase):
         if service_type_list_in_chain not in allowed_chain_combinations:
             raise InvalidNodeOrderInChain(
                     node_order=allowed_chain_combinations)
+
+        self.sc_node_count = len(node_list)
 
     def _get_consumers_for_provider(self, context, provider):
         '''
