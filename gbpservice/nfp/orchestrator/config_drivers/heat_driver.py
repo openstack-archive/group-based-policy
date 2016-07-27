@@ -249,6 +249,19 @@ class HeatDriver(object):
                     if port_info['port_model'] != nfp_constants.GBP_PORT:
                         return
 
+    def _post_stack_create(self, nfp_context):
+        service_details = self.get_service_details_from_nfp_context(
+            nfp_context)
+        service_type = service_details['service_details']['service_type']
+
+        if service_type in [pconst.LOADBALANCER]:
+            logging_context = nfp_logging.get_logging_context()
+            auth_token = logging_context['auth_token']
+            provider_tenant_id = nfp_context['tenant_id']
+            provider = service_details['provider_ptg']
+            self._create_policy_target_for_vip(
+                auth_token, provider_tenant_id, provider)
+
     def _create_policy_target_for_vip(self, auth_token,
                                       provider_tenant_id, provider):
         provider_subnet = None
@@ -481,6 +494,10 @@ class HeatDriver(object):
 
         consuming_ptgs_details = service_details['consuming_ptgs_details']
         consumer_eps = service_details['consuming_external_policies']
+
+        # Handle a case where a chain is provided first and then consumed
+        # if (not consuming_ptgs_details) and (not consumer_eps):
+        #    return None
 
         is_template_aws_version = stack_template.get(
             'AWSTemplateFormatVersion', False)
@@ -819,6 +836,106 @@ class HeatDriver(object):
                     'description'] = str(common_desc)
 
                 nf_desc = str(firewall_desc)
+        elif service_type == pconst.VPN:
+            config_param_values['Subnet'] = (
+                consumer_port['fixed_ips'][0]['subnet_id']
+                if consumer_port else None)
+            l2p = self.gbp_client.get_l2_policy(
+                auth_token, provider['l2_policy_id'])
+            l3p = self.gbp_client.get_l3_policy(
+                auth_token, l2p['l3_policy_id'])
+            config_param_values['RouterId'] = l3p['routers'][0]
+            stitching_cidr = service_details['consumer_subnet']['cidr']
+            mgmt_gw_ip = self._get_management_gw_ip(auth_token)
+            if not mgmt_gw_ip:
+                return None, None
+
+            services_nsp = self.gbp_client.get_network_service_policies(
+                auth_token,
+                filters={'name': ['nfp_services_nsp']})
+            if not services_nsp:
+                fip_nsp = {
+                    'network_service_policy': {
+                        'name': 'nfp_services_nsp',
+                        'description': 'nfp_implicit_resource',
+                        'shared': False,
+                        'tenant_id': tenant_id,
+                        'network_service_params': [
+                            {"type": "ip_pool", "value": "nat_pool",
+                             "name": "vpn_svc_external_access"}]
+                    }
+                }
+                nsp = self.gbp_client.create_network_service_policy(
+                    auth_token, fip_nsp)
+            else:
+                nsp = services_nsp[0]
+            if not base_mode_support:
+                stitching_pts = self.gbp_client.get_policy_targets(
+                    auth_token,
+                    filters={'port_id': [consumer_port['id']]})
+                if not stitching_pts:
+                    LOG.error(_LE("Policy target is not created for the "
+                                  "stitching port"))
+                    return None, None
+                stitching_ptg_id = (
+                    stitching_pts[0]['policy_target_group_id'])
+            else:
+                stitching_ptg_id = consumer['id']
+            self.gbp_client.update_policy_target_group(
+                auth_token, stitching_ptg_id,
+                {'policy_target_group': {
+                    'network_service_policy_id': nsp['id']}})
+            stitching_port_fip = ""
+
+            if not base_mode_support:
+                floatingips = (
+                    self.neutron_client.get_floating_ips(auth_token))
+                if not floatingips:
+                    LOG.error(_LE("Floating IP for VPN Service has been "
+                                  "disassociated Manually"))
+                    return None, None
+
+                for fip in floatingips:
+                    if consumer_port['id'] == fip['port_id']:
+                        stitching_port_fip = fip['floating_ip_address']
+                        break
+                if not stitching_port_fip:
+                    LOG.error(_LE("Floatingip retrival has failed."))
+                    return None, None
+
+                try:
+                    desc = ('fip=' + mgmt_ip +
+                            ";tunnel_local_cidr=" +
+                            provider_cidr + ";user_access_ip=" +
+                            stitching_port_fip + ";fixed_ip=" +
+                            consumer_port['fixed_ips'][0]['ip_address'] +
+                            ';service_vendor=' + service_vendor +
+                            ';stitching_cidr=' + stitching_cidr +
+                            ';stitching_gateway=' + service_details[
+                                'consumer_subnet']['gateway_ip'] +
+                            ';mgmt_gw_ip=' + mgmt_gw_ip +
+                            ';network_function_id=' + network_function['id'])
+                except Exception:
+                    LOG.error(_LE("Problem in preparing description, some of "
+                                  "the fields might not have initialized"))
+                    return None, None
+                stack_params['ServiceDescription'] = desc
+                siteconn_keys = self._get_site_conn_keys(
+                    stack_template[resources_key],
+                    is_template_aws_version,
+                    'OS::Neutron::IPsecSiteConnection')
+                for siteconn_key in siteconn_keys:
+                    stack_template[resources_key][siteconn_key][
+                        properties_key]['description'] = str(common_desc)
+
+                vpnservice_key = self._get_heat_resource_key(
+                    stack_template[resources_key],
+                    is_template_aws_version,
+                    'OS::Neutron::VPNService')
+                stack_template[resources_key][vpnservice_key][properties_key][
+                    'description'] = str(common_desc)
+
+                nf_desc = str(desc)
 
         if nf_desc:
             network_function['description'] = network_function[
@@ -1329,6 +1446,7 @@ class HeatDriver(object):
             if stack.stack_status == 'DELETE_FAILED':
                 return failure_status
             elif stack.stack_status == 'CREATE_COMPLETE':
+                self._post_stack_create(nfp_context)
                 return success_status
             elif stack.stack_status == 'UPDATE_COMPLETE':
                 return success_status

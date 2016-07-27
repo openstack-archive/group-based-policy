@@ -1005,6 +1005,13 @@ class ServiceOrchestrator(nfp_api.NfpEventHandler):
                            original_event=event)
 
     def apply_user_config(self, event):
+        event_results = event.graph.get_leaf_node_results(event)
+        for c_event in event_results:
+            if c_event.id == "SEND_HEAT_CONFIG" and (
+                    c_event.result.upper() == "HANDLED"):
+                self._controller.event_complete(
+                    event, result="SUCCESS")
+                return
         nfp_context = event.data
         nfp_core_context.store_nfp_context(nfp_context)
         network_function = nfp_context['network_function']
@@ -1364,28 +1371,39 @@ class ServiceOrchestrator(nfp_api.NfpEventHandler):
         # Trigger RPC to notify the Create_Service caller with status
 
     def handle_config_applied(self, event):
-        event_data = event.data
-        network_function_id = event_data['network_function_id']
-        network_function_instance_id = event_data.get(
-            'network_function_instance_id')
-        if network_function_instance_id:
-            nfi = {
+        nfp_context = event.data['nfp_context']
+        base_mode = nfp_context['base_mode']
+        network_function_id = event.data['network_function_id']
+        if base_mode:
+            network_function = {
                 'status': nfp_constants.ACTIVE,
             }
-            nfi = self.db_handler.update_network_function_instance(
-                self.db_session, network_function_instance_id, nfi)
+            self.db_handler.update_network_function(
+                self.db_session,
+                network_function_id,
+                network_function)
+            LOG.info(_LI("NSO: applying user config is successfull moving "
+                         "network function %(network_function_id)s to ACTIVE"),
+                     {'network_function_id':
+                      network_function_id})
+        else:
+            network_function_instance_id = (
+                event.data['network_function_instance_id'])
+            if network_function_instance_id:
+                nfi = {
+                    'status': nfp_constants.ACTIVE,
+                }
+                nfi = self.db_handler.update_network_function_instance(
+                    self.db_session, network_function_instance_id, nfi)
 
-        network_function = {
-            'status': nfp_constants.ACTIVE,
-        }
-        self.db_handler.update_network_function(
-            self.db_session,
-            network_function_id,
-            network_function)
-        LOG.info(_LI("NSO: applying user config is successfull moving "
-                     "network function %(network_function_id)s to ACTIVE"),
-                 {'network_function_id':
-                  network_function_id})
+            event_desc = nfp_context['event_desc']
+            key = nfp_context['key']
+            id = nfp_context['id']
+
+            # Complete the original event here
+            event = self._controller.new_event(id=id, key=key,
+                                               desc_dict=event_desc)
+            self._controller.event_complete(event, result='HANDLED')
 
     def handle_update_user_config_failed(self, event):
         event_data = event.data
