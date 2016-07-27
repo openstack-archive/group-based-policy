@@ -153,6 +153,14 @@ class TestMappedGroupResourceAttrs(GroupPolicyMappingDbTestCase):
                 routers = [router1['router']['id'], router2['router']['id']]
                 l3p = self.create_l3_policy(routers=routers)
                 l3p_id = l3p['l3_policy']['id']
+                test_l3p_id = self._gbp_plugin.get_l3p_id_from_router_id(
+                    nctx.get_admin_context(),
+                    router1['router']['id'])
+                self.assertEqual(l3p_id, test_l3p_id)
+                test_l3p_id = self._gbp_plugin.get_l3p_id_from_router_id(
+                    nctx.get_admin_context(),
+                    router2['router']['id'])
+                self.assertEqual(l3p_id, test_l3p_id)
                 self.assertEqual(sorted(routers),
                                  sorted(l3p['l3_policy']['routers']))
                 req = self.new_show_request('l3_policies', l3p_id,
