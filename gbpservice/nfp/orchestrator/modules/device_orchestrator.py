@@ -474,6 +474,19 @@ class DeviceOrchestrator(nfp_api.NfpEventHandler):
         device.update(device_data)
         return device
 
+    def _make_ports_dict(self, consumer, provider, port_type):
+
+        t_ports = []
+        for ptg in [consumer, provider]:
+            if (port_type in ptg.keys()) and ptg[port_type]:
+                t_ports.append({
+                                'id': ptg[port_type].get('id'),
+                                'port_classification': ptg.get(
+                                                    'port_classification'),
+                                'port_model': ptg.get('port_model')
+                               })
+        return t_ports
+
     def _prepare_device_data_from_nfp_context(self, nfp_context):
         device_data = {}
 
@@ -496,19 +509,8 @@ class DeviceOrchestrator(nfp_api.NfpEventHandler):
 
         consumer = nfp_context['consumer']
         provider = nfp_context['provider']
-        ports = []
 
-        if consumer['port']:
-            ports.append({
-                'id': consumer['port']['id'],
-                'port_classification': consumer['port_classification'],
-                'port_model': consumer['port_model']})
-
-        if provider['port']:
-            ports.append({
-                'id': provider['port']['id'],
-                'port_classification': provider['port_classification'],
-                'port_model': provider['port_model']})
+        ports = self._make_ports_dict(consumer, provider, 'pt')
 
         device_data['management_network_info'] = management_network_info
 
@@ -868,17 +870,8 @@ class DeviceOrchestrator(nfp_api.NfpEventHandler):
         orchestration_driver = self._get_orchestration_driver(
             service_details['service_vendor'])
 
-        ports = []
-        if consumer['port']:
-            ports.append(
-                {'id': consumer['port']['id'],
-                 'port_classification': consumer['port_classification'],
-                 'port_model': consumer['port_model']})
-        if provider['port']:
-            ports.append(
-                {'id': provider['port']['id'],
-                 'port_classification': provider['port_classification'],
-                 'port_model': provider['port_model']})
+        ports = self._make_ports_dict(consumer, provider, 'port')
+
         device = {
             'id': network_function_device['id'],
             'ports': ports,
