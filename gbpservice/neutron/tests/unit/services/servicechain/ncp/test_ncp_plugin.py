@@ -212,6 +212,12 @@ class NodeCompositionPluginTestCase(
         self.assertIsNone(ctx.original_node)
         self.assertEqual(0, len(ctx.get_service_targets()))
 
+        instance['provider_ptg_id'] = 'dummy-id'
+        ctx = ncp_context.get_node_driver_context(
+            self.plugin, plugin_context, instance, node)
+        self.assertIsNone(ctx.provider)
+        self.assertIsNone(ctx.consumer)
+
     def test_context_relevant_specs(self):
         plugin_context = n_context.get_admin_context()
         node_used = self._create_profiled_servicechain_node(
