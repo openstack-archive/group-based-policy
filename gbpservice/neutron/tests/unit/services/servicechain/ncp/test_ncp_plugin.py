@@ -30,6 +30,8 @@ from gbpservice.neutron.services.servicechain.plugins.ncp import (
     context as ncp_context)
 from gbpservice.neutron.services.servicechain.plugins.ncp import (
     exceptions as exc)
+from gbpservice.neutron.services.servicechain.plugins.ncp import (
+    plugin as ncp_plugin)
 import gbpservice.neutron.services.servicechain.plugins.ncp.config  # noqa
 from gbpservice.neutron.services.servicechain.plugins.ncp.node_drivers import (
     dummy_driver as dummy_driver)
@@ -702,6 +704,18 @@ class NodeCompositionPluginTestCase(
             consumer['id'],
             consumed_policy_rule_sets={})['policy_target_group']
         rem.assert_called_with(mock.ANY, consumer)
+
+        provider, consumer, prs = self._create_simple_service_chain(3)
+        with mock.patch.object(ncp_plugin.NodeCompositionPlugin,
+                "update_chains_consumer_removed") as ptg_removed:
+                plugin_context = n_context.get_admin_context()
+                self._gbp_plugin.delete_policy_target_group(plugin_context,
+                        consumer['id'])
+
+                self.assertEqual(ptg_removed.call_count, 1)
+                consumer['consumed_policy_rule_sets'] = []
+                ptg_removed.assert_called_once_with(
+                        mock.ANY, consumer, mock.ANY)
 
         add.reset_mock()
         rem.reset_mock()
