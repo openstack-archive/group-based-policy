@@ -13,23 +13,24 @@
 
 import mock
 
-from aim import aim_manager
 from aim.api import resource as aim_resource
 from aim import context as aim_context
 from aim.db import model_base as aim_model_base
 from keystoneclient.v3 import client as ksc_client
 from neutron import context as nctx
 from neutron.db import api as db_api
-from oslo_log import log as logging
 import webob.exc
 
 from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import (
     mechanism_driver as aim_md)
-from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import apic_mapper
 from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import model
+from gbpservice.neutron.services.grouppolicy.common import (
+    constants as gp_const)
 from gbpservice.neutron.services.grouppolicy import config
 from gbpservice.neutron.tests.unit.plugins.ml2plus import (
     test_apic_aim as test_aim_md)
+from gbpservice.neutron.tests.unit.services.grouppolicy import (
+    test_extension_driver_api as test_ext_base)
 from gbpservice.neutron.tests.unit.services.grouppolicy import (
     test_neutron_resources_driver as test_nr_base)
 
@@ -37,7 +38,10 @@ from gbpservice.neutron.tests.unit.services.grouppolicy import (
 ML2PLUS_PLUGIN = 'gbpservice.neutron.plugins.ml2plus.plugin.Ml2PlusPlugin'
 
 
-class AIMBaseTestCase(test_nr_base.CommonNeutronBaseTestCase):
+class AIMBaseTestCase(test_nr_base.CommonNeutronBaseTestCase,
+                      test_ext_base.ExtensionDriverTestBase):
+    _extension_drivers = ['aim_extension']
+    _extension_path = None
 
     def setUp(self, policy_drivers=None, core_plugin=None, ml2_options=None,
               sc_plugin=None, **kwargs):
@@ -65,15 +69,31 @@ class AIMBaseTestCase(test_nr_base.CommonNeutronBaseTestCase):
 
         engine = db_api.get_engine()
         aim_model_base.Base.metadata.create_all(engine)
-        self._aim = aim_manager.AimManager()
+        self._aim_mgr = None
         self._aim_context = aim_context.AimContext(
             self._neutron_context.session)
         self._db = model.DbModel()
-        self._name_mapper = apic_mapper.APICNameMapper(self._db, logging)
+        self._name_mapper = None
 
     def tearDown(self):
         ksc_client.Client = self.saved_keystone_client
         super(AIMBaseTestCase, self).tearDown()
+
+    @property
+    def aim_mgr(self):
+        if not self._aim_mgr:
+            self._aim_mgr = (
+                self._gbp_plugin.policy_driver_manager.policy_drivers[
+                    'aim_mapping'].obj.aim)
+        return self._aim_mgr
+
+    @property
+    def name_mapper(self):
+        if not self._name_mapper:
+            self._name_mapper = (
+                self._gbp_plugin.policy_driver_manager.policy_drivers[
+                    'aim_mapping'].obj.name_mapper)
+        return self._name_mapper
 
 
 class TestL2Policy(test_nr_base.TestL2Policy, AIMBaseTestCase):
@@ -83,31 +103,47 @@ class TestL2Policy(test_nr_base.TestL2Policy, AIMBaseTestCase):
 
 class TestPolicyTargetGroup(AIMBaseTestCase):
 
+    def _test_aim_resource_status(self, aim_resource_obj, gbp_resource):
+        aim_status = self.aim_mgr.get_status(self._aim_context,
+                                             aim_resource_obj)
+        if aim_status.is_error():
+            self.assertEqual(gp_const.STATUS_ERROR, gbp_resource['status'])
+        elif aim_status.is_build():
+            self.assertEqual(gp_const.STATUS_BUILD, gbp_resource['status'])
+        else:
+            self.assertEqual(gp_const.STATUS_ACTIVE, gbp_resource['status'])
+
     def test_policy_target_group_lifecycle_implicit_l2p(self):
         ptg = self.create_policy_target_group(
             name="ptg1")['policy_target_group']
         ptg_id = ptg['id']
-        self.show_policy_target_group(ptg_id, expected_res_status=200)
+        ptg_show = self.show_policy_target_group(
+            ptg_id, expected_res_status=200)['policy_target_group']
 
         self.show_l2_policy(ptg['l2_policy_id'], expected_res_status=200)
         req = self.new_show_request('subnets', ptg['subnets'][0], fmt=self.fmt)
         res = self.deserialize(self.fmt, req.get_response(self.api))
         self.assertIsNotNone(res['subnet']['id'])
         ptg_name = ptg['name']
-        aim_epg_name = str(self._name_mapper.policy_target_group(
+        aim_epg_name = str(self.name_mapper.policy_target_group(
             self._neutron_context.session, ptg_id, ptg_name))
-        aim_tenant_name = str(self._name_mapper.tenant(
+        aim_tenant_name = str(self.name_mapper.tenant(
             self._neutron_context.session, self._tenant_id))
         aim_app_profile_name = aim_md.AP_NAME
-        aim_app_profiles = self._aim.find(
+        aim_app_profiles = self.aim_mgr.find(
             self._aim_context, aim_resource.ApplicationProfile,
             tenant_name=aim_tenant_name, name=aim_app_profile_name)
         self.assertEqual(1, len(aim_app_profiles))
-        aim_epgs = self._aim.find(
+        aim_epgs = self.aim_mgr.find(
             self._aim_context, aim_resource.EndpointGroup, name=aim_epg_name)
         self.assertEqual(1, len(aim_epgs))
         self.assertEqual(aim_epg_name, aim_epgs[0].name)
         self.assertEqual(aim_tenant_name, aim_epgs[0].tenant_name)
+
+        self._test_aim_resource_status(aim_epgs[0], ptg)
+        self.assertEqual(aim_epgs[0].dn,
+                         ptg_show['apic:distinguished_names']['EndpointGroup'])
+        self._test_aim_resource_status(aim_epgs[0], ptg_show)
 
         self.delete_policy_target_group(ptg_id, expected_res_status=204)
         self.show_policy_target_group(ptg_id, expected_res_status=404)
@@ -118,7 +154,7 @@ class TestPolicyTargetGroup(AIMBaseTestCase):
         # Implicitly created L2P should be deleted
         self.show_l2_policy(ptg['l2_policy_id'], expected_res_status=404)
 
-        aim_epgs = self._aim.find(
+        aim_epgs = self.aim_mgr.find(
             self._aim_context, aim_resource.EndpointGroup, name=aim_epg_name)
         self.assertEqual(0, len(aim_epgs))
 
@@ -136,20 +172,22 @@ class TestPolicyTargetGroup(AIMBaseTestCase):
         res = self.deserialize(self.fmt, req.get_response(self.api))
         self.assertIsNotNone(res['subnet']['id'])
         ptg_name = ptg['name']
-        aim_epg_name = str(self._name_mapper.policy_target_group(
+        aim_epg_name = str(self.name_mapper.policy_target_group(
             self._neutron_context.session, ptg_id, ptg_name))
-        aim_tenant_name = str(self._name_mapper.tenant(
+        aim_tenant_name = str(self.name_mapper.tenant(
             self._neutron_context.session, self._tenant_id))
         aim_app_profile_name = aim_md.AP_NAME
-        aim_app_profiles = self._aim.find(
+        aim_app_profiles = self.aim_mgr.find(
             self._aim_context, aim_resource.ApplicationProfile,
             tenant_name=aim_tenant_name, name=aim_app_profile_name)
         self.assertEqual(1, len(aim_app_profiles))
-        aim_epgs = self._aim.find(
+        aim_epgs = self.aim_mgr.find(
             self._aim_context, aim_resource.EndpointGroup, name=aim_epg_name)
         self.assertEqual(1, len(aim_epgs))
         self.assertEqual(aim_epg_name, aim_epgs[0].name)
         self.assertEqual(aim_tenant_name, aim_epgs[0].tenant_name)
+
+        self._test_aim_resource_status(aim_epgs[0], ptg)
 
         self.delete_policy_target_group(ptg_id, expected_res_status=204)
         self.show_policy_target_group(ptg_id, expected_res_status=404)
@@ -160,7 +198,7 @@ class TestPolicyTargetGroup(AIMBaseTestCase):
         # Explicitly created L2P should not be deleted
         self.show_l2_policy(ptg['l2_policy_id'], expected_res_status=200)
 
-        aim_epgs = self._aim.find(
+        aim_epgs = self.aim_mgr.find(
             self._aim_context, aim_resource.EndpointGroup, name=aim_epg_name)
         self.assertEqual(0, len(aim_epgs))
 
@@ -340,7 +378,7 @@ class TestPolicyRule(AIMBaseTestCase):
         pr_id = pr['id']
         pr_name = pr['name']
         rn = self._aim_mapper.tenant_filter(tenant, pr_id, name=pr_name)
-        aim_pr = self._aim.find(
+        aim_pr = self.aim_mgr.find(
             self._aim_context, aim_resource.TenantFilter, rn=rn)
         self.assertEqual(1, len(aim_pr))
         self.assertEqual(rn, aim_pr[0].rn)
@@ -349,6 +387,6 @@ class TestPolicyRule(AIMBaseTestCase):
         self.delete_policy_rule(pr_id, expected_res_status=204)
         self.show_policy_rule(pr_id, expected_res_status=404)
 
-        aim_pr = self._aim.find(
+        aim_pr = self.aim_mgr.find(
             self._aim_context, aim_resource.TenantFilter, rn=rn)
         self.assertEqual(0, len(aim_pr))
