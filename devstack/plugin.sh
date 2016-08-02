@@ -35,8 +35,6 @@ function nfp_configure_neutron {
     iniset $NEUTRON_CONF admin_owned_resources_apic_tscp plumbing_resource_owner_user "neutron"
     iniset $NEUTRON_CONF admin_owned_resources_apic_tscp plumbing_resource_owner_password $ADMIN_PASSWORD
     iniset $NEUTRON_CONF admin_owned_resources_apic_tscp plumbing_resource_owner_tenant_name "service"
-    iniset $NEUTRON_CONF group_policy_implicit_policy default_ip_pool "11.0.0.0/8"
-    iniset $NEUTRON_CONF group_policy_implicit_policy default_proxy_ip_pool "192.169.0.0/16"
     iniset $NEUTRON_CONF group_policy_implicit_policy default_external_segment_name "default"
     iniset $NEUTRON_CONF nfp_node_driver is_service_admin_owned "True"
     iniset $NEUTRON_CONF nfp_node_driver svc_management_ptg_name "svc_management_ptg"
