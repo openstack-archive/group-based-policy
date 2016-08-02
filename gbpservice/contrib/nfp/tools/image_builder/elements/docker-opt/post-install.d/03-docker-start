@@ -1,0 +1,8 @@
+#!/bin/bash
+set -eux
+
+# start docker and load the configurator image
+docker daemon --raw-logs &
+
+# sleep for docker to comeup
+sleep 10
