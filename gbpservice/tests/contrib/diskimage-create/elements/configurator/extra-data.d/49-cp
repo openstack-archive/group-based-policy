@@ -1,8 +1,0 @@
-#!/bin/bash
-set -eux
-
-# create 'images' directory to hold docker images
-sudo mkdir -p ${TMP_MOUNT_PATH}/usr/share/configurator/docker/images
-
-#copy docker images to VM
-sudo cp -L ${DOCKER_IMAGES_PATH}/configurator-docker ${TMP_MOUNT_PATH}/usr/share/configurator/docker/images/
