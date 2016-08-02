@@ -1,0 +1,4 @@
+#!/bin/bash
+set -eux
+
+docker load -i /usr/share/docker/images/configurator-docker

@@ -24,7 +24,8 @@ NFPSERVICE_DIR=$DEST/gbp
 NEUTRON_CONF_DIR=/etc/neutron
 NEUTRON_CONF=$NEUTRON_CONF_DIR/neutron.conf
 NFP_CONF_DIR=/etc/nfp
-DISKIMAGE_CREATE_DIR=$NFPSERVICE_DIR/gbpservice/tests/contrib/diskimage-create
+DISKIMAGE_CREATE_DIR=$NFPSERVICE_DIR/gbpservice/contrib/nfp/tools/image_builder
+NEUTRON_SRC_BRANCH_FOR_NFP_CONTROLLER=stable/liberty
 
 # Save trace setting
 XTRACE=$(set +o | grep xtrace)
@@ -196,9 +197,9 @@ function create_nfp_gbp_resources {
 
     gbp l3policy-create\
  --ip-version 4\
- --proxy-ip-pool=192.169.0.0/24\
- --ip-pool 120.0.0.0/24\
- --subnet-prefix-length 24\
+ --ip-pool 172.16.0.0/16\
+ --subnet-prefix-length 20\
+ --proxy-ip-pool=172.17.0.0/16\
  service_management
 
     gbp l2policy-create\
@@ -244,7 +245,12 @@ function create_nfp_image {
     if [[ $NFP_DEVSTACK_MODE = base ]]; then
         RefConfiguratorQcow2ImageName=reference_configurator_image
         echo "Building Image: $RefConfiguratorQcow2ImageName"
-        sudo python $DISKIMAGE_CREATE_DIR/disk_image_create.py $DISKIMAGE_CREATE_DIR/ref_configurator_conf.json
+        sudo python -c\
+ 'from gbpservice.contrib.nfp.tools.image_builder import disk_image_create as DIB;\
+ DIB.cur_dir = "'$DISKIMAGE_CREATE_DIR'";\
+ DIB.conf["ubuntu_release"] = {"release": "wily"};\
+ DIB.conf["dib"] = {"image_size": 3, "elements": ["nfp-reference-configurator", "dhcp-all-interfaces", "devuser"], "offline": True, "cache_dir": "'$HOME'/.cache/image-create"};\
+ DIB.dib()'
         RefConfiguratorQcow2Image=$(cat $DISKIMAGE_CREATE_DIR/output/last_built_image_path)
         echo "Uploading Image: $RefConfiguratorQcow2ImageName"
         glance image-create --name $RefConfiguratorQcow2ImageName --disk-format qcow2 --container-format bare --visibility public --file $RefConfiguratorQcow2Image
@@ -255,7 +261,26 @@ function create_nfp_image {
         create_port_for_vm $ConfiguratorQcow2ImageName $ConfiguratorInstanceName
         if [[ $ConfiguratorQcow2Image = build ]]; then
             echo "Building Image: $ConfiguratorQcow2ImageName"
-            sudo python $DISKIMAGE_CREATE_DIR/disk_image_create.py $DISKIMAGE_CREATE_DIR/configurator_conf.json $GBPSERVICE_BRANCH
+            # Prepare source for configurator
+            git clone -b $NEUTRON_SRC_BRANCH_FOR_NFP_CONTROLLER https://github.com/openstack/neutron-lib.git
+            cp -r neutron-lib/neutron_lib $DISKIMAGE_CREATE_DIR/neutron_lib
+            rm -rf neutron-lib
+            git_clone $GBPSERVICE_REPO $DEVSTACK_DIR/group-based-policy $GBPSERVICE_BRANCH
+            cp -r $DEVSTACK_DIR/group-based-policy/gbpservice $DISKIMAGE_CREATE_DIR/gbpservice
+            rm -rf $DEVSTACK_DIR/group-based-policy
+            git clone -b $NEUTRON_SRC_BRANCH_FOR_NFP_CONTROLLER https://github.com/openstack/neutron.git
+            cp -r neutron/neutron $DISKIMAGE_CREATE_DIR/neutron
+            rm -rf neutron
+            git clone -b $NEUTRON_SRC_BRANCH_FOR_NFP_CONTROLLER https://github.com/openstack/neutron-lbaas.git
+            cp -r neutron-lbaas/neutron_lbaas $DISKIMAGE_CREATE_DIR/neutron_lbaas
+            rm -rf neutron-lbaas
+            sudo python -c\
+ 'from gbpservice.contrib.nfp.tools.image_builder import disk_image_create as DIB;\
+ DIB.cur_dir = "'$DISKIMAGE_CREATE_DIR'";\
+ DIB.conf["ubuntu_release"] = {"release": "trusty"};\
+ DIB.conf["dib"] = {"image_size": 10, "elements": ["configurator"], "offline": True, "cache_dir": "'$HOME'/.cache/image-create"};\
+ DIB.dib()'
+            rm -rf $DISKIMAGE_CREATE_DIR/neutron_lib $DISKIMAGE_CREATE_DIR/gbpservice $DISKIMAGE_CREATE_DIR/neutron $DISKIMAGE_CREATE_DIR/neutron_lbaas
             ConfiguratorQcow2Image=$(cat $DISKIMAGE_CREATE_DIR/output/last_built_image_path)
         fi
         echo "Uploading Image: $ConfiguratorQcow2ImageName"
@@ -279,7 +304,7 @@ function create_nfp_image {
 function configure_configurator_user_data {
     CUR_DIR=$PWD
     sudo rm -rf /opt/configurator_user_data
-    sudo cp -r $NFPSERVICE_DIR/devstack/exercises/nfp_service/user-data/configurator_user_data /opt/.
+    sudo cp -r $DISKIMAGE_CREATE_DIR/configurator_user_data /opt/.
     cd /opt
     sudo rm -rf my.key my.key.pub
     sudo ssh-keygen -t rsa -N "" -f my.key
