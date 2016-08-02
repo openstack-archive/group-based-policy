@@ -1,0 +1,54 @@
+{
+    "heat_template_version": "2013-05-23",
+    "description": "Configuration for Firewall service",
+    "resources": {
+        "Firewall": {
+            "type": "OS::Neutron::Firewall",
+            "properties": {
+                "admin_state_up": true,
+                "firewall_policy_id": {
+                    "get_resource": "Firewall_Policy"
+                },
+                "name": "FWaaS",
+                "description": "Firewll Resource"
+            }
+        },
+        "Firewall_Policy": {
+            "type": "OS::Neutron::FirewallPolicy",
+            "properties": {
+                "description": "firewall policy Resource",
+                "audited": false,
+                "firewall_rules": [
+                    {
+                        "get_resource": "Rule_1"
+                    },
+                    {
+                        "get_resource": "Rule_2"
+                    }
+                ],
+                "name": "FW_policy"
+            }
+	},
+            "Rule_1": {
+		"type": "OS::Neutron::FirewallRule",
+		"properties": {
+		"protocol": "tcp",
+		"name": "fw-tcp-rule",
+		"enabled": true,
+		"destination_port": "80",
+		"action": "allow",
+		"description": "fw config to allow tcp"
+			}
+		},
+            "Rule_2": {
+		"type": "OS::Neutron::FirewallRule",
+		"properties": {
+		"protocol": "icmp",
+		"name": "fw-icmp-rule",
+		"enabled": true,
+		"action": "allow",
+		"description": "fw config to allow icmp"
+			}
+		}
+    }
+}
