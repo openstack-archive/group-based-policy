@@ -1,0 +1,546 @@
+heat_template_version: 2014-10-16
+resources:
+  HTTP-REDIRECT-FW-LB:
+    type: OS::GroupBasedPolicy::PolicyRule
+    properties: 
+      name: HTTP-REDIRECT-FW-LB
+      enabled: true
+      policy_classifier_id: {get_resource: HTTP}
+      policy_actions: [{get_resource: REDIRECT-FW-LB}]
+      shared: true
+
+  HTTP-REDIRECT-LB:
+    type: OS::GroupBasedPolicy::PolicyRule
+    properties: 
+      name: HTTP-REDIRECT-LB
+      enabled: true
+      policy_classifier_id: {get_resource: HTTP}
+      policy_actions: [{get_resource: REDIRECT-LB}]
+      shared: true
+
+  MySQL-REDIRECT-FW:
+    type: OS::GroupBasedPolicy::PolicyRule
+    properties: 
+      name: MySQL-REDIRECT-FW
+      enabled: true
+      policy_classifier_id: {get_resource: MySQL}
+      policy_actions: [{get_resource: REDIRECT-FW}]
+      shared: true
+
+  ANY-REDIRECT-VPN-FW-LB:
+    type: OS::GroupBasedPolicy::PolicyRule
+    properties: 
+      name: ANY-REDIRECT-VPN-FW-LB
+      enabled: true
+      policy_classifier_id: {get_resource: ANY }
+      policy_actions: [{get_resource: REDIRECT-VPN-FW-LB }]
+      shared: true
+  
+  HTTP-ALLOW: 
+    type: OS::GroupBasedPolicy::PolicyRule
+    properties: 
+      name: HTTP-ALLOW
+      enabled: true
+      policy_classifier_id: {get_resource: HTTP}
+      policy_actions: [{get_resource: ALLOW}]
+      shared: true
+
+  HTTPS-ALLOW: 
+    type: OS::GroupBasedPolicy::PolicyRule
+    properties: 
+      name: HTTPS-ALLOW
+      enabled: true
+      policy_classifier_id: {get_resource: HTTPS}
+      policy_actions: [{get_resource: ALLOW}]
+      shared: true
+
+  SYSLOG-UDP-ALLOW:
+    type: OS::GroupBasedPolicy::PolicyRule
+    properties:
+        name: SYSLOG-UDP-ALLOW
+        enabled: true
+        policy_classifier_id: {get_resource: SYSLOG-UDP }
+        policy_actions: [{get_resource: ALLOW}]
+        shared: true
+
+  ICMP-ALLOW:
+    type: OS::GroupBasedPolicy::PolicyRule
+    properties: 
+      name: ICMP-ALLOW
+      enabled: true
+      policy_classifier_id: {get_resource: ICMP}
+      policy_actions: [{get_resource: ALLOW}]
+      shared: true
+
+  SSH-ALLOW: 
+    type: OS::GroupBasedPolicy::PolicyRule
+    properties: 
+      name: SSH-ALLOW
+      enabled: true
+      policy_classifier_id: {get_resource: SSH}
+      policy_actions: [{get_resource: ALLOW}]
+      shared: true
+
+  SNMP-ALLOW: 
+    type: OS::GroupBasedPolicy::PolicyRule
+    properties: 
+      name: SNMP-ALLOW
+      enabled: true
+      policy_classifier_id: {get_resource: SNMP}
+      policy_actions: [{get_resource: ALLOW}]
+      shared: true
+
+  ANY-ALLOW:
+    type: OS::GroupBasedPolicy::PolicyRule
+    properties:
+        name: ANY-ALLOW
+        enabled: true
+        policy_classifier_id: {get_resource: ANY }
+        policy_actions: [{get_resource: ALLOW}]
+        shared: true
+
+  TCP-ALLOW:
+    type: OS::GroupBasedPolicy::PolicyRule
+    properties:
+        name: TCP-ALLOW
+        enabled: true
+        policy_classifier_id: {get_resource: ANY-TCP }
+        policy_actions: [{get_resource: ALLOW}]
+        shared: true
+ 
+  UDP-ALLOW:
+    type: OS::GroupBasedPolicy::PolicyRule
+    properties:
+        name: UDP-ALLOW
+        enabled: true
+        policy_classifier_id: {get_resource: ANY-UDP }
+        policy_actions: [{get_resource: ALLOW}]
+        shared: true
+
+  KEYSTONE-ALLOW:
+    type: OS::GroupBasedPolicy::PolicyRule
+    properties:
+        name: KEYSTONE-ALLOW
+        enabled: true
+        policy_classifier_id: {get_resource: KEYSTONE }
+        policy_actions: [{get_resource: ALLOW}]
+        shared: true
+
+  KEYSTONE-ADMIN-ALLOW:
+    type: OS::GroupBasedPolicy::PolicyRule
+    properties:
+        name: KEYSTONE-ADMIN-ALLOW
+        enabled: true
+        policy_classifier_id: {get_resource: KEYSTONE-ADMIN }
+        policy_actions: [{get_resource: ALLOW}]
+        shared: true
+
+  NEUTRON-ALLOW:
+    type: OS::GroupBasedPolicy::PolicyRule
+    properties:
+        name: NEUTRON-ALLOW
+        enabled: true
+        policy_classifier_id: {get_resource: NEUTRON }
+        policy_actions: [{get_resource: ALLOW}]
+        shared: true
+
+  NOVA-ALLOW:
+    type: OS::GroupBasedPolicy::PolicyRule
+    properties:
+        name: NOVA-ALLOW
+        enabled: true
+        policy_classifier_id: {get_resource: NOVA }
+        policy_actions: [{get_resource: ALLOW}]
+        shared: true
+
+  CEILOMETER-ALLOW:
+    type: OS::GroupBasedPolicy::PolicyRule
+    properties:
+        name: CEILOMETER-ALLOW
+        enabled: true
+        policy_classifier_id: {get_resource: CEILOMETER }
+        policy_actions: [{get_resource: ALLOW}]
+        shared: true
+
+  MySQL-ALLOW:
+    type: OS::GroupBasedPolicy::PolicyRule
+    properties:
+        name: MySQL-ALLOW
+        enabled: true
+        policy_classifier_id: {get_resource: MySQL }
+        policy_actions: [{get_resource: ALLOW}]
+        shared: true
+
+
+  ICMP: 
+    type: OS::GroupBasedPolicy::PolicyClassifier
+    properties: 
+      name: ICMP
+      protocol: icmp
+      direction: bi
+      shared: true
+
+  SSH:
+    type: OS::GroupBasedPolicy::PolicyClassifier
+    properties:
+        name: SSH
+        protocol: tcp
+        port_range: 22
+        direction: in
+        shared: true
+
+  HTTP:
+    type: OS::GroupBasedPolicy::PolicyClassifier
+    properties:
+        name: HTTP
+        protocol: tcp
+        port_range: 80
+        direction: in
+        shared: true
+
+  HTTPS:
+    type: OS::GroupBasedPolicy::PolicyClassifier
+    properties:
+        name: HTTPS
+        protocol: tcp
+        port_range: 443
+        direction: in
+        shared: true
+
+  SNMP:
+    type: OS::GroupBasedPolicy::PolicyClassifier
+    properties:
+        name: SNMP
+        protocol: udp
+        port_range: 161:162
+        direction: bi
+        shared: true
+
+  SYSLOG-UDP:
+    type: OS::GroupBasedPolicy::PolicyClassifier
+    properties:
+        name: SYSLOG-UDP
+        protocol: udp
+        port_range: 514
+        direction: bi
+        shared: true
+  
+  ANY:
+    type: OS::GroupBasedPolicy::PolicyClassifier
+    properties:
+        name: ANY-TRAFFIC
+        direction: bi
+        shared: true
+
+  ANY-TCP:
+    type: OS::GroupBasedPolicy::PolicyClassifier
+    properties:
+        name: ANY-TCP
+        protocol: tcp
+        direction: in
+        shared: true
+  
+  ANY-UDP:
+    type: OS::GroupBasedPolicy::PolicyClassifier
+    properties:
+        name: ANY-UDP
+        protocol: udp
+        direction: bi
+        shared: true
+  
+  MySQL:
+    type: OS::GroupBasedPolicy::PolicyClassifier
+    properties:
+        name: MySQL
+        protocol: tcp
+        port_range: 3306
+        direction: in
+        shared: true
+
+  NEUTRON:
+    type: OS::GroupBasedPolicy::PolicyClassifier
+    properties:
+        name: NEUTRON
+        protocol: tcp
+        port_range: 9696
+        direction: out
+        shared: true
+
+  NOVA:
+    type: OS::GroupBasedPolicy::PolicyClassifier
+    properties:
+        name: NOVA
+        protocol: tcp
+        port_range: 8774
+        direction: out
+        shared: true
+
+  CEILOMETER:
+    type: OS::GroupBasedPolicy::PolicyClassifier
+    properties:
+        name: CEILOMETER
+        protocol: tcp
+        port_range: 8777
+        direction: out
+        shared: true
+
+  KEYSTONE:
+    type: OS::GroupBasedPolicy::PolicyClassifier
+    properties:
+        name: KEYSTONE
+        protocol: tcp
+        port_range: 5000
+        direction: out
+        shared: true
+
+  KEYSTONE-ADMIN:
+    type: OS::GroupBasedPolicy::PolicyClassifier
+    properties:
+        name: KEYSTONE-ADMIN
+        protocol: tcp
+        port_range: 35357
+        direction: out
+        shared: true
+
+  ALLOW: 
+    type: OS::GroupBasedPolicy::PolicyAction
+    properties: 
+      name: ALLOW
+      action_type: allow
+      shared: true
+
+  REDIRECT-LB: 
+    type: OS::GroupBasedPolicy::PolicyAction
+    properties: 
+      name: REDIRECT-LB
+      action_type: redirect
+      action_value: {get_resource: SPEC-LB}
+      shared: true
+
+  REDIRECT-FW: 
+    type: OS::GroupBasedPolicy::PolicyAction
+    properties: 
+      name: REDIRECT-FW
+      action_type: redirect
+      action_value: {get_resource: SPEC-FW}
+      shared: true
+
+  REDIRECT-FW-LB: 
+    type: OS::GroupBasedPolicy::PolicyAction
+    properties: 
+      name: REDIRECT-FW-LB
+      action_type: redirect
+      action_value: {get_resource: SPEC-FW-LB}
+      shared: true
+
+  
+  REDIRECT-VPN-FW-LB: 
+    type: OS::GroupBasedPolicy::PolicyAction
+    properties: 
+      name: REDIRECT-VPN-FW-LB
+      action_type: redirect
+      action_value: {get_resource: SPEC-VPN-FW-LB }
+      shared: true
+
+
+  SPEC-LB:
+    type: OS::GroupBasedPolicy::ServiceChainSpec
+    properties:
+        name: LB
+        nodes: [{get_resource: NODE-LB}]
+        shared: true
+
+  SPEC-FW:
+     type: OS::GroupBasedPolicy::ServiceChainSpec
+     properties:
+         name: FW
+         nodes: [{get_resource: NODE-FW}]
+         shared: true
+
+  SPEC-FW-LB:
+     type: OS::GroupBasedPolicy::ServiceChainSpec
+     properties:
+         name: FW-LB
+         nodes: 
+            - { get_resource: NODE-FW }
+            - { get_resource: NODE-LB }
+         shared: true
+
+  SPEC-VPN-FW-LB:
+     type: OS::GroupBasedPolicy::ServiceChainSpec
+     properties:
+         name: VPN-FW-LB
+         nodes: 
+            - { get_resource: NODE-VPN }
+            - { get_resource: NODE-FW }
+            - { get_resource: NODE-LB }
+         shared: true
+
+
+  SPEC-VPN-FW-LB-MANAGED:
+     type: OS::GroupBasedPolicy::ServiceChainSpec
+     properties:
+         name: SPEC-VPN-FW-LB-MANAGED
+         nodes: 
+            - { get_resource: NODE-VPN-ASAv }
+            - { get_resource: NODE-FW-ASAv }
+            - { get_resource: NODE-LB-F5 }
+         shared: true 
+
+
+  SPEC-ASAvFW-LB:
+     type: OS::GroupBasedPolicy::ServiceChainSpec
+     properties:
+         name: SPEC-ASAvFW-LB-MANAGED
+         nodes: 
+            - { get_resource: NODE-FW-ASAv }
+            - { get_resource: NODE-LB-F5 }
+         shared: true 
+
+  NODE-FW:
+    type: OS::GroupBasedPolicy::ServiceChainNode
+    properties:
+        name: FW
+        service_profile_id: {get_resource: PROFILE-FW}
+        config: { get_file: fw.template }
+        shared: True
+
+  NODE-LB:
+    type: OS::GroupBasedPolicy::ServiceChainNode
+    properties:
+        name: LB
+        service_profile_id: {get_resource: PROFILE-LB}
+        config: { get_file: lb.template }
+        shared: true
+  
+  NODE-VPN:
+    type: OS::GroupBasedPolicy::ServiceChainNode
+    properties:
+        name: VPN
+        service_profile_id: {get_resource: PROFILE-VPN}
+        config: { get_file: vpn.template }
+        shared: true
+
+  NODE-LB-F5:
+    type: OS::GroupBasedPolicy::ServiceChainNode
+    properties:
+        name: LB-F5
+        service_profile_id: {get_resource: PROFILE-LB-F5}
+        config: { get_file: lb.template }
+        shared: true
+
+  NODE-FW-ASAv:
+    type: OS::GroupBasedPolicy::ServiceChainNode
+    properties:
+        name: FW-ASAv
+        service_profile_id: {get_resource: PROFILE-FW-ASAV}
+        config: { get_file: fw.template }
+        shared: True
+
+  NODE-VPN-ASAv:
+    type: OS::GroupBasedPolicy::ServiceChainNode
+    properties:
+        name: VPN-ASAv
+        service_profile_id: {get_resource: PROFILE-VPN-ASAV}
+        config: { get_file: vpn.template }
+        shared: True
+
+  NODE-FW-NEXTGEN:
+    type: OS::GroupBasedPolicy::ServiceChainNode
+    properties:
+        name: FW-NEXTGEN
+        service_profile_id: {get_resource: PROFILE-FW-PALOALTO}
+        config: { get_file: fw.template }
+        shared: True
+
+  PROFILE-FW:
+    type: OS::GroupBasedPolicy::ServiceProfile
+    properties:
+       name: FW
+       vendor: NFP
+       service_type: FIREWALL
+       insertion_mode: l3
+       service_flavor: service_vendor=vyos,device_type=nova
+       shared: true
+
+  PROFILE-VPN:
+    type: OS::GroupBasedPolicy::ServiceProfile
+    properties:
+       name: VPN
+       vendor: NFP
+       service_type: VPN
+       insertion_mode: l3
+       service_flavor: service_vendor=vyos,device_type=nova
+       shared: true
+
+
+  PROFILE-LB:
+    type: OS::GroupBasedPolicy::ServiceProfile
+    properties:
+       name: LB
+       vendor: NFP
+       service_type: LOADBALANCER
+       insertion_mode: l3
+       service_flavor: service_vendor=haproxy,device_type=nova
+       shared: true
+
+  PROFILE-FW-ASAV:
+    type: OS::GroupBasedPolicy::ServiceProfile
+    properties:
+       name: FW-ASAV
+       vendor: NFP
+       service_type: FIREWALL
+       insertion_mode: l3
+       service_flavor: service_vendor=asav,device_type=nova
+       shared: true
+
+  PROFILE-VPN-ASAV:
+    type: OS::GroupBasedPolicy::ServiceProfile
+    properties:
+       name: VPN-ASAV
+       vendor: NFP
+       service_type: VPN
+       insertion_mode: l3
+       service_flavor: service_vendor=asav,device_type=nova
+       shared: true
+
+  PROFILE-FW-PALOALTO:
+    type: OS::GroupBasedPolicy::ServiceProfile
+    properties:
+       name: FW-PALOALTO
+       vendor: NFP
+       service_type: FIREWALL
+       insertion_mode: l3
+       service_flavor: service_vendor=paloalto,device_type=nova
+       shared: true
+
+  PROFILE-LB-F5:
+    type: OS::GroupBasedPolicy::ServiceProfile
+    properties:
+       name: LB-F5
+       vendor: NFP
+       service_type: LOADBALANCER
+       insertion_mode: l3
+       service_flavor: service_vendor=f5,device_type=nova
+       shared: true
+
+  LBVIP-IP-POLICY:
+        type: OS::GroupBasedPolicy::NetworkServicePolicy
+        properties:
+            name: LBVIP-IP-POLICY
+            network_service_params:
+                - type: ip_single
+                  name: vip_ip
+                  value: self_subnet
+            shared: True
+
+  FIP-POLICY:
+        type: OS::GroupBasedPolicy::NetworkServicePolicy
+        properties:
+            name: FIP-POLICY
+            network_service_params:
+                - type: ip_pool
+                  name: fip
+                  value: nat_pool
+            shared: True
+  
