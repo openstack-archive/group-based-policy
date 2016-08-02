@@ -1,0 +1,65 @@
+{
+    "AWSTemplateFormatVersion" : "2010-09-09",
+    "Description": "Template to test Haproxy Loadbalacer service",
+
+    "Parameters": {
+        "Subnet": {
+            "Description": "Pool Subnet CIDR, on which VIP port should be created",
+            "Type": "String"
+        },
+	"vip_ip": {
+	    "Description": "VIP IP Address",
+            "Type": "String"
+	},
+	"service_chain_metadata": {
+	    "Description": "sc metadata",
+            "Type": "String"
+	}
+    },
+
+    "Resources" : {
+        "HttpHM": {
+            "Type": "OS::Neutron::HealthMonitor",
+            "Properties": {
+                "admin_state_up": true,
+                "delay": 20,
+                "expected_codes": "200",
+                "http_method": "GET",
+                "max_retries": 3,
+                "timeout": 10,
+                "type": "HTTP",
+                "url_path": "/"
+            }
+        },
+        "HaproxyPool": {
+            "Type": "OS::Neutron::Pool",
+            "Properties": {
+                "admin_state_up": true,
+                "description": "Haproxy pool from teplate",
+                "lb_method": "ROUND_ROBIN",
+                "monitors": [{"Ref":"HttpHM"}],
+                "name": "Haproxy pool",
+		"provider": "loadbalancer",
+                "protocol": "HTTP",
+                "subnet_id": {"Ref":"Subnet"},
+                "vip": {
+                    "subnet": {"Ref":"Subnet"},
+		    "address": {"Ref":"vip_ip"},
+                    "name": "Haproxy vip",
+                    "description": {"Ref":"service_chain_metadata"},
+                    "protocol_port": 80,
+                    "connection_limit": -1,
+                    "admin_state_up": true
+                }
+            }
+        },
+        "HaproxyLb": {
+            "Type": "OS::Neutron::LoadBalancer",
+            "Properties": {
+                "pool_id": {"Ref":"HaproxyPool"},
+                "protocol_port": 80
+            }
+        }
+    }
+}
+

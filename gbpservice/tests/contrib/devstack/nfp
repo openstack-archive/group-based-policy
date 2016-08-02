@@ -1,17 +1,22 @@
 #!/bin/bash
 NEW_BASE="$BASE/new"
-DISK_IMAGE_DIR=$NEW_BASE/group-based-policy/gbpservice/tests/contrib
+DISKIMAGE_CREATE_DIR=$NEW_BASE/group-based-policy/gbpservice/contrib/nfp/tools/image_builder/
 
 function prepare_nfp_image_builder {
     #setup_develop $NFPSERVICE_DIR
-    sudo -H -E pip install -r $DISK_IMAGE_DIR/diskimage-create/requirements.txt
+    sudo -H -E pip install -r $DISKIMAGE_CREATE_DIR/requirements.txt
     sudo apt-get install -y --force-yes qemu-utils
 }
 
 function create_nfp_image {
     TOP_DIR=$1
-    sudo python $DISK_IMAGE_DIR/diskimage-create/disk_image_create.py $DISK_IMAGE_DIR/diskimage-create/ref_configurator_conf.json
-    BUILT_IMAGE_PATH=$(cat $DISK_IMAGE_DIR/diskimage-create/output/last_built_image_path)
+    sudo python -c\
+ 'from gbpservice.contrib.nfp.tools.image_builder import disk_image_create as DIB;\
+ DIB.cur_dir = "'$DISKIMAGE_CREATE_DIR'";\
+ DIB.conf["ubuntu_release"] = {"release": "wily"};\
+ DIB.conf["dib"] = {"image_size": 3, "elements": ["nfp-reference-configurator", "dhcp-all-interfaces", "devuser"], "offline": True, "cache_dir": "'$HOME'/.cache/image-create"};\
+ DIB.dib()'
+    BUILT_IMAGE_PATH=$(cat $DISKIMAGE_CREATE_DIR/output/last_built_image_path)
     upload_image file://$BUILT_IMAGE_PATH
 
     openstack --os-cloud=devstack-admin flavor create --ram 512 --disk 3 --vcpus 1 m1.nfp-tiny
@@ -136,7 +141,7 @@ function namespace_create {
 function create_nfp_gbp_resources {
    TOP_DIR=$1
    source $TOP_DIR/openrc neutron service
-   IMAGE_PATH=$(cat $DISK_IMAGE_DIR/diskimage-create/output/last_built_image_path)
+   IMAGE_PATH=$(cat $DISKIMAGE_CREATE_DIR/output/last_built_image_path)
    IMAGE_NAME=`basename "$IMAGE_PATH"`
    IMAGE_NAME_FLAT="${IMAGE_NAME%.*}"
    FLAVOR=m1.nfp-tiny
