@@ -1,0 +1,5 @@
+#!/bin/bash
+set -eux
+
+# start docker on every boot
+sed -i '2i docker start configurator' /etc/rc.local

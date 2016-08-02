@@ -1,6 +1,5 @@
 #!/bin/bash
 set -eux
 
-
 # since we already did a docker load, we can delete docker images
-rm -rf /usr/share/configurator/docker/images/
+rm -rf /usr/share/docker/images/
