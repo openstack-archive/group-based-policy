@@ -15,20 +15,16 @@
 
 from aim import aim_manager
 from aim.api import resource as aim_resource
+from aim import config as aim_cfg
 from aim import context as aim_context
-from neutron._i18n import _LE
 from neutron._i18n import _LI
 from neutron._i18n import _LW
-from neutron.agent.linux import dhcp
 from neutron.common import constants as n_constants
-from neutron.common import rpc as n_rpc
 # from neutron.db import models_v2
+from neutron.db import api as db_api
 from neutron.extensions import portbindings
-from neutron import manager
 from neutron.plugins.ml2 import driver_api as api
-from neutron.plugins.ml2 import rpc as ml2_rpc
 from opflexagent import constants as ofcst
-from opflexagent import rpc as o_rpc
 from oslo_log import log
 
 from gbpservice.neutron.plugins.ml2plus import driver_api as api_plus
@@ -39,7 +35,6 @@ from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim.extensions import (
 from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import model
 
 LOG = log.getLogger(__name__)
-AP_NAME = 'NeutronAP'
 UNROUTED_VRF_NAME = 'UnroutedVRF'
 COMMON_TENANT_NAME = 'common'
 AGENT_TYPE_DVS = 'DVS agent'
@@ -59,20 +54,16 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
         self.db = model.DbModel()
         self.name_mapper = apic_mapper.APICNameMapper(self.db, log)
         self.aim = aim_manager.AimManager()
-
-        # REVISIT(rkukura): Read from config or possibly from AIM?
-        self.enable_dhcp_opt = True
-        self.enable_metadata_opt = True
-
-        self._setup_opflex_rpc_listeners()
-
-    def _setup_opflex_rpc_listeners(self):
-        self.opflex_endpoints = [o_rpc.GBPServerRpcCallback(self)]
-        self.opflex_topic = o_rpc.TOPIC_OPFLEX
-        self.opflex_conn = n_rpc.create_connection(new=True)
-        self.opflex_conn.create_consumer(
-            self.opflex_topic, self.opflex_endpoints, fanout=False)
-        self.opflex_conn.consume_in_threads()
+        self.aim_cfg_mgr = aim_cfg.ConfigManager(
+            aim_context.AimContext(db_api.get_session()),
+            host=aim_cfg.CONF.host)
+        # Get APIC configuration and subscribe for changes
+        self.enable_metadata_opt = self.aim_cfg_mgr.get_option_and_subscribe(
+            self._set_enable_metadata_opt, 'enable_optimized_metadata', 'apic')
+        self.enable_dhcp_opt = self.aim_cfg_mgr.get_option_and_subscribe(
+            self._set_enable_dhcp_opt, 'enable_optimized_dhcp', 'apic')
+        self.ap_name = self.aim_cfg_mgr.get_option_and_subscribe(
+            self._set_ap_name, 'apic_app_profile_name', 'apic')
 
     def ensure_tenant(self, plugin_context, tenant_id):
         LOG.info(_LI("APIC AIM MD ensuring tenant_id: %s"), tenant_id)
@@ -96,9 +87,8 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
             tenant = aim_resource.Tenant(name=tenant_aname)
             if not self.aim.get(aim_ctx, tenant):
                 self.aim.create(aim_ctx, tenant)
-
             ap = aim_resource.ApplicationProfile(tenant_name=tenant_aname,
-                                                 name=AP_NAME)
+                                                 name=self.ap_name)
             if not self.aim.get(aim_ctx, ap):
                 self.aim.create(aim_ctx, ap)
 
@@ -136,7 +126,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
 
         epg = aim_resource.EndpointGroup(
             tenant_name=tenant_aname,
-            app_profile_name=AP_NAME,
+            app_profile_name=self.ap_name,
             name=aname,
             display_name=dname,
             bd_name=aname)
@@ -168,7 +158,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
             bd = self.aim.update(aim_ctx, bd, display_name=dname)
 
             epg = aim_resource.EndpointGroup(tenant_name=tenant_aname,
-                                             app_profile_name=AP_NAME,
+                                             app_profile_name=self.ap_name,
                                              name=aname)
             epg = self.aim.update(aim_ctx, epg, display_name=dname)
 
@@ -190,7 +180,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
         aim_ctx = aim_context.AimContext(session)
 
         epg = aim_resource.EndpointGroup(tenant_name=tenant_aname,
-                                         app_profile_name=AP_NAME,
+                                         app_profile_name=self.ap_name,
                                          name=aname)
         self.aim.delete(aim_ctx, epg)
 
@@ -227,7 +217,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
         LOG.debug("got BD with DN: %s", bd.dn)
 
         epg = aim_resource.EndpointGroup(tenant_name=tenant_aname,
-                                         app_profile_name=AP_NAME,
+                                         app_profile_name=self.ap_name,
                                          name=aname)
         epg = self.aim.get(aim_ctx, epg)
         LOG.debug("got EPG with DN: %s", epg.dn)
@@ -439,152 +429,6 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
         # TODO(rkukura): Implement DVS port binding
         return False
 
-    # RPC Method
-    def get_gbp_details(self, context, **kwargs):
-        LOG.debug("APIC AIM MD handling get_gbp_details for: %s", kwargs)
-        try:
-            return self._get_gbp_details(context, kwargs)
-        except Exception as e:
-            device = kwargs.get('device')
-            LOG.error(_LE("An exception has occurred while retrieving device "
-                          "gbp details for %s"), device)
-            LOG.exception(e)
-            return {'device': device}
-
-    def request_endpoint_details(self, context, **kwargs):
-        LOG.debug("APIC AIM MD handling get_endpoint_details for: %s", kwargs)
-        try:
-            request = kwargs.get('request')
-            result = {'device': request['device'],
-                      'timestamp': request['timestamp'],
-                      'request_id': request['request_id'],
-                      'gbp_details': None,
-                      'neutron_details': None}
-            result['gbp_details'] = self._get_gbp_details(context, request)
-            result['neutron_details'] = ml2_rpc.RpcCallbacks(
-                None, None).get_device_details(context, **request)
-            return result
-        except Exception as e:
-            LOG.error(_LE("An exception has occurred while requesting device "
-                          "gbp details for %s"), request.get('device'))
-            LOG.exception(e)
-            return None
-
-    def _get_gbp_details(self, context, request):
-        device = request.get('device')
-        host = request.get('host')
-
-        core_plugin = manager.NeutronManager.get_plugin()
-        port_id = core_plugin._device_to_port_id(context, device)
-        port_context = core_plugin.get_bound_port_context(context, port_id,
-                                                          host)
-        if not port_context:
-            LOG.warning(_LW("Device %(device)s requested by agent "
-                            "%(agent_id)s not found in database"),
-                        {'device': port_id,
-                         'agent_id': request.get('agent_id')})
-            return {'device': device}
-
-        port = port_context.current
-        if port[portbindings.HOST_ID] != host:
-            LOG.warning(_LW("Device %(device)s requested by agent "
-                            "%(agent_id)s not found bound for host %(host)s"),
-                        {'device': port_id, 'host': host,
-                         'agent_id': request.get('agent_id')})
-            return
-
-        session = context.session
-        with session.begin(subtransactions=True):
-            # REVISIT(rkukura): Should AIM resources be
-            # validated/created here if necessary? Also need to avoid
-            # creating any new name mappings without first getting
-            # their resource names.
-
-            # TODO(rkukura): For GBP, we need to use the EPG
-            # associated with the port's PT's PTG. For now, we just use the
-            # network's default EPG.
-
-            # TODO(rkukura): Use common tenant for shared networks.
-
-            # TODO(rkukura): Scope the tenant's AIM name.
-
-            network = port_context.network.current
-            epg_tenant_aname = self.name_mapper.tenant(session,
-                                                       network['tenant_id'])
-            epg_aname = self.name_mapper.network(session, network['id'])
-
-        promiscuous_mode = port['device_owner'] in PROMISCUOUS_TYPES
-
-        details = {'allowed_address_pairs': port['allowed_address_pairs'],
-                   'app_profile_name': AP_NAME,
-                   'device': device,
-                   'enable_dhcp_optimization': self.enable_dhcp_opt,
-                   'enable_metadata_optimization': self.enable_metadata_opt,
-                   'endpoint_group_name': epg_aname,
-                   'host': host,
-                   'l3_policy_id': network['tenant_id'],  # TODO(rkukura)
-                   'mac_address': port['mac_address'],
-                   'port_id': port_id,
-                   'promiscuous_mode': promiscuous_mode,
-                   'ptg_tenant': epg_tenant_aname,
-                   'subnets': self._get_subnet_details(core_plugin, context,
-                                                       port)}
-
-        if port['device_owner'].startswith('compute:') and port['device_id']:
-            # REVISIT(rkukura): Do we need to map to name using nova client?
-            details['vm-name'] = port['device_id']
-
-        # TODO(rkukura): Mark active allowed_address_pairs
-
-        # TODO(rkukura): Add the following details common to the old
-        # GBP and ML2 drivers: floating_ip, host_snat_ips, ip_mapping,
-        # vrf_name, vrf_subnets, vrf_tenant.
-
-        # TODO(rkukura): Add the following details unique to the old
-        # ML2 driver: attestation, interface_mtu.
-
-        # TODO(rkukura): Add the following details unique to the old
-        # GBP driver: extra_details, extra_ips, fixed_ips,
-        # l2_policy_id.
-
-        return details
-
-    def _get_subnet_details(self, core_plugin, context, port):
-        subnets = core_plugin.get_subnets(
-            context,
-            filters={'id': [ip['subnet_id'] for ip in port['fixed_ips']]})
-        for subnet in subnets:
-            dhcp_ips = set()
-            for port in core_plugin.get_ports(
-                    context, filters={
-                        'network_id': [subnet['network_id']],
-                        'device_owner': [n_constants.DEVICE_OWNER_DHCP]}):
-                dhcp_ips |= set([x['ip_address'] for x in port['fixed_ips']
-                                 if x['subnet_id'] == subnet['id']])
-            dhcp_ips = list(dhcp_ips)
-            if not subnet['dns_nameservers']:
-                # Use DHCP namespace port IP
-                subnet['dns_nameservers'] = dhcp_ips
-            # Ser Default route if needed
-            metadata = default = False
-            if subnet['ip_version'] == 4:
-                for route in subnet['host_routes']:
-                    if route['destination'] == '0.0.0.0/0':
-                        default = True
-                    if route['destination'] == dhcp.METADATA_DEFAULT_CIDR:
-                        metadata = True
-                # Set missing routes
-                if not default:
-                    subnet['host_routes'].append(
-                        {'destination': '0.0.0.0/0',
-                         'nexthop': subnet['gateway_ip']})
-                if not metadata and dhcp_ips and not self.enable_metadata_opt:
-                    subnet['host_routes'].append(
-                        {'destination': dhcp.METADATA_DEFAULT_CIDR,
-                         'nexthop': dhcp_ips[0]})
-            subnet['dhcp_server_ips'] = dhcp_ips
-        return subnets
-
     def _merge_status(self, sync_state, status):
         if status.is_error():
             sync_state = cisco_apic.SYNC_ERROR
@@ -620,3 +464,13 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
             LOG.info(_LI("Creating common unrouted VRF"))
             vrf = self.aim.create(aim_ctx, attrs)
         return vrf
+
+    # DB Configuration callbacks
+    def _set_enable_metadata_opt(self, new_conf):
+        self.enable_metadata_opt = new_conf['value']
+
+    def _set_enable_dhcp_opt(self, new_conf):
+        self.enable_dhcp_opt = new_conf['value']
+
+    def _set_ap_name(self, new_conf):
+        self.ap_name = new_conf['value']
