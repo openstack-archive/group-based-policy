@@ -16,6 +16,7 @@ from neutron._i18n import _LW
 from neutron.api.rpc.agentnotifiers import dhcp_rpc_agent_api
 from neutron.common import constants as const
 from neutron.common import exceptions as n_exc
+from neutron.extensions import address_scope
 from neutron.extensions import l3
 from neutron.extensions import securitygroup as ext_sg
 from neutron import manager
@@ -260,6 +261,72 @@ class LocalAPI(object):
                                   subnet_id, clean_session=clean_session)
         except n_exc.SubnetNotFound:
             LOG.warning(_LW('Subnet %s already deleted'), subnet_id)
+
+    def _get_subnetpool(self, plugin_context, subnetpool_id,
+                        clean_session=True):
+        return self._get_resource(self._core_plugin, plugin_context,
+                                  'subnetpool',
+                                  subnetpool_id, clean_session=clean_session)
+
+    def _get_subnetpools(self, plugin_context, filters=None,
+                         clean_session=True):
+        filters = filters or {}
+        return self._get_resources(self._core_plugin, plugin_context,
+                                   'subnetpools', filters,
+                                   clean_session=clean_session)
+
+    def _create_subnetpool(self, plugin_context, attrs, clean_session=True):
+        return self._create_resource(self._core_plugin, plugin_context,
+                                     'subnetpool', attrs,
+                                     clean_session=clean_session)
+
+    def _update_subnetpool(self, plugin_context, subnetpool_id, attrs,
+                           clean_session=True):
+        return self._update_resource(self._core_plugin, plugin_context,
+                                     'subnetpool', subnetpool_id, attrs,
+                                     clean_session=clean_session)
+
+    def _delete_subnetpool(self, plugin_context, subnetpool_id,
+                           clean_session=True):
+        try:
+            self._delete_resource(self._core_plugin, plugin_context,
+                                  'subnetpool', subnetpool_id,
+                                  clean_session=clean_session)
+        except n_exc.SubnetPoolNotFound:
+            LOG.warning(_LW('Subnetpool %s already deleted'), subnetpool_id)
+
+    def _get_address_scope(self, plugin_context, address_scope_id,
+                           clean_session=True):
+        return self._get_resource(self._core_plugin, plugin_context,
+                                  'address_scope', address_scope_id,
+                                  clean_session=clean_session)
+
+    def _get_address_scopes(self, plugin_context, filters=None,
+                            clean_session=True):
+        filters = filters or {}
+        return self._get_resources(self._core_plugin, plugin_context,
+                                   'address_scopes', filters,
+                                   clean_session=clean_session)
+
+    def _create_address_scope(self, plugin_context, attrs, clean_session=True):
+        return self._create_resource(self._core_plugin, plugin_context,
+                                     'address_scope', attrs,
+                                     clean_session=clean_session)
+
+    def _update_address_scope(self, plugin_context, address_scope_id, attrs,
+                           clean_session=True):
+        return self._update_resource(self._core_plugin, plugin_context,
+                                     'address_scope', address_scope_id, attrs,
+                                     clean_session=clean_session)
+
+    def _delete_address_scope(self, plugin_context, address_scope_id,
+                           clean_session=True):
+        try:
+            self._delete_resource(self._core_plugin, plugin_context,
+                                  'address_scope', address_scope_id,
+                                  clean_session=clean_session)
+        except address_scope.AddressScopeNotFound:
+            LOG.warning(_LW('Subnetpool %s already deleted'), address_scope_id)
 
     def _get_network(self, plugin_context, network_id, clean_session=True):
         return self._get_resource(self._core_plugin, plugin_context, 'network',
