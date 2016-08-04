@@ -16,6 +16,7 @@ from neutron._i18n import _LW
 from neutron.api.rpc.agentnotifiers import dhcp_rpc_agent_api
 from neutron.common import constants as const
 from neutron.common import exceptions as n_exc
+from neutron.extensions import address_scope
 from neutron.extensions import l3
 from neutron.extensions import securitygroup as ext_sg
 from neutron import manager
