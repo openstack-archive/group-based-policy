@@ -13,14 +13,14 @@
 from aim.api import resource as aim_resource
 from aim import context as aim_context
 from neutron._i18n import _LI
+from neutron.agent.linux import dhcp
+from neutron.common import constants as n_constants
 from neutron import manager
 from oslo_concurrency import lockutils
 from oslo_log import helpers as log
 from oslo_log import log as logging
 
 from gbpservice.neutron.extensions import group_policy as gpolicy
-from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import (
-    mechanism_driver as aim_md)
 from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim.extensions import (
     cisco_apic)
 from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import model
@@ -29,18 +29,24 @@ from gbpservice.neutron.services.grouppolicy.common import (
 from gbpservice.neutron.services.grouppolicy.common import exceptions as gpexc
 from gbpservice.neutron.services.grouppolicy.drivers import (
     neutron_resources as nrd)
+from gbpservice.neutron.services.grouppolicy.drivers.cisco.apic import (
+    aim_mapping_rpc as aim_rpc)
 from gbpservice.neutron.services.grouppolicy import plugin as gbp_plugin
 
 
 LOG = logging.getLogger(__name__)
 APIC_OWNED = 'apic_owned_'
+PROMISCUOUS_TYPES = [n_constants.DEVICE_OWNER_DHCP,
+                     n_constants.DEVICE_OWNER_LOADBALANCER]
+# TODO(ivar): define a proper promiscuous API
+PROMISCUOUS_SUFFIX = 'promiscuous'
 
 
 class ExplicitSubnetAssociationNotSupported(gpexc.GroupPolicyBadRequest):
     message = _("Explicit subnet association not supported by APIC driver.")
 
 
-class AIMMappingDriver(nrd.CommonNeutronBase):
+class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
     """AIM Mapping Orchestration driver.
 
     This driver maps GBP resources to the ACI-Integration-Module (AIM).
@@ -52,6 +58,7 @@ class AIMMappingDriver(nrd.CommonNeutronBase):
         self.db = model.DbModel()
         super(AIMMappingDriver, self).initialize()
         self._apic_aim_mech_driver = None
+        self.setup_opflex_rpc_listeners()
 
     @property
     def aim_mech_driver(self):
@@ -219,6 +226,7 @@ class AIMMappingDriver(nrd.CommonNeutronBase):
         # self.aim.delete(aim_context, tf)
 
     def _aim_tenant_name(self, session, tenant_id):
+        # TODO(ivar): manage shared objects
         tenant_name = self.name_mapper.tenant(session, tenant_id)
         LOG.debug("Mapped tenant_id %(id)s to %(apic_name)s",
                   {'id': tenant_id, 'apic_name': tenant_name})
@@ -236,7 +244,7 @@ class AIMMappingDriver(nrd.CommonNeutronBase):
                   {'id': id, 'name': name, 'apic_name': epg_name})
         kwargs = {'tenant_name': str(tenant_name),
                   'name': str(epg_name),
-                  'app_profile_name': aim_md.AP_NAME}
+                  'app_profile_name': self.aim_mech_driver.ap_name}
         if bd_name:
             kwargs['bd_name'] = bd_name
         if bd_tenant_name:
@@ -337,3 +345,112 @@ class AIMMappingDriver(nrd.CommonNeutronBase):
 
     def _db_plugin(self, plugin_obj):
             return super(gbp_plugin.GroupPolicyPlugin, plugin_obj)
+
+    def _is_port_promiscuous(self, plugin_context, port):
+        pt = self._port_id_to_pt(plugin_context, port['id'])
+        if (pt and pt.get('cluster_id') and
+                pt.get('cluster_id') != pt['id']):
+            master = self._get_policy_target(plugin_context, pt['cluster_id'])
+            if master.get('group_default_gateway'):
+                return True
+        return (port['device_owner'] in PROMISCUOUS_TYPES or
+                port['name'].endswith(PROMISCUOUS_SUFFIX)) or (
+                    pt and pt.get('group_default_gateway'))
+
+    def _is_dhcp_optimized(self, plugin_context, port):
+        return self.aim_mech_driver.enable_dhcp_opt
+
+    def _is_metadata_optimized(self, plugin_context, port):
+        return self.aim_mech_driver.enable_metadata_opt
+
+    def _get_port_epg(self, plugin_context, port):
+        ptg, pt = self._port_id_to_ptg(plugin_context, port['id'])
+        if ptg:
+            return self._get_aim_endpoint_group(plugin_context.session, ptg)
+        else:
+            #TODO(ivar) Return default EPG
+            return
+
+    def _get_subnet_details(self, plugin_context, port, details):
+        # L2P might not exist for a pure Neutron port
+        l2p = self._network_id_to_l2p(plugin_context, port['network_id'])
+        # TODO(ivar): support shadow network
+        #if not l2p and self._ptg_needs_shadow_network(context, ptg):
+        #    l2p = self._get_l2_policy(context._plugin_context,
+        #                              ptg['l2_policy_id'])
+
+        subnets = self._get_subnets(
+            plugin_context,
+            filters={'id': [ip['subnet_id'] for ip in port['fixed_ips']]})
+        for subnet in subnets:
+            dhcp_ips = set()
+            for port in self._get_ports(
+                    plugin_context,
+                    filters={
+                        'network_id': [subnet['network_id']],
+                        'device_owner': [n_constants.DEVICE_OWNER_DHCP]}):
+                dhcp_ips |= set([x['ip_address'] for x in port['fixed_ips']
+                                 if x['subnet_id'] == subnet['id']])
+            dhcp_ips = list(dhcp_ips)
+            if not subnet['dns_nameservers']:
+                # Use DHCP namespace port IP
+                subnet['dns_nameservers'] = dhcp_ips
+            # Set Default & Metadata routes if needed
+            default_route = metadata_route = {}
+            if subnet['ip_version'] == 4:
+                for route in subnet['host_routes']:
+                    if route['destination'] == '0.0.0.0/0':
+                        default_route = route
+                    if route['destination'] == dhcp.METADATA_DEFAULT_CIDR:
+                        metadata_route = route
+                if not l2p or not l2p['inject_default_route']:
+                    # In this case we do not want to send the default route
+                    # and the metadata route. We also do not want to send
+                    # the gateway_ip for the subnet.
+                    if default_route:
+                        subnet['host_routes'].remove(default_route)
+                    if metadata_route:
+                        subnet['host_routes'].remove(metadata_route)
+                    del subnet['gateway_ip']
+                else:
+                    # Set missing routes
+                    if not default_route:
+                        subnet['host_routes'].append(
+                            {'destination': '0.0.0.0/0',
+                             'nexthop': subnet['gateway_ip']})
+                    if not metadata_route and dhcp_ips and (
+                        not self.enable_metadata_opt):
+                        subnet['host_routes'].append(
+                            {'destination': dhcp.METADATA_DEFAULT_CIDR,
+                             'nexthop': dhcp_ips[0]})
+            subnet['dhcp_server_ips'] = dhcp_ips
+        return subnets
+
+    def _get_aap_details(self, plugin_context, port, details):
+        pt = self._port_id_to_pt(plugin_context, port['id'])
+        aaps = port['allowed_address_pairs']
+        if pt:
+            # Set the correct address ownership for this port
+            owned_addresses = self._get_owned_addresses(
+                plugin_context, pt['port_id'])
+            for allowed in aaps:
+                if allowed['ip_address'] in owned_addresses:
+                    # Signal the agent that this particular address is active
+                    # on its port
+                    allowed['active'] = True
+        return aaps
+
+    def _get_vrf_id(self, plugin_context, port, details):
+        # TODO(ivar): this is related to the address scope. Not sure what to
+        # return at this time
+        pass
+
+    def _get_port_vrf(self, plugin_context, vrf_id, details):
+        # TODO(ivar): this is related to the address scope. Not sure what to
+        # return at this time
+        pass
+
+    def _get_vrf_subnets(self, plugin_context, vrf_id, details):
+        # TODO(ivar): this is related to the address scope. Not sure what to
+        # return at this time
+        pass
