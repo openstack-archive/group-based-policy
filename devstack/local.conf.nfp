@@ -42,8 +42,8 @@ if [[ $ENABLE_NFP = True ]]; then
         # Make sure that your public interface is not attached to any bridge.
         PUBLIC_INTERFACE=
 
-        enable_plugin neutron-vpnaas https://git.openstack.org/openstack/neutron-vpnaas stable/mitaka
-        enable_plugin ceilometer https://git.openstack.org/openstack/ceilometer.git stable/mitaka
+        enable_plugin neutron-vpnaas https://git.openstack.org/openstack/neutron-vpnaas stable/liberty
+        enable_plugin ceilometer https://git.openstack.org/openstack/ceilometer.git stable/liberty
 
     fi
 fi
