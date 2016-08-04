@@ -278,7 +278,7 @@ function create_nfp_image {
  'from gbpservice.contrib.nfp.tools.image_builder import disk_image_create as DIB;\
  DIB.cur_dir = "'$DISKIMAGE_CREATE_DIR'";\
  DIB.conf["ubuntu_release"] = {"release": "trusty"};\
- DIB.conf["dib"] = {"image_size": 10, "elements": ["configurator"], "offline": True, "cache_dir": "'$HOME'/.cache/image-create"};\
+ DIB.conf["dib"] = {"image_size": 10, "elements": ["configurator", "root-passwd"], "root_pswd": "nfp123", "offline": True, "cache_dir": "'$HOME'/.cache/image-create"};\
  DIB.dib()'
             rm -rf $DISKIMAGE_CREATE_DIR/neutron_lib $DISKIMAGE_CREATE_DIR/gbpservice $DISKIMAGE_CREATE_DIR/neutron $DISKIMAGE_CREATE_DIR/neutron_lbaas
             ConfiguratorQcow2Image=$(cat $DISKIMAGE_CREATE_DIR/output/last_built_image_path)
