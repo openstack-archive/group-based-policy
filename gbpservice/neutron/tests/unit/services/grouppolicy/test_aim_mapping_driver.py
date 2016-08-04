@@ -19,6 +19,7 @@ from aim.db import model_base as aim_model_base
 from keystoneclient.v3 import client as ksc_client
 from neutron import context as nctx
 from neutron.db import api as db_api
+from opflexagent import constants as ocst
 import webob.exc
 
 from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import (
@@ -36,6 +37,11 @@ from gbpservice.neutron.tests.unit.services.grouppolicy import (
 
 
 ML2PLUS_PLUGIN = 'gbpservice.neutron.plugins.ml2plus.plugin.Ml2PlusPlugin'
+AGENT_TYPE = ocst.AGENT_TYPE_OPFLEX_OVS
+AGENT_CONF = {'alive': True, 'binary': 'somebinary',
+              'topic': 'sometopic', 'agent_type': AGENT_TYPE,
+              'configurations': {'opflex_networks': None,
+                                 'bridge_mappings': {'physnet1': 'br-eth1'}}}
 
 
 class AIMBaseTestCase(test_nr_base.CommonNeutronBaseTestCase,
@@ -46,6 +52,7 @@ class AIMBaseTestCase(test_nr_base.CommonNeutronBaseTestCase,
     def setUp(self, policy_drivers=None, core_plugin=None, ml2_options=None,
               sc_plugin=None, **kwargs):
         core_plugin = core_plugin or ML2PLUS_PLUGIN
+        self.agent_conf = AGENT_CONF
         policy_drivers = policy_drivers or ['aim_mapping']
         ml2_opts = ml2_options or {'mechanism_drivers': ['logger', 'apic_aim'],
                                    'extension_drivers': ['apic_aim'],
@@ -74,25 +81,43 @@ class AIMBaseTestCase(test_nr_base.CommonNeutronBaseTestCase,
             self._neutron_context.session)
         self._db = model.DbModel()
         self._name_mapper = None
+        self._driver = None
+        nova_client = mock.patch(
+            'gbpservice.neutron.services.grouppolicy.drivers.cisco.'
+            'apic.nova_client.NovaClient.get_server').start()
+        vm = mock.Mock()
+        vm.name = 'someid'
+        nova_client.return_value = vm
 
     def tearDown(self):
         ksc_client.Client = self.saved_keystone_client
         super(AIMBaseTestCase, self).tearDown()
 
+    def _bind_port_to_host(self, port_id, host):
+        data = {'port': {'binding:host_id': host,
+                         'device_owner': 'compute:',
+                         'device_id': 'someid'}}
+        return super(AIMBaseTestCase, self)._bind_port_to_host(
+            port_id, host, data=data)
+
+    @property
+    def driver(self):
+        if not self._driver:
+            self._driver = (
+                self._gbp_plugin.policy_driver_manager.policy_drivers[
+                    'aim_mapping'].obj)
+        return self._driver
+
     @property
     def aim_mgr(self):
         if not self._aim_mgr:
-            self._aim_mgr = (
-                self._gbp_plugin.policy_driver_manager.policy_drivers[
-                    'aim_mapping'].obj.aim)
+            self._aim_mgr = self.driver.aim
         return self._aim_mgr
 
     @property
     def name_mapper(self):
         if not self._name_mapper:
-            self._name_mapper = (
-                self._gbp_plugin.policy_driver_manager.policy_drivers[
-                    'aim_mapping'].obj.name_mapper)
+            self._name_mapper = self.driver.name_mapper
         return self._name_mapper
 
 
@@ -104,8 +129,8 @@ class TestL2Policy(test_nr_base.TestL2Policy, AIMBaseTestCase):
 class TestPolicyTargetGroup(AIMBaseTestCase):
 
     def _test_aim_resource_status(self, aim_resource_obj, gbp_resource):
-        aim_status = self.aim_mgr.get_status(self._aim_context,
-                                             aim_resource_obj)
+        aim_status = self.driver.get_status(self._aim_context,
+                                            aim_resource_obj)
         if aim_status.is_error():
             self.assertEqual(gp_const.STATUS_ERROR, gbp_resource['status'])
         elif aim_status.is_build():
@@ -130,11 +155,11 @@ class TestPolicyTargetGroup(AIMBaseTestCase):
         aim_tenant_name = str(self.name_mapper.tenant(
             self._neutron_context.session, self._tenant_id))
         aim_app_profile_name = aim_md.AP_NAME
-        aim_app_profiles = self.aim_mgr.find(
+        aim_app_profiles = self.driver.find(
             self._aim_context, aim_resource.ApplicationProfile,
             tenant_name=aim_tenant_name, name=aim_app_profile_name)
         self.assertEqual(1, len(aim_app_profiles))
-        aim_epgs = self.aim_mgr.find(
+        aim_epgs = self.driver.find(
             self._aim_context, aim_resource.EndpointGroup, name=aim_epg_name)
         self.assertEqual(1, len(aim_epgs))
         self.assertEqual(aim_epg_name, aim_epgs[0].name)
@@ -154,7 +179,7 @@ class TestPolicyTargetGroup(AIMBaseTestCase):
         # Implicitly created L2P should be deleted
         self.show_l2_policy(ptg['l2_policy_id'], expected_res_status=404)
 
-        aim_epgs = self.aim_mgr.find(
+        aim_epgs = self.driver.find(
             self._aim_context, aim_resource.EndpointGroup, name=aim_epg_name)
         self.assertEqual(0, len(aim_epgs))
 
@@ -177,11 +202,11 @@ class TestPolicyTargetGroup(AIMBaseTestCase):
         aim_tenant_name = str(self.name_mapper.tenant(
             self._neutron_context.session, self._tenant_id))
         aim_app_profile_name = aim_md.AP_NAME
-        aim_app_profiles = self.aim_mgr.find(
+        aim_app_profiles = self.driver.find(
             self._aim_context, aim_resource.ApplicationProfile,
             tenant_name=aim_tenant_name, name=aim_app_profile_name)
         self.assertEqual(1, len(aim_app_profiles))
-        aim_epgs = self.aim_mgr.find(
+        aim_epgs = self.driver.find(
             self._aim_context, aim_resource.EndpointGroup, name=aim_epg_name)
         self.assertEqual(1, len(aim_epgs))
         self.assertEqual(aim_epg_name, aim_epgs[0].name)
@@ -198,7 +223,7 @@ class TestPolicyTargetGroup(AIMBaseTestCase):
         # Explicitly created L2P should not be deleted
         self.show_l2_policy(ptg['l2_policy_id'], expected_res_status=200)
 
-        aim_epgs = self.aim_mgr.find(
+        aim_epgs = self.driver.find(
             self._aim_context, aim_resource.EndpointGroup, name=aim_epg_name)
         self.assertEqual(0, len(aim_epgs))
 
@@ -301,6 +326,56 @@ class TestPolicyTarget(AIMBaseTestCase):
         res = req.get_response(self.api)
         self.assertEqual(webob.exc.HTTPNotFound.code, res.status_int)
 
+    def _do_test_get_gbp_details(self):
+        l3p = self.create_l3_policy(name='myl3')['l3_policy']
+        l2p = self.create_l2_policy(name='myl2',
+                                    l3_policy_id=l3p['id'])['l2_policy']
+        ptg = self.create_policy_target_group(
+            name="ptg1", l2_policy_id=l2p['id'])['policy_target_group']
+        pt1 = self.create_policy_target(
+            policy_target_group_id=ptg['id'])['policy_target']
+        self._bind_port_to_host(pt1['port_id'], 'h1')
+
+        mapping = self.driver.get_gbp_details(self._neutron_admin_context,
+            device='tap%s' % pt1['port_id'], host='h1')
+        req_mapping = self.driver.request_endpoint_details(
+            nctx.get_admin_context(),
+            request={'device': 'tap%s' % pt1['port_id'], 'host': 'h1',
+                     'timestamp': 0, 'request_id': 'request_id'})
+        self.assertEqual(mapping, req_mapping['gbp_details'])
+
+        self.assertEqual(pt1['port_id'], mapping['port_id'])
+        epg_name = self.name_mapper.policy_target_group(
+            self._neutron_context.session, ptg['id'], ptg['name'])
+        epg_tenant = self.name_mapper.tenant(self._neutron_context.session,
+                                             ptg['tenant_id'])
+        self.assertEqual(epg_name, mapping['endpoint_group_name'])
+        self.assertEqual(epg_tenant, mapping['ptg_tenant'])
+        self.assertEqual('someid', mapping['vm-name'])
+        self.assertTrue(mapping['enable_dhcp_optimization'])
+        self.assertTrue(mapping['enable_metadata_optimization'])
+        self.assertEqual(1, len(mapping['subnets']))
+        subnet = self._get_object('subnets', ptg['subnets'][0], self.api)
+        self.assertEqual(subnet['subnet']['cidr'],
+                         mapping['subnets'][0]['cidr'])
+
+        # Verify Neutron details
+        self.assertEqual(pt1['port_id'],
+                         req_mapping['neutron_details']['port_id'])
+
+        # Create event on a second host to verify that the SNAT
+        # port gets created for this second host
+        pt2 = self.create_policy_target(
+            policy_target_group_id=ptg['id'])['policy_target']
+        self._bind_port_to_host(pt2['port_id'], 'h1')
+
+        mapping = self.driver.get_gbp_details(self._neutron_admin_context,
+            device='tap%s' % pt2['port_id'], host='h2')
+        self.assertEqual(pt2['port_id'], mapping['port_id'])
+
+    def test_get_gbp_details(self):
+        self._do_test_get_gbp_details()
+
 
 class TestPolicyTargetRollback(AIMBaseTestCase):
 
@@ -378,7 +453,7 @@ class TestPolicyRule(AIMBaseTestCase):
         pr_id = pr['id']
         pr_name = pr['name']
         rn = self._aim_mapper.tenant_filter(tenant, pr_id, name=pr_name)
-        aim_pr = self.aim_mgr.find(
+        aim_pr = self.driver.find(
             self._aim_context, aim_resource.TenantFilter, rn=rn)
         self.assertEqual(1, len(aim_pr))
         self.assertEqual(rn, aim_pr[0].rn)
@@ -387,6 +462,6 @@ class TestPolicyRule(AIMBaseTestCase):
         self.delete_policy_rule(pr_id, expected_res_status=204)
         self.show_policy_rule(pr_id, expected_res_status=404)
 
-        aim_pr = self.aim_mgr.find(
+        aim_pr = self.driver.find(
             self._aim_context, aim_resource.TenantFilter, rn=rn)
         self.assertEqual(0, len(aim_pr))
