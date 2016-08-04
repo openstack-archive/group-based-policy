@@ -10,6 +10,7 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+from neutron import manager
 from oslo_log import helpers as log
 from oslo_log import log as logging
 
@@ -35,7 +36,15 @@ class CommonNeutronBase(ipd.ImplicitPolicyBase, rmd.OwnedResourcesOperations,
     def initialize(self):
         # REVISIT: Check if this is still required
         self._cached_agent_notifier = None
+        self._gbp_plugin = None
         super(CommonNeutronBase, self).initialize()
+
+    @property
+    def gbp_plugin(self):
+        if not self._gbp_plugin:
+            self._gbp_plugin = (manager.NeutronManager.get_service_plugins()
+                                .get("GROUP_POLICY"))
+        return self._gbp_plugin
 
     @log.log_method_call
     def create_l2_policy_precommit(self, context):
@@ -70,3 +79,23 @@ class CommonNeutronBase(ipd.ImplicitPolicyBase, rmd.OwnedResourcesOperations,
             l3p_id = l2p_db['l3_policy_id']
             l2p_db.update({'l3_policy_id': None})
             self._cleanup_l3_policy(context, l3p_id, clean_session=False)
+
+    def _port_id_to_pt(self, plugin_context, port_id):
+        pts = self.gbp_plugin.get_policy_targets(
+            plugin_context, {'port_id': [port_id]})
+        if pts:
+            return pts[0]
+
+    def _port_id_to_ptg(self, plugin_context, port_id):
+        pt = self._port_id_to_pt(plugin_context, port_id)
+        if pt:
+            return self.gbp_plugin.get_policy_target_group(
+                plugin_context, pt['policy_target_group_id']), pt
+        return None, None
+
+    def _network_id_to_l2p(self, context, network_id):
+        l2ps = self.gbp_plugin.get_l2_policies(
+            context, filters={'network_id': [network_id]})
+        for l2p in l2ps:
+            if l2p['network_id'] == network_id:
+                return l2p

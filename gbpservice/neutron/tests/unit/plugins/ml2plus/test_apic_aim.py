@@ -15,8 +15,10 @@
 
 from aim import aim_manager
 from aim.api import resource as aim_resource
+from aim import config as aim_cfg
 from aim import context as aim_context
 from aim.db import model_base as aim_model_base
+from aim.db import config_model as aim_config_model  # noqa
 from keystoneclient.v3 import client as ksc_client
 from neutron import context
 from neutron.db import api as db_api
@@ -53,7 +55,26 @@ class FakeKeystoneClient(object):
         self.projects = FakeProjectManager()
 
 
-class ApicAimTestCase(test_plugin.NeutronDbPluginV2TestCase):
+class ApicAimTestMixin(object):
+
+    def initialize_db_config(self):
+        self.aim_cfg_manager = aim_cfg.ConfigManager(
+            aim_context.AimContext(
+                db_session=db_api.get_session(expire_on_commit=True)), '')
+        self.aim_cfg_manager.replace_all(aim_cfg.CONF)
+
+    def set_override(self, item, value, group=None, host=''):
+        # Override DB config as well
+        if group:
+            aim_cfg.CONF.set_override(item, value, group)
+        else:
+            aim_cfg.CONF.set_override(item, value)
+        self.aim_cfg_manager.to_db(aim_cfg.CONF, host=host)
+
+
+
+class ApicAimTestCase(test_plugin.NeutronDbPluginV2TestCase,
+                      ApicAimTestMixin):
 
     def setUp(self):
         # Enable the test mechanism driver to ensure that
@@ -75,14 +96,15 @@ class ApicAimTestCase(test_plugin.NeutronDbPluginV2TestCase):
                                      ['physnet1:1000:1099'],
                                      group='ml2_type_vlan')
 
+        engine = db_api.get_engine()
+        aim_model_base.Base.metadata.create_all(engine)
+        self.initialize_db_config()
+
         super(ApicAimTestCase, self).setUp(PLUGIN_NAME)
         self.port_create_status = 'DOWN'
 
         self.saved_keystone_client = ksc_client.Client
         ksc_client.Client = FakeKeystoneClient
-
-        engine = db_api.get_engine()
-        aim_model_base.Base.metadata.create_all(engine)
 
         self.plugin = manager.NeutronManager.get_plugin()
         self.plugin.start_rpc_listeners()
@@ -235,38 +257,6 @@ class TestPortBinding(ApicAimTestCase):
         self.assertEqual('ovs', port['binding:vif_type'])
         self.assertEqual({'port_filter': False, 'ovs_hybrid_plug': False},
                          port['binding:vif_details'])
-
-        # Verify get_gbp_details.
-        device = 'tap%s' % port_id
-        details = self.driver.get_gbp_details(context.get_admin_context(),
-            device=device, host='host1')
-        self.assertEqual(port['allowed_address_pairs'],
-                         details['allowed_address_pairs'])
-        self.assertEqual('NeutronAP', details['app_profile_name'])
-        self.assertEqual(device, details['device'])
-        self.assertTrue(details['enable_dhcp_optimization'])
-        self.assertTrue(details['enable_metadata_optimization'])
-        self.assertIn('net1', details['endpoint_group_name'])
-        self.assertEqual('host1', details['host'])
-        self.assertEqual('test-tenant', details['l3_policy_id'])
-        self.assertEqual(port['mac_address'], details['mac_address'])
-        self.assertEqual(port_id, details['port_id'])
-        self.assertFalse(details['promiscuous_mode'])
-        self.assertIn('TestTenantName', details['ptg_tenant'])
-        self.assertEqual(1, len(details['subnets']))
-        self.assertEqual('someid', details['vm-name'])
-
-        # Verify request_endpoint_details.
-        req_details = self.driver.request_endpoint_details(
-            context.get_admin_context(),
-            request={'device': 'tap%s' % port_id, 'host': 'host1',
-                     'timestamp': 0, 'request_id': 'a_request_id'})
-        self.assertEqual(details, req_details['gbp_details'])
-        self.assertEqual(port_id, req_details['neutron_details']['port_id'])
-
-        # TODO(rkukura): Verify subnet details. Also, test with
-        # variations of DHCP IPs on subnet, dns_nameservers and
-        # host_routes values, etc..
 
     # TODO(rkukura): Add tests for promiscuous_mode cases.
 
