@@ -126,7 +126,8 @@ def build_configuration_vm():
 
     # create a configurattion dictionary needed by DIB
     DIB.conf['ubuntu_release'] = {'release': 'trusty'}
-    DIB.conf['dib'] = {"image_size": 10, "elements": ["configurator"],
+    DIB.conf['dib'] = {"image_size": 10, "elements": ["configurator", "root-passwd"],
+                       "root_pswd": "nfp123",
                        "offline": True, "cache_dir": cache_dir}
 
     # Build configurator VM

@@ -113,6 +113,9 @@ def dib():
     # offline mode, assuming the image cache (tar) already exists
     if(dib['offline']):
         dib_args.append('--offline')
+    # root login enabled, set password environment varaible
+    if 'root-passwd' in dib['elements']:
+        os.environ['DIB_PASSWORD'] = dib['root_pswd']
     # set the image build cache dir
     dib_args.append('--image-cache')
     dib_args.append(dib['cache_dir'])
