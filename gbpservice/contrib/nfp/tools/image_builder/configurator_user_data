@@ -1,11 +1,4 @@
 #cloud-config
-users:
-  - name: ubuntu
-    groups: sudo
-    shell: /bin/bash
-    sudo: ['ALL=(ALL) NOPASSWD:ALL']
-    ssh-authorized-keys:
-      - <SSH PUBLIC KEY>
 
 runcmd:
   - docker run -d --name configurator -it -p 5672:5672 -p 8070:8080 configurator-docker
