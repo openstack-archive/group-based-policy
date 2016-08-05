@@ -28,6 +28,9 @@ dst_dir = "/tmp/controller_docker_build/"
 
 
 parser = argparse.ArgumentParser()
+parser.add_argument('--configure', action='store_true',
+                    dest='configure_nfp',
+                    default=False, help='Configure NFP')
 parser.add_argument('--build-controller-vm', action='store_true',
                     dest='build_controller_vm',
                     default=False, help='enable building controller vm')
@@ -55,6 +58,44 @@ parser.add_argument('--clean-up', action='store_true', dest='clean_up_nfp',
 parser.add_argument('--controller-path', type=str, dest='controller_path',
                     help='patch to the controller image')
 args = parser.parse_args()
+
+
+def configure_nfp():
+    # Enable FW plugin
+    subprocess.call("crudini --set /etc/neutron/neutron.conf DEFAULT service_plugins neutron.services.l3_router.l3_router_plugin.L3RouterPlugin,group_policy,ncp,neutron_lbaas.services.loadbalancer.plugin.LoadBalancerPlugin,neutron.services.metering.metering_plugin.MeteringPlugin,neutron_vpnaas.services.vpn.plugin.VPNDriverPlugin,gbpservice.contrib.nfp.service_plugins.firewall.nfp_fwaas_plugin.NFPFirewallPlugin".split(' '))
+
+    # Enable GBP extension driver for service sharing
+    subprocess.call("crudini --set /etc/neutron/neutron.conf group_policy policy_drivers implicit_policy,resource_mapping,chain_mapping".split(' '))
+    subprocess.call("crudini --set /etc/neutron/neutron.conf group_policy extension_drivers proxy_group".split(' '))
+
+    # Configure service owner
+    subprocess.call("crudini --set /etc/neutron/neutron.conf admin_owned_resources_apic_tscp plumbing_resource_owner_user neutron".split(' '))
+    admin_password = commands.getoutput("crudini --get /etc/neutron/neutron.conf keystone_authtoken admin_password")
+    subprocess.call("crudini --set /etc/neutron/neutron.conf admin_owned_resources_apic_tscp plumbing_resource_owner_password".split(' ') + [admin_password])
+    subprocess.call("crudini --set /etc/neutron/neutron.conf admin_owned_resources_apic_tscp plumbing_resource_owner_tenant_name services".split(' '))
+
+    # Configure NFP drivers
+    subprocess.call("crudini --set /etc/neutron/neutron.conf node_composition_plugin node_plumber admin_owned_resources_apic_plumber".split(' '))
+    subprocess.call("crudini --set /etc/neutron/neutron.conf node_composition_plugin node_drivers nfp_node_driver".split(' '))
+    subprocess.call("crudini --set /etc/neutron/neutron.conf nfp_node_driver is_service_admin_owned True".split(' '))
+    subprocess.call("crudini --set /etc/neutron/neutron.conf nfp_node_driver svc_management_ptg_name svc_management_ptg".split(' '))
+
+    # Enable ML2 port security
+    subprocess.call("crudini --set /etc/neutron/plugins/ml2/ml2_conf.ini ml2 extension_drivers port_security".split(' '))
+
+    # Update neutron server to use GBP policy
+    subprocess.call("crudini --set /etc/neutron/neutron.conf DEFAULT policy_file /etc/group-based-policy/policy.d/policy.json".split(' '))
+
+    # Update neutron LBaaS with NFP LBaaS service provider
+    subprocess.call("crudini --set /etc/neutron/neutron_lbaas.conf service_providers service_provider LOADBALANCER:loadbalancer:gbpservice.contrib.nfp.service_plugins.loadbalancer.drivers.nfp_lbaas_plugin_driver.HaproxyOnVMPluginDriver:default".split(' '))
+
+    # Update DB
+    subprocess.call("gbp-db-manage --config-file /usr/share/neutron/neutron-dist.conf --config-file /etc/neutron/neutron.conf --config-file /etc/neutron/plugin.ini upgrade head".split(' '))
+
+    # Restart the services to make the configuration effective
+    subprocess.call("systemctl restart nfp_orchestrator".split(' '))
+    subprocess.call("systemctl restart nfp_config_orch".split(' '))
+    subprocess.call("systemctl restart neutron-server".split(' '))
 
 
 def get_src_dirs():
@@ -569,7 +610,9 @@ def clean_up():
 
 
 def main():
-    if args.build_controller_vm:
+    if args.configure_nfp:
+        configure_nfp()
+    elif args.build_controller_vm:
         build_configuration_vm()
     elif args.enable_orchestrator:
         create_orchestrator_ctl()
