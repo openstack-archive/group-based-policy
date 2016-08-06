@@ -262,9 +262,6 @@ function create_nfp_image {
         if [[ $ConfiguratorQcow2Image = build ]]; then
             echo "Building Image: $ConfiguratorQcow2ImageName"
             # Prepare source for configurator
-            git clone -b $NEUTRON_SRC_BRANCH_FOR_NFP_CONTROLLER https://github.com/openstack/neutron-lib.git
-            cp -r neutron-lib/neutron_lib $DISKIMAGE_CREATE_DIR/neutron_lib
-            rm -rf neutron-lib
             git_clone $GBPSERVICE_REPO $DEVSTACK_DIR/group-based-policy $GBPSERVICE_BRANCH
             cp -r $DEVSTACK_DIR/group-based-policy/gbpservice $DISKIMAGE_CREATE_DIR/gbpservice
             rm -rf $DEVSTACK_DIR/group-based-policy
@@ -280,7 +277,7 @@ function create_nfp_image {
  DIB.conf["ubuntu_release"] = {"release": "trusty"};\
  DIB.conf["dib"] = {"image_size": 10, "elements": ["configurator", "root-passwd"], "root_pswd": "nfp123", "offline": True, "cache_dir": "'$HOME'/.cache/image-create"};\
  DIB.dib()'
-            rm -rf $DISKIMAGE_CREATE_DIR/neutron_lib $DISKIMAGE_CREATE_DIR/gbpservice $DISKIMAGE_CREATE_DIR/neutron $DISKIMAGE_CREATE_DIR/neutron_lbaas
+            rm -rf $DISKIMAGE_CREATE_DIR/gbpservice $DISKIMAGE_CREATE_DIR/neutron $DISKIMAGE_CREATE_DIR/neutron_lbaas
             ConfiguratorQcow2Image=$(cat $DISKIMAGE_CREATE_DIR/output/last_built_image_path)
         fi
         echo "Uploading Image: $ConfiguratorQcow2ImageName"
@@ -300,21 +297,6 @@ function create_nfp_image {
     fi
 }
 
-# configure_configurator_user_data() - Configure Configurator user data
-function configure_configurator_user_data {
-    CUR_DIR=$PWD
-    sudo rm -rf /opt/configurator_user_data
-    sudo cp -r $DISKIMAGE_CREATE_DIR/configurator_user_data /opt/.
-    cd /opt
-    sudo rm -rf my.key my.key.pub
-    sudo ssh-keygen -t rsa -N "" -f my.key
-    value=`sudo cat my.key.pub`
-    sudo echo $value
-    sudo sed -i "8 i\      -\ $value" configurator_user_data
-    sudo sed -i '9d' configurator_user_data
-    cd $CUR_DIR
-}
-
 # launch_configuratorVM() - Launch the Configurator VM
 function launch_configuratorVM {
     echo "Collecting ImageId : for $configurator_image_name"
@@ -326,10 +308,13 @@ function launch_configuratorVM {
         exit
     fi
 
-    configure_configurator_user_data
+    nova keypair-add configurator_key > $HOME/configurator_key.pem
+    chmod 600 $HOME/configurator_key.pem
+
     nova boot\
  --flavor m1.medium\
- --user-data /opt/configurator_user_data\
+ --key-name configurator_key\
+ --user-data $DISKIMAGE_CREATE_DIR/configurator_user_data\
  --image $ImageId\
  --nic port-id=$configurator_port_id\
  $ConfiguratorInstanceName

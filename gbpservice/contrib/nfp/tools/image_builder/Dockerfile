@@ -3,7 +3,7 @@ FROM ubuntu:14.04
 RUN apt-get -y update --fix-missing
 
 # dependencies
-RUN apt-get -y --force-yes install \
+RUN apt-get -y --force-yes install\
  python2.7\
  python-pip\
  python2.7-dev\
@@ -15,22 +15,22 @@ RUN apt-get -y --force-yes install \
  screen
 
 # python dependencies
-RUN pip install \
- python-keystoneclient \
- oslo.config==3.6.0 \
- oslo.log==2.4.0 \
- oslo.messaging==4.2.0 \
- oslo.db==4.4.0 \
- oslo.policy \
- iptools \
- cryptography \
- pecan==1.0.4 \
- amqp==1.4.9 \
- wsme \
+RUN pip install\
+ python-keystoneclient\
+ oslo.config==3.6.0\
+ oslo.log==2.4.0\
+ oslo.messaging==4.2.0\
+ oslo.db==4.4.0\
+ oslo.policy\
+ iptools\
+ cryptography\
+ pecan==1.0.4\
+ amqp==1.4.9\
+ wsme\
+ neutron-lib\
  "octavia<0.8"
 
 # copy local src to docker image
-COPY ./neutron_lib /usr/local/lib/python2.7/dist-packages/neutron_lib
 COPY ./gbpservice /usr/local/lib/python2.7/dist-packages/gbpservice
 COPY ./neutron /usr/local/lib/python2.7/dist-packages/neutron
 COPY ./neutron_lbaas /usr/local/lib/python2.7/dist-packages/neutron_lbaas
