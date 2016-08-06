@@ -28,6 +28,9 @@ dst_dir = "/tmp/controller_docker_build/"
 
 
 parser = argparse.ArgumentParser()
+parser.add_argument('--configure', action='store_true',
+                    dest='configure_nfp',
+                    default=False, help='Configure NFP')
 parser.add_argument('--build-controller-vm', action='store_true',
                     dest='build_controller_vm',
                     default=False, help='enable building controller vm')
@@ -55,6 +58,44 @@ parser.add_argument('--clean-up', action='store_true', dest='clean_up_nfp',
 parser.add_argument('--controller-path', type=str, dest='controller_path',
                     help='patch to the controller image')
 args = parser.parse_args()
+
+
+def configure_nfp():
+    # Enable FW plugin
+    subprocess.call("crudini --set /etc/neutron/neutron.conf DEFAULT service_plugins neutron.services.l3_router.l3_router_plugin.L3RouterPlugin,group_policy,ncp,neutron_lbaas.services.loadbalancer.plugin.LoadBalancerPlugin,neutron.services.metering.metering_plugin.MeteringPlugin,neutron_vpnaas.services.vpn.plugin.VPNDriverPlugin,gbpservice.contrib.nfp.service_plugins.firewall.nfp_fwaas_plugin.NFPFirewallPlugin".split(' '))
+
+    # Enable GBP extension driver for service sharing
+    subprocess.call("crudini --set /etc/neutron/neutron.conf group_policy policy_drivers implicit_policy,resource_mapping,chain_mapping".split(' '))
+    subprocess.call("crudini --set /etc/neutron/neutron.conf group_policy extension_drivers proxy_group".split(' '))
+
+    # Configure service owner
+    subprocess.call("crudini --set /etc/neutron/neutron.conf admin_owned_resources_apic_tscp plumbing_resource_owner_user neutron".split(' '))
+    admin_password = commands.getoutput("crudini --get /etc/neutron/neutron.conf keystone_authtoken admin_password")
+    subprocess.call("crudini --set /etc/neutron/neutron.conf admin_owned_resources_apic_tscp plumbing_resource_owner_password".split(' ') + [admin_password])
+    subprocess.call("crudini --set /etc/neutron/neutron.conf admin_owned_resources_apic_tscp plumbing_resource_owner_tenant_name services".split(' '))
+
+    # Configure NFP drivers
+    subprocess.call("crudini --set /etc/neutron/neutron.conf node_composition_plugin node_plumber admin_owned_resources_apic_plumber".split(' '))
+    subprocess.call("crudini --set /etc/neutron/neutron.conf node_composition_plugin node_drivers nfp_node_driver".split(' '))
+    subprocess.call("crudini --set /etc/neutron/neutron.conf nfp_node_driver is_service_admin_owned True".split(' '))
+    subprocess.call("crudini --set /etc/neutron/neutron.conf nfp_node_driver svc_management_ptg_name svc_management_ptg".split(' '))
+
+    # Enable ML2 port security
+    subprocess.call("crudini --set /etc/neutron/plugins/ml2/ml2_conf.ini ml2 extension_drivers port_security".split(' '))
+
+    # Update neutron server to use GBP policy
+    subprocess.call("crudini --set /etc/neutron/neutron.conf DEFAULT policy_file /etc/group-based-policy/policy.d/policy.json".split(' '))
+
+    # Update neutron LBaaS with NFP LBaaS service provider
+    subprocess.call("crudini --set /etc/neutron/neutron_lbaas.conf service_providers service_provider LOADBALANCER:loadbalancer:gbpservice.contrib.nfp.service_plugins.loadbalancer.drivers.nfp_lbaas_plugin_driver.HaproxyOnVMPluginDriver:default".split(' '))
+
+    # Update DB
+    subprocess.call("gbp-db-manage --config-file /usr/share/neutron/neutron-dist.conf --config-file /etc/neutron/neutron.conf --config-file /etc/neutron/plugin.ini upgrade head".split(' '))
+
+    # Restart the services to make the configuration effective
+    subprocess.call("systemctl restart nfp_orchestrator".split(' '))
+    subprocess.call("systemctl restart nfp_config_orch".split(' '))
+    subprocess.call("systemctl restart neutron-server".split(' '))
 
 
 def get_src_dirs():
@@ -95,13 +136,6 @@ def clean_src_dirs():
     subprocess.call(["rm", "-rf", dst_dir])
 
 
-def update_user_data():
-    os.chdir(DIB.cur_dir)
-    print("Updating user_data with fresh ssh key")
-    subprocess.call(["bash", "edit_user_data.sh"])
-    return
-
-
 def build_configuration_vm():
 
     cur_dir = os.path.dirname(__file__)
@@ -114,9 +148,6 @@ def build_configuration_vm():
 
     if(get_src_dirs()):
         return
-
-    # update configurator user_data with a fresh rsa ssh keypair
-    update_user_data()
 
     # set the cache dir where trusty tar.gz will be present
     if args.image_build_cache_dir:
@@ -497,6 +528,24 @@ def create_nfp_resources():
               " gbp_services_stack")
 
 
+def add_nova_key_pair():
+    tools_dir = os.path.dirname(__file__)
+    tools_dir = os.path.realpath(tools_dir)
+    if not tools_dir:
+        # if script is executed from current dir, get abs path
+        tools_dir = os.path.realpath('./')
+    os.chdir(tools_dir)
+    subprocess.call(["mkdir", "-p", "keys"])
+
+    configurator_key_name = "configurator_key"
+    print("Creating nova keypair for configurator VM.")
+    pem_file_content = commands.getoutput("nova keypair-add" + " " + configurator_key_name)
+    with open("keys/configurator_key.pem", "w") as f:
+        f.write(pem_file_content)
+    os.chmod("keys/configurator_key.pem", 0o600)
+    return configurator_key_name
+
+
 def launch_configurator():
     get_openstack_creds()
     if os.path.isfile(args.controller_path):
@@ -506,6 +555,10 @@ def launch_configurator():
     else:
         print("Error " + args.controller_path + " does not exist")
         sys.exit(1)
+
+    # add nova keypair for configurator VM.
+    configurator_key_name = add_nova_key_pair()
+
     Port_id = commands.getstatusoutput(
         "gbp policy-target-create --policy-target-group svc_management_ptg"
         " configuratorVM_instance | grep port_id  | awk '{print $4}'")[1]
@@ -514,12 +567,13 @@ def launch_configurator():
     if Image_id and Port_id:
         os.system("nova boot --flavor m1.medium --image " +
                   Image_id + " --user-data " + CONFIGURATOR_USER_DATA +
+                  " --key-name " + configurator_key_name +
                   " --nic port-id=" + Port_id + " configuratorVM_instance")
     else:
         if not Port_id:
             print("Error unable to create the controller port id")
         else:
-            print("Erro unable to get configurator image info")
+            print("Error unable to get configurator image info")
         sys.exit(1)
 
 
@@ -570,7 +624,9 @@ def clean_up():
 
 
 def main():
-    if args.build_controller_vm:
+    if args.configure_nfp:
+        configure_nfp()
+    elif args.build_controller_vm:
         build_configuration_vm()
     elif args.enable_orchestrator:
         create_orchestrator_ctl()
