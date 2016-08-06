@@ -158,8 +158,8 @@ class NfpWorker(Service):
     def dispatch(self, handler, event, *args):
         if self._threads:
             th = self.tg.add_thread(self.log_dispatch, handler, event, *args)
-            message = "%s - (handler - %s) - dispatched to thread %d" % (
-                self._log_meta(), identify(handler), th.ident)
+            message = "%s - (handler - %s) - dispatched to thread" % (
+                self._log_meta(), identify(handler))
             LOG.debug(message)
         else:
             handler(event, *args)
