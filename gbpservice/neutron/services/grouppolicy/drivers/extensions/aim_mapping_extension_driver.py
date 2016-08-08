@@ -47,3 +47,6 @@ class AIMExtensionDriver(api.ExtensionDriver):
 
     def extend_policy_target_group_dict(self, session, result):
         self._pd.extend_policy_target_group_dict(session, result)
+
+    def extend_policy_rule_dict(self, session, result):
+        self._pd.extend_policy_rule_dict(session, result)
