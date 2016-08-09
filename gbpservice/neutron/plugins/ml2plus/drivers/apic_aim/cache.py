@@ -51,6 +51,10 @@ class ProjectNameCache(object):
         inside a transaction with a project_id not already in the
         cache.
         """
+
+        # TODO(rkukura): It seems load_from_conf_options() and
+        # keystoneclient auth plugins have been deprecated, and we
+        # should use keystoneauth instead.
         if project_id not in self.project_names:
             if self.keystone is None:
                 LOG.debug("Getting keystone client")

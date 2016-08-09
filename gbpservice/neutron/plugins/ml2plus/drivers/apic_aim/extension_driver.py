@@ -16,16 +16,16 @@
 from neutron._i18n import _LI
 from neutron.api import extensions
 from neutron import manager as n_manager
-from neutron.plugins.ml2 import driver_api
 from oslo_log import log
 
+from gbpservice.neutron.plugins.ml2plus import driver_api as api_plus
 from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import (
     extensions as extensions_pkg)
 
 LOG = log.getLogger(__name__)
 
 
-class ApicExtensionDriver(driver_api.ExtensionDriver):
+class ApicExtensionDriver(api_plus.ExtensionDriver):
 
     def __init__(self):
         LOG.info(_LI("APIC AIM ED __init__"))
@@ -55,3 +55,6 @@ class ApicExtensionDriver(driver_api.ExtensionDriver):
 
     def extend_subnet_dict(self, session, base_model, result):
         self._md.extend_subnet_dict(session, base_model, result)
+
+    def extend_address_scope_dict(self, session, base_model, result):
+        self._md.extend_address_scope_dict(session, base_model, result)
