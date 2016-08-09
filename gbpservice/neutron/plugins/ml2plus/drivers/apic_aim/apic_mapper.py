@@ -22,6 +22,7 @@ LOG = None
 
 NAME_TYPE_TENANT = 'tenant'
 NAME_TYPE_NETWORK = 'network'
+NAME_TYPE_ADDRESS_SCOPE = 'address_scope'
 NAME_TYPE_POLICY_TARGET_GROUP = 'policy_target_group'
 NAME_TYPE_L3_POLICY = 'l3_policy'
 NAME_TYPE_L2_POLICY = 'l2_policy'
@@ -85,6 +86,10 @@ class APICNameMapper(object):
                     LOG.warn(("Exception in looking up name %s"), name_type)
                     LOG.error(e.message)
 
+                # Be sure not to persist when no name supplied.
+                if name is None:
+                    return None
+
                 purged_id = re.sub(r"-+", "-", resource_id)
                 result = purged_id[:inst.min_suffix]
                 if name:
@@ -144,6 +149,11 @@ class APICNameMapper(object):
     @mapper(NAME_TYPE_NETWORK)
     def network(self, session, network_id, network_name=None):
         return network_name
+
+    @mapper(NAME_TYPE_ADDRESS_SCOPE)
+    def address_scope(self, session, address_scope_id,
+                      address_scope_name=None):
+        return address_scope_name
 
     @mapper(NAME_TYPE_POLICY_TARGET_GROUP)
     def policy_target_group(self, session, policy_target_group_id,
