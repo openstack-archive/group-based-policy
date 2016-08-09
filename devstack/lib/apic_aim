@@ -26,8 +26,7 @@ function configure_apic_aim {
     # GBP Configuration for AIM
     # Policy drivers (REVISIT: chain_mapping might needed to be added later)
     iniset $NEUTRON_CONF group_policy policy_drivers "aim_mapping"
-    # Extension drivers (REVISIT: proxy_group might needed to be added later)
-    iniset $NEUTRON_CONF group_policy extension_drivers "aim_extension"
+    iniset $NEUTRON_CONF group_policy extension_drivers "aim_extension,proxy_group"
     # Service Chain (REVISIT: not overriding any defaults yet)
 
     init_aim

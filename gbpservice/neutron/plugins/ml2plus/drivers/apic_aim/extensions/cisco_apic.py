@@ -26,6 +26,7 @@ BD = 'BridgeDomain'
 CTX = 'Context'
 EPG = 'EndpointGroup'
 SUBNET = 'Subnet'
+VRF = 'VRF'
 
 SYNC_SYNCED = 'synced'
 SYNC_PENDING = 'pending'
