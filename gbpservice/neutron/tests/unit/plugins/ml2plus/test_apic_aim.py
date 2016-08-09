@@ -18,11 +18,14 @@ from aim.api import resource as aim_resource
 from aim import context as aim_context
 from aim.db import model_base as aim_model_base
 from keystoneclient.v3 import client as ksc_client
+from neutron.api import extensions
 from neutron import context
 from neutron.db import api as db_api
 from neutron import manager
 from neutron.plugins.ml2 import config
+from neutron.tests.unit.api import test_extensions
 from neutron.tests.unit.db import test_db_base_plugin_v2 as test_plugin
+from neutron.tests.unit.extensions import test_address_scope
 from opflexagent import constants as ofcst
 
 PLUGIN_NAME = 'gbpservice.neutron.plugins.ml2plus.plugin.Ml2PlusPlugin'
@@ -53,7 +56,7 @@ class FakeKeystoneClient(object):
         self.projects = FakeProjectManager()
 
 
-class ApicAimTestCase(test_plugin.NeutronDbPluginV2TestCase):
+class ApicAimTestCase(test_address_scope.AddressScopeTestCase):
 
     def setUp(self):
         # Enable the test mechanism driver to ensure that
@@ -76,6 +79,8 @@ class ApicAimTestCase(test_plugin.NeutronDbPluginV2TestCase):
                                      group='ml2_type_vlan')
 
         super(ApicAimTestCase, self).setUp(PLUGIN_NAME)
+        ext_mgr = extensions.PluginAwareExtensionManager.get_instance()
+        self.ext_api = test_extensions.setup_extensions_middleware(ext_mgr)
         self.port_create_status = 'DOWN'
 
         self.saved_keystone_client = ksc_client.Client
@@ -209,6 +214,35 @@ class TestApicExtension(ApicAimTestCase):
         # Test show after removing gateway.
         res = self._show('subnets', subnet_id)['subnet']
         self._verify_subnet_dist_names(res)
+
+    def _verify_address_scope_dist_names(self, a_s):
+        id = a_s['id']
+        dist_names = a_s.get('apic:distinguished_names')
+        self.assertIsInstance(dist_names, dict)
+        self._verify_dn(dist_names, 'VRF', ['tn', 'ctx'], id[:5])
+
+    def test_address_scope(self):
+        # Test create.
+        a_s = self._make_address_scope(
+            self.fmt, 4, name='as1')['address_scope']
+        a_s_id = a_s['id']
+        self._verify_address_scope_dist_names(a_s)
+
+        # Verify AIM resources.
+        aim_vrf = self._find_by_dn(
+            a_s['apic:distinguished_names']['VRF'],
+            aim_resource.VRF)
+        self.assertIsNotNone(aim_vrf.name)
+        # REVISIT(rkukura): More to verify?
+
+        # Test show.
+        res = self._show('address-scopes', a_s_id)['address_scope']
+        self._verify_address_scope_dist_names(res)
+
+        # Test update.
+        data = {'address_scope': {'name': 'newnamefora_s'}}
+        res = self._update('address-scopes', a_s_id, data)['address_scope']
+        self._verify_address_scope_dist_names(res)
 
 
 class TestPortBinding(ApicAimTestCase):

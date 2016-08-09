@@ -190,9 +190,9 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
                                          cisco_apic.EPG: epg.dn}
 
         bd_status = self.aim.get_status(aim_ctx, bd)
-        self._merge_status(sync_state, bd_status)
+        sync_state = self._merge_status(sync_state, bd_status)
         epg_status = self.aim.get_status(aim_ctx, epg)
-        self._merge_status(sync_state, epg_status)
+        sync_state = self._merge_status(sync_state, epg_status)
         result[cisco_apic.SYNC_STATE] = sync_state
 
     def create_subnet_precommit(self, context):
@@ -234,7 +234,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
             subnet_dn = subnet.dn
             subnet_status = self.aim.get_status(aim_ctx, subnet)
             sync_state = cisco_apic.SYNC_SYNCED
-            self._merge_status(sync_state, subnet_status)
+            sync_state = self._merge_status(sync_state, subnet_status)
 
             # ML2 does not extend subnet dict after precommit.
             context.current[cisco_apic.DIST_NAMES] = {cisco_apic.SUBNET:
@@ -285,7 +285,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
                 subnet_dn = subnet.dn
                 subnet_status = self.aim.get_status(aim_ctx, subnet)
                 sync_state = cisco_apic.SYNC_SYNCED
-                self._merge_status(sync_state, subnet_status)
+                sync_state = self._merge_status(sync_state, subnet_status)
 
                 # ML2 does not extend subnet dict after precommit.
                 context.current[cisco_apic.DIST_NAMES] = {cisco_apic.SUBNET:
@@ -362,13 +362,107 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
                 LOG.debug("got Subnet with DN: %s", subnet.dn)
                 subnet_dn = subnet.dn
                 subnet_status = self.aim.get_status(aim_ctx, subnet)
-                self._merge_status(sync_state, subnet_status)
+                sync_state = self._merge_status(sync_state, subnet_status)
             else:
                 # This should always get replaced with the real DN
                 # during precommit.
                 subnet_dn = "AIM Subnet not yet created"
 
         result[cisco_apic.DIST_NAMES] = {cisco_apic.SUBNET: subnet_dn}
+        result[cisco_apic.SYNC_STATE] = sync_state
+
+    def create_address_scope_precommit(self, context):
+        LOG.info(_LI("APIC AIM MD creating address scope: %s"),
+                 context.current)
+
+        session = context._plugin_context.session
+
+        tenant_id = context.current['tenant_id']
+        tenant_name = self.name_mapper.tenant(session, tenant_id)
+        LOG.info(_LI("Mapped tenant_id %(id)s to %(apic_name)s"),
+                 {'id': tenant_id, 'apic_name': tenant_name})
+
+        id = context.current['id']
+        name = context.current['name']
+        vrf_name = self.name_mapper.address_scope(session, id, name)
+        LOG.info(_LI("Mapped address_scope_id %(id)s with name %(name)s to "
+                     "%(apic_name)s"),
+                 {'id': id, 'name': name, 'apic_name': vrf_name})
+
+        aim_ctx = aim_context.AimContext(session)
+
+        vrf = aim_resource.VRF(tenant_name=tenant_name,
+                               name=vrf_name)
+        self.aim.create(aim_ctx, vrf)
+        vrf_dn = vrf.dn
+        vrf_status = self.aim.get_status(aim_ctx, vrf)
+        sync_state = cisco_apic.SYNC_SYNCED
+        sync_state = self._merge_status(sync_state, vrf_status)
+
+        # ML2Plus does not extend address scope dict after precommit.
+        context.current[cisco_apic.DIST_NAMES] = {cisco_apic.VRF:
+                                                  vrf_dn}
+        context.current[cisco_apic.SYNC_STATE] = sync_state
+
+    # REVISIT(rkukura): Do we need update_address_scope_precommit?
+
+    def delete_address_scope_precommit(self, context):
+        LOG.info(_LI("APIC AIM MD deleting address scope: %s"),
+                 context.current)
+
+        session = context._plugin_context.session
+
+        tenant_id = context.current['tenant_id']
+        tenant_name = self.name_mapper.tenant(session, tenant_id)
+        LOG.info(_LI("Mapped tenant_id %(id)s to %(apic_name)s"),
+                 {'id': tenant_id, 'apic_name': tenant_name})
+
+        id = context.current['id']
+        vrf_name = self.name_mapper.address_scope(session, id)
+        LOG.info(_LI("Mapped address_scope_id %(id)s to %(apic_name)s"),
+                 {'id': id, 'apic_name': vrf_name})
+
+        aim_ctx = aim_context.AimContext(session)
+
+        vrf = aim_resource.VRF(tenant_name=tenant_name,
+                               name=vrf_name)
+        self.aim.delete(aim_ctx, vrf)
+
+        self.name_mapper.delete_apic_name(session, id)
+
+    def extend_address_scope_dict(self, session, base_model, result):
+        LOG.info(_LI("APIC AIM MD extending dict for address scope: %s"),
+                 result)
+
+        sync_state = cisco_apic.SYNC_SYNCED
+
+        tenant_id = result['tenant_id']
+        tenant_name = self.name_mapper.tenant(session, tenant_id)
+        LOG.info(_LI("Mapped tenant_id %(id)s to %(apic_name)s"),
+                 {'id': tenant_id, 'apic_name': tenant_name})
+
+        id = result['id']
+        name = result['name']
+        vrf_name = self.name_mapper.address_scope(session, id, name)
+        LOG.info(_LI("Mapped address_scope_id %(id)s with name %(name)s to "
+                     "%(apic_name)s"),
+                 {'id': id, 'name': name, 'apic_name': vrf_name})
+
+        aim_ctx = aim_context.AimContext(session)
+
+        vrf = aim_resource.VRF(tenant_name=tenant_name,
+                               name=vrf_name)
+        vrf = self.aim.get(aim_ctx, vrf)
+        if vrf:
+            vrf_dn = vrf.dn
+            LOG.debug("got VRF with DN: %s", vrf_dn)
+            vrf_status = self.aim.get_status(aim_ctx, vrf)
+            sync_state = self._merge_status(sync_state, vrf_status)
+        else:
+            # This should always get replaced with the real DN during
+            # precommit.
+            vrf_dn = "AIM VRF not yet created"
+        result[cisco_apic.DIST_NAMES] = {cisco_apic.VRF: vrf_dn}
         result[cisco_apic.SYNC_STATE] = sync_state
 
     def bind_port(self, context):
@@ -582,6 +676,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
             sync_state = cisco_apic.SYNC_ERROR
         elif status.is_build() and sync_state is not cisco_apic.SYNC_ERROR:
             sync_state = cisco_apic.SYNC_BUILD
+        return sync_state
 
     def _gateway_ip_mask(self, subnet):
         gateway_ip = subnet['gateway_ip']
