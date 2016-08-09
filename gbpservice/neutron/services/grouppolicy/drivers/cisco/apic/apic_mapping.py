@@ -57,6 +57,8 @@ from gbpservice.neutron.services.grouppolicy.common import exceptions as gpexc
 from gbpservice.neutron.services.grouppolicy.drivers import (
     resource_mapping as api)
 from gbpservice.neutron.services.grouppolicy.drivers.cisco.apic import (
+    apic_mapping_lib as alib)
+from gbpservice.neutron.services.grouppolicy.drivers.cisco.apic import (
     name_manager as name_manager)
 from gbpservice.neutron.services.grouppolicy.drivers.cisco.apic import (
     nova_client as nclient)
@@ -212,7 +214,6 @@ class TenantSpecificNatEpg(model_base.BASEV2):
     tenant_id = sa.Column(sa.String(36), primary_key=True)
 
 
-REVERSE_PREFIX = 'reverse-'
 SHADOW_PREFIX = 'Shd-'
 AUTO_PREFIX = 'Auto-'
 SERVICE_PREFIX = 'Svc-'
@@ -223,13 +224,8 @@ APIC_OWNED = 'apic_owned_'
 APIC_OWNED_RES = 'apic_owned_res_'
 PROMISCUOUS_TYPES = [n_constants.DEVICE_OWNER_DHCP,
                      n_constants.DEVICE_OWNER_LOADBALANCER]
-ALLOWING_ACTIONS = [g_const.GP_ACTION_ALLOW, g_const.GP_ACTION_REDIRECT]
-REVERTIBLE_PROTOCOLS = [n_constants.PROTO_NAME_TCP.lower(),
-                        n_constants.PROTO_NAME_UDP.lower(),
-                        n_constants.PROTO_NAME_ICMP.lower()]
 PROXY_PORT_PREFIX = "opflex_proxy:"
 EOC_PREFIX = "opflex_eoc:"
-ICMP_REPLY_TYPES = ['echo-rep', 'dst-unreach', 'src-quench', 'time-exceeded']
 
 
 class ApicMappingDriver(api.ResourceMappingDriver,
@@ -750,49 +746,21 @@ class ApicMappingDriver(api.ResourceMappingDriver,
         pass
 
     def create_policy_rule_postcommit(self, context, transaction=None):
-        action = context._plugin.get_policy_action(
-            context._plugin_context, context.current['policy_actions'][0])
-        classifier = context._plugin.get_policy_classifier(
-            context._plugin_context,
-            context.current['policy_classifier_id'])
-        if action['action_type'] in ALLOWING_ACTIONS:
-            port_min, port_max = (
-                gpdb.GroupPolicyMappingDbPlugin._get_min_max_ports_from_range(
-                    classifier['port_range']))
-            attrs = {'etherT': 'unspecified'}
-            if classifier['protocol']:
-                attrs['etherT'] = 'ip'
-                attrs['prot'] = classifier['protocol'].lower()
-            if port_min and port_max:
-                attrs['dToPort'] = port_max
-                attrs['dFromPort'] = port_min
+        entries = alib.get_filter_entries_for_policy_rule(context)
+        if entries['forward_rules']:
             tenant = self._tenant_by_sharing_policy(context.current)
             policy_rule = self.name_mapper.policy_rule(context,
                                                        context.current)
-            entries = [attrs]
             with self.apic_manager.apic.transaction(transaction) as trs:
-                self._create_tenant_filter(policy_rule, tenant, entries,
+                self._create_tenant_filter(policy_rule, tenant,
+                                           entries['forward_rules'],
                                            transaction=trs)
-                # Also create reverse rule
-                if attrs.get('prot') in REVERTIBLE_PROTOCOLS:
+                if entries['reverse_rules']:
+                    # Also create reverse rule
                     policy_rule = self.name_mapper.policy_rule(
-                        context, context.current, prefix=REVERSE_PREFIX)
-                    if attrs.get('dToPort') and attrs.get('dFromPort'):
-                        attrs.pop('dToPort')
-                        attrs.pop('dFromPort')
-                        attrs['sToPort'] = port_max
-                        attrs['sFromPort'] = port_min
-                    if attrs['prot'] == n_constants.PROTO_NAME_TCP.lower():
-                        # Only match on established sessions
-                        attrs['tcpRules'] = 'est'
-                    if attrs['prot'] == n_constants.PROTO_NAME_ICMP.lower():
-                        # create more entries:
-                        entries = []
-                        for reply_type in ICMP_REPLY_TYPES:
-                            entry = copy.deepcopy(attrs)
-                            entry['icmpv4T'] = reply_type
-                            entries.append(entry)
-                    self._create_tenant_filter(policy_rule, tenant, entries,
+                        context, context.current, prefix=alib.REVERSE_PREFIX)
+                    self._create_tenant_filter(policy_rule, tenant,
+                                               entries['reverse_rules'],
                                                transaction=trs)
 
     def create_policy_rule_set_precommit(self, context):
@@ -1041,7 +1009,7 @@ class ApicMappingDriver(api.ResourceMappingDriver,
                                                    transaction=trs)
             # Delete policy reverse rule
             policy_rule = self.name_mapper.policy_rule(
-                context, context.current, prefix=REVERSE_PREFIX)
+                context, context.current, prefix=alib.REVERSE_PREFIX)
             self.apic_manager.delete_tenant_filter(policy_rule, owner=tenant,
                                                    transaction=trs)
 
@@ -1345,8 +1313,8 @@ class ApicMappingDriver(api.ResourceMappingDriver,
             c_prot = context.current['protocol']
             # TODO(ivar): Optimize by aggregating on PRS ID
             if ((o_dir != c_dir) or
-                    ((o_prot in REVERTIBLE_PROTOCOLS) !=
-                        (c_prot in REVERTIBLE_PROTOCOLS))):
+                    ((o_prot in alib.REVERSIBLE_PROTOCOLS) !=
+                        (c_prot in alib.REVERSIBLE_PROTOCOLS))):
                 for prs in context._plugin.get_policy_rule_sets(
                         admin_context,
                         filters={'id': rule['policy_rule_sets']}):
@@ -1612,7 +1580,7 @@ class ApicMappingDriver(api.ResourceMappingDriver,
                             rule['policy_classifier_id'])
                 policy_rule = self.name_mapper.policy_rule(context, rule)
                 reverse_policy_rule = self.name_mapper.policy_rule(
-                    context, rule, prefix=REVERSE_PREFIX)
+                    context, rule, prefix=alib.REVERSE_PREFIX)
                 rule_owner = self._tenant_by_sharing_policy(rule)
                 with self.apic_manager.apic.transaction(transaction) as trs:
                     if classifier['direction'] in in_dir:
@@ -1623,7 +1591,7 @@ class ApicMappingDriver(api.ResourceMappingDriver,
                             rule_owner=rule_owner)
                         if classifier['protocol'] and (
                                 classifier['protocol'].lower() in
-                                REVERTIBLE_PROTOCOLS):
+                                alib.REVERSIBLE_PROTOCOLS):
                             (self.apic_manager.
                              manage_contract_subject_out_filter(
                                  contract, contract, reverse_policy_rule,
@@ -1637,7 +1605,7 @@ class ApicMappingDriver(api.ResourceMappingDriver,
                             rule_owner=rule_owner)
                         if classifier['protocol'] and (
                                 classifier['protocol'].lower() in
-                                REVERTIBLE_PROTOCOLS):
+                                alib.REVERSIBLE_PROTOCOLS):
                             (self.apic_manager.
                              manage_contract_subject_in_filter(
                                  contract, contract, reverse_policy_rule,
@@ -2621,7 +2589,7 @@ class ApicMappingDriver(api.ResourceMappingDriver,
                 contract, owner=tenant, transaction=trs)
 
             # Create ARP filter/subject
-            attrs = {'etherT': 'arp'}
+            attrs = alib.get_arp_filter_entry()
             self._associate_service_filter(tenant, contract, 'arp',
                                            'arp', transaction=trs, **attrs)
 
@@ -2645,61 +2613,40 @@ class ApicMappingDriver(api.ResourceMappingDriver,
                 tenant, shadow_epg, contract, provider=True,
                 contract_owner=tenant, transaction=trs)
 
+            entries = alib.get_service_contract_filter_entries()
+
             # Create DNS filter/subject
-            attrs = {'etherT': 'ip',
-                     'prot': 'udp',
-                     'dToPort': 'dns',
-                     'dFromPort': 'dns'}
             self._associate_service_filter(tenant, contract, 'dns',
-                                           'dns', transaction=trs, **attrs)
-            attrs = {'etherT': 'ip',
-                     'prot': 'udp',
-                     'sToPort': 'dns',
-                     'sFromPort': 'dns'}
+                                           'dns', transaction=trs,
+                                           **entries['dns'])
             self._associate_service_filter(tenant, contract, 'dns',
-                                           'r-dns', transaction=trs, **attrs)
+                                           'r-dns', transaction=trs,
+                                           **entries['r-dns'])
 
             # Create HTTP filter/subject
-            attrs = {'etherT': 'ip',
-                     'prot': 'tcp',
-                     'dToPort': 80,
-                     'dFromPort': 80}
             self._associate_service_filter(tenant, contract, 'http',
-                                           'http', transaction=trs, **attrs)
-            attrs = {'etherT': 'ip',
-                     'prot': 'tcp',
-                     'sToPort': 80,
-                     'sFromPort': 80}
+                                           'http', transaction=trs,
+                                           **entries['http'])
             self._associate_service_filter(tenant, contract, 'http',
-                                           'r-http', transaction=trs, **attrs)
+                                           'r-http', transaction=trs,
+                                           **entries['r-http'])
 
-            attrs = {'etherT': 'ip',
-                     'prot': 'icmp'}
             self._associate_service_filter(tenant, contract, 'icmp',
-                                           'icmp', transaction=trs, **attrs)
+                                           'icmp', transaction=trs,
+                                           **entries['icmp'])
 
             # Create DHCP filter/subject
-            attrs = {'etherT': 'ip',
-                     'prot': 'udp',
-                     'dToPort': 68,
-                     'dFromPort': 68,
-                     'sToPort': 67,
-                     'sFromPort': 67}
             self._associate_service_filter(tenant, contract, 'dhcp',
-                                           'dhcp', transaction=trs, **attrs)
-            attrs = {'etherT': 'ip',
-                     'prot': 'udp',
-                     'dToPort': 67,
-                     'dFromPort': 67,
-                     'sToPort': 68,
-                     'sFromPort': 68}
+                                           'dhcp', transaction=trs,
+                                           **entries['dhcp'])
             self._associate_service_filter(tenant, contract, 'dhcp',
-                                           'r-dhcp', transaction=trs, **attrs)
+                                           'r-dhcp', transaction=trs,
+                                           **entries['r-dhcp'])
 
             # Create ARP filter/subject
-            attrs = {'etherT': 'arp'}
             self._associate_service_filter(tenant, contract, 'arp',
-                                           'arp', transaction=trs, **attrs)
+                                           'arp', transaction=trs,
+                                           **entries['arp'])
 
             contract = self.name_mapper.l2_policy(
                 context, l2p, prefix=IMPLICIT_PREFIX)
@@ -3467,14 +3414,10 @@ class ApicMappingDriver(api.ResourceMappingDriver,
 
     def _create_tenant_filter(self, rule_name, tenant, entries=None,
                               transaction=None):
-        entries = entries or []
-        x = 0
         with self.apic_manager.apic.transaction(transaction) as trs:
-            for entry in entries:
+            for k, v in entries.iteritems():
                 self.apic_manager.create_tenant_filter(
-                    rule_name, owner=tenant, transaction=trs,
-                    entry=apic_manager.CP_ENTRY + '-' + str(x), **entry)
-                x += 1
+                    rule_name, owner=tenant, transaction=trs, entry=k, **v)
 
     def _get_l3p_allocated_subnets(self, context, l3p_id,
                                    clean_session=True):
