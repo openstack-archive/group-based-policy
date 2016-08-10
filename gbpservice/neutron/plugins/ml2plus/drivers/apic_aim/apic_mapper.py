@@ -157,16 +157,13 @@ class APICNameMapper(object):
         return l3_policy['name']
 
     @mapper(NAME_TYPE_L2_POLICY)
-    def l2_policy(self, context, l2_policy_id):
-        l2_policy = context._plugin.get_l2_policy(context._plugin_context,
-                                                  l2_policy_id)
-        return l2_policy['name']
+    def l2_policy(self, context, l2_policy_id, l2_policy_name):
+        return l2_policy_name
 
     @mapper(NAME_TYPE_POLICY_RULE_SET)
-    def policy_rule_set(self, context, policy_rule_set_id):
-        policy_rule_set = context._plugin.get_policy_rule_set(
-            context._plugin_context, policy_rule_set_id)
-        return policy_rule_set['name']
+    def policy_rule_set(self, context, policy_rule_set_id,
+                        policy_rule_set_name=None):
+        return policy_rule_set_name
 
     @mapper(NAME_TYPE_POLICY_RULE)
     def policy_rule(self, context, policy_rule_id,
