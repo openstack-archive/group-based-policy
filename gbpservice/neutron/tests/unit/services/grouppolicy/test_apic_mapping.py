@@ -1695,17 +1695,17 @@ class TestPolicyTargetGroup(ApicMappingTestCase):
                 provider=provider),
             mock.call(
                 ptg['tenant_id'], ptg['id'],
-                amap.SERVICE_PREFIX + ptg['l2_policy_id'],
+                alib.SERVICE_PREFIX + ptg['l2_policy_id'],
                 transaction=mock.ANY, contract_owner=ptg['tenant_id'],
                 provider=False),
             mock.call(
                 ptg['tenant_id'], ptg['id'],
-                amap.IMPLICIT_PREFIX + ptg['l2_policy_id'],
+                alib.IMPLICIT_PREFIX + ptg['l2_policy_id'],
                 transaction=mock.ANY, contract_owner=ptg['tenant_id'],
                 provider=True),
             mock.call(
                 ptg['tenant_id'], ptg['id'],
-                amap.IMPLICIT_PREFIX + ptg['l2_policy_id'],
+                alib.IMPLICIT_PREFIX + ptg['l2_policy_id'],
                 transaction=mock.ANY, contract_owner=ptg['tenant_id'],
                 provider=False)]
         self._check_call_list(expected_calls,
@@ -2067,9 +2067,9 @@ class TestL2Policy(ApicMappingTestCase):
             tenant, amap.SHADOW_PREFIX + l2p['id'],
             transaction=mock.ANY)
         expected_calls = [
-            mock.call(amap.IMPLICIT_PREFIX + l2p['id'], owner=tenant,
+            mock.call(alib.IMPLICIT_PREFIX + l2p['id'], owner=tenant,
                       transaction=mock.ANY),
-            mock.call(amap.SERVICE_PREFIX + l2p['id'], owner=tenant,
+            mock.call(alib.SERVICE_PREFIX + l2p['id'], owner=tenant,
                       transaction=mock.ANY)]
         self._check_call_list(expected_calls,
                               mgr.delete_contract.call_args_list)
