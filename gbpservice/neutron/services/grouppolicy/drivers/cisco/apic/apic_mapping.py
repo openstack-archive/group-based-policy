@@ -110,14 +110,6 @@ class SharedAttributeUpdateNotSupportedOnApic(gpexc.GroupPolicyBadRequest):
                 "GBP driver for resource of type %(type)s")
 
 
-class ExplicitSubnetAssociationNotSupported(gpexc.GroupPolicyBadRequest):
-    message = _("Explicit subnet association not supported by APIC driver.")
-
-
-class HierarchicalContractsNotSupported(gpexc.GroupPolicyBadRequest):
-    message = _("Hierarchical contracts not supported by APIC driver.")
-
-
 class HostPoolSubnetOverlap(gpexc.GroupPolicyBadRequest):
     message = _("Host pool subnet %(host_pool_cidr)s overlaps with "
                 "APIC external network subnet for %(es)s.")
@@ -216,8 +208,6 @@ class TenantSpecificNatEpg(model_base.BASEV2):
 
 SHADOW_PREFIX = 'Shd-'
 AUTO_PREFIX = 'Auto-'
-SERVICE_PREFIX = 'Svc-'
-IMPLICIT_PREFIX = 'implicit-'
 ANY_PREFIX = 'any-'
 PROMISCUOUS_SUFFIX = 'promiscuous'
 APIC_OWNED = 'apic_owned_'
@@ -766,7 +756,7 @@ class ApicMappingDriver(api.ResourceMappingDriver,
     def create_policy_rule_set_precommit(self, context):
         if not self.name_mapper._is_apic_reference(context.current):
             if context.current['child_policy_rule_sets']:
-                raise HierarchicalContractsNotSupported()
+                raise alib.HierarchicalContractsNotSupported()
         else:
             self.name_mapper.has_valid_name(context.current)
 
@@ -834,7 +824,7 @@ class ApicMappingDriver(api.ResourceMappingDriver,
     def create_policy_target_group_precommit(self, context):
         if not self.name_mapper._is_apic_reference(context.current):
             if context.current['subnets']:
-                raise ExplicitSubnetAssociationNotSupported()
+                raise alib.ExplicitSubnetAssociationNotSupported()
             if context.current.get('proxied_group_id'):
                 # goes in same L2P as proxied group
                 proxied = context._plugin.get_policy_target_group(
@@ -1125,7 +1115,7 @@ class ApicMappingDriver(api.ResourceMappingDriver,
         if not self.name_mapper._is_apic_reference(context.current):
             self._reject_shared_update(context, 'policy_rule_set')
             if context.current['child_policy_rule_sets']:
-                raise HierarchicalContractsNotSupported()
+                raise alib.HierarchicalContractsNotSupported()
 
     def update_policy_rule_set_postcommit(self, context):
         # Update policy_rule_set rules
@@ -1180,7 +1170,7 @@ class ApicMappingDriver(api.ResourceMappingDriver,
         if not self.name_mapper._is_apic_reference(context.current):
             if set(context.original['subnets']) != set(
                  context.current['subnets']):
-                raise ExplicitSubnetAssociationNotSupported()
+                raise alib.ExplicitSubnetAssociationNotSupported()
             self._reject_shared_update(context, 'policy_target_group')
             if (context.current['description'] !=
                     context.original['description']):
@@ -2584,14 +2574,15 @@ class ApicMappingDriver(api.ResourceMappingDriver,
             tenant = self._tenant_by_sharing_policy(l2p)
             # Create Service contract
             contract = self.name_mapper.l2_policy(
-                context, l2p, prefix=IMPLICIT_PREFIX)
+                context, l2p, prefix=alib.IMPLICIT_PREFIX)
             self.apic_manager.create_contract(
                 contract, owner=tenant, transaction=trs)
 
             # Create ARP filter/subject
-            attrs = alib.get_arp_filter_entry()
-            self._associate_service_filter(tenant, contract, 'arp',
-                                           'arp', transaction=trs, **attrs)
+            entries = alib.get_arp_filter_entry()
+            for k, v in entries.iteritems():
+                self._associate_service_filter(tenant, contract, k,
+                                               k, transaction=trs, **v)
 
     def _configure_shadow_epg(self, context, l2p, bd_name, transaction=None):
         with self.apic_manager.apic.transaction(transaction) as trs:
@@ -2604,7 +2595,7 @@ class ApicMappingDriver(api.ResourceMappingDriver,
 
             # Create Service contract
             contract = self.name_mapper.l2_policy(
-                context, l2p, prefix=SERVICE_PREFIX)
+                context, l2p, prefix=alib.SERVICE_PREFIX)
             self.apic_manager.create_contract(
                 contract, owner=tenant, transaction=trs)
 
@@ -2649,7 +2640,7 @@ class ApicMappingDriver(api.ResourceMappingDriver,
                                            **entries['arp'])
 
             contract = self.name_mapper.l2_policy(
-                context, l2p, prefix=IMPLICIT_PREFIX)
+                context, l2p, prefix=alib.IMPLICIT_PREFIX)
             # Shadow EPG provides and consumes implicit contract
             self.apic_manager.set_contract_for_epg(
                 tenant, shadow_epg, contract, provider=False,
@@ -2680,7 +2671,7 @@ class ApicMappingDriver(api.ResourceMappingDriver,
 
             # Delete Service Contract
             contract = self.name_mapper.l2_policy(
-                context, l2p, prefix=SERVICE_PREFIX)
+                context, l2p, prefix=alib.SERVICE_PREFIX)
             self.apic_manager.delete_contract(
                 contract, owner=tenant, transaction=trs)
 
@@ -2688,7 +2679,7 @@ class ApicMappingDriver(api.ResourceMappingDriver,
         with self.apic_manager.apic.transaction(transaction) as trs:
             tenant = self._tenant_by_sharing_policy(l2p)
             contract = self.name_mapper.l2_policy(
-                context, l2p, prefix=IMPLICIT_PREFIX)
+                context, l2p, prefix=alib.IMPLICIT_PREFIX)
             self.apic_manager.delete_contract(
                 contract, owner=tenant, transaction=trs)
 
@@ -2698,7 +2689,7 @@ class ApicMappingDriver(api.ResourceMappingDriver,
             contract_owner = self._tenant_by_sharing_policy(l2p)
             tenant = self._tenant_by_sharing_policy(ptg)
             contract = self.name_mapper.l2_policy(
-                context, l2p, prefix=SERVICE_PREFIX)
+                context, l2p, prefix=alib.SERVICE_PREFIX)
             self.apic_manager.set_contract_for_epg(
                 tenant, epg_name, contract, provider=False,
                 contract_owner=contract_owner, transaction=trs)
@@ -2709,7 +2700,7 @@ class ApicMappingDriver(api.ResourceMappingDriver,
             contract_owner = self._tenant_by_sharing_policy(l2p)
             tenant = self._tenant_by_sharing_policy(ptg)
             contract = self.name_mapper.l2_policy(
-                context, l2p, prefix=IMPLICIT_PREFIX)
+                context, l2p, prefix=alib.IMPLICIT_PREFIX)
             self.apic_manager.set_contract_for_epg(
                 tenant, epg_name, contract, provider=False,
                 contract_owner=contract_owner, transaction=trs)
