@@ -61,3 +61,9 @@ class DbModel(object):
         if apic_name:
             query = query.filter_by(apic_name=apic_name)
         return query.all()
+
+    def get_resource_from_apic_name(self, session, apic_name=None):
+        query = session.query(old_model.ApicName)
+        if apic_name:
+            query = query.filter_by(apic_name=apic_name)
+        return query.all()
