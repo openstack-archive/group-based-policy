@@ -625,3 +625,58 @@ class TestPolicyRuleRollback(TestPolicyRuleBase):
         # restore mock
         self._gbp_plugin.policy_driver_manager.policy_drivers[
             'dummy'].obj.delete_policy_rule_precommit = orig_func
+
+
+class TestPolicyRuleSetBase(AIMBaseTestCase):
+
+    def _create_3_direction_rules(self, shared=False):
+        a1 = self.create_policy_action(name='a1',
+                                       action_type='allow',
+                                       shared=shared)['policy_action']
+        cl_attr = {'protocol': 'tcp', 'port_range': 80}
+        cls = []
+        for direction in ['bi', 'in', 'out']:
+            if direction == 'out':
+                cl_attr['protocol'] = 'udp'
+            cls.append(self.create_policy_classifier(
+                direction=direction, shared=shared,
+                **cl_attr)['policy_classifier'])
+        rules = []
+        for classifier in cls:
+            rules.append(self.create_policy_rule(
+                policy_classifier_id=classifier['id'],
+                policy_actions=[a1['id']],
+                shared=shared)['policy_rule'])
+        return rules
+
+
+class TestPolicyRuleSet(TestPolicyRuleSetBase):
+
+    def test_policy_rule_set_lifecycle(self):
+        bi, in_d, out = range(3)
+        rules = self._create_3_direction_rules()
+        # exclude BI rule for now
+        ctr = self.create_policy_rule_set(
+            name="ctr", policy_rules=[x['id'] for x in rules])[
+                'policy_rule_set']
+        self.show_policy_rule_set(ctr['id'], expected_res_status=200)
+
+        aim_contract_name = str(self.name_mapper.policy_rule_set(
+            self._neutron_context.session, ctr['id'], ctr['name']))
+        aim_contracts = self.aim_mgr.find(
+            self._aim_context, aim_resource.Contract, name=aim_contract_name)
+        self.assertEqual(1, len(aim_contracts))
+        aim_contract_subjects = self.aim_mgr.find(
+            self._aim_context, aim_resource.ContractSubject,
+            name=aim_contract_name)
+        self.assertEqual(1, len(aim_contract_subjects))
+
+        new_rules = self._create_3_direction_rules()
+        data = {'policy_rule_set': {
+            'policy_rules': [x['id'] for x in new_rules]}}
+        self.new_update_request(
+            'policy_rule_sets', data, ctr['id'], self.fmt).get_response(
+                self.ext_api)
+
+        self.delete_policy_rule_set(ctr['id'], expected_res_status=204)
+        self.show_policy_rule_set(ctr['id'], expected_res_status=404)
