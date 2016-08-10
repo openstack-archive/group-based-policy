@@ -114,10 +114,6 @@ class ExplicitSubnetAssociationNotSupported(gpexc.GroupPolicyBadRequest):
     message = _("Explicit subnet association not supported by APIC driver.")
 
 
-class HierarchicalContractsNotSupported(gpexc.GroupPolicyBadRequest):
-    message = _("Hierarchical contracts not supported by APIC driver.")
-
-
 class HostPoolSubnetOverlap(gpexc.GroupPolicyBadRequest):
     message = _("Host pool subnet %(host_pool_cidr)s overlaps with "
                 "APIC external network subnet for %(es)s.")
@@ -766,7 +762,7 @@ class ApicMappingDriver(api.ResourceMappingDriver,
     def create_policy_rule_set_precommit(self, context):
         if not self.name_mapper._is_apic_reference(context.current):
             if context.current['child_policy_rule_sets']:
-                raise HierarchicalContractsNotSupported()
+                raise alib.HierarchicalContractsNotSupported()
         else:
             self.name_mapper.has_valid_name(context.current)
 
@@ -1125,7 +1121,7 @@ class ApicMappingDriver(api.ResourceMappingDriver,
         if not self.name_mapper._is_apic_reference(context.current):
             self._reject_shared_update(context, 'policy_rule_set')
             if context.current['child_policy_rule_sets']:
-                raise HierarchicalContractsNotSupported()
+                raise alib.HierarchicalContractsNotSupported()
 
     def update_policy_rule_set_postcommit(self, context):
         # Update policy_rule_set rules
