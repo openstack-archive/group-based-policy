@@ -225,7 +225,8 @@ class Test_Process_Model(unittest.TestCase):
         controller._manager.manager_run()
         pids = controller._manager._resource_map.keys()
         self.assertTrue(len(pids) == 2)
-        self.assertFalse(old_childs[0] in pids)
+        if pid not in old_childs:
+            self.assertFalse(old_childs[0] in pids)
         self.assertTrue(old_childs[1] in pids)
 
     def test_post_event_with_no_handler(self):
