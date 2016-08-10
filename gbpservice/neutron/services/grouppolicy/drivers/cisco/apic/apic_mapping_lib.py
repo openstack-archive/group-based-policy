@@ -16,15 +16,26 @@ from neutron.common import constants as n_constants
 
 from gbpservice.neutron.db.grouppolicy import group_policy_mapping_db as gpdb
 from gbpservice.neutron.services.grouppolicy.common import constants as g_const
+from gbpservice.neutron.services.grouppolicy.common import exceptions as gpexc
 
 
 ALLOWING_ACTIONS = [g_const.GP_ACTION_ALLOW, g_const.GP_ACTION_REDIRECT]
 REVERSE_PREFIX = 'reverse-'
+SERVICE_PREFIX = 'Svc-'
+IMPLICIT_PREFIX = 'implicit-'
 REVERSIBLE_PROTOCOLS = [n_constants.PROTO_NAME_TCP.lower(),
                         n_constants.PROTO_NAME_UDP.lower(),
                         n_constants.PROTO_NAME_ICMP.lower()]
 ICMP_REPLY_TYPES = ['echo-rep', 'dst-unreach', 'src-quench', 'time-exceeded']
 CP_ENTRY = 'os-entry'
+
+
+class ExplicitSubnetAssociationNotSupported(gpexc.GroupPolicyBadRequest):
+    message = _("Explicit subnet association not supported by APIC driver.")
+
+
+class HierarchicalContractsNotSupported(gpexc.GroupPolicyBadRequest):
+    message = _("Hierarchical contracts not supported by APIC driver.")
 
 
 def get_filter_entries_for_policy_rule(context):
@@ -76,7 +87,7 @@ def get_filter_entries_for_policy_rule(context):
 
 
 def get_arp_filter_entry():
-    return {'etherT': 'arp'}
+    return {'arp': {'etherT': 'arp'}}
 
 
 def get_service_contract_filter_entries():
@@ -126,10 +137,23 @@ def get_service_contract_filter_entries():
     entries['r-dhcp'] = r_dhcp_attrs
 
     # ARP
-    arp_attrs = get_arp_filter_entry()
+    arp_entries = get_arp_filter_entry()
+    for k, v in arp_entries.iteritems():
+        entries[k] = v
 
-    entries['arp'] = arp_attrs
     return entries
+
+
+def map_to_aim_filter_entry(entry):
+    mapped_keys = {'etherT': 'ether_type',
+                   'prot': 'ip_protocol',
+                   'dToPort': 'dest_to_port',
+                   'dFromPort': 'dest_from_port',
+                   'sToPort': 'source_to_port',
+                   'sFromPort': 'source_from_port',
+                   'icmpv4T': 'icmpv4_type',
+                   'tcpRules': 'tcp_flags'}
+    return dict((mapped_keys[k], v) for (k, v) in entry.iteritems())
 
 
 def _get_filter_entry_name(entry_number):
