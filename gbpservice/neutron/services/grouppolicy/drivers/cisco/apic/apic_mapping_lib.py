@@ -16,6 +16,7 @@ from neutron.common import constants as n_constants
 
 from gbpservice.neutron.db.grouppolicy import group_policy_mapping_db as gpdb
 from gbpservice.neutron.services.grouppolicy.common import constants as g_const
+from gbpservice.neutron.services.grouppolicy.common import exceptions as gpexc
 
 
 ALLOWING_ACTIONS = [g_const.GP_ACTION_ALLOW, g_const.GP_ACTION_REDIRECT]
@@ -25,6 +26,10 @@ REVERSIBLE_PROTOCOLS = [n_constants.PROTO_NAME_TCP.lower(),
                         n_constants.PROTO_NAME_ICMP.lower()]
 ICMP_REPLY_TYPES = ['echo-rep', 'dst-unreach', 'src-quench', 'time-exceeded']
 CP_ENTRY = 'os-entry'
+
+
+class HierarchicalContractsNotSupported(gpexc.GroupPolicyBadRequest):
+    message = _("Hierarchical contracts not supported by APIC driver.")
 
 
 def get_filter_entries_for_policy_rule(context):
