@@ -559,6 +559,7 @@ class DeviceOrchestrator(nfp_api.NfpEventHandler):
                                is_internal_event=True)
             return None
 
+        nfp_context['vendor_data'] = driver_device_info.get('vendor_data')
         management = nfp_context['management']
         management['port'] = driver_device_info[
             'mgmt_neutron_port_info']['neutron_port']
@@ -876,7 +877,8 @@ class DeviceOrchestrator(nfp_api.NfpEventHandler):
             'token': token,
             'tenant_id': tenant_id,
             'interfaces_in_use': network_function_device['interfaces_in_use'],
-            'status': network_function_device['status']}
+            'status': network_function_device['status'],
+            'vendor_data': nfp_context['vendor_data']}
 
         _ifaces_plugged_in = (
             orchestration_driver.plug_network_function_device_interfaces(
