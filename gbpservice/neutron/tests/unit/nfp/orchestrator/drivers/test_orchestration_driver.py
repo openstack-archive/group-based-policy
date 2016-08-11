@@ -285,6 +285,8 @@ class OrchestrationDriverTestCase(unittest.TestCase):
             return_value=None)
         driver.compute_handler_nova.attach_interface = mock.MagicMock(
             return_value=None)
+        driver.compute_handler_nova.get_image_metadata = mock.MagicMock(
+            return_value={})
         driver.network_handler.get_port_id = mock.MagicMock(return_value='7')
 
         device_data = {'id': '1',
@@ -298,6 +300,7 @@ class OrchestrationDriverTestCase(unittest.TestCase):
                                  {'id': '4',
                                   'port_model': 'neutron',
                                   'port_classification': 'consumer'}],
+                       'vendor_data': {},
                        'token': str(pyuuid.uuid4()),
                        'tenant_id': str(pyuuid.uuid4())}
 
@@ -323,6 +326,8 @@ class OrchestrationDriverTestCase(unittest.TestCase):
             return_value=(None, None, 'admin', None))
         driver.compute_handler_nova.detach_interface = mock.MagicMock(
             return_value=None)
+        driver.compute_handler_nova.get_image_metadata = mock.MagicMock(
+            return_value={})
         driver.network_handler.get_port_id = mock.MagicMock(return_value='7')
 
         device_data = {'id': '1',
@@ -330,6 +335,7 @@ class OrchestrationDriverTestCase(unittest.TestCase):
                                            'service_type': 'firewall',
                                            'service_vendor': 'vyos',
                                            'network_mode': 'gbp'},
+                       'vendor_data': {},
                        'ports': [{'id': '3',
                                   'port_model': 'gbp',
                                   'port_classification': 'provider'},
