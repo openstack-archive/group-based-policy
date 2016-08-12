@@ -325,7 +325,26 @@ class TestMl2PortsV2(test_plugin.TestPortsV2,
 
 class TestMl2NetworksV2(test_plugin.TestNetworksV2,
                         ApicAimTestCase):
-    pass
+
+    def test_aim_epg_domains(self):
+        session = db_api.get_session()
+        aim_ctx = aim_context.AimContext(session)
+        self.aim_mgr.create(aim_ctx,
+                            aim_resource.VMMDomain(type='OpenStack',
+                                                   name='vm1'))
+        self.aim_mgr.create(aim_ctx,
+                            aim_resource.VMMDomain(type='OpenStack',
+                                                   name='vm2'))
+        self.aim_mgr.create(aim_ctx,
+                            aim_resource.PhysicalDomain(name='ph1'))
+        self.aim_mgr.create(aim_ctx,
+                            aim_resource.PhysicalDomain(name='ph2'))
+        with self.network(name='net'):
+            epg = self.aim_mgr.find(aim_ctx, aim_resource.EndpointGroup)[0]
+            self.assertEqual(set(['vm1', 'vm2']),
+                             set(epg.openstack_vmm_domain_names))
+            self.assertEqual(set(['ph1', 'ph2']),
+                             set(epg.physical_domain_names))
 
 
 class TestMl2SubnetsV2(test_plugin.TestSubnetsV2,
