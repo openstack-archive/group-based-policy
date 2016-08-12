@@ -27,49 +27,6 @@ from neutron.db import api as db_api
 from neutron import manager
 from neutron.plugins.common import constants as service_constants
 from neutron.plugins.ml2 import config
-from neutron.tests.unit.api import test_extensions
-from neutron.tests.unit.db import test_db_base_plugin_v2 as test_plugin
-from neutron.tests.unit.extensions import test_address_scope
-from neutron.tests.unit.extensions import test_l3
-from opflexagent import constants as ofcst
-
-PLUGIN_NAME = 'gbpservice.neutron.plugins.ml2plus.plugin.Ml2PlusPlugin'
-
-AGENT_CONF_OPFLEX = {'alive': True, 'binary': 'somebinary',
-                     'topic': 'sometopic',
-                     'agent_type': ofcst.AGENT_TYPE_OPFLEX_OVS,
-                     'configurations': {
-                         'opflex_networks': None,
-                         'bridge_mappings': {'physnet1': 'br-eth1'}}}
-
-
-# REVISIT(rkukura): Use mock for this instead?
-class FakeTenant(object):
-    def __init__(self, id, name):
-        self.id = id
-        self.name = name
-
-
-class FakeProjectManager(object):
-    def list(self):
-        return [
-            FakeTenant('another_tenant', 'AnotherTenantName'),
-            FakeTenant('bad_tenant_id', 'BadTenantIdName'),
-            FakeTenant('not_admin', 'NotAdminName'),
-            FakeTenant('some_tenant', 'SomeTenantName'),
-            FakeTenant('somebody_else', 'SomebodyElseName'),
-            FakeTenant('t1', 'T1Name'),
-            FakeTenant('tenant1', 'Tenant1Name'),
-            FakeTenant('tenant_1', 'Tenant1Name'),
-            FakeTenant('tenant_2', 'Tenant2Name'),
-            FakeTenant('test-tenant', 'TestTenantName'),
-        ]
-
-
-class FakeKeystoneClient(object):
-    def __init__(self, **kwargs):
-        self.projects = FakeProjectManager()
-
 
 # TODO(rkukura): Also run Neutron L3 tests on apic_aim L3 plugin.
 
@@ -920,7 +877,29 @@ class TestMl2PortsV2(test_plugin.TestPortsV2,
 
 class TestMl2NetworksV2(test_plugin.TestNetworksV2,
                         ApicAimTestCase):
-    pass
+
+    def test_aim_epg_domains(self):
+        aim_ctx = aim_context.AimContext(self.db_session)
+        self.aim_mgr.create(aim_ctx,
+                            aim_resource.VMMDomain(type='OpenStack',
+                                                   name='vm1'),
+                            overwrite=True)
+        self.aim_mgr.create(aim_ctx,
+                            aim_resource.VMMDomain(type='OpenStack',
+                                                   name='vm2'),
+                            overwrite=True)
+        self.aim_mgr.create(aim_ctx,
+                            aim_resource.PhysicalDomain(name='ph1'),
+                            overwrite=True)
+        self.aim_mgr.create(aim_ctx,
+                            aim_resource.PhysicalDomain(name='ph2'),
+                            overwrite=True)
+        with self.network(name='net'):
+            epg = self.aim_mgr.find(aim_ctx, aim_resource.EndpointGroup)[0]
+            self.assertEqual(set(['vm1', 'vm2']),
+                             set(epg.openstack_vmm_domain_names))
+            self.assertEqual(set(['ph1', 'ph2']),
+                             set(epg.physical_domain_names))
 
 
 class TestMl2SubnetsV2(test_plugin.TestSubnetsV2,
