@@ -97,6 +97,10 @@ class ApicAimTestCase(test_address_scope.AddressScopeTestCase,
             'L3_ROUTER_NAT':
             'gbpservice.neutron.services.apic_aim.l3_plugin.ApicL3Plugin'}
 
+        engine = db_api.get_engine()
+        aim_model_base.Base.metadata.create_all(engine)
+        self.db_session = db_api.get_session()
+
         super(ApicAimTestCase, self).setUp(PLUGIN_NAME,
                                            service_plugins=service_plugins)
         ext_mgr = extensions.PluginAwareExtensionManager.get_instance()
@@ -750,7 +754,29 @@ class TestMl2PortsV2(test_plugin.TestPortsV2,
 
 class TestMl2NetworksV2(test_plugin.TestNetworksV2,
                         ApicAimTestCase):
-    pass
+
+    def test_aim_epg_domains(self):
+        aim_ctx = aim_context.AimContext(self.db_session)
+        self.aim_mgr.create(aim_ctx,
+                            aim_resource.VMMDomain(type='OpenStack',
+                                                   name='vm1'),
+                            overwrite=True)
+        self.aim_mgr.create(aim_ctx,
+                            aim_resource.VMMDomain(type='OpenStack',
+                                                   name='vm2'),
+                            overwrite=True)
+        self.aim_mgr.create(aim_ctx,
+                            aim_resource.PhysicalDomain(name='ph1'),
+                            overwrite=True)
+        self.aim_mgr.create(aim_ctx,
+                            aim_resource.PhysicalDomain(name='ph2'),
+                            overwrite=True)
+        with self.network(name='net'):
+            epg = self.aim_mgr.find(aim_ctx, aim_resource.EndpointGroup)[0]
+            self.assertEqual(set(['vm1', 'vm2']),
+                             set(epg.openstack_vmm_domain_names))
+            self.assertEqual(set(['ph1', 'ph2']),
+                             set(epg.physical_domain_names))
 
 
 class TestMl2SubnetsV2(test_plugin.TestSubnetsV2,
