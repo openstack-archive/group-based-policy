@@ -11,6 +11,7 @@
 #    under the License.
 
 from aim.api import resource as aim_resource
+from aim.common import utils
 from aim import context as aim_context
 from neutron._i18n import _LE
 from neutron._i18n import _LI
@@ -138,6 +139,12 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
 
         epg = self._aim_endpoint_group(session, context.current, bd_name,
                                        bd_tenant_name)
+        vmms = [x.name for x in self.aim.find(aim_ctx, aim_resource.VMMDomain)
+                if x.type == utils.OPENSTACK_VMM_TYPE]
+        phys = [x.name for x in
+                self.aim.find(aim_ctx, aim_resource.PhysicalDomain)]
+        epg.openstack_vmm_domain_names = vmms
+        epg.physical_domain_names = phys
         self.aim.create(aim_ctx, epg)
 
     @log.log_method_call
