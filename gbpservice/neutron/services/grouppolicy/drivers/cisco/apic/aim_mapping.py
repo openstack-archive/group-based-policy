@@ -11,6 +11,7 @@
 #    under the License.
 
 from aim.api import resource as aim_resource
+from aim.common import utils
 from aim import context as aim_context
 from neutron._i18n import _LE
 from neutron._i18n import _LI
@@ -24,8 +25,6 @@ from oslo_log import log as logging
 from gbpservice.neutron.extensions import cisco_apic
 from gbpservice.neutron.extensions import cisco_apic_gbp as aim_ext
 from gbpservice.neutron.extensions import group_policy as gpolicy
-from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import (
-    mechanism_driver as aim_md)
 from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim.extensions import (
     cisco_apic)
 from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import model
@@ -254,6 +253,14 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
             session, context.current, bd_name, bd_tenant_name,
             provided_contracts=provided_contracts,
             consumed_contracts=consumed_contracts)
+        session = context._plugin_context.session
+        aim_ctx = aim_context.AimContext(session)
+        vmms = [x.name for x in self.aim.find(aim_ctx, aim_resource.VMMDomain)
+                if x.type == utils.OPENSTACK_VMM_TYPE]
+        phys = [x.name for x in
+                self.aim.find(aim_ctx, aim_resource.PhysicalDomain)]
+        aim_epg.openstack_vmm_domain_names = vmms
+        aim_epg.physical_domain_names = phys
         # AIM EPG will be persisted in the following call
         self._add_implicit_svc_contracts_to_epg(context, l2p_db, aim_epg)
 

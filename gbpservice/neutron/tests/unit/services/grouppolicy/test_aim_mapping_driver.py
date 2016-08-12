@@ -87,6 +87,9 @@ class AIMBaseTestCase(test_nr_base.CommonNeutronBaseTestCase,
         amap.ApicMappingDriver.get_apic_manager = mock.Mock()
         self.db_session = db_api.get_session()
         self.initialize_db_config(self.db_session)
+        mock.patch(
+            'gbpservice.neutron.services.grouppolicy.drivers.cisco.'
+            'apic.aim_mapping.AIMMappingDriver._ensure_apic_infra').start()
         super(AIMBaseTestCase, self).setUp(
             policy_drivers=policy_drivers, core_plugin=core_plugin,
             ml2_options=ml2_opts, sc_plugin=sc_plugin)
@@ -591,6 +594,42 @@ class TestPolicyTargetGroup(AIMBaseTestCase):
         self.assertItemsEqual([aim_cons_contract_name, service_contract_name,
                                implicit_contract_name],
                               aim_epg.consumed_contract_names)
+
+    def test_policy_target_group_aim_domains(self):
+        self.aim_mgr.create(self._aim_context,
+                            aim_resource.VMMDomain(type='OpenStack',
+                                                   name='vm1'),
+                            overwrite=True)
+        self.aim_mgr.create(self._aim_context,
+                            aim_resource.VMMDomain(type='OpenStack',
+                                                   name='vm2'),
+                            overwrite=True)
+        self.aim_mgr.create(self._aim_context,
+                            aim_resource.PhysicalDomain(name='ph1'),
+                            overwrite=True)
+        self.aim_mgr.create(self._aim_context,
+                            aim_resource.PhysicalDomain(name='ph2'),
+                            overwrite=True)
+        ptg = self.create_policy_target_group(name="ptg1")[
+            'policy_target_group']
+
+        aim_epg_name = str(self.name_mapper.policy_target_group(
+            self._neutron_context.session, ptg['id'], ptg['name']))
+        aim_tenant_name = str(self.name_mapper.tenant(
+            self._neutron_context.session, self._tenant_id))
+        aim_app_profile_name = self.driver.aim_mech_driver.ap_name
+        aim_app_profiles = self.aim_mgr.find(
+            self._aim_context, aim_resource.ApplicationProfile,
+            tenant_name=aim_tenant_name, name=aim_app_profile_name)
+        self.assertEqual(1, len(aim_app_profiles))
+        aim_epg = self.aim_mgr.get(
+            self._aim_context, aim_resource.EndpointGroup(
+                tenant_name=aim_tenant_name,
+                app_profile_name=aim_app_profile_name, name=aim_epg_name))
+        self.assertEqual(set(['vm1', 'vm2']),
+                         set(aim_epg.openstack_vmm_domain_names))
+        self.assertEqual(set(['ph1', 'ph2']),
+                         set(aim_epg.physical_domain_names))
 
     def test_policy_target_group_lifecycle_implicit_l2p(self):
         prs_lists = self._get_provided_consumed_prs_lists()
