@@ -15,6 +15,8 @@
 
 from aim import aim_manager
 from aim.api import resource as aim_resource
+
+from aim.common import utils
 from aim import context as aim_context
 from aim import utils as aim_utils
 from neutron._i18n import _LE
@@ -78,6 +80,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
         # REVISIT(rkukura): Read from config or possibly from AIM?
         self.enable_dhcp_opt = True
         self.enable_metadata_opt = True
+        self.ap_name = AP_NAME
 
         self._setup_opflex_rpc_listeners()
 
@@ -163,12 +166,13 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
                                        limit_ip_learn_to_subnets=True,
                                        ep_move_detect_mode='garp')
         self.aim.create(aim_ctx, bd)
-
+        vmms, phys = self.get_aim_domains(aim_ctx)
         epg = aim_resource.EndpointGroup(tenant_name=tenant_aname,
-                                         app_profile_name=AP_NAME,
-                                         name=aname,
-                                         display_name=dname,
-                                         bd_name=aname)
+                                         app_profile_name=self.ap_name,
+                                         name=aname, display_name=dname,
+                                         bd_name=aname,
+                                         openstack_vmm_domain_names=vmms,
+                                         physical_domain_names=phys)
         self.aim.create(aim_ctx, epg)
 
     def update_network_precommit(self, context):
@@ -1175,3 +1179,10 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
             LOG.info(_LI("Creating default VRF for %s"), tenant_aname)
             vrf = self.aim.create(aim_ctx, attrs)
         return vrf
+
+    def get_aim_domains(self, aim_ctx):
+        vmms = [x.name for x in self.aim.find(aim_ctx, aim_resource.VMMDomain)
+                if x.type == utils.OPENSTACK_VMM_TYPE]
+        phys = [x.name for x in
+                self.aim.find(aim_ctx, aim_resource.PhysicalDomain)]
+        return vmms, phys
