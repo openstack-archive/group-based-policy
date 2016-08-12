@@ -40,4 +40,4 @@ pyOpenSSL>=0.13.0,<=0.15.1
 python-heatclient
 python-keystoneclient
 
--e git+https://github.com/noironetworks/aci-integration-module.git#egg=aci-integration-module
+-e git+https://github.com/noironetworks/aci-integration-module.git@apic-domains#egg=aci-integration-module
