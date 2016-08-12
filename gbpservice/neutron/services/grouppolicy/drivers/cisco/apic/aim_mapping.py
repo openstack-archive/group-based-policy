@@ -11,6 +11,7 @@
 #    under the License.
 
 from aim.api import resource as aim_resource
+from aim.common import utils
 from aim import context as aim_context
 from neutron._i18n import _LI
 from neutron import manager
@@ -228,6 +229,11 @@ class AIMMappingDriver(nrd.CommonNeutronBase):
             session, context.current, bd_name, bd_tenant_name,
             provided_contracts=provided_contracts,
             consumed_contracts=consumed_contracts)
+        session = context._plugin_context.session
+        aim_ctx = aim_context.AimContext(session)
+        vmms, phys = self.aim_mech_driver.get_aim_domains(aim_ctx)
+        aim_epg.openstack_vmm_domain_names = vmms
+        aim_epg.physical_domain_names = phys
         # AIM EPG will be persisted in the following call
         self._add_implicit_svc_contracts_to_epg(context, l2p_db, aim_epg)
 
