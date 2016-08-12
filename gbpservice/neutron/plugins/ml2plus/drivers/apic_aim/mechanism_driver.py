@@ -15,6 +15,7 @@
 
 from aim import aim_manager
 from aim.api import resource as aim_resource
+from aim.common import utils
 from aim import config as aim_cfg
 from aim import context as aim_context
 from neutron._i18n import _LI
@@ -125,11 +126,16 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
                                        enable_routing=False,
                                        limit_ip_learn_to_subnets=True)
         self.aim.create(aim_ctx, bd)
-
+        vmms = [x.name for x in self.aim.find(aim_ctx, aim_resource.VMMDomain)
+                if x.type == utils.OPENSTACK_VMM_TYPE]
+        phys = [x.name for x in
+                self.aim.find(aim_ctx, aim_resource.PhysicalDomain)]
         epg = aim_resource.EndpointGroup(tenant_name=tenant_name,
                                          app_profile_name=self.ap_name,
                                          name=bd_name,
-                                         bd_name=bd_name)
+                                         bd_name=bd_name,
+                                         openstack_vmm_domain_names=vmms,
+                                         physical_domain_names=phys)
         self.aim.create(aim_ctx, epg)
 
     def delete_network_precommit(self, context):
