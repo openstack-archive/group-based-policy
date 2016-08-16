@@ -20,6 +20,70 @@ from neutron.plugins.ml2 import driver_api
 
 
 @six.add_metaclass(abc.ABCMeta)
+class SubnetPoolContext(object):
+    """Context passed to MechanismDrivers for changes to subnet pool
+    resources.
+
+    A SubnetPoolContext instance wraps a subnet pool resource. It
+    provides helper methods for accessing other relevant
+    information. Results from expensive operations are cached so that
+    other MechanismDrivers can freely access the same information.
+    """
+
+    @abc.abstractproperty
+    def current(self):
+        """Return the subnet pool in its current configuration.
+
+        Return the subnet pool with all its properties 'current' at
+        the time the context was established.
+        """
+        pass
+
+    @abc.abstractproperty
+    def original(self):
+        """Return the subnet pool in its original configuration.
+
+        Return the subnet pool, with all its properties set to their
+        original values prior to a call to update_address_scope. Method is
+        only valid within calls to update_address_scope_precommit and
+        update_address_scope_postcommit.
+        """
+        pass
+
+
+@six.add_metaclass(abc.ABCMeta)
+class AddressScopeContext(object):
+    """Context passed to MechanismDrivers for changes to address scope
+    resources.
+
+    An AddressScopeContext instance wraps an address scope
+    resource. It provides helper methods for accessing other relevant
+    information. Results from expensive operations are cached so that
+    other MechanismDrivers can freely access the same information.
+    """
+
+    @abc.abstractproperty
+    def current(self):
+        """Return the address scope in its current configuration.
+
+        Return the address scope with all its properties 'current' at
+        the time the context was established.
+        """
+        pass
+
+    @abc.abstractproperty
+    def original(self):
+        """Return the address scope in its original configuration.
+
+        Return the address scope, with all its properties set to their
+        original values prior to a call to update_address_scope. Method is
+        only valid within calls to update_address_scope_precommit and
+        update_address_scope_postcommit.
+        """
+        pass
+
+
+@six.add_metaclass(abc.ABCMeta)
 class MechanismDriver(driver_api.MechanismDriver):
 
     # REVISIT(rkukura): Is this needed for all operations, or just for
@@ -39,9 +103,280 @@ class MechanismDriver(driver_api.MechanismDriver):
         """
         pass
 
-    # TODO(rkukura): Add precommit/postcommit calls for address_scope,
-    # subnet_pool, and other resources.
+    def create_subnetpool_precommit(self, context):
+        """Allocate resources for a new subnet pool.
+
+        :param context: SubnetPoolContext instance describing the new
+        subnet pool.
+
+        Create a new subnet pool, allocating resources as necessary in
+        the database. Called inside transaction context on
+        session. Call cannot block.  Raising an exception will result
+        in a rollback of the current transaction.
+        """
+        pass
+
+    def create_subnetpool_postcommit(self, context):
+        """Create a subnet pool.
+
+        :param context: SubnetPoolContext instance describing the new
+        subnet pool.
+
+        Called after the transaction commits. Call can block, though
+        will block the entire process so care should be taken to not
+        drastically affect performance. Raising an exception will
+        cause the deletion of the resource.
+        """
+        pass
+
+    def update_subnetpool_precommit(self, context):
+        """Update resources of a subnet pool.
+
+        :param context: SubnetPoolContext instance describing the new
+        state of the subnet pool, as well as the original state prior
+        to the update_subnetpool call.
+
+        Update values of a subnet pool, updating the associated
+        resources in the database. Called inside transaction context
+        on session.  Raising an exception will result in rollback of
+        the transaction.
+
+        update_subnetpool_precommit is called for all changes to the
+        subnet pool state. It is up to the mechanism driver to ignore
+        state or state changes that it does not know or care about.
+        """
+        pass
+
+    def update_subnetpool_postcommit(self, context):
+        """Update a subnet pool.
+
+        :param context: SubnetPoolContext instance describing the new
+        state of the subnet pool, as well as the original state prior
+        to the update_subnetpool call.
+
+        Called after the transaction commits. Call can block, though
+        will block the entire process so care should be taken to not
+        drastically affect performance. Raising an exception will
+        cause the deletion of the resource.
+
+        update_subnetpool_postcommit is called for all changes to the
+        subnet pool state.  It is up to the mechanism driver to ignore
+        state or state changes that it does not know or care about.
+        """
+        pass
+
+    def delete_subnetpool_precommit(self, context):
+        """Delete resources for a subnet pool.
+
+        :param context: SubnetPoolContext instance describing the
+        current state of the subnet pool, prior to the call to delete
+        it.
+
+        Delete subnet pool resources previously allocated by this
+        mechanism driver for a subnet pool. Called inside transaction
+        context on session. Runtime errors are not expected, but
+        raising an exception will result in rollback of the
+        transaction.
+        """
+        pass
+
+    def delete_subnetpool_postcommit(self, context):
+        """Delete a subnet pool.
+
+        :param context: SubnetPoolContext instance describing the
+        current state of the subnet pool, prior to the call to delete
+        it.
+
+        Called after the transaction commits. Call can block, though
+        will block the entire process so care should be taken to not
+        drastically affect performance. Runtime errors are not
+        expected, and will not prevent the resource from being
+        deleted.
+        """
+        pass
+
+    def create_address_scope_precommit(self, context):
+        """Allocate resources for a new address scope.
+
+        :param context: AddressScopeContext instance describing the
+        new address scope.
+
+        Create a new address scope, allocating resources as necessary
+        in the database. Called inside transaction context on
+        session. Call cannot block.  Raising an exception will result
+        in a rollback of the current transaction.
+        """
+        pass
+
+    def create_address_scope_postcommit(self, context):
+        """Create an address scope.
+
+        :param context: AddressScopeContext instance describing the
+        new address scope.
+
+        Called after the transaction commits. Call can block, though
+        will block the entire process so care should be taken to not
+        drastically affect performance. Raising an exception will
+        cause the deletion of the resource.
+        """
+        pass
+
+    def update_address_scope_precommit(self, context):
+        """Update resources of an address scope.
+
+        :param context: AddressScopeContext instance describing the
+        new state of the address scope, as well as the original state
+        prior to the update_address_scope call.
+
+        Update values of an address scope, updating the associated
+        resources in the database. Called inside transaction context
+        on session.  Raising an exception will result in rollback of
+        the transaction.
+
+        update_address_scope_precommit is called for all changes to
+        the address scope state. It is up to the mechanism driver to
+        ignore state or state changes that it does not know or care
+        about.
+        """
+        pass
+
+    def update_address_scope_postcommit(self, context):
+        """Update an address scope.
+
+        :param context: AddressScopeContext instance describing the
+        new state of the address scope, as well as the original state
+        prior to the update_address_scope call.
+
+        Called after the transaction commits. Call can block, though
+        will block the entire process so care should be taken to not
+        drastically affect performance. Raising an exception will
+        cause the deletion of the resource.
+
+        update_address_scope_postcommit is called for all changes to
+        the address scope state.  It is up to the mechanism driver to
+        ignore state or state changes that it does not know or care
+        about.
+        """
+        pass
+
+    def delete_address_scope_precommit(self, context):
+        """Delete resources for an address scope.
+
+        :param context: AddressScopeContext instance describing the
+        current state of the address scope, prior to the call to
+        delete it.
+
+        Delete address scope resources previously allocated by this
+        mechanism driver for an address scope. Called inside
+        transaction context on session. Runtime errors are not
+        expected, but raising an exception will result in rollback of
+        the transaction.
+        """
+        pass
+
+    def delete_address_scope_postcommit(self, context):
+        """Delete an address scope.
+
+        :param context: AddressScopeContext instance describing the
+        current state of the address scope, prior to the call to
+        delete it.
+
+        Called after the transaction commits. Call can block, though
+        will block the entire process so care should be taken to not
+        drastically affect performance. Runtime errors are not
+        expected, and will not prevent the resource from being
+        deleted.
+        """
+        pass
+
+    # REVISIT(rkukura): Add precommit/postcommit calls for other
+    # resources implemented in ML2, such as security groups and
+    # security group rules?
 
 
-# TODO(rkukura): Extend ExtensionDriver for address_scope,
-# subnet_pool, and other resources.
+@six.add_metaclass(abc.ABCMeta)
+class ExtensionDriver(driver_api.ExtensionDriver):
+
+    def process_create_subnetpool(self, plugin_context, data, result):
+        """Process extended attributes for create subnet pool.
+
+        :param plugin_context: plugin request context
+        :param data: dictionary of incoming subnet pool data
+        :param result: subnet pool dictionary to extend
+
+        Called inside transaction context on plugin_context.session to
+        validate and persist any extended subnet pool attributes
+        defined by this driver. Extended attribute values must also be
+        added to result.
+        """
+        pass
+
+    def process_update_subnetpool(self, plugin_context, data, result):
+        """Process extended attributes for update subnet pool.
+
+        :param plugin_context: plugin request context
+        :param data: dictionary of incoming subnet pool data
+        :param result: subnet pool dictionary to extend
+
+        Called inside transaction context on plugin_context.session to
+        validate and update any extended subnet pool attributes
+        defined by this driver. Extended attribute values, whether
+        updated or not, must also be added to result.
+        """
+        pass
+
+    def extend_subnetpool_dict(self, session, base_model, result):
+        """Add extended attributes to subnet pool dictionary.
+
+        :param session: database session
+        :param base_model: subnet pool model data
+        :param result: subnet pool dictionary to extend
+
+        Called inside transaction context on session to add any
+        extended attributes defined by this driver to a subnet pool
+        dictionary to be used for mechanism driver calls and/or
+        returned as the result of a subnet pool operation.
+        """
+        pass
+
+    def process_create_address_scope(self, plugin_context, data, result):
+        """Process extended attributes for create address scope.
+
+        :param plugin_context: plugin request context
+        :param data: dictionary of incoming address scope data
+        :param result: address scope dictionary to extend
+
+        Called inside transaction context on plugin_context.session to
+        validate and persist any extended address scope attributes
+        defined by this driver. Extended attribute values must also be
+        added to result.
+        """
+        pass
+
+    def process_update_address_scope(self, plugin_context, data, result):
+        """Process extended attributes for update address scope.
+
+        :param plugin_context: plugin request context
+        :param data: dictionary of incoming address scope data
+        :param result: address scope dictionary to extend
+
+        Called inside transaction context on plugin_context.session to
+        validate and update any extended address scope attributes
+        defined by this driver. Extended attribute values, whether
+        updated or not, must also be added to result.
+        """
+        pass
+
+    def extend_address_scope_dict(self, session, base_model, result):
+        """Add extended attributes to address scope dictionary.
+
+        :param session: database session
+        :param base_model: address scope model data
+        :param result: address scope dictionary to extend
+
+        Called inside transaction context on session to add any
+        extended attributes defined by this driver to an address scope
+        dictionary to be used for mechanism driver calls and/or
+        returned as the result of an address scope operation.
+        """
+        pass

@@ -13,17 +13,24 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+from neutron._i18n import _LE
 from neutron._i18n import _LI
 from neutron.api.v2 import attributes
+from neutron.db import db_base_plugin_v2
 from neutron.db import models_v2
 from neutron.db import securitygroups_db
+from neutron.extensions import address_scope as as_ext
+from neutron.plugins.ml2.common import exceptions as ml2_exc
 from neutron.plugins.ml2 import managers as ml2_managers
 from neutron.plugins.ml2 import plugin as ml2_plugin
 from neutron.quota import resource_registry
 from oslo_log import log
+from oslo_utils import excutils
 from sqlalchemy import inspect
 
+from gbpservice.neutron.plugins.ml2plus import driver_context
 from gbpservice.neutron.plugins.ml2plus import managers
+from gbpservice.neutron.plugins.ml2plus import patch_neutron  # noqa
 
 LOG = log.getLogger(__name__)
 
@@ -59,7 +66,7 @@ class Ml2PlusPlugin(ml2_plugin.Ml2Plugin):
         LOG.info(_LI("Ml2Plus initializing"))
         # First load drivers, then initialize DB, then initialize drivers
         self.type_manager = ml2_managers.TypeManager()
-        self.extension_manager = ml2_managers.ExtensionManager()
+        self.extension_manager = managers.ExtensionManager()
         self.mechanism_manager = managers.MechanismManager()
         super(ml2_plugin.Ml2Plugin, self).__init__()
         self.type_manager.initialize()
@@ -70,6 +77,12 @@ class Ml2PlusPlugin(ml2_plugin.Ml2Plugin):
         self.add_agent_status_check(self.agent_health_check)
         self._verify_service_plugins_requirements()
         LOG.info(_LI("Modular L2 Plugin (extended) initialization complete"))
+
+    db_base_plugin_v2.NeutronDbPluginV2.register_dict_extend_funcs(
+               attributes.SUBNETPOOLS, ['_ml2_md_extend_subnetpool_dict'])
+
+    db_base_plugin_v2.NeutronDbPluginV2.register_dict_extend_funcs(
+               as_ext.ADDRESS_SCOPES, ['_ml2_md_extend_address_scope_dict'])
 
     def _ml2_md_extend_network_dict(self, result, netdb):
         session = inspect(netdb).session
@@ -86,6 +99,29 @@ class Ml2PlusPlugin(ml2_plugin.Ml2Plugin):
         with session.begin(subtransactions=True):
             self.extension_manager.extend_subnet_dict(
                 session, subnetdb, result)
+
+    def _ml2_md_extend_subnetpool_dict(self, result, subnetpooldb):
+        session = inspect(subnetpooldb).session
+        with session.begin(subtransactions=True):
+            self.extension_manager.extend_subnetpool_dict(
+                session, subnetpooldb, result)
+
+    def _ml2_md_extend_address_scope_dict(self, result, address_scopedb):
+        session = inspect(address_scopedb).session
+        with session.begin(subtransactions=True):
+            self.extension_manager.extend_address_scope_dict(
+                session, address_scopedb, result)
+
+    # Base version does not call _apply_dict_extend_functions()
+    def _make_address_scope_dict(self, address_scope, fields=None):
+        res = {'id': address_scope['id'],
+               'name': address_scope['name'],
+               'tenant_id': address_scope['tenant_id'],
+               'shared': address_scope['shared'],
+               'ip_version': address_scope['ip_version']}
+        self._apply_dict_extend_functions(as_ext.ADDRESS_SCOPES, res,
+                                          address_scope)
+        return self._fields(res, fields)
 
     def create_network(self, context, network):
         self._ensure_tenant(context, network[attributes.NETWORK])
@@ -117,9 +153,110 @@ class Ml2PlusPlugin(ml2_plugin.Ml2Plugin):
         return super(Ml2PlusPlugin, self).create_port_bulk(context,
                                                            ports)
 
-    # TODO(rkukura): Override address_scope, subnet_pool, and any
-    # other needed resources to ensure tenant and invoke mechanism and
-    # extension drivers.
+    def create_subnetpool(self, context, subnetpool):
+        self._ensure_tenant(context, subnetpool[attributes.SUBNETPOOL])
+        session = context.session
+        with session.begin(subtransactions=True):
+            result = super(Ml2PlusPlugin, self).create_subnetpool(context,
+                                                                  subnetpool)
+            self.extension_manager.process_create_subnetpool(
+                context, subnetpool[attributes.SUBNETPOOL], result)
+            mech_context = driver_context.SubnetPoolContext(
+                self, context, result)
+            self.mechanism_manager.create_subnetpool_precommit(mech_context)
+        try:
+            self.mechanism_manager.create_subnetpool_postcommit(mech_context)
+        except ml2_exc.MechanismDriverError:
+            with excutils.save_and_reraise_exception():
+                LOG.error(_LE("mechanism_manager.create_subnetpool_postcommit "
+                              "failed, deleting subnetpool '%s'"),
+                          result['id'])
+                self.delete_subnetpool(context, result['id'])
+        return result
+
+    # REVISIT(rkukura): Is create_subnetpool_bulk() needed?
+
+    def update_subnetpool(self, context, id, subnetpool):
+        session = context.session
+        with session.begin(subtransactions=True):
+            original_subnetpool = super(Ml2PlusPlugin, self).get_subnetpool(
+                context, id)
+            updated_subnetpool = super(Ml2PlusPlugin, self).update_subnetpool(
+                context, id, subnetpool)
+            self.extension_manager.process_update_subnetpool(
+                context, subnetpool[attributes.SUBNETPOOL],
+                updated_subnetpool)
+            mech_context = driver_context.SubnetPoolContext(
+                self, context, updated_subnetpool,
+                original_subnetpool=original_subnetpool)
+            self.mechanism_manager.update_subnetpool_precommit(mech_context)
+        self.mechanism_manager.update_subnetpool_postcommit(mech_context)
+        return updated_subnetpool
+
+    def delete_subnetpool(self, context, id):
+        session = context.session
+        with session.begin(subtransactions=True):
+            subnetpool = super(Ml2PlusPlugin, self).get_subnetpool(context, id)
+            super(Ml2PlusPlugin, self).delete_subnetpool(context, id)
+            mech_context = driver_context.SubnetPoolContext(
+                self, context, subnetpool)
+            self.mechanism_manager.delete_subnetpool_precommit(mech_context)
+        self.mechanism_manager.delete_subnetpool_postcommit(mech_context)
+
+    def create_address_scope(self, context, address_scope):
+        self._ensure_tenant(context, address_scope[as_ext.ADDRESS_SCOPE])
+        session = context.session
+        with session.begin(subtransactions=True):
+            result = super(Ml2PlusPlugin, self).create_address_scope(
+                context, address_scope)
+            self.extension_manager.process_create_address_scope(
+                context, address_scope[as_ext.ADDRESS_SCOPE], result)
+            mech_context = driver_context.AddressScopeContext(
+                self, context, result)
+            self.mechanism_manager.create_address_scope_precommit(
+                mech_context)
+        try:
+            self.mechanism_manager.create_address_scope_postcommit(
+                mech_context)
+        except ml2_exc.MechanismDriverError:
+            with excutils.save_and_reraise_exception():
+                LOG.error(_LE("mechanism_manager.create_address_scope_"
+                              "postcommit failed, deleting address_scope"
+                              " '%s'"),
+                          result['id'])
+                self.delete_address_scope(context, result['id'])
+        return result
+
+    # REVISIT(rkukura): Is create_address_scope_bulk() needed?
+
+    def update_address_scope(self, context, id, address_scope):
+        session = context.session
+        with session.begin(subtransactions=True):
+            original_address_scope = super(Ml2PlusPlugin,
+                                           self).get_address_scope(context, id)
+            updated_address_scope = super(Ml2PlusPlugin,
+                                          self).update_address_scope(
+                                              context, id, address_scope)
+            self.extension_manager.process_update_address_scope(
+                context, address_scope[as_ext.ADDRESS_SCOPE],
+                updated_address_scope)
+            mech_context = driver_context.AddressScopeContext(
+                self, context, updated_address_scope,
+                original_address_scope=original_address_scope)
+            self.mechanism_manager.update_address_scope_precommit(mech_context)
+        self.mechanism_manager.update_address_scope_postcommit(mech_context)
+        return updated_address_scope
+
+    def delete_address_scope(self, context, id):
+        session = context.session
+        with session.begin(subtransactions=True):
+            address_scope = super(Ml2PlusPlugin, self).get_address_scope(
+                context, id)
+            super(Ml2PlusPlugin, self).delete_address_scope(context, id)
+            mech_context = driver_context.AddressScopeContext(
+                self, context, address_scope)
+            self.mechanism_manager.delete_address_scope_precommit(mech_context)
+        self.mechanism_manager.delete_address_scope_postcommit(mech_context)
 
     def _ensure_tenant(self, context, resource):
         tenant_id = resource['tenant_id']

@@ -15,9 +15,12 @@
 
 import mock
 
+from neutron.api import extensions
 from neutron import manager
 from neutron.plugins.ml2 import config
+from neutron.tests.unit.api import test_extensions
 from neutron.tests.unit.db import test_db_base_plugin_v2 as test_plugin
+from neutron.tests.unit.extensions import test_address_scope
 
 from gbpservice.neutron.tests.unit.plugins.ml2plus.drivers import (
     mechanism_logger as mech_logger)
@@ -28,7 +31,7 @@ PLUGIN_NAME = 'gbpservice.neutron.plugins.ml2plus.plugin.Ml2PlusPlugin'
 # This is just a quick sanity test that basic ML2 plugin functionality
 # is preserved.
 
-class Ml2PlusPluginV2TestCase(test_plugin.NeutronDbPluginV2TestCase):
+class Ml2PlusPluginV2TestCase(test_address_scope.AddressScopeTestCase):
 
     def setUp(self):
         # Enable the test mechanism driver to ensure that
@@ -41,6 +44,8 @@ class Ml2PlusPluginV2TestCase(test_plugin.NeutronDbPluginV2TestCase):
                                      ['physnet1:1000:1099'],
                                      group='ml2_type_vlan')
         super(Ml2PlusPluginV2TestCase, self).setUp(PLUGIN_NAME)
+        ext_mgr = extensions.PluginAwareExtensionManager.get_instance()
+        self.ext_api = test_extensions.setup_extensions_middleware(ext_mgr)
         self.port_create_status = 'DOWN'
         self.plugin = manager.NeutronManager.get_plugin()
         self.plugin.start_rpc_listeners()
@@ -135,6 +140,145 @@ class TestEnsureTenant(Ml2PlusPluginV2TestCase):
                                  mock.call(mock.ANY, 't2')],
                                 any_order=True)
             self.assertEqual(2, et.call_count)
+
+    def test_subnetpool(self):
+        with mock.patch.object(mech_logger.LoggerPlusMechanismDriver,
+                               'ensure_tenant') as et:
+            self._make_subnetpool(self.fmt, ['10.0.0.0/8'], name='sp1',
+                                  tenant_id='t1')
+            et.assert_called_once_with(mock.ANY, 't1')
+
+    def test_address_scope(self):
+        with mock.patch.object(mech_logger.LoggerPlusMechanismDriver,
+                               'ensure_tenant') as et:
+            self._make_address_scope(self.fmt, 4, name='as1', tenant_id='t1')
+            et.assert_called_once_with(mock.ANY, 't1')
+
+
+class TestSubnetPool(Ml2PlusPluginV2TestCase):
+    def test_create(self):
+        with mock.patch.object(mech_logger.LoggerPlusMechanismDriver,
+                               'create_subnetpool_precommit') as pre:
+            with mock.patch.object(mech_logger.LoggerPlusMechanismDriver,
+                                   'create_subnetpool_postcommit') as post:
+                self._make_subnetpool(self.fmt, ['10.0.0.0/8'], name='sp1',
+                                      tenant_id='t1')
+
+                self.assertEqual(1, pre.call_count)
+                self.assertEqual('sp1',
+                                 pre.call_args[0][0].current['name'])
+                self.assertIsNone(pre.call_args[0][0].original)
+
+                self.assertEqual(1, post.call_count)
+                self.assertEqual('sp1',
+                                 post.call_args[0][0].current['name'])
+                self.assertIsNone(post.call_args[0][0].original)
+
+    def test_update(self):
+        subnetpool = self._make_subnetpool(
+            self.fmt, ['10.0.0.0/8'], name='sp1', tenant_id='t1')['subnetpool']
+        data = {'subnetpool': {'name': 'newnameforsubnetpool'}}
+        with mock.patch.object(mech_logger.LoggerPlusMechanismDriver,
+                               'update_subnetpool_precommit') as pre:
+            with mock.patch.object(mech_logger.LoggerPlusMechanismDriver,
+                                   'update_subnetpool_postcommit') as post:
+                res = self._update('subnetpools', subnetpool['id'],
+                                   data)['subnetpool']
+                self.assertEqual('newnameforsubnetpool', res['name'])
+
+                self.assertEqual(1, pre.call_count)
+                self.assertEqual('newnameforsubnetpool',
+                                 pre.call_args[0][0].current['name'])
+                self.assertEqual('sp1',
+                                 pre.call_args[0][0].original['name'])
+
+                self.assertEqual(1, post.call_count)
+                self.assertEqual('newnameforsubnetpool',
+                                 post.call_args[0][0].current['name'])
+                self.assertEqual('sp1',
+                                 post.call_args[0][0].original['name'])
+
+    def test_delete(self):
+        subnetpool = self._make_subnetpool(
+            self.fmt, ['10.0.0.0/8'], name='sp1', tenant_id='t1')['subnetpool']
+        with mock.patch.object(mech_logger.LoggerPlusMechanismDriver,
+                               'delete_subnetpool_precommit') as pre:
+            with mock.patch.object(mech_logger.LoggerPlusMechanismDriver,
+                                   'delete_subnetpool_postcommit') as post:
+                self._delete('subnetpools', subnetpool['id'])
+
+                self.assertEqual(1, pre.call_count)
+                self.assertEqual('sp1',
+                                 pre.call_args[0][0].current['name'])
+                self.assertIsNone(pre.call_args[0][0].original)
+
+                self.assertEqual(1, post.call_count)
+                self.assertEqual('sp1',
+                                 post.call_args[0][0].current['name'])
+                self.assertIsNone(post.call_args[0][0].original)
+
+
+class TestAddressScope(Ml2PlusPluginV2TestCase):
+    def test_create(self):
+        with mock.patch.object(mech_logger.LoggerPlusMechanismDriver,
+                               'create_address_scope_precommit') as pre:
+            with mock.patch.object(mech_logger.LoggerPlusMechanismDriver,
+                                   'create_address_scope_postcommit') as post:
+                self._make_address_scope(self.fmt, 4, name='as1',
+                                         tenant_id='t1')
+
+                self.assertEqual(1, pre.call_count)
+                self.assertEqual('as1',
+                                 pre.call_args[0][0].current['name'])
+                self.assertIsNone(pre.call_args[0][0].original)
+
+                self.assertEqual(1, post.call_count)
+                self.assertEqual('as1',
+                                 post.call_args[0][0].current['name'])
+                self.assertIsNone(post.call_args[0][0].original)
+
+    def test_update(self):
+        address_scope = self._make_address_scope(
+            self.fmt, 4, name='as1', tenant_id='t1')['address_scope']
+        data = {'address_scope': {'name': 'newnameforaddress_scope'}}
+        with mock.patch.object(mech_logger.LoggerPlusMechanismDriver,
+                               'update_address_scope_precommit') as pre:
+            with mock.patch.object(mech_logger.LoggerPlusMechanismDriver,
+                                   'update_address_scope_postcommit') as post:
+                res = self._update('address-scopes', address_scope['id'],
+                                   data)['address_scope']
+                self.assertEqual('newnameforaddress_scope', res['name'])
+
+                self.assertEqual(1, pre.call_count)
+                self.assertEqual('newnameforaddress_scope',
+                                 pre.call_args[0][0].current['name'])
+                self.assertEqual('as1',
+                                 pre.call_args[0][0].original['name'])
+
+                self.assertEqual(1, post.call_count)
+                self.assertEqual('newnameforaddress_scope',
+                                 post.call_args[0][0].current['name'])
+                self.assertEqual('as1',
+                                 post.call_args[0][0].original['name'])
+
+    def test_delete(self):
+        address_scope = self._make_address_scope(
+            self.fmt, 4, name='as1', tenant_id='t1')['address_scope']
+        with mock.patch.object(mech_logger.LoggerPlusMechanismDriver,
+                               'delete_address_scope_precommit') as pre:
+            with mock.patch.object(mech_logger.LoggerPlusMechanismDriver,
+                                   'delete_address_scope_postcommit') as post:
+                self._delete('address-scopes', address_scope['id'])
+
+                self.assertEqual(1, pre.call_count)
+                self.assertEqual('as1',
+                                 pre.call_args[0][0].current['name'])
+                self.assertIsNone(pre.call_args[0][0].original)
+
+                self.assertEqual(1, post.call_count)
+                self.assertEqual('as1',
+                                 post.call_args[0][0].current['name'])
+                self.assertIsNone(post.call_args[0][0].original)
 
 
 class TestMl2BasicGet(test_plugin.TestBasicGet,
