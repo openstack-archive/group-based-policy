@@ -14,7 +14,7 @@ from neutron._i18n import _LI
 from neutron import manager as n_manager
 from oslo_log import log as logging
 
-from gbpservice.neutron.extensions import aim_driver_ext
+from gbpservice.neutron.extensions import cisco_apic_gbp
 from gbpservice.neutron.services.grouppolicy import (
     group_policy_driver_api as api)
 
@@ -22,8 +22,8 @@ LOG = logging.getLogger(__name__)
 
 
 class AIMExtensionDriver(api.ExtensionDriver):
-    _supported_extension_alias = aim_driver_ext.AIM_DRIVER_EXT
-    _extension_dict = aim_driver_ext.EXTENDED_ATTRIBUTES_2_0
+    _supported_extension_alias = cisco_apic_gbp.ALIAS
+    _extension_dict = cisco_apic_gbp.EXTENDED_ATTRIBUTES_2_0
 
     def __init__(self):
         LOG.info(_LI("AIM Extension __init__"))
