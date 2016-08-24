@@ -1238,6 +1238,7 @@ class VpnaasIpsecDriver(VpnGenericConfigDriver):
             msg = ("Failed to check if IPSEC state is changed. %s"
                    % str(err).capitalize())
             LOG.error(msg)
+            return vpn_const.STATE_ERROR
         if changed:
             self.agent.update_status(
                 context, self._update_conn_status(conn,

@@ -219,10 +219,12 @@ class GenericConfigEventHandler(agent_base.AgentBaseEventHandler,
             elif ev.id == gen_cfg_const.EVENT_CONFIGURE_HEALTHMONITOR:
                 resource_data = ev.data.get('resource_data')
                 periodicity = resource_data.get('periodicity')
+                EV_CONF_HM_MAXRETRY = (
+                    gen_cfg_const.EVENT_CONFIGURE_HEALTHMONITOR_MAXRETRY)
                 if periodicity == gen_cfg_const.INITIAL:
                     self.sc.poll_event(
-                                    ev,
-                                    max_times=gen_cfg_const.INITIAL_HM_RETRIES)
+                        ev,
+                        max_times= EV_CONF_HM_MAXRETRY)
 
                 elif periodicity == gen_cfg_const.FOREVER:
                     self.sc.poll_event(ev)
@@ -354,8 +356,8 @@ class GenericConfigEventHandler(agent_base.AgentBaseEventHandler,
         self.notify._notification(notification_data)
 
     @nfp_api.poll_event_desc(
-                            event=gen_cfg_const.EVENT_CONFIGURE_HEALTHMONITOR,
-                            spacing=5)
+            event=gen_cfg_const.EVENT_CONFIGURE_HEALTHMONITOR,
+            spacing=gen_cfg_const.EVENT_CONFIGURE_HEALTHMONITOR_SPACING)
     def handle_configure_healthmonitor(self, ev):
         """Decorator method called for poll event CONFIGURE_HEALTHMONITOR
            Finally it Enqueues response into notification queue.
@@ -410,8 +412,8 @@ def load_drivers(conf):
 
     """
 
-    cutils = utils.ConfiguratorUtils()
-    drivers = cutils.load_drivers(gen_cfg_const.DRIVERS_DIR)
+    cutils = utils.ConfiguratorUtils(conf)
+    drivers = cutils.load_drivers()
 
     for service_type, driver_name in drivers.iteritems():
         driver_obj = driver_name(conf=conf)
