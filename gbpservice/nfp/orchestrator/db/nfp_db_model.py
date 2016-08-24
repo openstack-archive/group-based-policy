@@ -111,7 +111,7 @@ class NetworkFunction(BASE, model_base.HasId, model_base.HasTenant,
     service_chain_id = sa.Column(sa.String(36), nullable=True)
     service_profile_id = sa.Column(sa.String(36), nullable=False)
     service_config = sa.Column(sa.TEXT)
-    heat_stack_id = sa.Column(sa.String(36), nullable=True)
+    config_policy_id = sa.Column(sa.String(36), nullable=True)
     network_function_instances = orm.relationship(
         NetworkFunctionInstance,
         backref='network_function')

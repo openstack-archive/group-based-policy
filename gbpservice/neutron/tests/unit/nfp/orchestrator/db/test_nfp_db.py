@@ -82,7 +82,7 @@ class NFPDBTestCase(SqlTestCase):
                 'service_chain_id': 'service_chain_id',
                 'service_profile_id': 'service_profile_id',
                 'service_config': 'service_config',
-                'heat_stack_id': 'heat_stack_id',
+                'config_policy_id': 'config_policy_id',
                 'status': 'status'
             }
         return self.nfp_db.create_network_function(self.session, attributes)
@@ -96,7 +96,7 @@ class NFPDBTestCase(SqlTestCase):
             'service_chain_id': 'service_chain_id',
             'service_profile_id': 'service_profile_id',
             'service_config': 'service_config',
-            'heat_stack_id': 'heat_stack_id',
+            'config_policy_id': 'config_policy_id',
             'status': 'status'
         }
 
@@ -118,7 +118,7 @@ class NFPDBTestCase(SqlTestCase):
             self.assertEqual(attrs_mandatory[key], network_function[key])
         self.assertIsNotNone(network_function['id'])
         non_mandatory_args = ['service_chain_id', 'service_config',
-                              'heat_stack_id']
+                              'config_policy_id']
         for arg in non_mandatory_args:
             self.assertIsNone(network_function[arg])
 
@@ -131,7 +131,7 @@ class NFPDBTestCase(SqlTestCase):
             'service_chain_id': 'service_chain_id',
             'service_profile_id': 'service_profile_id',
             'service_config': 'service_config',
-            'heat_stack_id': 'heat_stack_id',
+            'config_policy_id': 'config_policy_id',
             'status': 'status'
         }
         network_function = self.create_network_function(attrs_all)
@@ -243,7 +243,8 @@ class NFPDBTestCase(SqlTestCase):
             'name': 'name',
             'tenant_id': 'tenant_id',
             'network_function_id': network_function['id'],
-            'status': 'status'
+            'status': 'status',
+            'port_info': []
         }
         network_function_instance = (
             self.nfp_db.create_network_function_instance(
