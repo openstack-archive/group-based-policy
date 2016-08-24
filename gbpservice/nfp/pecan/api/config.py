@@ -28,15 +28,15 @@ app = {
 }
 
 logging = {
-    'root': {'level': 'INFO', 'handlers': ['console']},
+    'root': {'level': 'INFO', 'handlers': ['console', 'logfile']},
     'loggers': {
         'pecanlog': {'level': 'INFO',
-                     'handlers': ['console'],
+                     'handlers': ['console', 'logfile'],
                      'propagate': False},
         'pecan': {'level': 'INFO',
-                  'handlers': ['console'],
+                  'handlers': ['console', 'logfile'],
                   'propagate': False},
-        'py.warnings': {'handlers': ['console']},
+        'py.warnings': {'handlers': ['console', 'logfile']},
         '__force_dict__': True
     },
     'handlers': {
@@ -44,6 +44,11 @@ logging = {
             'level': 'INFO',
             'class': 'logging.StreamHandler',
             'formatter': 'color'
+        },
+        'logfile': {
+            'class': 'logging.FileHandler',
+            'filename': '/var/log/nfp/nfp_pecan.log',
+            'level': 'INFO'
         }
     },
     'formatters': {
@@ -56,13 +61,18 @@ logging = {
             'format': ('%(asctime)s [%(padded_color_levelname)s] [%(name)s]'
                        '[%(threadName)s] %(message)s'),
             '__force_dict__': True
-                 }
-                 }
+        }
+    }
 }
+
 cloud_services = [
     {'service_name': 'configurator',
-     'topic': 'configurator',
+     'topic': 'configurator',  # configurator rpc topic
      'reporting_interval': '10',  # in seconds
-     'apis': ['CONFIGURATION']
-     }
+     'apis': ['CONFIGURATION'],
+     # notifications from configurator to UTC components
+     'notifications': {'host': '127.0.0.1',
+                       'queue': 'configurator-notifications'
+                       }
+     },
 ]
