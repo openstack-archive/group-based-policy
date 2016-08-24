@@ -108,6 +108,12 @@ class NetworkFunctionDeviceNotFound(NotFound):
                 "not be found")
 
 
+class NetworkFunctionDeviceInterfaceNotFound(NotFound):
+    message = _("NetworkFunctionDeviceInterface "
+                "%(network_function_device_interface_id)s could "
+                "not be found")
+
+
 class NFPPortNotFound(NotFound):
     message = _("NFP Port %(port_id)s could not be found")
 
