@@ -368,10 +368,11 @@ class NovaClient(OpenstackApi):
             raise Exception(err)
 
     def create_instance(self, token, tenant_id, image_id, flavor,
-                        nw_port_id_list, name, secgroup_name=None,
+                        nw_port_id_list, name, volume_support,
+                        volume_size, secgroup_name=None,
                         metadata=None, files=None, config_drive=False,
                         userdata=None, key_name='', different_hosts=None,
-                        volume_support=False, volume_size="2"):
+                        ):
         """ Launch a VM with given details
 
         :param token: A scoped token
@@ -393,6 +394,21 @@ class NovaClient(OpenstackApi):
         :return: VM instance UUID
 
         """
+        try:
+            if files:
+                file_dict = {}
+                for _file in files:
+                    with open(_file["src"]) as config_file:
+                        data = config_file.read()
+                        config_drive = True
+                        file_dict.update({_file["dst"]: data})
+                files = file_dict
+        except Exception as e:
+            msg = (
+                "Failed while reading file: %r " % e)
+            LOG.error(msg)
+            raise e
+
         kwargs = dict()
         if volume_support:
             block_device_mapping_v2 = [
@@ -417,7 +433,7 @@ class NovaClient(OpenstackApi):
             kwargs.update(userdata=userdata)
         if metadata is not None and type(metadata) is dict and metadata != {}:
             kwargs.update(meta=metadata)
-        if files is not None and type(files) is list and files != []:
+        if files is not None:
             kwargs.update(files=files)
         if nw_port_id_list:
             nics = [{"port-id": entry.get("port"), "net-id": entry.get("uuid"),
