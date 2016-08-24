@@ -92,7 +92,7 @@ class HeatDriver(object):
         self.gbp_client = GBPClient(config)
         self.neutron_client = NeutronClient(config)
 
-        self.keystone_conf = config.keystone_authtoken
+        self.keystone_conf = config.nfp_keystone_authtoken
         keystone_version = self.keystone_conf.auth_version
         self.v2client = self.keystoneclient._get_v2_keystone_admin_client()
         self.admin_id = self.v2client.users.find(
@@ -926,7 +926,7 @@ class HeatDriver(object):
                 nf_desc = str(firewall_desc)
         elif service_type == pconst.VPN:
             config_param_values['Subnet'] = (
-                consumer_port['fixed_ips'][0]['subnet_id']
+                provider_port['fixed_ips'][0]['subnet_id']
                 if consumer_port else None)
             l2p = self.gbp_client.get_l2_policy(
                 auth_token, provider['l2_policy_id'])
@@ -969,10 +969,15 @@ class HeatDriver(object):
                     stitching_pts[0]['policy_target_group_id'])
             else:
                 stitching_ptg_id = consumer['id']
-            self.gbp_client.update_policy_target_group(
-                auth_token, stitching_ptg_id,
-                {'policy_target_group': {
-                    'network_service_policy_id': nsp['id']}})
+            try:
+                self.gbp_client.update_policy_target_group(
+                    auth_token, stitching_ptg_id,
+                    {'policy_target_group': {
+                        'network_service_policy_id': nsp['id']}})
+            except Exception:
+                LOG.error(_LE("problem in accesing external segment or "
+                              "nat_pool, seems they have not created"))
+                return None, None
             stitching_port_fip = ""
 
             if not base_mode_support:
@@ -1173,7 +1178,7 @@ class HeatDriver(object):
                 nf_desc = str(firewall_desc)
         elif service_type == pconst.VPN:
             config_param_values['Subnet'] = (
-                consumer_port['fixed_ips'][0]['subnet_id']
+                provider_port['fixed_ips'][0]['subnet_id']
                 if consumer_port else None)
             l2p = self.gbp_client.get_l2_policy(
                 auth_token, provider['l2_policy_id'])
@@ -1322,7 +1327,7 @@ class HeatDriver(object):
         else:
             mgmt_ip = None
 
-        heat_stack_id = network_function['heat_stack_id']
+        config_policy_id = network_function['config_policy_id']
         service_id = network_function['service_id']
         servicechain_node = self.gbp_client.get_servicechain_node(admin_token,
                                                                   service_id)
@@ -1386,7 +1391,7 @@ class HeatDriver(object):
             'provider_port': provider_port,
             'mgmt_ip': mgmt_ip,
             'policy_target_group': provider_policy_target_group,
-            'heat_stack_id': heat_stack_id,
+            'config_policy_id': config_policy_id,
             'provider_ptg': provider_ptg,
             'consumer_ptg': consumer_ptg or consumer_policy_target_group
         }
@@ -1524,7 +1529,7 @@ class HeatDriver(object):
         intermediate_status = "IN_PROGRESS"
 
         provider_tenant_id = nfp_context['tenant_id']
-        stack_id = nfp_context['heat_stack_id']
+        stack_id = nfp_context['config_policy_id']
 
         heatclient = self._get_heat_client(provider_tenant_id)
         if not heatclient:
@@ -1560,8 +1565,6 @@ class HeatDriver(object):
         success_status = "COMPLETED"
         failure_status = "ERROR"
         intermediate_status = "IN_PROGRESS"
-        _, resource_owner_tenant_id = (
-            self._get_resource_owner_context())
         heatclient = self._get_heat_client(tenant_id)
         if not heatclient:
             return failure_status
@@ -1595,7 +1598,7 @@ class HeatDriver(object):
         # network_function_instance = nfp_context['network_function_instance']
         service_details = nfp_context['service_details']
         mgmt_ip = nfp_context['management']['port']['ip_address']
-        heat_stack_id = network_function['heat_stack_id']
+        config_policy_id = network_function['config_policy_id']
         # service_id = network_function['service_id']
         # service_chain_id = network_function['service_chain_id']
         servicechain_instance = nfp_context['service_chain_instance']
@@ -1622,7 +1625,7 @@ class HeatDriver(object):
             'provider_port': provider_port,
             'provider_subnet': provider_subnet,
             'mgmt_ip': mgmt_ip,
-            'heat_stack_id': heat_stack_id,
+            'config_policy_id': config_policy_id,
             'provider_ptg': provider_policy_target_group,
             'consumer_ptg': consumer_policy_target_group,
             'consuming_external_policies':
@@ -1745,8 +1748,6 @@ class HeatDriver(object):
         return stack_id
 
     def delete_config(self, stack_id, tenant_id, network_function=None):
-        _, resource_owner_tenant_id = (
-            self._get_resource_owner_context())
 
         try:
             heatclient = self._get_heat_client(tenant_id)
@@ -1890,7 +1891,7 @@ class HeatDriver(object):
         consumer_port = service_details['consumer_port']
         provider_port = service_details['provider_port']
         mgmt_ip = service_details['mgmt_ip']
-        stack_id = service_details['heat_stack_id']
+        stack_id = service_details['config_policy_id']
 
         if service_profile['service_type'] in [pconst.LOADBALANCER,
                                                pconst.LOADBALANCERV2]:
@@ -1927,7 +1928,7 @@ class HeatDriver(object):
         consumer_port = service_details['consumer_port']
         provider_port = service_details['provider_port']
         mgmt_ip = service_details['mgmt_ip']
-        stack_id = service_details['heat_stack_id']
+        stack_id = service_details['config_policy_id']
 
         if service_profile['service_type'] == pconst.FIREWALL:
             auth_token, resource_owner_tenant_id = (
