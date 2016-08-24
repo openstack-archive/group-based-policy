@@ -10,7 +10,6 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-DRIVERS_DIR = 'gbpservice.contrib.nfp.configurator.drivers'
 SERVICE_TYPE = 'generic_config'
 EVENT_CONFIGURE_INTERFACES = 'CONFIGURE_INTERFACES'
 EVENT_CLEAR_INTERFACES = 'CLEAR_INTERFACES'
@@ -19,7 +18,7 @@ EVENT_CLEAR_ROUTES = 'CLEAR_ROUTES'
 EVENT_CONFIGURE_HEALTHMONITOR = 'CONFIGURE_HEALTHMONITOR'
 EVENT_CLEAR_HEALTHMONITOR = 'CLEAR_HEALTHMONITOR'
 
-MAX_FAIL_COUNT = 12  # 5 secs delay * 12 = 60 secs
+MAX_FAIL_COUNT = 28  # 5 secs delay * 28 = 140 secs
 INITIAL = 'initial'
 FOREVER = 'forever'
-INITIAL_HM_RETRIES = 24  # 5 secs delay * 24 = 120 secs
+INITIAL_HM_RETRIES = 40  # 5 secs delay * 40 = 200 secs
