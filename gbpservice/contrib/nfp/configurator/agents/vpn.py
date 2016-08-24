@@ -332,8 +332,8 @@ def load_drivers(sc, conf):
     Returns: dictionary of instances of the respective driver classes.
     """
 
-    ld = utils.ConfiguratorUtils()
-    drivers = ld.load_drivers(const.DRIVERS_DIR)
+    ld = utils.ConfiguratorUtils(conf)
+    drivers = ld.load_drivers(const.SERVICE_TYPE)
 
     for service_type, driver_name in drivers.iteritems():
         driver_obj = driver_name(conf=conf)
