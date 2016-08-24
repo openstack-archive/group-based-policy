@@ -18,9 +18,8 @@ from neutron.api import extensions
 from neutron import manager as n_manager
 from oslo_log import log
 
+from gbpservice.neutron import extensions as extensions_pkg
 from gbpservice.neutron.plugins.ml2plus import driver_api as api_plus
-from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import (
-    extensions as extensions_pkg)
 
 LOG = log.getLogger(__name__)
 
