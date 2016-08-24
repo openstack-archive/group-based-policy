@@ -15,9 +15,11 @@ from image_builder import disk_image_create as DIB
 TEMP_WORK_DIR = "tmp"
 CONFIG = ConfigParser.ConfigParser()
 NEUTRON_CONF = "/etc/neutron/neutron.conf"
+NEUTRON_ML2_CONF = "/etc/neutron/plugins/ml2/ml2_conf.ini"
 FILE_PATH = os.path.dirname(os.path.realpath(__file__))
 CONFIGURATOR_USER_DATA = FILE_PATH + "/image_builder/configurator_user_data"
 TEMPLATES_PATH = FILE_PATH + "/templates/gbp_resources.yaml"
+APIC_ENV = False
 
 # global values
 # these src_dirs will be copied from host to inside docker image, these
@@ -59,13 +61,39 @@ parser.add_argument('--controller-path', type=str, dest='controller_path',
                     help='patch to the controller image')
 args = parser.parse_args()
 
+def check_if_apic_sys():
+    mech_drivers = commands.getoutput("crudini --get " + NEUTRON_ML2_CONF + " ml2 mechanism_drivers")
+    if mech_drivers == 'apic_gbp':
+        APIC_ENV = True
 
 def configure_nfp():
-    # Enable FW plugin
-    subprocess.call("crudini --set /etc/neutron/neutron.conf DEFAULT service_plugins neutron.services.l3_router.l3_router_plugin.L3RouterPlugin,group_policy,ncp,neutron_lbaas.services.loadbalancer.plugin.LoadBalancerPlugin,neutron.services.metering.metering_plugin.MeteringPlugin,neutron_vpnaas.services.vpn.plugin.VPNDriverPlugin,gbpservice.contrib.nfp.service_plugins.firewall.nfp_fwaas_plugin.NFPFirewallPlugin".split(' '))
-
+    check_if_apic_sys()
+    curr_service_plugins = commands.getoutput("crudini --get /etc/neutron/neutron.conf DEFAULT service_plugins")
+    curr_service_plugins_list = curr_service_plugins.split(",")
+    lbaas_enabled = filter(lambda x: 'lbaas' in x, curr_service_plugins_list)
+    vpnaas_enabled = filter(lambda x: 'vpnaas' in x, curr_service_plugins_list)
+    fwaas_enabled = filter(lambda x: 'fwaas' in x, curr_service_plugins_list)
+    
+    if not len(vpnaas_enabled):
+        curr_service_plugins_list.append("neutron_vpnaas.services.vpn.plugin.VPNDriverPlugin")
+    elif not len(lbaas_enabled):
+        curr_service_plugins_list.append("neutron_lbaas.services.loadbalancer.plugin.LoadBalancerPlugin")
+    elif not len(fwaas_enabled):
+        curr_service_plugins_list.append("gbpservice.contrib.nfp.service_plugins.firewall.nfp_fwaas_plugin.NFPFirewallPlugin")
+    elif len(fwaas_enabled):
+        for word in fwaas_enabled:
+            curr_service_plugins_list.remove(word)
+        curr_service_plugins_list.append("gbpservice.contrib.nfp.service_plugins.firewall.nfp_fwaas_plugin.NFPFirewallPlugin")
+        
+    new_service_plugins_list = curr_service_plugins_list
+    new_service_plugins = ",".join(new_service_plugins_list)
+    subprocess.call(("crudini --set /etc/neutron/neutron.conf DEFAULT service_plugins " + str(new_service_plugins)).split(' '))
+    
     # Enable GBP extension driver for service sharing
-    subprocess.call("crudini --set /etc/neutron/neutron.conf group_policy policy_drivers implicit_policy,resource_mapping,chain_mapping".split(' '))
+    if not APIC_ENV:
+        subprocess.call("crudini --set /etc/neutron/neutron.conf group_policy policy_drivers implicit_policy,resource_mapping,chain_mapping".split(' '))
+    else:
+        subprocess.call("crudini --set /etc/neutron/neutron.conf group_policy policy_drivers implicit_policy,apic,chain_mapping".split(' '))
     subprocess.call("crudini --set /etc/neutron/neutron.conf group_policy extension_drivers proxy_group".split(' '))
 
     # Configure service owner
@@ -237,10 +265,10 @@ def create_orchestrator_ctl():
 
     file.write("[Unit]\nDescription=One Convergence NFP Orchestrator\n")
     file.write("After=syslog.target network.target\n\n[Service]")
-    file.write("\nUser=neutron\nExecStart=/usr/bin/nfp  --config-file ")
-    file.write(" /etc/neutron/neutron.conf --config-file ")
+    file.write("\nUser=neutron\nExecStart=/usr/bin/nfp  --module orchestrator")
+    file.write(" --config-file /etc/neutron/neutron.conf --config-file ")
     file.write(" /etc/neutron/plugins/ml2/ml2_conf.ini ")
-    file.write(" --config-file /etc/nfp/nfp_orchestrator.ini ")
+    file.write(" --config-file /etc/nfp/nfp.ini ")
     file.write("--log-file /var/log/nfp/nfp_orchestrator.log\n\n")
     file.write("[Install]\nWantedBy=multi-user.target")
     file.close()
@@ -262,7 +290,8 @@ def create_orchestrator_ctl():
     file.write("\nAfter=syslog.target network.target")
     file.write("\n\n[Service]\nType=simple\nUser=neutron")
     file.write("\nExecStart=/usr/bin/nfp"
-               " --config-file /etc/nfp/nfp_config_orch.ini")
+               " --module config_orchestrator"
+               " --config-file /etc/nfp/nfp.ini")
     file.write(" --config-file /etc/neutron/neutron.conf"
                " --log-file /var/log/nfp/nfp_config_orch.log")
     file.write("\n\n[Install]\nWantedBy=multi-user.target")
@@ -415,7 +444,7 @@ def create_proxy_ctl():
         print("Error creating " + proxy_sup_file + " file")
         sys.exit(1)
 
-    filepx.write("#!/usr/bin/sh\nNFP_PROXY_AGENT_INI=/etc/nfp/nfp_proxy.ini")
+    filepx.write("#!/usr/bin/sh\nNFP_PROXY_AGENT_INI=/etc/nfp/nfp.ini")
     filepx.write("\nCONFIGURATOR_IP=`crudini --get $NFP_PROXY_AGENT_INI"
                  " NFP_CONTROLLER rest_server_address`\n")
     filepx.write(". /usr/lib/python2.7/site-packages/gbpservice/nfp/tools/"
@@ -474,9 +503,9 @@ def create_proxy_agent_ctl():
     file.write("[Unit]\nDescription=One Convergence NFP Proxy Agent")
     file.write("\nAfter=syslog.target network.target\n")
     file.write("\n[Service]\nUser=root")
-    file.write("\nExecStart=/usr/bin/nfp "
+    file.write("\nExecStart=/usr/bin/nfp --module proxy_agent "
                "--config-file /etc/neutron/neutron.conf ")
-    file.write("--config-file /etc/nfp/nfp_proxy_agent.ini ")
+    file.write("--config-file /etc/nfp/nfp.ini ")
     file.write("--log-file /var/log/nfp/nfp_proxy_agent.log\n")
     file.write("\n[Install]\nWantedBy=multi-user.target\n")
     file.close()
@@ -549,31 +578,31 @@ def add_nova_key_pair():
 def launch_configurator():
     get_openstack_creds()
     if os.path.isfile(args.controller_path):
-        os.system("glance image-create --name configurator"
+        os.system("glance image-create --name nfp_controller"
                   " --disk-format qcow2  --container-format bare"
                   "  --visibility public --file " + args.controller_path)
     else:
         print("Error " + args.controller_path + " does not exist")
         sys.exit(1)
 
-    # add nova keypair for configurator VM.
+    # add nova keypair for nfp_controller VM.
     configurator_key_name = add_nova_key_pair()
 
     Port_id = commands.getstatusoutput(
         "gbp policy-target-create --policy-target-group svc_management_ptg"
-        " configuratorVM_instance | grep port_id  | awk '{print $4}'")[1]
+        " nfp_controllerVM_instance | grep port_id  | awk '{print $4}'")[1]
     Image_id = commands.getstatusoutput(
-        "glance image-list | grep configurator |awk '{print $2}'")[1]
+        "glance image-list | grep nfp_controller |awk '{print $2}'")[1]
     if Image_id and Port_id:
         os.system("nova boot --flavor m1.medium --image " +
                   Image_id + " --user-data " + CONFIGURATOR_USER_DATA +
                   " --key-name " + configurator_key_name +
-                  " --nic port-id=" + Port_id + " configuratorVM_instance")
+                  " --nic port-id=" + Port_id + " nfp_controllerVM_instance")
     else:
         if not Port_id:
             print("Error unable to create the controller port id")
         else:
-            print("Error unable to get configurator image info")
+            print("Error unable to get nfp_controller image info")
         sys.exit(1)
 
 
@@ -583,19 +612,19 @@ def clean_up():
     """
     get_openstack_creds()
     InstanceId = commands.getstatusoutput(
-        "nova list | grep configuratorVM_instance | awk '{print $2}'")[1]
+        "nova list | grep nfp_controllerVM_instance | awk '{print $2}'")[1]
     if InstanceId:
         os.system("nova delete " + InstanceId)
         time.sleep(10)
 
     PolicyTargetId = commands.getstatusoutput(
-        "gbp policy-target-list | grep configuratorVM_instance"
+        "gbp policy-target-list | grep nfp_controllerVM_instance"
         " | awk '{print $2}'")[1]
     if PolicyTargetId:
         os.system("gbp policy-target-delete " + PolicyTargetId)
 
     ImageId = commands.getstatusoutput(
-        "glance image-list | grep configurator | awk '{print $2}'")[1]
+        "glance image-list | grep nfp_controller | awk '{print $2}'")[1]
     if ImageId:
         os.system("glance image-delete " + ImageId)
 

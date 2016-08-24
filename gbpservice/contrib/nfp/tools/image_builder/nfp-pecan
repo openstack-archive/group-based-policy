@@ -1,0 +1,117 @@
+#!/bin/sh
+mkdir -p /var/run/nfp
+PIDFILE=/var/run/nfp/nfp_pecan.pid
+tmp_pidfile=$(tempfile -s .nfp_pecan.init)
+
+clean()
+{
+    rm -f $tmp_pidfile
+}
+trap clean EXIT
+
+start_nfp_pecan () {
+        start-stop-daemon --quiet --start -m --pidfile $PIDFILE --background \
+        --chdir /usr/local/lib/python2.7/dist-packages/gbpservice/nfp/pecan/api \
+        --exec /usr/local/bin/pecan  configurator_decider config.py -- --mode  advanced || return 1
+        return 0
+}
+
+stop_nfp_pecan () {
+    if [ ! -f $PIDFILE ] ; then
+        # This is a success according to LSB
+        return 0
+    fi
+
+    ret=0
+    for pid in $(cat $PIDFILE); do
+        echo $pid > $tmp_pidfile
+        start-stop-daemon --quiet --stop --signal KILL --pidfile $PIDFILE || ret=$?
+    done
+
+    [ $ret -eq 0 ] && rm -f $PIDFILE
+
+    return $ret
+}
+
+nfp_pecan_status()
+{
+    if [ ! -f $PIDFILE ] ; then
+        # program not running
+        return 2
+    fi
+
+    for pid in $(cat $PIDFILE) ; do
+        if  ps --no-headers p "$pid" | grep pecan > /dev/null ; then
+            return 0
+        fi
+    done
+
+    #bogus pidfile
+    return 1
+}
+
+
+case "$1" in
+start)
+    start_nfp_pecan
+    ret=$?
+    case "$ret" in
+    0)
+        echo "Started nfp-pecan"
+        ;;
+    1)
+        echo "NOT started nfp-pecan"
+        ;;
+    esac
+    exit $ret
+    ;;
+stop)
+   stop_nfp_pecan
+   ret=$?
+   case "$ret" in
+   0)
+        echo "Stopped nfp_pecan"
+        ;;
+   1)
+        echo "Didn't stop nfp_pecan"
+        ;;
+    esac
+    exit $ret
+    ;;
+restart)
+    echo "Restarting nfp-pecan"
+    stop_nfp_pecan
+    start_nfp_pecan
+    ret=$?
+    case "$ret" in
+    0)
+    echo "Restarted nfp-pecan"
+    ;;
+    1)
+    echo "Failed to restart"
+    ;;
+    esac
+    exit $ret
+    ;;
+status)
+    nfp_pecan_status
+    ret=$?
+    case "$ret" in
+    0)
+       echo "nfp-pecan is running."
+       ;;
+    1)
+       echo "bogus $PIDFILE exists"
+       ;;
+    2)
+        echo "nfp-pecan NOT running."
+        ;;
+    esac
+    exit $ret
+    ;;
+*)
+    echo "Usage: /etc/init.d/nfp-pecan {start|stop|restart|status}"
+    exit 2
+    ;;
+esac
+
