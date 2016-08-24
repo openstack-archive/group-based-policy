@@ -256,10 +256,13 @@ class GenericConfigEventHandlerTestCase(base.BaseTestCase):
                 agent, '_get_driver', return_value=driver), (
              mock.patch.object(
                     driver, const.EVENT_CONFIGURE_HEALTHMONITOR.lower(),
-                    return_value=common_const.SUCCESS)), (
-             mock.patch.object(subprocess, 'check_output', return_value=True)):
+                    return_value=common_const.SUCCESS)) as mock_dvr, (
+             mock.patch.object(subprocess,
+                               'check_output', return_value=True)):
 
             agent.handle_configure_healthmonitor(ev)
+
+            self.assertEqual(mock_dvr.return_value, common_const.SUCCESS)
 
     def test_configure_interfaces_genericconfigeventhandler(self):
         """ Implements test case for configure interfaces method

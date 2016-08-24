@@ -410,8 +410,8 @@ def load_drivers(conf):
 
     """
 
-    cutils = utils.ConfiguratorUtils()
-    drivers = cutils.load_drivers(gen_cfg_const.DRIVERS_DIR)
+    cutils = utils.ConfiguratorUtils(conf)
+    drivers = cutils.load_drivers()
 
     for service_type, driver_name in drivers.iteritems():
         driver_obj = driver_name(conf=conf)

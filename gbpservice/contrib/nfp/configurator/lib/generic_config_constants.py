@@ -10,7 +10,6 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-DRIVERS_DIR = 'gbpservice.contrib.nfp.configurator.drivers'
 SERVICE_TYPE = 'generic_config'
 EVENT_CONFIGURE_INTERFACES = 'CONFIGURE_INTERFACES'
 EVENT_CLEAR_INTERFACES = 'CLEAR_INTERFACES'
