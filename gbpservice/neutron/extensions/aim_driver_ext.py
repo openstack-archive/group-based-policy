@@ -17,6 +17,10 @@ from gbpservice.neutron.extensions import group_policy as gp
 
 AIM_DRIVER_EXT = 'aim-driver-extensions'
 DIST_NAMES = 'apic:distinguished_names'
+FORWARD_FILTER_ENTRIES = 'Forward-FilterEntries'
+REVERSE_FILTER_ENTRIES = 'Reverse-FilterEntries'
+CONTRACT = 'Contract'
+CONTRACT_SUBJECT = 'ContractSubject'
 
 EXTENDED_ATTRIBUTES_2_0 = {
     gp.POLICY_TARGET_GROUPS: {
@@ -24,6 +28,10 @@ EXTENDED_ATTRIBUTES_2_0 = {
             'allow_post': False, 'allow_put': False, 'is_visible': True},
     },
     gp.POLICY_RULES: {
+        DIST_NAMES: {
+            'allow_post': False, 'allow_put': False, 'is_visible': True},
+    },
+    gp.POLICY_RULE_SETS: {
         DIST_NAMES: {
             'allow_post': False, 'allow_put': False, 'is_visible': True},
     },
