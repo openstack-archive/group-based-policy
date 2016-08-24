@@ -13,49 +13,32 @@
 
 from oslo_config import cfg as oslo_config
 
+CONF = oslo_config.CONF
+
 NFP_OPTS = [
     oslo_config.IntOpt(
         'workers',
         default=1,
         help='Number of event worker process to be created.'
     ),
-    oslo_config.StrOpt(
+    oslo_config.ListOpt(
         'nfp_modules_path',
         default='gbpservice.nfp.core.test',
         help='Path for NFP modules.'
-        'All modules from this path are autloaded by framework'
-    )
-]
-
-es_openstack_opts = [
-    oslo_config.StrOpt('auth_host',
-                       default='localhost',
-                       help='Openstack controller IP Address'),
-    oslo_config.StrOpt('admin_user',
-                       help='Admin user name to create service VMs'),
-    oslo_config.StrOpt('admin_password',
-                       help='Admin password to create service VMs'),
-    oslo_config.StrOpt('admin_tenant_name',
-                       help='Admin tenant name to create service VMs'),
-    oslo_config.StrOpt('admin_tenant_id',
-                       help='Admin tenant ID to create service VMs'),
-    oslo_config.StrOpt('auth_protocol',
-                       default='http', help='Auth protocol used.'),
-    oslo_config.IntOpt('auth_port',
-                       default='5000', help='Auth protocol used.'),
-    oslo_config.IntOpt('bind_port',
-                       default='9696', help='Auth protocol used.'),
-    oslo_config.StrOpt('auth_version',
-                       default='v2.0', help='Auth protocol used.'),
-    oslo_config.StrOpt('auth_uri',
-                       default='', help='Auth URI.'),
+        'All modules from this path are autoloaded by framework'
+    ),
+    oslo_config.StrOpt(
+        'backend',
+        default='rpc',
+        help='Backend Support for communicationg with configurator.'
+    ),
 ]
 
 
-def init(args, **kwargs):
+def init(module, args, **kwargs):
     """Initialize the configuration. """
     oslo_config.CONF.register_opts(NFP_OPTS)
-    oslo_config.CONF.register_opts(es_openstack_opts, "keystone_authtoken")
+    oslo_config.CONF.register_opts(NFP_OPTS, module)
     oslo_config.CONF(args=args, project='nfp',
                      version='%%(prog)s %s' % ('version'),
                      **kwargs)

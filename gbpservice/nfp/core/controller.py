@@ -72,11 +72,15 @@ class NfpService(object):
     def get_event_handlers(self):
         return self._event_handlers
 
-    def register_events(self, event_descs):
+    def register_events(self, event_descs, priority=0):
         """Register event handlers with core. """
+        logging_context = nfp_logging.get_logging_context()
+        module = logging_context['namespace']
         # REVISIT (mak): change name to register_event_handlers() ?
         for event_desc in event_descs:
-            self._event_handlers.register(event_desc.id, event_desc.handler)
+            self._event_handlers.register(
+                event_desc.id, event_desc.handler,
+                module, priority=priority)
 
     def register_rpc_agents(self, agents):
         """Register rpc handlers with core. """
@@ -112,17 +116,19 @@ class NfpService(object):
         event.desc.pid = os.getpid()
         return event
 
-    def post_event(self, event):
+    def post_event(self, event, target=None):
         """Post an event.
 
             As a base class, it only does the descriptor preparation.
             NfpController class implements the required functionality.
         """
-        handler = self._event_handlers.get_event_handler(event.id)
+        handler, module = (
+            self._event_handlers.get_event_handler(event.id, module=target))
         assert handler, "No handler registered for event %s" % (event.id)
         event.desc.type = nfp_event.SCHEDULE_EVENT
         event.desc.flag = nfp_event.EVENT_NEW
         event.desc.pid = os.getpid()
+        event.desc.target = module
         return event
 
     # REVISIT (mak): spacing=0, caller must explicitly specify
@@ -137,14 +143,17 @@ class NfpService(object):
         assert spacing or ev_spacing, "No spacing specified for polling"
         if ev_spacing:
             spacing = ev_spacing
-
-        handler = self._event_handlers.get_poll_handler(event.id)
+        logging_context = nfp_logging.get_logging_context()
+        module = logging_context['namespace']
+        handler = (
+            self._event_handlers.get_poll_handler(event.id, module=module))
         assert handler, "No poll handler found for event %s" % (event.id)
 
         refuuid = event.desc.uuid
         event = self._make_new_event(event)
         event.lifetime = 0
         event.desc.type = nfp_event.POLL_EVENT
+        event.desc.target = module
 
         kwargs = {'spacing': spacing,
                   'max_times': max_times,
@@ -374,7 +383,7 @@ class NfpController(nfp_launcher.NfpLauncher, NfpService):
             LOG.debug(message)
             self._manager.process_events([event])
 
-    def post_event(self, event):
+    def post_event(self, event, target=None):
         """Post a new event into the system.
 
             If distributor(main) process posts an event, it
@@ -387,7 +396,7 @@ class NfpController(nfp_launcher.NfpLauncher, NfpService):
 
             Returns: None
         """
-        event = super(NfpController, self).post_event(event)
+        event = super(NfpController, self).post_event(event, target=target)
         message = "(event - %s) - New event" % (event.identify())
         LOG.debug(message)
         if self.PROCESS_TYPE == "worker":
@@ -514,21 +523,32 @@ class NfpController(nfp_launcher.NfpLauncher, NfpService):
 
 
 def load_nfp_modules(conf, controller):
+    modules_dirs = conf.nfp_modules_path
+    pymodules = []
+    for _dir in modules_dirs:
+        pymodules.extend(load_nfp_modules_from_path(conf, controller,
+                                                    _dir))
+    return pymodules
+
+
+def load_nfp_modules_from_path(conf, controller, path):
     """ Load all nfp modules from configured directory. """
     pymodules = []
     try:
-        base_module = __import__(conf.nfp_modules_path,
+        base_module = __import__(path,
                                  globals(), locals(), ['modules'], -1)
         modules_dir = base_module.__path__[0]
         try:
             files = os.listdir(modules_dir)
             for pyfile in set([f for f in files if f.endswith(".py")]):
                 try:
-                    pymodule = __import__(conf.nfp_modules_path,
+                    pymodule = __import__(path,
                                           globals(), locals(),
                                           [pyfile[:-3]], -1)
                     pymodule = eval('pymodule.%s' % (pyfile[:-3]))
                     try:
+                        namespace = pyfile[:-3].split(".")[-1]
+                        nfp_logging.store_logging_context(namespace=namespace)
                         pymodule.nfp_module_init(controller, conf)
                         pymodules += [pymodule]
                         message = "(module - %s) - Initialized" % (
@@ -549,7 +569,7 @@ def load_nfp_modules(conf, controller):
             LOG.error(message)
     except ImportError:
         message = "Failed to import module from path %s" % (
-            conf.nfp_modules_path)
+            path)
         LOG.error(message)
 
     return pymodules
@@ -572,8 +592,36 @@ def nfp_modules_post_init(conf, nfp_modules, nfp_controller):
             LOG.debug(message)
 
 
+def extract_module(args):
+    try:
+        index = args.index('--module')
+        module = args[index + 1]
+        args.remove('--module')
+        args.remove(module)
+        return args, module
+    except ValueError:
+        print("--module <name> missing from cmd args")
+        sys.exit(-1)
+
+
+def load_module_opts(conf):
+    module = conf.module
+    # register each opt from <module> section
+    # to default section.
+    module_opts = eval('conf.%s.keys' % (module))()
+    for module_opt in module_opts:
+        module_cfg_opt = eval("conf.%s._group._opts['%s']['opt']" % (
+            module, module_opt))
+        module_cfg_opt_value = eval("conf.%s.%s" % (module, module_opt))
+        conf.register_opt(module_cfg_opt)
+        conf.set_override(module_opt, module_cfg_opt_value)
+
+
 def main():
-    conf = nfp_cfg.init(sys.argv[1:])
+    args, module = extract_module(sys.argv[1:])
+    conf = nfp_cfg.init(module, args)
+    conf.module = module
+    load_module_opts(conf)
     nfp_common.init()
     nfp_controller = NfpController(conf)
     # Load all nfp modules from path configured
