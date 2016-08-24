@@ -64,7 +64,8 @@ class MockHeatClient(object):
     def __init__(self, api_version, endpoint, **kwargs):
         self.stacks = MockHeatClientFunctions()
 
-cfg.CONF.import_group('keystone_authtoken', 'keystonemiddleware.auth_token')
+cfg.CONF.import_group('nfp_keystone_authtoken',
+                      'gbpservice.nfp.orchestrator.modules.__init__')
 IS_SERVICE_ADMIN_OWNED = True
 SVC_MGMT_PTG_NAME = 'svc_management_ptg'
 RESOURCE_OWNER_TENANT_ID = '8ae6701128994ab281dde6b92207bb19'
@@ -87,13 +88,13 @@ class TestHeatDriver(unittest.TestCase):
                               group='heat_driver')
         cfg.CONF.set_override('admin_user',
                               'neutron',
-                              group='keystone_authtoken')
+                              group='nfp_keystone_authtoken')
         cfg.CONF.set_override('admin_password',
                               'admin_pass',
-                              group='keystone_authtoken')
+                              group='nfp_keystone_authtoken')
         cfg.CONF.set_override('admin_tenant_name',
                               'admin',
-                              group='keystone_authtoken')
+                              group='nfp_keystone_authtoken')
         # cfg.CONF.set_override('resource_owner_tenant_id',
         #                      RESOURCE_OWNER_TENANT_ID,
         #                      group='heat_driver')
@@ -548,7 +549,7 @@ class TestHeatDriver(unittest.TestCase):
         service_details['consumer_port'] = self.mock_dict.consumer_port
         service_details['provider_port'] = self.mock_dict.port_info['port']
         service_details['mgmt_ip'] = '11.3.4.5'
-        service_details['heat_stack_id'] = (
+        service_details['config_policy_id'] = (
             '70754fdd-0325-4856-8a39-f171b65617d6')
         self.heat_driver_obj.get_service_details = mock.Mock(
             return_value=service_details)
@@ -594,7 +595,7 @@ class TestHeatDriver(unittest.TestCase):
         service_details['consumer_port'] = self.mock_dict.consumer_port
         service_details['provider_port'] = self.mock_dict.port_info['port']
         service_details['mgmt_ip'] = '11.3.4.5'
-        service_details['heat_stack_id'] = (
+        service_details['config_policy_id'] = (
             '70754fdd-0325-4856-8a39-f171b65617d6')
         self.heat_driver_obj.get_service_details = mock.Mock(
             return_value=service_details)
@@ -635,7 +636,7 @@ class TestHeatDriver(unittest.TestCase):
         service_details['consumer_port'] = self.mock_dict.consumer_port
         service_details['provider_port'] = self.mock_dict.port_info['port']
         service_details['mgmt_ip'] = '11.3.4.5'
-        service_details['heat_stack_id'] = (
+        service_details['config_policy_id'] = (
             '70754fdd-0325-4856-8a39-f171b65617d6')
         self.heat_driver_obj.get_service_details = mock.Mock(
             return_value=service_details)
@@ -677,7 +678,7 @@ class TestHeatDriver(unittest.TestCase):
         service_details['consumer_port'] = self.mock_dict.consumer_port
         service_details['provider_port'] = self.mock_dict.port_info['port']
         service_details['mgmt_ip'] = '11.3.4.5'
-        service_details['heat_stack_id'] = (
+        service_details['config_policy_id'] = (
             '70754fdd-0325-4856-8a39-f171b65617d6')
         self.heat_driver_obj.get_service_details = mock.Mock(
             return_value=service_details)
