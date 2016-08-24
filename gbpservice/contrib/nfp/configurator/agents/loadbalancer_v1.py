@@ -710,8 +710,8 @@ def load_drivers(sc, conf):
     vendor name
 
     """
-    cutils = utils.ConfiguratorUtils()
-    drivers = cutils.load_drivers(lb_constants.DRIVERS_DIR)
+    cutils = utils.ConfiguratorUtils(conf)
+    drivers = cutils.load_drivers(lb_constants.SERVICE_TYPE)
 
     plugin_rpc = LBaasRpcSender(sc)
 
