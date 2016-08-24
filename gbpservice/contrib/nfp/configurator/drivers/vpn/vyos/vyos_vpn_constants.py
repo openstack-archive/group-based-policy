@@ -15,4 +15,4 @@ SERVICE_VENDOR = 'vyos'
 CONFIGURATION_SERVER_PORT = 8888
 request_url = "http://%s:%s/%s"
 
-REST_TIMEOUT = 90
+REST_TIMEOUT = 180
