@@ -42,6 +42,12 @@ if [[ $ENABLE_NFP = True ]]; then
         # Make sure that your public interface is not attached to any bridge.
         PUBLIC_INTERFACE=
 
+        enable_plugin neutron-lbaas https://git.openstack.org/openstack/neutron-lbaas stable/mitaka
+        enable_plugin barbican https://git.openstack.org/openstack/barbican master
+        # By default, LBAASV2 plugin driver is not configured.
+        # To configure LBAASV2 set the below value to True.
+        ENABLE_LBAASV2=False
+
         enable_plugin neutron-vpnaas https://git.openstack.org/openstack/neutron-vpnaas stable/mitaka
         enable_plugin ceilometer https://git.openstack.org/openstack/ceilometer.git stable/mitaka
 
