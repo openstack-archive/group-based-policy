@@ -111,7 +111,7 @@ class NetworkFunction(BASE, model_base.HasId, model_base.HasTenant,
     service_chain_id = sa.Column(sa.String(36), nullable=True)
     service_profile_id = sa.Column(sa.String(36), nullable=False)
     service_config = sa.Column(sa.TEXT)
-    heat_stack_id = sa.Column(sa.String(36), nullable=True)
+    config_policy_id = sa.Column(sa.String(36), nullable=True)
     network_function_instances = orm.relationship(
         NetworkFunctionInstance,
         backref='network_function')
@@ -141,3 +141,21 @@ class NetworkFunctionDevice(BASE, model_base.HasId, model_base.HasTenant,
     max_interfaces = sa.Column(sa.Integer(), nullable=False)
     reference_count = sa.Column(sa.Integer(), nullable=False)
     interfaces_in_use = sa.Column(sa.Integer(), nullable=False)
+
+
+class NetworkFunctionDeviceInterface(BASE, model_base.HasId,
+        model_base.HasTenant):
+    """Represents the Network Function Device"""
+    __tablename__ = 'nfp_network_function_device_interfaces'
+
+    plugged_in_port_id = sa.Column(sa.String(36),
+                                   sa.ForeignKey('nfp_port_infos.id',
+                                                 ondelete='SET NULL'),
+                                   nullable=True)
+    interface_position = sa.Column(sa.Integer(), nullable=True)
+    mapped_real_port_id = sa.Column(sa.String(36), nullable=True)
+    network_function_device_id = sa.Column(
+        sa.String(36),
+        sa.ForeignKey('nfp_network_function_devices.id',
+                      ondelete='SET NULL'),
+        nullable=True)
