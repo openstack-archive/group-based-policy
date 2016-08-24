@@ -213,15 +213,16 @@ class TestNovaClient(SampleData):
                                                    self.FLAVOR_NAME,
                                                    None,
                                                    "name",
-                                                   "secgroup_name",
-                                                   "metadata={}",
-                                                   "files=[]",
-                                                   "config_drive=False",
-                                                   "userdata=None",
-                                                   "key_name=''",
-                                                   "different_hosts=None",
-                                                   "volume_support=False",
-                                                   "volume_size='2'")
+                                                   False,
+                                                   '2',
+                                                   None,
+                                                   None,
+                                                   None,
+                                                   False,
+                                                   None,
+                                                   '',
+                                                   None
+                                                   )
 
             self.assertEqual(retval, obj1)
             mock_obj.assert_called_once_with('2', auth_token=self.AUTH_TOKEN,

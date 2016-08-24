@@ -548,7 +548,7 @@ class TestHeatDriver(unittest.TestCase):
         service_details['consumer_port'] = self.mock_dict.consumer_port
         service_details['provider_port'] = self.mock_dict.port_info['port']
         service_details['mgmt_ip'] = '11.3.4.5'
-        service_details['heat_stack_id'] = (
+        service_details['config_policy_id'] = (
             '70754fdd-0325-4856-8a39-f171b65617d6')
         self.heat_driver_obj.get_service_details = mock.Mock(
             return_value=service_details)
@@ -594,7 +594,7 @@ class TestHeatDriver(unittest.TestCase):
         service_details['consumer_port'] = self.mock_dict.consumer_port
         service_details['provider_port'] = self.mock_dict.port_info['port']
         service_details['mgmt_ip'] = '11.3.4.5'
-        service_details['heat_stack_id'] = (
+        service_details['config_policy_id'] = (
             '70754fdd-0325-4856-8a39-f171b65617d6')
         self.heat_driver_obj.get_service_details = mock.Mock(
             return_value=service_details)
@@ -635,7 +635,7 @@ class TestHeatDriver(unittest.TestCase):
         service_details['consumer_port'] = self.mock_dict.consumer_port
         service_details['provider_port'] = self.mock_dict.port_info['port']
         service_details['mgmt_ip'] = '11.3.4.5'
-        service_details['heat_stack_id'] = (
+        service_details['config_policy_id'] = (
             '70754fdd-0325-4856-8a39-f171b65617d6')
         self.heat_driver_obj.get_service_details = mock.Mock(
             return_value=service_details)
@@ -677,7 +677,7 @@ class TestHeatDriver(unittest.TestCase):
         service_details['consumer_port'] = self.mock_dict.consumer_port
         service_details['provider_port'] = self.mock_dict.port_info['port']
         service_details['mgmt_ip'] = '11.3.4.5'
-        service_details['heat_stack_id'] = (
+        service_details['config_policy_id'] = (
             '70754fdd-0325-4856-8a39-f171b65617d6')
         self.heat_driver_obj.get_service_details = mock.Mock(
             return_value=service_details)

@@ -38,7 +38,7 @@ class NFPDbBase(common_db_mixin.CommonDbMixin):
                 service_chain_id=network_function.get('service_chain_id'),
                 service_profile_id=network_function['service_profile_id'],
                 service_config=network_function.get('service_config'),
-                heat_stack_id=network_function.get('heat_stack_id'),
+                config_policy_id=network_function.get('config_policy_id'),
                 status=network_function['status'])
             session.add(network_function_db)
             return self._make_network_function_dict(network_function_db)
@@ -85,9 +85,6 @@ class NFPDbBase(common_db_mixin.CommonDbMixin):
                                network_function_instance, is_update=False):
         nfi_db = network_function_instance_db
         port_info = network_function_instance.get('port_info')
-        if not port_info:
-            nfi_db.port_info = []
-            return
         with session.begin(subtransactions=True):
             nfi_db.port_info = []
             for port in port_info:
@@ -406,7 +403,7 @@ class NFPDbBase(common_db_mixin.CommonDbMixin):
                'service_chain_id': network_function['service_chain_id'],
                'service_profile_id': network_function['service_profile_id'],
                'service_config': network_function['service_config'],
-               'heat_stack_id': network_function['heat_stack_id'],
+               'config_policy_id': network_function['config_policy_id'],
                'status': network_function['status']
                }
         res['network_function_instances'] = [
