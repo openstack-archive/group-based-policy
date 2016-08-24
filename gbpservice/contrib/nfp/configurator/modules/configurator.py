@@ -12,7 +12,6 @@
 
 from oslo_log import helpers as log_helpers
 
-from gbpservice.contrib.nfp.configurator.lib import config_opts
 from gbpservice.contrib.nfp.configurator.lib import constants as const
 from gbpservice.contrib.nfp.configurator.lib import demuxer
 from gbpservice.contrib.nfp.configurator.lib import schema_validator
@@ -417,7 +416,7 @@ def init_rpc(sc, cm, conf, demuxer):
     sc.register_rpc_agents([configurator_agent])
 
 
-def get_configurator_module_instance(sc):
+def get_configurator_module_instance(sc, conf):
     """ Provides ConfiguratorModule class object and loads service agents.
 
     Returns: Instance of ConfiguratorModule class
@@ -425,7 +424,7 @@ def get_configurator_module_instance(sc):
     """
 
     cm = ConfiguratorModule(sc)
-    conf_utils = utils.ConfiguratorUtils()
+    conf_utils = utils.ConfiguratorUtils(conf)
 
     # Loads all the service agents under AGENT_PKG module path
     cm.imported_sas = conf_utils.load_agents(const.AGENTS_PKG)
@@ -455,7 +454,7 @@ def nfp_module_init(sc, conf):
 
     # Create configurator module and de-multiplexer objects
     try:
-        cm = get_configurator_module_instance(sc)
+        cm = get_configurator_module_instance(sc, conf)
         demuxer_instance = demuxer.ServiceAgentDemuxer()
     except Exception as err:
         msg = ("Failed to initialize configurator de-multiplexer. %s."
@@ -468,7 +467,6 @@ def nfp_module_init(sc, conf):
 
     # Initialize all the pre-loaded service agents
     try:
-        conf.register_opts(config_opts.opts)
         cm.init_service_agents(sc, conf)
     except Exception as err:
         msg = ("Failed to initialize configurator agent modules. %s."
@@ -507,7 +505,7 @@ def nfp_module_post_init(sc, conf):
     """
 
     try:
-        cm = get_configurator_module_instance(sc)
+        cm = get_configurator_module_instance(sc, conf)
         cm.init_service_agents_complete(sc, conf)
     except Exception as err:
         msg = ("Failed to trigger initialization complete for configurator"
