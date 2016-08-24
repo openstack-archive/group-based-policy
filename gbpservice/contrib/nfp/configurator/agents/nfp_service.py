@@ -172,8 +172,8 @@ def load_drivers(conf):
 
     """
 
-    ld = load_driver.ConfiguratorUtils()
-    drivers = ld.load_drivers(const.DRIVERS_DIR)
+    ld = load_driver.ConfiguratorUtils(conf)
+    drivers = ld.load_drivers(const.SERVICE_TYPE)
 
     for service_type, driver_name in drivers.iteritems():
         driver_obj = driver_name(conf=conf)
