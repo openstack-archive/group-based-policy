@@ -1,0 +1,124 @@
+#!/bin/sh
+mkdir -p /var/run/nfp
+PIDFILE=/var/run/nfp/nfp_controller.pid
+tmp_pidfile=$(tempfile -s .nfp.init)
+
+clean()
+{
+    rm -f $tmp_pidfile
+}
+trap clean EXIT
+
+start_nfp_controller () {
+    start-stop-daemon --quiet --start -m --background  --pidfile $PIDFILE \
+    --exec /usr/bin/python2 /usr/bin/nfp -- --log-file /var/log/nfp/nfp_configurator.log \
+    --module configurator --config-file /etc/nfp_controller.ini || return 1
+    return 0
+
+}
+
+stop_nfp_controller () {
+    if [ ! -f $PIDFILE ] ; then
+        # This is a success according to LSB
+        return 0
+    fi
+
+    ret=0
+    for pid in $(cat $PIDFILE); do
+        echo $pid > $tmp_pidfile
+        start-stop-daemon --quiet --oknodo --stop \
+        --retry 5 --pidfile $tmp_pidfile --exec /usr/bin/python2 /usr/bin/nfp \
+        -- --log-file /var/log/nfp/nfp_configurator.log \
+        --module configurator --config-file /etc/nfp_controller.ini || ret=$?
+    done
+
+    [ $ret -eq 0 ] && rm -f $PIDFILE
+
+    return $ret
+
+}
+
+nfp_controller_status()
+{
+    if [ ! -f $PIDFILE ] ; then
+        # program not running
+        return 2
+    fi
+
+    for pid in $(cat $PIDFILE) ; do
+        if  ps --no-headers p "$pid" | grep nfp > /dev/null ; then
+            return 0
+        fi
+    done
+
+    #bogus pidfile
+    return 1
+}
+
+
+case "$1" in
+start)
+    #log_daemon_msg "Starting start_nfp_controller" "start_nfp_controller"
+    start_nfp_controller
+    ret=$?
+    case "$ret" in
+    0)
+        echo "Started nfp-controller"
+        ;;
+    1)
+        echo "NOT started nfp-controller"
+        ;;
+    esac
+    exit $ret
+    ;;
+stop)
+   stop_nfp_controller
+   ret=$?
+   case "$ret" in
+   0)
+        echo "Stopped nfp_controller"
+        ;;
+   1)
+        echo "Didn't stop nfp_controller"
+        ;;
+    esac
+    exit $ret
+    ;;
+restart)
+    echo "Restarting nfp-controller"
+    stop_nfp_controller
+    start_nfp_controller
+    ret=$?
+    case "$ret" in
+    0)
+    echo "Restarted nfp-controller"
+    ;;
+    1)
+    echo "Failed to restart"
+    ;;
+    esac
+    exit $ret
+    ;;
+
+status)
+    nfp_controller_status
+    ret=$?
+    case "$ret" in
+    0)
+       echo "nfp-controller is running."
+       ;;
+    1)
+        echo "bogus $PIDFILE exist"
+        ;;
+    2)
+        echo "nfp-controller NOT running"
+        ;;
+    esac
+    exit $ret
+    ;;
+*)
+    echo "Usage: /etc/init.d/nfp_controller {start|stop|restart|status}"
+    exit 2
+    ;;
+esac
+

@@ -44,7 +44,11 @@ fi
 enable_service q-dhcp
 enable_service q-fwaas
 [[ $ENABLE_NFP = True ]] && [[ $NFP_DEVSTACK_MODE = advanced ]] && enable_service neutron-vpnaas
-enable_service q-lbaas
+if [[ $ENABLE_NFP = True ]] && [[ $NFP_DEVSTACK_MODE = advanced ]] && [[ $ENABLE_LBAASV2 = True ]]; then
+      enable_service q-lbaasv2
+else
+      enable_service q-lbaas
+fi
 enable_service q-meta
 enable_service neutron
 enable_service group-policy
