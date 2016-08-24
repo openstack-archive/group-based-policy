@@ -60,9 +60,8 @@ Steps to test Base Mode with VM:
 (3) Test firewall with traffic from consumer VM.
 
 (4) Log-in into service VM
-    # cd /opt/stack/gbp/gbpservice/tests/contrib/diskimage-create/output
-    # sudo ip netns exec nfp-proxy /bin/bash
-    # ssh -i ./nfp_reference_service_<timestamp> ubuntu@<nfp_service mgmt-ip>
+    # cd /opt/stack/gbp/gbpservice/contrib/nfp/tools/image_builder
+    # sudo ip netns exec nfp-proxy ssh -i nfp_reference_service ubuntu@<nfp_service mgmt-ip>
 
 (5) Delete members created in the consumer and provider groups in step 2.
 
