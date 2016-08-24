@@ -14,11 +14,15 @@ import ast
 import copy
 
 from gbpservice.contrib.nfp.config_orchestrator.common import common
+from gbpservice.contrib.nfp.config_orchestrator.common import lbv2_constants
 from gbpservice.nfp.common import constants as const
 from gbpservice.nfp.core import log as nfp_logging
 from gbpservice.nfp.lib import transport
 
+from neutron_lbaas.common import cert_manager
+from neutron_lbaas.common.tls_utils import cert_parser
 from neutron_lbaas.db.loadbalancer import loadbalancer_dbv2
+from neutron_lbaas.extensions import loadbalancerv2
 
 from oslo_log import helpers as log_helpers
 import oslo_messaging as messaging
@@ -37,6 +41,7 @@ class Lbv2Agent(loadbalancer_dbv2.LoadBalancerPluginDbv2):
         super(Lbv2Agent, self).__init__()
         self._conf = conf
         self._sc = sc
+        self._cert_manager_plugin = cert_manager.get_backend()
         self._db_inst = super(Lbv2Agent, self)
 
     def _filter_service_info_with_resource(self, lb_db, core_db):
@@ -160,6 +165,12 @@ class Lbv2Agent(loadbalancer_dbv2.LoadBalancerPluginDbv2):
         transport.send_request_to_configurator(self._conf,
                                                context, body, "CREATE")
 
+    def _put(self, context, tenant_id, name, nf, **kwargs):
+        body = self._data_wrapper(context, tenant_id, name,
+                                  'UPDATE', nf, **kwargs)
+        transport.send_request_to_configurator(self._conf,
+                                               context, body, "UPDATE")
+
     def _delete(self, context, tenant_id, name, nf, **kwargs):
         body = self._data_wrapper(context, tenant_id, name,
                                   'DELETE', nf, **kwargs)
@@ -171,6 +182,81 @@ class Lbv2Agent(loadbalancer_dbv2.LoadBalancerPluginDbv2):
         nf_id = desc_dict['network_function_id']
         return nf_id
 
+    def _get_primary_cn(self, tls_cert):
+        """Returns primary CN for Certificate."""
+        return cert_parser.get_host_names(tls_cert.get_certificate())['cn']
+
+    @staticmethod
+    def _get_listeners_dict_list(resource_type, resource_dict):
+        if resource_type.lower() == 'loadbalancer':
+            listeners = resource_dict['listeners']
+        elif resource_type.lower() == 'listener':
+            listeners = [resource_dict]
+        elif resource_type.lower() == 'pool':
+            listeners = resource_dict['listeners']
+        elif resource_type.lower() == 'member':
+            listeners = resource_dict['pool']['listeners']
+        elif resource_type.lower() == 'healthmonitor':
+            listeners = resource_dict['pool']['listeners']
+        else:
+            listeners = []
+
+        return listeners
+
+    def _update_tls_cert(self, resource_type, resource_dict):
+        listeners = self._get_listeners_dict_list(resource_type, resource_dict)
+        for listener in listeners:
+            if listener['protocol'] != \
+                    lbv2_constants.PROTOCOL_TERMINATED_HTTPS:
+                continue
+            cert_mgr = self._cert_manager_plugin.CertManager()
+            lb_id = listener.get('loadbalancer_id')
+            tenant_id = listener.get('tenant_id')
+
+            def get_cert(cont_id):
+                try:
+                    cert_cont = cert_mgr.get_cert(
+                        project_id=tenant_id,
+                        cert_ref=cont_id,
+                        resource_ref=cert_mgr.get_service_url(lb_id),
+                        check_only=True
+                    )
+                    return cert_cont
+                except Exception as e:
+                    if hasattr(e, 'status_code') and e.status_code == 404:
+                        raise loadbalancerv2.TLSContainerNotFound(
+                            container_id=cont_id)
+                    else:
+                        # Could be a keystone configuration error...
+                        raise loadbalancerv2.CertManagerError(
+                            ref=cont_id, reason=e.message
+                        )
+
+            def build_container_dict(cont_id, cert_cont):
+                return {
+                    "id": cont_id,
+                    "primary_cn": self._get_primary_cn(cert_cont),
+                    "private_key": cert_cont.get_private_key(),
+                    "certificate": cert_cont.get_certificate(),
+                    "intermediates": cert_cont.get_intermediates()
+                }
+
+            if not listener['default_tls_container_id']:
+                raise loadbalancerv2.TLSDefaultContainerNotSpecified()
+            else:
+                container_id = listener['default_tls_container_id']
+                cert_container = get_cert(container_id)
+                container_dict = \
+                    build_container_dict(container_id, cert_container)
+                listener["default_tls_container"] = container_dict
+
+            for container in listener.get("sni_containers"):
+                container_id = container["tls_container_id"]
+                cert_container = get_cert(container_id)
+                container_dict = \
+                    build_container_dict(container_id, cert_container)
+                container["tls_container"] = container_dict
+
     # REVISIT(jiahao): Argument allocate_vip and
     # delete_vip_port are not implememnted.
     @log_helpers.log_method_call
@@ -180,10 +266,24 @@ class Lbv2Agent(loadbalancer_dbv2.LoadBalancerPluginDbv2):
         nf_id = self._fetch_nf_from_resource_desc(loadbalancer["description"])
         nfp_logging.store_logging_context(meta_id=nf_id)
         nf = common.get_network_function_details(context, nf_id)
+        self._update_tls_cert('loadbalancer', loadbalancer)
         self._post(
             context, loadbalancer['tenant_id'],
             'loadbalancer', nf,
             loadbalancer=loadbalancer, driver_name=driver_name)
+        nfp_logging.clear_logging_context()
+
+    @log_helpers.log_method_call
+    def update_loadbalancer(self, context, old_loadbalancer, loadbalancer):
+        # Fetch nf_id from description of the resource
+        nf_id = self._fetch_nf_from_resource_desc(loadbalancer["description"])
+        nfp_logging.store_logging_context(meta_id=nf_id)
+        nf = common.get_network_function_details(context, nf_id)
+        self._update_tls_cert('loadbalancer', loadbalancer)
+        self._put(
+            context, loadbalancer['tenant_id'],
+            'loadbalancer', nf,
+            old_loadbalancer=old_loadbalancer, loadbalancer=loadbalancer)
         nfp_logging.clear_logging_context()
 
     @log_helpers.log_method_call
@@ -193,6 +293,7 @@ class Lbv2Agent(loadbalancer_dbv2.LoadBalancerPluginDbv2):
         nf_id = self._fetch_nf_from_resource_desc(loadbalancer["description"])
         nfp_logging.store_logging_context(meta_id=nf_id)
         nf = common.get_network_function_details(context, nf_id)
+        self._update_tls_cert('loadbalancer', loadbalancer)
         self._delete(
             context, loadbalancer['tenant_id'],
             'loadbalancer', nf, loadbalancer=loadbalancer)
@@ -205,9 +306,23 @@ class Lbv2Agent(loadbalancer_dbv2.LoadBalancerPluginDbv2):
         nf_id = self._fetch_nf_from_resource_desc(loadbalancer["description"])
         nfp_logging.store_logging_context(meta_id=nf_id)
         nf = common.get_network_function_details(context, nf_id)
+        self._update_tls_cert('listener', listener)
         self._post(
             context, listener['tenant_id'],
             'listener', nf, listener=listener)
+        nfp_logging.clear_logging_context()
+
+    @log_helpers.log_method_call
+    def update_listener(self, context, old_listener, listener):
+        loadbalancer = listener['loadbalancer']
+        # Fetch nf_id from description of the resource
+        nf_id = self._fetch_nf_from_resource_desc(loadbalancer["description"])
+        nfp_logging.store_logging_context(meta_id=nf_id)
+        nf = common.get_network_function_details(context, nf_id)
+        self._update_tls_cert('listener', listener)
+        self._put(
+            context, listener['tenant_id'],
+            'listener', nf, old_listener=old_listener, listener=listener)
         nfp_logging.clear_logging_context()
 
     @log_helpers.log_method_call
@@ -217,6 +332,7 @@ class Lbv2Agent(loadbalancer_dbv2.LoadBalancerPluginDbv2):
         nf_id = self._fetch_nf_from_resource_desc(loadbalancer["description"])
         nfp_logging.store_logging_context(meta_id=nf_id)
         nf = common.get_network_function_details(context, nf_id)
+        self._update_tls_cert('listener', listener)
         self._delete(
             context, listener['tenant_id'],
             'listener', nf, listener=listener)
@@ -229,9 +345,23 @@ class Lbv2Agent(loadbalancer_dbv2.LoadBalancerPluginDbv2):
         nf_id = self._fetch_nf_from_resource_desc(loadbalancer["description"])
         nfp_logging.store_logging_context(meta_id=nf_id)
         nf = common.get_network_function_details(context, nf_id)
+        self._update_tls_cert('pool', pool)
         self._post(
             context, pool['tenant_id'],
             'pool', nf, pool=pool)
+        nfp_logging.clear_logging_context()
+
+    @log_helpers.log_method_call
+    def update_pool(self, context, old_pool, pool):
+        loadbalancer = pool['loadbalancer']
+        # Fetch nf_id from description of the resource
+        nf_id = self._fetch_nf_from_resource_desc(loadbalancer["description"])
+        nfp_logging.store_logging_context(meta_id=nf_id)
+        nf = common.get_network_function_details(context, nf_id)
+        self._update_tls_cert('pool', pool)
+        self._put(
+            context, pool['tenant_id'],
+            'pool', nf, old_pool=old_pool, pool=pool)
         nfp_logging.clear_logging_context()
 
     @log_helpers.log_method_call
@@ -241,6 +371,7 @@ class Lbv2Agent(loadbalancer_dbv2.LoadBalancerPluginDbv2):
         nf_id = self._fetch_nf_from_resource_desc(loadbalancer["description"])
         nfp_logging.store_logging_context(meta_id=nf_id)
         nf = common.get_network_function_details(context, nf_id)
+        self._update_tls_cert('pool', pool)
         self._delete(
             context, pool['tenant_id'],
             'pool', nf, pool=pool)
@@ -253,9 +384,23 @@ class Lbv2Agent(loadbalancer_dbv2.LoadBalancerPluginDbv2):
         nf_id = self._fetch_nf_from_resource_desc(loadbalancer["description"])
         nfp_logging.store_logging_context(meta_id=nf_id)
         nf = common.get_network_function_details(context, nf_id)
+        self._update_tls_cert('member', member)
         self._post(
             context, member['tenant_id'],
             'member', nf, member=member)
+        nfp_logging.clear_logging_context()
+
+    @log_helpers.log_method_call
+    def update_member(self, context, old_member, member):
+        loadbalancer = member['pool']['loadbalancer']
+        # Fetch nf_id from description of the resource
+        nf_id = self._fetch_nf_from_resource_desc(loadbalancer["description"])
+        nfp_logging.store_logging_context(meta_id=nf_id)
+        nf = common.get_network_function_details(context, nf_id)
+        self._update_tls_cert('member', member)
+        self._put(
+            context, member['tenant_id'],
+            'member', nf, old_member=old_member, member=member)
         nfp_logging.clear_logging_context()
 
     @log_helpers.log_method_call
@@ -265,6 +410,7 @@ class Lbv2Agent(loadbalancer_dbv2.LoadBalancerPluginDbv2):
         nf_id = self._fetch_nf_from_resource_desc(loadbalancer["description"])
         nfp_logging.store_logging_context(meta_id=nf_id)
         nf = common.get_network_function_details(context, nf_id)
+        self._update_tls_cert('member', member)
         self._delete(
             context, member['tenant_id'],
             'member', nf, member=member)
@@ -277,9 +423,24 @@ class Lbv2Agent(loadbalancer_dbv2.LoadBalancerPluginDbv2):
         nf_id = self._fetch_nf_from_resource_desc(loadbalancer["description"])
         nfp_logging.store_logging_context(meta_id=nf_id)
         nf = common.get_network_function_details(context, nf_id)
+        self._update_tls_cert('healthmonitor', healthmonitor)
         self._post(
             context, healthmonitor['tenant_id'],
             'healthmonitor', nf, healthmonitor=healthmonitor)
+        nfp_logging.clear_logging_context()
+
+    @log_helpers.log_method_call
+    def update_healthmonitor(self, context, old_healthmonitor, healthmonitor):
+        loadbalancer = healthmonitor['pool']['loadbalancer']
+        # Fetch nf_id from description of the resource
+        nf_id = self._fetch_nf_from_resource_desc(loadbalancer["description"])
+        nfp_logging.store_logging_context(meta_id=nf_id)
+        nf = common.get_network_function_details(context, nf_id)
+        self._update_tls_cert('healthmonitor', healthmonitor)
+        self._put(
+            context, healthmonitor['tenant_id'],
+            'healthmonitor', nf,
+            old_healthmonitor=old_healthmonitor, healthmonitor=healthmonitor)
         nfp_logging.clear_logging_context()
 
     @log_helpers.log_method_call
@@ -289,6 +450,7 @@ class Lbv2Agent(loadbalancer_dbv2.LoadBalancerPluginDbv2):
         nf_id = self._fetch_nf_from_resource_desc(loadbalancer["description"])
         nfp_logging.store_logging_context(meta_id=nf_id)
         nf = common.get_network_function_details(context, nf_id)
+        self._update_tls_cert('healthmonitor', healthmonitor)
         self._delete(
             context, healthmonitor['tenant_id'],
             'healthmonitor', nf, healthmonitor=healthmonitor)
