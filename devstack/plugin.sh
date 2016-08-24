@@ -42,14 +42,18 @@ function nfp_configure_neutron {
 
 function configure_nfp_loadbalancer {
     echo "Configuring NFP Loadbalancer plugin driver"
+    LBAAS_SERVICE_PROVIDER=LOADBALANCER:loadbalancer:gbpservice.contrib.nfp.service_plugins.loadbalancer.drivers.nfp_lbaas_plugin_driver.HaproxyOnVMPluginDriver:default
+    if [[ $ENABLE_LBAASV2 = True ]]; then
+        LBAAS_SERVICE_PROVIDER=LOADBALANCERV2:loadbalancerv2:gbpservice.contrib.nfp.service_plugins.loadbalancer.drivers.nfp_lbaasv2_plugin_driver.HaproxyOnVMPluginDriver:default
+    fi
     sudo\
  sed\
  -i\
- '/^service_provider.*HaproxyOnHostPluginDriver:default/'\
+ '/^service_provider.*:default/'\
 's'/\
 ':default'/\
 '\n'\
-'service_provider = LOADBALANCER:loadbalancer:gbpservice.contrib.nfp.service_plugins.loadbalancer.drivers.nfp_lbaas_plugin_driver.HaproxyOnVMPluginDriver:default'/\
+"service_provider = $LBAAS_SERVICE_PROVIDER"/\
  /etc/neutron/neutron_lbaas.conf
 }
 
