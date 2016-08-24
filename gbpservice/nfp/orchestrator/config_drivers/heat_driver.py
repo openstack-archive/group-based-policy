@@ -259,9 +259,52 @@ class HeatDriver(object):
             self._create_policy_target_for_vip(
                 auth_token, provider_tenant_id, provider)
 
-    def _create_policy_target_for_vip(self, auth_token,
-                                      provider_tenant_id, provider):
+
+    def _get_provider_ptg_info(self, auth_token, sci_id):
+        servicechain_instance = self.gbp_client.get_servicechain_instance(
+            auth_token, sci_id)
+        provider_ptg_id = servicechain_instance['provider_ptg_id']
+        provider_ptg = self.gbp_client.get_policy_target_group(
+            auth_token, provider_ptg_id)
+        return provider_ptg
+
+    def _pre_stack_cleanup(self, network_function):
+        logging_context = nfp_logging.get_logging_context()
+        auth_token = logging_context['auth_token']
+        service_profile = self.gbp_client.get_service_profile(
+            auth_token, network_function['service_profile_id'])
+        service_type = service_profile['service_type']
+        if service_type in [pconst.LOADBALANCER]:
+            provider = self._get_provider_ptg_info(auth_token,
+                    network_function['service_chain_id'])
+            provider_tenant_id = provider['tenant_id']
+            self._update_policy_targets_for_vip(
+                auth_token, provider_tenant_id, provider)
+
+
+    def _post_stack_cleanup(self, network_function):
+        #TODO(ashu): In post stack cleanup, need to delete vip pt, currently
+        # we dont have any way to identify vip pt, so skipping this, but need
+        # to fix it.
+        return
+
+    def _get_vip_pt(self, auth_token, vip_port_id):
+        vip_pt = None
+        filters = {'port_id': vip_port_id}
+        policy_targets = self.gbp_client.get_policy_targets(
+            auth_token,
+            filters=filters)
+        if policy_targets:
+            vip_pt = policy_targets[0]
+
+        return vip_pt
+
+    def _get_lb_vip(self, auth_token, provider):
         provider_subnet = None
+        provider_pt_id = None
+        lb_vip = None
+        lb_vip_name = None
+
         provider_l2p_subnets = self.neutron_client.get_subnets(
             auth_token,
             filters={'id': provider['subnets']})
@@ -275,11 +318,59 @@ class HeatDriver(object):
                 filters={'subnet_id': [provider_subnet['id']]})
             if lb_pool_ids and lb_pool_ids[0]['vip_id']:
                 lb_vip = self.neutron_client.get_vip(
-                    auth_token, lb_pool_ids[0]['vip_id'])
-                vip_name = "service_target_vip_pt" + lb_pool_ids[0]['vip_id']
-                self.gbp_client.create_policy_target(
-                    auth_token, provider_tenant_id, provider['id'],
-                    vip_name, lb_vip['vip']['port_id'])
+                    auth_token, lb_pool_ids[0]['vip_id'])['vip']
+                lb_vip_name = "service_target_vip_pt" + lb_pool_ids[0]['vip_id']
+        return lb_vip, lb_vip_name
+
+    def _create_policy_target_for_vip(self, auth_token,
+                                      provider_tenant_id, provider):
+        admin_token = self.keystoneclient.get_admin_token()
+        lb_vip, vip_name = self._get_lb_vip(auth_token, provider)
+        provider_pt = self._get_provider_pt(admin_token, provider)
+        if provider_pt:
+            provider_pt_id = provider_pt['id']
+
+        vip_pt = self.gbp_client.create_policy_target(
+            auth_token, provider_tenant_id, provider['id'],
+            vip_name, lb_vip['port_id'])
+
+        policy_target_info = {'cluster_id': vip_pt['id']}
+        self.gbp_client.update_policy_target(auth_token, vip_pt['id'],
+                policy_target_info)
+
+        self.gbp_client.update_policy_target(admin_token, provider_pt_id,
+                policy_target_info)
+
+    def _update_policy_targets_for_vip(self, auth_token,
+                                      provider_tenant_id, provider):
+        admin_token = self.keystoneclient.get_admin_token()
+        lb_vip, vip_name = self._get_lb_vip(auth_token, provider)
+        provider_pt = self._get_provider_pt(admin_token, provider)
+        if provider_pt:
+            provider_pt_id = provider_pt['id']
+
+        policy_target_info = {'cluster_id': ''}
+        vip_pt = self._get_vip_pt(auth_token, lb_vip['port_id'])
+        if vip_pt:
+            self.gbp_client.update_policy_target(auth_token, vip_pt['id'],
+                    policy_target_info)
+
+        self.gbp_client.update_policy_target(admin_token, provider_pt_id,
+                policy_target_info)
+
+    def _get_provider_pt(self, auth_token, provider):
+        if provider.get("policy_targets"):
+            filters = {'id': provider.get("policy_targets")}
+        else:
+            filters = {'policy_target_group': provider['id']}
+        policy_targets = self.gbp_client.get_policy_targets(
+                auth_token,
+                filters=filters)
+        for policy_target in policy_targets:
+            if ('endpoint' in policy_target['name'] and
+                    self._is_service_target(policy_target)):
+                return policy_target
+        return None
 
     def _is_service_target(self, policy_target):
         if policy_target['name'] and (policy_target['name'].startswith(
@@ -835,7 +926,7 @@ class HeatDriver(object):
                 nf_desc = str(firewall_desc)
         elif service_type == pconst.VPN:
             config_param_values['Subnet'] = (
-                consumer_port['fixed_ips'][0]['subnet_id']
+                provider_port['fixed_ips'][0]['subnet_id']
                 if consumer_port else None)
             l2p = self.gbp_client.get_l2_policy(
                 auth_token, provider['l2_policy_id'])
@@ -1082,7 +1173,7 @@ class HeatDriver(object):
                 nf_desc = str(firewall_desc)
         elif service_type == pconst.VPN:
             config_param_values['Subnet'] = (
-                consumer_port['fixed_ips'][0]['subnet_id']
+                provider_port['fixed_ips'][0]['subnet_id']
                 if consumer_port else None)
             l2p = self.gbp_client.get_l2_policy(
                 auth_token, provider['l2_policy_id'])
@@ -1464,12 +1555,11 @@ class HeatDriver(object):
                           {'stack': stack_id})
             return failure_status
 
-    def is_config_delete_complete(self, stack_id, tenant_id):
+    def is_config_delete_complete(self, stack_id, tenant_id,
+            network_function=None):
         success_status = "COMPLETED"
         failure_status = "ERROR"
         intermediate_status = "IN_PROGRESS"
-        _, resource_owner_tenant_id = (
-            self._get_resource_owner_context())
         heatclient = self._get_heat_client(tenant_id)
         if not heatclient:
             return failure_status
@@ -1482,6 +1572,8 @@ class HeatDriver(object):
             elif stack.stack_status == 'DELETE_COMPLETE':
                 LOG.info(_LI("Stack %(stack)s is deleted"),
                          {'stack': stack_id})
+                if network_function:
+                    self._post_stack_cleanup(network_function)
                 return success_status
             elif stack.stack_status == 'CREATE_FAILED':
                 return failure_status
@@ -1650,14 +1742,14 @@ class HeatDriver(object):
 
         return stack_id
 
-    def delete_config(self, stack_id, tenant_id):
-        _, resource_owner_tenant_id = (
-            self._get_resource_owner_context())
+    def delete_config(self, stack_id, tenant_id, network_function=None):
 
         try:
             heatclient = self._get_heat_client(tenant_id)
             if not heatclient:
                 return None
+            if network_function:
+                self._pre_stack_cleanup(network_function)
             heatclient.delete(stack_id)
         except Exception as err:
             # Log the error and continue with VM delete in case of *aas
