@@ -20,6 +20,7 @@ from neutron.db import agents_db
 from neutron.db import agentschedulers_db
 from neutron import manager
 from neutron_lib import exceptions
+from neutron_vpnaas.db.vpn import vpn_validator
 from neutron_vpnaas.services.vpn.plugin import VPNDriverPlugin
 from neutron_vpnaas.services.vpn.plugin import VPNPlugin
 from neutron_vpnaas.services.vpn.service_drivers import base_ipsec
@@ -148,12 +149,22 @@ class NFPIPsecVpnAgentApi(base_ipsec.IPsecVpnAgentApi):
             LOG.error(msg)
 
 
+class VPNValidator(vpn_validator.VpnReferenceValidator):
+    """This class overrides the vpnservice validator method"""
+    def __init__(self):
+        super(VPNValidator, self).__init__()
+
+    def validate_vpnservice(self, context, vpns):
+        pass
+
+
 class NFPIPsecVPNDriver(base_ipsec.BaseIPsecVPNDriver):
     """VPN Service Driver class for IPsec."""
 
     def __init__(self, service_plugin):
         super(NFPIPsecVPNDriver, self).__init__(
             service_plugin)
+        self.validator = VPNValidator()
 
     def create_rpc_conn(self):
         self.endpoints = [
@@ -205,7 +216,10 @@ class NFPIPsecVPNDriver(base_ipsec.BaseIPsecVPNDriver):
                 msg = ('updating ipsec_site_connection with id %s to'
                        'ERROR state' % (ipsec_site_connection['id']))
                 LOG.error(msg)
-                self._update_ipsec_conn_state(context, ipsec_site_connection)
+                VPNPluginExt().update_ipsec_site_conn_status(
+                                            context,
+                                            ipsec_site_connection['id'],
+                                            ERROR)
                 break
             time.sleep(5)
             starttime += 5
@@ -213,7 +227,10 @@ class NFPIPsecVPNDriver(base_ipsec.BaseIPsecVPNDriver):
             msg = ('updating ipsec_site_connection with id %s to'
                    'ERROR state' % (ipsec_site_connection['id']))
             LOG.error(msg)
-            self._update_ipsec_conn_state(context, ipsec_site_connection)
+            VPNPluginExt().update_ipsec_site_conn_status(
+                                                context,
+                                                ipsec_site_connection['id'],
+                                                ERROR)
 
     def _move_ipsec_conn_state_to_error(self, context, ipsec_site_connection):
         vpnsvc_status = [{
