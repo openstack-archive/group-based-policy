@@ -63,10 +63,6 @@ class VpnAgent(vpn_db.VPNPluginDb, vpn_db.VPNPluginRpcDbMixin):
                 'ipsecpolicies': ipsecpolicies,
                 'ipsec_site_conns': ipsec_site_conns}
 
-    def _get_core_context(self, context):
-        return {'networks': common.get_networks(context, self._conf.host),
-                'routers': common.get_routers(context, self._conf.host)}
-
     def _context(self, context, tenant_id, resource, resource_data):
         if context.is_admin:
             tenant_id = context.tenant_id
@@ -82,11 +78,6 @@ class VpnAgent(vpn_db.VPNPluginDb, vpn_db.VPNPluginRpcDbMixin):
                                                resource_data['id'],
                                                resource_data[
                                                    'description'])
-            core_db = self._get_core_context(context)
-            filtered_core_db = self._filter_core_data(core_db,
-                                                      vpn_ctx_db[
-                                                          'vpnservices'])
-            vpn_ctx_db.update(filtered_core_db)
             return vpn_ctx_db
         elif resource.lower() == 'vpn_service':
             return {'vpnservices': [resource_data]}
@@ -153,22 +144,9 @@ class VpnAgent(vpn_db.VPNPluginDb, vpn_db.VPNPluginRpcDbMixin):
                                                reason)
         nfp_logging.clear_logging_context()
 
-    def _filter_core_data(self, db_data, vpnservices):
-        filtered_core_data = {'subnets': [],
-                              'routers': []}
-        for vpnservice in vpnservices:
-            subnet_id = vpnservice['subnet_id']
-            for network in db_data['networks']:
-                subnets = network['subnets']
-                for subnet in subnets:
-                    if subnet['id'] == subnet_id:
-                        filtered_core_data['subnets'].append(
-                            {'id': subnet['id'], 'cidr': subnet['cidr']})
-            router_id = vpnservice['router_id']
-            for router in db_data['routers']:
-                if router['id'] == router_id:
-                    filtered_core_data['routers'].append({'id': router_id})
-        return filtered_core_data
+    def _proxy_subnet_cidr(self, description):
+        tokens = description.split(';')
+        return tokens[5].split('=')[1]
 
     def _get_vpnservices(self, context, tenant_id, vpnservice_id, desc):
         filters = {'tenant_id': [tenant_id],
