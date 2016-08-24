@@ -10,6 +10,9 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+from gbpservice.contrib.nfp.configurator.drivers.vpn.vyos import (
+    vyos_vpn_constants)
+
 """ Implements fake objects for assertion.
 
 """
@@ -76,7 +79,7 @@ class VPNTestData(object):
         self.data__ = {"local_cidr": "11.0.6.0/24",
                        "peer_address": "1.103.2.2",
                        "peer_cidr": "141.0.0.0/24"}
-        self.timeout = 90
+        self.timeout = vyos_vpn_constants.REST_TIMEOUT
 
         self.ipsec_vpn_create = ['fip=192.168.20.75',
                                  'tunnel_local_cidr=11.0.6.0/24',
