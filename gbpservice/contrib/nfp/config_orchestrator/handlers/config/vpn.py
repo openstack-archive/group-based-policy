@@ -153,17 +153,23 @@ class VpnAgent(vpn_db.VPNPluginDb, vpn_db.VPNPluginRpcDbMixin):
                                                reason)
         nfp_logging.clear_logging_context()
 
+    def _proxy_subnet_cidr(self, description):
+        tokens = description.split(';')
+        return tokens[5].split('=')[1]
+
     def _filter_core_data(self, db_data, vpnservices):
         filtered_core_data = {'subnets': [],
                               'routers': []}
         for vpnservice in vpnservices:
             subnet_id = vpnservice['subnet_id']
+            desc = vpnservice['description']
             for network in db_data['networks']:
                 subnets = network['subnets']
                 for subnet in subnets:
                     if subnet['id'] == subnet_id:
                         filtered_core_data['subnets'].append(
-                            {'id': subnet['id'], 'cidr': subnet['cidr']})
+                            {'id': subnet['id'],
+                             'cidr': self._proxy_subnet_cidr(desc)})
             router_id = vpnservice['router_id']
             for router in db_data['routers']:
                 if router['id'] == router_id:
