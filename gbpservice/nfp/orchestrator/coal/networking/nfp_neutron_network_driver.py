@@ -37,7 +37,7 @@ class NFPNeutronNetworkDriver(ndb.NFPNetworkDriverBase):
         return port_id
 
     def update_port(self, token, port_id, port):
-        port = self.neutron_client.update_port(token, port_id, port)
+        port = self.neutron_client.update_port(token, port_id, **port)
         return port['port']
 
     def get_port_and_subnet_details(self, token, port_id):
