@@ -86,6 +86,7 @@ class NfpLogContext(object):
     def __init__(self, **kwargs):
         self.meta_id = kwargs.get('meta_id', '')
         self.auth_token = kwargs.get('auth_token', '')
+        self.namespace = kwargs.get('namespace', '')
 
     def emit(self):
         return "[LogMetaID:%s]" % (self.meta_id)
@@ -93,7 +94,8 @@ class NfpLogContext(object):
     def to_dict(self):
         return {
             'meta_id': self.meta_id,
-            'auth_token': self.auth_token}
+            'auth_token': self.auth_token,
+            'namespace': self.namespace}
 
 
 def getLogger(name):

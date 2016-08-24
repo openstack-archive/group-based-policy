@@ -31,6 +31,14 @@ function prepare_nfp_devstack {
     sudo cp $CONTRIB_DIR/devstack/exercises-nfp/*.sh $TOP_DIR/exercises/
     sudo cp -r $CONTRIB_DIR/devstack/nfp-templates $TOP_DIR
     sudo cp $CONTRIB_DIR/devstack/nfp $TOP_DIR/lib/
+
+    sudo mkdir -p $BASE/nfp_new
+    sudo sed -i 's/DEST=\/opt\/stack\/new/DEST=\/opt\/stack\/nfp_new/g' $TOP_DIR/stackrc
+    sudo git clone https://github.com/openstack/group-based-policy.git $BASE/nfp_new/group-based-policy
+    sudo cp -r $NEW_BASE/python-gbpclient $BASE/nfp_new/
+    sudo cp -r $NEW_BASE/group-based-policy-automation $BASE/nfp_new/
+    sudo cp -r $NEW_BASE/group-based-policy-ui $BASE/nfp_new/
+
     sed -i 's/source $TOP_DIR\/lib\/dstat/source $TOP_DIR\/lib\/dstat\nsource $TOP_DIR\/lib\/nfp/g' stack.sh
     sed -i 's/# Restore\/close logging file descriptors/nfp_setup $TOP_DIR\n# Restore\/close logging file descriptors/g' stack.sh
     source $TOP_DIR/functions
