@@ -663,7 +663,7 @@ class DummyDictionaries(object):
             'description': '',
             'service_vendor': None,
             'tenant_id': 'ee27b1d0d7f04ac390ee7ec4b2fd5b13',
-            'max_interfaces': 10,
+            'max_interfaces': 8,
             'mgmt_port_id': '4497a287-d947-4845-af29-a9d6ad6515e9',
             'reference_count': 1,
             'interfaces_in_use': 2,

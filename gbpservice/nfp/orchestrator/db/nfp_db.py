@@ -85,9 +85,6 @@ class NFPDbBase(common_db_mixin.CommonDbMixin):
                                network_function_instance, is_update=False):
         nfi_db = network_function_instance_db
         port_info = network_function_instance.get('port_info')
-        if not port_info:
-            nfi_db.port_info = []
-            return
         with session.begin(subtransactions=True):
             nfi_db.port_info = []
             for port in port_info:
