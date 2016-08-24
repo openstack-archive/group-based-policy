@@ -17,6 +17,7 @@ from oslo_config import cfg
 from oslo_log import log as logging
 import oslo_messaging
 import pecan
+import pika
 
 from gbpservice.nfp.pecan import base_controller
 
@@ -44,6 +45,10 @@ class Controller(base_controller.BaseController):
             for service in self.services:
                 self._entry_to_rpc_routing_table(service)
 
+            configurator_notifications = self.services[0]['notifications']
+            self.rmqconsumer = RMQConsumer(configurator_notifications['host'],
+                                           configurator_notifications['queue']
+                                           )
             super(Controller, self).__init__()
         except Exception as err:
             msg = (
@@ -88,10 +93,11 @@ class Controller(base_controller.BaseController):
 
         try:
             if self.method_name == 'get_notifications':
-                routing_key = 'CONFIGURATION'
-                uservice = self.rpc_routing_table[routing_key]
-                notification_data = uservice[0].rpcclient.call(
-                    self.method_name)
+                # routing_key = 'CONFIGURATION'
+                # uservice = self.rpc_routing_table[routing_key]
+                # notification_data = uservice[0].rpcclient.call(
+                #     self.method_name)
+                notification_data = self.rmqconsumer.pull_notifications()
                 msg = ("NOTIFICATION_DATA sent to config_agent %s"
                        % notification_data)
                 LOG.info(msg)
@@ -99,7 +105,7 @@ class Controller(base_controller.BaseController):
 
         except Exception as err:
             pecan.response.status = 400
-            msg = ("Failed to get handle request=%s. Reason=%s."
+            msg = ("Failed to handle request=%s. Reason=%s."
                    % (self.method_name, str(err).capitalize()))
             LOG.error(msg)
             error_data = self._format_description(msg)
@@ -123,10 +129,8 @@ class Controller(base_controller.BaseController):
             body = None
             if pecan.request.is_body_readable:
                 body = pecan.request.json_body
-            if self.method_name == 'network_function_event':
-                routing_key = 'VISIBILITY'
-            else:
-                routing_key = 'CONFIGURATION'
+
+            routing_key = body.pop("routing_key", "CONFIGURATION")
             for uservice in self.rpc_routing_table[routing_key]:
                 uservice.rpcclient.cast(self.method_name, body)
                 msg = ('Sent RPC to %s' % (uservice.topic))
@@ -162,10 +166,8 @@ class Controller(base_controller.BaseController):
             body = None
             if pecan.request.is_body_readable:
                 body = pecan.request.json_body
-            if self.method_name == 'network_function_event':
-                routing_key = 'VISIBILITY'
-            else:
-                routing_key = 'CONFIGURATION'
+
+            routing_key = body.pop("routing_key", "CONFIGURATION")
             for uservice in self.rpc_routing_table[routing_key]:
                 uservice.rpcclient.cast(self.method_name, body)
                 msg = ('Sent RPC to %s' % (uservice.topic))
@@ -269,3 +271,68 @@ class CloudService(object):
         self.topic = kwargs.get('topic')
         self.reporting_interval = kwargs.get('reporting_interval')
         self.rpcclient = RPCClient(topic=self.topic)
+
+
+class RMQConsumer(object):
+    """RMQConsumer for over the cloud services.
+
+    This class access rabbitmq's 'configurator-notifications' queue
+    to pull all the notifications came from over the cloud services.
+
+    """
+
+    def __init__(self, rabbitmq_host, queue):
+        self.rabbitmq_host = rabbitmq_host
+        self.queue = queue
+        self.create_connection()
+
+    def create_connection(self):
+        self.connection = pika.BlockingConnection(pika.ConnectionParameters(
+            host=self.rabbitmq_host))
+
+    def _fetch_data_from_wrapper_strct(self, oslo_notifications):
+        notifications = []
+        for oslo_notification_data in oslo_notifications:
+            notification_data = jsonutils.loads(
+                oslo_notification_data["oslo.message"]
+            )["args"]["notification_data"]
+            notifications.extend(notification_data)
+        return notifications
+
+    def pull_notifications(self):
+        notifications = []
+        msgs_acknowledged = False
+        try:
+            self.channel = self.connection.channel()
+            self.queue_declared = self.channel.queue_declare(queue=self.queue,
+                                                             durable=True)
+            self.channel.queue_bind(self.queue, 'openstack')
+            pending_msg_count = self.queue_declared.method.message_count
+            log = ('[notifications queue:%s, pending notifications:%s]'
+                   % (self.queue, pending_msg_count))
+            LOG.info(log)
+            for i in range(pending_msg_count):
+                method, properties, body = self.channel.basic_get(self.queue)
+                notifications.append(jsonutils.loads(body))
+
+            # Acknowledge all messages delivery
+            if pending_msg_count > 0:
+                self.channel.basic_ack(delivery_tag=method.delivery_tag,
+                                       multiple=True)
+                msgs_acknowledged = True
+
+            self.channel.close()
+            return self._fetch_data_from_wrapper_strct(notifications)
+
+        except pika.exceptions.ConnectionClosed:
+            msg = ("Caught ConnectionClosed exception.Creating new connection")
+            LOG.error(msg)
+            self.create_connection()
+            return self._fetch_data_from_wrapper_strct(notifications)
+        except pika.exceptions.ChannelClosed:
+            msg = ("Caught ChannelClosed exception.")
+            LOG.error(msg)
+            if msgs_acknowledged is False:
+                return self.pull_notifications()
+            else:
+                return self._fetch_data_from_wrapper_strct(notifications)
