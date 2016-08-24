@@ -166,13 +166,15 @@ function create_nfp_gbp_resources {
  --vendor NFP\
  lb_profile
 
-        gbp service-profile-create\
+        if [[ $ENABLE_LBAASV2 = True ]]; then
+            gbp service-profile-create\
  --servicetype LOADBALANCERV2\
  --insertion-mode l3\
  --shared True\
  --service-flavor service_vendor=haproxy_lbaasv2,device_type=nova,flavor=m1.small\
  --vendor NFP\
  lbv2_profile
+        fi
 
         gbp service-profile-create\
  --servicetype FIREWALL\
@@ -385,7 +387,9 @@ function namespace_create {
     else
         echo "New Neutron Port Created on Service management network with ip =$new_ip"
     fi
-    new_ip_cidr+="$new_ip/24"
+
+    netmask=`neutron net-list --name $SERVICE_MGMT_NET -F subnets  -f value | awk '{print $2}' | awk -F'/' '{print $2}'`
+    new_ip_cidr="$new_ip/$netmask"
     sleep 2
 
     #get the ip address of new port eg : 11.0.0.6 and asign to namespace
@@ -420,7 +424,7 @@ function namespace_create {
         echo "Fails reaching to $configurator_ip"
     fi
 
-    sudo ip netns exec nfp-proxy /usr/bin/nfp_proxy --config-file=/etc/nfp_proxy.ini
+    sudo ip netns exec nfp-proxy /usr/bin/nfp_proxy --config-file=/etc/nfp.ini
 }
 
 # copy_nfp_files_and_start_process() - Setup configuration and start processes
@@ -428,13 +432,10 @@ function copy_nfp_files_and_start_process {
     cd $NFPSERVICE_DIR/gbpservice/nfp
     sudo cp -r bin/nfp /usr/bin/
     sudo chmod +x /usr/bin/nfp
-    sudo rm -rf /etc/nfp_*
-    sudo cp -r bin/nfp_orchestrator.ini /etc/
-    sudo cp -r bin/nfp_proxy_agent.ini /etc/
-    [[ $NFP_DEVSTACK_MODE = advanced ]] && sudo cp -r ../contrib/nfp/bin/nfp_config_orch.ini /etc/
-    sudo cp -r bin/nfp_proxy.ini /etc/nfp_proxy.ini
+    sudo rm -rf /etc/nfp*
+    sudo cp -r bin/nfp.ini /etc/
     sudo cp -r bin/nfp_proxy /usr/bin/
-
+    [[ $NFP_DEVSTACK_MODE = advanced ]] && sudo bash -c 'cat '$NFPSERVICE_DIR'/gbpservice/contrib/nfp/bin/nfp.ini >> /etc/nfp.ini'
     if [[ $NFP_DEVSTACK_MODE = base ]]; then
         configurator_ip=127.0.0.1
         configurator_port=8080
@@ -442,19 +443,19 @@ function copy_nfp_files_and_start_process {
         configurator_ip=$configurator_ip
         configurator_port=8070
     fi
-    echo "Configuring proxy.ini .... with rest_server_address as $configurator_ip:$configurator_port"
-    sudo sed -i "s/rest_server_address=*.*/rest_server_address=$configurator_ip/g" /etc/nfp_proxy.ini
-    sudo sed -i "s/rest_server_port= *.*/rest_server_port=$configurator_port/g" /etc/nfp_proxy.ini
+    echo "Configuring nfp.ini .... with nfp_controller_ip as $configurator_ip:$nfp_controller_port"
+    sudo sed -i "s/nfp_controller_ip=*.*/nfp_controller_ip=$configurator_ip/g" /etc/nfp.ini
+    sudo sed -i "s/nfp_controller_port= *.*/nfp_controller_port=$configurator_port/g" /etc/nfp.ini
 
     sed -i 's#source.*#source '$DEVSTACK_DIR'/openrc demo demo#g' $NFPSERVICE_DIR/devstack/exercises/nfp_service/*.sh
     source $DEVSTACK_DIR/functions-common
 
     echo "Starting nfp_orchestrator under screen named nfp_orchestrator"
-    run_process nfp_orchestrator "sudo /usr/bin/nfp --config-file /etc/neutron/neutron.conf --config-file /etc/neutron/plugins/ml2/ml2_conf.ini --config-file /etc/nfp_orchestrator.ini --log-file $DEST/logs/nfp_orchestrator.log"
+    run_process nfp_orchestrator "sudo /usr/bin/nfp --module orchestrator --config-file /etc/neutron/neutron.conf --config-file /etc/neutron/plugins/ml2/ml2_conf.ini --config-file /etc/nfp.ini --log-file $DEST/logs/nfp_orchestrator.log"
     sleep 4
 
     echo "Starting nfp_proxy_agent under screen named nfp_proxy_agent"
-    run_process nfp_proxy_agent "sudo /usr/bin/nfp --config-file /etc/nfp_proxy_agent.ini --log-file $DEST/logs/nfp_proxy_agent.log"
+    run_process nfp_proxy_agent "sudo /usr/bin/nfp --module proxy_agent --config-file /etc/nfp.ini --config-file /etc/neutron/neutron.conf --log-file $DEST/logs/nfp_proxy_agent.log"
     sleep 4
 
     echo "Starting nfp_proxy inside namespace named nfp-proxy, under screen named nfp_proxy"
@@ -463,10 +464,12 @@ function copy_nfp_files_and_start_process {
 
     if [[ $NFP_DEVSTACK_MODE = advanced ]]; then
         echo "Starting nfp_config_orchestrator under screen named nfp_config_orchestrator"
-        run_process nfp_config_orchestrator "sudo /usr/bin/nfp --config-file /etc/nfp_config_orch.ini --config-file /etc/neutron/neutron.conf --log-file $DEST/logs/nfp_config_orchestrator.log"
+        run_process nfp_config_orchestrator "sudo /usr/bin/nfp --module config_orchestrator --config-file /etc/nfp.ini --config-file /etc/neutron/neutron.conf --log-file $DEST/logs/nfp_config_orchestrator.log"
     else
         cd pecan/api
         sudo python setup.py develop
+        sudo mkdir -p /var/log/nfp
+        sudo touch /var/log/nfp/nfp_pecan.log
         echo "Starting nfp_base_configurator under screen named nfp_base_configurator"
         run_process nfp_base_configurator "cd $NFPSERVICE_DIR/gbpservice/nfp/pecan/api; sudo ip netns exec nfp-proxy pecan configurator_decider config.py --mode base"
     fi
