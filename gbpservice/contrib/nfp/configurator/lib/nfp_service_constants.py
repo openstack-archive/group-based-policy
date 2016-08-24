@@ -10,7 +10,6 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-DRIVERS_DIR = 'gbpservice.contrib.nfp.configurator.drivers.nfp_service'
 SERVICE_TYPE = 'nfp_service'
 CREATE_NFP_SERVICE_EVENT = 'CREATE_NFP_SERVICE'
 UNHANDLED_RESULT = 'unhandled'

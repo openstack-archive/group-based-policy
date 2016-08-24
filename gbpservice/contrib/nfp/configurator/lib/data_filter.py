@@ -217,9 +217,9 @@ class Filter(object):
             """
             Get the local subnet cidr
             """
-            subnet = [subnet for subnet in service_info['subnets']
-                      if subnet['id'] == vpnservice['subnet_id']][0]
-            cidr = subnet['cidr']
+            description = vpnservice['description']
+            tokens = description.split(';')
+            cidr = tokens[5].split('=')[1]
             vpnservice['cidr'] = cidr
 
             siteconn = {}
