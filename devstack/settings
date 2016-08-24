@@ -9,8 +9,9 @@ ENABLE_NFP=${ENABLE_NFP:-False}
 # VM locations
 ConfiguratorQcow2Image=${ConfiguratorQcow2Image:-build}
 
-# Enable necessary Neutron plugins, including group_policy and ncp
-Q_SERVICE_PLUGIN_CLASSES=neutron.services.l3_router.l3_router_plugin.L3RouterPlugin,group_policy,ncp
+# Enable necessary Neutron plugins, including group_policy and ncp (L3
+# is set via ML2_L3_PLUGIN, so isn't listed here).
+Q_SERVICE_PLUGIN_CLASSES=group_policy,ncp
 
 # Preferred git mirror
 GIT_BASE=${GIT_BASE:-https://git.openstack.org}
@@ -27,6 +28,7 @@ GBPHEAT_BRANCH=${GBPHEAT_BRANCH:-stable/mitaka}
 AIM_BRANCH=${AIM_BRANCH:-master}
 APICML2_BRANCH=${APICML2_BRANCH:-stable/mitaka}
 OPFLEX_BRANCH=${OPFLEX_BRANCH:-master}
+APICAPI_BRANCH=${APICAPI_BRANCH:-aci_integration_manager}
 
 # Enable necessary services, including group-policy (and disable others)
 disable_service n-net

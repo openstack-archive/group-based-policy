@@ -28,6 +28,8 @@ APICML2_REPO=http://github.com/noironetworks/apic-ml2-driver.git
 APICML2_DIR=$DEST/apic_ml2
 OPFLEX_REPO=http://github.com/noironetworks/python-opflex-agent.git
 OPFLEX_DIR=$DEST/opflexagent
+APICAPI_REPO=http://github.com/noironetworks/apicapi.git
+APICAPI_DIR=$DEST/apicapi
 
 # Save trace setting
 XTRACE=$(set +o | grep xtrace)
@@ -88,6 +90,14 @@ function install_apic_ml2 {
     mv $APICML2_DIR/test-requirements.txt $APICML2_DIR/_test-requirements.txt
     setup_develop $APICML2_DIR
     mv $APICML2_DIR/_test-requirements.txt $APICML2_DIR/test-requirements.txt
+}
+
+function install_apicapi {
+    git_clone $APICAPI_REPO $APICAPI_DIR $APICAPI_BRANCH
+    mv $APICAPI_DIR/test-requirements.txt $APICAPI_DIR/_test-requirements.txt
+    touch $APICAPI_DIR/setup.cfg
+    setup_develop $APICAPI_DIR
+    mv $APICAPI_DIR/_test-requirements.txt $APICAPI_DIR/test-requirements.txt
 }
 
 
