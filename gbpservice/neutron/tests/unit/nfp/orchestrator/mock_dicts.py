@@ -634,7 +634,7 @@ class DummyDictionaries(object):
         'network_function': {
             'status': 'ACTIVE',
             'description': '',
-            'heat_stack_id': '57d6b523-ae89-41cd-9b63-9bfb054a20b6',
+            'config_policy_id': '57d6b523-ae89-41cd-9b63-9bfb054a20b6',
             'tenant_id': 'ee27b1d0d7f04ac390ee7ec4b2fd5b13',
             'network_function_instances': [
                 '4693118c-149a-46e7-b92c-cc729b536a2e'],
@@ -663,7 +663,7 @@ class DummyDictionaries(object):
             'description': '',
             'service_vendor': None,
             'tenant_id': 'ee27b1d0d7f04ac390ee7ec4b2fd5b13',
-            'max_interfaces': 10,
+            'max_interfaces': 8,
             'mgmt_port_id': '4497a287-d947-4845-af29-a9d6ad6515e9',
             'reference_count': 1,
             'interfaces_in_use': 2,
