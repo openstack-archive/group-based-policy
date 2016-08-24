@@ -10,8 +10,6 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-DRIVERS_DIR = 'gbpservice.contrib.nfp.configurator.drivers.vpn'
-
 SERVICE_TYPE = 'vpn'
 
 

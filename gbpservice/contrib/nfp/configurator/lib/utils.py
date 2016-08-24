@@ -24,29 +24,31 @@ class ConfiguratorUtils(object):
        New common library functions, if needed, should be added in this class.
     """
 
-    def __init__(self):
-        pass
+    def __init__(self, conf):
+        self.conf = conf
 
-    def load_drivers(self, pkg):
+    def load_drivers(self, service_type=None):
         """Load all the driver class objects inside pkg. In each class in the
            pkg it will look for keywork 'service_type' or/and 'vendor' and
            select that class as driver class
 
-        @param pkg : package
-        e.g pkg = 'gbpservice.neutron.nsf.configurator.drivers.firewall'
+        @param service_type: firewall/vpn/loadbalancer/nfp_service/None
 
         Returns: driver_objects dictionary
                e.g driver_objects = {'loadbalancer': <driver class object>}
 
         """
+
+        pkgs = self.conf.CONFIG_DRIVERS.drivers
         driver_objects = {}
-
-        base_driver = __import__(pkg,
-                                 globals(), locals(), ['drivers'], -1)
-        drivers_dir = base_driver.__path__[0]
-
         modules = []
-        subdirectories = [x[0] for x in os.walk(drivers_dir)]
+        subdirectories = []
+        for pkg in pkgs:
+            base_driver = __import__(pkg,
+                                     globals(), locals(), ['drivers'], -1)
+            drivers_dir = base_driver.__path__[0]
+            subdirectories += [x[0] for x in os.walk(drivers_dir)]
+
         for subd in subdirectories:
             syspath = sys.path
             sys.path = [subd] + syspath
@@ -66,8 +68,12 @@ class ConfiguratorUtils(object):
             for name, class_obj in inspect.getmembers(module):
                 if inspect.isclass(class_obj):
                     key = ''
-                    if hasattr(class_obj, 'service_type'):
+                    if hasattr(class_obj, 'service_type') and (
+                         not service_type or (service_type.lower() in (
+                            class_obj.service_type.lower()))):
                         key += class_obj.service_type
+                    else:
+                        continue
                     if hasattr(class_obj, 'service_vendor'):
                         key += class_obj.service_vendor
                     if key:
