@@ -1,3 +1,6 @@
+# Copyright (c) 2016 Cisco Systems Inc.
+# All Rights Reserved.
+#
 #    Licensed under the Apache License, Version 2.0 (the "License"); you may
 #    not use this file except in compliance with the License. You may obtain
 #    a copy of the License at
@@ -11,55 +14,38 @@
 #    under the License.
 
 from neutron.api import extensions
+from neutron.extensions import l3
 
-from gbpservice.neutron.extensions import group_policy as gp
+from gbpservice.neutron.extensions import cisco_apic
 
+ALIAS = 'cisco-apic-l3'
 
-AIM_DRIVER_EXT = 'aim-driver-extensions'
-DIST_NAMES = 'apic:distinguished_names'
-FORWARD_FILTER_ENTRIES = 'Forward-FilterEntries'
-REVERSE_FILTER_ENTRIES = 'Reverse-FilterEntries'
 CONTRACT = 'Contract'
 CONTRACT_SUBJECT = 'ContractSubject'
 
 EXTENDED_ATTRIBUTES_2_0 = {
-    gp.POLICY_TARGET_GROUPS: {
-        DIST_NAMES: {
-            'allow_post': False, 'allow_put': False, 'is_visible': True},
-    },
-    gp.POLICY_RULES: {
-        DIST_NAMES: {
-            'allow_post': False, 'allow_put': False, 'is_visible': True},
-    },
-    gp.POLICY_RULE_SETS: {
-        DIST_NAMES: {
-            'allow_post': False, 'allow_put': False, 'is_visible': True},
-    },
+    l3.ROUTERS: cisco_apic.APIC_ATTRIBUTES
 }
 
 
-class Aim_driver_ext(extensions.ExtensionDescriptor):
+class Cisco_apic_l3(extensions.ExtensionDescriptor):
 
     @classmethod
     def get_name(cls):
-        return "Extensions for AIM driver"
+        return "Cisco APIC L3"
 
     @classmethod
     def get_alias(cls):
-        return AIM_DRIVER_EXT
+        return ALIAS
 
     @classmethod
     def get_description(cls):
-        return _("Adds AIM driver specific attributes to GBP resources.")
-
-    @classmethod
-    def get_namespace(cls):
-        return ("http://docs.openstack.org/ext/neutron/grouppolicy/"
-                "aim_driver_ext/api/v1.0")
+        return ("Extension exposing mapping of Neutron L3 resources to Cisco "
+                "APIC constructs")
 
     @classmethod
     def get_updated(cls):
-        return "2016-07-11T10:00:00-00:00"
+        return "2016-09-06T12:00:00-00:00"
 
     def get_extended_resources(self, version):
         if version == "2.0":

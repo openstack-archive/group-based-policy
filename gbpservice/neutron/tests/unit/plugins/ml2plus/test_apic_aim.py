@@ -22,10 +22,12 @@ from neutron.api import extensions
 from neutron import context
 from neutron.db import api as db_api
 from neutron import manager
+from neutron.plugins.common import constants as service_constants
 from neutron.plugins.ml2 import config
 from neutron.tests.unit.api import test_extensions
 from neutron.tests.unit.db import test_db_base_plugin_v2 as test_plugin
 from neutron.tests.unit.extensions import test_address_scope
+from neutron.tests.unit.extensions import test_l3
 from opflexagent import constants as ofcst
 
 PLUGIN_NAME = 'gbpservice.neutron.plugins.ml2plus.plugin.Ml2PlusPlugin'
@@ -66,7 +68,8 @@ class FakeKeystoneClient(object):
         self.projects = FakeProjectManager()
 
 
-class ApicAimTestCase(test_address_scope.AddressScopeTestCase):
+class ApicAimTestCase(test_address_scope.AddressScopeTestCase,
+                      test_l3.L3NatTestCaseMixin):
     def setUp(self):
         # Enable the test mechanism driver to ensure that
         # we can successfully call through to all mechanism
@@ -87,7 +90,12 @@ class ApicAimTestCase(test_address_scope.AddressScopeTestCase):
                                      ['physnet1:1000:1099'],
                                      group='ml2_type_vlan')
 
-        super(ApicAimTestCase, self).setUp(PLUGIN_NAME)
+        service_plugins = {
+            'L3_ROUTER_NAT':
+            'gbpservice.neutron.services.apic_aim.l3_plugin.ApicL3Plugin'}
+
+        super(ApicAimTestCase, self).setUp(PLUGIN_NAME,
+                                           service_plugins=service_plugins)
         ext_mgr = extensions.PluginAwareExtensionManager.get_instance()
         self.ext_api = test_extensions.setup_extensions_middleware(ext_mgr)
         self.port_create_status = 'DOWN'
@@ -102,6 +110,8 @@ class ApicAimTestCase(test_address_scope.AddressScopeTestCase):
         self.plugin.start_rpc_listeners()
         self.driver = self.plugin.mechanism_manager.mech_drivers[
             'apic_aim'].obj
+        self.l3_plugin = manager.NeutronManager.get_service_plugins()[
+            service_constants.L3_ROUTER_NAT]
         self.aim_mgr = aim_manager.AimManager()
         self._app_profile_name = 'NeutronAP'
         self._tenant_name = self._map_name({'id': 'test-tenant',
@@ -109,6 +119,11 @@ class ApicAimTestCase(test_address_scope.AddressScopeTestCase):
         self._unrouted_vrf_name = 'UnroutedVRF'
 
     def tearDown(self):
+        engine = db_api.get_engine()
+        with engine.begin() as conn:
+            for table in reversed(
+                aim_model_base.Base.metadata.sorted_tables):
+                conn.execute(table.delete())
         ksc_client.Client = self.saved_keystone_client
         super(ApicAimTestCase, self).tearDown()
 
@@ -166,6 +181,58 @@ class TestAimMapping(ApicAimTestCase):
         else:
             self.assertIsNone(epg)
         return epg
+
+    def _get_contract(self, contract_name, tenant_name, should_exist=True):
+        session = db_api.get_session()
+        aim_ctx = aim_context.AimContext(session)
+        contract = aim_resource.Contract(tenant_name=tenant_name,
+                                         name=contract_name)
+        contract = self.aim_mgr.get(aim_ctx, contract)
+        if should_exist:
+            self.assertIsNotNone(contract)
+        else:
+            self.assertIsNone(contract)
+        return contract
+
+    def _get_subject(self, subject_name, contract_name, tenant_name,
+                     should_exist=True):
+        session = db_api.get_session()
+        aim_ctx = aim_context.AimContext(session)
+        subject = aim_resource.ContractSubject(tenant_name=tenant_name,
+                                               contract_name=contract_name,
+                                               name=subject_name)
+        subject = self.aim_mgr.get(aim_ctx, subject)
+        if should_exist:
+            self.assertIsNotNone(subject)
+        else:
+            self.assertIsNone(subject)
+        return subject
+
+    def _get_filter(self, filter_name, tenant_name, should_exist=True):
+        session = db_api.get_session()
+        aim_ctx = aim_context.AimContext(session)
+        filter = aim_resource.Filter(tenant_name=tenant_name,
+                                     name=filter_name)
+        filter = self.aim_mgr.get(aim_ctx, filter)
+        if should_exist:
+            self.assertIsNotNone(filter)
+        else:
+            self.assertIsNone(filter)
+        return filter
+
+    def _get_filter_entry(self, entry_name, filter_name, tenant_name,
+                          should_exist=True):
+        session = db_api.get_session()
+        aim_ctx = aim_context.AimContext(session)
+        entry = aim_resource.FilterEntry(tenant_name=tenant_name,
+                                         filter_name=filter_name,
+                                         name=entry_name)
+        entry = self.aim_mgr.get(aim_ctx, entry)
+        if should_exist:
+            self.assertIsNotNone(entry)
+        else:
+            self.assertIsNone(entry)
+        return entry
 
     def _check_dn(self, resource, aim_resource, key):
         dist_names = resource.get('apic:distinguished_names')
@@ -274,6 +341,69 @@ class TestAimMapping(ApicAimTestCase):
                       self._tenant_name,
                       should_exist=False)
 
+    def _check_router(self, router, orig_router=None):
+        orig_router = orig_router or router
+
+        # REVISIT(rkukura): Check AIM Tenant here?
+        self.assertEqual('test-tenant', router['tenant_id'])
+
+        aname = self._map_name(orig_router)
+
+        aim_contract = self._get_contract(aname, self._tenant_name)
+        self.assertEqual(self._tenant_name, aim_contract.tenant_name)
+        self.assertEqual(aname, aim_contract.name)
+        self.assertEqual(router['name'], aim_contract.display_name)
+        self.assertEqual('context', aim_contract.scope)  # REVISIT(rkukura)
+        self._check_dn(router, aim_contract, 'Contract')
+
+        aim_subject = self._get_subject('route', aname, self._tenant_name)
+        self.assertEqual(self._tenant_name, aim_subject.tenant_name)
+        self.assertEqual(aname, aim_subject.contract_name)
+        self.assertEqual('route', aim_subject.name)
+        self.assertEqual(router['name'], aim_subject.display_name)
+        self.assertEqual([], aim_subject.in_filters)
+        self.assertEqual([], aim_subject.out_filters)
+        self.assertEqual(['AnyFilter'], aim_subject.bi_filters)
+        self._check_dn(router, aim_subject, 'ContractSubject')
+
+        self._check_any_filter()
+        # REVISIT(rkukura): Anything else to check?
+
+    def _check_router_deleted(self, router):
+        aname = self._map_name(router)
+
+        self._get_contract(aname, self._tenant_name, should_exist=False)
+
+        self._get_subject('route', aname, self._tenant_name,
+                          should_exist=False)
+
+        # REVISIT(rkukura): Anything else to check?
+
+    def _check_any_filter(self):
+        aim_filter = self._get_filter('AnyFilter', self._tenant_name)
+        self.assertEqual(self._tenant_name, aim_filter.tenant_name)
+        self.assertEqual('AnyFilter', aim_filter.name)
+        self.assertEqual('Any Filter', aim_filter.display_name)
+
+        aim_entry = self._get_filter_entry('Anything', 'AnyFilter',
+                                           self._tenant_name)
+        self.assertEqual(self._tenant_name, aim_entry.tenant_name)
+        self.assertEqual('AnyFilter', aim_entry.filter_name)
+        self.assertEqual('Anything', aim_entry.name)
+        self.assertEqual('Anything', aim_entry.display_name)
+        self.assertEqual('unspecified', aim_entry.arp_opcode)
+        self.assertEqual('unspecified', aim_entry.ether_type)
+        self.assertEqual('unspecified', aim_entry.ip_protocol)
+        self.assertEqual('unspecified', aim_entry.icmpv4_type)
+        self.assertEqual('unspecified', aim_entry.icmpv6_type)
+        self.assertEqual('unspecified', aim_entry.source_from_port)
+        self.assertEqual('unspecified', aim_entry.source_to_port)
+        self.assertEqual('unspecified', aim_entry.dest_from_port)
+        self.assertEqual('unspecified', aim_entry.dest_to_port)
+        self.assertEqual('unspecified', aim_entry.tcp_flags)
+        self.assertFalse(aim_entry.stateful)
+        self.assertFalse(aim_entry.fragment_only)
+
     def test_network_lifecycle(self):
         # Test create.
         orig_net = self._make_network(self.fmt, 'net1', True)['network']
@@ -335,6 +465,58 @@ class TestAimMapping(ApicAimTestCase):
         # Test delete.
         self._delete('address-scopes', a_s_id)
         self._check_address_scope_deleted(orig_a_s)
+
+    def test_router_lifecycle(self):
+        # Test create.
+        orig_router = self._make_router(
+            self.fmt, 'test-tenant', 'router1')['router']
+        router_id = orig_router['id']
+        self._check_router(orig_router)
+
+        # Test show.
+        router = self._show('routers', router_id)['router']
+        self._check_router(router)
+
+        # Test update.
+        data = {'router': {'name': 'newnameforrouter'}}
+        router = self._update('routers', router_id, data)['router']
+        self._check_router(router, orig_router)
+
+        # Test delete.
+        self._delete('routers', router_id)
+        self._check_router_deleted(orig_router)
+
+    def test_router_interface(self):
+        # Create router.
+        router = self._make_router(
+            self.fmt, 'test-tenant', 'router1')['router']
+        router_id = router['id']
+        self._check_router(router)
+
+        # Create network.
+        net_resp = self._make_network(self.fmt, 'net1', True)
+        self._check_unrouted_network(net_resp['network'])
+
+        # Create subnet.
+        subnet = self._make_subnet(self.fmt, net_resp, '10.0.0.1',
+                                   '10.0.0.0/24')['subnet']
+        subnet_id = subnet['id']
+        self._check_unrouted_subnet(subnet)
+
+        # Add subnet to router.
+        info = self.l3_plugin.add_router_interface(
+            context.get_admin_context(), router_id, {'subnet_id': subnet_id})
+        self.assertIn(subnet_id, info['subnet_ids'])
+        self._check_router(router)
+
+        # TODO(rkukura): Check router and subnet extension attributes,
+        # BD, EPG, etc..
+
+        # Remove subnet from router.
+        info = self.l3_plugin.remove_router_interface(
+            context.get_admin_context(), router_id, {'subnet_id': subnet_id})
+        self.assertIn(subnet_id, info['subnet_ids'])
+        self._check_router(router)
 
     # def test_create_subnet_with_address_scope(self):
     #     net = self._make_network(self.fmt, 'net1', True)

@@ -18,12 +18,11 @@ from oslo_concurrency import lockutils
 from oslo_log import helpers as log
 from oslo_log import log as logging
 
-from gbpservice.neutron.extensions import aim_driver_ext as aim_ext
+from gbpservice.neutron.extensions import cisco_apic
+from gbpservice.neutron.extensions import cisco_apic_gbp as aim_ext
 from gbpservice.neutron.extensions import group_policy as gpolicy
 from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import (
     mechanism_driver as aim_md)
-from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim.extensions import (
-    cisco_apic)
 from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import model
 from gbpservice.neutron.services.grouppolicy.common import (
     constants as gp_const)

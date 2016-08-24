@@ -260,11 +260,11 @@ class TestL2PolicyBase(test_nr_base.TestL2Policy, AIMBaseTestCase):
         aim_filters = self.aim_mgr.find(
             self._aim_context, aim_resource.Filter,
             tenant_name=aim_tenant_name)
-        self.assertEqual(9, len(aim_filters))
+        self.assertEqual(10, len(aim_filters))  # 1 belongs to MD
         aim_filter_entries = self.aim_mgr.find(
             self._aim_context, aim_resource.FilterEntry,
             tenant_name=aim_tenant_name)
-        self.assertEqual(9, len(aim_filter_entries))
+        self.assertEqual(10, len(aim_filter_entries))  # 1 belongs to MD
         entries_attrs = alib.get_service_contract_filter_entries().values()
         entries_attrs.extend(alib.get_arp_filter_entry().values())
         expected_entries_attrs = []
@@ -276,9 +276,11 @@ class TestL2PolicyBase(test_nr_base.TestL2Policy, AIMBaseTestCase):
         entries_attrs = [x.__dict__ for x in aim_filter_entries]
         observed_entries_attrs = []
         for entry in entries_attrs:
-            observed_entries_attrs.append(
-                {k: unicode(entry[k]) for k in entry if k not in [
-                    'name', 'display_name', 'filter_name', 'tenant_name']})
+            # Ignore entry belonging to MD's filter.
+            if entry['filter_name'] != 'AnyFilter':
+                observed_entries_attrs.append(
+                    {k: unicode(entry[k]) for k in entry if k not in [
+                        'name', 'display_name', 'filter_name', 'tenant_name']})
         self.assertItemsEqual(expected_entries_attrs, observed_entries_attrs)
 
 
@@ -305,11 +307,11 @@ class TestL2Policy(TestL2PolicyBase):
         aim_filters = self.aim_mgr.find(
             self._aim_context, aim_resource.Filter,
             tenant_name=aim_tenant_name)
-        self.assertEqual(0, len(aim_filters))
+        self.assertEqual(1, len(aim_filters))  # belongs to MD
         aim_filter_entries = self.aim_mgr.find(
             self._aim_context, aim_resource.FilterEntry,
             tenant_name=aim_tenant_name)
-        self.assertEqual(0, len(aim_filter_entries))
+        self.assertEqual(1, len(aim_filter_entries))  # belongs to MD
 
     def test_l2_policy_lifecycle(self):
         self.assertEqual(0, len(self.aim_mgr.find(
@@ -389,11 +391,11 @@ class TestL2PolicyRollback(TestL2PolicyBase):
         aim_filters = self.aim_mgr.find(
             self._aim_context, aim_resource.Filter,
             tenant_name=aim_tenant_name)
-        self.assertEqual(0, len(aim_filters))
+        self.assertEqual(1, len(aim_filters))  # belongs to MD
         aim_filter_entries = self.aim_mgr.find(
             self._aim_context, aim_resource.FilterEntry,
             tenant_name=aim_tenant_name)
-        self.assertEqual(0, len(aim_filter_entries))
+        self.assertEqual(1, len(aim_filter_entries))  # belongs to MD
         # restore mock
         self.dummy.create_l2_policy_precommit = orig_func
 
@@ -843,10 +845,10 @@ class TestPolicyRuleRollback(TestPolicyRuleBase):
                          self._gbp_plugin.get_policy_rules(self._context))
         aim_filters = self.aim_mgr.find(
             self._aim_context, aim_resource.Filter)
-        self.assertEqual(0, len(aim_filters))
+        self.assertEqual(1, len(aim_filters))  # belongs to MD
         aim_filter_entries = self.aim_mgr.find(
             self._aim_context, aim_resource.FilterEntry)
-        self.assertEqual(0, len(aim_filter_entries))
+        self.assertEqual(1, len(aim_filter_entries))  # belongs to MD
         # restore mock
         self.dummy.create_policy_rule_precommit = orig_func
 
