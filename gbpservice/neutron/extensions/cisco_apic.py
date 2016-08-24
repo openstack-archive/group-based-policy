@@ -23,7 +23,6 @@ DIST_NAMES = 'apic:distinguished_names'
 SYNC_STATE = 'apic:synchronization_state'
 
 BD = 'BridgeDomain'
-CTX = 'Context'
 EPG = 'EndpointGroup'
 SUBNET = 'Subnet'
 VRF = 'VRF'

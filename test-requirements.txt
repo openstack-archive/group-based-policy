@@ -4,7 +4,8 @@
 
 setuptools>=19.2
 -e git+https://git.openstack.org/openstack/neutron.git@stable/mitaka#egg=neutron
--e git+https://github.com/noironetworks/apicapi.git@master#egg=apicapi
+# TODO(rkukura): Switch apicapi back to master branch eventually.
+-e git+https://github.com/noironetworks/apicapi.git@aci_integration_manager#egg=apicapi
 -e git+https://github.com/noironetworks/python-opflex-agent.git@master#egg=python-opflexagent-agent
 -e git+https://github.com/noironetworks/apic-ml2-driver.git@master#egg=apic_ml2
 -e git+https://git.openstack.org/openstack/python-group-based-policy-client@master#egg=gbpclient
