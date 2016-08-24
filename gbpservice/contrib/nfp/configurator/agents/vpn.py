@@ -297,7 +297,8 @@ class VPNaasEventHandler(nfp_api.NfpEventHandler):
         context = ev.data.get('context')
         s2s_contexts = self._plugin_rpc.get_vpn_servicecontext(context)
         state = self._sync_ipsec_conns(context, s2s_contexts[0])
-        if state == const.STATE_ACTIVE:
+        if state in {const.STATE_ACTIVE,
+                     const.STATE_ERROR}:
             return {'poll': False}
 
 
@@ -332,8 +333,8 @@ def load_drivers(sc, conf):
     Returns: dictionary of instances of the respective driver classes.
     """
 
-    ld = utils.ConfiguratorUtils()
-    drivers = ld.load_drivers(const.DRIVERS_DIR)
+    ld = utils.ConfiguratorUtils(conf)
+    drivers = ld.load_drivers(const.SERVICE_TYPE)
 
     for service_type, driver_name in drivers.iteritems():
         driver_obj = driver_name(conf=conf)
