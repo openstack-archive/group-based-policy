@@ -67,13 +67,11 @@ class ControllerTestCase(base.BaseTestCase, rest.RestController):
         Returns: none
 
         """
-        with mock.patch.object(
-                controller.RPCClient, 'call') as rpc_mock:
-            rpc_mock.return_value = jsonutils.dumps(self.data)
-            response = self.app.get(
-                '/v1/nfp/get_notifications'
-            )
-        rpc_mock.assert_called_with('get_notifications')
+        #with mock.patch.object(
+        #        controller.RMQConsumer, 'pull_notifications') as mock_pn:
+        #    response = self.app.get('/v1/nfp/get_notifications')
+        #mock_pn.assert_called_with()
+        response = self.app.get('/v1/nfp/get_notifications')
         self.assertEqual(response.status_code, 200)
 
     def test_post_create_network_function_device_config(self):
