@@ -163,9 +163,7 @@ class GeneralConfigStructure(object):
                         if all(k in data for k in ["vpnservices",
                                                    "ikepolicies",
                                                    "ipsecpolicies",
-                                                   "ipsec_site_conns",
-                                                   "subnets",
-                                                   "routers"]):
+                                                   "ipsec_site_conns"]):
                             return True
             except AttributeError:
                 return False
