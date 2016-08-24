@@ -243,7 +243,8 @@ class NFPDBTestCase(SqlTestCase):
             'name': 'name',
             'tenant_id': 'tenant_id',
             'network_function_id': network_function['id'],
-            'status': 'status'
+            'status': 'status',
+            'port_info': []
         }
         network_function_instance = (
             self.nfp_db.create_network_function_instance(
