@@ -229,9 +229,10 @@ class GenericConfigEventHandlerTestCase(base.BaseTestCase):
                 mock_delete_src_routes.assert_called_with(
                             self.fo.context, resource_data)
             elif const.EVENT_CONFIGURE_HEALTHMONITOR in ev.id:
-                if periodicity == const.INITIAL_HM_RETRIES:
+                if periodicity == const.EVENT_CONFIGURE_HEALTHMONITOR_MAXRETRY:
                     mock_hm_poll_event.assert_called_with(
-                                ev, max_times=const.INITIAL_HM_RETRIES)
+                        ev, max_times=(
+                                const.EVENT_CONFIGURE_HEALTHMONITOR_MAXRETRY))
                 elif periodicity == const.FOREVER:
                     mock_hm_poll_event.assert_called_with(ev)
             elif ev.id == const.EVENT_CLEAR_HEALTHMONITOR:
@@ -256,10 +257,13 @@ class GenericConfigEventHandlerTestCase(base.BaseTestCase):
                 agent, '_get_driver', return_value=driver), (
              mock.patch.object(
                     driver, const.EVENT_CONFIGURE_HEALTHMONITOR.lower(),
-                    return_value=common_const.SUCCESS)), (
-             mock.patch.object(subprocess, 'check_output', return_value=True)):
+                    return_value=common_const.SUCCESS)) as mock_dvr, (
+             mock.patch.object(subprocess,
+                               'check_output', return_value=True)):
 
             agent.handle_configure_healthmonitor(ev)
+
+            self.assertEqual(mock_dvr.return_value, common_const.SUCCESS)
 
     def test_configure_interfaces_genericconfigeventhandler(self):
         """ Implements test case for configure interfaces method
