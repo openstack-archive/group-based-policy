@@ -1,3 +1,5 @@
 #!/bin/sh
 script='/usr/local/lib/python2.7/dist-packages/gbpservice/nfp/pecan/api/config.py'
+mkdir -p /var/log/nfp/
+touch /var/log/nfp/nfp_pecan.log
 pecan configurator_decider $script --mode base_with_vm &
