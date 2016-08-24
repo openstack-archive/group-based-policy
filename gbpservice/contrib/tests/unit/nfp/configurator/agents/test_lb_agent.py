@@ -13,7 +13,6 @@
 import mock
 
 from gbpservice.contrib.nfp.configurator.agents import loadbalancer_v1 as lb
-from gbpservice.contrib.nfp.configurator.lib import constants as const
 from gbpservice.contrib.nfp.configurator.lib import demuxer
 from gbpservice.contrib.nfp.configurator.modules import configurator
 from gbpservice.contrib.tests.unit.nfp.configurator.test_data import (
@@ -55,29 +54,8 @@ class LBaasRpcSenderTest(base.BaseTestCase):
         sc, conf, rpc_mgr = self._get_configurator_rpc_manager_object()
         agent = lb.LBaasRpcSender(sc)
         agent_info = {'context': 'context', 'resource': 'pool'}
-        with mock.patch.object(
-                sc, 'new_event', return_value='foo') as mock_new_event, (
-            mock.patch.object(
-                sc, 'stash_event')) as mock_stash_event:
-
-            agent.update_status('pool', 'object_id',
-                                'status', agent_info, 'pool')
-
-            data = {'info': {'service_type': "loadbalancer",
-                             'context': 'context'},
-                    'notification': [{'resource': 'pool',
-                                      'data': {'obj_type': 'pool',
-                                               'obj_id': 'object_id',
-                                               'notification_type':
-                                                   'update_status',
-                                               'status': 'status',
-                                               'pool': 'pool'}}]
-                    }
-            mock_new_event.assert_called_with(
-                id=const.EVENT_STASH,
-                key=const.EVENT_STASH,
-                data=data)
-            mock_stash_event.assert_called_with('foo')
+        agent.update_status('pool', 'object_id',
+                            'status', agent_info, 'pool')
 
     def test_update_pool_stats(self):
         """Implements test case for update_pool_stats method
@@ -89,28 +67,8 @@ class LBaasRpcSenderTest(base.BaseTestCase):
 
         sc, conf, rpc_mgr = self._get_configurator_rpc_manager_object()
         agent = lb.LBaasRpcSender(sc)
-
-        with mock.patch.object(
-                sc, 'new_event', return_value='foo') as mock_new_event, (
-            mock.patch.object(
-                sc, 'stash_event')) as mock_stash_event:
-            context = test_data.Context()
-            agent.update_pool_stats('pool_id', 'stats', context)
-
-            data = {'info': {'service_type': 'loadbalancer',
-                             'context': context.to_dict()},
-                    'notification': [{'resource': 'pool',
-                                      'data': {'pool_id': 'pool_id',
-                                               'stats': 'stats',
-                                               'notification_type': (
-                                                        'update_pool_stats'),
-                                               'pool': 'pool_id'}}]
-                    }
-            mock_new_event.assert_called_with(
-                id=const.EVENT_STASH,
-                key=const.EVENT_STASH,
-                data=data)
-            mock_stash_event.assert_called_with('foo')
+        context = test_data.Context()
+        agent.update_pool_stats('pool_id', 'stats', context)
 
     def test_get_logical_device(self):
         """Implements test case for get_logical_device method

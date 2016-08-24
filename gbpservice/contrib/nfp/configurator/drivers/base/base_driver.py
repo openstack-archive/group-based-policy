@@ -105,7 +105,7 @@ class BaseDriver(object):
 
         url = url % (mgmt_ip, port, 'configure-rsyslog-as-client')
 
-        log_forward_ip_address = self.conf.log_forward_ip_address
+        log_forward_ip_address = self.conf.configurator.log_forward_ip_address
         if not log_forward_ip_address:
             msg = ("Log forwarding IP address not configured "
                    "for service at %s." % mgmt_ip)
@@ -114,8 +114,8 @@ class BaseDriver(object):
 
         data = dict(
             server_ip=log_forward_ip_address,
-            server_port=self.conf.log_forward_port,
-            log_level=self.conf.log_level)
+            server_port=self.conf.configurator.log_forward_port,
+            log_level=self.conf.configurator.log_level)
         data = jsonutils.dumps(data)
 
         msg = ("Initiating POST request to configure log forwarding "
