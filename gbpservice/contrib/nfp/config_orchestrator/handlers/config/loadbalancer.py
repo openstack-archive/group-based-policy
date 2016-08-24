@@ -194,7 +194,7 @@ class LbAgent(loadbalancer_db.LoadBalancerPluginDb):
         nf_id = self._fetch_nf_from_resource_desc(vip["description"])
         nfp_logging.store_logging_context(meta_id=nf_id)
         nf = common.get_network_function_details(context, nf_id)
-        self._put(context, vip['tenant_id'], 'vip', nf, olf_vip=old_vip,
+        self._put(context, vip['tenant_id'], 'vip', nf, old_vip=old_vip,
                   vip=vip)
         nfp_logging.clear_logging_context()
 
