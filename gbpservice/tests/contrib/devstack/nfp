@@ -1,6 +1,6 @@
 #!/bin/bash
-NEW_BASE="$BASE/new"
-DISKIMAGE_CREATE_DIR=$NEW_BASE/group-based-policy/gbpservice/contrib/nfp/tools/image_builder/
+GBPSERVICE_DIR=$DEST/group-based-policy
+DISKIMAGE_CREATE_DIR=$GBPSERVICE_DIR/gbpservice/contrib/nfp/tools/image_builder/
 
 function prepare_nfp_image_builder {
     #setup_develop $NFPSERVICE_DIR
@@ -184,7 +184,7 @@ function get_router_namespace {
 
 function copy_nfp_files_and_start_process {
     TOP_DIR=$1
-    cd $NEW_BASE/group-based-policy/gbpservice/nfp
+    cd $DEST/group-based-policy/gbpservice/nfp
     sudo cp -r  bin/nfp /usr/bin/
     sudo chmod +x /usr/bin/nfp
     sudo rm -rf /etc/nfp_*
@@ -210,13 +210,13 @@ function copy_nfp_files_and_start_process {
     sleep 1
 
     echo "Starting proxy server under Namespace : nfp-proxy namespace >>>> under screen named : proxy"
-    run_process proxy "source $NEW_BASE/devstack/lib/nfp;namespace_delete $TOP_DIR;namespace_create $TOP_DIR $IpAddr"
+    run_process proxy "source $DEST/devstack/lib/nfp;namespace_delete $TOP_DIR;namespace_create $TOP_DIR $IpAddr"
     sleep 10
 
     cd pecan/api
     sudo python setup.py develop
     echo "Starting base_configurator  >>>> under screen named : base_configurator"
-    run_process base_configurator "cd $NEW_BASE/group-based-policy/gbpservice/nfp/pecan/api;sudo ip netns exec nfp-proxy pecan configurator_decider config.py --mode base"
+    run_process base_configurator "cd $GBPSERVICE_DIR/gbpservice/nfp/pecan/api;sudo ip netns exec nfp-proxy pecan configurator_decider config.py --mode base"
     sleep 1
 
     echo "Running gbp-db-manage"
