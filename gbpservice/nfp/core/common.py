@@ -10,8 +10,6 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-import time
-
 from oslo_config import cfg as oslo_cfg
 from oslo_log import log as oslo_logging
 
@@ -68,12 +66,3 @@ def identify(obj):
     except Exception:
         # Some unknown type, returning empty
         return ""
-
-
-def time_stamp():
-    """Current time stamp in milliseconds.
-
-    Returns: time stamp in milliseconds.
-    """
-    _time_ms = lambda: int(round(time.time() * 1000.0))
-    return _time_ms()
