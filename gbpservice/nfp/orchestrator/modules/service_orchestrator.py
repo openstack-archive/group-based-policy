@@ -705,7 +705,7 @@ class ServiceOrchestrator(nfp_api.NfpEventHandler):
                   'service_provider': service_vendor})
 
     def _validate_service_vendor(self, service_vendor):
-        if (service_vendor not in self.conf.supported_vendors):
+        if (service_vendor not in self.conf.orchestrator.supported_vendors):
             raise Exception(
                 "The NFP Node driver does not support this service "
                 "profile with the service vendor %s." % service_vendor)
@@ -1338,6 +1338,9 @@ class ServiceOrchestrator(nfp_api.NfpEventHandler):
         nfp_context = event.data
 
         network_function = nfp_context['network_function']
+        binding_key = nfp_context[
+                        'service_details'][
+                            'service_vendor'].lower() + network_function['id']
         config_status = self.config_driver.check_config_complete(nfp_context)
 
         if config_status == nfp_constants.ERROR:
@@ -1359,6 +1362,7 @@ class ServiceOrchestrator(nfp_api.NfpEventHandler):
                 id='APPLY_USER_CONFIG',
                 key=network_function['id'],
                 desc_dict=event_desc)
+            apply_config_event.binding_key = binding_key
             self._controller.event_complete(
                 apply_config_event, result="FAILED")
             return STOP_POLLING
@@ -1370,6 +1374,7 @@ class ServiceOrchestrator(nfp_api.NfpEventHandler):
                 id='APPLY_USER_CONFIG',
                 key=network_function['id'],
                 desc_dict=event_desc)
+            apply_config_event.binding_key = binding_key
             self._controller.event_complete(
                 apply_config_event, result="SUCCESS")
 

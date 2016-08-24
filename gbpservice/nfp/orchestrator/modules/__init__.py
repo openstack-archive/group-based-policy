@@ -46,4 +46,4 @@ nfp_orchestrator_opts = [
                  nfp_constants.HAPROXY_LBAASV2, nfp_constants.NFP_VENDOR],
         help="Supported service vendors for nfp")]
 
-oslo_config.CONF.register_opts(nfp_orchestrator_opts)
+oslo_config.CONF.register_opts(nfp_orchestrator_opts, 'orchestrator')

@@ -676,26 +676,31 @@ class DeviceOrchestrator(nfp_api.NfpEventHandler):
             # Continue polling until device status became ACTIVE/ERROR.
             return CONTINUE_POLLING
 
-    def _post_configure_device_graph(self, nfp_context):
+    def _post_configure_device_graph(self, nfp_context, serialize=False):
         nf_id = nfp_context['network_function']['id']
-        device_configured_event = self._controller.new_event(
-            id='CONFIGURATION_COMPLETE',
-            key=nf_id,
-            data=nfp_context,
-            graph=True)
+        binding_key = nfp_context['service_details'][
+                                    'service_vendor'].lower() + nf_id
         device_configure_event = self._controller.new_event(
             id='CREATE_DEVICE_CONFIGURATION',
+            key=nf_id,
+            serialize=serialize,
+            binding_key=binding_key,
+            data=nfp_context,
+            graph=True)
+        check_heat_config = self._controller.new_event(
+            id='SEND_HEAT_CONFIG',
             key=nf_id,
             data=nfp_context,
             graph=True)
         user_config_event = self._controller.new_event(
             id='APPLY_USER_CONFIG',
             key=nf_id,
+            serialize=serialize,
+            binding_key=binding_key,
             data=nfp_context,
             graph=True)
-
-        check_heat_config = self._controller.new_event(
-            id='SEND_HEAT_CONFIG',
+        device_configured_event = self._controller.new_event(
+            id='CONFIGURATION_COMPLETE',
             key=nf_id,
             data=nfp_context,
             graph=True)
@@ -971,6 +976,9 @@ class DeviceOrchestrator(nfp_api.NfpEventHandler):
         network_function_instance = nfp_context['network_function_instance']
         network_function_device = nfp_context['network_function_device']
 
+        binding_key = service_details[
+                        'service_vendor'].lower() + network_function['id']
+
         orchestration_driver = self._get_orchestration_driver(
             service_details['service_vendor'])
         device = {
@@ -1001,7 +1009,8 @@ class DeviceOrchestrator(nfp_api.NfpEventHandler):
             'nfp_context': {
                 'event_desc': nfp_context['event_desc'],
                 'id': event.id, 'key': event.key,
-                'network_function_device': network_function_device}})
+                'network_function_device': network_function_device,
+                'binding_key': binding_key}})
 
         if not config_params:
             self._create_event(event_id='DRIVER_ERROR',
@@ -1048,6 +1057,7 @@ class DeviceOrchestrator(nfp_api.NfpEventHandler):
         key = nfp_context.pop('key')
         event = self._controller.new_event(id="CREATE_DEVICE_CONFIGURATION",
                                            key=key, desc_dict=event_desc)
+        event.binding_key = nfp_context.pop('binding_key')
         self._controller.event_complete(event, result=result)
 
     def delete_network_function_device(self, event):
