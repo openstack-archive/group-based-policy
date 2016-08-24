@@ -102,12 +102,16 @@ class NfpWorker(Service):
         """
         if event.desc.type == nfp_event.SCHEDULE_EVENT:
             self._send_event_ack(event)
-            eh = self.event_handlers.get_event_handler(event.id)
+            eh, _ = (
+                self.event_handlers.get_event_handler(
+                    event.id, module=event.desc.target))
             self.dispatch(eh.handle_event, event)
         elif event.desc.type == nfp_event.POLL_EVENT:
             self.dispatch(self._handle_poll_event, event)
         elif event.desc.type == nfp_event.EVENT_EXPIRED:
-            eh = self.event_handlers.get_event_handler(event.id)
+            eh, _ = (
+                self.event_handlers.get_event_handler(
+                    event.id, module=event.desc.target))
             self.dispatch(eh.event_cancelled, event, 'EXPIRED')
 
     def _build_poll_status(self, ret, event):
@@ -137,8 +141,11 @@ class NfpWorker(Service):
     def _handle_poll_event(self, event):
         ret = {}
         event.desc.poll_desc.max_times -= 1
-        poll_handler = self.event_handlers.get_poll_handler(event.id)
-        event_handler = self.event_handlers.get_event_handler(event.id)
+        module = event.desc.target
+        poll_handler = (
+            self.event_handlers.get_poll_handler(event.id, module=module))
+        event_handler, _ = (
+            self.event_handlers.get_event_handler(event.id, module=module))
         try:
             ret = poll_handler(event)
         except TypeError:
@@ -147,19 +154,17 @@ class NfpWorker(Service):
 
     def log_dispatch(self, handler, event, *args):
         try:
+            event.context['namespace'] = event.desc.target
             nfp_logging.store_logging_context(**(event.context))
+        finally:
             handler(event, *args)
             nfp_logging.clear_logging_context()
-        except Exception as e:
-            message = "%r" % e
-            LOG.error(message)
-            handler(event, *args)
 
     def dispatch(self, handler, event, *args):
         if self._threads:
-            th = self.tg.add_thread(self.log_dispatch, handler, event, *args)
-            message = "%s - (handler - %s) - dispatched to thread %d" % (
-                self._log_meta(), identify(handler), th.ident)
+            self.tg.add_thread(self.log_dispatch, handler, event, *args)
+            message = "%s - (handler - %s) - dispatched to thread " % (
+                self._log_meta(), identify(handler))
             LOG.debug(message)
         else:
             handler(event, *args)
