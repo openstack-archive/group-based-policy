@@ -14,6 +14,7 @@ import ast
 from collections import defaultdict
 from neutron._i18n import _LE
 from neutron._i18n import _LI
+from neutron._i18n import _LW
 from oslo_utils import excutils
 
 from gbpservice.nfp.common import constants as nfp_constants
@@ -172,7 +173,7 @@ class OrchestrationDriver(object):
             return None
         vendor_data = self._verify_vendor_data(image_name, metadata)
         if not vendor_data:
-            return None
+            return {}
         return vendor_data
 
     def _get_vendor_data_fast(self, token,
@@ -189,7 +190,7 @@ class OrchestrationDriver(object):
             return None
         vendor_data = self._verify_vendor_data(image_name, metadata)
         if not vendor_data:
-            return None
+            return {}
         return vendor_data
 
     def _update_self_with_vendor_data(self, vendor_data, attr):
@@ -203,6 +204,7 @@ class OrchestrationDriver(object):
                      {'attr': attr, 'default': attr_value})
 
     def _update_vendor_data(self, device_data, token=None):
+        vendor_data = {}
         try:
             image_name = self._get_image_name(device_data)
             vendor_data = self._get_vendor_data(device_data, image_name)
@@ -212,16 +214,21 @@ class OrchestrationDriver(object):
                 self._update_self_with_vendor_data(
                     vendor_data,
                     nfp_constants.MAXIMUM_INTERFACES)
+                self._update_self_with_vendor_data(
+                    vendor_data,
+                    nfp_constants.SUPPORTS_HOTPLUG)
             else:
                 LOG.info(_LI("No vendor data specified in image, "
                              "proceeding with default values"))
         except Exception:
             LOG.error(_LE("Error while getting metadata for image name:"
                           "%(image_name)s, proceeding with default values"),
-                     {'image_name': image_name})
+                      {'image_name': image_name})
+        return vendor_data
 
     def _update_vendor_data_fast(self, token, admin_tenant_id,
-                               image_name, device_data):
+                                 image_name, device_data):
+        vendor_data = None
         try:
             vendor_data = self._get_vendor_data_fast(
                 token, admin_tenant_id, image_name, device_data)
@@ -231,6 +238,9 @@ class OrchestrationDriver(object):
                 self._update_self_with_vendor_data(
                     vendor_data,
                     nfp_constants.MAXIMUM_INTERFACES)
+                self._update_self_with_vendor_data(
+                    vendor_data,
+                    nfp_constants.SUPPORTS_HOTPLUG)
             else:
                 LOG.info(_LI("No vendor data specified in image, "
                              "proceeding with default values"))
@@ -238,6 +248,7 @@ class OrchestrationDriver(object):
             LOG.error(_LE("Error while getting metadata for image name: "
                           "%(image_name)s, proceeding with default values"),
                      {'image_name': image_name})
+        return vendor_data
 
     def _get_image_name(self, device_data):
         if device_data['service_details'].get('image_name'):
@@ -268,86 +279,6 @@ class OrchestrationDriver(object):
                     network_handler)
                 device_service_types_map[device['id']].add(service_type)
         return device_service_types_map
-
-    def get_network_function_device_sharing_info(self, device_data):
-        """ Get filters for NFD sharing
-
-        :param device_data: NFD data
-        :type device_data: dict
-
-        :returns: None -- when device sharing is not supported
-        :returns: dict -- It has the following scheme
-        {
-            'filters': {
-                'key': 'value',
-                ...
-            }
-        }
-
-        :raises: exceptions.IncompleteData
-        """
-
-        if (
-            any(key not in device_data
-                for key in ['tenant_id',
-                            'service_details']) or
-
-            type(device_data['service_details']) is not dict or
-
-            any(key not in device_data['service_details']
-                for key in ['service_vendor'])
-        ):
-            raise exceptions.IncompleteData()
-
-        if not self._is_device_sharing_supported():
-            return None
-
-    @_set_network_handler
-    def select_network_function_device(self, devices, device_data,
-                                       network_handler=None):
-        """ Select a NFD which is eligible for sharing
-
-        :param devices: NFDs
-        :type devices: list
-        :param device_data: NFD data
-        :type device_data: dict
-
-        :returns: None -- when device sharing is not supported, or
-                          when no device is eligible for sharing
-        :return: dict -- NFD which is eligible for sharing
-
-        :raises: exceptions.IncompleteData
-        """
-
-        if (
-            any(key not in device_data
-                for key in ['ports']) or
-
-            type(device_data['ports']) is not list or
-
-            any(key not in port
-                for port in device_data['ports']
-                for key in ['id',
-                            'port_classification',
-                            'port_model']) or
-
-            type(devices) is not list or
-
-            any(key not in device
-                for device in devices
-                for key in ['interfaces_in_use'])
-        ):
-            raise exceptions.IncompleteData()
-
-        token = self._get_token(device_data.get('token'))
-        if not token:
-            return None
-        image_name = self._get_image_name(device_data)
-        if image_name:
-            self._update_vendor_data(device_data,
-                                     device_data.get('token'))
-        if not self._is_device_sharing_supported():
-            return None
 
     def get_image_id(self, nova, token, admin_tenant_id, image_name):
         try:
@@ -448,10 +379,12 @@ class OrchestrationDriver(object):
         executor = nfp_executor.TaskExecutor(jobs=3)
 
         image_id_result = {}
+        vendor_data_result = {}
 
         executor.add_job('UPDATE_VENDOR_DATA',
                          self._update_vendor_data_fast,
-                         token, admin_tenant_id, image_name, device_data)
+                         token, admin_tenant_id, image_name, device_data,
+                         result_store=vendor_data_result)
         executor.add_job('GET_INTERFACES_FOR_DEVICE_CREATE',
                          self._get_interfaces_for_device_create,
                          token, admin_tenant_id, network_handler, device_data)
@@ -476,6 +409,11 @@ class OrchestrationDriver(object):
                                     network_handler=network_handler)
             return None
 
+        vendor_data = vendor_data_result.get('result', None)
+        if not vendor_data:
+            LOG.warning(_LW('Failed to get vendor data for device creation.'))
+            vendor_data = {}
+
         if device_data['service_details'].get('flavor'):
             flavor = device_data['service_details']['flavor']
         else:
@@ -485,8 +423,40 @@ class OrchestrationDriver(object):
             flavor = 'm1.medium'
 
         interfaces_to_attach = []
-        for interface in interfaces:
-            interfaces_to_attach.append({'port': interface['port_id']})
+        try:
+            for interface in interfaces:
+                interfaces_to_attach.append({'port': interface['port_id']})
+            if vendor_data.get('supports_hotplug') is False:
+                for port in device_data['ports']:
+                        if (port['port_classification'] ==
+                                nfp_constants.PROVIDER):
+                            if (device_data['service_details'][
+                                'service_type'].lower()
+                                in [nfp_constants.FIREWALL.lower(),
+                                    nfp_constants.VPN.lower()]):
+                                network_handler.set_promiscuos_mode(
+                                    token, port['id'])
+                            port_id = network_handler.get_port_id(
+                                token, port['id'])
+                            interfaces_to_attach.append({'port': port_id})
+                for port in device_data['ports']:
+                        if (port['port_classification'] ==
+                                nfp_constants.CONSUMER):
+                            if (device_data['service_details'][
+                                'service_type'].lower()
+                                in [nfp_constants.FIREWALL.lower(),
+                                    nfp_constants.VPN.lower()]):
+                                network_handler.set_promiscuos_mode(
+                                    token, port['id'])
+                            port_id = network_handler.get_port_id(
+                                token, port['id'])
+                            interfaces_to_attach.append({'port': port_id})
+        except Exception as e:
+            LOG.error(_LE('Failed to fetch list of interfaces to attach'
+                          ' for device creation %(error)s'), {'error': e})
+            self._delete_interfaces(device_data, interfaces,
+                                    network_handler=network_handler)
+            return None
 
         instance_name = device_data['name']
         instance_id_result = {}
@@ -537,6 +507,7 @@ class OrchestrationDriver(object):
         mgmt_ip_address = mgmt_neutron_port_info['ip_address']
         return {'id': instance_id,
                 'name': instance_name,
+                'vendor_data': vendor_data,
                 'mgmt_ip_address': mgmt_ip_address,
                 'mgmt_port_id': interfaces[0],
                 'mgmt_neutron_port_info': mgmt_neutron_port_info,
@@ -585,13 +556,15 @@ class OrchestrationDriver(object):
             raise exceptions.ComputePolicyNotSupported(
                 compute_policy=device_data['service_details']['device_type'])
 
+        token = self._get_token(device_data.get('token'))
+
+        if not token:
+            return None
+
         image_name = self._get_image_name(device_data)
         if image_name:
             self._update_vendor_data(device_data,
                                      device_data.get('token'))
-        token = self._get_token(device_data.get('token'))
-        if not token:
-            return None
 
         if device_data.get('id'):
             # delete the device instance
@@ -601,8 +574,7 @@ class OrchestrationDriver(object):
             try:
                 self.compute_handler_nova.delete_instance(
                     token,
-                    self._get_admin_tenant_id(
-                        token=token),
+                    device_data['tenant_id'],
                     device_data['id'])
             except Exception:
                 LOG.error(_LE('Failed to delete %(instance)s instance'),
@@ -653,6 +625,11 @@ class OrchestrationDriver(object):
             raise exceptions.ComputePolicyNotSupported(
                 compute_policy=device_data['service_details']['device_type'])
 
+        token = self._get_token(device_data.get('token'))
+
+        if not token:
+            return None
+
         try:
             device = self.compute_handler_nova.get_instance(
                 device_data['token'],
@@ -662,7 +639,7 @@ class OrchestrationDriver(object):
             if ignore_failure:
                 return None
             LOG.error(_LE('Failed to get %(instance)s instance details'),
-                     {device_data['service_details']['device_type']})
+                {'instance': device_data['service_details']['device_type']})
             return None  # TODO(RPM): should we raise an Exception here?
 
         return device['status']
@@ -713,7 +690,10 @@ class OrchestrationDriver(object):
 
         token = device_data['token']
         tenant_id = device_data['tenant_id']
+        vendor_data = device_data['vendor_data']
 
+        if vendor_data.get('supports_hotplug') is False:
+            return True
         try:
             executor = nfp_executor.TaskExecutor(jobs=10)
 
@@ -833,21 +813,28 @@ class OrchestrationDriver(object):
             raise exceptions.ComputePolicyNotSupported(
                 compute_policy=device_data['service_details']['device_type'])
 
-        image_name = self._get_image_name(device_data)
-        if image_name:
-            self._update_vendor_data(device_data,
-                                     device_data.get('token'))
-
         token = self._get_token(device_data.get('token'))
+
         if not token:
             return None
 
+        image_name = self._get_image_name(device_data)
+        vendor_data = {}
+        if image_name:
+            vendor_data = self._update_vendor_data(device_data,
+                                                   device_data.get('token'))
+
+        if not vendor_data:
+            LOG.warning(_LW('Failed to get vendor data for device deletion.'))
+
+        if vendor_data.get('supports_hotplug') is False:
+            return True
         try:
             for port in device_data['ports']:
                 port_id = network_handler.get_port_id(token, port['id'])
                 self.compute_handler_nova.detach_interface(
                     token,
-                    self._get_admin_tenant_id(token=token),
+                    device_data['tenant_id'],
                     device_data['id'],
                     port_id)
 
