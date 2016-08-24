@@ -9,6 +9,8 @@
 #    WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 #    License for the specific language governing permissions and limitations
 #    under the License.
+
+
 import exceptions
 
 from gbpservice.nfp.common import constants as nfp_constants
@@ -40,15 +42,6 @@ rpc_opts = [
                default='', help='Topic for rpc connection'),
 ]
 
-OPTS = [
-    cfg.StrOpt(
-        'backend',
-        default='rpc',
-        help='Backend Support for communicationg with configurator.'
-    ),
-]
-
-oslo_config.CONF.register_opts(OPTS)
 oslo_config.CONF.register_opts(rest_opts, "REST")
 oslo_config.CONF.register_opts(rpc_opts, "RPC")
 n_rpc.init(cfg.CONF)
@@ -134,6 +127,26 @@ class RestApi(object):
                 url, rce)
             LOG.error(message)
 
+    def put(self, path, body):
+        """Put restclient request handler
+        Return:Http response
+        """
+        url = self.url % (
+              self.rest_server_address,
+              self.rest_server_port, path)
+        data = jsonutils.dumps(body)
+        try:
+            headers = {"content-type": "application/json"}
+            resp = requests.put(url, data,
+                                headers=headers)
+            message = "PUT url %s %d" % (url, resp.status_code)
+            LOG.info(message)
+            return self._response(resp, url)
+        except RestClientException as rce:
+            message = "Rest API %s - Failed. Reason: %s" % (
+                url, rce)
+            LOG.error(message)
+
     def get(self, path):
         """Get restclient request handler
         Return:Http response
@@ -195,10 +208,20 @@ def send_request_to_configurator(conf, context, body,
         try:
             rc = RestApi(conf.REST.rest_server_address,
                          conf.REST.rest_server_port)
-            resp = rc.post(method_name, body, method_type.upper())
-            message = "%s -> POST response: (%s) body: %s " % (
-                method_name, resp, body)
-            LOG.info(message)
+            if method_type.lower() in [nfp_constants.CREATE,
+                                       nfp_constants.DELETE]:
+                resp = rc.post(method_name, body, method_type.upper())
+                message = "%s -> POST response: (%s) body: %s " % (method_name,
+                                                                   resp, body)
+                LOG.debug(message)
+            elif method_type.lower() in [nfp_constants.UPDATE]:
+                resp = rc.put(method_name, body)
+                message = "%s -> PUT response: (%s) body: %s " % (method_name,
+                                                                  resp, body)
+                LOG.debug(message)
+            else:
+                message = ("%s api not supported" % (method_name))
+                LOG.error(message)
         except RestClientException as rce:
             message = "%s -> POST request failed.Reason: %s" % (
                 method_name, rce)
@@ -206,12 +229,22 @@ def send_request_to_configurator(conf, context, body,
 
     elif conf.backend == UNIX_REST:
         try:
-            resp, content = unix_rc.post(method_name,
-                                         body=body)
-            message = "%s -> POST response: (%s) body : %s " % (
-                method_name, content, body)
-            LOG.info(message)
-
+            if method_type.lower() in [nfp_constants.CREATE,
+                                       nfp_constants.DELETE]:
+                resp, content = unix_rc.post(method_name,
+                                             body=body)
+                message = ("%s -> POST response: (%s) body : %s " %
+                        (method_name, content, body))
+                LOG.info(message)
+            elif method_type.lower() in [nfp_constants.UPDATE]:
+                resp, content = unix_rc.put(method_name,
+                                            body=body)
+                message = ("%s -> PUT response: (%s) body : %s " %
+                        (method_name, content, body))
+                LOG.info(message)
+            else:
+                message = ("%s api not supported" % (method_name))
+                LOG.error(message)
         except unix_rc.RestClientException as rce:
             message = "%s -> request failed . Reason %s " % (
                 method_name, rce)
