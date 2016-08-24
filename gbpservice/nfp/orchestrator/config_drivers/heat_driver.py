@@ -835,7 +835,7 @@ class HeatDriver(object):
                 nf_desc = str(firewall_desc)
         elif service_type == pconst.VPN:
             config_param_values['Subnet'] = (
-                consumer_port['fixed_ips'][0]['subnet_id']
+                provider_port['fixed_ips'][0]['subnet_id']
                 if consumer_port else None)
             l2p = self.gbp_client.get_l2_policy(
                 auth_token, provider['l2_policy_id'])
@@ -1082,7 +1082,7 @@ class HeatDriver(object):
                 nf_desc = str(firewall_desc)
         elif service_type == pconst.VPN:
             config_param_values['Subnet'] = (
-                consumer_port['fixed_ips'][0]['subnet_id']
+                provider_port['fixed_ips'][0]['subnet_id']
                 if consumer_port else None)
             l2p = self.gbp_client.get_l2_policy(
                 auth_token, provider['l2_policy_id'])
@@ -1468,8 +1468,6 @@ class HeatDriver(object):
         success_status = "COMPLETED"
         failure_status = "ERROR"
         intermediate_status = "IN_PROGRESS"
-        _, resource_owner_tenant_id = (
-            self._get_resource_owner_context())
         heatclient = self._get_heat_client(tenant_id)
         if not heatclient:
             return failure_status
@@ -1651,9 +1649,6 @@ class HeatDriver(object):
         return stack_id
 
     def delete_config(self, stack_id, tenant_id):
-        _, resource_owner_tenant_id = (
-            self._get_resource_owner_context())
-
         try:
             heatclient = self._get_heat_client(tenant_id)
             if not heatclient:

@@ -67,6 +67,14 @@ CONFIG_TAG_RESOURCE_MAP = {
     ANSIBLE_TAG: 'ansible',
     CUSTOM_JSON: 'custom_json'}
 
+MAXIMUM_INTERFACES = 'maximum_interfaces'
+SUPPORTS_SHARING = 'supports_device_sharing'
+SUPPORTS_HOTPLUG = 'supports_hotplug'
+
+METADATA_SUPPORTED_ATTRIBUTES = [MAXIMUM_INTERFACES,
+                                 SUPPORTS_SHARING,
+                                 SUPPORTS_HOTPLUG]
+
 LOADBALANCER_RPC_API_VERSION = "2.0"
 LOADBALANCERV2_RPC_API_VERSION = "1.0"
 
