@@ -135,7 +135,7 @@ function namespace_create {
         echo "Fails reaching to $2"
     fi
 
-    sudo ip netns exec nfp-proxy /usr/bin/nfp_proxy --config-file=/etc/nfp_proxy.ini
+    sudo ip netns exec nfp-proxy /usr/bin/nfp_proxy --config-file=/etc/nfp.ini
 }
 
 function create_nfp_gbp_resources {
@@ -187,30 +187,28 @@ function copy_nfp_files_and_start_process {
     cd $NEW_BASE/group-based-policy/gbpservice/nfp
     sudo cp -r  bin/nfp /usr/bin/
     sudo chmod +x /usr/bin/nfp
-    sudo rm -rf /etc/nfp_*
-    sudo cp -r  bin/nfp_orchestrator.ini /etc/
-    sudo cp -r  bin/nfp_proxy_agent.ini /etc/
-    sudo cp -r  bin/nfp_proxy.ini /etc/nfp_proxy.ini
+    sudo rm -rf /etc/nfp.ini
+    sudo cp -r  bin/nfp.ini /etc/
     sudo cp -r  bin/nfp_proxy /usr/bin/
 
     IpAddr=127.0.0.1
-    echo "Configuring proxy.ini .... with rest_server_address as $IpAddr"
-    sudo sed -i "s/rest_server_address=*.*/rest_server_address=$IpAddr/g" /etc/nfp_proxy.ini
-    sudo sed -i "s/rest_server_port= *.*/rest_server_port=8080/g" /etc/nfp_proxy.ini
+    echo "Configuring nfp.ini .... with rest_server_address as $IpAddr"
+    sudo sed -i "s/rest_server_address=*.*/rest_server_address=$IpAddr/g" /etc/nfp.ini
+    sudo sed -i "s/rest_server_port= *.*/rest_server_port=8080/g" /etc/nfp.ini
     ipnetns_router=`sudo ip netns |grep $RouterId`
 
     source $TOP_DIR/functions-common
 
     echo "Starting orchestrator  >>>> under screen named : orchestrator"
-    run_process orchestrator "sudo /usr/bin/nfp  --config-file /etc/neutron/neutron.conf --config-file /etc/neutron/plugins/ml2/ml2_conf.ini --config-file /etc/nfp_orchestrator.ini --log-file $DEST/logs/nfp_orchestrator.log"
+    run_process orchestrator "sudo /usr/bin/nfp  --module orchestrator --config-file /etc/neutron/neutron.conf --config-file /etc/neutron/plugins/ml2/ml2_conf.ini --config-file /etc/nfp.ini --log-file $DEST/logs/nfp_orchestrator.log"
     sleep 1
 
     echo "Starting proxy_agent  >>>> under screen named : proxy_agent"
-    run_process proxy_agent "sudo /usr/bin/nfp --config-file /etc/nfp_proxy_agent.ini --log-file $DEST/logs/nfp_proxy_agent.log"
+    run_process proxy_agent "sudo /usr/bin/nfp --module proxy_agent --config-file /etc/nfp.ini --log-file $DEST/logs/nfp_proxy_agent.log"
     sleep 1
 
     echo "Starting proxy server under Namespace : nfp-proxy namespace >>>> under screen named : proxy"
-    run_process proxy "source $NEW_BASE/devstack/lib/nfp;namespace_delete $TOP_DIR;namespace_create $TOP_DIR $IpAddr"
+    run_process proxy "source $NEW_BASE/devstack/lib/nfp;namespace_delete $TOP_DIR;namespace_create $TOP_DIR $configurator_ip"
     sleep 10
 
     cd pecan/api
