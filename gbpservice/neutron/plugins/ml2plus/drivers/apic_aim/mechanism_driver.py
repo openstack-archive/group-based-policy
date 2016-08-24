@@ -31,17 +31,20 @@ from opflexagent import constants as ofcst
 from opflexagent import rpc as o_rpc
 from oslo_log import log
 
+from gbpservice.neutron.extensions import cisco_apic
+from gbpservice.neutron.extensions import cisco_apic_l3
 from gbpservice.neutron.plugins.ml2plus import driver_api as api_plus
 from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import apic_mapper
 from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import cache
-from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim.extensions import (
-    cisco_apic)
 from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import model
 
 LOG = log.getLogger(__name__)
 AP_NAME = 'NeutronAP'
+ANY_FILTER_NAME = 'AnyFilter'
+ANY_FILTER_ENTRY_NAME = 'Anything'
 UNROUTED_VRF_NAME = 'UnroutedVRF'
 COMMON_TENANT_NAME = 'common'
+ROUTER_SUBJECT_NAME = 'route'
 AGENT_TYPE_DVS = 'DVS agent'
 VIF_TYPE_DVS = 'dvs'
 PROMISCUOUS_TYPES = [n_constants.DEVICE_OWNER_DHCP,
@@ -79,9 +82,9 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
 
         self.project_name_cache.ensure_project(tenant_id)
 
-        # TODO(rkukura): Move the following to precommit methods so
-        # AIM tenants and application profiles are created whenever
-        # needed.
+        # TODO(rkukura): Move the following to calls made from
+        # precommit methods so AIM Tenants, ApplicationProfiles, and
+        # Filters are [re]created whenever needed.
         session = plugin_context.session
         with session.begin(subtransactions=True):
             project_name = self.project_name_cache.get_project_name(tenant_id)
@@ -102,6 +105,19 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
                                                  name=AP_NAME)
             if not self.aim.get(aim_ctx, ap):
                 self.aim.create(aim_ctx, ap)
+
+            filter = aim_resource.Filter(tenant_name=tenant_aname,
+                                         name=ANY_FILTER_NAME,
+                                         display_name='Any Filter')
+            if not self.aim.get(aim_ctx, filter):
+                self.aim.create(aim_ctx, filter)
+
+            entry = aim_resource.FilterEntry(tenant_name=tenant_aname,
+                                             filter_name=ANY_FILTER_NAME,
+                                             name=ANY_FILTER_ENTRY_NAME,
+                                             display_name='Anything')
+            if not self.aim.get(aim_ctx, entry):
+                self.aim.create(aim_ctx, entry)
 
     def create_network_precommit(self, context):
         LOG.debug("APIC AIM MD creating network: %s", context.current)
@@ -124,22 +140,20 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
 
         vrf = self._get_unrouted_vrf(aim_ctx)
 
-        bd = aim_resource.BridgeDomain(
-            tenant_name=tenant_aname,
-            name=aname,
-            display_name=dname,
-            vrf_name=vrf.name,
-            enable_arp_flood=True,
-            enable_routing=False,
-            limit_ip_learn_to_subnets=True)
+        bd = aim_resource.BridgeDomain(tenant_name=tenant_aname,
+                                       name=aname,
+                                       display_name=dname,
+                                       vrf_name=vrf.name,
+                                       enable_arp_flood=True,
+                                       enable_routing=False,
+                                       limit_ip_learn_to_subnets=True)
         self.aim.create(aim_ctx, bd)
 
-        epg = aim_resource.EndpointGroup(
-            tenant_name=tenant_aname,
-            app_profile_name=AP_NAME,
-            name=aname,
-            display_name=dname,
-            bd_name=aname)
+        epg = aim_resource.EndpointGroup(tenant_name=tenant_aname,
+                                         app_profile_name=AP_NAME,
+                                         name=aname,
+                                         display_name=dname,
+                                         bd_name=aname)
         self.aim.create(aim_ctx, epg)
 
     def update_network_precommit(self, context):
@@ -268,13 +282,13 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
         LOG.debug("Mapped address_scope_id %(id)s with name %(name)s to "
                   "%(aname)s",
                   {'id': id, 'name': name, 'aname': aname})
+        dname = aim_utils.sanitize_display_name(name)
 
         aim_ctx = aim_context.AimContext(session)
 
-        vrf = aim_resource.VRF(
-            tenant_name=tenant_aname,
-            name=aname,
-            display_name=aim_utils.sanitize_display_name(name))
+        vrf = aim_resource.VRF(tenant_name=tenant_aname,
+                               name=aname,
+                               display_name=dname)
         self.aim.create(aim_ctx, vrf)
 
         # ML2Plus does not extend address scope dict after precommit.
@@ -357,6 +371,149 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
         sync_state = self._merge_status(aim_ctx, sync_state, vrf)
         result[cisco_apic.DIST_NAMES] = {cisco_apic.VRF: vrf.dn}
         result[cisco_apic.SYNC_STATE] = sync_state
+
+    def create_router(self, context, current):
+        LOG.debug("APIC AIM MD creating router: %s", current)
+
+        session = context.session
+
+        tenant_id = current['tenant_id']
+        tenant_aname = self.name_mapper.tenant(session, tenant_id)
+        LOG.debug("Mapped tenant_id %(id)s to %(aname)s",
+                  {'id': tenant_id, 'aname': tenant_aname})
+
+        id = current['id']
+        name = current['name']
+        aname = self.name_mapper.router(session, id, name)
+        LOG.debug("Mapped router_id %(id)s with name %(name)s to "
+                  "%(aname)s",
+                  {'id': id, 'name': name, 'aname': aname})
+        dname = aim_utils.sanitize_display_name(name)
+
+        aim_ctx = aim_context.AimContext(session)
+
+        contract = aim_resource.Contract(tenant_name=tenant_aname,
+                                         name=aname,
+                                         display_name=dname)
+        self.aim.create(aim_ctx, contract)
+
+        subject = aim_resource.ContractSubject(tenant_name=tenant_aname,
+                                               contract_name=aname,
+                                               name=ROUTER_SUBJECT_NAME,
+                                               display_name=dname,
+                                               bi_filters=[ANY_FILTER_NAME])
+        self.aim.create(aim_ctx, subject)
+
+        # REVISIT(rkukura): Consider having L3 plugin extend router
+        # dict again after calling this function.
+        sync_state = cisco_apic.SYNC_SYNCED
+        sync_state = self._merge_status(aim_ctx, sync_state, contract)
+        sync_state = self._merge_status(aim_ctx, sync_state, subject)
+        current[cisco_apic.DIST_NAMES] = {cisco_apic_l3.CONTRACT: contract.dn,
+                                          cisco_apic_l3.CONTRACT_SUBJECT:
+                                          subject.dn}
+        current[cisco_apic.SYNC_STATE] = sync_state
+
+    def update_router(self, context, current, original):
+        LOG.debug("APIC AIM MD updating router: %s", current)
+
+        if current['name'] != original['name']:
+            session = context.session
+
+            tenant_id = current['tenant_id']
+            tenant_aname = self.name_mapper.tenant(session, tenant_id)
+            LOG.debug("Mapped tenant_id %(id)s to %(aname)s",
+                      {'id': tenant_id, 'aname': tenant_aname})
+
+            id = current['id']
+            name = current['name']
+            aname = self.name_mapper.router(session, id, name)
+            LOG.debug("Mapped router_id %(id)s with name %(name)s to "
+                      "%(aname)s",
+                      {'id': id, 'name': name, 'aname': aname})
+            dname = aim_utils.sanitize_display_name(name)
+
+            aim_ctx = aim_context.AimContext(session)
+
+            contract = aim_resource.Contract(tenant_name=tenant_aname,
+                                             name=aname)
+            contract = self.aim.update(aim_ctx, contract, display_name=dname)
+
+            subject = aim_resource.ContractSubject(tenant_name=tenant_aname,
+                                                   contract_name=aname,
+                                                   name=ROUTER_SUBJECT_NAME)
+            subject = self.aim.update(aim_ctx, subject, display_name=dname)
+
+        # REVISIT(rkukura): Update extension attributes?
+
+    def delete_router(self, context, current):
+        LOG.debug("APIC AIM MD deleting router: %s", current)
+
+        session = context.session
+
+        tenant_id = current['tenant_id']
+        tenant_aname = self.name_mapper.tenant(session, tenant_id)
+        LOG.debug("Mapped tenant_id %(id)s to %(aname)s",
+                  {'id': tenant_id, 'aname': tenant_aname})
+
+        id = current['id']
+        name = current['name']
+        aname = self.name_mapper.router(session, id, name)
+        LOG.debug("Mapped router_id %(id)s with name %(name)s to "
+                  "%(aname)s",
+                  {'id': id, 'name': name, 'aname': aname})
+
+        aim_ctx = aim_context.AimContext(session)
+
+        subject = aim_resource.ContractSubject(tenant_name=tenant_aname,
+                                               contract_name=aname,
+                                               name=ROUTER_SUBJECT_NAME)
+        self.aim.delete(aim_ctx, subject)
+
+        contract = aim_resource.Contract(tenant_name=tenant_aname,
+                                         name=aname)
+        self.aim.delete(aim_ctx, contract)
+
+        self.name_mapper.delete_apic_name(session, id)
+
+    def extend_router_dict(self, session, base_model, result):
+        LOG.debug("APIC AIM MD extending dict for router: %s", result)
+
+        tenant_id = result['tenant_id']
+        tenant_aname = self.name_mapper.tenant(session, tenant_id)
+        LOG.debug("Mapped tenant_id %(id)s to %(aname)s",
+                  {'id': tenant_id, 'aname': tenant_aname})
+
+        id = result['id']
+        name = result['name']
+        aname = self.name_mapper.router(session, id, name)
+        LOG.debug("Mapped router_id %(id)s with name %(name)s to "
+                  "%(aname)s",
+                  {'id': id, 'name': name, 'aname': aname})
+
+        contract = aim_resource.Contract(tenant_name=tenant_aname,
+                                         name=aname)
+
+        subject = aim_resource.ContractSubject(tenant_name=tenant_aname,
+                                               contract_name=aname,
+                                               name=ROUTER_SUBJECT_NAME)
+
+        aim_ctx = aim_context.AimContext(session)
+        sync_state = cisco_apic.SYNC_SYNCED
+        sync_state = self._merge_status(aim_ctx, sync_state, contract)
+        sync_state = self._merge_status(aim_ctx, sync_state, subject)
+        result[cisco_apic.DIST_NAMES] = {cisco_apic_l3.CONTRACT: contract.dn,
+                                         cisco_apic_l3.CONTRACT_SUBJECT:
+                                         subject.dn}
+        result[cisco_apic.SYNC_STATE] = sync_state
+
+    def add_router_interface(self, context, info):
+        LOG.debug("APIC AIM MD adding router interface: %s", info)
+        # TODO(rkukura): Implement.
+
+    def remove_router_interface(self, context, info):
+        LOG.debug("APIC AIM MD removing router interface: %s", info)
+        # TODO(rkukura): Implement.
 
     def bind_port(self, context):
         LOG.debug("Attempting to bind port %(port)s on network %(net)s",
