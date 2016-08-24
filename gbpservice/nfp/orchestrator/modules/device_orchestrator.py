@@ -28,6 +28,7 @@ from neutron.common import rpc as n_rpc
 from neutron import context as n_context
 from neutron.db import api as db_api
 
+import copy
 import sys
 import traceback
 
@@ -56,10 +57,11 @@ def events_init(controller, config, device_orchestrator):
               'CONFIGURATION_COMPLETE',
               'DEVICE_CONFIGURED', "DELETE_CONFIGURATION",
               'DELETE_NETWORK_FUNCTION_DEVICE',
-              'DELETE_CONFIGURATION_COMPLETED', 'DEVICE_BEING_DELETED',
+              'DELETE_CONFIGURATION_COMPLETED',
+              'DEVICE_BEING_DELETED',
               'DEVICE_NOT_REACHABLE',
               'DEVICE_CONFIGURATION_FAILED', 'PERFORM_HEALTH_CHECK',
-              'PLUG_INTERFACES']
+              'PLUG_INTERFACES', 'UNPLUG_INTERFACES']
     events_to_register = []
     for event in events:
         events_to_register.append(
@@ -98,7 +100,7 @@ class RpcHandler(object):
                  {'event_name': event_id, 'event_data': event_data})
 
     def _create_event(self, event_id, event_data=None,
-                      is_poll_event=False, original_event=False):
+                      is_poll_event=False, original_event=False, max_times=10):
         if is_poll_event:
             ev = self._controller.new_event(
                 id=event_id, data=event_data,
@@ -203,7 +205,7 @@ class DeviceOrchestrator(nfp_api.NfpEventHandler):
         self.status_map = {
             'INIT': 'Created Network Service Device with status INIT.',
             'PENDING_CREATE': '',
-            'DEVICE_SPAWNING': ('Creating NSD, launched the new device, ' +
+            'DEVICE_SPAWNING': ('Creating NFD, launched the new device, ' +
                                 'polling on its status'),
             'DEVICE_UP': 'Device is UP/ACTIVE',
             'PERFORM_HEALTH_CHECK': 'perform health check of service vm',
@@ -240,7 +242,9 @@ class DeviceOrchestrator(nfp_api.NfpEventHandler):
 
             "DELETE_NETWORK_FUNCTION_DEVICE": (
                 self.delete_network_function_device),
-            "DELETE_CONFIGURATION_COMPLETED": self.unplug_interfaces,
+            "DELETE_CONFIGURATION_COMPLETED": (
+                self.delete_configuration_complete),
+            "UNPLUG_INTERFACES": self.unplug_interfaces,
             "DELETE_DEVICE": self.delete_device,
             "DELETE_CONFIGURATION": self.delete_device_configuration,
             "DEVICE_NOT_REACHABLE": self.handle_device_not_reachable,
@@ -280,7 +284,7 @@ class DeviceOrchestrator(nfp_api.NfpEventHandler):
 
     def _create_event(self, event_id, event_data=None,
                       is_poll_event=False, original_event=False,
-                      is_internal_event=False):
+                      is_internal_event=False, max_times=10):
         if not is_internal_event:
             if is_poll_event:
                 ev = self._controller.new_event(
@@ -289,7 +293,7 @@ class DeviceOrchestrator(nfp_api.NfpEventHandler):
                     binding_key=original_event.binding_key,
                     key=original_event.desc.uuid)
                 LOG.debug("poll event started for %s" % (ev.id))
-                self._controller.poll_event(ev, max_times=20)
+                self._controller.poll_event(ev, max_times=max_times)
             else:
                 ev = self._controller.new_event(
                     id=event_id,
@@ -326,11 +330,16 @@ class DeviceOrchestrator(nfp_api.NfpEventHandler):
                 device['service_details']['service_vendor'])
             device_id = device['id']
             del device['id']
+            nf_id = device['network_function_id']
             orchestration_driver.delete_network_function_device(device)
             self._delete_network_function_device_db(device_id, device)
-            # DEVICE_DELETED event for NSO
-            self._create_event(event_id='DEVICE_DELETED',
-                               event_data=device)
+            dnfd_event = (
+                self._controller.new_event(id='DELETE_NETWORK_FUNCTION_DEVICE',
+                                           key=nf_id,
+                                           binding_key=nf_id,
+                                           desc_dict=device[
+                                               'event_desc']))
+            self._controller.event_complete(dnfd_event, result='FAILED')
 
     def _update_device_status(self, device, state, status_desc=None):
         device['status'] = state
@@ -364,8 +373,13 @@ class DeviceOrchestrator(nfp_api.NfpEventHandler):
     def _update_network_function_device_db(self, device, state,
                                            status_desc=''):
         self._update_device_status(device, state, status_desc)
+        updated_device = copy.deepcopy(device)
+        updated_device.pop('reference_count', None)
+        updated_device.pop('interfaces_in_use', None)
         self.nsf_db.update_network_function_device(self.db_session,
-                                                   device['id'], device)
+                                                   updated_device['id'],
+                                                   updated_device)
+        device.update(updated_device)
 
     def _delete_network_function_device_db(self, device_id, device):
         self.nsf_db.delete_network_function_device(self.db_session, device_id)
@@ -396,33 +410,41 @@ class DeviceOrchestrator(nfp_api.NfpEventHandler):
         return network_function_devices
 
     def _increment_device_ref_count(self, device):
-        device['reference_count'] += 1
+        network_function_device = (
+            self.nsf_db.get_network_function_device(
+                self.db_session, device['id']))
+        network_function_device['reference_count'] += 1
+        update_device = (
+            {'reference_count': network_function_device['reference_count']})
+        self.nsf_db.update_network_function_device(self.db_session,
+                                                   device['id'], update_device)
 
     def _decrement_device_ref_count(self, device):
-        device['reference_count'] -= 1
+        network_function_device = (
+            self.nsf_db.get_network_function_device(
+                self.db_session, device['id']))
+        network_function_device['reference_count'] -= 1
+        update_device = (
+            {'reference_count': network_function_device['reference_count']})
+        self.nsf_db.update_network_function_device(self.db_session,
+                                                   device['id'], update_device)
 
     def _increment_device_interface_count(self, device):
         device['interfaces_in_use'] += len(device['ports'])
-        self._update_network_function_device_db(device, device['status'])
+        update_device = (
+            {'interfaces_in_use': device['interfaces_in_use']})
+        self.nsf_db.update_network_function_device(self.db_session,
+                                                   device['id'], update_device)
 
     def _decrement_device_interface_count(self, device):
         device['interfaces_in_use'] -= len(device['ports'])
-        self._update_network_function_device_db(device, device['status'])
+        update_device = (
+            {'interfaces_in_use': device['interfaces_in_use']})
+        self.nsf_db.update_network_function_device(self.db_session,
+                                                   device['id'], update_device)
 
     def _get_orchestration_driver(self, service_vendor):
         return self.orchestration_driver
-
-    def _get_device_to_reuse(self, device_data, dev_sharing_info):
-        device_filters = dev_sharing_info['filters']
-        orchestration_driver = self._get_orchestration_driver(
-            device_data['service_details']['service_vendor'])
-
-        devices = self._get_network_function_devices(device_filters)
-
-        device = orchestration_driver.select_network_function_device(
-            devices,
-            device_data)
-        return device
 
     def _get_device_data(self, nfd_request):
 
@@ -509,6 +531,7 @@ class DeviceOrchestrator(nfp_api.NfpEventHandler):
 
         ports = self._make_ports_dict(consumer, provider, 'pt')
 
+        device_data['provider_name'] = provider['ptg']['name']
         device_data['management_network_info'] = management_network_info
 
         device_data['network_function_id'] = network_function['id']
@@ -520,7 +543,11 @@ class DeviceOrchestrator(nfp_api.NfpEventHandler):
         device_data['service_details'] = service_details
         device_data['service_details']['network_mode'] = nfp_constants.GBP_MODE
         device_data['service_vendor'] = service_details['service_vendor']
+        device_data['interfaces_to_attach'] = (
+            nfp_context.get('interfaces_to_attach'))
 
+        if nfp_context.get('files'):
+            device_data['files'] = nfp_context['files']
         return device_data
 
     # Create path
@@ -548,17 +575,22 @@ class DeviceOrchestrator(nfp_api.NfpEventHandler):
 
         LOG.info(_LI("Creating new device,"
                      "device request: %(device)s"), {'device': nfd_request})
-
+        device_data['volume_support'] = (
+                self.config.device_orchestrator.volume_support)
+        device_data['volume_size'] = (
+                self.config.device_orchestrator.volume_size)
         driver_device_info = (
-            orchestration_driver.create_network_function_device(
-                device_data))
+                orchestration_driver.create_network_function_device(
+                        device_data))
         if not driver_device_info:
             LOG.info(_LI("Device creation failed"))
             self._create_event(event_id='DEVICE_ERROR',
                                event_data=nfd_request,
                                is_internal_event=True)
+            self._controller.event_complete(event)
             return None
 
+        nfp_context['vendor_data'] = driver_device_info.get('vendor_data')
         management = nfp_context['management']
         management['port'] = driver_device_info[
             'mgmt_neutron_port_info']['neutron_port']
@@ -571,6 +603,12 @@ class DeviceOrchestrator(nfp_api.NfpEventHandler):
         device = self._update_device_data(driver_device_info, device_data)
         device['network_function_device_id'] = device['id']
 
+        name = '%s_%s_%s_%s' % (
+                    device['provider_name'],
+                    service_details['service_type'],
+                    nfp_context['resource_owner_context']['tenant_name'][:6],
+                    device['network_function_device_id'][:3])
+        device['name'] = name
         # Create DB entry with status as DEVICE_SPAWNING
         network_function_device = (
             self._create_network_function_device_db(device,
@@ -579,20 +617,14 @@ class DeviceOrchestrator(nfp_api.NfpEventHandler):
         # REVISIT(mak) Wrong but nfp_db method needs in this format
         network_function_device['mgmt_port_id'] = device['mgmt_port_id']
         nfp_context['network_function_device'] = network_function_device
-
-        # Create an event to NSO, to give device_id
-        device_created_data = {
-            'network_function_instance_id': (
-                nfp_context['network_function_instance']['id']),
-            'network_function_device_id': device['id']
-        }
-
+        nfp_context['event_desc'] = event.desc.to_dict()
         self._create_event(event_id='DEVICE_SPAWNING',
                            event_data=nfp_context,
                            is_poll_event=True,
-                           original_event=event)
+                           original_event=event,
+                           max_times=nfp_constants.DEVICE_SPAWNING_MAXRETRY)
         self._create_event(event_id='DEVICE_CREATED',
-                           event_data=device_created_data)
+                           event_data=device)
 
     def _post_device_up_event_graph(self, nfp_context):
         nf_id = nfp_context['network_function']['id']
@@ -620,7 +652,8 @@ class DeviceOrchestrator(nfp_api.NfpEventHandler):
         graph_nodes = [du_event, hc_event, plug_int_event]
         self._controller.post_event_graph(graph_event, graph_nodes)
 
-    @nfp_api.poll_event_desc(event='DEVICE_SPAWNING', spacing=2)
+    @nfp_api.poll_event_desc(event='DEVICE_SPAWNING',
+                             spacing=nfp_constants.DEVICE_SPAWNING_SPACING)
     def check_device_is_up(self, event):
         nfp_context = event.data
 
@@ -673,26 +706,31 @@ class DeviceOrchestrator(nfp_api.NfpEventHandler):
             # Continue polling until device status became ACTIVE/ERROR.
             return CONTINUE_POLLING
 
-    def _post_configure_device_graph(self, nfp_context):
+    def _post_configure_device_graph(self, nfp_context, serialize=False):
         nf_id = nfp_context['network_function']['id']
-        device_configured_event = self._controller.new_event(
-            id='CONFIGURATION_COMPLETE',
-            key=nf_id,
-            data=nfp_context,
-            graph=True)
+        binding_key = nfp_context['service_details'][
+                                    'service_vendor'].lower() + nf_id
         device_configure_event = self._controller.new_event(
             id='CREATE_DEVICE_CONFIGURATION',
+            key=nf_id,
+            serialize=serialize,
+            binding_key=binding_key,
+            data=nfp_context,
+            graph=True)
+        check_heat_config = self._controller.new_event(
+            id='SEND_USER_CONFIG',
             key=nf_id,
             data=nfp_context,
             graph=True)
         user_config_event = self._controller.new_event(
             id='APPLY_USER_CONFIG',
             key=nf_id,
+            serialize=serialize,
+            binding_key=binding_key,
             data=nfp_context,
             graph=True)
-
-        check_heat_config = self._controller.new_event(
-            id='SEND_HEAT_CONFIG',
+        device_configured_event = self._controller.new_event(
+            id='CONFIGURATION_COMPLETE',
             key=nf_id,
             data=nfp_context,
             graph=True)
@@ -714,11 +752,30 @@ class DeviceOrchestrator(nfp_api.NfpEventHandler):
         # Get the results of PLUG_INTERFACES & PERFORM_HEALTH_CHECK events
         # results.
         results = event.graph.get_leaf_node_results(event)
+        nfd_event = self._controller.new_event(
+            id='CREATE_NETWORK_FUNCTION_DEVICE',
+            key=nfp_context['network_function']['id'],
+            desc_dict=nfp_context.pop('event_desc'))
+        if 'binding_key' in nfp_context:
+            nfd_event.binding_key = nfp_context['binding_key']
 
         for result in results:
             if result.result.lower() != 'success':
+                self._controller.event_complete(nfd_event)
                 return self._controller.event_complete(event, result='FAILED')
 
+        network_function_device = nfp_context['network_function_device']
+        self._update_network_function_device_db(
+            network_function_device, nfp_constants.ACTIVE)
+
+        LOG.info(_LI(
+            "Device Configuration completed for device: %(device_id)s"
+            "Updated DB status to ACTIVE, Incremented device "
+            "reference count for %(device)s"),
+            {'device_id': network_function_device['id'],
+             'device': network_function_device})
+
+        self._controller.event_complete(nfd_event)
         self._post_configure_device_graph(nfp_context)
         self._controller.event_complete(event)
 
@@ -807,6 +864,28 @@ class DeviceOrchestrator(nfp_api.NfpEventHandler):
 
         return device
 
+    def _prepare_device_data_fast(self, network_function_details):
+        network_function = network_function_details['network_function']
+        network_function_device = network_function_details[
+            'network_function_device']
+        admin_token = network_function_details['admin_token']
+        service_profile = network_function_details['service_profile']
+        service_details = network_function_details['service_details']
+        service_details.update(
+            {'service_type': service_profile['service_type']})
+        device = self._get_device_data(network_function_details)
+        device = self._update_device_data(device, network_function_device)
+        mgmt_port_id = network_function_device.pop('mgmt_port_id')
+        mgmt_port_id = self._get_port(mgmt_port_id)
+        device['mgmt_port_id'] = mgmt_port_id
+        device['network_function_id'] = network_function['id']
+        device['network_function_device_id'] = (
+            network_function_device['id'])
+        device['token'] = admin_token
+        device['tenant_id'] = (
+            network_function_details['admin_tenant_id'])
+        return device
+
     def health_monitor_complete(self, event, result='SUCCESS'):
         nfp_context = event.data['nfp_context']
         # device = nfp_context['network_function_device']
@@ -868,6 +947,12 @@ class DeviceOrchestrator(nfp_api.NfpEventHandler):
             service_details['service_vendor'])
 
         ports = self._make_ports_dict(consumer, provider, 'port')
+        # Modify interface_in_use as dummy interfaces_in_use has been included
+        # for health check
+        if provider:
+            network_function_device['interfaces_in_use'] -= 1
+        if consumer:
+            network_function_device['interfaces_in_use'] -= 1
 
         device = {
             'id': network_function_device['id'],
@@ -876,7 +961,8 @@ class DeviceOrchestrator(nfp_api.NfpEventHandler):
             'token': token,
             'tenant_id': tenant_id,
             'interfaces_in_use': network_function_device['interfaces_in_use'],
-            'status': network_function_device['status']}
+            'status': network_function_device['status'],
+            'vendor_data': nfp_context['vendor_data']}
 
         _ifaces_plugged_in = (
             orchestration_driver.plug_network_function_device_interfaces(
@@ -921,6 +1007,9 @@ class DeviceOrchestrator(nfp_api.NfpEventHandler):
         network_function_instance = nfp_context['network_function_instance']
         network_function_device = nfp_context['network_function_device']
 
+        binding_key = service_details[
+                        'service_vendor'].lower() + network_function['id']
+
         orchestration_driver = self._get_orchestration_driver(
             service_details['service_vendor'])
         device = {
@@ -951,7 +1040,8 @@ class DeviceOrchestrator(nfp_api.NfpEventHandler):
             'nfp_context': {
                 'event_desc': nfp_context['event_desc'],
                 'id': event.id, 'key': event.key,
-                'network_function_device': network_function_device}})
+                'network_function_device': network_function_device,
+                'binding_key': binding_key}})
 
         if not config_params:
             self._create_event(event_id='DRIVER_ERROR',
@@ -983,7 +1073,6 @@ class DeviceOrchestrator(nfp_api.NfpEventHandler):
         device = nfp_context['network_function_device']
 
         if result.lower() == 'success':
-            self._increment_device_ref_count(device)
             self._update_network_function_device_db(
                 device, nfp_constants.ACTIVE)
             LOG.info(_LI(
@@ -994,24 +1083,25 @@ class DeviceOrchestrator(nfp_api.NfpEventHandler):
 
         # Invoke event_complete for original event which is
         # CREATE_DEVICE_CONFIGURATION
+        self._increment_device_ref_count(device)
         event_desc = nfp_context.pop('event_desc')
         key = nfp_context.pop('key')
         event = self._controller.new_event(id="CREATE_DEVICE_CONFIGURATION",
                                            key=key, desc_dict=event_desc)
+        event.binding_key = nfp_context.pop('binding_key')
         self._controller.event_complete(event, result=result)
 
-    # Delete path
     def delete_network_function_device(self, event):
-        delete_nfd_request = event.data
-        network_function_instance = (
-            delete_nfd_request.pop('network_function_instance'))
-        delete_nfd_request['network_function_instance_id'] = (
-            network_function_instance['id'])
-        device = self._prepare_device_data(delete_nfd_request)
+        network_function_details = event.data
+        nfd = network_function_details['network_function_device']
+        if not nfd:
+            self._controller.event_complete(event, result="SUCCESS")
+            return
+        device = self._prepare_device_data_fast(network_function_details)
         LOG.info(_LI("Device Orchestrator received delete network service "
                      "device request for device %(device)s"),
-                 {'device': delete_nfd_request})
-
+                 {'device': device})
+        device['event_desc'] = event.desc.to_dict()
         self._create_event(event_id='DELETE_CONFIGURATION',
                            event_data=device,
                            is_internal_event=True)
@@ -1027,14 +1117,22 @@ class DeviceOrchestrator(nfp_api.NfpEventHandler):
             self._create_event(event_id='DRIVER_ERROR',
                                event_data=device,
                                is_internal_event=True)
+            nf_id = device['network_function_id']
+            dnfd_event = (
+                self._controller.new_event(id='DELETE_NETWORK_FUNCTION_DEVICE',
+                                           key=nf_id,
+                                           binding_key=nf_id,
+                                           desc_dict=device[
+                                               'event_desc']))
+            self._controller.event_complete(dnfd_event, result='FAILED')
             return None
+
         # Sends RPC call to configurator to delete generic config API
         self.configurator_rpc.delete_network_function_device_config(
             device, config_params)
 
     def unplug_interfaces(self, event):
-        device_info = event.data
-        device = self._prepare_device_data(device_info)
+        device = event.data
         orchestration_driver = self._get_orchestration_driver(
             device['service_details']['service_vendor'])
 
@@ -1051,6 +1149,19 @@ class DeviceOrchestrator(nfp_api.NfpEventHandler):
         self._create_event(event_id='DELETE_DEVICE',
                            event_data=device,
                            is_internal_event=True)
+        self._controller.event_complete(event)
+
+    def delete_configuration_complete(self, event):
+        device = event.data['nfp_context']
+        nfd_id = event.data['network_function_device_id']
+        nf_id = event.data['network_function_id']
+        unplug_interfaces = (
+            self._controller.new_event(id='UNPLUG_INTERFACES',
+                                       data=device,
+                                       key=nf_id,
+                                       binding_key=nfd_id,
+                                       serialize=True))
+        self._controller.post_event(unplug_interfaces)
 
     def delete_device(self, event):
         # Update status in DB, send DEVICE_DELETED event to NSO.
@@ -1061,11 +1172,13 @@ class DeviceOrchestrator(nfp_api.NfpEventHandler):
         self._decrement_device_ref_count(device)
         orchestration_driver.delete_network_function_device(device)
         self._create_event(event_id='DEVICE_BEING_DELETED',
-                           event_data=device,
-                           is_poll_event=True,
-                           original_event=event)
+                        event_data=device,
+                        is_poll_event=True,
+                        original_event=event,
+                        max_times=nfp_constants.DEVICE_BEING_DELETED_MAXRETRY)
 
-    @nfp_api.poll_event_desc(event='DEVICE_BEING_DELETED', spacing=2)
+    @nfp_api.poll_event_desc(event='DEVICE_BEING_DELETED',
+                            spacing=nfp_constants.DEVICE_BEING_DELETED_SPACING)
     def check_device_deleted(self, event):
         device = event.data
         orchestration_driver = self._get_orchestration_driver(
@@ -1077,9 +1190,14 @@ class DeviceOrchestrator(nfp_api.NfpEventHandler):
             del device['id']
             orchestration_driver.delete_network_function_device(device)
             self._delete_network_function_device_db(device_id, device)
-            # DEVICE_DELETED event for NSO
-            self._create_event(event_id='DEVICE_DELETED',
-                               event_data=device)
+            nf_id = device['network_function_id']
+            dnfd_event = (
+                self._controller.new_event(id='DELETE_NETWORK_FUNCTION_DEVICE',
+                                           key=nf_id,
+                                           binding_key=nf_id,
+                                           desc_dict=device[
+                                               'event_desc']))
+            self._controller.event_complete(dnfd_event, result='SUCCESS')
             return STOP_POLLING
         else:
             return CONTINUE_POLLING
@@ -1118,7 +1236,7 @@ class DeviceOrchestrator(nfp_api.NfpEventHandler):
     def handle_plug_interface_failed(self, event):
         nfp_context = event.data
         device = self._prepare_failure_case_device_data(nfp_context)
-        status = nfp_constants.ERROR
+        status = nfp_constants.ACTIVE
         desc = "Failed to plug interfaces"
         self._update_network_function_device_db(device, status, desc)
         self._create_event(event_id='DEVICE_CREATE_FAILED',
@@ -1226,6 +1344,7 @@ class NDOConfiguratorRpcApi(object):
     def delete_network_function_device_config(self, device_data,
                                               config_params):
         self._update_params(device_data, config_params, operation='delete')
+        config_params['info']['context']['nfp_context'] = device_data
         LOG.info(_LI("Sending delete NFD config request to configurator "
                      "with config_params = %(config_params)s"),
                  {'config_params': config_params})
