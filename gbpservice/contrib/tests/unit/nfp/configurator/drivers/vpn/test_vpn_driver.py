@@ -320,7 +320,7 @@ class RestApiTestCase(base.BaseTestCase):
         self.test_dict = vpn_data.VPNTestData()
         self.args = {'peer_address': '1.103.2.2'}
         self.fake_resp_dict = {'status': None}
-        self.timeout = 90
+        self.timeout = self.rest_obj.timeout
         self.data = {'data': 'data'}
         self.j_data = jsonutils.dumps(self.data)
 
