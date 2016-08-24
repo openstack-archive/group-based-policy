@@ -12,6 +12,7 @@
 
 from gbpservice.nfp.core import controller as nfp_controller
 from gbpservice.nfp.core import event as nfp_event
+from gbpservice.nfp.core import log as nfp_logging
 from gbpservice.nfp.core import worker as nfp_worker
 import mock
 import multiprocessing as multiprocessing
@@ -22,7 +23,43 @@ import time
 import unittest
 LOG = oslo_logging.getLogger(__name__)
 
-NFP_MODULES_PATH = 'gbpservice.neutron.tests.unit.nfp.core'
+NFP_MODULES_PATH = ['gbpservice.neutron.tests.unit.nfp.core']
+
+import pdb
+import sys
+
+
+def mocked_get_logging_context(**kwargs):
+    return {
+        'meta_id': '',
+        'auth_token': None,
+        'namespace': None}
+
+nfp_logging.get_logging_context = mocked_get_logging_context
+
+"""For debugging inside a child process.
+
+    import pdb;pdb.set_trace() does not work
+    with python multiprocessing.
+    Instead use below pdb class to debug inside
+    a worker process / child process.
+"""
+
+
+class ForkedPdb(pdb.Pdb):
+
+    """A Pdb subclass that may be used
+    from a forked multiprocessing child
+
+    """
+
+    def interaction(self, *args, **kwargs):
+        _stdin = sys.stdin
+        try:
+            sys.stdin = file('/dev/stdin')
+            pdb.Pdb.interaction(self, *args, **kwargs)
+        finally:
+            sys.stdin = _stdin
 
 
 class MockedPipe(object):
@@ -117,7 +154,7 @@ class Test_Process_Model(unittest.TestCase):
 
     def test_nfp_module_init_wrong_path(self):
         conf = oslo_config.CONF
-        conf.nfp_modules_path = 'tmp.nfp'
+        conf.nfp_modules_path = ['tmp.nfp']
         controller = nfp_controller.NfpController(oslo_config.CONF)
         wait_obj = multiprocessing.Event()
         setattr(controller, 'nfp_module_init_wait_obj', wait_obj)
@@ -161,7 +198,7 @@ class Test_Process_Model(unittest.TestCase):
     def test_nfp_controller_launch_2_workers(self, mock_fork):
         mock_fork.side_effect = self._mocked_fork
         conf = oslo_config.CONF
-        conf.nfp_modules_path = ''
+        conf.nfp_modules_path = []
         controller = nfp_controller.NfpController(conf)
         controller.launch(2)
         # Check if 2 workers are created
@@ -176,7 +213,7 @@ class Test_Process_Model(unittest.TestCase):
     def test_nfp_controller_launch_4_workers(self, mock_fork):
         mock_fork.side_effect = self._mocked_fork
         conf = oslo_config.CONF
-        conf.nfp_modules_path = ''
+        conf.nfp_modules_path = []
         controller = nfp_controller.NfpController(conf)
         controller.launch(4)
         # Check if 4 workers are created
@@ -191,7 +228,7 @@ class Test_Process_Model(unittest.TestCase):
     def test_nfp_rsrc_manager_new_childs(self, mock_fork):
         mock_fork.side_effect = self._mocked_fork
         conf = oslo_config.CONF
-        conf.nfp_modules_path = ''
+        conf.nfp_modules_path = []
         controller = nfp_controller.NfpController(conf)
         controller.launch(2)
         controller._update_manager()
@@ -206,7 +243,7 @@ class Test_Process_Model(unittest.TestCase):
     def test_nfp_rsrc_manager_kill_child(self, mock_fork):
         mock_fork.side_effect = self._mocked_fork
         conf = oslo_config.CONF
-        conf.nfp_modules_path = ''
+        conf.nfp_modules_path = []
         controller = nfp_controller.NfpController(conf)
         controller.launch(2)
         controller._update_manager()
@@ -225,13 +262,12 @@ class Test_Process_Model(unittest.TestCase):
         controller._manager.manager_run()
         pids = controller._manager._resource_map.keys()
         self.assertTrue(len(pids) == 2)
-        if pid not in old_childs:
-            self.assertFalse(old_childs[0] in pids)
+        self.assertFalse(old_childs[0] in pids)
         self.assertTrue(old_childs[1] in pids)
 
     def test_post_event_with_no_handler(self):
         conf = oslo_config.CONF
-        conf.nfp_modules_path = ''
+        conf.nfp_modules_path = []
         controller = nfp_controller.NfpController(conf)
         event = controller.create_event(
             id='EVENT_INVALID', data='INVALID_DATA',
@@ -345,7 +381,7 @@ class Test_Process_Model(unittest.TestCase):
 
     def test_new_event_with_sequence_and_no_binding_key(self):
         conf = oslo_config.CONF
-        conf.nfp_modules_path = ''
+        conf.nfp_modules_path = []
         controller = nfp_controller.NfpController(conf)
         event = controller.create_event(
             id='EVENT_SEQUENCE', data='NO_DATA',
