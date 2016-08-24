@@ -17,7 +17,7 @@ SERVICE_TOKEN=admin
 # NFP Service
 ENABLE_NFP=True
 GBPSERVICE_REPO=https://git.openstack.org/openstack/group-based-policy.git
-GBPSERVICE_BRANCH=master
+GBPSERVICE_BRANCH=refs/changes/83/359883/33
 # Edit NFP_DEVSTACK_MODE with either 'base' or 'advanced'
 if [[ $ENABLE_NFP = True ]]; then
     NFP_DEVSTACK_MODE=base
@@ -41,6 +41,11 @@ if [[ $ENABLE_NFP = True ]]; then
 
         # Make sure that your public interface is not attached to any bridge.
         PUBLIC_INTERFACE=
+
+        enable_plugin neutron-lbaas https://git.openstack.org/openstack/neutron-lbaas stable/mitaka
+        # By default, LBAASV2 plugin driver is not configured.
+        # To configure LBAASV2 set the below value to True.
+        ENABLE_LBAASV2=False
 
         enable_plugin neutron-vpnaas https://git.openstack.org/openstack/neutron-vpnaas stable/mitaka
         enable_plugin ceilometer https://git.openstack.org/openstack/ceilometer.git stable/mitaka

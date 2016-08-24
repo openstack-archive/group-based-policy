@@ -1,9 +1,7 @@
 FROM ubuntu:14.04 
 
-RUN apt-get -y update --fix-missing
-
 # dependencies
-RUN apt-get -y --force-yes install\
+RUN apt-get -y update --fix-missing && apt-get -y --force-yes install\
  python2.7\
  python-pip\
  python2.7-dev\
@@ -11,8 +9,7 @@ RUN apt-get -y --force-yes install\
  libyaml-dev\
  python-ipaddr\
  rabbitmq-server\
- python-dev \
- screen
+ python-dev
 
 # python dependencies
 RUN pip install\
@@ -22,10 +19,9 @@ RUN pip install\
  oslo.messaging==4.2.0\
  oslo.db==4.4.0\
  oslo.policy\
- iptools\
- cryptography\
  pecan==1.0.4\
- amqp==1.4.9\
+ pika==0.10.0\
+ amqp==2.0.3\
  wsme\
  neutron-lib\
  "octavia<0.8"
@@ -44,8 +40,10 @@ RUN rm -rf /var/lib/apt/lists/* && apt-get autoremove -y
 
 RUN cp /usr/local/lib/python2.7/dist-packages/gbpservice/nfp/bin/nfp /usr/bin/
 RUN chmod +x /usr/bin/nfp
-RUN cp /usr/local/lib/python2.7/dist-packages/gbpservice/contrib/nfp/bin/nfp_configurator.ini /etc/
+RUN cp /usr/local/lib/python2.7/dist-packages/gbpservice/contrib/nfp/bin/nfp_controller.ini /etc/
 RUN cp /usr/local/lib/python2.7/dist-packages/gbpservice/contrib/nfp/bin/policy.json /etc/
+RUN cp /usr/local/lib/python2.7/dist-packages/gbpservice/contrib/nfp/tools/image_builder/nfp-controller /etc/init.d/
+RUN cp /usr/local/lib/python2.7/dist-packages/gbpservice/contrib/nfp/tools/image_builder/nfp-pecan /etc/init.d/
 RUN mkdir -p /var/log/nfp
 RUN touch /var/log/nfp/nfp_configurator.log
 RUN touch /var/log/nfp/nfp_pecan.log
