@@ -1170,6 +1170,27 @@ class TestPolicyTarget(ApicMappingTestCase):
         self.update_policy_target_group(
             ptg['id'], description='opflex_eoc:', expected_res_status=400)
 
+    def test_cluster_id_notify(self):
+        ptg = self.create_policy_target_group(
+            name="ptg1")['policy_target_group']
+        pt1 = self.create_policy_target(
+            policy_target_group_id=ptg['id'])['policy_target']
+        # Same cluster
+        pt2 = self.create_policy_target(
+            policy_target_group_id=ptg['id'],
+            cluster_id=pt1['id'])['policy_target']
+        self.create_policy_target(
+            name='pt3', policy_target_group_id=ptg['id'], cluster_id=pt1['id'])
+        self._bind_port_to_host(pt2['port_id'], 'h1')
+        port = self.driver._get_port(context.get_admin_context(),
+                                     pt2['port_id'])
+        self.driver.notifier.port_update = mock.Mock()
+        self.driver._notify_port_update(context.get_admin_context(),
+                                        pt1['port_id'])
+        self.driver.notifier.port_update.assert_called_once_with(mock.ANY,
+                                                                 port)
+        # The above guarantees that pt3 wasn't notified
+
 
 class TestPolicyTargetVlanNetwork(ApicMappingVlanTestCase,
                                   TestPolicyTarget):
