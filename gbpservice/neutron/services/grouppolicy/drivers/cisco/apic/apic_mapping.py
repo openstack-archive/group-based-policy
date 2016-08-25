@@ -2489,6 +2489,16 @@ class ApicMappingDriver(api.ResourceMappingDriver,
         pointing_pts = self.gbp_plugin.get_policy_targets(
             plugin_context.elevated(),
             {'description': [PROXY_PORT_PREFIX + port_id]})
+        pt = self._port_id_to_pt(plugin_context, port_id)
+        if pt:
+            # Notify ports in cluster
+            cluster_ids = [pt['id']]
+            if pt.get('cluster_id') and pt.get('cluster_id') != pt['id']:
+                cluster_ids.append(pt.get('cluster_id'))
+            pointing_pts.extend(
+                self.gbp_plugin.get_policy_targets(
+                    plugin_context.elevated(),
+                    {'cluster_id': cluster_ids}))
         ports = self._get_ports(
             plugin_context, {'id': [port_id] +
                              [x['port_id'] for x in pointing_pts]})
