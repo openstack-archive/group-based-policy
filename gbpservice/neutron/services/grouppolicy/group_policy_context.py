@@ -130,6 +130,29 @@ class L3PolicyContext(GroupPolicyContext, api.L3PolicyContext):
     def original(self):
         return self._original_l3_policy
 
+    def set_address_scope_id(self, address_scope_id, version=4):
+        self._plugin._set_address_scope_for_l3_policy(
+            self._plugin_context, self._l3_policy['id'], address_scope_id,
+            version=version)
+        if version == 4:
+            self._l3_policy['address_scope_v4_id'] = address_scope_id
+        else:
+            self._l3_policy['address_scope_v6_id'] = address_scope_id
+
+    def add_subnetpool(self, subnetpool_id, version=4):
+        subnetpools = self._plugin._add_subnetpool_to_l3_policy(
+            self._plugin_context, self._l3_policy['id'], subnetpool_id,
+            version=version)
+        self._l3_policy['subnetpools_v4'] = subnetpools[4]
+        self._l3_policy['subnetpools_v6'] = subnetpools[6]
+
+    def remove_subnetpool(self, subnetpool_id, version=4):
+        subnetpools = self._plugin._remove_subnetpool_to_l3_policy(
+            self._plugin_context, self._l3_policy['id'], subnetpool_id,
+            version=version)
+        self._l3_policy['subnetpools_v4'] = subnetpools[4]
+        self._l3_policy['subnetpools_v6'] = subnetpools[6]
+
     def add_router(self, router_id):
         routers = self._plugin._add_router_to_l3_policy(
             self._plugin_context, self._l3_policy['id'], router_id)
