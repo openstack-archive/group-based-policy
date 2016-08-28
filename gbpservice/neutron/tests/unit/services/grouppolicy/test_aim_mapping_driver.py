@@ -220,6 +220,99 @@ class TestAIMStatus(AIMBaseTestCase):
         self.aim_mgr.get_status = orig_get_status
 
 
+class TestL3Policy(AIMBaseTestCase):
+
+    def test_create_l3_policy_lifecycle_implicit_address_scope(self):
+        # Create L3 policy with implicit router.
+        l3p = self.create_l3_policy(name="l3p1")['l3_policy']
+        l3p_id = l3p['id']
+        self.assertIsNone(l3p['address_scope_v6_id'])
+        ascp_id = l3p['address_scope_v4_id']
+        self.assertEqual(len(l3p['subnetpools_v4']), 1)
+        sp_id = l3p['subnetpools_v4'][0]
+        self.assertIsNotNone(ascp_id)
+        routers = l3p['routers']
+        self.assertIsNotNone(routers)
+        self.assertEqual(len(routers), 1)
+        router_id = routers[0]
+        """
+        # TODO(Sumit): Address-scope retrieval is creating issues, requires
+        # some fixing in the UT setup
+        req = self.new_show_request('address-scopes', ascp_id, fmt=self.fmt)
+        res = self.deserialize(self.fmt, req.get_response(self.api))
+        ascope = res['address_scope']
+        """
+        req = self.new_show_request('subnetpools', sp_id, fmt=self.fmt)
+        res = self.deserialize(self.fmt, req.get_response(self.api))
+        subpool = res['subnetpool']
+        self.assertEqual(l3p['ip_pool'], subpool['prefixes'][0])
+        self.assertEqual(l3p['subnet_prefix_length'],
+                         int(subpool['default_prefixlen']))
+        self.assertEqual(l3p['ip_version'],
+                         subpool['ip_version'])
+        router = self._get_object('routers', router_id, self.ext_api)['router']
+        self.assertEqual('l3p_l3p1', router['name'])
+
+        # TODO(Sumit): Test update of relevant attributes
+
+        req = self.new_delete_request('l3_policies', l3p_id)
+        res = req.get_response(self.ext_api)
+        self.assertEqual(webob.exc.HTTPNoContent.code, res.status_int)
+        req = self.new_show_request('subnetpools', sp_id, fmt=self.fmt)
+        res = req.get_response(self.api)
+        self.assertEqual(webob.exc.HTTPNotFound.code, res.status_int)
+        req = self.new_show_request('address_scopes', ascp_id, fmt=self.fmt)
+        res = req.get_response(self.api)
+        self.assertEqual(webob.exc.HTTPNotFound.code, res.status_int)
+        req = self.new_show_request('routers', router_id, fmt=self.fmt)
+        res = req.get_response(self.ext_api)
+        self.assertEqual(webob.exc.HTTPNotFound.code, res.status_int)
+
+
+class TestL3PolicyRollback(AIMBaseTestCase):
+
+    def test_l3_policy_create_fail(self):
+        orig_func = self.dummy.create_l3_policy_precommit
+        self.dummy.create_l3_policy_precommit = mock.Mock(
+            side_effect=Exception)
+        self.create_l3_policy(name="l3p1", expected_res_status=500)
+        self.assertEqual([], self._plugin.get_address_scopes(self._context))
+        self.assertEqual([], self._plugin.get_subnetpools(self._context))
+        self.assertEqual([], self._l3_plugin.get_routers(self._context))
+        self.assertEqual([], self._gbp_plugin.get_l3_policies(self._context))
+        # restore mock
+        self.dummy.create_l3_policy_precommit = orig_func
+
+    def test_l3_policy_update_fail(self):
+        orig_func = self.dummy.update_l3_policy_precommit
+        self.dummy.update_l3_policy_precommit = mock.Mock(
+            side_effect=Exception)
+        l3p = self.create_l3_policy(name="l3p1")['l3_policy']
+        l3p_id = l3p['id']
+        self.update_l3_policy(l3p_id, expected_res_status=500,
+                              name="new name")
+        new_l3p = self.show_l3_policy(l3p_id, expected_res_status=200)
+        self.assertEqual(l3p['name'],
+                         new_l3p['l3_policy']['name'])
+        # restore mock
+        self.dummy.update_l3_policy_precommit = orig_func
+
+    def test_l3_policy_delete_fail(self):
+        orig_func = self.dummy.delete_l3_policy_precommit
+        self.dummy.delete_l3_policy_precommit = mock.Mock(
+            side_effect=Exception)
+        l3p = self.create_l3_policy(name="l3p1")['l3_policy']
+        l3p_id = l3p['id']
+        self.delete_l3_policy(l3p_id, expected_res_status=500)
+        self.show_l3_policy(l3p_id, expected_res_status=200)
+        self.assertEqual(
+            1, len(self._plugin.get_address_scopes(self._context)))
+        self.assertEqual(1, len(self._plugin.get_subnetpools(self._context)))
+        self.assertEqual(1, len(self._l3_plugin.get_routers(self._context)))
+        # restore mock
+        self.dummy.delete_l3_policy_precommit = orig_func
+
+
 class TestL2PolicyBase(test_nr_base.TestL2Policy, AIMBaseTestCase):
 
     def _validate_implicit_contracts_exist(self, l2p):
@@ -366,7 +459,7 @@ class TestL2Policy(TestL2PolicyBase):
 class TestL2PolicyRollback(TestL2PolicyBase):
 
     def test_l2_policy_create_fail(self):
-        orig_func = self.dummy.create_policy_target_group_precommit
+        orig_func = self.dummy.create_l2_policy_precommit
         self.dummy.create_l2_policy_precommit = mock.Mock(
             side_effect=Exception)
         self.create_l2_policy(name="l2p1", expected_res_status=500)
@@ -474,9 +567,14 @@ class TestPolicyTargetGroup(AIMBaseTestCase):
 
         l2p = self.show_l2_policy(ptg['l2_policy_id'],
                                   expected_res_status=200)['l2_policy']
+        l3p = self.show_l3_policy(ptg['l3_policy_id'],
+                                  expected_res_status=200)['l3_policy']
         req = self.new_show_request('subnets', ptg['subnets'][0], fmt=self.fmt)
-        res = self.deserialize(self.fmt, req.get_response(self.api))
-        self.assertIsNotNone(res['subnet']['id'])
+        subnet = self.deserialize(self.fmt,
+                                  req.get_response(self.api))['subnet']
+        self.assertIsNotNone(subnet['id'])
+        self.assertEqual(l3p['subnetpools_v4'][0],
+                         subnet['subnetpool_id'])
         ptg_name = ptg['name']
         aim_epg_name = str(self.name_mapper.policy_target_group(
             self._neutron_context.session, ptg_id, ptg_name))
@@ -600,6 +698,17 @@ class TestPolicyTargetGroup(AIMBaseTestCase):
         req = self.new_show_request('subnets', ptg['subnets'][0], fmt=self.fmt)
         res = self.deserialize(self.fmt, req.get_response(self.api))
         self.assertIsNotNone(res['subnet']['id'])
+
+
+# TODO(Sumit): Add tests here which tests different scenarios for subnet
+# allocation for PTGs
+# 1. Multiple PTGs share the subnets associated with the l2_policy
+# 2. Associated subnets are correctly used for IP address allocation
+# 3. New subnets are created when the last available is exhausted
+# 4. If multiple subnets are present, all are deleted at the time of
+#    l2_policy deletion
+# 5. 'prefixlen', 'cidr', and 'subnetpool_id' overrides as a part of
+#    the subnet_specifics dictionary
 
 
 class TestPolicyTargetGroupRollback(AIMBaseTestCase):
