@@ -85,6 +85,26 @@ class OwnedNetwork(model_base.BASEV2):
                            nullable=False, primary_key=True)
 
 
+class OwnedAddressScope(model_base.BASEV2):
+    """An Address Scope owned by the resource_mapping driver."""
+
+    __tablename__ = 'gpm_owned_address_scopes'
+    address_scope_id = sa.Column(sa.String(36),
+                                 sa.ForeignKey('address_scopes.id',
+                                               ondelete='CASCADE'),
+                                 nullable=False, primary_key=True)
+
+
+class OwnedSubnetpool(model_base.BASEV2):
+    """A Subnetpool owned by the resource_mapping driver."""
+
+    __tablename__ = 'gpm_owned_subnetpools'
+    subnetpool_id = sa.Column(sa.String(36),
+                              sa.ForeignKey('subnetpools.id',
+                                            ondelete='CASCADE'),
+                              nullable=False, primary_key=True)
+
+
 class OwnedRouter(model_base.BASEV2):
     """A Router owned by the resource_mapping driver."""
 
@@ -114,6 +134,10 @@ class CidrInUse(exc.GroupPolicyInternalError):
 
 
 class OwnedResourcesOperations(object):
+
+    # TODO(Sumit): All the following operations can be condensed into
+    # a single _mark_resource_owned() and _resource_is_owned() method,
+    # by creating a resource to DB class name mapping.
 
     def _mark_port_owned(self, session, port_id):
         with session.begin(subtransactions=True):
@@ -159,8 +183,90 @@ class OwnedResourcesOperations(object):
                     filter_by(router_id=router_id).
                     first() is not None)
 
+    def _mark_address_scope_owned(self, session, address_scope_id):
+        with session.begin(subtransactions=True):
+            owned = OwnedAddressScope(address_scope_id=address_scope_id)
+            session.add(owned)
+
+    def _address_scope_is_owned(self, session, address_scope_id):
+        with session.begin(subtransactions=True):
+            return (session.query(OwnedAddressScope).
+                    filter_by(address_scope_id=address_scope_id).
+                    first() is not None)
+
+    def _mark_subnetpool_owned(self, session, subnetpool_id):
+        with session.begin(subtransactions=True):
+            owned = OwnedSubnetpool(subnetpool_id=subnetpool_id)
+            session.add(owned)
+
+    def _subnetpool_is_owned(self, session, subnetpool_id):
+        with session.begin(subtransactions=True):
+            return (session.query(OwnedSubnetpool).
+                    filter_by(subnetpool_id=subnetpool_id).
+                    first() is not None)
+
 
 class ImplicitResourceOperations(local_api.LocalAPI):
+
+    def _create_implicit_address_scope(self, context, clean_session=True,
+                                       **kwargs):
+        attrs = {'tenant_id': context.current['tenant_id'],
+                 'name': context.current['name'], 'ip_version':
+                 context.current['ip_version'],
+                 'shared': context.current.get('shared', False)}
+        attrs.update(**kwargs)
+        address_scope = self._create_address_scope(
+            context._plugin_context, attrs, clean_session)
+        as_id = address_scope['id']
+        self._mark_address_scope_owned(context._plugin_context.session, as_id)
+        return address_scope
+
+    def _use_implicit_address_scope(self, context, clean_session=True):
+        address_scope = self._create_implicit_address_scope(
+            context, clean_session, name='l3p_' + context.current['name'])
+        context.set_address_scope_id(address_scope['id'])
+
+    def _cleanup_address_scope(self, plugin_context, address_scope_id,
+                               clean_session=True):
+        if self._address_scope_is_owned(plugin_context.session,
+                                        address_scope_id):
+            self._delete_address_scope(plugin_context, address_scope_id,
+                                       clean_session)
+
+    def _create_implicit_subnetpool(self, context, clean_session=True,
+                                    **kwargs):
+        attrs = {'tenant_id': context.current['tenant_id'],
+                 'name': context.current['name'], 'ip_version':
+                 context.current['ip_version'],
+                 'default_prefixlen': context.current['subnet_prefix_length'],
+                 'prefixes': [context.current['ip_pool']],
+                 'shared': context.current.get('shared', False),
+                 # The assumption here is that the implicitly created
+                 # subnetpool is the first and only one that needs to be
+                 # created implicitly for a specific address family, hence
+                 # it will serve as the default.
+                 'is_default': True}
+        attrs.update(**kwargs)
+        subnetpool = self._create_subnetpool(
+            context._plugin_context, attrs, clean_session)
+        sp_id = subnetpool['id']
+        self._mark_subnetpool_owned(context._plugin_context.session, sp_id)
+        return subnetpool
+
+    def _use_implicit_subnetpool(self, context, address_scope_id, ip_version,
+                                 clean_session=True):
+        subnetpool = self._create_implicit_subnetpool(
+            context, clean_session, name='l3p_' + context.current['name'],
+            address_scope_id=address_scope_id)
+        context.add_subnetpool(subnetpool_id=subnetpool['id'],
+                               ip_version=ip_version)
+
+    def _cleanup_subnetpool(self, plugin_context, subnetpool_id,
+                            clean_session=True):
+        if self._subnetpool_is_owned(plugin_context.session,
+                                     subnetpool_id):
+            self._delete_subnetpool(plugin_context, subnetpool_id,
+                                    clean_session)
 
     def _create_implicit_network(self, context, clean_session=True, **kwargs):
         attrs = {'tenant_id': context.current['tenant_id'],
@@ -431,6 +537,48 @@ class ImplicitResourceOperations(local_api.LocalAPI):
             except n_exc.PortNotFound:
                 LOG.warning(_LW("Port %s is missing") % port_id)
 
+    def _reject_invalid_router_access(self, context, clean_session=True):
+        # Validate if the explicit router(s) belong to the tenant.
+        # Are routers shared across tenants ??
+        # How to check if admin and if admin can access all routers ??
+        for router_id in context.current['routers']:
+            router = None
+            try:
+                router = self._get_router(context._plugin_context, router_id,
+                                          clean_session=clean_session)
+            except n_exc.NotFound:
+                raise exc.InvalidRouterAccess(
+                    msg="Can't access other tenants router",
+                    router_id=router_id,
+                    tenant_id=context.current['tenant_id'])
+
+            if router:
+                tenant_id_of_explicit_router = router['tenant_id']
+                curr_tenant_id = context.current['tenant_id']
+                if tenant_id_of_explicit_router != curr_tenant_id:
+                    raise exc.InvalidRouterAccess(
+                        msg="Can't access other tenants router",
+                        router_id=router_id,
+                        tenant_id=context.current['tenant_id'])
+
+    def _use_implicit_router(self, context, router_name=None,
+                             clean_session=True):
+        attrs = {'tenant_id': context.current['tenant_id'],
+                 'name': router_name or ('l3p_' + context.current['name']),
+                 'external_gateway_info': None,
+                 'admin_state_up': True}
+        router = self._create_router(context._plugin_context, attrs,
+                                    clean_session=clean_session)
+        router_id = router['id']
+        self._mark_router_owned(context._plugin_context.session, router_id)
+        context.add_router(router_id)
+        return router_id
+
+    def _cleanup_router(self, plugin_context, router_id, clean_session=True):
+        if self._router_is_owned(plugin_context.session, router_id):
+            self._delete_router(plugin_context, router_id,
+                                clean_session=clean_session)
+
 
 class ResourceMappingDriver(api.PolicyDriver, ImplicitResourceOperations,
                             nsp_manager.NetworkServicePolicyMappingMixin,
@@ -529,29 +677,6 @@ class ResourceMappingDriver(api.PolicyDriver, ImplicitResourceOperations,
                     raise exc.InvalidNetworkAccess(
                         msg="Can't access other tenants networks",
                         network_id=context.current['network_id'],
-                        tenant_id=context.current['tenant_id'])
-
-    def _reject_invalid_router_access(self, context):
-        # Validate if the explicit router(s) belong to the tenant.
-        # Are routers shared across tenants ??
-        # How to check if admin and if admin can access all routers ??
-        for router_id in context.current['routers']:
-            router = None
-            try:
-                router = self._get_router(context._plugin_context, router_id)
-            except n_exc.NotFound:
-                raise exc.InvalidRouterAccess(
-                    msg="Can't access other tenants router",
-                    router_id=router_id,
-                    tenant_id=context.current['tenant_id'])
-
-            if router:
-                tenant_id_of_explicit_router = router['tenant_id']
-                curr_tenant_id = context.current['tenant_id']
-                if tenant_id_of_explicit_router != curr_tenant_id:
-                    raise exc.InvalidRouterAccess(
-                        msg="Can't access other tenants router",
-                        router_id=router_id,
                         tenant_id=context.current['tenant_id'])
 
     @log.log_method_call
@@ -1793,21 +1918,6 @@ class ResourceMappingDriver(api.PolicyDriver, ImplicitResourceOperations,
             for subnet_id in subnet_ids:
                 self._delete_subnet(context._plugin_context, subnet_id)
                 raise exc.GroupPolicyInternalError()
-
-    def _use_implicit_router(self, context, router_name=None):
-        attrs = {'tenant_id': context.current['tenant_id'],
-                 'name': router_name or ('l3p_' + context.current['name']),
-                 'external_gateway_info': None,
-                 'admin_state_up': True}
-        router = self._create_router(context._plugin_context, attrs)
-        router_id = router['id']
-        self._mark_router_owned(context._plugin_context.session, router_id)
-        context.add_router(router_id)
-        return router_id
-
-    def _cleanup_router(self, plugin_context, router_id):
-        if self._router_is_owned(plugin_context.session, router_id):
-            self._delete_router(plugin_context, router_id)
 
     def _create_policy_rule_set_sg(self, context, sg_name_prefix):
         return self._create_gbp_sg(

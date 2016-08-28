@@ -220,6 +220,50 @@ class TestAIMStatus(AIMBaseTestCase):
         self.aim_mgr.get_status = orig_get_status
 
 
+class TestL3Policy(AIMBaseTestCase):
+
+    def test_create_l3_policy_lifecycle_implicit_address_scope(self):
+        # Create L3 policy with implicit router.
+        l3p = self.create_l3_policy(name="l3p1")['l3_policy']
+        l3p_id = l3p['id']
+        self.assertIsNone(l3p['address_scope_v6_id'])
+        ascp_id = l3p['address_scope_v4_id']
+        self.assertEqual(len(l3p['subnetpools_v4']), 1)
+        sp_id = l3p['subnetpools_v4'][0]
+        self.assertIsNotNone(ascp_id)
+        routers = l3p['routers']
+        self.assertIsNotNone(routers)
+        self.assertEqual(len(routers), 1)
+        router_id = routers[0]
+        """
+        req = self.new_show_request('address-scopes', ascp_id, fmt=self.fmt)
+        res = self.deserialize(self.fmt, req.get_response(self.api))
+        ascope = res['address_scope']
+        req = self.new_show_request('subnetpools', sp_id, fmt=self.fmt)
+        res = self.deserialize(self.fmt, req.get_response(self.api))
+        subpool = res['subnetpool']
+        ascope = self._get_object('address-scopes', ascp_id,
+                                  self.ext_api)['address_scope']
+        subpool = self._get_object('subnetpools', sp_id,
+                                   self.ext_api)['subnetpool']
+        """
+        router = self._get_object('routers', router_id, self.ext_api)['router']
+        self.assertEqual('l3p_l3p1', router['name'])
+
+        req = self.new_delete_request('l3_policies', l3p_id)
+        res = req.get_response(self.ext_api)
+        self.assertEqual(webob.exc.HTTPNoContent.code, res.status_int)
+        req = self.new_show_request('subnetpools', sp_id, fmt=self.fmt)
+        res = req.get_response(self.api)
+        self.assertEqual(webob.exc.HTTPNotFound.code, res.status_int)
+        req = self.new_show_request('address_scopes', ascp_id, fmt=self.fmt)
+        res = req.get_response(self.api)
+        self.assertEqual(webob.exc.HTTPNotFound.code, res.status_int)
+        req = self.new_show_request('routers', router_id, fmt=self.fmt)
+        res = req.get_response(self.ext_api)
+        self.assertEqual(webob.exc.HTTPNotFound.code, res.status_int)
+
+
 class TestL2PolicyBase(test_nr_base.TestL2Policy, AIMBaseTestCase):
 
     def _validate_implicit_contracts_exist(self, l2p):

@@ -24,6 +24,7 @@ from neutron.plugins.common import constants
 from neutron import policy
 from neutron.tests.unit.api import test_extensions
 from neutron.tests.unit.db import test_db_base_plugin_v2
+#from neutron.tests.unit.extensions import test_address_scope
 from oslo_utils import importutils
 from oslo_utils import uuidutils
 
@@ -314,6 +315,8 @@ DB_SC_PLUGIN_KLASS = (ServiceChainDBTestPlugin.__module__ + '.' +
 
 
 class GroupPolicyDbTestCase(GroupPolicyDBTestBase,
+#                            test_address_scope.TestAddressScope):
+#                            test_address_scope.AddressScopeTestCase):
                             test_db_base_plugin_v2.NeutronDbPluginV2TestCase):
 
     def setUp(self, core_plugin=None, sc_plugin=None, service_plugins=None,

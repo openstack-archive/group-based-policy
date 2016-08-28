@@ -45,6 +45,7 @@ class CommonNeutronBase(ipd.ImplicitPolicyBase, rmd.OwnedResourcesOperations,
             self._create_implicit_l3_policy(context, clean_session=False)
             l2p_db['l3_policy_id'] = context.current['l3_policy_id']
         if not context.current['network_id']:
+            # TODO(Sumit): Set the address_scope_id for this network
             self._use_implicit_network(context, clean_session=False)
             l2p_db['network_id'] = context.current['network_id']
 
