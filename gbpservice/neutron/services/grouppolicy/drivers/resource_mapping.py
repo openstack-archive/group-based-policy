@@ -85,6 +85,26 @@ class OwnedNetwork(model_base.BASEV2):
                            nullable=False, primary_key=True)
 
 
+class OwnedAddressScope(model_base.BASEV2):
+    """An Address Scope owned by the resource_mapping driver."""
+
+    __tablename__ = 'gpm_owned_address_scopes'
+    address_scope_id = sa.Column(sa.String(36),
+                                 sa.ForeignKey('address_scopes.id',
+                                               ondelete='CASCADE'),
+                                 nullable=False, primary_key=True)
+
+
+class OwnedSubnetpool(model_base.BASEV2):
+    """A Subnetpool owned by the resource_mapping driver."""
+
+    __tablename__ = 'gpm_owned_subnetpools'
+    subnetpool_id = sa.Column(sa.String(36),
+                              sa.ForeignKey('subnetpools.id',
+                                            ondelete='CASCADE'),
+                              nullable=False, primary_key=True)
+
+
 class OwnedRouter(model_base.BASEV2):
     """A Router owned by the resource_mapping driver."""
 
@@ -114,6 +134,10 @@ class CidrInUse(exc.GroupPolicyInternalError):
 
 
 class OwnedResourcesOperations(object):
+
+    # TODO(Sumit): All the following operations can be condensed into
+    # a single _mark_resource_owned() and _resource_is_owned() method,
+    # by creating a resource to DB class name mapping.
 
     def _mark_port_owned(self, session, port_id):
         with session.begin(subtransactions=True):
@@ -159,8 +183,82 @@ class OwnedResourcesOperations(object):
                     filter_by(router_id=router_id).
                     first() is not None)
 
+    def _mark_address_scope_owned(self, session, address_scope_id):
+        with session.begin(subtransactions=True):
+            owned = OwnedAddressScope(address_scope_id=address_scope_id)
+            session.add(owned)
+
+    def _address_scope_is_owned(self, session, address_scope_id):
+        with session.begin(subtransactions=True):
+            return (session.query(OwnedAddressScope).
+                    filter_by(address_scope_id=address_scope_id).
+                    first() is not None)
+
+    def _mark_subnetpool_owned(self, session, subnetpool_id):
+        with session.begin(subtransactions=True):
+            owned = OwnedSubnetpool(subnetpool_id=subnetpool_id)
+            session.add(owned)
+
+    def _subnetpool_is_owned(self, session, subnetpool_id):
+        with session.begin(subtransactions=True):
+            return (session.query(OwnedSubnetpool).
+                    filter_by(subnetpool_id=subnetpool_id).
+                    first() is not None)
+
 
 class ImplicitResourceOperations(local_api.LocalAPI):
+
+    def _create_implicit_address_scope(self, context, clean_session=True,
+                                       **kwargs):
+        attrs = {'tenant_id': context.current['tenant_id'],
+                 'name': context.current['name'], 'ip_version':
+                 context.current['ip_version'],
+                 'shared': context.current.get('shared', False)}
+        attrs.update(**kwargs)
+        address_scope = self._create_address_scope(
+            context._plugin_context, attrs, clean_session)
+        as_id = address_scope['id']
+        self._mark_address_scope_owned(context._plugin_context.session, as_id)
+        return address_scope
+
+    def _use_implicit_address_scope(self, context, clean_session=True):
+        address_scope = self._create_implicit_address_scope(
+            context, clean_session, name='l3p_' + context.current['name'])
+        context.set_address_scope_id(address_scope['id'])
+
+    def _cleanup_address_scope(self, plugin_context, address_scope_id,
+                               clean_session=True):
+        if self._address_scope_is_owned(plugin_context.session,
+                                        address_scope_id):
+            self._delete_address_scope(plugin_context, address_scope_id,
+                                       clean_session)
+
+    def _create_implicit_subnetpool(self, context, clean_session=True,
+                                    **kwargs):
+        attrs = {'tenant_id': context.current['tenant_id'],
+                 'name': context.current['name'], 'ip_version':
+                 context.current['ip_version'],
+                 'default_prefixlen': context.current['subnet_prefix_length'],
+                 'prefixes': [context.current['ip_pool']],
+                 'shared': context.current.get('shared', False)}
+        attrs.update(**kwargs)
+        subnetpool = self._create_subnetpool(
+            context._plugin_context, attrs, clean_session)
+        sp_id = subnetpool['id']
+        self._mark_subnetpool_owned(context._plugin_context.session, sp_id)
+        return subnetpool
+
+    def _use_implicit_subnetpool(self, context, clean_session=True):
+        subnetpool = self._create_implicit_subnetpool(
+            context, clean_session, name='l3p_' + context.current['name'])
+        context.set_subnetpool_id(subnetpool['id'])
+
+    def _cleanup_subnetpool(self, plugin_context, subnetpool_id,
+                            clean_session=True):
+        if self._subnetpool_is_owned(plugin_context.session,
+                                     subnetpool_id):
+            self._delete_subnetpool(plugin_context, subnetpool_id,
+                                    clean_session)
 
     def _create_implicit_network(self, context, clean_session=True, **kwargs):
         attrs = {'tenant_id': context.current['tenant_id'],
