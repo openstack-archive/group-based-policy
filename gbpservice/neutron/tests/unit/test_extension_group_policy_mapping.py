@@ -103,16 +103,26 @@ class GroupPolicyMappingExtTestCase(tgp.GroupPolicyExtensionTestCase):
 
     def get_create_l3_policy_default_attrs(self):
         attrs = cm.get_create_l3_policy_default_attrs()
+        attrs.update({'address_scope_v4_id': None})
+        attrs.update({'address_scope_v6_id': None})
+        attrs.update({'subnetpools_v4': []})
+        attrs.update({'subnetpools_v6': []})
         attrs.update({'routers': []})
         return attrs
 
     def get_create_l3_policy_attrs(self):
         attrs = cm.get_create_l3_policy_attrs()
+        attrs.update({'address_scope_v4_id': tgp._uuid()})
+        attrs.update({'address_scope_v6_id': tgp._uuid()})
+        attrs.update({'subnetpools_v4': [tgp._uuid(), tgp._uuid()]})
+        attrs.update({'subnetpools_v6': [tgp._uuid(), tgp._uuid()]})
         attrs.update({'routers': [tgp._uuid(), tgp._uuid()]})
         return attrs
 
     def get_update_l3_policy_attrs(self):
         attrs = cm.get_update_l3_policy_attrs()
+        attrs.update({'subnetpools_v4': [tgp._uuid(), tgp._uuid()]})
+        attrs.update({'subnetpools_v6': [tgp._uuid(), tgp._uuid()]})
         attrs.update({'routers': [tgp._uuid(), tgp._uuid()]})
         return attrs
 
