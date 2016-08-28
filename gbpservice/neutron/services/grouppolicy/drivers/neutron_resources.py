@@ -44,8 +44,13 @@ class CommonNeutronBase(ipd.ImplicitPolicyBase, rmd.OwnedResourcesOperations,
         if not context.current['l3_policy_id']:
             self._create_implicit_l3_policy(context, clean_session=False)
             l2p_db['l3_policy_id'] = context.current['l3_policy_id']
+        l3p_db = context._plugin._get_l3_policy(
+            context._plugin_context, l2p_db['l3_policy_id'])
         if not context.current['network_id']:
-            self._use_implicit_network(context, clean_session=False)
+            self._use_implicit_network(
+                context, address_scope_v4=l3p_db['address_scope_v4_id'],
+                address_scope_v6=l3p_db['address_scope_v6_id'],
+                clean_session=False)
             l2p_db['network_id'] = context.current['network_id']
 
     @log.log_method_call
