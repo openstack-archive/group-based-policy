@@ -1,5 +1,8 @@
 #!/bin/bash
 
+# Temporary - remove when patch is out of WIP
+exit
+
 source functions-gbp
 
 set -x
