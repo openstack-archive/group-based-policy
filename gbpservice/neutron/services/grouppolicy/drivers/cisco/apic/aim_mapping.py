@@ -28,6 +28,7 @@ from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import model
 from gbpservice.neutron.services.grouppolicy.common import (
     constants as gp_const)
 from gbpservice.neutron.services.grouppolicy.common import constants as g_const
+from gbpservice.neutron.services.grouppolicy.common import exceptions as exc
 from gbpservice.neutron.services.grouppolicy.drivers import (
     neutron_resources as nrd)
 from gbpservice.neutron.services.grouppolicy.drivers.cisco.apic import (
@@ -41,6 +42,7 @@ REVERSE = 'Reverse'
 FILTER_DIRECTIONS = {FORWARD: False, REVERSE: True}
 FORWARD_FILTER_ENTRIES = 'Forward-FilterEntries'
 REVERSE_FILTER_ENTRIES = 'Reverse-FilterEntries'
+ADDR_SCOPE_KEYS = ['address_scope_v4_id', 'address_scope_v6_id']
 
 # Definitions duplicated from apicapi lib
 APIC_OWNED = 'apic_owned_'
@@ -81,6 +83,52 @@ class AIMMappingDriver(nrd.CommonNeutronBase):
 
     def aim_display_name(self, name):
         return name
+
+    @log.log_method_call
+    def create_l3_policy_precommit(self, context):
+        l3p = context.current
+        l3p_db = context._plugin._get_l3_policy(
+            context._plugin_context, l3p['id'])
+        for ascp in ADDR_SCOPE_KEYS:
+            if not l3p[ascp]:
+                self._use_implicit_address_scope(context, clean_session=False)
+                l3p_db[ascp] = l3p[ascp]
+        # REVISIT: Check if the following constraint still holds
+        if len(l3p['routers']) > 1:
+            raise exc.L3PolicyMultipleRoutersNotSupported()
+        # REVISIT: Validate non overlapping IPs in the same tenant.
+        #          Currently this validation is not required for the
+        #          AIM driver, and since the AIM driver is the only
+        #          driver inheriting from this driver, we are okay
+        #          without the check.
+        self._reject_invalid_router_access(context, clean_session=False)
+        if not l3p['routers']:
+            self._use_implicit_router(context, clean_session=False)
+
+    @log.log_method_call
+    def update_l3_policy_precommit(self, context):
+        if context.current['routers'] != context.original['routers']:
+            raise exc.L3PolicyRoutersUpdateNotSupported()
+        # Currently there is no support for router update in l3p update.
+        # Added this check just in case it is supported in future.
+        self._reject_invalid_router_access(context, clean_session=False)
+
+    @log.log_method_call
+    def delete_l3_policy_precommit(self, context):
+        l3p_db = context._plugin._get_l3_policy(
+            context._plugin_context, context.current['id'])
+        for ascp in ADDR_SCOPE_KEYS:
+            if l3p_db[ascp]:
+                ascp_id = l3p_db[ascp]
+                l3p_db.update({ascp: None})
+                self._cleanup_address_scope(context._plugin_context, ascp_id,
+                                            clean_session=False)
+        routers = [router.router_id for router in l3p_db.routers]
+        for router_id in routers:
+            self._db_plugin(context._plugin)._remove_router_from_l3_policy(
+                context._plugin_context, l3p_db['id'], router_id)
+            self._cleanup_router(context._plugin_context, router_id,
+                                 clean_session=False)
 
     @log.log_method_call
     def create_l2_policy_precommit(self, context):
@@ -257,11 +305,6 @@ class AIMMappingDriver(nrd.CommonNeutronBase):
             context._plugin_context, context.current['id'])
         if pt_db['port_id']:
             self._cleanup_port(context._plugin_context, pt_db['port_id'])
-
-    @log.log_method_call
-    def delete_l3_policy_precommit(self, context):
-        # TODO(Sumit): Implement
-        pass
 
     @log.log_method_call
     def update_policy_classifier_precommit(self, context):

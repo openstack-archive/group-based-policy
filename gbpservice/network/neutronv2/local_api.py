@@ -284,35 +284,40 @@ class LocalAPI(object):
         except n_exc.NetworkNotFound:
             LOG.warning(_LW('Network %s already deleted'), network_id)
 
-    def _get_router(self, plugin_context, router_id):
+    def _get_router(self, plugin_context, router_id, clean_session=True):
         return self._get_resource(self._l3_plugin, plugin_context, 'router',
-                                  router_id)
+                                  router_id, clean_session=clean_session)
 
-    def _get_routers(self, plugin_context, filters=None):
+    def _get_routers(self, plugin_context, filters=None, clean_session=True):
         filters = filters or {}
         return self._get_resources(self._l3_plugin, plugin_context, 'routers',
-                                   filters)
+                                   filters, clean_session=clean_session)
 
-    def _create_router(self, plugin_context, attrs):
+    def _create_router(self, plugin_context, attrs, clean_session=True):
         return self._create_resource(self._l3_plugin, plugin_context, 'router',
-                                     attrs)
+                                     attrs, clean_session=clean_session)
 
-    def _update_router(self, plugin_context, router_id, attrs):
+    def _update_router(self, plugin_context, router_id, attrs,
+                       clean_session=True):
         return self._update_resource(self._l3_plugin, plugin_context, 'router',
-                                     router_id, attrs)
+                                     router_id, attrs,
+                                     clean_session=clean_session)
 
-    def _add_router_interface(self, plugin_context, router_id, interface_info):
+    def _add_router_interface(self, plugin_context, router_id, interface_info,
+                              clean_session=True):
         self._l3_plugin.add_router_interface(plugin_context,
-                                             router_id, interface_info)
+                                             router_id, interface_info,
+                                             clean_session=clean_session)
 
     def _remove_router_interface(self, plugin_context, router_id,
-                                 interface_info):
+                                 interface_info, clean_session=True):
         # To detach Router interface either port ID or Subnet ID is mandatory
         key = 'port_id' if 'port_id' in interface_info else 'subnet_id'
         fixed_ips_filter = {key: [interface_info.get(key)]}
         filters = {'device_id': [router_id],
                    'fixed_ips': fixed_ips_filter}
-        ports = self._get_ports(plugin_context, filters=filters)
+        ports = self._get_ports(plugin_context, filters=filters,
+                                clean_session=clean_session)
 
         try:
             self._l3_plugin.remove_router_interface(plugin_context, router_id,
@@ -330,21 +335,22 @@ class LocalAPI(object):
                                                  {'port': ports[0]},
                                                  'port' + '.delete.end')
 
-    def _add_router_gw_interface(self, plugin_context, router_id, gw_info):
+    def _add_router_gw_interface(self, plugin_context, router_id, gw_info,
+                                 clean_session=True):
         return self._l3_plugin.update_router(
             plugin_context, router_id,
             {'router': {'external_gateway_info': gw_info}})
 
     def _remove_router_gw_interface(self, plugin_context, router_id,
-                                    interface_info):
+                                    interface_info, clean_session=True):
         self._l3_plugin.update_router(
             plugin_context, router_id,
             {'router': {'external_gateway_info': None}})
 
-    def _delete_router(self, plugin_context, router_id):
+    def _delete_router(self, plugin_context, router_id, clean_session=True):
         try:
             self._delete_resource(self._l3_plugin, plugin_context, 'router',
-                                  router_id)
+                                  router_id, clean_session=clean_session)
         except l3.RouterNotFound:
             LOG.warning(_LW('Router %s already deleted'), router_id)
 
@@ -435,6 +441,75 @@ class LocalAPI(object):
                                   'floatingip', fip_id)
         except l3.FloatingIPNotFound:
             LOG.warning(_LW('Floating IP %s Already deleted'), fip_id)
+
+    def _get_address_scope(self, plugin_context, address_scope_id,
+                           clean_session=True):
+        return self._get_resource(self._core_plugin, plugin_context,
+                                  'address_scope', address_scope_id,
+                                  clean_session=clean_session)
+
+    def _get_address_scopes(self, plugin_context, filters=None,
+                         clean_session=True):
+        filters = filters or {}
+        return self._get_resources(self._core_plugin, plugin_context,
+                                   'address_scopes', filters,
+                                   clean_session=clean_session)
+
+    def _create_address_scope(self, plugin_context, attrs,
+                              clean_session=True):
+        return self._create_resource(self._core_plugin, plugin_context,
+                                     'address_scope', attrs,
+                                     clean_session=clean_session)
+
+    def _update_address_scope(self, plugin_context, address_scope_id, attrs,
+                              clean_session=True):
+        return self._update_resource(self._core_plugin, plugin_context,
+                                     'address_scope', address_scope_id, attrs,
+                                     clean_session=clean_session)
+
+    def _delete_address_scope(self, plugin_context, address_scope_id,
+                              clean_session=True):
+        try:
+            self._delete_resource(self._core_plugin, plugin_context,
+                                  'address_scope', address_scope_id,
+                                  clean_session=clean_session)
+        except n_exc.AddressScopeNotFound:
+            LOG.warning(_LW('Address Scope %s already deleted'),
+                        address_scope_id)
+
+    def _get_subnetpool(self, plugin_context, subnetpool_id,
+                        clean_session=True):
+        return self._get_resource(self._core_plugin, plugin_context,
+                                  'subnetpool', subnetpool_id,
+                                  clean_session=clean_session)
+
+    def _get_subnetpools(self, plugin_context, filters=None,
+                         clean_session=True):
+        filters = filters or {}
+        return self._get_resources(self._core_plugin, plugin_context,
+                                   'subnetpools', filters,
+                                   clean_session=clean_session)
+
+    def _create_subnetpool(self, plugin_context, attrs,
+                           clean_session=True):
+        return self._create_resource(self._core_plugin, plugin_context,
+                                     'subnetpool', attrs,
+                                     clean_session=clean_session)
+
+    def _update_subnetpool(self, plugin_context, subnetpool_id, attrs,
+                       clean_session=True):
+        return self._update_resource(self._core_plugin, plugin_context,
+                                     'subnetpool', subnetpool_id, attrs,
+                                     clean_session=clean_session)
+
+    def _delete_subnetpool(self, plugin_context, subnetpool_id,
+                           clean_session=True):
+        try:
+            self._delete_resource(self._core_plugin, plugin_context,
+                                  'subnetpool', subnetpool_id,
+                                  clean_session=clean_session)
+        except n_exc.SubnetpoolNotFound:
+            LOG.warning(_LW('Subnetpool %s already deleted'), subnetpool_id)
 
     def _get_l2_policy(self, plugin_context, l2p_id, clean_session=True):
         return self._get_resource(self._group_policy_plugin, plugin_context,
