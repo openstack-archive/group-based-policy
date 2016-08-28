@@ -10,6 +10,9 @@ trap prepare_logs ERR
 $TOP_DIR/exercise.sh
 exercises_exit_code=$?
 
+# Temporary - remove when patch is out of WIP
+exit $exercises_exit_code
+
 # Check if exercises left any resources undeleted
 check_residual_resources admin admin
 check_residual_resources admin demo
