@@ -85,6 +85,26 @@ class OwnedNetwork(model_base.BASEV2):
                            nullable=False, primary_key=True)
 
 
+class OwnedAddressScope(model_base.BASEV2):
+    """An Address Scope owned by the resource_mapping driver."""
+
+    __tablename__ = 'gpm_owned_address_scopes'
+    address_scope_id = sa.Column(sa.String(36),
+                                 sa.ForeignKey('address_scopes.id',
+                                               ondelete='CASCADE'),
+                                 nullable=False, primary_key=True)
+
+
+class OwnedSubnetpools(model_base.BASEV2):
+    """A Subnetpool owned by the resource_mapping driver."""
+
+    __tablename__ = 'gpm_owned_subnetpools'
+    subnetpool_id = sa.Column(sa.String(36),
+                              sa.ForeignKey('subnetpool.id',
+                                            ondelete='CASCADE'),
+                              nullable=False, primary_key=True)
+
+
 class OwnedRouter(model_base.BASEV2):
     """A Router owned by the resource_mapping driver."""
 
