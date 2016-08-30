@@ -13,6 +13,8 @@
 
 import copy
 import os
+import ssl
+ssl.PROTOCOL_SSLv3 = 1
 import webob.exc
 
 from neutron.api import extensions
