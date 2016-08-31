@@ -18,11 +18,14 @@ from aim.api import resource as aim_resource
 from aim import context as aim_context
 from aim.db import model_base as aim_model_base
 from keystoneclient.v3 import client as ksc_client
+from neutron.api import extensions
 from neutron import context
 from neutron.db import api as db_api
 from neutron import manager
 from neutron.plugins.ml2 import config
+from neutron.tests.unit.api import test_extensions
 from neutron.tests.unit.db import test_db_base_plugin_v2 as test_plugin
+from neutron.tests.unit.extensions import test_address_scope
 from opflexagent import constants as ofcst
 
 PLUGIN_NAME = 'gbpservice.neutron.plugins.ml2plus.plugin.Ml2PlusPlugin'
@@ -44,8 +47,18 @@ class FakeTenant(object):
 
 class FakeProjectManager(object):
     def list(self):
-        return [FakeTenant('test-tenant', 'TestTenantName'),
-                FakeTenant('bad_tenant_id', 'BadTenantName')]
+        return [
+            FakeTenant('another_tenant', 'AnotherTenantName'),
+            FakeTenant('bad_tenant_id', 'BadTenantIdName'),
+            FakeTenant('not_admin', 'NotAdminName'),
+            FakeTenant('some_tenant', 'SomeTenantName'),
+            FakeTenant('somebody_else', 'SomebodyElseName'),
+            FakeTenant('t1', 'T1Name'),
+            FakeTenant('tenant1', 'Tenant1Name'),
+            FakeTenant('tenant_1', 'Tenant1Name'),
+            FakeTenant('tenant_2', 'Tenant2Name'),
+            FakeTenant('test-tenant', 'TestTenantName'),
+        ]
 
 
 class FakeKeystoneClient(object):
@@ -53,8 +66,7 @@ class FakeKeystoneClient(object):
         self.projects = FakeProjectManager()
 
 
-class ApicAimTestCase(test_plugin.NeutronDbPluginV2TestCase):
-
+class ApicAimTestCase(test_address_scope.AddressScopeTestCase):
     def setUp(self):
         # Enable the test mechanism driver to ensure that
         # we can successfully call through to all mechanism
@@ -76,6 +88,8 @@ class ApicAimTestCase(test_plugin.NeutronDbPluginV2TestCase):
                                      group='ml2_type_vlan')
 
         super(ApicAimTestCase, self).setUp(PLUGIN_NAME)
+        ext_mgr = extensions.PluginAwareExtensionManager.get_instance()
+        self.ext_api = test_extensions.setup_extensions_middleware(ext_mgr)
         self.port_create_status = 'DOWN'
 
         self.saved_keystone_client = ksc_client.Client
@@ -89,126 +103,260 @@ class ApicAimTestCase(test_plugin.NeutronDbPluginV2TestCase):
         self.driver = self.plugin.mechanism_manager.mech_drivers[
             'apic_aim'].obj
         self.aim_mgr = aim_manager.AimManager()
+        self._app_profile_name = 'NeutronAP'
+        self._tenant_name = self._map_name({'id': 'test-tenant',
+                                            'name': 'TestTenantName'})
+        self._unrouted_vrf_name = 'UnroutedVRF'
 
     def tearDown(self):
         ksc_client.Client = self.saved_keystone_client
         super(ApicAimTestCase, self).tearDown()
 
-    def _find_by_dn(self, dn, cls):
+    def _map_name(self, resource):
+        # Assumes no conflicts and no substition needed.
+        return resource['name'][:40] + '_' + resource['id'][:5]
+
+
+class TestAimMapping(ApicAimTestCase):
+    def _get_tenant(self, tenant_name, should_exist=True):
         session = db_api.get_session()
         aim_ctx = aim_context.AimContext(session)
-        resource = cls.from_dn(dn)
-        return self.aim_mgr.get(aim_ctx, resource)
+        tenant = aim_resource.Tenant(name=tenant_name)
+        tenant = self.aim_mgr.get(aim_ctx, tenant)
+        if should_exist:
+            self.assertIsNotNone(tenant)
+        else:
+            self.assertIsNone(tenant)
+        return tenant
 
+    def _get_vrf(self, vrf_name, tenant_name, should_exist=True):
+        session = db_api.get_session()
+        aim_ctx = aim_context.AimContext(session)
+        vrf = aim_resource.VRF(tenant_name=tenant_name,
+                               name=vrf_name)
+        vrf = self.aim_mgr.get(aim_ctx, vrf)
+        if should_exist:
+            self.assertIsNotNone(vrf)
+        else:
+            self.assertIsNone(vrf)
+        return vrf
 
-class TestApicExtension(ApicAimTestCase):
-    def _verify_dn(self, dist_names, key, mo_types, id):
+    def _get_bd(self, bd_name, tenant_name, should_exist=True):
+        session = db_api.get_session()
+        aim_ctx = aim_context.AimContext(session)
+        bd = aim_resource.BridgeDomain(tenant_name=tenant_name,
+                                       name=bd_name)
+        bd = self.aim_mgr.get(aim_ctx, bd)
+        if should_exist:
+            self.assertIsNotNone(bd)
+        else:
+            self.assertIsNone(bd)
+        return bd
+
+    def _get_epg(self, epg_name, tenant_name, app_profile_name,
+                 should_exist=True):
+        session = db_api.get_session()
+        aim_ctx = aim_context.AimContext(session)
+        epg = aim_resource.EndpointGroup(tenant_name=tenant_name,
+                                         app_profile_name=app_profile_name,
+                                         name=epg_name)
+        epg = self.aim_mgr.get(aim_ctx, epg)
+        if should_exist:
+            self.assertIsNotNone(epg)
+        else:
+            self.assertIsNone(epg)
+        return epg
+
+    def _check_dn(self, resource, aim_resource, key):
+        dist_names = resource.get('apic:distinguished_names')
+        self.assertIsInstance(dist_names, dict)
         dn = dist_names.get(key)
         self.assertIsInstance(dn, basestring)
-        self.assertEqual('uni/', dn[:4])
-        for mo_type in mo_types:
-            self.assertIn('/' + mo_type + '-', dn)
-        self.assertIn(id, dn)
+        self.assertEqual(aim_resource.dn, dn)
 
-    def _verify_no_dn(self, dist_names, key):
-        self.assertIn(key, dist_names)
-        self.assertIsNone(dist_names.get(key))
-
-    def _verify_network_dist_names(self, net):
-        id = net['id']
-        dist_names = net.get('apic:distinguished_names')
+    def _check_no_dn(self, resource, key):
+        dist_names = resource.get('apic:distinguished_names')
         self.assertIsInstance(dist_names, dict)
-        self._verify_dn(dist_names, 'BridgeDomain', ['tn', 'BD'], id[:5])
-        self._verify_dn(dist_names, 'EndpointGroup', ['tn', 'ap', 'epg'],
-                        id[:5])
+        self.assertNotIn(key, dist_names)
 
-    def test_network(self):
+    def _check_unrouted_vrf(self):
+        aim_tenant = self._get_tenant('common')
+        self.assertEqual('common', aim_tenant.name)
+        self.assertEqual("Common Tenant", aim_tenant.display_name)
+
+        aim_vrf = self._get_vrf(self._unrouted_vrf_name, 'common')
+        self.assertEqual('common', aim_vrf.tenant_name)
+        self.assertEqual(self._unrouted_vrf_name, aim_vrf.name)
+        self.assertEqual('Common Unrouted Context', aim_vrf.display_name)
+        self.assertEqual('enforced', aim_vrf.policy_enforcement_pref)
+
+    def _check_unrouted_network(self, net, orig_net=None):
+        orig_net = orig_net or net
+
+        # REVISIT(rkukura): Check AIM Tenant here?
+        self.assertEqual('test-tenant', net['tenant_id'])
+
+        aname = self._map_name(orig_net)
+
+        aim_bd = self._get_bd(aname,
+                              self._tenant_name)
+        self.assertEqual(self._tenant_name, aim_bd.tenant_name)
+        self.assertEqual(aname, aim_bd.name)
+        self.assertEqual(net['name'], aim_bd.display_name)
+        self.assertEqual(self._unrouted_vrf_name, aim_bd.vrf_name)
+        self.assertTrue(aim_bd.enable_arp_flood)
+        self.assertFalse(aim_bd.enable_routing)
+        self.assertTrue(aim_bd.limit_ip_learn_to_subnets)
+        self.assertEqual('proxy', aim_bd.l2_unknown_unicast_mode)  # REVISIT
+        self.assertEqual('', aim_bd.ep_move_detect_mode)  # REVISIT
+        self._check_dn(net, aim_bd, 'BridgeDomain')
+
+        aim_epg = self._get_epg(aname,
+                                tenant_name=self._tenant_name,
+                                app_profile_name=self._app_profile_name)
+        self.assertEqual(self._tenant_name, aim_epg.tenant_name)
+        self.assertEqual(self._app_profile_name, aim_epg.app_profile_name)
+        self.assertEqual(aname, aim_epg.name)
+        self.assertEqual(net['name'], aim_epg.display_name)
+        self.assertEqual(aname, aim_epg.bd_name)
+        self.assertEqual([], aim_epg.provided_contract_names)
+        self.assertEqual([], aim_epg.consumed_contract_names)
+        # REVISIT(rkukura): Check openstack_vmm_domain_names and
+        # physical_domain_names?
+        self._check_dn(net, aim_epg, 'EndpointGroup')
+
+        self._check_unrouted_vrf()
+
+    def _check_network_deleted(self, net):
+        aname = self._map_name(net)
+
+        self._get_bd(aname,
+                     self._tenant_name,
+                     should_exist=False)
+
+        self._get_epg(aname,
+                      tenant_name=self._tenant_name,
+                      app_profile_name=self._app_profile_name,
+                      should_exist=False)
+
+    def _check_unrouted_subnet(self, subnet):
+        # REVISIT(rkukura): Check AIM Tenant here?
+        self.assertEqual('test-tenant', subnet['tenant_id'])
+
+        self._check_no_dn(subnet, 'Subnet')
+
+        # REVISIT(rkukura): Anything else to check?
+
+    def _check_subnet_deleted(self, subnet):
+        # REVISIT(rkukura): Anything to check?
+        pass
+
+    def _check_address_scope(self, a_s, orig_a_s=None):
+        orig_a_s = orig_a_s or a_s
+
+        # REVISIT(rkukura): Check AIM Tenant here?
+        self.assertEqual('test-tenant', a_s['tenant_id'])
+
+        aname = self._map_name(orig_a_s)
+
+        aim_vrf = self._get_vrf(aname,
+                                self._tenant_name)
+        self.assertEqual(self._tenant_name, aim_vrf.tenant_name)
+        self.assertEqual(aname, aim_vrf.name)
+        self.assertEqual(a_s['name'], aim_vrf.display_name)
+        self.assertEqual('enforced', aim_vrf.policy_enforcement_pref)
+        self._check_dn(a_s, aim_vrf, 'VRF')
+
+    def _check_address_scope_deleted(self, a_s):
+        aname = self._map_name(a_s)
+
+        self._get_vrf(aname,
+                      self._tenant_name,
+                      should_exist=False)
+
+    def test_network_lifecycle(self):
         # Test create.
-        net = self._make_network(self.fmt, 'net1', True)['network']
-        net_id = net['id']
-        self._verify_network_dist_names(net)
-
-        # Verify AIM resources.
-        aim_bd = self._find_by_dn(
-            net['apic:distinguished_names']['BridgeDomain'],
-            aim_resource.BridgeDomain)
-        aim_epg = self._find_by_dn(
-            net['apic:distinguished_names']['EndpointGroup'],
-            aim_resource.EndpointGroup)
-        self.assertEqual(aim_bd.name, aim_epg.name)
-        self.assertEqual(aim_bd.name, aim_epg.bd_name)
+        orig_net = self._make_network(self.fmt, 'net1', True)['network']
+        net_id = orig_net['id']
+        self._check_unrouted_network(orig_net)
 
         # Test show.
-        res = self._show('networks', net_id)['network']
-        self._verify_network_dist_names(res)
+        net = self._show('networks', net_id)['network']
+        self._check_unrouted_network(net)
 
         # Test update.
         data = {'network': {'name': 'newnamefornet'}}
-        res = self._update('networks', net_id, data)['network']
-        self._verify_network_dist_names(res)
+        net = self._update('networks', net_id, data)['network']
+        self._check_unrouted_network(net, orig_net)
 
-    def _verify_subnet_dist_names(self, subnet):
-        dist_names = subnet.get('apic:distinguished_names')
-        self.assertIsInstance(dist_names, dict)
-        if subnet['gateway_ip']:
-            id = subnet['gateway_ip'] + '/' + subnet['cidr'].split('/')[1]
-            self._verify_dn(dist_names, 'Subnet', ['tn', 'BD', 'subnet'], id)
-        else:
-            self._verify_no_dn(dist_names, 'Subnet')
+        # Test delete.
+        self._delete('networks', net_id)
+        self._check_network_deleted(orig_net)
 
-    def test_subnet_without_gw(self):
-        # Test create without gateway.
-        net = self._make_network(self.fmt, 'net', True)
-        pools = [{'start': '10.0.0.2', 'end': '10.0.0.254'}]
-        subnet = self._make_subnet(self.fmt, net, None,
-                                   '10.0.0.0/24',
-                                   allocation_pools=pools)['subnet']
-        subnet_id = subnet['id']
-        self._verify_subnet_dist_names(subnet)
+    def test_subnet_lifecycle(self):
+        # Create network.
+        net = self._make_network(self.fmt, 'net1', True)
 
-        # Test show.
-        res = self._show('subnets', subnet_id)['subnet']
-        self._verify_subnet_dist_names(res)
-
-        # Test update.
-        data = {'subnet': {'name': 'newnameforsubnet'}}
-        res = self._update('subnets', subnet_id, data)['subnet']
-        self._verify_subnet_dist_names(res)
-
-        # Test update adding gateay.
-        data = {'subnet': {'gateway_ip': '10.0.0.1'}}
-        res = self._update('subnets', subnet_id, data)['subnet']
-        self._verify_subnet_dist_names(res)
-
-        # Test show after adding gateway.
-        res = self._show('subnets', subnet_id)['subnet']
-        self._verify_subnet_dist_names(res)
-
-    def test_subnet_with_gw(self):
         # Test create.
-        net = self._make_network(self.fmt, 'net', True)
-        subnet = self._make_subnet(self.fmt, net, '10.0.1.1',
-                                   '10.0.1.0/24')['subnet']
+        subnet = self._make_subnet(
+            self.fmt, net, '10.0.0.1', '10.0.0.0/24')['subnet']
         subnet_id = subnet['id']
-        self._verify_subnet_dist_names(subnet)
+        self._check_unrouted_subnet(subnet)
 
         # Test show.
-        res = self._show('subnets', subnet_id)['subnet']
-        self._verify_subnet_dist_names(res)
+        subnet = self._show('subnets', subnet_id)['subnet']
+        self._check_unrouted_subnet(subnet)
 
         # Test update.
-        data = {'subnet': {'name': 'newnameforsubnet'}}
-        res = self._update('subnets', subnet_id, data)['subnet']
-        self._verify_subnet_dist_names(res)
+        data = {'subnet': {'name': 'newnamefornet'}}
+        subnet = self._update('subnets', subnet_id, data)['subnet']
+        self._check_unrouted_subnet(subnet)
 
-        # Test update removing gateway.
-        data = {'subnet': {'gateway_ip': None}}
-        res = self._update('subnets', subnet_id, data)['subnet']
-        self._verify_subnet_dist_names(res)
+        # Test delete.
+        self._delete('subnets', subnet_id)
+        self._check_subnet_deleted(subnet)
 
-        # Test show after removing gateway.
-        res = self._show('subnets', subnet_id)['subnet']
-        self._verify_subnet_dist_names(res)
+    def test_address_scope_lifecycle(self):
+        # Test create.
+        orig_a_s = self._make_address_scope(
+            self.fmt, 4, name='as1')['address_scope']
+        a_s_id = orig_a_s['id']
+        self._check_address_scope(orig_a_s)
+
+        # Test show.
+        a_s = self._show('address-scopes', a_s_id)['address_scope']
+        self._check_address_scope(a_s)
+
+        # Test update.
+        data = {'address_scope': {'name': 'newnameforaddressscope'}}
+        a_s = self._update('address-scopes', a_s_id, data)['address_scope']
+        self._check_address_scope(a_s, orig_a_s)
+
+        # Test delete.
+        self._delete('address-scopes', a_s_id)
+        self._check_address_scope_deleted(orig_a_s)
+
+    # def test_create_subnet_with_address_scope(self):
+    #     net = self._make_network(self.fmt, 'net1', True)
+    #     name = self._map_name(net['network'])
+    #     self._check(name, vrf_name='UnroutedVRF')
+
+    #     a_s = self._make_address_scope(self.fmt, 4, name='as1')
+    #     a_s_id = a_s['address_scope']['id']
+    #     # vrf_name = self._map_name(a_s['address_scope'])
+
+    #     sp = self._make_subnetpool(self.fmt, ['10.0.0.0/8'], name='sp1',
+    #                                tenant_id='test-tenant',  # REVISIT
+    #                                address_scope_id=a_s_id,
+    #                                default_prefixlen=24)
+    #     sp_id = sp['subnetpool']['id']
+
+    #     self._make_subnet(self.fmt, net, None, None, subnetpool_id=sp_id)
+    #     # REVISIT(rkukura): Should the address_scopes VRF be used
+    #     # immediately, or not until connected to a router?
+    #     #
+    #     # self._check(name, vrf_name=vrf_name)
+    #     self._check(name, vrf_name='UnroutedVRF')
 
 
 class TestPortBinding(ApicAimTestCase):
