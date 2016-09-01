@@ -2042,7 +2042,7 @@ class TestPolicyTargetGroupVlanNetwork(ApicMappingVlanTestCase,
             self.assertFalse(port['port']['admin_state_up'])
 
 
-class TestL2Policy(ApicMappingTestCase):
+class TestL2PolicyBase(ApicMappingTestCase):
 
     def _test_l2_policy_created_on_apic(self, shared=False):
         l2p = self.create_l2_policy(name="l2p", shared=shared)['l2_policy']
@@ -2055,12 +2055,6 @@ class TestL2Policy(ApicMappingTestCase):
         mgr.ensure_epg_created.assert_called_once_with(
             tenant, amap.SHADOW_PREFIX + l2p['id'], bd_owner=tenant,
             bd_name=l2p['id'], transaction=mock.ANY)
-
-    def test_l2_policy_created_on_apic(self):
-        self._test_l2_policy_created_on_apic()
-
-    def test_l2_policy_created_on_apic_shared(self):
-        self._test_l2_policy_created_on_apic(shared=True)
 
     def _test_l2_policy_deleted_on_apic(self, shared=False):
         l2p = self.create_l2_policy(name="l2p", shared=shared)['l2_policy']
@@ -2080,6 +2074,15 @@ class TestL2Policy(ApicMappingTestCase):
                       transaction=mock.ANY)]
         self._check_call_list(expected_calls,
                               mgr.delete_contract.call_args_list)
+
+
+class TestL2Policy(TestL2PolicyBase):
+
+    def test_l2_policy_created_on_apic(self):
+        self._test_l2_policy_created_on_apic()
+
+    def test_l2_policy_created_on_apic_shared(self):
+        self._test_l2_policy_created_on_apic(shared=True)
 
     def test_l2_policy_deleted_on_apic(self):
         self._test_l2_policy_deleted_on_apic()
@@ -2125,6 +2128,71 @@ class TestL2Policy(ApicMappingTestCase):
         subnet2 = netaddr.IPSet(
             [self._show_subnet(x)['subnet']['cidr'] for x in ptg['subnets']])
         self.assertFalse(subnet & subnet2)
+
+
+class TestL2PolicyWithDefaultPTG(TestL2PolicyBase):
+
+    def setUp(self, **kwargs):
+        config.cfg.CONF.set_override(
+            'create_default_ptg', True, group='apic_mapping')
+        super(TestL2PolicyWithDefaultPTG, self).setUp(**kwargs)
+        self._neutron_context = context.Context(
+            '', kwargs.get('tenant_id', self._tenant_id),
+            is_admin_context=False)
+
+    def _test_default_ptg_created(self, shared=False):
+        ptgs = self._gbp_plugin.get_policy_target_groups(self._neutron_context)
+        self.assertEqual(1, len(ptgs))
+        ptg = ptgs[0]
+        self.assertEqual(amap.DEFAULT_PTG, str(ptg['name']))
+        self.assertEqual(shared, ptg['shared'])
+        # Only PRS can be updated for default EPG, but not other attributes
+        prs1 = self.create_policy_rule_set(
+            name='p1', shared=shared)['policy_rule_set']
+        prs2 = self.create_policy_rule_set(
+            name='c1', shared=shared)['policy_rule_set']
+        self.update_policy_target_group(
+            ptg['id'], provided_policy_rule_sets={prs1['id']: 'scope'},
+            expected_res_status=webob.exc.HTTPOk.code)
+        self.update_policy_target_group(
+            ptg['id'], consumed_policy_rule_sets={prs2['id']: 'scope'},
+            expected_res_status=webob.exc.HTTPOk.code)
+        res = self.update_policy_target_group(
+            ptg['id'], name='something-else',
+            description='something-else',
+            expected_res_status=webob.exc.HTTPBadRequest.code)
+        self.assertEqual('DefaultPTGAttrsUpdateNotSupported',
+                         res['NeutronError']['type'])
+        # Second PTG with default name cannot be created
+        res = self.create_policy_target_group(
+            name=amap.DEFAULT_PTG, l2_policy_id=ptg['l2_policy_id'],
+            expected_res_status=webob.exc.HTTPBadRequest.code)
+        self.assertEqual('DefaultPTGNameConflict',
+                         res['NeutronError']['type'])
+        res = self.delete_policy_target_group(
+            ptg['id'], expected_res_status=webob.exc.HTTPBadRequest.code)
+        self.assertEqual('DefaultPTGDeleteNotSupported',
+                         res['NeutronError']['type'])
+
+    def _test_default_ptg_deleted(self, shared=False):
+        ptgs = self._gbp_plugin.get_policy_target_groups(self._neutron_context)
+        self.assertEqual(0, len(ptgs))
+
+    def test_l2_policy_created_on_apic(self):
+        self._test_l2_policy_created_on_apic()
+        self._test_default_ptg_created()
+
+    def test_l2_policy_created_on_apic_shared(self):
+        self._test_l2_policy_created_on_apic(shared=True)
+        self._test_default_ptg_created(shared=True)
+
+    def test_l2_policy_deleted_on_apic(self):
+        self._test_l2_policy_deleted_on_apic()
+        self._test_default_ptg_deleted()
+
+    def test_l2_policy_deleted_on_apic_shared(self):
+        self._test_l2_policy_deleted_on_apic(shared=True)
+        self._test_default_ptg_deleted()
 
 
 class TestL3Policy(ApicMappingTestCase):
