@@ -298,8 +298,11 @@ class GroupPolicyMappingDbPlugin(gpdb.GroupPolicyDbPlugin):
         with context.session.begin(subtransactions=True):
             if ptg['service_management']:
                 self._validate_service_management_ptg(context, tenant_id)
+            uuid = ptg.get('id')
+            if not uuid:
+                uuid = uuidutils.generate_uuid()
             ptg_db = PolicyTargetGroupMapping(
-                id=uuidutils.generate_uuid(), tenant_id=tenant_id,
+                id=uuid, tenant_id=tenant_id,
                 name=ptg['name'], description=ptg['description'],
                 l2_policy_id=ptg['l2_policy_id'],
                 network_service_policy_id=ptg['network_service_policy_id'],
