@@ -2056,7 +2056,7 @@ class TestPolicyTargetGroupVlanNetwork(ApicMappingVlanTestCase,
             self.assertFalse(port['port']['admin_state_up'])
 
 
-class TestL2Policy(ApicMappingTestCase):
+class TestL2PolicyBase(ApicMappingTestCase):
 
     def _test_l2_policy_created_on_apic(self, shared=False):
         l2p = self.create_l2_policy(name="l2p", shared=shared)['l2_policy']
@@ -2069,12 +2069,6 @@ class TestL2Policy(ApicMappingTestCase):
         mgr.ensure_epg_created.assert_called_once_with(
             tenant, amap.SHADOW_PREFIX + l2p['id'], bd_owner=tenant,
             bd_name=l2p['id'], transaction=mock.ANY)
-
-    def test_l2_policy_created_on_apic(self):
-        self._test_l2_policy_created_on_apic()
-
-    def test_l2_policy_created_on_apic_shared(self):
-        self._test_l2_policy_created_on_apic(shared=True)
 
     def _test_l2_policy_deleted_on_apic(self, shared=False):
         l2p = self.create_l2_policy(name="l2p", shared=shared)['l2_policy']
@@ -2094,6 +2088,15 @@ class TestL2Policy(ApicMappingTestCase):
                       transaction=mock.ANY)]
         self._check_call_list(expected_calls,
                               mgr.delete_contract.call_args_list)
+
+
+class TestL2Policy(TestL2PolicyBase):
+
+    def test_l2_policy_created_on_apic(self):
+        self._test_l2_policy_created_on_apic()
+
+    def test_l2_policy_created_on_apic_shared(self):
+        self._test_l2_policy_created_on_apic(shared=True)
 
     def test_l2_policy_deleted_on_apic(self):
         self._test_l2_policy_deleted_on_apic()
@@ -2139,6 +2142,26 @@ class TestL2Policy(ApicMappingTestCase):
         subnet2 = netaddr.IPSet(
             [self._show_subnet(x)['subnet']['cidr'] for x in ptg['subnets']])
         self.assertFalse(subnet & subnet2)
+
+
+class TestL2PolicyWithDefaultPTG(TestL2PolicyBase):
+
+    def setUp(self, **kwargs):
+        super(TestL2PolicyWithDefaultPTG, self).setUp(**kwargs)
+        config.cfg.CONF.set_override(
+            'create_default_ptg', True, group='apic_mapping')
+
+    def test_l2_policy_created_on_apic(self):
+        self._test_l2_policy_created_on_apic()
+
+    def test_l2_policy_created_on_apic_shared(self):
+        self._test_l2_policy_created_on_apic(shared=True)
+
+    def test_l2_policy_deleted_on_apic(self):
+        self._test_l2_policy_deleted_on_apic()
+
+    def test_l2_policy_deleted_on_apic_shared(self):
+        self._test_l2_policy_deleted_on_apic(shared=True)
 
 
 class TestL3Policy(ApicMappingTestCase):
