@@ -11,6 +11,7 @@
 #    under the License.
 
 import copy
+import hashlib
 import netaddr
 import re
 
@@ -59,6 +60,7 @@ from gbpservice.neutron.services.grouppolicy.drivers.cisco.apic import (
 from gbpservice.neutron.services.grouppolicy.drivers.cisco.apic import (
     nova_client as nclient)
 from gbpservice.neutron.services.grouppolicy import group_policy_context
+from gbpservice.neutron.services.grouppolicy import plugin as gbp_plugin
 
 
 HOST_SNAT_POOL = 'host-snat-pool-for-internal-use'
@@ -70,6 +72,24 @@ LOG = logging.getLogger(__name__)
 UNMANAGED_SEGMENT = _("External Segment %s is not managed by APIC mapping "
                       "driver.")
 PRE_EXISTING_SEGMENT = _("Pre-existing external segment %s not found.")
+AUTO_PTG_NAME_PREFIX = 'auto-ptg-%s'
+# Note that this prefix should not exceede 4 characters
+AUTO_PTG_ID_PREFIX = 'auto%s'
+AUTO_PTG_MUTABLE_KEYS = ['name', 'description', 'consumed_policy_rule_sets',
+                         'provided_policy_rule_sets']
+
+opts = [
+    cfg.BoolOpt('create_auto_ptg',
+                default=False,
+                help=_("Automatically create a PTG when a L2 Policy "
+                       "gets created. This is currently an apic_mapping "
+                       "policy driver specific feature and may evolve "
+                       "to be a broader GBP feature. As a part of the "
+                       "evolution, new APIs may be added, the Auto PTG "
+                       "naming, and ID format convention may change.")),
+]
+
+cfg.CONF.register_opts(opts, "apic_mapping")
 
 
 class PolicyRuleUpdateNotSupportedOnApicDriver(gpexc.GroupPolicyBadRequest):
@@ -200,6 +220,15 @@ class AdminOnlyOperation(gpexc.GroupPolicyBadRequest):
     message = _("This operation is reserved to admins")
 
 
+class AutoPTGAttrsUpdateNotSupported(gpexc.GroupPolicyBadRequest):
+    message = _("Update of attributes: %(attrs)s for auto PTG "
+                "%(id)s not supported.")
+
+
+class AutoPTGDeleteNotSupported(gpexc.GroupPolicyBadRequest):
+    message = _("Auto PTG %(id)s cannot be deleted.")
+
+
 class TenantSpecificNatEpg(model_base.BASEV2):
     """Tenants that use a specific NAT EPG for an external segment."""
     __tablename__ = 'gp_apic_tenant_specific_nat_epg'
@@ -289,6 +318,11 @@ class ApicMappingDriver(api.ResourceMappingDriver,
         self.l3out_vlan_alloc = l3out_vlan_alloc.L3outVlanAlloc()
         self.l3out_vlan_alloc.sync_vlan_allocations(
             self.apic_manager.ext_net_dict)
+        self.create_auto_ptg = cfg.CONF.apic_mapping.create_auto_ptg
+        if self.create_auto_ptg:
+            LOG.info(_('Auto PTG creation configuration set, '
+                       'this will result in automatic creation of a PTG '
+                       'per L2 Policy'))
 
     def _setup_rpc_listeners(self):
         self.endpoints = [rpc.GBPServerRpcCallback(self, self.notifier)]
@@ -1063,7 +1097,11 @@ class ApicMappingDriver(api.ResourceMappingDriver,
             return
 
     def delete_policy_target_group_precommit(self, context):
-        pass
+        if self.create_auto_ptg:
+            auto_ptg_id = self._get_auto_ptg_id(
+                context.current['l2_policy_id'])
+            if context.current['id'] == auto_ptg_id:
+                raise AutoPTGDeleteNotSupported(id=auto_ptg_id)
 
     def delete_policy_target_group_postcommit(self, context):
         if not self.name_mapper._is_apic_reference(context.current):
@@ -1105,6 +1143,14 @@ class ApicMappingDriver(api.ResourceMappingDriver,
             self._unset_any_contract(context.current)
 
     def delete_l2_policy_precommit(self, context):
+        if self.create_auto_ptg:
+            auto_ptg_id = self._get_auto_ptg_id(context.current['id'])
+            auto_ptg = context._plugin.get_policy_target_group(
+                    context._plugin_context, auto_ptg_id)
+            if auto_ptg:
+                self._db_plugin(context._plugin).delete_policy_target_group(
+                    context._plugin_context, auto_ptg_id)
+            self.apic_manager.db.delete_apic_name(auto_ptg_id)
         if not self.name_mapper._is_apic_reference(context.current):
             super(ApicMappingDriver, self).delete_l2_policy_precommit(context)
 
@@ -1202,6 +1248,15 @@ class ApicMappingDriver(api.ResourceMappingDriver,
         self.create_policy_rule_postcommit(context, transaction=None)
 
     def update_policy_target_group_precommit(self, context):
+        if self.create_auto_ptg:
+            auto_ptg_id = self._get_auto_ptg_id(
+                context.original['l2_policy_id'])
+            if context.current['id'] == auto_ptg_id:
+                updated_attrs = [key for key in context.current if
+                                 context.original[key] != context.current[key]]
+                if list(set(updated_attrs) - set(AUTO_PTG_MUTABLE_KEYS)):
+                    raise AutoPTGAttrsUpdateNotSupported(
+                        id=auto_ptg_id, attrs=updated_attrs)
         if not self.name_mapper._is_apic_reference(context.current):
             if set(context.original['subnets']) != set(
                  context.current['subnets']):
@@ -2713,6 +2768,27 @@ class ApicMappingDriver(api.ResourceMappingDriver,
             self.apic_manager.set_contract_for_epg(
                 tenant, shadow_epg, contract, provider=True,
                 contract_owner=tenant, transaction=trs)
+        if self.create_auto_ptg:
+            data = {
+                "id": self._get_auto_ptg_id(l2p['id']),
+                "name": self._get_auto_ptg_name(l2p),
+                "description": "System created auto PTG per L2P",
+                "l2_policy_id": l2p['id'],
+                "proxied_group_id": None,
+                "proxy_type": None,
+                "proxy_group_id": attributes.ATTR_NOT_SPECIFIED,
+                "network_service_policy_id": None,
+                "service_management": False,
+                "shared": l2p['shared'],
+            }
+            auto_ptg = self._db_plugin(
+                context._plugin).create_policy_target_group(
+                    context._plugin_context,
+                    {'policy_target_group': data})
+            # Since we are reverse mapping the APIC EPG to the default PTG
+            # we will map the id of the PTG to the APIC EPG name
+            self.apic_manager.db.update_apic_name(
+                auto_ptg['id'], 'policy_target_group', shadow_epg)
 
     def _associate_service_filter(self, tenant, contract, filter_name,
                                   entry_name, transaction=None, **attrs):
@@ -3871,3 +3947,12 @@ class ApicMappingDriver(api.ResourceMappingDriver,
         """
         if EOC_PREFIX in ptg.get('description', ''):
             return ptg['description'][len(EOC_PREFIX):]
+
+    def _db_plugin(self, plugin_obj):
+            return super(gbp_plugin.GroupPolicyPlugin, plugin_obj)
+
+    def _get_auto_ptg_name(self, l2p):
+        return AUTO_PTG_NAME_PREFIX % l2p['id']
+
+    def _get_auto_ptg_id(self, l2p_id):
+        return AUTO_PTG_ID_PREFIX % hashlib.md5(l2p_id).hexdigest()
