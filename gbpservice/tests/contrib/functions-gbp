@@ -35,7 +35,15 @@ function prepare_nfp_devstack {
     sed -i 's/# Restore\/close logging file descriptors/nfp_setup $TOP_DIR\n# Restore\/close logging file descriptors/g' stack.sh
     source $TOP_DIR/functions
     source $TOP_DIR/functions-common
-    
+}
+
+function prepare_gbp_aim_devstack {
+    cd $TOP_DIR
+    sudo git checkout stable/mitaka
+    sudo cp $CONTRIB_DIR/devstack/local-aim.conf $TOP_DIR/local.conf
+    sudo cp $CONTRIB_DIR/devstack/exercises/gbp.sh $TOP_DIR/exercises/
+    source $TOP_DIR/functions
+    source $TOP_DIR/functions-common
 }
 
 function source_creds {
