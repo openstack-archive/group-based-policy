@@ -17,13 +17,11 @@ import copy
 
 from neutron._i18n import _LW
 from neutron.common import constants as n_constants
-from neutron import context as nctx
 from neutron.extensions import portbindings
 from neutron import manager
 from neutron.plugins.ml2 import driver_api as api
 from opflexagent import constants as ofcst
 from oslo_log import log
-from oslo_utils import importutils
 
 from gbpservice.neutron.services.grouppolicy.drivers.cisco.apic import (
     apic_mapping as amap)
@@ -41,7 +39,6 @@ class APICMechanismGBPDriver(api.MechanismDriver):
 
     def __init__(self):
         super(APICMechanismGBPDriver, self).__init__()
-        self._dvs_notifier = None
 
     def _agent_bind_port(self, context, agent_list, bind_strategy):
         """Attempt port binding per agent.
@@ -127,16 +124,6 @@ class APICMechanismGBPDriver(api.MechanismDriver):
             currentcopy = copy.copy(context.current)
             currentcopy['portgroup_name'] = (
                 vif_details['dvs_port_group_name'])
-            booked_port_key = None
-            if self.dvs_notifier:
-                booked_port_key = self.dvs_notifier.bind_port_call(
-                    currentcopy,
-                    context.network.network_segments,
-                    context.network.current,
-                    context.host
-                )
-            if booked_port_key:
-                vif_details['dvs_port_key'] = booked_port_key
             context.set_binding(segment[api.ID],
                                 VIF_TYPE_DVS, vif_details,
                                 n_constants.PORT_STATUS_ACTIVE)
@@ -193,49 +180,17 @@ class APICMechanismGBPDriver(api.MechanismDriver):
                 'apic'].obj
         return self._apic_gbp
 
-    @property
-    def dvs_notifier(self):
-        if not self._dvs_notifier:
-            try:
-                self._dvs_notifier = importutils.import_object(
-                    DVS_AGENT_KLASS,
-                    nctx.get_admin_context_without_session()
-                )
-            except ImportError:
-                self._dvs_notifier = None
-        return self._dvs_notifier
-
     def create_port_postcommit(self, context):
         self.apic_gbp.process_port_added(context)
 
     def update_port_postcommit(self, context):
         self.apic_gbp.process_port_changed(context)
-        port = context.current
-        if (port.get('binding:vif_details') and
-                port['binding:vif_details'].get('dvs_port_group_name')) and (
-                self.dvs_notifier):
-            self.dvs_notifier.update_postcommit_port_call(
-                context.current,
-                context.original,
-                context.network.network_segments[0],
-                context.host
-            )
 
     def delete_port_precommit(self, context):
         self.apic_gbp.process_pre_port_deleted(context)
 
     def delete_port_postcommit(self, context):
         self.apic_gbp.process_port_deleted(context)
-        port = context.current
-        if (port.get('binding:vif_details') and
-                port['binding:vif_details'].get('dvs_port_group_name')) and (
-                self.dvs_notifier):
-            self.dvs_notifier.delete_port_call(
-                context.current,
-                context.original,
-                context.network.network_segments[0],
-                context.host
-            )
 
     def update_subnet_postcommit(self, context):
         self.apic_gbp.process_subnet_changed(context._plugin_context,
