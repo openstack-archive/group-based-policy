@@ -525,6 +525,7 @@ class ServiceOrchestrator(nfp_api.NfpEventHandler):
             event_data = {
                 'network_function_id': request_data['network_function_id']
             }
+            request_data = event.data
             self._create_event('USER_CONFIG_DELETE_FAILED',
                                event_data=event_data, is_internal_event=True)
 
@@ -547,7 +548,9 @@ class ServiceOrchestrator(nfp_api.NfpEventHandler):
                     binding_key=original_event.binding_key,
                     key=original_event.desc.uuid)
                 LOG.debug("poll event started for %s" % (ev.id))
-                self._controller.poll_event(ev, max_times=20)
+                # REVISIT(ashu): Currently increased poll event to run
+                # max 40 times, need to come up with proper value.
+                self._controller.poll_event(ev, max_times=40)
             else:
                 if original_event:
                     ev = self._controller.new_event(
