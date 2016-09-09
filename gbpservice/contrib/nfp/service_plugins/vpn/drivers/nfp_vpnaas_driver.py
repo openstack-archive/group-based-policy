@@ -15,11 +15,11 @@ import time
 
 from gbpservice.contrib.nfp.config_orchestrator.common import topics
 from gbpservice.nfp.core import log as nfp_logging
+from neutron.common import exceptions
 from neutron.common import rpc as n_rpc
 from neutron.db import agents_db
 from neutron.db import agentschedulers_db
 from neutron import manager
-from neutron_lib import exceptions
 from neutron_vpnaas.services.vpn import plugin
 from neutron_vpnaas.services.vpn.service_drivers import base_ipsec
 
