@@ -15,9 +15,11 @@ from image_builder import disk_image_create as DIB
 TEMP_WORK_DIR = "tmp"
 CONFIG = ConfigParser.ConfigParser()
 NEUTRON_CONF = "/etc/neutron/neutron.conf"
+NEUTRON_ML2_CONF = "/etc/neutron/plugins/ml2/ml2_conf.ini"
 FILE_PATH = os.path.dirname(os.path.realpath(__file__))
 CONFIGURATOR_USER_DATA = FILE_PATH + "/image_builder/configurator_user_data"
 TEMPLATES_PATH = FILE_PATH + "/templates/gbp_resources.yaml"
+APIC_ENV = False
 
 # global values
 # these src_dirs will be copied from host to inside docker image, these
@@ -59,13 +61,76 @@ parser.add_argument('--controller-path', type=str, dest='controller_path',
                     help='patch to the controller image')
 args = parser.parse_args()
 
+def check_if_apic_sys():
+    global APIC_ENV
+    mech_drivers = commands.getoutput("crudini --get " + NEUTRON_ML2_CONF + " ml2 mechanism_drivers")
+    if mech_drivers == 'apic_gbp':
+        APIC_ENV = True
 
 def configure_nfp():
-    # Enable FW plugin
-    subprocess.call("crudini --set /etc/neutron/neutron.conf DEFAULT service_plugins neutron.services.l3_router.l3_router_plugin.L3RouterPlugin,group_policy,ncp,neutron_lbaas.services.loadbalancer.plugin.LoadBalancerPlugin,neutron.services.metering.metering_plugin.MeteringPlugin,neutron_vpnaas.services.vpn.plugin.VPNDriverPlugin,gbpservice.contrib.nfp.service_plugins.firewall.nfp_fwaas_plugin.NFPFirewallPlugin".split(' '))
+    commands.getoutput("cat /usr/lib/python2.7/site-packages/gbpservice/contrib/nfp/bin/nfp.ini >> /etc/nfp.ini")
+    check_if_apic_sys()
+    curr_service_plugins = commands.getoutput("crudini --get /etc/neutron/neutron.conf DEFAULT service_plugins")
+    curr_service_plugins_list = curr_service_plugins.split(",")
+    lbaas_enabled = filter(lambda x: 'lbaas' in x, curr_service_plugins_list)
+    vpnaas_enabled = filter(lambda x: 'vpnaas' in x, curr_service_plugins_list)
+    fwaas_enabled = filter(lambda x: 'fwaas' in x, curr_service_plugins_list)
+    firewall_enabled = filter(lambda x: 'firewall' in x, curr_service_plugins_list)
+    for word in firewall_enabled:
+       if word not in fwaas_enabled:
+           fwaas_enabled.append(word)
+    plugins_to_enable = ["ncp"]
+    for plugin in plugins_to_enable:
+        if plugin not in curr_service_plugins_list:
+            curr_service_plugins_list.append(plugin)
+                         
+    if "servicechain" in curr_service_plugins_list:
+         curr_service_plugins_list.remove("servicechain")
 
+    if not len(vpnaas_enabled):
+        curr_service_plugins_list.append("neutron_vpnaas.services.vpn.plugin.VPNDriverPlugin")
+    else:
+        for word in vpnaas_enabled:
+            curr_service_plugins_list.remove(word)
+        curr_service_plugins_list.append("neutron_vpnaas.services.vpn.plugin.VPNDriverPlugin")
+ 
+    if not len(lbaas_enabled):
+        curr_service_plugins_list.append("neutron_lbaas.services.loadbalancer.plugin.LoadBalancerPlugin")
+    else:
+        for word in lbaas_enabled:
+            curr_service_plugins_list.remove(word)
+        curr_service_plugins_list.append("neutron_lbaas.services.loadbalancer.plugin.LoadBalancerPlugin")
+        
+    if not len(fwaas_enabled):
+        curr_service_plugins_list.append("gbpservice.contrib.nfp.service_plugins.firewall.nfp_fwaas_plugin.NFPFirewallPlugin")
+    else:
+        for word in fwaas_enabled:
+            curr_service_plugins_list.remove(word)
+        curr_service_plugins_list.append("gbpservice.contrib.nfp.service_plugins.firewall.nfp_fwaas_plugin.NFPFirewallPlugin")
+   
+     
+        
+    new_service_plugins_list = curr_service_plugins_list
+    new_service_plugins = ",".join(new_service_plugins_list)
+    subprocess.call(("crudini --set /etc/neutron/neutron.conf DEFAULT service_plugins " + str(new_service_plugins)).split(' '))
+
+    #check id gbp-heat is configured, if not configure
+    curr_heat_plugin_dirs = commands.getoutput("crudini --get /etc/heat/heat.conf DEFAULT plugin_dirs")
+    curr_heat_plugin_dirs_list =  curr_heat_plugin_dirs.split(",")
+    heat_dirs_to_enable = ["/usr/lib64/heat", "/usr/lib/heat", "/usr/lib/python2.7/site-packages/gbpautomation/heat"]
+    for dir in heat_dirs_to_enable:
+        if dir not in curr_heat_plugin_dirs_list:
+            curr_heat_plugin_dirs_list.append(dir) 
+    new_heat_plugin_dirs_list = curr_heat_plugin_dirs_list
+    new_heat_plugin_dirs = ",".join(new_heat_plugin_dirs_list)
+    subprocess.call(("crudini --set /etc/heat/heat.conf DEFAULT plugin_dirs " + str(new_heat_plugin_dirs)).split(' '))
+    
+    
     # Enable GBP extension driver for service sharing
-    subprocess.call("crudini --set /etc/neutron/neutron.conf group_policy policy_drivers implicit_policy,resource_mapping,chain_mapping".split(' '))
+    if not APIC_ENV:
+        subprocess.call("crudini --set /etc/neutron/neutron.conf group_policy policy_drivers implicit_policy,resource_mapping,chain_mapping".split(' '))
+    else:
+        subprocess.call("crudini --set /etc/neutron/neutron.conf group_policy policy_drivers implicit_policy,apic,chain_mapping".split(' '))
     subprocess.call("crudini --set /etc/neutron/neutron.conf group_policy extension_drivers proxy_group".split(' '))
 
     # Configure service owner
@@ -89,12 +154,16 @@ def configure_nfp():
     # Update neutron LBaaS with NFP LBaaS service provider
     subprocess.call("crudini --set /etc/neutron/neutron_lbaas.conf service_providers service_provider LOADBALANCER:loadbalancer:gbpservice.contrib.nfp.service_plugins.loadbalancer.drivers.nfp_lbaas_plugin_driver.HaproxyOnVMPluginDriver:default".split(' '))
 
+    # Update neutron VPNaaS with NFP VPNaaS service provider
+    #subprocess.call(["sed -i '/^service_provider.*IPsecVPNDriver/ s/:default/\\nservice_provider\ =\ VPN:vpn:gbpservice.contrib.nfp.service_plugins.vpn.drivers.nfp_vpnaas_driver.NFPIPsecVPNDriver:default/' /etc/neutron/neutron_vpnaas.conf"], shell=True)
+
     # Update DB
     subprocess.call("gbp-db-manage --config-file /usr/share/neutron/neutron-dist.conf --config-file /etc/neutron/neutron.conf --config-file /etc/neutron/plugin.ini upgrade head".split(' '))
 
     # Restart the services to make the configuration effective
     subprocess.call("systemctl restart nfp_orchestrator".split(' '))
     subprocess.call("systemctl restart nfp_config_orch".split(' '))
+    subprocess.call("systemctl restart openstack-heat-engine".split(' '))
     subprocess.call("systemctl restart neutron-server".split(' '))
 
 
