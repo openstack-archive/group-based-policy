@@ -346,6 +346,7 @@ class GroupPolicyDbTestCase(GroupPolicyDBTestBase,
         plugins = manager.NeutronManager.get_service_plugins()
         self._gbp_plugin = plugins.get(constants.GROUP_POLICY)
         self._sc_plugin = plugins.get(constants.SERVICECHAIN)
+        self._l3_plugin = plugins.get(constants.L3_ROUTER_NAT)
 
 
 class TestGroupResources(GroupPolicyDbTestCase):
