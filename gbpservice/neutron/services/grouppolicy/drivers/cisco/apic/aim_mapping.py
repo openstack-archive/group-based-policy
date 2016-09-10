@@ -28,6 +28,7 @@ from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import model
 from gbpservice.neutron.services.grouppolicy.common import (
     constants as gp_const)
 from gbpservice.neutron.services.grouppolicy.common import constants as g_const
+from gbpservice.neutron.services.grouppolicy.common import exceptions as exc
 from gbpservice.neutron.services.grouppolicy.drivers import (
     neutron_resources as nrd)
 from gbpservice.neutron.services.grouppolicy.drivers.cisco.apic import (
@@ -41,6 +42,7 @@ REVERSE = 'Reverse'
 FILTER_DIRECTIONS = {FORWARD: False, REVERSE: True}
 FORWARD_FILTER_ENTRIES = 'Forward-FilterEntries'
 REVERSE_FILTER_ENTRIES = 'Reverse-FilterEntries'
+ADDR_SCOPE_KEYS = ['address_scope_v4_id', 'address_scope_v6_id']
 
 # Definitions duplicated from apicapi lib
 APIC_OWNED = 'apic_owned_'
@@ -83,6 +85,76 @@ class AIMMappingDriver(nrd.CommonNeutronBase):
         return name
 
     @log.log_method_call
+    def create_l3_policy_precommit(self, context):
+        l3p = context.current
+        l3p_db = context._plugin._get_l3_policy(
+            context._plugin_context, l3p['id'])
+        ascp = 'address_scope_v4_id' if l3p['ip_version'] == 4 else (
+            'address_scope_v6_id')
+        if not l3p[ascp]:
+            # REVISIT: For dual stack.
+            # This logic assumes either 4 or 6 but not both
+            self._use_implicit_address_scope(context, clean_session=False)
+            l3p_db[ascp] = l3p[ascp]
+        subpool = 'subnetpools_v4' if l3p['ip_version'] == 4 else (
+            'subnetpools_v6')
+        if not l3p[subpool]:
+            # REVISIT: For dual stack.
+            # This logic assumes either 4 or 6 but not both
+            self._use_implicit_subnetpool(
+                context, address_scope_id=l3p_db[ascp],
+                ip_version=l3p['ip_version'], clean_session=False)
+        # REVISIT: Check if the following constraint still holds
+        if len(l3p['routers']) > 1:
+            raise exc.L3PolicyMultipleRoutersNotSupported()
+        # REVISIT: Validate non overlapping IPs in the same tenant.
+        #          Currently this validation is not required for the
+        #          AIM driver, and since the AIM driver is the only
+        #          driver inheriting from this driver, we are okay
+        #          without the check.
+        self._reject_invalid_router_access(context, clean_session=False)
+        if not l3p['routers']:
+            self._use_implicit_router(context, clean_session=False)
+
+    @log.log_method_call
+    def update_l3_policy_precommit(self, context):
+        if context.current['routers'] != context.original['routers']:
+            raise exc.L3PolicyRoutersUpdateNotSupported()
+        # Currently there is no support for router update in l3p update.
+        # Added this check just in case it is supported in future.
+        self._reject_invalid_router_access(context, clean_session=False)
+        # TODO(Sumit): For extra safety add validation for address_scope change
+
+    @log.log_method_call
+    def delete_l3_policy_precommit(self, context):
+        l3p_db = context._plugin._get_l3_policy(
+            context._plugin_context, context.current['id'])
+        v4v6subpools = {4: l3p_db.subnetpools_v4, 6: l3p_db.subnetpools_v6}
+        for k, v in v4v6subpools.iteritems():
+            subpools = [sp.subnetpool_id for sp in v]
+            for sp_id in subpools:
+                self._db_plugin(
+                    context._plugin)._remove_subnetpool_from_l3_policy(
+                        context._plugin_context, l3p_db['id'], sp_id,
+                        ip_version=k)
+                self._cleanup_subnetpool(context._plugin_context, sp_id,
+                                         clean_session=False)
+        for ascp in ADDR_SCOPE_KEYS:
+            if l3p_db[ascp]:
+                ascp_id = l3p_db[ascp]
+                l3p_db.update({ascp: None})
+                self._cleanup_address_scope(context._plugin_context, ascp_id,
+                                            clean_session=False)
+        routers = [router.router_id for router in l3p_db.routers]
+        for router_id in routers:
+            self._db_plugin(context._plugin)._remove_router_from_l3_policy(
+                context._plugin_context, l3p_db['id'], router_id)
+            self._cleanup_router(context._plugin_context, router_id,
+                                 clean_session=False)
+
+# TODO(Sumit): Implement get_l3_policy_status()
+
+    @log.log_method_call
     def create_l2_policy_precommit(self, context):
         super(AIMMappingDriver, self).create_l2_policy_precommit(context)
         net = self._get_network(context._plugin_context,
@@ -116,6 +188,8 @@ class AIMMappingDriver(nrd.CommonNeutronBase):
             self._delete_implicit_contracts_and_unconfigure_default_epg(
                 context, context.current, default_epg_dn)
         super(AIMMappingDriver, self).delete_l2_policy_precommit(context)
+
+# TODO(Sumit): Implement get_l2_policy_status()
 
     @log.log_method_call
     def create_policy_target_group_precommit(self, context):
@@ -208,6 +282,7 @@ class AIMMappingDriver(nrd.CommonNeutronBase):
             for subnet_id in subnet_ids:
                 if not context._plugin._get_ptgs_for_subnet(
                     context._plugin_context, subnet_id):
+                    # TODO(Sumit): pass router_id of default router
                     self._cleanup_subnet(plugin_context, subnet_id,
                                          clean_session=False)
 
@@ -257,11 +332,6 @@ class AIMMappingDriver(nrd.CommonNeutronBase):
             context._plugin_context, context.current['id'])
         if pt_db['port_id']:
             self._cleanup_port(context._plugin_context, pt_db['port_id'])
-
-    @log.log_method_call
-    def delete_l3_policy_precommit(self, context):
-        # TODO(Sumit): Implement
-        pass
 
     @log.log_method_call
     def update_policy_classifier_precommit(self, context):
@@ -694,12 +764,14 @@ class AIMMappingDriver(nrd.CommonNeutronBase):
                     context._plugin_context, l2p_id)
                 name = APIC_OWNED + l2p['name']
                 added = super(
-                    AIMMappingDriver, self)._use_implicit_subnet(
+                    AIMMappingDriver,
+                    self)._use_implicit_subnet_from_subnetpool(
                         context, subnet_specifics={'name': name},
-                        is_proxy=False, clean_session=clean_session)
+                        clean_session=clean_session)
             context.add_subnets(subs - set(context.current['subnets']))
             for subnet in added:
                 self._sync_ptg_subnets(context, l2p)
+            # TODO(Sumit): This subnet needs to added to the default router
 
     def _create_implicit_contracts_and_configure_default_epg(
         self, context, l2p, epg_dn):
