@@ -435,10 +435,12 @@ class TestHeatDriver(unittest.TestCase):
         self.assertEqual(rvpn_l3_policy, expected_rvpn_l3_policy)
 
     @mock.patch.object(gbp_client.Client, "create_policy_target")
+    @mock.patch.object(gbp_client.Client, "update_policy_target")
     @mock.patch.object(neutron_client.Client, "list_subnets")
     @mock.patch.object(neutron_client.Client, "list_pools")
     @mock.patch.object(neutron_client.Client, "show_vip")
-    def test_create_policy_target_for_vip(self, vip, pools, subnets, pt):
+    def test_create_policy_target_for_vip(self, vip, pools, subnets,
+            pt, pt_update):
         pt.return_value = {
             'policy_target': {
                 'name': 'service_target_provider_0132c_00b93'
@@ -458,6 +460,12 @@ class TestHeatDriver(unittest.TestCase):
         auth_token = 'adsdsdd'
         provider_tenant_id = '8ae6701128994ab281dde6b92207bb19'
         provider = self.mock_dict.provider_ptg
+        self.heat_driver_obj.gbp_client.get_policy_targets = (
+                mock.MagicMock(
+                    return_value=self.mock_dict.policy_targets[
+                        'policy_targets']))
+        self.heat_driver_obj.keystoneclient.get_admin_token = (
+                mock.MagicMock(return_value='token'))
         self.heat_driver_obj._create_policy_target_for_vip(
             auth_token, provider_tenant_id, provider)
         pools.assert_called_once_with(
