@@ -557,7 +557,8 @@ class ServiceOrchestratorTestCase(NSOModuleTestCase):
             status = self.service_orchestrator.check_for_user_config_deleted(
                 test_event)
             mock_is_config_delete_complete.assert_called_once_with(
-                request_data['heat_stack_id'], network_function['tenant_id'])
+                request_data['heat_stack_id'], network_function['tenant_id'],
+                network_function)
             db_nf = self.nfp_db.get_network_function(
                 self.session, network_function['id'])
             self.assertEqual(network_function['status'], db_nf['status'])
@@ -576,7 +577,8 @@ class ServiceOrchestratorTestCase(NSOModuleTestCase):
             status = self.service_orchestrator.check_for_user_config_deleted(
                 test_event)
             mock_is_config_delete_complete.assert_called_once_with(
-                request_data['heat_stack_id'], network_function['tenant_id'])
+                request_data['heat_stack_id'], network_function['tenant_id'],
+                network_function)
             event_data = {
                 'network_function_id': network_function['id']
             }
@@ -599,7 +601,8 @@ class ServiceOrchestratorTestCase(NSOModuleTestCase):
             status = self.service_orchestrator.check_for_user_config_deleted(
                 test_event)
             mock_is_config_delete_complete.assert_called_once_with(
-                request_data['heat_stack_id'], network_function['tenant_id'])
+                request_data['heat_stack_id'], network_function['tenant_id'],
+                network_function)
             db_nf = self.nfp_db.get_network_function(
                 self.session, network_function['id'])
             self.assertEqual(None, db_nf['heat_stack_id'])

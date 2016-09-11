@@ -846,7 +846,8 @@ class ServiceOrchestrator(nfp_api.NfpEventHandler):
 
         heat_stack_id = self.config_driver.delete_config(
             network_function_info['heat_stack_id'],
-            network_function_info['tenant_id'])
+            network_function_info['tenant_id'],
+            network_function_info)
         request_data = {
             'heat_stack_id': network_function_info['heat_stack_id'],
             'tenant_id': network_function_info['tenant_id'],
@@ -1322,8 +1323,12 @@ class ServiceOrchestrator(nfp_api.NfpEventHandler):
             'network_function_id': request_data['network_function_id']
         }
         try:
+            network_function = self.db_handler.get_network_function(
+                self.db_session,
+                request_data['network_function_id'])
             config_status = self.config_driver.is_config_delete_complete(
-                request_data['heat_stack_id'], request_data['tenant_id'])
+                request_data['heat_stack_id'], request_data['tenant_id'],
+                network_function)
         except Exception as err:
             # FIXME: May be we need a count before removing the poll event
             LOG.error(_LE("Error: %(err)s while verifying configuration delete"
