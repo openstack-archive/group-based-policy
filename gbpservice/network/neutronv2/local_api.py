@@ -11,8 +11,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from neutron._i18n import _LE
-from neutron._i18n import _LW
+from neutron._i18n import _LE, _LW
 from neutron.api.rpc.agentnotifiers import dhcp_rpc_agent_api
 from neutron.common import constants as const
 from neutron.common import exceptions as n_exc

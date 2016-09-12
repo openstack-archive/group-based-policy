@@ -12,8 +12,7 @@
 
 import ast
 from collections import defaultdict
-from neutron._i18n import _LE
-from neutron._i18n import _LI
+from neutron._i18n import _LE, _LI
 from oslo_utils import excutils
 
 from gbpservice.nfp.common import constants as nfp_constants

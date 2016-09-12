@@ -11,8 +11,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from neutron._i18n import _LE
-from neutron._i18n import _LI
+from neutron._i18n import _LE, _LI
 from neutron.common import exceptions as n_exc
 from oslo_config import cfg
 from oslo_log import log

@@ -15,8 +15,7 @@ from subprocess import PIPE
 from subprocess import Popen
 import sys
 
-from oslo_log._i18n import _LE
-from oslo_log._i18n import _LI
+from oslo_log._i18n import _LE, _LI
 from oslo_log import log as logging
 from oslo_serialization import jsonutils
 

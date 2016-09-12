@@ -12,8 +12,7 @@
 
 import netaddr
 
-from neutron._i18n import _LE
-from neutron._i18n import _LW
+from neutron._i18n import _LE, _LW
 from neutron.api.v2 import attributes as nattr
 from neutron import context as n_ctx
 from neutron.extensions import portbindings

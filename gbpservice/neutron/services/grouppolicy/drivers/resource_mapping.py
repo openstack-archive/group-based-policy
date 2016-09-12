@@ -15,8 +15,7 @@ import operator
 
 from keystoneclient import exceptions as k_exceptions
 from keystoneclient.v2_0 import client as k_client
-from neutron._i18n import _LE
-from neutron._i18n import _LW
+from neutron._i18n import _LE, _LW
 from neutron.api.v2 import attributes
 from neutron.common import constants as const
 from neutron.common import exceptions as n_exc

@@ -10,8 +10,7 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-from neutron._i18n import _LI
-from neutron._i18n import _LW
+from neutron._i18n import _LI, _LW
 from neutron.db import model_base
 from oslo_config import cfg
 from oslo_log import helpers as log

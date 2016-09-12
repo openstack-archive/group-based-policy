@@ -14,8 +14,7 @@ import subprocess
 
 import netaddr
 import netifaces
-from oslo_log._i18n import _LE
-from oslo_log._i18n import _LI
+from oslo_log._i18n import _LE, _LI
 from oslo_log import log as logging
 import oslo_serialization.jsonutils as jsonutils
 import pecan
