@@ -11,16 +11,12 @@
 #    under the License.
 
 from oslo_log import helpers as log
-from oslo_log import log as logging
 
 from gbpservice.neutron.services.grouppolicy.common import exceptions as exc
 from gbpservice.neutron.services.grouppolicy.drivers import (
     implicit_policy as ipd)
 from gbpservice.neutron.services.grouppolicy.drivers import (
     resource_mapping as rmd)
-
-
-LOG = logging.getLogger(__name__)
 
 
 class CommonNeutronBase(ipd.ImplicitPolicyBase, rmd.OwnedResourcesOperations,

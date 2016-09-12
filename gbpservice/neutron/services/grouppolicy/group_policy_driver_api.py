@@ -13,13 +13,10 @@
 import abc
 
 from neutron.api.v2 import attributes
-from oslo_log import log as logging
 import six
 from sqlalchemy.orm import exc as orm_exc
 
 from gbpservice.common import utils
-
-LOG = logging.getLogger(__name__)
 
 
 @six.add_metaclass(abc.ABCMeta)

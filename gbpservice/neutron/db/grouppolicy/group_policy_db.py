@@ -17,7 +17,6 @@ from neutron.db import common_db_mixin
 from neutron.db import model_base
 from neutron.db import models_v2
 from oslo_log import helpers as log
-from oslo_log import log as logging
 from oslo_utils import uuidutils
 import sqlalchemy as sa
 from sqlalchemy import orm
@@ -28,7 +27,6 @@ from gbpservice.neutron.services.grouppolicy.common import (
     constants as gp_constants)
 
 
-LOG = logging.getLogger(__name__)
 MAX_IPV4_SUBNET_PREFIX_LENGTH = 31
 MAX_IPV6_SUBNET_PREFIX_LENGTH = 127
 ADDRESS_NOT_SPECIFIED = ''
