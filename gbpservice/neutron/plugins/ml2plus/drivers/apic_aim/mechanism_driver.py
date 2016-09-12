@@ -23,6 +23,8 @@ from neutron._i18n import _LW
 from neutron.agent.linux import dhcp
 from neutron.common import constants as n_constants
 from neutron.common import rpc as n_rpc
+from neutron.db import l3_db
+from neutron.db import models_v2
 from neutron.extensions import portbindings
 from neutron import manager
 from neutron.plugins.ml2 import driver_api as api
@@ -246,24 +248,74 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
 
     def create_subnet_precommit(self, context):
         LOG.debug("APIC AIM MD creating subnet: %s", context.current)
-        # TODO(rkukura): Implement.
+        # Neutron subnets are mapped to AIM Subnets as they are added
+        # to routers as interfaces.
 
     def update_subnet_precommit(self, context):
         LOG.debug("APIC AIM MD updating subnet: %s", context.current)
-        # TODO(rkukura): Implement.
+
+        if context.current['name'] != context.original['name']:
+            session = context._plugin_context.session
+
+            # REVISIT(rkukura): Subnet must always use the network's
+            # tenant_id.
+            tenant_id = context.current['tenant_id']
+            tenant_aname = self.name_mapper.tenant(session, tenant_id)
+            LOG.debug("Mapped tenant_id %(id)s to %(aname)s",
+                      {'id': tenant_id, 'aname': tenant_aname})
+
+            network_id = context.current['network_id']
+            network_aname = self.name_mapper.network(session, network_id)
+            LOG.info(_LI("Mapped network_id %(id)s to %(aname)s"),
+                     {'id': network_id, 'aname': network_aname})
+
+            dname = aim_utils.sanitize_display_name(context.current['name'])
+            aim_ctx = aim_context.AimContext(session)
+            prefix_len = context.current['cidr'].split('/')[1]
+            subnet_id = context.current['id']
+
+            for intf in self._subnet_router_interfaces(session, subnet_id):
+                gw_ip = intf.ip_address
+                gw_ip_mask = gw_ip + '/' + prefix_len
+                aim_subnet = aim_resource.Subnet(tenant_name=tenant_aname,
+                                                 bd_name=network_aname,
+                                                 gw_ip_mask=gw_ip_mask)
+                self.aim.update(aim_ctx, aim_subnet, display_name=dname)
 
     def delete_subnet_precommit(self, context):
         LOG.debug("APIC AIM MD deleting subnet: %s", context.current)
-        # TODO(rkukura): Implement.
+        # Neutron subnets are unmapped from AIM Subnets as they are
+        # removed from routers.
 
     def extend_subnet_dict(self, session, base_model, result):
         LOG.debug("APIC AIM MD extending dict for subnet: %s", result)
 
         sync_state = cisco_apic.SYNC_SYNCED
+        dist_names = {}
+        prefix_len = result['cidr'].split('/')[1]
+        aim_ctx = aim_context.AimContext(session)
 
-        # TODO(rkukura): Implement.
+        tenant_id = result['tenant_id']
+        tenant_aname = self.name_mapper.tenant(session, tenant_id)
+        LOG.debug("Mapped tenant_id %(id)s to %(aname)s",
+                  {'id': tenant_id, 'aname': tenant_aname})
 
-        result[cisco_apic.DIST_NAMES] = {}
+        network_id = result['network_id']
+        network_aname = self.name_mapper.network(session, network_id)
+        LOG.debug("Mapped network_id %(id)s to %(aname)s",
+                  {'id': network_id, 'aname': network_aname})
+
+        subnet_id = result['id']
+        for intf in self._subnet_router_interfaces(session, subnet_id):
+            gw_ip = intf.ip_address
+            gw_ip_mask = gw_ip + '/' + prefix_len
+            aim_subnet = aim_resource.Subnet(tenant_name=tenant_aname,
+                                             bd_name=network_aname,
+                                             gw_ip_mask=gw_ip_mask)
+            dist_names[gw_ip] = aim_subnet.dn
+            sync_state = self._merge_status(aim_ctx, sync_state, aim_subnet)
+
+        result[cisco_apic.DIST_NAMES] = dist_names
         result[cisco_apic.SYNC_STATE] = sync_state
 
     def create_address_scope_precommit(self, context):
@@ -507,13 +559,70 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
                                          subject.dn}
         result[cisco_apic.SYNC_STATE] = sync_state
 
-    def add_router_interface(self, context, info):
-        LOG.debug("APIC AIM MD adding router interface: %s", info)
-        # TODO(rkukura): Implement.
+    def add_router_interface(self, context, router, port, subnets):
+        LOG.debug("APIC AIM MD adding subnets %(subnets)s to router "
+                  "%(router)s as interface port %(port)s",
+                  {'subnets': subnets, 'router': router, 'port': port})
 
-    def remove_router_interface(self, context, info):
-        LOG.debug("APIC AIM MD removing router interface: %s", info)
-        # TODO(rkukura): Implement.
+        session = context.session
+
+        tenant_id = port['tenant_id']
+        tenant_aname = self.name_mapper.tenant(session, tenant_id)
+        LOG.debug("Mapped tenant_id %(id)s to %(aname)s",
+                  {'id': tenant_id, 'aname': tenant_aname})
+
+        network_id = port['network_id']
+        bd_aname = self.name_mapper.network(session, network_id)
+        LOG.info(_LI("Mapped network_id %(id)s to %(aname)s"),
+                 {'id': network_id, 'aname': bd_aname})
+
+        aim_ctx = aim_context.AimContext(session)
+
+        for subnet in subnets:
+            gw_ip = self._ip_for_subnet(subnet, port['fixed_ips'])
+            prefix_len = subnet['cidr'].split('/')[1]
+            gw_ip_mask = gw_ip + '/' + prefix_len
+
+            aim_subnet = aim_resource.Subnet(tenant_name=tenant_aname,
+                                             bd_name=bd_aname,
+                                             gw_ip_mask=gw_ip_mask,
+                                             display_name=subnet['name'])
+            aim_subnet = self.aim.create(aim_ctx, aim_subnet)
+
+        # TODO(rkukura): Implement selecting/setting VRF,
+        # providing/consuming Contract.
+
+    def remove_router_interface(self, context, router_id, port_db, subnets):
+        LOG.debug("APIC AIM MD removing subnets %(subnets)s from router "
+                  "%(router)s as interface port %(port)s",
+                  {'subnets': subnets, 'router': router_id, 'port': port_db})
+
+        session = context.session
+
+        tenant_id = port_db.tenant_id
+        tenant_aname = self.name_mapper.tenant(session, tenant_id)
+        LOG.debug("Mapped tenant_id %(id)s to %(aname)s",
+                  {'id': tenant_id, 'aname': tenant_aname})
+
+        network_id = port_db.network_id
+        bd_aname = self.name_mapper.network(session, network_id)
+        LOG.info(_LI("Mapped network_id %(id)s to %(aname)s"),
+                 {'id': network_id, 'aname': bd_aname})
+
+        aim_ctx = aim_context.AimContext(session)
+
+        for subnet in subnets:
+            gw_ip = self._ip_for_subnet(subnet, port_db.fixed_ips)
+            prefix_len = subnet['cidr'].split('/')[1]
+            gw_ip_mask = gw_ip + '/' + prefix_len
+
+            aim_subnet = aim_resource.Subnet(tenant_name=tenant_aname,
+                                             bd_name=bd_aname,
+                                             gw_ip_mask=gw_ip_mask)
+            self.aim.delete(aim_ctx, aim_subnet)
+
+        # TODO(rkukura): Implement cleaning VRF,
+        # unproviding/unconsuming Contract.
 
     def bind_port(self, context):
         LOG.debug("Attempting to bind port %(port)s on network %(net)s",
@@ -746,11 +855,21 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
             sync_state = cisco_apic.SYNC_BUILD
         return sync_state
 
-    def _gateway_ip_mask(self, subnet):
-        gateway_ip = subnet['gateway_ip']
-        if gateway_ip:
-            prefix_len = subnet['cidr'].split('/')[1]
-            return gateway_ip + '/' + prefix_len
+    def _ip_for_subnet(self, subnet, fixed_ips):
+        subnet_id = subnet['id']
+        for fixed_ip in fixed_ips:
+            if fixed_ip['subnet_id'] == subnet_id:
+                return fixed_ip['ip_address']
+
+    def _subnet_router_interfaces(self, session, subnet_id):
+        return (session.query(models_v2.IPAllocation).
+                join(models_v2.Port).
+                join(l3_db.RouterPort).
+                filter(
+                    models_v2.IPAllocation.subnet_id == subnet_id,
+                    l3_db.RouterPort.port_type ==
+                    n_constants.DEVICE_OWNER_ROUTER_INTF
+                ))
 
     def _get_common_tenant(self, aim_ctx):
         attrs = aim_resource.Tenant(name=COMMON_TENANT_NAME,
