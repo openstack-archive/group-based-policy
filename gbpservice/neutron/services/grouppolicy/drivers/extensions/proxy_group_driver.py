@@ -11,15 +11,12 @@
 #    under the License.
 
 from neutron.api.v2 import attributes
-from oslo_log import log as logging
 
 from gbpservice.neutron.db.grouppolicy.extensions import group_proxy_db as db
 from gbpservice.neutron.db.grouppolicy import group_policy_db as gp_db
 from gbpservice.neutron.extensions import driver_proxy_group
 from gbpservice.neutron.services.grouppolicy import (
     group_policy_driver_api as api)
-
-LOG = logging.getLogger(__name__)
 
 
 class ProxyGroupDriver(api.ExtensionDriver):

@@ -13,7 +13,6 @@
 from neutron.common import exceptions as nexc
 from neutron.db import model_base
 from oslo_log import helpers as log
-from oslo_log import log as logging
 from oslo_utils import uuidutils
 import sqlalchemy as sa
 from sqlalchemy import orm
@@ -21,9 +20,6 @@ from sqlalchemy import orm
 from gbpservice.neutron.db.grouppolicy import group_policy_db as gpdb
 from gbpservice.neutron.extensions import group_policy as gpolicy
 from gbpservice.neutron.services.grouppolicy.common import exceptions
-
-
-LOG = logging.getLogger(__name__)
 
 
 class AddressScopeUpdateForL3PNotSupported(nexc.BadRequest):
