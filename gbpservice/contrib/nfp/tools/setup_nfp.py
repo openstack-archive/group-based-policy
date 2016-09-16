@@ -354,6 +354,12 @@ def create_nfp_namespace_file():
     """
     create nfp proxy systemctl service file
     """
+    try:
+        neutron_auth_url =  subprocess.check_output("crudini --get /etc/nova/nova.conf neutron admin_auth_url".split(' '))
+        branch = "liberty"
+    except:
+        branch = "mitaka"
+
     if not os.path.exists(TEMP_WORK_DIR):
         os.makedirs(TEMP_WORK_DIR)
 
@@ -366,17 +372,35 @@ def create_nfp_namespace_file():
     filepx.write("#!/usr/bin/bash\n")
     filepx.write("\nNOVA_CONF=/etc/nova/nova.conf\nNOVA_SESSION=neutron")
     filepx.write("\n\nget_openstack_creds () {")
-    filepx.write("\n\tAUTH_URI=`crudini --get $NOVA_CONF $NOVA_SESSION"
-                 " admin_auth_url`")
-    filepx.write("\n\tADMIN_USER=`crudini --get $NOVA_CONF $NOVA_SESSION"
-                 " admin_username`")
-    filepx.write("\n\tADMIN_PASSWD=`crudini --get $NOVA_CONF $NOVA_SESSION"
-                 " admin_password`")
-    filepx.write("\n\tADMIN_TENANT_NAME=`crudini --get $NOVA_CONF"
-                 " $NOVA_SESSION admin_tenant_name`")
+    if branch == "mitaka":
+        filepx.write("\n\tAUTH_URI=`crudini --get $NOVA_CONF $NOVA_SESSION"
+                     " auth_url`")
+        filepx.write("\n\tADMIN_USER=`crudini --get $NOVA_CONF $NOVA_SESSION"
+                     " username`")
+        filepx.write("\n\tADMIN_PASSWD=`crudini --get $NOVA_CONF $NOVA_SESSION"
+                     " password`")
+        filepx.write("\n\tADMIN_TENANT_NAME=`crudini --get $NOVA_CONF"
+                     " $NOVA_SESSION project_name`")
+        filepx.write("\n\tADMIN_PROJECT_DOMAIN_NAME=`crudini --get $NOVA_CONF"
+                     " $NOVA_SESSION project_domain_name`")
+        filepx.write("\n\tADMIN_USER_DOMAIN_NAME=`crudini --get $NOVA_CONF"
+                     " $NOVA_SESSION user_domain_name`")
+    else:
+        filepx.write("\n\tAUTH_URI=`crudini --get $NOVA_CONF $NOVA_SESSION"
+                     " admin_auth_url`")
+        filepx.write("\n\tADMIN_USER=`crudini --get $NOVA_CONF $NOVA_SESSION"
+                     " admin_username`")
+        filepx.write("\n\tADMIN_PASSWD=`crudini --get $NOVA_CONF $NOVA_SESSION"
+                     " admin_password`")
+        filepx.write("\n\tADMIN_TENANT_NAME=`crudini --get $NOVA_CONF"
+                     " $NOVA_SESSION admin_tenant_name`")
+
     filepx.write("\n\texport OS_USERNAME=$ADMIN_USER")
     filepx.write("\n\texport OS_TENANT_NAME=$ADMIN_TENANT_NAME")
     filepx.write("\n\texport OS_PASSWORD=$ADMIN_PASSWD")
+    if branch == "mitaka":
+        filepx.write("\n\texport OS_PROJECT_DOMAIN_NAME=$ADMIN_PROJECT_DOMAIN_NAME")
+        filepx.write("\n\texport OS_USER_DOMAIN_NAME=$ADMIN_USER_DOMAIN_NAME")
     filepx.write("\n\texport OS_AUTH_URL=$AUTH_URI\n\n}")
     filepx.write("\n\nfunction namespace_delete {\n\tget_openstack_creds")
     filepx.write("\n\n\tproxyPortId=`neutron port-list | ")
@@ -689,7 +713,7 @@ def clean_up():
         "heat stack-list | grep '\sgbp_services_stack\s'"
         " | awk '{print $2}'")[1]
     if HeatId:
-        os.system("heat stack-delete gbp_services_stack")
+        os.system("heat stack-delete gbp_services_stack -y")
 
 
 def main():
