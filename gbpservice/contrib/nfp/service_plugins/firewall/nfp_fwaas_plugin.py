@@ -28,12 +28,16 @@ from neutron.db.l3_db import EXTERNAL_GW_INFO
 from neutron.db.l3_db import RouterPort
 from neutron.db import models_v2
 from neutron.extensions import l3
+from neutron.plugins.common import constants as n_const
 
 import neutron_fwaas.extensions
 from neutron_fwaas.services.firewall import fwaas_plugin as ref_fw_plugin
 from oslo_config import cfg
 from oslo_utils import excutils
+from oslo_utils import uuidutils
 from sqlalchemy import orm
+
+from neutron_fwaas.db.firewall import firewall_db as n_firewall
 
 LOG = nfp_logging.getLogger(__name__)
 
@@ -91,9 +95,33 @@ class NFPFirewallPlugin(ref_fw_plugin.FirewallPlugin):
         return fw
 
 
+# Monkey patching the create_firewall db method
+def create_firewall(self, context, firewall, status=None):
+    fw = firewall['firewall']
+    tenant_id = fw['tenant_id']
+    # distributed routers may required a more complex state machine;
+    # the introduction of a new 'CREATED' state allows this, whilst
+    # keeping a backward compatible behavior of the logical resource.
+    if not status:
+        status = n_const.PENDING_CREATE
+    with context.session.begin(subtransactions=True):
+        self._validate_fw_parameters(context, fw, tenant_id)
+        firewall_db = n_firewall.Firewall(
+                id=uuidutils.generate_uuid(),
+                tenant_id=tenant_id,
+                name=fw['name'],
+                description=fw['description'],
+                firewall_policy_id=fw['firewall_policy_id'],
+                admin_state_up=fw['admin_state_up'],
+                status=status)
+        context.session.add(firewall_db)
+    return self._make_firewall_dict(firewall_db)
+
+n_firewall.Firewall_db_mixin.create_firewall = create_firewall
+
+
 # Monkey patching l3_db's _get_router_for_floatingip method to associate
 # floatingip if corresponding routes is present.
-
 def _is_net_reachable_from_net(self, context, tenant_id, from_net_id,
                                to_net_id):
     """Check whether a network is reachable.
