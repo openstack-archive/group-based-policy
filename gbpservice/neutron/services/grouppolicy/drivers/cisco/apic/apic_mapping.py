@@ -2788,7 +2788,7 @@ class ApicMappingDriver(api.ResourceMappingDriver,
             # Since we are reverse mapping the APIC EPG to the default PTG
             # we will map the id of the PTG to the APIC EPG name
             self.apic_manager.db.update_apic_name(
-                auto_ptg['id'], 'policy_target_group', shadow_epg)
+                auto_ptg['id'], 'policy_target_group', str(shadow_epg))
 
     def _associate_service_filter(self, tenant, contract, filter_name,
                                   entry_name, transaction=None, **attrs):
