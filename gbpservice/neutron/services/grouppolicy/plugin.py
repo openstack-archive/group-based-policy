@@ -480,7 +480,7 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
 
         # Strip the extra port attributes
         result.pop('port_attributes', None)
-        return result
+        return self.get_policy_target(context, result['id'])
 
     @log.log
     def update_policy_target(self, context, policy_target_id, policy_target):
@@ -505,7 +505,7 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
 
         self.policy_driver_manager.update_policy_target_postcommit(
             policy_context)
-        return updated_policy_target
+        return self.get_policy_target(context, policy_target_id)
 
     @log.log
     def delete_policy_target(self, context, policy_target_id):
