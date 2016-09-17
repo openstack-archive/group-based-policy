@@ -303,6 +303,7 @@ class ApicMappingDriver(api.ResourceMappingDriver,
         self.nat_enabled = self.apic_manager.use_vmm
         self.per_tenant_nat_epg = self.apic_manager.per_tenant_nat_epg
         self._gbp_plugin = None
+        self._apic_mapping_extension_driver = None
         self.l3out_vlan_alloc = l3out_vlan_alloc.L3outVlanAlloc()
         self.l3out_vlan_alloc.sync_vlan_allocations(
             self.apic_manager.ext_net_dict)
@@ -329,6 +330,17 @@ class ApicMappingDriver(api.ResourceMappingDriver,
             self._gbp_plugin = (manager.NeutronManager.get_service_plugins()
                                 .get("GROUP_POLICY"))
         return self._gbp_plugin
+
+    @property
+    def apic_mapping_extension_driver(self):
+        if not self._apic_mapping_extension_driver:
+            ext_drivers = self.gbp_plugin.extension_manager.ordered_ext_drivers
+            for driver in ext_drivers:
+                if 'apic_segmentation_label' == driver.name:
+                    self._apic_mapping_extension_driver = (
+                        driver.obj)
+                    break
+        return self._apic_mapping_extension_driver
 
     # HA RPC call
     def update_ip_owner(self, ip_owner_info):
@@ -506,6 +518,9 @@ class ApicMappingDriver(api.ResourceMappingDriver,
                 # Active chain head must have changed in a concurrent
                 # operation, get out of here
                 pass
+        if self.apic_mapping_extension_driver and pt and (
+            'segmentation_labels' in pt):
+            details['segmentation_labels'] = pt['segmentation_labels']
         return details
 
     def get_snat_ip_for_vrf(self, context, vrf_id, network, es_name=None):
