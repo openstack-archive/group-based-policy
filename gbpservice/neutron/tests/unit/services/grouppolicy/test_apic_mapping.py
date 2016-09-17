@@ -94,6 +94,8 @@ class MockCallRecorder(mock.Mock):
 class ApicMappingTestCase(
         test_rmd.ResourceMappingTestCase,
         mocked.ControllerMixin, mocked.ConfigMixin):
+    _extension_drivers = ['apic_segmentation_label']
+    _extension_path = None
 
     def setUp(self, sc_plugin=None, nat_enabled=True,
               pre_existing_l3out=False, default_agent_conf=True,
@@ -105,6 +107,13 @@ class ApicMappingTestCase(
         cfg.CONF.register_opts(sg_cfg.security_group_opts, 'SECURITYGROUP')
         config.cfg.CONF.set_override('enable_security_group', False,
                                      group='SECURITYGROUP')
+        if not cfg.CONF.group_policy.extension_drivers:
+            config.cfg.CONF.set_override('extension_drivers',
+                                         self._extension_drivers,
+                                         group='group_policy')
+        if self._extension_path:
+            config.cfg.CONF.set_override(
+                'api_extensions_path', self._extension_path)
         n_rpc.create_connection = mock.Mock()
         amap.ApicMappingDriver.get_apic_manager = mock.Mock(
             return_value=mock.MagicMock(
@@ -415,12 +424,17 @@ class TestPolicyTarget(ApicMappingTestCase):
         ptg = self.create_policy_target_group(
             name="ptg1", l2_policy_id=l2p['id'],
             network_service_policy_id=nsp['id'])['policy_target_group']
+        segmentation_labels = ['label1', 'label2']
         pt1 = self.create_policy_target(
-            policy_target_group_id=ptg['id'])['policy_target']
+            policy_target_group_id=ptg['id'],
+            segmentation_labels=segmentation_labels)['policy_target']
         self._bind_port_to_host(pt1['port_id'], 'h1')
 
         mapping = self.driver.get_gbp_details(context.get_admin_context(),
             device='tap%s' % pt1['port_id'], host='h1')
+        if 'segmentation_labels' in pt1:
+            self.assertItemsEqual(segmentation_labels,
+                                  mapping['segmentation_labels'])
         req_mapping = self.driver.request_endpoint_details(
             context.get_admin_context(),
             request={'device': 'tap%s' % pt1['port_id'], 'host': 'h1',
