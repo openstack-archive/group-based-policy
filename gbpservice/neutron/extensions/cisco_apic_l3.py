@@ -22,6 +22,7 @@ ALIAS = 'cisco-apic-l3'
 
 CONTRACT = 'Contract'
 CONTRACT_SUBJECT = 'ContractSubject'
+VRF = 'VRF'
 
 EXTENDED_ATTRIBUTES_2_0 = {
     l3.ROUTERS: cisco_apic.APIC_ATTRIBUTES
