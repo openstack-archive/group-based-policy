@@ -44,6 +44,7 @@ LOG = log.getLogger(__name__)
 AP_NAME = 'NeutronAP'
 ANY_FILTER_NAME = 'AnyFilter'
 ANY_FILTER_ENTRY_NAME = 'AnyFilterEntry'
+DEFAULT_VRF_NAME = 'DefaultVRF'
 UNROUTED_VRF_NAME = 'UnroutedVRF'
 COMMON_TENANT_NAME = 'common'
 ROUTER_SUBJECT_NAME = 'route'
@@ -54,6 +55,8 @@ PROMISCUOUS_TYPES = [n_constants.DEVICE_OWNER_DHCP,
 
 
 class ApicMechanismDriver(api_plus.MechanismDriver):
+    # TODO(rkukura): Derivations of tenant_aname throughout need to
+    # take sharing into account.
 
     def __init__(self):
         LOG.info(_LI("APIC AIM MD __init__"))
@@ -641,8 +644,44 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
             aim_epg = self.aim.update(aim_ctx, aim_epg,
                                       provided_contract_names=contracts)
 
-        # TODO(rkukura): Implement selecting/setting VRF and
-        # validating topology.
+        # Find routers with interfaces to this network. The current
+        # interface is not included, because the RouterPort has not
+        # yet been added to the DB session.
+        router_ids = [r[0] for r in
+                      session.query(l3_db.RouterPort.router_id).
+                      join(models_v2.Port).
+                      filter(models_v2.Port.network_id == network_id,
+                             l3_db.RouterPort.port_type ==
+                             n_constants.DEVICE_OWNER_ROUTER_INTF).distinct()]
+
+        # TODO(rkukura): Validate topology.
+
+        if not router_ids:
+            # Enable routing for BD and set VRF.
+
+            subnetpool_id = subnets[0]['subnetpool_id']
+            if subnetpool_id:
+                subnetpool_db = (session.query(models_v2.SubnetPool).
+                                 filter_by(id=subnetpool_id).
+                                 one())
+                address_scope_id = subnetpool_db.address_scope_id
+                if address_scope_id:
+                    vrf_aname = self.name_mapper.address_scope(
+                        session, address_scope_id)
+                    LOG.debug("Mapped address_scope_id %(id)s to %(aname)s",
+                              {'id': id, 'aname': vrf_aname})
+                else:
+                    vrf_aname = self._get_default_vrf(
+                        aim_ctx, router_tenant_aname).name
+            else:
+                vrf_aname = self._get_default_vrf(
+                    aim_ctx, router_tenant_aname).name
+
+            aim_bd = aim_resource.BridgeDomain(
+                tenant_name=network_tenant_aname, name=network_aname)
+            aim_bd = self.aim.get(aim_ctx, aim_bd)
+            aim_bd = self.aim.update(aim_ctx, aim_bd, enable_routing=True,
+                                     vrf_name=vrf_aname)
 
     def remove_router_interface(self, context, router_id, port_db, subnets):
         LOG.debug("APIC AIM MD removing subnets %(subnets)s from router "
@@ -718,8 +757,16 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
             aim_epg = self.aim.update(aim_ctx, aim_epg,
                                       provided_contract_names=contracts)
 
-        # TODO(rkukura): If network no longer connected to any router,
-        # make the network's BD unrouted.
+        # If network is no longer connected to any router, make the
+        # network's BD unrouted.
+        if not router_ids:
+            vrf = self._get_unrouted_vrf(aim_ctx)
+
+            aim_bd = aim_resource.BridgeDomain(
+                tenant_name=network_tenant_aname, name=network_aname)
+            aim_bd = self.aim.get(aim_ctx, aim_bd)
+            aim_bd = self.aim.update(aim_ctx, aim_bd, enable_routing=False,
+                                     vrf_name=vrf.name)
 
     def bind_port(self, context):
         LOG.debug("Attempting to bind port %(port)s on network %(net)s",
@@ -991,5 +1038,15 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
         vrf = self.aim.get(aim_ctx, attrs)
         if not vrf:
             LOG.info(_LI("Creating common unrouted VRF"))
+            vrf = self.aim.create(aim_ctx, attrs)
+        return vrf
+
+    def _get_default_vrf(self, aim_ctx, tenant_aname):
+        attrs = aim_resource.VRF(tenant_name=tenant_aname,
+                                 name=DEFAULT_VRF_NAME,
+                                 display_name='Default Context')
+        vrf = self.aim.get(aim_ctx, attrs)
+        if not vrf:
+            LOG.info(_LI("Creating default VRF for %s"), tenant_aname)
             vrf = self.aim.create(aim_ctx, attrs)
         return vrf
