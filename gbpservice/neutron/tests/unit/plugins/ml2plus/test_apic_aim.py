@@ -119,7 +119,6 @@ class ApicAimTestCase(test_address_scope.AddressScopeTestCase,
         self._app_profile_name = 'NeutronAP'
         self._tenant_name = self._map_name({'id': 'test-tenant',
                                             'name': 'TestTenantName'})
-        self._unrouted_vrf_name = 'UnroutedVRF'
 
     def tearDown(self):
         engine = db_api.get_engine()
@@ -262,18 +261,7 @@ class TestAimMapping(ApicAimTestCase):
         self.assertIsInstance(dist_names, dict)
         self.assertNotIn(key, dist_names)
 
-    def _check_unrouted_vrf(self):
-        aim_tenant = self._get_tenant('common')
-        self.assertEqual('common', aim_tenant.name)
-        self.assertEqual("Common Tenant", aim_tenant.display_name)
-
-        aim_vrf = self._get_vrf(self._unrouted_vrf_name, 'common')
-        self.assertEqual('common', aim_vrf.tenant_name)
-        self.assertEqual(self._unrouted_vrf_name, aim_vrf.name)
-        self.assertEqual('Common Unrouted Context', aim_vrf.display_name)
-        self.assertEqual('enforced', aim_vrf.policy_enforcement_pref)
-
-    def _check_network(self, net, orig_net=None, routers=None):
+    def _check_network(self, net, orig_net=None, routers=None, scope=None):
         orig_net = orig_net or net
 
         # REVISIT(rkukura): Check AIM Tenant here?
@@ -283,14 +271,34 @@ class TestAimMapping(ApicAimTestCase):
 
         router_anames = [self._map_name(router) for router in routers or []]
 
+        if routers:
+            if scope:
+                vrf_aname = self._map_name(scope)
+                vrf_dname = scope['name']
+                vrf_tenant_aname = self._tenant_name
+                vrf_tenant_dname = None
+            else:
+                vrf_aname = 'DefaultVRF'
+                vrf_dname = 'Default Routed VRF'
+                vrf_tenant_aname = self._tenant_name
+                vrf_tenant_dname = None
+        else:
+            vrf_aname = 'UnroutedVRF'
+            vrf_dname = 'Common Unrouted VRF'
+            vrf_tenant_aname = 'common'
+            vrf_tenant_dname = 'Common Tenant'
+
         aim_bd = self._get_bd(aname,
                               self._tenant_name)
         self.assertEqual(self._tenant_name, aim_bd.tenant_name)
         self.assertEqual(aname, aim_bd.name)
         self.assertEqual(net['name'], aim_bd.display_name)
-        self.assertEqual(self._unrouted_vrf_name, aim_bd.vrf_name)
+        self.assertEqual(vrf_aname, aim_bd.vrf_name)
         self.assertTrue(aim_bd.enable_arp_flood)
-        self.assertFalse(aim_bd.enable_routing)  # TODO(rkukura)
+        if routers:
+            self.assertTrue(aim_bd.enable_routing)
+        else:
+            self.assertFalse(aim_bd.enable_routing)
         self.assertTrue(aim_bd.limit_ip_learn_to_subnets)
         self.assertEqual('proxy', aim_bd.l2_unknown_unicast_mode)
         self.assertEqual('garp', aim_bd.ep_move_detect_mode)
@@ -310,8 +318,17 @@ class TestAimMapping(ApicAimTestCase):
         # physical_domain_names?
         self._check_dn(net, aim_epg, 'EndpointGroup')
 
-        if not routers:
-            self._check_unrouted_vrf()
+        aim_tenant = self._get_tenant(vrf_tenant_aname)
+        self.assertEqual(vrf_tenant_aname, aim_tenant.name)
+        self.assertEqual(vrf_tenant_dname, aim_tenant.display_name)
+
+        aim_vrf = self._get_vrf(vrf_aname,
+                                vrf_tenant_aname)
+        self.assertEqual(vrf_tenant_aname, aim_vrf.tenant_name)
+        self.assertEqual(vrf_aname, aim_vrf.name)
+        self.assertEqual(vrf_dname, aim_vrf.display_name)
+        self.assertEqual('enforced', aim_vrf.policy_enforcement_pref)
+        self._check_dn(net, aim_vrf, 'VRF')
 
     def _check_network_deleted(self, net):
         aname = self._map_name(net)
@@ -359,30 +376,31 @@ class TestAimMapping(ApicAimTestCase):
         # are in this subnet.
         pass
 
-    def _check_address_scope(self, a_s, orig_a_s=None):
-        orig_a_s = orig_a_s or a_s
+    def _check_address_scope(self, scope, orig_scope=None):
+        orig_scope = orig_scope or scope
 
         # REVISIT(rkukura): Check AIM Tenant here?
-        self.assertEqual('test-tenant', a_s['tenant_id'])
+        self.assertEqual('test-tenant', scope['tenant_id'])
 
-        aname = self._map_name(orig_a_s)
+        aname = self._map_name(orig_scope)
 
         aim_vrf = self._get_vrf(aname,
                                 self._tenant_name)
         self.assertEqual(self._tenant_name, aim_vrf.tenant_name)
         self.assertEqual(aname, aim_vrf.name)
-        self.assertEqual(a_s['name'], aim_vrf.display_name)
+        self.assertEqual(scope['name'], aim_vrf.display_name)
         self.assertEqual('enforced', aim_vrf.policy_enforcement_pref)
-        self._check_dn(a_s, aim_vrf, 'VRF')
+        self._check_dn(scope, aim_vrf, 'VRF')
 
-    def _check_address_scope_deleted(self, a_s):
-        aname = self._map_name(a_s)
+    def _check_address_scope_deleted(self, scope):
+        aname = self._map_name(scope)
 
         self._get_vrf(aname,
                       self._tenant_name,
                       should_exist=False)
 
-    def _check_router(self, router, orig_router=None):
+    def _check_router(self, router, orig_router=None, active=False,
+                      scope=None):
         orig_router = orig_router or router
 
         # REVISIT(rkukura): Check AIM Tenant here?
@@ -408,7 +426,34 @@ class TestAimMapping(ApicAimTestCase):
         self._check_dn(router, aim_subject, 'ContractSubject')
 
         self._check_any_filter()
-        # REVISIT(rkukura): Anything else to check?
+
+        # TODO(rkukura): Once AIM Subnets are exposed on router, pass
+        # in expected_gw_ips and use instead of this active flag.
+        if active:
+            if scope:
+                vrf_aname = self._map_name(scope)
+                vrf_dname = scope['name']
+                vrf_tenant_aname = self._tenant_name
+                vrf_tenant_dname = None
+            else:
+                vrf_aname = 'DefaultVRF'
+                vrf_dname = 'Default Routed VRF'
+                vrf_tenant_aname = self._tenant_name
+                vrf_tenant_dname = None
+
+            aim_tenant = self._get_tenant(vrf_tenant_aname)
+            self.assertEqual(vrf_tenant_aname, aim_tenant.name)
+            self.assertEqual(vrf_tenant_dname, aim_tenant.display_name)
+
+            aim_vrf = self._get_vrf(vrf_aname,
+                                    vrf_tenant_aname)
+            self.assertEqual(vrf_tenant_aname, aim_vrf.tenant_name)
+            self.assertEqual(vrf_aname, aim_vrf.name)
+            self.assertEqual(vrf_dname, aim_vrf.display_name)
+            self.assertEqual('enforced', aim_vrf.policy_enforcement_pref)
+            self._check_dn(router, aim_vrf, 'VRF')
+        else:
+            self._check_no_dn(router, 'VRF')
 
     def _check_router_deleted(self, router):
         aname = self._map_name(router)
@@ -417,8 +462,6 @@ class TestAimMapping(ApicAimTestCase):
 
         self._get_subject('route', aname, self._tenant_name,
                           should_exist=False)
-
-        # REVISIT(rkukura): Anything else to check?
 
     def _check_any_filter(self):
         aim_filter = self._get_filter('AnyFilter', self._tenant_name)
@@ -491,23 +534,23 @@ class TestAimMapping(ApicAimTestCase):
 
     def test_address_scope_lifecycle(self):
         # Test create.
-        orig_a_s = self._make_address_scope(
+        orig_scope = self._make_address_scope(
             self.fmt, 4, name='as1')['address_scope']
-        a_s_id = orig_a_s['id']
-        self._check_address_scope(orig_a_s)
+        scope_id = orig_scope['id']
+        self._check_address_scope(orig_scope)
 
         # Test show.
-        a_s = self._show('address-scopes', a_s_id)['address_scope']
-        self._check_address_scope(a_s)
+        scope = self._show('address-scopes', scope_id)['address_scope']
+        self._check_address_scope(scope)
 
         # Test update.
         data = {'address_scope': {'name': 'newnameforaddressscope'}}
-        a_s = self._update('address-scopes', a_s_id, data)['address_scope']
-        self._check_address_scope(a_s, orig_a_s)
+        scope = self._update('address-scopes', scope_id, data)['address_scope']
+        self._check_address_scope(scope, orig_scope)
 
         # Test delete.
-        self._delete('address-scopes', a_s_id)
-        self._check_address_scope_deleted(orig_a_s)
+        self._delete('address-scopes', scope_id)
+        self._check_address_scope_deleted(orig_scope)
 
     def test_router_lifecycle(self):
         # Test create.
@@ -560,7 +603,10 @@ class TestAimMapping(ApicAimTestCase):
         info = self.l3_plugin.add_router_interface(
             context.get_admin_context(), router_id, {'subnet_id': subnet1_id})
         self.assertIn(subnet1_id, info['subnet_ids'])
-        # REVISIT(rkukura): Get and check router?
+
+        # Check router.
+        router = self._show('routers', router_id)['router']
+        self._check_router(router, active=True)
 
         # Check network.
         net = self._show('networks', net_id)['network']
@@ -586,7 +632,10 @@ class TestAimMapping(ApicAimTestCase):
         info = self.l3_plugin.add_router_interface(
             context.get_admin_context(), router_id, {'port_id': port2_id})
         self.assertIn(subnet2_id, info['subnet_ids'])
-        # REVISIT(rkukura): Get and check router?
+
+        # Check router.
+        router = self._show('routers', router_id)['router']
+        self._check_router(router, active=True)
 
         # Check network.
         net = self._show('networks', net_id)['network']
@@ -604,7 +653,10 @@ class TestAimMapping(ApicAimTestCase):
         info = self.l3_plugin.remove_router_interface(
             context.get_admin_context(), router_id, {'subnet_id': subnet1_id})
         self.assertIn(subnet1_id, info['subnet_ids'])
-        # REVISIT(rkukura): Get and check router?
+
+        # Check router.
+        router = self._show('routers', router_id)['router']
+        self._check_router(router, active=True)
 
         # Check network.
         net = self._show('networks', net_id)['network']
@@ -622,7 +674,10 @@ class TestAimMapping(ApicAimTestCase):
         info = self.l3_plugin.remove_router_interface(
             context.get_admin_context(), router_id, {'port_id': port2_id})
         self.assertIn(subnet2_id, info['subnet_ids'])
-        # REVISIT(rkukura): Get and check router?
+
+        # Check router.
+        router = self._show('routers', router_id)['router']
+        self._check_router(router)
 
         # Check network.
         net = self._show('networks', net_id)['network']
@@ -636,28 +691,148 @@ class TestAimMapping(ApicAimTestCase):
         subnet = self._show('subnets', subnet2_id)['subnet']
         self._check_subnet(subnet, net, [], [gw2_ip])
 
-    # def test_create_subnet_with_address_scope(self):
-    #     net_resp = self._make_network(self.fmt, 'net1', True)
-    #     name = self._map_name(net_resp['network'])
-    #     self._check(name, vrf_name='UnroutedVRF')
+    def test_router_interface_with_address_scope(self):
+        # REVISIT(rkukura): Currently follows same workflow as above,
+        # but might be sufficient to test with a single subnet with
+        # its CIDR allocated from the subnet pool.
 
-    #     a_s = self._make_address_scope(self.fmt, 4, name='as1')
-    #     a_s_id = a_s['address_scope']['id']
-    #     # vrf_name = self._map_name(a_s['address_scope'])
+        # Create address scope.
+        scope = self._make_address_scope(
+            self.fmt, 4, name='as1')['address_scope']
+        scope_id = scope['id']
+        self._check_address_scope(scope)
 
-    #     sp = self._make_subnetpool(self.fmt, ['10.0.0.0/8'], name='sp1',
-    #                                tenant_id='test-tenant',  # REVISIT
-    #                                address_scope_id=a_s_id,
-    #                                default_prefixlen=24)
-    #     sp_id = sp['subnetpool']['id']
+        # Create subnet pool.
+        pool = self._make_subnetpool(self.fmt, ['10.0.0.0/8'], name='sp1',
+                                     tenant_id='test-tenant',  # REVISIT
+                                     address_scope_id=scope_id,
+                                     default_prefixlen=24)['subnetpool']
+        pool_id = pool['id']
 
-    #     self._make_subnet(self.fmt, net_resp, None, None,
-    #                       subnetpool_id=sp_id)
-    #     # REVISIT(rkukura): Should the address_scopes VRF be used
-    #     # immediately, or not until connected to a router?
-    #     #
-    #     # self._check(name, vrf_name=vrf_name)
-    #     self._check(name, vrf_name='UnroutedVRF')
+        # Create router.
+        router = self._make_router(
+            self.fmt, 'test-tenant', 'router1')['router']
+        router_id = router['id']
+        self._check_router(router, scope=scope)
+
+        # Create network.
+        net_resp = self._make_network(self.fmt, 'net1', True)
+        net = net_resp['network']
+        net_id = net['id']
+        self._check_network(net)
+
+        # Create subnet1.
+        gw1_ip = '10.0.1.1'
+        subnet = self._make_subnet(
+            self.fmt, net_resp, gw1_ip, '10.0.1.0/24',
+            subnetpool_id=pool_id)['subnet']
+        subnet1_id = subnet['id']
+        self._check_subnet(subnet, net, [], [gw1_ip])
+
+        # Create subnet2.
+        gw2_ip = '10.0.2.1'
+        subnet = self._make_subnet(
+            self.fmt, net_resp, gw2_ip, '10.0.2.0/24',
+            subnetpool_id=pool_id)['subnet']
+        subnet2_id = subnet['id']
+        self._check_subnet(subnet, net, [], [gw2_ip])
+
+        # Add subnet1 to router by subnet.
+        info = self.l3_plugin.add_router_interface(
+            context.get_admin_context(), router_id, {'subnet_id': subnet1_id})
+        self.assertIn(subnet1_id, info['subnet_ids'])
+
+        # Check router.
+        router = self._show('routers', router_id)['router']
+        self._check_router(router, active=True, scope=scope)
+
+        # Check network.
+        net = self._show('networks', net_id)['network']
+        self._check_network(net, routers=[router], scope=scope)
+
+        # Check subnet1.
+        subnet = self._show('subnets', subnet1_id)['subnet']
+        self._check_subnet(subnet, net, [gw1_ip], [])
+
+        # Check subnet2.
+        subnet = self._show('subnets', subnet2_id)['subnet']
+        self._check_subnet(subnet, net, [], [gw2_ip])
+
+        # Test subnet update.
+        data = {'subnet': {'name': 'newnameforsubnet'}}
+        subnet = self._update('subnets', subnet1_id, data)['subnet']
+        self._check_subnet(subnet, net, [gw1_ip], [])
+
+        # Add subnet2 to router by port.
+        fixed_ips = [{'subnet_id': subnet2_id, 'ip_address': gw2_ip}]
+        port = self._make_port(self.fmt, net_id, fixed_ips=fixed_ips)['port']
+        port2_id = port['id']
+        info = self.l3_plugin.add_router_interface(
+            context.get_admin_context(), router_id, {'port_id': port2_id})
+        self.assertIn(subnet2_id, info['subnet_ids'])
+
+        # Check router.
+        router = self._show('routers', router_id)['router']
+        self._check_router(router, active=True, scope=scope)
+
+        # Check network.
+        net = self._show('networks', net_id)['network']
+        self._check_network(net, routers=[router], scope=scope)
+
+        # Check subnet1.
+        subnet = self._show('subnets', subnet1_id)['subnet']
+        self._check_subnet(subnet, net, [gw1_ip], [])
+
+        # Check subnet2.
+        subnet = self._show('subnets', subnet2_id)['subnet']
+        self._check_subnet(subnet, net, [gw2_ip], [])
+
+        # Remove subnet1 from router by subnet.
+        info = self.l3_plugin.remove_router_interface(
+            context.get_admin_context(), router_id, {'subnet_id': subnet1_id})
+        self.assertIn(subnet1_id, info['subnet_ids'])
+
+        # Check router.
+        router = self._show('routers', router_id)['router']
+        self._check_router(router, active=True, scope=scope)
+
+        # Check network.
+        net = self._show('networks', net_id)['network']
+        self._check_network(net, routers=[router], scope=scope)
+
+        # Check subnet1.
+        subnet = self._show('subnets', subnet1_id)['subnet']
+        self._check_subnet(subnet, net, [], [gw1_ip])
+
+        # Check subnet2.
+        subnet = self._show('subnets', subnet2_id)['subnet']
+        self._check_subnet(subnet, net, [gw2_ip], [])
+
+        # Remove subnet2 from router by port.
+        info = self.l3_plugin.remove_router_interface(
+            context.get_admin_context(), router_id, {'port_id': port2_id})
+        self.assertIn(subnet2_id, info['subnet_ids'])
+
+        # Check router.
+        router = self._show('routers', router_id)['router']
+        self._check_router(router, scope=scope)
+
+        # Check network.
+        net = self._show('networks', net_id)['network']
+        self._check_network(net)
+
+        # Check subnet1.
+        subnet = self._show('subnets', subnet1_id)['subnet']
+        self._check_subnet(subnet, net, [], [gw1_ip])
+
+        # Check subnet2.
+        subnet = self._show('subnets', subnet2_id)['subnet']
+        self._check_subnet(subnet, net, [], [gw2_ip])
+
+    # TODO(rkukura): Test IPv6 and dual stack router interfaces.
+
+    # TODO(rkukura): Test synchronization_state attribute for each AIM
+    # resource.
 
 
 class TestPortBinding(ApicAimTestCase):
