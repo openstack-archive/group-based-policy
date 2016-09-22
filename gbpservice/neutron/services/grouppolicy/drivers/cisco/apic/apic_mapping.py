@@ -3850,7 +3850,7 @@ class ApicMappingDriver(api.ResourceMappingDriver,
             self._tenant_uses_specific_nat_epg(context, es, tenant_obj)):
                 nat_epg_tenant = self.name_mapper.tenant(tenant_obj)
         nat_epg_tenant = nat_epg_tenant or self._tenant_by_sharing_policy(es)
-        return nat_epg_tenant, nat_epg_name
+        return str(nat_epg_tenant), str(nat_epg_name)
 
     def _tenant_uses_specific_nat_epg(self, context, es, tenant_obj):
         session = context._plugin_context.session
