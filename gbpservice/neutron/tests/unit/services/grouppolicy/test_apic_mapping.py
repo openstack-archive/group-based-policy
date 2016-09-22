@@ -241,11 +241,21 @@ class ApicMappingTestCase(
 
         self.driver.apic_manager.apic.fvTenant.name = echo2
         self.driver.apic_manager.apic.fvCtx.name = echo2
+        self.real_get_gbp_details = self.driver.get_gbp_details
+        self.driver.get_gbp_details = self._get_gbp_details
+        self.driver.enable_metadata_opt = True
+        self.driver.enable_dhcp_opt = True
         self._db_plugin = n_db.NeutronDbPluginV2()
 
     def tearDown(self):
         sys.modules["apicapi"] = self.saved_apicapi
         super(ApicMappingTestCase, self).tearDown()
+
+    def _get_gbp_details(self, context, **kwargs):
+        details = self.real_get_gbp_details(context, **kwargs)
+        # Verify that the answer is serializable
+        details = jsonutils.loads(jsonutils.dumps(details))
+        return details
 
     def _get_pts_addresses(self, pts):
         addresses = []
