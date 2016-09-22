@@ -27,6 +27,7 @@ from neutron.db import api as db_api
 from neutron.db import db_base_plugin_v2 as n_db
 from neutron.db import model_base
 from neutron import manager
+from neutron.openstack.common import jsonutils
 from neutron.tests.unit.ml2.drivers.cisco.apic import (
     test_cisco_apic_common as mocked)
 from opflexagent import constants as ocst
@@ -159,7 +160,17 @@ class ApicMappingTestCase(
             return string
         self.driver.apic_manager.apic.fvTenant.name = echo2
         self.driver.apic_manager.apic.fvCtx.name = echo2
+        self.real_get_gbp_details = self.driver.get_gbp_details
+        self.driver.get_gbp_details = self._get_gbp_details
+        self.driver.enable_metadata_opt = True
+        self.driver.enable_dhcp_opt = True
         self._db_plugin = n_db.NeutronDbPluginV2()
+
+    def _get_gbp_details(self, context, **kwargs):
+        details = self.real_get_gbp_details(context, **kwargs)
+        # Verify that the answer is serializable
+        details = jsonutils.loads(jsonutils.dumps(details))
+        return details
 
     def _get_pts_addresses(self, pts):
         addresses = []
