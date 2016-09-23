@@ -34,8 +34,8 @@ CORE_PLUGIN = ('gbpservice.neutron.tests.unit.services.grouppolicy.'
 class CommonNeutronBaseTestCase(test_plugin.GroupPolicyPluginTestBase):
 
     def setUp(self, policy_drivers=None,
-              core_plugin=n_test_plugin.PLUGIN_NAME, ml2_options=None,
-              sc_plugin=None):
+              core_plugin=n_test_plugin.PLUGIN_NAME, l3_plugin=None,
+              ml2_options=None, sc_plugin=None):
         policy_drivers = policy_drivers or ['neutron_resources']
         config.cfg.CONF.set_override('policy_drivers',
                                      policy_drivers,
@@ -44,6 +44,7 @@ class CommonNeutronBaseTestCase(test_plugin.GroupPolicyPluginTestBase):
                                      ['dummy'], group='servicechain')
         config.cfg.CONF.set_override('allow_overlapping_ips', True)
         super(CommonNeutronBaseTestCase, self).setUp(core_plugin=core_plugin,
+                                                     l3_plugin=l3_plugin,
                                                      ml2_options=ml2_options,
                                                      sc_plugin=sc_plugin)
         engine = db_api.get_engine()

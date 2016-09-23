@@ -523,7 +523,8 @@ class ImplicitResourceOperations(local_api.LocalAPI):
         if router_id:
             try:
                 self._remove_router_interface(plugin_context, router_id,
-                                              interface_info)
+                                              interface_info,
+                                              clean_session=clean_session)
             except ext_l3.RouterInterfaceNotFoundForSubnet:
                 LOG.debug("Ignoring RouterInterfaceNotFoundForSubnet cleaning "
                           "up subnet: %s", subnet_id)
@@ -626,6 +627,27 @@ class ImplicitResourceOperations(local_api.LocalAPI):
         if self._router_is_owned(plugin_context.session, router_id):
             self._delete_router(plugin_context, router_id,
                                 clean_session=clean_session)
+
+    def _plug_router_to_subnet(self, plugin_context, subnet_id, router_id):
+        interface_info = {'subnet_id': subnet_id}
+        if router_id:
+            try:
+                self._add_router_interface(plugin_context, router_id,
+                                           interface_info)
+            except n_exc.BadRequest as e:
+                LOG.exception(_LE("Adding subnet to router failed, exception:"
+                                  "%s"), e)
+                raise exc.GroupPolicyInternalError()
+
+    def _add_router_interface_for_subnet(self, context, router_id, subnet_id):
+        self._plug_router_to_subnet(
+            context._plugin_context, subnet_id, router_id)
+
+    def _get_l3p_for_l2policy(self, context, l2p_id):
+        l2p = context._plugin.get_l2_policy(context._plugin_context, l2p_id)
+        l3p_id = l2p['l3_policy_id']
+        l3p = context._plugin.get_l3_policy(context._plugin_context, l3p_id)
+        return l3p
 
 
 class ResourceMappingDriver(api.PolicyDriver, ImplicitResourceOperations,
@@ -1825,12 +1847,6 @@ class ResourceMappingDriver(api.PolicyDriver, ImplicitResourceOperations,
     def update_network_service_policy_precommit(self, context):
         self._validate_nsp_parameters(context)
 
-    def _get_l3p_for_l2policy(self, context, l2p_id):
-        l2p = context._plugin.get_l2_policy(context._plugin_context, l2p_id)
-        l3p_id = l2p['l3_policy_id']
-        l3p = context._plugin.get_l3_policy(context._plugin_context, l3p_id)
-        return l3p
-
     def _plug_router_to_external_segment(self, context, es_dict):
         es_list = context._plugin.get_external_segments(
             context._plugin_context, filters={'id': es_dict.keys()})
@@ -1894,16 +1910,6 @@ class ResourceMappingDriver(api.PolicyDriver, ImplicitResourceOperations,
             context._plugin_context, context.current, subnet['id'])
         self._mark_subnet_owned(context._plugin_context.session, subnet['id'])
         return subnet
-
-    def _plug_router_to_subnet(self, plugin_context, subnet_id, router_id):
-        interface_info = {'subnet_id': subnet_id}
-        if router_id:
-            try:
-                self._add_router_interface(plugin_context, router_id,
-                                           interface_info)
-            except n_exc.BadRequest:
-                LOG.exception(_LE("Adding subnet to router failed"))
-                raise exc.GroupPolicyInternalError()
 
     def _stitch_ptg_to_l3p(self, context, ptg, l3p, subnet_ids):
         if l3p['routers']:
