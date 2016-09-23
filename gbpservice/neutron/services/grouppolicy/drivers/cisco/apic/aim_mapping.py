@@ -281,8 +281,13 @@ class AIMMappingDriver(nrd.CommonNeutronBase):
             for subnet_id in subnet_ids:
                 if not context._plugin._get_ptgs_for_subnet(
                     context._plugin_context, subnet_id):
-                    # TODO(Sumit): pass router_id of default router
+                    l2p_id = context.current['l2_policy_id']
+                    router_id = None
+                    if l2p_id:
+                        l3p = self._get_l3p_for_l2policy(context, l2p_id)
+                        router_id = l3p['routers'][0]
                     self._cleanup_subnet(plugin_context, subnet_id,
+                                         router_id=router_id,
                                          clean_session=False)
 
         if ptg_db['l2_policy_id']:
@@ -770,7 +775,13 @@ class AIMMappingDriver(nrd.CommonNeutronBase):
             context.add_subnets(subs - set(context.current['subnets']))
             for subnet in added:
                 self._sync_ptg_subnets(context, l2p)
-            # TODO(Sumit): This subnet needs to added to the default router
+                l3p = self._get_l3p_for_l2policy(context, l2p_id)
+                # TODO(Sumit): Consider uplinking to multiple routers
+                # which is done to provide multiple external gateways
+                # in different Neutron external networks.
+                router_id = l3p['routers'][0]
+                self._add_router_interface_for_subnet(context, router_id,
+                                                      subnet['id'])
 
     def _create_implicit_contracts_and_configure_default_epg(
         self, context, l2p, epg_dn):
