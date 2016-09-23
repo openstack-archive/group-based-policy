@@ -51,7 +51,7 @@ DEFAULT_FILTER_ENTRY = {'arp_opcode': u'unspecified',
                         'source_from_port': u'unspecified',
                         'source_to_port': u'unspecified',
                         'stateful': False,
-                        'tcp_flags': u'unspecified'}
+                        'tcp_flags': u''}
 
 
 class AIMBaseTestCase(test_nr_base.CommonNeutronBaseTestCase,
