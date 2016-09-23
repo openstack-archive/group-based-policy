@@ -400,7 +400,7 @@ class TestAimMapping(ApicAimTestCase):
         self.assertEqual('unspecified', aim_entry.source_to_port)
         self.assertEqual('unspecified', aim_entry.dest_from_port)
         self.assertEqual('unspecified', aim_entry.dest_to_port)
-        self.assertEqual('unspecified', aim_entry.tcp_flags)
+        self.assertEqual('', aim_entry.tcp_flags)
         self.assertFalse(aim_entry.stateful)
         self.assertFalse(aim_entry.fragment_only)
 
