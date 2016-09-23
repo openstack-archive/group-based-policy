@@ -60,8 +60,10 @@ class AIMBaseTestCase(test_nr_base.CommonNeutronBaseTestCase,
     _extension_path = None
 
     def setUp(self, policy_drivers=None, core_plugin=None, ml2_options=None,
-              sc_plugin=None, **kwargs):
+              l3_plugin=None, sc_plugin=None, **kwargs):
         core_plugin = core_plugin or ML2PLUS_PLUGIN
+        if not l3_plugin:
+            l3_plugin = "apic_aim_l3"
         # The dummy driver configured here is meant to be the second driver
         # invoked and helps in rollback testing. We mock the dummy driver
         # methods to raise an exception and validate that DB operations
@@ -74,7 +76,8 @@ class AIMBaseTestCase(test_nr_base.CommonNeutronBaseTestCase,
                                    'tenant_network_types': ['opflex']}
         super(AIMBaseTestCase, self).setUp(
             policy_drivers=policy_drivers, core_plugin=core_plugin,
-            ml2_options=ml2_opts, sc_plugin=sc_plugin)
+            ml2_options=ml2_opts, l3_plugin=l3_plugin,
+            sc_plugin=sc_plugin)
         config.cfg.CONF.set_override('network_vlan_ranges',
                                      ['physnet1:1000:1099'],
                                      group='ml2_type_vlan')
