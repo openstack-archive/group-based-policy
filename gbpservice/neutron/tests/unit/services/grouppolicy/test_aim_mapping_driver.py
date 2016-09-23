@@ -60,8 +60,10 @@ class AIMBaseTestCase(test_nr_base.CommonNeutronBaseTestCase,
     _extension_path = None
 
     def setUp(self, policy_drivers=None, core_plugin=None, ml2_options=None,
-              sc_plugin=None, **kwargs):
+              l3_plugin=None, sc_plugin=None, **kwargs):
         core_plugin = core_plugin or ML2PLUS_PLUGIN
+        if not l3_plugin:
+            l3_plugin = "apic_aim_l3"
         # The dummy driver configured here is meant to be the second driver
         # invoked and helps in rollback testing. We mock the dummy driver
         # methods to raise an exception and validate that DB operations
@@ -74,7 +76,8 @@ class AIMBaseTestCase(test_nr_base.CommonNeutronBaseTestCase,
                                    'tenant_network_types': ['opflex']}
         super(AIMBaseTestCase, self).setUp(
             policy_drivers=policy_drivers, core_plugin=core_plugin,
-            ml2_options=ml2_opts, sc_plugin=sc_plugin)
+            ml2_options=ml2_opts, l3_plugin=l3_plugin,
+            sc_plugin=sc_plugin)
         config.cfg.CONF.set_override('network_vlan_ranges',
                                      ['physnet1:1000:1099'],
                                      group='ml2_type_vlan')
@@ -556,6 +559,23 @@ class TestPolicyTargetGroup(AIMBaseTestCase):
                                implicit_contract_name],
                               aim_epg.consumed_contract_names)
 
+    def _validate_router_interface_created(self):
+        # check port is created on default router
+        ports = self._plugin.get_ports(self._context)
+        self.assertEqual(1, len(ports))
+        router_port = ports[0]
+        self.assertEqual('network:router_interface',
+                         router_port['device_owner'])
+        routers = self._l3_plugin.get_routers(self._context)
+        self.assertEqual(1, len(routers))
+        self.assertEqual(routers[0]['id'],
+                         router_port['device_id'])
+        subnets = self._plugin.get_subnets(self._context)
+        self.assertEqual(1, len(subnets))
+        self.assertEqual(1, len(router_port['fixed_ips']))
+        self.assertEqual(subnets[0]['id'],
+                         router_port['fixed_ips'][0]['subnet_id'])
+
     def test_policy_target_group_lifecycle_implicit_l2p(self):
         prs_lists = self._get_provided_consumed_prs_lists()
         ptg = self.create_policy_target_group(
@@ -577,6 +597,9 @@ class TestPolicyTargetGroup(AIMBaseTestCase):
         self.assertIsNotNone(subnet['id'])
         self.assertEqual(l3p['subnetpools_v4'][0],
                          subnet['subnetpool_id'])
+
+        self._validate_router_interface_created()
+
         ptg_name = ptg['name']
         aim_epg_name = str(self.name_mapper.policy_target_group(
             self._neutron_context.session, ptg_id, ptg_name))
@@ -625,6 +648,8 @@ class TestPolicyTargetGroup(AIMBaseTestCase):
         req = self.new_show_request('subnets', ptg['subnets'][0], fmt=self.fmt)
         res = req.get_response(self.api)
         self.assertEqual(webob.exc.HTTPNotFound.code, res.status_int)
+        # check router ports are deleted too
+        self.assertEqual([], self._plugin.get_ports(self._context))
         # Implicitly created L2P should be deleted
         self.show_l2_policy(ptg['l2_policy_id'], expected_res_status=404)
 
@@ -646,6 +671,9 @@ class TestPolicyTargetGroup(AIMBaseTestCase):
         req = self.new_show_request('subnets', ptg['subnets'][0], fmt=self.fmt)
         res = self.deserialize(self.fmt, req.get_response(self.api))
         self.assertIsNotNone(res['subnet']['id'])
+
+        self._validate_router_interface_created()
+
         ptg_name = ptg['name']
         aim_epg_name = str(self.name_mapper.policy_target_group(
             self._neutron_context.session, ptg_id, ptg_name))
@@ -700,6 +728,7 @@ class TestPolicyTargetGroup(AIMBaseTestCase):
         req = self.new_show_request('subnets', ptg['subnets'][0], fmt=self.fmt)
         res = self.deserialize(self.fmt, req.get_response(self.api))
         self.assertIsNotNone(res['subnet']['id'])
+        self._validate_router_interface_created()
 
 
 # TODO(Sumit): Add tests here which tests different scenarios for subnet
@@ -720,6 +749,7 @@ class TestPolicyTargetGroupRollback(AIMBaseTestCase):
         self.dummy.create_policy_target_group_precommit = mock.Mock(
             side_effect=Exception)
         self.create_policy_target_group(name="ptg1", expected_res_status=500)
+        self.assertEqual([], self._plugin.get_ports(self._context))
         self.assertEqual([], self._plugin.get_subnets(self._context))
         self.assertEqual([], self._plugin.get_networks(self._context))
         self.assertEqual([], self._gbp_plugin.get_policy_target_groups(
@@ -800,12 +830,14 @@ class TestPolicyTargetRollback(AIMBaseTestCase):
             side_effect=Exception)
         ptg_id = self.create_policy_target_group(
             name="ptg1")['policy_target_group']['id']
+        ports = self._plugin.get_ports(self._context)
         self.create_policy_target(name="pt1",
                                   policy_target_group_id=ptg_id,
                                   expected_res_status=500)
         self.assertEqual([],
                          self._gbp_plugin.get_policy_targets(self._context))
-        self.assertEqual([], self._plugin.get_ports(self._context))
+        new_ports = self._plugin.get_ports(self._context)
+        self.assertItemsEqual(ports, new_ports)
         # restore mock
         self.dummy.create_policy_target_precommit = orig_func
 
