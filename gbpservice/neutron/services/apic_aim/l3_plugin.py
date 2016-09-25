@@ -127,8 +127,27 @@ class ApicL3Plugin(common_db_mixin.CommonDbMixin,
             # funtionality to be completely transaction safe.
             info = super(ApicL3Plugin, self).add_router_interface(
                 context, router_id, interface_info)
-            self._md.add_router_interface(context, info)
             return info
+
+    def _add_interface_by_subnet(self, context, router, subnet_id, owner):
+        LOG.debug("APIC AIM L3 Plugin adding interface by subnet %(subnet)s "
+                  "to router %(router)s",
+                  {'subnet': subnet_id, 'router': router['id']})
+        port, subnets, new_port = (
+            super(ApicL3Plugin, self)._add_interface_by_subnet(
+                context, router, subnet_id, owner))
+        self._md.add_router_interface(context, router, port, subnets)
+        return port, subnets, new_port
+
+    def _add_interface_by_port(self, context, router, port_id, owner):
+        LOG.debug("APIC AIM L3 Plugin adding interface by port %(port)s "
+                  "to router %(router)s",
+                  {'port': port_id, 'router': router['id']})
+        port, subnets = (
+            super(ApicL3Plugin, self)._add_interface_by_port(
+                context, router, port_id, owner))
+        self._md.add_router_interface(context, router, port, subnets)
+        return port, subnets
 
     def remove_router_interface(self, context, router_id, interface_info):
         LOG.debug("APIC AIM L3 Plugin removing interface %(interface)s "
@@ -144,5 +163,26 @@ class ApicL3Plugin(common_db_mixin.CommonDbMixin,
             # funtionality to be completely transaction safe.
             info = super(ApicL3Plugin, self).remove_router_interface(
                 context, router_id, interface_info)
-            self._md.remove_router_interface(context, info)
             return info
+
+    def _remove_interface_by_subnet(self, context, router_id, subnet_id,
+                                    owner):
+        LOG.debug("APIC AIM L3 Plugin removing interface by subnet %(subnet)s "
+                  "from router %(router)s",
+                  {'subnet': subnet_id, 'router': router_id})
+        port_db, subnets = (
+            super(ApicL3Plugin, self)._remove_interface_by_subnet(
+                context, router_id, subnet_id, owner))
+        self._md.remove_router_interface(context, router_id, port_db, subnets)
+        return port_db, subnets
+
+    def _remove_interface_by_port(self, context, router_id, port_id, subnet_id,
+                                  owner):
+        LOG.debug("APIC AIM L3 Plugin removing interface by port %(port)s "
+                  "from router %(router)s",
+                  {'port': port_id, 'router': router_id})
+        port_db, subnets = (
+            super(ApicL3Plugin, self)._remove_interface_by_port(
+                context, router_id, port_id, subnet_id, owner))
+        self._md.remove_router_interface(context, router_id, port_db, subnets)
+        return port_db, subnets
