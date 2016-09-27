@@ -17,16 +17,24 @@ from neutron._i18n import _LE
 from neutron._i18n import _LI
 from neutron.api import extensions
 from neutron import manager as n_manager
+from neutron_lib import exceptions as n_exc
 from oslo_log import log
 from oslo_utils import excutils
 
+from aim.api import resource as aim_res
+from aim import exceptions as aim_exc
+
 from gbpservice.neutron import extensions as extensions_pkg
+from gbpservice.neutron.extensions import cisco_apic
 from gbpservice.neutron.plugins.ml2plus import driver_api as api_plus
+from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import (
+    extension_db as extn_db)
 
 LOG = log.getLogger(__name__)
 
 
-class ApicExtensionDriver(api_plus.ExtensionDriver):
+class ApicExtensionDriver(api_plus.ExtensionDriver,
+                          extn_db.ExtensionDbMixin):
 
     def __init__(self):
         LOG.info(_LI("APIC AIM ED __init__"))
@@ -54,16 +62,71 @@ class ApicExtensionDriver(api_plus.ExtensionDriver):
     def extend_network_dict(self, session, base_model, result):
         try:
             self._md.extend_network_dict(session, base_model, result)
+            res_dict = self.get_network_extn_db(session, result['id'])
+            if cisco_apic.EXTERNAL_NETWORK in res_dict:
+                result.setdefault(cisco_apic.DIST_NAMES, {})[
+                    cisco_apic.EXTERNAL_NETWORK] = res_dict.pop(
+                        cisco_apic.EXTERNAL_NETWORK)
+            result.update(res_dict)
         except Exception:
             with excutils.save_and_reraise_exception():
                 LOG.exception(_LE("APIC AIM extend_network_dict failed"))
 
+    def process_create_network(self, plugin_context, data, result):
+        if (data.get(cisco_apic.DIST_NAMES) and
+            data[cisco_apic.DIST_NAMES].get(cisco_apic.EXTERNAL_NETWORK)):
+            dn = data[cisco_apic.DIST_NAMES][cisco_apic.EXTERNAL_NETWORK]
+            try:
+                aim_res.ExternalNetwork.from_dn(dn)
+            except aim_exc.InvalidDNForAciResource:
+                raise n_exc.InvalidInput(
+                    error_message=('%s is not valid ExternalNetwork DN' % dn))
+            res_dict = {cisco_apic.EXTERNAL_NETWORK: dn,
+                        cisco_apic.NAT_TYPE:
+                        data.get(cisco_apic.NAT_TYPE, 'distributed'),
+                        cisco_apic.EXTERNAL_CIDRS:
+                        data.get(cisco_apic.EXTERNAL_CIDRS, ['0.0.0.0/0'])}
+            self.set_network_extn_db(plugin_context.session, result['id'],
+                                     res_dict)
+            result.setdefault(cisco_apic.DIST_NAMES, {})[
+                    cisco_apic.EXTERNAL_NETWORK] = res_dict.pop(
+                        cisco_apic.EXTERNAL_NETWORK)
+            result.update(res_dict)
+
+    def process_update_network(self, plugin_context, data, result):
+        # only CIDRs can be updated
+        if not cisco_apic.EXTERNAL_CIDRS in data:
+            return
+        if result.get(cisco_apic.DIST_NAMES, {}).get(
+            cisco_apic.EXTERNAL_NETWORK):
+            res_dict = {cisco_apic.EXTERNAL_CIDRS:
+                        data[cisco_apic.EXTERNAL_CIDRS]}
+            self.set_network_extn_db(plugin_context.session, result['id'],
+                                     res_dict)
+            result.update(res_dict)
+
     def extend_subnet_dict(self, session, base_model, result):
         try:
             self._md.extend_subnet_dict(session, base_model, result)
+            res_dict = self.get_subnet_extn_db(session, result['id'])
+            result[cisco_apic.SNAT_HOST_POOL] = (
+                res_dict.get(cisco_apic.SNAT_HOST_POOL, False))
         except Exception:
             with excutils.save_and_reraise_exception():
                 LOG.exception(_LE("APIC AIM extend_subnet_dict failed"))
+
+    def process_create_subnet(self, plugin_context, data, result):
+        res_dict = {cisco_apic.SNAT_HOST_POOL:
+                    data.get(cisco_apic.SNAT_HOST_POOL, False)}
+        self.set_subnet_extn_db(plugin_context.session, result['id'],
+                                res_dict)
+
+    def process_update_subnet(self, plugin_context, data, result):
+        if not cisco_apic.SNAT_HOST_POOL in data:
+            return
+        res_dict = {cisco_apic.SNAT_HOST_POOL: data[cisco_apic.SNAT_HOST_POOL]}
+        self.set_subnet_extn_db(plugin_context.session, result['id'],
+                                res_dict)
 
     def extend_address_scope_dict(self, session, base_model, result):
         try:
