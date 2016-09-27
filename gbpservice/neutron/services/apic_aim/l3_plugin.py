@@ -27,13 +27,16 @@ from oslo_utils import excutils
 from sqlalchemy import inspect
 
 from gbpservice.neutron import extensions as extensions_pkg
+from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import (
+    extension_db as extn_db)
 
 LOG = logging.getLogger(__name__)
 
 
 class ApicL3Plugin(common_db_mixin.CommonDbMixin,
                    extraroute_db.ExtraRoute_db_mixin,
-                   l3_gwmode_db.L3_NAT_db_mixin):
+                   l3_gwmode_db.L3_NAT_db_mixin,
+                   extn_db.ExtensionDbMixin):
 
     supported_extension_aliases = ["router", "ext-gw-mode", "extraroute",
                                    "cisco-apic-l3"]
@@ -67,6 +70,7 @@ class ApicL3Plugin(common_db_mixin.CommonDbMixin,
         session = inspect(router_db).session
         try:
             self._md.extend_router_dict(session, router_db, router_res)
+            self._include_router_extn_attr(session, router_res)
         except Exception:
             with excutils.save_and_reraise_exception():
                 LOG.exception(_LE("APIC AIM extend_router_dict failed"))
@@ -86,6 +90,7 @@ class ApicL3Plugin(common_db_mixin.CommonDbMixin,
             # instead, and/or reimplementing the base funtionality to
             # be completely transaction safe.
             result = super(ApicL3Plugin, self).create_router(context, router)
+            self._process_router_op(context, result, router)
             self._md.create_router(context, result)
             return result
 
@@ -102,6 +107,7 @@ class ApicL3Plugin(common_db_mixin.CommonDbMixin,
             original = self.get_router(context, id)
             result = super(ApicL3Plugin, self).update_router(context, id,
                                                              router)
+            self._process_router_op(context, result, router)
             self._md.update_router(context, result, original)
             return result
 
@@ -118,6 +124,15 @@ class ApicL3Plugin(common_db_mixin.CommonDbMixin,
             router = self.get_router(context, id)
             super(ApicL3Plugin, self).delete_router(context, id)
             self._md.delete_router(context, router)
+
+    def _process_router_op(self, context, result, router_req):
+        self.set_router_extn_db(context.session, result['id'],
+                                router_req['router'])
+        self._include_router_extn_attr(context.session, result)
+
+    def _include_router_extn_attr(self, session, router):
+        attr = self.get_router_extn_db(session, router['id'])
+        router.update(attr)
 
     def add_router_interface(self, context, router_id, interface_info):
         LOG.debug("APIC AIM L3 Plugin adding interface %(interface)s "
@@ -192,3 +207,31 @@ class ApicL3Plugin(common_db_mixin.CommonDbMixin,
                 context, router_id, port_id, subnet_id, owner))
         self._md.remove_router_interface(context, router_id, port_db, subnets)
         return port_db, subnets
+
+    def create_floatingip(self, context, floatingip):
+        # if not floatingip['floatingip'].get('subnet_id'):
+        #    # TODO(amitbose) Verify that subnet is not a SNAT host-pool
+        # else:
+        #    # TODO(amitbose) Iterate over non SNAT host-pool subnets
+        #    # and try to allocate a FIP
+        result = super(ApicL3Plugin, self).create_floatingip(
+            context, floatingip)
+        self._md.create_floatingip(context, result)
+        self.update_floatingip_status(context, result['id'],
+                                      result['status'])
+        return result
+
+    def update_floatingip(self, context, id, floatingip):
+        old_fip = self.get_floatingip(context, id)
+        result = super(ApicL3Plugin, self).update_floatingip(
+            context, id, floatingip)
+        self._md.update_floatingip(context, old_fip, result)
+        if old_fip['status'] != result['status']:
+            self.update_floatingip_status(context, result['id'],
+                                          result['status'])
+        return result
+
+    def delete_floatingip(self, context, id):
+        old_fip = self.get_floatingip(context, id)
+        super(ApicL3Plugin, self).delete_floatingip(context, id)
+        self._md.delete_floatingip(context, old_fip)

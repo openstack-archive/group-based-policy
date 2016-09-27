@@ -14,18 +14,40 @@
 #    under the License.
 
 from neutron.api import extensions
+from neutron.api.v2 import attributes
 from neutron.extensions import l3
 
 from gbpservice.neutron.extensions import cisco_apic
 
 ALIAS = 'cisco-apic-l3'
 
+EXTERNAL_PROVIDED_CONTRACTS = 'apic:external_provided_contracts'
+EXTERNAL_CONSUMED_CONTRACTS = 'apic:external_consumed_contracts'
+
 CONTRACT = 'Contract'
 CONTRACT_SUBJECT = 'ContractSubject'
 VRF = 'VRF'
 
+EXT_GW_ATTRIBUTES = {
+    EXTERNAL_PROVIDED_CONTRACTS: {
+        # Additional contracts provided by external network
+        'allow_put': True, 'allow_post': True,
+        'is_visible': True, 'default': None,
+        'convert_to': attributes.convert_none_to_empty_list,
+        'validate': {'type:list_of_unique_strings': None},
+    },
+    EXTERNAL_CONSUMED_CONTRACTS: {
+        # Additional contracts consumed by external network
+        'allow_put': True, 'allow_post': True,
+        'is_visible': True, 'default': None,
+        'convert_to': attributes.convert_none_to_empty_list,
+        'validate': {'type:list_of_unique_strings': None},
+    }
+}
+
 EXTENDED_ATTRIBUTES_2_0 = {
-    l3.ROUTERS: cisco_apic.APIC_ATTRIBUTES
+    l3.ROUTERS: dict(cisco_apic.APIC_ATTRIBUTES.items() +
+                     EXT_GW_ATTRIBUTES.items())
 }
 
 

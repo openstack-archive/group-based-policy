@@ -21,6 +21,8 @@ from aim.db import model_base as aim_model_base
 from keystoneclient.v3 import client as ksc_client
 from neutron import context as nctx
 from neutron.db import api as db_api
+from neutron import manager
+from neutron.plugins.common import constants as service_constants
 from neutron.tests.unit.extensions import test_address_scope
 from opflexagent import constants as ocst
 import webob.exc
@@ -93,6 +95,8 @@ class AIMBaseTestCase(test_nr_base.CommonNeutronBaseTestCase,
             policy_drivers=policy_drivers, core_plugin=core_plugin,
             ml2_options=ml2_opts, l3_plugin=l3_plugin,
             sc_plugin=sc_plugin)
+        self.l3_plugin = manager.NeutronManager.get_service_plugins()[
+            service_constants.L3_ROUTER_NAT]
         config.cfg.CONF.set_override('network_vlan_ranges',
                                      ['physnet1:1000:1099'],
                                      group='ml2_type_vlan')
@@ -951,6 +955,41 @@ class TestPolicyTarget(AIMBaseTestCase):
         self.assertEqual(expected_l3p_id,
                          vrf_mapping['l3_policy_id'])
 
+    def _setup_external_network(self, name, dn=None, router_tenant=None):
+        DN = 'apic:distinguished_names'
+        kwargs = {'router:external': True}
+        if dn:
+            kwargs[DN] = {'ExternalNetwork': dn}
+        extn_attr = ('router:external', DN,
+                     'apic:nat_type', 'apic:snat_host_pool')
+
+        net = self._make_network(self.fmt, name, True,
+                                 arg_list=extn_attr,
+                                 **kwargs)['network']
+        self._make_subnet(
+            self.fmt, {'network': net}, '100.100.0.1',
+            '100.100.0.0/16')['subnet']
+        router = self._make_router(
+            self.fmt, router_tenant or net['tenant_id'], 'router1',
+            external_gateway_info={'network_id': net['id']})['router']
+        return net, router
+
+    def _verify_fip_details(self, mapping, fip, ext_epg_tenant,
+                            ext_epg_name):
+        self.assertEqual(1, len(mapping['floating_ip']))
+        fip = copy.deepcopy(fip)
+        fip['nat_epg_name'] = ext_epg_name
+        fip['nat_epg_tenant'] = ext_epg_tenant
+        self.assertEqual(fip, mapping['floating_ip'][0])
+
+    def _verify_ip_mapping_details(self, mapping, ext_net, ext_epg_tenant,
+                                   ext_epg_name):
+        self.assertEqual(1, len(mapping['ip_mapping']))
+        self.assertEqual({'external_segment_name': ext_net,
+                          'nat_epg_name': ext_epg_name,
+                          'nat_epg_tenant': ext_epg_tenant},
+                         mapping['ip_mapping'][0])
+
     def _do_test_get_gbp_details(self):
         l3p = self.create_l3_policy(name='myl3')['l3_policy']
         l2p = self.create_l2_policy(name='myl2',
@@ -998,12 +1037,31 @@ class TestPolicyTarget(AIMBaseTestCase):
             self.fmt, ['2.1.0.0/16'],
             name='as2', address_scope_id=address_scope['id'],
             tenant_id=self._tenant_id)
+
+        ext_net1, router1 = self._setup_external_network(
+            'l1', dn='uni/tn-t1/out-l1/instP-n1')
+        _, router2 = self._setup_external_network(
+            'l2', dn='uni/tn-t1/out-l2/instP-n2')
+
         with self.network() as network:
             with self.subnet(network=network, cidr='1.1.2.0/24',
                              subnetpool_id=subnetpool['id']) as subnet:
+                self.l3_plugin.add_router_interface(
+                    nctx.get_admin_context(), router1['id'],
+                    {'subnet_id': subnet['subnet']['id']})
+                with self.port(subnet=subnet) as intf_port:
+                    self.l3_plugin.add_router_interface(
+                        nctx.get_admin_context(), router2['id'],
+                        {'port_id': intf_port['port']['id']})
                 with self.port(subnet=subnet) as port:
                     port_id = port['port']['id']
                     network = network['network']
+                    fip = self.l3_plugin.create_floatingip(
+                        nctx.get_admin_context(),
+                        {'floatingip': {'floating_network_id': ext_net1['id'],
+                                        'tenant_id': network['tenant_id'],
+                                        'port_id': port_id}})
+
                     self._bind_port_to_host(port_id, 'h1')
                     mapping = self.driver.get_gbp_details(
                         self._neutron_admin_context, device='tap%s' % port_id,
@@ -1037,6 +1095,9 @@ class TestPolicyTarget(AIMBaseTestCase):
                         vrf_mapping, vrf_name, address_scope['id'],
                         ['10.10.0.0/26', '1.1.0.0/16', '2.1.0.0/16'],
                         epg_tenant)
+                    self._verify_fip_details(mapping, fip, 't1', 'EXT-l1')
+                    self._verify_ip_mapping_details(mapping, 'l2',
+                                                    't1', 'EXT-l2')
 
     def test_get_gbp_details(self):
         self._do_test_get_gbp_details()

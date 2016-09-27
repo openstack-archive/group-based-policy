@@ -21,11 +21,15 @@ ALIAS = 'cisco-apic'
 
 DIST_NAMES = 'apic:distinguished_names'
 SYNC_STATE = 'apic:synchronization_state'
+NAT_TYPE = 'apic:nat_type'
+SNAT_HOST_POOL = 'apic:snat_host_pool'
+EXTERNAL_CIDRS = 'apic:external_cidrs'
 
 BD = 'BridgeDomain'
 EPG = 'EndpointGroup'
 SUBNET = 'Subnet'
 VRF = 'VRF'
+EXTERNAL_NETWORK = 'ExternalNetwork'
 
 SYNC_SYNCED = 'synced'
 SYNC_BUILD = 'build'
@@ -36,9 +40,49 @@ APIC_ATTRIBUTES = {
     SYNC_STATE: {'allow_post': False, 'allow_put': False, 'is_visible': True}
 }
 
+EXT_NET_ATTRIBUTES = {
+    DIST_NAMES: {
+        # DN of corresponding APIC L3Out external network
+        'allow_post': True, 'allow_put': False,
+        'is_visible': True,
+        'default': None,
+        'validate': {
+            'type:dict_or_none': {
+                EXTERNAL_NETWORK: {'type:string': None,
+                                   'required': True}
+            }
+        }
+    },
+    NAT_TYPE: {
+        # whether NAT is enabled, and if so its type
+        'allow_post': True, 'allow_put': False,
+        'is_visible': True, 'default': 'distributed',
+        'validate': {'type:values': ['distributed', 'edge', '']},
+    },
+    EXTERNAL_CIDRS: {
+        # Restrict external traffic to specified addresses
+        'allow_put': True, 'allow_post': True,
+        'is_visible': True, 'default': ['0.0.0.0/0'],
+        'convert_to': attributes.convert_none_to_empty_list,
+        'validate': {'type:subnet_list': None},
+    },
+}
+
+EXT_SUBNET_ATTRIBUTES = {
+    SNAT_HOST_POOL: {
+        # whether an external subnet should be used as a pool
+        # for allocating host-based SNAT addresses
+        'allow_post': True, 'allow_put': True,
+        'is_visible': True, 'default': False,
+        'convert_to': attributes.convert_to_boolean,
+    }
+}
+
 EXTENDED_ATTRIBUTES_2_0 = {
-    attributes.NETWORKS: APIC_ATTRIBUTES,
-    attributes.SUBNETS: APIC_ATTRIBUTES,
+    attributes.NETWORKS: dict(
+        APIC_ATTRIBUTES.items() + EXT_NET_ATTRIBUTES.items()),
+    attributes.SUBNETS: dict(
+        APIC_ATTRIBUTES.items() + EXT_SUBNET_ATTRIBUTES.items()),
     address_scope.ADDRESS_SCOPES: APIC_ATTRIBUTES
 }
 

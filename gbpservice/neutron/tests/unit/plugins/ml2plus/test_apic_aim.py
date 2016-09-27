@@ -15,16 +15,21 @@
 
 import mock
 
+from aim.aim_lib import nat_strategy
 from aim import aim_manager
 from aim.api import resource as aim_resource
 from aim.api import status as aim_status
 from aim import config as aim_cfg
 from aim import context as aim_context
 from aim.db import model_base as aim_model_base
+
+from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import (
+    extension_db as extn_db)
 from keystoneclient.v3 import client as ksc_client
 from neutron.api import extensions
 from neutron import context
 from neutron.db import api as db_api
+from neutron.db import model_base
 from neutron import manager
 from neutron.plugins.common import constants as service_constants
 from neutron.plugins.ml2 import config
@@ -42,6 +47,13 @@ AGENT_CONF_OPFLEX = {'alive': True, 'binary': 'somebinary',
                      'configurations': {
                          'opflex_networks': None,
                          'bridge_mappings': {'physnet1': 'br-eth1'}}}
+
+DN = 'apic:distinguished_names'
+CIDR = 'apic:external_cidrs'
+PROV = 'apic:external_provided_contracts'
+CONS = 'apic:external_consumed_contracts'
+
+aim_resource.ResourceBase.__repr__ = lambda x: x.__dict__.__repr__()
 
 
 # REVISIT(rkukura): Use mock for this instead?
@@ -77,6 +89,7 @@ class FakeKeystoneClient(object):
 class ApicAimTestMixin(object):
 
     def initialize_db_config(self, session):
+        aim_cfg.CONF.register_opts(aim_cfg.global_opts)
         aim_cfg._get_option_subscriber_manager = mock.Mock()
         self.aim_cfg_manager = aim_cfg.ConfigManager(
             aim_context.AimContext(db_session=session), '')
@@ -130,6 +143,11 @@ class ApicAimTestCase(test_address_scope.AddressScopeTestCase,
         self.ext_api = test_extensions.setup_extensions_middleware(ext_mgr)
         self.port_create_status = 'DOWN'
 
+        # Do this *again* after loading of the mechanism driver so that
+        # all AIM model classes used by mechanism driver will be defined.
+        aim_model_base.Base.metadata.create_all(engine)
+        model_base.BASEV2.metadata.create_all(engine)
+
         self.saved_keystone_client = ksc_client.Client
         ksc_client.Client = FakeKeystoneClient
         self.plugin = manager.NeutronManager.get_plugin()
@@ -142,6 +160,9 @@ class ApicAimTestCase(test_address_scope.AddressScopeTestCase,
         self._app_profile_name = self.driver.ap_name
         self._tenant_name = self._map_name({'id': 'test-tenant',
                                             'name': 'TestTenantName'})
+        self.extension_attributes = ('router:external', DN,
+                                     'apic:nat_type', 'apic:snat_host_pool',
+                                     CIDR, PROV, CONS)
 
     def tearDown(self):
         engine = db_api.get_engine()
@@ -160,6 +181,47 @@ class ApicAimTestCase(test_address_scope.AddressScopeTestCase,
         aim_ctx = aim_context.AimContext(self.db_session)
         resource = cls.from_dn(dn)
         return self.aim_mgr.get(aim_ctx, resource)
+
+    def _check_dn(self, resource, aim_resource, key):
+        dist_names = resource.get('apic:distinguished_names')
+        self.assertIsInstance(dist_names, dict)
+        dn = dist_names.get(key)
+        self.assertIsInstance(dn, basestring)
+        self.assertEqual(aim_resource.dn, dn)
+
+    def _check_no_dn(self, resource, key):
+        dist_names = resource.get('apic:distinguished_names')
+        if dist_names is not None:
+            self.assertIsInstance(dist_names, dict)
+            self.assertNotIn(key, dist_names)
+
+    def _register_agent(self, host, agent_conf):
+        agent = {'host': host}
+        agent.update(agent_conf)
+        self.plugin.create_or_update_agent(context.get_admin_context(), agent)
+
+    def _bind_port_to_host(self, port_id, host):
+        data = {'port': {'binding:host_id': host,
+                         'device_owner': 'compute:',
+                         'device_id': 'someid'}}
+        req = self.new_update_request('ports', data, port_id,
+                                      self.fmt)
+        return self.deserialize(self.fmt, req.get_response(self.api))
+
+    def _make_ext_network(self, name, dn=None, nat_type=None, cidrs=None):
+        kwargs = {'router:external': True}
+        if dn:
+            kwargs[DN] = {'ExternalNetwork': dn}
+        if nat_type is not None:
+            kwargs['apic:nat_type'] = nat_type
+        elif getattr(self, 'nat_type', None) is not None:
+            kwargs['apic:nat_type'] = self.nat_type
+        if cidrs:
+            kwargs[CIDR] = cidrs
+
+        return self._make_network(self.fmt, name, True,
+                                  arg_list=self.extension_attributes,
+                                  **kwargs)['network']
 
 
 class TestAimMapping(ApicAimTestCase):
@@ -276,18 +338,6 @@ class TestAimMapping(ApicAimTestCase):
         else:
             self.assertIsNone(entry)
         return entry
-
-    def _check_dn(self, resource, aim_resource, key):
-        dist_names = resource.get('apic:distinguished_names')
-        self.assertIsInstance(dist_names, dict)
-        dn = dist_names.get(key)
-        self.assertIsInstance(dn, basestring)
-        self.assertEqual(aim_resource.dn, dn)
-
-    def _check_no_dn(self, resource, key):
-        dist_names = resource.get('apic:distinguished_names')
-        self.assertIsInstance(dist_names, dict)
-        self.assertNotIn(key, dist_names)
 
     def _check_network(self, net, orig_net=None, routers=None, scope=None):
         orig_net = orig_net or net
@@ -1089,19 +1139,6 @@ class TestSyncState(ApicAimTestCase):
 
 
 class TestPortBinding(ApicAimTestCase):
-    def _register_agent(self, host, agent_conf):
-        agent = {'host': host}
-        agent.update(agent_conf)
-        self.plugin.create_or_update_agent(context.get_admin_context(), agent)
-
-    def _bind_port_to_host(self, port_id, host):
-        data = {'port': {'binding:host_id': host,
-                         'device_owner': 'compute:',
-                         'device_id': 'someid'}}
-        req = self.new_update_request('ports', data, port_id,
-                                      self.fmt)
-        return self.deserialize(self.fmt, req.get_response(self.api))
-
     def test_bind_opflex_agent(self):
         self._register_agent('host1', AGENT_CONF_OPFLEX)
         net = self._make_network(self.fmt, 'net1', True)
@@ -1179,3 +1216,669 @@ class TestMl2SubnetsV2(test_plugin.TestSubnetsV2,
 class TestMl2SubnetPoolsV2(test_plugin.TestSubnetPoolsV2,
                            ApicAimTestCase):
     pass
+
+
+class TestExtensionDriver(ApicAimTestCase):
+
+    def test_external_network_lifecycle(self):
+        session = db_api.get_session()
+        extn = extn_db.ExtensionDbMixin()
+
+        # create with APIC DN, nat_typeand default CIDR
+        net1 = self._make_ext_network('net1',
+                                      dn='uni/tn-t1/out-l1/instP-n1',
+                                      nat_type='')
+
+        self.assertEqual('uni/tn-t1/out-l1/instP-n1',
+                         net1[DN]['ExternalNetwork'])
+        self.assertEqual('', net1['apic:nat_type'])
+        self.assertEqual(['0.0.0.0/0'], net1[CIDR])
+
+        # create with nat_type set to default, and CIDR specified
+        net2 = self._make_ext_network('net2',
+                                      dn='uni/tn-t1/out-l2/instP-n2',
+                                      cidrs=['5.5.5.0/24', '10.20.0.0/16'])
+        self.assertEqual('distributed', net2['apic:nat_type'])
+        self.assertEqual(['10.20.0.0/16', '5.5.5.0/24'],
+                         sorted(net2[CIDR]))
+
+        # update CIDR
+        net2 = self._update('networks', net2['id'],
+            {'network': {CIDR: ['20.20.30.0/24']}})['network']
+        self.assertEqual('distributed', net2['apic:nat_type'])
+        self.assertEqual(['20.20.30.0/24'], net2[CIDR])
+
+        # create without APIC DN -> this is an unmanaged network
+        net3 = self._make_ext_network('net3')
+        self.assertTrue(DN not in net3 or 'ExternalNetwork' not in net3[DN])
+        self.assertFalse('apic:nat_type' in net3)
+        self.assertFalse(CIDR in net3)
+
+        # updating CIDR of unmanaged network is no-op
+        net3 = self._update('networks', net3['id'],
+            {'network': {CIDR: ['30.30.20.0/24']}})['network']
+        self.assertTrue(DN not in net3 or 'ExternalNetwork' not in net3[DN])
+        self.assertFalse('apic:nat_type' in net3)
+        self.assertFalse(CIDR in net3)
+
+        # delete the external networks
+        self._delete('networks', net2['id'])
+        self._delete('networks', net1['id'])
+
+        self.assertFalse(extn.get_network_extn_db(session, net1['id']))
+        self.assertFalse(extn.get_network_extn_db(session, net2['id']))
+
+    def test_external_network_fail(self):
+        # APIC DN not specified
+        resp = self._create_network(self.fmt, 'net1', True,
+                                    arg_list=self.extension_attributes,
+                                    **{'router:external': True,
+                                       DN: {'Foo': 'bar'}})
+        self.assertEqual(400, resp.status_code)
+
+        # APIC DN is wrong
+        resp = self._create_network(self.fmt, 'net1', True,
+            arg_list=self.extension_attributes,
+            **{'router:external': True,
+               DN: {'ExternalNetwork': 'uni/tenant-t1/ext-l1/instP-n2'}})
+        self.assertEqual(400, resp.status_code)
+
+        # Update APIC DN, nat-type
+        net1 = self._make_ext_network('net1',
+                                      dn='uni/tn-t1/out-l1/instP-n1',
+                                      nat_type='edge')
+
+        self._update('networks', net1['id'],
+            {'network':
+             {DN: {'ExternalNetwork': 'uni/tn-t1/out-l1/instP-n2'}}},
+            400)
+        self._update('networks', net1['id'], {'apic:nat_type': ''}, 400)
+
+    def test_external_subnet_lifecycle(self):
+        session = db_api.get_session()
+        extn = extn_db.ExtensionDbMixin()
+
+        net1 = self._make_ext_network('net1',
+                                      dn='uni/tn-t1/out-l1/instP-n1')
+        # create with default value for snat_host_pool
+        subnet = self._make_subnet(
+            self.fmt, {'network': net1}, '10.0.0.1', '10.0.0.0/24')['subnet']
+        subnet = self._show('subnets', subnet['id'])['subnet']
+        self.assertFalse(subnet['apic:snat_host_pool'])
+
+        # Update something other than snat_host_pool
+        self._update('subnets', subnet['id'],
+                     {'subnet': {'name': 'foo'}})
+        subnet = self._show('subnets', subnet['id'])['subnet']
+        self.assertFalse(subnet['apic:snat_host_pool'])
+
+        # Update snat_host_pool
+        self._update('subnets', subnet['id'],
+                     {'subnet': {'apic:snat_host_pool': True}})
+        subnet = self._show('subnets', subnet['id'])['subnet']
+        self.assertTrue(subnet['apic:snat_host_pool'])
+
+        # delete subnet
+        self._delete('subnets', subnet['id'])
+        self.assertFalse(extn.get_subnet_extn_db(session, subnet['id']))
+
+        # Simulate a prior existing subnet (i.e. no extension attrs exist)
+        # Get should give default value, and updates should stick
+        subnet2 = self._make_subnet(
+            self.fmt, {'network': net1}, '20.0.0.1', '20.0.0.0/24')['subnet']
+        self._update('subnets', subnet2['id'],
+                     {'subnet': {'apic:snat_host_pool': True}})
+        with session.begin(subtransactions=True):
+            db_obj = session.query(extn_db.SubnetExtensionDb).filter(
+                        extn_db.SubnetExtensionDb.subnet_id ==
+                        subnet2['id']).one()
+            session.delete(db_obj)
+        subnet2 = self._show('subnets', subnet2['id'])['subnet']
+        self.assertFalse(subnet2['apic:snat_host_pool'])
+
+        self._update('subnets', subnet2['id'],
+                     {'subnet': {'apic:snat_host_pool': True}})
+        subnet2 = self._show('subnets', subnet2['id'])['subnet']
+        self.assertTrue(subnet2['apic:snat_host_pool'])
+
+    def test_router_lifecycle(self):
+        session = db_api.get_session()
+        extn = extn_db.ExtensionDbMixin()
+
+        # create router with default values
+        rtr0 = self._make_router(self.fmt, 'test-tenant',
+                                 'router0')['router']
+        self.assertEqual([], rtr0[PROV])
+        self.assertEqual([], rtr0[CONS])
+
+        # create with specific values
+        rtr1 = self._make_router(self.fmt, 'test-tenant', 'router1',
+            arg_list=self.extension_attributes,
+            **{PROV: ['p1', 'p2', 'k'],
+               CONS: ['c1', 'c2', 'k']})['router']
+        self.assertEqual(['k', 'p1', 'p2'], sorted(rtr1[PROV]))
+        self.assertEqual(['c1', 'c2', 'k'], sorted(rtr1[CONS]))
+
+        # update router
+        self._update('routers', rtr1['id'],
+                     {'router': {PROV: [], CONS: ['k']}})
+        rtr1 = self._show('routers', rtr1['id'])['router']
+        self.assertEqual([], rtr1[PROV])
+        self.assertEqual(['k'], rtr1[CONS])
+
+        self._update('routers', rtr1['id'],
+                     {'router': {PROV: ['p1', 'p2']}})
+        rtr1 = self._show('routers', rtr1['id'])['router']
+        self.assertEqual(['p1', 'p2'], sorted(rtr1[PROV]))
+        self.assertEqual(['k'], rtr1[CONS])
+
+        # delete
+        self._delete('routers', rtr1['id'])
+        self.assertEqual({PROV: [], CONS: []},
+            extn.get_router_extn_db(session, rtr1['id']))
+
+        # Simulate a prior existing router (i.e. no extension attrs exist)
+        rtr2 = self._make_router(self.fmt, 'test-tenant', 'router2',
+            arg_list=self.extension_attributes,
+            **{PROV: ['k'], CONS: ['k']})['router']
+        extn.set_router_extn_db(session, rtr2['id'], {PROV: [], CONS: []})
+        rtr2 = self._show('routers', rtr2['id'])['router']
+        self.assertEqual([], rtr2[PROV])
+        self.assertEqual([], rtr2[CONS])
+
+        rtr2 = self._update('routers', rtr2['id'],
+                            {'router': {PROV: ['p1', 'p2']}})['router']
+        self.assertEqual(['p1', 'p2'], sorted(rtr2[PROV]))
+        self.assertEqual([], rtr2[CONS])
+
+
+class CallRecordWrapper(object):
+    # Instrument all method calls in a class to record the call in a mock
+
+    def setUp(self, klass):
+        """Returns a mock that records all calls."""
+        def record_and_call(func, recorder_func):
+            def wrapped(*args, **kwargs):
+                ret = func(*args, **kwargs)
+                a = args[1:]  # exclude the 'self' argument
+                recorder_func(*a, **kwargs)
+                return ret
+            return wrapped
+
+        self.klass = klass
+        recorder = mock.create_autospec(self.klass)
+        self.klass.__overridden = {}
+        for fn in dir(self.klass):
+            val = getattr(self.klass, fn, None)
+            if val and callable(val) and not fn.startswith('_'):
+                setattr(self.klass, fn,
+                        record_and_call(val, getattr(recorder, fn)))
+                self.klass.__overridden[fn] = val
+        return recorder
+
+    def tearDown(self):
+        for k, v in self.klass.__overridden.iteritems():
+            setattr(self.klass, k, v)
+        del self.klass.__overridden
+
+
+class TestExternalConnectivityBase(object):
+
+    def setUp(self):
+        self.call_wrapper = CallRecordWrapper()
+        kls = {'distributed': nat_strategy.DistributedNatStrategy,
+               'edge': nat_strategy.EdgeNatStrategy,
+               '': nat_strategy.NoNatStrategy}
+        self.mock_ns = self.call_wrapper.setUp(kls[self.nat_type])
+        super(TestExternalConnectivityBase, self).setUp()
+
+    def tearDown(self):
+        self.call_wrapper.tearDown()
+        super(TestExternalConnectivityBase, self).tearDown()
+
+    def test_external_network_lifecycle(self):
+        net1 = self._make_ext_network('net1',
+                                      dn='uni/tn-t1/out-l1/instP-n1',
+                                      cidrs=['20.10.0.0/16', '4.4.4.0/24'])
+        self.mock_ns.create_l3outside.assert_called_once_with(
+            mock.ANY,
+            aim_resource.L3Outside(tenant_name='t1', name='l1'))
+        a_ext_net = aim_resource.ExternalNetwork(
+            tenant_name='t1', l3out_name='l1', name='n1')
+        self.mock_ns.create_external_network.assert_called_once_with(
+            mock.ANY, a_ext_net)
+        self.mock_ns.update_external_cidrs.assert_called_once_with(
+            mock.ANY, a_ext_net, ['20.10.0.0/16', '4.4.4.0/24'])
+        ext_epg = aim_resource.EndpointGroup(
+            tenant_name='t1', app_profile_name=self._app_profile_name,
+            name='EXT-l1')
+        ext_bd = aim_resource.BridgeDomain(tenant_name='t1', name='EXT-l1')
+        ext_vrf = aim_resource.VRF(tenant_name='t1', name='EXT-l1')
+        self._check_dn(net1, ext_epg, 'EndpointGroup')
+        self._check_dn(net1, ext_bd, 'BridgeDomain')
+        self._check_dn(net1, ext_vrf, 'VRF')
+
+        net1 = self._show('networks', net1['id'])['network']
+        self._check_dn(net1, ext_epg, 'EndpointGroup')
+        self._check_dn(net1, ext_bd, 'BridgeDomain')
+        self._check_dn(net1, ext_vrf, 'VRF')
+
+        # test no-op CIDR update
+        self.mock_ns.reset_mock()
+        net1 = self._update('networks', net1['id'],
+            {'network': {CIDR: ['4.4.4.0/24', '20.10.0.0/16']}})['network']
+        self.mock_ns.update_external_cidrs.assert_not_called()
+
+        # test CIDR update
+        self.mock_ns.reset_mock()
+        net1 = self._update('networks', net1['id'],
+            {'network': {CIDR: ['33.33.33.0/30']}})['network']
+        self.mock_ns.update_external_cidrs.assert_called_once_with(
+            mock.ANY, a_ext_net, ['33.33.33.0/30'])
+
+        # delete
+        self.mock_ns.reset_mock()
+        self._delete('networks', net1['id'])
+        self.mock_ns.delete_l3outside.assert_called_once_with(
+            mock.ANY,
+            aim_resource.L3Outside(tenant_name='t1', name='l1'))
+        self.mock_ns.delete_external_network.assert_called_once_with(
+            mock.ANY,
+            aim_resource.ExternalNetwork(tenant_name='t1', l3out_name='l1',
+                                         name='n1'))
+
+        # create with default CIDR
+        self.mock_ns.reset_mock()
+        self._make_ext_network('net2',
+                               dn='uni/tn-t1/out-l1/instP-n1')
+        self.mock_ns.create_external_network.assert_called_once_with(
+            mock.ANY, a_ext_net)
+        self.mock_ns.update_external_cidrs.assert_called_once_with(
+            mock.ANY, a_ext_net, ['0.0.0.0/0'])
+
+    def test_unmanaged_external_network_lifecycle(self):
+        net1 = self._make_ext_network('net1')
+        self.mock_ns.create_l3outside.assert_not_called()
+        self.mock_ns.create_external_network.assert_not_called()
+        self.mock_ns.update_external_cidrs.assert_not_called()
+        self._check_no_dn(net1, 'EndpointGroup')
+        self._check_no_dn(net1, 'BridgeDomain')
+        self._check_no_dn(net1, 'VRF')
+
+        self._delete('networks', net1['id'])
+        self.mock_ns.delete_l3outside.assert_not_called()
+        self.mock_ns.delete_external_network.assert_not_called()
+
+    def test_external_subnet_lifecycle(self):
+        net1 = self._make_ext_network('net1',
+                                      dn='uni/tn-t1/out-l1/instP-n1')
+        subnet = self._make_subnet(
+            self.fmt, {'network': net1}, '10.0.0.1', '10.0.0.0/24',
+            allocation_pools=[{'start': '10.0.0.2',
+                               'end': '10.0.0.250'}])['subnet']
+        subnet = self._show('subnets', subnet['id'])['subnet']
+
+        l3out = aim_resource.L3Outside(tenant_name='t1', name='l1')
+        self.mock_ns.create_subnet.assert_called_once_with(
+            mock.ANY, l3out, '10.0.0.1/24')
+        ext_sub = aim_resource.Subnet(tenant_name='t1', bd_name='EXT-l1',
+                                      gw_ip_mask='10.0.0.1/24')
+        self._check_dn(subnet, ext_sub, 'Subnet')
+
+        # Update gateway
+        self.mock_ns.reset_mock()
+        ext_sub.gw_ip_mask = '10.0.0.251/24'
+        self._update('subnets', subnet['id'],
+                     {'subnet': {'gateway_ip': '10.0.0.251'}})
+        subnet = self._show('subnets', subnet['id'])['subnet']
+        self.mock_ns.delete_subnet.assert_called_once_with(
+            mock.ANY, l3out, '10.0.0.1/24')
+        self.mock_ns.create_subnet.assert_called_once_with(
+            mock.ANY, l3out, '10.0.0.251/24')
+        self._check_dn(subnet, ext_sub, 'Subnet')
+
+        # delete subnet
+        self.mock_ns.reset_mock()
+        self._delete('subnets', subnet['id'])
+        self.mock_ns.delete_subnet.assert_called_once_with(
+            mock.ANY, l3out, '10.0.0.251/24')
+
+    def test_unmanaged_external_subnet_lifecycle(self):
+        net1 = self._make_ext_network('net1')
+        subnet = self._make_subnet(
+            self.fmt, {'network': net1}, '10.0.0.1', '10.0.0.0/24',
+            allocation_pools=[{'start': '10.0.0.2',
+                               'end': '10.0.0.250'}])['subnet']
+
+        self.mock_ns.create_subnet.assert_not_called()
+        self._check_no_dn(subnet, 'Subnet')
+
+        # Update gateway
+        self._update('subnets', subnet['id'],
+                     {'subnet': {'gateway_ip': '10.0.0.251'}})
+        subnet = self._show('subnets', subnet['id'])['subnet']
+        self.mock_ns.delete_subnet.assert_not_called()
+        self.mock_ns.create_subnet.assert_not_called()
+        self._check_no_dn(subnet, 'Subnet')
+
+        # delete subnet
+        self._delete('subnets', subnet['id'])
+        self.mock_ns.delete_subnet.assert_not_called()
+
+    def _do_test_router_interface(self, use_addr_scope=False):
+        cv = self.mock_ns.connect_vrf
+        dv = self.mock_ns.disconnect_vrf
+
+        admin_ctx = context.get_admin_context()
+        ext_net1 = self._make_ext_network('ext-net1',
+                                          dn='uni/tn-t1/out-l1/instP-n1')
+        self._make_subnet(
+            self.fmt, {'network': ext_net1}, '100.100.100.1',
+            '100.100.100.0/24')
+
+        # Each tenant has
+        #   1. One subnetpool + address-scope (optional)
+        #   2. Two networks with 2 subnets each; subnets come
+        #      from the subnetpool if present
+        #   3. Two routers with external gateway.
+        # Test connects the routers one-by-one to two subnets each,
+        # and then removes the router interfaces one-by-one.
+
+        tenants = {'tenant_1': self._map_name({'id': 'tenant_1',
+                                               'name': 'Tenant1Name'}),
+                   'tenant_2': self._map_name({'id': 'tenant_2',
+                                               'name': 'Tenant2Name'})}
+        objs = {}
+        # Create the networks, subnets, routers etc
+        for t in tenants.keys():
+            subnetpool = None
+            addr_scope = None
+            if use_addr_scope:
+                addr_scope = self._make_address_scope(
+                    self.fmt, 4, name='as1', tenant_id=t)['address_scope']
+                subnetpool = self._make_subnetpool(
+                    self.fmt, ['10.0.0.0/8'], name='spool1', tenant_id=t,
+                    address_scope_id=addr_scope['id'])['subnetpool']
+            for ni in range(0, 2):
+                net = self._make_network(self.fmt, 'pvt-net%d' % ni, True,
+                                        tenant_id=t)['network']
+                sp_id = subnetpool['id'] if use_addr_scope else None
+                sub1 = self._make_subnet(
+                    self.fmt, {'network': net}, '10.%d.1.1' % (10 + ni),
+                    '10.%d.1.0/24' % (10 + ni),
+                    subnetpool_id=sp_id)['subnet']
+                sub2 = self._make_subnet(
+                    self.fmt, {'network': net}, '10.%d.2.1' % (10 + ni),
+                    '10.%d.2.0/24' % (10 + ni),
+                    subnetpool_id=sp_id)['subnet']
+
+                router = self._make_router(
+                    self.fmt, t, 'router%d' % ni,
+                    arg_list=self.extension_attributes,
+                    external_gateway_info={'network_id':
+                                           ext_net1['id']},
+                    **{PROV: ['pr-%s-%d' % (t, ni)],
+                       CONS: ['co-%s-%d' % (t, ni)]})['router']
+                objs.setdefault(t, []).append(
+                    tuple([router, [sub1, sub2], addr_scope]))
+                self.mock_ns.connect_vrf.assert_not_called()
+
+        # Connect the router interfaces to the subnets
+        vrf_objs = {}
+        for tenant, router_list in objs.iteritems():
+            a_vrf = aim_resource.VRF(tenant_name=tenants[tenant],
+                                     name='DefaultVRF')
+            a_ext_net = aim_resource.ExternalNetwork(
+                tenant_name='t1', l3out_name='l1', name='n1')
+            for router, subnets, addr_scope in router_list:
+                if addr_scope:
+                    a_vrf.name = self._map_name(addr_scope)
+                contract = self._map_name(router)
+                a_ext_net.provided_contract_names.append(contract)
+                a_ext_net.provided_contract_names.extend(
+                    router[PROV])
+                a_ext_net.provided_contract_names.sort()
+                a_ext_net.consumed_contract_names.append(contract)
+                a_ext_net.consumed_contract_names.extend(
+                    router[CONS])
+                a_ext_net.consumed_contract_names.sort()
+
+                for idx in range(0, len(subnets)):
+                    self.mock_ns.reset_mock()
+                    self.l3_plugin.add_router_interface(
+                        admin_ctx, router['id'],
+                        {'subnet_id': subnets[idx]['id']})
+                    if idx == 0:
+                        cv.assert_called_once_with(mock.ANY, a_ext_net, a_vrf)
+                    else:
+                        cv.assert_not_called()
+            vrf_objs[tenant] = a_ext_net
+
+        # Remove the router interfaces
+        for tenant, router_list in objs.iteritems():
+            a_vrf = aim_resource.VRF(tenant_name=tenants[tenant],
+                                     name='DefaultVRF')
+            a_ext_net = vrf_objs.pop(tenant)
+            num_router = len(router_list)
+            for router, subnets, addr_scope in router_list:
+                if addr_scope:
+                    a_vrf.name = self._map_name(addr_scope)
+                contract = self._map_name(router)
+                a_ext_net.provided_contract_names.remove(contract)
+                a_ext_net.consumed_contract_names.remove(contract)
+                for c in router[PROV]:
+                    a_ext_net.provided_contract_names.remove(c)
+                for c in router[CONS]:
+                    a_ext_net.consumed_contract_names.remove(c)
+
+                for idx in range(0, len(subnets)):
+                    self.mock_ns.reset_mock()
+                    self.l3_plugin.remove_router_interface(
+                        admin_ctx, router['id'],
+                        {'subnet_id': subnets[idx]['id']})
+                    if idx == len(subnets) - 1:
+                        num_router -= 1
+                        if num_router:
+                            cv.assert_called_once_with(mock.ANY, a_ext_net,
+                                                       a_vrf)
+                        else:
+                            dv.assert_called_once_with(mock.ANY, a_ext_net,
+                                                       a_vrf)
+                    else:
+                        cv.assert_not_called()
+                        dv.assert_not_called()
+
+        self.mock_ns.reset_mock()
+        self._delete('routers', router['id'])
+        dv.assert_not_called()
+
+    def test_router_interface(self):
+        self._do_test_router_interface(use_addr_scope=False)
+
+    def test_router_interface_addr_scope(self):
+        self._do_test_router_interface(use_addr_scope=True)
+
+    def _do_test_router_gateway(self, use_addr_scope=False):
+        cv = self.mock_ns.connect_vrf
+        dv = self.mock_ns.disconnect_vrf
+
+        admin_ctx = context.get_admin_context()
+        ext_net1 = self._make_ext_network('ext-net1',
+                                          dn='uni/tn-t1/out-l1/instP-n1')
+        self._make_subnet(
+            self.fmt, {'network': ext_net1}, '100.100.100.1',
+            '100.100.100.0/24')
+        ext_net2 = self._make_ext_network('ext-net1',
+                                          dn='uni/tn-t1/out-l2/instP-n2')
+        self._make_subnet(
+            self.fmt, {'network': ext_net2}, '200.200.200.1',
+            '200.200.200.0/24')
+
+        objs = []
+        net = self._make_network(self.fmt, 'pvt-net1', True)['network']
+        subnetpool = None
+        addr_scope = None
+        if use_addr_scope:
+            addr_scope = self._make_address_scope(
+                self.fmt, 4, name='as1',
+                tenant_id=net['tenant_id'])['address_scope']
+            subnetpool = self._make_subnetpool(
+                self.fmt, ['10.10.0.0/16'],
+                name='spool1', address_scope_id=addr_scope['id'],
+                tenant_id=net['tenant_id'])['subnetpool']
+        sub1 = self._make_subnet(
+            self.fmt, {'network': net}, '10.10.1.1',
+            '10.10.1.0/24',
+            subnetpool_id=subnetpool['id'] if addr_scope else None)['subnet']
+
+        router = self._make_router(
+            self.fmt, net['tenant_id'], 'router1',
+            arg_list=self.extension_attributes,
+            **{PROV: ['pr-1'],
+               CONS: ['co-1']})['router']
+        objs.append(tuple([router, [sub1]]))
+
+        self.l3_plugin.add_router_interface(
+            admin_ctx, router['id'], {'subnet_id': sub1['id']})
+        self.mock_ns.connect_vrf.assert_not_called()
+
+        self.mock_ns.reset_mock()
+        self._update('routers', router['id'],
+                     {'router':
+                      {'external_gateway_info': {'network_id':
+                                                 ext_net1['id']}}})
+        contract = self._map_name(router)
+        a_ext_net1 = aim_resource.ExternalNetwork(
+            tenant_name='t1', l3out_name='l1', name='n1',
+            provided_contract_names=['pr-1', contract],
+            consumed_contract_names=['co-1', contract])
+        a_vrf = aim_resource.VRF(tenant_name=self._tenant_name,
+                                 name='DefaultVRF')
+        if use_addr_scope:
+            a_vrf.name = self._map_name(addr_scope)
+        cv.assert_called_once_with(mock.ANY, a_ext_net1, a_vrf)
+
+        self.mock_ns.reset_mock()
+        self._update('routers', router['id'],
+                     {'router':
+                      {'external_gateway_info': {'network_id':
+                                                 ext_net2['id']}}})
+        a_ext_net2 = aim_resource.ExternalNetwork(
+            tenant_name='t1', l3out_name='l2', name='n2',
+            provided_contract_names=['pr-1', contract],
+            consumed_contract_names=['co-1', contract])
+        a_ext_net1.provided_contract_names = []
+        a_ext_net1.consumed_contract_names = []
+        dv.assert_called_once_with(mock.ANY, a_ext_net1, a_vrf)
+        cv.assert_called_once_with(mock.ANY, a_ext_net2, a_vrf)
+
+        self.mock_ns.reset_mock()
+        self._update('routers', router['id'],
+                     {'router': {'external_gateway_info': {}}})
+        a_ext_net2.provided_contract_names = []
+        a_ext_net2.consumed_contract_names = []
+        dv.assert_called_once_with(mock.ANY, a_ext_net2, a_vrf)
+
+    def test_router_gateway(self):
+        self._do_test_router_gateway(use_addr_scope=False)
+
+    def test_router_gateway_addr_scope(self,):
+        self._do_test_router_gateway(use_addr_scope=True)
+
+    def test_router_with_unmanaged_external_network(self):
+        admin_ctx = context.get_admin_context()
+        ext_net1 = self._make_ext_network('ext-net1')
+        self._make_subnet(
+            self.fmt, {'network': ext_net1}, '100.100.100.1',
+            '100.100.100.0/24')
+
+        net = self._make_network(self.fmt, 'pvt-net1', True)['network']
+        sub1 = self._make_subnet(
+            self.fmt, {'network': net}, '10.10.1.1',
+            '10.10.1.0/24')['subnet']
+
+        router = self._make_router(
+            self.fmt, net['tenant_id'], 'router1',
+            arg_list=self.extension_attributes,
+            external_gateway_info={'network_id': ext_net1['id']},
+            **{PROV: ['pr-1'],
+               CONS: ['co-1']})['router']
+
+        self.l3_plugin.add_router_interface(
+            admin_ctx, router['id'], {'subnet_id': sub1['id']})
+        self.mock_ns.connect_vrf.assert_not_called()
+
+        self.l3_plugin.remove_router_interface(
+            admin_ctx, router['id'], {'subnet_id': sub1['id']})
+        self.mock_ns.disconnect_vrf.assert_not_called()
+
+    def test_floatingip(self):
+        net1 = self._make_network(self.fmt, 'pvt-net1', True)['network']
+        sub1 = self._make_subnet(
+            self.fmt, {'network': net1}, '10.10.1.1', '10.10.1.0/24')
+        net2 = self._make_network(self.fmt, 'pvt-net1', True)['network']
+        sub2 = self._make_subnet(
+            self.fmt, {'network': net2}, '10.10.2.1', '10.10.2.0/24')
+
+        self._register_agent('host1', AGENT_CONF_OPFLEX)
+        p = []
+        for sub in [sub1, sub2, sub2]:
+            with self.port(subnet=sub) as port:
+                port = self._bind_port_to_host(port['port']['id'], 'host1')
+                port['port']['dns_name'] = None
+                p.append(port['port'])
+
+        mock_notif = mock.Mock()
+        self.driver.notifier.port_update = mock_notif
+
+        with self.floatingip_no_assoc(sub1) as fip1:
+            fip1 = fip1['floatingip']
+            self.assertEqual('DOWN', fip1['status'])
+            mock_notif.assert_not_called()
+
+            fip1 = self._update('floatingips', fip1['id'],
+                                {'floatingip': {'port_id': p[0]['id']}})
+            fip1 = fip1['floatingip']
+            self.assertEqual('ACTIVE', fip1['status'])
+            mock_notif.assert_called_once_with(mock.ANY, p[0])
+
+            mock_notif.reset_mock()
+            fip1 = self._update('floatingips', fip1['id'],
+                                {'floatingip': {'port_id': None}})
+            fip1 = fip1['floatingip']
+            self.assertEqual('DOWN', fip1['status'])
+            mock_notif.assert_called_once_with(mock.ANY, p[0])
+
+        mock_notif.reset_mock()
+        with self.floatingip_with_assoc(port_id=p[1]['id']) as fip2:
+            fip2 = fip2['floatingip']
+            self.assertEqual('ACTIVE', fip2['status'])
+            mock_notif.assert_called_once_with(mock.ANY, p[1])
+
+            mock_notif.reset_mock()
+            fip2 = self._update('floatingips', fip2['id'],
+                                {'floatingip': {'port_id': p[2]['id']}})
+            fip2 = fip2['floatingip']
+            calls = [mock.call(mock.ANY, p[1]), mock.call(mock.ANY, p[2])]
+            self.assertEqual(len(calls), mock_notif.call_count)
+            mock_notif.has_calls(calls)
+            self.assertEqual('ACTIVE', fip2['status'])
+
+            mock_notif.reset_mock()
+        # fip2 should be deleted at this point
+        mock_notif.assert_called_once_with(mock.ANY, p[2])
+
+
+class TestExternalDistributedNat(TestExternalConnectivityBase,
+                                 ApicAimTestCase):
+    nat_type = 'distributed'
+
+
+class TestExternalEdgeNat(TestExternalConnectivityBase,
+                          ApicAimTestCase):
+    nat_type = 'edge'
+
+
+class TestExternalNoNat(TestExternalConnectivityBase,
+                        ApicAimTestCase):
+    nat_type = ''
