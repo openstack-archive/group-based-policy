@@ -776,7 +776,7 @@ class ApicMappingDriver(api.ResourceMappingDriver,
             self._notify_head_chain_ports(pt['policy_target_group_id'])
 
     def process_port_added(self, context):
-        self._disable_port_on_shadow_subnet(context)
+        self._handle_shadow_port_change(context)
 
     def create_policy_action_precommit(self, context):
         pass
@@ -1567,7 +1567,7 @@ class ApicMappingDriver(api.ResourceMappingDriver,
             self._sync_shadow_subnets(context, l2p, subnet, None)
 
     def process_port_changed(self, context):
-        self._disable_port_on_shadow_subnet(context)
+        self._handle_shadow_port_change(context)
         if (context.original_host != context.host or
                 context.original_bottom_bound_segment !=
                 context.bottom_bound_segment):
@@ -2909,7 +2909,7 @@ class ApicMappingDriver(api.ResourceMappingDriver,
             if not es['subnet_id']:
                 continue
             router_id = sub_r_dict.get(es['subnet_id'])
-            if router_id:   # router connecting to ES's subnet exists
+            if router_id:  # router connecting to ES's subnet exists
                 router = self._get_router(context._plugin_context, router_id)
             else:
                 router_id = self._use_implicit_router(
@@ -2959,7 +2959,7 @@ class ApicMappingDriver(api.ResourceMappingDriver,
     def _attach_router_to_subnets(self, plugin_context, router_id, sn_ids):
         rtr_sn = self._get_router_interface_subnets(plugin_context, router_id)
         for subnet_id in sn_ids:
-            if subnet_id in rtr_sn:     # already attached
+            if subnet_id in rtr_sn:  # already attached
                 continue
             self._plug_router_to_subnet(plugin_context, subnet_id, router_id)
 
@@ -3618,15 +3618,35 @@ class ApicMappingDriver(api.ResourceMappingDriver,
                     grp['id'])
                 raise
 
-    def _disable_port_on_shadow_subnet(self, context):
-        """Disable certain kinds of ports in shadow-network."""
+    def _handle_shadow_port_change(self, context):
+        """Special handling for changes to ports in shadow network.
+
+        1. Disable certain kinds of ports like DHCP to avoid interference
+        on the data path.
+        2. Copy device_id from shadow port to corresponding port in
+           L2P's network.
+
+        """
         port = context.current
-        if (port['device_owner'] == n_constants.DEVICE_OWNER_DHCP and
-                port['admin_state_up'] is True and
-                self._shadow_network_id_to_ptg(context, port['network_id'])):
-            self._update_port(context._plugin_context.elevated(),
-                              port['id'],
-                              {'admin_state_up': False})
+        ptg = self._shadow_network_id_to_ptg(context, port['network_id'])
+        admin_ctx = context._plugin_context.elevated()
+        if ptg:
+            # Disable DHCP port
+            if (port['device_owner'] == n_constants.DEVICE_OWNER_DHCP and
+                    port['admin_state_up'] is True):
+                self._update_port(admin_ctx, port['id'],
+                                  {'admin_state_up': False})
+            # Copy device_id
+            l2p = self._get_l2_policy(admin_ctx, ptg['l2_policy_id'])
+            l2p_port = self._get_ports(
+                admin_ctx,
+                filters={'mac_address': [port['mac_address']],
+                         'network_id': [l2p['network_id']]})
+            if l2p_port:
+                l2p_port = l2p_port[0]
+                if l2p_port['device_id'] != port['device_id']:
+                    self._update_port(admin_ctx, l2p_port['id'],
+                                      {'device_id': port['device_id']})
 
     def _delete_ptg_shadow_network(self, context, ptg):
         shadow_net = self._get_ptg_shadow_network(context, ptg)
@@ -3672,12 +3692,13 @@ class ApicMappingDriver(api.ResourceMappingDriver,
         # a port originally, then treat that port as the "shadow" port,
         # else create the shadow port in the shadow network. In both cases,
         # associate the shadow port to the PT.
-        context.current['port_attributes'] = {'device_owner': 'apic',
-                                              'device_id': pt['id']}
+        context.current['port_attributes'] = {'device_owner':
+                                              'apic:%s' % pt['id']}
 
         if pt_port_id:
             shadow_port = self._get_port(context._plugin_context, pt_port_id)
             context.current['port_attributes'].update({
+                'device_id': shadow_port['device_id'],
                 'fixed_ips': self._strip_subnet(shadow_port['fixed_ips']),
                 'mac_address': shadow_port['mac_address']})
 
@@ -3721,8 +3742,7 @@ class ApicMappingDriver(api.ResourceMappingDriver,
             l2p = self._get_l2_policy(context._plugin_context,
                                       ptg['l2_policy_id'])
             implicit_ports = self._get_ports(context._plugin_context,
-                filters={'device_owner': ['apic'],
-                         'device_id': [pt['id']],
+                filters={'device_owner': ['apic:%s' % pt['id']],
                          'network_id': [l2p['network_id']]})
             for p in implicit_ports:
                 self._cleanup_port(context._plugin_context, p['id'])
@@ -3813,8 +3833,8 @@ class ApicMappingDriver(api.ResourceMappingDriver,
     def _tenant_uses_specific_nat_epg(self, context, es, tenant_obj):
         session = context._plugin_context.session
         cnt = session.query(TenantSpecificNatEpg).filter_by(
-            external_segment_id = es['id']).filter_by(
-                tenant_id = tenant_obj['tenant_id']).count()
+            external_segment_id=es['id']).filter_by(
+                tenant_id=tenant_obj['tenant_id']).count()
         return bool(cnt)
 
     def _create_tenant_specific_nat_epg(self, context, es, l3_policy,
@@ -3881,8 +3901,8 @@ class ApicMappingDriver(api.ResourceMappingDriver,
             session = context._plugin_context.session
             with session.begin(subtransactions=True):
                 db_obj = session.query(TenantSpecificNatEpg).filter_by(
-                    external_segment_id = es['id']).filter_by(
-                        tenant_id = l3_policy['tenant_id']).first()
+                    external_segment_id=es['id']).filter_by(
+                        tenant_id=l3_policy['tenant_id']).first()
                 if db_obj:
                     session.delete(db_obj)
 
