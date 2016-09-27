@@ -533,6 +533,8 @@ class ApicMappingDriver(api.ResourceMappingDriver,
                 continue
             nat_epg_tenant, nat_epg_name = self._determine_nat_epg_for_es(
                 context, es, l3_policy)
+            nat_epg_tenant = self.apic_manager.apic.fvTenant.name(
+                nat_epg_tenant)
             fips_in_es = []
 
             if es['subnet_id']:
