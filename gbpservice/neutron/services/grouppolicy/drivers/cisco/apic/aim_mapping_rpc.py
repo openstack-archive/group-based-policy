@@ -154,9 +154,9 @@ class AIMMappingRPCMixin(ha_ip_db.HAIPOwnerDbMixin):
         details['_cache'] = {}
         details['l3_policy_id'] = self._get_vrf_id(context, port, details)
         self._add_subnet_details(context, port, details)
-        self._add_nat_details(context, port, details)
         self._add_allowed_address_pairs_details(context, port, details)
         self._add_vrf_details(context, details['l3_policy_id'], details)
+        self._add_nat_details(context, port, host, details)
         self._add_extra_details(context, port, details)
         details.pop('_cache', None)
 
@@ -174,14 +174,15 @@ class AIMMappingRPCMixin(ha_ip_db.HAIPOwnerDbMixin):
         # - subnets;
         details['subnets'] = self._get_subnet_details(context, port, details)
 
-    def _add_nat_details(self, context, port, details):
-        # TODO(ivar): How to retrieve NAT details depends on ES implementation
+    def _add_nat_details(self, context, port, host, details):
         # This method needs to define requirements for this Mixin's child
         # classes in order to fill the following result parameters:
         # - floating_ip;
         # - ip_mapping;
         # - host_snat_ips.
-        pass
+        (details['floating_ip'], details['ip_mapping'],
+            details['host_snat_ips']) = self._get_nat_details(
+                context, port, host, details)
 
     # Child class needs to support:
     # - self._get_aap_details(context, port, details)
