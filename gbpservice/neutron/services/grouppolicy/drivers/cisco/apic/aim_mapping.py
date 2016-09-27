@@ -1233,3 +1233,83 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
         if self.apic_segmentation_label_driver and pt and (
             'segmentation_labels' in pt):
             return pt['segmentation_labels']
+
+    def _get_nat_details(self, plugin_context, port, host, details):
+        """ Add information about IP mapping for DNAT/SNAT """
+
+        fips = []
+        ipms = []
+        host_snat_ips = []
+
+        # Find all external networks connected to the port.
+        # Handle them depending on whether there is a FIP on that
+        # network.
+        ext_nets = []
+
+        port_sn = set([x['subnet_id'] for x in port['fixed_ips']])
+        router_intf_ports = self._get_ports(
+            plugin_context,
+            filters={'device_owner': [n_constants.DEVICE_OWNER_ROUTER_INTF],
+                     'fixed_ips': {'subnet_id': port_sn}})
+        if router_intf_ports:
+            routers = self._get_routers(
+                 plugin_context,
+                 filters={'device_id': [x['device_id']
+                                        for x in router_intf_ports]})
+            ext_nets = self._get_networks(
+                plugin_context,
+                filters={'id': [r['external_gateway_info']['network_id']
+                                for r in routers
+                                if r.get('external_gateway_info')]})
+        if not ext_nets:
+            return fips, ipms, host_snat_ips
+
+        # Handle FIPs of owned addresses - find other ports in the
+        # network whose address is owned by this port.
+        # If those ports have FIPs, then steal them.
+        fips_filter = [port['id']]
+        active_addrs = [a['ip_address']
+                        for a in details['allowed_address_pairs']
+                        if a['active']]
+        if active_addrs:
+            others = self._get_ports(plugin_context,
+                filters={'network_id': [port['network_id']],
+                         'fixed_ips': {'ip_address': active_addrs}})
+            fips_filter.extend([p['id'] for p in others])
+        fips = self._get_fips(plugin_context,
+                              filters={'port_id': fips_filter})
+
+        for ext_net in ext_nets:
+            dn = ext_net.get(cisco_apic.DIST_NAMES, {}).get(
+                    cisco_apic.EXTERNAL_NETWORK)
+            ext_net_epg_dn = ext_net.get(cisco_apic.DIST_NAMES, {}).get(
+                    cisco_apic.EPG)
+            if not dn or not ext_net_epg_dn:
+                continue
+            if 'distributed' != ext_net.get(cisco_apic.NAT_TYPE):
+                continue
+
+            # TODO(amitbose) Handle per-tenant NAT EPG
+            ext_net_epg = aim_resource.EndpointGroup.from_dn(ext_net_epg_dn)
+
+            fips_in_ext_net = filter(
+                lambda x: x['floating_network_id'] == ext_net['id'], fips)
+            if not fips_in_ext_net:
+                ipms.append({'external_segment_name': ext_net['name'],
+                             'nat_epg_name': ext_net_epg.name,
+                             'nat_epg_tenant': ext_net_epg.tenant_name})
+                # TODO(amitbose) Set next_hop_ep_tenant for per-tenant NAT EPG
+                if host:
+                    # TODO(amitbose) Allocate host-specific SNAT IP
+                    # and append it to host_snat_ips in the format:
+                    # [ {'external_segment_name': <ext_segment_name1>,
+                    #    'host_snat_ip': <ip_addr>,
+                    #    'gateway_ip': <gateway_ip>,
+                    #    'prefixlen': <prefix_length_of_subnet>},
+                    #    {..}, ... ]
+                    pass
+            else:
+                for f in fips_in_ext_net:
+                    f['nat_epg_name'] = ext_net_epg.name
+                    f['nat_epg_tenant'] = ext_net_epg.tenant_name
+        return fips, ipms, host_snat_ips
