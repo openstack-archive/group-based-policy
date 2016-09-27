@@ -544,7 +544,7 @@ class TestPolicyTarget(ApicMappingTestCase):
         self._bind_port_to_host(pt2['port_id'], 'h1')
 
         details = self.driver.get_snat_ip_for_vrf(context.get_admin_context(),
-            TEST_VRF2, network, es_name = es['name'])
+            TEST_VRF2, network, es_name=es['name'])
         self.assertEqual(es['name'],
             details['external_segment_name'])
         self.assertEqual("192.168.200.1",
@@ -1209,6 +1209,15 @@ class TestPolicyTargetVlanNetwork(ApicMappingVlanTestCase,
                          len(ports[0]['fixed_ips']))
         self.assertEqual(shadow_port['fixed_ips'][0]['ip_address'],
                          ports[0]['fixed_ips'][0]['ip_address'])
+        self.assertEqual('apic:%s' % pt1['id'], ports[0]['device_owner'])
+        self.assertEqual('', ports[0]['device_id'])
+
+        # update device_id of shadow port
+        shadow_port = self._update('ports', shadow_port['id'],
+                                   {'port': {'device_id': 'comp1'}})['port']
+        l2p_port = self._get_object(
+            'ports', ports[0]['id'], self.api)['port']
+        self.assertEqual('comp1', l2p_port['device_id'])
 
         self.delete_policy_target(pt1['id'])
         self._get_object('ports', pt1['port_id'], self.api,
@@ -1223,7 +1232,7 @@ class TestPolicyTargetVlanNetwork(ApicMappingVlanTestCase,
                                           self.api)
         subnet = self._get_object('subnets', ptg1['subnets'][0], self.api)
 
-        with self.port(subnet=shadow_subnet1) as p:
+        with self.port(subnet=shadow_subnet1, device_id='vm1') as p:
             port1 = p['port']
 
         pt1 = self.create_policy_target(policy_target_group_id=ptg1['id'],
@@ -1238,12 +1247,40 @@ class TestPolicyTargetVlanNetwork(ApicMappingVlanTestCase,
                          len(ports[0]['fixed_ips']))
         self.assertEqual(port1['fixed_ips'][0]['ip_address'],
                          ports[0]['fixed_ips'][0]['ip_address'])
+        self.assertEqual('apic:%s' % pt1['id'], ports[0]['device_owner'])
+        self.assertEqual('vm1', ports[0]['device_id'])
+
+        # update device_id of explicit port
+        port1 = self._update('ports', port1['id'],
+                             {'port': {'device_id': 'comp1'}})['port']
+        l2p_port = self._get_object(
+            'ports', ports[0]['id'], self.api)['port']
+        self.assertEqual('comp1', l2p_port['device_id'])
 
         self.delete_policy_target(pt1['id'])
         self._get_object('ports', pt1['port_id'], self.api,
                          expected_res_status=200)
         self._get_object('ports', ports[0]['id'], self.api,
                          expected_res_status=404)
+
+    def test_dhcp_disable_in_shadow_network(self):
+        ptg1 = self.create_policy_target_group(
+            name="ptg1")['policy_target_group']
+        self.create_policy_target(
+            policy_target_group_id=ptg1['id'])['policy_target']
+
+        subnet = self._get_object('subnets',
+                                  self._get_ptg_shadow_subnet(ptg1),
+                                  self.api)
+        with self.port(subnet=subnet, device_owner='network:dhcp') as p:
+            port1 = p['port']
+            port1 = self._get_object('ports', port1['id'], self.api)['port']
+            self.assertFalse(port1['admin_state_up'])
+
+            port1 = self._update('ports', port1['id'],
+                                 {'port': {'admin_state_up': True}})['port']
+            port1 = self._get_object('ports', port1['id'], self.api)['port']
+            self.assertFalse(port1['admin_state_up'])
 
     def test_explicit_port_wrong_network(self):
         ptg1 = self.create_policy_target_group()['policy_target_group']
