@@ -21,6 +21,7 @@ from aim.db import model_base as aim_model_base
 from keystoneclient.v3 import client as ksc_client
 from neutron import context as nctx
 from neutron.db import api as db_api
+from neutron.tests.unit.extensions import test_address_scope
 import webob.exc
 
 from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import (
@@ -55,7 +56,8 @@ DEFAULT_FILTER_ENTRY = {'arp_opcode': u'unspecified',
 
 
 class AIMBaseTestCase(test_nr_base.CommonNeutronBaseTestCase,
-                      test_ext_base.ExtensionDriverTestBase):
+                      test_ext_base.ExtensionDriverTestBase,
+                      test_address_scope.AddressScopeTestCase):
     _extension_drivers = ['aim_extension']
     _extension_path = None
 
@@ -238,13 +240,11 @@ class TestL3Policy(AIMBaseTestCase):
         self.assertIsNotNone(routers)
         self.assertEqual(len(routers), 1)
         router_id = routers[0]
-        """
-        # TODO(Sumit): Address-scope retrieval is creating issues, requires
-        # some fixing in the UT setup
         req = self.new_show_request('address-scopes', ascp_id, fmt=self.fmt)
-        res = self.deserialize(self.fmt, req.get_response(self.api))
+        res = self.deserialize(self.fmt, req.get_response(self.ext_api))
         ascope = res['address_scope']
-        """
+        self.assertEqual(l3p['ip_version'], ascope['ip_version'])
+        self.assertEqual(l3p['shared'], ascope['shared'])
         req = self.new_show_request('subnetpools', sp_id, fmt=self.fmt)
         res = self.deserialize(self.fmt, req.get_response(self.api))
         subpool = res['subnetpool']
@@ -264,7 +264,7 @@ class TestL3Policy(AIMBaseTestCase):
         req = self.new_show_request('subnetpools', sp_id, fmt=self.fmt)
         res = req.get_response(self.api)
         self.assertEqual(webob.exc.HTTPNotFound.code, res.status_int)
-        req = self.new_show_request('address_scopes', ascp_id, fmt=self.fmt)
+        req = self.new_show_request('address-scopes', ascp_id, fmt=self.fmt)
         res = req.get_response(self.api)
         self.assertEqual(webob.exc.HTTPNotFound.code, res.status_int)
         req = self.new_show_request('routers', router_id, fmt=self.fmt)
