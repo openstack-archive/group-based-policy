@@ -56,6 +56,23 @@ PROMISCUOUS_TYPES = [n_constants.DEVICE_OWNER_DHCP,
 PROMISCUOUS_SUFFIX = 'promiscuous'
 
 
+class SimultaneousV4V6AddressScopesNotSupportedOnAimDriver(
+    exc.GroupPolicyBadRequest):
+    message = _("Both v4 and v6 address_scopes cannot be set "
+                "simultaneously for a l3_policy.")
+
+
+class SimultaneousV4V6SubnetpoolsNotSupportedOnAimDriver(
+    exc.GroupPolicyBadRequest):
+    message = _("Both v4 and v6 subnetpools cannot be set "
+                "simultaneously for a l3_policy.")
+
+
+class InconsistentAddressScopeSubnetpool(exc.GroupPolicyBadRequest):
+    message = _("Subnetpool is not associated with the address "
+                "scope for a l3_policy.")
+
+
 class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
     """AIM Mapping Orchestration driver.
 
@@ -110,21 +127,59 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
         l3p = context.current
         l3p_db = context._plugin._get_l3_policy(
             context._plugin_context, l3p['id'])
-        ascp = 'address_scope_v4_id' if l3p['ip_version'] == 4 else (
-            'address_scope_v6_id')
-        if not l3p[ascp]:
-            # REVISIT: For dual stack.
-            # This logic assumes either 4 or 6 but not both
-            self._use_implicit_address_scope(context, clean_session=False)
-            l3p_db[ascp] = l3p[ascp]
-        subpool = 'subnetpools_v4' if l3p['ip_version'] == 4 else (
+        if l3p['address_scope_v4_id'] and l3p['address_scope_v6_id']:
+            raise SimultaneousV4V6AddressScopesNotSupportedOnAimDriver()
+        if l3p['subnetpools_v4'] and l3p['subnetpools_v6']:
+            raise SimultaneousV4V6SubnetpoolsNotSupportedOnAimDriver()
+        if (l3p['address_scope_v4_id'] and l3p['subnetpools_v6']) or (
+            l3p['address_scope_v6_id'] and l3p['subnetpools_v4']):
+            raise InconsistentAddressScopeSubnetpool()
+        ascp = None
+        if l3p['address_scope_v6_id'] or l3p['subnetpools_v6']:
+            l3p_db['ip_version'] = 6
+            context.current['ip_version'] = 6
+            ascp = 'address_scope_v6_id'
+        elif l3p['address_scope_v4_id'] or l3p['subnetpools_v4']:
+            # Since we are not supporting dual stack yet, if both v4 and
+            # v6 address_scopes are set, the v4 address_scope will be used
+            # to set the l3p ip_version
+            l3p_db['ip_version'] = 4
+            ascp = 'address_scope_v4_id'
+        if not ascp:
+            # Explicit address_scope has not been set
+            ascp = 'address_scope_v4_id' if l3p_db['ip_version'] == 4 else (
+                'address_scope_v6_id')
+            if not l3p[ascp]:
+                # REVISIT: For dual stack.
+                # This logic assumes either 4 or 6 but not both
+                self._use_implicit_address_scope(context, clean_session=False)
+                l3p_db[ascp] = l3p[ascp]
+        else:
+            # TODO(Sumit): check that l3p['ip_pool'] does not overlap with an
+            # existing subnetpool associated with the explicit address_scope
+            pass
+        subpool = 'subnetpools_v4' if l3p_db['ip_version'] == 4 else (
             'subnetpools_v6')
         if not l3p[subpool]:
             # REVISIT: For dual stack.
             # This logic assumes either 4 or 6 but not both
             self._use_implicit_subnetpool(
                 context, address_scope_id=l3p_db[ascp],
-                ip_version=l3p['ip_version'], clean_session=False)
+                ip_version=l3p_db['ip_version'], clean_session=False)
+        else:
+            if len(l3p[subpool]) == 1:
+                sp = self._get_subnetpool(
+                    context._plugin_context, l3p[subpool][0],
+                    clean_session=False)
+                if len(sp['prefixes']) == 1:
+                    l3p_db['ip_pool'] = sp['prefixes'][0]
+                l3p_db[ascp] = sp['address_scope_id']
+                l3p_db['subnet_prefix_length'] = int(sp['default_prefixlen'])
+            else:
+                # TODO(Sumit): There is more than one subnetpool explicitly
+                # associated. Unset the ip_pool and subnet_prefix_length. This
+                # required changing the DB schema.
+                pass
         # REVISIT: Check if the following constraint still holds
         if len(l3p['routers']) > 1:
             raise exc.L3PolicyMultipleRoutersNotSupported()
@@ -139,6 +194,11 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
 
     @log.log_method_call
     def update_l3_policy_precommit(self, context):
+        if (context.current['subnetpools_v4'] or
+            context.original['subnetpools_v4']) and (
+                context.current['subnetpools_v6'] or
+                context.original['subnetpools_v6']):
+            raise SimultaneousV4V6SubnetpoolsNotSupportedOnAimDriver()
         if context.current['routers'] != context.original['routers']:
             raise exc.L3PolicyRoutersUpdateNotSupported()
         # Currently there is no support for router update in l3p update.
@@ -1032,7 +1092,7 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
         # L2P might not exist for a pure Neutron port
         l2p = self._network_id_to_l2p(plugin_context, port['network_id'])
         # TODO(ivar): support shadow network
-        #if not l2p and self._ptg_needs_shadow_network(context, ptg):
+        # if not l2p and self._ptg_needs_shadow_network(context, ptg):
         #    l2p = self._get_l2_policy(context._plugin_context,
         #                              ptg['l2_policy_id'])
 
@@ -1118,7 +1178,7 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
     def _get_address_scope_cached(self, plugin_context, vrf_id, cache):
         if not cache.get('gbp_map_address_scope'):
             address_scope = self._get_address_scopes(
-                    plugin_context, filters={'id': [vrf_id]})
+                plugin_context, filters={'id': [vrf_id]})
             cache['gbp_map_address_scope'] = (address_scope[0] if
                                               address_scope else None)
         return cache['gbp_map_address_scope']

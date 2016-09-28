@@ -208,39 +208,58 @@ class GroupPolicyMappingDbPlugin(gpdb.GroupPolicyDbPlugin):
             l2p_db = self._get_l2_policy(context, l2p_id)
             l2p_db.network_id = network_id
 
-    def _set_address_scope_for_l3_policy(self, context, l3p_id,
+    def _set_address_scope_for_l3_policy_by_id(
+        self, context, l3p_id, address_scope_id, ip_version=4):
+        with context.session.begin(subtransactions=True):
+            l3p_db = self._get_l3_policy(context, l3p_id)
+            self._set_address_scope_for_l3_policy(
+                context, l3p_db, address_scope_id, ip_version)
+
+    def _set_address_scope_for_l3_policy(self, context, l3p_db,
                                          address_scope_id, ip_version=4):
         if not address_scope_id:
             return
         # TODO(Sumit): address_scope_id validation
         with context.session.begin(subtransactions=True):
-            l3p_db = self._get_l3_policy(context, l3p_id)
             if ip_version == 4:
                 l3p_db.address_scope_v4_id = address_scope_id
             else:
                 l3p_db.address_scope_v6_id = address_scope_id
 
-    def _add_subnetpool_to_l3_policy(self, context, l3p_id,
+    def _add_subnetpool_to_l3_policy_by_id(self, context, l3p_id,
+                                           subnetpool_id, ip_version=4):
+        with context.session.begin(subtransactions=True):
+            l3p_db = self._get_l3_policy(context, l3p_id)
+            return self._add_subnetpool_to_l3_policy(
+                context, l3p_db, subnetpool_id, ip_version)
+
+    def _add_subnetpool_to_l3_policy(self, context, l3p_db,
                                      subnetpool_id, ip_version=4):
         # TODO(Sumit): subnetpool_id validation
         with context.session.begin(subtransactions=True):
-            l3p_db = self._get_l3_policy(context, l3p_id)
             if ip_version == 4:
                 assoc = L3PolicySubnetpoolV4Association(
-                    l3_policy_id=l3p_id, subnetpool_id=subnetpool_id)
+                    l3_policy_id=l3p_db['id'], subnetpool_id=subnetpool_id)
                 l3p_db.subnetpools_v4.append(assoc)
             else:
                 assoc = L3PolicySubnetpoolV6Association(
-                    l3_policy_id=l3p_id, subnetpool_id=subnetpool_id)
+                    l3_policy_id=l3p_db['id'], subnetpool_id=subnetpool_id)
                 l3p_db.subnetpools_v6.append(assoc)
         return {4: [sp.subnetpool_id for sp in l3p_db.subnetpools_v4],
                 6: [sp.subnetpool_id for sp in l3p_db.subnetpools_v6]}
 
-    def _add_subnetpools_to_l3_policy(self, context, l3p_id,
+    def _add_subnetpools_to_l3_policy_by_id(self, context, l3p_id,
+                                            subnetpools, ip_version=4):
+        with context.session.begin(subtransactions=True):
+            l3p_db = self._get_l3_policy(context, l3p_id)
+            self._add_subnetpools_to_l3_policy(
+                context, l3p_db, subnetpools, ip_version)
+
+    def _add_subnetpools_to_l3_policy(self, context, l3p_db,
                                       subnetpools, ip_version=4):
         for sp in subnetpools or []:
             self._add_subnetpool_to_l3_policy(
-                context, l3p_id, sp, ip_version=ip_version)
+                context, l3p_db, sp, ip_version=ip_version)
 
     def _remove_subnetpool_from_l3_policy(self, context, l3p_id,
                                           subnetpool_id, ip_version=4):
@@ -542,6 +561,8 @@ class GroupPolicyMappingDbPlugin(gpdb.GroupPolicyDbPlugin):
     def create_l3_policy(self, context, l3_policy):
         l3p = l3_policy['l3_policy']
         self.validate_ip_pool(l3p.get('ip_pool', None), l3p['ip_version'])
+        # TODO(Sumit): Check consistency of explicit subnetpool's
+        # address_scopes
         tenant_id = self._get_tenant_id_for_create(context, l3p)
         self.validate_subnet_prefix_length(l3p['ip_version'],
                                            l3p['subnet_prefix_length'],
@@ -558,15 +579,15 @@ class GroupPolicyMappingDbPlugin(gpdb.GroupPolicyDbPlugin):
                                      shared=l3p.get('shared', False))
 
             self._set_address_scope_for_l3_policy(
-                context, l3p_db['id'], l3p.get('address_scope_v4_id'),
+                context, l3p_db, l3p.get('address_scope_v4_id'),
                 ip_version=4)
             self._set_address_scope_for_l3_policy(
-                context, l3p_db['id'], l3p.get('address_scope_v6_id'),
+                context, l3p_db, l3p.get('address_scope_v6_id'),
                 ip_version=6)
             self._add_subnetpools_to_l3_policy(
-                context, l3p_db['id'], l3p.get('subnetpools_v4'), ip_version=4)
+                context, l3p_db, l3p.get('subnetpools_v4'), ip_version=4)
             self._add_subnetpools_to_l3_policy(
-                context, l3p_db['id'], l3p.get('subnetpools_v6'), ip_version=6)
+                context, l3p_db, l3p.get('subnetpools_v6'), ip_version=6)
 
             if 'routers' in l3p:
                 for router in l3p['routers']:
@@ -597,7 +618,7 @@ class GroupPolicyMappingDbPlugin(gpdb.GroupPolicyDbPlugin):
             l3p.pop('subnetpools_v4', None)
             self._update_subnetpools_for_l3_policy(context, l3_policy_id,
                                                    l3p.get('subnetpools_v6'),
-                                                   ip_version=4)
+                                                   ip_version=6)
             l3p.pop('subnetpools_v6', None)
 
             if 'subnet_prefix_length' in l3p:
