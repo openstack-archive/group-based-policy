@@ -131,7 +131,7 @@ class L3PolicyContext(GroupPolicyContext, api.L3PolicyContext):
         return self._original_l3_policy
 
     def set_address_scope_id(self, address_scope_id, version=4):
-        self._plugin._set_address_scope_for_l3_policy(
+        self._plugin._set_address_scope_for_l3_policy_by_id(
             self._plugin_context, self._l3_policy['id'], address_scope_id,
             ip_version=version)
         if version == 4:
