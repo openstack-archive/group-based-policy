@@ -253,26 +253,27 @@ class TestAIMStatus(AIMBaseTestCase):
 
 class TestL3Policy(AIMBaseTestCase):
 
-    def test_create_l3_policy_lifecycle_implicit_address_scope(self):
-        # Create L3 policy with implicit router.
-        l3p = self.create_l3_policy(name="l3p1")['l3_policy']
-        l3p_id = l3p['id']
-        self.assertIsNone(l3p['address_scope_v6_id'])
-        ascp_id = l3p['address_scope_v4_id']
-        self.assertEqual(len(l3p['subnetpools_v4']), 1)
-        sp_id = l3p['subnetpools_v4'][0]
+    def _validate_create_l3_policy(self, l3p, address_scope_version):
+        if address_scope_version == 'address_scope_v4_id':
+            self.assertIsNone(l3p['address_scope_v6_id'])
+            self.assertEqual(1, len(l3p['subnetpools_v4']))
+            subnetpools_version = 'subnetpools_v4'
+        else:
+            self.assertIsNone(l3p['address_scope_v4_id'])
+            self.assertEqual(1, len(l3p['subnetpools_v6']))
+            subnetpools_version = 'subnetpools_v6'
+        ascp_id = l3p[address_scope_version]
+        req = self.new_show_request('address-scopes', ascp_id, fmt=self.fmt)
+        res = self.deserialize(self.fmt, req.get_response(self.ext_api))
+        ascope = res['address_scope']
+        self.assertEqual(l3p['ip_version'], ascope['ip_version'])
+        self.assertEqual(l3p['shared'], ascope['shared'])
+        sp_id = l3p[subnetpools_version][0]
         self.assertIsNotNone(ascp_id)
         routers = l3p['routers']
         self.assertIsNotNone(routers)
         self.assertEqual(len(routers), 1)
         router_id = routers[0]
-        """
-        # TODO(Sumit): Address-scope retrieval is creating issues, requires
-        # some fixing in the UT setup
-        req = self.new_show_request('address-scopes', ascp_id, fmt=self.fmt)
-        res = self.deserialize(self.fmt, req.get_response(self.api))
-        ascope = res['address_scope']
-        """
         req = self.new_show_request('subnetpools', sp_id, fmt=self.fmt)
         res = self.deserialize(self.fmt, req.get_response(self.api))
         subpool = res['subnetpool']
@@ -286,18 +287,48 @@ class TestL3Policy(AIMBaseTestCase):
 
         # TODO(Sumit): Test update of relevant attributes
 
-        req = self.new_delete_request('l3_policies', l3p_id)
+        req = self.new_delete_request('l3_policies', l3p['id'])
         res = req.get_response(self.ext_api)
         self.assertEqual(webob.exc.HTTPNoContent.code, res.status_int)
         req = self.new_show_request('subnetpools', sp_id, fmt=self.fmt)
         res = req.get_response(self.api)
         self.assertEqual(webob.exc.HTTPNotFound.code, res.status_int)
-        req = self.new_show_request('address_scopes', ascp_id, fmt=self.fmt)
+        req = self.new_show_request('address-scopes', ascp_id, fmt=self.fmt)
         res = req.get_response(self.api)
         self.assertEqual(webob.exc.HTTPNotFound.code, res.status_int)
         req = self.new_show_request('routers', router_id, fmt=self.fmt)
         res = req.get_response(self.ext_api)
         self.assertEqual(webob.exc.HTTPNotFound.code, res.status_int)
+
+    def test_l3_policy_v4_lifecycle_implicit_address_scope(self):
+        # Create L3 policy with implicit router.
+        l3p = self.create_l3_policy(name="l3p1")['l3_policy']
+        self._validate_create_l3_policy(l3p, 'address_scope_v4_id')
+
+    def test_l3_policy_v6_lifecycle_implicit_address_scope(self):
+        # Create L3 policy with implicit router.
+        l3p = self.create_l3_policy(
+            name="l3p1", ip_pool='2210::/64', subnet_prefix_length=64,
+            ip_version=6)['l3_policy']
+        self._validate_create_l3_policy(l3p, 'address_scope_v6_id')
+
+    def test_l3_policy_lifecycle_explicit_address_scope_v4(self):
+        with self.address_scope(ip_version=4) as ascp:
+            ascp = ascp['address_scope']
+            l3p = self.create_l3_policy(
+                name="l3p1", address_scope_v4_id=ascp['id'])['l3_policy']
+            self.assertEqual(ascp['id'], l3p['address_scope_v4_id'])
+            self._validate_create_l3_policy(l3p, 'address_scope_v4_id')
+
+    def test_l3_policy_lifecycle_explicit_address_scope_v6(self):
+        with self.address_scope(ip_version=6) as ascp:
+            ascp = ascp['address_scope']
+            l3p = self.create_l3_policy(
+                name="l3p1", address_scope_v6_id=ascp['id'],
+                ip_pool='2210::/64', subnet_prefix_length=64,
+                ip_version=6)['l3_policy']
+            self.assertEqual(ascp['id'], l3p['address_scope_v6_id'])
+            self._validate_create_l3_policy(l3p, 'address_scope_v6_id')
 
 
 class TestL3PolicyRollback(AIMBaseTestCase):

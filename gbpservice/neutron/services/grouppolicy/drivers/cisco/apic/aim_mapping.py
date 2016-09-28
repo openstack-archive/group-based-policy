@@ -110,21 +110,37 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
         l3p = context.current
         l3p_db = context._plugin._get_l3_policy(
             context._plugin_context, l3p['id'])
-        ascp = 'address_scope_v4_id' if l3p['ip_version'] == 4 else (
-            'address_scope_v6_id')
-        if not l3p[ascp]:
-            # REVISIT: For dual stack.
-            # This logic assumes either 4 or 6 but not both
-            self._use_implicit_address_scope(context, clean_session=False)
-            l3p_db[ascp] = l3p[ascp]
-        subpool = 'subnetpools_v4' if l3p['ip_version'] == 4 else (
+        ascp = None
+        if l3p['address_scope_v6_id']:
+            l3p_db['ip_version'] = 6
+            context.current['ip_version'] = 6
+            ascp = 'address_scope_v6_id'
+        if l3p['address_scope_v4_id']:
+            # Since we are not supporting dual stack yet, if both v4 and
+            # v6 address_scopes are set, the v4 address_scope will be used
+            # to set the l3p ip_version
+            l3p_db['ip_version'] = 4
+            ascp = 'address_scope_v4_id'
+        if not ascp:
+            ascp = 'address_scope_v4_id' if l3p_db['ip_version'] == 4 else (
+                'address_scope_v6_id')
+            if not l3p[ascp]:
+                # REVISIT: For dual stack.
+                # This logic assumes either 4 or 6 but not both
+                self._use_implicit_address_scope(context, clean_session=False)
+                l3p_db[ascp] = l3p[ascp]
+        else:
+            # TODO(Sumit): check that l3p['ip_pool'] does not overlap with an
+            # existing subnetpool associated with the explicit address_scope
+            pass
+        subpool = 'subnetpools_v4' if l3p_db['ip_version'] == 4 else (
             'subnetpools_v6')
         if not l3p[subpool]:
             # REVISIT: For dual stack.
             # This logic assumes either 4 or 6 but not both
             self._use_implicit_subnetpool(
                 context, address_scope_id=l3p_db[ascp],
-                ip_version=l3p['ip_version'], clean_session=False)
+                ip_version=l3p_db['ip_version'], clean_session=False)
         # REVISIT: Check if the following constraint still holds
         if len(l3p['routers']) > 1:
             raise exc.L3PolicyMultipleRoutersNotSupported()

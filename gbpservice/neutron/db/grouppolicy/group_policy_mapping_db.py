@@ -204,13 +204,19 @@ class GroupPolicyMappingDbPlugin(gpdb.GroupPolicyDbPlugin):
             l2p_db = self._get_l2_policy(context, l2p_id)
             l2p_db.network_id = network_id
 
-    def _set_address_scope_for_l3_policy(self, context, l3p_id,
+    def _set_address_scope_for_l3_policy_by_id(self, context, l3p_id,
+                                         address_scope_id, ip_version=4):
+        with context.session.begin(subtransactions=True):
+            l3p_db = self._get_l3_policy(context, l3p_id)
+            self._set_address_scope_for_l3_policy(
+                context, l3p_db, address_scope_id, ip_version)
+
+    def _set_address_scope_for_l3_policy(self, context, l3p_db,
                                          address_scope_id, ip_version=4):
         if not address_scope_id:
             return
         # TODO(Sumit): address_scope_id validation
         with context.session.begin(subtransactions=True):
-            l3p_db = self._get_l3_policy(context, l3p_id)
             if ip_version == 4:
                 l3p_db.address_scope_v4_id = address_scope_id
             else:
@@ -554,10 +560,10 @@ class GroupPolicyMappingDbPlugin(gpdb.GroupPolicyDbPlugin):
                                      shared=l3p.get('shared', False))
 
             self._set_address_scope_for_l3_policy(
-                context, l3p_db['id'], l3p.get('address_scope_v4_id'),
+                context, l3p_db, l3p.get('address_scope_v4_id'),
                 ip_version=4)
             self._set_address_scope_for_l3_policy(
-                context, l3p_db['id'], l3p.get('address_scope_v6_id'),
+                context, l3p_db, l3p.get('address_scope_v6_id'),
                 ip_version=6)
             self._add_subnetpools_to_l3_policy(
                 context, l3p_db['id'], l3p.get('subnetpools_v4'), ip_version=4)
