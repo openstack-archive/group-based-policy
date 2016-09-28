@@ -224,7 +224,8 @@ class ImplicitResourceOperations(local_api.LocalAPI):
     def _use_implicit_address_scope(self, context, clean_session=True):
         address_scope = self._create_implicit_address_scope(
             context, clean_session, name='l3p_' + context.current['name'])
-        context.set_address_scope_id(address_scope['id'])
+        context.set_address_scope_id(address_scope['id'],
+                                     context.current['ip_version'])
 
     def _cleanup_address_scope(self, plugin_context, address_scope_id,
                                clean_session=True):
