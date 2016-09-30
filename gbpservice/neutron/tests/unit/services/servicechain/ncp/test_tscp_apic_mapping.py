@@ -36,8 +36,7 @@ class ApicMappingStitchingPlumberGBPTestCase(
 
     def setUp(self, plumber='stitching_plumber'):
         cfg.CONF.set_override(
-            'extension_drivers', ['apic_segmentation_label',
-                                  'proxy_group'], group='group_policy')
+            'extension_drivers', ['proxy_group'], group='group_policy')
         cfg.CONF.set_override('node_plumber', plumber,
                               group='node_composition_plugin')
         super(ApicMappingStitchingPlumberGBPTestCase, self).setUp(
