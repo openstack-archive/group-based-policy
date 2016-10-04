@@ -30,7 +30,8 @@ def upgrade():
 
     op.add_column(
         'gp_group_proxy_mappings',
-        sa.Column('enforce_service_chains', sa.Boolean, default=True)
+        sa.Column('enforce_service_chains', sa.Boolean, server_default=True,
+                  nullable=False)
     )
 
 
