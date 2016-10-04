@@ -395,6 +395,11 @@ def create_nfp_namespace_file():
     filepx.write("\n\tfi\n\tpkill nfp_proxy")
     filepx.write("\n\n\tgbp pt-delete nfp_proxy_pt")
     filepx.write("\n\n\techo \"nfp-proxy cleaning success.... \"\n\n}")
+    filepx.write("\n\nfunction netmask_to_bitmask {")
+    filepx.write("\n\tnetmask_bits=$1")
+    filepx.write("\n\tset -- $(( 5 - ($netmask_bits / 8) )) 255 255 255 255 $(( (255 << (8 - ($netmask_bits % 8))) & 255 )) 0 0 0")
+    filepx.write("\n\t[ $1 -gt 1 ] && shift $1 || shift")
+    filepx.write("\n\tnetmask=${1-0}.${2-0}.${3-0}.${4-0}\n}")
     filepx.write("\n\nfunction namespace_create {\n\n\tget_openstack_creds")
     filepx.write("\n\tSERVICE_MGMT_GROUP=\"svc_management_ptg\"")
     filepx.write("\n\tnetmask_bits=`neutron net-list --name l2p_$SERVICE_MGMT_GROUP -F subnets  -f value | awk '{print $2}' | awk -F'/' '{print $2}'`")
@@ -402,7 +407,7 @@ def create_nfp_namespace_file():
     filepx.write("\n\n\t#new namespace with name proxy")
     filepx.write("\n\tNFP_P=`ip netns add nfp-proxy`")
     filepx.write("\n\tif [ ${#NFP_P} -eq 0 ]; then")
-    filepx.write("\n\t\techo \"New namepace nfp-proxt create\"")
+    filepx.write("\n\t\techo \"New namepace nfp-proxy create\"")
     filepx.write("\n\telse\n\t\techo \"nfp-proxy creation failed\"\n\t\t"
                  "exit 0")
     filepx.write("\n\tfi\n\n\t# create nfp_proxy pt")
@@ -417,9 +422,7 @@ def create_nfp_namespace_file():
                  " | awk '{print $11}' | sed 's/^\"\(.*\)\"}$/\\1/'`")
     filepx.write("\n\ttapName=\"tap${proxyPortId:0:11}\"")
     filepx.write("\n\tnew_ip_cidr=\"$proxyPortIp/$netmask_bits\"")
-    filepx.write("\n\tset -- $(( 5 - ($netmask_bits / 8) )) 255 255 255 255 $(( (255 << (8 - ($netmask_bits % 8))) & 255 )) 0 0 0")
-    filepx.write("\n\t[ $1 -gt 1 ] && shift $1 || shift")
-    filepx.write("\n\tnetmask=${1-0}.${2-0}.${3-0}.${4-0}")
+    filepx.write("\n\tnetmask_to_bitmask $netmask_bits\n")
     filepx.write("\n\tproxyBrd=`ipcalc -4 $proxyPortIp -m $netmask -b"
                  " | grep BROADCAST | awk -F '=' '{print $2}'`")
     filepx.write("\n\n\t# Create a tap interface and add it"
