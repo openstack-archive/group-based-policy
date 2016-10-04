@@ -28,7 +28,8 @@ class GroupProxyMapping(model_base.BASEV2):
                                sa.ForeignKey('gp_policy_target_groups.id',
                                              ondelete="SET NULL"))
     proxy_type = sa.Column(sa.String(24))
-    enforce_service_chains = sa.Column(sa.Boolean)
+    enforce_service_chains = sa.Column(sa.Boolean, default=True,
+                                       server_default=True, nullable=False)
 
 
 class ProxyGatewayMapping(model_base.BASEV2):
