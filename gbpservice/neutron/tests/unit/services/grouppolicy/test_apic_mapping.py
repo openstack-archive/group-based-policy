@@ -2226,6 +2226,8 @@ class TestL2PolicyWithAutoPTG(TestL2PolicyBase):
             expected_res_status=webob.exc.HTTPBadRequest.code)
         self.assertEqual('AutoPTGAttrsUpdateNotSupported',
                          res['NeutronError']['type'])
+        self.create_policy_target(name='pt',
+                                  policy_target_group_id=ptg['id'])
         # Auto PTG cannot be deleted by user
         res = self.delete_policy_target_group(
             ptg['id'], expected_res_status=webob.exc.HTTPBadRequest.code)
