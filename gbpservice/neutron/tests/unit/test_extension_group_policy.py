@@ -1200,3 +1200,14 @@ class TestGroupPolicyAttributeValidators(base.BaseTestCase):
         invalid_name = 'x' * 129
         msg = "'" + invalid_name + "' exceeds maximum length of 128"
         self.assertEqual(gp._validate_gbp_resource_name(invalid_name), msg)
+
+    def test_validate_gbp_uuid(self):
+        self.assertIsNone(gp._validate_gbp_uuid_or_none(_uuid()))
+        auto_uuid = 'auto' + '9' * 32
+        self.assertIsNone(gp._validate_gbp_uuid_or_none(auto_uuid))
+        bad_uuid = 'autt' + '9' * 32
+        self.assertEqual(gp._validate_gbp_uuid_or_none(bad_uuid),
+                         "'%s' is not a valid UUID" % bad_uuid)
+        bad_uuid = 'auto' + 'z' * 32
+        self.assertEqual(gp._validate_gbp_uuid_or_none(bad_uuid),
+                         "'%s' is not a valid UUID" % bad_uuid)

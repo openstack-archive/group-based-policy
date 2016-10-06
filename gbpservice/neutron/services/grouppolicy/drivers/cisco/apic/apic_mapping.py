@@ -2804,6 +2804,9 @@ class ApicMappingDriver(api.ResourceMappingDriver,
             # we will map the id of the PTG to the APIC EPG name
             self.apic_manager.db.update_apic_name(
                 auto_ptg['id'], 'policy_target_group', str(shadow_epg))
+            ptg_context = group_policy_context.PolicyTargetGroupContext(
+                context._plugin, context._plugin_context, auto_ptg)
+            self._use_implicit_subnet(ptg_context)
 
     def _associate_service_filter(self, tenant, contract, filter_name,
                                   entry_name, transaction=None, **attrs):
