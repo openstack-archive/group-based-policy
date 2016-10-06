@@ -11,6 +11,7 @@
 #    under the License.
 
 import abc
+import re
 
 from neutron.api import extensions
 from neutron.api.v2 import attributes as attr
@@ -373,11 +374,22 @@ def _validate_gbp_resource_name(data, valid_values=None):
     # Any REST API defined GBP resource name is restricted to 128 characters
     return attr._validate_string(data, max_len=128)
 
+
+AUTO_PTG_REGEX = re.compile('auto[0-9a-f]{32}\Z', re.I)
+
+
+def _validate_gbp_uuid_or_none(data, valid_values=None):
+    if data is not None:
+        if not bool(AUTO_PTG_REGEX.match(data)):
+            return attr._validate_uuid_or_none(data)
+
+
 attr.validators['type:gbp_port_range'] = _validate_gbp_port_range
 attr.validators['type:network_service_params'] = _validate_network_svc_params
 attr.validators['type:external_dict'] = _validate_external_dict
 attr.validators['type:gbproutes'] = _validate_gbproutes
 attr.validators['type:gbp_resource_name'] = _validate_gbp_resource_name
+attr.validators['type:gbp_uuid_or_none'] = _validate_gbp_uuid_or_none
 
 
 POLICY_TARGETS = 'policy_targets'
@@ -412,7 +424,7 @@ RESOURCE_ATTRIBUTE_MAP = {
         'status_details': {'allow_post': False, 'allow_put': False,
                            'is_visible': True},
         'policy_target_group_id': {'allow_post': True, 'allow_put': True,
-                                   'validate': {'type:uuid_or_none': None},
+                                   'validate': {'type:gbp_uuid_or_none': None},
                                    'required': True, 'is_visible': True},
         'cluster_id': {'allow_post': True, 'allow_put': True,
                        'validate': {'type:string': None},
