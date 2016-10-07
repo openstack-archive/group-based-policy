@@ -13,10 +13,12 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+from neutron._i18n import _LE
 from neutron._i18n import _LI
 from neutron.api import extensions
 from neutron import manager as n_manager
 from oslo_log import log
+from oslo_utils import excutils
 
 from gbpservice.neutron import extensions as extensions_pkg
 from gbpservice.neutron.plugins.ml2plus import driver_api as api_plus
@@ -50,10 +52,22 @@ class ApicExtensionDriver(api_plus.ExtensionDriver):
         return "cisco-apic"
 
     def extend_network_dict(self, session, base_model, result):
-        self._md.extend_network_dict(session, base_model, result)
+        try:
+            self._md.extend_network_dict(session, base_model, result)
+        except Exception:
+            with excutils.save_and_reraise_exception():
+                LOG.exception(_LE("APIC AIM extend_network_dict failed"))
 
     def extend_subnet_dict(self, session, base_model, result):
-        self._md.extend_subnet_dict(session, base_model, result)
+        try:
+            self._md.extend_subnet_dict(session, base_model, result)
+        except Exception:
+            with excutils.save_and_reraise_exception():
+                LOG.exception(_LE("APIC AIM extend_subnet_dict failed"))
 
     def extend_address_scope_dict(self, session, base_model, result):
-        self._md.extend_address_scope_dict(session, base_model, result)
+        try:
+            self._md.extend_address_scope_dict(session, base_model, result)
+        except Exception:
+            with excutils.save_and_reraise_exception():
+                LOG.exception(_LE("APIC AIM extend_address_scope_dict failed"))

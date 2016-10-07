@@ -28,8 +28,8 @@ SUBNET = 'Subnet'
 VRF = 'VRF'
 
 SYNC_SYNCED = 'synced'
-SYNC_PENDING = 'pending'
-SYNC_FAILED = 'failed'
+SYNC_BUILD = 'build'
+SYNC_ERROR = 'error'
 
 APIC_ATTRIBUTES = {
     DIST_NAMES: {'allow_post': False, 'allow_put': False, 'is_visible': True},

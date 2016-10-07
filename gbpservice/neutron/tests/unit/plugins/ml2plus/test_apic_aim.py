@@ -17,6 +17,7 @@ import mock
 
 from aim import aim_manager
 from aim.api import resource as aim_resource
+from aim.api import status as aim_status
 from aim import config as aim_cfg
 from aim import context as aim_context
 from aim.db import model_base as aim_model_base
@@ -858,8 +859,218 @@ class TestAimMapping(ApicAimTestCase):
 
     # TODO(rkukura): Test IPv6 and dual stack router interfaces.
 
-    # TODO(rkukura): Test synchronization_state attribute for each AIM
-    # resource.
+
+class TestSyncState(ApicAimTestCase):
+    @staticmethod
+    def _get_pending_status_for_type(resource, type):
+        status = (isinstance(resource, type) and
+                  aim_status.AciStatus.SYNC_PENDING or
+                  aim_status.AciStatus.SYNCED)
+        return aim_status.AciStatus(sync_status=status)
+
+    @staticmethod
+    def _get_failed_status_for_type(resource, type):
+        status = (isinstance(resource, type) and
+                  aim_status.AciStatus.SYNC_FAILED or
+                  aim_status.AciStatus.SYNC_PENDING)
+        return aim_status.AciStatus(sync_status=status)
+
+    def _test_network(self, expected_state):
+        net = self._make_network(self.fmt, 'net1', True)['network']
+        self.assertEqual(expected_state, net['apic:synchronization_state'])
+
+        net = self._show('networks', net['id'])['network']
+        self.assertEqual(expected_state, net['apic:synchronization_state'])
+
+    def test_network_synced(self):
+        self._test_network('synced')
+
+    def test_network_bd_build(self):
+        def get_status(self, context, resource):
+            return TestSyncState._get_pending_status_for_type(
+                resource, aim_resource.BridgeDomain)
+
+        with mock.patch('aim.aim_manager.AimManager.get_status', get_status):
+            self._test_network('build')
+
+    def test_network_bd_error(self):
+        def get_status(self, context, resource):
+            return TestSyncState._get_failed_status_for_type(
+                resource, aim_resource.BridgeDomain)
+
+        with mock.patch('aim.aim_manager.AimManager.get_status', get_status):
+            self._test_network('error')
+
+    def test_network_epg_build(self):
+        def get_status(self, context, resource):
+            return TestSyncState._get_pending_status_for_type(
+                resource, aim_resource.EndpointGroup)
+
+        with mock.patch('aim.aim_manager.AimManager.get_status', get_status):
+            self._test_network('build')
+
+    def test_network_epg_error(self):
+        def get_status(self, context, resource):
+            return TestSyncState._get_failed_status_for_type(
+                resource, aim_resource.EndpointGroup)
+
+        with mock.patch('aim.aim_manager.AimManager.get_status', get_status):
+            self._test_network('error')
+
+    def test_network_vrf_build(self):
+        def get_status(self, context, resource):
+            return TestSyncState._get_pending_status_for_type(
+                resource, aim_resource.VRF)
+
+        with mock.patch('aim.aim_manager.AimManager.get_status', get_status):
+            self._test_network('build')
+
+    def test_network_vrf_error(self):
+        def get_status(self, context, resource):
+            return TestSyncState._get_failed_status_for_type(
+                resource, aim_resource.VRF)
+
+        with mock.patch('aim.aim_manager.AimManager.get_status', get_status):
+            self._test_network('error')
+
+    def _test_address_scope(self, expected_state):
+        scope = self._make_address_scope(self.fmt, 4, name='scope1')[
+            'address_scope']
+        self.assertEqual(expected_state, scope['apic:synchronization_state'])
+
+        scope = self._show('address-scopes', scope['id'])['address_scope']
+        self.assertEqual(expected_state, scope['apic:synchronization_state'])
+
+    def test_address_scope_synced(self):
+        self._test_address_scope('synced')
+
+    def test_address_scope_vrf_build(self):
+        def get_status(self, context, resource):
+            return TestSyncState._get_pending_status_for_type(
+                resource, aim_resource.VRF)
+
+        with mock.patch('aim.aim_manager.AimManager.get_status', get_status):
+            self._test_address_scope('build')
+
+    def test_address_scope_vrf_error(self):
+        def get_status(self, context, resource):
+            return TestSyncState._get_failed_status_for_type(
+                resource, aim_resource.VRF)
+
+        with mock.patch('aim.aim_manager.AimManager.get_status', get_status):
+            self._test_address_scope('error')
+
+    def _test_router(self, expected_state):
+        router = self._make_router(self.fmt, 'test-tenant', 'router1')[
+            'router']
+        self.assertEqual(expected_state, router['apic:synchronization_state'])
+
+        router = self._show('routers', router['id'])['router']
+        self.assertEqual(expected_state, router['apic:synchronization_state'])
+
+    def test_router_synced(self):
+        self._test_router('synced')
+
+    def test_router_contract_build(self):
+        def get_status(self, context, resource):
+            return TestSyncState._get_pending_status_for_type(
+                resource, aim_resource.Contract)
+
+        with mock.patch('aim.aim_manager.AimManager.get_status', get_status):
+            self._test_router('build')
+
+    def test_router_contract_error(self):
+        def get_status(self, context, resource):
+            return TestSyncState._get_failed_status_for_type(
+                resource, aim_resource.Contract)
+
+        with mock.patch('aim.aim_manager.AimManager.get_status', get_status):
+            self._test_router('error')
+
+    def test_router_subject_build(self):
+        def get_status(self, context, resource):
+            return TestSyncState._get_pending_status_for_type(
+                resource, aim_resource.ContractSubject)
+
+        with mock.patch('aim.aim_manager.AimManager.get_status', get_status):
+            self._test_router('build')
+
+    def test_router_subject_error(self):
+        def get_status(self, context, resource):
+            return TestSyncState._get_failed_status_for_type(
+                resource, aim_resource.ContractSubject)
+
+        with mock.patch('aim.aim_manager.AimManager.get_status', get_status):
+            self._test_router('error')
+
+    def _test_router_interface_vrf(self, expected_state):
+        net_resp = self._make_network(self.fmt, 'net1', True)
+        subnet = self._make_subnet(
+            self.fmt, net_resp, '10.0.0.1', '10.0.0.0/24')['subnet']
+        router = self._make_router(self.fmt, 'test-tenant', 'router1')[
+            'router']
+        self.l3_plugin.add_router_interface(
+            context.get_admin_context(), router['id'],
+            {'subnet_id': subnet['id']})
+
+        router = self._show('routers', router['id'])['router']
+        self.assertEqual(expected_state, router['apic:synchronization_state'])
+
+    def test_router_interface_vrf_synced(self):
+        self._test_router_interface_vrf('synced')
+
+    def test_router_interface_vrf_build(self):
+        def get_status(self, context, resource):
+            return TestSyncState._get_pending_status_for_type(
+                resource, aim_resource.VRF)
+
+        with mock.patch('aim.aim_manager.AimManager.get_status', get_status):
+            self._test_router_interface_vrf('build')
+
+    def test_router_interface_vrf_error(self):
+        def get_status(self, context, resource):
+            return TestSyncState._get_failed_status_for_type(
+                resource, aim_resource.VRF)
+
+        with mock.patch('aim.aim_manager.AimManager.get_status', get_status):
+            self._test_router_interface_vrf('error')
+
+    def _test_router_interface_subnet(self, expected_state):
+        net_resp = self._make_network(self.fmt, 'net1', True)
+        subnet = self._make_subnet(
+            self.fmt, net_resp, '10.0.0.1', '10.0.0.0/24')['subnet']
+        router = self._make_router(self.fmt, 'test-tenant', 'router1')[
+            'router']
+        self.l3_plugin.add_router_interface(
+            context.get_admin_context(), router['id'],
+            {'subnet_id': subnet['id']})
+
+        # TODO(rkukura): Enable when exposing Subnets on router is implemented.
+        # router = self._show('routers', router['id'])['router']
+        # self.assertEqual(expected_state,
+        #                  router['apic:synchronization_state'])
+
+        subnet = self._show('subnets', subnet['id'])['subnet']
+        self.assertEqual(expected_state, subnet['apic:synchronization_state'])
+
+    def test_router_interface_subnet_synced(self):
+        self._test_router_interface_subnet('synced')
+
+    def test_router_interface_subnet_build(self):
+        def get_status(self, context, resource):
+            return TestSyncState._get_pending_status_for_type(
+                resource, aim_resource.Subnet)
+
+        with mock.patch('aim.aim_manager.AimManager.get_status', get_status):
+            self._test_router_interface_subnet('build')
+
+    def test_router_interface_subnet_error(self):
+        def get_status(self, context, resource):
+            return TestSyncState._get_failed_status_for_type(
+                resource, aim_resource.Subnet)
+
+        with mock.patch('aim.aim_manager.AimManager.get_status', get_status):
+            self._test_router_interface_subnet('error')
 
 
 class TestPortBinding(ApicAimTestCase):
