@@ -13,6 +13,7 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+from neutron._i18n import _LE
 from neutron._i18n import _LI
 from neutron.api import extensions
 from neutron.db import common_db_mixin
@@ -22,6 +23,7 @@ from neutron.db import l3_gwmode_db
 from neutron.extensions import l3
 from neutron.plugins.common import constants
 from oslo_log import log as logging
+from oslo_utils import excutils
 from sqlalchemy import inspect
 
 from gbpservice.neutron import extensions as extensions_pkg
@@ -63,7 +65,11 @@ class ApicL3Plugin(common_db_mixin.CommonDbMixin,
     def _extend_router_dict_apic(self, router_res, router_db):
         LOG.debug("APIC AIM L3 Plugin extending router dict: %s", router_res)
         session = inspect(router_db).session
-        self._md.extend_router_dict(session, router_db, router_res)
+        try:
+            self._md.extend_router_dict(session, router_db, router_res)
+        except Exception:
+            with excutils.save_and_reraise_exception():
+                LOG.exception(_LE("APIC AIM extend_router_dict failed"))
 
     db_base_plugin_v2.NeutronDbPluginV2.register_dict_extend_funcs(
         l3.ROUTERS, ['_extend_router_dict_apic'])

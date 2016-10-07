@@ -305,6 +305,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
                                    name=vrf_aname)
         dist_names[cisco_apic.VRF] = aim_vrf.dn
         sync_state = self._merge_status(aim_ctx, sync_state, aim_vrf)
+
         result[cisco_apic.DIST_NAMES] = dist_names
         result[cisco_apic.SYNC_STATE] = sync_state
 
