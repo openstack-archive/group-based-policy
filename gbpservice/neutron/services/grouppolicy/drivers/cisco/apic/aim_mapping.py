@@ -261,7 +261,7 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
     @log.log_method_call
     def update_policy_target_group_precommit(self, context):
         session = context._plugin_context.session
-        provided_contracts, consumed_contracts = [], []
+        provided_contracts, consumed_contracts = None, None
         if 'provided_policy_rule_sets' in context.current:
             provided_contracts = self._get_aim_contract_names(
                 session, context.current['provided_policy_rule_sets'])
@@ -269,8 +269,13 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
             consumed_contracts = self._get_aim_contract_names(
                 session, context.current['consumed_policy_rule_sets'])
 
-        if provided_contracts or consumed_contracts:
-            aim_epg = self._aim_endpoint_group(session, context.current)
+        aim_epg = self._get_aim_endpoint_group(session, context.current)
+        if aim_epg and ((provided_contracts is not None) or (
+            consumed_contracts is not None)):
+            if provided_contracts is not None:
+                aim_epg.provided_contract_names = provided_contracts
+            if consumed_contracts is not None:
+                aim_epg.consumed_contract_names = consumed_contracts
             ptg_db = context._plugin._get_policy_target_group(
                 context._plugin_context, context.current['id'])
             if ptg_db['l2_policy_id']:
@@ -280,13 +285,6 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
                 # infra svc contracts
                 self._add_implicit_svc_contracts_to_epg(context, l2p_db,
                                                         aim_epg)
-                provided_contracts += aim_epg.provided_contract_names
-                consumed_contracts += aim_epg.consumed_contract_names
-
-            aim_ctx = self._get_aim_context(context)
-            self.aim.update(aim_ctx, aim_epg,
-                            **{'provided_contract_names': provided_contracts,
-                               'consumed_contract_names': consumed_contracts})
 
     @log.log_method_call
     def delete_policy_target_group_precommit(self, context):

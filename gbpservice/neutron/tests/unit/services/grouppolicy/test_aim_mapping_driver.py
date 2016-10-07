@@ -674,12 +674,20 @@ class TestPolicyTargetGroup(AIMBaseTestCase):
             self._aim_context, aim_resource.ApplicationProfile,
             tenant_name=aim_tenant_name, name=aim_app_profile_name)
         self.assertEqual(1, len(aim_app_profiles))
+        req = self.new_show_request('networks', l2p['network_id'],
+                                    fmt=self.fmt)
+        net = self.deserialize(self.fmt,
+                               req.get_response(self.api))['network']
+        bd = self.aim_mgr.get(
+            self._aim_context, aim_resource.BridgeDomain.from_dn(
+                net['apic:distinguished_names']['BridgeDomain']))
         aim_epgs = self.aim_mgr.find(
             self._aim_context, aim_resource.EndpointGroup, name=aim_epg_name)
         self.assertEqual(1, len(aim_epgs))
         self.assertEqual(aim_epg_name, aim_epgs[0].name)
         self.assertEqual(aim_tenant_name, aim_epgs[0].tenant_name)
         self.assertEqual(ptg['name'], aim_epgs[0].display_name)
+        self.assertEqual(bd.name, aim_epgs[0].bd_name)
 
         self._validate_contracts(aim_epgs[0], prs_lists, l2p)
 
@@ -705,6 +713,7 @@ class TestPolicyTargetGroup(AIMBaseTestCase):
         self.assertEqual(1, len(aim_epgs))
         self.assertEqual(aim_epg_name, aim_epgs[0].name)
         self._validate_contracts(aim_epgs[0], new_prs_lists, l2p)
+        self.assertEqual(bd.name, aim_epgs[0].bd_name)
 
         self.delete_policy_target_group(ptg_id, expected_res_status=204)
         self.show_policy_target_group(ptg_id, expected_res_status=404)
@@ -748,17 +757,42 @@ class TestPolicyTargetGroup(AIMBaseTestCase):
             self._aim_context, aim_resource.ApplicationProfile,
             tenant_name=aim_tenant_name, name=aim_app_profile_name)
         self.assertEqual(1, len(aim_app_profiles))
+        req = self.new_show_request('networks', l2p['network_id'],
+                                    fmt=self.fmt)
+        net = self.deserialize(self.fmt,
+                               req.get_response(self.api))['network']
+        bd = self.aim_mgr.get(
+            self._aim_context, aim_resource.BridgeDomain.from_dn(
+                net['apic:distinguished_names']['BridgeDomain']))
         aim_epgs = self.aim_mgr.find(
             self._aim_context, aim_resource.EndpointGroup, name=aim_epg_name)
         self.assertEqual(1, len(aim_epgs))
         self.assertEqual(aim_epg_name, aim_epgs[0].name)
         self.assertEqual(aim_tenant_name, aim_epgs[0].tenant_name)
+        self.assertEqual(bd.name, aim_epgs[0].bd_name)
 
         self.assertEqual(aim_epgs[0].dn,
                          ptg['apic:distinguished_names']['EndpointGroup'])
         self._test_aim_resource_status(aim_epgs[0], ptg)
         self.assertEqual(aim_epgs[0].dn,
                          ptg_show['apic:distinguished_names']['EndpointGroup'])
+
+        new_name = 'new name'
+        new_prs_lists = self._get_provided_consumed_prs_lists()
+        self.update_policy_target_group(
+            ptg_id, expected_res_status=200, name=new_name,
+            provided_policy_rule_sets={new_prs_lists['provided']['id']:
+                                       'scope'},
+            consumed_policy_rule_sets={new_prs_lists['consumed']['id']:
+                                       'scope'})['policy_target_group']
+        aim_epg_name = str(self.name_mapper.policy_target_group(
+            self._neutron_context.session, ptg_id, new_name))
+        aim_epgs = self.aim_mgr.find(
+            self._aim_context, aim_resource.EndpointGroup, name=aim_epg_name)
+        self.assertEqual(1, len(aim_epgs))
+        self.assertEqual(aim_epg_name, aim_epgs[0].name)
+        self._validate_contracts(aim_epgs[0], new_prs_lists, l2p)
+        self.assertEqual(bd.name, aim_epgs[0].bd_name)
 
         self.delete_policy_target_group(ptg_id, expected_res_status=204)
         self.show_policy_target_group(ptg_id, expected_res_status=404)
