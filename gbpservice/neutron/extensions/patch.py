@@ -15,8 +15,10 @@ from neutron.callbacks import events
 from neutron.callbacks import registry
 from neutron.callbacks import resources
 from neutron.common import constants as l3_constants
+from neutron.db import api as db_api
 from neutron.db import l3_db
 from neutron.db import securitygroups_db
+from sqlalchemy import event
 
 
 # Monkey patch create floatingip to allow subnet_id to be specified.
@@ -167,3 +169,37 @@ def _get_security_groups_on_port(self, context, port):
 
 securitygroups_db.SecurityGroupDbMixin._get_security_groups_on_port = (
     _get_security_groups_on_port)
+
+
+LOCAL_API_NOTIFICATION_QUEUE = None
+PUSH_NOTIFICATIONS_METHOD = None
+
+
+def get_session(autocommit=True, expire_on_commit=False, use_slave=False):
+    global LOCAL_API_NOTIFICATION_QUEUE
+    global PUSH_NOTIFICATIONS_METHOD
+    if 'local_api' not in locals():
+        from gbpservice.network.neutronv2 import local_api
+        LOCAL_API_NOTIFICATION_QUEUE = local_api.NOTIFICATION_QUEUE
+        PUSH_NOTIFICATIONS_METHOD = (
+            local_api.post_notifications_from_queue)
+    facade = db_api._create_facade_lazily()
+    new_session = facade.get_session(autocommit=autocommit,
+                                     expire_on_commit=expire_on_commit,
+                                     use_slave=use_slave)
+
+    def gbp_after_transaction(session, transaction):
+        global LOCAL_API_NOTIFICATION_QUEUE
+        if not transaction._parent and not transaction.is_active and (
+            not transaction.nested):
+            if transaction in LOCAL_API_NOTIFICATION_QUEUE:
+                PUSH_NOTIFICATIONS_METHOD(transaction)
+            pass
+
+    if local_api.BATCH_NOTIFICATIONS:
+        event.listen(new_session, "after_transaction_end",
+                     gbp_after_transaction)
+    return new_session
+
+
+db_api.get_session = get_session
