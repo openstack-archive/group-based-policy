@@ -34,6 +34,43 @@ from gbpservice.neutron.services.grouppolicy.common import exceptions as exc
 LOG = logging.getLogger(__name__)
 
 
+def _get_outer_transaction(transaction):
+    if not transaction:
+        return
+    if not transaction._parent:
+        return transaction
+    else:
+        return _get_outer_transaction(transaction._parent)
+
+
+BATCH_NOTIFICATIONS = False
+NOTIFICATION_QUEUE = {}
+NOTIFIER_REF = 'notifier_object_reference'
+NOTIFIER_METHOD = 'notifier_method_name'
+NOTIFICATION_ARGS = 'notification_args'
+
+
+def add_notification_to_queue(transaction_key, notifier_obj, notifier_method,
+                              args):
+    if not transaction_key:
+        getattr(notifier_obj, notifier_method)(*args)
+
+    entry = {NOTIFIER_REF: notifier_obj, NOTIFIER_METHOD: notifier_method,
+             NOTIFICATION_ARGS: args}
+    if transaction_key not in NOTIFICATION_QUEUE:
+        NOTIFICATION_QUEUE[transaction_key] = [entry]
+    else:
+        NOTIFICATION_QUEUE[transaction_key].append(entry)
+
+
+def post_notifications_from_queue(transaction_key):
+    queue = NOTIFICATION_QUEUE[transaction_key]
+    for entry in queue:
+        getattr(entry[NOTIFIER_REF],
+                entry[NOTIFIER_METHOD])(*entry[NOTIFICATION_ARGS])
+    del NOTIFICATION_QUEUE[transaction_key]
+
+
 class dummy_context_mgr(object):
 
     def __enter__(self):
@@ -135,12 +172,26 @@ class LocalAPI(object):
                 # explicit resource creation request, and hence the above
                 # method will be invoked in the API layer.
             if do_notify:
-                self._nova_notifier.send_network_change(action, {},
-                                                        {resource: obj})
+                if not clean_session:
+                    outer_transaction = (_get_outer_transaction(
+                        context._session.transaction))
+                args = [action, {}, {resource: obj}]
+                if BATCH_NOTIFICATIONS:
+                    add_notification_to_queue(
+                        outer_transaction, self._nova_notifier,
+                        'send_network_change', args)
+                else:
+                    self._nova_notifier.send_network_change(*args)
                 # REVISIT(rkukura): Do create.end notification?
                 if cfg.CONF.dhcp_agent_notification:
-                    self._dhcp_agent_notifier.notify(
-                        context, {resource: obj}, resource + '.create.end')
+                    args = [context, {resource: obj},
+                            resource + '.create.end']
+                    if BATCH_NOTIFICATIONS:
+                        add_notification_to_queue(
+                            outer_transaction, self._dhcp_agent_notifier,
+                            'notify', args)
+                    else:
+                        self._dhcp_agent_notifier.notify(*args)
         return obj
 
     def _update_resource(self, plugin, context, resource, resource_id, attrs,
