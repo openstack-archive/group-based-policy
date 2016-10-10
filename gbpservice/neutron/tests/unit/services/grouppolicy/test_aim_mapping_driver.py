@@ -19,12 +19,16 @@ from aim.api import status as aim_status
 from aim import context as aim_context
 from aim.db import model_base as aim_model_base
 from keystoneclient.v3 import client as ksc_client
+from neutron.api.rpc.agentnotifiers import dhcp_rpc_agent_api
 from neutron import context as nctx
 from neutron.db import api as db_api
+from neutron.notifiers import nova
 from neutron.tests.unit.extensions import test_address_scope
 from opflexagent import constants as ocst
+from oslo_utils import uuidutils
 import webob.exc
 
+from gbpservice.network.neutronv2 import local_api
 from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import model
 from gbpservice.neutron.services.grouppolicy.common import (
     constants as gp_const)
@@ -1640,3 +1644,213 @@ class TestPolicyRuleSetRollback(TestPolicyRuleSetBase):
 
         # restore mock
         self.dummy.delete_policy_rule_set_precommit = orig_func
+
+
+class NotificationTest(AIMBaseTestCase):
+
+    def setUp(self, policy_drivers=None, core_plugin=None, ml2_options=None,
+              l3_plugin=None, sc_plugin=None, **kwargs):
+        self.fake_uuid = 0
+        self.mac_prefix = '12:34:56:78:5d:'
+        self.add_notification_to_queue_call_count = 0
+        self.max_notification_queue_length = 0
+        self.post_notifications_from_queue_call_count = 0
+        self.orig_generate_uuid = uuidutils.generate_uuid
+        self.orig_is_uuid_like = uuidutils.is_uuid_like
+
+        def generate_uuid():
+            self.fake_uuid += 1
+            return str(self.fake_uuid)
+
+        def is_uuid_like(val):
+            return True
+
+        def _generate_mac():
+            lsb = 10 + self.fake_uuid
+            return self.mac_prefix + str(lsb)
+
+        uuidutils.generate_uuid = generate_uuid
+        uuidutils.is_uuid_like = is_uuid_like
+
+        super(NotificationTest, self).setUp(
+            policy_drivers=policy_drivers, core_plugin=core_plugin,
+            ml2_options=ml2_options, l3_plugin=l3_plugin,
+            sc_plugin=sc_plugin, **kwargs)
+        self.orig_generate_mac = self._plugin._generate_mac
+        self._plugin._generate_mac = _generate_mac
+        self.orig_add_notification_to_queue = (
+            local_api.add_notification_to_queue)
+
+        def add_notification_to_queue(
+            transaction_key, notifier_obj, notifier_method, args):
+            self.add_notification_to_queue_call_count += 1
+            self.orig_add_notification_to_queue(
+                transaction_key, notifier_obj, notifier_method, args)
+            if local_api.NOTIFICATION_QUEUE:
+                key = local_api.NOTIFICATION_QUEUE.keys()[0]
+                length = len(local_api.NOTIFICATION_QUEUE[key])
+                if length > self.max_notification_queue_length:
+                    self.max_notification_queue_length = length
+
+        local_api.add_notification_to_queue = (
+            add_notification_to_queue)
+
+        self.orig_post_notifications_from_queue = (
+            local_api.post_notifications_from_queue)
+
+        def post_notifications_from_queue(transaction_key):
+            self.post_notifications_from_queue_call_count += 1
+            self.orig_post_notifications_from_queue(transaction_key)
+
+        local_api.post_notifications_from_queue = (
+            post_notifications_from_queue)
+
+    def tearDown(self):
+        super(NotificationTest, self).tearDown()
+        self._plugin._generate_mac = self.orig_generate_mac
+        uuidutils.generate_uuid = self.orig_generate_uuid
+        uuidutils.is_uuid_like = self.orig_is_uuid_like
+        local_api.BATCH_NOTIFICATIONS = False
+        local_api.add_notification_to_queue = (
+            self.orig_add_notification_to_queue)
+        local_api.post_notifications_from_queue = (
+            self.orig_post_notifications_from_queue)
+
+    def _expected_dhcp_agent_call_list(self):
+        # The 2nd argument is the resource object that is created,
+        # and can be potentially verified for further detail
+        calls = [
+            mock.call().notify(mock.ANY, mock.ANY,
+                               "address_scope.create.end"),
+            mock.call().notify(mock.ANY, mock.ANY,
+                               "subnetpool.create.end"),
+            mock.call().notify(mock.ANY, mock.ANY, "router.create.end"),
+            mock.call().notify(mock.ANY, mock.ANY, "network.create.end"),
+            mock.call().notify(mock.ANY, mock.ANY, "subnet.create.end"),
+            mock.call().notify(mock.ANY, mock.ANY,
+                               "policy_target_group.create.end"),
+            mock.call().notify(mock.ANY, mock.ANY, "port.create.end"),
+            mock.call().notify(mock.ANY, mock.ANY,
+                               "policy_target.create.end"),
+            mock.call().notify(mock.ANY, mock.ANY, "port.delete.end"),
+            mock.call().notify(mock.ANY, mock.ANY,
+                               "policy_target.delete.end"),
+            mock.call().notify(mock.ANY, mock.ANY, "port.delete.end"),
+            mock.call().notify(mock.ANY, mock.ANY, "subnet.delete.end"),
+            mock.call().notify(mock.ANY, mock.ANY, "network.delete.end"),
+            mock.call().notify(mock.ANY, mock.ANY,
+                               "subnetpool.delete.end"),
+            mock.call().notify(mock.ANY, mock.ANY,
+                               "address_scope.delete.end"),
+            mock.call().notify(mock.ANY, mock.ANY, "router.delete.end"),
+            mock.call().notify(mock.ANY, mock.ANY,
+                               "policy_target_group.delete.end"),
+            mock.call().notify(mock.ANY, mock.ANY,
+                               "security_group.delete.end")]
+        return calls
+
+    def _expected_nova_call_list(self):
+        # The 2nd argument is the resource object that is created,
+        # and can be potentially verified for further detail
+        calls = [
+            mock.call().notify("create_address_scope", mock.ANY, mock.ANY),
+            mock.call().notify("create_subnetpool", mock.ANY, mock.ANY),
+            mock.call().notify("create_router", mock.ANY, mock.ANY),
+            mock.call().notify("create_network", mock.ANY, mock.ANY),
+            mock.call().notify("create_subnet", mock.ANY, mock.ANY),
+            mock.call().notify("create_policy_target_group",
+                               mock.ANY, mock.ANY),
+            mock.call().notify("create_port", mock.ANY, mock.ANY),
+            mock.call().notify("create_policy_target", mock.ANY, mock.ANY),
+            mock.call().notify("delete_port", mock.ANY, mock.ANY),
+            mock.call().notify("delete_policy_target", mock.ANY, mock.ANY),
+            mock.call().notify("delete_subnet", mock.ANY, mock.ANY),
+            mock.call().notify("delete_network", mock.ANY, mock.ANY),
+            mock.call().notify("delete_subnetpool", mock.ANY, mock.ANY),
+            mock.call().notify("delete_address_scope", mock.ANY, mock.ANY),
+            mock.call().notify("delete_router", mock.ANY, mock.ANY),
+            mock.call().notify("delete_policy_target_group",
+                               mock.ANY, mock.ANY),
+            mock.call().notify("delete_security_group",
+                               mock.ANY, mock.ANY)]
+        return calls
+
+    def _test_notifier(self, notifier, expected_calls,
+                       batch_notifications=False):
+            local_api.BATCH_NOTIFICATIONS = batch_notifications
+            ptg = self.create_policy_target_group(name="ptg1")
+            ptg_id = ptg['policy_target_group']['id']
+            pt = self.create_policy_target(
+                name="pt1", policy_target_group_id=ptg_id)['policy_target']
+            self.assertEqual(pt['policy_target_group_id'], ptg_id)
+            self.new_delete_request(
+                'policy_targets', pt['id']).get_response(self.ext_api)
+            self.new_delete_request(
+                'policy_target_groups', ptg_id).get_response(self.ext_api)
+            sg_rules = self._plugin.get_security_group_rules(
+                self._neutron_context)
+            sg_id = sg_rules[0]['security_group_id']
+            self.new_delete_request(
+                'security-groups', sg_id).get_response(self.ext_api)
+            notifier.assert_has_calls(expected_calls(), any_order=False)
+            self.assertEqual({}, local_api.NOTIFICATION_QUEUE)
+
+    def test_dhcp_notifier(self):
+        with mock.patch.object(dhcp_rpc_agent_api.DhcpAgentNotifyAPI,
+                               'notify') as dhcp_notifier_no_batch:
+            self._test_notifier(dhcp_notifier_no_batch,
+                                self._expected_dhcp_agent_call_list, False)
+
+        self.assertEqual(0, self.add_notification_to_queue_call_count)
+        self.assertEqual(0, self.max_notification_queue_length)
+        self.assertEqual(0, self.post_notifications_from_queue_call_count)
+        self.fake_uuid = 0
+
+        with mock.patch.object(dhcp_rpc_agent_api.DhcpAgentNotifyAPI,
+                               'notify') as dhcp_notifier_with_batch:
+            self._test_notifier(dhcp_notifier_with_batch,
+                                self._expected_dhcp_agent_call_list, True)
+
+        self.assertLess(0, self.add_notification_to_queue_call_count)
+        self.assertLess(0, self.max_notification_queue_length)
+        # Two resources (PTG and PT) are created in the _test_notifier
+        # function via the tenant API, hence two batches of notifications
+        # should be sent
+        self.assertEqual(2, self.post_notifications_from_queue_call_count)
+
+        for n1, n2 in zip(dhcp_notifier_no_batch.call_args_list,
+                          dhcp_notifier_with_batch.call_args_list):
+            self.assertEqual(n1[0][1], n2[0][1])
+            self.assertEqual(n1[0][2], n2[0][2])
+
+        local_api.BATCH_NOTIFICATIONS = False
+
+    def test_nova_notifier(self):
+        with mock.patch.object(nova.Notifier,
+                               'send_network_change') as nova_notifier_nobatch:
+            self._test_notifier(nova_notifier_nobatch,
+                                self._expected_nova_call_list, False)
+
+        self.assertEqual(0, self.add_notification_to_queue_call_count)
+        self.assertEqual(0, self.max_notification_queue_length)
+        self.assertEqual(0, self.post_notifications_from_queue_call_count)
+        self.fake_uuid = 0
+
+        with mock.patch.object(nova.Notifier,
+                               'send_network_change') as nova_notifier_batch:
+            self._test_notifier(nova_notifier_batch,
+                                self._expected_nova_call_list, True)
+
+        self.assertLess(0, self.add_notification_to_queue_call_count)
+        self.assertLess(0, self.max_notification_queue_length)
+        # Two resources (PTG and PT) are created in the _test_notifier
+        # function via the tenant API, hence two batches of notifications
+        # should be sent
+        self.assertEqual(2, self.post_notifications_from_queue_call_count)
+
+        for n1, n2 in zip(nova_notifier_nobatch.call_args_list,
+                          nova_notifier_batch.call_args_list):
+            self.assertEqual(n1[0][1], n2[0][1])
+            self.assertEqual(n1[0][2], n2[0][2])
+
+        local_api.BATCH_NOTIFICATIONS = False
