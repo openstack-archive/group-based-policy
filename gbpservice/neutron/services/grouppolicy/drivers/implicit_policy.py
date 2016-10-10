@@ -95,6 +95,7 @@ class ImplicitPolicyBase(api.PolicyDriver, local_api.LocalAPI):
         self._default_proxy_subnet_prefix_length = (
             gpproxy.default_proxy_subnet_prefix_length)
         self._default_es_name = gpip.default_external_segment_name
+        local_api.BATCH_NOTIFICATIONS = True
 
     def _create_implicit_l3_policy(self, context, clean_session=True):
         tenant_id = context.current['tenant_id']

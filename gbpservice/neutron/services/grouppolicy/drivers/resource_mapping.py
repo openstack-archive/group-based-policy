@@ -663,6 +663,7 @@ class ResourceMappingDriver(api.PolicyDriver, ImplicitResourceOperations,
     def initialize(self):
         self._cached_agent_notifier = None
         self._resource_owner_tenant_id = None
+        local_api.BATCH_NOTIFICATIONS = True
 
     def _reject_shared(self, object, type):
         if object.get('shared'):
