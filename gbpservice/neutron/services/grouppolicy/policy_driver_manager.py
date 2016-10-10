@@ -14,6 +14,7 @@ from neutron._i18n import _LE
 from neutron._i18n import _LI
 from oslo_config import cfg
 from oslo_log import log
+from oslo_utils import excutils
 import stevedore
 
 from gbpservice.neutron.services.grouppolicy.common import exceptions as gp_exc
@@ -124,10 +125,11 @@ class PolicyDriverManager(stevedore.named.NamedExtensionManager):
                 raise
             except Exception:
                 # This is an internal failure.
-                LOG.exception(
-                    _LE("Policy driver '%(name)s' failed in %(method)s"),
-                    {'name': driver.name, 'method': method_name}
-                )
+                with excutils.save_and_reraise_exception():
+                    LOG.exception(
+                        _LE("Policy driver '%(name)s' failed in %(method)s"),
+                        {'name': driver.name, 'method': method_name}
+                    )
                 error = True
                 if not continue_on_failure:
                     break
