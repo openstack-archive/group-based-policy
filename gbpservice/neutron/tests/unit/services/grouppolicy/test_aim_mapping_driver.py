@@ -19,12 +19,16 @@ from aim.api import status as aim_status
 from aim import context as aim_context
 from aim.db import model_base as aim_model_base
 from keystoneclient.v3 import client as ksc_client
+from neutron.api.rpc.agentnotifiers import dhcp_rpc_agent_api
 from neutron import context as nctx
 from neutron.db import api as db_api
+from neutron.notifiers import nova
 from neutron.tests.unit.extensions import test_address_scope
 from opflexagent import constants as ocst
+from oslo_utils import uuidutils
 import webob.exc
 
+from gbpservice.network.neutronv2 import local_api
 from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import model
 from gbpservice.neutron.services.grouppolicy.common import (
     constants as gp_const)
@@ -1391,3 +1395,85 @@ class TestPolicyRuleSetRollback(TestPolicyRuleSetBase):
 
         # restore mock
         self.dummy.delete_policy_rule_set_precommit = orig_func
+
+
+class NotificationTest(AIMBaseTestCase):
+
+    def setUp(self, policy_drivers=None, core_plugin=None, ml2_options=None,
+              l3_plugin=None, sc_plugin=None, **kwargs):
+        self.fake_uuid = 0
+        self.orig_generate_uuid = uuidutils.generate_uuid
+        self.orig_is_uuid_like = uuidutils.is_uuid_like
+
+        def generate_uuid():
+            self.fake_uuid += 1
+            return str(self.fake_uuid)
+
+        def is_uuid_like(val):
+            return True
+
+        uuidutils.generate_uuid = generate_uuid
+        uuidutils.is_uuid_like = is_uuid_like
+
+        super(NotificationTest, self).setUp(
+            policy_drivers=policy_drivers, core_plugin=core_plugin,
+            ml2_options=ml2_options, l3_plugin=l3_plugin,
+            sc_plugin=sc_plugin, **kwargs)
+
+    def tearDown(self):
+        super(NotificationTest, self).tearDown()
+        uuidutils.generate_uuid = self.orig_generate_uuid
+        uuidutils.is_uuid_like = self.orig_is_uuid_like
+
+    def test_dhcp_notifier(self):
+        with mock.patch.object(dhcp_rpc_agent_api.DhcpAgentNotifyAPI,
+                               'notify') as dhcp_notifier:
+            local_api.BATCH_NOTIFICATIONS = True
+            ptg = self.create_policy_target_group(name="ptg1")
+            ptg_id = ptg['policy_target_group']['id']
+            pt = self.create_policy_target(
+                name="pt1", policy_target_group_id=ptg_id)
+            self.assertEqual(
+                pt['policy_target']['policy_target_group_id'], ptg_id)
+            self.assertEqual(8, dhcp_notifier.call_count)
+            # The 2nd argument is the resource object that is created,
+            # and can be potentially verified for further detail
+            calls = [
+                mock.call().notify(mock.ANY, mock.ANY,
+                                   "address_scope.create.end"),
+                mock.call().notify(mock.ANY, mock.ANY,
+                                   "subnetpool.create.end"),
+                mock.call().notify(mock.ANY, mock.ANY, "router.create.end"),
+                mock.call().notify(mock.ANY, mock.ANY, "network.create.end"),
+                mock.call().notify(mock.ANY, mock.ANY, "subnet.create.end"),
+                mock.call().notify(mock.ANY, mock.ANY,
+                                   "policy_target_group.create.end"),
+                mock.call().notify(mock.ANY, mock.ANY, "port.create.end"),
+                mock.call().notify(mock.ANY, mock.ANY,
+                                   "policy_target.create.end")]
+            dhcp_notifier.assert_has_calls(calls, any_order=False)
+
+    def test_nova_notifier(self):
+        with mock.patch.object(nova.Notifier,
+                               'send_network_change') as nova_notifier:
+            local_api.BATCH_NOTIFICATIONS = True
+            ptg = self.create_policy_target_group(name="ptg1")
+            ptg_id = ptg['policy_target_group']['id']
+            pt = self.create_policy_target(
+                name="pt1", policy_target_group_id=ptg_id)
+            self.assertEqual(
+                pt['policy_target']['policy_target_group_id'], ptg_id)
+            self.assertEqual(8, nova_notifier.call_count)
+            # The 3rd argument is the resource object that is created,
+            # and can be potentially verified for further detail
+            calls = [
+                mock.call().notify("create_address_scope", mock.ANY, mock.ANY),
+                mock.call().notify("create_subnetpool", mock.ANY, mock.ANY),
+                mock.call().notify("create_router", mock.ANY, mock.ANY),
+                mock.call().notify("create_network", mock.ANY, mock.ANY),
+                mock.call().notify("create_subnet", mock.ANY, mock.ANY),
+                mock.call().notify("create_policy_target_group",
+                                   mock.ANY, mock.ANY),
+                mock.call().notify("create_port", mock.ANY, mock.ANY),
+                mock.call().notify("create_policy_target", mock.ANY, mock.ANY)]
+            nova_notifier.assert_has_calls(calls, any_order=False)
