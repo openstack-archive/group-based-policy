@@ -862,6 +862,11 @@ class TestAimMapping(ApicAimTestCase):
 
 class TestSyncState(ApicAimTestCase):
     @staticmethod
+    def _get_synced_status(self, context, resource):
+        status = aim_status.AciStatus.SYNCED
+        return aim_status.AciStatus(sync_status=status)
+
+    @staticmethod
     def _get_pending_status_for_type(resource, type):
         status = (isinstance(resource, type) and
                   aim_status.AciStatus.SYNC_PENDING or
@@ -883,7 +888,9 @@ class TestSyncState(ApicAimTestCase):
         self.assertEqual(expected_state, net['apic:synchronization_state'])
 
     def test_network_synced(self):
-        self._test_network('synced')
+        with mock.patch('aim.aim_manager.AimManager.get_status',
+                        TestSyncState._get_synced_status):
+            self._test_network('synced')
 
     def test_network_bd_build(self):
         def get_status(self, context, resource):
@@ -942,7 +949,9 @@ class TestSyncState(ApicAimTestCase):
         self.assertEqual(expected_state, scope['apic:synchronization_state'])
 
     def test_address_scope_synced(self):
-        self._test_address_scope('synced')
+        with mock.patch('aim.aim_manager.AimManager.get_status',
+                        TestSyncState._get_synced_status):
+            self._test_address_scope('synced')
 
     def test_address_scope_vrf_build(self):
         def get_status(self, context, resource):
@@ -969,7 +978,9 @@ class TestSyncState(ApicAimTestCase):
         self.assertEqual(expected_state, router['apic:synchronization_state'])
 
     def test_router_synced(self):
-        self._test_router('synced')
+        with mock.patch('aim.aim_manager.AimManager.get_status',
+                        TestSyncState._get_synced_status):
+            self._test_router('synced')
 
     def test_router_contract_build(self):
         def get_status(self, context, resource):
@@ -1017,7 +1028,9 @@ class TestSyncState(ApicAimTestCase):
         self.assertEqual(expected_state, router['apic:synchronization_state'])
 
     def test_router_interface_vrf_synced(self):
-        self._test_router_interface_vrf('synced')
+        with mock.patch('aim.aim_manager.AimManager.get_status',
+                        TestSyncState._get_synced_status):
+            self._test_router_interface_vrf('synced')
 
     def test_router_interface_vrf_build(self):
         def get_status(self, context, resource):
@@ -1054,7 +1067,9 @@ class TestSyncState(ApicAimTestCase):
         self.assertEqual(expected_state, subnet['apic:synchronization_state'])
 
     def test_router_interface_subnet_synced(self):
-        self._test_router_interface_subnet('synced')
+        with mock.patch('aim.aim_manager.AimManager.get_status',
+                        TestSyncState._get_synced_status):
+            self._test_router_interface_subnet('synced')
 
     def test_router_interface_subnet_build(self):
         def get_status(self, context, resource):

@@ -404,7 +404,8 @@ class TestL2PolicyBase(test_nr_base.TestL2Policy, AIMBaseTestCase):
             if entry['filter_name'] != 'AnyFilter':
                 observed_entries_attrs.append(
                     {k: unicode(entry[k]) for k in entry if k not in [
-                        'name', 'display_name', 'filter_name', 'tenant_name']})
+                        'name', 'display_name', 'filter_name', 'tenant_name',
+                        'monitored']})
         self.assertItemsEqual(expected_entries_attrs, observed_entries_attrs)
 
 
