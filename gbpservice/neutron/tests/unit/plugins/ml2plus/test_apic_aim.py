@@ -370,7 +370,7 @@ class TestAimMapping(ApicAimTestCase):
                       app_profile_name=self._app_profile_name,
                       should_exist=False)
 
-    def _check_subnet(self, subnet, net, expected_gw_ips, unexpected_gw_ips):
+    def _check_subnet(self, subnet, net, expected_gws, unexpected_gw_ips):
         prefix_len = subnet['cidr'].split('/')[1]
 
         # REVISIT(rkukura): Check AIM Tenant here?
@@ -378,7 +378,7 @@ class TestAimMapping(ApicAimTestCase):
 
         net_aname = self._map_name(net)
 
-        for gw_ip in expected_gw_ips:
+        for gw_ip, router in expected_gws:
             gw_ip_mask = gw_ip + '/' + prefix_len
             aim_subnet = self._get_subnet(gw_ip_mask,
                                           net_aname,
@@ -387,7 +387,10 @@ class TestAimMapping(ApicAimTestCase):
             self.assertEqual(net_aname, aim_subnet.bd_name)
             self.assertEqual(gw_ip_mask, aim_subnet.gw_ip_mask)
             self.assertEqual('private', aim_subnet.scope)
-            self.assertEqual(subnet['name'], aim_subnet.display_name)
+            display_name = ("%s - %s" %
+                            (router['name'],
+                             (subnet['name'] or subnet['cidr'])))
+            self.assertEqual(display_name, aim_subnet.display_name)
             self._check_dn(subnet, aim_subnet, gw_ip)
 
         for gw_ip in unexpected_gw_ips:
@@ -427,8 +430,8 @@ class TestAimMapping(ApicAimTestCase):
                       self._tenant_name,
                       should_exist=False)
 
-    def _check_router(self, router, orig_router=None, active=False,
-                      scope=None):
+    def _check_router(self, router, expected_gw_ips, unexpected_gw_ips,
+                      orig_router=None, scope=None):
         orig_router = orig_router or router
 
         # REVISIT(rkukura): Check AIM Tenant here?
@@ -455,9 +458,7 @@ class TestAimMapping(ApicAimTestCase):
 
         self._check_any_filter()
 
-        # TODO(rkukura): Once AIM Subnets are exposed on router, pass
-        # in expected_gw_ips and use instead of this active flag.
-        if active:
+        if expected_gw_ips:
             if scope:
                 vrf_aname = self._map_name(scope)
                 vrf_dname = scope['name']
@@ -482,6 +483,17 @@ class TestAimMapping(ApicAimTestCase):
             self._check_dn(router, aim_vrf, 'VRF')
         else:
             self._check_no_dn(router, 'VRF')
+
+        # The AIM Subnets are validated in _check_subnet, so just
+        # check that their DNs are present and valid.
+        dist_names = router.get('apic:distinguished_names')
+        for gw_ip in expected_gw_ips:
+            self.assertIn(gw_ip, dist_names)
+            aim_subnet = self._find_by_dn(dist_names[gw_ip],
+                                          aim_resource.Subnet)
+            self.assertIsNotNone(aim_subnet)
+        for gw_ip in unexpected_gw_ips:
+            self.assertNotIn(gw_ip, dist_names)
 
     def _check_router_deleted(self, router):
         aname = self._map_name(router)
@@ -585,16 +597,16 @@ class TestAimMapping(ApicAimTestCase):
         orig_router = self._make_router(
             self.fmt, 'test-tenant', 'router1')['router']
         router_id = orig_router['id']
-        self._check_router(orig_router)
+        self._check_router(orig_router, [], [])
 
         # Test show.
         router = self._show('routers', router_id)['router']
-        self._check_router(router)
+        self._check_router(router, [], [])
 
         # Test update.
         data = {'router': {'name': 'newnameforrouter'}}
         router = self._update('routers', router_id, data)['router']
-        self._check_router(router, orig_router)
+        self._check_router(router, [], [], orig_router)
 
         # Test delete.
         self._delete('routers', router_id)
@@ -602,10 +614,10 @@ class TestAimMapping(ApicAimTestCase):
 
     def test_router_interface(self):
         # Create router.
-        router = self._make_router(
+        orig_router = self._make_router(
             self.fmt, 'test-tenant', 'router1')['router']
-        router_id = router['id']
-        self._check_router(router)
+        router_id = orig_router['id']
+        self._check_router(orig_router, [], [])
 
         # Create network.
         net_resp = self._make_network(self.fmt, 'net1', True)
@@ -634,7 +646,7 @@ class TestAimMapping(ApicAimTestCase):
 
         # Check router.
         router = self._show('routers', router_id)['router']
-        self._check_router(router, active=True)
+        self._check_router(router, [gw1_ip], [])
 
         # Check network.
         net = self._show('networks', net_id)['network']
@@ -642,7 +654,7 @@ class TestAimMapping(ApicAimTestCase):
 
         # Check subnet1.
         subnet = self._show('subnets', subnet1_id)['subnet']
-        self._check_subnet(subnet, net, [gw1_ip], [])
+        self._check_subnet(subnet, net, [(gw1_ip, router)], [])
 
         # Check subnet2.
         subnet = self._show('subnets', subnet2_id)['subnet']
@@ -651,7 +663,13 @@ class TestAimMapping(ApicAimTestCase):
         # Test subnet update.
         data = {'subnet': {'name': 'newnameforsubnet'}}
         subnet = self._update('subnets', subnet1_id, data)['subnet']
-        self._check_subnet(subnet, net, [gw1_ip], [])
+        self._check_subnet(subnet, net, [(gw1_ip, router)], [])
+
+        # Test router update.
+        data = {'router': {'name': 'newnameforrouter'}}
+        router = self._update('routers', router_id, data)['router']
+        self._check_router(router, [gw1_ip], [], orig_router)
+        self._check_subnet(subnet, net, [(gw1_ip, router)], [])
 
         # Add subnet2 to router by port.
         fixed_ips = [{'subnet_id': subnet2_id, 'ip_address': gw2_ip}]
@@ -663,19 +681,19 @@ class TestAimMapping(ApicAimTestCase):
 
         # Check router.
         router = self._show('routers', router_id)['router']
-        self._check_router(router, active=True)
+        self._check_router(router, [gw1_ip, gw2_ip], [], orig_router)
 
         # Check network.
         net = self._show('networks', net_id)['network']
-        self._check_network(net, routers=[router])
+        self._check_network(net, routers=[orig_router])
 
         # Check subnet1.
         subnet = self._show('subnets', subnet1_id)['subnet']
-        self._check_subnet(subnet, net, [gw1_ip], [])
+        self._check_subnet(subnet, net, [(gw1_ip, router)], [])
 
         # Check subnet2.
         subnet = self._show('subnets', subnet2_id)['subnet']
-        self._check_subnet(subnet, net, [gw2_ip], [])
+        self._check_subnet(subnet, net, [(gw2_ip, router)], [])
 
         # Remove subnet1 from router by subnet.
         info = self.l3_plugin.remove_router_interface(
@@ -684,11 +702,11 @@ class TestAimMapping(ApicAimTestCase):
 
         # Check router.
         router = self._show('routers', router_id)['router']
-        self._check_router(router, active=True)
+        self._check_router(router, [gw2_ip], [gw1_ip], orig_router)
 
         # Check network.
         net = self._show('networks', net_id)['network']
-        self._check_network(net, routers=[router])
+        self._check_network(net, routers=[orig_router])
 
         # Check subnet1.
         subnet = self._show('subnets', subnet1_id)['subnet']
@@ -696,7 +714,7 @@ class TestAimMapping(ApicAimTestCase):
 
         # Check subnet2.
         subnet = self._show('subnets', subnet2_id)['subnet']
-        self._check_subnet(subnet, net, [gw2_ip], [])
+        self._check_subnet(subnet, net, [(gw2_ip, router)], [])
 
         # Remove subnet2 from router by port.
         info = self.l3_plugin.remove_router_interface(
@@ -705,7 +723,7 @@ class TestAimMapping(ApicAimTestCase):
 
         # Check router.
         router = self._show('routers', router_id)['router']
-        self._check_router(router)
+        self._check_router(router, [], [gw1_ip, gw2_ip], orig_router)
 
         # Check network.
         net = self._show('networks', net_id)['network']
@@ -738,10 +756,10 @@ class TestAimMapping(ApicAimTestCase):
         pool_id = pool['id']
 
         # Create router.
-        router = self._make_router(
+        orig_router = self._make_router(
             self.fmt, 'test-tenant', 'router1')['router']
-        router_id = router['id']
-        self._check_router(router, scope=scope)
+        router_id = orig_router['id']
+        self._check_router(orig_router, [], [], scope=scope)
 
         # Create network.
         net_resp = self._make_network(self.fmt, 'net1', True)
@@ -772,7 +790,7 @@ class TestAimMapping(ApicAimTestCase):
 
         # Check router.
         router = self._show('routers', router_id)['router']
-        self._check_router(router, active=True, scope=scope)
+        self._check_router(router, [gw1_ip], [], scope=scope)
 
         # Check network.
         net = self._show('networks', net_id)['network']
@@ -780,7 +798,7 @@ class TestAimMapping(ApicAimTestCase):
 
         # Check subnet1.
         subnet = self._show('subnets', subnet1_id)['subnet']
-        self._check_subnet(subnet, net, [gw1_ip], [])
+        self._check_subnet(subnet, net, [(gw1_ip, router)], [])
 
         # Check subnet2.
         subnet = self._show('subnets', subnet2_id)['subnet']
@@ -789,7 +807,13 @@ class TestAimMapping(ApicAimTestCase):
         # Test subnet update.
         data = {'subnet': {'name': 'newnameforsubnet'}}
         subnet = self._update('subnets', subnet1_id, data)['subnet']
-        self._check_subnet(subnet, net, [gw1_ip], [])
+        self._check_subnet(subnet, net, [(gw1_ip, router)], [])
+
+        # Test router update.
+        data = {'router': {'name': 'newnameforrouter'}}
+        router = self._update('routers', router_id, data)['router']
+        self._check_router(router, [gw1_ip], [], orig_router, scope)
+        self._check_subnet(subnet, net, [(gw1_ip, router)], [])
 
         # Add subnet2 to router by port.
         fixed_ips = [{'subnet_id': subnet2_id, 'ip_address': gw2_ip}]
@@ -801,19 +825,19 @@ class TestAimMapping(ApicAimTestCase):
 
         # Check router.
         router = self._show('routers', router_id)['router']
-        self._check_router(router, active=True, scope=scope)
+        self._check_router(router, [gw1_ip, gw2_ip], [], orig_router, scope)
 
         # Check network.
         net = self._show('networks', net_id)['network']
-        self._check_network(net, routers=[router], scope=scope)
+        self._check_network(net, routers=[orig_router], scope=scope)
 
         # Check subnet1.
         subnet = self._show('subnets', subnet1_id)['subnet']
-        self._check_subnet(subnet, net, [gw1_ip], [])
+        self._check_subnet(subnet, net, [(gw1_ip, router)], [])
 
         # Check subnet2.
         subnet = self._show('subnets', subnet2_id)['subnet']
-        self._check_subnet(subnet, net, [gw2_ip], [])
+        self._check_subnet(subnet, net, [(gw2_ip, router)], [])
 
         # Remove subnet1 from router by subnet.
         info = self.l3_plugin.remove_router_interface(
@@ -822,11 +846,11 @@ class TestAimMapping(ApicAimTestCase):
 
         # Check router.
         router = self._show('routers', router_id)['router']
-        self._check_router(router, active=True, scope=scope)
+        self._check_router(router, [gw2_ip], [gw1_ip], orig_router, scope)
 
         # Check network.
         net = self._show('networks', net_id)['network']
-        self._check_network(net, routers=[router], scope=scope)
+        self._check_network(net, routers=[orig_router], scope=scope)
 
         # Check subnet1.
         subnet = self._show('subnets', subnet1_id)['subnet']
@@ -834,7 +858,7 @@ class TestAimMapping(ApicAimTestCase):
 
         # Check subnet2.
         subnet = self._show('subnets', subnet2_id)['subnet']
-        self._check_subnet(subnet, net, [gw2_ip], [])
+        self._check_subnet(subnet, net, [(gw2_ip, router)], [])
 
         # Remove subnet2 from router by port.
         info = self.l3_plugin.remove_router_interface(
@@ -843,7 +867,7 @@ class TestAimMapping(ApicAimTestCase):
 
         # Check router.
         router = self._show('routers', router_id)['router']
-        self._check_router(router, scope=scope)
+        self._check_router(router, [], [gw1_ip, gw2_ip], orig_router, scope)
 
         # Check network.
         net = self._show('networks', net_id)['network']
@@ -1058,10 +1082,9 @@ class TestSyncState(ApicAimTestCase):
             context.get_admin_context(), router['id'],
             {'subnet_id': subnet['id']})
 
-        # TODO(rkukura): Enable when exposing Subnets on router is implemented.
-        # router = self._show('routers', router['id'])['router']
-        # self.assertEqual(expected_state,
-        #                  router['apic:synchronization_state'])
+        router = self._show('routers', router['id'])['router']
+        self.assertEqual(expected_state,
+                         router['apic:synchronization_state'])
 
         subnet = self._show('subnets', subnet['id'])['subnet']
         self.assertEqual(expected_state, subnet['apic:synchronization_state'])

@@ -28,6 +28,7 @@ from neutron.db import l3_db
 from neutron.db import models_v2
 from neutron.extensions import portbindings
 from neutron import manager
+from neutron.plugins.common import constants as pconst
 from neutron.plugins.ml2 import driver_api as api
 from opflexagent import constants as ofcst
 from oslo_log import log
@@ -72,6 +73,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
         self.name_mapper = apic_mapper.APICNameMapper(self.db, log)
         self.aim = aim_manager.AimManager()
         self._core_plugin = None
+        self._l3_plugin = None
         self.aim_cfg_mgr = aim_cfg.ConfigManager(
             aim_context.AimContext(db_api.get_session()),
             host=aim_cfg.CONF.host)
@@ -334,17 +336,18 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
             LOG.info(_LI("Mapped network_id %(id)s to %(aname)s"),
                      {'id': network_id, 'aname': network_aname})
 
-            # TODO(rkukura): Combine subnet name and name of
-            # interfaced router to build display name for each mapped
-            # Subnet.
-            dname = aim_utils.sanitize_display_name(context.current['name'])
-
             aim_ctx = aim_context.AimContext(session)
             prefix_len = context.current['cidr'].split('/')[1]
             subnet_id = context.current['id']
 
-            for intf in self._subnet_router_interfaces(session, subnet_id):
-                gw_ip = intf.ip_address
+            for gw_ip, router_id in self._subnet_router_ips(session,
+                                                            subnet_id):
+                router_db = self.l3_plugin._get_router(context._plugin_context,
+                                                       router_id)
+                dname = aim_utils.sanitize_display_name(
+                    router_db.name + " - " +
+                    (context.current['name'] or context.current['cidr']))
+
                 gw_ip_mask = gw_ip + '/' + prefix_len
                 aim_subnet = aim_resource.Subnet(tenant_name=
                                                  network_tenant_aname,
@@ -382,8 +385,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
                   {'id': network_id, 'aname': network_aname})
 
         subnet_id = subnet_db.id
-        for intf in self._subnet_router_interfaces(session, subnet_id):
-            gw_ip = intf.ip_address
+        for gw_ip, router_id in self._subnet_router_ips(session, subnet_id):
             gw_ip_mask = gw_ip + '/' + prefix_len
             aim_subnet = aim_resource.Subnet(tenant_name=network_tenant_aname,
                                              bd_name=network_aname,
@@ -578,7 +580,49 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
                                                    name=ROUTER_SUBJECT_NAME)
             subject = self.aim.update(aim_ctx, subject, display_name=dname)
 
-        # REVISIT(rkukura): Update extension attributes?
+            # REVISIT(rkukura): Refactor to share common code below
+            # with extend_router_dict. Also consider using joins to
+            # fetch the subnet_db and network_db as part of the
+            # initial query.
+            for intf in (session.query(models_v2.IPAllocation).
+                         join(models_v2.Port).
+                         join(l3_db.RouterPort).
+                         filter(l3_db.RouterPort.router_id == id,
+                                l3_db.RouterPort.port_type ==
+                                n_constants.DEVICE_OWNER_ROUTER_INTF)):
+
+                subnet_db = (session.query(models_v2.Subnet).
+                             filter_by(id=intf.subnet_id).
+                             one())
+                prefix_len = subnet_db.cidr.split('/')[1]
+
+                dname = aim_utils.sanitize_display_name(
+                    name + " - " + (subnet_db.name or subnet_db.cidr))
+
+                network_id = subnet_db.network_id
+                network_db = (session.query(models_v2.Network).
+                              filter_by(id=network_id).
+                              one())
+                network_tenant_id = network_db.tenant_id
+
+                network_tenant_aname = self.name_mapper.tenant(
+                    session, network_tenant_id)
+                LOG.debug("Mapped tenant_id %(id)s to %(aname)s",
+                          {'id': network_tenant_id,
+                           'aname': network_tenant_aname})
+
+                network_aname = self.name_mapper.network(session, network_id)
+                LOG.debug("Mapped network_id %(id)s to %(aname)s",
+                          {'id': network_id, 'aname': network_aname})
+
+                gw_ip = intf.ip_address
+                gw_ip_mask = gw_ip + '/' + prefix_len
+
+                aim_subnet = aim_resource.Subnet(tenant_name=
+                                                 network_tenant_aname,
+                                                 bd_name=network_aname,
+                                                 gw_ip_mask=gw_ip_mask)
+                self.aim.update(aim_ctx, aim_subnet, display_name=dname)
 
     def delete_router(self, context, current):
         LOG.debug("APIC AIM MD deleting router: %s", current)
@@ -643,12 +687,47 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
         dist_names[cisco_apic_l3.CONTRACT_SUBJECT] = aim_subject.dn
         sync_state = self._merge_status(aim_ctx, sync_state, aim_subject)
 
-        # See if this router has any attached interfaces.
-        if (session.query(l3_db.RouterPort).
-            filter(l3_db.RouterPort.router_id == id,
-                   l3_db.RouterPort.port_type ==
-                   n_constants.DEVICE_OWNER_ROUTER_INTF).
-            count()):
+        # REVISIT(rkukura): Consider moving the SubnetPool query below
+        # into this loop, although that might be less efficient when
+        # many subnets are from the same pool.
+        active = False
+        for intf in (session.query(models_v2.IPAllocation).
+                     join(models_v2.Port).
+                     join(l3_db.RouterPort).
+                     filter(l3_db.RouterPort.router_id == id,
+                            l3_db.RouterPort.port_type ==
+                            n_constants.DEVICE_OWNER_ROUTER_INTF)):
+
+            active = True
+            subnet_db = (session.query(models_v2.Subnet).
+                         filter_by(id=intf.subnet_id).
+                         one())
+            prefix_len = subnet_db.cidr.split('/')[1]
+
+            network_id = subnet_db.network_id
+            network_db = (session.query(models_v2.Network).
+                          filter_by(id=network_id).
+                          one())
+            network_tenant_id = network_db.tenant_id
+
+            network_tenant_aname = self.name_mapper.tenant(session,
+                                                           network_tenant_id)
+            LOG.debug("Mapped tenant_id %(id)s to %(aname)s",
+                      {'id': network_tenant_id, 'aname': network_tenant_aname})
+
+            network_aname = self.name_mapper.network(session, network_id)
+            LOG.debug("Mapped network_id %(id)s to %(aname)s",
+                      {'id': network_id, 'aname': network_aname})
+
+            gw_ip = intf.ip_address
+            gw_ip_mask = gw_ip + '/' + prefix_len
+            aim_subnet = aim_resource.Subnet(tenant_name=network_tenant_aname,
+                                             bd_name=network_aname,
+                                             gw_ip_mask=gw_ip_mask)
+            dist_names[gw_ip] = aim_subnet.dn
+            sync_state = self._merge_status(aim_ctx, sync_state, aim_subnet)
+
+        if active:
             # Find this router's IPv4 address scope if it has one, or
             # else its IPv6 address scope.
             scope_id = None
@@ -663,7 +742,6 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
                                    l3_db.RouterPort.port_type ==
                                    n_constants.DEVICE_OWNER_ROUTER_INTF).
                             distinct()):
-                LOG.debug("got pool_db: %s", pool_db)
                 if pool_db.ip_version == 4:
                     scope_id = pool_db.address_scope_id
                     break
@@ -688,11 +766,6 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
                                        name=vrf_aname)
             dist_names[cisco_apic_l3.VRF] = aim_vrf.dn
             sync_state = self._merge_status(aim_ctx, sync_state, aim_vrf)
-
-        # TODO(rkukura): Also include interfaced Subnets. This
-        # probably means splitting the above SubnetPool query to first
-        # query for subnets, add the corresponding AIM subnet, then
-        # check the subnet's subnetpool's address scope.
 
         result[cisco_apic.DIST_NAMES] = dist_names
         result[cisco_apic.SYNC_STATE] = sync_state
@@ -736,10 +809,13 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
             prefix_len = subnet['cidr'].split('/')[1]
             gw_ip_mask = gw_ip + '/' + prefix_len
 
+            dname = aim_utils.sanitize_display_name(
+                router['name'] + " - " +
+                (subnet['name'] or subnet['cidr']))
             aim_subnet = aim_resource.Subnet(tenant_name=network_tenant_aname,
                                              bd_name=network_aname,
                                              gw_ip_mask=gw_ip_mask,
-                                             display_name=subnet['name'])
+                                             display_name=dname)
             aim_subnet = self.aim.create(aim_ctx, aim_subnet)
 
         # Ensure network's EPG provides/consumes router's Contract.
@@ -948,6 +1024,13 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
             self._core_plugin = manager.NeutronManager.get_plugin()
         return self._core_plugin
 
+    @property
+    def l3_plugin(self):
+        if not self._l3_plugin:
+            plugins = manager.NeutronManager.get_service_plugins()
+            self._l3_plugin = plugins[pconst.L3_ROUTER_NAT]
+        return self._l3_plugin
+
     def _merge_status(self, aim_ctx, sync_state, resource):
         status = self.aim.get_status(aim_ctx, resource)
         if not status:
@@ -978,10 +1061,10 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
             if fixed_ip['subnet_id'] == subnet_id:
                 return fixed_ip['ip_address']
 
-    def _subnet_router_interfaces(self, session, subnet_id):
-        return (session.query(models_v2.IPAllocation).
+    def _subnet_router_ips(self, session, subnet_id):
+        return (session.query(models_v2.IPAllocation.ip_address,
+                              l3_db.RouterPort.router_id).
                 join(models_v2.Port).
-                join(l3_db.RouterPort).
                 filter(
                     models_v2.IPAllocation.subnet_id == subnet_id,
                     l3_db.RouterPort.port_type ==
