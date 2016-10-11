@@ -15,7 +15,7 @@ import sqlalchemy as sa
 
 
 class ApicSegmentationLabelDB(model_base.BASEV2):
-    __tablename__ = 'gp_apic_mapping_segmentation_lablels'
+    __tablename__ = 'gp_apic_mapping_segmentation_labels'
     policy_target_id = sa.Column(
         sa.String(36), sa.ForeignKey('gp_policy_targets.id',
                                      ondelete="CASCADE"), primary_key=True)
