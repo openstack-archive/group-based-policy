@@ -14,6 +14,7 @@
 #    under the License.
 
 import copy
+import re
 
 from neutron._i18n import _LW
 from neutron.common import constants as n_constants
@@ -27,6 +28,8 @@ from oslo_utils import importutils
 
 from gbpservice.neutron.services.grouppolicy.drivers.cisco.apic import (
     apic_mapping as amap)
+from gbpservice.neutron.services.grouppolicy.drivers.cisco.apic import (
+    nova_client as nclient)
 
 
 LOG = log.getLogger(__name__)
@@ -42,6 +45,7 @@ class APICMechanismGBPDriver(api.MechanismDriver):
     def __init__(self):
         super(APICMechanismGBPDriver, self).__init__()
         self._dvs_notifier = None
+        self._apic_allowed_vm_name_driver = None
 
     def _agent_bind_port(self, context, agent_list, bind_strategy):
         """Attempt port binding per agent.
@@ -80,11 +84,37 @@ class APICMechanismGBPDriver(api.MechanismDriver):
                       vnic_type)
             return
 
-        # Attempt to bind ports for DVS agents for nova-compute daemons
-        # first. This allows having network agents (dhcp, metadata)
-        # that typically run on a network node using an OpFlex agent to
-        # co-exist with nova-compute daemons for ESX, which host DVS agents.
         if context.current['device_owner'].startswith('compute:'):
+            # enforce the allowed_vm_names rules if possible
+            if (context.current['device_id'] and
+                self.apic_allowed_vm_name_driver):
+                ptg, pt = self.apic_gbp._port_id_to_ptg(
+                    context._plugin_context, context.current['id'])
+                l2p = self.apic_gbp._get_l2_policy(context._plugin_context,
+                                                   ptg['l2_policy_id'])
+                l3p = self.apic_gbp.gbp_plugin.get_l3_policy(
+                    context._plugin_context, l2p['l3_policy_id'])
+
+                ok_to_bind = True
+                if l3p.get('allowed_vm_names'):
+                    ok_to_bind = False
+                    vm = nclient.NovaClient().get_server(
+                        context.current['device_id'])
+                    for allowed_vm_name in l3p['allowed_vm_names']:
+                        match = re.search(allowed_vm_name, vm.name)
+                        if match:
+                            ok_to_bind = True
+                            break
+                if not ok_to_bind:
+                    LOG.warning(_("failed to bind the port due to "
+                                  "allowed_vm_names rule for VM: %s"), vm.name)
+                    return
+
+            # Attempt to bind ports for DVS agents for nova-compute daemons
+            # first. This allows having network agents (dhcp, metadata)
+            # that typically run on a network node using an OpFlex agent to
+            # co-exist with nova-compute daemons for ESX, which host DVS
+            # agents.
             agent_list = context.host_agents(AGENT_TYPE_DVS)
             if self._agent_bind_port(context, agent_list, self._bind_dvs_port):
                 return
@@ -204,6 +234,18 @@ class APICMechanismGBPDriver(api.MechanismDriver):
             except ImportError:
                 self._dvs_notifier = None
         return self._dvs_notifier
+
+    @property
+    def apic_allowed_vm_name_driver(self):
+        if not self._apic_allowed_vm_name_driver:
+            ext_drivers = (self.apic_gbp.gbp_plugin.extension_manager.
+                           ordered_ext_drivers)
+            for driver in ext_drivers:
+                if 'apic_allowed_vm_name' == driver.name:
+                    self._apic_allowed_vm_name_driver = (
+                        driver.obj)
+                    break
+        return self._apic_allowed_vm_name_driver
 
     def create_port_postcommit(self, context):
         self.apic_gbp.process_port_added(context)
