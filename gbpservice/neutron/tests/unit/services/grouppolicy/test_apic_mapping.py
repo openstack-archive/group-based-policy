@@ -94,7 +94,7 @@ class MockCallRecorder(mock.Mock):
 class ApicMappingTestCase(
         test_rmd.ResourceMappingTestCase,
         mocked.ControllerMixin, mocked.ConfigMixin):
-    _extension_drivers = ['apic_segmentation_label']
+    _extension_drivers = ['apic_segmentation_label', 'apic_allowed_vm_name']
     _extension_path = None
 
     def setUp(self, sc_plugin=None, nat_enabled=True,
@@ -1532,7 +1532,6 @@ class FakePortContext(object):
 
 
 class TestPolicyTargetDvs(ApicMappingTestCase):
-
     def setUp(self):
         super(TestPolicyTargetDvs, self).setUp()
         self.driver.apic_manager.app_profile_name = mocked.APIC_AP
@@ -1714,6 +1713,31 @@ class TestPolicyTargetDvs(ApicMappingTestCase):
         port_ctx = FakePortContext(newp1['port'], net_ctx)
         self.ml2.delete_port_postcommit(port_ctx)
         self._verify_dvs_notifier('delete_port_call', newp1['port'], 'h1')
+
+    def test_bind_port_with_allowed_vm_names(self):
+        allowed_vm_names = ['safe_vm*', '^secure_vm*']
+        l3p = self.create_l3_policy(name='myl3',
+            allowed_vm_names=allowed_vm_names)['l3_policy']
+        l2p = self.create_l2_policy(
+            name='myl2', l3_policy_id=l3p['id'])['l2_policy']
+        ptg = self.create_policy_target_group(
+            name="ptg1", l2_policy_id=l2p['id'])['policy_target_group']
+        pt = self.create_policy_target(
+            policy_target_group_id=ptg['id'])['policy_target']
+
+        nova_client = mock.patch(
+            'gbpservice.neutron.services.grouppolicy.drivers.cisco.'
+            'apic.nova_client.NovaClient.get_server').start()
+        vm = mock.Mock()
+        vm.name = 'secure_vm1'
+        nova_client.return_value = vm
+        newp1 = self._bind_port_to_host(pt['port_id'], 'h1')
+        self.assertEqual(newp1['port']['binding:vif_type'], 'ovs')
+
+        # bind agaain
+        vm.name = 'bad_vm1'
+        newp1 = self._bind_port_to_host(pt['port_id'], 'h2')
+        self.assertEqual(newp1['port']['binding:vif_type'], 'binding_failed')
 
 
 class TestPolicyTargetGroup(ApicMappingTestCase):
