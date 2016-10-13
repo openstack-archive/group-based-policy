@@ -262,7 +262,10 @@ class ApicMappingDriver(api.ResourceMappingDriver,
     @staticmethod
     def get_apic_manager(client=True):
         if not ApicMappingDriver.manager:
-            apic_config = cfg.CONF.apic
+            if cfg.CONF.apic.apic_username is not None:
+                apic_config = cfg.CONF.apic
+            else:
+                apic_config = cfg.CONF.ml2_cisco_apic
             network_config = {
                 'vlan_ranges': cfg.CONF.ml2_type_vlan.network_vlan_ranges,
                 'vni_ranges': cfg.CONF.ml2_type_vxlan.vni_ranges,
