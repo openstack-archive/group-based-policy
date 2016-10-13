@@ -1060,7 +1060,7 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
                         default_route = route
                     if route['destination'] == dhcp.METADATA_DEFAULT_CIDR:
                         metadata_route = route
-                if not l2p or not l2p['inject_default_route']:
+                if l2p and not l2p['inject_default_route']:
                     # In this case we do not want to send the default route
                     # and the metadata route. We also do not want to send
                     # the gateway_ip for the subnet.

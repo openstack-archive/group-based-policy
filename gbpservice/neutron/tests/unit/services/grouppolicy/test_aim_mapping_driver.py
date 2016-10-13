@@ -922,7 +922,7 @@ class TestPolicyTarget(AIMBaseTestCase):
 
     def _verify_gbp_details_assertions(self, mapping, req_mapping, port_id,
                                        expected_epg_name, expected_epg_tenant,
-                                       subnet):
+                                       subnet, default_route=None):
         self.assertEqual(mapping, req_mapping['gbp_details'])
         self.assertEqual(port_id, mapping['port_id'])
         self.assertEqual(expected_epg_name, mapping['endpoint_group_name'])
@@ -933,6 +933,11 @@ class TestPolicyTarget(AIMBaseTestCase):
         self.assertEqual(1, len(mapping['subnets']))
         self.assertEqual(subnet['subnet']['cidr'],
                          mapping['subnets'][0]['cidr'])
+        if default_route:
+            self.assertTrue(
+                {'destination': '0.0.0.0/0', 'nexthop': default_route} in
+                mapping['subnets'][0]['host_routes'],
+                "Default route missing in %s" % mapping['subnets'][0])
         # Verify Neutron details
         self.assertEqual(port_id, req_mapping['neutron_details']['port_id'])
 
@@ -1019,7 +1024,7 @@ class TestPolicyTarget(AIMBaseTestCase):
 
                     self._verify_gbp_details_assertions(
                         mapping, req_mapping, port_id, epg_name, epg_tenant,
-                        subnet)
+                        subnet, default_route='1.1.2.1')
                     vrf_name = self.name_mapper.address_scope(
                         self._neutron_context.session, address_scope['id'],
                         address_scope['name'])
