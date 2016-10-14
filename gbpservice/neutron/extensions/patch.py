@@ -11,8 +11,13 @@
 #    under the License.
 
 from neutron.db import l3_db
+from neutron.db import models_v2
 from neutron.db import securitygroups_db
 from neutron import manager
+from neutron.plugins.ml2 import db as ml2_db
+from oslo_log import log
+
+LOG = log.getLogger(__name__)
 
 
 # Monkey patch create floatingip to allow subnet_id to be specified.
@@ -136,3 +141,12 @@ def _load_flavors_manager(self):
     pass
 
 manager.NeutronManager._load_flavors_manager = _load_flavors_manager
+
+
+def get_port_from_device_mac(context, device_mac):
+    LOG.debug("get_port_from_device_mac() called for mac %s", device_mac)
+    qry = context.session.query(models_v2.Port).filter_by(
+        mac_address=device_mac).order_by(models_v2.Port.device_owner.desc())
+    return qry.first()
+
+ml2_db.get_port_from_device_mac = get_port_from_device_mac
