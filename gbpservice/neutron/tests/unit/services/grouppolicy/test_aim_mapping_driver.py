@@ -697,6 +697,29 @@ class TestL2Policy(TestL2PolicyBase):
         self._switch_to_tenant1()
 
 
+class TestL2PolicyWithAutoPTG(TestL2PolicyBase):
+
+    def setUp(self, **kwargs):
+        super(TestL2PolicyWithAutoPTG, self).setUp(**kwargs)
+        self.driver.create_auto_ptg = True
+
+    def _test_auto_ptg(self, shared=False):
+        ptg = self._gbp_plugin.get_policy_target_groups(
+            self._neutron_context)[0]
+        l2p_id = ptg['l2_policy_id']
+        self.assertEqual(alib.AUTO_PTG_NAME_PREFIX % l2p_id, str(ptg['name']))
+        self.assertEqual(shared, ptg['shared'])
+        # Auto PTG cannot be deleted by user
+        res = self.delete_policy_target_group(
+            ptg['id'], expected_res_status=webob.exc.HTTPBadRequest.code)
+        self.assertEqual('AutoPTGDeleteNotSupported',
+                         res['NeutronError']['type'])
+
+    def test_auto_ptg_lifecycle(self):
+        self.create_l2_policy(name="l2p0")
+        self._test_auto_ptg()
+
+
 class TestL2PolicyRollback(TestL2PolicyBase):
 
     def test_l2_policy_create_fail(self):
