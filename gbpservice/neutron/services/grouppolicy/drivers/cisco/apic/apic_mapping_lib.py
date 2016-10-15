@@ -29,6 +29,9 @@ REVERSIBLE_PROTOCOLS = [n_constants.PROTO_NAME_TCP.lower(),
                         n_constants.PROTO_NAME_ICMP.lower()]
 ICMP_REPLY_TYPES = ['echo-rep', 'dst-unreach', 'src-quench', 'time-exceeded']
 CP_ENTRY = 'os-entry'
+AUTO_PTG_NAME_PREFIX = 'auto-ptg-%s'
+AUTO_PTG_MUTABLE_KEYS = ['name', 'description', 'consumed_policy_rule_sets',
+                         'provided_policy_rule_sets']
 
 
 class ExplicitSubnetAssociationNotSupported(gpexc.GroupPolicyBadRequest):

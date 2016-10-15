@@ -2237,7 +2237,7 @@ class TestL2PolicyWithAutoPTG(TestL2PolicyBase):
         ptg = self._gbp_plugin.get_policy_target_groups(
             self._neutron_context)[0]
         l2p_id = ptg['l2_policy_id']
-        self.assertEqual(amap.AUTO_PTG_NAME_PREFIX % l2p_id, str(ptg['name']))
+        self.assertEqual(alib.AUTO_PTG_NAME_PREFIX % l2p_id, str(ptg['name']))
         auto_ptg_id = amap.AUTO_PTG_ID_PREFIX % hashlib.md5(l2p_id).hexdigest()
         self.assertEqual(auto_ptg_id, ptg['id'])
         self.assertEqual(shared, ptg['shared'])
