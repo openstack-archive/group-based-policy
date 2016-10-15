@@ -78,6 +78,16 @@ class OwnedL3Policy(model_base.BASEV2):
                              nullable=False, primary_key=True)
 
 
+class OwnedPolicyTargetGroup(model_base.BASEV2):
+    """A Policy Target Group owned by the mapping driver."""
+
+    __tablename__ = 'gpm_owned_policy_target_groups'
+    policy_target_group_id = sa.Column(
+        sa.String(36), sa.ForeignKey('gp_policy_target_groups.id',
+                                     ondelete='CASCADE'),
+        nullable=False, primary_key=True)
+
+
 class ImplicitPolicyBase(api.PolicyDriver, local_api.LocalAPI):
 
     @log.log_method_call
@@ -192,6 +202,19 @@ class ImplicitPolicyBase(api.PolicyDriver, local_api.LocalAPI):
         with session.begin(subtransactions=True):
             return (session.query(OwnedL3Policy).
                     filter_by(l3_policy_id=l3p_id).
+                    first() is not None)
+
+    def _mark_policy_target_group_owned(
+        self, session, ptg_id):
+        with session.begin(subtransactions=True):
+            owned = OwnedPolicyTargetGroup(
+                policy_target_group_id=ptg_id)
+            session.add(owned)
+
+    def _policy_target_group_is_owned(self, session, ptg_id):
+        with session.begin(subtransactions=True):
+            return (session.query(OwnedPolicyTargetGroup).
+                    filter_by(policy_target_group_id=ptg_id).
                     first() is not None)
 
     def _cleanup_l3_policy(self, context, l3p_id, clean_session=True):
