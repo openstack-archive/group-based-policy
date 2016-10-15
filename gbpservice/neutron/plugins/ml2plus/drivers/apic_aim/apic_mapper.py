@@ -159,7 +159,19 @@ class APICNameMapper(object):
     @mapper(NAME_TYPE_POLICY_TARGET_GROUP)
     def policy_target_group(self, session, policy_target_group_id,
                             policy_target_group_name=None):
-        return policy_target_group_name
+        # We are temporarily reverting to fetching the mapped PTG name from
+        # the DB since the mapped auto_ptg name is derived from the
+        # default EPG for the L2P unlike the user created PTGs in the L2P
+        # whose name is preserved in the apic name mapping, and we want to
+        # keep the mapped named retrieval consistent across user created
+        # PTGs and auto PTGs.
+        # REVISIT(Sumit): When we remove the DB for the name mapper,
+        # the auto PTG ID to the default EPG name mapping will have to be
+        # stored somewhere and we should use that DB model to retrieve
+        # the following information.
+        saved_name = self.db.get_apic_name(session, policy_target_group_id,
+                                           NAME_TYPE_POLICY_TARGET_GROUP)
+        return saved_name
 
     @mapper(NAME_TYPE_L3_POLICY)
     def l3_policy(self, context, l3_policy_id):
@@ -201,3 +213,13 @@ class APICNameMapper(object):
 
     def delete_apic_name(self, session, object_id):
         self.db.delete_apic_name(session, object_id)
+
+    def map_auto_ptg_to_epg(self, session, auto_ptg_id, endpoint_group_name):
+        self.db.add_apic_name(session, auto_ptg_id, 'policy_target_group',
+                              endpoint_group_name)
+
+    def get_auto_ptg_id_from_epg(self, session, endpoint_group_name):
+        auto_ptg_id = self.db.get_neutron_id(
+            session, neutron_type='policy_target_group',
+            apic_name=endpoint_group_name)
+        return auto_ptg_id

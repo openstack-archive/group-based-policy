@@ -43,6 +43,10 @@ class DbModel(object):
         return session.query(old_model.ApicName.apic_name).filter_by(
             neutron_id=neutron_id, neutron_type=neutron_type).first()
 
+    def get_neutron_id(self, session, neutron_type, apic_name):
+        return session.query(old_model.ApicName.neutron_id).filter_by(
+            apic_name=apic_name, neutron_type=neutron_type).first()
+
     def delete_apic_name(self, session, neutron_id):
         with session.begin(subtransactions=True):
             try:
