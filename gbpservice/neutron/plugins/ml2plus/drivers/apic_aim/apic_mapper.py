@@ -156,11 +156,6 @@ class APICNameMapper(object):
     def router(self, session, router_id, router_name=None):
         return router_name
 
-    @mapper(NAME_TYPE_POLICY_TARGET_GROUP)
-    def policy_target_group(self, session, policy_target_group_id,
-                            policy_target_group_name=None):
-        return policy_target_group_name
-
     @mapper(NAME_TYPE_L3_POLICY)
     def l3_policy(self, context, l3_policy_id):
         l3_policy = context._plugin.get_l3_policy(context._plugin_context,
