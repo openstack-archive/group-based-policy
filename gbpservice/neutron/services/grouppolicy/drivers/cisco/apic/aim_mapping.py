@@ -15,9 +15,11 @@ from aim import context as aim_context
 from neutron._i18n import _LE
 from neutron._i18n import _LI
 from neutron.agent.linux import dhcp
+from neutron.api.v2 import attributes
 from neutron.common import constants as n_constants
 from neutron import manager
 from oslo_concurrency import lockutils
+from oslo_config import cfg
 from oslo_log import helpers as log
 from oslo_log import log as logging
 
@@ -37,6 +39,7 @@ from gbpservice.neutron.services.grouppolicy.drivers.cisco.apic import (
     apic_mapping as amap)
 from gbpservice.neutron.services.grouppolicy.drivers.cisco.apic import (
     apic_mapping_lib as alib)
+from gbpservice.neutron.services.grouppolicy import group_policy_context
 from gbpservice.neutron.services.grouppolicy import plugin as gbp_plugin
 
 
@@ -54,6 +57,16 @@ PROMISCUOUS_TYPES = [n_constants.DEVICE_OWNER_DHCP,
                      n_constants.DEVICE_OWNER_LOADBALANCER]
 # TODO(ivar): define a proper promiscuous API
 PROMISCUOUS_SUFFIX = 'promiscuous'
+
+opts = [
+    cfg.BoolOpt('create_auto_ptg',
+                default=True,
+                help=_("Automatically create a PTG when a L2 Policy "
+                       "gets created. This is currently an aim_mapping "
+                       "policy driver specific feature.")),
+]
+
+cfg.CONF.register_opts(opts, "aim_mapping")
 
 
 class SimultaneousV4V6AddressScopesNotSupportedOnAimDriver(
@@ -85,6 +98,11 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
         self.db = model.DbModel()
         super(AIMMappingDriver, self).initialize()
         self._apic_aim_mech_driver = None
+        self.create_auto_ptg = cfg.CONF.aim_mapping.create_auto_ptg
+        if self.create_auto_ptg:
+            LOG.info(_LI('Auto PTG creation configuration set, '
+                         'this will result in automatic creation of a PTG '
+                         'per L2 Policy'))
         self.setup_opflex_rpc_listeners()
         self._ensure_apic_infra()
 
@@ -882,6 +900,34 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
     def _create_implicit_contracts_and_configure_default_epg(
         self, context, l2p, epg_dn):
         self._process_contracts_for_default_epg(context, l2p, epg_dn)
+        if self.create_auto_ptg:
+            session = context._plugin_context.session
+            desc = "System created auto PTG for L2P: %s" % l2p['id']
+            data = {
+                "name": self._get_auto_ptg_name(l2p),
+                "description": desc,
+                "l2_policy_id": l2p['id'],
+                "proxied_group_id": None,
+                "proxy_type": None,
+                "proxy_group_id": attributes.ATTR_NOT_SPECIFIED,
+                "network_service_policy_id": None,
+                "service_management": False,
+                "shared": l2p['shared'],
+            }
+            auto_ptg = self._db_plugin(
+                context._plugin).create_policy_target_group(
+                    context._plugin_context,
+                    {'policy_target_group': data})
+            self._mark_policy_target_group_owned(session, auto_ptg['id'])
+            default_epg_name = epg_dn.split('/')[-1]
+            # Since we are reverse mapping the APIC EPG to the default PTG
+            # we will map the id of the PTG to the APIC default EPG name
+            self.name_mapper.db.add_apic_name(
+                session, auto_ptg['id'], 'policy_target_group',
+                default_epg_name)
+            ptg_context = group_policy_context.PolicyTargetGroupContext(
+                context._plugin, context._plugin_context, auto_ptg)
+            self._use_implicit_subnet(ptg_context)
 
     def _configure_contracts_for_default_epg(self, context, l2p, epg_dn):
         self._process_contracts_for_default_epg(
@@ -1215,3 +1261,6 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
             for pool in subnetpools:
                 subnets.extend(pool['prefixes'])
         return subnets
+
+    def _get_auto_ptg_name(self, l2p):
+        return alib.AUTO_PTG_NAME_PREFIX % l2p['id']

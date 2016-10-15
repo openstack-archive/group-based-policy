@@ -76,11 +76,8 @@ LOG = logging.getLogger(__name__)
 UNMANAGED_SEGMENT = _("External Segment %s is not managed by APIC mapping "
                       "driver.")
 PRE_EXISTING_SEGMENT = _("Pre-existing external segment %s not found.")
-AUTO_PTG_NAME_PREFIX = 'auto-ptg-%s'
 # Note that this prefix should not exceede 4 characters
 AUTO_PTG_ID_PREFIX = 'auto%s'
-AUTO_PTG_MUTABLE_KEYS = ['name', 'description', 'consumed_policy_rule_sets',
-                         'provided_policy_rule_sets']
 
 opts = [
     cfg.BoolOpt('create_auto_ptg',
@@ -1237,7 +1234,7 @@ class ApicMappingDriver(api.ResourceMappingDriver,
             if context.current['id'] == auto_ptg_id:
                 updated_attrs = [key for key in context.current if
                                  context.original[key] != context.current[key]]
-                if list(set(updated_attrs) - set(AUTO_PTG_MUTABLE_KEYS)):
+                if list(set(updated_attrs) - set(alib.AUTO_PTG_MUTABLE_KEYS)):
                     raise AutoPTGAttrsUpdateNotSupported(
                         id=auto_ptg_id, attrs=updated_attrs)
         if not self.name_mapper._is_apic_reference(context.current):
@@ -3936,7 +3933,7 @@ class ApicMappingDriver(api.ResourceMappingDriver,
             return super(gbp_plugin.GroupPolicyPlugin, plugin_obj)
 
     def _get_auto_ptg_name(self, l2p):
-        return AUTO_PTG_NAME_PREFIX % l2p['id']
+        return alib.AUTO_PTG_NAME_PREFIX % l2p['id']
 
     def _get_auto_ptg_id(self, l2p_id):
         return AUTO_PTG_ID_PREFIX % hashlib.md5(l2p_id).hexdigest()
