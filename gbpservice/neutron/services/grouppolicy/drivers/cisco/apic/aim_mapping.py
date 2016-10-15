@@ -14,10 +14,13 @@ from aim.api import resource as aim_resource
 from aim import context as aim_context
 from neutron._i18n import _LE
 from neutron._i18n import _LI
+from neutron._i18n import _LW
 from neutron.agent.linux import dhcp
+from neutron.api.v2 import attributes
 from neutron.common import constants as n_constants
 from neutron import manager
 from oslo_concurrency import lockutils
+from oslo_config import cfg
 from oslo_log import helpers as log
 from oslo_log import log as logging
 
@@ -37,6 +40,7 @@ from gbpservice.neutron.services.grouppolicy.drivers.cisco.apic import (
     apic_mapping as amap)
 from gbpservice.neutron.services.grouppolicy.drivers.cisco.apic import (
     apic_mapping_lib as alib)
+from gbpservice.neutron.services.grouppolicy import group_policy_context
 from gbpservice.neutron.services.grouppolicy import plugin as gbp_plugin
 
 
@@ -47,6 +51,7 @@ FILTER_DIRECTIONS = {FORWARD: False, REVERSE: True}
 FORWARD_FILTER_ENTRIES = 'Forward-FilterEntries'
 REVERSE_FILTER_ENTRIES = 'Reverse-FilterEntries'
 ADDR_SCOPE_KEYS = ['address_scope_v4_id', 'address_scope_v6_id']
+AUTO_PTG_NAME_PREFIX = 'auto-ptg-%s'
 
 # Definitions duplicated from apicapi lib
 APIC_OWNED = 'apic_owned_'
@@ -54,6 +59,16 @@ PROMISCUOUS_TYPES = [n_constants.DEVICE_OWNER_DHCP,
                      n_constants.DEVICE_OWNER_LOADBALANCER]
 # TODO(ivar): define a proper promiscuous API
 PROMISCUOUS_SUFFIX = 'promiscuous'
+
+opts = [
+    cfg.BoolOpt('create_auto_ptg',
+                default=False,
+                help=_("Automatically create a PTG when a L2 Policy "
+                       "gets created. This is currently an aim_mapping "
+                       "policy driver specific feature.")),
+]
+
+cfg.CONF.register_opts(opts, "aim_mapping")
 
 
 class SimultaneousV4V6AddressScopesNotSupportedOnAimDriver(
@@ -73,6 +88,15 @@ class InconsistentAddressScopeSubnetpool(exc.GroupPolicyBadRequest):
                 "scope for a l3_policy.")
 
 
+class AutoPTGDeleteNotSupported(exc.GroupPolicyBadRequest):
+    message = _("Auto PTG %(id)s cannot be deleted.")
+
+
+class SharedAttributeUpdateNotSupported(exc.GroupPolicyBadRequest):
+    message = _("Resource shared attribute update not supported with AIM "
+                "GBP driver for resource of type %(type)s")
+
+
 class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
     """AIM Mapping Orchestration driver.
 
@@ -85,6 +109,11 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
         self.db = model.DbModel()
         super(AIMMappingDriver, self).initialize()
         self._apic_aim_mech_driver = None
+        self.create_auto_ptg = cfg.CONF.aim_mapping.create_auto_ptg
+        if self.create_auto_ptg:
+            LOG.info(_LI('Auto PTG creation configuration set, '
+                         'this will result in automatic creation of a PTG '
+                         'per L2 Policy'))
         self.setup_opflex_rpc_listeners()
         self._ensure_apic_infra()
 
@@ -257,12 +286,41 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
 
     @log.log_method_call
     def delete_l2_policy_precommit(self, context):
+        l2p_id = context.current['id']
         l2p_db = context._plugin._get_l2_policy(
-            context._plugin_context, context.current['id'])
+            context._plugin_context, l2p_id)
         net = self._get_network(context._plugin_context,
                                 l2p_db['network_id'],
                                 clean_session=False)
         default_epg_dn = net['apic:distinguished_names']['EndpointGroup']
+        if self.create_auto_ptg:
+            default_epg_name = self._get_epg_name_from_dn(
+                context, default_epg_dn)
+            auto_ptg_id = self.name_mapper.db.get_neutron_id(
+                context._plugin_context.session,
+                neutron_type='policy_target_group',
+                apic_name=default_epg_name)
+            if auto_ptg_id:
+                auto_ptg = context._plugin._get_policy_target_group(
+                    context._plugin_context, auto_ptg_id[0])
+                if auto_ptg:
+                    self._process_subnets_for_ptg_delete(
+                        context, auto_ptg, l2p_id)
+                    if auto_ptg['l2_policy_id']:
+                        auto_ptg.update({'l2_policy_id': None})
+                    self._db_plugin(
+                        context._plugin).delete_policy_target_group(
+                            context._plugin_context, auto_ptg['id'])
+                    self.name_mapper.db.delete_apic_name(
+                        context._plugin_context.session, auto_ptg['id'])
+                else:
+                    LOG.warning(_LW("Auto PTG with ID %(id)s for "
+                                    "for L2P %(l2p)s not found"),
+                                {'id': auto_ptg_id[0], 'l2p': l2p_id})
+            else:
+                LOG.warning(_LW("Could not retrieve Auto PTG ID from "
+                                "name_mapper for EPG %(epg) for %(l2p)s"),
+                            {'epg': default_epg_dn, 'l2p': l2p_id})
         l2p_count = self._db_plugin(context._plugin).get_l2_policies_count(
             context._plugin_context)
         if (l2p_count == 1):
@@ -320,6 +378,7 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
 
     @log.log_method_call
     def update_policy_target_group_precommit(self, context):
+        self._reject_shared_update(context, 'policy_target_group')
         session = context._plugin_context.session
         provided_contracts, consumed_contracts = None, None
         if 'provided_policy_rule_sets' in context.current:
@@ -332,6 +391,9 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
         aim_epg = self._get_aim_endpoint_group(session, context.current)
         if aim_epg and ((provided_contracts is not None) or (
             consumed_contracts is not None)):
+            if 'name' in context.current:
+                aim_epg.display_name = (
+                    self.aim_display_name(context.current['name']))
             if provided_contracts is not None:
                 aim_epg.provided_contract_names = provided_contracts
             if consumed_contracts is not None:
@@ -349,37 +411,25 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
     @log.log_method_call
     def delete_policy_target_group_precommit(self, context):
         plugin_context = context._plugin_context
+        if self._policy_target_group_is_owned(
+            plugin_context.session, context.current['id']):
+            raise AutoPTGDeleteNotSupported(id=context.current['id'])
         ptg_db = context._plugin._get_policy_target_group(
-            context._plugin_context, context.current['id'])
+            plugin_context, context.current['id'])
         session = context._plugin_context.session
 
         aim_ctx = self._get_aim_context(context)
         epg = self._aim_endpoint_group(session, context.current)
         self.aim.delete(aim_ctx, epg)
         self.name_mapper.delete_apic_name(session, context.current['id'])
-
-        subnet_ids = [assoc['subnet_id'] for assoc in ptg_db['subnets']]
-
-        context._plugin._remove_subnets_from_policy_target_group(
-            context._plugin_context, ptg_db['id'])
-        if subnet_ids:
-            for subnet_id in subnet_ids:
-                if not context._plugin._get_ptgs_for_subnet(
-                    context._plugin_context, subnet_id):
-                    l2p_id = context.current['l2_policy_id']
-                    router_id = None
-                    if l2p_id:
-                        l3p = self._get_l3p_for_l2policy(context, l2p_id)
-                        router_id = l3p['routers'][0]
-                    self._cleanup_subnet(plugin_context, subnet_id,
-                                         router_id=router_id,
-                                         clean_session=False)
+        self._process_subnets_for_ptg_delete(
+            context, ptg_db, context.current['l2_policy_id'])
 
         if ptg_db['l2_policy_id']:
             l2p_id = ptg_db['l2_policy_id']
             ptg_db.update({'l2_policy_id': None})
             l2p_db = context._plugin._get_l2_policy(
-                context._plugin_context, l2p_id)
+                plugin_context, l2p_id)
             if not l2p_db['policy_target_groups']:
                 self._cleanup_l2_policy(context, l2p_id, clean_session=False)
         self.name_mapper.delete_apic_name(session, context.current['id'])
@@ -545,6 +595,10 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
         aim_contract_subject = self._aim_contract_subject(aim_contract)
         context.current['status'] = self._merge_aim_status(
             session, [aim_contract, aim_contract_subject])
+
+    def _reject_shared_update(self, context, type):
+        if context.original.get('shared') != context.current.get('shared'):
+            raise SharedAttributeUpdateNotSupported(type=type)
 
     def _aim_tenant_name(self, session, tenant_id):
         # TODO(ivar): manage shared objects
@@ -882,6 +936,34 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
     def _create_implicit_contracts_and_configure_default_epg(
         self, context, l2p, epg_dn):
         self._process_contracts_for_default_epg(context, l2p, epg_dn)
+        if self.create_auto_ptg:
+            session = context._plugin_context.session
+            desc = "System created auto PTG for L2P: %s" % l2p['id']
+            data = {
+                "name": self._get_auto_ptg_name(l2p),
+                "description": desc,
+                "l2_policy_id": l2p['id'],
+                "proxied_group_id": None,
+                "proxy_type": None,
+                "proxy_group_id": attributes.ATTR_NOT_SPECIFIED,
+                "network_service_policy_id": None,
+                "service_management": False,
+                "shared": l2p['shared'],
+            }
+            auto_ptg = self._db_plugin(
+                context._plugin).create_policy_target_group(
+                    context._plugin_context,
+                    {'policy_target_group': data})
+            self._mark_policy_target_group_owned(session, auto_ptg['id'])
+            default_epg_name = self._get_epg_name_from_dn(context, epg_dn)
+            # Since we are reverse mapping the APIC EPG to the default PTG
+            # we will map the id of the PTG to the APIC default EPG name
+            self.name_mapper.db.add_apic_name(
+                session, auto_ptg['id'], 'policy_target_group',
+                default_epg_name)
+            ptg_context = group_policy_context.PolicyTargetGroupContext(
+                context._plugin, context._plugin_context, auto_ptg)
+            self._use_implicit_subnet(ptg_context)
 
     def _configure_contracts_for_default_epg(self, context, l2p, epg_dn):
         self._process_contracts_for_default_epg(
@@ -1016,6 +1098,24 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
 
         aim_resource = aim_resource_class(**kwargs)
         return aim_resource
+
+    def _process_subnets_for_ptg_delete(self, context, ptg, l2p_id):
+        plugin_context = context._plugin_context
+        subnet_ids = [assoc['subnet_id'] for assoc in ptg['subnets']]
+
+        context._plugin._remove_subnets_from_policy_target_group(
+            plugin_context, ptg['id'])
+        if subnet_ids:
+            for subnet_id in subnet_ids:
+                if not context._plugin._get_ptgs_for_subnet(
+                    plugin_context, subnet_id):
+                    router_id = None
+                    if l2p_id:
+                        l3p = self._get_l3p_for_l2policy(context, l2p_id)
+                        router_id = l3p['routers'][0]
+                    self._cleanup_subnet(plugin_context, subnet_id,
+                                         router_id=router_id,
+                                         clean_session=False)
 
     def _map_aim_status(self, session, aim_resource_obj):
         # Note that this implementation assumes that this driver
@@ -1215,3 +1315,12 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
             for pool in subnetpools:
                 subnets.extend(pool['prefixes'])
         return subnets
+
+    def _get_auto_ptg_name(self, l2p):
+        return AUTO_PTG_NAME_PREFIX % l2p['id']
+
+    def _get_epg_name_from_dn(self, context, epg_dn):
+        aim_context = self._get_aim_context(context)
+        default_epg_name = self.aim.get(
+            aim_context, aim_resource.EndpointGroup.from_dn(epg_dn)).name
+        return default_epg_name
