@@ -12,6 +12,7 @@
 # limitations under the License.
 
 import copy
+import hashlib
 import mock
 
 from aim.api import resource as aim_resource
@@ -37,6 +38,8 @@ from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import model
 from gbpservice.neutron.services.grouppolicy.common import (
     constants as gp_const)
 from gbpservice.neutron.services.grouppolicy import config
+from gbpservice.neutron.services.grouppolicy.drivers.cisco.apic import (
+    aim_mapping as aimd)
 from gbpservice.neutron.services.grouppolicy.drivers.cisco.apic import (
     apic_mapping as amap)
 from gbpservice.neutron.services.grouppolicy.drivers.cisco.apic import (
@@ -139,6 +142,15 @@ class AIMBaseTestCase(test_nr_base.CommonNeutronBaseTestCase,
         nova_client.return_value = vm
 
         self._db = model.DbModel()
+        # REVISIT: Note that the aim_driver sets create_auto_ptg to
+        # True by default, hence this feature is always ON by default.
+        # However, as a better unit testing strategy, we turn this OFF
+        # for the base case, and turn it ON for select set of tests
+        # which test in addition to what has been already tested in the
+        # base case. It can be evaluated in the future if the base
+        # testing strategy itself should evolve to always test with
+        # the feature turned ON.
+        self.driver.create_auto_ptg = False
 
     def tearDown(self):
         engine = db_api.get_engine()
@@ -329,6 +341,172 @@ class AIMBaseTestCase(test_nr_base.CommonNeutronBaseTestCase,
                               fmt=self.fmt).get_response(self.api)
         self.new_show_request('address-scopes', ascp_id,
                               fmt=self.fmt).get_response(self.ext_api)
+
+    def _get_provided_consumed_prs_lists(self, shared=False):
+        prs_dict = {}
+        prs_type = ['provided', 'consumed']
+        for ptype in prs_type:
+            rules = self._create_3_direction_rules(shared)
+            prs = self.create_policy_rule_set(
+                name="ctr", shared=shared,
+                policy_rules=[x['id'] for x in rules])['policy_rule_set']
+            prs_dict[ptype] = prs
+        return prs_dict
+
+    def _delete_prs_dicts_and_rules(self, prs_dicts):
+        for prs in prs_dicts:
+            prs_id = prs_dicts[prs]['id']
+            rules = prs_dicts[prs]['policy_rules']
+            self.delete_policy_rule_set(prs_id, expected_res_status=204)
+            for rule in rules:
+                self.delete_policy_rule(rule, expected_res_status=204)
+
+    def _validate_contracts(self, ptg, aim_epg, prs_lists, l2p):
+        implicit_contract_name = str(self.name_mapper.policy_rule_set(
+            self._neutron_context.session, l2p['tenant_id'], l2p['tenant_id'],
+            prefix=alib.IMPLICIT_PREFIX))
+        service_contract_name = str(self.name_mapper.policy_rule_set(
+            self._neutron_context.session, l2p['tenant_id'], l2p['tenant_id'],
+            prefix=alib.SERVICE_PREFIX))
+        l3p = self.show_l3_policy(l2p['l3_policy_id'], expected_res_status=200)
+        router_id = l3p['l3_policy']['routers'][0]
+        router = self._get_object('routers', router_id, self.ext_api)['router']
+        router_contract_name = self.name_mapper.router(
+            self._neutron_context.session, router_id, router['name'])
+        expected_prov_contract_names = []
+        expected_cons_contract_names = []
+        if ptg['id'].startswith(aimd.AUTO_PTG_PREFIX):
+            expected_prov_contract_names = [implicit_contract_name,
+                                            service_contract_name,
+                                            router_contract_name]
+            expected_cons_contract_names = [implicit_contract_name,
+                                            router_contract_name]
+        else:
+            expected_cons_contract_names = [implicit_contract_name,
+                                            service_contract_name]
+        if prs_lists['provided']:
+            aim_prov_contract_name = str(self.name_mapper.policy_rule_set(
+                self._neutron_context.session, prs_lists['provided']['id']))
+            expected_prov_contract_names.append(aim_prov_contract_name)
+
+        self.assertItemsEqual(expected_prov_contract_names,
+                              aim_epg.provided_contract_names)
+
+        if prs_lists['consumed']:
+            aim_cons_contract_name = str(self.name_mapper.policy_rule_set(
+                self._neutron_context.session, prs_lists['consumed']['id']))
+            expected_cons_contract_names.append(aim_cons_contract_name)
+
+        self.assertItemsEqual(expected_cons_contract_names,
+                              aim_epg.consumed_contract_names)
+
+    def _validate_router_interface_created(self):
+        # check port is created on default router
+        ports = self._plugin.get_ports(self._context)
+        self.assertEqual(1, len(ports))
+        router_port = ports[0]
+        self.assertEqual('network:router_interface',
+                         router_port['device_owner'])
+        routers = self._l3_plugin.get_routers(self._context)
+        self.assertEqual(1, len(routers))
+        self.assertEqual(routers[0]['id'],
+                         router_port['device_id'])
+        subnets = self._plugin.get_subnets(self._context)
+        self.assertEqual(1, len(subnets))
+        self.assertEqual(1, len(router_port['fixed_ips']))
+        self.assertEqual(subnets[0]['id'],
+                         router_port['fixed_ips'][0]['subnet_id'])
+
+    def _test_policy_target_group_aim_mappings(self, ptg, prs_lists, l2p):
+        self._validate_router_interface_created()
+
+        ptg_id = ptg['id']
+        ptg_show = self.show_policy_target_group(
+            ptg_id, expected_res_status=200)['policy_target_group']
+        aim_epg_name = self.driver.apic_epg_name_for_policy_target_group(
+            self._neutron_context.session, ptg_id)
+        aim_tenant_name = str(self.name_mapper.tenant(
+            self._neutron_context.session, self._tenant_id))
+        aim_app_profile_name = self.driver.aim_mech_driver.ap_name
+        aim_app_profiles = self.aim_mgr.find(
+            self._aim_context, aim_resource.ApplicationProfile,
+            tenant_name=aim_tenant_name, name=aim_app_profile_name)
+        self.assertEqual(1, len(aim_app_profiles))
+        req = self.new_show_request('networks', l2p['network_id'],
+                                    fmt=self.fmt)
+        net = self.deserialize(self.fmt,
+                               req.get_response(self.api))['network']
+        bd = self.aim_mgr.get(
+            self._aim_context, aim_resource.BridgeDomain.from_dn(
+                net['apic:distinguished_names']['BridgeDomain']))
+        aim_epgs = self.aim_mgr.find(
+            self._aim_context, aim_resource.EndpointGroup, name=aim_epg_name)
+        self.assertEqual(1, len(aim_epgs))
+        self.assertEqual(aim_epg_name, aim_epgs[0].name)
+        self.assertEqual(aim_tenant_name, aim_epgs[0].tenant_name)
+        if not ptg['id'].startswith(aimd.AUTO_PTG_PREFIX):
+            # display_name of default EPG should not be mutated
+            # if the name of the auto-ptg is edited, but should
+            # and this should be validated in the auto-ptg tests
+            self.assertEqual(ptg['name'], aim_epgs[0].display_name)
+        self.assertEqual(bd.name, aim_epgs[0].bd_name)
+
+        self._validate_contracts(ptg, aim_epgs[0], prs_lists, l2p)
+
+        self.assertEqual(aim_epgs[0].dn,
+                         ptg['apic:distinguished_names']['EndpointGroup'])
+        self._test_aim_resource_status(aim_epgs[0], ptg)
+        self.assertEqual(aim_epgs[0].dn,
+                         ptg_show['apic:distinguished_names']['EndpointGroup'])
+        self._test_aim_resource_status(aim_epgs[0], ptg_show)
+
+    def _validate_implicit_contracts_deleted(self, l2p):
+        aim_tenant_name = str(self.name_mapper.tenant(
+            self._neutron_context.session, l2p['tenant_id']))
+        contracts = [alib.SERVICE_PREFIX, alib.IMPLICIT_PREFIX]
+
+        for contract_name_prefix in contracts:
+            contract_name = str(self.name_mapper.policy_rule_set(
+                self._neutron_context.session,
+                l2p['tenant_id'], l2p['tenant_id'],
+                prefix=contract_name_prefix))
+            aim_contracts = self.aim_mgr.find(
+                self._aim_context, aim_resource.Contract, name=contract_name)
+            self.assertEqual(0, len(aim_contracts))
+            aim_contract_subjects = self.aim_mgr.find(
+                self._aim_context, aim_resource.ContractSubject,
+                name=contract_name)
+            self.assertEqual(0, len(aim_contract_subjects))
+
+        aim_filters = self.aim_mgr.find(
+            self._aim_context, aim_resource.Filter,
+            tenant_name=aim_tenant_name)
+        self.assertEqual(1, len(aim_filters))  # belongs to MD
+        aim_filter_entries = self.aim_mgr.find(
+            self._aim_context, aim_resource.FilterEntry,
+            tenant_name=aim_tenant_name)
+        self.assertEqual(1, len(aim_filter_entries))  # belongs to MD
+
+    def _validate_l2_policy_deleted(self, l2p):
+        l2p_id = l2p['id']
+        l3p_id = l2p['l3_policy_id']
+        network_id = l2p['network_id']
+        self.delete_l2_policy(l2p_id, expected_res_status=204)
+        self.show_l2_policy(l2p_id, expected_res_status=404)
+        req = self.new_show_request('networks', network_id, fmt=self.fmt)
+        res = req.get_response(self.api)
+        self.assertEqual(webob.exc.HTTPNotFound.code, res.status_int)
+        l2ps = self._gbp_plugin.get_l2_policies(
+            self._neutron_context)
+        if len(l2ps) == 0:
+            self._validate_implicit_contracts_deleted(l2p)
+            self.show_l3_policy(l3p_id, expected_res_status=404)
+            apic_tenant_name = self.name_mapper.tenant(
+                self._neutron_context.session, self._tenant_id)
+            epgs = self.aim_mgr.find(
+                self._aim_context, aim_resource.EndpointGroup,
+                tenant_name=apic_tenant_name)
+            self.assertEqual(0, len(epgs))
 
 
 class TestGBPStatus(AIMBaseTestCase):
@@ -697,33 +875,6 @@ class TestL2PolicyBase(test_nr_base.TestL2Policy, AIMBaseTestCase):
 
 class TestL2Policy(TestL2PolicyBase):
 
-    def _validate_implicit_contracts_deleted(self, l2p):
-        aim_tenant_name = str(self.name_mapper.tenant(
-            self._neutron_context.session, l2p['tenant_id']))
-        contracts = [alib.SERVICE_PREFIX, alib.IMPLICIT_PREFIX]
-
-        for contract_name_prefix in contracts:
-            contract_name = str(self.name_mapper.policy_rule_set(
-                self._neutron_context.session,
-                l2p['tenant_id'], l2p['tenant_id'],
-                prefix=contract_name_prefix))
-            aim_contracts = self.aim_mgr.find(
-                self._aim_context, aim_resource.Contract, name=contract_name)
-            self.assertEqual(0, len(aim_contracts))
-            aim_contract_subjects = self.aim_mgr.find(
-                self._aim_context, aim_resource.ContractSubject,
-                name=contract_name)
-            self.assertEqual(0, len(aim_contract_subjects))
-
-        aim_filters = self.aim_mgr.find(
-            self._aim_context, aim_resource.Filter,
-            tenant_name=aim_tenant_name)
-        self.assertEqual(1, len(aim_filters))  # belongs to MD
-        aim_filter_entries = self.aim_mgr.find(
-            self._aim_context, aim_resource.FilterEntry,
-            tenant_name=aim_tenant_name)
-        self.assertEqual(1, len(aim_filter_entries))  # belongs to MD
-
     def test_l2_policy_lifecycle(self):
 
         self.assertEqual(0, len(self.aim_mgr.find(
@@ -764,21 +915,83 @@ class TestL2Policy(TestL2PolicyBase):
             'l2_policy']
         self._validate_implicit_contracts_exist(l2p_tenant2)
         self._switch_to_tenant1()
-
-        self.delete_l2_policy(l2p_id, expected_res_status=204)
-        self.show_l2_policy(l2p_id, expected_res_status=404)
-        req = self.new_show_request('networks', network_id, fmt=self.fmt)
-        res = req.get_response(self.api)
-        self.assertEqual(webob.exc.HTTPNotFound.code, res.status_int)
-        self.delete_l2_policy(l2p0['id'], expected_res_status=204)
-        self._validate_implicit_contracts_deleted(l2p0)
-        self.show_l3_policy(l3p_id, expected_res_status=404)
+        self._validate_l2_policy_deleted(l2p)
+        self._validate_l2_policy_deleted(l2p0)
         # Validate that the Contracts still exist in the other tenant
         self._switch_to_tenant2()
         self._validate_implicit_contracts_exist(l2p_tenant2)
-        self.delete_l2_policy(l2p_tenant2['id'],
-                              expected_res_status=204)
+        self._validate_l2_policy_deleted(l2p_tenant2)
         self._switch_to_tenant1()
+
+
+class TestL2PolicyWithAutoPTG(TestL2PolicyBase):
+
+    def setUp(self, **kwargs):
+        super(TestL2PolicyWithAutoPTG, self).setUp(**kwargs)
+        self.driver.create_auto_ptg = True
+
+    def _test_auto_ptg(self, l2p, shared=False):
+        ptg = self._gbp_plugin.get_policy_target_groups(
+            self._neutron_context)[0]
+        l2p_id = ptg['l2_policy_id']
+        auto_ptg_id = amap.AUTO_PTG_ID_PREFIX % hashlib.md5(l2p_id).hexdigest()
+        self.assertEqual(auto_ptg_id, ptg['id'])
+        self.assertEqual(aimd.AUTO_PTG_NAME_PREFIX % l2p_id, str(ptg['name']))
+        self.assertEqual(shared, ptg['shared'])
+        prs_lists = self._get_provided_consumed_prs_lists(shared)
+        ptg = self.update_policy_target_group(
+            ptg['id'], expected_res_status=webob.exc.HTTPOk.code,
+            name='new name', description='something-else',
+            provided_policy_rule_sets={prs_lists['provided']['id']:
+                                       'scope'},
+            consumed_policy_rule_sets={prs_lists['consumed']['id']:
+                                       'scope'})['policy_target_group']
+        self._test_policy_target_group_aim_mappings(
+            ptg, prs_lists, l2p)
+        self.update_policy_target_group(
+            ptg['id'], shared=(not shared),
+            expected_res_status=webob.exc.HTTPBadRequest.code)
+        # Auto PTG cannot be deleted by user
+        res = self.delete_policy_target_group(
+            ptg['id'], expected_res_status=webob.exc.HTTPBadRequest.code)
+        self.assertEqual('AutoPTGDeleteNotSupported',
+                         res['NeutronError']['type'])
+        aim_epg_name = self.driver.apic_epg_name_for_policy_target_group(
+            self._neutron_context.session, ptg['id'])
+        aim_epg = self.aim_mgr.find(
+            self._aim_context, aim_resource.EndpointGroup,
+            name=aim_epg_name)[0]
+        aim_epg_display_name = aim_epg.display_name
+        ptg = self.update_policy_target_group(
+            ptg['id'], expected_res_status=webob.exc.HTTPOk.code,
+            name='new name', description='something-else',
+            provided_policy_rule_sets={},
+            consumed_policy_rule_sets={})['policy_target_group']
+        self._test_policy_target_group_aim_mappings(
+            ptg, {'provided': None, 'consumed': None}, l2p)
+        aim_epg = self.aim_mgr.find(
+            self._aim_context, aim_resource.EndpointGroup,
+            name=aim_epg_name)[0]
+        self.assertEqual(aim_epg_display_name, aim_epg.display_name)
+        self._delete_prs_dicts_and_rules(prs_lists)
+        self._validate_l2_policy_deleted(l2p)
+        self.show_policy_target_group(ptg['id'], expected_res_status=404)
+
+    def _test_multiple_l2p_post_create(self, shared=False):
+        l2p = self.create_l2_policy(name="l2p0", shared=shared)['l2_policy']
+        self._test_auto_ptg(l2p, shared=shared)
+        # At this time first l2p and auto-ptg for that l2p are deleted
+        self.create_l2_policy(name="l2p1", shared=shared)['l2_policy']
+        self.create_l2_policy(name="l2p2", shared=shared)['l2_policy']
+        # Two new l2ps are created, and each one should have their own auto-ptg
+        ptgs = self._gbp_plugin.get_policy_target_groups(self._neutron_context)
+        self.assertEqual(2, len(ptgs))
+
+    def test_auto_ptg_lifecycle_shared(self):
+        self._test_multiple_l2p_post_create(shared=True)
+
+    def test_auto_ptg_lifecycle_unshared(self):
+        self._test_multiple_l2p_post_create()
 
 
 class TestL2PolicyRollback(TestL2PolicyBase):
@@ -851,51 +1064,6 @@ class TestL2PolicyRollback(TestL2PolicyBase):
 
 class TestPolicyTargetGroup(AIMBaseTestCase):
 
-    def _get_provided_consumed_prs_lists(self):
-        prs_dict = {}
-        prs_type = ['provided', 'consumed']
-        for ptype in prs_type:
-            rules = self._create_3_direction_rules()
-            prs = self.create_policy_rule_set(
-                name="ctr", policy_rules=[x['id'] for x in rules])[
-                    'policy_rule_set']
-            prs_dict[ptype] = prs
-        return prs_dict
-
-    def _validate_contracts(self, aim_epg, prs_lists, l2p):
-        implicit_contract_name = str(self.name_mapper.policy_rule_set(
-            self._neutron_context.session, l2p['tenant_id'], l2p['tenant_id'],
-            prefix=alib.IMPLICIT_PREFIX))
-        service_contract_name = str(self.name_mapper.policy_rule_set(
-            self._neutron_context.session, l2p['tenant_id'], l2p['tenant_id'],
-            prefix=alib.SERVICE_PREFIX))
-        aim_prov_contract_name = str(self.name_mapper.policy_rule_set(
-            self._neutron_context.session, prs_lists['provided']['id']))
-        self.assertEqual([aim_prov_contract_name],
-                         aim_epg.provided_contract_names)
-        aim_cons_contract_name = str(self.name_mapper.policy_rule_set(
-            self._neutron_context.session, prs_lists['consumed']['id']))
-        self.assertItemsEqual([aim_cons_contract_name, service_contract_name,
-                               implicit_contract_name],
-                              aim_epg.consumed_contract_names)
-
-    def _validate_router_interface_created(self):
-        # check port is created on default router
-        ports = self._plugin.get_ports(self._context)
-        self.assertEqual(1, len(ports))
-        router_port = ports[0]
-        self.assertEqual('network:router_interface',
-                         router_port['device_owner'])
-        routers = self._l3_plugin.get_routers(self._context)
-        self.assertEqual(1, len(routers))
-        self.assertEqual(routers[0]['id'],
-                         router_port['device_id'])
-        subnets = self._plugin.get_subnets(self._context)
-        self.assertEqual(1, len(subnets))
-        self.assertEqual(1, len(router_port['fixed_ips']))
-        self.assertEqual(subnets[0]['id'],
-                         router_port['fixed_ips'][0]['subnet_id'])
-
     def test_policy_target_group_aim_domains(self):
         self.aim_mgr.create(self._aim_context,
                             aim_resource.VMMDomain(type='OpenStack',
@@ -914,8 +1082,8 @@ class TestPolicyTargetGroup(AIMBaseTestCase):
         ptg = self.create_policy_target_group(name="ptg1")[
             'policy_target_group']
 
-        aim_epg_name = str(self.name_mapper.policy_target_group(
-            self._neutron_context.session, ptg['id'], ptg['name']))
+        aim_epg_name = self.driver.apic_epg_name_for_policy_target_group(
+            self._neutron_context.session, ptg['id'])
         aim_tenant_name = str(self.name_mapper.tenant(
             self._neutron_context.session, self._tenant_id))
         aim_app_profile_name = self.driver.aim_mech_driver.ap_name
@@ -940,8 +1108,6 @@ class TestPolicyTargetGroup(AIMBaseTestCase):
             consumed_policy_rule_sets={prs_lists['consumed']['id']: 'scope'})[
                 'policy_target_group']
         ptg_id = ptg['id']
-        ptg_show = self.show_policy_target_group(
-            ptg_id, expected_res_status=200)['policy_target_group']
 
         l2p = self.show_l2_policy(ptg['l2_policy_id'],
                                   expected_res_status=200)['l2_policy']
@@ -954,58 +1120,18 @@ class TestPolicyTargetGroup(AIMBaseTestCase):
         self.assertEqual(l3p['subnetpools_v4'][0],
                          subnet['subnetpool_id'])
 
-        self._validate_router_interface_created()
-
-        ptg_name = ptg['name']
-        aim_epg_name = str(self.name_mapper.policy_target_group(
-            self._neutron_context.session, ptg_id, ptg_name))
-        aim_tenant_name = str(self.name_mapper.tenant(
-            self._neutron_context.session, self._tenant_id))
-        aim_app_profile_name = self.driver.aim_mech_driver.ap_name
-        aim_app_profiles = self.aim_mgr.find(
-            self._aim_context, aim_resource.ApplicationProfile,
-            tenant_name=aim_tenant_name, name=aim_app_profile_name)
-        self.assertEqual(1, len(aim_app_profiles))
-        req = self.new_show_request('networks', l2p['network_id'],
-                                    fmt=self.fmt)
-        net = self.deserialize(self.fmt,
-                               req.get_response(self.api))['network']
-        bd = self.aim_mgr.get(
-            self._aim_context, aim_resource.BridgeDomain.from_dn(
-                net['apic:distinguished_names']['BridgeDomain']))
-        aim_epgs = self.aim_mgr.find(
-            self._aim_context, aim_resource.EndpointGroup, name=aim_epg_name)
-        self.assertEqual(1, len(aim_epgs))
-        self.assertEqual(aim_epg_name, aim_epgs[0].name)
-        self.assertEqual(aim_tenant_name, aim_epgs[0].tenant_name)
-        self.assertEqual(ptg['name'], aim_epgs[0].display_name)
-        self.assertEqual(bd.name, aim_epgs[0].bd_name)
-
-        self._validate_contracts(aim_epgs[0], prs_lists, l2p)
-
-        self.assertEqual(aim_epgs[0].dn,
-                         ptg['apic:distinguished_names']['EndpointGroup'])
-        self._test_aim_resource_status(aim_epgs[0], ptg)
-        self.assertEqual(aim_epgs[0].dn,
-                         ptg_show['apic:distinguished_names']['EndpointGroup'])
-        self._test_aim_resource_status(aim_epgs[0], ptg_show)
+        self._test_policy_target_group_aim_mappings(ptg, prs_lists, l2p)
 
         new_name = 'new name'
         new_prs_lists = self._get_provided_consumed_prs_lists()
-        self.update_policy_target_group(
+        ptg = self.update_policy_target_group(
             ptg_id, expected_res_status=200, name=new_name,
             provided_policy_rule_sets={new_prs_lists['provided']['id']:
                                        'scope'},
             consumed_policy_rule_sets={new_prs_lists['consumed']['id']:
                                        'scope'})['policy_target_group']
-        aim_epg_name = str(self.name_mapper.policy_target_group(
-            self._neutron_context.session, ptg_id, new_name))
-        aim_epgs = self.aim_mgr.find(
-            self._aim_context, aim_resource.EndpointGroup, name=aim_epg_name)
-        self.assertEqual(1, len(aim_epgs))
-        self.assertEqual(aim_epg_name, aim_epgs[0].name)
-        self._validate_contracts(aim_epgs[0], new_prs_lists, l2p)
-        self.assertEqual(bd.name, aim_epgs[0].bd_name)
+
+        self._test_policy_target_group_aim_mappings(ptg, new_prs_lists, l2p)
 
         self.delete_policy_target_group(ptg_id, expected_res_status=204)
         self.show_policy_target_group(ptg_id, expected_res_status=404)
@@ -1019,7 +1145,7 @@ class TestPolicyTargetGroup(AIMBaseTestCase):
         self.show_l2_policy(ptg['l2_policy_id'], expected_res_status=404)
 
         aim_epgs = self.aim_mgr.find(
-            self._aim_context, aim_resource.EndpointGroup, name=aim_epg_name)
+            self._aim_context, aim_resource.EndpointGroup)
         self.assertEqual(0, len(aim_epgs))
 
     def test_policy_target_group_lifecycle_explicit_l2p(self):
@@ -1040,8 +1166,8 @@ class TestPolicyTargetGroup(AIMBaseTestCase):
         self._validate_router_interface_created()
 
         ptg_name = ptg['name']
-        aim_epg_name = str(self.name_mapper.policy_target_group(
-            self._neutron_context.session, ptg_id, ptg_name))
+        aim_epg_name = self.driver.apic_epg_name_for_policy_target_group(
+            self._neutron_context.session, ptg_id, ptg_name)
         aim_tenant_name = str(self.name_mapper.tenant(
             self._neutron_context.session, self._tenant_id))
         aim_app_profile_name = self.driver.aim_mech_driver.ap_name
@@ -1077,13 +1203,13 @@ class TestPolicyTargetGroup(AIMBaseTestCase):
                                        'scope'},
             consumed_policy_rule_sets={new_prs_lists['consumed']['id']:
                                        'scope'})['policy_target_group']
-        aim_epg_name = str(self.name_mapper.policy_target_group(
-            self._neutron_context.session, ptg_id, new_name))
+        aim_epg_name = self.driver.apic_epg_name_for_policy_target_group(
+            self._neutron_context.session, ptg_id, new_name)
         aim_epgs = self.aim_mgr.find(
             self._aim_context, aim_resource.EndpointGroup, name=aim_epg_name)
         self.assertEqual(1, len(aim_epgs))
         self.assertEqual(aim_epg_name, aim_epgs[0].name)
-        self._validate_contracts(aim_epgs[0], new_prs_lists, l2p)
+        self._validate_contracts(ptg, aim_epgs[0], new_prs_lists, l2p)
         self.assertEqual(bd.name, aim_epgs[0].bd_name)
 
         self.delete_policy_target_group(ptg_id, expected_res_status=204)
@@ -1362,7 +1488,7 @@ class TestPolicyTarget(AIMBaseTestCase):
             nctx.get_admin_context(),
             request={'device': 'tap%s' % pt1['port_id'], 'host': 'h1',
                      'timestamp': 0, 'request_id': 'request_id'})
-        epg_name = self.name_mapper.policy_target_group(
+        epg_name = self.driver.apic_epg_name_for_policy_target_group(
             self._neutron_context.session, ptg['id'], ptg['name'])
         epg_tenant = self.name_mapper.tenant(self._neutron_context.session,
                                              ptg['tenant_id'])
