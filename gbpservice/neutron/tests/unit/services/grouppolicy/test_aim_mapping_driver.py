@@ -30,6 +30,8 @@ from gbpservice.neutron.services.grouppolicy.common import (
     constants as gp_const)
 from gbpservice.neutron.services.grouppolicy import config
 from gbpservice.neutron.services.grouppolicy.drivers.cisco.apic import (
+    aim_mapping as aimd)
+from gbpservice.neutron.services.grouppolicy.drivers.cisco.apic import (
     apic_mapping as amap)
 from gbpservice.neutron.services.grouppolicy.drivers.cisco.apic import (
     apic_mapping_lib as alib)
@@ -695,6 +697,50 @@ class TestL2Policy(TestL2PolicyBase):
         self.delete_l2_policy(l2p_tenant2['id'],
                               expected_res_status=204)
         self._switch_to_tenant1()
+
+
+class TestL2PolicyWithAutoPTG(TestL2PolicyBase):
+
+    def setUp(self, **kwargs):
+        super(TestL2PolicyWithAutoPTG, self).setUp(**kwargs)
+        self.driver.create_auto_ptg = True
+
+    def _test_auto_ptg(self, shared=False):
+        ptg = self._gbp_plugin.get_policy_target_groups(
+            self._neutron_context)[0]
+        l2p_id = ptg['l2_policy_id']
+        self.assertEqual(aimd.AUTO_PTG_NAME_PREFIX % l2p_id, str(ptg['name']))
+        self.assertEqual(shared, ptg['shared'])
+        prs1 = self.create_policy_rule_set(
+            name='p1', shared=shared)['policy_rule_set']
+        prs2 = self.create_policy_rule_set(
+            name='c1', shared=shared)['policy_rule_set']
+        self.update_policy_target_group(
+            ptg['id'], name='something-else', description='something-else',
+            provided_policy_rule_sets={prs1['id']: 'scope'},
+            consumed_policy_rule_sets={prs2['id']: 'scope'},
+            expected_res_status=webob.exc.HTTPOk.code)
+        res = self.update_policy_target_group(
+            ptg['id'], shared=(not shared),
+            expected_res_status=webob.exc.HTTPBadRequest.code)
+        self.assertEqual('SharedAttributeUpdateNotSupported',
+                         res['NeutronError']['type'])
+        # Auto PTG cannot be deleted by user
+        res = self.delete_policy_target_group(
+            ptg['id'], expected_res_status=webob.exc.HTTPBadRequest.code)
+        self.assertEqual('AutoPTGDeleteNotSupported',
+                         res['NeutronError']['type'])
+        self.delete_l2_policy(l2p_id, expected_res_status=204)
+        ptgs = self._gbp_plugin.get_policy_target_groups(self._neutron_context)
+        self.assertEqual(0, len(ptgs))
+
+    def test_auto_ptg_lifecycle_shared(self):
+        self.create_l2_policy(name="l2p0", shared=True)
+        self._test_auto_ptg(shared=True)
+
+    def test_auto_ptg_lifecycle_unshared(self):
+        self.create_l2_policy(name="l2p0")
+        self._test_auto_ptg()
 
 
 class TestL2PolicyRollback(TestL2PolicyBase):
