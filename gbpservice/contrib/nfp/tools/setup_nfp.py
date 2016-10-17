@@ -83,7 +83,7 @@ def configure_nfp():
     for plugin in plugins_to_enable:
         if plugin not in curr_service_plugins_list:
             curr_service_plugins_list.append(plugin)
-                         
+
     if "servicechain" in curr_service_plugins_list:
          curr_service_plugins_list.remove("servicechain")
 
@@ -93,23 +93,21 @@ def configure_nfp():
         for word in vpnaas_enabled:
             curr_service_plugins_list.remove(word)
         curr_service_plugins_list.append("neutron_vpnaas.services.vpn.plugin.VPNDriverPlugin")
- 
+
     if not len(lbaas_enabled):
         curr_service_plugins_list.append("neutron_lbaas.services.loadbalancer.plugin.LoadBalancerPlugin")
     else:
         for word in lbaas_enabled:
             curr_service_plugins_list.remove(word)
         curr_service_plugins_list.append("neutron_lbaas.services.loadbalancer.plugin.LoadBalancerPlugin")
-        
+
     if not len(fwaas_enabled):
         curr_service_plugins_list.append("gbpservice.contrib.nfp.service_plugins.firewall.nfp_fwaas_plugin.NFPFirewallPlugin")
     else:
         for word in fwaas_enabled:
             curr_service_plugins_list.remove(word)
         curr_service_plugins_list.append("gbpservice.contrib.nfp.service_plugins.firewall.nfp_fwaas_plugin.NFPFirewallPlugin")
-   
-     
-        
+
     new_service_plugins_list = curr_service_plugins_list
     new_service_plugins = ",".join(new_service_plugins_list)
     subprocess.call(("crudini --set /etc/neutron/neutron.conf DEFAULT service_plugins " + str(new_service_plugins)).split(' '))
@@ -120,17 +118,21 @@ def configure_nfp():
     heat_dirs_to_enable = ["/usr/lib64/heat", "/usr/lib/heat", "/usr/lib/python2.7/site-packages/gbpautomation/heat"]
     for dir in heat_dirs_to_enable:
         if dir not in curr_heat_plugin_dirs_list:
-            curr_heat_plugin_dirs_list.append(dir) 
+            curr_heat_plugin_dirs_list.append(dir)
     new_heat_plugin_dirs_list = curr_heat_plugin_dirs_list
     new_heat_plugin_dirs = ",".join(new_heat_plugin_dirs_list)
     subprocess.call(("crudini --set /etc/heat/heat.conf DEFAULT plugin_dirs " + str(new_heat_plugin_dirs)).split(' '))
-    
-    
+
     # Enable GBP extension driver for service sharing
     if not APIC_ENV:
         subprocess.call("crudini --set /etc/neutron/neutron.conf group_policy policy_drivers implicit_policy,resource_mapping,chain_mapping".split(' '))
     else:
         subprocess.call("crudini --set /etc/neutron/neutron.conf group_policy policy_drivers implicit_policy,apic,chain_mapping".split(' '))
+        # Configure policy_drivers if section group_policy exists in the config file
+        ret = subprocess.call("crudini --get /etc/neutron/plugins/ml2/ml2_conf_cisco_apic.ini group_policy".split(' '))
+        if not ret:
+            subprocess.call("crudini --set /etc/neutron/plugins/ml2/ml2_conf_cisco_apic.ini group_policy policy_drivers implicit_policy,apic,chain_mapping".split(' '))
+
     subprocess.call("crudini --set /etc/neutron/neutron.conf group_policy extension_drivers proxy_group".split(' '))
 
     # Configure service owner
@@ -366,17 +368,41 @@ def create_nfp_namespace_file():
     filepx.write("#!/usr/bin/bash\n")
     filepx.write("\nNOVA_CONF=/etc/nova/nova.conf\nNOVA_SESSION=neutron")
     filepx.write("\n\nget_openstack_creds () {")
-    filepx.write("\n\tAUTH_URI=`crudini --get $NOVA_CONF $NOVA_SESSION"
-                 " admin_auth_url`")
-    filepx.write("\n\tADMIN_USER=`crudini --get $NOVA_CONF $NOVA_SESSION"
-                 " admin_username`")
-    filepx.write("\n\tADMIN_PASSWD=`crudini --get $NOVA_CONF $NOVA_SESSION"
-                 " admin_password`")
-    filepx.write("\n\tADMIN_TENANT_NAME=`crudini --get $NOVA_CONF"
-                 " $NOVA_SESSION admin_tenant_name`")
+    filepx.write("\n\tAUTH_URI=`crudini --get $NOVA_CONF $NOVA_SESSION auth_url`")
+    filepx.write("\n\t# if auth_url option is not available, look for admin_auth_url"
+                 "\n\tif [[ $? = 1 ]]; then"
+                 "\n\t\tAUTH_URI=`crudini --get $NOVA_CONF $NOVA_SESSION admin_auth_url`"
+                 "\n\tfi")
+    filepx.write("\n\tADMIN_USER=`crudini --get $NOVA_CONF $NOVA_SESSION username`")
+    filepx.write("\n\t# if username option is not available, look for admin_username"
+                 "\n\tif [[ $? = 1 ]]; then"
+                 "\n\t\tADMIN_USER=`crudini --get $NOVA_CONF $NOVA_SESSION admin_username`")
+    filepx.write("\n\t\t# if admin_username option is not available, look for admin_user"
+                 "\n\t\tif [[ $? = 1 ]]; then"
+                 "\n\t\t\tADMIN_USER=`crudini --get $NOVA_CONF $NOVA_SESSION admin_user`"
+                 "\n\t\tfi"
+                 "\n\tfi")
+    filepx.write("\n\tADMIN_PASSWD=`crudini --get $NOVA_CONF $NOVA_SESSION password`")
+    filepx.write("\n\t# if password option is not available, look for admin_password"
+                 "\n\tif [[ $? = 1 ]]; then"
+                 "\n\t\tADMIN_PASSWD=`crudini --get $NOVA_CONF $NOVA_SESSION admin_password`"
+                 "\n\tfi")
+    filepx.write("\n\tADMIN_TENANT_NAME=`crudini --get $NOVA_CONF $NOVA_SESSION project_name`")
+    filepx.write("\n\t# if project_name option is not available, look for admin_tenant_name"
+                 "\n\tif [[ $? = 1 ]]; then"
+                 "\n\t\tADMIN_TENANT_NAME=`crudini --get $NOVA_CONF $NOVA_SESSION admin_tenant_name`"
+                 "\n\tfi")
     filepx.write("\n\texport OS_USERNAME=$ADMIN_USER")
     filepx.write("\n\texport OS_TENANT_NAME=$ADMIN_TENANT_NAME")
     filepx.write("\n\texport OS_PASSWORD=$ADMIN_PASSWD")
+    filepx.write("\n\tif [[ $AUTH_URI == *\"v3\"* ]]; then"
+                 "\n\t\tADMIN_PROJECT_DOMAIN_NAME=`crudini --get $NOVA_CONF"
+                 " $NOVA_SESSION project_domain_name`"
+                 "\n\t\tADMIN_USER_DOMAIN_NAME=`crudini --get $NOVA_CONF"
+                 " $NOVA_SESSION user_domain_name`"
+                 "\n\t\texport OS_PROJECT_DOMAIN_NAME=$ADMIN_PROJECT_DOMAIN_NAME"
+                 "\n\t\texport OS_USER_DOMAIN_NAME=$ADMIN_USER_DOMAIN_NAME"
+                 "\n\tfi")
     filepx.write("\n\texport OS_AUTH_URL=$AUTH_URI\n\n}")
     filepx.write("\n\nfunction namespace_delete {\n\tget_openstack_creds")
     filepx.write("\n\n\tproxyPortId=`neutron port-list | ")
@@ -695,7 +721,7 @@ def clean_up():
         "heat stack-list | grep '\sgbp_services_stack\s'"
         " | awk '{print $2}'")[1]
     if HeatId:
-        os.system("heat stack-delete gbp_services_stack")
+        os.system("heat stack-delete gbp_services_stack -y")
 
 
 def main():
