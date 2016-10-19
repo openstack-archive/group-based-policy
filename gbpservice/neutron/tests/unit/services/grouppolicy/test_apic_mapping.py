@@ -92,6 +92,9 @@ class ApicMappingTestCase(
         cfg.CONF.register_opts(sg_cfg.security_group_opts, 'SECURITYGROUP')
         config.cfg.CONF.set_override('enable_security_group', False,
                                      group='SECURITYGROUP')
+        config.cfg.CONF.set_override('extension_drivers',
+                                     ['port_endpoint'],
+                                     group='ml2')
         n_rpc.create_connection = mock.Mock()
         amap.ApicMappingDriver.get_apic_manager = mock.Mock(
             return_value=mock.MagicMock(
@@ -474,8 +477,9 @@ class TestPolicyTarget(ApicMappingTestCase):
                      'device_id': ['h1']})
         self._db_plugin.update_port(admin_ctx,
             snat_ports[0]['id'], {'port': {'fixed_ips': []}})
+        # TODO(ivar): relate SNAT port with other ports in the same EPG
         mapping = self.driver.get_gbp_details(admin_ctx,
-            device='tap%s' % pt1['port_id'], host='h1')
+            device='tap%s' % pt1['port_id'], host='h1', recalculate=True)
         self.assertEqual(0, len(mapping['host_snat_ips']))
 
     def test_ip_address_owner_update(self):
@@ -1073,7 +1077,7 @@ class TestPolicyTargetVlanNetwork(ApicMappingVlanTestCase,
             self.assertEqual(webob.exc.HTTPNoContent.code, res.status_int)
 
         with self.port(subnet=subnet,
-                       mac_address=shadow_port1['port']['mac_address']) as p:
+                       mac_address=shadow_port1['port']['mac_address']):
             res = self.create_policy_target(
                 policy_target_group_id=ptg1['id'],
                 port_id=shadow_port1['port']['id'], expected_res_status=400)
