@@ -35,6 +35,7 @@ from oslo.config import cfg
 
 sys.modules["apicapi"] = mock.Mock()
 
+from gbpservice.neutron.extensions import apic_port_ep
 from gbpservice.neutron.services.grouppolicy import (
     group_policy_context as p_context)
 from gbpservice.neutron.services.grouppolicy import config
@@ -92,6 +93,9 @@ class ApicMappingTestCase(
         cfg.CONF.register_opts(sg_cfg.security_group_opts, 'SECURITYGROUP')
         config.cfg.CONF.set_override('enable_security_group', False,
                                      group='SECURITYGROUP')
+        config.cfg.CONF.set_override('extension_drivers',
+                                     ['port_endpoint'],
+                                     group='ml2')
         n_rpc.create_connection = mock.Mock()
         amap.ApicMappingDriver.get_apic_manager = mock.Mock(
             return_value=mock.MagicMock(
@@ -474,6 +478,10 @@ class TestPolicyTarget(ApicMappingTestCase):
                      'device_id': ['h1']})
         self._db_plugin.update_port(admin_ctx,
             snat_ports[0]['id'], {'port': {'fixed_ips': []}})
+        # TODO(ivar): relate SNAT port with other ports in the same EPG
+        self._update_resource(
+            pt1['port_id'], 'port', expected_res_status=200, api=self.api,
+            **{apic_port_ep.ENDPOINT_UP_TO_DATE: False})
         mapping = self.driver.get_gbp_details(admin_ctx,
             device='tap%s' % pt1['port_id'], host='h1')
         self.assertEqual(0, len(mapping['host_snat_ips']))

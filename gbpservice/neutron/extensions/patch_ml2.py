@@ -25,6 +25,8 @@ from neutron.plugins.ml2 import plugin
 from oslo.db import exception as os_db_exception
 from sqlalchemy import exc as sql_exc
 
+from gbpservice.neutron.db import port_ep_db
+
 LOG = log.getLogger(__name__)
 
 
@@ -224,3 +226,26 @@ def delete_subnet(self, context, id):
         LOG.error(_("mechanism_manager.delete_subnet_postcommit failed"))
 
 plugin.Ml2Plugin.delete_subnet = delete_subnet
+
+
+# REVISIT(ivar): sets the proper port's GBP details to the "outdated" state
+def _notify_port_updated(self, mech_context):
+    port = mech_context._port
+    LOG.debug("Port %s GBP details are outdated" % port['id'])
+    port_ep_db.PortEndpointManager().update(
+        mech_context._plugin_context.session, port['id'], up_to_date=False)
+    segment = mech_context.bound_segment
+    if not segment:
+        # REVISIT(rkukura): This should notify agent to unplug port
+        network = mech_context.network.current
+        LOG.warning(_("In _notify_port_updated(), no bound segment for "
+                      "port %(port_id)s on network %(network_id)s"),
+                    {'port_id': port['id'],
+                     'network_id': network['id']})
+        return
+    self.notifier.port_update(mech_context._plugin_context, port,
+                              segment[plugin.api.NETWORK_TYPE],
+                              segment[plugin.api.SEGMENTATION_ID],
+                              segment[plugin.api.PHYSICAL_NETWORK])
+
+plugin.Ml2Plugin._notify_port_updated = _notify_port_updated
