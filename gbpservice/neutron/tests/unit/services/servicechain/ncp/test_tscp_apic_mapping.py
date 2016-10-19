@@ -1064,8 +1064,10 @@ class TestProxyGroup(ApicMappingStitchingPlumberGBPTestCase):
         # Set the port ownership and verify that extra_ips is correctly set
         ips = self._get_pts_addresses([pt1, pt2, group_default_gw])
         for x in master_port['fixed_ips']:
-            self.driver.ha_ip_handler.set_port_id_for_ha_ipaddress(
-                proxy_gw_failover['port_id'], x['ip_address'])
+            self.driver.ip_address_owner_update(
+                context.get_admin_context(),
+                ip_owner_info={'port': proxy_gw_failover['port_id'],
+                               'ip_address_v4': x['ip_address']})
 
         mapping = self.driver.get_gbp_details(
             context.get_admin_context(),
