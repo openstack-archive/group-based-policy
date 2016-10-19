@@ -3276,7 +3276,8 @@ class ApicMappingDriver(api.ResourceMappingDriver,
                 descr.append(EOC_PREFIX + port_id)
             if pt.get('cluster_id'):
                 master_pt = self._get_pt_cluster_master(plugin_context, pt)
-                descr.append(EOC_PREFIX + master_pt['port_id'])
+                if master_pt and master_pt['port_id']:
+                    descr.append(EOC_PREFIX + master_pt['port_id'])
             if bool(self._get_policy_target_groups(
                     plugin_context, filters={'description': descr})):
                 return True
