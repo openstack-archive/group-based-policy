@@ -85,6 +85,7 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
         self.db = model.DbModel()
         super(AIMMappingDriver, self).initialize()
         self._apic_aim_mech_driver = None
+        self._apic_segmentation_label_driver = None
         self.setup_opflex_rpc_listeners()
         self._ensure_apic_infra()
 
@@ -114,6 +115,17 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
     @property
     def name_mapper(self):
         return self.aim_mech_driver.name_mapper
+
+    @property
+    def apic_segmentation_label_driver(self):
+        if not self._apic_segmentation_label_driver:
+            ext_drivers = self.gbp_plugin.extension_manager.ordered_ext_drivers
+            for driver in ext_drivers:
+                if 'apic_segmentation_label' == driver.name:
+                    self._apic_segmentation_label_driver = (
+                        driver.obj)
+                    break
+        return self._apic_segmentation_label_driver
 
     @log.log_method_call
     def ensure_tenant(self, plugin_context, tenant_id):
@@ -1215,3 +1227,9 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
             for pool in subnetpools:
                 subnets.extend(pool['prefixes'])
         return subnets
+
+    def _get_segmentation_labels(self, plugin_context, port, details):
+        pt = self._port_id_to_pt(plugin_context, port['id'])
+        if self.apic_segmentation_label_driver and pt and (
+            'segmentation_labels' in pt):
+            return pt['segmentation_labels']
