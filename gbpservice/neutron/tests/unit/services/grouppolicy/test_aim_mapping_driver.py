@@ -25,6 +25,7 @@ from neutron.db import api as db_api
 from neutron.notifiers import nova
 from neutron.tests.unit.extensions import test_address_scope
 from opflexagent import constants as ocst
+from oslo_config import cfg
 from oslo_utils import uuidutils
 import webob.exc
 
@@ -69,7 +70,7 @@ class AIMBaseTestCase(test_nr_base.CommonNeutronBaseTestCase,
                       test_ext_base.ExtensionDriverTestBase,
                       test_aim_md.ApicAimTestMixin,
                       test_address_scope.AddressScopeTestCase):
-    _extension_drivers = ['aim_extension']
+    _extension_drivers = ['aim_extension', 'apic_segmentation_label']
     _extension_path = None
 
     def setUp(self, policy_drivers=None, core_plugin=None, ml2_options=None,
@@ -83,6 +84,13 @@ class AIMBaseTestCase(test_nr_base.CommonNeutronBaseTestCase,
         # performed up until that point (including those in the aim_mapping)
         # driver are rolled back.
         policy_drivers = policy_drivers or ['aim_mapping', 'dummy']
+        if not cfg.CONF.group_policy.extension_drivers:
+            config.cfg.CONF.set_override(
+                'extension_drivers', self._extension_drivers,
+                group='group_policy')
+        if self._extension_path:
+            config.cfg.CONF.set_override(
+                'api_extensions_path', self._extension_path)
         self.agent_conf = AGENT_CONF
         ml2_opts = ml2_options or {'mechanism_drivers': ['logger', 'apic_aim'],
                                    'extension_drivers': ['apic_aim'],
@@ -1168,13 +1176,18 @@ class TestPolicyTarget(AIMBaseTestCase):
                                     l3_policy_id=l3p['id'])['l2_policy']
         ptg = self.create_policy_target_group(
             name="ptg1", l2_policy_id=l2p['id'])['policy_target_group']
+        segmentation_labels = ['label1', 'label2']
         pt1 = self.create_policy_target(
-            policy_target_group_id=ptg['id'])['policy_target']
+            policy_target_group_id=ptg['id'],
+            segmentation_labels=segmentation_labels)['policy_target']
         self._bind_port_to_host(pt1['port_id'], 'h1')
 
         mapping = self.driver.get_gbp_details(
             self._neutron_admin_context, device='tap%s' % pt1['port_id'],
             host='h1')
+        if 'apic_segmentation_label' in self._extension_drivers:
+            self.assertItemsEqual(segmentation_labels,
+                                  mapping['segmentation_labels'])
         req_mapping = self.driver.request_endpoint_details(
             nctx.get_admin_context(),
             request={'device': 'tap%s' % pt1['port_id'], 'host': 'h1',

@@ -158,6 +158,7 @@ class AIMMappingRPCMixin(ha_ip_db.HAIPOwnerDbMixin):
         self._add_allowed_address_pairs_details(context, port, details)
         self._add_vrf_details(context, details['l3_policy_id'], details)
         self._add_extra_details(context, port, details)
+        self._add_segmentation_label_details(context, port, details)
         details.pop('_cache', None)
 
         LOG.debug("Details for port %s : %s" % (port['id'], details))
@@ -213,6 +214,17 @@ class AIMMappingRPCMixin(ha_ip_db.HAIPOwnerDbMixin):
             details['vrf_name'] = aim_vrf.name
             details['vrf_subnets'] = self._get_vrf_subnets(context, vrf_id,
                                                            details)
+
+    # Child class needs to support:
+    # - self._get_segmentation_labels(context, port, details)
+    def _add_segmentation_label_details(self, context, port, details):
+        # This method needs to define requirements for this Mixin's child
+        # classes in order to fill the following result parameters:
+        # - segmentation_labels
+        # apic_segmentation_label is a GBP driver extension configured
+        # for the aim_mapping driver
+        details['segmentation_labels'] = self._get_segmentation_labels(
+            context, port, details)
 
     def _add_extra_details(self, context, port, details):
         # TODO(ivar): Extra details depend on HA and SC implementation
