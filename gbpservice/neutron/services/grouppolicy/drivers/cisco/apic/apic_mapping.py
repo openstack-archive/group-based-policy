@@ -40,6 +40,7 @@ from neutron.extensions import portbindings
 from neutron.extensions import providernet
 from neutron import manager
 from neutron.plugins.common import constants as p_const
+from neutron.plugins.ml2.drivers import type_vxlan  # noqa
 from neutron.plugins.ml2 import driver_api as n_api
 from neutron.plugins.ml2 import models as ml2_models
 from neutron.plugins.ml2 import rpc as neu_rpc
