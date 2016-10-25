@@ -55,6 +55,11 @@ PROMISCUOUS_TYPES = [n_constants.DEVICE_OWNER_DHCP,
 # TODO(ivar): define a proper promiscuous API
 PROMISCUOUS_SUFFIX = 'promiscuous'
 
+CONTRACTS = 'contracts'
+CONTRACT_SUBJECTS = 'contract_subjects'
+FILTERS = 'filters'
+FILTER_ENTRIES = 'filter_entries'
+
 
 class SimultaneousV4V6AddressScopesNotSupportedOnAimDriver(
     exc.GroupPolicyBadRequest):
@@ -245,7 +250,46 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
             self._cleanup_router(context._plugin_context, router_id,
                                  clean_session=False)
 
-# TODO(Sumit): Implement get_l3_policy_status()
+    @log.log_method_call
+    def get_l3_policy_status(self, context):
+        # Not all of the neutron resources that l3_policy maps to
+        # has a status attribute, hence we derive the status
+        # from the AIM resources that the neutron resources map to
+        session = context._plugin_context.session
+        l3p_db = context._plugin._get_l3_policy(
+            context._plugin_context, context.current['id'])
+        mapped_aim_resources = []
+        # Note: Subnetpool is not mapped to any AIM resource, hence it is not
+        # considered for deriving the status
+        mapped_status = []
+
+        for ascp in ADDR_SCOPE_KEYS:
+            if l3p_db[ascp]:
+                ascp_id = l3p_db[ascp]
+                ascope = self._get_address_scope(
+                    context._plugin_context, ascp_id, clean_session=False)
+                vrf_dn = ascope['apic:distinguished_names']['VRF']
+                aim_vrf = self._get_vrf_by_dn(context, vrf_dn)
+                mapped_aim_resources.append(aim_vrf)
+
+        routers = [router.router_id for router in l3p_db.routers]
+        for router_id in routers:
+            router = self._get_router(
+                context._plugin_context, router_id, clean_session=False)
+            mapped_status.append(
+                {'status': self._map_ml2plus_status(router)})
+            """
+            subject_dn = router['apic:distinguished_names']['ContractSubject']
+            aim_subject = self._get_contract_subject_by_dn(context, subject_dn)
+            mapped_aim_resources.append(aim_subject)
+            contract_dn = router['apic:distinguished_names']['Contract']
+            aim_contract = self._get_contract_by_dn(context, contract_dn)
+            mapped_aim_resources.append(aim_contract)
+            """
+
+        mapped_status.append({'status': self._merge_aim_status(
+            session, mapped_aim_resources)})
+        context.current['status'] = self._merge_gbp_status(mapped_status)
 
     @log.log_method_call
     def create_l2_policy_precommit(self, context):
@@ -282,7 +326,34 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
                 context, context.current, default_epg_dn)
         super(AIMMappingDriver, self).delete_l2_policy_precommit(context)
 
-# TODO(Sumit): Implement get_l2_policy_status()
+    @log.log_method_call
+    def get_l2_policy_status(self, context):
+        l2p_db = context._plugin._get_l2_policy(
+            context._plugin_context, context.current['id'])
+        net = self._get_network(context._plugin_context,
+                                l2p_db['network_id'],
+                                clean_session=False)
+
+        if net:
+            context.current['status'] = net['status']
+            default_epg_dn = net['apic:distinguished_names']['EndpointGroup']
+            aim_resources = self._get_implicit_contracts_for_default_epg(
+                context, l2p_db, default_epg_dn)
+            aim_resources_list = []
+            for k in aim_resources.keys():
+                if not aim_resources[k] or not all(
+                    x for x in aim_resources[k]):
+                    # We expected a AIM mapped resource but did not find
+                    # it, so something seems to be wrong
+                    context.current['status'] = gp_const.STATUS_ERROR
+                    return
+                aim_resources_list.extend(aim_resources[k])
+            merged_aim_status = self._merge_aim_status(
+                context._plugin_context.session, aim_resources_list)
+            context.current['status'] = self._merge_gbp_status(
+                [context.current, {'status': merged_aim_status}])
+        else:
+            context.current['status'] = gp_const.STATUS_ERROR
 
     @log.log_method_call
     def create_policy_target_group_precommit(self, context):
@@ -904,8 +975,16 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
         self._process_contracts_for_default_epg(
             context, l2p, epg_dn, create=False, delete=True)
 
+    def _get_implicit_contracts_for_default_epg(
+        self, context, l2p, epg_dn):
+        return self._process_contracts_for_default_epg(
+            context, l2p, epg_dn, get=True)
+
     def _process_contracts_for_default_epg(
-        self, context, l2p, epg_dn, create=True, delete=False):
+        self, context, l2p, epg_dn, create=True, delete=False, get=False):
+        # get=True overrides the create and delete cases, and returns a dict
+        # with the Contracts, ContractSubjects, Filters, and FilterEntries
+        # for the default EPG
         # create=True, delete=False means create everything and add Contracts
         # to the default EPG
         # create=False, delete=False means only add Contracts to the default
@@ -937,19 +1016,29 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
                 gbp_resource_name=alib.PER_PROJECT,
                 prefix=contract_name_prefix)
 
-            if create:
-                self.aim.create(aim_ctx, aim_contract, overwrite=True)
+            if get:
+                aim_resources = {}
+                aim_resources[FILTERS] = []
+                aim_resources[FILTER_ENTRIES] = []
+                aim_resources[CONTRACT_SUBJECTS] = []
+                contract_fetched = self.aim.get(aim_ctx, aim_contract)
+                aim_resources[CONTRACTS] = [contract_fetched]
+            else:
+                if create:
+                    self.aim.create(aim_ctx, aim_contract, overwrite=True)
 
-            if not delete:
-                if contract_name_prefix == alib.IMPLICIT_PREFIX:
-                    # Default EPG provides and consumes ARP Contract
-                    self._add_contracts_for_epg(
-                        aim_ctx, aim_epg, provided_contracts=[contract_name],
-                        consumed_contracts=[contract_name])
-                else:
-                    # Default EPG provides Infra Services' Contract
-                    self._add_contracts_for_epg(
-                        aim_ctx, aim_epg, provided_contracts=[contract_name])
+                if not delete:
+                    if contract_name_prefix == alib.IMPLICIT_PREFIX:
+                        # Default EPG provides and consumes ARP Contract
+                        self._add_contracts_for_epg(
+                            aim_ctx, aim_epg,
+                            provided_contracts=[contract_name],
+                            consumed_contracts=[contract_name])
+                    else:
+                        # Default EPG provides Infra Services' Contract
+                        self._add_contracts_for_epg(
+                            aim_ctx, aim_epg,
+                            provided_contracts=[contract_name])
 
             filter_names = []
             for k, v in entries.iteritems():
@@ -960,24 +1049,39 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
                     l2p['tenant_id'], gbp_resource_id=l2p['tenant_id'],
                     gbp_resource_name=alib.PER_PROJECT,
                     prefix=''.join([contract_name_prefix, k, '-']))
+                if get:
+                    filter_fetched = self.aim.get(aim_ctx, aim_filter)
+                    aim_resources[FILTERS].append(filter_fetched)
+                    aim_filter_entry = self._aim_filter_entry(
+                        session, aim_filter, k,
+                        alib.map_to_aim_filter_entry(v))
+                    entry_fetched = self.aim.get(aim_ctx, aim_filter_entry)
+                    aim_resources[FILTER_ENTRIES].append(entry_fetched)
+                else:
+                    if create:
+                        self.aim.create(aim_ctx, aim_filter, overwrite=True)
+                        # Create FilterEntries (one per tenant) and associate
+                        #  with Filter
+                        self._create_aim_filter_entry(
+                            session, aim_ctx, aim_filter, k, v, overwrite=True)
+                        filter_names.append(aim_filter.name)
+                    if delete:
+                        self._delete_aim_filter_entries(aim_ctx, aim_filter)
+                        self.aim.delete(aim_ctx, aim_filter)
+            if get:
+                aim_contract_subject = self._aim_contract_subject(aim_contract)
+                subject_fetched = self.aim.get(aim_ctx, aim_contract_subject)
+                aim_resources[CONTRACT_SUBJECTS].append(subject_fetched)
+                return aim_resources
+            else:
                 if create:
-                    self.aim.create(aim_ctx, aim_filter, overwrite=True)
-                    # Create FilterEntries (one per tenant) and associate with
-                    # Filter
-                    self._create_aim_filter_entry(
-                        session, aim_ctx, aim_filter, k, v, overwrite=True)
-                    filter_names.append(aim_filter.name)
+                    # Create ContractSubject (one per tenant) with relevant
+                    # Filters, and associate with Contract
+                    self._populate_aim_contract_subject_by_filters(
+                        context, aim_contract, bi_filters=filter_names)
                 if delete:
-                    self._delete_aim_filter_entries(aim_ctx, aim_filter)
-                    self.aim.delete(aim_ctx, aim_filter)
-            if create:
-                # Create ContractSubject (one per tenant) with relevant
-                # Filters, and associate with Contract
-                self._populate_aim_contract_subject_by_filters(
-                    context, aim_contract, bi_filters=filter_names)
-            if delete:
-                self._delete_aim_contract_subject(aim_ctx, aim_contract)
-                self.aim.delete(aim_ctx, aim_contract)
+                    self._delete_aim_contract_subject(aim_ctx, aim_contract)
+                    self.aim.delete(aim_ctx, aim_contract)
 
     def _add_implicit_svc_contracts_to_epg(self, context, l2p, aim_epg):
         session = context._plugin_context.session
@@ -1028,6 +1132,27 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
 
         aim_resource = aim_resource_class(**kwargs)
         return aim_resource
+
+    def _merge_gbp_status(self, gbp_resource_list):
+        merged_status = gp_const.STATUS_ACTIVE
+        for gbp_resource in gbp_resource_list:
+            if gbp_resource['status'] == gp_const.STATUS_BUILD:
+                merged_status = gp_const.STATUS_BUILD
+            elif gbp_resource['status'] == gp_const.STATUS_ERROR:
+                merged_status = gp_const.STATUS_ERROR
+                break
+        return merged_status
+
+    def _map_ml2plus_status(self, sync_status):
+        if not sync_status:
+            # REVIST(Sumit)
+            return gp_const.STATUS_BUILD
+        if sync_status == cisco_apic.SYNC_ERROR:
+            return gp_const.STATUS_ERROR
+        elif sync_status == cisco_apic.SYNC_BUILD:
+            return gp_const.STATUS_BUILD
+        else:
+            return gp_const.STATUS_ACTIVE
 
     def _map_aim_status(self, session, aim_resource_obj):
         # Note that this implementation assumes that this driver
@@ -1253,9 +1378,9 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
                      'fixed_ips': {'subnet_id': port_sn}})
         if router_intf_ports:
             routers = self._get_routers(
-                 plugin_context,
-                 filters={'device_id': [x['device_id']
-                                        for x in router_intf_ports]})
+                plugin_context,
+                filters={'device_id': [x['device_id']
+                                       for x in router_intf_ports]})
             ext_nets = self._get_networks(
                 plugin_context,
                 filters={'id': [r['external_gateway_info']['network_id']
@@ -1272,18 +1397,19 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
                         for a in details['allowed_address_pairs']
                         if a['active']]
         if active_addrs:
-            others = self._get_ports(plugin_context,
-                filters={'network_id': [port['network_id']],
-                         'fixed_ips': {'ip_address': active_addrs}})
+            others = self._get_ports(
+                plugin_context, filters={'network_id': [port['network_id']],
+                                         'fixed_ips':
+                                         {'ip_address': active_addrs}})
             fips_filter.extend([p['id'] for p in others])
         fips = self._get_fips(plugin_context,
                               filters={'port_id': fips_filter})
 
         for ext_net in ext_nets:
             dn = ext_net.get(cisco_apic.DIST_NAMES, {}).get(
-                    cisco_apic.EXTERNAL_NETWORK)
+                cisco_apic.EXTERNAL_NETWORK)
             ext_net_epg_dn = ext_net.get(cisco_apic.DIST_NAMES, {}).get(
-                    cisco_apic.EPG)
+                cisco_apic.EPG)
             if not dn or not ext_net_epg_dn:
                 continue
             if 'distributed' != ext_net.get(cisco_apic.NAT_TYPE):
@@ -1313,3 +1439,21 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
                     f['nat_epg_name'] = ext_net_epg.name
                     f['nat_epg_tenant'] = ext_net_epg.tenant_name
         return fips, ipms, host_snat_ips
+
+    def _get_vrf_by_dn(self, context, vrf_dn):
+        aim_context = self._get_aim_context(context)
+        vrf = self.aim.get(
+            aim_context, aim_resource.VRF.from_dn(vrf_dn))
+        return vrf
+
+    def _get_contract_by_dn(self, context, contract_dn):
+        aim_context = self._get_aim_context(context)
+        contract = self.aim.get(
+            aim_context, aim_resource.Contract.from_dn(contract_dn))
+        return contract
+
+    def _get_contract_subject_by_dn(self, context, subject_dn):
+        aim_context = self._get_aim_context(context)
+        subject = self.aim.get(
+            aim_context, aim_resource.ContractSubject.from_dn(subject_dn))
+        return subject
