@@ -18,14 +18,16 @@ from oslo.config import cfg
 LOG = logging.getLogger(__name__)
 
 
-class NovaClient:
+client = None
 
-    def __init__(self):
 
+def _get_client():
+    global client
+    if client is None:
+        LOG.debug("Initialize Nova client")
         bypass_url = "%s/%s" % (cfg.CONF.nova_url,
                                 cfg.CONF.nova_admin_tenant_id)
-
-        self.client = nclient.Client(
+        client = nclient.Client(
             username=cfg.CONF.nova_admin_username,
             api_key=cfg.CONF.nova_admin_password,
             project_id=None,
@@ -35,6 +37,13 @@ class NovaClient:
             insecure=cfg.CONF.nova_api_insecure,
             bypass_url=bypass_url,
             region_name=cfg.CONF.nova_region_name)
+    return client
+
+
+class NovaClient:
+
+    def __init__(self):
+        self.client = _get_client()
 
     def get_server(self, server_id):
         try:
