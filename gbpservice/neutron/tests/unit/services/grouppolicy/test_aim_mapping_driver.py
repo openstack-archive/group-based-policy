@@ -217,6 +217,55 @@ class AIMBaseTestCase(test_nr_base.CommonNeutronBaseTestCase,
                 shared=shared)['policy_rule'])
         return rules
 
+    def _validate_status(self, show_method, resource_id):
+        # This validation is used in the case where GBP resource status is
+        # derived from Neutron and AIM resources which it maps to. In this
+        # test we manipulate the state of AIM resources to test that the
+        # different status states are correctly reflected in the L2P.
+        AIM_STATUS = aim_status.AciStatus.SYNC_PENDING
+
+        def mock_get_aim_status(aim_context, aim_resource):
+            astatus = aim_status.AciStatus()
+            astatus.sync_status = AIM_STATUS
+            return astatus
+
+        orig_get_status = self.aim_mgr.get_status
+
+        res = getattr(self, show_method)(resource_id, expected_res_status=200)[
+            show_method[5:]]
+        self.assertEqual(gp_const.STATUS_BUILD, res['status'])
+        AIM_STATUS = aim_status.AciStatus.SYNCED
+        # Temporarily patch aim_mgr.get_status to set status from test
+        self.aim_mgr.get_status = mock_get_aim_status
+        res = getattr(self, show_method)(resource_id, expected_res_status=200)[
+            show_method[5:]]
+        self.assertEqual(gp_const.STATUS_ACTIVE, res['status'])
+        AIM_STATUS = aim_status.AciStatus.SYNC_FAILED
+        res = getattr(self, show_method)(resource_id, expected_res_status=200)[
+            show_method[5:]]
+        self.assertEqual(gp_const.STATUS_ERROR, res['status'])
+        # Restore aim_mgr.get_status
+        self.aim_mgr.get_status = orig_get_status
+
+
+class TestGBPStatus(AIMBaseTestCase):
+
+    def test_status_merging(self):
+        gbp_active = {'status': gp_const.STATUS_ACTIVE}
+        gbp_objs = [gbp_active, gbp_active]
+        mstatus = self.driver._merge_gbp_status(gbp_objs)
+        self.assertEqual(gp_const.STATUS_ACTIVE, mstatus)
+
+        gbp_build = {'status': gp_const.STATUS_BUILD}
+        gbp_objs = [gbp_active, gbp_build]
+        mstatus = self.driver._merge_gbp_status(gbp_objs)
+        self.assertEqual(gp_const.STATUS_BUILD, mstatus)
+
+        gbp_error = {'status': gp_const.STATUS_ERROR}
+        gbp_objs = [gbp_active, gbp_build, gbp_error]
+        mstatus = self.driver._merge_gbp_status(gbp_objs)
+        self.assertEqual(gp_const.STATUS_ERROR, mstatus)
+
 
 class TestAIMStatus(AIMBaseTestCase):
 
@@ -280,6 +329,7 @@ class TestL3Policy(AIMBaseTestCase):
         ascope = res['address_scope']
         self.assertEqual(l3p['ip_version'], ascope['ip_version'])
         self.assertEqual(l3p['shared'], ascope['shared'])
+        self.assertEqual(gp_const.STATUS_BUILD, l3p['status'])
         sp_id = l3p[subnetpools_version][0]
         self.assertIsNotNone(ascp_id)
         routers = l3p['routers']
@@ -323,6 +373,7 @@ class TestL3Policy(AIMBaseTestCase):
         # Create L3 policy with implicit router.
         l3p = self.create_l3_policy(name="l3p1")['l3_policy']
         self._validate_create_l3_policy(l3p, 'address_scope_v4_id')
+        self._validate_status('show_l3_policy', l3p['id'])
         # TODO(Sumit): Test update of relevant attributes
         self._validate_delete_l3_policy_implicit_resources(
             l3p, 'address_scope_v4_id')
@@ -333,6 +384,7 @@ class TestL3Policy(AIMBaseTestCase):
             name="l3p1", ip_pool='2210::/64', subnet_prefix_length=64,
             ip_version=6)['l3_policy']
         self._validate_create_l3_policy(l3p, 'address_scope_v6_id')
+        self._validate_status('show_l3_policy', l3p['id'])
         # TODO(Sumit): Test update of relevant attributes
         self._validate_delete_l3_policy_implicit_resources(
             l3p, 'address_scope_v6_id')
@@ -344,6 +396,7 @@ class TestL3Policy(AIMBaseTestCase):
                 name="l3p1", address_scope_v4_id=ascp['id'])['l3_policy']
             self.assertEqual(ascp['id'], l3p['address_scope_v4_id'])
             self._validate_create_l3_policy(l3p, 'address_scope_v4_id')
+            self._validate_status('show_l3_policy', l3p['id'])
             # TODO(Sumit): Test update of relevant attributes
             self._validate_delete_l3_policy_implicit_resources(
                 l3p, 'address_scope_v4_id')
@@ -357,6 +410,7 @@ class TestL3Policy(AIMBaseTestCase):
                 ip_version=6)['l3_policy']
             self.assertEqual(ascp['id'], l3p['address_scope_v6_id'])
             self._validate_create_l3_policy(l3p, 'address_scope_v6_id')
+            self._validate_status('show_l3_policy', l3p['id'])
             # TODO(Sumit): Test update of relevant attributes
             self._validate_delete_l3_policy_implicit_resources(
                 l3p, 'address_scope_v6_id')
@@ -658,6 +712,7 @@ class TestL2Policy(TestL2PolicyBase):
         self.assertEqual(1, len(aim_filter_entries))  # belongs to MD
 
     def test_l2_policy_lifecycle(self):
+
         self.assertEqual(0, len(self.aim_mgr.find(
             self._aim_context, aim_resource.Contract)))
         self.assertEqual(0, len(self.aim_mgr.find(
@@ -669,6 +724,7 @@ class TestL2Policy(TestL2PolicyBase):
         # are created after the first L2P creation
         self._validate_implicit_contracts_exist(l2p0)
         l2p = self.create_l2_policy(name="l2p1")['l2_policy']
+        self.assertEqual(gp_const.STATUS_BUILD, l2p['status'])
         # This validates that the infra and implicit Contracts, etc.
         # are not created after the second L2P creation
         self._validate_implicit_contracts_exist(l2p)
@@ -682,6 +738,9 @@ class TestL2Policy(TestL2PolicyBase):
         self.assertIsNotNone(res['network']['id'])
         self.show_l3_policy(l3p_id, expected_res_status=200)
         self.show_l2_policy(l2p_id, expected_res_status=200)
+
+        self._validate_status('show_l2_policy', l2p_id)
+
         self.update_l2_policy(l2p_id, expected_res_status=200,
                               name="new name")
 
