@@ -830,10 +830,8 @@ class TestPolicyTarget(ResourceMappingTestCase, TestClusterIdMixin):
                                             self.api)['port']
                     ports.append(port)
                     self.assertEqual(1, len(port['fixed_ips']))
-                # sadly, we expect a 500 being a postcommit Neutron raised
-                # exception
                 self.create_policy_target(
-                    policy_target_group_id=ptg['id'], expected_res_status=500)
+                    policy_target_group_id=ptg['id'], expected_res_status=409)
 
     def test_port_extra_attributes(self, extra=None):
         extra = extra or {}

@@ -301,7 +301,7 @@ class TestPolicyTarget(ResourceMappingProxyGroupGBPTestCase,
         ptg = self.create_policy_target_group()['policy_target_group']
         self.create_policy_target(policy_target_group_id=ptg['id'],
                                   group_default_gateway=True,
-                                  expected_res_status=500)
+                                  expected_res_status=409)
 
     def test_proxy_gateway_deleted(self):
         ptg = self.create_policy_target_group()['policy_target_group']
