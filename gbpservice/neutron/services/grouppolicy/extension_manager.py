@@ -13,12 +13,10 @@
 
 from neutron._i18n import _LE
 from neutron._i18n import _LI
-from neutron.common import exceptions as n_exc
 from oslo_config import cfg
 from oslo_log import log
+from oslo_utils import excutils
 import stevedore
-
-from gbpservice.neutron.services.grouppolicy.common import exceptions as gp_exc
 
 
 LOG = log.getLogger(__name__)
@@ -73,14 +71,13 @@ class ExtensionManager(stevedore.named.NamedExtensionManager):
         for driver in self.ordered_ext_drivers:
             try:
                 getattr(driver.obj, method_name)(session, data, result)
-            except (gp_exc.GroupPolicyException, n_exc.NeutronException):
-                # This is an exception for the user.
-                raise
             except Exception:
-                LOG.exception(
-                    _LE("Extension driver '%(name)s' failed in %(method)s"),
-                    {'name': driver.name, 'method': method_name}
-                )
+                with excutils.save_and_reraise_exception():
+                    LOG.exception(
+                        _LE("Extension driver '%(name)s' "
+                            "failed in %(method)s"),
+                        {'name': driver.name, 'method': method_name}
+                    )
 
     def process_create_policy_target(self, session, data, result):
         """Call all extension drivers during PT creation."""
