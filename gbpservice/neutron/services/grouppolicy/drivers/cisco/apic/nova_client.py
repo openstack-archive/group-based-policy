@@ -21,10 +21,12 @@ from oslo_log import log as logging
 LOG = logging.getLogger(__name__)
 
 
-class NovaClient:
+client = None
 
-    def __init__(self):
 
+def _get_client():
+    global client
+    if client is None:
         auth = ks_auth.load_from_conf_options(cfg.CONF, 'nova')
         endpoint_override = None
 
@@ -46,13 +48,20 @@ class NovaClient:
             cfg.CONF, 'nova', auth=auth)
         novaclient_cls = nclient.get_client_class(n_nova.NOVA_API_VERSION)
 
-        self.nclient = novaclient_cls(
+        client = novaclient_cls(
             session=session,
             region_name=cfg.CONF.nova.region_name)
+    return client
+
+
+class NovaClient:
+
+    def __init__(self):
+        self.client = _get_client()
 
     def get_server(self, server_id):
         try:
-            return self.nclient.servers.get(server_id)
+            return self.client.servers.get(server_id)
         except nova_exceptions.NotFound:
             LOG.warning(_("Nova returned NotFound for server: %s"),
                         server_id)
