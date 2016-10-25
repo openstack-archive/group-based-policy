@@ -34,6 +34,9 @@ from neutron.tests.unit.extensions import test_address_scope
 from neutron.tests.unit.extensions import test_l3
 from opflexagent import constants as ofcst
 
+from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import (
+    mechanism_driver as md)
+
 PLUGIN_NAME = 'gbpservice.neutron.plugins.ml2plus.plugin.Ml2PlusPlugin'
 
 AGENT_CONF_OPFLEX = {'alive': True, 'binary': 'somebinary',
@@ -1109,6 +1112,97 @@ class TestSyncState(ApicAimTestCase):
 
         with mock.patch('aim.aim_manager.AimManager.get_status', get_status):
             self._test_router_interface_subnet('error')
+
+
+class TestTopology(ApicAimTestCase):
+    def test_network_subnets_on_same_router(self):
+        # Create network.
+        net_resp = self._make_network(self.fmt, 'net1', True)
+        net_id = net_resp['network']['id']
+
+        # Create router.
+        router1_id = self._make_router(
+            self.fmt, 'test-tenant', 'router1')['router']['id']
+
+        # Create subnet and add to router.
+        subnet1_id = self._make_subnet(
+            self.fmt, net_resp, '10.0.1.1', '10.0.1.0/24')['subnet']['id']
+        self.l3_plugin.add_router_interface(
+            context.get_admin_context(), router1_id, {'subnet_id': subnet1_id})
+
+        # Create 2nd subnet and add to router.
+        subnet2_id = self._make_subnet(
+            self.fmt, net_resp, '10.0.2.1', '10.0.2.0/24')['subnet']['id']
+        self.l3_plugin.add_router_interface(
+            context.get_admin_context(), router1_id, {'subnet_id': subnet2_id})
+
+        # Create another router.
+        router2_id = self._make_router(
+            self.fmt, 'test-tenant', 'router2')['router']['id']
+
+        # Create 3rd subnet and verify adding to 2nd router fails.
+        subnet3_id = self._make_subnet(
+            self.fmt, net_resp, '10.0.3.1', '10.0.3.0/24')['subnet']['id']
+        self.assertRaises(
+            md.UnsupportedRoutingTopology,
+            self.l3_plugin.add_router_interface,
+            context.get_admin_context(), router2_id, {'subnet_id': subnet3_id})
+
+        # Verify adding 1st subnet to 2nd router fails.
+        fixed_ips = [{'subnet_id': subnet1_id, 'ip_address': '10.0.1.100'}]
+        port_id = self._make_port(
+            self.fmt, net_id, fixed_ips=fixed_ips)['port']['id']
+        self.assertRaises(
+            md.UnsupportedRoutingTopology,
+            self.l3_plugin.add_router_interface,
+            context.get_admin_context(), router2_id, {'port_id': port_id})
+
+        # Verify adding 2nd subnet to 2nd router fails.
+        fixed_ips = [{'subnet_id': subnet2_id, 'ip_address': '10.0.2.100'}]
+        port_id = self._make_port(
+            self.fmt, net_id, fixed_ips=fixed_ips)['port']['id']
+        self.assertRaises(
+            md.UnsupportedRoutingTopology,
+            self.l3_plugin.add_router_interface,
+            context.get_admin_context(), router2_id, {'port_id': port_id})
+
+    def test_network_subnet_on_multple_routers(self):
+        # Create network.
+        net_resp = self._make_network(self.fmt, 'net1', True)
+        net_id = net_resp['network']['id']
+
+        # Create router.
+        router1_id = self._make_router(
+            self.fmt, 'test-tenant', 'router1')['router']['id']
+
+        # Create subnet and add to router.
+        subnet1_id = self._make_subnet(
+            self.fmt, net_resp, '10.0.1.1', '10.0.1.0/24')['subnet']['id']
+        self.l3_plugin.add_router_interface(
+            context.get_admin_context(), router1_id, {'subnet_id': subnet1_id})
+
+        # Create 2nd router.
+        router2_id = self._make_router(
+            self.fmt, 'test-tenant', 'router2')['router']['id']
+
+        # Add same subnet to 2nd router.
+        fixed_ips = [{'subnet_id': subnet1_id, 'ip_address': '10.0.1.100'}]
+        port_id = self._make_port(
+            self.fmt, net_id, fixed_ips=fixed_ips)['port']['id']
+        self.l3_plugin.add_router_interface(
+            context.get_admin_context(), router2_id, {'port_id': port_id})
+
+        # Create 2nd subnet and verify adding to either router fails.
+        subnet2_id = self._make_subnet(
+            self.fmt, net_resp, '10.0.2.1', '10.0.2.0/24')['subnet']['id']
+        self.assertRaises(
+            md.UnsupportedRoutingTopology,
+            self.l3_plugin.add_router_interface,
+            context.get_admin_context(), router1_id, {'subnet_id': subnet2_id})
+        self.assertRaises(
+            md.UnsupportedRoutingTopology,
+            self.l3_plugin.add_router_interface,
+            context.get_admin_context(), router2_id, {'subnet_id': subnet2_id})
 
 
 class TestPortBinding(ApicAimTestCase):

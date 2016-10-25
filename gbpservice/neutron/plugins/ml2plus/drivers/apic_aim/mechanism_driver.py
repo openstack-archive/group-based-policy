@@ -22,6 +22,7 @@ from aim import utils as aim_utils
 from neutron._i18n import _LI
 from neutron._i18n import _LW
 from neutron.common import constants as n_constants
+from neutron.common import exceptions
 from neutron.db import address_scope_db
 from neutron.db import api as db_api
 from neutron.db import l3_db
@@ -57,6 +58,11 @@ AGENT_TYPE_DVS = 'DVS agent'
 VIF_TYPE_DVS = 'dvs'
 PROMISCUOUS_TYPES = [n_constants.DEVICE_OWNER_DHCP,
                      n_constants.DEVICE_OWNER_LOADBALANCER]
+
+
+class UnsupportedRoutingTopology(exceptions.BadRequest):
+    message = _("All router interfaces for a network must share either the "
+                "same router or the same subnet.")
 
 
 class ApicMechanismDriver(api_plus.MechanismDriver):
@@ -837,20 +843,42 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
             aim_epg = self.aim.update(aim_ctx, aim_epg,
                                       provided_contract_names=contracts)
 
-        # Find routers with interfaces to this network. The current
-        # interface is not included, because the RouterPort has not
-        # yet been added to the DB session.
-        router_ids = [r[0] for r in
-                      session.query(l3_db.RouterPort.router_id).
-                      join(models_v2.Port).
-                      filter(models_v2.Port.network_id == network_id,
-                             l3_db.RouterPort.port_type ==
-                             n_constants.DEVICE_OWNER_ROUTER_INTF).distinct()]
+        # Find up to two existing router interfaces for this
+        # network. The interface currently being added is not
+        # included, because the RouterPort has not yet been added to
+        # the DB session.
+        intfs = (session.query(l3_db.RouterPort.router_id,
+                               models_v2.IPAllocation.subnet_id).
+                 join(models_v2.Port).
+                 join(models_v2.IPAllocation).
+                 filter(models_v2.Port.network_id == network_id,
+                        l3_db.RouterPort.port_type ==
+                        n_constants.DEVICE_OWNER_ROUTER_INTF).
+                 limit(2).
+                 all())
+        if intfs:
+            # Since the EPGs that provide/consume routers' contracts
+            # are at network rather than subnet granularity,
+            # topologies where different subnets on the same network
+            # are interfaced to different routers, which are valid in
+            # Neutron, would result in unintended routing. We
+            # therefore require that all router interfaces for a
+            # network share either the same router or the same subnet.
 
-        # TODO(rkukura): Validate topology.
-
-        if not router_ids:
-            # Enable routing for BD and set VRF.
+            different_router = False
+            different_subnet = False
+            subnet_ids = [subnet['id'] for subnet in subnets]
+            for existing_router_id, existing_subnet_id in intfs:
+                if router_id != existing_router_id:
+                    different_router = True
+                for subnet_id in subnet_ids:
+                    if subnet_id != existing_subnet_id:
+                        different_subnet = True
+            if different_router and different_subnet:
+                raise UnsupportedRoutingTopology()
+        else:
+            # No existing interfaces, so enable routing for BD and set
+            # its VRF.
 
             subnetpool_id = subnets[0]['subnetpool_id']
             if subnetpool_id:
