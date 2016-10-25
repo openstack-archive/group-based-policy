@@ -280,6 +280,7 @@ class TestL3Policy(AIMBaseTestCase):
         ascope = res['address_scope']
         self.assertEqual(l3p['ip_version'], ascope['ip_version'])
         self.assertEqual(l3p['shared'], ascope['shared'])
+        self.assertEqual(gp_const.STATUS_BUILD, l3p['status'])
         sp_id = l3p[subnetpools_version][0]
         self.assertIsNotNone(ascp_id)
         routers = l3p['routers']
@@ -669,6 +670,7 @@ class TestL2Policy(TestL2PolicyBase):
         # are created after the first L2P creation
         self._validate_implicit_contracts_exist(l2p0)
         l2p = self.create_l2_policy(name="l2p1")['l2_policy']
+        self.assertEqual(gp_const.STATUS_ACTIVE, l2p['status'])
         # This validates that the infra and implicit Contracts, etc.
         # are not created after the second L2P creation
         self._validate_implicit_contracts_exist(l2p)

@@ -245,7 +245,40 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
             self._cleanup_router(context._plugin_context, router_id,
                                  clean_session=False)
 
-# TODO(Sumit): Implement get_l3_policy_status()
+    @log.log_method_call
+    def get_l3_policy_status(self, context):
+        # Not all of the neutron resources that l3_policy maps to
+        # has a status attribute, hence we derive the status
+        # from the AIM resources that the neutron resources map to
+        session = context._plugin_context.session
+        l3p_db = context._plugin._get_l3_policy(
+            context._plugin_context, context.current['id'])
+        # Subnetpool is not mapped to any AIM resource, hence it is not
+        # considered for deriving the status
+        mapped_aim_resources = []
+
+        for ascp in ADDR_SCOPE_KEYS:
+            if l3p_db[ascp]:
+                ascp_id = l3p_db[ascp]
+                ascope = self._get_address_scope(
+                    context._plugin_context, ascp_id, clean_session=False)
+                vrf_dn = ascope['apic:distinguished_names']['VRF']
+                aim_vrf = self._get_vrf_by_dn(context, vrf_dn)
+                mapped_aim_resources.append(aim_vrf)
+
+        routers = [router.router_id for router in l3p_db.routers]
+        for router_id in routers:
+            router = self._get_router(
+                context._plugin_context, router_id, clean_session=False)
+            subject_dn = router['apic:distinguished_names']['ContractSubject']
+            aim_subject = self._get_contract_subject_by_dn(context, subject_dn)
+            mapped_aim_resources.append(aim_subject)
+            contract_dn = router['apic:distinguished_names']['Contract']
+            aim_contract = self._get_contract_by_dn(context, contract_dn)
+            mapped_aim_resources.append(aim_contract)
+
+        context.current['status'] = self._merge_aim_status(
+            session, mapped_aim_resources)
 
     @log.log_method_call
     def create_l2_policy_precommit(self, context):
@@ -282,7 +315,18 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
                 context, context.current, default_epg_dn)
         super(AIMMappingDriver, self).delete_l2_policy_precommit(context)
 
-# TODO(Sumit): Implement get_l2_policy_status()
+    @log.log_method_call
+    def get_l2_policy_status(self, context):
+        l2p_db = context._plugin._get_l2_policy(
+            context._plugin_context, context.current['id'])
+        net = self._get_network(context._plugin_context,
+                                l2p_db['network_id'],
+                                clean_session=False)
+
+        if net:
+            context.current['status'] = net['status']
+        else:
+            context.current['status'] = gp_const.STATUS_ERROR
 
     @log.log_method_call
     def create_policy_target_group_precommit(self, context):
@@ -1233,3 +1277,21 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
         if self.apic_segmentation_label_driver and pt and (
             'segmentation_labels' in pt):
             return pt['segmentation_labels']
+
+    def _get_vrf_by_dn(self, context, vrf_dn):
+        aim_context = self._get_aim_context(context)
+        vrf = self.aim.get(
+            aim_context, aim_resource.VRF.from_dn(vrf_dn))
+        return vrf
+
+    def _get_contract_by_dn(self, context, contract_dn):
+        aim_context = self._get_aim_context(context)
+        contract = self.aim.get(
+            aim_context, aim_resource.Contract.from_dn(contract_dn))
+        return contract
+
+    def _get_contract_subject_by_dn(self, context, subject_dn):
+        aim_context = self._get_aim_context(context)
+        subject = self.aim.get(
+            aim_context, aim_resource.ContractSubject.from_dn(subject_dn))
+        return subject
