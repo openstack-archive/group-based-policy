@@ -28,6 +28,7 @@ from neutron.db import model_base
 from neutron.extensions import portbindings
 from neutron.extensions import providernet
 from neutron import manager
+from neutron.openstack.common import jsonutils
 from neutron.openstack.common import lockutils
 from neutron.openstack.common import log as logging
 from neutron.plugins.common import constants as p_const
@@ -41,6 +42,7 @@ from oslo.config import cfg
 import sqlalchemy as sa
 
 from gbpservice.neutron.db.grouppolicy import group_policy_mapping_db as gpdb
+from gbpservice.neutron.db import port_ep_db
 from gbpservice.neutron.extensions import group_policy as gpolicy
 from gbpservice.neutron.services.grouppolicy.common import constants as g_const
 from gbpservice.neutron.services.grouppolicy.common import exceptions as gpexc
@@ -238,6 +240,7 @@ class ApicMappingDriver(api.ResourceMappingDriver,
         self.nat_enabled = self.apic_manager.use_vmm
         self.per_tenant_nat_epg = self.apic_manager.per_tenant_nat_epg
         self._gbp_plugin = None
+        self.port_ep_manager = port_ep_db.PortEndpointManager()
         ApicMappingDriver.me = self
 
     def _setup_rpc_listeners(self):
@@ -289,6 +292,17 @@ class ApicMappingDriver(api.ResourceMappingDriver,
         try:
             port_id = self._core_plugin._device_to_port_id(
                 kwargs['device'])
+            if not kwargs.get('recalculate', False):
+                stored_ep = self.port_ep_manager.get(context.session, port_id)
+                if stored_ep and stored_ep.endpoint and stored_ep.up_to_date:
+                    # GBP details are cached, return
+                    LOG.debug("Found stored GBP details: %s" %
+                              stored_ep.endpoint)
+                    return jsonutils.loads(stored_ep.endpoint)
+            else:
+                LOG.info(_("Host %(host)s forcing EP fetching "
+                           "for port %(port)s"),
+                         {'host': kwargs['host'], 'port': port_id})
             port_context = self._core_plugin.get_bound_port_context(
                 context, port_id, kwargs['host'])
             if not port_context:
@@ -437,6 +451,19 @@ class ApicMappingDriver(api.ResourceMappingDriver,
                   "gbp details for %(device)s with error %(error)s"),
                 {'device': kwargs.get('device'), 'error': e.message})
             details = {'device': kwargs.get('device')}
+        # store details
+        try:
+            LOG.debug("Storing GBP details for port_id: %s", port_id)
+            self.port_ep_manager.update(
+                context.session, port_id, endpoint=jsonutils.dumps(details),
+                up_to_date=True)
+        except Exception as e:
+            LOG.exception(
+                _("An exception has occurred while storing device "
+                  "gbp details for %(device)s with error %(error)s"),
+                {'device': kwargs.get('device'), 'error': e.message})
+
+        LOG.debug("Returning GBP details: %s" % details)
         return details
 
     def _allocate_snat_ip_for_host_and_ext_net(self, context, host, network,
@@ -2192,6 +2219,9 @@ class ApicMappingDriver(api.ResourceMappingDriver,
                              [x['port_id'] for x in pointing_pts]})
         for port in ports:
             if self._is_port_bound(port):
+                LOG.debug("Port %s GBP details are outdated" % port['id'])
+                self.port_ep_manager.update(plugin_context.session, port['id'],
+                                            up_to_date=False)
                 LOG.debug("APIC notify port %s", port['id'])
                 self.notifier.port_update(plugin_context, port)
 
