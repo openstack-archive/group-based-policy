@@ -14,6 +14,7 @@ from neutron._i18n import _LE
 from neutron._i18n import _LI
 from oslo_config import cfg
 from oslo_log import log
+from oslo_utils import excutils
 import stevedore
 
 from gbpservice.neutron.services.grouppolicy.common import exceptions as gp_exc
@@ -112,29 +113,20 @@ class PolicyDriverManager(stevedore.named.NamedExtensionManager):
         :raises: neutron.services.group_policy.common.GroupPolicyDriverError
         if any policy driver call fails.
         """
-        error = False
         drivers = (self.ordered_policy_drivers if not
                    method_name.startswith('delete') else
                    self.reverse_ordered_policy_drivers)
         for driver in drivers:
             try:
                 getattr(driver.obj, method_name)(context)
-            except gp_exc.GroupPolicyException:
-                # This is an exception for the user.
-                raise
             except Exception:
-                # This is an internal failure.
-                LOG.exception(
-                    _LE("Policy driver '%(name)s' failed in %(method)s"),
-                    {'name': driver.name, 'method': method_name}
-                )
-                error = True
+                with excutils.save_and_reraise_exception():
+                    LOG.exception(
+                        _LE("Policy driver '%(name)s' failed in %(method)s"),
+                        {'name': driver.name, 'method': method_name}
+                    )
                 if not continue_on_failure:
                     break
-        if error:
-            raise gp_exc.GroupPolicyDriverError(
-                method=method_name
-            )
 
     def ensure_tenant(self, plugin_context, tenant_id):
         for driver in self.ordered_policy_drivers:
