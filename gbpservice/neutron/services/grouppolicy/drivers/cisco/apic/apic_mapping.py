@@ -43,6 +43,7 @@ import sqlalchemy as sa
 
 from gbpservice.neutron.db.grouppolicy import group_policy_mapping_db as gpdb
 from gbpservice.neutron.db import port_ep_db
+from gbpservice.neutron.extensions import apic_port_ep
 from gbpservice.neutron.extensions import group_policy as gpolicy
 from gbpservice.neutron.services.grouppolicy.common import constants as g_const
 from gbpservice.neutron.services.grouppolicy.common import exceptions as gpexc
@@ -243,6 +244,12 @@ class ApicMappingDriver(api.ResourceMappingDriver,
         self.port_ep_manager = port_ep_db.PortEndpointManager()
         ApicMappingDriver.me = self
 
+        # Verify whether apic_port_endpoint extension is loaded
+        self.cache_eps = apic_port_ep.ALIAS in cfg.CONF.ml2.extension_drivers
+        if not self.cache_eps:
+            LOG.warn(_("EP cache disabled. To turn it on, add %s extension to "
+                       "the GBP extension drivers"), apic_port_ep.ALIAS)
+
     def _setup_rpc_listeners(self):
         self.endpoints = [rpc.GBPServerRpcCallback(self)]
         self.topic = rpc.TOPIC_OPFLEX
@@ -292,7 +299,7 @@ class ApicMappingDriver(api.ResourceMappingDriver,
         try:
             port_id = self._core_plugin._device_to_port_id(
                 kwargs['device'])
-            if not kwargs.get('recalculate', False):
+            if not kwargs.get('recalculate', False) and self.cache_eps:
                 stored_ep = self.port_ep_manager.get(context.session, port_id)
                 if stored_ep and stored_ep.endpoint and stored_ep.up_to_date:
                     # GBP details are cached, return

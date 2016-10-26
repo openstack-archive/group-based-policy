@@ -242,6 +242,9 @@ class ApicMappingVlanTestCase(ApicMappingTestCase):
 
 class TestPolicyTarget(ApicMappingTestCase):
 
+    def test_cache_eps_set(self):
+        self.assertTrue(self.driver.cache_eps)
+
     def test_policy_target_port_deleted_on_apic(self):
         ptg = self.create_policy_target_group()['policy_target_group']
         subnet = self._get_object('subnets',

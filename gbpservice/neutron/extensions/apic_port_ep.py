@@ -16,7 +16,7 @@
 from neutron.api import extensions
 from neutron.api.v2 import attributes
 
-ALIAS = 'apic-port-ep'
+ALIAS = 'apic_port_endpoint'
 
 ENDPOINT_UP_TO_DATE = 'apic:endpoint_up_to_date'
 

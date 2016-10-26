@@ -27,7 +27,7 @@ LOG = log.getLogger(__name__)
 
 class PortEndpointExtensionDriver(api.ExtensionDriver):
 
-    _supported_extension_alias = "apic-port-ep"
+    _supported_extension_alias = port_ep.ALIAS
 
     def initialize(self):
         LOG.info(_("Initializing APIC port Endpoint Extension"))
