@@ -229,6 +229,11 @@ class AutoPTGDeleteNotSupported(gpexc.GroupPolicyBadRequest):
     message = _("Auto PTG %(id)s cannot be deleted.")
 
 
+class SingleTenantAndPerTenantNatEPGNotSupported(gpexc.GroupPolicyBadRequest):
+    message = _("single_tenant_mode can not be combined with "
+                "per_tenant_nat_epg.")
+
+
 class TenantSpecificNatEpg(model_base.BASEV2):
     """Tenants that use a specific NAT EPG for an external segment."""
     __tablename__ = 'gp_apic_tenant_specific_nat_epg'
@@ -314,6 +319,8 @@ class ApicMappingDriver(api.ResourceMappingDriver,
         self.enable_metadata_opt = self.apic_manager.enable_optimized_metadata
         self.nat_enabled = self.apic_manager.use_vmm
         self.per_tenant_nat_epg = self.apic_manager.per_tenant_nat_epg
+        self.single_tenant_mode = cfg.CONF.ml2_cisco_apic.single_tenant_mode
+        self.single_tenant_name = cfg.CONF.ml2_cisco_apic.single_tenant_name
         self._gbp_plugin = None
         self._apic_segmentation_label_driver = None
         self.l3out_vlan_alloc = l3out_vlan_alloc.L3outVlanAlloc()
@@ -1418,6 +1425,8 @@ class ApicMappingDriver(api.ResourceMappingDriver,
                     self._apply_policy_rule_set_rules(context, prs, [rule])
 
     def create_external_segment_precommit(self, context):
+        if self.per_tenant_nat_epg and self.single_tenant_mode:
+            raise SingleTenantAndPerTenantNatEPGNotSupported()
         es = context.current
         if es['port_address_translation']:
             raise PATNotSupportedByApicDriver()
@@ -2506,6 +2515,9 @@ class ApicMappingDriver(api.ResourceMappingDriver,
             raise SharedAttributeUpdateNotSupportedOnApic(type=type)
 
     def _tenant_by_sharing_policy(self, object):
+        if self.single_tenant_mode:
+            return self.single_tenant_name
+
         if object.get('shared') and not self.name_mapper._is_apic_reference(
                 object):
             return apic_manager.TENANT_COMMON
