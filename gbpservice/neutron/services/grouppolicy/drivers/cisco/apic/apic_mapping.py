@@ -305,6 +305,8 @@ class ApicMappingDriver(api.ResourceMappingDriver,
         self.enable_metadata_opt = self.apic_manager.enable_optimized_metadata
         self.nat_enabled = self.apic_manager.use_vmm
         self.per_tenant_nat_epg = self.apic_manager.per_tenant_nat_epg
+        self.single_tenant_mode = cfg.CONF.ml2_cisco_apic.single_tenant_mode
+        self.single_tenant_name = cfg.CONF.ml2_cisco_apic.single_tenant_name
         self._gbp_plugin = None
         self._apic_segmentation_label_driver = None
         self.l3out_vlan_alloc = l3out_vlan_alloc.L3outVlanAlloc()
@@ -2487,6 +2489,8 @@ class ApicMappingDriver(api.ResourceMappingDriver,
                 l2p = self.gbp_plugin.get_l2_policy(
                     nctx.get_admin_context(), object['l2_policy_id'])
                 return self._tenant_by_sharing_policy(l2p)
+            elif self.single_tenant_mode:
+                return self.single_tenant_name
             else:
                 return self.name_mapper.tenant(object)
 

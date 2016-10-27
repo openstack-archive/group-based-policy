@@ -450,17 +450,21 @@ class ResourceMappingTestCase(test_plugin.GroupPolicyPluginTestCase):
 
     def _create_simple_policy_rule(self, direction='bi', protocol='tcp',
                                    port_range=80, shared=False,
-                                   action_type='allow', action_value=None):
+                                   action_type='allow', action_value=None,
+                                   tenant_id=None):
+        if tenant_id is None:
+            tenant_id = self._tenant_id
         cls = self.create_policy_classifier(
             direction=direction, protocol=protocol,
-            port_range=port_range, shared=shared)['policy_classifier']
+            port_range=port_range, shared=shared,
+            tenant_id=tenant_id)['policy_classifier']
 
         action = self.create_policy_action(
-            action_type=action_type, shared=shared,
+            action_type=action_type, shared=shared, tenant_id=tenant_id,
             action_value=action_value)['policy_action']
         return self.create_policy_rule(
             policy_classifier_id=cls['id'], policy_actions=[action['id']],
-            shared=shared)['policy_rule']
+            shared=shared, tenant_id=tenant_id)['policy_rule']
 
 
 class TestClusterIdMixin(object):
