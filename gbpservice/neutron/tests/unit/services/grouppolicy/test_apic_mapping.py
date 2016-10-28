@@ -320,7 +320,8 @@ class ApicMappingVlanTestCase(ApicMappingTestCase):
 
     def setUp(self, **kwargs):
         config.cfg.CONF.set_override(
-            'network_vlan_ranges', ['physnet1:100:200'], group='ml2_type_vlan')
+            'network_vlan_ranges',
+            ['physnet1:100:200', 'physnet2:20:30'], group='ml2_type_vlan')
         kwargs['ml2_options'] = {
             'mechanism_drivers': ['apic_gbp', 'openvswitch'],
             'type_drivers': ['vlan'],
@@ -2133,6 +2134,25 @@ class TestPolicyTargetGroupVlanNetwork(ApicMappingVlanTestCase,
                 admin_state_up=True)
             port = self._get_object('ports', port['port']['id'], self.api)
             self.assertFalse(port['port']['admin_state_up'])
+
+    def test_explicit_l2p_network_phys_net(self):
+        attr = {'arg_list': ('provider:physical_network',
+                             'provider:network_type'),
+                'provider:physical_network': 'physnet2',
+                'provider:network_type': 'vlan'}
+        with self.network(**attr) as net:
+            net = net['network']
+            l2p = self.create_l2_policy(
+                network_id=net['id'])['l2_policy']
+            ptg = self.create_policy_target_group(
+                name='ptg1', l2_policy_id=l2p['id']
+            )['policy_target_group']
+            shadow_net = self._get_ptg_shadow_net(ptg)
+            self.assertIsNone(shadow_net.get('segments'))
+            self.assertEqual('physnet2',
+                             shadow_net['provider:physical_network'])
+            self.assertEqual('vlan',
+                             shadow_net['provider:network_type'])
 
 
 class TestL2PolicyBase(ApicMappingTestCase):

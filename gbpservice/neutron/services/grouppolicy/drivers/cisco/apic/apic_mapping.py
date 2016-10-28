@@ -3561,7 +3561,9 @@ class ApicMappingDriver(api.ResourceMappingDriver,
         return networks[0] if networks else None
 
     def _create_ptg_shadow_network(self, context, ptg):
-        if not self._ptg_needs_shadow_network(context, ptg):
+        l2p_network = self._l2p_id_to_network(context._plugin_context,
+                                              ptg['l2_policy_id'])
+        if not self._is_supported_non_opflex_network(l2p_network):
             return
         shadow_net = self._get_ptg_shadow_network(context, ptg)
         if not shadow_net:
@@ -3569,6 +3571,11 @@ class ApicMappingDriver(api.ResourceMappingDriver,
                      'name': self._get_ptg_shadow_network_name(ptg),
                      'admin_state_up': True,
                      'shared': ptg.get('shared', False)}
+            if l2p_network.get(providernet.PHYSICAL_NETWORK):
+                attrs[providernet.PHYSICAL_NETWORK] = (
+                    l2p_network[providernet.PHYSICAL_NETWORK])
+                attrs[providernet.NETWORK_TYPE] = (
+                    l2p_network[providernet.NETWORK_TYPE])
             shadow_net = self._create_network(context._plugin_context, attrs)
             l2p = self._get_l2_policy(context._plugin_context,
                                       ptg['l2_policy_id'])
