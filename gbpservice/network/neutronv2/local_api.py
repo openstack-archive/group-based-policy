@@ -332,6 +332,12 @@ class LocalAPI(object):
                                      'network', attrs, True,
                                      clean_session=clean_session)
 
+    def _update_network(self, plugin_context, network_id, attrs,
+                        clean_session=True):
+        return self._update_resource(self._core_plugin, plugin_context,
+                                     'network', network_id, attrs,
+                                     clean_session=clean_session)
+
     def _delete_network(self, plugin_context, network_id, clean_session=True):
         try:
             self._delete_resource(self._core_plugin, plugin_context,
