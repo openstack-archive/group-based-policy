@@ -106,16 +106,6 @@ class ExactlyOneActionPerRuleIsSupportedOnApicDriver(
     message = _("Exactly one action per rule is supported on APIC GBP driver.")
 
 
-class OnlyOneL3PolicyIsAllowedPerExternalSegment(gpexc.GroupPolicyBadRequest):
-    message = _("Only one L3 Policy per ES is supported when NAT is disabled "
-                "on the ES.")
-
-
-class OnlyOneAddressIsAllowedPerExternalSegment(gpexc.GroupPolicyBadRequest):
-    message = _("Only one ip address on each ES is supported on "
-                "APIC GBP driver.")
-
-
 class NoAddressConfiguredOnExternalSegment(gpexc.GroupPolicyBadRequest):
     message = _("L3 Policy %(l3p_id)s has no address configured on "
                 "External Segment %(es_id)s")
@@ -148,16 +138,6 @@ class NatPoolOverlapsApicSubnet(gpexc.GroupPolicyBadRequest):
 class CannotUpdateApicName(gpexc.GroupPolicyBadRequest):
     message = _("Objects referring to existing "
                 "APIC resources can't be updated")
-
-
-class MultipleExternalPoliciesForL3Policy(gpexc.GroupPolicyBadRequest):
-    message = _("Potential association of multiple external policies to "
-                "an L3 Policy.")
-
-
-class SharedExternalPolicyUnsupported(gpexc.GroupPolicyBadRequest):
-    message = _("APIC mapping driver does not support sharing of "
-                "external policies.")
 
 
 class PreExistingL3OutNotFound(gpexc.GroupPolicyBadRequest):
@@ -2444,7 +2424,7 @@ class ApicMappingDriver(api.ResourceMappingDriver,
         if l3p['external_segments']:
             for allocations in l3p['external_segments'].values():
                 if len(allocations) > 1:
-                    raise OnlyOneAddressIsAllowedPerExternalSegment()
+                    raise alib.OnlyOneAddressIsAllowedPerExternalSegment()
             # if NAT is disabled, allow only one L3P per ES
             ess = context._plugin.get_external_segments(
                 context._plugin_context,
@@ -2453,7 +2433,7 @@ class ApicMappingDriver(api.ResourceMappingDriver,
                 if self._is_nat_enabled_on_es(es):
                     continue
                 if [x for x in es['l3_policies'] if x != l3p['id']]:
-                    raise OnlyOneL3PolicyIsAllowedPerExternalSegment()
+                    raise alib.OnlyOneL3PolicyIsAllowedPerExternalSegment()
                 if self._is_pre_existing(es):
                     l3out_info = self._query_l3out_info(
                         self.name_mapper.name_mapper.pre_existing(
@@ -3344,7 +3324,7 @@ class ApicMappingDriver(api.ResourceMappingDriver,
 
     def _check_external_policy(self, context, ep):
         if ep.get('shared', False):
-            raise SharedExternalPolicyUnsupported()
+            raise alib.SharedExternalPolicyUnsupported()
         ess = context._plugin.get_external_segments(
             context._plugin_context,
             filters={'id': ep['external_segments']})
@@ -3354,7 +3334,7 @@ class ApicMappingDriver(api.ResourceMappingDriver,
                 filters={'id': es['external_policies'],
                          'tenant_id': [ep['tenant_id']]})
             if [x for x in other_eps if x['id'] != ep['id']]:
-                raise MultipleExternalPoliciesForL3Policy()
+                raise alib.MultipleExternalPoliciesForL3Policy()
 
     def _is_nat_enabled_on_es(self, es):
         ext_info = self.apic_manager.ext_net_dict.get(es['name'])
