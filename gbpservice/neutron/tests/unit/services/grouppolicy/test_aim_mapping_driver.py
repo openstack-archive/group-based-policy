@@ -13,6 +13,7 @@
 
 import copy
 import mock
+import netaddr
 
 from aim.api import resource as aim_resource
 from aim.api import status as aim_status
@@ -67,6 +68,12 @@ AGENT_CONF = {'alive': True, 'binary': 'somebinary',
               'topic': 'sometopic', 'agent_type': AGENT_TYPE,
               'configurations': {'opflex_networks': None,
                                  'bridge_mappings': {'physnet1': 'br-eth1'}}}
+
+
+DN = 'apic:distinguished_names'
+CIDR = 'apic:external_cidrs'
+PROV = 'apic:external_provided_contracts'
+CONS = 'apic:external_consumed_contracts'
 
 
 class AIMBaseTestCase(test_nr_base.CommonNeutronBaseTestCase,
@@ -139,6 +146,9 @@ class AIMBaseTestCase(test_nr_base.CommonNeutronBaseTestCase,
         nova_client.return_value = vm
 
         self._db = model.DbModel()
+        self.extension_attributes = ('router:external', DN,
+                                     'apic:nat_type', 'apic:snat_host_pool',
+                                     CIDR, PROV, CONS)
 
     def tearDown(self):
         engine = db_api.get_engine()
@@ -329,6 +339,46 @@ class AIMBaseTestCase(test_nr_base.CommonNeutronBaseTestCase,
                               fmt=self.fmt).get_response(self.api)
         self.new_show_request('address-scopes', ascp_id,
                               fmt=self.fmt).get_response(self.ext_api)
+
+    def _get_provided_consumed_prs_lists(self):
+        prs_dict = {}
+        prs_type = ['provided', 'consumed']
+        for ptype in prs_type:
+            rules = self._create_3_direction_rules()
+            prs = self.create_policy_rule_set(
+                name="ctr", policy_rules=[x['id'] for x in rules])[
+                    'policy_rule_set']
+            prs_dict[ptype] = prs
+        return prs_dict
+
+    def _make_ext_subnet(self, network_name, cidr, dn=None,
+                         nat_type=None, ext_cidrs=None):
+        kwargs = {'router:external': True}
+        if dn:
+            kwargs[DN] = {'ExternalNetwork': dn}
+        if nat_type is not None:
+            kwargs['apic:nat_type'] = nat_type
+        elif getattr(self, 'nat_type', None) is not None:
+            kwargs['apic:nat_type'] = self.nat_type
+        if ext_cidrs:
+            kwargs[CIDR] = ext_cidrs
+
+        net = self._make_network(self.fmt, network_name, True,
+                                 arg_list=self.extension_attributes,
+                                 **kwargs)['network']
+        gw = str(netaddr.IPAddress(netaddr.IPNetwork(cidr).first + 1))
+        subnet = self._make_subnet(
+            self.fmt, {'network': net}, gw, cidr)['subnet']
+        return subnet
+
+    def _router_gw(self, router):
+        gw = router['external_gateway_info']
+        return gw['network_id'] if gw else None
+
+    def _show_all(self, resource_type, ids):
+        resource_type_plural = resource_type + 's'  # Won't work always
+        return [self._show(resource_type_plural, res_id)[resource_type]
+                for res_id in ids]
 
 
 class TestGBPStatus(AIMBaseTestCase):
@@ -584,6 +634,153 @@ class TestL3Policy(AIMBaseTestCase):
                             subnetpools_v4=[spv4['id']],
                             expected_res_status=400)
                         self.assertEqual(excp, res['NeutronError']['type'])
+
+    def _check_routers_connections(self, l3p, ext_nets, eps, subnets):
+        routers = self._show_all('router', l3p['routers'])
+        routers = [r for r in routers if self._router_gw(r)]
+
+        self.assertEqual(len(ext_nets), len(routers))
+        self.assertEqual(sorted(ext_nets),
+                         sorted([self._router_gw(r) for r in routers]))
+        session = self._neutron_context.session
+        for ext_net, ep in zip(ext_nets, eps):
+            router = [r for r in routers if self._router_gw(r) == ext_net]
+            prov = sorted([str(self.name_mapper.policy_rule_set(session, c))
+                           for c in ep['provided_policy_rule_sets']])
+            cons = sorted([str(self.name_mapper.policy_rule_set(session, c))
+                           for c in ep['consumed_policy_rule_sets']])
+            self.assertEqual(prov, sorted(router[0][PROV]))
+            self.assertEqual(cons, sorted(router[0][CONS]))
+
+        subnets = sorted(subnets)
+        for router in routers:
+            intf_ports = self._list('ports',
+               query_params=('device_id=' + router['id'] +
+                             '&device_owner=network:router_interface')
+            )['ports']
+            intf_subnets = sorted([p['fixed_ips'][0]['subnet_id']
+                                   for p in intf_ports if p['fixed_ips']])
+            self.assertEqual(subnets, intf_subnets,
+                             'Router %s' % router['name'])
+
+    def test_external_segment_association(self):
+        ess = []
+        eps = []
+        ext_nets = []
+        for x in range(0, 2):
+            es_sub = self._make_ext_subnet('net%d' % x, '90.9%d.0.0/16' % x,
+                dn='uni/tn-t1/out-l%d/instP-n%x' % (x, x))
+            es = self.create_external_segment(
+                name='seg%d' % x, subnet_id=es_sub['id'],
+                external_routes=[{'destination': '12%d.0.0.0/24' % (8 + x),
+                                  'nexthop': None}])['external_segment']
+            ess.append(es)
+            prs1 = self.create_policy_rule_set(name='prs1')['policy_rule_set']
+            prs2 = self.create_policy_rule_set(name='prs2')['policy_rule_set']
+            ep = self.create_external_policy(
+                name='ep%d' % x,
+                provided_policy_rule_sets={prs1['id']: 'scope'},
+                consumed_policy_rule_sets={prs2['id']: 'scope'},
+                external_segments=[es['id']])['external_policy']
+            eps.append(ep)
+            ext_nets.append(es_sub['network_id'])
+
+        es_dict = {es['id']: [] for es in ess}
+        l3p = self.create_l3_policy(name='l3p1',
+            external_segments=es_dict)['l3_policy']
+        self._check_routers_connections(l3p, ext_nets, eps, [])
+
+        all_subnets = []
+        ptgs = []
+        for x in range(0, 2):
+            l2p = self.create_l2_policy(name='l2p%d' % x,
+                                        l3_policy_id=l3p['id'])['l2_policy']
+            ptg = self.create_policy_target_group(name='ptg%d' % x,
+                l2_policy_id=l2p['id'])['policy_target_group']
+            ptgs.append(ptg)
+            all_subnets.extend(ptg['subnets'])
+            self._check_routers_connections(l3p, ext_nets, eps, all_subnets)
+
+        es_dict.pop(ess[0]['id'])
+        l3p = self.update_l3_policy(l3p['id'],
+                                    external_segments=es_dict)['l3_policy']
+        self._check_routers_connections(l3p, ext_nets[1:], eps[1:],
+                                        all_subnets)
+
+        es_dict = {ess[0]['id']: ['']}
+        l3p = self.update_l3_policy(l3p['id'],
+                                    external_segments=es_dict)['l3_policy']
+        self._check_routers_connections(l3p, ext_nets[0:1], eps[0:1],
+                                        all_subnets)
+
+        for ptg in ptgs:
+            all_subnets = [s for s in all_subnets if s not in ptg['subnets']]
+            self.delete_policy_target_group(ptg['id'])
+            self._check_routers_connections(l3p, ext_nets[0:1], eps[0:1],
+                                            all_subnets)
+            self.delete_l2_policy(ptg['l2_policy_id'])
+
+        self.delete_l3_policy(l3p['id'])
+        for r in l3p['routers']:
+            self._show('routers', r, expected_code=404)
+
+    def test_external_address(self):
+        es_sub = self._make_ext_subnet('net1', '90.90.0.0/16',
+                                       dn='uni/tn-t1/out-l1/instP-n1')
+        es = self.create_external_segment(
+            subnet_id=es_sub['id'])['external_segment']
+        l3p = self.create_l3_policy(
+            external_segments={es['id']: ['90.90.0.10']})['l3_policy']
+        routers = self._show_all('router', l3p['routers'])
+        routers = [r for r in routers if self._router_gw(r)]
+        self.assertEqual(1, len(routers))
+        ext_ip = routers[0]['external_gateway_info']['external_fixed_ips']
+        self.assertEqual([{'ip_address': '90.90.0.10',
+                           'subnet_id': es_sub['id']}],
+                         ext_ip)
+
+    def test_one_l3_policy_ip_on_es(self):
+        # Verify L3P created with more than 1 IP on ES fails
+        es_sub = self._make_ext_subnet('net1', '90.90.0.0/16',
+                                       dn='uni/tn-t1/out-l1/instP-n1')
+        es = self.create_external_segment(
+            subnet_id=es_sub['id'])['external_segment']
+        res = self.create_l3_policy(
+            external_segments={es['id']: ['90.90.0.2', '90.90.0.3']},
+            expected_res_status=400)
+        self.assertEqual('OnlyOneAddressIsAllowedPerExternalSegment',
+                         res['NeutronError']['type'])
+        # Verify L3P updated to more than 1 IP on ES fails
+        sneaky_l3p = self.create_l3_policy(
+            external_segments={es['id']: ['90.90.0.2']},
+            expected_res_status=201)['l3_policy']
+        res = self.update_l3_policy(
+            sneaky_l3p['id'], expected_res_status=400,
+            external_segments={es['id']: ['90.90.0.2', '90.90.0.3']})
+        self.assertEqual('OnlyOneAddressIsAllowedPerExternalSegment',
+                         res['NeutronError']['type'])
+
+    def test_one_l3_policy_per_es_with_no_nat(self):
+        # Verify only one L3P can connect to ES with no-NAT
+        es_sub = self._make_ext_subnet('net1', '90.90.0.0/16',
+                                       dn='uni/tn-t1/out-l1/instP-n1',
+                                       nat_type='')
+        es = self.create_external_segment(
+            subnet_id=es_sub['id'])['external_segment']
+        self.create_l3_policy(external_segments={es['id']: []})
+        res = self.create_l3_policy(
+            external_segments={es['id']: []},
+            expected_res_status=400)
+        self.assertEqual('OnlyOneL3PolicyIsAllowedPerExternalSegment',
+                         res['NeutronError']['type'])
+
+    def test_l3_policy_with_multiple_routers(self):
+        with self.router() as r1, self.router() as r2:
+            res = self.create_l3_policy(
+                routers=[r1['router']['id'], r2['router']['id']],
+                expected_res_status=400)
+            self.assertEqual('L3PolicyMultipleRoutersNotSupported',
+                             res['NeutronError']['type'])
 
 
 class TestL3PolicyRollback(AIMBaseTestCase):
@@ -850,17 +1047,6 @@ class TestL2PolicyRollback(TestL2PolicyBase):
 
 
 class TestPolicyTargetGroup(AIMBaseTestCase):
-
-    def _get_provided_consumed_prs_lists(self):
-        prs_dict = {}
-        prs_type = ['provided', 'consumed']
-        for ptype in prs_type:
-            rules = self._create_3_direction_rules()
-            prs = self.create_policy_rule_set(
-                name="ctr", policy_rules=[x['id'] for x in rules])[
-                    'policy_rule_set']
-            prs_dict[ptype] = prs
-        return prs_dict
 
     def _validate_contracts(self, aim_epg, prs_lists, l2p):
         implicit_contract_name = str(self.name_mapper.policy_rule_set(
@@ -1324,6 +1510,23 @@ class TestPolicyTarget(AIMBaseTestCase):
             external_gateway_info={'network_id': net['id']})['router']
         return net, router
 
+    def _setup_external_segment(self, name, dn=None):
+        DN = 'apic:distinguished_names'
+        kwargs = {'router:external': True}
+        if dn:
+            kwargs[DN] = {'ExternalNetwork': dn}
+        extn_attr = ('router:external', DN)
+
+        net = self._make_network(self.fmt, name, True,
+                                 arg_list=extn_attr,
+                                 **kwargs)['network']
+        subnet = self._make_subnet(
+            self.fmt, {'network': net}, '100.100.0.1',
+            '100.100.0.0/16')['subnet']
+        ext_seg = self.create_external_segment(name=name,
+            subnet_id=subnet['id'])['external_segment']
+        return ext_seg, subnet
+
     def _verify_fip_details(self, mapping, fip, ext_epg_tenant,
                             ext_epg_name):
         self.assertEqual(1, len(mapping['floating_ip']))
@@ -1334,14 +1537,18 @@ class TestPolicyTarget(AIMBaseTestCase):
 
     def _verify_ip_mapping_details(self, mapping, ext_net, ext_epg_tenant,
                                    ext_epg_name):
-        self.assertEqual(1, len(mapping['ip_mapping']))
-        self.assertEqual({'external_segment_name': ext_net,
-                          'nat_epg_name': ext_epg_name,
-                          'nat_epg_tenant': ext_epg_tenant},
-                         mapping['ip_mapping'][0])
+        self.assertTrue({'external_segment_name': ext_net,
+                         'nat_epg_name': ext_epg_name,
+                         'nat_epg_tenant': ext_epg_tenant}
+                        in mapping['ip_mapping'])
 
     def _do_test_get_gbp_details(self):
-        l3p = self.create_l3_policy(name='myl3')['l3_policy']
+        es1, es1_sub = self._setup_external_segment(
+            'es1', dn='uni/tn-t1/out-l1/instP-n1')
+        es2, _ = self._setup_external_segment(
+            'es2', dn='uni/tn-t1/out-l2/instP-n2')
+        l3p = self.create_l3_policy(name='myl3',
+            external_segments={es1['id']: [], es2['id']: []})['l3_policy']
         l2p = self.create_l2_policy(name='myl2',
                                     l3_policy_id=l3p['id'])['l2_policy']
         ptg = self.create_policy_target_group(
@@ -1351,6 +1558,8 @@ class TestPolicyTarget(AIMBaseTestCase):
             policy_target_group_id=ptg['id'],
             segmentation_labels=segmentation_labels)['policy_target']
         self._bind_port_to_host(pt1['port_id'], 'h1')
+        fip = self._make_floatingip(self.fmt, es1_sub['network_id'],
+                                    port_id=pt1['port_id'])['floatingip']
 
         mapping = self.driver.get_gbp_details(
             self._neutron_admin_context, device='tap%s' % pt1['port_id'],
@@ -1370,6 +1579,9 @@ class TestPolicyTarget(AIMBaseTestCase):
 
         self._verify_gbp_details_assertions(
             mapping, req_mapping, pt1['port_id'], epg_name, epg_tenant, subnet)
+        self._verify_fip_details(mapping, fip, 't1', 'EXT-l1')
+        self._verify_ip_mapping_details(mapping, 'es2',
+                                        't1', 'EXT-l2')
 
         # Create event on a second host to verify that the SNAT
         # port gets created for this second host
@@ -1381,6 +1593,8 @@ class TestPolicyTarget(AIMBaseTestCase):
             self._neutron_admin_context, device='tap%s' % pt2['port_id'],
             host='h2')
         self.assertEqual(pt2['port_id'], mapping['port_id'])
+        self._verify_ip_mapping_details(mapping, 'es1', 't1', 'EXT-l1')
+        self._verify_ip_mapping_details(mapping, 'es2', 't1', 'EXT-l2')
 
     def _do_test_gbp_details_no_pt(self):
         # Create port and bind it
@@ -2128,3 +2342,152 @@ class NotificationTest(AIMBaseTestCase):
             key = local_api.NOTIFICATION_QUEUE.keys()[0]
             self.assertLess(0, len(local_api.NOTIFICATION_QUEUE[key]))
         local_api.NOTIFICATION_QUEUE = {}
+
+
+class TestExternalSegment(AIMBaseTestCase):
+
+    def test_external_segment_lifecycle(self):
+        es_sub = self._make_ext_subnet('net1', '90.90.0.0/16',
+                                       dn='uni/tn-t1/out-l1/instP-n1')
+        es = self.create_external_segment(
+            name='seg1', subnet_id=es_sub['id'],
+            external_routes=[{'destination': '129.0.0.0/24',
+                              'nexthop': None},
+                             {'destination': '128.0.0.0/16',
+                              'nexthop': None}])['external_segment']
+        self.assertEqual('90.90.0.0/16', es['cidr'])
+        self.assertEqual(4, es['ip_version'])
+        es_net = self._show('networks', es_sub['network_id'])['network']
+        self.assertEqual(['128.0.0.0/16', '129.0.0.0/24'],
+                         sorted(es_net[CIDR]))
+
+        es = self.update_external_segment(es['id'],
+            external_routes=[{'destination': '129.0.0.0/24',
+                              'nexthop': None}])['external_segment']
+        es_net = self._show('networks', es_sub['network_id'])['network']
+        self.assertEqual(['129.0.0.0/24'], sorted(es_net[CIDR]))
+
+        self.delete_external_segment(es['id'])
+        es_net = self._show('networks', es_sub['network_id'])['network']
+        self.assertEqual(['0.0.0.0/0'], es_net[CIDR])
+
+    def test_implicit_subnet(self):
+        res = self.create_external_segment(name='seg1',
+                                           expected_res_status=400)
+        self.assertEqual('ImplicitSubnetNotSupported',
+                         res['NeutronError']['type'])
+
+    def test_invalid_subnet(self):
+        with self.network() as net:
+            with self.subnet(network=net) as sub:
+                res = self.create_external_segment(
+                    name='seg1', subnet_id=sub['subnet']['id'],
+                    expected_res_status=400)
+                self.assertEqual('InvalidSubnetForES',
+                                 res['NeutronError']['type'])
+
+
+class TestExternalPolicy(AIMBaseTestCase):
+
+    def _check_router_contracts(self, routers, prov_prs, cons_prs):
+        session = self._neutron_context.session
+        prov = sorted([str(self.name_mapper.policy_rule_set(session, c))
+                       for c in prov_prs])
+        cons = sorted([str(self.name_mapper.policy_rule_set(session, c))
+                       for c in cons_prs])
+        for router in self._show_all('router', routers):
+            self.assertEqual(prov, sorted(router[PROV]),
+                             'Router %s' % router)
+            self.assertEqual(cons, sorted(router[CONS]),
+                             'Router %s' % router)
+
+    def test_external_policy_lifecycle(self):
+        ess = []
+        es_nets = {}
+        for x in range(0, 3):
+            es_sub = self._make_ext_subnet('net%d' % x, '90.9%d.0.0/16' % x,
+                dn='uni/tn-t1/out-l%d/instP-n%x' % (x, x))
+            es = self.create_external_segment(
+                name='seg%d' % x, subnet_id=es_sub['id'],
+                external_routes=[{'destination': '13%d.0.0.0/24' % x,
+                                  'nexthop': None}])['external_segment']
+            ess.append(es['id'])
+            es_nets[es_sub['network_id']] = es['id']
+
+        routers = {}
+        for x in range(0, 3):
+            l3p = self.create_l3_policy(name='l3p%d' % x,
+                external_segments={ess[x]: [''],
+                                   ess[(x + 1) % len(ess)]: ['']}
+            )['l3_policy']
+            l3p_routers = self._show_all('router', l3p['routers'])
+            for r in l3p_routers:
+                net = self._router_gw(r)
+                if net:
+                    routers.setdefault(es_nets[net], []).append(r['id'])
+
+        self._check_router_contracts(routers[ess[0]] +
+                                     routers[ess[1]] +
+                                     routers[ess[2]], [], [])
+
+        prss = []
+        rules = self._create_3_direction_rules()
+        for x in range(0, 4):
+            prs = self.create_policy_rule_set(name='prs%d' % x,
+                policy_rules=[x['id'] for x in rules])['policy_rule_set']
+            prss.append(prs['id'])
+
+        ep1 = self.create_external_policy(name='ep1',
+            external_segments=[ess[0], ess[1]],
+            provided_policy_rule_sets={p: 'scope' for p in prss[0:2]},
+            consumed_policy_rule_sets={p: 'scope' for p in prss[2:4]}
+        )['external_policy']
+        self._check_router_contracts(routers[ess[0]] + routers[ess[1]],
+                                     prss[0:2], prss[2:4])
+        self._check_router_contracts(routers[ess[2]], [], [])
+
+        ep1 = self.update_external_policy(ep1['id'],
+            provided_policy_rule_sets={p: 'scope' for p in prss[1:4]},
+            consumed_policy_rule_sets={p: 'scope' for p in prss[0:3]}
+        )['external_policy']
+        self._check_router_contracts(routers[ess[0]] + routers[ess[1]],
+                                     prss[1:4], prss[0:3])
+        self._check_router_contracts(routers[ess[2]], [], [])
+
+        ep1 = self.update_external_policy(ep1['id'],
+            external_segments=[ess[1], ess[2]],
+            provided_policy_rule_sets={p: 'scope' for p in prss[0:2]},
+            consumed_policy_rule_sets={p: 'scope' for p in prss[2:4]}
+        )['external_policy']
+        self._check_router_contracts(routers[ess[1]] + routers[ess[2]],
+                                     prss[0:2], prss[2:4])
+        self._check_router_contracts(routers[ess[0]], [], [])
+
+        self.delete_external_policy(ep1['id'])
+        self._check_router_contracts(routers[ess[0]] + routers[ess[1]] +
+                                     routers[ess[2]], [], [])
+
+    def test_shared_external_policy(self):
+        res = self.create_external_policy(shared=True,
+                                          expected_res_status=400)
+        self.assertEqual('SharedExternalPolicyUnsupported',
+                         res['NeutronError']['type'])
+
+    def test_multiple_external_policy_for_es(self):
+        es_sub = self._make_ext_subnet('net1', '90.90.0.0/16',
+                                       dn='uni/tn-t1/out-l1/instP-n1')
+        es = self.create_external_segment(
+            name='seg1', subnet_id=es_sub['id'])['external_segment']
+
+        self.create_external_policy(external_segments=[es['id']])
+        res = self.create_external_policy(external_segments=[es['id']],
+                                          expected_res_status=400)
+        self.assertEqual('MultipleExternalPoliciesForL3Policy',
+                         res['NeutronError']['type'])
+
+        ep2 = self.create_external_policy()['external_policy']
+        res = self.update_external_policy(ep2['id'],
+                                          external_segments=[es['id']],
+                                          expected_res_status=400)
+        self.assertEqual('MultipleExternalPoliciesForL3Policy',
+                         res['NeutronError']['type'])

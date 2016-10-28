@@ -691,6 +691,22 @@ class ImplicitResourceOperations(local_api.LocalAPI):
         l3p = context._plugin.get_l3_policy(context._plugin_context, l3p_id)
         return l3p
 
+    def _create_router_gw_for_external_segment(self, plugin_context, es,
+                                               es_dict, router_id):
+        subnet = self._get_subnet(plugin_context, es['subnet_id'])
+        external_fixed_ips = [
+            {'subnet_id': es['subnet_id'], 'ip_address': x}
+            if x else {'subnet_id': es['subnet_id']}
+            for x in es_dict[es['id']]
+        ] if es_dict[es['id']] else [{'subnet_id': es['subnet_id']}]
+        interface_info = {
+            'network_id': subnet['network_id'],
+            'enable_snat': es['port_address_translation'],
+            'external_fixed_ips': external_fixed_ips}
+        router = self._add_router_gw_interface(
+            plugin_context, router_id, interface_info)
+        return router
+
 
 class ResourceMappingDriver(api.PolicyDriver, ImplicitResourceOperations,
                             nsp_manager.NetworkServicePolicyMappingMixin,
@@ -1904,22 +1920,6 @@ class ResourceMappingDriver(api.PolicyDriver, ImplicitResourceOperations,
                     assigned_ips = [x['ip_address'] for x in efi
                                     if x['subnet_id'] == es['subnet_id']]
                     context.set_external_fixed_ips(es['id'], assigned_ips)
-
-    def _create_router_gw_for_external_segment(self, plugin_context, es,
-                                               es_dict, router_id):
-        subnet = self._get_subnet(plugin_context, es['subnet_id'])
-        external_fixed_ips = [
-            {'subnet_id': es['subnet_id'], 'ip_address': x}
-            if x else {'subnet_id': es['subnet_id']}
-            for x in es_dict[es['id']]
-        ] if es_dict[es['id']] else [{'subnet_id': es['subnet_id']}]
-        interface_info = {
-            'network_id': subnet['network_id'],
-            'enable_snat': es['port_address_translation'],
-            'external_fixed_ips': external_fixed_ips}
-        router = self._add_router_gw_interface(
-            plugin_context, router_id, interface_info)
-        return router
 
     def _unplug_router_from_external_segment(self, context, es_ids):
         es_list = context._plugin.get_external_segments(
