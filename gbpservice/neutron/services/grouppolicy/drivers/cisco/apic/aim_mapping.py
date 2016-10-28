@@ -15,14 +15,18 @@ from aim import context as aim_context
 from neutron._i18n import _LE
 from neutron._i18n import _LI
 from neutron.agent.linux import dhcp
+from neutron.api.v2 import attributes
 from neutron.common import constants as n_constants
+from neutron.common import exceptions as n_exc
 from neutron import manager
 from oslo_concurrency import lockutils
 from oslo_log import helpers as log
 from oslo_log import log as logging
+from oslo_utils import excutils
 
 from gbpservice.neutron.extensions import cisco_apic
 from gbpservice.neutron.extensions import cisco_apic_gbp as aim_ext
+from gbpservice.neutron.extensions import cisco_apic_l3
 from gbpservice.neutron.extensions import group_policy as gpolicy
 from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import model
 from gbpservice.neutron.services.grouppolicy.common import (
@@ -146,6 +150,8 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
     @log.log_method_call
     def create_l3_policy_precommit(self, context):
         l3p = context.current
+        self._check_l3policy_ext_segment(context, l3p)
+
         l3p_db = context._plugin._get_l3_policy(
             context._plugin_context, l3p['id'])
         if l3p['address_scope_v4_id'] and l3p['address_scope_v6_id']:
@@ -244,6 +250,10 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
         self._reject_invalid_router_access(context, clean_session=False)
         if not l3p['routers']:
             self._use_implicit_router(context, clean_session=False)
+        external_segments = context.current['external_segments']
+        if external_segments:
+            self._plug_l3p_routers_to_ext_segment(context, l3p,
+                                                  external_segments)
 
     @log.log_method_call
     def update_l3_policy_precommit(self, context):
@@ -258,9 +268,30 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
         # Added this check just in case it is supported in future.
         self._reject_invalid_router_access(context, clean_session=False)
         # TODO(Sumit): For extra safety add validation for address_scope change
+        self._check_l3policy_ext_segment(context, context.current)
+        old_segment_dict = context.original['external_segments']
+        new_segment_dict = context.current['external_segments']
+        if (context.current['external_segments'] !=
+                context.original['external_segments']):
+            new_segments = set(new_segment_dict.keys())
+            old_segments = set(old_segment_dict.keys())
+            removed = old_segments - new_segments
+            self._unplug_l3p_routers_from_ext_segment(context,
+                                                      context.current,
+                                                      removed)
+            added_dict = {s: new_segment_dict[s]
+                          for s in (new_segments - old_segments)}
+            if added_dict:
+                self._plug_l3p_routers_to_ext_segment(context,
+                                                      context.current,
+                                                      added_dict)
 
     @log.log_method_call
     def delete_l3_policy_precommit(self, context):
+        external_segments = context.current['external_segments']
+        if external_segments:
+            self._unplug_l3p_routers_from_ext_segment(context,
+                context.current, external_segments.keys())
         l3p_db = context._plugin._get_l3_policy(
             context._plugin_context, context.current['id'])
         v4v6subpools = {4: l3p_db.subnetpools_v4, 6: l3p_db.subnetpools_v6}
@@ -279,8 +310,7 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
                 l3p_db.update({ascp: None})
                 self._cleanup_address_scope(context._plugin_context, ascp_id,
                                             clean_session=False)
-        routers = [router.router_id for router in l3p_db.routers]
-        for router_id in routers:
+        for router_id in context.current['routers']:
             self._db_plugin(context._plugin)._remove_router_from_l3_policy(
                 context._plugin_context, l3p_db['id'], router_id)
             self._cleanup_router(context._plugin_context, router_id,
@@ -475,15 +505,17 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
             context._plugin_context, ptg_db['id'])
         if subnet_ids:
             for subnet_id in subnet_ids:
+                # clean-up subnet if this is the last PTG using the L2P
                 if not context._plugin._get_ptgs_for_subnet(
                     context._plugin_context, subnet_id):
                     l2p_id = context.current['l2_policy_id']
-                    router_id = None
                     if l2p_id:
                         l3p = self._get_l3p_for_l2policy(context, l2p_id)
-                        router_id = l3p['routers'][0]
+                        for router_id in l3p['routers']:
+                            self._detach_router_from_subnets(plugin_context,
+                                                             router_id,
+                                                             subnet_ids)
                     self._cleanup_subnet(plugin_context, subnet_id,
-                                         router_id=router_id,
                                          clean_session=False)
 
         if ptg_db['l2_policy_id']:
@@ -656,6 +688,100 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
         aim_contract_subject = self._aim_contract_subject(aim_contract)
         context.current['status'] = self._merge_aim_status(
             session, [aim_contract, aim_contract_subject])
+
+    @log.log_method_call
+    def create_external_segment_precommit(self, context):
+        if not context.current['subnet_id']:
+            raise exc.ImplicitSubnetNotSupported()
+        subnet = self._get_subnet(context._plugin_context,
+                                  context.current['subnet_id'])
+        network = self._get_network(context._plugin_context,
+                                    subnet['network_id'])
+        if not network['router:external']:
+            raise exc.InvalidSubnetForES(sub_id=subnet['id'],
+                                         net_id=network['id'])
+        db_es = context._plugin._get_external_segment(
+                context._plugin_context, context.current['id'])
+        db_es.cidr = subnet['cidr']
+        db_es.ip_version = subnet['ip_version']
+        context.current['cidr'] = db_es.cidr
+        context.current['ip_version'] = db_es.ip_version
+
+        cidrs = sorted([x['destination']
+                        for x in context.current['external_routes']])
+        self._update_network(context._plugin_context,
+                             subnet['network_id'],
+                             {cisco_apic.EXTERNAL_CIDRS: cidrs},
+                             clean_session=False)
+
+    @log.log_method_call
+    def update_external_segment_precommit(self, context):
+        # REVISIT: what other attributes should we prevent an update on?
+        invalid = ['port_address_translation']
+        for attr in invalid:
+            if context.current[attr] != context.original[attr]:
+                raise exc.InvalidAttributeUpdateForES(attribute=attr)
+
+        old_cidrs = sorted([x['destination']
+                            for x in context.original['external_routes']])
+        new_cidrs = sorted([x['destination']
+                            for x in context.current['external_routes']])
+        if old_cidrs != new_cidrs:
+            subnet = self._get_subnet(context._plugin_context,
+                                      context.current['subnet_id'])
+            self._update_network(context._plugin_context,
+                                 subnet['network_id'],
+                                 {cisco_apic.EXTERNAL_CIDRS: new_cidrs},
+                                 clean_session=False)
+
+    @log.log_method_call
+    def delete_external_segment_precommit(self, context):
+        subnet = self._get_subnet(context._plugin_context,
+                                  context.current['subnet_id'])
+        self._update_network(context._plugin_context,
+                             subnet['network_id'],
+                             {cisco_apic.EXTERNAL_CIDRS: ['0.0.0.0/0']},
+                             clean_session=False)
+
+    @log.log_method_call
+    def create_external_policy_precommit(self, context):
+        self._check_external_policy(context, context.current)
+
+        routers = self._get_ext_policy_routers(context,
+            context.current, context.current['external_segments'])
+        for r in routers:
+            self._set_router_ext_contracts(context, r, context.current)
+
+    @log.log_method_call
+    def update_external_policy_precommit(self, context):
+        ep = context.current
+        old_ep = context.original
+        self._check_external_policy(context, ep)
+        removed_segments = (set(old_ep['external_segments']) -
+                            set(ep['external_segments']))
+        added_segment = (set(ep['external_segments']) -
+                         set(old_ep['external_segments']))
+        if removed_segments:
+            routers = self._get_ext_policy_routers(context, ep,
+                                                   removed_segments)
+            for r in routers:
+                self._set_router_ext_contracts(context, r, None)
+        if (added_segment or
+            sorted(old_ep['provided_policy_rule_sets']) !=
+                sorted(ep['provided_policy_rule_sets']) or
+            sorted(old_ep['consumed_policy_rule_sets']) !=
+                sorted(ep['consumed_policy_rule_sets'])):
+            routers = self._get_ext_policy_routers(context, ep,
+                                                   ep['external_segments'])
+            for r in routers:
+                self._set_router_ext_contracts(context, r, ep)
+
+    @log.log_method_call
+    def delete_external_policy_precommit(self, context):
+        routers = self._get_ext_policy_routers(context,
+            context.current, context.current['external_segments'])
+        for r in routers:
+            self._set_router_ext_contracts(context, r, None)
 
     def _aim_tenant_name(self, session, tenant_id):
         # TODO(ivar): manage shared objects
@@ -980,15 +1106,12 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
                         context, subnet_specifics={'name': name},
                         clean_session=clean_session)
             context.add_subnets(subs - set(context.current['subnets']))
-            for subnet in added:
+            if added:
                 self._sync_ptg_subnets(context, l2p)
                 l3p = self._get_l3p_for_l2policy(context, l2p_id)
-                # TODO(Sumit): Consider uplinking to multiple routers
-                # which is done to provide multiple external gateways
-                # in different Neutron external networks.
-                router_id = l3p['routers'][0]
-                self._add_router_interface_for_subnet(context, router_id,
-                                                      subnet['id'])
+                for r in l3p['routers']:
+                    self._attach_router_to_subnets(context._plugin_context,
+                                                   r, added)
 
     def _create_implicit_contracts_and_configure_default_epg(
         self, context, l2p, epg_dn):
@@ -1479,3 +1602,205 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
         vrf = self.aim.get(
             aim_context, aim_resource.VRF.from_dn(vrf_dn))
         return vrf
+
+    def _check_l3policy_ext_segment(self, context, l3policy):
+        if l3policy['external_segments']:
+            for allocations in l3policy['external_segments'].values():
+                if len(allocations) > 1:
+                    raise alib.OnlyOneAddressIsAllowedPerExternalSegment()
+            # if NAT is disabled, allow only one L3P per ES
+            ess = context._plugin.get_external_segments(
+                context._plugin_context,
+                filters={'id': l3policy['external_segments'].keys()})
+            for es in ess:
+                ext_net = self._ext_segment_2_ext_network(context, es)
+                if (ext_net and
+                    ext_net.get(cisco_apic.NAT_TYPE) in
+                        ('distributed', 'edge')):
+                    continue
+                if [x for x in es['l3_policies'] if x != l3policy['id']]:
+                    raise alib.OnlyOneL3PolicyIsAllowedPerExternalSegment()
+
+    def _check_external_policy(self, context, ep):
+        if ep.get('shared', False):
+            # REVISIT(amitbose) This could be relaxed
+            raise alib.SharedExternalPolicyUnsupported()
+        ess = context._plugin.get_external_segments(
+            context._plugin_context,
+            filters={'id': ep['external_segments']})
+        for es in ess:
+            other_eps = context._plugin.get_external_policies(
+                context._plugin_context,
+                filters={'id': es['external_policies'],
+                         'tenant_id': [ep['tenant_id']]})
+            if [x for x in other_eps if x['id'] != ep['id']]:
+                raise alib.MultipleExternalPoliciesForL3Policy()
+
+    def _get_l3p_subnets(self, context, l3policy):
+        l2p_sn = []
+        for l2p_id in l3policy['l2_policies']:
+            l2p_sn.extend(self._get_l2p_subnets(context, l2p_id))
+        return l2p_sn
+
+    def _ext_segment_2_ext_network(self, context, ext_segment):
+        subnet = self._get_subnet(context._plugin_context,
+                                  ext_segment['subnet_id'])
+        if subnet:
+            return self._get_network(context._plugin_context,
+                                     subnet['network_id'])
+
+    def _map_ext_segment_to_routers(self, context, ext_segments,
+                                    routers):
+        net_to_router = {r['external_gateway_info']['network_id']: r
+                         for r in routers
+                         if r.get('external_gateway_info')}
+        result = {}
+        for es in ext_segments:
+            sn = self._get_subnet(context._plugin_context, es['subnet_id'])
+            router = net_to_router.get(sn['network_id']) if sn else None
+            if router:
+                result[es['id']] = router
+        return result
+
+    def _plug_l3p_routers_to_ext_segment(self, context, l3policy,
+                                         ext_seg_info):
+        plugin_context = context._plugin_context
+        es_list = self._get_external_segments(plugin_context,
+            filters={'id': ext_seg_info.keys()})
+        l3p_subs = self._get_l3p_subnets(context, l3policy)
+
+        # REVISIT: We are not re-using the first router created
+        # implicitly for the L3Policy (or provided explicitly by the
+        # user). Consider using that for the first external segment
+
+        for es in es_list:
+            router_id = self._use_implicit_router(context,
+                  router_name=l3policy['name'] + '-' + es['name'])
+            router = self._create_router_gw_for_external_segment(
+                context._plugin_context, es, ext_seg_info, router_id)
+            if not ext_seg_info[es['id']] or not ext_seg_info[es['id']][0]:
+                # Update L3P assigned address
+                efi = router['external_gateway_info']['external_fixed_ips']
+                assigned_ips = [x['ip_address'] for x in efi
+                                if x['subnet_id'] == es['subnet_id']]
+                context.set_external_fixed_ips(es['id'], assigned_ips)
+            if es['external_policies']:
+                ext_policy = self._get_external_policies(plugin_context,
+                   filters={'id': es['external_policies'],
+                            'tenant_id': [l3policy['tenant_id']]})
+                if ext_policy:
+                    self._set_router_ext_contracts(context, router_id,
+                                                   ext_policy[0])
+            # Use admin context because router and subnet may be in
+            # different tenants
+            self._attach_router_to_subnets(plugin_context.elevated(),
+                                           router_id, l3p_subs)
+
+    def _unplug_l3p_routers_from_ext_segment(self, context, l3policy,
+                                             ext_seg_ids):
+        plugin_context = context._plugin_context
+        es_list = self._get_external_segments(plugin_context,
+                                              filters={'id': ext_seg_ids})
+        routers = self._get_routers(plugin_context,
+                                    filters={'id': l3policy['routers']})
+        es_2_router = self._map_ext_segment_to_routers(context, es_list,
+                                                       routers)
+        for r in es_2_router.values():
+            router_subs = self._get_router_interface_subnets(plugin_context,
+                                                             r['id'])
+            self._detach_router_from_subnets(plugin_context, r['id'],
+                                             router_subs)
+            context.remove_router(r['id'])
+            self._cleanup_router(plugin_context, r['id'],
+                                 clean_session=False)
+
+    def _get_router_interface_subnets(self, plugin_context, router_id):
+        router_ports = self._get_ports(plugin_context,
+            filters={'device_owner': [n_constants.DEVICE_OWNER_ROUTER_INTF],
+                     'device_id': [router_id]})
+        return set(y['subnet_id']
+                   for x in router_ports for y in x['fixed_ips'])
+
+    def _attach_router_to_subnets(self, plugin_context, router_id, subs):
+        rtr_sn = self._get_router_interface_subnets(plugin_context, router_id)
+        for subnet in subs:
+            if subnet['id'] in rtr_sn:  # already attached
+                continue
+            gw_port = self._get_ports(plugin_context,
+               filters={'fixed_ips': {'ip_address': [subnet['gateway_ip']],
+                                      'subnet_id': [subnet['id']]}})
+            if gw_port:
+                # Gateway port is in use, create new interface port
+                attrs = {'tenant_id': subnet['tenant_id'],
+                         'network_id': subnet['network_id'],
+                         'fixed_ips': [{'subnet_id': subnet['id']}],
+                         'device_id': '',
+                         'device_owner': '',
+                         'mac_address': attributes.ATTR_NOT_SPECIFIED,
+                         'name': '%s-%s' % (router_id, subnet['id']),
+                         'admin_state_up': True}
+                try:
+                    intf_port = self._create_port(plugin_context, attrs,
+                                                  clean_session=False)
+                except n_exc.NeutronException:
+                    with excutils.save_and_reraise_exception():
+                        LOG.exception(_LE('Failed to create explicit router '
+                                          'interface port in subnet '
+                                          '%(subnet)s'),
+                                      {'subnet': subnet['id']})
+                interface_info = {'port_id': intf_port['id']}
+                try:
+                    self._add_router_interface(plugin_context, router_id,
+                                               interface_info)
+                except n_exc.BadRequest:
+                    self._delete_port(plugin_context, intf_port['id'],
+                                      clean_session=False)
+                    with excutils.save_and_reraise_exception():
+                        LOG.exception(_LE('Attaching router %(router)s to '
+                                          '%(subnet)s with explicit port '
+                                          '%(port) failed'),
+                                      {'subnet': subnet['id'],
+                                       'router': router_id,
+                                       'port': intf_port['id']})
+            else:
+                self._plug_router_to_subnet(plugin_context, subnet['id'],
+                                            router_id)
+
+    def _detach_router_from_subnets(self, plugin_context, router_id, sn_ids):
+        for subnet_id in sn_ids:
+            # Use admin context because router and subnet may be in
+            # different tenants
+            self._remove_router_interface(plugin_context.elevated(),
+                                          router_id,
+                                          {'subnet_id': subnet_id},
+                                          clean_session=False)
+
+    def _set_router_ext_contracts(self, context, router_id, ext_policy):
+        session = context._plugin_context.session
+        prov = []
+        cons = []
+        if ext_policy:
+            prov = self._get_aim_contract_names(session,
+                ext_policy['provided_policy_rule_sets'])
+            cons = self._get_aim_contract_names(session,
+                ext_policy['consumed_policy_rule_sets'])
+        attr = {cisco_apic_l3.EXTERNAL_PROVIDED_CONTRACTS: prov,
+                cisco_apic_l3.EXTERNAL_CONSUMED_CONTRACTS: cons}
+        self._update_router(context._plugin_context, router_id, attr,
+                            clean_session=False)
+
+    def _get_ext_policy_routers(self, context, ext_policy, ext_seg_ids):
+        plugin_context = context._plugin_context
+        es = self._get_external_segments(plugin_context,
+                                         filters={'id': ext_seg_ids})
+        subs = self._get_subnets(context._plugin_context,
+            filters={'id': [e['subnet_id'] for e in es]})
+        ext_net = {s['network_id'] for s in subs}
+        l3ps = set([l3p for e in es for l3p in e['l3_policies']])
+        l3ps = self._get_l3_policies(plugin_context,
+             filters={'id': l3ps,
+                      'tenant_id': [ext_policy['tenant_id']]})
+        routers = self._get_routers(plugin_context,
+            filters={'id': [r for l in l3ps for r in l['routers']]})
+        return [r['id'] for r in routers
+            if (r['external_gateway_info'] or {}).get('network_id') in ext_net]
