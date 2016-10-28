@@ -39,6 +39,26 @@ class HierarchicalContractsNotSupported(gpexc.GroupPolicyBadRequest):
     message = _("Hierarchical contracts not supported by APIC driver.")
 
 
+class MultipleExternalPoliciesForL3Policy(gpexc.GroupPolicyBadRequest):
+    message = _("Potential association of multiple external policies to "
+                "an L3 Policy.")
+
+
+class SharedExternalPolicyUnsupported(gpexc.GroupPolicyBadRequest):
+    message = _("APIC mapping driver does not support sharing of "
+                "external policies.")
+
+
+class OnlyOneL3PolicyIsAllowedPerExternalSegment(gpexc.GroupPolicyBadRequest):
+    message = _("Only one L3 Policy per ES is supported when NAT is disabled "
+                "on the ES.")
+
+
+class OnlyOneAddressIsAllowedPerExternalSegment(gpexc.GroupPolicyBadRequest):
+    message = _("Only one ip address on each ES is supported on "
+                "APIC GBP driver.")
+
+
 def get_filter_entries_for_policy_rule(context):
     # forward_rules and reverse_rules is each a dict of filter_entries
     # with each entry in the dict having the filter_entry name as the
