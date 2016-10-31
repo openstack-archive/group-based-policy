@@ -324,6 +324,8 @@ class ApicMappingVlanTestCase(ApicMappingTestCase):
         kwargs['default_agent_conf'] = False
         super(ApicMappingVlanTestCase, self).setUp(**kwargs)
         self.non_apic_network = True
+        self.agent_conf['configurations'][
+            'bridge_mappings']['physnet2'] = 'br-eth2'
 
     def _get_ptg_shadow_net(self, ptg):
         net = self._list_resource('networks', self.api,
