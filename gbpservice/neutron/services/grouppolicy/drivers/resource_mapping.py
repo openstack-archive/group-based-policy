@@ -486,37 +486,71 @@ class ImplicitResourceOperations(local_api.LocalAPI):
         l2p = context._plugin.get_l2_policy(context._plugin_context, l2p_id)
         l3p_id = l2p['l3_policy_id']
         l3p_db = context._plugin.get_l3_policy(context._plugin_context, l3p_id)
+        # Only allocate from subnetpools that belong to this tenant
+        filters = {'tenant_id': [context.current['tenant_id']]}
         # REVISIT: For dual stack
         # Current assumption is that either v4 or v6 subnet needs to be
         # allocated, but not both
         if l3p_db['address_scope_v4_id']:
-            # Since this is implicit assignment, the first subnetpool
-            # is considered as the default and always used (here and in
-            # the v6 case below)
-            subnetpool_id = l3p_db['subnetpools_v4'][0]
+            filters['id'] = l3p_db['subnetpools_v4']
             ip_version = 4
         else:
-            subnetpool_id = l3p_db['subnetpools_v6'][0]
+            filters['id'] = l3p_db['subnetpools_v6']
             ip_version = 6
-        attrs = {'tenant_id': context.current['tenant_id'],
-                 'name': 'ptg_' + context.current['name'],
-                 'network_id': l2p['network_id'],
-                 'ip_version': ip_version,
-                 'subnetpool_id': subnetpool_id,
-                 'cidr': attributes.ATTR_NOT_SPECIFIED,
-                 'prefixlen': attributes.ATTR_NOT_SPECIFIED,
-                 'enable_dhcp': True,
-                 'gateway_ip': attributes.ATTR_NOT_SPECIFIED,
-                 'allocation_pools': attributes.ATTR_NOT_SPECIFIED,
-                 'dns_nameservers': (
-                     cfg.CONF.resource_mapping.dns_nameservers or
-                     attributes.ATTR_NOT_SPECIFIED),
-                 'host_routes': attributes.ATTR_NOT_SPECIFIED}
-        attrs.update(subnet_specifics)
-        subnet = self._create_subnet(context._plugin_context, attrs,
-                                     clean_session=clean_session)
-        self._mark_subnet_owned(context._plugin_context.session, subnet['id'])
-        return [subnet]
+        # All relevant subnetpools owned by this tenant
+        candidate_subpools = self._get_subnetpools(
+            context._plugin_context, filters) or []
+        del filters['tenant_id']
+        filters['shared'] = [True]
+        # All relevant shared subnetpools
+        shared_subpools = self._get_subnetpools(
+            context._plugin_context, filters) or []
+        # Union of the above two lists of subnetpools
+        candidate_subpools = {x['id']: x for x in candidate_subpools +
+                              shared_subpools}.values()
+        subnet = None
+        for pool in candidate_subpools:
+            try:
+                attrs = {'tenant_id': context.current['tenant_id'],
+                         'name': 'ptg_' + context.current['name'],
+                         'network_id': l2p['network_id'],
+                         'ip_version': ip_version,
+                         'subnetpool_id': pool['id'],
+                         'cidr': attributes.ATTR_NOT_SPECIFIED,
+                         'prefixlen': attributes.ATTR_NOT_SPECIFIED,
+                         'enable_dhcp': True,
+                         'gateway_ip': attributes.ATTR_NOT_SPECIFIED,
+                         'allocation_pools': attributes.ATTR_NOT_SPECIFIED,
+                         'dns_nameservers': (
+                             cfg.CONF.resource_mapping.dns_nameservers or
+                             attributes.ATTR_NOT_SPECIFIED),
+                         'host_routes': attributes.ATTR_NOT_SPECIFIED}
+                attrs.update(subnet_specifics)
+                subnet = self._create_subnet(context._plugin_context, attrs,
+                                             clean_session=clean_session)
+                self._mark_subnet_owned(context._plugin_context.session,
+                                        subnet['id'])
+                LOG.debug("Allocated subnet %(sub)s from subnetpool: %(sp)s.",
+                          {'sub': subnet['id'], 'sp': pool['id']})
+                break
+            except Exception as e:
+                LOG.exception(_LE("Allocating subnet from subnetpool %(sp)s "
+                                  "failed. Allocation will be attempted "
+                                  "from any other configured "
+                                  "subnetpool(s). Exception: %(excp)s"),
+                              {'sp': pool['id'], 'excp': e})
+                last = e
+                continue
+
+        if subnet:
+            return [subnet]
+        else:
+            # In the case of multiple subnetpools configured, the failure
+            # condition for subnet allocation on earlier subnetpools might
+            # be different from that on the last one, however it might still
+            # be more helpful to propagate this last exception instead of
+            # a generic exception.
+            raise last
 
     def _cleanup_subnet(self, plugin_context, subnet_id, router_id=None,
                         clean_session=True):
