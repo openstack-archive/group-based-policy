@@ -73,6 +73,10 @@ class InconsistentAddressScopeSubnetpool(exc.GroupPolicyBadRequest):
                 "scope for a l3_policy.")
 
 
+class NoAddressScopeForSubnetpool(exc.GroupPolicyBadRequest):
+    message = _("Subnetpool does not have an associated address scope.")
+
+
 class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
     """AIM Mapping Orchestration driver.
 
@@ -143,8 +147,9 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
             raise SimultaneousV4V6AddressScopesNotSupportedOnAimDriver()
         if l3p['subnetpools_v4'] and l3p['subnetpools_v6']:
             raise SimultaneousV4V6SubnetpoolsNotSupportedOnAimDriver()
-        if (l3p['address_scope_v4_id'] and l3p['subnetpools_v6']) or (
-            l3p['address_scope_v6_id'] and l3p['subnetpools_v4']):
+        mix1 = l3p['address_scope_v4_id'] is not None and l3p['subnetpools_v6']
+        mix2 = l3p['address_scope_v6_id'] is not None and l3p['subnetpools_v4']
+        if mix1 or mix2:
             raise InconsistentAddressScopeSubnetpool()
         ascp = None
         if l3p['address_scope_v6_id'] or l3p['subnetpools_v6']:
@@ -183,6 +188,8 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
                 sp = self._get_subnetpool(
                     context._plugin_context, l3p[subpool][0],
                     clean_session=False)
+                if not sp['address_scope_id']:
+                    raise NoAddressScopeForSubnetpool()
                 if len(sp['prefixes']) == 1:
                     l3p_db['ip_pool'] = sp['prefixes'][0]
                 l3p_db[ascp] = sp['address_scope_id']
@@ -191,7 +198,36 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
                 # TODO(Sumit): There is more than one subnetpool explicitly
                 # associated. Unset the ip_pool and subnet_prefix_length. This
                 # required changing the DB schema.
-                pass
+                sp_ascp = None
+                for sp_id in l3p[subpool]:
+                    # REVISIT: For dual stack.
+                    # This logic assumes either 4 or 6 but not both
+                    sp = self._get_subnetpool(
+                        context._plugin_context, sp_id, clean_session=False)
+                    if not sp['address_scope_id']:
+                        raise NoAddressScopeForSubnetpool()
+                    if not sp_ascp:
+                        if l3p_db[ascp]:
+                            # This is the case where the address_scope
+                            # was explicitly set for the l3p  and we need to
+                            # check if it conflicts with the address_scope of
+                            # the first subnetpool
+                            if sp['address_scope_id'] != l3p_db[ascp]:
+                                raise InconsistentAddressScopeSubnetpool()
+                        else:
+                            # No address_scope was explicitly set for the l3p,
+                            # so set it to that of the first subnetpool
+                            l3p_db[ascp] = sp['address_scope_id']
+                        sp_ascp = sp['address_scope_id']
+                    elif sp_ascp != sp['address_scope_id']:
+                        # all subnetpools do not have the same address_scope
+                        raise InconsistentAddressScopeSubnetpool()
+                LOG.info(_LI("Since multiple subnetpools are configured for "
+                             "this l3_policy, it's ip_pool and "
+                             "subnet_prefix_length attributes will be unset."))
+                l3p_db['ip_pool'] = None
+                l3p_db['subnet_prefix_length'] = None
+
         # REVISIT: Check if the following constraint still holds
         if len(l3p['routers']) > 1:
             raise exc.L3PolicyMultipleRoutersNotSupported()
