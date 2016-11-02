@@ -10,6 +10,7 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+from gbpservice.nfp.common import constants as nfp_constants
 from gbpservice.nfp.core import log as nfp_logging
 from gbpservice.nfp.core import module as nfp_api
 from gbpservice.nfp.lib import transport as transport
@@ -55,7 +56,8 @@ class PullNotification(nfp_api.NfpEventHandler):
         except Exception as e:
             raise Exception(e)
 
-    @nfp_api.poll_event_desc(event='PULL_NOTIFICATIONS', spacing=2)
+    @nfp_api.poll_event_desc(event='PULL_NOTIFICATIONS',
+            spacing=nfp_constants.PULL_NOTIFICATIONS_SPACING)
     def pull_notifications(self, ev):
         """Pull and handle notification from configurator."""
         notifications = transport.get_response_from_configurator(self._conf)
