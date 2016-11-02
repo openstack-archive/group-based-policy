@@ -120,6 +120,7 @@ class ApicExtensionDriver(api_plus.ExtensionDriver,
                     data.get(cisco_apic.SNAT_HOST_POOL, False)}
         self.set_subnet_extn_db(plugin_context.session, result['id'],
                                 res_dict)
+        result.update(res_dict)
 
     def process_update_subnet(self, plugin_context, data, result):
         if not cisco_apic.SNAT_HOST_POOL in data:
@@ -127,6 +128,7 @@ class ApicExtensionDriver(api_plus.ExtensionDriver,
         res_dict = {cisco_apic.SNAT_HOST_POOL: data[cisco_apic.SNAT_HOST_POOL]}
         self.set_subnet_extn_db(plugin_context.session, result['id'],
                                 res_dict)
+        result.update(res_dict)
 
     def extend_address_scope_dict(self, session, base_model, result):
         try:

@@ -14,6 +14,7 @@
 #    under the License.
 
 import mock
+import netaddr
 
 from aim.aim_lib import nat_strategy
 from aim import aim_manager
@@ -54,6 +55,7 @@ DN = 'apic:distinguished_names'
 CIDR = 'apic:external_cidrs'
 PROV = 'apic:external_provided_contracts'
 CONS = 'apic:external_consumed_contracts'
+SNAT_POOL = 'apic:snat_host_pool'
 
 aim_resource.ResourceBase.__repr__ = lambda x: x.__dict__.__repr__()
 
@@ -158,7 +160,7 @@ class ApicAimTestCase(test_address_scope.AddressScopeTestCase,
         self._tenant_name = self._map_name({'id': 'test-tenant',
                                             'name': 'TestTenantName'})
         self.extension_attributes = ('router:external', DN,
-                                     'apic:nat_type', 'apic:snat_host_pool',
+                                     'apic:nat_type', SNAT_POOL,
                                      CIDR, PROV, CONS)
 
     def tearDown(self):
@@ -1478,24 +1480,21 @@ class TestExtensionAttributes(ApicAimTestCase):
         subnet = self._make_subnet(
             self.fmt, {'network': net1}, '10.0.0.1', '10.0.0.0/24')['subnet']
         subnet = self._show('subnets', subnet['id'])['subnet']
-        self.assertFalse(subnet['apic:snat_host_pool'])
+        self.assertFalse(subnet[SNAT_POOL])
 
         # Update something other than snat_host_pool
-        self._update('subnets', subnet['id'],
-                     {'subnet': {'name': 'foo'}})
-        subnet = self._show('subnets', subnet['id'])['subnet']
-        self.assertFalse(subnet['apic:snat_host_pool'])
+        subnet = self._update('subnets', subnet['id'],
+                              {'subnet': {'name': 'foo'}})['subnet']
+        self.assertFalse(subnet[SNAT_POOL])
 
         # Update snat_host_pool
-        self._update('subnets', subnet['id'],
-                     {'subnet': {'apic:snat_host_pool': True}})
-        subnet = self._show('subnets', subnet['id'])['subnet']
-        self.assertTrue(subnet['apic:snat_host_pool'])
+        subnet = self._update('subnets', subnet['id'],
+            {'subnet': {SNAT_POOL: True}})['subnet']
+        self.assertTrue(subnet[SNAT_POOL])
 
-        self._update('subnets', subnet['id'],
-                     {'subnet': {'apic:snat_host_pool': False}})
-        subnet = self._show('subnets', subnet['id'])['subnet']
-        self.assertFalse(subnet['apic:snat_host_pool'])
+        subnet = self._update('subnets', subnet['id'],
+            {'subnet': {SNAT_POOL: False}})['subnet']
+        self.assertFalse(subnet[SNAT_POOL])
 
         # delete subnet
         self._delete('subnets', subnet['id'])
@@ -1506,19 +1505,18 @@ class TestExtensionAttributes(ApicAimTestCase):
         subnet2 = self._make_subnet(
             self.fmt, {'network': net1}, '20.0.0.1', '20.0.0.0/24')['subnet']
         self._update('subnets', subnet2['id'],
-                     {'subnet': {'apic:snat_host_pool': True}})
+                     {'subnet': {SNAT_POOL: True}})
         with session.begin(subtransactions=True):
             db_obj = session.query(extn_db.SubnetExtensionDb).filter(
                         extn_db.SubnetExtensionDb.subnet_id ==
                         subnet2['id']).one()
             session.delete(db_obj)
         subnet2 = self._show('subnets', subnet2['id'])['subnet']
-        self.assertFalse(subnet2['apic:snat_host_pool'])
+        self.assertFalse(subnet2[SNAT_POOL])
 
-        self._update('subnets', subnet2['id'],
-                     {'subnet': {'apic:snat_host_pool': True}})
-        subnet2 = self._show('subnets', subnet2['id'])['subnet']
-        self.assertTrue(subnet2['apic:snat_host_pool'])
+        subnet2 = self._update('subnets', subnet2['id'],
+            {'subnet': {SNAT_POOL: True}})['subnet']
+        self.assertTrue(subnet2[SNAT_POOL])
 
     def test_router_lifecycle(self):
         session = db_api.get_session()
@@ -2139,3 +2137,207 @@ class TestExternalEdgeNat(TestExternalConnectivityBase,
 class TestExternalNoNat(TestExternalConnectivityBase,
                         ApicAimTestCase):
     nat_type = ''
+
+
+class TestSnatIpAllocation(ApicAimTestCase):
+
+    def test_get_alloc_ip(self):
+        admin_ctx = context.get_admin_context()
+        ext_net = self._make_ext_network('ext-net1',
+                                         dn='uni/tn-t1/out-l1/instP-n1')
+        sub1 = self._make_subnet(
+            self.fmt, {'network': ext_net}, '100.100.100.1',
+            '100.100.100.0/29')['subnet']
+        sub2 = self._make_subnet(
+            self.fmt, {'network': ext_net}, '200.100.100.1',
+            '200.100.100.0/28')['subnet']
+
+        # No SNAT pools -> no allocation possible
+        alloc = self.driver.get_or_allocate_snat_ip(admin_ctx, 'h0', ext_net)
+        self.assertIsNone(alloc)
+
+        # Add one SNAT pool
+        self._update('subnets', sub1['id'],
+                     {'subnet': {SNAT_POOL: True}})
+
+        # Allocate IP and then verify that same IP is returned on get
+        for x in range(0, 5):
+            alloc = self.driver.get_or_allocate_snat_ip(admin_ctx,
+                                                        'h%d' % x, ext_net)
+            self.assertEqual({'host_snat_ip': '100.100.100.%d' % (x + 2),
+                              'gateway_ip': '100.100.100.1',
+                              'prefixlen': 29}, alloc)
+            alloc = self.driver.get_or_allocate_snat_ip(admin_ctx,
+                                                        'h%d' % x, ext_net)
+            self.assertEqual({'host_snat_ip': '100.100.100.%d' % (x + 2),
+                              'gateway_ip': '100.100.100.1',
+                              'prefixlen': 29}, alloc)
+
+        # First pool exhausted, no further allocations possible
+        alloc = self.driver.get_or_allocate_snat_ip(admin_ctx, 'h5', ext_net)
+        self.assertIsNone(alloc)
+
+        # Add a second pool and try to re-allocate
+        self._update('subnets', sub2['id'],
+                     {'subnet': {SNAT_POOL: True}})
+        alloc = self.driver.get_or_allocate_snat_ip(admin_ctx, 'h5', ext_net)
+        self.assertEqual({'host_snat_ip': '200.100.100.2',
+                          'gateway_ip': '200.100.100.1',
+                          'prefixlen': 28}, alloc)
+
+    def test_snat_pool_flag_update_no_ip(self):
+        ext_net = self._make_ext_network('ext-net1',
+                                         dn='uni/tn-t1/out-l1/instP-n1')
+        sub1 = self._make_subnet(
+            self.fmt, {'network': ext_net}, '100.100.100.1',
+            '100.100.100.0/29')['subnet']
+        self._update('subnets', sub1['id'],
+                     {'subnet': {SNAT_POOL: True}})
+
+        self._update('subnets', sub1['id'],
+                     {'subnet': {SNAT_POOL: False}})
+        self._update('subnets', sub1['id'],
+                     {'subnet': {SNAT_POOL: True}})
+
+        self._delete('subnets', sub1['id'])
+
+    def test_snat_pool_flag_update_with_ip(self):
+        ext_net = self._make_ext_network('ext-net1',
+                                         dn='uni/tn-t1/out-l1/instP-n1')
+        sub1 = self._make_subnet(
+            self.fmt, {'network': ext_net}, '100.100.100.1',
+            '100.100.100.0/29')['subnet']
+        self._update('subnets', sub1['id'],
+                     {'subnet': {SNAT_POOL: True}})
+
+        alloc = self.driver.get_or_allocate_snat_ip(
+            context.get_admin_context(), 'h0', ext_net)
+        self.assertIsNotNone(alloc)
+        self._update('subnets', sub1['id'],
+            {'subnet': {SNAT_POOL: False}}, expected_code=500)
+        self._delete('subnets', sub1['id'], expected_code=409)
+
+    def _setup_router_with_ext_net(self):
+        ext_net = self._make_ext_network('ext-net1',
+                                         dn='uni/tn-t1/out-l1/instP-n1')
+        self._make_subnet(
+            self.fmt, {'network': ext_net}, '100.100.100.1',
+            '100.100.100.0/24')
+
+        net = self._make_network(self.fmt, 'pvt-net1', True)['network']
+        pvt_sub = self._make_subnet(
+            self.fmt, {'network': net}, '10.10.1.1',
+            '10.10.1.0/24')['subnet']
+
+        rtr = self._make_router(
+            self.fmt, net['tenant_id'], 'router1',
+            external_gateway_info={'network_id': ext_net['id']})['router']
+        self._router_interface_action('add', rtr['id'], pvt_sub['id'], None)
+
+        sub2 = self._make_subnet(
+            self.fmt, {'network': ext_net}, '200.100.100.1',
+            '200.100.100.0/29')['subnet']
+        self._update('subnets', sub2['id'],
+                     {'subnet': {SNAT_POOL: True}})
+        alloc = self.driver.get_or_allocate_snat_ip(
+            context.get_admin_context(), 'h0', ext_net)
+        self.assertIsNotNone(alloc)
+
+        return sub2, rtr, pvt_sub
+
+    def _get_snat_ports(self, snat_subnet):
+        snat_ports = self._list('ports',
+            query_params=('network_id=%s' % snat_subnet['network_id'])
+        )['ports']
+        return [p for p in snat_ports
+                if p['fixed_ips'][0]['subnet_id'] == snat_subnet['id']]
+
+    def test_snat_port_delete_on_router_gw_clear(self):
+        snat_sub, rtr, _ = self._setup_router_with_ext_net()
+        self.assertTrue(self._get_snat_ports(snat_sub))
+
+        self._update('routers', rtr['id'],
+                     {'router': {'external_gateway_info': None}})
+        self.assertFalse(self._get_snat_ports(snat_sub))
+        self._update('subnets', snat_sub['id'],
+                     {'subnet': {SNAT_POOL: False}})
+
+    def test_snat_port_delete_on_router_intf_remove(self):
+        snat_sub, rtr, pvt_sub = self._setup_router_with_ext_net()
+        self.assertTrue(self._get_snat_ports(snat_sub))
+
+        self._router_interface_action('remove', rtr['id'], pvt_sub['id'],
+                                      None)
+        self.assertFalse(self._get_snat_ports(snat_sub))
+        self._update('subnets', snat_sub['id'],
+                     {'subnet': {SNAT_POOL: False}})
+
+    def test_snat_port_binding_update(self):
+        # Verify that updates to SNAT ports are fine
+        snat_sub, _, _ = self._setup_router_with_ext_net()
+        snat_port = self._get_snat_ports(snat_sub)[0]
+
+        snat_port = self._update('ports', snat_port['id'],
+                                 {'port': {'binding:vnic_type': 'normal',
+                                           'binding:profile': {'foo': 'bar'}}}
+        )['port']
+        self.assertEqual('normal', snat_port['binding:vnic_type'])
+        self.assertEqual({'foo': 'bar'}, snat_port['binding:profile'])
+
+    def test_floatingip_alloc_in_snat_pool(self):
+        ext_net = self._make_ext_network('ext-net1',
+                                         dn='uni/tn-t1/out-l1/instP-n1')
+        snat_sub = self._make_subnet(
+            self.fmt, {'network': ext_net}, '100.100.100.1',
+            '100.100.100.0/24')['subnet']
+        self._update('subnets', snat_sub['id'],
+                     {'subnet': {SNAT_POOL: True}})
+
+        # allocate FIP by subnet
+        res = self._create_floatingip(self.fmt, ext_net['id'],
+                                      subnet_id=snat_sub['id'])
+        self.assertEqual(400, res.status_int)
+        res = self.deserialize(self.fmt, res)
+        self.assertEqual('SnatPoolCannotBeUsedForFloatingIp',
+                         res['NeutronError']['type'])
+
+        # allocate FIP by external address
+        res = self._make_floatingip(self.fmt, ext_net['id'],
+                                    floating_ip='100.100.100.10',
+                                    http_status=400)
+        self.assertEqual('SnatPoolCannotBeUsedForFloatingIp',
+                         res['NeutronError']['type'])
+
+    def test_floatingip_alloc_in_non_snat_pool(self):
+        ext_net = self._make_ext_network('ext-net1',
+                                         dn='uni/tn-t1/out-l1/instP-n1')
+        snat_sub = self._make_subnet(
+            self.fmt, {'network': ext_net}, '100.100.100.1',
+            '100.100.100.0/24')['subnet']
+        self._update('subnets', snat_sub['id'],
+                     {'subnet': {SNAT_POOL: True}})
+
+        fip_sub1 = self._make_subnet(
+            self.fmt, {'network': ext_net}, '200.100.100.1',
+            '200.100.100.0/29')['subnet']
+        self._make_subnet(
+            self.fmt, {'network': ext_net}, '250.100.100.1',
+            '250.100.100.0/29')
+
+        # FIP with subnet
+        fip1 = self._create_floatingip(self.fmt, ext_net['id'],
+                                       subnet_id=fip_sub1['id'])
+        self.assertEqual(201, fip1.status_int)
+        fip1 = self.deserialize(self.fmt, fip1)['floatingip']
+        self.assertEqual('200.100.100.2', fip1['floating_ip_address'])
+
+        # FIP with external-address
+        fip2 = self._make_floatingip(self.fmt, ext_net['id'],
+                                     floating_ip='250.100.100.3')['floatingip']
+        self.assertEqual('250.100.100.3', fip2['floating_ip_address'])
+
+        # FIP with no IP specifications - exhaust all available IPs
+        ips = netaddr.IPSet(['200.100.100.0/29', '250.100.100.0/29'])
+        for x in range(0, 8):
+            fip = self._make_floatingip(self.fmt, ext_net['id'])['floatingip']
+            self.assertTrue(fip['floating_ip_address'] in ips)
