@@ -20,7 +20,8 @@ from keystoneclient.v2_0 import client as identity_client
 from neutronclient.v2_0 import client as neutron_client
 from novaclient import client as nova_client
 
-cfg.CONF.import_group('keystone_authtoken', 'keystonemiddleware.auth_token')
+cfg.CONF.import_group('nfp_keystone_authtoken',
+                      'gbpservice.nfp.orchestrator.modules.__init__')
 
 
 class SampleData(unittest.TestCase):
@@ -28,8 +29,8 @@ class SampleData(unittest.TestCase):
     def __init__(self, *args, **kwargs):
         super(SampleData, self).__init__(*args, **kwargs)
         self.AUTH_TOKEN = '6db9dfa4d29d442eb2b23811ad4b3a6d'
-        self.AUTH_URL = 'https://127.0.0.1:35357/None/'
-        self.ENDPOINT_URL = 'https://127.0.0.1:9696/'
+        self.AUTH_URL = 'http://localhost:5000/v2.0/'
+        self.ENDPOINT_URL = 'http://localhost:9696/'
         self.FLAVOR_NAME = 'm1.tiny'
         self.IMAGE_NAME = 'cirros-0.3.4-x86_64-uec'
         self.IMAGE_ID = '7022c5a4-ef0c-4f7e-a2c8-b7f5b36c9086'
@@ -51,16 +52,16 @@ class TestKeystoneClient(SampleData):
     def setUp(self):
         cfg.CONF.set_override('admin_user',
                               'neutron',
-                              group='keystone_authtoken')
+                              group='nfp_keystone_authtoken')
         cfg.CONF.set_override('admin_password',
                               'neutron_pass',
-                              group='keystone_authtoken')
+                              group='nfp_keystone_authtoken')
         cfg.CONF.set_override('admin_tenant_name',
                               'service',
-                              group='keystone_authtoken')
+                              group='nfp_keystone_authtoken')
         cfg.CONF.set_override('auth_version',
                               'None',
-                              group='keystone_authtoken')
+                              group='nfp_keystone_authtoken')
 
     def test_get_admin_token(self, mock_obj):
         instance = mock_obj.return_value
@@ -213,15 +214,16 @@ class TestNovaClient(SampleData):
                                                    self.FLAVOR_NAME,
                                                    None,
                                                    "name",
-                                                   "secgroup_name",
-                                                   "metadata={}",
-                                                   "files=[]",
-                                                   "config_drive=False",
-                                                   "userdata=None",
-                                                   "key_name=''",
-                                                   "different_hosts=None",
-                                                   "volume_support=False",
-                                                   "volume_size='2'")
+                                                   False,
+                                                   '2',
+                                                   None,
+                                                   None,
+                                                   None,
+                                                   False,
+                                                   None,
+                                                   '',
+                                                   None
+                                                   )
 
             self.assertEqual(retval, obj1)
             mock_obj.assert_called_once_with('2', auth_token=self.AUTH_TOKEN,

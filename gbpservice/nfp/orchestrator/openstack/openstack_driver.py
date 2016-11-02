@@ -28,18 +28,19 @@ class OpenstackApi(object):
         self.nova_version = '2'
         self.config = config
         self.identity_service = ("%s://%s:%d/%s/" %
-                                 (config.keystone_authtoken.auth_protocol,
-                                  config.keystone_authtoken.auth_host,
-                                  config.keystone_authtoken.auth_port,
-                                  config.keystone_authtoken.auth_version))
+                                 (config.nfp_keystone_authtoken.auth_protocol,
+                                  config.nfp_keystone_authtoken.auth_host,
+                                  config.nfp_keystone_authtoken.auth_port,
+                                  config.nfp_keystone_authtoken.auth_version))
         self.network_service = ("%s://%s:%d/" %
-                                (config.keystone_authtoken.auth_protocol,
-                                 config.keystone_authtoken.auth_host,
+                                (config.nfp_keystone_authtoken.auth_protocol,
+                                 config.nfp_keystone_authtoken.auth_host,
                                  config.bind_port))
-        self.username = username or config.keystone_authtoken.admin_user
-        self.password = password or config.keystone_authtoken.admin_password
+        self.username = username or config.nfp_keystone_authtoken.admin_user
+        self.password = password or (
+                            config.nfp_keystone_authtoken.admin_password)
         self.tenant_name = (tenant_name or
-                            config.keystone_authtoken.admin_tenant_name)
+                            config.nfp_keystone_authtoken.admin_tenant_name)
         self.token = None
         self.admin_tenant_id = None
 
@@ -50,9 +51,9 @@ class KeystoneClient(OpenstackApi):
     def get_admin_token(self):
         try:
             admin_token = self.get_scoped_keystone_token(
-                self.config.keystone_authtoken.admin_user,
-                self.config.keystone_authtoken.admin_password,
-                self.config.keystone_authtoken.admin_tenant_name)
+                self.config.nfp_keystone_authtoken.admin_user,
+                self.config.nfp_keystone_authtoken.admin_password,
+                self.config.nfp_keystone_authtoken.admin_tenant_name)
         except Exception as ex:
             err = ("Failed to obtain user token. Error: %s" % ex)
             LOG.error(err)
@@ -89,7 +90,7 @@ class KeystoneClient(OpenstackApi):
             err = ("Failed to get scoped token from"
                    " Openstack Keystone service"
                    " KeyError :: %s" % (err))
-            self.config.keystone_authtoken.auth_port,
+            self.config.nfp_keystone_authtoken.auth_port,
             LOG.error(err)
             raise Exception(err)
         else:
@@ -99,7 +100,7 @@ class KeystoneClient(OpenstackApi):
         if not self.admin_tenant_id:
             self.admin_tenant_id = self.get_tenant_id(
                 token,
-                self.config.keystone_authtoken.admin_tenant_name)
+                self.config.nfp_keystone_authtoken.admin_tenant_name)
 
         return self.admin_tenant_id
 
@@ -131,7 +132,7 @@ class KeystoneClient(OpenstackApi):
             Using this client one can perform CRUD operations over
             keystone resources.
         """
-        keystone_conf = self.config.keystone_authtoken
+        keystone_conf = self.config.nfp_keystone_authtoken
 
         v2client = identity_client.Client(
             username=keystone_conf.admin_user,
@@ -147,7 +148,7 @@ class KeystoneClient(OpenstackApi):
             Using this client one can perform CRUD operations over
             keystone resources.
         """
-        keystone_conf = self.config.keystone_authtoken
+        keystone_conf = self.config.nfp_keystone_authtoken
         v3_auth_url = ('%s://%s:%s/%s/' % (
             keystone_conf.auth_protocol, keystone_conf.auth_host,
             keystone_conf.auth_port, self.config.heat_driver.keystone_version))
@@ -368,10 +369,11 @@ class NovaClient(OpenstackApi):
             raise Exception(err)
 
     def create_instance(self, token, tenant_id, image_id, flavor,
-                        nw_port_id_list, name, secgroup_name=None,
+                        nw_port_id_list, name, volume_support,
+                        volume_size, secgroup_name=None,
                         metadata=None, files=None, config_drive=False,
                         userdata=None, key_name='', different_hosts=None,
-                        volume_support=False, volume_size="2"):
+                        ):
         """ Launch a VM with given details
 
         :param token: A scoped token
@@ -393,6 +395,21 @@ class NovaClient(OpenstackApi):
         :return: VM instance UUID
 
         """
+        try:
+            if files:
+                file_dict = {}
+                for _file in files:
+                    with open(_file["src"]) as config_file:
+                        data = config_file.read()
+                        config_drive = True
+                        file_dict.update({_file["dst"]: data})
+                files = file_dict
+        except Exception as e:
+            msg = (
+                "Failed while reading file: %r " % e)
+            LOG.error(msg)
+            raise e
+
         kwargs = dict()
         if volume_support:
             block_device_mapping_v2 = [
@@ -417,7 +434,7 @@ class NovaClient(OpenstackApi):
             kwargs.update(userdata=userdata)
         if metadata is not None and type(metadata) is dict and metadata != {}:
             kwargs.update(meta=metadata)
-        if files is not None and type(files) is list and files != []:
+        if files is not None:
             kwargs.update(files=files)
         if nw_port_id_list:
             nics = [{"port-id": entry.get("port"), "net-id": entry.get("uuid"),
