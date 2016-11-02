@@ -1542,19 +1542,17 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
             fips_in_ext_net = filter(
                 lambda x: x['floating_network_id'] == ext_net['id'], fips)
             if not fips_in_ext_net:
-                ipms.append({'external_segment_name': ext_net['name'],
+                ext_segment_name = dn.replace('/', ':')
+                ipms.append({'external_segment_name': ext_segment_name,
                              'nat_epg_name': ext_net_epg.name,
                              'nat_epg_tenant': ext_net_epg.tenant_name})
                 # TODO(amitbose) Set next_hop_ep_tenant for per-tenant NAT EPG
                 if host:
-                    # TODO(amitbose) Allocate host-specific SNAT IP
-                    # and append it to host_snat_ips in the format:
-                    # [ {'external_segment_name': <ext_segment_name1>,
-                    #    'host_snat_ip': <ip_addr>,
-                    #    'gateway_ip': <gateway_ip>,
-                    #    'prefixlen': <prefix_length_of_subnet>},
-                    #    {..}, ... ]
-                    pass
+                    snat_ip = self.aim_mech_driver.get_or_allocate_snat_ip(
+                        plugin_context, host, ext_net)
+                    if snat_ip:
+                        snat_ip['external_segment_name'] = ext_segment_name
+                        host_snat_ips.append(snat_ip)
             else:
                 for f in fips_in_ext_net:
                     f['nat_epg_name'] = ext_net_epg.name

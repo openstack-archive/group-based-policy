@@ -1463,18 +1463,34 @@ class TestPolicyTarget(AIMBaseTestCase):
         fip['nat_epg_tenant'] = ext_epg_tenant
         self.assertEqual(fip, mapping['floating_ip'][0])
 
-    def _verify_ip_mapping_details(self, mapping, ext_net, ext_epg_tenant,
-                                   ext_epg_name):
-        self.assertTrue({'external_segment_name': ext_net,
+    def _verify_ip_mapping_details(self, mapping, ext_segment_name,
+                                   ext_epg_tenant, ext_epg_name):
+        self.assertTrue({'external_segment_name': ext_segment_name,
                          'nat_epg_name': ext_epg_name,
                          'nat_epg_tenant': ext_epg_tenant}
                         in mapping['ip_mapping'])
 
+    def _verify_host_snat_ip_details(self, mapping, ext_segment_name,
+                                     snat_ip, subnet_cidr):
+        gw, prefix = subnet_cidr.split('/')
+        self.assertEqual({'external_segment_name': ext_segment_name,
+                          'host_snat_ip': snat_ip,
+                          'gateway_ip': gw,
+                          'prefixlen': int(prefix)},
+                         mapping['host_snat_ips'][0])
+
     def _do_test_get_gbp_details(self):
         es1, es1_sub = self._setup_external_segment(
             'es1', dn='uni/tn-t1/out-l1/instP-n1')
-        es2, _ = self._setup_external_segment(
+        es2, es2_sub1 = self._setup_external_segment(
             'es2', dn='uni/tn-t1/out-l2/instP-n2')
+        es2_sub2 = self._make_subnet(
+            self.fmt, {'network': {'id': es2_sub1['network_id'],
+                                   'tenant_id': es2_sub1['tenant_id']}},
+            '200.200.0.1', '200.200.0.0/16')['subnet']
+        self._update('subnets', es2_sub2['id'],
+                     {'subnet': {'apic:snat_host_pool': True}})
+
         l3p = self.create_l3_policy(name='myl3',
             external_segments={es1['id']: [], es2['id']: []})['l3_policy']
         l2p = self.create_l2_policy(name='myl2',
@@ -1508,8 +1524,10 @@ class TestPolicyTarget(AIMBaseTestCase):
         self._verify_gbp_details_assertions(
             mapping, req_mapping, pt1['port_id'], epg_name, epg_tenant, subnet)
         self._verify_fip_details(mapping, fip, 't1', 'EXT-l1')
-        self._verify_ip_mapping_details(mapping, 'es2',
-                                        't1', 'EXT-l2')
+        self._verify_ip_mapping_details(mapping,
+            'uni:tn-t1:out-l2:instP-n2', 't1', 'EXT-l2')
+        self._verify_host_snat_ip_details(mapping,
+            'uni:tn-t1:out-l2:instP-n2', '200.200.0.2', '200.200.0.1/16')
 
         # Create event on a second host to verify that the SNAT
         # port gets created for this second host
@@ -1521,8 +1539,12 @@ class TestPolicyTarget(AIMBaseTestCase):
             self._neutron_admin_context, device='tap%s' % pt2['port_id'],
             host='h2')
         self.assertEqual(pt2['port_id'], mapping['port_id'])
-        self._verify_ip_mapping_details(mapping, 'es1', 't1', 'EXT-l1')
-        self._verify_ip_mapping_details(mapping, 'es2', 't1', 'EXT-l2')
+        self._verify_ip_mapping_details(mapping,
+            'uni:tn-t1:out-l1:instP-n1', 't1', 'EXT-l1')
+        self._verify_ip_mapping_details(mapping,
+            'uni:tn-t1:out-l2:instP-n2', 't1', 'EXT-l2')
+        self._verify_host_snat_ip_details(mapping,
+            'uni:tn-t1:out-l2:instP-n2', '200.200.0.3', '200.200.0.1/16')
 
     def _do_test_gbp_details_no_pt(self):
         # Create port and bind it
@@ -1539,8 +1561,13 @@ class TestPolicyTarget(AIMBaseTestCase):
 
         ext_net1, router1 = self._setup_external_network(
             'l1', dn='uni/tn-t1/out-l1/instP-n1')
-        _, router2 = self._setup_external_network(
+        ext_net2, router2 = self._setup_external_network(
             'l2', dn='uni/tn-t1/out-l2/instP-n2')
+        ext_net2_sub2 = self._make_subnet(
+            self.fmt, {'network': ext_net2}, '200.200.0.1',
+            '200.200.0.0/16')['subnet']
+        self._update('subnets', ext_net2_sub2['id'],
+                     {'subnet': {'apic:snat_host_pool': True}})
 
         with self.network() as network:
             with self.subnet(network=network, cidr='1.1.2.0/24',
@@ -1595,8 +1622,11 @@ class TestPolicyTarget(AIMBaseTestCase):
                         ['10.10.0.0/26', '1.1.0.0/16', '2.1.0.0/16'],
                         epg_tenant)
                     self._verify_fip_details(mapping, fip, 't1', 'EXT-l1')
-                    self._verify_ip_mapping_details(mapping, 'l2',
-                                                    't1', 'EXT-l2')
+                    self._verify_ip_mapping_details(mapping,
+                        'uni:tn-t1:out-l2:instP-n2', 't1', 'EXT-l2')
+                    self._verify_host_snat_ip_details(mapping,
+                        'uni:tn-t1:out-l2:instP-n2', '200.200.0.2',
+                        '200.200.0.1/16')
 
     def test_get_gbp_details(self):
         self._do_test_get_gbp_details()
