@@ -13,6 +13,8 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+import sqlalchemy as sa
+
 from aim.aim_lib import nat_strategy
 from aim import aim_manager
 from aim.api import resource as aim_resource
@@ -22,11 +24,13 @@ from aim import context as aim_context
 from aim import utils as aim_utils
 from neutron._i18n import _LI
 from neutron._i18n import _LW
+from neutron.api.v2 import attributes
 from neutron.common import constants as n_constants
 from neutron.common import exceptions
 from neutron.common import topics as n_topics
 from neutron.db import address_scope_db
 from neutron.db import api as db_api
+from neutron.db import db_base_plugin_v2 as n_db
 from neutron.db import l3_db
 from neutron.db import models_v2
 from neutron.extensions import portbindings
@@ -44,8 +48,12 @@ from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import apic_mapper
 from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import cache
 from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import extension_db
 from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import model
+from oslo_serialization.jsonutils import netaddr
 
 LOG = log.getLogger(__name__)
+
+DEVICE_OWNER_SNAT_PORT = 'apic:snat-pool'
+
 
 # REVISIT(rkukura): Consider making these APIC name constants
 # configurable, although changing them would break an existing
@@ -67,6 +75,16 @@ PROMISCUOUS_TYPES = [n_constants.DEVICE_OWNER_DHCP,
 class UnsupportedRoutingTopology(exceptions.BadRequest):
     message = _("All router interfaces for a network must share either the "
                 "same router or the same subnet.")
+
+
+class SnatPortsInUse(exceptions.SubnetInUse):
+    def __init__(self, **kwargs):
+        kwargs['reason'] = _('Subnet has SNAT IP addresses allocated')
+        super(SnatPortsInUse, self).__init__(**kwargs)
+
+
+class SnatPoolCannotBeUsedForFloatingIp(exceptions.InvalidInput):
+    message = _("Floating IP cannot be allocated in SNAT host pool subnet.")
 
 
 NO_ADDR_SCOPE = object()
@@ -404,10 +422,18 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
         network_db = self.plugin._get_network(context._plugin_context,
                                               network_id)
         is_ext = network_db.external is not None
+        session = context._plugin_context.session
+
+        # If subnet is no longer a SNAT pool, check if SNAT IP ports
+        # are allocated
+        if (is_ext and context.original[cisco_apic.SNAT_HOST_POOL] and
+            not context.current[cisco_apic.SNAT_HOST_POOL] and
+            self._has_snat_ip_ports(context._plugin_context,
+                                    context.current['id'])):
+                raise SnatPortsInUse(subnet_id=context.current['id'])
 
         if (not is_ext and
             context.current['name'] != context.original['name']):
-            session = context._plugin_context.session
 
             network_tenant_id = network_db['tenant_id']
             network_tenant_aname = self.name_mapper.tenant(session,
@@ -758,6 +784,9 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
                    {}).get('network_id')
         new_net = (current.get('external_gateway_info') or
                    {}).get('network_id')
+        if old_net and not new_net:
+            self._delete_snat_ip_ports_if_reqd(context, old_net,
+                                               current['id'])
         if ((old_net != new_net or
              is_diff(original, current, a_l3.EXTERNAL_PROVIDED_CONTRACTS) or
              is_diff(original, current, a_l3.EXTERNAL_CONSUMED_CONTRACTS)) and
@@ -1158,6 +1187,9 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
                 context, router_db, net, None,
                 address_scope_id=address_scope_id)
 
+            self._delete_snat_ip_ports_if_reqd(context, net['id'],
+                                               router_id)
+
     def bind_port(self, context):
         LOG.debug("Attempting to bind port %(port)s on network %(net)s",
                   {'port': context.current['id'],
@@ -1552,3 +1584,125 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
         if self._is_port_bound(port):
             LOG.debug("APIC notify port %s", port['id'])
             self.notifier.port_update(plugin_context, port)
+
+    def get_or_allocate_snat_ip(self, plugin_context, host_or_vrf,
+                                ext_network):
+        """Fetch or allocate SNAT IP on the external network.
+
+        IP allocation is done by creating a port on the external network,
+        and associating an owner with it. The owner could be the ID of
+        a host (or VRF) if SNAT IP allocation per host (or per VRF) is
+        desired.
+        If IP was found or successfully allocated, returns a dict like:
+            {'host_snat_ip': <ip_addr>,
+             'gateway_ip': <gateway_ip of subnet>,
+             'prefixlen': <prefix_length_of_subnet>}
+        """
+        session = plugin_context.session
+        snat_port = (session.query(models_v2.Port)
+                     .filter(models_v2.Port.network_id == ext_network['id'],
+                             models_v2.Port.device_id == host_or_vrf,
+                             models_v2.Port.device_owner ==
+                             DEVICE_OWNER_SNAT_PORT)
+                     .first())
+        snat_ip = None
+        if not snat_port or snat_port.fixed_ips is None:
+            # allocate SNAT port
+            extn_db_sn = extension_db.SubnetExtensionDb
+            snat_subnets = (session.query(models_v2.Subnet)
+                            .join(extn_db_sn)
+                            .filter(models_v2.Subnet.network_id ==
+                                    ext_network['id'])
+                            .filter(extn_db_sn.snat_host_pool.is_(True))
+                            .all())
+            if not snat_subnets:
+                LOG.info(_LI('No subnet in external network %(net_id)s '
+                             'is marked as SNAT-pool'),
+                         ext_network['id'])
+                return
+            for snat_subnet in snat_subnets:
+                try:
+                    attrs = {'device_id': host_or_vrf,
+                             'device_owner': DEVICE_OWNER_SNAT_PORT,
+                             'tenant_id': ext_network['tenant_id'],
+                             'name': 'snat-pool-port:%s' % host_or_vrf,
+                             'network_id': ext_network['id'],
+                             'mac_address': attributes.ATTR_NOT_SPECIFIED,
+                             'fixed_ips': [{'subnet_id': snat_subnet.id}],
+                             'admin_state_up': False}
+                    port = n_db.NeutronDbPluginV2().create_port_db(
+                        plugin_context, {'port': attrs})
+                    if port and port.fixed_ips is not None:
+                        snat_ip = port.fixed_ips[0].ip_address
+                        break
+                except exceptions.IpAddressGenerationFailure:
+                    LOG.info(_LI('No more addresses available in subnet %s '
+                                 'for SNAT IP allocation'),
+                             snat_subnet['id'])
+        else:
+            snat_ip = snat_port.fixed_ips[0].ip_address
+            snat_subnet = (session.query(models_v2.Subnet)
+                           .filter(models_v2.Subnet.id ==
+                                   snat_port.fixed_ips[0].subnet_id)
+                           .one())
+
+        if snat_ip:
+            return {'host_snat_ip': snat_ip,
+                    'gateway_ip': snat_subnet['gateway_ip'],
+                    'prefixlen': int(snat_subnet['cidr'].split('/')[1])}
+
+    def _has_snat_ip_ports(self, plugin_context, subnet_id):
+        session = plugin_context.session
+        return (session.query(models_v2.Port)
+                .join(models_v2.IPAllocation)
+                .filter(models_v2.IPAllocation.subnet_id == subnet_id)
+                .filter(models_v2.Port.device_owner == DEVICE_OWNER_SNAT_PORT)
+                .first())
+
+    def _delete_snat_ip_ports_if_reqd(self, plugin_context,
+                                      ext_network_id, exclude_router_id):
+        session = plugin_context.session
+        # if there are no routers uplinked to the external network,
+        # then delete any ports allocated for SNAT IP
+        gw_qry = (session.query(models_v2.Port)
+                  .filter(models_v2.Port.network_id == ext_network_id,
+                          models_v2.Port.device_owner ==
+                          n_constants.DEVICE_OWNER_ROUTER_GW,
+                          models_v2.Port.device_id != exclude_router_id))
+        if not gw_qry.first():
+            (session.query(models_v2.Port)
+             .filter(models_v2.Port.network_id == ext_network_id,
+                     models_v2.Port.device_owner == DEVICE_OWNER_SNAT_PORT)
+             .delete())
+
+    def check_floatingip_external_address(self, context, floatingip):
+        session = context.session
+        if floatingip.get('subnet_id'):
+            sn_ext = (extension_db.ExtensionDbMixin()
+                      .get_subnet_extn_db(session,
+                                          floatingip['subnet_id']))
+            if sn_ext.get(cisco_apic.SNAT_HOST_POOL, False):
+                raise SnatPoolCannotBeUsedForFloatingIp()
+        elif floatingip.get('floating_ip_address'):
+            extn_db_sn = extension_db.SubnetExtensionDb
+            cidrs = (session.query(models_v2.Subnet.cidr)
+                    .join(extn_db_sn)
+                    .filter(models_v2.Subnet.network_id ==
+                            floatingip['floating_network_id'])
+                    .filter(extn_db_sn.snat_host_pool.is_(True))
+                    .all())
+            cidrs = netaddr.IPSet([c[0] for c in cidrs])
+            if floatingip['floating_ip_address'] in cidrs:
+                raise SnatPoolCannotBeUsedForFloatingIp()
+
+    def get_subnets_for_fip(self, context, floatingip):
+        session = context.session
+        extn_db_sn = extension_db.SubnetExtensionDb
+        other_sn = (session.query(models_v2.Subnet.id)
+                    .outerjoin(extn_db_sn)
+                    .filter(models_v2.Subnet.network_id ==
+                            floatingip['floating_network_id'])
+                    .filter(sa.or_(extn_db_sn.snat_host_pool.is_(False),
+                                   extn_db_sn.snat_host_pool.is_(None)))
+                    .all())
+        return [s[0] for s in other_sn]
