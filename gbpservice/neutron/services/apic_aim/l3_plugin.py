@@ -22,6 +22,7 @@ from neutron.db import extraroute_db
 from neutron.db import l3_gwmode_db
 from neutron.extensions import l3
 from neutron.plugins.common import constants
+from neutron_lib import exceptions
 from oslo_log import log as logging
 from oslo_utils import excutils
 from sqlalchemy import inspect
@@ -209,14 +210,33 @@ class ApicL3Plugin(common_db_mixin.CommonDbMixin,
         return port_db, subnets
 
     def create_floatingip(self, context, floatingip):
-        # if not floatingip['floatingip'].get('subnet_id'):
-        #    # TODO(amitbose) Verify that subnet is not a SNAT host-pool
-        # else:
-        #    # TODO(amitbose) Iterate over non SNAT host-pool subnets
-        #    # and try to allocate a FIP
+        fip = floatingip['floatingip']
+        # Verify that subnet is not a SNAT host-pool
+        self._md.check_floatingip_external_address(context, fip)
         with context.session.begin(subtransactions=True):
-            result = super(ApicL3Plugin, self).create_floatingip(
-                context, floatingip)
+            if fip.get('subnet_id') or fip.get('floating_ip_address'):
+                result = super(ApicL3Plugin, self).create_floatingip(
+                    context, floatingip)
+            else:
+                # Iterate over non SNAT host-pool subnets and try to allocate
+                # an address
+                other_subs = self._md.get_subnets_for_fip(context, fip)
+                result = None
+                for ext_sn in other_subs:
+                    fip['subnet_id'] = ext_sn
+                    try:
+                        with context.session.begin(nested=True):
+                            result = (super(ApicL3Plugin, self)
+                                      .create_floatingip(context, floatingip))
+                        break
+                    except exceptions.IpAddressGenerationFailure:
+                        LOG.info(_LI('No more floating IP addresses available '
+                                     'in subnet %s'),
+                                 ext_sn)
+
+                if not result:
+                    raise exceptions.IpAddressGenerationFailure(
+                        net_id=fip['floating_network_id'])
             self._md.create_floatingip(context, result)
             self.update_floatingip_status(context, result['id'],
                                           result['status'])
