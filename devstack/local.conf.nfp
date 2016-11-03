@@ -24,6 +24,8 @@ if [[ $ENABLE_NFP = True ]]; then
 
     if [[ $NFP_DEVSTACK_MODE = advanced ]]; then
         # External Network
+        # If configured, install step creates external network, external policy and network service policy
+        # If not configured, user has to create external network, external policy and network service policy
         EXT_NET_GATEWAY=
         EXT_NET_ALLOCATION_POOL_START=
         EXT_NET_ALLOCATION_POOL_END=
