@@ -12,25 +12,38 @@ Fresh Installation Steps:
 
 (3) Configure local.conf
     # Modify NFP_DEVSTACK_MODE to 'advanced'
-    # Configure following external network details,
+    # Configure the following external network details.
+    # If configured, install step creates resources required for external access.
+    # If not configured, user needs to create these resources as described in step 5 below.
       EXT_NET_GATEWAY=
       EXT_NET_ALLOCATION_POOL_START=
       EXT_NET_ALLOCATION_POOL_END=
       EXT_NET_CIDR=
-    # Configure the Configurator VM image path(optional),
+
+    # Configure the Configurator (NFP Controller) VM image path(optional),
     # If configured, install step uploads the specified image
     # If not configured, install step will build a new one and upload it
       ConfiguratorQcow2Image=
-    # Configure the Service VM image paths(optional),
+
+    # Configure Service VM image paths(optional),
     # If configured, install step uploads the specified images
     # If not configured, install step ignores uploading these service images
       VyosQcow2Image=
       HaproxyQcow2Image=
+
     # Configure PUBLIC_INTERFACE with the public interface name
 
 (4) Install devstack.
     # ./stack.sh
 
+(5) Create required basic GBP resources
+    # In step 3 above, if you have chosen not to create resources for external access, you may need
+    # to create them explicitly as described below.
+    # Note: This step is not required to excercise east west traffic
+    # Create external-network, external-subnet, external-segment, nat-pool, network-service-policy
+    # Configure "default_external_segment_name" option from "group_policy_implicit_policy" group
+    # with external-segment name created above  from neutron.conf
+    # Restart neutron-server service
 
 Re-installation Steps:
 ======================
