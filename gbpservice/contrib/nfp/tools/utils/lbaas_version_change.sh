@@ -18,7 +18,7 @@ move_to_v2() { #LBaaSV1 to LBaaSV2
     fi
 
     # Change service plugin
-    sudo sed -i "s/neutron_lbaas.services.loadbalancer.plugin.LoadBalancerPlugin/neutron_lbaas.services.loadbalancer.plugin.LoadBalancerPluginv2/g" /etc/neutron/neutron.conf
+    sudo sed -i "s/lbaas/lbaasv2/g" /etc/neutron/neutron.conf
 
     # Change service provider
     sudo sed -i "s/LOADBALANCER:loadbalancer:gbpservice.contrib.nfp.service_plugins.loadbalancer.drivers.nfp_lbaas_plugin_driver.HaproxyOnVMPluginDriver/LOADBALANCERV2:loadbalancerv2:gbpservice.contrib.nfp.service_plugins.loadbalancer.drivers.nfp_lbaasv2_plugin_driver.HaproxyOnVMPluginDriver/g" /etc/neutron/neutron_lbaas.conf
@@ -43,7 +43,7 @@ move_to_v1() { #LBaaSV2 to LBaaSV1
     fi
 
     # Change service plugin
-    sudo sed -i "s/neutron_lbaas.services.loadbalancer.plugin.LoadBalancerPluginv2/neutron_lbaas.services.loadbalancer.plugin.LoadBalancerPlugin/g" /etc/neutron/neutron.conf
+    sudo sed -i "s/lbaasv2/lbaas/g" /etc/neutron/neutron.conf
 
     # Change service provider
     sudo sed -i "s/LOADBALANCERV2:loadbalancerv2:gbpservice.contrib.nfp.service_plugins.loadbalancer.drivers.nfp_lbaasv2_plugin_driver.HaproxyOnVMPluginDriver/LOADBALANCER:loadbalancer:gbpservice.contrib.nfp.service_plugins.loadbalancer.drivers.nfp_lbaas_plugin_driver.HaproxyOnVMPluginDriver/g" /etc/neutron/neutron_lbaas.conf
