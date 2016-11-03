@@ -101,25 +101,25 @@ def configure_nfp():
          curr_service_plugins_list.remove("servicechain")
 
     if not len(vpnaas_enabled):
-        curr_service_plugins_list.append("neutron_vpnaas.services.vpn.plugin.VPNDriverPlugin")
+        curr_service_plugins_list.append("vpnaas")
     else:
         for word in vpnaas_enabled:
             curr_service_plugins_list.remove(word)
-        curr_service_plugins_list.append("neutron_vpnaas.services.vpn.plugin.VPNDriverPlugin")
+        curr_service_plugins_list.append("vpnaas")
 
     if not len(lbaas_enabled):
-        curr_service_plugins_list.append("neutron_lbaas.services.loadbalancer.plugin.LoadBalancerPlugin")
+        curr_service_plugins_list.append("lbaas")
     else:
         for word in lbaas_enabled:
             curr_service_plugins_list.remove(word)
-        curr_service_plugins_list.append("neutron_lbaas.services.loadbalancer.plugin.LoadBalancerPlugin")
+        curr_service_plugins_list.append("lbaas")
 
     if not len(fwaas_enabled):
-        curr_service_plugins_list.append("gbpservice.contrib.nfp.service_plugins.firewall.nfp_fwaas_plugin.NFPFirewallPlugin")
+        curr_service_plugins_list.append("nfp_fwaas")
     else:
         for word in fwaas_enabled:
             curr_service_plugins_list.remove(word)
-        curr_service_plugins_list.append("gbpservice.contrib.nfp.service_plugins.firewall.nfp_fwaas_plugin.NFPFirewallPlugin")
+        curr_service_plugins_list.append("nfp_fwaas")
 
     new_service_plugins_list = curr_service_plugins_list
     new_service_plugins = ",".join(new_service_plugins_list)
