@@ -17,13 +17,15 @@ SERVICE_TOKEN=admin
 # NFP Service
 ENABLE_NFP=True
 GBPSERVICE_REPO=https://git.openstack.org/openstack/group-based-policy.git
-GBPSERVICE_BRANCH=refs/changes/83/359883/80
+GBPSERVICE_BRANCH=master
 # Edit NFP_DEVSTACK_MODE with either 'base' or 'advanced'
 if [[ $ENABLE_NFP = True ]]; then
     NFP_DEVSTACK_MODE=base
 
     if [[ $NFP_DEVSTACK_MODE = advanced ]]; then
         # External Network
+        # If configured, install step creates external network, external policy and network service policy
+        # If not configured, user has to create external network, external policy and network service policy
         EXT_NET_GATEWAY=
         EXT_NET_ALLOCATION_POOL_START=
         EXT_NET_ALLOCATION_POOL_END=

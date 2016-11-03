@@ -13,6 +13,8 @@ Fresh Installation Steps:
 (3) Configure local.conf
     # Modify NFP_DEVSTACK_MODE to 'advanced'
     # Configure following external network details,
+    # If configured, install step creates external network, external policy and network service policy
+    # If not configured, user has to create external network, external policy and network service policy
       EXT_NET_GATEWAY=
       EXT_NET_ALLOCATION_POOL_START=
       EXT_NET_ALLOCATION_POOL_END=
@@ -31,6 +33,17 @@ Fresh Installation Steps:
 (4) Install devstack.
     # ./stack.sh
 
+(5) Create required basic GBP resources
+    # If following options are not in local.conf, user has to create external network,
+    # external policy and network service policy
+      EXT_NET_GATEWAY=
+      EXT_NET_ALLOCATION_POOL_START=
+      EXT_NET_ALLOCATION_POOL_END=
+      EXT_NET_CIDR=
+   # Create external-network, external-subnet, external-segment, nat-pool, network-service-policy
+   # Configure "default_external_segment_name" option from "group_policy_implicit_policy" group with external-segment
+   # name created above  from neutron.conf
+   # Restart neutron-server service
 
 Re-installation Steps:
 ======================
