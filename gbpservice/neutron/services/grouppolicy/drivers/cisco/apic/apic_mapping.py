@@ -3760,8 +3760,8 @@ class ApicMappingDriver(api.ResourceMappingDriver,
         # a port originally, then treat that port as the "shadow" port,
         # else create the shadow port in the shadow network. In both cases,
         # associate the shadow port to the PT.
-        context.current['port_attributes'] = {'device_owner':
-                                              'apic:%s' % pt['id']}
+        context.current.setdefault('port_attributes', {}).update(
+            {'device_owner': 'apic:%s' % pt['id']})
 
         if pt_port_id:
             shadow_port = self._get_port(context._plugin_context, pt_port_id)
