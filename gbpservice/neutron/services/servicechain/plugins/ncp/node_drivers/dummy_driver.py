@@ -68,6 +68,11 @@ class NoopNodeDriver(driver_base.NodeDriverBase):
     def notify_chain_parameters_updated(self, context):
         pass
 
+    @log.log_method_call
+    def policy_target_group_updated(self, context, old_policy_target_group,
+                                    current_policy_target_group):
+        pass
+
     @property
     def name(self):
         return self._name

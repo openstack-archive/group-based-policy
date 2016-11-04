@@ -165,6 +165,7 @@ class ChainMappingDriver(api.PolicyDriver, local_api.LocalAPI,
                 context, context.current['provided_policy_rule_sets'],
                 providing_ptg=context.current)
         self._handle_prs_added(context)
+        self._handle_provider_updated(context)
 
     @log.log
     def update_policy_target_group_precommit(self, context):
@@ -192,6 +193,7 @@ class ChainMappingDriver(api.PolicyDriver, local_api.LocalAPI,
                 context, curr['provided_policy_rule_sets'],
                 providing_ptg=context.current)
         self._handle_prs_updated(context)
+        self._handle_provider_updated(context)
 
     @log.log
     def delete_policy_target_group_precommit(self, context):
@@ -822,3 +824,20 @@ class ChainMappingDriver(api.PolicyDriver, local_api.LocalAPI,
         """
         return (not group.get('proxied_group_id') and
                 group.get('enforce_service_chains', True) is True)
+
+    def _get_ptg_provided_chain_id(self, context, ptg):
+        try:
+            return [x.servicechain_instance_id for x in
+                    self._get_ptg_servicechain_mapping(
+                        context._plugin_context.session,
+                        provider_ptg_ids=[ptg['id']])][0]
+        except IndexError:
+            return None
+
+    def _handle_provider_updated(self, context):
+        sci = self._get_ptg_provided_chain_id(context, context.current)
+        if sci:
+            chain_context = self._get_chain_admin_context(
+                context._plugin_context, instance_id=sci)
+            self._notify_ptg_updated(chain_context, context.original,
+                                     context.current, sci)

@@ -277,6 +277,17 @@ class NodeCompositionPlugin(servicechain_db.ServiceChainDbPlugin,
         self._update_chains_consumer_modified(context, policy_target_group,
                                               instance_id, 'added')
 
+    def policy_target_group_updated(self, context, old_policy_target_group,
+                                    current_policy_target_group,
+                                    instance_id):
+        """ Utility function.
+        Override this method to react to policy target group update
+        """
+        self._policy_target_group_updated(context,
+                                          old_policy_target_group,
+                                          current_policy_target_group,
+                                          instance_id)
+
     def update_chains_consumer_removed(self, context, policy_target_group,
                                        instance_id):
         """ Auto scaling function.
@@ -286,6 +297,23 @@ class NodeCompositionPlugin(servicechain_db.ServiceChainDbPlugin,
         """
         self._update_chains_consumer_modified(context, policy_target_group,
                                               instance_id, 'removed')
+
+    def _policy_target_group_updated(self, context, old_policy_target_group,
+                                     current_policy_target_group,
+                                     instance_id):
+        updaters = self._get_scheduled_drivers(
+                context,
+                self.get_servicechain_instance(context, instance_id),
+                'update')
+        for update in updaters.values():
+            try:
+                update['driver'].policy_target_group_updated(
+                        update['context'],
+                        old_policy_target_group,
+                        current_policy_target_group)
+            except exc.NodeDriverError as ex:
+                LOG.error(_LE("Node Update on policy target group modification"
+                              " failed, %s"), ex.message)
 
     def _update_chains_pt_modified(self, context, policy_target, instance_id,
                                    action):
