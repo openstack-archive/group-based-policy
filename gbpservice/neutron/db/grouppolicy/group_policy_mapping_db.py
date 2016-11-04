@@ -392,7 +392,8 @@ class GroupPolicyMappingDbPlugin(gpdb.GroupPolicyDbPlugin):
                     context, pt['policy_target_group_id'])
                 subnets = ptg['subnets']
                 for fixed_ip in attributes.get('fixed_ips'):
-                    if fixed_ip['subnet_id'] not in subnets:
+                    if ('subnet_id' in fixed_ip and
+                            fixed_ip['subnet_id'] not in subnets):
                         raise exceptions.InvalidPortExtraAttributes(
                             attribute='fixed_ips:subnet_id',
                             reason='subnet not in PTG')

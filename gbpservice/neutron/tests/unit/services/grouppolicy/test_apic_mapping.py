@@ -1519,6 +1519,51 @@ class TestPolicyTargetVlanNetwork(ApicMappingVlanTestCase,
         mgr.ensure_path_deleted_for_port.assert_called_once_with(
             ptg1['tenant_id'], 'Shd-%s' % ptg1['l2_policy_id'], 'h1')
 
+    def test_fixed_ip(self):
+        ptg1 = self.create_policy_target_group(
+            name="ptg1")['policy_target_group']
+        subnet = self._get_object('subnets', ptg1['subnets'][0],
+                                  self.api)['subnet']
+        network = self._get_object('networks', subnet['network_id'],
+                                   self.api)
+        # create PT with specific IP-address
+        pt1 = self.create_policy_target(
+            policy_target_group_id=ptg1['id'],
+            fixed_ips=[{'ip_address': '10.0.0.42'}]
+        )['policy_target']
+        shadow_port = self._get_object('ports', pt1['port_id'],
+                                       self.api)['port']
+        self.assertEqual(1, len(shadow_port['fixed_ips']))
+        self.assertEqual('10.0.0.42',
+                         shadow_port['fixed_ips'][0]['ip_address'])
+        implicit_port = self._list_resource('ports',
+            self.api, network_id=network['network']['id'])['ports'][0]
+        self.assertEqual(1, len(implicit_port['fixed_ips']))
+        self.assertEqual('10.0.0.42',
+                         implicit_port['fixed_ips'][0]['ip_address'])
+        self.delete_policy_target(pt1['id'])
+
+        # create PT with specific IP-address and subnet
+        subnet2 = self._make_subnet(self.fmt, network, '20.0.0.1',
+                                    '20.0.0.0/28')['subnet']
+        pt2 = self.create_policy_target(
+            policy_target_group_id=ptg1['id'],
+            fixed_ips=[{'ip_address': '20.0.0.14',
+                        'subnet_id': subnet2['id']}]
+        )['policy_target']
+        shadow_port = self._get_object('ports', pt2['port_id'],
+                                       self.api)['port']
+        self.assertEqual(1, len(shadow_port['fixed_ips']))
+        self.assertEqual('20.0.0.14',
+                         shadow_port['fixed_ips'][0]['ip_address'])
+        implicit_port = self._list_resource('ports',
+            self.api, network_id=network['network']['id'])['ports'][0]
+        self.assertEqual(1, len(implicit_port['fixed_ips']))
+        self.assertEqual('20.0.0.14',
+                         implicit_port['fixed_ips'][0]['ip_address'])
+        self.assertEqual(subnet2['id'],
+                         implicit_port['fixed_ips'][0]['subnet_id'])
+
 
 class FakeNetworkContext(object):
     """To generate network context for testing purposes only."""
