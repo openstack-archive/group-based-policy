@@ -35,3 +35,8 @@ class ServiceChainNotificationsMixin(object):
         if self._servicechain_plugin:
             self._servicechain_plugin.update_chains_consumer_removed(
                 context, policy_target_group, instance_id)
+
+    def _notify_ptg_updated(self, context, old, current, instance_id):
+        if self._servicechain_plugin:
+            self._servicechain_plugin.policy_target_group_updated(
+                    context, old, current, instance_id)

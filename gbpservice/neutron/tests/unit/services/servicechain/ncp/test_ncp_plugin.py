@@ -774,6 +774,36 @@ class NodeCompositionPluginTestCase(
         self.assertFalse(add.called)
         self.assertFalse(rem.called)
 
+    def test_node_drivers_notified_provider_updated(self):
+        upd = self.driver.policy_target_group_updated = mock.Mock()
+
+        prof = self._create_service_profile(
+            service_type='LOADBALANCER',
+            vendor=self.SERVICE_PROFILE_VENDOR)['service_profile']
+        node = self.create_servicechain_node(
+            service_profile_id=prof['id'],
+            config=self.DEFAULT_LB_CONFIG,
+            expected_res_status=201)['servicechain_node']
+
+        spec = self.create_servicechain_spec(
+            nodes=[node['id']],
+            expected_res_status=201)['servicechain_spec']
+        prs = self._create_redirect_prs(spec['id'])['policy_rule_set']
+        provider = self.create_policy_target_group(
+            provided_policy_rule_sets={prs['id']: ''})['policy_target_group']
+
+        # Verify notification issued for PTG consuming
+        upd.assert_called_with(mock.ANY, None, provider)
+        upd.reset_mock()
+
+        # Verify notification issued for PTG consuming
+        new_provider = self.update_policy_target_group(
+            provider['id'],
+            consumed_policy_rule_sets={prs['id']: ''})['policy_target_group']
+        upd.assert_called_with(mock.ANY, provider, new_provider)
+
+        upd.reset_mock()
+
 
 class TestQuotasForServiceChain(test_base.ServiceChainPluginTestCase):
 
