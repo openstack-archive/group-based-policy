@@ -254,6 +254,11 @@ class HeatNodeDriver(driver_base.NodeDriverBase):
     def notify_chain_parameters_updated(self, context):
         self.update(context)
 
+    @log.log
+    def policy_target_group_updated(self, context, old_policy_target_group,
+                                    current_policy_target_group):
+        pass
+
     @property
     def name(self):
         return self._name
