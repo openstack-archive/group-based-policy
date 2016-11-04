@@ -24,6 +24,7 @@ from neutron.plugins.common import constants
 from neutron import policy
 from neutron.tests.unit.api import test_extensions
 from neutron.tests.unit.db import test_db_base_plugin_v2
+from oslo_log import log as logging
 from oslo_utils import importutils
 from oslo_utils import uuidutils
 
@@ -306,6 +307,7 @@ class GroupPolicyDbTestCase(GroupPolicyDBTestBase,
 
     def setUp(self, core_plugin=None, sc_plugin=None, service_plugins=None,
               ext_mgr=None, gp_plugin=None):
+        logging.getLogger('neutron').logger.setLevel(logging.ERROR)
         sc_plugin = sc_plugin or DB_SC_PLUGIN_KLASS
         gp_plugin = gp_plugin or DB_GP_PLUGIN_KLASS
 
