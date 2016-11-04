@@ -198,6 +198,19 @@ class NodeDriverBase(object):
         pass
 
     @abc.abstractmethod
+    def policy_target_group_updated(self, context, old_policy_target_group,
+                                current_policy_target_group):
+        """Update a Node Driver that a chain provider PTG was created or
+        changed
+        :param context: NodeDriverContext instance describing the service chain
+        and the specific node to be processed by this driver.
+        :param old_policy_target_group: PTG state before the update. None if
+        the group was created.
+        :param current_policy_target_group: Current PTG state.
+        """
+        pass
+
+    @abc.abstractmethod
     def notify_chain_parameters_updated(self, context):
         """Update a deployed Service Chain Node on GBP PRS updates
 
