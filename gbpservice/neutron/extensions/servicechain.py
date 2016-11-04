@@ -357,6 +357,15 @@ class ServiceChainPluginBase(service_base.ServicePluginBase):
         """
         pass
 
+    def policy_target_group_updated(self, context, old_policy_target_group,
+                                    current_policy_target_group,
+                                    instance_id):
+        """ Utility function.
+
+        Override this method to react to policy target group update
+        """
+        pass
+
     @abc.abstractmethod
     def get_servicechain_nodes(self, context, filters=None, fields=None):
         pass
