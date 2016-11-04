@@ -603,6 +603,9 @@ class NFPNodeDriver(driver_base.NodeDriverBase):
                     context, network_function_id,
                     operation=nfp_constants.UPDATE)
 
+    def policy_target_group_updated(self, context, old_ptg, current_ptg):
+        pass
+
     def _wait_for_network_function_delete_completion(self, context,
                                                      network_function_id):
         time_waited = 0
