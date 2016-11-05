@@ -1,4 +1,10 @@
 #!/bin/sh
 
-# on the safer side, stop the docker
-service docker stop
+set -eux
+
+# get the docker pid, started by dib element
+DOCKER_PS_DIB=`cat /tmp/docker_pid_dib`
+
+# kill the docker process
+kill -9 $DOCKER_PS_DIB
+rm -f /tmp/docker_pid_dib
