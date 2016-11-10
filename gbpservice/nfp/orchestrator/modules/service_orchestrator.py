@@ -851,9 +851,10 @@ class ServiceOrchestrator(nfp_api.NfpEventHandler):
         }
         network_function = self.db_handler.update_network_function(
             self.db_session, network_function_id, network_function)
-        self._create_event('DELETE_NETWORK_FUNCTION_INSTANCE',
-                           event_data=network_function_details,
-                           is_internal_event=True)
+        if not base_mode_support:
+            self._create_event('DELETE_NETWORK_FUNCTION_INSTANCE',
+                               event_data=network_function_details,
+                               is_internal_event=True)
 
         LOG.info(_LI("[Event:DeleteService]"))
 
@@ -861,13 +862,6 @@ class ServiceOrchestrator(nfp_api.NfpEventHandler):
             id='DELETE_NETWORK_FUNCTION_DB',
             key=network_function_id,
             data=network_function_details,
-            graph=True)
-        dnfd_event = self._controller.new_event(
-            id='DELETE_NETWORK_FUNCTION_DEVICE',
-            key=network_function_id,
-            data=network_function_details,
-            serialize=True,
-            binding_key=network_function_id,
             graph=True)
         graph = nfp_event.EventGraph(dnf_event)
         graph_nodes = [dnf_event]
@@ -886,8 +880,16 @@ class ServiceOrchestrator(nfp_api.NfpEventHandler):
             service_config = network_function['service_config']
             self.delete_network_function_user_config(network_function_id,
                                                      service_config)
-        graph.add_node(dnfd_event, dnf_event)
-        graph_nodes.append(dnfd_event)
+        if not base_mode_support:
+            dnfd_event = self._controller.new_event(
+                id='DELETE_NETWORK_FUNCTION_DEVICE',
+                key=network_function_id,
+                data=network_function_details,
+                serialize=True,
+                binding_key=network_function_id,
+                graph=True)
+            graph.add_node(dnfd_event, dnf_event)
+            graph_nodes.append(dnfd_event)
         graph_event = (
             self._controller.new_event(id="DELETE_NETWORK_FUNCTION_GRAPH",
                                        graph=graph))
@@ -1613,10 +1615,12 @@ class ServiceOrchestrator(nfp_api.NfpEventHandler):
 
         network_function_details = event.data
         try:
-            nfi_id = (
-                network_function_details['network_function_instance']['id'])
-            self.db_handler.delete_network_function_instance(
-                self.db_session, nfi_id)
+            if not network_function_details['base_mode_support']:
+                nfi_id = (
+                    network_function_details['network_function_instance'][
+                                                                        'id'])
+                self.db_handler.delete_network_function_instance(
+                    self.db_session, nfi_id)
         except nfp_exc.NetworkFunctionInstanceNotFound:
             msg = "Network Function Instance %r Not Found" % (nfi_id)
             LOG.error(msg)
