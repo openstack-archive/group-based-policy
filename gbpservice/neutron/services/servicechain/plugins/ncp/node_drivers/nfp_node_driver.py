@@ -311,6 +311,9 @@ class NFPNodeDriver(driver_base.NodeDriverBase):
         service_flavor_str = context.current_profile['service_flavor']
         service_details = self._parse_service_flavor_string(service_flavor_str)
         if service_details['device_type'] == 'None':
+            if not NFPContext.get_nfp_context(context.instance['id']):
+                nfp_context = NFPContext.store_nfp_context(
+                                context.instance['id'])
             return {}
         # Management PTs are managed by NFP since it supports hosting multiple
         # logical services in a single device
