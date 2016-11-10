@@ -362,7 +362,7 @@ class HeatDriver(object):
         if provider.get("policy_targets"):
             filters = {'id': provider.get("policy_targets")}
         else:
-            filters = {'policy_target_group': provider['id']}
+            filters = {'policy_target_group_id': provider['id']}
         policy_targets = self.gbp_client.get_policy_targets(
                 auth_token,
                 filters=filters)
