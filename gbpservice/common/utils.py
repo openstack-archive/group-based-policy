@@ -26,11 +26,11 @@ cfg.CONF.import_group('keystone_authtoken', 'keystonemiddleware.auth_token')
 
 @contextlib.contextmanager
 def clean_session(session):
-    # Cleans session by expunging persisted object. This avoids inconsistency
+    # Cleans session by retiring persisted object. This avoids inconsistency
     # when multiple transactions are called with the same context.
-    session.expunge_all()
+    session.expire_all()
     yield
-    session.expunge_all()
+    session.expire_all()
 
 
 def get_resource_plural(resource):
