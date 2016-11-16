@@ -64,7 +64,10 @@ class ApicNameManager(object):
                 self._extract_apic_reference(obj))
             result = self.name_mapper.pre_existing(context, parts[-1])
         else:
-            result = getattr(self.name_mapper, obj_type)(context, obj['id'],
+            obj_id = (obj['reuse_bd']
+                      if obj_type == 'l2_policy' and obj.get('reuse_bd')
+                      else obj['id'])
+            result = getattr(self.name_mapper, obj_type)(context, obj_id,
                                                          prefix=prefix)
         return result
 
