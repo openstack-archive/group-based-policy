@@ -51,6 +51,7 @@ from oslo_log import log as logging
 from oslo_serialization import jsonutils
 import sqlalchemy as sa
 
+from gbpservice.neutron.db.grouppolicy.extensions import apic_reuse_bd_db
 from gbpservice.neutron.db.grouppolicy import group_policy_mapping_db as gpdb
 from gbpservice.neutron.extensions import group_policy as gpolicy
 from gbpservice.neutron.services.grouppolicy.common import constants as g_const
@@ -228,6 +229,11 @@ class AutoPTGDeleteNotSupported(gpexc.GroupPolicyBadRequest):
 class SingleTenantAndPerTenantNatEPGNotSupported(gpexc.GroupPolicyBadRequest):
     message = _("single_tenant_mode can not be combined with "
                 "per_tenant_nat_epg.")
+
+
+class L3PolicyMustBeSame(gpexc.GroupPolicyBadRequest):
+    message = _("L2 policy cannot use a L3 policy different from the target "
+                "L2 policy when BridgeDomain is being reused.")
 
 
 class TenantSpecificNatEpg(model_base.BASEV2):
@@ -907,6 +913,7 @@ class ApicMappingDriver(api.ResourceMappingDriver,
             tenant = self._tenant_by_sharing_policy(context.current)
             l2p = self._get_l2_policy(context._plugin_context,
                                       context.current['l2_policy_id'])
+
             l2_policy = self.name_mapper.l2_policy(context, l2p)
             epg = self.name_mapper.policy_target_group(context,
                                                        context.current)
@@ -954,6 +961,15 @@ class ApicMappingDriver(api.ResourceMappingDriver,
     def create_l2_policy_precommit(self, context):
         if not self.name_mapper._is_apic_reference(context.current):
             self._reject_non_shared_net_on_shared_l2p(context)
+            if context.current.get('reuse_bd'):
+                target_l2p = self._get_l2_policy(context._plugin_context,
+                                                 context.current['reuse_bd'])
+                if context.current.get('l3_policy_id'):
+                    if (context.current['l3_policy_id'] !=
+                        target_l2p['l3_policy_id']):
+                        raise L3PolicyMustBeSame()
+                else:
+                    context.set_l3_policy_id(target_l2p['l3_policy_id'])
         else:
             self.name_mapper.has_valid_name(context.current)
 
@@ -968,7 +984,8 @@ class ApicMappingDriver(api.ResourceMappingDriver,
 
     def create_l2_policy_postcommit(self, context):
         super(ApicMappingDriver, self).create_l2_policy_postcommit(context)
-        if not self.name_mapper._is_apic_reference(context.current):
+        if (not self.name_mapper._is_apic_reference(context.current) and
+                not context.current.get('reuse_bd')):
             tenant = self._tenant_by_sharing_policy(context.current)
             l3_policy_object = self._get_l3_policy(
                 context._plugin_context, context.current['l3_policy_id'])
@@ -1133,6 +1150,10 @@ class ApicMappingDriver(api.ResourceMappingDriver,
             self._unset_any_contract(context.current)
 
     def delete_l2_policy_precommit(self, context):
+        # Disallow L2 policy delete if its BD is being reused
+        if apic_reuse_bd_db.ApicReuseBdDBMixin().is_reuse_bd_target(
+            context._plugin_context.session, context.current['id']):
+                raise gpolicy.L2PolicyInUse(l2_policy_id=context.current['id'])
         if self.create_auto_ptg:
             auto_ptg_id = self._get_auto_ptg_id(context.current['id'])
             auto_ptg = context._plugin.get_policy_target_group(
@@ -1148,7 +1169,8 @@ class ApicMappingDriver(api.ResourceMappingDriver,
         # before removing the network, remove interfaces attached to router
         self._cleanup_router_interface(context, context.current)
         super(ApicMappingDriver, self).delete_l2_policy_postcommit(context)
-        if not self.name_mapper._is_apic_reference(context.current):
+        if (not self.name_mapper._is_apic_reference(context.current) and
+                not context.current.get('reuse_bd')):
             tenant = self._tenant_by_sharing_policy(context.current)
             l2_policy = self.name_mapper.l2_policy(context, context.current)
 
@@ -2486,6 +2508,10 @@ class ApicMappingDriver(api.ResourceMappingDriver,
         if self.single_tenant_mode:
             return self.single_tenant_name
 
+        if object.get('reuse_bd'):
+            target_l2p = self._get_l2_policy(nctx.get_admin_context(),
+                                             object['reuse_bd'])
+            return self._tenant_by_sharing_policy(target_l2p)
         if object.get('shared') and not self.name_mapper._is_apic_reference(
                 object):
             return apic_manager.TENANT_COMMON

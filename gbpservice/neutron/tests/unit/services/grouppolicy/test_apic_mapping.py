@@ -95,7 +95,8 @@ class MockCallRecorder(mock.Mock):
 class ApicMappingTestCase(
         test_rmd.ResourceMappingTestCase,
         mocked.ControllerMixin, mocked.ConfigMixin):
-    _extension_drivers = ['apic_segmentation_label', 'apic_allowed_vm_name']
+    _extension_drivers = ['apic_segmentation_label', 'apic_allowed_vm_name',
+                          'apic_reuse_bd']
     _extension_path = None
 
     def setUp(self, sc_plugin=None, nat_enabled=True,
@@ -2326,6 +2327,72 @@ class TestL2Policy(TestL2PolicyBase):
             [self._show_subnet(x)['subnet']['cidr'] for x in ptg['subnets']])
         self.assertFalse(subnet & subnet2)
 
+    def _test_reuse_bd(self, target_l2p_shared=False):
+        target_l2p = self.create_l2_policy(
+            shared=target_l2p_shared)['l2_policy']
+        target_l2p_tenant = self._tenant(target_l2p['tenant_id'],
+                                         target_l2p_shared)
+        mgr = self.driver.apic_manager
+        mgr.ensure_bd_created_on_apic.reset_mock()
+        mgr.ensure_epg_created.reset_mock()
+
+        # create L2P with reuse_bd
+        l2p = self.create_l2_policy(reuse_bd=target_l2p['id'])['l2_policy']
+        self.assertEqual(target_l2p['id'], l2p['reuse_bd'])
+        self.assertEqual(target_l2p['l3_policy_id'], l2p['l3_policy_id'])
+        mgr.ensure_bd_created_on_apic.assert_not_called()
+        mgr.ensure_epg_created.assert_not_called()
+
+        # delete of target L2p is not allowed
+        res = self.delete_l2_policy(target_l2p['id'],
+                                    expected_res_status=409)
+        self.assertEqual('L2PolicyInUse', res['NeutronError']['type'])
+
+        # create in PTG in L2P
+        ptg = self.create_policy_target_group(
+            l2_policy_id=l2p['id'])['policy_target_group']
+        sn1 = self._show_subnet(ptg['subnets'][0])['subnet']
+        mgr.ensure_epg_created.assert_called_with(
+            self._tenant(ptg['tenant_id']), ptg['id'],
+            bd_name=target_l2p['id'], bd_owner=target_l2p_tenant)
+        mgr.ensure_subnet_created_on_apic.assert_called_with(
+            target_l2p_tenant, target_l2p['id'],
+            sn1['gateway_ip'] + '/' + sn1['cidr'].split('/')[1],
+            transaction=mock.ANY)
+
+        # delete PTG in L2P
+        self.delete_policy_target_group(ptg['id'])
+        mgr.delete_epg_for_network.assert_called_with(
+            self._tenant(ptg['tenant_id']), ptg['id'])
+
+        # delete L2P
+        mgr.delete_epg_for_network.reset_mock()
+        self.delete_l2_policy(l2p['id'])
+        mgr.delete_bd_on_apic.assert_not_called()
+        mgr.delete_epg_for_network.assert_not_called()
+        mgr.delete_contract.assert_not_called()
+
+    def test_reuse_bd(self):
+        self._test_reuse_bd(target_l2p_shared=False)
+
+    def test_reuse_bd_shared(self):
+        self._test_reuse_bd(target_l2p_shared=True)
+
+    def test_reuse_bd_invalid_target(self):
+        # Try to reuse BD of a non-existent target
+        res = self.create_l2_policy(
+            reuse_bd='50ae6722-f040-459c-bbfa-a4be1b5cab64',
+            expected_res_status=404)
+        self.assertEqual('L2PolicyNotFound', res['NeutronError']['type'])
+
+        # Try to reuse BD of L2P in different L3P
+        target_l2p = self.create_l2_policy()['l2_policy']
+        l3p = self.create_l3_policy()['l3_policy']
+        res = self.create_l2_policy(l3_policy_id=l3p['id'],
+                                    reuse_bd=target_l2p['id'],
+                                    expected_res_status=400)
+        self.assertEqual('L3PolicyMustBeSame', res['NeutronError']['type'])
+
 
 class TestL2PolicySingleTenant(TestL2Policy):
     def setUp(self):
@@ -2394,6 +2461,18 @@ class TestL2PolicyWithAutoPTG(TestL2PolicyBase):
     def test_l2_policy_deleted_on_apic_shared(self):
         self._test_l2_policy_deleted_on_apic(shared=True)
         self._test_auto_ptg_deleted()
+
+    def test_auto_ptg_not_created_with_reuse_bd(self):
+        target_l2p = self.create_l2_policy()['l2_policy']
+        ptgs_before = self._gbp_plugin.get_policy_target_groups(
+            self._neutron_context)
+        self.assertEqual(1, len(ptgs_before))
+
+        # create L2P with reuse_bd
+        self.create_l2_policy(reuse_bd=target_l2p['id'])
+        ptgs_after = self._gbp_plugin.get_policy_target_groups(
+            self._neutron_context)
+        self.assertEqual(ptgs_before, ptgs_after)
 
 
 class TestL3Policy(ApicMappingTestCase):
