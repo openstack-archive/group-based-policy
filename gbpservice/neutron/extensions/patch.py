@@ -208,9 +208,9 @@ def get_session(autocommit=True, expire_on_commit=False, use_slave=False):
     # implementation of db_api.get_session() and should be updated
     # if the original implementation changes.
     facade = db_api._create_facade_lazily()
-    new_session = facade.get_session(autocommit=autocommit,
-                                     expire_on_commit=expire_on_commit,
-                                     use_slave=use_slave)
+    new_session = db_api.context_manager.get_legacy_facade().get_session(
+        autocommit=autocommit, expire_on_commit=expire_on_commit,
+        use_slave=use_slave)
 
     def gbp_after_transaction(session, transaction):
         global LOCAL_API_NOTIFICATION_QUEUE
