@@ -171,8 +171,8 @@ class ApicAimTestCase(test_address_scope.AddressScopeTestCase,
         super(ApicAimTestCase, self).tearDown()
 
     def _map_name(self, resource):
-        # Assumes no conflicts and no substition needed.
-        return resource['name'][:40] + '_' + resource['id'][:5]
+        # TODO(rkukura): Eliminate.
+        return resource['id']
 
     def _find_by_dn(self, dn, cls):
         aim_ctx = aim_context.AimContext(self.db_session)
@@ -1925,8 +1925,8 @@ class TestExternalConnectivityBase(object):
         contract = self._map_name(router)
         a_ext_net1 = aim_resource.ExternalNetwork(
             tenant_name='t1', l3out_name='l1', name='n1',
-            provided_contract_names=['pr-1', contract],
-            consumed_contract_names=['co-1', contract])
+            provided_contract_names=sorted(['pr-1', contract]),
+            consumed_contract_names=sorted(['co-1', contract]))
         a_vrf = aim_resource.VRF(tenant_name=self._tenant_name,
                                  name='DefaultVRF')
         if use_addr_scope:
@@ -1940,8 +1940,8 @@ class TestExternalConnectivityBase(object):
                                                  ext_net2['id']}}})
         a_ext_net2 = aim_resource.ExternalNetwork(
             tenant_name='t1', l3out_name='l2', name='n2',
-            provided_contract_names=['pr-1', contract],
-            consumed_contract_names=['co-1', contract])
+            provided_contract_names=sorted(['pr-1', contract]),
+            consumed_contract_names=sorted(['co-1', contract]))
         a_ext_net1.provided_contract_names = []
         a_ext_net1.consumed_contract_names = []
         dv.assert_called_once_with(mock.ANY, a_ext_net1, a_vrf)
