@@ -869,6 +869,9 @@ class ApicMappingDriver(api.ResourceMappingDriver,
                     {'id': context.current['policy_rules']})
                 self._apply_policy_rule_set_rules(
                     context, context.current, rules, transaction=trs)
+            self.apic_manager.update_name_alias(
+                self.apic_manager.apic.vzBrCP, tenant, contract,
+                nameAlias=context.current['name'])
 
     def create_policy_target_precommit(self, context):
         ptg = self._get_policy_target_group(
@@ -957,6 +960,10 @@ class ApicMappingDriver(api.ResourceMappingDriver,
                     context, context.current, l2p, epg, transaction=trs)
                 self._configure_epg_implicit_contract(
                     context, context.current, l2p, epg, transaction=trs)
+            self.apic_manager.update_name_alias(
+                self.apic_manager.apic.fvAEPg, tenant,
+                self.apic_manager.app_profile_name,
+                epg, nameAlias=context.current['name'])
 
             l3p = context._plugin.get_l3_policy(
                 context._plugin_context, l2_policy_object['l3_policy_id'])
@@ -1049,9 +1056,29 @@ class ApicMappingDriver(api.ResourceMappingDriver,
                                     context._plugin_context, es['name'])
                             self.apic_manager.set_l3out_for_bd(tenant,
                                     l2_policy, es_name, transaction=trs)
+            self.apic_manager.update_name_alias(
+                self.apic_manager.apic.fvBD, tenant, l2_policy,
+                nameAlias=context.current['name'])
+            shadow_epg = self.name_mapper.l2_policy(
+                context, context.current, prefix=SHADOW_PREFIX)
+            self.apic_manager.update_name_alias(
+                self.apic_manager.apic.fvAEPg, tenant,
+                self.apic_manager.app_profile_name, shadow_epg,
+                nameAlias=self._get_shadow_name(context.current['name']))
 
     def update_l2_policy_postcommit(self, context):
-        pass
+        if context.original['name'] != context.current['name']:
+            tenant = self._tenant_by_sharing_policy(context.current)
+            l2_policy = self.name_mapper.l2_policy(context, context.current)
+            self.apic_manager.update_name_alias(
+                self.apic_manager.apic.fvBD, tenant, l2_policy,
+                nameAlias=context.current['name'])
+            shadow_epg = self.name_mapper.l2_policy(
+                context, context.current, prefix=SHADOW_PREFIX)
+            self.apic_manager.update_name_alias(
+                self.apic_manager.apic.fvAEPg, tenant,
+                self.apic_manager.app_profile_name, shadow_epg,
+                nameAlias=self._get_shadow_name(context.current['name']))
 
     def create_l3_policy_precommit(self, context):
         if not self.name_mapper._is_apic_reference(context.current):
@@ -1064,6 +1091,9 @@ class ApicMappingDriver(api.ResourceMappingDriver,
             tenant = self._tenant_by_sharing_policy(context.current)
             l3_policy = self.name_mapper.l3_policy(context, context.current)
             self.apic_manager.ensure_context_enforced(tenant, l3_policy)
+            self.apic_manager.update_name_alias(
+                self.apic_manager.apic.fvCtx, tenant, l3_policy,
+                nameAlias=context.current['name'])
             external_segments = context.current['external_segments']
             if external_segments:
                 # Create a L3 ext for each External Segment
@@ -1221,6 +1251,14 @@ class ApicMappingDriver(api.ResourceMappingDriver,
                 raise HierarchicalContractsNotSupported()
 
     def update_policy_rule_set_postcommit(self, context):
+        if context.original['name'] != context.current['name']:
+            tenant = self._tenant_by_sharing_policy(context.current)
+            contract = self.name_mapper.policy_rule_set(context,
+                                                        context.current)
+            self.apic_manager.update_name_alias(
+                self.apic_manager.apic.vzBrCP, tenant, contract,
+                nameAlias=context.current['name'])
+
         # Update policy_rule_set rules
         old_rules = set(context.original['policy_rules'])
         new_rules = set(context.current['policy_rules'])
@@ -1292,6 +1330,15 @@ class ApicMappingDriver(api.ResourceMappingDriver,
 
     def update_policy_target_group_postcommit(self, context):
         if not self.name_mapper._is_apic_reference(context.current):
+            if context.original['name'] != context.current['name']:
+                tenant = self._tenant_by_sharing_policy(context.current)
+                epg = self.name_mapper.policy_target_group(context,
+                                                           context.current)
+                self.apic_manager.update_name_alias(
+                    self.apic_manager.apic.fvAEPg, tenant,
+                    self.apic_manager.app_profile_name,
+                    epg, nameAlias=context.current['name'])
+
             # TODO(ivar): refactor parent to avoid code duplication
             orig_provided_policy_rule_sets = context.original[
                 'provided_policy_rule_sets']
@@ -1355,6 +1402,13 @@ class ApicMappingDriver(api.ResourceMappingDriver,
 
     def update_l3_policy_postcommit(self, context):
         if not self.name_mapper._is_apic_reference(context.current):
+            if context.original['name'] != context.current['name']:
+                tenant = self._tenant_by_sharing_policy(context.current)
+                l3_policy = self.name_mapper.l3_policy(context,
+                                                       context.current)
+                self.apic_manager.update_name_alias(
+                    self.apic_manager.apic.fvCtx, tenant, l3_policy,
+                    nameAlias=context.current['name'])
             old_segment_dict = context.original['external_segments']
             new_segment_dict = context.current['external_segments']
             if (context.current['external_segments'] !=
@@ -2562,6 +2616,9 @@ class ApicMappingDriver(api.ResourceMappingDriver,
             ('%s%s-' % (prefix,
                 str(self.name_mapper.l3_policy(context, l3_obj))))
             or '')
+
+    def _get_shadow_name(self, name):
+        return "%s%s" % (SHADOW_PREFIX, name)
 
     def _get_tenant_for_shadow(self, is_shadow, shadow_obj, obj):
         return self._tenant_by_sharing_policy(
