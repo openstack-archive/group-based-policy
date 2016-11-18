@@ -16,6 +16,7 @@ import operator
 from keystoneclient import exceptions as k_exceptions
 from keystoneclient.v2_0 import client as k_client
 from neutron._i18n import _LE
+from neutron._i18n import _LI
 from neutron._i18n import _LW
 from neutron.api.v2 import attributes
 from neutron.common import constants as const
@@ -1131,9 +1132,13 @@ class ResourceMappingDriver(api.PolicyDriver, ImplicitResourceOperations,
 
     def _cleanup_network_service_policy(self, context, ptg,
                                         ipaddress=None, fip_maps=None):
+        LOG.info(_LI("_cleanup_network_service_policy 1, ptg: %(ptg)s, "
+            "ipaddress: %(ip)s"), {'ptg': ptg, 'ip': ipaddress})
         if not ipaddress:
             ipaddress = self._get_ptg_policy_ipaddress_mapping(
                 context._plugin_context.session, ptg['id'])
+        LOG.info(_LI("_cleanup_network_service_policy 2, ptg: %(ptg)s, "
+            "ipaddress: %(ip)s"), {'ptg': ptg, 'ip': ipaddress})
         if ipaddress and ptg['subnets']:
             # TODO(rkukura): Loop on subnets?
             self._restore_ip_to_allocation_pool(
@@ -1238,6 +1243,8 @@ class ResourceMappingDriver(api.PolicyDriver, ImplicitResourceOperations,
     def _handle_nsp_update_on_ptg(self, context):
         old_nsp = context.original.get("network_service_policy_id")
         new_nsp = context.current.get("network_service_policy_id")
+        LOG.info(_LI("_handle_nsp_update_on_ptg, old_nsp: %(old)s, "
+            " new_nsp: %(new)s"), {'old': old_nsp, 'new': new_nsp})
         if old_nsp != new_nsp:
             if old_nsp:
                 self._cleanup_network_service_policy(
@@ -1255,10 +1262,19 @@ class ResourceMappingDriver(api.PolicyDriver, ImplicitResourceOperations,
 
     @log.log_method_call
     def delete_policy_target_group_postcommit(self, context):
-        self._cleanup_network_service_policy(context,
+        LOG.info(_LI("delete_policy_target_group_postcommit: %(ptg)s"), {
+            'ptg': context.current})
+        try:
+            if not context.current['proxied_group_id']:
+                self._cleanup_network_service_policy(context,
                                              context.current,
                                              context.nsp_cleanup_ipaddress,
                                              context.nsp_cleanup_fips)
+        except Exception:
+            LOG.info(_LI("cleanup nsp fails for %(ptg)s, %(nsp_ip)s, "
+                "%(nsp_fips)s"), {'ptg': context.current,
+                    'nsp_ip': context.nsp_cleanup_ipaddress,
+                    'nsp_fips': context.nsp_cleanup_fips})
         # Cleanup SGs
         self._unset_sg_rules_for_subnets(
             context, context.current['subnets'],

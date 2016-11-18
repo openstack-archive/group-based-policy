@@ -12,7 +12,7 @@
 # limitations under the License.
 
 import eventlet
-from eventlet import greenpool
+# from eventlet import greenpool
 import threading
 
 from keystoneclient import exceptions as k_exceptions
@@ -251,9 +251,14 @@ class NFPContext(object):
 
     @staticmethod
     def _initialise_attr(sc_instance_id):
+        '''
         context = {'thread_pool': greenpool.GreenPool(10),
                    'active_threads': [],
                    'sc_node_count': 0,
+                   'sc_gateway_type_nodes': [],
+                   'update': False}
+        '''
+        context = {'sc_node_count': 0,
                    'sc_gateway_type_nodes': [],
                    'update': False}
         if nfp_context_store.context:
@@ -435,30 +440,38 @@ class NFPNodeDriver(driver_base.NodeDriverBase):
                                             network_function_id,
                                             operation):
         # Check for NF status in a separate thread
-        LOG.debug("Spawning thread for nf ACTIVE poll")
+        # LOG.debug("Spawning thread for nf ACTIVE poll")
         nfp_context = NFPContext.get_nfp_context(context.instance['id'])
         if operation == nfp_constants.DELETE:
+            '''
             gth = nfp_context['thread_pool'].spawn(
                 self._wait_for_network_function_delete_completion,
                 context, network_function_id)
+            '''
+            self._wait_for_network_function_delete_completion(
+                context, network_function_id)
         else:
+            '''
             gth = nfp_context['thread_pool'].spawn(
                 self._wait_for_network_function_operation_completion,
                 context, network_function_id, operation=operation)
+            '''
+            self._wait_for_network_function_operation_completion(
+                context, network_function_id, operation=operation)
 
-        nfp_context['active_threads'].append(gth)
+        # nfp_context['active_threads'].append(gth)
 
-        LOG.debug("Active Threads count (%d), sc_node_count (%d)" % (
-            len(nfp_context['active_threads']), nfp_context['sc_node_count']))
+        # LOG.debug("Active Threads count (%d), sc_node_count (%d)" % (
+        # len(nfp_context['active_threads']), nfp_context['sc_node_count']))
 
         nfp_context['sc_node_count'] -= 1
 
         # At last wait for the threads to complete, success/failure/timeout
         if nfp_context['sc_node_count'] == 0:
-            nfp_context['thread_pool'].waitall()
+            # nfp_context['thread_pool'].waitall()
             # Get the results
-            for gth in nfp_context['active_threads']:
-                self._wait(gth, context)
+            # for gth in nfp_context['active_threads']:
+            #     self._wait(gth, context)
             NFPContext.clear_nfp_context(context.instance['id'])
         else:
             NFPContext.store_nfp_context(context.instance['id'], **nfp_context)
