@@ -1841,6 +1841,28 @@ class TestPolicyTargetGroup(ApicMappingTestCase):
                       transaction=mock.ANY)]
         self._check_call_list(
             expected_calls, mgr.ensure_epg_created.call_args_list)
+        expected_calls = [
+            mock.call(mgr.apic.fvCtx, tenant, mock.ANY,
+                      nameAlias='default'),
+            mock.call(mgr.apic.fvBD, tenant, ptg['l2_policy_id'],
+                      nameAlias='ptg1'),
+            mock.call(mgr.apic.fvAEPg, tenant, mgr.app_profile_name,
+                      amap.SHADOW_PREFIX + ptg['l2_policy_id'],
+                      nameAlias=amap.SHADOW_PREFIX + 'ptg1'),
+            mock.call(mgr.apic.fvAEPg, tenant, mgr.app_profile_name,
+                      ptg['id'], nameAlias='ptg1')]
+        self._check_call_list(expected_calls,
+                              mgr.update_name_alias.call_args_list)
+
+        mgr.reset_mock()
+        self.update_policy_target_group(
+            ptg['id'], description='desc', expected_res_status=200)
+        self.assertFalse(mgr.update_name_alias.called)
+        self.update_policy_target_group(
+            ptg['id'], name='ptg1_1', expected_res_status=200)
+        mgr.update_name_alias.assert_called_once_with(
+            mgr.apic.fvAEPg, tenant, mgr.app_profile_name,
+            ptg['id'], nameAlias='ptg1_1')
 
     def test_policy_target_group_created_on_apic(self):
         self._test_policy_target_group_created_on_apic()
@@ -2251,6 +2273,31 @@ class TestL2PolicyBase(ApicMappingTestCase):
         mgr.ensure_epg_created.assert_called_once_with(
             tenant, amap.SHADOW_PREFIX + l2p['id'], bd_owner=tenant,
             bd_name=l2p['id'], transaction=mock.ANY)
+        expected_calls = [
+            mock.call(mgr.apic.fvCtx, tenant, l2p['l3_policy_id'],
+                      nameAlias='default'),
+            mock.call(mgr.apic.fvBD, tenant, l2p['id'],
+                      nameAlias='l2p'),
+            mock.call(mgr.apic.fvAEPg, tenant, mgr.app_profile_name,
+                      amap.SHADOW_PREFIX + l2p['id'],
+                      nameAlias=amap.SHADOW_PREFIX + 'l2p')]
+        self._check_call_list(expected_calls,
+                              mgr.update_name_alias.call_args_list)
+
+        mgr.reset_mock()
+        self.update_l2_policy(
+            l2p['id'], description='desc', expected_res_status=200)
+        self.assertFalse(mgr.update_name_alias.called)
+        self.update_l2_policy(
+            l2p['id'], name='l2p_1', expected_res_status=200)
+        expected_calls = [
+            mock.call(mgr.apic.fvBD, tenant, l2p['id'],
+                      nameAlias='l2p_1'),
+            mock.call(mgr.apic.fvAEPg, tenant, mgr.app_profile_name,
+                      amap.SHADOW_PREFIX + l2p['id'],
+                      nameAlias=amap.SHADOW_PREFIX + 'l2p_1')]
+        self._check_call_list(expected_calls,
+                              mgr.update_name_alias.call_args_list)
 
     def _test_l2_policy_deleted_on_apic(self, shared=False):
         l2p = self.create_l2_policy(name="l2p", shared=shared)['l2_policy']
@@ -2405,6 +2452,17 @@ class TestL3Policy(ApicMappingTestCase):
         mgr = self.driver.apic_manager
         mgr.ensure_context_enforced.assert_called_once_with(
             tenant, l3p['id'])
+        mgr.update_name_alias.assert_called_once_with(
+            mgr.apic.fvCtx, tenant, l3p['id'], nameAlias='l3p')
+
+        mgr.reset_mock()
+        self.update_l3_policy(
+            l3p['id'], description='desc', expected_res_status=200)
+        self.assertFalse(mgr.update_name_alias.called)
+        self.update_l3_policy(
+            l3p['id'], name='l3p_1', expected_res_status=200)
+        mgr.update_name_alias.assert_called_once_with(
+            mgr.apic.fvCtx, tenant, l3p['id'], nameAlias='l3p_1')
 
     def test_l3_policy_created_on_apic(self):
         self._test_l3_policy_created_on_apic()
@@ -3673,6 +3731,17 @@ class TestPolicyRuleSet(ApicMappingTestCase):
         mgr = self.driver.apic_manager
         mgr.create_contract.assert_called_once_with(
             ct['id'], owner=tenant, transaction=mock.ANY)
+        mgr.update_name_alias.assert_called_once_with(
+            mgr.apic.vzBrCP, tenant, ct['id'], nameAlias='ctr')
+
+        mgr.reset_mock()
+        self.update_policy_rule_set(
+            ct['id'], description='desc', expected_res_status=200)
+        self.assertFalse(mgr.update_name_alias.called)
+        self.update_policy_rule_set(
+            ct['id'], name='ctr_1', expected_res_status=200)
+        mgr.update_name_alias.assert_called_once_with(
+            mgr.apic.vzBrCP, tenant, ct['id'], nameAlias='ctr_1')
 
     def test_policy_rule_set_created_on_apic(self):
         self._test_policy_rule_set_created_on_apic()
