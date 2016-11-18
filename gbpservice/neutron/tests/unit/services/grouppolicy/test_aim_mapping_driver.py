@@ -32,7 +32,6 @@ from oslo_utils import uuidutils
 import webob.exc
 
 from gbpservice.network.neutronv2 import local_api
-from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import model
 from gbpservice.neutron.services.grouppolicy.common import (
     constants as gp_const)
 from gbpservice.neutron.services.grouppolicy import config
@@ -136,8 +135,6 @@ class AIMBaseTestCase(test_nr_base.CommonNeutronBaseTestCase,
         vm = mock.Mock()
         vm.name = 'someid'
         nova_client.return_value = vm
-
-        self._db = model.DbModel()
 
     def tearDown(self):
         engine = db_api.get_engine()

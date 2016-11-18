@@ -52,6 +52,9 @@ class ProjectNameCache(object):
         cache.
         """
 
+        if not project_id:
+            return
+
         # TODO(rkukura): It seems load_from_conf_options() and
         # keystoneclient auth plugins have been deprecated, and we
         # should use keystoneauth instead.

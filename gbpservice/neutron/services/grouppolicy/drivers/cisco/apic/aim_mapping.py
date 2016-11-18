@@ -24,7 +24,6 @@ from oslo_log import log as logging
 from gbpservice.neutron.extensions import cisco_apic
 from gbpservice.neutron.extensions import cisco_apic_gbp as aim_ext
 from gbpservice.neutron.extensions import group_policy as gpolicy
-from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import model
 from gbpservice.neutron.services.grouppolicy.common import (
     constants as gp_const)
 from gbpservice.neutron.services.grouppolicy.common import constants as g_const
@@ -82,7 +81,6 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
     @log.log_method_call
     def initialize(self):
         LOG.info(_LI("APIC AIM Policy Driver initializing"))
-        self.db = model.DbModel()
         super(AIMMappingDriver, self).initialize()
         self._apic_aim_mech_driver = None
         self._apic_segmentation_label_driver = None
