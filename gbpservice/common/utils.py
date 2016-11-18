@@ -26,11 +26,13 @@ cfg.CONF.import_group('keystone_authtoken', 'keystonemiddleware.auth_token')
 
 @contextlib.contextmanager
 def clean_session(session):
-    # Cleans session by expunging persisted object. This avoids inconsistency
-    # when multiple transactions are called with the same context.
-    session.expunge_all()
+    # NB(tbachman): the expunge_all() calls before and after
+    # the yield have been removed in order to test that they are
+    # no longer needed. The yield was kept in place for now, which
+    # makes the clean_session a No-Op. Once testing has validated
+    # that these can be removed, then a subsequent patch is needed
+    # to remove this (now-unused) infrastructure.
     yield
-    session.expunge_all()
 
 
 def get_resource_plural(resource):
