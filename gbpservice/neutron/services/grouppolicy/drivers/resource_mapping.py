@@ -1131,9 +1131,13 @@ class ResourceMappingDriver(api.PolicyDriver, ImplicitResourceOperations,
 
     def _cleanup_network_service_policy(self, context, ptg,
                                         ipaddress=None, fip_maps=None):
+        LOG.info(_LI("_cleanup_network_service_policy 1, ptg: %s, "
+            "ipaddress: %s" % (ptg, ipaddress)))
         if not ipaddress:
             ipaddress = self._get_ptg_policy_ipaddress_mapping(
                 context._plugin_context.session, ptg['id'])
+        LOG.info(_LI("_cleanup_network_service_policy 2, ptg: %s, "
+            "ipaddress: %s" % (ptg, ipaddress)))
         if ipaddress and ptg['subnets']:
             # TODO(rkukura): Loop on subnets?
             self._restore_ip_to_allocation_pool(
@@ -1238,6 +1242,8 @@ class ResourceMappingDriver(api.PolicyDriver, ImplicitResourceOperations,
     def _handle_nsp_update_on_ptg(self, context):
         old_nsp = context.original.get("network_service_policy_id")
         new_nsp = context.current.get("network_service_policy_id")
+        LOG.info(_LI("_handle_nsp_update_on_ptg, old_nsp: %s, new_nsp: %s"
+            " " % (old_nsp, new_nsp)))
         if old_nsp != new_nsp:
             if old_nsp:
                 self._cleanup_network_service_policy(
@@ -1255,6 +1261,8 @@ class ResourceMappingDriver(api.PolicyDriver, ImplicitResourceOperations,
 
     @log.log_method_call
     def delete_policy_target_group_postcommit(self, context):
+        LOG.info(_LI("delete_policy_target_group_postcommit: %s" % (
+            context.current)))
         self._cleanup_network_service_policy(context,
                                              context.current,
                                              context.nsp_cleanup_ipaddress,
