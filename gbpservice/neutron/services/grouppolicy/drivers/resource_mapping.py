@@ -28,6 +28,7 @@ from oslo_config import cfg
 from oslo_log import log as logging
 from oslo_utils import excutils
 import sqlalchemy as sa
+from sqlalchemy.orm import exc as sa_exc
 
 from gbpservice.common import utils
 from gbpservice.network.neutronv2 import local_api
@@ -679,10 +680,14 @@ class ResourceMappingDriver(api.PolicyDriver, local_api.LocalAPI,
 
     @log.log
     def delete_policy_target_group_postcommit(self, context):
-        self._cleanup_network_service_policy(context,
-                                             context.current,
-                                             context.nsp_cleanup_ipaddress,
-                                             context.nsp_cleanup_fips)
+        try:
+            self._cleanup_network_service_policy(context,
+                                                 context.current,
+                                                 context.nsp_cleanup_ipaddress,
+                                                 context.nsp_cleanup_fips)
+        except sa_exc.ObjectDeletedError as err:
+            LOG.warning(_LW("Object already got deleted. Error: %(err)s"),
+                    {'err': err})
         # Cleanup SGs
         self._unset_sg_rules_for_subnets(
             context, context.current['subnets'],
