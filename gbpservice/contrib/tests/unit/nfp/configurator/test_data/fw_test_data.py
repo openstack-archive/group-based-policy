@@ -41,7 +41,7 @@ class FakeObjects(object):
     data_for_add_src_route = {'source_cidr': "1.2.3.4/24",
                               'gateway_ip': "1.2.3.4"}
     data_for_del_src_route = {'source_cidr': '1.2.3.4/24'}
-    timeout = 120
+    timeout = 180
 
     def get_url_for_api(self, api):
         url = 'http://172.24.4.5:8888/'
