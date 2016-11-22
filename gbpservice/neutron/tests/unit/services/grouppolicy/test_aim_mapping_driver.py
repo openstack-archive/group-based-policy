@@ -71,7 +71,8 @@ class AIMBaseTestCase(test_nr_base.CommonNeutronBaseTestCase,
                       test_ext_base.ExtensionDriverTestBase,
                       test_aim_md.ApicAimTestMixin,
                       test_address_scope.AddressScopeTestCase):
-    _extension_drivers = ['aim_extension', 'apic_segmentation_label']
+    _extension_drivers = ['aim_extension', 'apic_segmentation_label',
+                          'proxy_group']
     _extension_path = None
 
     def setUp(self, policy_drivers=None, core_plugin=None, ml2_options=None,

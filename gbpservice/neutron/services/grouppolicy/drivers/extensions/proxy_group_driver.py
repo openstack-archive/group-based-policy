@@ -115,4 +115,6 @@ class ProxyGroupDriver(api.ExtensionDriver):
 
     @api.default_extension_behavior(db.ProxyIPPoolMapping)
     def extend_l3_policy_dict(self, session, result):
-        pass
+        for version in [4, 6]:
+            pool = 'proxy_subnetpools_v%s' % version
+            result[pool] = [x.subnetpool_id for x in result[pool]]
