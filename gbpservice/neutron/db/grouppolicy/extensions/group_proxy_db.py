@@ -12,6 +12,7 @@
 
 from neutron.db import model_base
 import sqlalchemy as sa
+from sqlalchemy import orm
 
 
 class GroupProxyMapping(model_base.BASEV2):

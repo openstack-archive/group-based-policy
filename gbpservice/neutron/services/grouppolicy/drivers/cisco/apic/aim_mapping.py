@@ -225,6 +225,7 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
             pass
         subpool = 'subnetpools_v4' if l3p_db['ip_version'] == 4 else (
             'subnetpools_v6')
+
         if not l3p[subpool]:
             # REVISIT: For dual stack.
             # This logic assumes either 4 or 6 but not both
@@ -232,6 +233,9 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
                 context, address_scope_id=l3p_db[ascp],
                 ip_version=l3p_db['ip_version'], clean_session=False)
         else:
+            # Reconcile pool values
+            ip_pool = 'ip_pool'
+            subnet_prefix_length = 'subnet_prefix_length'
             if len(l3p[subpool]) == 1:
                 sp = self._get_subnetpool(
                     context._plugin_context, l3p[subpool][0],
@@ -239,9 +243,9 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
                 if not sp['address_scope_id']:
                     raise NoAddressScopeForSubnetpool()
                 if len(sp['prefixes']) == 1:
-                    l3p_db['ip_pool'] = sp['prefixes'][0]
+                    l3p_db[ip_pool] = sp['prefixes'][0]
                 l3p_db[ascp] = sp['address_scope_id']
-                l3p_db['subnet_prefix_length'] = int(sp['default_prefixlen'])
+                l3p_db[subnet_prefix_length] = int(sp['default_prefixlen'])
             else:
                 # TODO(Sumit): There is more than one subnetpool explicitly
                 # associated. Unset the ip_pool and subnet_prefix_length. This
@@ -273,8 +277,8 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
                 LOG.info(_LI("Since multiple subnetpools are configured for "
                              "this l3_policy, it's ip_pool and "
                              "subnet_prefix_length attributes will be unset."))
-                l3p_db['ip_pool'] = None
-                l3p_db['subnet_prefix_length'] = None
+                l3p_db[ip_pool] = None
+                l3p_db[subnet_prefix_length] = None
 
         # REVISIT: Check if the following constraint still holds
         if len(l3p['routers']) > 1:
@@ -341,6 +345,7 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
                         ip_version=k)
                 self._cleanup_subnetpool(context._plugin_context, sp_id,
                                          clean_session=False)
+
         for ascp in ADDR_SCOPE_KEYS:
             if l3p_db[ascp]:
                 ascp_id = l3p_db[ascp]
@@ -507,6 +512,23 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
             ptg_db['l2_policy_id'] = l2p_id = context.current['l2_policy_id']
         else:
             l2p_id = context.current['l2_policy_id']
+        if 'proxy_ip_pool' in context.current:
+            # We ignore proxy_ip_pool as there's no way to enforce it in
+            # Neutron
+            ptg_db['proxy_ip_pool'] = None
+
+        proxy = False
+        if context.current.get('proxied_group_id'):
+            # goes in same L2P as proxied group
+            # Will raise if target group doesn't exist
+            proxy = True
+            proxied = context._plugin.get_policy_target_group(
+                context._plugin_context,
+                context.current['proxied_group_id'])
+            db_group = context._plugin._get_policy_target_group(
+                context._plugin_context, context.current['id'])
+            db_group.l2_policy_id = proxied['l2_policy_id']
+            context.current['l2_policy_id'] = proxied['l2_policy_id']
 
         l2p_db = context._plugin._get_l2_policy(
             context._plugin_context, l2p_id)
@@ -515,7 +537,7 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
             context._plugin_context, l2p_db['network_id'],
             clean_session=False)
 
-        self._use_implicit_subnet(context)
+        self._use_implicit_subnet(context, proxy=proxy)
 
         bd_name = str(self.name_mapper.network(
             session, net['id'], net['name']))
@@ -537,6 +559,11 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
         aim_epg.physical_domain_names = phys
         # AIM EPG will be persisted in the following call
         self._add_implicit_svc_contracts_to_epg(context, l2p_db, aim_epg)
+        # Proxy-group extension: mirror contracts if needed
+        alib.mirror_contracts_from_proxied(context)
+        # REVISIT(ivar): apic mapping also assigns an ANY contracts between
+        # all the proxy groups, using _set_proxy_any_contract. Not sure whether
+        # we need it or not.
 
     @log.log_method_call
     def update_policy_target_group_precommit(self, context):
@@ -567,6 +594,7 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
 
             self._add_contracts_for_epg(
                 aim_context.AimContext(session), aim_epg)
+        alib.mirror_contracts_on_proxies(context)
 
     @log.log_method_call
     def delete_policy_target_group_precommit(self, context):
@@ -611,12 +639,26 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
                 context._plugin).get_policy_target_group(
                     context._plugin_context,
                     context.current['policy_target_group_id'])
-            subnets = self._get_subnets(
-                context._plugin_context, {'id': ptg['subnets']},
-                clean_session=False)
 
-            self._use_implicit_port(context, subnets=subnets,
+            # Make sure that ports are allocated in reserved subnet if any
+            reserved, owned = self._screen_reserved_subnets(context, ptg)
+            self._use_implicit_port(context, subnets=reserved or owned,
                                     clean_session=False)
+
+    def _screen_reserved_subnets(self, context, ptg):
+        # TODO(ivar): do reserve subnet bookkeeping using the DB
+        # instead of naming convention
+        subnets = self._get_subnets(
+            context._plugin_context, {'id': ptg['subnets']},
+            clean_session=False)
+        owned = []
+        reserved = []
+        for subnet in subnets:
+            if subnet['name'] == APIC_OWNED + ptg['id']:
+                reserved.append(subnet)
+            else:
+                owned.append(subnet)
+        return reserved, owned
 
     @log.log_method_call
     def update_policy_target_precommit(self, context):
@@ -1153,7 +1195,7 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
                         LOG.warning(e)
 
     def _use_implicit_subnet(self, context, force_add=False,
-                             clean_session=False):
+                             clean_session=False, proxy=False):
         """Implicit subnet for AIM.
 
         The first PTG in a L2P will allocate a new subnet from the L3P.
@@ -1166,15 +1208,16 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
             subs = self._get_l2p_subnets(context, l2p_id)
             subs = set([x['id'] for x in subs])
             added = []
-            if not subs or force_add:
+            if not subs or force_add or proxy:
                 l2p = context._plugin.get_l2_policy(
                     context._plugin_context, l2p_id)
-                name = APIC_OWNED + l2p['name']
-                added = super(
-                    AIMMappingDriver,
-                    self)._use_implicit_subnet_from_subnetpool(
+                # TODO(ivar): do reserve subnet bookkeeping using the DB
+                # instead of naming convention
+                name = APIC_OWNED + (l2p['name'] if not proxy else
+                                     context.current['id'])
+                added = self._use_implicit_subnet_from_subnetpool(
                         context, subnet_specifics={'name': name},
-                        clean_session=clean_session)
+                        clean_session=clean_session, proxy=proxy)
             context.add_subnets(subs - set(context.current['subnets']))
             if added:
                 self._sync_ptg_subnets(context, l2p)

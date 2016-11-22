@@ -25,6 +25,7 @@ from oslo_log import log as logging
 from oslo_utils import excutils
 
 from gbpservice.common import utils as gbp_utils
+from gbpservice.neutron.db.grouppolicy.extensions import group_proxy_db
 from gbpservice.neutron.db.grouppolicy import group_policy_db as gpdb
 from gbpservice.neutron.db.grouppolicy import group_policy_mapping_db
 from gbpservice.neutron.extensions import group_policy as gpex
@@ -629,6 +630,9 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
                 self, context, policy_target_group)
             self.policy_driver_manager.delete_policy_target_group_precommit(
                 policy_context)
+
+        # TODO(ivar): all this stuff should go in a single transaction for the
+        # AIM driver
 
         # Disassociate all the PRSs first, this will trigger service chains
         # deletion.
