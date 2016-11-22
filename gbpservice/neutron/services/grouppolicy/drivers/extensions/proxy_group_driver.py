@@ -19,7 +19,7 @@ from gbpservice.neutron.services.grouppolicy import (
     group_policy_driver_api as api)
 
 
-class ProxyGroupDriver(api.ExtensionDriver):
+class ProxyGroupDriver(api.ExtensionDriver, db.ProxyGroupDbManager):
     _supported_extension_alias = 'proxy_group'
     _extension_dict = driver_proxy_group.EXTENDED_ATTRIBUTES_2_0
 
@@ -104,6 +104,12 @@ class ProxyGroupDriver(api.ExtensionDriver):
         gp_db.GroupPolicyDbPlugin.validate_subnet_prefix_length(
             data['ip_version'], data['proxy_subnet_prefix_length'],
             data['proxy_ip_pool'])
+        for v in [4, 6]:
+            self._update_proxy_subnetpools_for_l3_policy(
+                session, result['id'], data.get(
+                    'proxy_subnetpools_v%s' % v, []), ip_version=v)
+            result['proxy_subnetpools_v%s' % v] = data.get(
+                'proxy_subnetpools_v%s' % v, [])
 
     @api.default_extension_behavior(db.ProxyIPPoolMapping)
     def process_update_l3_policy(self, session, data, result):
@@ -115,4 +121,18 @@ class ProxyGroupDriver(api.ExtensionDriver):
 
     @api.default_extension_behavior(db.ProxyIPPoolMapping)
     def extend_l3_policy_dict(self, session, result):
-        pass
+        for version in [4, 6]:
+            pool = 'proxy_subnetpools_v%s' % version
+            result[pool] = [x.subnetpool_id for x in result[pool]]
+
+    def _default_process_create(self, session, data, result, type=None,
+                                table=None, keys=None):
+        if data.keys()[0] == 'l3_policy':
+            # Exclude ORM relationships
+            try:
+                keys.remove('proxy_subnetpools_v4')
+                keys.remove('proxy_subnetpools_v6')
+            except ValueError:
+                pass
+        super(ProxyGroupDriver, self)._default_process_create(
+            session, data, result, type, table, keys)
