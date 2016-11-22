@@ -153,6 +153,26 @@ class L3PolicyContext(GroupPolicyContext, api.L3PolicyContext):
         self._l3_policy['subnetpools_v4'] = subnetpools[4]
         self._l3_policy['subnetpools_v6'] = subnetpools[6]
 
+    def add_proxy_subnetpool(self, subnetpool_id, ip_version=4):
+        subnetpools = 'proxy_subnetpools_v%s' % ip_version
+        curr = set(self._l3_policy[subnetpools])
+        new = curr | set([subnetpool_id])
+        if curr != new:
+            self._plugin._update_proxy_subnetpools_for_l3_policy(
+                self._plugin_context.session, self._l3_policy['id'], new,
+                ip_version=ip_version)
+            self._l3_policy['subnetpools'] = new
+
+    def remove_proxy_subnetpool(self, subnetpool_id, ip_version=4):
+        subnetpools = 'proxy_subnetpools_v%s' % ip_version
+        curr = set(self._l3_policy[subnetpools])
+        new = curr - set([subnetpool_id])
+        if curr != new:
+            self._plugin._update_proxy_subnetpools_for_l3_policy(
+                self._plugin_context.session, self._l3_policy['id'], new,
+                ip_version=ip_version)
+            self._l3_policy['subnetpools'] = new
+
     def add_router(self, router_id):
         routers = self._plugin._add_router_to_l3_policy(
             self._plugin_context, self._l3_policy['id'], router_id)

@@ -25,6 +25,7 @@ from oslo_log import log as logging
 from oslo_utils import excutils
 
 from gbpservice.common import utils as gbp_utils
+from gbpservice.neutron.db.grouppolicy.extensions import group_proxy_db
 from gbpservice.neutron.db.grouppolicy import group_policy_db as gpdb
 from gbpservice.neutron.db.grouppolicy import group_policy_mapping_db
 from gbpservice.neutron.extensions import group_policy as gpex
@@ -46,7 +47,8 @@ STATUS_DETAILS = 'status_details'
 STATUS_SET = set([STATUS, STATUS_DETAILS])
 
 
-class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
+class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin,
+                        group_proxy_db.ProxyGroupDbManager):
 
     """Implementation of the Group Policy Model Plugin.
 

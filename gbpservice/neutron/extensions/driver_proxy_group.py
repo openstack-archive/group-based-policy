@@ -94,6 +94,14 @@ EXTENDED_ATTRIBUTES_2_0 = {
             'default': attr.convert_to_int(
                 PROXY_CONF.default_proxy_subnet_prefix_length),
             'is_visible': True},
+        'proxy_subnetpools_v4': {'allow_post': True, 'allow_put': True,
+                                 'validate': {'type:uuid_list': None},
+                                 'convert_to': attr.convert_none_to_empty_list,
+                                 'is_visible': True, 'default': None},
+        'proxy_subnetpools_v6': {'allow_post': True, 'allow_put': True,
+                                 'validate': {'type:uuid_list': None},
+                                 'convert_to': attr.convert_none_to_empty_list,
+                                 'is_visible': True, 'default': None},
         # Proxy IP version is the same as the standard L3 pool ip version
     },
     gp.POLICY_TARGETS: {

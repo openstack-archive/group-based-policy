@@ -16,6 +16,7 @@ from neutron._i18n import _LW
 from neutron.api.rpc.agentnotifiers import dhcp_rpc_agent_api
 from neutron.common import constants as const
 from neutron.common import exceptions as n_exc
+from neutron.extensions import address_scope
 from neutron.extensions import l3
 from neutron.extensions import securitygroup as ext_sg
 from neutron import manager
@@ -527,7 +528,7 @@ class LocalAPI(object):
             self._delete_resource(self._core_plugin, plugin_context,
                                   'address_scope', address_scope_id,
                                   clean_session=clean_session)
-        except n_exc.AddressScopeNotFound:
+        except address_scope.AddressScopeNotFound:
             LOG.warning(_LW('Address Scope %s already deleted'),
                         address_scope_id)
 
@@ -562,7 +563,7 @@ class LocalAPI(object):
             self._delete_resource(self._core_plugin, plugin_context,
                                   'subnetpool', subnetpool_id,
                                   clean_session=clean_session)
-        except n_exc.SubnetpoolNotFound:
+        except n_exc.SubnetPoolNotFound:
             LOG.warning(_LW('Subnetpool %s already deleted'), subnetpool_id)
 
     def _get_l2_policy(self, plugin_context, l2p_id, clean_session=True):
