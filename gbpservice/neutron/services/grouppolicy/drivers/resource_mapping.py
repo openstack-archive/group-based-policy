@@ -235,12 +235,15 @@ class ImplicitResourceOperations(local_api.LocalAPI):
                                        clean_session)
 
     def _create_implicit_subnetpool(self, context, clean_session=True,
-                                    **kwargs):
+                                    proxy=False, **kwargs):
+        prefix = context.current['ip_pool' if not proxy else 'proxy_ip_pool']
+        plen = context.current['subnet_prefix_length' if not proxy else
+                               'proxy_subnet_prefix_length']
         attrs = {'tenant_id': context.current['tenant_id'],
                  'name': context.current['name'], 'ip_version':
                  context.current['ip_version'],
-                 'default_prefixlen': context.current['subnet_prefix_length'],
-                 'prefixes': [context.current['ip_pool']],
+                 'default_prefixlen': plen,
+                 'prefixes': [prefix],
                  'shared': context.current.get('shared', False),
                  # Per current understanding, is_default is used for
                  # auto_allocation and is a per-tenant setting.
@@ -259,6 +262,14 @@ class ImplicitResourceOperations(local_api.LocalAPI):
             address_scope_id=address_scope_id)
         context.add_subnetpool(subnetpool_id=subnetpool['id'],
                                ip_version=ip_version)
+
+    def _use_implicit_proxy_subnetpool(
+            self, context, address_scope_id, ip_version, clean_session=True):
+        subnetpool = self._create_implicit_subnetpool(
+            context, clean_session, name='l3p_' + context.current['name'],
+            proxy=True, address_scope_id=address_scope_id)
+        context.add_proxy_subnetpool(subnetpool_id=subnetpool['id'],
+                                     ip_version=ip_version)
 
     def _cleanup_subnetpool(self, plugin_context, subnetpool_id,
                             clean_session=True):
@@ -472,7 +483,8 @@ class ImplicitResourceOperations(local_api.LocalAPI):
                 clean_session=clean_session)
 
     def _use_implicit_subnet_from_subnetpool(
-        self, context, subnet_specifics=None, clean_session=True):
+        self, context, subnet_specifics=None, clean_session=True,
+        proxy=False):
         # If a subnet needs to be created with a prefix_length other than
         # the subnet_prefix_length set for the l3_policy, a 'prefixlen' can be
         # passed explicitly in the subnet_specifics dict.
@@ -491,11 +503,12 @@ class ImplicitResourceOperations(local_api.LocalAPI):
         # REVISIT: For dual stack
         # Current assumption is that either v4 or v6 subnet needs to be
         # allocated, but not both
+        proxy_prefix = 'proxy_' if proxy else ''
         if l3p_db['address_scope_v4_id']:
-            filters['id'] = l3p_db['subnetpools_v4']
+            filters['id'] = l3p_db['%ssubnetpools_v4' % proxy_prefix]
             ip_version = 4
         else:
-            filters['id'] = l3p_db['subnetpools_v6']
+            filters['id'] = l3p_db['%ssubnetpools_v6' % proxy_prefix]
             ip_version = 6
         # All relevant subnetpools owned by this tenant
         candidate_subpools = self._get_subnetpools(
