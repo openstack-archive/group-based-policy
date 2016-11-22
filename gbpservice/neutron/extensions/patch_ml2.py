@@ -95,7 +95,7 @@ def delete_network(self, context, id):
                     self.mechanism_manager.delete_network_precommit(
                         mech_context)
 
-                    self.type_manager.release_network_segments(session, id)
+                    self.type_manager.release_network_segments(context, id)
                     record = self._get_network(context, id)
                     LOG.debug("Deleting network record %s", record)
                     session.delete(record)
