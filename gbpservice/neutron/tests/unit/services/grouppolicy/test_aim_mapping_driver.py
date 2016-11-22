@@ -71,7 +71,8 @@ class AIMBaseTestCase(test_nr_base.CommonNeutronBaseTestCase,
                       test_ext_base.ExtensionDriverTestBase,
                       test_aim_md.ApicAimTestMixin,
                       test_address_scope.AddressScopeTestCase):
-    _extension_drivers = ['aim_extension', 'apic_segmentation_label']
+    _extension_drivers = ['aim_extension', 'apic_segmentation_label',
+                          'proxy_group']
     _extension_path = None
 
     def setUp(self, policy_drivers=None, core_plugin=None, ml2_options=None,
@@ -356,6 +357,7 @@ class TestL3Policy(AIMBaseTestCase):
         # Create L3 policy with implicit router.
         l3p = self.create_l3_policy(
             name="l3p1", ip_pool='2210::/64', subnet_prefix_length=64,
+            proxy_ip_pool='2211::/64', proxy_subnet_prefix_length=64,
             ip_version=6)['l3_policy']
         self._validate_create_l3_policy(l3p, 'address_scope_v6_id')
         self.assertEqual(1, len(l3p['subnetpools_v6']))
@@ -381,6 +383,7 @@ class TestL3Policy(AIMBaseTestCase):
             l3p = self.create_l3_policy(
                 name="l3p1", address_scope_v6_id=ascp['id'],
                 ip_pool='2210::/64', subnet_prefix_length=64,
+                proxy_ip_pool='2211::/64', proxy_subnet_prefix_length=64,
                 ip_version=6)['l3_policy']
             self.assertEqual(ascp['id'], l3p['address_scope_v6_id'])
             self._validate_create_l3_policy(l3p, 'address_scope_v6_id')
@@ -410,7 +413,8 @@ class TestL3Policy(AIMBaseTestCase):
                 address_scope_id=ascpv4['id']) as spv4:
                     spv4 = spv4['subnetpool']
                     l3p = self.create_l3_policy(
-                        name="l3p1", subnetpools_v4=[spv4['id']])['l3_policy']
+                        name="l3p1", subnetpools_v4=[spv4['id']],
+                        proxy_subnetpools_v4=[spv4['id']])['l3_policy']
                     self.assertEqual(ascpv4['id'], spv4['address_scope_id'])
                     self.assertEqual(ascpv4['id'], l3p['address_scope_v4_id'])
                     self.assertEqual(spv4['prefixes'][0], l3p['ip_pool'])
@@ -431,7 +435,8 @@ class TestL3Policy(AIMBaseTestCase):
                 address_scope_id=ascpv6['id']) as spv6:
                     spv6 = spv6['subnetpool']
                     l3p = self.create_l3_policy(
-                        name="l3p1", subnetpools_v6=[spv6['id']])['l3_policy']
+                        name="l3p1", subnetpools_v6=[spv6['id']],
+                        proxy_subnetpools_v6=[spv6['id']])['l3_policy']
                     self.assertEqual(ascpv6['id'], spv6['address_scope_id'])
                     self.assertEqual(ascpv6['id'], l3p['address_scope_v6_id'])
                     self.assertEqual(spv6['prefixes'][0], l3p['ip_pool'])
@@ -483,9 +488,12 @@ class TestL3Policy(AIMBaseTestCase):
                         spv6 = spv6['subnetpool']
                         l3p = self.create_l3_policy(
                             name="l3p1",
-                            subnetpools_v6=[spv6['id']])['l3_policy']
+                            subnetpools_v6=[spv6['id']],
+                            proxy_subnetpools_v6=[spv6['id']])['l3_policy']
                         self.assertEqual([spv6['id']],
                                          l3p['subnetpools_v6'])
+                        self.assertEqual([spv6['id']],
+                                         l3p['proxy_subnetpools_v6'])
                         res = self.update_l3_policy(
                             l3p['id'], subnetpools_v4=[spv4['id']],
                             expected_res_status=400)

@@ -177,29 +177,28 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
             pass
         subpool = 'subnetpools_v4' if l3p_db['ip_version'] == 4 else (
             'subnetpools_v6')
-        if not l3p[subpool]:
-            # REVISIT: For dual stack.
-            # This logic assumes either 4 or 6 but not both
-            self._use_implicit_subnetpool(
-                context, address_scope_id=l3p_db[ascp],
-                ip_version=l3p_db['ip_version'], clean_session=False)
-        else:
-            if len(l3p[subpool]) == 1:
+        proxy_subpool = 'proxy_' + subpool
+
+        def reconcile_pool_values(pool, proxy=False):
+            prefix = '' if not proxy else 'proxy_'
+            ip_pool = '%sip_pool' % prefix
+            subnet_prefix_length = '%ssubnet_prefix_length' % prefix
+            if len(l3p[pool]) == 1:
                 sp = self._get_subnetpool(
-                    context._plugin_context, l3p[subpool][0],
+                    context._plugin_context, l3p[pool][0],
                     clean_session=False)
                 if not sp['address_scope_id']:
                     raise NoAddressScopeForSubnetpool()
                 if len(sp['prefixes']) == 1:
-                    l3p_db['ip_pool'] = sp['prefixes'][0]
+                    l3p_db[ip_pool] = sp['prefixes'][0]
                 l3p_db[ascp] = sp['address_scope_id']
-                l3p_db['subnet_prefix_length'] = int(sp['default_prefixlen'])
+                l3p_db[subnet_prefix_length] = int(sp['default_prefixlen'])
             else:
                 # TODO(Sumit): There is more than one subnetpool explicitly
                 # associated. Unset the ip_pool and subnet_prefix_length. This
                 # required changing the DB schema.
                 sp_ascp = None
-                for sp_id in l3p[subpool]:
+                for sp_id in l3p[pool]:
                     # REVISIT: For dual stack.
                     # This logic assumes either 4 or 6 but not both
                     sp = self._get_subnetpool(
@@ -225,8 +224,23 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
                 LOG.info(_LI("Since multiple subnetpools are configured for "
                              "this l3_policy, it's ip_pool and "
                              "subnet_prefix_length attributes will be unset."))
-                l3p_db['ip_pool'] = None
-                l3p_db['subnet_prefix_length'] = None
+                l3p_db[ip_pool] = None
+                l3p_db[subnet_prefix_length] = None
+        if not l3p[subpool]:
+            # REVISIT: For dual stack.
+            # This logic assumes either 4 or 6 but not both
+            self._use_implicit_subnetpool(
+                context, address_scope_id=l3p_db[ascp],
+                ip_version=l3p_db['ip_version'], clean_session=False)
+        else:
+            reconcile_pool_values(subpool)
+        if proxy_subpool in l3p:
+            if not l3p[proxy_subpool]:
+                self._use_implicit_proxy_subnetpool(
+                    context, address_scope_id=l3p_db[ascp],
+                    ip_version=l3p_db['ip_version'], clean_session=False)
+            else:
+                reconcile_pool_values(proxy_subpool, proxy=True)
 
         # REVISIT: Check if the following constraint still holds
         if len(l3p['routers']) > 1:
@@ -268,6 +282,20 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
                         ip_version=k)
                 self._cleanup_subnetpool(context._plugin_context, sp_id,
                                          clean_session=False)
+        # Delete proxy pools if we own them
+        try:
+            proxy_pools = (context.current['proxy_subnetpools_v4'] +
+                           context.current['proxy_subnetpools_v6'])
+            context._plugin._update_proxy_subnetpools_for_l3_policy(
+                context._plugin_context.session, context.current['id'], [], 4)
+            context._plugin._update_proxy_subnetpools_for_l3_policy(
+                context._plugin_context.session, context.current['id'], [], 6)
+            for pool in proxy_pools:
+                self._cleanup_subnetpool(context._plugin_context, pool,
+                                         clean_session=False)
+        except KeyError:
+            LOG.debug("group_proxy extension disabled")
+
         for ascp in ADDR_SCOPE_KEYS:
             if l3p_db[ascp]:
                 ascp_id = l3p_db[ascp]
@@ -365,6 +393,11 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
         aim_epg.physical_domain_names = phys
         # AIM EPG will be persisted in the following call
         self._add_implicit_svc_contracts_to_epg(context, l2p_db, aim_epg)
+        # Proxy-group extension: mirror contracts if needed
+        alib.mirror_contracts_on_proxies(context)
+        # REVISIT(ivar): apic mapping also assigns an ANY contracts between
+        # all the proxy groups, using _set_proxy_any_contract. Not sure whether
+        # we need it or not.
 
     @log.log_method_call
     def update_policy_target_group_precommit(self, context):

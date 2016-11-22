@@ -159,3 +159,21 @@ def map_to_aim_filter_entry(entry):
 
 def _get_filter_entry_name(entry_number):
     return CP_ENTRY + '-' + str(entry_number)
+
+
+def mirror_contracts_on_proxies(context):
+    if context.current.get('proxied_group_id'):
+        proxied = context._plugin.get_policy_target_group(
+            context._plugin_context.elevated(),
+            context.current['proxied_group_id'])
+        updated = context._plugin.update_policy_target_group(
+            context._plugin_context.elevated(),
+            context.current['id'], {
+                'policy_target_group': {
+                    'provided_policy_rule_sets': dict(
+                        (x, '') for x in proxied[
+                            'provided_policy_rule_sets']),
+                    'consumed_policy_rule_sets': dict(
+                        (x, '') for x in proxied[
+                            'consumed_policy_rule_sets'])}})
+        context.current.update(updated)
