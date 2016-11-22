@@ -948,21 +948,7 @@ class ApicMappingDriver(api.ResourceMappingDriver,
                     context.current['consumed_policy_rule_sets'], [], [])
             self._set_proxy_any_contract(context.current)
             # Mirror Contracts
-            if context.current.get('proxied_group_id'):
-                proxied = context._plugin.get_policy_target_group(
-                    context._plugin_context.elevated(),
-                    context.current['proxied_group_id'])
-                updated = context._plugin.update_policy_target_group(
-                    context._plugin_context.elevated(),
-                    context.current['id'], {
-                        'policy_target_group': {
-                            'provided_policy_rule_sets': dict(
-                                (x, '') for x in proxied[
-                                    'provided_policy_rule_sets']),
-                            'consumed_policy_rule_sets': dict(
-                                (x, '') for x in proxied[
-                                    'consumed_policy_rule_sets'])}})
-                context.current.update(updated)
+            alib.mirror_contracts_from_proxied(context)
             self._create_ptg_shadow_network(context, context.current)
 
     def create_l2_policy_precommit(self, context):
@@ -1362,22 +1348,9 @@ class ApicMappingDriver(api.ResourceMappingDriver,
 
             # Set same contracts to proxy group
             # Refresh current after the above operations took place
-            current = context._plugin.get_policy_target_group(
+            context.current = context._plugin.get_policy_target_group(
                 context._plugin_context, context.current['id'])
-            if current.get('proxy_group_id'):
-                proxy = context._plugin.get_policy_target_group(
-                    context._plugin_context.elevated(),
-                    current['proxy_group_id'])
-                context._plugin.update_policy_target_group(
-                    context._plugin_context.elevated(),
-                    proxy['id'], {
-                        'policy_target_group': {
-                            'provided_policy_rule_sets': dict(
-                                (x, '') for x in current[
-                                    'provided_policy_rule_sets']),
-                            'consumed_policy_rule_sets': dict(
-                                (x, '') for x in current[
-                                    'consumed_policy_rule_sets'])}})
+            alib.mirror_contracts_on_proxies(context)
 
     def update_l3_policy_precommit(self, context):
         self._reject_apic_name_change(context)
