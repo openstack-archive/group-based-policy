@@ -235,12 +235,15 @@ class ImplicitResourceOperations(local_api.LocalAPI):
                                        clean_session)
 
     def _create_implicit_subnetpool(self, context, clean_session=True,
-                                    **kwargs):
+                                    proxy=False, **kwargs):
+        prefix = context.current['ip_pool' if not proxy else 'proxy_ip_pool']
+        plen = context.current['subnet_prefix_length' if not proxy else
+                               'proxy_subnet_prefix_length']
         attrs = {'tenant_id': context.current['tenant_id'],
                  'name': context.current['name'], 'ip_version':
                  context.current['ip_version'],
-                 'default_prefixlen': context.current['subnet_prefix_length'],
-                 'prefixes': [context.current['ip_pool']],
+                 'default_prefixlen': plen,
+                 'prefixes': [prefix],
                  'shared': context.current.get('shared', False),
                  # Per current understanding, is_default is used for
                  # auto_allocation and is a per-tenant setting.
@@ -472,7 +475,8 @@ class ImplicitResourceOperations(local_api.LocalAPI):
                 clean_session=clean_session)
 
     def _use_implicit_subnet_from_subnetpool(
-        self, context, subnet_specifics=None, clean_session=True):
+        self, context, subnet_specifics=None, clean_session=True,
+        proxy=False):
         # If a subnet needs to be created with a prefix_length other than
         # the subnet_prefix_length set for the l3_policy, a 'prefixlen' can be
         # passed explicitly in the subnet_specifics dict.
@@ -509,6 +513,10 @@ class ImplicitResourceOperations(local_api.LocalAPI):
         candidate_subpools = {x['id']: x for x in candidate_subpools +
                               shared_subpools}.values()
         subnet = None
+        if proxy and 'prefixlen' not in subnet_specifics:
+            # Set subnet prefix length to the specified value
+            subnet_specifics['prefixlen'] = l3p_db[
+                'proxy_subnet_prefix_length']
         for pool in candidate_subpools:
             try:
                 attrs = {'tenant_id': context.current['tenant_id'],
@@ -582,7 +590,8 @@ class ImplicitResourceOperations(local_api.LocalAPI):
                                       clean_session=clean_session)
         return default_group[0]['id'] if default_group else None
 
-    def _use_implicit_port(self, context, subnets=None, clean_session=True):
+    def _use_implicit_port(self, context, subnets=None, clean_session=True,
+                           proxy_gw_aap=False):
         ptg_id = context.current['policy_target_group_id']
         ptg = context._plugin.get_policy_target_group(
             context._plugin_context, ptg_id)
@@ -607,7 +616,16 @@ class ImplicitResourceOperations(local_api.LocalAPI):
                          'security_groups': [sg_id] if sg_id else None,
                          'admin_state_up': True}
                 if context.current.get('group_default_gateway'):
-                    attrs['fixed_ips'][0]['ip_address'] = subnet['gateway_ip']
+                    if not proxy_gw_aap:
+                        attrs['fixed_ips'][0]['ip_address'] = subnet[
+                            'gateway_ip']
+                    else:
+                        # We can't directly allocate the Gateway IP for this
+                        # port, use AAP instead
+                        context.current.setdefault(
+                            'port_attributes', {}).setdefault(
+                            'allowed_address_pairs', []).append(
+                            {'ip_address': subnet['gateway_ip']})
                 attrs.update(context.current.get('port_attributes', {}))
                 port = self._create_port(context._plugin_context, attrs,
                                          clean_session=clean_session)

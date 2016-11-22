@@ -50,6 +50,8 @@ from gbpservice.neutron.tests.unit.plugins.ml2plus import (
 from gbpservice.neutron.tests.unit.services.grouppolicy import (
     test_extension_driver_api as test_ext_base)
 from gbpservice.neutron.tests.unit.services.grouppolicy import (
+    test_group_proxy_extension as test_ext_proxy)
+from gbpservice.neutron.tests.unit.services.grouppolicy import (
     test_neutron_resources_driver as test_nr_base)
 
 
@@ -83,7 +85,8 @@ class AIMBaseTestCase(test_nr_base.CommonNeutronBaseTestCase,
                       test_ext_base.ExtensionDriverTestBase,
                       test_aim_md.ApicAimTestMixin,
                       test_address_scope.AddressScopeTestCase):
-    _extension_drivers = ['aim_extension', 'apic_segmentation_label']
+    _extension_drivers = ['aim_extension', 'apic_segmentation_label',
+                          'proxy_group']
     _extension_path = None
 
     def setUp(self, policy_drivers=None, core_plugin=None, ml2_options=None,
@@ -628,6 +631,7 @@ class TestL3Policy(AIMBaseTestCase):
         # Create L3 policy with implicit router.
         l3p = self.create_l3_policy(
             name="l3p1", ip_pool='2210::/64', subnet_prefix_length=64,
+            proxy_subnet_prefix_length=64,
             ip_version=6)['l3_policy']
         self._validate_create_l3_policy(l3p, 'address_scope_v6_id')
         self._validate_status('show_l3_policy', l3p['id'])
@@ -655,6 +659,7 @@ class TestL3Policy(AIMBaseTestCase):
             l3p = self.create_l3_policy(
                 name="l3p1", address_scope_v6_id=ascp['id'],
                 ip_pool='2210::/64', subnet_prefix_length=64,
+                proxy_subnet_prefix_length=64,
                 ip_version=6)['l3_policy']
             self.assertEqual(ascp['id'], l3p['address_scope_v6_id'])
             self._validate_create_l3_policy(l3p, 'address_scope_v6_id')
@@ -1006,7 +1011,7 @@ class TestL3PolicyRollback(AIMBaseTestCase):
         self.show_l3_policy(l3p_id, expected_res_status=200)
         self.assertEqual(
             1, len(self._plugin.get_address_scopes(self._context)))
-        self.assertEqual(1, len(self._plugin.get_subnetpools(self._context)))
+        self.assertEqual(2, len(self._plugin.get_subnetpools(self._context)))
         self.assertEqual(1, len(self._l3_plugin.get_routers(self._context)))
         # restore mock
         self.dummy.delete_l3_policy_precommit = orig_func
@@ -1484,7 +1489,7 @@ class TestPolicyTargetGroup(AIMBaseTestCase):
 
     def test_create_ptg_explicit_subnetpools_v4(self):
         self._test_create_ptg_explicit_subnetpools(
-            ip_version=4, cidr1='192.168.0.0/24', prefixlen1=24,
+            ip_version=4, cidr1='192.169.0.0/24', prefixlen1=24,
             cidr2='10.0.0.0/16', prefixlen2=26)
 
     def test_create_ptg_explicit_subnetpools_v6(self):
@@ -2665,3 +2670,35 @@ class TestExternalPolicy(AIMBaseTestCase):
                                           expected_res_status=400)
         self.assertEqual('MultipleExternalPoliciesForL3Policy',
                          res['NeutronError']['type'])
+
+
+class GroupProxyTest(AIMBaseTestCase,
+                     test_ext_proxy.ExtensionDriverTestCaseMixin):
+
+    def test_proxy_gw_aap(self):
+        l3p = self.create_l3_policy(ip_pool='192.168.0.0/16',
+                                    subnet_prefix_length=24,
+                                    proxy_subnet_prefix_length=28)['l3_policy']
+        l2p = self.create_l2_policy(l3_policy_id=l3p['id'])['l2_policy']
+        ptg = self.create_policy_target_group(
+            l2_policy_id=l2p['id'])['policy_target_group']
+        self.assertEqual(1, len(ptg['subnets']))
+        sub_id = ptg['subnets'][0]
+        sub = self._get_object('subnets', sub_id, self.api)['subnet']
+        self.assertEqual('24', sub['cidr'].split('/')[1])
+
+        pt = self.create_policy_target(
+            policy_target_group_id=ptg['id'])['policy_target']
+        ptg_proxy = self.create_policy_target_group(
+        proxied_group_id=ptg['id'])['policy_target_group']
+        self.assertEqual(2, len(ptg_proxy['subnets']))
+        sub_id = (set(ptg_proxy['subnets']) - set([sub_id])).pop()
+        sub = self._get_object('subnets', sub_id, self.api)['subnet']
+        self.assertEqual('28', sub['cidr'].split('/')[1])
+        pt_gw = self.create_policy_target(
+            policy_target_group_id=ptg_proxy['id'],
+            proxy_gateway=True, group_default_gateway=True)['policy_target']
+        port = self._get_object('ports', pt_gw['port_id'], self.api)['port']
+        self.assertEqual([{'ip_address': sub['gateway_ip'],
+                           'mac_address': port['mac_address']}],
+                         port['allowed_address_pairs'])
