@@ -10,10 +10,12 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+
 from oslo_config import cfg as oslo_config
 
 from oslo_service import loopingcall as oslo_looping_call
 from oslo_service import periodic_task as oslo_periodic_task
+from oslo_service import service as oslo_service
 
 from neutron.agent import rpc as n_agent_rpc
 from neutron.common import rpc as n_rpc
@@ -26,6 +28,56 @@ LOG = nfp_logging.getLogger(__name__)
 
 n_rpc.init(oslo_config.CONF)
 
+"""RPC Service class.
+
+    This class is implemented from neutron.common.rpc
+    because neutron limit itself to single rpc manager
+    per topic while oslo allows multiple.
+    Using this class, one can register multiple rpc
+    managers with oslo.
+"""
+
+
+class RpcService(oslo_service.Service):
+
+    def __init__(self, topic, managers=None):
+        # Not taking host and serializer as neutron rpc does not support
+        # passing any host and serializer- it picks up the host from
+        # 'cfg.CONF.host' and consider serializer as None
+
+        super(RpcService, self).__init__()
+        self.topic = topic
+        self.endpoints = managers or []
+
+    def start(self):
+        LOG.debug("RPCAgent listening on topic=%s" % self.topic)
+        super(RpcService, self).start()
+
+        self.conn = n_rpc.create_connection()
+        LOG.debug("Creating Consumer connection for Service %s",
+                  self.topic)
+
+        self.conn.create_consumer(self.topic, self.endpoints)
+
+        # Hook to allow the manager to do other initializations after
+        # the rpc connection is created.
+        for manager in self.endpoints:
+            if callable(getattr(manager, 'initialize_service_hook', None)):
+                self.manager.initialize_service_hook(self)
+
+        # Consume from all consumers in threads
+        self.conn.consume_in_threads()
+
+    def stop(self):
+        # Try to shut the connection down, but if we get any sort of
+        # errors, go ahead and ignore them.. as we're shutting down anyway
+        try:
+            self.conn.close()
+        except Exception:
+            pass
+        super(RpcService, self).stop()
+
+
 """Wrapper class for Neutron RpcAgent definition.
 
     NFP modules will use this class for the agent definition.
@@ -34,22 +86,24 @@ n_rpc.init(oslo_config.CONF)
 """
 
 
-class RpcAgent(n_rpc.Service):
+class RpcAgent(object):
 
     def __init__(
             self, sc, host=None,
-            topic=None, manager=None, report_state=None):
+            topic=None, manager=None, report_state=None, priority=0):
         # report_state =
         #   {<agent_state_keys>, 'plugin_topic': '', 'report_interval': ''}
-        super(RpcAgent, self).__init__(host=host, topic=topic, manager=manager)
 
+        self.sc = sc
+        # The argument 'host' will be ignored as neutron rpc does not
+        # support passing any host -it picks up from 'cfg.CONF.host'
+        self.host = oslo_config.CONF.host
+        self.topic = topic
+        self.manager = manager
+        self.priority = priority
         # Check if the agent needs to report state
         if report_state:
             self._report_state = ReportState(report_state)
-
-    def start(self):
-        LOG.debug("RPCAgent listening on %s" % (self.identify))
-        super(RpcAgent, self).start()
 
     def report_state(self):
         if hasattr(self, '_report_state'):
@@ -59,6 +113,7 @@ class RpcAgent(n_rpc.Service):
 
     def identify(self):
         return "(host=%s,topic=%s)" % (self.host, self.topic)
+
 
 """This class implements the state reporting for neutron *aaS agents
 
