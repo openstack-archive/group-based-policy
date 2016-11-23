@@ -294,6 +294,7 @@ class DeviceOrchestratorTestCase(unittest.TestCase):
         orig_event_data['status_description'] = ndo_handler.status_map[status]
         orig_event_data['network_function_id'] = self.event.data[
             'network_function']['id']
+        orig_event_data['binding_key'] = None
         orig_event_data['network_function_instance_id'] = self.event.data[
             'network_function_instance']['id']
         orig_event_data['network_function_device_id'] = self.event.data[
@@ -586,6 +587,10 @@ class DeviceOrchestratorTestCase(unittest.TestCase):
     @mock.patch.object(nfpdb.NFPDbBase, 'update_network_function_device')
     def test_handle_device_not_up(self, mock_update_nfd):
         ndo_handler = self._initialize_ndo_handler()
+        ndo_handler._controller.new_event = mock.MagicMock(
+                    return_value=self.event)
+        ndo_handler._controller.event_complete = mock.MagicMock(
+                    return_value=None)
         status = 'ERROR'
         desc = 'Device not became ACTIVE'
         self.event = DummyEvent(101, status, 1)
