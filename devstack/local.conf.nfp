@@ -17,7 +17,7 @@ SERVICE_TOKEN=admin
 # NFP Service
 ENABLE_NFP=True
 GBPSERVICE_REPO=https://git.openstack.org/openstack/group-based-policy.git
-GBPSERVICE_BRANCH=refs/changes/26/393226/2
+GBPSERVICE_BRANCH=stable/mitaka
 # Edit NFP_DEVSTACK_MODE with either 'base' or 'advanced'
 if [[ $ENABLE_NFP = True ]]; then
     NFP_DEVSTACK_MODE=base
