@@ -35,7 +35,9 @@ function nfp_configure_neutron {
     iniset $NEUTRON_CONF admin_owned_resources_apic_tscp plumbing_resource_owner_user "neutron"
     iniset $NEUTRON_CONF admin_owned_resources_apic_tscp plumbing_resource_owner_password $ADMIN_PASSWORD
     iniset $NEUTRON_CONF admin_owned_resources_apic_tscp plumbing_resource_owner_tenant_name "service"
-    iniset $NEUTRON_CONF group_policy_implicit_policy default_external_segment_name "default"
+    if [[ $EXT_NET_GATEWAY && $EXT_NET_ALLOCATION_POOL_START && $EXT_NET_ALLOCATION_POOL_END && $EXT_NET_CIDR ]]; then
+        iniset $NEUTRON_CONF group_policy_implicit_policy default_external_segment_name "default"
+    fi
     iniset $NEUTRON_CONF nfp_node_driver is_service_admin_owned "True"
     iniset $NEUTRON_CONF nfp_node_driver svc_management_ptg_name "svc_management_ptg"
 }

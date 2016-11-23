@@ -125,7 +125,7 @@ function create_ep_and_nsp {
  default
 
     gbp nsp-create\
- --network-service-params type=ip_pool,name=vip_ip,value=nat_pool\
+ --network-service-params type=ip_pool,name=fip,value=nat_pool\
  svc_mgmt_fip_policy
 }
 
@@ -191,9 +191,10 @@ function create_nfp_gbp_resources {
  --service-flavor service_vendor=vyos,device_type=nova\
  --vendor NFP\
  vpn_profile
-
-        create_ext_net
-        create_ep_and_nsp
+        if [[ $EXT_NET_GATEWAY && $EXT_NET_ALLOCATION_POOL_START && $EXT_NET_ALLOCATION_POOL_END && $EXT_NET_CIDR ]]; then
+            create_ext_net
+            create_ep_and_nsp
+        fi
 
     fi
 
