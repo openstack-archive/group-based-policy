@@ -11,6 +11,8 @@
 #    under the License.
 
 
+from argparse import Namespace
+
 from gbpservice.nfp.core import log as nfp_logging
 from gbpservice.nfp.core import threadpool as core_tp
 
@@ -110,23 +112,6 @@ class TaskExecutor(object):
         return done_jobs
 
 
-def set_node(f):
-    """To find and set a graph node for a
-        given event.
-    """
-
-    def decorator(self, *args, **kwargs):
-        node = kwargs.get('node')
-        event = kwargs.get('event')
-        if not node:
-            if not event:
-                kwargs['node'] = self.graph.root_node
-            else:
-                kwargs['node'] = self.graph.get_node(event)
-        return f(self, *args, **kwargs)
-    return decorator
-
-
 class EventGraphExecutor(object):
 
     """Executor which executs a graph of events.
@@ -151,53 +136,90 @@ class EventGraphExecutor(object):
         to get the child events execution status.
     """
 
-    def __init__(self, manager, graph):
+    def __init__(self, manager):
         self.manager = manager
-        self.graph = graph
+        self.running = {}
 
-    @set_node
-    def run(self, event=None, node=None):
-        LOG.debug("GraphExecutor - (event - %s)" %
-                  (node.event))
+    def add(self, graph):
+        assert graph['id'] not in self.running.keys(), "Graph - %s \
+            is already running" % (graph['id'])
+        graph['results'] = dict.fromkeys(graph['data'])
+        self.running[graph['id']] = graph
+        self.run(graph['id'], graph['root'])
 
-        # Call to check if event would get sequenced
-        if self.manager.schedule_graph_event(
-                node.event, self.graph, dispatch=False):
-            LOG.debug("GraphExecutor - "
-                      "(event - %s) - sequenced" %
-                      (node.event))
-            # Event would have got added to sequencer,
-            # unlink it from pending links of graph
-            return self.graph.unlink_node(node)
+    def run(self, graph_id, node):
+        graph = self.running[graph_id]
+        leafs = self._leafs(graph['data'], node)
+        if leafs == []:
+            results = self._results(graph, node)
+            self._schedule(node, results=results)
+        else:
+            self._dispatch(graph, leafs)
 
-        l_nodes = self.graph.get_pending_leaf_nodes(node)
-        LOG.debug("GraphExecutor - "
-                  "(event - %s) - number of leaf nodes - %d" %
-                  (node.event, len(l_nodes)))
+    def _results(self, graph, node):
+        try:
+            return self.running['results'][node]
+        except KeyError:
+            return []
 
-        if not l_nodes:
-            if not self.graph.waiting_events(node):
-                LOG.debug("GraphExecutor - "
-                          "(event - %s) - Scheduling event" %
-                          (node.event))
-                self.manager.schedule_graph_event(node.event, self.graph)
-                self.graph.unlink_node(node)
+    def _dispatch(self, graph, nodes):
+        for node in nodes:
+            event = self.manager.get_event(node)
+            if event.sequence:
+                self._schedule(node)
+            else:
+                self.run(graph['id'], node)
 
-        if l_nodes:
-            for l_node in l_nodes:
-                LOG.debug("GraphExecutor -"
-                          "(event - %s) executing leaf node" %
-                          (node.event))
-                self.run(node=l_node)
+    def _leafs(self, tree, root):
+        leafs = []
+        try:
+            leafs = tree[root]
+        finally:
+            return leafs
 
-    @set_node
-    def event_complete(self, result, event=None, node=None):
-        LOG.debug("GraphExecutor - (event - %s) complete" %
-                  (node.event))
-        node.result = result
-        p_node = self.graph.remove_node(node)
-        if p_node:
-            LOG.debug("GraphExecutor - "
-                      "(event - %s) complete, rerunning parent - %s" %
-                      (node.event, p_node.event))
-            self.run(node=p_node)
+    def _root(self, graph, of):
+        tree = graph['data']
+        for root, nodes in tree.iteritems():
+            if of in nodes:
+                return root
+        return None
+
+    def _schedule(self, node, results=None):
+        results = results or []
+        event = self.manager.get_event(node)
+        event.result = results
+        self.manager._scheduled_new_event(event)
+
+    def _graph(self, node):
+        for graph in self.running.values():
+            root = self._root(graph, node)
+            if root:
+                return graph
+
+    def _prepare_result(self, node, result):
+        result_obj = Namespace()
+        key, id = node.split(':')
+        result_obj.id = id
+        result_obj.key = key
+        result_obj.result = result
+        return result_obj
+
+    def _update_result(self, graph, root, result):
+        if not graph['results'][root]:
+            graph['results'][root] = []
+        graph['results'][root].append(result)
+        return graph['results'][root]
+
+    def conntinue(self, completed_node, result):
+        graph = self._graph(completed_node)
+        if graph:
+            if completed_node == graph['root']:
+                #Graph is complete here, remove from running_instances
+                self.running.pop(graph['id'])
+            else:
+                root = self._root(graph, completed_node)
+                graph['data'][root].remove(completed_node)
+                result = self._prepare_result(completed_node, result)
+                results = self._update_result(graph, root, result)
+                if graph['data'][root] == []:
+                    self._schedule(root, results=results)
