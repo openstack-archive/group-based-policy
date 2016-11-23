@@ -10,6 +10,7 @@
 # License for the specific language governing permissions and limitations
 # under the License.
 
+import ast
 import copy
 import time
 
@@ -452,7 +453,8 @@ class HeatDriver(object):
                     properties_key]['vip']['name'] += ptg_name
 
     def _generate_lbv2_member_template(self, is_template_aws_version,
-                                       member_ip, stack_template):
+                                       member_ip, stack_template,
+                                       pool_name="pool"):
         type_key = 'Type' if is_template_aws_version else 'type'
         properties_key = ('Properties' if is_template_aws_version
                           else 'properties')
@@ -466,11 +468,18 @@ class HeatDriver(object):
         subnet = stack_template[resources_key][lbaas_loadbalancer_key][
             properties_key]['vip_subnet']
 
+        app_port = "app_port"
+        if stack_template[resources_key][pool_name].get("description"):
+            desc_dict = ast.literal_eval(
+                stack_template[resources_key][pool_name].get("description"))
+            if desc_dict.get("app_port_param_name"):
+                app_port = desc_dict.get("app_port_param_name")
+
         return {type_key: "OS::Neutron::LBaaS::PoolMember",
                 properties_key: {
-                    "pool": {res_key: "pool"},
+                    "pool": {res_key: pool_name},
                     "address": member_ip,
-                    "protocol_port": {"get_param": "app_port"},
+                    "protocol_port": {"get_param": app_port},
                     "subnet": subnet,
                     "weight": 1}}
 
@@ -487,12 +496,20 @@ class HeatDriver(object):
         member_ips = self._get_member_ips(auth_token, provider_ptg)
         if not member_ips:
             return
+        pools = self._get_all_heat_resource_keys(
+            stack_template[resources_key],
+            is_template_aws_version,
+            "OS::Neutron::LBaaS::Pool"
+        )
+        if not pools:
+            return
         for member_ip in member_ips:
-            member_name = 'mem-' + member_ip
-            stack_template[resources_key][member_name] = (
-                self._generate_lbv2_member_template(
-                    is_template_aws_version,
-                    member_ip, stack_template))
+            for pool in pools:
+                member_name = 'mem-' + member_ip + '-' + pool
+                stack_template[resources_key][member_name] = (
+                    self._generate_lbv2_member_template(
+                        is_template_aws_version,
+                        member_ip, stack_template, pool_name=pool))
 
     def _generate_pool_members(self, auth_token, stack_template,
                                config_param_values, provider_ptg,
