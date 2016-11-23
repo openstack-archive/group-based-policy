@@ -277,7 +277,12 @@ class HeatDriver(object):
         service_profile = self.gbp_client.get_service_profile(
             auth_token, network_function['service_profile_id'])
         service_type = service_profile['service_type']
-        if service_type in [pconst.LOADBALANCER]:
+        service_details = transport.parse_service_flavor_string(
+            service_profile['service_flavor'])
+        base_mode_support = (True if service_details['device_type'] == 'None'
+                             else False)
+        if (service_type in [pconst.LOADBALANCER]) and (
+            not base_mode_support):
             provider = self._get_provider_ptg_info(auth_token,
                     network_function['service_chain_id'])
             provider_tenant_id = provider['tenant_id']
@@ -366,7 +371,7 @@ class HeatDriver(object):
         if provider.get("policy_targets"):
             filters = {'id': provider.get("policy_targets")}
         else:
-            filters = {'policy_target_group': provider['id']}
+            filters = {'policy_target_group_id': provider['id']}
         policy_targets = self.gbp_client.get_policy_targets(
                 auth_token,
                 filters=filters)
