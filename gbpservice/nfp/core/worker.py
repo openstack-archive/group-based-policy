@@ -142,7 +142,7 @@ class NfpWorker(Service):
         ret = {}
         event.desc.poll_desc.max_times -= 1
         module = event.desc.target
-        poll_handler = (
+        poll_handler, _ = (
             self.event_handlers.get_poll_handler(event.id, module=module))
         event_handler, _ = (
             self.event_handlers.get_event_handler(event.id, module=module))
@@ -150,6 +150,9 @@ class NfpWorker(Service):
             ret = poll_handler(event)
         except TypeError:
             ret = poll_handler(event_handler, event)
+        except Exception as exc:
+            message = "Exception from module's poll handler - %s" % exc
+            LOG.error(message)
         self._repoll(ret, event, event_handler)
 
     def log_dispatch(self, handler, event, *args):
@@ -157,8 +160,12 @@ class NfpWorker(Service):
             event.context['namespace'] = event.desc.target
             nfp_logging.store_logging_context(**(event.context))
         finally:
-            handler(event, *args)
-            nfp_logging.clear_logging_context()
+            try:
+                handler(event, *args)
+                nfp_logging.clear_logging_context()
+            except Exception as exc:
+                message = "Exception from module's event handler - %s" % exc
+                LOG.error(message)
 
     def dispatch(self, handler, event, *args):
         if self._threads:
@@ -167,7 +174,11 @@ class NfpWorker(Service):
                 self._log_meta(), identify(handler))
             LOG.debug(message)
         else:
-            handler(event, *args)
-            message = "%s - (handler - %s) - invoked" % (
-                self._log_meta(), identify(handler))
-            LOG.debug(message)
+            try:
+                handler(event, *args)
+                message = "%s - (handler - %s) - invoked" % (
+                    self._log_meta(), identify(handler))
+                LOG.debug(message)
+            except Exception as exc:
+                message = "Exception from module's event handler - %s" % exc
+                LOG.error(message)
