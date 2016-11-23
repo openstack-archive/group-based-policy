@@ -15,7 +15,6 @@ import eventlet
 eventlet.monkey_patch()
 
 import multiprocessing
-import operator
 import os
 import pickle
 import Queue
@@ -59,7 +58,7 @@ class NfpService(object):
     def __init__(self, conf):
         self._conf = conf
         self._event_handlers = nfp_event.NfpEventHandlers()
-        self._rpc_agents = list()
+        self._rpc_agents = {}
 
     def _make_new_event(self, event):
         """Make a new event from the object passed. """
@@ -84,8 +83,22 @@ class NfpService(object):
 
     def register_rpc_agents(self, agents):
         """Register rpc handlers with core. """
+
         for agent in agents:
-            self._rpc_agents.append((agent,))
+            # rpc server is created using neutron rpc service
+            # this implementation does not support 'initialize_service_hook'
+            if hasattr(agent.manager, 'initialize_service_hook'):
+                setattr(agent.manager, 'initialize_service_hook', None)
+
+            key = str(agent.host) + '.' + str(agent.topic)
+            try:
+                self._rpc_agents[key]['agents'].append(agent)
+            except KeyError:
+                self._rpc_agents[key] = {}
+                self._rpc_agents[key]['topic'] = agent.topic
+                self._rpc_agents[key]['host'] = agent.host
+                self._rpc_agents[key]['agents'] = list()
+                self._rpc_agents[key]['agents'].append(agent)
 
     def new_event(self, **kwargs):
         """Define and return a new event. """
@@ -105,16 +118,10 @@ class NfpService(object):
             LOG.exception(message)
         return event
 
-    def post_event_graph(self, event):
-        """Post a event graph.
-
-            As base class, set only the required
-            attributes of event.
-        """
-        event.desc.type = nfp_event.EVENT_GRAPH
-        event.desc.flag = ''
-        event.desc.pid = os.getpid()
-        return event
+    def post_graph(self, graph_nodes, root_node):
+        for node in graph_nodes:
+            self.post_event(node)
+        self.post_event(root_node)
 
     def post_event(self, event, target=None):
         """Post an event.
@@ -139,16 +146,14 @@ class NfpService(object):
             descriptor preparation.
             NfpController class implements the required functionality.
         """
-        ev_spacing = self._event_handlers.get_poll_spacing(event.id)
+        logging_context = nfp_logging.get_logging_context()
+        module = logging_context['namespace']
+        handler, ev_spacing = (
+            self._event_handlers.get_poll_handler(event.id, module=module))
+        assert handler, "No poll handler found for event %s" % (event.id)
         assert spacing or ev_spacing, "No spacing specified for polling"
         if ev_spacing:
             spacing = ev_spacing
-        logging_context = nfp_logging.get_logging_context()
-        module = logging_context['namespace']
-        handler = (
-            self._event_handlers.get_poll_handler(event.id, module=module))
-        assert handler, "No poll handler found for event %s" % (event.id)
-
         refuuid = event.desc.uuid
         event = self._make_new_event(event)
         event.lifetime = 0
@@ -321,12 +326,21 @@ class NfpController(nfp_launcher.NfpLauncher, NfpService):
         """
         self._update_manager()
 
-        # Launch rpc_agents
-        for index, rpc_agent in enumerate(self._rpc_agents):
+        # create and launch core's rpc agent for each topic
+        for key, agent_wrap in self._rpc_agents.iteritems():
+            host = agent_wrap.get('host')
+            topic = agent_wrap.get('topic')
+            agents = agent_wrap.get('agents')
+            rpc_manager = nfp_rpc.RpcManager(self, self._conf, agents=agents)
+            rpc_agent = nfp_rpc.RpcAgent(
+                self, host=host, topic=topic, manager=rpc_manager)
+            # Launch rpc_service_agent
             # Use threads for launching service
             launcher = oslo_service.launch(
-                self._conf, rpc_agent[0], workers=None)
-            self._rpc_agents[index] = rpc_agent + (launcher,)
+                self._conf, rpc_agent, workers=None)
+
+            self._rpc_agents[key]['agent'] = rpc_agent
+            self._rpc_agents[key]['launcher'] = launcher
 
         # One task to manage the resources - workers & events.
         eventlet.spawn_n(self._manager_task)
@@ -346,42 +360,38 @@ class NfpController(nfp_launcher.NfpLauncher, NfpService):
 
     def report_state(self):
         """Invoked by report_task to report states of all agents. """
-        for agent in self._rpc_agents:
-            rpc_agent = operator.itemgetter(0)(agent)
-            rpc_agent.report_state()
+        for key, agent_wrap in self._rpc_agents.iteritems():
+            for agent in agent_wrap['agents']:
+                agent.report_state()
 
-    def post_event_graph(self, event, graph_nodes):
-        """Post a new event graph into system.
+    def _verify_graph(self, graph):
+        graph_sig = {}
+        graph_nodes = []
+        for parent, childs in graph.iteritems():
+            puuid = parent.desc.uuid
+            assert puuid not in graph_sig.keys(), (
+                "Event - %s is already root of subtree - %s" % (
+                    puuid, str(graph_sig[puuid])))
+            graph_sig[puuid] = []
+            for child in childs:
+                graph_sig[puuid].append(child.desc.uuid)
+                graph_nodes.append(child)
 
-            Graph is a collection of events to be
-            executed in a certain manner. Use the
-            commonly defined 'Event' class to define
-            even the graph.
+        return graph_sig, graph_nodes
 
-            :param event: Object of 'Event' class.
+    def post_graph(self, graph, root, graph_str=''):
+        graph_sig, graph_nodes = self._verify_graph(graph)
+        graph_data = {
+            'id': root.desc.uuid + "_" + graph_str,
+            'root': root.desc.uuid,
+            'data': graph_sig}
 
-            Return: None
-        """
+        for graph_node in graph_nodes:
+            graph_node.desc.graph = graph_data
 
-        # Post events for all the graph nodes
-        for node in graph_nodes:
-            self.post_event(node)
+        root.desc.graph = graph_data
 
-        event = super(NfpController, self).post_event_graph(event)
-        message = "(event - %s) - New event" % (event.identify())
-        LOG.debug(message)
-        if self.PROCESS_TYPE == "worker":
-            # Event posted in worker context, send it to parent process
-            message = ("(event - %s) - new event in worker"
-                       "posting to distributor process") % (event.identify())
-            LOG.debug(message)
-            # Send it to the distributor process
-            self.pipe_send(self._pipe, event)
-        else:
-            message = ("(event - %s) - new event in distributor"
-                       "processing event") % (event.identify())
-            LOG.debug(message)
-            self._manager.process_events([event])
+        super(NfpController, self).post_graph(graph_nodes, root)
 
     def post_event(self, event, target=None):
         """Post a new event into the system.
