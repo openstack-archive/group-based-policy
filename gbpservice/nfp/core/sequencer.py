@@ -85,7 +85,7 @@ class EventSequencer(object):
             self._sequencer[key] = self.Sequencer()
             self._sequencer[key].sequence(event)
         message = "Sequenced event - %s" % (event.identify())
-        LOG.error(message)
+        LOG.info(message)
 
     def run(self):
         events = []
@@ -95,9 +95,9 @@ class EventSequencer(object):
             try:
                 event = sequencer.run()
                 if event:
-                    message = "Desequence event - %s" % (
+                    message = "Desequenced event - %s" % (
                         event.identify())
-                    LOG.error(message)
+                    LOG.info(message)
                     event.sequence = False
                     events.append(event)
             except SequencerBusy as exc:

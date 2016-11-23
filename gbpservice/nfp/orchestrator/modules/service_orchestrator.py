@@ -22,6 +22,7 @@ from gbpservice.nfp.common import exceptions as nfp_exc
 from gbpservice.nfp.common import topics as nfp_rpc_topics
 from gbpservice.nfp.core import context as nfp_core_context
 from gbpservice.nfp.core import event as nfp_event
+from gbpservice.nfp.core.event import Event
 from gbpservice.nfp.core import module as nfp_api
 from gbpservice.nfp.core import rpc as nfp_rpc
 from gbpservice.nfp.lib import transport
@@ -861,10 +862,9 @@ class ServiceOrchestrator(nfp_api.NfpEventHandler):
         dnf_event = self._controller.new_event(
             id='DELETE_NETWORK_FUNCTION_DB',
             key=network_function_id,
-            data=network_function_details,
-            graph=True)
-        graph = nfp_event.EventGraph(dnf_event)
-        graph_nodes = [dnf_event]
+            data=network_function_details)
+
+        GRAPH = {dnf_event: []}
 
         if network_function['config_policy_id']:
             ducf_event = (
@@ -872,10 +872,8 @@ class ServiceOrchestrator(nfp_api.NfpEventHandler):
                                            key=network_function_id,
                                            data=network_function_details,
                                            serialize=True,
-                                           binding_key=network_function_id,
-                                           graph=True))
-            graph.add_node(ducf_event, dnf_event)
-            graph_nodes.append(ducf_event)
+                                           binding_key=network_function_id))
+            GRAPH[dnf_event].append(ducf_event)
         else:
             service_config = network_function['service_config']
             self.delete_network_function_user_config(network_function_id,
@@ -886,14 +884,10 @@ class ServiceOrchestrator(nfp_api.NfpEventHandler):
                 key=network_function_id,
                 data=network_function_details,
                 serialize=True,
-                binding_key=network_function_id,
-                graph=True)
-            graph.add_node(dnfd_event, dnf_event)
-            graph_nodes.append(dnfd_event)
-        graph_event = (
-            self._controller.new_event(id="DELETE_NETWORK_FUNCTION_GRAPH",
-                                       graph=graph))
-        self._controller.post_event_graph(graph_event, graph_nodes)
+                binding_key=network_function_id)
+            GRAPH[dnf_event].append(dnfd_event)
+        self._controller.post_graph(GRAPH, dnf_event,
+                                    graph_str='DELETE_NETWORK_FUNCTION_GRAPH')
         nfp_logging.clear_logging_context()
 
     def delete_user_config(self, event):
@@ -990,14 +984,15 @@ class ServiceOrchestrator(nfp_api.NfpEventHandler):
         ev = self._controller.new_event(
             id='CREATE_NETWORK_FUNCTION_DEVICE',
             data=nfp_context,
-            key=network_function['id'])
+            key=network_function['id'] + nfi['id'])
 
         if 'binding_key' in nfp_context:
             ev.sequence = True
             ev.binding_key = nfp_context['binding_key']
 
         self._controller.post_event(ev)
-        self._controller.event_complete(event)
+        if event.binding_key and not nfp_context.get('is_nfi_in_graph'):
+            self._controller.event_complete(event)
 
     def handle_device_created(self, event):
         request_data = event.data
@@ -1102,7 +1097,7 @@ class ServiceOrchestrator(nfp_api.NfpEventHandler):
             max_times=nfp_constants.APPLY_USER_CONFIG_IN_PROGRESS_MAXRETRY)
 
     def apply_user_config(self, event):
-        event_results = event.graph.get_leaf_node_results(event)
+        event_results = event.result
         for c_event in event_results:
             if c_event.id == "SEND_USER_CONFIG" and (
                     c_event.result.upper() == "HANDLED"):
@@ -1607,7 +1602,7 @@ class ServiceOrchestrator(nfp_api.NfpEventHandler):
     # So we have to pass the NSI ID in delete event to NDO and process
     # the result based on that
     def delete_network_function_db(self, event):
-        results = event.graph.get_leaf_node_results(event)
+        results = event.result
         for result in results:
             if result.result.lower() != 'success':
                 LOG.error(_LE("Event: %(result_id)s failed"),
