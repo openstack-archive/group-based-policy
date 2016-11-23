@@ -20,6 +20,7 @@ from gbpservice.nfp.core import sequencer as nfp_sequencer
 
 LOG = nfp_logging.getLogger(__name__)
 NfpEventManager = nfp_event.NfpEventManager
+NfpGraphExecutor = nfp_executor.EventGraphExecutor
 
 deque = collections.deque
 
@@ -36,16 +37,12 @@ def IS_SCHEDULED_NEW_EVENT(event):
     )
 
 
-def IS_SCHEDULED_EVENT_GRAPHEVENT(event):
-    return IS_SCHEDULED_NEW_EVENT(event) and (event.graph)
+def IS_EVENT_COMPLETE(event):
+    return event.desc.flag == nfp_event.EVENT_COMPLETE
 
 
 def IS_EVENT_GRAPH(event):
-    return event.desc.type == nfp_event.EVENT_GRAPH
-
-
-def IS_EVENT_COMPLETE(event):
-    return event.desc.flag == nfp_event.EVENT_COMPLETE
+    return event.desc.graph
 
 
 """Manages the forked childs.
@@ -110,6 +107,8 @@ class NfpResourceManager(NfpProcessManager, NfpEventManager):
         self._distributor_process_id = os.getpid()
         # Single sequencer to be used by all event managers
         self._event_sequencer = nfp_sequencer.EventSequencer()
+        # Graph executor
+        self.graph_executor = NfpGraphExecutor(self)
 
         NfpProcessManager.__init__(self, conf, controller)
         NfpEventManager.__init__(self, conf, controller, self._event_sequencer)
@@ -141,6 +140,9 @@ class NfpResourceManager(NfpProcessManager, NfpEventManager):
         self._child_watcher()
         self._event_watcher()
 
+    def get_event(self, event_id):
+        return self._event_cache[event_id]
+
     def _event_acked(self, event):
         """Post handling after event is dispatched to worker. """
         if event.lifetime:
@@ -156,53 +158,37 @@ class NfpResourceManager(NfpProcessManager, NfpEventManager):
         event_manager, load_info = self._get_min_loaded_em(load_info)
         event_manager.dispatch_event(event)
 
-    def _execute_event_graph(self, event, state=None):
-        graph = event.graph
-        g_executor = nfp_executor.EventGraphExecutor(self, graph)
-        g_executor.run(event=state)
+    def _graph_event(self, event):
+        if isinstance(event.desc.graph, dict):
+            graph = event.desc.graph
+
+            event.desc.graph = graph['id']
+
+            self._event_cache[event.desc.uuid] = event
+
+            if event.desc.uuid == graph['root']:
+                # graph = {'id': <>, 'data': {}, 'root': <>}
+                self.graph_executor.add(graph)
+        else:
+            graph = event.desc.graph
+            self.graph_executor.run(graph, event.desc.uuid)
 
     def _graph_event_complete(self, event):
-        if not event.graph:
-            return
+        self.graph_executor.conntinue(event.desc.uuid, event.result)
 
-        graph = event.graph
-        g_executor = nfp_executor.EventGraphExecutor(self, graph)
-        g_executor.event_complete(event.result, event=event.desc.uuid)
-
-    def _scheduled_event_graph(self, event):
-        if type(event.graph) == bool:
-            # Cache the event object
-            self._event_cache[event.desc.uuid] = event
-        else:
-            # This case happens when a serialized event of
-            # a graph is desequenced and is processed.
-            self._execute_event_graph(event, state=event.desc.uuid)
-
-    def _get_event_from_cache(self, uuid):
-        try:
-            return self._event_cache[uuid]
-        except KeyError as ke:
-            message = "(event - %s) - no event with uuid" % (
-                uuid)
-            LOG.error(message)
-            raise ke
-
-    def schedule_graph_event(self, uuid, graph, dispatch=True):
-        # Get event from cache
-        event = self._get_event_from_cache(uuid)
-        # Update the graph in event, which will be stored in cache
-        event.graph = graph
-        # Schedule the event
-        return self._scheduled_new_event(event, dispatch=dispatch)
-
-    def _scheduled_new_event(self, event, dispatch=True):
+    def _scheduled_new_event(self, event):
         # Cache the event object
         self._event_cache[event.desc.uuid] = event
+
         # Event needs to be sequenced ?
         if not event.sequence:
-            if dispatch:
-                # Dispatch to a worker
-                self._dispatch_event(event)
+            # Since event is dispatched, remove its
+            # graph link, modules may decide to use
+            # same event as non graph event
+            event.desc.graph = None
+
+            # Dispatch to a worker
+            self._dispatch_event(event)
         else:
             message = "(event - %s) - sequencing" % (
                 event.identify())
@@ -251,7 +237,7 @@ class NfpResourceManager(NfpProcessManager, NfpEventManager):
             kerr = kerr
             message = "(event - %s) - completed, not in cache" % (
                 event.identify())
-            LOG.error(message)
+            LOG.debug(message)
         except AssertionError as aerr:
             aerr = aerr
             # No event manager for the event, worker could have got
@@ -264,7 +250,7 @@ class NfpResourceManager(NfpProcessManager, NfpEventManager):
             # Release the sequencer for this sequence,
             # so that next event can get scheduled.
             self._event_sequencer.release(event.binding_key, event)
-            self._graph_event_complete(cached_event)
+            self._graph_event_complete(event)
 
     def _non_schedule_event(self, event):
         if event.desc.type == nfp_event.POLL_EVENT:
@@ -313,14 +299,13 @@ class NfpResourceManager(NfpProcessManager, NfpEventManager):
             message = "%s - processing event" % (event.identify())
             LOG.debug(message)
 
-            if IS_EVENT_GRAPH(event):
-                self._execute_event_graph(event)
-            elif IS_SCHEDULED_EVENT_GRAPHEVENT(event):
-                self._scheduled_event_graph(event)
-            elif IS_SCHEDULED_EVENT_ACK(event):
+            if IS_SCHEDULED_EVENT_ACK(event):
                 self._scheduled_event_ack(event)
             elif IS_SCHEDULED_NEW_EVENT(event):
-                self._scheduled_new_event(event)
+                if IS_EVENT_GRAPH(event):
+                    self._graph_event(event)
+                else:
+                    self._scheduled_new_event(event)
             elif IS_EVENT_COMPLETE(event):
                 self._scheduled_event_complete(event)
             else:

@@ -27,9 +27,6 @@ LOG = oslo_logging.getLogger(__name__)
 
 NFP_MODULES_PATH = ['gbpservice.neutron.tests.unit.nfp.core']
 
-import pdb
-import sys
-
 
 def mocked_get_logging_context(**kwargs):
     return {
@@ -38,30 +35,6 @@ def mocked_get_logging_context(**kwargs):
         'namespace': None}
 
 nfp_logging.get_logging_context = mocked_get_logging_context
-
-"""For debugging inside a child process.
-
-    import pdb;pdb.set_trace() does not work
-    with python multiprocessing.
-    Instead use below pdb class to debug inside
-    a worker process / child process.
-"""
-
-
-class ForkedPdb(pdb.Pdb):
-
-    """A Pdb subclass that may be used
-    from a forked multiprocessing child
-
-    """
-
-    def interaction(self, *args, **kwargs):
-        _stdin = sys.stdin
-        try:
-            sys.stdin = file('/dev/stdin')
-            pdb.Pdb.interaction(self, *args, **kwargs)
-        finally:
-            sys.stdin = _stdin
 
 
 class MockedPipe(object):
