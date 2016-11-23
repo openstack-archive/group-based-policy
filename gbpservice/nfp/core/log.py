@@ -66,12 +66,18 @@ class WrappedLogger(logging.Logger):
             break
         return rv
 
-    def makeRecord(self, name, level, fn,
-                   lno, msg, args, exc_info, func=None, extra=None):
+    def _get_nfp_msg(self, msg):
         context = getattr(logging_context_store, 'context', None)
         if context:
-            _prefix = context.emit()
-            msg = "%s-%s" % (_prefix, msg)
+            msg = "%s-%s" % (context.emit(), msg)
+        return msg
+
+    def makeRecord(self, name, level, fn,
+                   lno, msg, args, exc_info, func=None, extra=None):
+        # Prefix log meta id with every log if project is 'nfp'
+        if extra and extra.get('project') == 'nfp':
+            msg = self._get_nfp_msg(msg)
+
         return super(WrappedLogger, self).makeRecord(
             name, level, fn, lno, msg,
             args, exc_info, func=func, extra=extra)
@@ -99,7 +105,7 @@ class NfpLogContext(object):
 
 
 def getLogger(name):
-    return oslo_logging.getLogger(name)
+    return oslo_logging.getLogger(name, project='nfp')
 
 
 def store_logging_context(**kwargs):
