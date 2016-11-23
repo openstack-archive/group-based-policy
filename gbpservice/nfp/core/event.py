@@ -27,7 +27,6 @@ SCHEDULE_EVENT = 'schedule_event'
 POLL_EVENT = 'poll_event'
 STASH_EVENT = 'stash_event'
 EVENT_EXPIRED = 'event_expired'
-EVENT_GRAPH = 'event_graph'
 
 """Event Flag """
 EVENT_NEW = 'new_event'
@@ -39,110 +38,6 @@ SequencerEmpty = nfp_seq.SequencerEmpty
 SequencerBusy = nfp_seq.SequencerBusy
 
 deque = collections.deque
-
-
-class EventGraphNode(object):
-
-    def __init__(self, event, p_event=None):
-        self.p_link = ()
-        self.c_links = []
-        self.w_links = []
-        self.e_links = []
-        self.event = event
-        self.result = None
-
-        if p_event:
-            self.p_link = p_event
-
-    def __getstate__(self):
-        return (self.p_link, self.c_links,
-                self.e_links, self.w_links, self.event, self.result)
-
-    def __setstate__(self, state):
-        (self.p_link, self.c_links, self.e_links,
-            self.w_links, self.event, self.result) = state
-
-    def add_link(self, event):
-        self.c_links.append(event)
-        self.w_links.append(event)
-
-    def remove_link(self, event):
-        self.e_links.append(event)
-        self.w_links.remove(event)
-
-    def remove_c_link(self, event):
-        try:
-            self.c_links.remove(event)
-        except ValueError:
-            pass
-
-    def get_c_links(self):
-        return self.c_links
-
-    def get_w_links(self):
-        return self.w_links
-
-    def get_executed_links(self):
-        return self.e_links
-
-
-class EventGraph(object):
-
-    def __init__(self, event):
-        self.root_node = EventGraphNode(event.desc.uuid)
-        self.nodes = {event.desc.uuid: self.root_node}
-
-    def __getstate__(self):
-        return self.root_node, self.nodes
-
-    def __setstate__(self, state):
-        self.root_node, self.nodes = state
-
-    def add_node(self, event, p_event):
-        node = EventGraphNode(event.desc.uuid, p_event.desc.uuid)
-        self.nodes.update({event.desc.uuid: node})
-        p_node = self.nodes.get(p_event.desc.uuid)
-        p_node.add_link(event.desc.uuid)
-
-    def remove_node(self, node):
-        p_node = self.nodes.get(node.p_link)
-        if p_node:
-            p_node.remove_link(node.event)
-        return p_node
-
-    def unlink_node(self, node):
-        p_node = self.nodes.get(node.p_link)
-        if p_node:
-            p_node.remove_c_link(node.event)
-
-    def get_pending_leaf_nodes(self, node):
-        c_links = node.get_c_links()
-        c_nodes = []
-        for link in c_links:
-            c_nodes.append(self.nodes[link])
-
-        return c_nodes
-
-    def waiting_events(self, node):
-        return len(node.get_w_links())
-
-    def get_leaf_node_results(self, event):
-        results = []
-        node = self.nodes[event.desc.uuid]
-        e_links = node.get_executed_links()
-        for link in e_links:
-            node = self.nodes[link]
-            uuid = node.event
-            key, id = uuid.split(':')
-            result = nfp_common.Object()
-            setattr(result, 'id', id)
-            setattr(result, 'key', key)
-            setattr(result, 'result', node.result)
-            results.append(result)
-        return results
-
-    def get_node(self, event):
-        return self.nodes[event]
 
 """Defines poll descriptor of an event.
 
@@ -188,6 +83,8 @@ class EventDesc(object):
         self.poll_desc = kwargs.get('poll_desc')
         # Target module to which this event must be delivered
         self.target = None
+        # ID of graph of which this event is part of
+        self.graph = None
 
     def from_desc(self, desc):
         self.type = desc.type
@@ -246,16 +143,10 @@ class Event(object):
             desc = EventDesc(**{'id': self.id})
         self.desc = desc
 
-        # Will be set if this event is a event graph
-        self.graph = kwargs.get('graph', None)
         self.result = None
 
         cond = self.sequence is True and self.binding_key is None
         assert not cond
-
-    def set_fields(self, **kwargs):
-        if 'graph' in kwargs:
-            self.graph = kwargs['graph']
 
     def identify(self):
         if hasattr(self, 'desc'):
@@ -356,9 +247,12 @@ class NfpEventHandlers(object):
     def get_poll_handler(self, event_id, module=None):
         """Get the poll handler for event_id. """
         ph = None
+        spacing = 0
         try:
             if module:
                 ph = self._event_desc_table[event_id]['modules'][module][0][1]
+                spacing = self._event_desc_table[event_id]['modules'][
+                        module][0][2]
             else:
                 priorities = (
                     self._event_desc_table[event_id]['priority'].keys())
@@ -366,11 +260,13 @@ class NfpEventHandlers(object):
                 ph = (
                     self._event_desc_table[
                         event_id]['priority'][priority][0][1])
+                spacing = self._event_desc_table[event_id]['priority'][
+                        priority][0][2]
         finally:
             message = "%s - Returning poll handler" % (
                 self._log_meta(event_id, ph))
             LOG.debug(message)
-            return ph
+            return ph, spacing
 
     def get_poll_spacing(self, event_id):
         """Return the spacing for event_id. """
