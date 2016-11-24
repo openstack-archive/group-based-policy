@@ -518,6 +518,7 @@ class NFPNodeDriver(driver_base.NodeDriverBase):
                 context.instance['id'])
             raise e
 
+        self._update_ptg(context)
         self._wait_for_node_operation_completion(context,
                                                  network_function_id,
                                                  nfp_constants.DELETE)
@@ -607,7 +608,30 @@ class NFPNodeDriver(driver_base.NodeDriverBase):
                     operation=nfp_constants.UPDATE)
 
     def policy_target_group_updated(self, context, old_ptg, current_ptg):
-        pass
+        if not (old_ptg and current_ptg):
+            return
+        if current_ptg['description']:
+            desc = current_ptg['description'].split(':')
+            if 'opflex_eoc' in desc:
+                if (set(old_ptg[
+                        'provided_policy_rule_sets']).symmetric_difference(
+                            set(current_ptg['provided_policy_rule_sets']))):
+                    pts = context.gbp_plugin.get_policy_targets(
+                            context.plugin_context,
+                            filters={'port_id': [desc[-1]]})
+                    (pt,) = pts
+                    filters = {'description': [current_ptg['description']]}
+                    ptgs = context.gbp_plugin.get_policy_target_groups(
+                                context.plugin_context, filters)
+                    prs = []
+                    for ptg in ptgs:
+                        prs += ptg['provided_policy_rule_sets']
+                    context.gbp_plugin.update_policy_target_group(
+                            context.plugin_context,
+                            pt['policy_target_group_id'],
+                            {'policy_target_group':
+                                {'provided_policy_rule_sets':
+                                    dict((x, '') for x in prs)}})
 
     def _wait_for_network_function_delete_completion(self, context,
                                                      network_function_id):
@@ -1076,3 +1100,26 @@ class NFPNodeDriver(driver_base.NodeDriverBase):
                 all())
             for sc_node_instance_ns_map in sc_node_instance_ns_maps:
                 session.delete(sc_node_instance_ns_map)
+
+    def _update_ptg(self, context):
+        if hasattr(context, 'provider') and context.provider['description']:
+            gateway_desc = 'opflex_eoc' in context.provider[
+                'description'].split(':')
+            if gateway_desc:
+                pts = context.gbp_plugin.get_policy_targets(
+                        context.plugin_context,
+                        filters={'port_id': [context.provider[
+                            'description'].split(':')][-1]})
+                (pt,) = pts
+                filters = {'description': [context.provider['description']]}
+                ptgs = context.gbp_plugin.get_policy_target_groups(
+                        context.plugin_context, filters)
+                prs = []
+                for ptg in ptgs:
+                    prs += ptg['provided_policy_rule_sets']
+                context.gbp_plugin.update_policy_target_group(
+                        context.plugin_context,
+                        pt['policy_target_group_id'],
+                        {'policy_target_group':
+                            {'provided_policy_rule_sets':
+                                dict((x, '') for x in prs)}})
