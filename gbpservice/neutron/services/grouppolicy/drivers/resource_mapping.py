@@ -2177,6 +2177,10 @@ class ResourceMappingDriver(api.PolicyDriver, ImplicitResourceOperations,
         try:
             port_id = pt['port_id']
             port = self._get_port(context._plugin_context, port_id)
+            if not port['port_security_enabled']:
+                LOG.warning(_LW("Port security disabled for port %s " %
+                                port_id))
+                return
             cur_sg_list = port[ext_sg.SECURITYGROUPS]
             new_sg_list = cur_sg_list + sg_list
             port[ext_sg.SECURITYGROUPS] = new_sg_list
@@ -2197,6 +2201,10 @@ class ResourceMappingDriver(api.PolicyDriver, ImplicitResourceOperations,
     def _disassoc_sgs_from_port(self, plugin_context, port_id, sg_list):
         try:
             port = self._get_port(plugin_context, port_id)
+            if not port['port_security_enabled']:
+                LOG.warning(_LW("Port security disabled for port %s " %
+                                port_id))
+                return
             cur_sg_list = port[ext_sg.SECURITYGROUPS]
             new_sg_list = list(set(cur_sg_list) - set(sg_list))
             port[ext_sg.SECURITYGROUPS] = new_sg_list
