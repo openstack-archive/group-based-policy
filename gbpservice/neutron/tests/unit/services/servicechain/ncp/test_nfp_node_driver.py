@@ -750,3 +750,65 @@ class TestServiceChainInstance(NFPNodeDriverTestCase):
                           "policy_target_removed_notification") as pt_removed:
             self.delete_policy_target(pt['id'])
             pt_removed.assert_called_once_with(mock.ANY, mock.ANY, mock.ANY)
+
+    def test_policy_target_group_updated(self):
+        prof = self._create_service_profile(
+                service_type='FIREWALL',
+                vendor=self.SERVICE_PROFILE_VENDOR,
+                insertion_mode='l3', service_flavor='vyos')['service_profile']
+        node = self.create_servicechain_node(
+                service_profile_id=prof['id'],
+                config=self.DEFAULT_FW_CONFIG,
+                expected_res_status=201)['servicechain_node']
+        spec = self.create_servicechain_spec(
+                nodes=[node['id']])['servicechain_spec']
+
+        action = self.create_policy_action(
+                action_type='REDIRECT', action_value=spec['id'])[
+            'policy_action']
+        classifier = self.create_policy_classifier(
+                direction='bi', protocol='icmp')[
+            'policy_classifier']
+        rule = self.create_policy_rule(
+                policy_classifier_id=classifier['id'],
+                policy_actions=[action['id']])['policy_rule']
+        prs = self.create_policy_rule_set(
+                policy_rules=[rule['id']])['policy_rule_set']
+        # allow
+        allow_action = self.create_policy_action(action_type='ALLOW')[
+            'policy_action']
+        allow_rule = self.create_policy_rule(
+                policy_classifier_id=classifier['id'],
+                policy_actions=[allow_action['id']])['policy_rule']
+        allow_prs = self.create_policy_rule_set(
+                policy_rules=[allow_rule['id']])['policy_rule_set']
+        # ref ptg
+        ref_ptg = self.create_policy_target_group()['policy_target_group']
+        ref_pt = self.create_policy_target(
+                policy_target_group_id=ref_ptg['id'])['policy_target']
+
+        with mock.patch.object(nfp_node_driver.NFPClientApi,
+                               "create_network_function") as create_nf:
+            with mock.patch.object(nfp_node_driver.NFPClientApi,
+                                   'get_network_function') as get_nf:
+                get_nf.return_value = {
+                    'id': '126231632163',
+                    'status': 'ACTIVE'
+                }
+                create_nf.return_value = {
+                    'id': '126231632163'
+                }
+                orig_ptg = self.create_policy_target_group(
+                        description="opflex_eoc:%s" % ref_pt['port_id'],
+                        provided_policy_rule_sets={prs['id']: ''})[
+                    'policy_target_group']
+                current_ptg = self.update_policy_target_group(
+                        orig_ptg['id'],
+                        provided_policy_rule_sets={
+                            prs['id']: '', allow_prs['id']: ''})[
+                    'policy_target_group']
+                ref_ptg = self.show_policy_target_group(ref_ptg['id'])[
+                    'policy_target_group']
+                self.assertSetEqual(set(ref_ptg['provided_policy_rule_sets']),
+                                    set(current_ptg[
+                                            'provided_policy_rule_sets']))
