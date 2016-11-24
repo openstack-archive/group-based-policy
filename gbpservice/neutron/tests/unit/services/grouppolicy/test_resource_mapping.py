@@ -1412,6 +1412,50 @@ class TestPolicyTargetGroup(ResourceMappingTestCase):
                 simple_rule['id'], policy_actions=[action['id']],
                 expected_res_status=200)
 
+    def test_port_security_group_rules_not_applied(self):
+        allow_rule = self._create_simple_policy_rule()
+        allow_prs = self.create_policy_rule_set(
+                policy_rules=[allow_rule['id']])['policy_rule_set']
+        ptg = self.create_policy_target_group(
+            provided_policy_rule_sets={allow_prs['id']: ''})[
+            'policy_target_group']
+        ctx = nctx.get_admin_context()
+        l2p = self._gbp_plugin.get_l2_policy(self._context,
+                                             ptg['l2_policy_id'])
+        network = self._get_object('networks', l2p['network_id'], self.api)[
+            'network']
+        res_port = self._create_port(
+                self.fmt, network['id'],
+                arg_list=('security_groups', 'port_security_enabled'),
+                port_security_enabled=False)
+        port = self.deserialize(self.fmt, res_port)['port']
+        data = {'port_id': port['id'],
+                'description': '', 'name': '', 'cluster_id': '',
+                'policy_target_group_id': ptg['id'],
+                'proxy_gateway': False, 'group_default_gateway': False}
+        pt = self._gbp_plugin.create_policy_target(
+                ctx, {'policy_target': data})
+        allow_rule2 = self._create_simple_policy_rule(protocol='icmp')
+        allow_prs2 = self.create_policy_rule_set(
+                policy_rules=[allow_rule2['id']])['policy_rule_set']
+        self.update_policy_target_group(
+                ptg['id'], provided_policy_rule_sets={
+                    allow_prs['id']: '', allow_prs2['id']: ''})[
+            'policy_target_group']
+        res_port2 = self._create_port(
+                self.fmt, network['id'],
+                arg_list=('security_groups', 'port_security_enabled'))
+        new_port = self.deserialize(self.fmt, res_port2)['port']
+        data.update(port_id=new_port['id'])
+        pt2 = self._gbp_plugin.create_policy_target(
+                ctx, {'policy_target': data})
+        port_sg_disabled = self._get_object('ports', pt['port_id'], self.api)[
+            'port']
+        port_sg_enabled = self._get_object('ports', pt2['port_id'], self.api)[
+            'port']
+        self.assertEqual([], port_sg_disabled['security_groups'])
+        self.assertTrue(port_sg_enabled['security_groups'])
+
 
 class TestL2Policy(ResourceMappingTestCase):
 
