@@ -63,7 +63,8 @@ class GroupPolicyPluginTestCase(tgpmdb.GroupPolicyMappingDbTestCase):
               sc_plugin=None):
         if not gp_plugin:
             gp_plugin = GP_PLUGIN_KLASS
-        ml2_opts = ml2_options or {'mechanism_drivers': ['openvswitch']}
+        ml2_opts = ml2_options or {'mechanism_drivers': ['openvswitch'],
+                                   'extension_drivers': ['port_security']}
         for opt, val in ml2_opts.items():
             cfg.CONF.set_override(opt, val, 'ml2')
         core_plugin = core_plugin or test_plugin.PLUGIN_NAME
