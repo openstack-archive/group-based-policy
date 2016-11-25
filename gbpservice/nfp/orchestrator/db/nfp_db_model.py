@@ -141,6 +141,7 @@ class NetworkFunctionDevice(BASE, model_base.HasId, model_base.HasTenant,
     max_interfaces = sa.Column(sa.Integer(), nullable=False)
     reference_count = sa.Column(sa.Integer(), nullable=False)
     interfaces_in_use = sa.Column(sa.Integer(), nullable=False)
+    meta_data = sa.Column(sa.String(1024), nullable=True)
 
 
 class NetworkFunctionDeviceInterface(BASE, model_base.HasId,
@@ -159,3 +160,16 @@ class NetworkFunctionDeviceInterface(BASE, model_base.HasId,
         sa.ForeignKey('nfp_network_function_devices.id',
                       ondelete='SET NULL'),
         nullable=True)
+
+
+class ClusterInfo(BASE, model_base.HasId, model_base.HasTenant):
+    """
+    This table contains info about the ports participating in
+    cluster and optional.
+    """
+    __tablename__ = 'nfp_cluster_mapping_info'
+    network_function_device_id = sa.Column(sa.String(36), nullable=False)
+    cluster_group = sa.Column(sa.Integer(), nullable=True)
+    virtual_ip = sa.Column(sa.String(36), nullable=True)
+    multicast_ip = sa.Column(sa.String(36), nullable=True)
+    cluster_name = sa.Column(sa.String(36), nullable=True)
