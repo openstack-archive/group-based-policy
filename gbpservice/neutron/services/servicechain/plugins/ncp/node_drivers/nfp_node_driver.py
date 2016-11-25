@@ -213,6 +213,14 @@ class NFPClientApi(object):
                    network_function_id=network_function_id,
                    policy_target=policy_target)
 
+    def get_plumbing_info(self, context, node_driver_ctxt):
+        request_info = dict(profile=node_driver_ctxt.current_profile,
+                            tenant_id=node_driver_ctxt.provider['tenant_id'],
+                            provider=node_driver_ctxt.provider)
+        cctxt = self.client.prepare(version=self.RPC_API_VERSION)
+        return cctxt.call(context, 'get_plumbing_info',
+                          request_info=request_info)
+
 
 class NFPContext(object):
 
@@ -304,6 +312,7 @@ class NFPNodeDriver(driver_base.NodeDriverBase):
         return service_details
 
     def get_plumbing_info(self, context):
+        plumbing_request = {}
         context._plugin_context = self._get_resource_owner_context(
             context._plugin_context)
         service_type = context.current_profile['service_type']
@@ -317,8 +326,6 @@ class NFPNodeDriver(driver_base.NodeDriverBase):
             return {}
         # Management PTs are managed by NFP since it supports hosting multiple
         # logical services in a single device
-        plumbing_request = {'management': [], 'provider': [{}],
-                            'consumer': [{}]}
         # plumber will return stitching network PT instead of consumer
         # as chain is instantiated while creating provider group.
         if service_type in GATEWAY_PLUMBER_TYPE:
@@ -345,20 +352,20 @@ class NFPNodeDriver(driver_base.NodeDriverBase):
                         context.instance['id'],
                         sc_gateway_type_nodes=(
                             nfp_context['sc_gateway_type_nodes']))
+                    plumbing_request = self.nfp_notifier.get_plumbing_info(
+                            context._plugin_context, context)
             else:
                 NFPContext.store_nfp_context(
                     context.instance['id'],
                     sc_gateway_type_nodes=[gateway_type_node])
-
-            plumbing_request['plumbing_type'] = (
-                nfp_constants.GATEWAY_TYPE)
+                plumbing_request = self.nfp_notifier.get_plumbing_info(
+                        context._plugin_context, context)
 
         else:  # Loadbalancer which is one arm
             NFPContext.store_nfp_context(
                 context.instance['id'])
-            plumbing_request['consumer'] = []
-            plumbing_request['plumbing_type'] = (
-                    nfp_constants.ENDPOINT_TYPE)
+            plumbing_request = self.nfp_notifier.get_plumbing_info(
+                    context._plugin_context, context)
 
         LOG.info(_LI("Requesting plumber for %(plumbing_request)s PTs for "
                    "service type %(service_type)s"),
@@ -887,6 +894,7 @@ class NFPNodeDriver(driver_base.NodeDriverBase):
         allowed_chain_combinations = [
             [pconst.VPN],
             [pconst.VPN, pconst.FIREWALL],
+            [pconst.VPN, pconst.LOADBALANCER],
             [pconst.VPN, pconst.FIREWALL, pconst.LOADBALANCER],
             [pconst.VPN, pconst.FIREWALL, pconst.LOADBALANCERV2],
             [pconst.FIREWALL],
