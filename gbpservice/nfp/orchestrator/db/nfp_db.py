@@ -11,6 +11,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from oslo_serialization import jsonutils
 from oslo_utils import uuidutils
 from sqlalchemy.orm import exc
 
@@ -200,11 +201,11 @@ class NFPDbBase(common_db_mixin.CommonDbMixin):
                 session.add(port_info_db)
             session.flush()
             nfd_db.mgmt_port_id = port_info_db['id']
-            # del network_function_device['mgmt_port_id']
 
     def _set_monitoring_port_id_for_nfd(self, session,
                                         network_function_device_db,
-                                        network_function_device):
+                                        network_function_device,
+                                        is_update=False):
         nfd_db = network_function_device_db
         monitoring_port_id = network_function_device.get(
             'monitoring_port_id')
@@ -218,14 +219,17 @@ class NFPDbBase(common_db_mixin.CommonDbMixin):
                 port_classification=monitoring_port_id[
                     'port_classification'],
                 port_role=monitoring_port_id['port_role'])
-            session.add(port_info_db)
+            if is_update:
+                session.merge(port_info_db)
+            else:
+                session.add(port_info_db)
             session.flush()
             nfd_db.monitoring_port_id = monitoring_port_id['id']
-            del network_function_device['monitoring_port_id']
 
     def _set_monitoring_port_network_for_nfd(self, session,
                                              network_function_device_db,
-                                             network_function_device):
+                                             network_function_device,
+                                             is_update=False):
         nfd_db = network_function_device_db
         monitoring_port_network = network_function_device.get(
             'monitoring_port_network')
@@ -241,6 +245,34 @@ class NFPDbBase(common_db_mixin.CommonDbMixin):
             nfd_db.monitoring_port_network = (
                 monitoring_port_network['id'])
             del network_function_device['monitoring_port_network']
+
+    def _set_provider_metadata_for_nfd(self, session,
+                               network_function_device_db,
+                               network_function_device,
+                               is_update=False):
+        nfd_db = network_function_device_db
+        provider_metadata = nfd_db['provider_metadata']
+
+        if is_update:
+            if provider_metadata:
+                provider_metadata = jsonutils.loads(provider_metadata)
+            updated_provider_metadata_str = network_function_device.pop(
+                    'provider_metadata', {})
+            if not updated_provider_metadata_str:
+                return
+            if updated_provider_metadata_str:
+                updated_provider_metadata = jsonutils.loads(
+                    updated_provider_metadata_str)
+            if (type(updated_provider_metadata) is dict
+                    and updated_provider_metadata and provider_metadata):
+                updated_provider_metadata.update(provider_metadata)
+            provider_metadata_str = jsonutils.dumps(updated_provider_metadata)
+        else:
+            if not provider_metadata:
+                provider_metadata_str = ''
+                return
+            provider_metadata_str = jsonutils.dumps(provider_metadata)
+        nfd_db.provider_metadata = provider_metadata_str
 
     def create_network_function_device(self, session, network_function_device):
         with session.begin(subtransactions=True):
@@ -264,16 +296,19 @@ class NFPDbBase(common_db_mixin.CommonDbMixin):
                 session, network_function_device_db, network_function_device)
             self._set_monitoring_port_network_for_nfd(
                 session, network_function_device_db, network_function_device)
+            self._set_provider_metadata_for_nfd(
+                session, network_function_device_db, network_function_device)
             return self._make_network_function_device_dict(
                 network_function_device_db)
 
     def _get_network_function_device(self, session,
                                      network_function_device_id):
         try:
-            return self._get_by_id(
+            nfd = self._get_by_id(
                 session,
                 nfp_db_model.NetworkFunctionDevice,
                 network_function_device_id)
+            return nfd
         except exc.NoResultFound:
             raise nfp_exc.NetworkFunctionDeviceNotFound(
                 network_function_device_id=network_function_device_id)
@@ -284,6 +319,11 @@ class NFPDbBase(common_db_mixin.CommonDbMixin):
         with session.begin(subtransactions=True):
             network_function_device_db = self._get_network_function_device(
                 session, network_function_device_id)
+            if updated_network_function_device.get('provider_metadata'):
+                updated_network_function_device[
+                        'provider_metadata'] = jsonutils.dumps(
+                                updated_network_function_device[
+                                    'provider_metadata'])
             if updated_network_function_device.get('mgmt_port_id'):
                 self._set_mgmt_port_for_nfd(
                     session,
@@ -295,19 +335,35 @@ class NFPDbBase(common_db_mixin.CommonDbMixin):
                 self._set_monitoring_port_id_for_nfd(
                     session,
                     network_function_device_db,
-                    updated_network_function_device)
+                    updated_network_function_device,
+                    is_update=True)
             if 'monitoring_port_network' in updated_network_function_device:
                 self._set_monitoring_port_network_for_nfd(
                     session,
                     network_function_device_db,
-                    updated_network_function_device)
+                    updated_network_function_device,
+                    is_update=True)
+            self._set_provider_metadata_for_nfd(
+                    session, network_function_device_db,
+                    updated_network_function_device,
+                    is_update=True)
             mgmt_port_id = (
                 updated_network_function_device.pop('mgmt_port_id', None))
             if mgmt_port_id:
                 updated_network_function_device[
                     'mgmt_port_id'] = mgmt_port_id['id']
+
+            monitoring_port_id = (
+                updated_network_function_device.pop('monitoring_port_id',
+                                                    None))
+            if monitoring_port_id:
+                updated_network_function_device[
+                    'monitoring_port_id'] = monitoring_port_id['id']
             network_function_device_db.update(updated_network_function_device)
             updated_network_function_device['mgmt_port_id'] = mgmt_port_id
+            updated_network_function_device[
+                    'monitoring_port_id'] = monitoring_port_id
+
             return self._make_network_function_device_dict(
                 network_function_device_db)
 
@@ -348,6 +404,34 @@ class NFPDbBase(common_db_mixin.CommonDbMixin):
                                     sorts=sorts, limit=limit,
                                     marker_obj=marker_obj,
                                     page_reverse=page_reverse)
+
+    def increment_network_function_device_count(self, session,
+                                                network_function_device_id,
+                                                field_name):
+        with session.begin(subtransactions=True):
+            network_function_device = self._get_network_function_device(
+                session, network_function_device_id)
+            value = network_function_device[field_name]
+            value += 1
+            update_device = (
+                    {field_name: value})
+            self.update_network_function_device(session,
+                    network_function_device_id,
+                    update_device)
+
+    def decrement_network_function_device_count(self, session,
+                                                network_function_device_id,
+                                                field_name):
+        with session.begin(subtransactions=True):
+            network_function_device = self._get_network_function_device(
+                session, network_function_device_id)
+            value = network_function_device[field_name]
+            value -= 1
+            update_device = (
+                    {field_name: value})
+            self.update_network_function_device(session,
+                    network_function_device_id,
+                    update_device)
 
     def get_port_info(self, session, port_id, fields=None):
         port_info = self._get_port_info(session, port_id)
@@ -553,4 +637,76 @@ class NFPDbBase(common_db_mixin.CommonDbMixin):
                'interfaces_in_use': nfd['interfaces_in_use'],
                'status': nfd['status']
                }
+        if nfd.get('provider_metadata'):
+            res.update({'provider_metadata': nfd['provider_metadata']})
         return res
+
+    def add_cluster_info(self, session, cluster_info):
+        with session.begin(subtransactions=True):
+            cluster_info = nfp_db_model.ClusterInfo(
+                id=cluster_info['id'], tenant_id=cluster_info['tenant_id'],
+                network_function_device_id=cluster_info[
+                    'network_function_device_id'],
+                cluster_group=cluster_info[
+                    'cluster_group'], virtual_ip=cluster_info['virtual_ip'],
+                multicast_ip=cluster_info.get('multicast_ip', None),
+                cluster_name=cluster_info.get('cluster_name', None)
+            )
+            session.add(cluster_info)
+            return cluster_info
+
+    def insert_cluster_records(self, session, cluster_infos):
+        with session.begin(subtransactions=True):
+            for cluster_info in cluster_infos:
+                cluster_info = nfp_db_model.ClusterInfo(
+                        id=cluster_info['id'],
+                        tenant_id=cluster_info['tenant_id'],
+                        network_function_device_id=cluster_info[
+                            'network_function_device_id'],
+                        cluster_group=cluster_info['cluster_group'],
+                        virtual_ip=cluster_info['virtual_ip'],
+                        multicast_ip=cluster_info.get('multicast_ip', None),
+                        cluster_name=cluster_info.get('cluster_name', None))
+                session.add(cluster_info)
+
+    def get_cluster_info(self, session, _id):
+        try:
+            return self._get_by_id(
+                    session,
+                    nfp_db_model.ClusterInfo, _id)
+        except exc.NoResultFound:
+            raise nfp_exc.ClusterInfoNotFound(id=_id)
+
+    def get_all_cluster_info(self, session, filters=None, fields=None,
+                             sorts=None, limit=None, marker=None,
+                             page_reverse=False):
+        marker_obj = self._get_marker_obj(
+                'nfd_cluster_mapping_info', limit, marker)
+        return self._get_collection(session,
+                                    nfp_db_model.ClusterInfo,
+                                    self._get_cluster_info_dict,
+                                    filters=filters, fields=fields,
+                                    sorts=sorts, limit=limit,
+                                    marker_obj=marker_obj,
+                                    page_reverse=page_reverse)
+
+    def del_cluster_info(self, session, _id):
+        with session.begin(subtransactions=True):
+            cluster_info = self.get_cluster_info(session, _id)
+            session.delete(cluster_info)
+
+    def delete_cluster_info(self, session, port_id_list):
+        for port_id in port_id_list:
+            self.del_cluster_info(session, port_id)
+
+    def _get_cluster_info_dict(self, cluster_info, filters=None, fields=None,
+                               sorts=None, limit=None, marker=None,
+                               page_reverse=False):
+        return {
+            'id': cluster_info['id'], 'tenant_id': cluster_info['tenant_id'],
+            'network_function_device_id': cluster_info[
+                'network_function_device_id'],
+            'cluster_group': cluster_info['cluster_group'],
+            'multicast_ip': cluster_info['multicast_ip'],
+            'cluster_name': cluster_info['cluster_name']
+        }

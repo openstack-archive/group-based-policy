@@ -273,7 +273,8 @@ class NFPNodeDriverTestCase(
 
 class TestServiceChainInstance(NFPNodeDriverTestCase):
 
-    def test_node_create(self):
+    @mock.patch.object(nfp_node_driver.NFPClientApi, 'get_plumbing_info')
+    def test_node_create(self, plumbing_info):
         with mock.patch.object(nfp_node_driver.NFPClientApi,
                                "create_network_function") as create_nf:
             with mock.patch.object(nfp_node_driver.NFPClientApi,
@@ -284,6 +285,12 @@ class TestServiceChainInstance(NFPNodeDriverTestCase):
                 get_nf.return_value = {
                     'id': '126231632163',
                     'status': 'ACTIVE'
+                }
+                plumbing_info.return_value = {
+                    'management': [],
+                    'provider': [{}],
+                    'consumer': [{}],
+                    'plumbing_type': 'gateway'
                 }
                 self._create_simple_fw_service_chain()
                 create_nf.assert_called_once_with(
@@ -329,7 +336,8 @@ class TestServiceChainInstance(NFPNodeDriverTestCase):
                     get_nf.assert_called_once_with(mock.ANY, mock.ANY)
                     update_svc_config.assert_called_once_with()
 
-    def test_node_delete(self):
+    @mock.patch.object(nfp_node_driver.NFPClientApi, 'get_plumbing_info')
+    def test_node_delete(self, plumbing_info):
         with mock.patch.object(nfp_node_driver.NFPClientApi,
                                "create_network_function") as create_nf:
             with mock.patch.object(nfp_node_driver.NFPClientApi,
@@ -341,7 +349,12 @@ class TestServiceChainInstance(NFPNodeDriverTestCase):
                 create_nf.return_value = {
                     'id': '126231632163'
                 }
-
+                plumbing_info.return_value = {
+                    'management': [],
+                    'provider': [{}],
+                    'consumer': [{}],
+                    'plumbing_type': 'gateway'
+                }
                 prof = self.create_service_profile(
                                 service_type=constants.FIREWALL,
                                 vendor=self.SERVICE_PROFILE_VENDOR,
@@ -380,7 +393,8 @@ class TestServiceChainInstance(NFPNodeDriverTestCase):
                           context=mock.ANY,
                           network_function_id=mock.ANY)
 
-    def test_wait_for_network_function_delete_completion(self):
+    @mock.patch.object(nfp_node_driver.NFPClientApi, 'get_plumbing_info')
+    def test_wait_for_network_function_delete_completion(self, plumbing_info):
         with mock.patch.object(nfp_node_driver.NFPClientApi,
                                "create_network_function") as create_nf:
             with mock.patch.object(nfp_node_driver.NFPClientApi,
@@ -391,6 +405,12 @@ class TestServiceChainInstance(NFPNodeDriverTestCase):
                 }
                 create_nf.return_value = {
                     'id': '126231632163'
+                }
+                plumbing_info.return_value = {
+                    'management': [],
+                    'provider': [{}],
+                    'consumer': [{}],
+                    'plumbing_type': 'gateway'
                 }
                 prof = self.create_service_profile(
                                 service_type=constants.FIREWALL,
@@ -439,7 +459,8 @@ class TestServiceChainInstance(NFPNodeDriverTestCase):
                                 req.get_response(self.api))['port']
         return (pt, port)
 
-    def test_lb_node_create(self, consumer_external=False):
+    @mock.patch.object(nfp_node_driver.NFPClientApi, 'get_plumbing_info')
+    def test_lb_node_create(self, plumbing_info, consumer_external=False):
         with mock.patch.object(nfp_node_driver.NFPClientApi,
                                "create_network_function") as create_nf:
             with mock.patch.object(nfp_node_driver.NFPClientApi,
@@ -451,7 +472,12 @@ class TestServiceChainInstance(NFPNodeDriverTestCase):
                 create_nf.return_value = {
                     'id': '126231632163'
                 }
-
+                plumbing_info.return_value = {
+                    'management': [],
+                    'provider': [{}],
+                    'consumer': [{}],
+                    'plumbing_type': 'endpoint'
+                }
                 node_id = self._nfp_create_profiled_servicechain_node(
                     service_type=constants.LOADBALANCER)['servicechain_node'][
                     'id']
@@ -538,7 +564,8 @@ class TestServiceChainInstance(NFPNodeDriverTestCase):
         self.assertEqual('NoDriverAvailableForAction',
                     res['NeutronError']['type'])
 
-    def test_validate_update(self):
+    @mock.patch.object(nfp_node_driver.NFPClientApi, 'get_plumbing_info')
+    def test_validate_update(self, plumbing_info):
         with mock.patch.object(nfp_node_driver.NFPClientApi,
                                "create_network_function") as create_nf:
             with mock.patch.object(nfp_node_driver.NFPClientApi,
@@ -549,6 +576,12 @@ class TestServiceChainInstance(NFPNodeDriverTestCase):
                 get_nf.return_value = {
                     'id': '126231632163',
                     'status': 'ACTIVE'
+                }
+                plumbing_info.return_value = {
+                    'management': [],
+                    'provider': [{}],
+                    'consumer': [{}],
+                    'plumbing_type': 'gateway'
                 }
                 fw_prof = self.create_service_profile(
                             service_type=constants.FIREWALL,
@@ -603,7 +636,8 @@ class TestServiceChainInstance(NFPNodeDriverTestCase):
                     self.assertEqual('NoDriverAvailableForAction',
                             res['NeutronError']['type'])
 
-    def test_update_node_consumer_ptg_added(self):
+    @mock.patch.object(nfp_node_driver.NFPClientApi, 'get_plumbing_info')
+    def test_update_node_consumer_ptg_added(self, plumbing_info):
         with mock.patch.object(nfp_node_driver.NFPClientApi,
                                "create_network_function") as create_nf:
             with mock.patch.object(nfp_node_driver.NFPClientApi,
@@ -615,7 +649,12 @@ class TestServiceChainInstance(NFPNodeDriverTestCase):
                 create_nf.return_value = {
                     'id': '126231632163'
                 }
-
+                plumbing_info.return_value = {
+                    'management': [],
+                    'provider': [{}],
+                    'consumer': [{}],
+                    'plumbing_type': 'gateway'
+                }
                 prof = self.create_service_profile(
                                 service_type=constants.FIREWALL,
                                 vendor=self.SERVICE_PROFILE_VENDOR,
@@ -695,7 +734,8 @@ class TestServiceChainInstance(NFPNodeDriverTestCase):
                     consumer['id'], expected_res_status=204)
             ptg_removed.assert_called_once_with(mock.ANY, mock.ANY, mock.ANY)
 
-    def test_policy_target_add_remove(self):
+    @mock.patch.object(nfp_node_driver.NFPClientApi, 'get_plumbing_info')
+    def test_policy_target_add_remove(self, plumbing_info):
         prof = self._create_service_profile(
             service_type='LOADBALANCER',
             vendor=self.SERVICE_PROFILE_VENDOR,
@@ -719,6 +759,12 @@ class TestServiceChainInstance(NFPNodeDriverTestCase):
                 }
                 create_nf.return_value = {
                     'id': '126231632163'
+                }
+                plumbing_info.return_value = {
+                    'management': [],
+                    'provider': [{}],
+                    'consumer': [{}],
+                    'plumbing_type': 'endpoint'
                 }
                 params = [{'type': 'ip_single', 'name': 'vip_ip',
                            'value': 'self_subnet'}]
@@ -749,10 +795,18 @@ class TestServiceChainInstance(NFPNodeDriverTestCase):
         # Verify notification issued for deleted PT in the provider
         with mock.patch.object(nfp_node_driver.NFPClientApi,
                           "policy_target_removed_notification") as pt_removed:
-            self.delete_policy_target(pt['id'])
-            pt_removed.assert_called_once_with(mock.ANY, mock.ANY, mock.ANY)
+            with mock.patch.object(nfp_node_driver.NFPClientApi,
+                                   'get_network_function') as get_nf:
+                get_nf.return_value = {
+                    'id': '126231632163',
+                    'status': 'ACTIVE'
+                }
+                self.delete_policy_target(pt['id'])
+                pt_removed.assert_called_once_with(mock.ANY, mock.ANY,
+                                                   mock.ANY)
 
-    def test_policy_target_group_updated(self):
+    @mock.patch.object(nfp_node_driver.NFPClientApi, 'get_plumbing_info')
+    def test_policy_target_group_updated(self, plumbing_info):
         prof = self._create_service_profile(
                 service_type='FIREWALL',
                 vendor=self.SERVICE_PROFILE_VENDOR,
@@ -798,6 +852,12 @@ class TestServiceChainInstance(NFPNodeDriverTestCase):
                 }
                 create_nf.return_value = {
                     'id': '126231632163'
+                }
+                plumbing_info.return_value = {
+                    'management': [],
+                    'provider': [{}],
+                    'consumer': [{}],
+                    'plumbing_type': 'gateway'
                 }
                 orig_ptg = self.create_policy_target_group(
                         description="opflex_eoc:%s" % ref_pt['port_id'],
