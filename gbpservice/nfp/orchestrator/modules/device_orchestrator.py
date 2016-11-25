@@ -410,38 +410,24 @@ class DeviceOrchestrator(nfp_api.NfpEventHandler):
         return network_function_devices
 
     def _increment_device_ref_count(self, device):
-        network_function_device = (
-            self.nsf_db.get_network_function_device(
-                self.db_session, device['id']))
-        network_function_device['reference_count'] += 1
-        update_device = (
-            {'reference_count': network_function_device['reference_count']})
-        self.nsf_db.update_network_function_device(self.db_session,
-                                                   device['id'], update_device)
+        self.nsf_db.increment_network_function_device_count(self.db_session,
+                device['id'], 'reference_count')
+        device['reference_count'] += 1
 
     def _decrement_device_ref_count(self, device):
-        network_function_device = (
-            self.nsf_db.get_network_function_device(
-                self.db_session, device['id']))
-        network_function_device['reference_count'] -= 1
-        update_device = (
-            {'reference_count': network_function_device['reference_count']})
-        self.nsf_db.update_network_function_device(self.db_session,
-                                                   device['id'], update_device)
+        self.nsf_db.decrement_network_function_device_count(self.db_session,
+                device['id'], 'reference_count')
+        device['reference_count'] -= 1
 
     def _increment_device_interface_count(self, device):
-        device['interfaces_in_use'] += len(device['ports'])
-        update_device = (
-            {'interfaces_in_use': device['interfaces_in_use']})
-        self.nsf_db.update_network_function_device(self.db_session,
-                                                   device['id'], update_device)
+        self.nsf_db.increment_network_function_device_count(self.db_session,
+                device['id'], 'interfaces_in_use')
+        device['interfaces_in_use'] += 1
 
     def _decrement_device_interface_count(self, device):
-        device['interfaces_in_use'] -= len(device['ports'])
-        update_device = (
-            {'interfaces_in_use': device['interfaces_in_use']})
-        self.nsf_db.update_network_function_device(self.db_session,
-                                                   device['id'], update_device)
+        self.nsf_db.decrement_network_function_device_count(self.db_session,
+                device['id'], 'interfaces_in_use')
+        device['interfaces_in_use'] -= 1
 
     def _get_orchestration_driver(self, service_vendor):
         return self.orchestration_driver
