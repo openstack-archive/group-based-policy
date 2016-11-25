@@ -390,7 +390,7 @@ class NFPDBTestCase(SqlTestCase):
         network_function_device = self.nfp_db.create_network_function_device(
             self.session, attrs)
         for key in attrs:
-            if key == 'mgmt_port_id':
+            if (key == 'mgmt_port_id') or (key == 'monitoring_port_id'):
                 self.assertEqual(attrs[key]['id'],
                                  network_function_device[key])
                 continue
@@ -451,7 +451,7 @@ class NFPDBTestCase(SqlTestCase):
         db_network_function_device = self.nfp_db.get_network_function_device(
             self.session, network_function_device['id'])
         for key in attrs:
-            if key == 'mgmt_port_id':
+            if (key == 'mgmt_port_id') or (key == 'monitoring_port_id'):
                 self.assertEqual(attrs[key]['id'],
                                  network_function_device[key])
                 continue
@@ -504,7 +504,7 @@ class NFPDBTestCase(SqlTestCase):
         network_function_device = self.nfp_db.create_network_function_device(
             self.session, attrs)
         for key in attrs:
-            if key == 'mgmt_port_id':
+            if (key == 'mgmt_port_id') or (key == 'monitoring_port_id'):
                 self.assertEqual(attrs[key]['id'],
                                  network_function_device[key])
                 continue
@@ -523,7 +523,7 @@ class NFPDBTestCase(SqlTestCase):
         self.assertEqual('new_name', updated_nfd['name'])
         del updated_nfd['name']
         for key in attrs:
-            if key == 'mgmt_port_id':
+            if (key == 'mgmt_port_id') or (key == 'monitoring_port_id'):
                 self.assertEqual(attrs[key]['id'],
                                  network_function_device[key])
                 continue
@@ -546,7 +546,7 @@ class NFPDBTestCase(SqlTestCase):
         self.assertEqual(updated_nfd['mgmt_port_id'], 'myid3')
         del updated_nfd['mgmt_port_id']
         for key in attrs:
-            if key != 'mgmt_port_id':
+            if (key != 'mgmt_port_id') and (key != 'monitoring_port_id'):
                 self.assertEqual(attrs[key], updated_nfd[key])
 
     def test_delete_network_function_device(self):
