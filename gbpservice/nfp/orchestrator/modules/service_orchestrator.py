@@ -40,6 +40,7 @@ LOG = nfp_logging.getLogger(__name__)
 
 STOP_POLLING = {'poll': False}
 CONTINUE_POLLING = {'poll': True}
+GATEWAY_SERVICES = [nfp_constants.FIREWALL, nfp_constants.VPN]
 
 
 def rpc_init(controller, config):
@@ -233,6 +234,11 @@ class RpcHandler(object):
         service_orchestrator = ServiceOrchestrator(self._controller, self.conf)
         return service_orchestrator.get_network_function_context(
             network_function_id)
+
+    @log_helpers.log_method_call
+    def get_plumbing_info(self, context, request_info):
+        service_orchestrator = ServiceOrchestrator(self._controller, self.conf)
+        return service_orchestrator.get_pt_info_for_plumbing(request_info)
 
 
 class RpcHandlerConfigurator(object):
@@ -2048,6 +2054,16 @@ class ServiceOrchestrator(nfp_api.NfpEventHandler):
                       'mngmt_port_info': mngmt_port_info,
                       'monitor_port_info': monitor_port_info}
         return nf_context
+
+    def get_pt_info_for_plumbing(self, chain_info):
+        plumbing_request = {'management': [], 'provider': [{}],
+                            'consumer': [{}]}
+        service_type = chain_info['profile']['service_type']
+        if service_type.lower() in GATEWAY_SERVICES:
+            plumbing_request['plumbing_type'] = nfp_constants.GATEWAY_TYPE
+        else:
+            plumbing_request['plumbing_type'] = nfp_constants.ENDPOINT_TYPE
+        return plumbing_request
 
 
 class NSOConfiguratorRpcApi(object):
