@@ -229,10 +229,9 @@ class GenericConfigEventHandlerTestCase(base.BaseTestCase):
                 mock_delete_src_routes.assert_called_with(
                             self.fo.context, resource_data)
             elif const.EVENT_CONFIGURE_HEALTHMONITOR in ev.id:
-                if periodicity == const.EVENT_CONFIGURE_HEALTHMONITOR_MAXRETRY:
+                if periodicity == const.INITIAL_HM_RETRIES:
                     mock_hm_poll_event.assert_called_with(
-                        ev, max_times=(
-                                const.EVENT_CONFIGURE_HEALTHMONITOR_MAXRETRY))
+                                ev, max_times=const.INITIAL_HM_RETRIES)
                 elif periodicity == const.FOREVER:
                     mock_hm_poll_event.assert_called_with(ev)
             elif ev.id == const.EVENT_CLEAR_HEALTHMONITOR:
