@@ -147,12 +147,22 @@ class Controller(rest.RestController):
                  "data : %(interface_data)s ") %
                  {'interface_data': config_data})
 
+    def get_source_cidrs_and_gateway_ip(self, route_info):
+        nfds = route_info['resource_data']['nfds']
+        source_cidrs = []
+        for nfd in nfds:
+            for network in nfd['networks']:
+                source_cidrs.append(network['cidr'])
+                if network['type'] == 'stitching':
+                    gateway_ip = network['gw_ip']
+        return source_cidrs, gateway_ip
+
     def _add_routes(self, route_info):
         LOG.info(_LI("Configuring routes with configuration "
                  "data : %(route_data)s ") %
                  {'route_data': route_info['resource_data']})
-        source_cidrs = route_info['resource_data']['source_cidrs']
-        gateway_ip = route_info['resource_data']['gateway_ip']
+        source_cidrs, gateway_ip = self.get_source_cidrs_and_gateway_ip(
+                                        route_info)
         default_route_commands = []
         for cidr in source_cidrs:
             source_interface = self._get_if_name_by_cidr(cidr)

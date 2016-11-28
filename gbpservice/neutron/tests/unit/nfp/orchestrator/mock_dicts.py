@@ -633,7 +633,9 @@ class DummyDictionaries(object):
     network_function_details = {
         'network_function': {
             'status': 'ACTIVE',
-            'description': '',
+            'description': '\nuser_access_ip=\'192.168.203.12\';'
+                           'fixed_ip=\'11.0.3.4\';'
+                           'tunnel_local_cidr=\'11.0.3.0/24\'',
             'config_policy_id': '57d6b523-ae89-41cd-9b63-9bfb054a20b6',
             'tenant_id': 'ee27b1d0d7f04ac390ee7ec4b2fd5b13',
             'network_function_instances': [
