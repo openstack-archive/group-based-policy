@@ -180,9 +180,9 @@ class VPNaasEventHandler(nfp_api.NfpEventHandler):
         self._drivers = drivers
         self._plugin_rpc = VpnaasRpcSender(self._sc)
 
-    def _get_driver(self, service_vendor):
+    def _get_driver(self, service_vendor, service_feature):
 
-        driver_id = const.SERVICE_TYPE + service_vendor
+        driver_id = const.SERVICE_TYPE + service_vendor + service_feature
         return self._drivers[driver_id]
 
     def handle_event(self, ev):
@@ -203,9 +203,10 @@ class VPNaasEventHandler(nfp_api.NfpEventHandler):
                        % (os.getpid(),
                           ev.id, const.VPN_GENERIC_CONFIG_RPC_TOPIC))
                 LOG.debug(msg)
-                service_vendor = (
-                        ev.data['context']['agent_info']['service_vendor'])
-                driver = self._get_driver(service_vendor)
+                agent_info = ev.data['context']['agent_info']
+                service_vendor = agent_info['service_vendor']
+                service_feature = agent_info['service_feature']
+                driver = self._get_driver(service_vendor, service_feature)
                 setattr(VPNaasEventHandler, "service_driver", driver)
                 self._vpnservice_updated(ev, driver)
             except Exception as err:
@@ -277,7 +278,6 @@ class VPNaasEventHandler(nfp_api.NfpEventHandler):
         Returns: None
         """
         try:
-
             return self.service_driver.check_status(context, svc_context)
         except Exception as err:
             msg = ("Failed to sync ipsec connection information. %s."
