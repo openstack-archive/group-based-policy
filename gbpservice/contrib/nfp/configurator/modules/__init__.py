@@ -32,3 +32,12 @@ nfp_configurator_config_drivers_opts = [
 
 oslo_config.CONF.register_opts(nfp_configurator_config_drivers_opts,
                                "CONFIG_DRIVERS")
+
+nfp_configurator_config_agents_opts = [
+    oslo_config.ListOpt(
+        'agents',
+        default=['gbpservice.contrib.nfp.configurator.agents'],
+        help='Config agents directory')]
+
+oslo_config.CONF.register_opts(nfp_configurator_config_agents_opts,
+                               "CONFIG_AGENTS")
