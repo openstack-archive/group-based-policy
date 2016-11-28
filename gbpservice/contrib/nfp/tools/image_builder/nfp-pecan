@@ -1,6 +1,4 @@
 #!/bin/sh
-
-# nfp_pecan serves as REST server inside nfp_controller
 mkdir -p /var/run/nfp
 PIDFILE=/var/run/nfp/nfp_pecan.pid
 tmp_pidfile=$(tempfile -s .nfp_pecan.init)
