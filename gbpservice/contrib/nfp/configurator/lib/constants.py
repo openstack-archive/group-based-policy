@@ -27,8 +27,6 @@ NOTIFICATION_QUEUE = 'configurator-notifications'
 FIREWALL = 'firewall'
 VPN = 'vpn'
 LOADBALANCER = 'loadbalancer'
-HEALTHMONITOR = 'healthmonitor'
-VPN = 'vpn'
 VYOS = 'vyos'
 LOADBALANCERV2 = 'loadbalancerv2'
 HAPROXY = 'haproxy'
@@ -40,6 +38,10 @@ POST = 'post'
 PUT = 'put'
 UNHANDLED = "UNHANDLED"
 
+HEALTHMONITOR = 'healthmonitor'
+INTERFACES = 'interfaces'
+ROUTES = 'routes'
+
 SUCCESS_CODES = [200, 201, 202, 203, 204]
 ERROR_CODES = [400, 404, 500]
 
@@ -50,5 +52,6 @@ STATUS_ERROR = "ERROR"
 STATUS_SUCCESS = "SUCCESS"
 UNHANDLED = "UNHANDLED"
 
-AGENTS_PKG = 'gbpservice.contrib.nfp.configurator.agents'
+AGENTS_PKG = ['gbpservice.contrib.nfp.configurator.agents',
+              'gbpservice.nsd.configurator.agents']
 CONFIGURATOR_RPC_TOPIC = 'configurator'
