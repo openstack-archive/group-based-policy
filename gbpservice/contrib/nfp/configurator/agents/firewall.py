@@ -182,12 +182,12 @@ class FWaasEventHandler(nfp_api.NfpEventHandler):
         self.plugin_rpc = FwaasRpcSender(sc, self.host,
                                          self.drivers, self.rpcmgr)
 
-    def _get_driver(self, service_vendor):
+    def _get_driver(self, service_vendor, service_feature):
         """ Retrieves driver object given the service type
 
         """
 
-        driver_id = const.SERVICE_TYPE + service_vendor
+        driver_id = const.SERVICE_TYPE + service_vendor + service_feature
         return self.drivers[driver_id]
 
     def _is_firewall_rule_exists(self, fw):
@@ -222,8 +222,10 @@ class FWaasEventHandler(nfp_api.NfpEventHandler):
             # the API context alongside other relevant information like
             # service vendor and type. Agent info is constructed inside
             # the demuxer library.
-            service_vendor = ev.data['context']['agent_info']['service_vendor']
-            driver = self._get_driver(service_vendor)
+            agent_info = ev.data['context']['agent_info']
+            service_vendor = agent_info['service_vendor']
+            service_feature = agent_info.get('service_feature', '')
+            driver = self._get_driver(service_vendor, service_feature)
 
             self.method = getattr(driver, "%s" % (ev.id.lower()))
             self.invoke_driver_for_plugin_api(ev)
@@ -370,6 +372,8 @@ def load_drivers(conf):
         driver_obj = driver_name(conf=conf)
         drivers[service_type] = driver_obj
 
+    msg = ("Firewall loaded drivers: %s" % drivers)
+    LOG.info(msg)
     return drivers
 
 
