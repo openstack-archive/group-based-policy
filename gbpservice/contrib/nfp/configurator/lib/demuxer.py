@@ -77,10 +77,7 @@ class ServiceAgentDemuxer(object):
         # Get service type based on the fact that for some request data
         # formats the 'type' key is absent. Check for invalid types
         service_type = request_data['info'].get('service_type').lower()
-        if (service_type not in const.supported_service_types):
-            return const.invalid_service_type
-        else:
-            return service_type
+        return service_type
 
     def get_service_agent_info(self, operation, resource_type,
                                request_data, is_generic_config):
@@ -111,6 +108,10 @@ class ServiceAgentDemuxer(object):
         service_vendor = request_data['info']['service_vendor']
         if str(service_vendor) == 'None':
             service_vendor = vendor_map[resource_type]
+
+        service_feature = request_data['info'].get('service_feature')
+        if not service_feature:
+            service_feature = ''
 
         for config_data in request_data['config']:
             sa_info = {}
@@ -144,7 +145,10 @@ class ServiceAgentDemuxer(object):
             else:
                 if is_nfp_svc:
                     resource_type = const.NFP_SERVICE
-                method = resource_type_to_method_map[resource_type]
+                try:
+                    method = resource_type_to_method_map[resource_type]
+                except Exception:
+                    method = 'handle_config'
 
             sa_info.update({'method': method,
                             'resource_data': data,
@@ -152,6 +156,7 @@ class ServiceAgentDemuxer(object):
                                    # This is the API context
                                    'context': context,
                                    'service_vendor': service_vendor.lower(),
+                                   'service_feature': service_feature,
                                    'resource_type': resource_type.lower(),
                                    'resource': resource.lower()},
                             'is_generic_config': is_generic_config})

@@ -21,6 +21,7 @@ class NFPNeutronNetworkDriver(ndb.NFPNetworkDriverBase):
     def __init__(self, config):
         # self.network_handler = openstack_driver.NeutronClient(config)
         self.neutron_client = openstack_driver.NeutronClient(config)
+        self.config = config
 
     def setup_traffic_steering(self):
         pass
@@ -72,12 +73,16 @@ class NFPNeutronNetworkDriver(ndb.NFPNetworkDriverBase):
         cidr = subnet['subnet']['cidr']
         gateway_ip = subnet['subnet']['gateway_ip']
 
-        return (ip, mac, cidr, gateway_ip)
+        return (ip, mac, cidr, gateway_ip, port, subnet)
 
-    def set_promiscuos_mode(self, token, port_id):
+    def set_promiscuos_mode(self, token, port_id, enable_port_security):
+        if not enable_port_security:
+            port_security = False
+        else:
+            port_security = True
         self.neutron_client.update_port(token, port_id,
                                         security_groups=[],
-                                        port_security_enabled=False)
+                                        port_security_enabled=port_security)
 
     def get_service_profile(self, token, service_profile_id):
         return {}
