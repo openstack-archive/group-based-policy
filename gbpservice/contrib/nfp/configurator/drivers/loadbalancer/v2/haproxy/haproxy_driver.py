@@ -27,7 +27,7 @@ from gbpservice.contrib.nfp.configurator.drivers.loadbalancer.\
 from gbpservice.contrib.nfp.configurator.drivers.loadbalancer.\
     v2.haproxy.rest_api_driver import HaproxyAmphoraLoadBalancerDriver
 from gbpservice.contrib.nfp.configurator.lib import constants as common_const
-from gbpservice.contrib.nfp.configurator.lib.data_parser import DataParser
+from gbpservice.contrib.nfp.configurator.lib import data_parser
 from gbpservice.contrib.nfp.configurator.lib import lb_constants
 from gbpservice.contrib.nfp.configurator.lib import lbv2_constants
 from gbpservice.nfp.common import exceptions
@@ -133,7 +133,7 @@ class OctaviaDataModelBuilder(object):
         if not amphorae:
             raise exceptions.IncompleteData(
                 "Amphora information is missing")
-        # REVISIT(jiahao): vrrp_group, topology, server_group_id are not
+        # REVISIT(jiahao): cluster_group, topology, affinity_group_id are not
         # included yet
         args.update({
             'vip': vip,
@@ -343,7 +343,7 @@ class HaproxyLoadBalancerDriver(LbGenericConfigDriver,
         super(HaproxyLoadBalancerDriver, self).__init__()
         self.conf = conf
         self.port = haproxy_driver_constants.CONFIGURATION_SERVER_PORT
-        self.parse = DataParser()
+        self.parse = data_parser.DataParser()
         self.amphora_driver = HaproxyAmphoraLoadBalancerDriver()
         self.cert_manager = LocalCertManager()
 
@@ -382,7 +382,7 @@ class HaproxyCommonManager(object):
 
     def __init__(self, driver):
         self.driver = driver
-        self.parse = DataParser()
+        self.parse = data_parser.DataParser()
 
     def _deploy(self, context, obj):
         pass

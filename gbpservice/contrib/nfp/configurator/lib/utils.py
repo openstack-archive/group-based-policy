@@ -76,12 +76,14 @@ class ConfiguratorUtils(object):
                         continue
                     if hasattr(class_obj, 'service_vendor'):
                         key += class_obj.service_vendor
+                    if hasattr(class_obj, 'service_feature'):
+                        key += class_obj.service_feature
                     if key:
                         driver_objects[key] = class_obj
 
         return driver_objects
 
-    def load_agents(self, pkg):
+    def load_agents(self):
         """Load all the agents inside pkg.
 
         @param pkg : package
@@ -91,24 +93,26 @@ class ConfiguratorUtils(object):
 
         """
         imported_service_agents = []
-        base_agent = __import__(pkg,
-                                globals(), locals(), ['agents'], -1)
-        agents_dir = base_agent.__path__[0]
-        syspath = sys.path
-        sys.path = [agents_dir] + syspath
-        try:
-            files = os.listdir(agents_dir)
-        except OSError:
-            msg = ("Failed to read files from dir %s" % (agents_dir))
-            LOG.error(msg)
-            files = []
+        pkgs = self.conf.CONFIG_AGENTS.agents
+        for pkg in pkgs:
+            base_agent = __import__(pkg,
+                                    globals(), locals(), ['agents'], -1)
+            agents_dir = base_agent.__path__[0]
+            syspath = sys.path
+            sys.path = [agents_dir] + syspath
+            try:
+                files = os.listdir(agents_dir)
+            except OSError:
+                msg = ("Failed to read files from dir %s" % (agents_dir))
+                LOG.error(msg)
+                files = []
 
-        for fname in files:
-            if fname.endswith(".py") and fname != '__init__.py':
-                agent = __import__(pkg, globals(),
-                                   locals(), [fname[:-3]], -1)
-                imported_service_agents += [
-                                eval('agent.%s' % (fname[:-3]))]
-                # modules += [__import__(fname[:-3])]
-        sys.path = syspath
+            for fname in files:
+                if fname.endswith(".py") and fname != '__init__.py':
+                    agent = __import__(pkg, globals(),
+                                       locals(), [fname[:-3]], -1)
+                    imported_service_agents += [
+                                    eval('agent.%s' % (fname[:-3]))]
+                    # modules += [__import__(fname[:-3])]
+            sys.path = syspath
         return imported_service_agents
