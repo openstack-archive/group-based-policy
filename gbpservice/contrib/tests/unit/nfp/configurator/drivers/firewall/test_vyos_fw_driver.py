@@ -124,7 +124,8 @@ class FwGenericConfigDriverTestCase(base.BaseTestCase):
             self.driver.configure_routes(self.fo.context, self.kwargs)
 
             data = list()
-            data.append(self.fo.data_for_add_src_route)
+            data.append(self.fo.data_for_add_src_route[0])
+            data.append(self.fo.data_for_add_src_route[1])
             data = jsonutils.dumps(data)
             mock_post.assert_called_with(
                 self.fo.get_url_for_api('add_src_route'),
@@ -146,7 +147,8 @@ class FwGenericConfigDriverTestCase(base.BaseTestCase):
                 self.fo.context, self.kwargs)
 
             data = list()
-            data.append(self.fo.data_for_del_src_route)
+            data.append(self.fo.data_for_del_src_route[0])
+            data.append(self.fo.data_for_del_src_route[1])
             data = jsonutils.dumps(data)
             mock_delete.assert_called_with(
                 self.fo.get_url_for_api('del_src_route'),
@@ -186,7 +188,7 @@ class FwaasDriverTestCase(base.BaseTestCase):
             mock.patch.object(
                 self.resp, 'json', return_value=self.fake_resp_dict)):
             mock_post.configure_mock(status_code=200)
-            self.driver.create_firewall(self.fo.context,
+            self.driver.create_firewall(self.fo.firewall_api_context(),
                                         self.fo.firewall, self.fo.host)
             mock_post.assert_called_with(self.fo.get_url_for_api('config_fw'),
                                          data=self.firewall,
@@ -204,7 +206,7 @@ class FwaasDriverTestCase(base.BaseTestCase):
                 requests, 'put', return_value=self.resp) as mock_put, (
             mock.patch.object(
                 self.resp, 'json', return_value=self.fake_resp_dict)):
-            self.driver.update_firewall(self.fo.context,
+            self.driver.update_firewall(self.fo.firewall_api_context(),
                                         self.fo.firewall, self.fo.host)
             mock_put.assert_called_with(self.fo.get_url_for_api('update_fw'),
                                         data=self.firewall,
@@ -222,7 +224,7 @@ class FwaasDriverTestCase(base.BaseTestCase):
                 requests, 'delete', return_value=self.resp) as mock_delete, (
             mock.patch.object(
                 self.resp, 'json', return_value=self.fake_resp_dict)):
-            self.driver.delete_firewall(self.fo.context,
+            self.driver.delete_firewall(self.fo.firewall_api_context(),
                                         self.fo.firewall, self.fo.host)
             mock_delete.assert_called_with(
                 self.fo.get_url_for_api('delete_fw'),
