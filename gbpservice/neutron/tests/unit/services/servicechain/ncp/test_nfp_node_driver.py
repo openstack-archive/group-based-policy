@@ -68,9 +68,6 @@ class NFPNodeDriverTestCase(
                 "ClientAddressPoolCidr": {
                      "type": "string", "description": "Pool"
                 },
-                "ServiceDescription": {
-                     "type": "string", "description": "fip;tunnel_local-cidr"
-                }
             },
             "resources": {
                 "SSLVPNConnection": {
@@ -97,9 +94,6 @@ class NFPNodeDriverTestCase(
                             "get_param": "Subnet"
                         },
                         "admin_state_up": 'true',
-                        "description": {
-                            "get_param": "ServiceDescription"
-                        },
                         "name": "VPNService"
                     }
                 }

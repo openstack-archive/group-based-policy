@@ -408,7 +408,7 @@ class LBaaSEventHandler(agent_base.AgentBaseEventHandler,
         """
         self.context = context.get_admin_context_without_session()
 
-    def _get_driver(self, service_vendor):
+    def _get_driver(self, service_vendor, service_feature):
         """Retrieves service driver instance based on service type
         and service vendor.
 
@@ -417,7 +417,7 @@ class LBaaSEventHandler(agent_base.AgentBaseEventHandler,
         Returns: Service driver instance
 
         """
-        driver = lb_constants.SERVICE_TYPE + service_vendor
+        driver = lb_constants.SERVICE_TYPE + service_vendor + service_feature
         return self.drivers[driver]
 
     def handle_event(self, ev):
@@ -458,7 +458,7 @@ class LBaaSEventHandler(agent_base.AgentBaseEventHandler,
                 """
                 pass
             else:
-                msg = ("Successfully handled event %s" % (ev.id))
+                msg = ("Completed handling event %s" % (ev.id))
                 LOG.info(msg)
                 self.sc.event_complete(ev)
 
@@ -468,7 +468,8 @@ class LBaaSEventHandler(agent_base.AgentBaseEventHandler,
         vip = data['vip']
         agent_info = ev.data['context'].pop('agent_info')
         service_vendor = agent_info['service_vendor']
-        driver = self._get_driver(service_vendor)
+        service_feature = agent_info['service_feature']
+        driver = self._get_driver(service_vendor, service_feature)
 
         try:
             if operation == lb_constants.CREATE:
@@ -481,7 +482,7 @@ class LBaaSEventHandler(agent_base.AgentBaseEventHandler,
                 self.plugin_rpc.vip_deleted(vip,
                                             lb_constants.ACTIVE, agent_info)
                 return  # Don't update object status for delete operation
-        except Exception:
+        except Exception as e:
             if operation == lb_constants.DELETE:
                 msg = ("Failed to delete vip %s" % (vip['id']))
                 self.plugin_rpc.vip_deleted(vip,
@@ -491,6 +492,7 @@ class LBaaSEventHandler(agent_base.AgentBaseEventHandler,
                 self.plugin_rpc.update_status('vip', vip['id'],
                                               lb_constants.ERROR,
                                               agent_info, vip)
+                raise e
         else:
             self.plugin_rpc.update_status('vip', vip['id'],
                                           lb_constants.ACTIVE,
@@ -511,10 +513,11 @@ class LBaaSEventHandler(agent_base.AgentBaseEventHandler,
         pool = data['pool']
         agent_info = context.pop('agent_info')
         service_vendor = agent_info['service_vendor']
+        service_feature = agent_info['service_feature']
         try:
             if operation == lb_constants.CREATE:
                 driver_name = data['driver_name']
-                driver_id = driver_name + service_vendor
+                driver_id = driver_name + service_vendor + service_feature
                 if (driver_id) not in self.drivers.keys():
                     msg = ('No device driver on agent: %s.' % (driver_name))
                     LOG.error(msg)
@@ -527,14 +530,16 @@ class LBaaSEventHandler(agent_base.AgentBaseEventHandler,
                 LBaaSEventHandler.instance_mapping[pool['id']] = driver_name
             elif operation == lb_constants.UPDATE:
                 old_pool = data['old_pool']
-                driver = self._get_driver(service_vendor)  # pool['id'])
+                driver = self._get_driver(service_vendor,
+                                          service_feature)  # pool['id'])
                 driver.update_pool(old_pool, pool, context)
             elif operation == lb_constants.DELETE:
-                driver = self._get_driver(service_vendor)  # pool['id'])
+                driver = self._get_driver(service_vendor,
+                                          service_feature)  # pool['id'])
                 driver.delete_pool(pool, context)
                 del LBaaSEventHandler.instance_mapping[pool['id']]
                 return  # Don't update object status for delete operation
-        except Exception:
+        except Exception as e:
             if operation == lb_constants.DELETE:
                 msg = ("Failed to delete pool %s" % (pool['id']))
                 LOG.warn(msg)
@@ -543,6 +548,7 @@ class LBaaSEventHandler(agent_base.AgentBaseEventHandler,
                 self.plugin_rpc.update_status('pool', pool['id'],
                                               lb_constants.ERROR,
                                               agent_info, pool)
+                raise e
         else:
             self.plugin_rpc.update_status('pool', pool['id'],
                                           lb_constants.ACTIVE,
@@ -563,7 +569,9 @@ class LBaaSEventHandler(agent_base.AgentBaseEventHandler,
         member = data['member']
         agent_info = ev.data['context'].pop('agent_info')
         service_vendor = agent_info['service_vendor']
-        driver = self._get_driver(service_vendor)  # member['pool_id'])
+        service_feature = agent_info['service_feature']
+        driver = self._get_driver(service_vendor,
+                                  service_feature)  # member['pool_id'])
         try:
             if operation == lb_constants.CREATE:
                 driver.create_member(member, context)
@@ -573,7 +581,7 @@ class LBaaSEventHandler(agent_base.AgentBaseEventHandler,
             elif operation == lb_constants.DELETE:
                 driver.delete_member(member, context)
                 return  # Don't update object status for delete operation
-        except Exception:
+        except Exception as e:
             if operation == lb_constants.DELETE:
                 msg = ("Failed to delete member %s" % (member['id']))
                 LOG.warn(msg)
@@ -581,6 +589,7 @@ class LBaaSEventHandler(agent_base.AgentBaseEventHandler,
                 self.plugin_rpc.update_status('member', member['id'],
                                               lb_constants.ERROR,
                                               agent_info, member)
+                raise e
         else:
             self.plugin_rpc.update_status('member', member['id'],
                                           lb_constants.ACTIVE,
@@ -602,7 +611,8 @@ class LBaaSEventHandler(agent_base.AgentBaseEventHandler,
         health_monitor = data['health_monitor']
         pool_id = data['pool_id']
         service_vendor = agent_info['service_vendor']
-        driver = self._get_driver(service_vendor)  # (pool_id)
+        service_feature = agent_info['service_feature']
+        driver = self._get_driver(service_vendor, service_feature)  # (pool_id)
         assoc_id = {'pool_id': pool_id,
                     'monitor_id': health_monitor['id']}
         try:
@@ -618,7 +628,7 @@ class LBaaSEventHandler(agent_base.AgentBaseEventHandler,
                 driver.delete_pool_health_monitor(health_monitor, pool_id,
                                                   context)
                 return  # Don't update object status for delete operation
-        except Exception:
+        except Exception as e:
             if operation == lb_constants.DELETE:
                 msg = ("Failed to delete pool health monitor."
                        " assoc_id: %s" % (assoc_id))
@@ -627,6 +637,7 @@ class LBaaSEventHandler(agent_base.AgentBaseEventHandler,
                 self.plugin_rpc.update_status(
                     'health_monitor', assoc_id, lb_constants.ERROR,
                     agent_info, health_monitor)
+                raise e
         else:
             self.plugin_rpc.update_status(
                 'health_monitor', assoc_id, lb_constants.ACTIVE,

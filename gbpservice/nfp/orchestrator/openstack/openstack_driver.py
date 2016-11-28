@@ -15,6 +15,7 @@ from keystoneclient.v2_0 import client as identity_client
 from keystoneclient.v3 import client as keyclientv3
 from neutronclient.v2_0 import client as neutron_client
 from novaclient import client as nova_client
+from novaclient import exceptions as nova_exc
 
 from gbpservice.nfp.core import log as nfp_logging
 LOG = nfp_logging.getLogger(__name__)
@@ -368,11 +369,71 @@ class NovaClient(OpenstackApi):
             LOG.error(err)
             raise Exception(err)
 
+    def delete_affinity_group(self, token, tenant_id, nf_id):
+        """ Deletes a server group
+
+        :param token: A scoped token
+        :param tenant_id: Tenant UUID
+        :param nf_id: Network Function UUID
+
+        Returns: None
+
+        """
+
+        nova_version = 2.15
+        nova = nova_client.Client(nova_version, auth_token=token,
+                                  tenant_id=tenant_id,
+                                  auth_url=self.identity_service)
+
+        try:
+            affinity_group = nova.server_groups.find(name=nf_id)
+            affinity_group_id = affinity_group.to_dict()['id']
+            nova.server_groups.delete(affinity_group_id)
+            msg = ("Successfully deleted Nova Server Anti-Affinity "
+                   "Group: %s" % nf_id)
+            LOG.info(msg)
+        except nova_exc.NotFound:
+            pass
+        except Exception as err:
+            msg = ("Failed to delete Nova Server Anti-Affinity Group "
+                   "with name %s. Error: %s" % (nf_id, err))
+            LOG.error(msg)
+
+    def create_affinity_group(self, token, tenant_id, nf_id):
+        """ Creates a server group
+
+        :param token: A scoped token
+        :param tenant_id: Tenant UUID
+        :param nf_id: Network Function UUID
+
+        Returns: Nova server-group json object
+
+        """
+
+        nova_version = 2.15
+        kwargs = dict(name=nf_id, policies=['soft-anti-affinity'])
+        nova = nova_client.Client(nova_version, auth_token=token,
+                                  tenant_id=tenant_id,
+                                  auth_url=self.identity_service)
+
+        try:
+            affinity_group = nova.server_groups.create(**kwargs)
+            affinity_group_id = affinity_group.to_dict()['id']
+            msg = ("Successfully created Nova Server Anti-Affinity "
+                   "Group: %s" % nf_id)
+            LOG.info(msg)
+            return affinity_group_id
+        except Exception as err:
+            msg = ("Failed to create Nova Server Anti-Affinity Group. "
+                   "Error: %s" % err)
+            LOG.error(msg)
+            return None
+
     def create_instance(self, token, tenant_id, image_id, flavor,
                         nw_port_id_list, name, volume_support,
                         volume_size, secgroup_name=None,
                         metadata=None, files=None, config_drive=False,
-                        userdata=None, key_name='', different_hosts=None,
+                        userdata=None, key_name='', server_grp_id=None,
                         ):
         """ Launch a VM with given details
 
@@ -389,7 +450,7 @@ class NovaClient(OpenstackApi):
                           "src": <file_contents>}]
         :param userdata: user data file name
         :param key_name: Nova keypair name
-        :param different_hosts: Different host filter (List)
+        :param server_grp_id: Nova server group UUID
         :param volume_support: volume support to launch instance
         :param volume_size: cinder volume size in GB
         :return: VM instance UUID
@@ -424,8 +485,8 @@ class NovaClient(OpenstackApi):
             ]
             kwargs.update(block_device_mapping_v2=block_device_mapping_v2)
 
-        if different_hosts:
-            kwargs.update(scheduler_hints={"different_host": different_hosts})
+        if server_grp_id:
+            kwargs.update(scheduler_hints={"group": server_grp_id})
         if key_name != '':
             kwargs.update(key_name=key_name)
         if config_drive is True:
@@ -862,7 +923,8 @@ class GBPClient(OpenstackApi):
             raise Exception(err)
 
     def create_policy_target(self, token, tenant_id,
-                             policy_target_group_id, name, port_id=None):
+                             policy_target_group_id, name, port_id=None,
+                             description=''):
         """ Creates a GBP Policy Target
 
         :param token: A scoped token
@@ -881,6 +943,8 @@ class GBPClient(OpenstackApi):
             policy_target_info['policy_target'].update({'name': name})
         if port_id:
             policy_target_info["policy_target"]["port_id"] = port_id
+        if description:
+            policy_target_info["policy_target"]["description"] = description
 
         try:
             gbp = gbp_client.Client(token=token,
@@ -984,7 +1048,8 @@ class GBPClient(OpenstackApi):
             LOG.error(err)
             raise Exception(err)
 
-    def create_l2_policy(self, token, tenant_id, name, l3_policy_id=None):
+    def create_l2_policy(self, token, tenant_id, name, l3_policy_id=None,
+                         description=''):
 
         l2_policy_info = {
             "l2_policy": {
@@ -994,6 +1059,8 @@ class GBPClient(OpenstackApi):
         }
         if l3_policy_id:
             l2_policy_info["l2_policy"].update({'l3_policy_id': l3_policy_id})
+        if description:
+            l2_policy_info["description"].update({'description': description})
 
         try:
             gbp = gbp_client.Client(token=token,
