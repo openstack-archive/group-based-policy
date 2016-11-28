@@ -62,18 +62,18 @@ class GenericConfigRpcManagerTestCase(base.BaseTestCase):
 
         agent, sc = self._get_GenericConfigRpcManager_object()
         arg_dict = {'context': self.fo.context,
-                    'resource_data': self.fo.kwargs}
+                    'resource_data': self.fo._fake_resource_data()}
         with mock.patch.object(
                     sc, 'new_event', return_value='foo') as mock_sc_event, (
              mock.patch.object(sc, 'post_event')) as mock_sc_rpc_event:
             call_method = getattr(agent, method.lower())
 
-            call_method(self.fo.context, self.fo.kwargs)
+            call_method(self.fo.context, self.fo._fake_resource_data())
 
             if 'HEALTHMONITOR' in method:
                 mock_sc_event.assert_called_with(id=method,
                                                  data=arg_dict,
-                                                 key=self.fo.kwargs['vmid'])
+                                                 key=self.fo.vmid)
             else:
                 mock_sc_event.assert_called_with(id=method,
                                                  data=arg_dict, key=None)
@@ -229,10 +229,10 @@ class GenericConfigEventHandlerTestCase(base.BaseTestCase):
                 mock_delete_src_routes.assert_called_with(
                             self.fo.context, resource_data)
             elif const.EVENT_CONFIGURE_HEALTHMONITOR in ev.id:
-                if periodicity == const.EVENT_CONFIGURE_HEALTHMONITOR_MAXRETRY:
+                if periodicity == const.INITIAL:
                     mock_hm_poll_event.assert_called_with(
-                        ev, max_times=(
-                                const.EVENT_CONFIGURE_HEALTHMONITOR_MAXRETRY))
+                        ev,
+                        max_times=const.EVENT_CONFIGURE_HEALTHMONITOR_MAXRETRY)
                 elif periodicity == const.FOREVER:
                     mock_hm_poll_event.assert_called_with(ev)
             elif ev.id == const.EVENT_CLEAR_HEALTHMONITOR:
@@ -250,7 +250,7 @@ class GenericConfigEventHandlerTestCase(base.BaseTestCase):
 
         """
 
-        agent, sc = self._get_GenericConfigEventHandler_object()
+        agent, _ = self._get_GenericConfigEventHandler_object()
         driver = mock.Mock()
 
         with mock.patch.object(
@@ -334,7 +334,8 @@ class GenericConfigEventHandlerTestCase(base.BaseTestCase):
         """
 
         ev = fo.FakeEventGenericConfig()
-        ev.data['resource_data'].update({'periodicity': const.FOREVER})
+        ev.data['resource_data']['nfds'][0].update(
+                                            {'periodicity': const.FOREVER})
         ev.id = 'CONFIGURE_HEALTHMONITOR forever'
         self._test_handle_event(ev)
 
