@@ -1019,9 +1019,9 @@ class NFPNodeDriver(driver_base.NodeDriverBase):
                         context.plugin_context, provider_port['id'], port)
 
         provider = {
-            'pt': service_targets.get('provider_pt_objs', [None])[0],
-            'ptg': service_targets.get('provider_ptg', [None])[0],
-            'port': service_targets.get('provider_ports', [None])[0],
+            'pt': service_targets.get('provider_pt_objs', []),
+            'ptg': service_targets.get('provider_ptg', []),
+            'port': service_targets.get('provider_ports', []),
             'subnet': service_targets.get('provider_subnet', None),
             'port_model': nfp_constants.GBP_PORT,
             'port_classification': nfp_constants.PROVIDER}
@@ -1031,11 +1031,11 @@ class NFPNodeDriver(driver_base.NodeDriverBase):
         consumer_ports = None
 
         if service_targets.get('consumer_pt_objs'):
-            consumer_pt = service_targets.get('consumer_pt_objs')[0]
+            consumer_pt = service_targets.get('consumer_pt_objs')
         if service_targets.get('consumer_ptg'):
-            consumer_ptg = service_targets.get('consumer_ptg')[0]
+            consumer_ptg = service_targets.get('consumer_ptg')
         if service_targets.get('consumer_ports'):
-            consumer_ports = service_targets.get('consumer_ports')[0]
+            consumer_ports = service_targets.get('consumer_ports')
 
         consumer = {
             'pt': consumer_pt,
