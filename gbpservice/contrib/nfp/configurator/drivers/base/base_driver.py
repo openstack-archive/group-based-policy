@@ -21,6 +21,14 @@ from gbpservice.nfp.core import log as nfp_logging
 LOG = nfp_logging.getLogger(__name__)
 
 
+def set_class_attr(**kwargs):
+    def f(class_obj):
+        for key, value in kwargs.items():
+            setattr(class_obj, key.lower(), value.lower())
+        return class_obj
+    return f
+
+
 class BaseDriver(object):
     """ Implements common functions for drivers.
 
@@ -45,6 +53,9 @@ class BaseDriver(object):
            Returns: SUCCESS/FAILED
 
         """
+
+        resource_data = self.parse.parse_data(const.HEALTHMONITOR,
+                                              resource_data)
         ip = resource_data.get('mgmt_ip')
         port = str(self.port)
         command = 'nc ' + ip + ' ' + port + ' -z'
