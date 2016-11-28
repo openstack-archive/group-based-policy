@@ -10,12 +10,11 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-import ast
-
 from gbpservice.contrib.nfp.configurator.drivers.base import base_driver
 from gbpservice.contrib.nfp.configurator.drivers.loadbalancer.v1.\
     haproxy import (haproxy_rest_client)
 from gbpservice.contrib.nfp.configurator.lib import constants as common_const
+from gbpservice.contrib.nfp.configurator.lib import data_parser
 from gbpservice.contrib.nfp.configurator.lib import lb_constants
 from gbpservice.nfp.core import log as nfp_logging
 
@@ -24,12 +23,13 @@ LOG = nfp_logging.getLogger(__name__)
 DRIVER_NAME = 'loadbalancer'
 
 
-class LbGenericConfigDriver(object):
+class LbGenericConfigDriver(base_driver.BaseDriver):
     """ Loadbalancer generic configuration driver class for handling device
         configuration requests.
     """
+
     def __init__(self):
-        pass
+        self.parse = data_parser.DataParser()
 
     def configure_interfaces(self, context, resource_data):
         """ Configure interfaces for the service VM.
@@ -43,6 +43,8 @@ class LbGenericConfigDriver(object):
 
         """
 
+        resource_data = self.parse.parse_data(common_const.INTERFACES,
+                                              resource_data)
         mgmt_ip = resource_data['mgmt_ip']
 
         try:
@@ -71,14 +73,13 @@ class LbGenericConfigDriver(object):
         return lb_constants.STATUS_SUCCESS
 
 
-class HaproxyOnVmDriver(LbGenericConfigDriver, base_driver.BaseDriver):
+@base_driver.set_class_attr(SERVICE_TYPE=lb_constants.SERVICE_TYPE,
+                            SERVICE_VENDOR=common_const.HAPROXY)
+class HaproxyOnVmDriver(LbGenericConfigDriver):
     """Main driver which gets registered with LB agent and Generic Config agent
        in configurator and these agents pass all *aaS neutron and generic
        config requests to this class.
     """
-
-    service_type = 'loadbalancer'
-    service_vendor = 'haproxy'
     pool_to_device = {}
 
     def __init__(self, plugin_rpc=None, conf=None):
@@ -96,7 +97,11 @@ class HaproxyOnVmDriver(LbGenericConfigDriver, base_driver.BaseDriver):
         return client
 
     def _get_device_for_pool(self, pool_id, context):
-        device = HaproxyOnVmDriver.pool_to_device.get(pool_id, None)
+        resource_data = self.parse.parse_data(common_const.LOADBALANCER,
+                                              context)
+        role = resource_data.get('role', '')
+        key = pool_id + role
+        device = HaproxyOnVmDriver.pool_to_device.get(key, None)
         if device is not None:
             return device
 
@@ -106,15 +111,10 @@ class HaproxyOnVmDriver(LbGenericConfigDriver, base_driver.BaseDriver):
         if vip is None:
             return None
         else:
-            vip_desc = ast.literal_eval(vip['description'])
-            device = vip_desc['floating_ip']
+            device = resource_data['mgmt_ip']
             if device:
-                HaproxyOnVmDriver.pool_to_device[pool_id] = device
+                HaproxyOnVmDriver.pool_to_device[key] = device
                 return device
-
-    def _get_interface_mac(self, vip):
-        vip_desc = ast.literal_eval(vip['description'])
-        return vip_desc['provider_interface_mac']
 
     def _expand_expected_codes(self, codes):
         """Expand the expected code string in set of codes.
@@ -135,7 +135,7 @@ class HaproxyOnVmDriver(LbGenericConfigDriver, base_driver.BaseDriver):
                 retval.add(code)
         return retval
 
-    def _prepare_haproxy_frontend(self, vip):
+    def _prepare_haproxy_frontend(self, vip, resource_data):
         vip_ip = vip['address']
         vip_port_number = vip['protocol_port']
         protocol = vip['protocol']
@@ -156,7 +156,7 @@ class HaproxyOnVmDriver(LbGenericConfigDriver, base_driver.BaseDriver):
         try:
             if protocol == lb_constants.PROTOCOL_HTTP:
                 frontend['option'].update({'forwardfor': True})
-            provider_interface_mac = self._get_interface_mac(vip)
+            provider_interface_mac = resource_data['provider_mac']
             frontend.update({'provider_interface_mac': provider_interface_mac})
         except Exception as e:
             raise e
@@ -371,10 +371,10 @@ class HaproxyOnVmDriver(LbGenericConfigDriver, base_driver.BaseDriver):
 
         return backend
 
-    def _create_vip(self, vip, device_addr):
+    def _create_vip(self, vip, device_addr, resource_data):
         try:
             client = self._get_rest_client(device_addr)
-            frontend = self._prepare_haproxy_frontend(vip)
+            frontend = self._prepare_haproxy_frontend(vip, resource_data)
             body = {"frnt:%s" % vip['id']: frontend}
             client.create_resource("frontend", body)
         except Exception as e:
@@ -487,6 +487,8 @@ class HaproxyOnVmDriver(LbGenericConfigDriver, base_driver.BaseDriver):
         return stats
 
     def create_vip(self, vip, context):
+        resource_data = self.parse.parse_data(common_const.LOADBALANCER,
+                                              context)
         msg = ("Handling create vip [vip=%s]" % (vip))
         LOG.info(msg)
         try:
@@ -501,7 +503,7 @@ class HaproxyOnVmDriver(LbGenericConfigDriver, base_driver.BaseDriver):
                 self._create_pool_health_monitor(hm,
                                                  vip['pool_id'], device_addr)
 
-            self._create_vip(vip, device_addr)
+            self._create_vip(vip, device_addr, resource_data)
         except Exception as e:
             msg = ("Failed to create vip %s. %s"
                    % (vip['id'], str(e).capitalize()))
@@ -512,6 +514,8 @@ class HaproxyOnVmDriver(LbGenericConfigDriver, base_driver.BaseDriver):
             LOG.info(msg)
 
     def update_vip(self, old_vip, vip, context):
+        resource_data = self.parse.parse_data(common_const.LOADBALANCER,
+                                              context)
         msg = ("Handling update vip [old_vip=%s, vip=%s]" % (old_vip, vip))
         LOG.info(msg)
         try:
@@ -539,11 +543,11 @@ class HaproxyOnVmDriver(LbGenericConfigDriver, base_driver.BaseDriver):
                                                             context)
                 pool = logical_device['pool']
                 self._create_pool(pool, device_addr)
-                self._create_vip(vip, device_addr)
+                self._create_vip(vip, device_addr, resource_data)
                 return
 
             client = self._get_rest_client(device_addr)
-            body = self._prepare_haproxy_frontend(vip)
+            body = self._prepare_haproxy_frontend(vip, resource_data)
             client.update_resource("frontend/frnt:%s" % vip['id'], body)
         except Exception as e:
             msg = ("Failed to update vip %s. %s"
@@ -604,12 +608,9 @@ class HaproxyOnVmDriver(LbGenericConfigDriver, base_driver.BaseDriver):
         msg = ("Handling delete pool [pool=%s]" % (pool))
         LOG.info(msg)
         try:
-            device = HaproxyOnVmDriver.pool_to_device.get(pool['id'], None)
-            # if pool is not known, do nothing
-            if device is None:
-                return
-
             device_addr = self._get_device_for_pool(pool['id'], context)
+            if device_addr is None:
+                return
             if (pool['vip_id'] and
                     device_addr):
                 self._delete_pool(pool, device_addr)
@@ -626,7 +627,8 @@ class HaproxyOnVmDriver(LbGenericConfigDriver, base_driver.BaseDriver):
         msg = ("Handling create member [member=%s] " % (member))
         LOG.info(msg)
         try:
-            device_addr = self._get_device_for_pool(member['pool_id'], context)
+            device_addr = self._get_device_for_pool(member['pool_id'],
+                                                    context)
             if device_addr is not None:
                 self._create_member(member, device_addr, context)
         except Exception as e:
@@ -648,7 +650,8 @@ class HaproxyOnVmDriver(LbGenericConfigDriver, base_driver.BaseDriver):
             if device_addr is not None:
                 self._delete_member(old_member, device_addr)
 
-            device_addr = self._get_device_for_pool(member['pool_id'], context)
+            device_addr = self._get_device_for_pool(member['pool_id'],
+                                                    context)
             if device_addr is not None:
                 self._create_member(member, device_addr, context)
         except Exception as e:

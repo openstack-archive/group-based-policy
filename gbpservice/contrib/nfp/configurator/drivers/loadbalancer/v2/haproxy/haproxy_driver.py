@@ -131,7 +131,7 @@ class OctaviaDataModelBuilder(object):
         if not amphorae:
             raise exceptions.IncompleteData(
                 "Amphora information is missing")
-        # REVISIT(jiahao): vrrp_group, topology, server_group_id are not
+        # REVISIT(jiahao): cluster_group, topology, affinity_group_id are not
         # included yet
         args.update({
             'vip': vip,

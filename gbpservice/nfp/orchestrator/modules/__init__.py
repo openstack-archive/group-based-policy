@@ -46,7 +46,10 @@ nfp_orchestrator_opts = [
         'supported_vendors',
         default=[nfp_constants.VYOS_VENDOR, nfp_constants.HAPROXY_VENDOR,
                  nfp_constants.HAPROXY_LBAASV2, nfp_constants.NFP_VENDOR],
-        help="Supported service vendors for nfp")]
+        help="Supported service vendors for nfp"),
+    oslo_config.StrOpt('monitoring_ptg_l3policy_id',
+                       default='')
+]
 
 oslo_config.CONF.register_opts(nfp_orchestrator_opts, 'orchestrator')
 
@@ -54,7 +57,7 @@ device_orchestrator_opts = [
     oslo_config.BoolOpt('volume_support',
                         default=False, help='cinder volume support'),
     oslo_config.StrOpt('volume_size',
-                       default='2', help='cinder volume size'),
+                       default='2', help='cinder volume size')
 ]
 
 oslo_config.CONF.register_opts(device_orchestrator_opts, 'device_orchestrator')
