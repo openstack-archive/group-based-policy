@@ -60,7 +60,7 @@ class ConfiguratorRpcManagerTestCase(base.BaseTestCase):
 
         """
 
-        sc, rpc_mgr = self._get_ConfiguratorRpcManager_object()
+        _, rpc_mgr = self._get_ConfiguratorRpcManager_object()
         agent = mock.Mock()
 
         request_data = {'batch': {
@@ -81,10 +81,10 @@ class ConfiguratorRpcManagerTestCase(base.BaseTestCase):
                              else self.fo.fake_request_data_generic_single()))}
                         }
         if batch:
-            request_data_actual, request_data_expected = (
+            request_data_actual, _ = (
                                             request_data['batch'].values())
         else:
-            request_data_actual, request_data_expected = (
+            request_data_actual, _ = (
                                             request_data['single'].values())
 
         with mock.patch.object(rpc_mgr,
@@ -99,19 +99,6 @@ class ConfiguratorRpcManagerTestCase(base.BaseTestCase):
                 rpc_mgr.delete_network_function_device_config(
                                     self.fo.context, request_data_actual)
 
-            context = request_data_expected['info']['context']
-
-            agent_info = {}
-            agent_info.update(
-                    {'resource': request_data_expected['config'][0][
-                                                                'resource'],
-                     'resource_type': request_data_expected['info'][
-                                                            'service_type'],
-                     'service_vendor': request_data_expected['info'][
-                                                            'service_vendor'],
-                     'context': context,
-                     'notification_data': {}
-                     })
             notification_data = dict()
             sa_req_list = self.fo.fake_sa_req_list()
 
@@ -141,7 +128,7 @@ class ConfiguratorRpcManagerTestCase(base.BaseTestCase):
 
         """
 
-        sc, rpc_mgr = self._get_ConfiguratorRpcManager_object()
+        _, rpc_mgr = self._get_ConfiguratorRpcManager_object()
         agent = mock.Mock()
         method = {'CREATE': 'create_network_function_config',
                   'UPDATE': 'update_network_function_config',
@@ -153,8 +140,7 @@ class ConfiguratorRpcManagerTestCase(base.BaseTestCase):
              mock.patch.object(agent, 'process_request')) as mock_request:
 
             getattr(rpc_mgr, method[operation.split('_')[0]])(
-                                                        self.fo.fw_context,
-                                                        request_data)
+                                self.fo.firewall_api_context(), request_data)
 
             notification_data = dict()
             data = self.fo.fake_sa_req_list_fw()
