@@ -98,7 +98,7 @@ class HaproxyOnVmDriverTestCase(base.BaseTestCase):
 
             mock_request.status_code = 200
             if method_name == 'DELETE_VIP':
-                driver.delete_vip(self.fo.vip, self.fo.context)
+                driver.delete_vip(self.fo.vip, self.fo.lb_api_context())
                 mock_request.assert_called_with(
                     'DELETE',
                     data=None,
@@ -106,7 +106,7 @@ class HaproxyOnVmDriverTestCase(base.BaseTestCase):
                     timeout=self.data.timeout,
                     url=self.data.delete_vip_url)
             elif method_name == 'CREATE_VIP':
-                driver.create_vip(self.fo.vip, self.fo.context)
+                driver.create_vip(self.fo.vip, self.fo.lb_api_context())
                 data = jsonutils.dumps(self.data.create_vip_data)
                 mock_request.assert_called_with(
                     'POST',
@@ -120,7 +120,7 @@ class HaproxyOnVmDriverTestCase(base.BaseTestCase):
                 driver.update_vip(
                     self.fo.old_vip,
                     self.fo.vip,
-                    self.fo.context)
+                    self.fo.lb_api_context())
                 data = jsonutils.dumps(self.data.update_vip_data)
                 mock_request.assert_called_with(
                     'PUT',
@@ -129,14 +129,14 @@ class HaproxyOnVmDriverTestCase(base.BaseTestCase):
                     timeout=self.data.timeout,
                     url=self.data.update_vip_url)
             elif method_name == 'CREATE_POOL':
-                driver.create_pool(self.fo.pool, self.fo.context)
+                driver.create_pool(self.fo.pool, self.fo.lb_api_context())
             elif method_name == 'DELETE_POOL':
-                driver.delete_pool(self.fo.pool, self.fo.context)
+                driver.delete_pool(self.fo.pool, self.fo.lb_api_context())
             elif method_name == 'UPDATE_POOL':
                 driver.update_pool(
                     self.fo.old_pool,
                     self.fo.pool,
-                    self.fo.context)
+                    self.fo.lb_api_context())
                 data = jsonutils.dumps(self.data.update_pool_data)
                 mock_request.assert_called_with(
                     'PUT',
@@ -145,7 +145,8 @@ class HaproxyOnVmDriverTestCase(base.BaseTestCase):
                     timeout=self.data.timeout,
                     url=self.data.update_pool_url)
             elif method_name == 'CREATE_MEMBER':
-                driver.create_member(self.fo.member[0], self.fo.context)
+                driver.create_member(self.fo.member[0],
+                                     self.fo.lb_api_context())
                 data = jsonutils.dumps(self.data.create_member_data)
                 mock_request.assert_called_with(
                     'PUT',
@@ -154,7 +155,8 @@ class HaproxyOnVmDriverTestCase(base.BaseTestCase):
                     timeout=self.data.timeout,
                     url=self.data.create_member_url)
             elif method_name == 'DELETE_MEMBER':
-                driver.delete_member(self.fo.member[0], self.fo.context)
+                driver.delete_member(self.fo.member[0],
+                                     self.fo.lb_api_context())
                 data = jsonutils.dumps(self.data.delete_member_data)
                 mock_request.assert_called_with(
                     'PUT',
@@ -166,7 +168,7 @@ class HaproxyOnVmDriverTestCase(base.BaseTestCase):
                 driver.update_member(
                     self.fo.old_member[0],
                     self.fo.member[0],
-                    self.fo.context)
+                    self.fo.lb_api_context())
                 data = jsonutils.dumps(self.data.update_member_data)
                 mock_request.assert_called_with(
                     'PUT',
@@ -177,7 +179,7 @@ class HaproxyOnVmDriverTestCase(base.BaseTestCase):
             elif method_name == 'CREATE_POOL_HEALTH_MONITOR':
                 driver.create_pool_health_monitor(
                     self.fo.hm[0], self.fo._get_pool_object()[0]['id'],
-                    self.fo.context)
+                    self.fo.lb_api_context())
                 data = jsonutils.dumps(self.data.create_hm_data)
                 mock_request.assert_called_with(
                     'PUT',
@@ -188,7 +190,7 @@ class HaproxyOnVmDriverTestCase(base.BaseTestCase):
             elif method_name == 'DELETE_POOL_HEALTH_MONITOR':
                 driver.delete_pool_health_monitor(
                     self.fo.hm[0], self.fo._get_pool_object()[0]['id'],
-                    self.fo.context)
+                    self.fo.lb_api_context())
                 data = jsonutils.dumps(self.data.delete_hm_data)
                 mock_request.assert_called_with(
                     'PUT',
@@ -200,7 +202,7 @@ class HaproxyOnVmDriverTestCase(base.BaseTestCase):
                 driver.update_pool_health_monitor(
                     self.fo.old_hm[0],
                     self.fo.hm[0], self.fo._get_pool_object()[0]['id'],
-                    self.fo.context)
+                    self.fo.lb_api_context())
                 data = jsonutils.dumps(self.data.update_hm_data)
                 mock_request.assert_called_with(
                     'PUT',
