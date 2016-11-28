@@ -18,6 +18,7 @@ from neutron._i18n import _LW
 from oslo_utils import excutils
 
 from gbpservice.nfp.common import constants as nfp_constants
+from gbpservice.nfp.common import data_formatter as df
 from gbpservice.nfp.common import exceptions
 from gbpservice.nfp.core import executor as nfp_executor
 from gbpservice.nfp.core import log as nfp_logging
@@ -292,12 +293,12 @@ class OrchestrationDriver(object):
     def create_instance(self, nova, token, admin_tenant_id,
                         image_id, flavor, interfaces_to_attach,
                         instance_name, volume_support,
-                        volume_size, files=None):
+                        volume_size, files=None, server_grp_id=None):
         try:
             instance_id = nova.create_instance(
-                token, admin_tenant_id,
-                image_id, flavor, interfaces_to_attach, instance_name,
-                volume_support, volume_size, files=files)
+                token, admin_tenant_id, image_id, flavor,
+                interfaces_to_attach, instance_name, volume_support,
+                volume_size, files=files, server_grp_id=server_grp_id)
             return instance_id
         except Exception as e:
             LOG.error(_LE('Failed to create instance.'
@@ -340,6 +341,106 @@ class OrchestrationDriver(object):
         :raises: exceptions.IncompleteData,
                  exceptions.ComputePolicyNotSupported
         """
+        self._validate_create_nfd_data(device_data)
+
+        token = device_data['token']
+        admin_tenant_id = device_data['admin_tenant_id']
+        image_name = self._get_image_name(device_data)
+
+        pre_launch_executor = nfp_executor.TaskExecutor(jobs=3)
+
+        image_id_result = {}
+        vendor_data_result = {}
+
+        pre_launch_executor.add_job('UPDATE_VENDOR_DATA',
+                         self._update_vendor_data_fast,
+                         token, admin_tenant_id, image_name, device_data,
+                         result_store=vendor_data_result)
+        pre_launch_executor.add_job('GET_INTERFACES_FOR_DEVICE_CREATE',
+                         self._get_interfaces_for_device_create,
+                         token, admin_tenant_id, network_handler, device_data)
+        pre_launch_executor.add_job('GET_IMAGE_ID',
+                         self.get_image_id,
+                         self.compute_handler_nova, token, admin_tenant_id,
+                         image_name, result_store=image_id_result)
+
+        pre_launch_executor.fire()
+
+        interfaces, image_id, vendor_data = (
+            self._validate_pre_launch_executor_results(network_handler,
+                                                   device_data,
+                                                   image_name,
+                                                   image_id_result,
+                                                   vendor_data_result))
+        if not interfaces:
+            return None
+
+        management_interface = interfaces[0]
+        flavor = self._get_service_instance_flavor(device_data)
+
+        interfaces_to_attach = []
+        try:
+            for interface in interfaces:
+                interfaces_to_attach.append({'port': interface['port_id']})
+            if vendor_data.get('supports_hotplug') is False:
+                self._update_interfaces_for_non_hotplug_support(
+                                                network_handler,
+                                                interfaces,
+                                                interfaces_to_attach,
+                                                device_data)
+        except Exception as e:
+            LOG.error(_LE('Failed to fetch list of interfaces to attach'
+                          ' for device creation %(error)s'), {'error': e})
+            self._delete_interfaces(device_data, interfaces,
+                                    network_handler=network_handler)
+            return None
+
+        instance_name = device_data['name']
+
+        create_instance_executor = nfp_executor.TaskExecutor(jobs=3)
+        instance_id_result = {}
+        port_details_result = {}
+        volume_support = device_data['volume_support']
+        volume_size = device_data['volume_size']
+        create_instance_executor.add_job(
+                        'CREATE_INSTANCE', self.create_instance,
+                        self.compute_handler_nova, token,
+                        admin_tenant_id, image_id, flavor,
+                        interfaces_to_attach, instance_name,
+                        volume_support, volume_size,
+                        files=device_data.get('files'),
+                        result_store=instance_id_result)
+
+        create_instance_executor.add_job(
+                        'GET_NEUTRON_PORT_DETAILS',
+                        self.get_neutron_port_details,
+                        network_handler, token,
+                        management_interface['port_id'],
+                        result_store=port_details_result)
+
+        create_instance_executor.fire()
+
+        instance_id, mgmt_neutron_port_info = (
+            self._validate_create_instance_executor_results(network_handler,
+                                                        device_data,
+                                                        interfaces,
+                                                        instance_id_result,
+                                                        port_details_result))
+        if not instance_id:
+            return None
+
+        mgmt_ip_address = mgmt_neutron_port_info['ip_address']
+        return {'id': instance_id,
+                'name': instance_name,
+                'vendor_data': vendor_data,
+                'mgmt_ip_address': mgmt_ip_address,
+                'mgmt_port_id': interfaces[0],
+                'mgmt_neutron_port_info': mgmt_neutron_port_info,
+                'max_interfaces': self.maximum_interfaces,
+                'interfaces_in_use': len(interfaces_to_attach),
+                'description': ''}  # TODO(RPM): what should be the description
+
+    def _validate_create_nfd_data(self, device_data):
         if (
             any(key not in device_data
                 for key in ['service_details',
@@ -374,48 +475,37 @@ class OrchestrationDriver(object):
             raise exceptions.ComputePolicyNotSupported(
                 compute_policy=device_data['service_details']['device_type'])
 
-        token = device_data['token']
-        admin_tenant_id = device_data['admin_tenant_id']
-        image_name = self._get_image_name(device_data)
-
-        executor = nfp_executor.TaskExecutor(jobs=3)
-
-        image_id_result = {}
-        vendor_data_result = {}
-
-        executor.add_job('UPDATE_VENDOR_DATA',
-                         self._update_vendor_data_fast,
-                         token, admin_tenant_id, image_name, device_data,
-                         result_store=vendor_data_result)
-        executor.add_job('GET_INTERFACES_FOR_DEVICE_CREATE',
-                         self._get_interfaces_for_device_create,
-                         token, admin_tenant_id, network_handler, device_data)
-        executor.add_job('GET_IMAGE_ID',
-                         self.get_image_id,
-                         self.compute_handler_nova, token, admin_tenant_id,
-                         image_name, result_store=image_id_result)
-
-        executor.fire()
-
+    def _validate_pre_launch_executor_results(self, network_handler,
+                                              device_data,
+                                              image_name,
+                                              image_id_result,
+                                              vendor_data_result,
+                                              server_grp_id_result=None):
         interfaces = device_data.pop('interfaces', None)
         if not interfaces:
             LOG.exception(_LE('Failed to get interfaces for device creation.'))
-            return None
-        else:
-            management_interface = interfaces[0]
+            return None, _, _
 
         image_id = image_id_result.get('result', None)
         if not image_id:
             LOG.error(_LE('Failed to get image id for device creation.'))
             self._delete_interfaces(device_data, interfaces,
                                     network_handler=network_handler)
-            return None
+            return None, _, _
+
+        if server_grp_id_result and not server_grp_id_result.get('result'):
+            LOG.error(_LE('Validation failed for Nova anti-affinity '
+                          'server group.'))
+            return None, _, _
 
         vendor_data = vendor_data_result.get('result', None)
         if not vendor_data:
             LOG.warning(_LW('Failed to get vendor data for device creation.'))
             vendor_data = {}
 
+        return interfaces, image_id, vendor_data
+
+    def _get_service_instance_flavor(self, device_data):
         if device_data['service_details'].get('flavor'):
             flavor = device_data['service_details']['flavor']
         else:
@@ -423,80 +513,59 @@ class OrchestrationDriver(object):
                          "service flavor field, using default "
                          "flavor: m1.medium"))
             flavor = 'm1.medium'
+        return flavor
 
-        interfaces_to_attach = []
-        try:
-            for interface in interfaces:
-                interfaces_to_attach.append({'port': interface['port_id']})
-            if vendor_data.get('supports_hotplug') is False:
-                if not device_data['interfaces_to_attach']:
-                    for port in device_data['ports']:
-                            if (port['port_classification'] ==
-                                    nfp_constants.PROVIDER):
-                                if (device_data['service_details'][
-                                    'service_type'].lower()
-                                    in [nfp_constants.FIREWALL.lower(),
-                                        nfp_constants.VPN.lower()]):
-                                    network_handler.set_promiscuos_mode(
-                                        token, port['id'])
-                                port_id = network_handler.get_port_id(
-                                    token, port['id'])
-                                interfaces_to_attach.append({'port': port_id})
-                    for port in device_data['ports']:
-                            if (port['port_classification'] ==
-                                    nfp_constants.CONSUMER):
-                                if (device_data['service_details'][
-                                    'service_type'].lower()
-                                    in [nfp_constants.FIREWALL.lower(),
-                                        nfp_constants.VPN.lower()]):
-                                    network_handler.set_promiscuos_mode(
-                                        token, port['id'])
-                                port_id = network_handler.get_port_id(
-                                    token, port['id'])
-                                interfaces_to_attach.append({'port': port_id})
-                else:
-                    for interface in device_data['interfaces_to_attach']:
-                        interfaces_to_attach.append(
-                            {'port': interface['port']})
-                        interfaces.append({'id': interface['id']})
+    def _update_interfaces_for_non_hotplug_support(self, network_handler,
+                                                   interfaces,
+                                                   interfaces_to_attach,
+                                                   device_data):
+        token = device_data['token']
+        if not device_data['interfaces_to_attach']:
+            for port in device_data['ports']:
+                    if (port['port_classification'] ==
+                            nfp_constants.PROVIDER):
+                        if (device_data['service_details'][
+                            'service_type'].lower()
+                            in [nfp_constants.FIREWALL.lower(),
+                                nfp_constants.VPN.lower()]):
+                            network_handler.set_promiscuos_mode(
+                                token, port['id'])
+                        port_id = network_handler.get_port_id(
+                            token, port['id'])
+                        interfaces_to_attach.append({'port': port_id})
+            for port in device_data['ports']:
+                    if (port['port_classification'] ==
+                            nfp_constants.CONSUMER):
+                        if (device_data['service_details'][
+                            'service_type'].lower()
+                            in [nfp_constants.FIREWALL.lower(),
+                                nfp_constants.VPN.lower()]):
+                            network_handler.set_promiscuos_mode(
+                                token, port['id'])
+                        port_id = network_handler.get_port_id(
+                            token, port['id'])
+                        interfaces_to_attach.append({'port': port_id})
+        else:
+            for interface in device_data['interfaces_to_attach']:
+                interfaces_to_attach.append(
+                    {'port': interface['port']})
+                interfaces.append({'id': interface['id']})
 
-        except Exception as e:
-            LOG.error(_LE('Failed to fetch list of interfaces to attach'
-                          ' for device creation %(error)s'), {'error': e})
-            self._delete_interfaces(device_data, interfaces,
-                                    network_handler=network_handler)
-            return None
-
-        instance_name = device_data['name']
-        instance_id_result = {}
-        port_details_result = {}
-        volume_support = device_data['volume_support']
-        volume_size = device_data['volume_size']
-        executor.add_job('CREATE_INSTANCE',
-                         self.create_instance,
-                         self.compute_handler_nova,
-                         token, admin_tenant_id, image_id, flavor,
-                         interfaces_to_attach, instance_name,
-                         volume_support, volume_size,
-                         files=device_data.get('files'),
-                         result_store=instance_id_result)
-
-        executor.add_job('GET_NEUTRON_PORT_DETAILS',
-                         self.get_neutron_port_details,
-                         network_handler, token,
-                         management_interface['port_id'],
-                         result_store=port_details_result)
-
-        executor.fire()
-
+    def _validate_create_instance_executor_results(self,
+                                                network_handler,
+                                                device_data,
+                                                interfaces,
+                                                instance_id_result,
+                                                port_details_result):
+        token = device_data['token']
+        admin_tenant_id = device_data['admin_tenant_id']
         instance_id = instance_id_result.get('result', None)
         if not instance_id:
             LOG.error(_LE('Failed to create %(device_type)s instance.'))
             self._delete_interfaces(device_data, interfaces,
                                     network_handler=network_handler)
-            return None
+            return None, _
 
-        mgmt_ip_address = None
         mgmt_neutron_port_info = port_details_result.get('result', None)
 
         if not mgmt_neutron_port_info:
@@ -514,18 +583,8 @@ class OrchestrationDriver(object):
                            'error': e})
             self._delete_interfaces(device_data, interfaces,
                                     network_handler=network_handler)
-            return None
-
-        mgmt_ip_address = mgmt_neutron_port_info['ip_address']
-        return {'id': instance_id,
-                'name': instance_name,
-                'vendor_data': vendor_data,
-                'mgmt_ip_address': mgmt_ip_address,
-                'mgmt_port_id': interfaces[0],
-                'mgmt_neutron_port_info': mgmt_neutron_port_info,
-                'max_interfaces': self.maximum_interfaces,
-                'interfaces_in_use': len(interfaces_to_attach),
-                'description': ''}  # TODO(RPM): what should be the description
+            return None, _
+        return instance_id, mgmt_neutron_port_info
 
     @_set_network_handler
     def delete_network_function_device(self, device_data,
@@ -856,75 +915,20 @@ class OrchestrationDriver(object):
         else:
             return True
 
-    def get_network_function_device_healthcheck_info(self, device_data):
-        """ Get the health check information for NFD
-
-        :param device_data: NFD
-        :type device_data: dict
-
-        :returns: dict -- It has the following scheme
-        {
-            'config': [
-                {
-                    'resource': 'healthmonitor',
-                    'resource_data': {
-                        ...
-                    }
-                }
-            ]
-        }
-
-        :raises: exceptions.IncompleteData
-        """
-        if (
-            any(key not in device_data
-                for key in ['id',
-                            'mgmt_ip_address'])
-        ):
-            raise exceptions.IncompleteData()
-
-        return {
-            'config': [
-                {
-                    'resource': nfp_constants.HEALTHMONITOR_RESOURCE,
-                    'resource_data': {
-                        'vmid': device_data['id'],
-                        'mgmt_ip': device_data['mgmt_ip_address'],
-                        'periodicity': 'initial'
-                    }
-                }
-            ]
-        }
-
     @_set_network_handler
-    def get_network_function_device_config_info(self, device_data,
-                                                network_handler=None):
+    def get_delete_device_data(self, device_data, network_handler=None):
         """ Get the configuration information for NFD
 
         :param device_data: NFD
         :type device_data: dict
 
         :returns: None -- On Failure
-        :returns: dict -- It has the following scheme
-        {
-            'config': [
-                {
-                    'resource': 'interfaces',
-                    'resource_data': {
-                        ...
-                    }
-                },
-                {
-                    'resource': 'routes',
-                    'resource_data': {
-                        ...
-                    }
-                }
-            ]
-        }
+        :returns: dict
 
         :raises: exceptions.IncompleteData
+
         """
+
         if (
             any(key not in device_data
                 for key in ['service_details',
@@ -946,7 +950,9 @@ class OrchestrationDriver(object):
                             'port_classification',
                             'port_model'])
         ):
-            raise exceptions.IncompleteData()
+            LOG.error(_LE('Incomplete device data received for delete '
+                          'network function device.'))
+            return None
 
         token = self._get_token(device_data.get('token'))
         if not token:
@@ -963,7 +969,7 @@ class OrchestrationDriver(object):
         for port in device_data['ports']:
             if port['port_classification'] == nfp_constants.PROVIDER:
                 try:
-                    (provider_ip, provider_mac, provider_cidr, dummy) = (
+                    (provider_ip, provider_mac, provider_cidr, dummy, _, _) = (
                         network_handler.get_port_details(token, port['id'])
                     )
                 except Exception:
@@ -973,7 +979,7 @@ class OrchestrationDriver(object):
             elif port['port_classification'] == nfp_constants.CONSUMER:
                 try:
                     (consumer_ip, consumer_mac, consumer_cidr,
-                     consumer_gateway_ip) = (
+                     consumer_gateway_ip, _, _) = (
                         network_handler.get_port_details(token, port['id'])
                     )
                 except Exception:
@@ -981,106 +987,28 @@ class OrchestrationDriver(object):
                                   ' for get device config info operation'))
                     return None
 
-        return {
-            'config': [
-                {
-                    'resource': nfp_constants.INTERFACE_RESOURCE,
-                    'resource_data': {
-                        'mgmt_ip': device_data['mgmt_ip_address'],
-                        'provider_ip': provider_ip,
-                        'provider_cidr': provider_cidr,
-                        'provider_interface_index': 2,
-                        'stitching_ip': consumer_ip,
-                        'stitching_cidr': consumer_cidr,
-                        'stitching_interface_index': 3,
-                        'provider_mac': provider_mac,
-                        'stitching_mac': consumer_mac,
-                    }
-                },
-                {
-                    'resource': nfp_constants.ROUTES_RESOURCE,
-                    'resource_data': {
-                        'mgmt_ip': device_data['mgmt_ip_address'],
-                        'source_cidrs': ([provider_cidr, consumer_cidr]
-                                         if consumer_cidr
-                                         else [provider_cidr]),
-                        'destination_cidr': consumer_cidr,
-                        'provider_mac': provider_mac,
-                        'gateway_ip': consumer_gateway_ip,
-                        'provider_interface_index': 2
-                    }
-                }
-            ]
-        }
+        device_data.update({
+            'provider_ip': provider_ip, 'provider_mac': provider_mac,
+            'provider_cidr': provider_cidr, 'consumer_ip': consumer_ip,
+            'consumer_mac': consumer_mac, 'consumer_cidr': consumer_cidr,
+            'consumer_gateway_ip': consumer_gateway_ip})
+
+        return device_data
 
     @_set_network_handler
-    def get_create_network_function_device_config_info(self, device_data,
-                                                       network_handler=None):
+    def get_network_function_device_config(self, device_data,
+                                           resource_type, is_delete=False,
+                                           network_handler=None):
         """ Get the configuration information for NFD
 
-        :param device_data: NFD
-        :type device_data: dict
+        :returns: dict
 
-        :returns: None -- On Failure
-        :returns: dict -- It has the following scheme
-        {
-            'config': [
-                {
-                    'resource': 'interfaces',
-                    'resource_data': {
-                        ...
-                    }
-                },
-                {
-                    'resource': 'routes',
-                    'resource_data': {
-                        ...
-                    }
-                }
-            ]
-        }
-
-        :raises: exceptions.IncompleteData
         """
 
-        mgmt_ip = device_data.get('mgmt_ip', None)
-        provider_ip = device_data.get('provider_ip', None)
-        provider_mac = device_data.get('provider_mac', None)
-        provider_cidr = device_data.get('provider_cidr', None)
-        consumer_ip = device_data.get('consumer_ip', None)
-        consumer_mac = device_data.get('consumer_mac', None)
-        consumer_cidr = device_data.get('consumer_cidr', None)
-        consumer_gateway_ip = device_data.get('consumer_gateway_ip', None)
-
-        return {
-            'config': [
-                {
-                    'resource': nfp_constants.INTERFACE_RESOURCE,
-                    'resource_data': {
-                        'mgmt_ip': mgmt_ip,
-                        'provider_ip': provider_ip,
-                        'provider_cidr': provider_cidr,
-                        'provider_interface_index': 2,
-                        'stitching_ip': consumer_ip,
-                        'stitching_cidr': consumer_cidr,
-                        'stitching_interface_index': 3,
-                        'provider_mac': provider_mac,
-                        'stitching_mac': consumer_mac,
-                    },
-
-                },
-                {
-                    'resource': nfp_constants.ROUTES_RESOURCE,
-                    'resource_data': {
-                        'mgmt_ip': mgmt_ip,
-                        'source_cidrs': ([provider_cidr, consumer_cidr]
-                                         if consumer_cidr
-                                         else [provider_cidr]),
-                        'destination_cidr': consumer_cidr,
-                        'provider_mac': provider_mac,
-                        'gateway_ip': consumer_gateway_ip,
-                        'provider_interface_index': 2
-                    }
-                }
-            ]
-        }
+        if is_delete:
+            device_data = self.get_delete_device_data(
+                                device_data, network_handler=network_handler)
+            if not device_data:
+                return None
+        return df.get_network_function_info(
+                        device_data, resource_type)

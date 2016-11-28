@@ -16,7 +16,7 @@ RUN pip install\
  python-keystoneclient\
  oslo.config==3.6.0\
  oslo.log==2.4.0\
- oslo.messaging==4.2.0\
+ oslo.messaging==4.6.1\
  oslo.db==4.4.0\
  oslo.policy\
  pecan==1.0.4\
@@ -24,7 +24,7 @@ RUN pip install\
  amqp==2.0.3\
  wsme\
  neutron-lib\
- octavia==0.9
+ "octavia<0.8"
 
 # copy local src to docker image
 COPY ./gbpservice /usr/local/lib/python2.7/dist-packages/gbpservice

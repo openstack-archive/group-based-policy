@@ -192,13 +192,14 @@ class AgentBaseEventHandler(nfp_api.NfpEventHandler):
                 context = agent_info['context']
                 service_vendor = agent_info['service_vendor']
                 service_type = agent_info['resource_type']
-
+                service_feature = agent_info['service_feature']
                 if not is_generic_config:
                     sa_req_list[0]['resource_data']['context'] = sa_req_list[
                                     0]['resource_data'].pop('neutron_context')
 
                 # Get the service driver and invoke its method
-                driver = self._get_driver(service_type, service_vendor)
+                driver = self._get_driver(service_type, service_vendor,
+                                          service_feature)
 
                 # Service driver should return "success" on successful API
                 # processing. All other return values and exceptions are
