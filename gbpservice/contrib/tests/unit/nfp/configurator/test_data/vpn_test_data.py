@@ -67,8 +67,11 @@ class VPNTestData(object):
         self.data_for_interface = {"stitching_mac": "00:0a:95:9d:68:25",
                                    "provider_mac": "00:0a:95:9d:68:16"}
         self.data_for_add_src_route = [{"source_cidr": "1.2.3.4/24",
+                                        "gateway_ip": "1.2.3.4/24"},
+                                       {"source_cidr": "1.2.3.4/24",
                                         "gateway_ip": "1.2.3.4/24"}]
-        self.data_for_del_src_route = [{"source_cidr": "1.2.3.4/24"}]
+        self.data_for_del_src_route = [{"source_cidr": "1.2.3.4/24"},
+                                       {"source_cidr": "1.2.3.4/24"}]
         self.conn_id = 'ac3a0e54-cdf2-4ea7-ac2f-7c0225ab9af6'
         self.data_ = {"local_cidr": "11.0.6.0/24",
                       "peer_address": "1.103.2.2",
@@ -355,8 +358,28 @@ class VPNTestData(object):
             'user_name': u'neutron',
             'agent_info': {'context': {},
                            'resource': {}},
-
-        }
+            "resource_data": {
+                    "forward_route": True,
+                    "tenant_id": "ac33b4c2d80f485a86ea515c09c74949",
+                    "nfs": [{
+                        "role": "master",
+                        "svc_mgmt_fixed_ip": "192.168.20.75",
+                        "networks": [
+                            {"cidr": "11.0.2.0/24",
+                             "gw_ip": "",
+                             "type": "provider",
+                             "ports": [{
+                                "mac": "fa:16:3e:d9:4c:33",
+                                "fixed_ip": "11.0.1.1",
+                                "floating_ip": ""}]},
+                            {"cidr": "192.168.0.0/28",
+                             "gw_ip": "192.168.0.1 ",
+                             "type": "stitching",
+                             "ports": [{
+                                 "mac": "fa:16:3e:da:ca:4d",
+                                 "fixed_ip": "192.168.0.3",
+                                 "floating_ip": ""}]}
+                                        ]}]}}
 
     def make_service_context(self, operation_type=None):
         '''
@@ -532,7 +555,38 @@ class VPNTestData(object):
         A sample keyword arguments for configurator
         Returns: resource_data
         '''
-        resource_data = {'service_type': 'vpn',
+
+        resource_data = {
+                'forward_route': True,
+                'tenant_id': 'ac33b4c2d80f485a86ea515c09c74949',
+                'fail_count': 0,
+                'nfds': [{
+                    'role': 'master',
+                    'networks': [{
+                        'cidr': '1.2.3.4/24',
+                        'gw_ip': '',
+                        'type': 'provider',
+                        'ports': [{
+                            'fixed_ip': '1.2.3.4/24',
+                            'mac': '00:0a:95:9d:68:16',
+                            'floating_ip': ''
+                        }]
+                    }, {
+                        'cidr': '1.2.3.4/24',
+                        'gw_ip': '1.2.3.4/24',
+                        'type': 'stitching',
+                        'ports': [{
+                            'mac': '00:0a:95:9d:68:25',
+                            'floating_ip': '',
+                            'fixed_ip': '1.2.3.4/24'
+                        }]
+                    }],
+                    'svc_mgmt_fixed_ip': '192.168.20.75',
+                    'periodicity': 'initial',
+                    'vmid': 'b238e3f12fb64ebcbda2b3330700bf00'
+                }]}
+
+        '''resource_data = {'service_type': 'vpn',
                          'vm_mgmt_ip': '192.168.20.75',
                          'mgmt_ip': '192.168.20.75',
                          'source_cidrs': ['1.2.3.4/24'],
@@ -549,7 +603,7 @@ class VPNTestData(object):
                          'provider_mac': '00:0a:95:9d:68:16',
                          'stitching_mac': '00:0a:95:9d:68:25',
                          'context': {'notification_data': 'hello'}
-                         }
+                         }'''
         return resource_data
 
 
