@@ -26,6 +26,7 @@ LOG = logging.getLogger(__name__)
 SUCCESS = 'SUCCESS'
 _LE = _i18n._LE
 _LI = _i18n._LI
+FAILED = 'FAILED'
 
 notifications = []
 FW_SCRIPT_PATH = ("/usr/local/lib/python2.7/dist-packages/" +
@@ -103,19 +104,31 @@ class Controller(rest.RestController):
             notification_data = []
 
             for config_data in config_datas:
-                resource = config_data['resource']
-                if resource == 'healthmonitor':
-                    self._configure_healthmonitor(config_data)
-                elif resource == 'interfaces':
-                    self._configure_interfaces(config_data)
-                elif resource == 'routes':
-                    self._add_routes(config_data)
-                elif (config_data['resource'] in ['ansible', 'heat',
-                                                'custom_json']):
-                    self._apply_user_config(config_data)
-                notification_data.append(
-                            {'resource': config_data['resource'],
-                             'data': {'status_code': SUCCESS}})
+                try:
+                    resource = config_data['resource']
+                    if resource == 'healthmonitor':
+                        self._configure_healthmonitor(config_data)
+                    elif resource == 'interfaces':
+                        self._configure_interfaces(config_data)
+                    elif resource == 'routes':
+                        self._add_routes(config_data)
+                    elif (config_data['resource'] in ['ansible', 'heat',
+                                                      'custom_json']):
+                        self._apply_user_config(config_data)
+                    else:
+                        status_msg = 'Unsupported resource'
+                        notification_data.append(
+                                {'resource': resource,
+                                 'data': {'status_code': FAILED,
+                                          'status_msg': status_msg}})
+                    notification_data.append(
+                                {'resource': config_data['resource'],
+                                 'data': {'status_code': SUCCESS}})
+                except Exception as ex:
+                    notification_data.append(
+                                {'resource': resource,
+                                 'data': {'status_code': FAILED,
+                                          'status_msg': str(ex)}})
 
             context = body['info']['context']
             self._push_notification(context, notification_data,
@@ -148,40 +161,63 @@ class Controller(rest.RestController):
                  "data : %(interface_data)s ") %
                  {'interface_data': config_data})
 
+    def get_source_cidrs_and_gateway_ip(self, route_info):
+        nfds = route_info['resource_data']['nfds']
+        source_cidrs = []
+        for nfd in nfds:
+            for network in nfd['networks']:
+                source_cidrs.append(network['cidr'])
+                if network['type'] == 'stitching':
+                    gateway_ip = network['gw_ip']
+        return source_cidrs, gateway_ip
+
     def _add_routes(self, route_info):
         LOG.info(_LI("Configuring routes with configuration "
                  "data : %(route_data)s ") %
                  {'route_data': route_info['resource_data']})
-        source_cidrs = route_info['resource_data']['source_cidrs']
-        gateway_ip = route_info['resource_data']['gateway_ip']
+        source_cidrs, gateway_ip = self.get_source_cidrs_and_gateway_ip(
+                                        route_info)
         default_route_commands = []
         for cidr in source_cidrs:
-            source_interface = self._get_if_name_by_cidr(cidr)
+            try:
+                source_interface = self._get_if_name_by_cidr(cidr)
+            except Exception:
+                raise Exception("Some of the interfaces do not have "
+                                "IP Address")
             try:
                 interface_number_string = source_interface.split("eth", 1)[1]
             except IndexError:
                 LOG.error(_LE("Retrieved wrong interface %(interface)s for "
                           "configuring routes") %
                           {'interface': source_interface})
-            routing_table_number = 20 + int(interface_number_string)
-            ip_rule_command = "ip rule add from %s table %s" % (
-                cidr, routing_table_number)
-            out1 = subprocess.Popen(ip_rule_command, shell=True,
-                                    stdout=subprocess.PIPE).stdout.read()
-            ip_rule_command = "ip rule add to %s table main" % (cidr)
-            out2 = subprocess.Popen(ip_rule_command, shell=True,
-                                    stdout=subprocess.PIPE).stdout.read()
-            ip_route_command = "ip route add table %s default via %s" % (
-                                    routing_table_number, gateway_ip)
-            default_route_commands.append(ip_route_command)
-            output = "%s\n%s" % (out1, out2)
-            LOG.info(_LI("Static route configuration result: %(output)s") %
-                     {'output': output})
+            try:
+                routing_table_number = 20 + int(interface_number_string)
+
+                ip_rule_command = "ip rule add from %s table %s" % (
+                    cidr, routing_table_number)
+                out1 = subprocess.Popen(ip_rule_command, shell=True,
+                                        stdout=subprocess.PIPE).stdout.read()
+                ip_rule_command = "ip rule add to %s table main" % (cidr)
+                out2 = subprocess.Popen(ip_rule_command, shell=True,
+                                        stdout=subprocess.PIPE).stdout.read()
+                ip_route_command = "ip route add table %s default via %s" % (
+                                        routing_table_number, gateway_ip)
+                default_route_commands.append(ip_route_command)
+                output = "%s\n%s" % (out1, out2)
+                LOG.info(_LI("Static route configuration result: %(output)s") %
+                         {'output': output})
+            except Exception as ex:
+                raise Exception("Failed to add static routes: %(ex)s" % {
+                                'ex': str(ex)})
         for command in default_route_commands:
-            out = subprocess.Popen(command, shell=True,
-                                   stdout=subprocess.PIPE).stdout.read()
-            LOG.info(_LI("Static route configuration result: %(output)s") %
-                     {'output': out})
+            try:
+                out = subprocess.Popen(command, shell=True,
+                                       stdout=subprocess.PIPE).stdout.read()
+                LOG.info(_LI("Static route configuration result: %(output)s") %
+                         {'output': out})
+            except Exception as ex:
+                raise Exception("Failed to add static routes: %(ex)s" % {
+                                'ex': str(ex)})
 
     def _get_if_name_by_cidr(self, cidr):
         interfaces = netifaces.interfaces()
