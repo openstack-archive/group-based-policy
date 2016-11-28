@@ -16,6 +16,7 @@ from gbpservice.contrib.nfp.configurator.agents import agent_base
 from gbpservice.contrib.nfp.configurator.lib import (
                             generic_config_constants as gen_cfg_const)
 from gbpservice.contrib.nfp.configurator.lib import constants as common_const
+from gbpservice.contrib.nfp.configurator.lib import data_parser
 from gbpservice.contrib.nfp.configurator.lib import utils
 from gbpservice.nfp.core import event as nfp_event
 from gbpservice.nfp.core import log as nfp_logging
@@ -49,6 +50,7 @@ class GenericConfigRpcManager(agent_base.AgentBaseRPCManager):
 
         """
 
+        self.parse = data_parser.DataParser()
         super(GenericConfigRpcManager, self).__init__(sc, conf)
 
     def _send_event(self, context, resource_data, event_id, event_key=None):
@@ -142,7 +144,7 @@ class GenericConfigRpcManager(agent_base.AgentBaseRPCManager):
         self._send_event(context,
                          resource_data,
                          gen_cfg_const.EVENT_CONFIGURE_HEALTHMONITOR,
-                         resource_data['vmid'])
+                         resource_data['nfds'][0]['vmid'])
 
     def clear_healthmonitor(self, context, resource_data):
         """Enqueues event for worker to process clear healthmonitor request.
@@ -158,7 +160,7 @@ class GenericConfigRpcManager(agent_base.AgentBaseRPCManager):
         self._send_event(context,
                          resource_data,
                          gen_cfg_const.EVENT_CLEAR_HEALTHMONITOR,
-                         resource_data['vmid'])
+                         resource_data['nfds'][0]['vmid'])
 
 
 class GenericConfigEventHandler(agent_base.AgentBaseEventHandler,
@@ -175,7 +177,7 @@ class GenericConfigEventHandler(agent_base.AgentBaseEventHandler,
                                         sc, drivers, rpcmgr)
         self.sc = sc
 
-    def _get_driver(self, service_type, service_vendor):
+    def _get_driver(self, service_type, service_vendor, service_feature):
         """Retrieves service driver object based on service type input.
 
         Currently, service drivers are identified with service type. Support
@@ -189,7 +191,7 @@ class GenericConfigEventHandler(agent_base.AgentBaseEventHandler,
 
         """
 
-        return self.drivers[service_type + service_vendor]
+        return self.drivers[service_type + service_vendor + service_feature]
 
     def handle_event(self, ev):
         """Processes the generated events in worker context.
@@ -218,7 +220,7 @@ class GenericConfigEventHandler(agent_base.AgentBaseEventHandler,
             # Process HM poll events
             elif ev.id == gen_cfg_const.EVENT_CONFIGURE_HEALTHMONITOR:
                 resource_data = ev.data.get('resource_data')
-                periodicity = resource_data.get('periodicity')
+                periodicity = resource_data['nfds'][0]['periodicity']
                 EV_CONF_HM_MAXRETRY = (
                     gen_cfg_const.EVENT_CONFIGURE_HEALTHMONITOR_MAXRETRY)
                 if periodicity == gen_cfg_const.INITIAL:
@@ -246,6 +248,7 @@ class GenericConfigEventHandler(agent_base.AgentBaseEventHandler,
         context = agent_info['context']
         service_type = agent_info['resource_type']
         service_vendor = agent_info['service_vendor']
+        service_feature = agent_info.get('service_feature', '')
 
         try:
             msg = ("Worker process with ID: %s starting "
@@ -253,7 +256,8 @@ class GenericConfigEventHandler(agent_base.AgentBaseEventHandler,
                    % (os.getpid(), ev.id, str(service_type)))
             LOG.debug(msg)
 
-            driver = self._get_driver(service_type, service_vendor)
+            driver = self._get_driver(service_type, service_vendor,
+                                      service_feature)
 
             # Invoke service driver methods based on event type received
             result = getattr(driver, "%s" % ev.id.lower())(context,
@@ -265,12 +269,14 @@ class GenericConfigEventHandler(agent_base.AgentBaseEventHandler,
             result = common_const.FAILED
 
         if ev.id == gen_cfg_const.EVENT_CONFIGURE_HEALTHMONITOR:
-            if (resource_data.get('periodicity') == gen_cfg_const.INITIAL and
+            if (resource_data['nfds'][0][
+                                'periodicity'] == gen_cfg_const.INITIAL and
                     result == common_const.SUCCESS):
                 notification_data = self._prepare_notification_data(ev, result)
                 self.notify._notification(notification_data)
                 return {'poll': False}
-            elif resource_data.get('periodicity') == gen_cfg_const.FOREVER:
+            elif resource_data['nfds'][0][
+                                'periodicity'] == gen_cfg_const.FOREVER:
                 if result == common_const.FAILED:
                     """If health monitoring fails continuously for 5 times
                        send fail notification to orchestrator
@@ -419,6 +425,8 @@ def load_drivers(conf):
         driver_obj = driver_name(conf=conf)
         drivers[service_type] = driver_obj
 
+    msg = ("Generic config agent loaded drivers: %s" % drivers)
+    LOG.info(msg)
     return drivers
 
 

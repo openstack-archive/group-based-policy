@@ -16,6 +16,7 @@ import unittest
 
 from oslo_config import cfg
 
+from gbpservice.nfp.common import constants as nfp_constants
 from gbpservice.nfp.common import exceptions
 from gbpservice.nfp.orchestrator.drivers import (
     orchestration_driver
@@ -225,7 +226,7 @@ class OrchestrationDriverTestCase(unittest.TestCase):
                                  {'id': '4',
                                   'port_model': 'neutron',
                                   'port_classification': 'consumer'}],
-                       'vendor_data': {},
+                       'meta_data': {},
                        'token': str(pyuuid.uuid4()),
                        'tenant_id': str(pyuuid.uuid4())}
 
@@ -261,7 +262,7 @@ class OrchestrationDriverTestCase(unittest.TestCase):
                                            'service_type': 'firewall',
                                            'service_vendor': 'vyos',
                                            'network_mode': 'gbp'},
-                       'vendor_data': {},
+                       'meta_data': {},
                        'ports': [{'id': '3',
                                   'port_model': 'gbp',
                                   'port_classification': 'provider'},
@@ -286,10 +287,11 @@ class OrchestrationDriverTestCase(unittest.TestCase):
                        'mgmt_ip_address': 'a.b.c.d'}
 
         self.assertIsInstance(
-            driver.get_network_function_device_healthcheck_info(device_data),
+            driver.get_network_function_device_config(device_data,
+                nfp_constants.HEALTHMONITOR_RESOURCE),
             dict, msg='')
 
-    def test_get_network_function_device_config_info(self):
+    def test_get_network_function_device_config(self):
         driver = orchestration_driver.OrchestrationDriver(
             cfg.CONF,
             supports_device_sharing=True,
@@ -315,6 +317,7 @@ class OrchestrationDriverTestCase(unittest.TestCase):
                                   'port_model': 'gbp',
                                   'port_classification': 'provider'}]}
 
-        reply = driver.get_network_function_device_config_info(device_data)
+        reply = driver.get_network_function_device_config(device_data,
+                nfp_constants.GENERIC_CONFIG)
         self.assertIsInstance(reply, dict, msg='')
         self.assertTrue('config' in reply)

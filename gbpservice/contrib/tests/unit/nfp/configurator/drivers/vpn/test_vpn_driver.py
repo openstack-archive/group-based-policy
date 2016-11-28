@@ -277,8 +277,8 @@ class VPNSvcValidatorTestCase(base.BaseTestCase):
         """
 
         context = self.test_dict.make_service_context()
-        svc = self.test_dict._create_vpnservice_obj()['resource']
-        description = str(svc['description'])
+        svc = self.test_dict._create_vpnservice_obj()
+        description = str(svc['resource']['description'])
         description = description.split(';')
         description[1] = 'tunnel_local_cidr=12.0.6.0/24'
         description = ";".join(description)
@@ -299,7 +299,7 @@ class VPNSvcValidatorTestCase(base.BaseTestCase):
         with mock.patch.object(self.plugin_rpc, "update_status") as mock_valid:
             self.valid_obj.validate(
                 context,
-                self.test_dict._create_vpnservice_obj()['resource'])
+                self.test_dict._create_vpnservice_obj())
             mock_valid.assert_called_with(
                 context,
                 self.test_dict.vpn_vpnsvc_active)
