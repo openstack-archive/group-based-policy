@@ -13,6 +13,9 @@
 import ast
 import copy
 from gbpservice.contrib.nfp.config_orchestrator.common import common
+from gbpservice.nfp.common import constants as const
+from gbpservice.nfp.common import data_formatter as df
+from gbpservice.nfp.common import utils
 from gbpservice.nfp.core import log as nfp_logging
 from gbpservice.nfp.lib import transport
 
@@ -37,14 +40,6 @@ class VpnAgent(vpn_db.VPNPluginDb, vpn_db.VPNPluginRpcDbMixin):
         self._conf = conf
         self._sc = sc
         self._db_inst = super(VpnAgent, self)
-
-    def _get_dict_desc_from_string(self, vpn_svc):
-        svc_desc = vpn_svc.split(";")
-        desc = {}
-        for ele in svc_desc:
-            s_ele = ele.split("=")
-            desc.update({s_ele[0]: s_ele[1]})
-        return desc
 
     def _get_vpn_context(self, context, tenant_id, vpnservice_id,
                          ikepolicy_id, ipsecpolicy_id,
@@ -85,7 +80,8 @@ class VpnAgent(vpn_db.VPNPluginDb, vpn_db.VPNPluginRpcDbMixin):
             return None
 
     def _prepare_resource_context_dicts(self, context, tenant_id,
-                                        resource, resource_data):
+                                        resource, resource_data,
+                                        context_resource_data):
         # Prepare context_dict
         ctx_dict = context.to_dict()
         # Collecting db entry required by configurator.
@@ -95,15 +91,28 @@ class VpnAgent(vpn_db.VPNPluginDb, vpn_db.VPNPluginRpcDbMixin):
                            resource_data)
         rsrc_ctx_dict = copy.deepcopy(ctx_dict)
         rsrc_ctx_dict.update({'service_info': db})
+        rsrc_ctx_dict.update({'resource_data': context_resource_data})
         return ctx_dict, rsrc_ctx_dict
+
+    def _get_resource_data(self, description, resource_type):
+        resource_data = df.get_network_function_info(description,
+                                                     resource_type)
+        return resource_data
+
+    def _update_request_data(self, body, description):
+        pass
 
     def _data_wrapper(self, context, tenant_id, nf, **kwargs):
         nfp_context = {}
-        str_description = nf['description'].split('\n')[1]
-        description = self._get_dict_desc_from_string(
-            str_description)
+        description, str_description = (
+                utils.get_vpn_description_from_nf(nf))
+        description.update({'tenant_id': tenant_id})
+        context_resource_data = self._get_resource_data(description,
+                                                        const.VPN)
         resource = kwargs['rsrc_type']
         resource_data = kwargs['resource']
+        # REVISIT(dpak): We need to avoid resource description
+        # dependency in OTC and instead use neutron context description.
         resource_data['description'] = str_description
         if resource.lower() == 'ipsec_site_connection':
             nfp_context = {'network_function_id': nf['id'],
@@ -112,7 +121,8 @@ class VpnAgent(vpn_db.VPNPluginDb, vpn_db.VPNPluginRpcDbMixin):
 
         ctx_dict, rsrc_ctx_dict = self.\
             _prepare_resource_context_dicts(context, tenant_id,
-                                            resource, resource_data)
+                                            resource, resource_data,
+                                            context_resource_data)
         nfp_context.update({'neutron_context': ctx_dict,
                             'requester': 'nas_service',
                             'logging_context':
@@ -122,6 +132,7 @@ class VpnAgent(vpn_db.VPNPluginDb, vpn_db.VPNPluginRpcDbMixin):
         body = common.prepare_request_data(nfp_context, resource,
                                            resource_type, kwargs,
                                            description['service_vendor'])
+        self._update_request_data(body, description)
         return body
 
     def _fetch_nf_from_resource_desc(self, desc):

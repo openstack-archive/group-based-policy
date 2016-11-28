@@ -34,5 +34,5 @@ class NFPNetworkDriverBase(object):
     def get_port_details(self, token, port_id):
         pass
 
-    def set_promiscuos_mode(self, token, port_id):
+    def set_promiscuos_mode(self, token, port_id, enable_port_security):
         pass
