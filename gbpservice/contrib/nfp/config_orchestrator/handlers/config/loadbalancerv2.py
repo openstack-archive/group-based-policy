@@ -16,6 +16,7 @@ import copy
 from gbpservice.contrib.nfp.config_orchestrator.common import common
 from gbpservice.contrib.nfp.config_orchestrator.common import lbv2_constants
 from gbpservice.nfp.common import constants as const
+from gbpservice.nfp.common import data_formatter as df
 from gbpservice.nfp.core import log as nfp_logging
 from gbpservice.nfp.lib import transport
 
@@ -93,7 +94,7 @@ class Lbv2Agent(loadbalancer_dbv2.LoadBalancerPluginDbv2):
             kwargs['tenant_id'] = context.tenant_id
         core_db = self._get_core_context(context, kwargs['tenant_id'])
         # REVISIT(jiahao): _get_lb_context() fails for flavor_id, disable it
-        # for now. Sent the whole core_db to cofigurator
+        # for now. Sent the whole core_db to configurator
         # lb_db = self._get_lb_context(**kwargs)
         # db = self._filter_service_info_with_resource(lb_db, core_db)
         db = core_db
@@ -102,6 +103,7 @@ class Lbv2Agent(loadbalancer_dbv2.LoadBalancerPluginDbv2):
     def _prepare_resource_context_dicts(self, **kwargs):
         # Prepare context_dict
         context = kwargs.get('context')
+        context_resource_data = kwargs.pop('context_resource_data')
         ctx_dict = context.to_dict()
         # Collecting db entry required by configurator.
         # Addind service_info to neutron context and sending
@@ -109,11 +111,17 @@ class Lbv2Agent(loadbalancer_dbv2.LoadBalancerPluginDbv2):
         db = self._context(**kwargs)
         rsrc_ctx_dict = copy.deepcopy(ctx_dict)
         rsrc_ctx_dict.update({'service_info': db})
+        rsrc_ctx_dict.update({'resource_data': context_resource_data})
         return ctx_dict, rsrc_ctx_dict
 
     def _data_wrapper(self, context, tenant_id, name, reason, nf, **kwargs):
         nfp_context = {}
         description = ast.literal_eval((nf['description'].split('\n'))[1])
+        description.update({'tenant_id': tenant_id})
+        context_resource_data = df.get_network_function_info(
+                                            description, const.LOADBALANCERV2)
+        # REVISIT(dpak): We need to avoid resource description
+        # dependency in OTC and in stead use neutron context description.
         if name.lower() == 'loadbalancer':
             lb_id = kwargs['loadbalancer']['id']
             kwargs['loadbalancer'].update({'description': str(description)})
@@ -142,7 +150,8 @@ class Lbv2Agent(loadbalancer_dbv2.LoadBalancerPluginDbv2):
         args = {'tenant_id': tenant_id,
                 'lb_id': lb_id,
                 'context': context,
-                'description': str(description)}
+                'description': str(description),
+                'context_resource_data': context_resource_data}
 
         ctx_dict, rsrc_ctx_dict = self._prepare_resource_context_dicts(**args)
 
