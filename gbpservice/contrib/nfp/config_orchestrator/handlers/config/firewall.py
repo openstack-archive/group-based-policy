@@ -14,6 +14,8 @@ import ast
 import copy
 
 from gbpservice.contrib.nfp.config_orchestrator.common import common
+from gbpservice.nfp.common import constants as const
+from gbpservice.nfp.common import data_formatter as df
 from gbpservice.nfp.core import log as nfp_logging
 from gbpservice.nfp.lib import transport
 
@@ -25,7 +27,7 @@ import oslo_messaging as messaging
 LOG = nfp_logging.getLogger(__name__)
 
 """
-RPC handler for Firwrall service
+RPC handler for Firewall service
 """
 
 
@@ -84,6 +86,7 @@ class FwAgent(firewall_db.Firewall_db_mixin):
     def _prepare_resource_context_dicts(self, **kwargs):
         # Prepare context_dict
         context = kwargs.get('context')
+        context_resource_data = kwargs.pop('context_resource_data')
         ctx_dict = context.to_dict()
         # Collecting db entry required by configurator.
         # Addind service_info to neutron context and sending
@@ -91,15 +94,30 @@ class FwAgent(firewall_db.Firewall_db_mixin):
         db = self._context(**kwargs)
         rsrc_ctx_dict = copy.deepcopy(ctx_dict)
         rsrc_ctx_dict.update({'service_info': db})
+        rsrc_ctx_dict.update({'resource_data': context_resource_data})
         return ctx_dict, rsrc_ctx_dict
+
+    def _get_resource_data(self, description, resource_type):
+        resource_data = df.get_network_function_info(description,
+                                                     resource_type)
+        return resource_data
+
+    def _update_request_data(self, body, description):
+        pass
 
     def _data_wrapper(self, context, firewall, host, nf, reason):
         # Hardcoding the position for fetching data since we are owning
         # its positional change
         description = ast.literal_eval((nf['description'].split('\n'))[1])
+        description.update({'tenant_id': firewall['tenant_id']})
+        context_resource_data = self._get_resource_data(description,
+                                                        const.FIREWALL)
         fw_mac = description['provider_ptg_info'][0]
+        # REVISIT(dpak): We need to avoid resource description
+        # dependency in OTC and in stead use neutron context description.
         firewall.update({'description': str(description)})
         kwargs = {'context': context,
+                  'context_resource_data': context_resource_data,
                   'firewall_policy_id': firewall[
                       'firewall_policy_id'],
                   'description': str(description),
@@ -119,6 +137,7 @@ class FwAgent(firewall_db.Firewall_db_mixin):
         body = common.prepare_request_data(nfp_context, resource,
                                            resource_type, resource_data,
                                            description['service_vendor'])
+        self._update_request_data(body, description)
         return body
 
     def _fetch_nf_from_resource_desc(self, desc):

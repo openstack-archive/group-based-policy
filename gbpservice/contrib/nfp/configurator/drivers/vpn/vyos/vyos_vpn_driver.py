@@ -18,6 +18,7 @@ from gbpservice.contrib.nfp.configurator.drivers.base import base_driver
 from gbpservice.contrib.nfp.configurator.drivers.vpn.vyos import (
                                                 vyos_vpn_constants as const)
 from gbpservice.contrib.nfp.configurator.lib import constants as common_const
+from gbpservice.contrib.nfp.configurator.lib import data_parser
 from gbpservice.contrib.nfp.configurator.lib import vpn_constants as vpn_const
 from gbpservice.nfp.core import log as nfp_logging
 
@@ -262,7 +263,7 @@ class VPNServiceValidator(object):
         local_cidr = tokens[1].split('=')[1]
         return local_cidr
 
-    def validate(self, context, vpnsvc):
+    def validate(self, context, resource_data):
         """
         Get the vpn services for this tenant
         Check for overlapping lcidr - (not allowed)
@@ -273,7 +274,9 @@ class VPNServiceValidator(object):
 
         Returns: None
         """
-        lcidr = self._get_local_cidr(vpnsvc)
+
+        vpnsvc = resource_data.get('resource')
+        lcidr = resource_data.get('provider_cidr')
         filters = {'tenant_id': [context['tenant_id']]}
         t_vpnsvcs = self.agent.get_vpn_services(
             context, filters=filters)
@@ -303,6 +306,7 @@ class VpnGenericConfigDriver(base_driver.BaseDriver):
 
     def __init__(self):
         self.timeout = const.REST_TIMEOUT
+        self.parse = data_parser.DataParser()
 
     def _configure_static_ips(self, resource_data):
         """ Configure static IPs for provider and stitching interfaces
@@ -323,11 +327,7 @@ class VpnGenericConfigDriver(base_driver.BaseDriver):
             provider_mac=resource_data.get('provider_mac'),
             stitching_ip=resource_data.get('stitching_ip'),
             stitching_cidr=resource_data.get('stitching_cidr'),
-            stitching_mac=resource_data.get('stitching_mac'),
-            provider_interface_position=resource_data.get(
-                                        'provider_interface_index'),
-            stitching_interface_position=resource_data.get(
-                                        'stitching_interface_index'))
+            stitching_mac=resource_data.get('stitching_mac'))
         mgmt_ip = resource_data['mgmt_ip']
 
         url = const.request_url % (mgmt_ip,
@@ -385,6 +385,9 @@ class VpnGenericConfigDriver(base_driver.BaseDriver):
         Returns: SUCCESS/Failure message with reason.
 
         """
+
+        resource_data = self.parse.parse_data(common_const.INTERFACES,
+                                              resource_data)
         mgmt_ip = resource_data['mgmt_ip']
 
         try:
@@ -536,6 +539,8 @@ class VpnGenericConfigDriver(base_driver.BaseDriver):
 
         """
 
+        resource_data = self.parse.parse_data(common_const.INTERFACES,
+                                              resource_data)
         try:
             result_static_ips = self._clear_static_ips(resource_data)
         except Exception as err:
@@ -605,15 +610,22 @@ class VpnGenericConfigDriver(base_driver.BaseDriver):
         Returns: SUCCESS/Failure message with reason.
 
         """
-
+        forward_routes = resource_data.get('forward_route')
+        resource_data = self.parse.parse_data(common_const.ROUTES,
+                                              resource_data)
         mgmt_ip = resource_data.get('mgmt_ip')
-        source_cidrs = resource_data.get('source_cidrs')
-        gateway_ip = resource_data.get('gateway_ip')
+        gateway_ip = resource_data.get('stitching_gw_ip')
+        if not forward_routes:
+            source_cidrs = [resource_data.get('stitching_cidr')]
+        else:
+            source_cidrs = [resource_data.get('provider_cidr'),
+                            resource_data.get('stitching_cidr')]
 
         stitching_url = const.request_url % (mgmt_ip,
                                              const.CONFIGURATION_SERVER_PORT,
                                              'add-stitching-route')
         st_data = jsonutils.dumps({'gateway_ip': gateway_ip})
+
         try:
             resp = requests.post(
                 stitching_url, data=st_data, timeout=self.timeout)
@@ -685,14 +697,17 @@ class VpnGenericConfigDriver(base_driver.BaseDriver):
 
         """
         # clear the static stitching gateway route
+        resource_data = self.parse.parse_data(common_const.ROUTES,
+                                              resource_data)
         mgmt_ip = resource_data.get('mgmt_ip')
-        source_cidrs = resource_data.get('source_cidrs')
+        source_cidrs = [resource_data.get('provider_cidr'),
+                        resource_data.get('stitching_cidr')]
 
         stitching_url = const.request_url % (mgmt_ip,
                                              const.CONFIGURATION_SERVER_PORT,
                                              'delete-stitching-route')
         st_data = jsonutils.dumps(
-            {'gateway_ip': resource_data.get('gateway_ip')})
+            {'gateway_ip': resource_data.get('stitching_gw_ip')})
         try:
             resp = requests.post(
                 stitching_url, data=st_data, timeout=self.timeout)
@@ -740,14 +755,13 @@ class VpnGenericConfigDriver(base_driver.BaseDriver):
                     "Response Content: %r" % (resp.status_code, resp.content))
 
 
+@base_driver.set_class_attr(SERVICE_TYPE=vpn_const.SERVICE_TYPE,
+                            SERVICE_VENDOR=const.SERVICE_VENDOR)
 class VpnaasIpsecDriver(VpnGenericConfigDriver):
     """
     Driver class for implementing VPN IPSEC configuration
     requests from VPNaas Plugin.
     """
-
-    service_type = vpn_const.SERVICE_TYPE
-    service_vendor = const.SERVICE_VENDOR
 
     def __init__(self, conf):
         self.conf = conf
@@ -820,37 +834,6 @@ class VpnaasIpsecDriver(VpnGenericConfigDriver):
             if item['id'] == conn['id']:
                 item['status'] = vpn_const.STATE_INIT
 
-    def _get_fip_from_vpnsvc(self, vpn_svc):
-        svc_desc = vpn_svc['description']
-        tokens = svc_desc.split(';')
-        fip = tokens[0].split('=')[1]
-        return fip
-
-    def _get_fip(self, svc_context):
-        return self._get_fip_from_vpnsvc(svc_context['service'])
-
-    def _get_ipsec_tunnel_local_cidr_from_vpnsvc(self, vpn_svc):
-        svc_desc = vpn_svc['description']
-        tokens = svc_desc.split(';')
-        tunnel_local_cidr = tokens[1].split('=')[1]
-        return tunnel_local_cidr
-
-    def _get_ipsec_tunnel_local_cidr(self, svc_context):
-        return self._get_ipsec_tunnel_local_cidr_from_vpnsvc(
-                                                        svc_context['service'])
-
-    def _get_stitching_fixed_ip(self, conn):
-        desc = conn['description']
-        tokens = desc.split(';')
-        fixed_ip = tokens[3].split('=')[1]
-        return fixed_ip
-
-    def _get_user_access_ip(self, conn):
-        desc = conn['description']
-        tokens = desc.split(';')
-        access_ip = tokens[2].split('=')[1]
-        return access_ip
-
     def _ipsec_conn_correct_enc_algo(self, conn):
         ike_enc_algo = conn['ikepolicy']['encryption_algorithm']
         ipsec_enc_algo = conn['ipsecpolicy']['encryption_algorithm']
@@ -881,7 +864,24 @@ class VpnaasIpsecDriver(VpnGenericConfigDriver):
             filters['peer_address'] = peer_address
         return filters
 
-    def _ipsec_create_conn(self, context, mgmt_fip, conn):
+    def _get_ipsec_tunnel_local_cidr_from_vpnsvc(self, vpn_svc):
+        svc_desc = vpn_svc['description']
+        tokens = svc_desc.split(';')
+        tunnel_local_cidr = tokens[1].split('=')[1]
+
+        # REVISIT(pritam): HA
+        standby_fip = None
+        try:
+            standby_fip = tokens[9].split('=')[1]
+        except Exception:
+            pass
+        return tunnel_local_cidr, standby_fip
+
+    def _get_ipsec_tunnel_local_cidr(self, svc_context):
+        return self._get_ipsec_tunnel_local_cidr_from_vpnsvc(
+                                                        svc_context['service'])
+
+    def _ipsec_create_conn(self, context, mgmt_fip, resource_data):
         """
         Get the context for this ipsec conn and make POST to the service VM.
         :param context: Dictionary which holds all the required data for
@@ -892,14 +892,21 @@ class VpnaasIpsecDriver(VpnGenericConfigDriver):
         Returns: None
         """
 
+        conn = resource_data.get('resource')
         svc_context = self.agent.get_vpn_servicecontext(
             context, self._get_filters(conn_id=conn['id']))[0]
-        tunnel_local_cidr = self._get_ipsec_tunnel_local_cidr(svc_context)
+
+        # REVISIT(pritam): For HA we need to send standby_fip to svc vm agent
+        tunnel_local_cidr, standby_fip = self._get_ipsec_tunnel_local_cidr(
+                                                                svc_context)
+        if standby_fip:
+            svc_context['siteconns'][0]['connection']['standby_fip'] = (
+                                                                standby_fip)
         conn = svc_context['siteconns'][0]['connection']
         svc_context['siteconns'][0]['connection']['stitching_fixed_ip'] = (
-            self._get_stitching_fixed_ip(conn))
+            resource_data['stitching_ip'])
         svc_context['siteconns'][0]['connection']['access_ip'] = (
-            self._get_user_access_ip(conn))
+            resource_data['stitching_floating_ip'])
         msg = "IPSec: Pushing ipsec configuration %s" % conn
         LOG.info(msg)
         conn['tunnel_local_cidr'] = tunnel_local_cidr
@@ -921,7 +928,8 @@ class VpnaasIpsecDriver(VpnGenericConfigDriver):
         svc_context = self.agent.get_vpn_servicecontext(
             context, self._get_filters(conn_id=conn['id']))[0]
 
-        tunnel_local_cidr = self._get_ipsec_tunnel_local_cidr(svc_context)
+        tunnel_local_cidr, _ = self._get_ipsec_tunnel_local_cidr(
+            svc_context)
 
         tunnel = {}
         tunnel['peer_address'] = conn['peer_address']
@@ -1013,7 +1021,7 @@ class VpnaasIpsecDriver(VpnGenericConfigDriver):
                         context, conn, msg)
 
     def _ipsec_delete_tunnel(self, context, mgmt_fip,
-                             conn):
+                             resource_data):
         """
         Make DELETE to the service VM to delete the tunnel.
 
@@ -1025,7 +1033,8 @@ class VpnaasIpsecDriver(VpnGenericConfigDriver):
         Returns: None
         """
 
-        lcidr = self._get_ipsec_tunnel_local_cidr_from_vpnsvc(conn)
+        conn = resource_data.get('resource')
+        lcidr = resource_data['provider_cidr']
 
         tunnel = {}
         tunnel['peer_address'] = conn['peer_address']
@@ -1076,7 +1085,7 @@ class VpnaasIpsecDriver(VpnGenericConfigDriver):
         """
 
         c_state = None
-        lcidr = self._get_ipsec_tunnel_local_cidr(svc_context)
+        lcidr, _ = self._get_ipsec_tunnel_local_cidr(svc_context)
         if conn['status'] == vpn_const.STATE_INIT:
             tunnel = {
                 'peer_address': conn['peer_address'],
@@ -1098,19 +1107,11 @@ class VpnaasIpsecDriver(VpnGenericConfigDriver):
             return c_state, True
         return c_state, False
 
-    def _get_vm_mgmt_ip_from_desc(self, desc):
-        svc_desc = desc['description']
-        tokens = svc_desc.split(';')
-        vm_mgmt_ip = tokens[0].split('=')[1]
-        return vm_mgmt_ip
-
     def create_vpn_service(self, context, resource_data):
-
-        svc = resource_data.get('resource')
-        msg = "Validating VPN service %s " % svc
+        msg = "Validating VPN service %s " % resource_data.get('resource')
         LOG.info(msg)
         validator = VPNServiceValidator(self.agent)
-        validator.validate(context, svc)
+        validator.validate(context, resource_data)
 
     def create_ipsec_conn(self, context, resource_data):
         """
@@ -1124,7 +1125,7 @@ class VpnaasIpsecDriver(VpnGenericConfigDriver):
         """
 
         conn = resource_data.get('resource')
-        mgmt_fip = self._get_vm_mgmt_ip_from_desc(conn)
+        mgmt_fip = resource_data['mgmt_ip']
         msg = "IPsec: create siteconnection %s" % conn
         LOG.info(msg)
         """
@@ -1140,7 +1141,7 @@ class VpnaasIpsecDriver(VpnGenericConfigDriver):
                 . Add peer for different peer
         b) First conn, create complete ipsec profile
         """
-        t_lcidr = self._get_ipsec_tunnel_local_cidr_from_vpnsvc(conn)
+        t_lcidr = resource_data['provider_cidr']
         if t_lcidr in conn['peer_cidrs']:
             msg = ("IPSec: Tunnel remote cidr %s conflicts "
                    "with local cidr." % t_lcidr)
@@ -1161,7 +1162,7 @@ class VpnaasIpsecDriver(VpnGenericConfigDriver):
             LOG.error(msg)
         try:
             if not tenant_conns:
-                self._ipsec_create_conn(context, mgmt_fip, conn)
+                self._ipsec_create_conn(context, mgmt_fip, resource_data)
             else:
                 """
                 Check if this conn has overlapping peer
@@ -1203,14 +1204,14 @@ class VpnaasIpsecDriver(VpnGenericConfigDriver):
         conn = resource_data.get('resource')
         msg = "IPsec: delete siteconnection %s" % conn
         LOG.info(msg)
-        mgmt_fip = self._get_vm_mgmt_ip_from_desc(conn)
+        mgmt_fip = resource_data['mgmt_ip']
 
         tenant_conns = self._ipsec_get_tenant_conns(
             context, mgmt_fip, conn, on_delete=True)
         try:
             if tenant_conns:
                 self._ipsec_delete_tunnel(
-                    context, mgmt_fip, conn)
+                    context, mgmt_fip, resource_data)
             else:
                 self._ipsec_delete_connection(
                     context, mgmt_fip, conn)
@@ -1228,7 +1229,14 @@ class VpnaasIpsecDriver(VpnGenericConfigDriver):
 
         Returns: None
         """
-        fip = self._get_fip(svc_context)
+
+        vpn_desc = self.parse.parse_data(common_const.VPN, context)
+        # Other than non HA vpn_desc will be a list of parsed nfs
+        if type(vpn_desc) == list:
+            fip = vpn_desc[0]['mgmt_ip']
+        else:
+            fip = vpn_desc['mgmt_ip']
+
         conn = svc_context['siteconns'][0]['connection']
 
         try:
@@ -1255,6 +1263,10 @@ class VpnaasIpsecDriver(VpnGenericConfigDriver):
 
         Returns: None
         """
+
+        vpn_desc = self.parse.parse_data(common_const.VPN, context)
+        resource_data.update(vpn_desc)
+
         msg = ("Handling VPN service update notification '%s'",
                resource_data.get('reason', ''))
         LOG.info(msg)
