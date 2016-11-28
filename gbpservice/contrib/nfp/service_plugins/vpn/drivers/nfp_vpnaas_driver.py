@@ -32,7 +32,7 @@ BASE_VPN_VERSION = '1.0'
 AGENT_TYPE_VPN = 'NFP Vpn agent'
 ACTIVE = 'ACTIVE'
 ERROR = 'ERROR'
-TIMEOUT = 20
+TIMEOUT = 80
 
 
 class VPNAgentHostingServiceNotFound(exceptions.NeutronException):

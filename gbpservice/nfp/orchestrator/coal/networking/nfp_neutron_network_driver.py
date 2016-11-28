@@ -14,6 +14,7 @@ from gbpservice.nfp.orchestrator.openstack import openstack_driver
 from gbpservice.nfp.orchestrator.coal.networking import(
     nfp_network_driver_base as ndb
 )
+from gbpservice.nfp.common import utils
 
 
 class NFPNeutronNetworkDriver(ndb.NFPNetworkDriverBase):
@@ -21,6 +22,7 @@ class NFPNeutronNetworkDriver(ndb.NFPNetworkDriverBase):
     def __init__(self, config):
         # self.network_handler = openstack_driver.NeutronClient(config)
         self.neutron_client = openstack_driver.NeutronClient(config)
+        self.config = config
 
     def setup_traffic_steering(self):
         pass
@@ -72,12 +74,17 @@ class NFPNeutronNetworkDriver(ndb.NFPNetworkDriverBase):
         cidr = subnet['subnet']['cidr']
         gateway_ip = subnet['subnet']['gateway_ip']
 
-        return (ip, mac, cidr, gateway_ip)
+        return (ip, mac, cidr, gateway_ip, port, subnet)
 
     def set_promiscuos_mode(self, token, port_id):
+        is_aci_setup = utils.is_aci_setup()
+        if not is_aci_setup:
+            port_security = False
+        else:
+            port_security = True
         self.neutron_client.update_port(token, port_id,
                                         security_groups=[],
-                                        port_security_enabled=False)
+                                        port_security_enabled=port_security)
 
     def get_service_profile(self, token, service_profile_id):
         return {}

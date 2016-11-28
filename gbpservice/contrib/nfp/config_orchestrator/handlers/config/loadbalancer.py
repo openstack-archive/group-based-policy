@@ -15,6 +15,7 @@ import copy
 
 from gbpservice.contrib.nfp.config_orchestrator.common import common
 from gbpservice.nfp.common import constants as const
+from gbpservice.nfp.common import data_formatter as df
 from gbpservice.nfp.core import log as nfp_logging
 from gbpservice.nfp.lib import transport
 
@@ -100,6 +101,7 @@ class LbAgent(loadbalancer_db.LoadBalancerPluginDb):
     def _prepare_resource_context_dicts(self, **kwargs):
         # Prepare context_dict
         context = kwargs.get('context')
+        context_resource_data = kwargs.pop('context_resource_data')
         ctx_dict = context.to_dict()
         # Collecting db entry required by configurator.
         # Addind service_info to neutron context and sending
@@ -107,11 +109,25 @@ class LbAgent(loadbalancer_db.LoadBalancerPluginDb):
         db = self._context(**kwargs)
         rsrc_ctx_dict = copy.deepcopy(ctx_dict)
         rsrc_ctx_dict.update({'service_info': db})
+        rsrc_ctx_dict.update({'resource_data': context_resource_data})
         return ctx_dict, rsrc_ctx_dict
+
+    def _get_resource_data(self, description, resource_type):
+        resource_data = df.get_network_function_info(description,
+                                                     resource_type)
+        return resource_data
+
+    def _update_request_data(self, body, description):
+        pass
 
     def _data_wrapper(self, context, tenant_id, name, reason, nf, **kwargs):
         nfp_context = {}
         description = ast.literal_eval((nf['description'].split('\n'))[1])
+        description.update({'tenant_id': tenant_id})
+        # REVISIT(dpak): We need to avoid resource description
+        # dependency in OTC and in stead use neutron context description.
+        context_resource_data = self._get_resource_data(description,
+                                                        const.LOADBALANCER)
         if name.lower() == 'pool_health_monitor':
             pool_id = kwargs.get('pool_id')
             kwargs['health_monitor'].update({'description': str(description)})
@@ -130,7 +146,8 @@ class LbAgent(loadbalancer_db.LoadBalancerPluginDb):
         args = {'tenant_id': tenant_id,
                 'pool_id': pool_id,
                 'context': context,
-                'description': str(description)}
+                'description': str(description),
+                'context_resource_data': context_resource_data}
         ctx_dict, rsrc_ctx_dict = self._prepare_resource_context_dicts(
             **args)
 
@@ -145,6 +162,7 @@ class LbAgent(loadbalancer_db.LoadBalancerPluginDb):
         body = common.prepare_request_data(nfp_context, resource,
                                            resource_type, resource_data,
                                            description['service_vendor'])
+        self._update_request_data(body, description)
         return body
 
     def _post(self, context, tenant_id, name, nf, **kwargs):
