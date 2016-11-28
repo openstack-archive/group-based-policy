@@ -10,7 +10,6 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-import ast
 import requests
 
 from gbpservice.nfp.core import log as nfp_logging
@@ -21,6 +20,7 @@ from gbpservice.contrib.nfp.configurator.drivers.base import base_driver
 from gbpservice.contrib.nfp.configurator.drivers.firewall.vyos import (
                                                 vyos_fw_constants as const)
 from gbpservice.contrib.nfp.configurator.lib import constants as common_const
+from gbpservice.contrib.nfp.configurator.lib import data_parser
 from gbpservice.contrib.nfp.configurator.lib import fw_constants as fw_const
 
 LOG = nfp_logging.getLogger(__name__)
@@ -85,7 +85,7 @@ class FwGenericConfigDriver(base_driver.BaseDriver):
     """
 
     def __init__(self):
-        pass
+        self.parse = data_parser.DataParser()
 
     def _configure_static_ips(self, resource_data):
         """ Configure static IPs for provider and stitching interfaces
@@ -107,10 +107,9 @@ class FwGenericConfigDriver(base_driver.BaseDriver):
                     stitching_ip=resource_data.get('stitching_ip'),
                     stitching_cidr=resource_data.get('stitching_cidr'),
                     stitching_mac=resource_data.get('stitching_mac'),
-                    provider_interface_position=resource_data.get(
-                                            'provider_interface_index'),
-                    stitching_interface_position=resource_data.get(
-                                            'stitching_interface_index'))
+                    monitoring_ip=resource_data.get('monitoring_ip'),
+                    monitoring_cidr=resource_data.get('monitoring_cidr'),
+                    monitoring_mac=resource_data.get('monitoring_mac'))
         mgmt_ip = resource_data['mgmt_ip']
 
         url = const.request_url % (mgmt_ip,
@@ -158,6 +157,8 @@ class FwGenericConfigDriver(base_driver.BaseDriver):
 
         """
 
+        resource_data = self.parse.parse_data(common_const.INTERFACES,
+                                              resource_data)
         mgmt_ip = resource_data['mgmt_ip']
 
         try:
@@ -287,6 +288,8 @@ class FwGenericConfigDriver(base_driver.BaseDriver):
 
         """
 
+        resource_data = self.parse.parse_data(common_const.INTERFACES,
+                                              resource_data)
         try:
             result_static_ips = self._clear_static_ips(resource_data)
         except Exception as err:
@@ -346,9 +349,16 @@ class FwGenericConfigDriver(base_driver.BaseDriver):
 
         """
 
+        forward_routes = resource_data.get('forward_route')
+        resource_data = self.parse.parse_data(common_const.ROUTES,
+                                              resource_data)
         mgmt_ip = resource_data.get('mgmt_ip')
-        source_cidrs = resource_data.get('source_cidrs')
-        gateway_ip = resource_data.get('gateway_ip')
+        gateway_ip = resource_data.get('stitching_gw_ip')
+        if not forward_routes:
+            source_cidrs = [resource_data.get('stitching_cidr')]
+        else:
+            source_cidrs = [resource_data.get('provider_cidr'),
+                            resource_data.get('stitching_cidr')]
 
         url = const.request_url % (mgmt_ip, self.port,
                                    'add-source-route')
@@ -395,8 +405,11 @@ class FwGenericConfigDriver(base_driver.BaseDriver):
 
         """
 
+        resource_data = self.parse.parse_data(common_const.ROUTES,
+                                              resource_data)
         mgmt_ip = resource_data.get('mgmt_ip')
-        source_cidrs = resource_data.get('source_cidrs')
+        source_cidrs = [resource_data.get('provider_cidr'),
+                        resource_data.get('stitching_cidr')]
 
         url = const.request_url % (mgmt_ip, self.port,
                                    'delete-source-route')
@@ -430,6 +443,8 @@ class FwGenericConfigDriver(base_driver.BaseDriver):
         return err_msg
 
 
+@base_driver.set_class_attr(SERVICE_TYPE=fw_const.SERVICE_TYPE,
+                            SERVICE_VENDOR=const.VYOS)
 class FwaasDriver(FwGenericConfigDriver):
     """ Firewall as a service driver for handling firewall
     service configuration requests.
@@ -440,9 +455,6 @@ class FwaasDriver(FwGenericConfigDriver):
 
     """
 
-    service_type = fw_const.SERVICE_TYPE
-    service_vendor = const.VYOS
-
     def __init__(self, conf):
         self.conf = conf
         self.timeout = const.REST_TIMEOUT
@@ -450,32 +462,6 @@ class FwaasDriver(FwGenericConfigDriver):
         self.host = self.conf.host
         self.port = const.CONFIGURATION_SERVER_PORT
         super(FwaasDriver, self).__init__()
-
-    def _get_firewall_attribute(self, firewall):
-        """ Retrieves management IP from the firewall resource received
-
-        :param firewall: firewall dictionary containing rules
-        and other objects
-
-        Returns: management IP
-
-        """
-
-        description = ast.literal_eval(firewall["description"])
-        if not description.get('vm_management_ip'):
-            msg = ("Failed to find vm_management_ip.")
-            LOG.debug(msg)
-            raise
-
-        if not description.get('service_vendor'):
-            msg = ("Failed to find service_vendor.")
-            LOG.debug(msg)
-            raise
-
-        msg = ("Found vm_management_ip %s."
-               % description['vm_management_ip'])
-        LOG.debug(msg)
-        return description['vm_management_ip']
 
     def create_firewall(self, context, firewall, host):
         """ Implements firewall creation
@@ -490,10 +476,12 @@ class FwaasDriver(FwGenericConfigDriver):
 
         """
 
+        resource_data = self.parse.parse_data(common_const.FIREWALL, context)
+
         msg = ("Processing create firewall request in FWaaS Driver "
                "for Firewall ID: %s." % firewall['id'])
         LOG.debug(msg)
-        mgmt_ip = self._get_firewall_attribute(firewall)
+        mgmt_ip = resource_data.get('mgmt_ip')
         url = const.request_url % (mgmt_ip,
                                    self.port,
                                    'configure-firewall-rule')
@@ -536,7 +524,8 @@ class FwaasDriver(FwGenericConfigDriver):
 
         """
 
-        mgmt_ip = self._get_firewall_attribute(firewall)
+        resource_data = self.parse.parse_data(common_const.FIREWALL, context)
+        mgmt_ip = resource_data.get('mgmt_ip')
         url = const.request_url % (mgmt_ip,
                                    self.port,
                                    'update-firewall-rule')
@@ -578,7 +567,8 @@ class FwaasDriver(FwGenericConfigDriver):
 
         """
 
-        mgmt_ip = self._get_firewall_attribute(firewall)
+        resource_data = self.parse.parse_data(common_const.FIREWALL, context)
+        mgmt_ip = resource_data.get('mgmt_ip')
         url = const.request_url % (mgmt_ip,
                                    self.port,
                                    'delete-firewall-rule')
