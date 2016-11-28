@@ -65,6 +65,39 @@ class FakeObjects(object):
                 'subnets': self._get_subnets_object()}}
         return context_logical_device
 
+    def lb_api_context(self):
+            context = {
+                'agent_info': {
+                    'resource': 'firewall',
+                    'service_vendor': 'vyos',
+                    'context': {'requester': 'device_orch',
+                                'logging_context': {}},
+                    'resource_type': 'firewall'},
+                'notification_data': {}, 'service_info': {},
+                "resource_data": {
+                        "forward_route": True,
+                        "tenant_id": "ac33b4c2d80f485a86ea515c09c74949",
+                        "nfs": [{
+                            "role": "master",
+                            "svc_mgmt_fixed_ip": "11.0.0.37",
+                            "networks": [
+                                {"cidr": "11.0.1.0/24",
+                                 "gw_ip": "",
+                                 "type": "provider",
+                                 "ports": [{
+                                    "mac": "fa:16:3e:d9:4c:33",
+                                    "fixed_ip": "11.0.1.1",
+                                    "floating_ip": ""}]},
+                                {"cidr": "192.168.0.0/28",
+                                 "gw_ip": "192.168.0.1 ",
+                                 "type": "stitching",
+                                 "ports": [{
+                                     "mac": "fa:16:3e:da:ca:4d",
+                                     "fixed_ip": "192.168.0.3",
+                                     "floating_ip": ""}]}
+                                            ]}]}}
+            return context
+
     def get_request_data_for_vip(self):
         """Returns request data needed for create_vip method.
 
@@ -420,6 +453,7 @@ class FakeEvent(object):
             'context': {'notification_data': {},
                         'resource': 'context_resource',
                         'agent_info': {'service_vendor': '',
+                                       'service_feature': '',
                                        'context': {},
                                        'resource': ''
                                        }
@@ -462,7 +496,7 @@ class AssertionData(object):
                         "mode": "tcp",
                         "default_backend":
                             "bck:6350c0fd-07f8-46ff-b797-62acd23760de",
-                        "provider_interface_mac": "aa:bb:cc:dd:ee:ff"
+                        "provider_interface_mac": "fa:16:3e:d9:4c:33"
                         }
                        }
 
@@ -474,7 +508,7 @@ class AssertionData(object):
                        "mode": "tcp",
                        "default_backend":
                            "bck:6350c0fd-07f8-46ff-b797-62acd23760de",
-                       "provider_interface_mac": "aa:bb:cc:dd:ee:ff"
+                       "provider_interface_mac": "fa:16:3e:d9:4c:33"
                        }
 
     update_vip_url = ('http://192.168.100.149:1234/frontend/frnt:'
