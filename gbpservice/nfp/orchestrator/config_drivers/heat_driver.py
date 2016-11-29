@@ -283,8 +283,8 @@ class HeatDriver(object):
             provider = self._get_provider_ptg_info(auth_token,
                     network_function['service_chain_id'])
             provider_tenant_id = provider['tenant_id']
-            self._update_policy_targets_for_vip(
-                auth_token, provider_tenant_id, provider)
+            # self._update_policy_targets_for_vip(
+            #     auth_token, provider_tenant_id, provider)
 
     def _post_stack_cleanup(self, network_function):
         #TODO(ashu): In post stack cleanup, need to delete vip pt, currently
@@ -339,12 +339,12 @@ class HeatDriver(object):
             auth_token, provider_tenant_id, provider['id'],
             vip_name, lb_vip['port_id'])
 
-        policy_target_info = {'cluster_id': vip_pt['id']}
-        self.gbp_client.update_policy_target(auth_token, vip_pt['id'],
-                policy_target_info)
+        # policy_target_info = {'cluster_id': vip_pt['id']}
+        # self.gbp_client.update_policy_target(auth_token, vip_pt['id'],
+        #        policy_target_info)
 
-        self.gbp_client.update_policy_target(admin_token, provider_pt_id,
-                policy_target_info)
+        # self.gbp_client.update_policy_target(admin_token, provider_pt_id,
+        #        policy_target_info)
 
     def _update_policy_targets_for_vip(self, auth_token,
                                       provider_tenant_id, provider):
