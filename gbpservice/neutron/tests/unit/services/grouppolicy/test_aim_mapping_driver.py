@@ -1513,6 +1513,19 @@ class TestPolicyTargetGroup(AIMBaseTestCase):
         self.assertIsNotNone(res['subnet']['id'])
         self._validate_router_interface_created()
 
+    def test_delete_ptg_after_router_interface_delete(self):
+        ptg = self.create_policy_target_group(
+            name="ptg1")['policy_target_group']
+        ptg_id = ptg['id']
+        self._validate_router_interface_created()
+
+        router_id = self._l3_plugin.get_routers(self._context)[0]['id']
+        subnet_id = self._plugin.get_subnets(self._context)[0]['id']
+        info = self._l3_plugin.remove_router_interface(
+            self._context, router_id, {'subnet_id': subnet_id})
+        self.assertIn(subnet_id, info['subnet_ids'])
+        self.delete_policy_target_group(ptg_id, expected_res_status=204)
+
 
 # TODO(Sumit): Add tests here which tests different scenarios for subnet
 # allocation for PTGs
