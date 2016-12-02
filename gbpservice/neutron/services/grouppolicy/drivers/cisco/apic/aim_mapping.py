@@ -1380,6 +1380,7 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
             return gp_const.STATUS_ACTIVE
 
     def _process_subnets_for_ptg_delete(self, context, ptg, l2p_id):
+        session = context._plugin_context.session
         plugin_context = context._plugin_context
         subnet_ids = [assoc['subnet_id'] for assoc in ptg['subnets']]
 
@@ -1393,9 +1394,17 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
                     if l2p_id:
                         l3p = self._get_l3p_for_l2policy(context, l2p_id)
                         for router_id in l3p['routers']:
-                            self._detach_router_from_subnets(plugin_context,
-                                                             router_id,
-                                                             subnet_ids)
+                            # If the subnet interface for this router has
+                            # already been removed (say manually), the
+                            # call to Neutron's remove_router_interface
+                            # will cause the transaction to exit immediately.
+                            # To avoid this, we first check if this subnet
+                            # still has an interface on this router.
+                            if self._get_router_interface_port_by_subnet(
+                                plugin_context, router_id, subnet_id):
+                                with session.begin(nested=True):
+                                    self._detach_router_from_subnets(
+                                        plugin_context, router_id, [subnet_id])
                     self._cleanup_subnet(plugin_context, subnet_id,
                                          clean_session=False)
 
@@ -1809,6 +1818,15 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
                      'device_id': [router_id]})
         return set(y['subnet_id']
                    for x in router_ports for y in x['fixed_ips'])
+
+    def _get_router_interface_port_by_subnet(self, plugin_context,
+                                             router_id, subnet_id):
+        router_ports = self._get_ports(plugin_context,
+            filters={'device_owner': [n_constants.DEVICE_OWNER_ROUTER_INTF],
+                     'device_id': [router_id],
+                     'fixed_ips': {'subnet_id': [subnet_id]}},
+                                       clean_session=False)
+        return (router_ports or [None])[0]
 
     def _attach_router_to_subnets(self, plugin_context, router_id, subs):
         rtr_sn = self._get_router_interface_subnets(plugin_context, router_id)
