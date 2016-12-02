@@ -2569,7 +2569,8 @@ class ApicMappingDriver(api.ResourceMappingDriver,
             raise SharedAttributeUpdateNotSupportedOnApic(type=type)
 
     def _tenant_by_sharing_policy(self, object):
-        if self.single_tenant_mode:
+        if self.single_tenant_mode and not self.name_mapper._is_apic_reference(
+                object):
             return self.single_tenant_name
 
         if object.get('shared') and not self.name_mapper._is_apic_reference(
