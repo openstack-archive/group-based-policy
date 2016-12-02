@@ -46,7 +46,6 @@ from gbpservice.neutron.plugins.ml2plus import driver_api as api_plus
 from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import apic_mapper
 from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import cache
 from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import extension_db
-from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import model
 from oslo_serialization.jsonutils import netaddr
 
 LOG = log.getLogger(__name__)
@@ -99,8 +98,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
     def initialize(self):
         LOG.info(_LI("APIC AIM MD initializing"))
         self.project_name_cache = cache.ProjectNameCache()
-        self.db = model.DbModel()
-        self.name_mapper = apic_mapper.APICNameMapper(self.db, log)
+        self.name_mapper = apic_mapper.APICNameMapper()
         self.aim = aim_manager.AimManager()
         self._core_plugin = None
         self._l3_plugin = None
@@ -118,6 +116,15 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
 
     def ensure_tenant(self, plugin_context, tenant_id):
         LOG.debug("APIC AIM MD ensuring tenant_id: %s", tenant_id)
+
+        if not tenant_id:
+            # The l3_db module creates gateway ports with empty string
+            # project IDs in order to hide those ports from
+            # users. Since we are not currently mapping ports to
+            # anything in AIM, we can ignore these. Any other cases
+            # where empty string project IDs are used may require
+            # mapping AIM resources under some actual Tenant.
+            return
 
         self.project_name_cache.ensure_project(tenant_id)
 
