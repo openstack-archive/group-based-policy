@@ -81,6 +81,20 @@ class UnsupportedRoutingTopology(exceptions.BadRequest):
                 "same router or the same subnet.")
 
 
+class IPv6RoutingNotSupported(exceptions.BadRequest):
+    message = _("IPv6 routing is not currently supported.")
+
+
+class MultiScopeRoutingNotSupported(exceptions.BadRequest):
+    message = _("Attaching interfaces from multiple address_scopes to the "
+                "same router is not currently supported.")
+
+
+class ScopeUpdateNotSupported(exceptions.BadRequest):
+    message = _("Updating the address_scope of a subnetpool that is "
+                "associated with routers is not currently supported.")
+
+
 class SnatPortsInUse(exceptions.SubnetInUse):
     def __init__(self, **kwargs):
         kwargs['reason'] = _('Subnet has SNAT IP addresses allocated')
@@ -95,8 +109,6 @@ NO_ADDR_SCOPE = object()
 
 
 class ApicMechanismDriver(api_plus.MechanismDriver):
-    # TODO(rkukura): Derivations of tenant_aname throughout need to
-    # take sharing into account.
 
     class TopologyRpcEndpoint(object):
         target = oslo_messaging.Target(version='1.2')
@@ -168,19 +180,6 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
             if not self.aim.get(aim_ctx, ap):
                 self.aim.create(aim_ctx, ap)
 
-            filter = aim_resource.Filter(tenant_name=tenant_aname,
-                name=ANY_FILTER_NAME,
-                display_name=aim_utils.sanitize_display_name('AnyFilter'))
-            if not self.aim.get(aim_ctx, filter):
-                self.aim.create(aim_ctx, filter)
-
-            entry = aim_resource.FilterEntry(tenant_name=tenant_aname,
-                filter_name=ANY_FILTER_NAME,
-                name=ANY_FILTER_ENTRY_NAME,
-                display_name=aim_utils.sanitize_display_name('AnyFilterEntry'))
-            if not self.aim.get(aim_ctx, entry):
-                self.aim.create(aim_ctx, entry)
-
     def create_network_precommit(self, context):
         current = context.current
         LOG.debug("APIC AIM MD creating network: %s", current)
@@ -197,7 +196,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
             ns.update_external_cidrs(aim_ctx, ext_net,
                                      current[cisco_apic.EXTERNAL_CIDRS])
         else:
-            bd, epg = self._map_network(session, current)
+            bd, epg = self._map_network(session, current, None)
 
             dname = aim_utils.sanitize_display_name(current['name'])
             vrf = self._ensure_unrouted_vrf(aim_ctx)
@@ -233,8 +232,11 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
         is_ext = self._is_external(current)
         if (not is_ext and
             current['name'] != original['name']):
+            network_db = self.plugin._get_network(
+                context._plugin_context, current['id'])
 
-            bd, epg = self._map_network(session, current)
+            vrf = self._get_routed_vrf_for_network(session, network_db)
+            bd, epg = self._map_network(session, network_db, vrf)
 
             dname = aim_utils.sanitize_display_name(current['name'])
 
@@ -266,7 +268,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
             # network is using the L3out
             ns.delete_l3outside(aim_ctx, l3out)
         else:
-            bd, epg = self._map_network(session, current)
+            bd, epg = self._map_network(session, current, None)
 
             self.aim.delete(aim_ctx, epg)
             self.aim.delete(aim_ctx, bd)
@@ -294,10 +296,8 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
                         sync_state = self._merge_status(aim_ctx, sync_state,
                                                         o)
         else:
-            # REVISIT(rkukura): Consider optimizing this method by
-            # persisting the network->VRF relationship.
-
-            bd, epg = self._map_network(session, network_db)
+            vrf = self._get_routed_vrf_for_network(session, network_db)
+            bd, epg = self._map_network(session, network_db, vrf)
 
             dist_names[cisco_apic.BD] = bd.dn
             sync_state = self._merge_status(aim_ctx, sync_state, bd)
@@ -305,46 +305,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
             dist_names[cisco_apic.EPG] = epg.dn
             sync_state = self._merge_status(aim_ctx, sync_state, epg)
 
-            # See if this network is interfaced to any routers.
-            rp = (session.query(l3_db.RouterPort).
-                  join(models_v2.Port).
-                  filter(models_v2.Port.network_id == network_db.id,
-                         l3_db.RouterPort.port_type ==
-                         n_constants.DEVICE_OWNER_ROUTER_INTF).first())
-            if rp:
-                # A network is constrained to only one subnetpool per
-                # address family. To support both single and dual
-                # stack, use the IPv4 address scope's VRF if it
-                # exists, and otherwise use the IPv6 address scope's
-                # VRF. For dual stack, the plan is for identity NAT to
-                # move IPv6 traffic from the IPv4 address scope's VRF
-                # to the IPv6 address scope's VRF.
-                #
-                # REVISIT(rkukura): Ignore subnets that are not
-                # attached to any router, or maybe just do a query
-                # joining RouterPorts, Ports, Subnets, SubnetPools and
-                # AddressScopes.
-                pool_dbs = {subnet.subnetpool
-                            for subnet in network_db.subnets
-                            if subnet.subnetpool}
-                scope_id = None
-                for pool_db in pool_dbs:
-                    if pool_db.ip_version == 4:
-                        scope_id = pool_db.address_scope_id
-                        break
-                    elif pool_db.ip_version == 6:
-                        scope_id = pool_db.address_scope_id
-                if scope_id:
-                    scope_db = self._scope_by_id(session, scope_id)
-                    vrf = self._map_address_scope(session, scope_db)
-                else:
-                    router_db = (session.query(l3_db.Router).
-                                 filter_by(id=rp.router_id).
-                                 one())
-                    vrf = self._map_default_vrf(session, router_db)
-            else:
-                vrf = self._map_unrouted_vrf()
-
+            vrf = vrf or self._map_unrouted_vrf()
             dist_names[cisco_apic.VRF] = vrf.dn
             sync_state = self._merge_status(aim_ctx, sync_state, vrf)
 
@@ -396,7 +357,8 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
         if (not is_ext and
             current['name'] != original['name']):
 
-            bd = self._map_network(session, network_db, True)
+            vrf = self._get_routed_vrf_for_network(session, network_db)
+            bd = self._map_network(session, network_db, vrf, True)
 
             for gw_ip, router_id in self._subnet_router_ips(session,
                                                             current['id']):
@@ -461,7 +423,8 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
                     dist_names[cisco_apic.SUBNET] = sub.dn
                     sync_state = self._merge_status(aim_ctx, sync_state, sub)
         else:
-            bd = self._map_network(session, network_db, True)
+            vrf = self._get_routed_vrf_for_network(session, network_db)
+            bd = self._map_network(session, network_db, vrf, True)
 
             for gw_ip, router_id in self._subnet_router_ips(session,
                                                             subnet_db.id):
@@ -472,8 +435,39 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
         result[cisco_apic.DIST_NAMES] = dist_names
         result[cisco_apic.SYNC_STATE] = sync_state
 
-    # TODO(rkukura): Implement update_subnetpool_precommit to handle
-    # changing subnetpool's address_scope_id.
+    def update_subnetpool_precommit(self, context):
+        current = context.current
+        original = context.original
+        LOG.debug("APIC AIM MD updating subnetpool: %s", current)
+
+        session = context._plugin_context.session
+
+        current_scope_id = current['address_scope_id']
+        original_scope_id = original['address_scope_id']
+        if current_scope_id != original_scope_id:
+            # Find router interfaces involving subnets from this pool.
+            pool_id = current['id']
+            rps = (session.query(l3_db.RouterPort).
+                   join(models_v2.Port).
+                   join(models_v2.IPAllocation).
+                   join(models_v2.Subnet).
+                   filter(models_v2.Subnet.subnetpool_id == pool_id,
+                          l3_db.RouterPort.port_type ==
+                          n_constants.DEVICE_OWNER_ROUTER_INTF).
+                   all())
+            if rps:
+                # TODO(rkukura): Implement moving the effected router
+                # interfaces from one scope to another, from scoped to
+                # unscoped, and from unscoped to scoped. This might
+                # require moving the BDs and EPGs of routed networks
+                # associated with the pool to the new scope's
+                # project's Tenant. With multi-scope routing, it also
+                # might result in individual routers being associated
+                # with more or fewer scopes. Updates from scoped to
+                # unscoped might still need to be rejected due to
+                # overlap within a Tenant's default VRF. For now, we
+                # just reject the update.
+                raise ScopeUpdateNotSupported()
 
     def create_address_scope_precommit(self, context):
         current = context.current
@@ -543,6 +537,8 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
         session = context.session
         aim_ctx = aim_context.AimContext(session)
 
+        filter = self._ensure_any_filter(aim_ctx)
+
         contract, subject = self._map_router(session, current)
 
         dname = aim_utils.sanitize_display_name(current['name'])
@@ -551,7 +547,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
         self.aim.create(aim_ctx, contract)
 
         subject.display_name = dname
-        subject.bi_filters = [ANY_FILTER_NAME]
+        subject.bi_filters = [filter.name]
         self.aim.create(aim_ctx, subject)
 
         # External-gateway information about the router will be handled
@@ -582,10 +578,8 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
             self.aim.update(aim_ctx, contract, display_name=dname)
             self.aim.update(aim_ctx, subject, display_name=dname)
 
-            # REVISIT(rkukura): Refactor to share common code below
-            # with extend_router_dict. Also consider using joins to
-            # fetch the subnet_db and network_db as part of the
-            # initial query.
+            # REVISIT(rkukura): Refactor to share common code below with
+            # extend_router_dict.
             for intf in (session.query(models_v2.IPAllocation).
                          join(models_v2.Port).
                          join(l3_db.RouterPort).
@@ -593,6 +587,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
                                 l3_db.RouterPort.port_type ==
                                 n_constants.DEVICE_OWNER_ROUTER_INTF)):
 
+                # TODO(rkukura): Avoid separate queries for these.
                 subnet_db = (session.query(models_v2.Subnet).
                              filter_by(id=intf.subnet_id).
                              one())
@@ -603,7 +598,11 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
                 dname = aim_utils.sanitize_display_name(
                     name + "-" + (subnet_db.name or subnet_db.cidr))
 
-                bd = self._map_network(session, network_db, True)
+                # TODO(rkukura): This can be very expensive, so cache
+                # the BDs for networks that have been processed.
+                vrf = self._get_routed_vrf_for_network(session, network_db)
+
+                bd = self._map_network(session, network_db, vrf, True)
                 sn = self._map_subnet(subnet_db, intf.ip_address, bd)
 
                 self.aim.update(aim_ctx, sn, display_name=dname)
@@ -683,6 +682,8 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
                             n_constants.DEVICE_OWNER_ROUTER_INTF)):
 
             active = True
+
+            # TODO(rkukura): Avoid separate queries for these.
             subnet_db = (session.query(models_v2.Subnet).
                          filter_by(id=intf.subnet_id).
                          one())
@@ -690,38 +691,25 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
                           filter_by(id=subnet_db.network_id).
                           one())
 
-            bd = self._map_network(session, network_db, True)
+            # TODO(rkukura): This can be very expensive, and there can
+            # be multiple subnets per network, so cache the BDs for
+            # networks that have been processed. Also, without
+            # multi-scope routing, there should be exactly one VRF per
+            # router. With multi-scope routing, we should be able to
+            # determine the set of VRFs and the subnets accociated
+            # with each.
+            vrf = self._get_routed_vrf_for_network(session, network_db)
+
+            bd = self._map_network(session, network_db, vrf, True)
             sn = self._map_subnet(subnet_db, intf.ip_address, bd)
 
             dist_names[intf.ip_address] = sn.dn
             sync_state = self._merge_status(aim_ctx, sync_state, sn)
 
         if active:
-            # Find this router's IPv4 address scope if it has one, or
-            # else its IPv6 address scope.
-            scope_id = None
-            for pool_db in (session.query(models_v2.SubnetPool).
-                            join(models_v2.Subnet,
-                                 models_v2.Subnet.subnetpool_id ==
-                                 models_v2.SubnetPool.id).
-                            join(models_v2.IPAllocation).
-                            join(models_v2.Port).
-                            join(l3_db.RouterPort).
-                            filter(l3_db.RouterPort.router_id == router_db.id,
-                                   l3_db.RouterPort.port_type ==
-                                   n_constants.DEVICE_OWNER_ROUTER_INTF).
-                            distinct()):
-                if pool_db.ip_version == 4:
-                    scope_id = pool_db.address_scope_id
-                    break
-                elif pool_db.ip_version == 6:
-                    scope_id = pool_db.address_scope_id
-            if scope_id:
-                scope_db = self._scope_by_id(session, scope_id)
-                vrf = self._map_address_scope(session, scope_db)
-            else:
-                vrf = self._map_default_vrf(session, router_db)
-
+            # TODO(rkukura): With multi-scope routing, there will be
+            # multiple VRF DNs, so include the scope_id or 'no-scope'
+            # in the key.
             dist_names[a_l3.VRF] = vrf.dn
             sync_state = self._merge_status(aim_ctx, sync_state, vrf)
 
@@ -738,7 +726,104 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
 
         network_id = port['network_id']
         network_db = self.plugin._get_network(context, network_id)
-        bd, epg = self._map_network(session, network_db)
+
+        # Find the address_scope(s) for the new interface.
+        #
+        # TODO(rkukura): To support IPv6 and dual-stack routing, we
+        # will need both the v4 and v6 scopes. For now, we reject
+        # adding v6 subnets. Dual-stack topologies will use the v4
+        # scope, with OpFlex "identity NAT" moving v6 traffic to the
+        # v6 scope's VRF.
+        for subnet in subnets:
+            if subnet['ip_version'] != 4:
+                raise IPv6RoutingNotSupported()
+        scope_id = self._get_address_scope_id_for_subnets(context, subnets)
+
+        # Find number of existing interface ports on the router,
+        # excluding the one we are adding.
+        router_intf_count = self._get_router_intf_count(session, router)
+
+        # TODO(rkukura): Support multi-scope routing. For now, we
+        # reject adding an interface that does not match the scope of
+        # any existing interfaces.
+        if (router_intf_count and
+            (scope_id !=
+             self._get_address_scope_id_for_router(session, router))):
+            raise MultiScopeRoutingNotSupported()
+
+        # Find up to two existing router interfaces for this
+        # network. The interface currently being added is not
+        # included, because the RouterPort has not yet been added to
+        # the DB session.
+        net_intfs = (session.query(l3_db.RouterPort.router_id,
+                                   models_v2.IPAllocation.subnet_id).
+                     join(models_v2.Port).
+                     join(models_v2.IPAllocation).
+                     filter(models_v2.Port.network_id == network_id,
+                            l3_db.RouterPort.port_type ==
+                            n_constants.DEVICE_OWNER_ROUTER_INTF).
+                     limit(2).
+                     all())
+        if net_intfs:
+            # Since the EPGs that provide/consume routers' contracts
+            # are at network rather than subnet granularity,
+            # topologies where different subnets on the same network
+            # are interfaced to different routers, which are valid in
+            # Neutron, would result in unintended routing. We
+            # therefore require that all router interfaces for a
+            # network share either the same router or the same subnet.
+
+            different_router = False
+            different_subnet = False
+            router_id = router['id']
+            subnet_ids = [subnet['id'] for subnet in subnets]
+            for existing_router_id, existing_subnet_id in net_intfs:
+                if router_id != existing_router_id:
+                    different_router = True
+                for subnet_id in subnet_ids:
+                    if subnet_id != existing_subnet_id:
+                        different_subnet = True
+            if different_router and different_subnet:
+                raise UnsupportedRoutingTopology()
+
+        # Ensure that all the BDs and EPGs in the resulting topology
+        # are mapped under the same Tenant so that the BDs can all
+        # reference the topology's VRF and the EPGs can all provide
+        # and consume the router's Contract. This is handled
+        # differently for scoped and unscoped topologies.
+
+        if scope_id != NO_ADDR_SCOPE:
+            # TODO(rkukura): Scoped topologies are simple, until we
+            # support IPv6 routing. Then, we will need to figure out
+            # if a v6-only network should use its own v6 scope, or a
+            # v4 scope that's already part of the router
+            # topology. Adding a v4 interface to a previously v6-only
+            # network may require moving the existing network (and its
+            # subnets) from the v6 scope to the v4 scope. Multi-scope
+            # routers will further complicate this with multiple v4
+            # scopes to choose between for v6-only networks.
+            scope = self._scope_by_id(session, scope_id)
+            vrf = self._map_address_scope(session, scope)
+            if not net_intfs:
+                bd, epg = self._associate_network_with_vrf(
+                    aim_ctx, network_db, vrf)
+            else:
+                bd, epg = self._map_network(aim_ctx, network_db, vrf)
+        else:
+            # TODO(rkukura): To handle sharing for unscoped
+            # topologies, we will need to determine under which
+            # Tenants the existing interface and router topologies are
+            # currently mapped, make sure they don't conflict, and, if
+            # they don't match, move one topology to the other
+            # topology's Tenant. For now, we just associate the
+            # network with the router's project's default VRF as
+            # before, not handling sharing.
+            vrf = self._ensure_default_vrf(aim_ctx, router)
+            if not net_intfs:
+                bd, epg = self._associate_network_with_vrf(
+                    aim_ctx, network_db, vrf)
+            else:
+                bd, epg = self._map_network(aim_ctx, network_db, vrf)
 
         contract = self._map_router(session, router, True)
 
@@ -770,70 +855,13 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
             epg = self.aim.update(aim_ctx, epg,
                                   provided_contract_names=contracts)
 
-        # Find up to two existing router interfaces for this
-        # network. The interface currently being added is not
-        # included, because the RouterPort has not yet been added to
-        # the DB session.
-        intfs = (session.query(l3_db.RouterPort.router_id,
-                               models_v2.IPAllocation.subnet_id).
-                 join(models_v2.Port).
-                 join(models_v2.IPAllocation).
-                 filter(models_v2.Port.network_id == network_id,
-                        l3_db.RouterPort.port_type ==
-                        n_constants.DEVICE_OWNER_ROUTER_INTF).
-                 limit(2).
-                 all())
-        if intfs:
-            # Since the EPGs that provide/consume routers' contracts
-            # are at network rather than subnet granularity,
-            # topologies where different subnets on the same network
-            # are interfaced to different routers, which are valid in
-            # Neutron, would result in unintended routing. We
-            # therefore require that all router interfaces for a
-            # network share either the same router or the same subnet.
-
-            different_router = False
-            different_subnet = False
-            router_id = router['id']
-            subnet_ids = [subnet['id'] for subnet in subnets]
-            for existing_router_id, existing_subnet_id in intfs:
-                if router_id != existing_router_id:
-                    different_router = True
-                for subnet_id in subnet_ids:
-                    if subnet_id != existing_subnet_id:
-                        different_subnet = True
-            if different_router and different_subnet:
-                raise UnsupportedRoutingTopology()
-
-        # Number of existing router interface ports excluding the
-        # one we are adding right now
-        intf_count = self._get_router_intf_count(session, router)
-
-        if not intfs or not intf_count:
-            scope_id = self._get_address_scope_id_for_subnets(
-                context, subnets)
-
-        if not intfs:
-            # No existing interfaces, so enable routing for BD and set
-            # its VRF.
-            vrf = None
-            if scope_id != NO_ADDR_SCOPE:
-                scope_db = self._scope_by_id(session, scope_id)
-                vrf = self._map_address_scope(session, scope_db)
-            else:
-                vrf = self._ensure_default_vrf(aim_ctx, router)
-
-            bd = self.aim.update(aim_ctx, bd, enable_routing=True,
-                                 vrf_name=vrf.name)
-
         # If this is first interface-port, then that will determine
         # the VRF for this router. Setup exteral-connectivity for VRF
         # if external-gateway is set.
-        if (router.gw_port_id and not intf_count):
+        if (router.gw_port_id and not router_intf_count):
             net = self.plugin.get_network(context,
                                           router.gw_port.network_id)
-            self._manage_external_connectivity(
-                context, router, None, net, scope_id=scope_id)
+            self._manage_external_connectivity(context, router, None, net, vrf)
 
     def remove_router_interface(self, context, router_id, port_db, subnets):
         LOG.debug("APIC AIM MD removing subnets %(subnets)s from router "
@@ -845,7 +873,13 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
 
         network_id = port_db.network_id
         network_db = self.plugin._get_network(context, network_id)
-        bd, epg = self._map_network(session, network_db)
+
+        # Find old VRF for this network. Since the RouterPorts for
+        # this interface have already been deleted by the L3 DB layer,
+        # we pass them to _get_routed_vrf_for_network.
+        vrf = self._get_routed_vrf_for_network(session, network_db, subnets)
+
+        bd, epg = self._map_network(session, network_db, vrf)
 
         router_db = (session.query(l3_db.Router).
                      filter_by(id=router_id).
@@ -885,9 +919,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
         # If network is no longer connected to any router, make the
         # network's BD unrouted.
         if not router_ids:
-            vrf = self._map_unrouted_vrf()
-            bd = self.aim.update(aim_ctx, bd, enable_routing=False,
-                                 vrf_name=vrf.name)
+            self._dissassociate_network_from_vrf(aim_ctx, network_db, vrf)
 
         # If this was the last interface-port, then we no longer know
         # the VRF for this router. So update external-conectivity to
@@ -896,10 +928,8 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
             not self._get_router_intf_count(session, router_db)):
             net = self.plugin.get_network(context,
                                           router_db.gw_port.network_id)
-            scope_id = self._get_address_scope_id_for_subnets(
-                context, subnets)
             self._manage_external_connectivity(
-                context, router_db, net, None, scope_id=scope_id)
+                context, router_db, net, None, vrf)
 
             self._delete_snat_ip_ports_if_reqd(context, net['id'],
                                                router_id)
@@ -1141,6 +1171,202 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
                 if sync_state is cisco_apic.SYNC_NOT_APPLICABLE
                 else sync_state)
 
+    def _get_routed_vrf_for_network(self, session, network_db,
+                                    extra_subnets=None):
+        # See if this network is interfaced to any routers.
+        rp = (session.query(l3_db.RouterPort).
+              join(models_v2.Port).
+              filter(models_v2.Port.network_id == network_db.id,
+                     l3_db.RouterPort.port_type ==
+                     n_constants.DEVICE_OWNER_ROUTER_INTF).first())
+        if not (rp or extra_subnets):
+            LOG.debug("Network %(id)s named '%(name)s' is not routed",
+                      {'id': network_db.id, 'name': network_db.name})
+            return
+
+        # A network is constrained to only one subnetpool per address
+        # family. To support both single and dual stack, use the IPv4
+        # address scope's VRF if it exists, and otherwise use the IPv6
+        # address scope's VRF. For dual stack, the plan is for
+        # identity NAT to move IPv6 traffic from the IPv4 address
+        # scope's VRF to the IPv6 address scope's VRF.
+        #
+        # REVISIT(rkukura): Ignore subnets that are not attached to
+        # any router, or maybe just do a query joining RouterPorts,
+        # Ports, Subnets, SubnetPools and AddressScopes.
+        pool_dbs = {subnet.subnetpool
+                    for subnet in network_db.subnets
+                    if subnet.subnetpool}
+        scope_id = None
+        for pool_db in pool_dbs:
+            if pool_db.ip_version == 4:
+                scope_id = pool_db.address_scope_id
+                break
+            elif pool_db.ip_version == 6:
+                scope_id = pool_db.address_scope_id
+        if scope_id:
+            scope_db = self._scope_by_id(session, scope_id)
+            LOG.debug("Network %(net_id)s named '%(net_name)s' is routed in "
+                      "address_scope %(scope_id)s named '%(scope_name)s'",
+                      {'net_id': network_db.id, 'net_name': network_db.name,
+                       'scope_id': scope_db.id, 'scope_name': scope_db.name})
+            return self._map_address_scope(session, scope_db)
+
+        # TODO(rkukura): To support shared unscoped networks, use the
+        # Tenant of the project either of any shared network in this
+        # network's topology, or else of this network.
+        LOG.debug("Network %(net_id)s named '%(net_name)s' is routed in "
+                  "no-scope address_scope for tenant %(tenant)s",
+                  {'net_id': network_db.id, 'net_name': network_db.name,
+                   'tenant': network_db.tenant_id})
+        return self._map_default_vrf(session, network_db)
+
+    def _get_vrf_for_router(self, session, router):
+        # TODO(rkukura): To support multi-scope routing, return list
+        # of VRFs.
+
+        scope_id = self._get_address_scope_id_for_router(session, router)
+        if scope_id != NO_ADDR_SCOPE:
+            scope = self._scope_by_id(session, scope_id)
+            return self._map_address_scope(session, scope)
+
+        # TODO(rkukura): To support shared unscoped networks, we will
+        # need to look for a shared network anywhere in the router's
+        # topology, and use that network's Tenant's default VRF. For
+        # now, since only IPv4 is supported, we just use the default
+        # VRF of the Tenant of any of its interfaced networks.
+        network_db = (session.query(models_v2.Network).
+                      join(models_v2.Port).
+                      join(l3_db.RouterPort).
+                      filter(l3_db.RouterPort.router_id == router['id'],
+                             l3_db.RouterPort.port_type ==
+                             n_constants.DEVICE_OWNER_ROUTER_INTF).
+                      first())
+        if network_db:
+            return self._map_default_vrf(session, network_db)
+
+    def _get_routers_for_vrf(self, session, vrf):
+        # REVISIT(rkukura): Persist router/VRF relationship?
+        if vrf.name != DEFAULT_VRF_NAME:
+            rtr_dbs = (session.query(l3_db.Router)
+                       .join(l3_db.RouterPort)
+                       .join(models_v2.Port)
+                       .join(models_v2.IPAllocation)
+                       .join(models_v2.Subnet)
+                       .join(models_v2.SubnetPool,
+                             models_v2.Subnet.subnetpool_id ==
+                             models_v2.SubnetPool.id)
+                       .filter(l3_db.RouterPort.port_type ==
+                               n_constants.DEVICE_OWNER_ROUTER_INTF)
+                       .filter(models_v2.SubnetPool.address_scope_id ==
+                               vrf.name)
+                       .distinct())
+        else:
+            # TODO(rkukura): Support unscoped shared networks where
+            # the router won't necessarily map to the VRF's
+            # Tenant. Also, there may be a many-to-one mapping from
+            # projects to Tenants. So the Router's tenant_id should
+            # not be part of the query.
+            qry = (session.query(l3_db.Router)
+                   .join(l3_db.RouterPort)
+                   .join(models_v2.Port)
+                   .join(models_v2.IPAllocation)
+                   .join(models_v2.Subnet)
+                   .filter(l3_db.Router.tenant_id == vrf.tenant_name)
+                   .filter(l3_db.RouterPort.port_type ==
+                           n_constants.DEVICE_OWNER_ROUTER_INTF))
+            rtr_dbs = (qry.filter(models_v2.Subnet.subnetpool_id.is_(None))
+                       .distinct())
+            rtr_dbs = {r.id: r for r in rtr_dbs}
+            rtr_dbs_1 = (qry.join(models_v2.SubnetPool,
+                                  models_v2.Subnet.subnetpool_id ==
+                                  models_v2.SubnetPool.id)
+                         .filter(models_v2.SubnetPool.address_scope_id.is_(
+                                    None))
+                         .distinct())
+            rtr_dbs.update({r.id: r for r in rtr_dbs_1})
+            rtr_dbs = rtr_dbs.values()
+
+        return rtr_dbs
+
+    def _associate_network_with_vrf(self, aim_ctx, network_db, new_vrf):
+        LOG.debug("Associating network %(net_id)s named '%(net_name)s' in "
+                  "tenant %(net_tenant)s with VRF %(vrf)s",
+                  {'net_id': network_db.id, 'net_name': network_db.name,
+                   'net_tenant': network_db.tenant_id, 'vrf': new_vrf})
+
+        session = aim_ctx.db_session
+
+        old_vrf = self._get_routed_vrf_for_network(session, network_db)
+        old_tenant_name = (
+            old_vrf.tenant_name if old_vrf else
+            self._get_tenant_name(session, network_db.tenant_id))
+
+        if old_tenant_name != new_vrf.tenant_name:
+            # Move BD and EPG to new VRF's Tenant, set VRF, and make
+            # sure routing is enabled.
+            LOG.debug("Moving network from tenant %(old)s to tenant %(new)s",
+                      {'old': old_tenant_name, 'new': new_vrf.tenant_name})
+
+            bd, epg = self._map_network(session, network_db, old_vrf)
+
+            # TODO(rkukura): Move Subnets (if any).
+
+            bd = self.aim.get(aim_ctx, bd)
+            self.aim.delete(aim_ctx, bd)
+            bd.tenant_name = new_vrf.tenant_name
+            bd.enable_routing = True
+            bd.vrf_name = new_vrf.name
+            bd = self.aim.create(aim_ctx, bd)
+
+            epg = self.aim.get(aim_ctx, epg)
+            self.aim.delete(aim_ctx, epg)
+            epg.tenant_name = new_vrf.tenant_name
+            epg = self.aim.create(aim_ctx, epg)
+        else:
+            # Just set VRF and enable routing.
+            bd, epg = self._map_network(session, network_db, new_vrf)
+            bd = self.aim.update(aim_ctx, bd, enable_routing=True,
+                                 vrf_name=new_vrf.name)
+
+        return bd, epg
+
+    def _dissassociate_network_from_vrf(self, aim_ctx, network_db, old_vrf):
+        LOG.debug("Dissassociating network %(net_id)s named '%(net_name)s' in "
+                  "tenant %(net_tenant)s from VRF %(vrf)s",
+                  {'net_id': network_db.id, 'net_name': network_db.name,
+                   'net_tenant': network_db.tenant_id, 'vrf': old_vrf})
+
+        session = aim_ctx.db_session
+
+        bd, epg = self._map_network(session, network_db, old_vrf)
+        new_vrf = self._map_unrouted_vrf()
+
+        new_tenant_name = self._get_tenant_name(session, network_db.tenant_id)
+
+        # REVISIT(rkukura): Share code with _associate_network_with_vrf?
+        if old_vrf.tenant_name != new_tenant_name:
+            # Move BD and EPG to network's Tenant, set unrouted VRF,
+            # and disable routing.
+            LOG.debug("Moving network from tenant %(old)s to tenant %(new)s",
+                      {'old': old_vrf.tenant_name, 'new': new_tenant_name})
+
+            bd = self.aim.get(aim_ctx, bd)
+            self.aim.delete(aim_ctx, bd)
+            bd.tenant_name = new_tenant_name
+            bd.enable_routing = False
+            bd.vrf_name = new_vrf.name
+            bd = self.aim.create(aim_ctx, bd)
+
+            epg = self.aim.get(aim_ctx, epg)
+            self.aim.delete(aim_ctx, epg)
+            epg.tenant_name = new_tenant_name
+            epg = self.aim.create(aim_ctx, epg)
+        else:
+            # Just set unrouted VRF and disable routing.
+            bd = self.aim.update(aim_ctx, bd, enable_routing=False,
+                                 vrf_name=new_vrf.name)
+
     def _ip_for_subnet(self, subnet, fixed_ips):
         subnet_id = subnet['id']
         for fixed_ip in fixed_ips:
@@ -1162,8 +1388,9 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
                 filter_by(id=scope_id).
                 one())
 
-    def _map_network(self, session, network, bd_only=False):
-        tenant_aname = self._get_tenant_name(session, network['tenant_id'])
+    def _map_network(self, session, network, vrf, bd_only=False):
+        tenant_aname = (vrf.tenant_name if vrf else
+                        self._get_tenant_name(session, network['tenant_id']))
 
         id = network['id']
         name = network['name']
@@ -1187,11 +1414,6 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
             for o in (ns.get_l3outside_resources(aim_ctx, l3out) or []):
                 if isinstance(o, aim_resource.EndpointGroup):
                     return o
-
-    def _map_network_to_epg(self, session, network):
-        if self._is_external(network):
-            return self._map_external_network(session, network)
-        return self._map_network(session, network)[1]
 
     def _map_subnet(self, subnet, gw_ip, bd):
         prefix_len = subnet['cidr'].split('/')[1]
@@ -1217,8 +1439,6 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
         return vrf
 
     def _map_router(self, session, router, contract_only=False):
-        tenant_aname = self._get_tenant_name(session, router['tenant_id'])
-
         id = router['id']
         name = router['name']
         aname = self.name_mapper.router(session, id, name)
@@ -1226,17 +1446,17 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
                   "%(aname)s",
                   {'id': id, 'name': name, 'aname': aname})
 
-        contract = aim_resource.Contract(tenant_name=tenant_aname,
+        contract = aim_resource.Contract(tenant_name=COMMON_TENANT_NAME,
                                          name=aname)
         if contract_only:
             return contract
-        subject = aim_resource.ContractSubject(tenant_name=tenant_aname,
+        subject = aim_resource.ContractSubject(tenant_name=COMMON_TENANT_NAME,
                                                contract_name=aname,
                                                name=ROUTER_SUBJECT_NAME)
         return contract, subject
 
-    def _map_default_vrf(self, session, router):
-        tenant_aname = self._get_tenant_name(session, router['tenant_id'])
+    def _map_default_vrf(self, session, network):
+        tenant_aname = self._get_tenant_name(session, network['tenant_id'])
 
         vrf = aim_resource.VRF(tenant_name=tenant_aname,
                                name=DEFAULT_VRF_NAME)
@@ -1278,8 +1498,31 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
             vrf = self.aim.create(aim_ctx, attrs)
         return vrf
 
-    def _ensure_default_vrf(self, aim_ctx, router):
-        attrs = self._map_default_vrf(aim_ctx.db_session, router)
+    def _ensure_any_filter(self, aim_ctx):
+        self._ensure_common_tenant(aim_ctx)
+
+        filter_name = self.apic_system_id + '_' + ANY_FILTER_NAME
+        dname = aim_utils.sanitize_display_name("AnyFilter")
+        filter = aim_resource.Filter(tenant_name=COMMON_TENANT_NAME,
+                                     name=filter_name,
+                                     display_name=dname)
+        if not self.aim.get(aim_ctx, filter):
+            LOG.info(_LI("Creating common Any Filter"))
+            self.aim.create(aim_ctx, filter)
+
+        dname = aim_utils.sanitize_display_name("AnyFilterEntry")
+        entry = aim_resource.FilterEntry(tenant_name=COMMON_TENANT_NAME,
+                                         filter_name=filter_name,
+                                         name=ANY_FILTER_ENTRY_NAME,
+                                         display_name=dname)
+        if not self.aim.get(aim_ctx, entry):
+            LOG.info(_LI("Creating common Any FilterEntry"))
+            self.aim.create(aim_ctx, entry)
+
+        return filter
+
+    def _ensure_default_vrf(self, aim_ctx, network):
+        attrs = self._map_default_vrf(aim_ctx.db_session, network)
         vrf = self.aim.get(aim_ctx, attrs)
         if not vrf:
             attrs.display_name = (
@@ -1287,6 +1530,16 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
             LOG.info(_LI("Creating default VRF for %s"), attrs.tenant_name)
             vrf = self.aim.create(aim_ctx, attrs)
         return vrf
+
+    def _get_epg_for_network(self, session, network):
+        if self._is_external(network):
+            return self._map_external_network(session, network)
+        # REVISIT(rkukura): Can the network_db be passed in?
+        network_db = (session.query(models_v2.Network).
+                      filter_by(id=network['id']).
+                      one())
+        vrf = self._get_routed_vrf_for_network(session, network_db)
+        return self._map_network(session, network_db, vrf)[1]
 
     # DB Configuration callbacks
     def _set_enable_metadata_opt(self, new_conf):
@@ -1394,66 +1647,20 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
                 scope_id = pool_db.address_scope_id
         return scope_id
 
-    def _get_other_routers_in_same_vrf(self, session, router,
-                                       scope_id=None):
-        scope_id = (scope_id or
-                    self._get_address_scope_id_for_router(session, router))
-        if scope_id != NO_ADDR_SCOPE:
-            rtr_dbs = (session.query(l3_db.Router)
-                       .join(l3_db.RouterPort)
-                       .join(models_v2.Port)
-                       .join(models_v2.IPAllocation)
-                       .join(models_v2.Subnet)
-                       .join(models_v2.SubnetPool,
-                             models_v2.Subnet.subnetpool_id ==
-                             models_v2.SubnetPool.id)
-                       .filter(l3_db.RouterPort.port_type ==
-                               n_constants.DEVICE_OWNER_ROUTER_INTF)
-                       .filter(models_v2.SubnetPool.address_scope_id ==
-                               scope_id)
-                       .distinct())
-        else:
-            qry = (session.query(l3_db.Router)
-                   .join(l3_db.RouterPort)
-                   .join(models_v2.Port)
-                   .join(models_v2.IPAllocation)
-                   .join(models_v2.Subnet)
-                   .filter(l3_db.Router.tenant_id == router['tenant_id'])
-                   .filter(l3_db.RouterPort.port_type ==
-                           n_constants.DEVICE_OWNER_ROUTER_INTF))
-            rtr_dbs = (qry.filter(models_v2.Subnet.subnetpool_id.is_(None))
-                       .distinct())
-            rtr_dbs = {r.id: r for r in rtr_dbs}
-            rtr_dbs_1 = (qry.join(models_v2.SubnetPool,
-                                  models_v2.Subnet.subnetpool_id ==
-                                  models_v2.SubnetPool.id)
-                         .filter(models_v2.SubnetPool.address_scope_id.is_(
-                                    None))
-                         .distinct())
-            rtr_dbs.update({r.id: r for r in rtr_dbs_1})
-            rtr_dbs = rtr_dbs.values()
-
-        return (scope_id, [r for r in rtr_dbs if r.id != router['id']])
-
     def _manage_external_connectivity(self, context, router, old_network,
-                                      new_network, scope_id=None):
+                                      new_network, vrf=None):
         session = context.session
         aim_ctx = aim_context.AimContext(db_session=session)
-        scope_id, other_rtr_db = self._get_other_routers_in_same_vrf(
-            session, router, scope_id=scope_id)
-        ext_db = extension_db.ExtensionDbMixin()
 
-        if scope_id != NO_ADDR_SCOPE:
-            scope_db = (session.query(address_scope_db.AddressScope)
-                        .filter_by(id=scope_id).one())
-            vrf = self._map_address_scope(session, scope_db)
-        else:
-            vrf = self._map_default_vrf(session, router)
+        vrf = vrf or self._get_vrf_for_router(session, router)
+        rtr_dbs = self._get_routers_for_vrf(session, vrf)
+        ext_db = extension_db.ExtensionDbMixin()
 
         prov = set()
         cons = set()
 
         def update_contracts(r_id, r_name):
+            # TODO(rkukura): Use _map_router once name isn't needed.
             contract_aname = self.name_mapper.router(session, r_id, r_name)
             prov.add(contract_aname)
             cons.add(contract_aname)
@@ -1465,7 +1672,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
         if old_network:
             _, ext_net, ns = self._get_aim_nat_strategy(old_network)
             if ext_net:
-                rtr_old = [r for r in other_rtr_db
+                rtr_old = [r for r in rtr_dbs
                            if (r.gw_port_id and
                                r.gw_port.network_id == old_network['id'])]
                 prov = set()
@@ -1482,7 +1689,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
         if new_network:
             _, ext_net, ns = self._get_aim_nat_strategy(new_network)
             if ext_net:
-                rtr_new = [r for r in other_rtr_db
+                rtr_new = [r for r in rtr_dbs
                            if (r.gw_port_id and
                                r.gw_port.network_id == new_network['id'])]
                 prov = set()
@@ -1651,7 +1858,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
         if new_path and not segment:
             return
 
-        epg = self._map_network_to_epg(session, network)
+        epg = self._get_epg_for_network(session, network)
         if not epg:
             LOG.info(_LI('Network %s does not map to any EPG'), network['id'])
             return
