@@ -157,8 +157,6 @@ class ApicAimTestCase(test_address_scope.AddressScopeTestCase,
             service_constants.L3_ROUTER_NAT]
         self.aim_mgr = aim_manager.AimManager()
         self._app_profile_name = self.driver.ap_name
-        self._tenant_name = self._map_name({'id': 'test-tenant',
-                                            'name': 'TestTenantName'})
         self.extension_attributes = ('router:external', DN,
                                      'apic:nat_type', SNAT_POOL,
                                      CIDR, PROV, CONS)
@@ -171,10 +169,6 @@ class ApicAimTestCase(test_address_scope.AddressScopeTestCase,
                 conn.execute(table.delete())
         ksc_client.Client = self.saved_keystone_client
         super(ApicAimTestCase, self).tearDown()
-
-    def _map_name(self, resource):
-        # TODO(rkukura): Eliminate.
-        return resource['id']
 
     def _find_by_dn(self, dn, cls):
         aim_ctx = aim_context.AimContext(self.db_session)
@@ -224,140 +218,150 @@ class ApicAimTestCase(test_address_scope.AddressScopeTestCase,
 
 
 class TestAimMapping(ApicAimTestCase):
-    def _get_tenant(self, tenant_name, should_exist=True):
+    def _get_tenant(self, tenant_name):
         session = db_api.get_session()
         aim_ctx = aim_context.AimContext(session)
         tenant = aim_resource.Tenant(name=tenant_name)
         tenant = self.aim_mgr.get(aim_ctx, tenant)
-        if should_exist:
-            self.assertIsNotNone(tenant)
-        else:
-            self.assertIsNone(tenant)
+        self.assertIsNotNone(tenant)
         return tenant
 
-    def _get_vrf(self, vrf_name, tenant_name, should_exist=True):
+    def _get_vrf(self, vrf_name, tenant_name):
         session = db_api.get_session()
         aim_ctx = aim_context.AimContext(session)
         vrf = aim_resource.VRF(tenant_name=tenant_name,
                                name=vrf_name)
         vrf = self.aim_mgr.get(aim_ctx, vrf)
-        if should_exist:
-            self.assertIsNotNone(vrf)
-        else:
-            self.assertIsNone(vrf)
+        self.assertIsNotNone(vrf)
         return vrf
 
-    def _get_bd(self, bd_name, tenant_name, should_exist=True):
+    def _vrf_should_not_exist(self, vrf_name):
+        session = db_api.get_session()
+        aim_ctx = aim_context.AimContext(session)
+        vrfs = self.aim_mgr.find(aim_ctx, aim_resource.VRF, name=vrf_name)
+        self.assertEqual([], vrfs)
+
+    def _get_bd(self, bd_name, tenant_name):
         session = db_api.get_session()
         aim_ctx = aim_context.AimContext(session)
         bd = aim_resource.BridgeDomain(tenant_name=tenant_name,
                                        name=bd_name)
         bd = self.aim_mgr.get(aim_ctx, bd)
-        if should_exist:
-            self.assertIsNotNone(bd)
-        else:
-            self.assertIsNone(bd)
+        self.assertIsNotNone(bd)
         return bd
 
-    def _get_subnet(self, gw_ip_mask, bd_name, tenant_name, should_exist=True):
+    def _bd_should_not_exist(self, bd_name):
+        session = db_api.get_session()
+        aim_ctx = aim_context.AimContext(session)
+        bds = self.aim_mgr.find(
+            aim_ctx, aim_resource.BridgeDomain, name=bd_name)
+        self.assertEqual([], bds)
+
+    def _get_subnet(self, gw_ip_mask, bd_name, tenant_name):
         session = db_api.get_session()
         aim_ctx = aim_context.AimContext(session)
         subnet = aim_resource.Subnet(tenant_name=tenant_name,
                                      bd_name=bd_name,
                                      gw_ip_mask=gw_ip_mask)
         subnet = self.aim_mgr.get(aim_ctx, subnet)
-        if should_exist:
-            self.assertIsNotNone(subnet)
-        else:
-            self.assertIsNone(subnet)
+        self.assertIsNotNone(subnet)
         return subnet
 
-    def _get_epg(self, epg_name, tenant_name, app_profile_name,
-                 should_exist=True):
+    def _subnet_should_not_exist(self, gw_ip_mask, bd_name):
+        session = db_api.get_session()
+        aim_ctx = aim_context.AimContext(session)
+        subnets = self.aim_mgr.find(
+            aim_ctx, aim_resource.Subnet, bd_name=bd_name,
+            gw_ip_mask=gw_ip_mask)
+        self.assertEqual([], subnets)
+
+    def _get_epg(self, epg_name, tenant_name, app_profile_name):
         session = self.db_session
         aim_ctx = aim_context.AimContext(session)
         epg = aim_resource.EndpointGroup(tenant_name=tenant_name,
                                          app_profile_name=app_profile_name,
                                          name=epg_name)
         epg = self.aim_mgr.get(aim_ctx, epg)
-        if should_exist:
-            self.assertIsNotNone(epg)
-        else:
-            self.assertIsNone(epg)
+        self.assertIsNotNone(epg)
         return epg
 
-    def _get_contract(self, contract_name, tenant_name, should_exist=True):
+    def _epg_should_not_exist(self, epg_name):
+        session = db_api.get_session()
+        aim_ctx = aim_context.AimContext(session)
+        epgs = self.aim_mgr.find(aim_ctx, aim_resource.EndpointGroup,
+                                 name=epg_name)
+        self.assertEqual([], epgs)
+
+    def _get_contract(self, contract_name, tenant_name):
         session = db_api.get_session()
         aim_ctx = aim_context.AimContext(session)
         contract = aim_resource.Contract(tenant_name=tenant_name,
                                          name=contract_name)
         contract = self.aim_mgr.get(aim_ctx, contract)
-        if should_exist:
-            self.assertIsNotNone(contract)
-        else:
-            self.assertIsNone(contract)
+        self.assertIsNotNone(contract)
         return contract
 
-    def _get_subject(self, subject_name, contract_name, tenant_name,
-                     should_exist=True):
+    def _contract_should_not_exist(self, contract_name):
+        session = db_api.get_session()
+        aim_ctx = aim_context.AimContext(session)
+        contracts = self.aim_mgr.find(aim_ctx, aim_resource.Contract,
+                                      name=contract_name)
+        self.assertEqual([], contracts)
+
+    def _get_subject(self, subject_name, contract_name, tenant_name):
         session = db_api.get_session()
         aim_ctx = aim_context.AimContext(session)
         subject = aim_resource.ContractSubject(tenant_name=tenant_name,
                                                contract_name=contract_name,
                                                name=subject_name)
         subject = self.aim_mgr.get(aim_ctx, subject)
-        if should_exist:
-            self.assertIsNotNone(subject)
-        else:
-            self.assertIsNone(subject)
+        self.assertIsNotNone(subject)
         return subject
 
-    def _get_filter(self, filter_name, tenant_name, should_exist=True):
+    def _subject_should_not_exist(self, subject_name, contract_name):
+        session = db_api.get_session()
+        aim_ctx = aim_context.AimContext(session)
+        subjects = self.aim_mgr.find(
+            aim_ctx, aim_resource.ContractSubject,
+            subject_name=subject_name, name=contract_name)
+        self.assertEqual([], subjects)
+
+    def _get_filter(self, filter_name, tenant_name):
         session = db_api.get_session()
         aim_ctx = aim_context.AimContext(session)
         filter = aim_resource.Filter(tenant_name=tenant_name,
                                      name=filter_name)
         filter = self.aim_mgr.get(aim_ctx, filter)
-        if should_exist:
-            self.assertIsNotNone(filter)
-        else:
-            self.assertIsNone(filter)
+        self.assertIsNotNone(filter)
         return filter
 
-    def _get_filter_entry(self, entry_name, filter_name, tenant_name,
-                          should_exist=True):
+    def _get_filter_entry(self, entry_name, filter_name, tenant_name):
         session = db_api.get_session()
         aim_ctx = aim_context.AimContext(session)
         entry = aim_resource.FilterEntry(tenant_name=tenant_name,
                                          filter_name=filter_name,
                                          name=entry_name)
         entry = self.aim_mgr.get(aim_ctx, entry)
-        if should_exist:
-            self.assertIsNotNone(entry)
-        else:
-            self.assertIsNone(entry)
+        self.assertIsNotNone(entry)
         return entry
 
-    def _check_network(self, net, orig_net=None, routers=None, scope=None):
-        orig_net = orig_net or net
+    def _check_network(self, net, routers=None, scope=None):
+        tenant_aname = net['tenant_id']  # TODO(rkukura): Sharing
+        self._get_tenant(tenant_aname)
 
-        # REVISIT(rkukura): Check AIM Tenant here?
-        self.assertEqual('test-tenant', net['tenant_id'])
-
-        aname = self._map_name(orig_net)
-
-        router_anames = [self._map_name(router) for router in routers or []]
+        aname = net['id']
+        router_anames = [router['id'] for router in routers or []]
 
         if routers:
             if scope:
-                vrf_aname = self._map_name(scope)
+                vrf_aname = scope['id']
                 vrf_dname = scope['name']
-                vrf_tenant_aname = self._tenant_name
+                vrf_tenant_aname = scope['tenant_id']
                 vrf_tenant_dname = None
             else:
                 vrf_aname = 'DefaultVRF'
                 vrf_dname = 'Default Routed VRF'
-                vrf_tenant_aname = self._tenant_name
+                vrf_tenant_aname = tenant_aname
                 vrf_tenant_dname = None
         else:
             vrf_aname = 'UnroutedVRF'
@@ -365,9 +369,8 @@ class TestAimMapping(ApicAimTestCase):
             vrf_tenant_aname = 'common'
             vrf_tenant_dname = 'Common Tenant'
 
-        aim_bd = self._get_bd(aname,
-                              self._tenant_name)
-        self.assertEqual(self._tenant_name, aim_bd.tenant_name)
+        aim_bd = self._get_bd(aname, tenant_aname)
+        self.assertEqual(tenant_aname, aim_bd.tenant_name)
         self.assertEqual(aname, aim_bd.name)
         self.assertEqual(net['name'], aim_bd.display_name)
         self.assertEqual(vrf_aname, aim_bd.vrf_name)
@@ -381,10 +384,8 @@ class TestAimMapping(ApicAimTestCase):
         self.assertEqual('garp', aim_bd.ep_move_detect_mode)
         self._check_dn(net, aim_bd, 'BridgeDomain')
 
-        aim_epg = self._get_epg(aname,
-                                tenant_name=self._tenant_name,
-                                app_profile_name=self._app_profile_name)
-        self.assertEqual(self._tenant_name, aim_epg.tenant_name)
+        aim_epg = self._get_epg(aname, tenant_aname, self._app_profile_name)
+        self.assertEqual(tenant_aname, aim_epg.tenant_name)
         self.assertEqual(self._app_profile_name, aim_epg.app_profile_name)
         self.assertEqual(aname, aim_epg.name)
         self.assertEqual(net['name'], aim_epg.display_name)
@@ -399,8 +400,7 @@ class TestAimMapping(ApicAimTestCase):
         self.assertEqual(vrf_tenant_aname, aim_tenant.name)
         self.assertEqual(vrf_tenant_dname, aim_tenant.display_name)
 
-        aim_vrf = self._get_vrf(vrf_aname,
-                                vrf_tenant_aname)
+        aim_vrf = self._get_vrf(vrf_aname, vrf_tenant_aname)
         self.assertEqual(vrf_tenant_aname, aim_vrf.tenant_name)
         self.assertEqual(vrf_aname, aim_vrf.name)
         self.assertEqual(vrf_dname, aim_vrf.display_name)
@@ -408,31 +408,22 @@ class TestAimMapping(ApicAimTestCase):
         self._check_dn(net, aim_vrf, 'VRF')
 
     def _check_network_deleted(self, net):
-        aname = self._map_name(net)
-
-        self._get_bd(aname,
-                     self._tenant_name,
-                     should_exist=False)
-
-        self._get_epg(aname,
-                      tenant_name=self._tenant_name,
-                      app_profile_name=self._app_profile_name,
-                      should_exist=False)
+        aname = net['id']
+        self._bd_should_not_exist(aname)
+        self._epg_should_not_exist(aname)
 
     def _check_subnet(self, subnet, net, expected_gws, unexpected_gw_ips):
         prefix_len = subnet['cidr'].split('/')[1]
 
-        # REVISIT(rkukura): Check AIM Tenant here?
-        self.assertEqual('test-tenant', subnet['tenant_id'])
+        tenant_aname = net['tenant_id']  # TODO(rkukura): Sharing
+        self._get_tenant(tenant_aname)
 
-        net_aname = self._map_name(net)
+        net_aname = net['id']
 
         for gw_ip, router in expected_gws:
             gw_ip_mask = gw_ip + '/' + prefix_len
-            aim_subnet = self._get_subnet(gw_ip_mask,
-                                          net_aname,
-                                          self._tenant_name)
-            self.assertEqual(self._tenant_name, aim_subnet.tenant_name)
+            aim_subnet = self._get_subnet(gw_ip_mask, net_aname, tenant_aname)
+            self.assertEqual(tenant_aname, aim_subnet.tenant_name)
             self.assertEqual(net_aname, aim_subnet.bd_name)
             self.assertEqual(gw_ip_mask, aim_subnet.gw_ip_mask)
             self.assertEqual('private', aim_subnet.scope)
@@ -444,10 +435,7 @@ class TestAimMapping(ApicAimTestCase):
 
         for gw_ip in unexpected_gw_ips:
             gw_ip_mask = gw_ip + '/' + prefix_len
-            self._get_subnet(gw_ip_mask,
-                             net_aname,
-                             self._tenant_name,
-                             should_exist=False)
+            self._subnet_should_not_exist(gw_ip_mask, net_aname)
             self._check_no_dn(subnet, gw_ip)
 
     def _check_subnet_deleted(self, subnet):
@@ -456,47 +444,39 @@ class TestAimMapping(ApicAimTestCase):
         # are in this subnet.
         pass
 
-    def _check_address_scope(self, scope, orig_scope=None):
-        orig_scope = orig_scope or scope
+    def _check_address_scope(self, scope):
+        tenant_aname = scope['tenant_id']
+        self._get_tenant(tenant_aname)
 
-        # REVISIT(rkukura): Check AIM Tenant here?
-        self.assertEqual('test-tenant', scope['tenant_id'])
+        aname = scope['id']
 
-        aname = self._map_name(orig_scope)
-
-        aim_vrf = self._get_vrf(aname,
-                                self._tenant_name)
-        self.assertEqual(self._tenant_name, aim_vrf.tenant_name)
+        aim_vrf = self._get_vrf(aname, tenant_aname)
+        self.assertEqual(tenant_aname, aim_vrf.tenant_name)
         self.assertEqual(aname, aim_vrf.name)
         self.assertEqual(scope['name'], aim_vrf.display_name)
         self.assertEqual('enforced', aim_vrf.policy_enforcement_pref)
         self._check_dn(scope, aim_vrf, 'VRF')
 
     def _check_address_scope_deleted(self, scope):
-        aname = self._map_name(scope)
-
-        self._get_vrf(aname,
-                      self._tenant_name,
-                      should_exist=False)
+        aname = scope['id']
+        self._vrf_should_not_exist(aname)
 
     def _check_router(self, router, expected_gw_ips, unexpected_gw_ips,
-                      orig_router=None, scope=None):
-        orig_router = orig_router or router
+                      scope=None):
+        tenant_aname = router['tenant_id']  # TODO(rkukura): Sharing
+        self._get_tenant(tenant_aname)
 
-        # REVISIT(rkukura): Check AIM Tenant here?
-        self.assertEqual('test-tenant', router['tenant_id'])
+        aname = router['id']
 
-        aname = self._map_name(orig_router)
-
-        aim_contract = self._get_contract(aname, self._tenant_name)
-        self.assertEqual(self._tenant_name, aim_contract.tenant_name)
+        aim_contract = self._get_contract(aname, tenant_aname)
+        self.assertEqual(tenant_aname, aim_contract.tenant_name)
         self.assertEqual(aname, aim_contract.name)
         self.assertEqual(router['name'], aim_contract.display_name)
         self.assertEqual('context', aim_contract.scope)  # REVISIT(rkukura)
         self._check_dn(router, aim_contract, 'Contract')
 
-        aim_subject = self._get_subject('route', aname, self._tenant_name)
-        self.assertEqual(self._tenant_name, aim_subject.tenant_name)
+        aim_subject = self._get_subject('route', aname, tenant_aname)
+        self.assertEqual(tenant_aname, aim_subject.tenant_name)
         self.assertEqual(aname, aim_subject.contract_name)
         self.assertEqual('route', aim_subject.name)
         self.assertEqual(router['name'], aim_subject.display_name)
@@ -505,18 +485,18 @@ class TestAimMapping(ApicAimTestCase):
         self.assertEqual(['AnyFilter'], aim_subject.bi_filters)
         self._check_dn(router, aim_subject, 'ContractSubject')
 
-        self._check_any_filter()
+        self._check_any_filter(tenant_aname)  # REVISIT
 
         if expected_gw_ips:
             if scope:
-                vrf_aname = self._map_name(scope)
+                vrf_aname = scope['id']
                 vrf_dname = scope['name']
-                vrf_tenant_aname = self._tenant_name
+                vrf_tenant_aname = scope['tenant_id']
                 vrf_tenant_dname = None
             else:
                 vrf_aname = 'DefaultVRF'
                 vrf_dname = 'Default Routed VRF'
-                vrf_tenant_aname = self._tenant_name
+                vrf_tenant_aname = tenant_aname
                 vrf_tenant_dname = None
 
             aim_tenant = self._get_tenant(vrf_tenant_aname)
@@ -545,22 +525,19 @@ class TestAimMapping(ApicAimTestCase):
             self.assertNotIn(gw_ip, dist_names)
 
     def _check_router_deleted(self, router):
-        aname = self._map_name(router)
+        aname = router['id']
+        self._subject_should_not_exist('route', aname)
+        self._contract_should_not_exist(aname)
 
-        self._get_contract(aname, self._tenant_name, should_exist=False)
-
-        self._get_subject('route', aname, self._tenant_name,
-                          should_exist=False)
-
-    def _check_any_filter(self):
-        aim_filter = self._get_filter('AnyFilter', self._tenant_name)
-        self.assertEqual(self._tenant_name, aim_filter.tenant_name)
+    def _check_any_filter(self, tenant_aname):
+        aim_filter = self._get_filter('AnyFilter', tenant_aname)
+        self.assertEqual(tenant_aname, aim_filter.tenant_name)
         self.assertEqual('AnyFilter', aim_filter.name)
         self.assertEqual('Any Filter', aim_filter.display_name)
 
         aim_entry = self._get_filter_entry('AnyFilterEntry', 'AnyFilter',
-                                           self._tenant_name)
-        self.assertEqual(self._tenant_name, aim_entry.tenant_name)
+                                           tenant_aname)
+        self.assertEqual(tenant_aname, aim_entry.tenant_name)
         self.assertEqual('AnyFilter', aim_entry.filter_name)
         self.assertEqual('AnyFilterEntry', aim_entry.name)
         self.assertEqual('Any FilterEntry', aim_entry.display_name)
@@ -579,9 +556,9 @@ class TestAimMapping(ApicAimTestCase):
 
     def test_network_lifecycle(self):
         # Test create.
-        orig_net = self._make_network(self.fmt, 'net1', True)['network']
-        net_id = orig_net['id']
-        self._check_network(orig_net)
+        net = self._make_network(self.fmt, 'net1', True)['network']
+        net_id = net['id']
+        self._check_network(net)
 
         # Test show.
         net = self._show('networks', net_id)['network']
@@ -590,11 +567,11 @@ class TestAimMapping(ApicAimTestCase):
         # Test update.
         data = {'network': {'name': 'newnamefornet'}}
         net = self._update('networks', net_id, data)['network']
-        self._check_network(net, orig_net)
+        self._check_network(net)
 
         # Test delete.
         self._delete('networks', net_id)
-        self._check_network_deleted(orig_net)
+        self._check_network_deleted(net)
 
     def test_subnet_lifecycle(self):
         # Create network.
@@ -623,10 +600,10 @@ class TestAimMapping(ApicAimTestCase):
 
     def test_address_scope_lifecycle(self):
         # Test create.
-        orig_scope = self._make_address_scope(
+        scope = self._make_address_scope(
             self.fmt, 4, name='as1')['address_scope']
-        scope_id = orig_scope['id']
-        self._check_address_scope(orig_scope)
+        scope_id = scope['id']
+        self._check_address_scope(scope)
 
         # Test show.
         scope = self._show('address-scopes', scope_id)['address_scope']
@@ -635,18 +612,18 @@ class TestAimMapping(ApicAimTestCase):
         # Test update.
         data = {'address_scope': {'name': 'newnameforaddressscope'}}
         scope = self._update('address-scopes', scope_id, data)['address_scope']
-        self._check_address_scope(scope, orig_scope)
+        self._check_address_scope(scope)
 
         # Test delete.
         self._delete('address-scopes', scope_id)
-        self._check_address_scope_deleted(orig_scope)
+        self._check_address_scope_deleted(scope)
 
     def test_router_lifecycle(self):
         # Test create.
-        orig_router = self._make_router(
+        router = self._make_router(
             self.fmt, 'test-tenant', 'router1')['router']
-        router_id = orig_router['id']
-        self._check_router(orig_router, [], [])
+        router_id = router['id']
+        self._check_router(router, [], [])
 
         # Test show.
         router = self._show('routers', router_id)['router']
@@ -655,18 +632,18 @@ class TestAimMapping(ApicAimTestCase):
         # Test update.
         data = {'router': {'name': 'newnameforrouter'}}
         router = self._update('routers', router_id, data)['router']
-        self._check_router(router, [], [], orig_router)
+        self._check_router(router, [], [])
 
         # Test delete.
         self._delete('routers', router_id)
-        self._check_router_deleted(orig_router)
+        self._check_router_deleted(router)
 
     def test_router_interface(self):
         # Create router.
-        orig_router = self._make_router(
+        router = self._make_router(
             self.fmt, 'test-tenant', 'router1')['router']
-        router_id = orig_router['id']
-        self._check_router(orig_router, [], [])
+        router_id = router['id']
+        self._check_router(router, [], [])
 
         # Create network.
         net_resp = self._make_network(self.fmt, 'net1', True)
@@ -699,7 +676,7 @@ class TestAimMapping(ApicAimTestCase):
 
         # Check network.
         net = self._show('networks', net_id)['network']
-        self._check_network(net, routers=[router])
+        self._check_network(net, [router])
 
         # Check subnet1.
         subnet = self._show('subnets', subnet1_id)['subnet']
@@ -717,7 +694,7 @@ class TestAimMapping(ApicAimTestCase):
         # Test router update.
         data = {'router': {'name': 'newnameforrouter'}}
         router = self._update('routers', router_id, data)['router']
-        self._check_router(router, [gw1_ip], [], orig_router)
+        self._check_router(router, [gw1_ip], [])
         self._check_subnet(subnet, net, [(gw1_ip, router)], [])
 
         # Add subnet2 to router by port.
@@ -730,11 +707,11 @@ class TestAimMapping(ApicAimTestCase):
 
         # Check router.
         router = self._show('routers', router_id)['router']
-        self._check_router(router, [gw1_ip, gw2_ip], [], orig_router)
+        self._check_router(router, [gw1_ip, gw2_ip], [])
 
         # Check network.
         net = self._show('networks', net_id)['network']
-        self._check_network(net, routers=[orig_router])
+        self._check_network(net, [router])
 
         # Check subnet1.
         subnet = self._show('subnets', subnet1_id)['subnet']
@@ -751,11 +728,11 @@ class TestAimMapping(ApicAimTestCase):
 
         # Check router.
         router = self._show('routers', router_id)['router']
-        self._check_router(router, [gw2_ip], [gw1_ip], orig_router)
+        self._check_router(router, [gw2_ip], [gw1_ip])
 
         # Check network.
         net = self._show('networks', net_id)['network']
-        self._check_network(net, routers=[orig_router])
+        self._check_network(net, [router])
 
         # Check subnet1.
         subnet = self._show('subnets', subnet1_id)['subnet']
@@ -772,7 +749,7 @@ class TestAimMapping(ApicAimTestCase):
 
         # Check router.
         router = self._show('routers', router_id)['router']
-        self._check_router(router, [], [gw1_ip, gw2_ip], orig_router)
+        self._check_router(router, [], [gw1_ip, gw2_ip])
 
         # Check network.
         net = self._show('networks', net_id)['network']
@@ -805,10 +782,10 @@ class TestAimMapping(ApicAimTestCase):
         pool_id = pool['id']
 
         # Create router.
-        orig_router = self._make_router(
+        router = self._make_router(
             self.fmt, 'test-tenant', 'router1')['router']
-        router_id = orig_router['id']
-        self._check_router(orig_router, [], [], scope=scope)
+        router_id = router['id']
+        self._check_router(router, [], [], scope)
 
         # Create network.
         net_resp = self._make_network(self.fmt, 'net1', True)
@@ -839,11 +816,11 @@ class TestAimMapping(ApicAimTestCase):
 
         # Check router.
         router = self._show('routers', router_id)['router']
-        self._check_router(router, [gw1_ip], [], scope=scope)
+        self._check_router(router, [gw1_ip], [], scope)
 
         # Check network.
         net = self._show('networks', net_id)['network']
-        self._check_network(net, routers=[router], scope=scope)
+        self._check_network(net, [router], scope)
 
         # Check subnet1.
         subnet = self._show('subnets', subnet1_id)['subnet']
@@ -861,7 +838,7 @@ class TestAimMapping(ApicAimTestCase):
         # Test router update.
         data = {'router': {'name': 'newnameforrouter'}}
         router = self._update('routers', router_id, data)['router']
-        self._check_router(router, [gw1_ip], [], orig_router, scope)
+        self._check_router(router, [gw1_ip], [], scope)
         self._check_subnet(subnet, net, [(gw1_ip, router)], [])
 
         # Add subnet2 to router by port.
@@ -874,11 +851,11 @@ class TestAimMapping(ApicAimTestCase):
 
         # Check router.
         router = self._show('routers', router_id)['router']
-        self._check_router(router, [gw1_ip, gw2_ip], [], orig_router, scope)
+        self._check_router(router, [gw1_ip, gw2_ip], [], scope)
 
         # Check network.
         net = self._show('networks', net_id)['network']
-        self._check_network(net, routers=[orig_router], scope=scope)
+        self._check_network(net, [router], scope)
 
         # Check subnet1.
         subnet = self._show('subnets', subnet1_id)['subnet']
@@ -895,11 +872,11 @@ class TestAimMapping(ApicAimTestCase):
 
         # Check router.
         router = self._show('routers', router_id)['router']
-        self._check_router(router, [gw2_ip], [gw1_ip], orig_router, scope)
+        self._check_router(router, [gw2_ip], [gw1_ip], scope)
 
         # Check network.
         net = self._show('networks', net_id)['network']
-        self._check_network(net, routers=[orig_router], scope=scope)
+        self._check_network(net, [router], scope)
 
         # Check subnet1.
         subnet = self._show('subnets', subnet1_id)['subnet']
@@ -916,7 +893,7 @@ class TestAimMapping(ApicAimTestCase):
 
         # Check router.
         router = self._show('routers', router_id)['router']
-        self._check_router(router, [], [gw1_ip, gw2_ip], orig_router, scope)
+        self._check_router(router, [], [gw1_ip, gw2_ip], scope)
 
         # Check network.
         net = self._show('networks', net_id)['network']
@@ -1761,13 +1738,9 @@ class TestExternalConnectivityBase(object):
         # Test connects the routers one-by-one to two subnets each,
         # and then removes the router interfaces one-by-one.
 
-        tenants = {'tenant_1': self._map_name({'id': 'tenant_1',
-                                               'name': 'Tenant1Name'}),
-                   'tenant_2': self._map_name({'id': 'tenant_2',
-                                               'name': 'Tenant2Name'})}
         objs = {}
         # Create the networks, subnets, routers etc
-        for t in tenants.keys():
+        for t in ['tenant_1', 'tenant_2']:
             subnetpool = None
             addr_scope = None
             if use_addr_scope:
@@ -1803,14 +1776,14 @@ class TestExternalConnectivityBase(object):
         # Connect the router interfaces to the subnets
         vrf_objs = {}
         for tenant, router_list in objs.iteritems():
-            a_vrf = aim_resource.VRF(tenant_name=tenants[tenant],
+            a_vrf = aim_resource.VRF(tenant_name=tenant,
                                      name='DefaultVRF')
             a_ext_net = aim_resource.ExternalNetwork(
                 tenant_name='t1', l3out_name='l1', name='n1')
             for router, subnets, addr_scope in router_list:
                 if addr_scope:
-                    a_vrf.name = self._map_name(addr_scope)
-                contract = self._map_name(router)
+                    a_vrf.name = addr_scope['id']
+                contract = router['id']
                 a_ext_net.provided_contract_names.append(contract)
                 a_ext_net.provided_contract_names.extend(
                     router[PROV])
@@ -1832,14 +1805,14 @@ class TestExternalConnectivityBase(object):
 
         # Remove the router interfaces
         for tenant, router_list in objs.iteritems():
-            a_vrf = aim_resource.VRF(tenant_name=tenants[tenant],
+            a_vrf = aim_resource.VRF(tenant_name=tenant,
                                      name='DefaultVRF')
             a_ext_net = vrf_objs.pop(tenant)
             num_router = len(router_list)
             for router, subnets, addr_scope in router_list:
                 if addr_scope:
-                    a_vrf.name = self._map_name(addr_scope)
-                contract = self._map_name(router)
+                    a_vrf.name = addr_scope['id']
+                contract = router['id']
                 a_ext_net.provided_contract_names.remove(contract)
                 a_ext_net.consumed_contract_names.remove(contract)
                 for c in router[PROV]:
@@ -1920,15 +1893,16 @@ class TestExternalConnectivityBase(object):
                      {'router':
                       {'external_gateway_info': {'network_id':
                                                  ext_net1['id']}}})
-        contract = self._map_name(router)
+        contract = router['id']
         a_ext_net1 = aim_resource.ExternalNetwork(
             tenant_name='t1', l3out_name='l1', name='n1',
             provided_contract_names=sorted(['pr-1', contract]),
             consumed_contract_names=sorted(['co-1', contract]))
-        a_vrf = aim_resource.VRF(tenant_name=self._tenant_name,
+        tenant_aname = net['tenant_id']  # REVISIT
+        a_vrf = aim_resource.VRF(tenant_name=tenant_aname,
                                  name='DefaultVRF')
         if use_addr_scope:
-            a_vrf.name = self._map_name(addr_scope)
+            a_vrf.name = addr_scope['id']
         cv.assert_called_once_with(mock.ANY, a_ext_net1, a_vrf)
 
         self.mock_ns.reset_mock()
@@ -2014,10 +1988,11 @@ class TestExternalConnectivityBase(object):
             self.fmt, {'network': net}, '10.10.1.1',
             '10.10.1.0/24',
             subnetpool_id=subnetpool['id'] if addr_scope else None)['subnet']
-        a_vrf = aim_resource.VRF(tenant_name=self._tenant_name,
+        tenant_aname = net['tenant_id']  # REVISIT
+        a_vrf = aim_resource.VRF(tenant_name=tenant_aname,
                                  name='DefaultVRF')
         if use_addr_scope:
-            a_vrf.name = self._map_name(addr_scope)
+            a_vrf.name = addr_scope['id']
 
         routers = []
         contracts = []
@@ -2034,7 +2009,7 @@ class TestExternalConnectivityBase(object):
             self._router_interface_action('add', r['id'], sub_id,
                                           intf_port)
             routers.append(r['id'])
-            contracts.append(self._map_name(r))
+            contracts.append(r['id'])
         cv.assert_not_called()
 
         self._add_external_gateway_to_router(routers[0], ext_nets[0])
