@@ -335,19 +335,32 @@ class HeatDriver(object):
         admin_token = self.keystoneclient.get_admin_token()
         lb_vip, vip_name = self._get_lb_vip(auth_token, provider)
         provider_pt = self._get_provider_pt(admin_token, provider)
-        if provider_pt:
-            provider_pt_id = provider_pt['id']
+        if not provider_pt:
+            return
+        provider_pt_id = provider_pt['id']
+        provider_port_id = provider_pt['port_id']
 
         vip_pt = self.gbp_client.create_policy_target(
             auth_token, provider_tenant_id, provider['id'],
             vip_name, lb_vip['port_id'])
 
+        # Set cluster_id as vip_pt
         policy_target_info = {'cluster_id': vip_pt['id']}
-        self.gbp_client.update_policy_target(auth_token, vip_pt['id'],
-                policy_target_info)
-
         self.gbp_client.update_policy_target(admin_token, provider_pt_id,
-                policy_target_info)
+               policy_target_info)
+
+        provider_port = self.neutron_client.get_port(
+                        admin_token, provider_port_id)['port']
+        vip_ip = provider_port['allowed_address_pairs'][0]['ip_address']
+
+        # Update allowed address pairs entry came through cluster_id updation
+        # with provider_port mac address.
+        updated_port = {
+                'allowed_address_pairs': [{'ip_address': vip_ip,
+                        'mac_address': provider_port['mac_address']}]
+                       }
+        self.neutron_client.update_port(
+                admin_token, provider_pt['port_id'], **updated_port)
 
     def _update_policy_targets_for_vip(self, auth_token,
                                       provider_tenant_id, provider):
