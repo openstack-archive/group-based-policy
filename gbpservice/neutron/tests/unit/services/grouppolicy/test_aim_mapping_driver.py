@@ -1775,8 +1775,9 @@ class TestPolicyTarget(AIMBaseTestCase):
                                   mapping['segmentation_labels'])
         req_mapping = self.driver.request_endpoint_details(
             nctx.get_admin_context(),
-            request={'device': 'tap%s' % pt1['port_id'], 'host': 'h1',
-                     'timestamp': 0, 'request_id': 'request_id'})
+            request={'device': 'tap%s' % pt1['port_id'],
+                     'timestamp': 0, 'request_id': 'request_id'},
+            host='h1')
         epg_name = self.driver.apic_epg_name_for_policy_target_group(
             self._neutron_context.session, ptg['id'], ptg['name'])
         epg_tenant = self.name_mapper.tenant(self._neutron_context.session,
@@ -1856,8 +1857,9 @@ class TestPolicyTarget(AIMBaseTestCase):
                         host='h1')
                     req_mapping = self.driver.request_endpoint_details(
                         nctx.get_admin_context(),
-                        request={'device': 'tap%s' % port_id, 'host': 'h1',
-                                 'timestamp': 0, 'request_id': 'request_id'})
+                        request={'device': 'tap%s' % port_id,
+                                 'timestamp': 0, 'request_id': 'request_id'},
+                        host='h1')
                     vrf_mapping = self.driver.get_vrf_details(
                         self._neutron_admin_context,
                         vrf_id=address_scope['id'])
