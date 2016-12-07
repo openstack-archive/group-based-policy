@@ -497,11 +497,10 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
         if context.current['subnets']:
             raise alib.ExplicitSubnetAssociationNotSupported()
 
-        ptg_db = context._plugin._get_policy_target_group(
-            context._plugin_context, context.current['id'])
-
         if not context.current['l2_policy_id']:
             self._create_implicit_l2_policy(context, clean_session=False)
+            ptg_db = context._plugin._get_policy_target_group(
+                context._plugin_context, context.current['id'])
             ptg_db['l2_policy_id'] = l2p_id = context.current['l2_policy_id']
         else:
             l2p_id = context.current['l2_policy_id']
@@ -587,7 +586,9 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
             ptg_db.update({'l2_policy_id': None})
             l2p_db = context._plugin._get_l2_policy(
                 plugin_context, l2p_id)
-            if not l2p_db['policy_target_groups']:
+            if not l2p_db['policy_target_groups'] or (
+                (len(l2p_db['policy_target_groups']) == 1) and (
+                    self._is_auto_ptg(l2p_db['policy_target_groups'][0]))):
                 self._cleanup_l2_policy(context, l2p_id, clean_session=False)
 
     @log.log_method_call
