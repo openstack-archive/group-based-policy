@@ -61,7 +61,7 @@ class AIMMappingRPCMixin(ha_ip_db.HAIPOwnerDbMixin):
     def get_gbp_details(self, context, **kwargs):
         LOG.debug("APIC AIM MD handling get_gbp_details for: %s", kwargs)
         try:
-            return self._get_gbp_details(context, kwargs)
+            return self._get_gbp_details(context, kwargs, kwargs.get('host'))
         except Exception as e:
             device = kwargs.get('device')
             LOG.error(_LE("An exception has occurred while retrieving device "
@@ -73,10 +73,12 @@ class AIMMappingRPCMixin(ha_ip_db.HAIPOwnerDbMixin):
         LOG.debug("APIC AIM handling get_endpoint_details for: %s", kwargs)
         try:
             request = kwargs.get('request')
+            host = kwargs.get('host')
             result = {'device': request['device'],
                       'timestamp': request['timestamp'],
                       'request_id': request['request_id'],
-                      'gbp_details': self._get_gbp_details(context, request),
+                      'gbp_details': self._get_gbp_details(context, request,
+                                                           host),
                       'neutron_details': ml2_rpc.RpcCallbacks(
                           None, None).get_device_details(context, **request)}
             return result
@@ -96,11 +98,10 @@ class AIMMappingRPCMixin(ha_ip_db.HAIPOwnerDbMixin):
     # - self._is_dhcp_optimized(context, port);
     # - self._is_metadata_optimized(context, port);
     # - self._get_vrf_id(context, port, details): VRF identified for the port;
-    def _get_gbp_details(self, context, request):
+    def _get_gbp_details(self, context, request, host):
         # TODO(ivar): should this happen within a single transaction? what are
         # the concurrency risks?
         device = request.get('device')
-        host = request.get('host')
 
         core_plugin = self._core_plugin
         port_id = core_plugin._device_to_port_id(context, device)
