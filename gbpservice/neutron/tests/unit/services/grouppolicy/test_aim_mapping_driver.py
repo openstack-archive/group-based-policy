@@ -1195,6 +1195,41 @@ class TestL2PolicyWithAutoPTG(TestL2PolicyBase):
     def test_auto_ptg_lifecycle_unshared(self):
         self._test_multiple_l2p_post_create()
 
+    def test_ptg_lifecycle(self):
+        # Once the testing strategy evolves to always assuming auto_ptg
+        # being present, this UT can be removed/merged with the UTs in the
+        # TestPolicyTargetGroup class
+        ptg = self.create_policy_target_group()['policy_target_group']
+        ptg_id = ptg['id']
+        l2p = self.show_l2_policy(ptg['l2_policy_id'],
+                                  expected_res_status=200)['l2_policy']
+        l3p = self.show_l3_policy(l2p['l3_policy_id'],
+                                  expected_res_status=200)['l3_policy']
+        ascopes = self._plugin.get_address_scopes(self._context)
+        self.assertEqual(l3p['address_scope_v4_id'], ascopes[0]['id'])
+        subpools = self._plugin.get_subnetpools(self._context)
+        self.assertEqual(l3p['subnetpools_v4'], [subpools[0]['id']])
+        self.assertEqual(l3p['address_scope_v4_id'],
+                         subpools[0]['address_scope_id'])
+        routers = self._l3_plugin.get_routers(self._context)
+        self.assertEqual(l3p['routers'], [routers[0]['id']])
+        req = self.new_show_request('subnets', ptg['subnets'][0], fmt=self.fmt)
+        subnet = self.deserialize(self.fmt,
+                                  req.get_response(self.api))['subnet']
+        self.assertIsNotNone(subnet['id'])
+        self.assertEqual(l3p['subnetpools_v4'][0],
+                         subnet['subnetpool_id'])
+
+        self.delete_policy_target_group(ptg_id, expected_res_status=204)
+        self.show_policy_target_group(ptg_id, expected_res_status=404)
+        self.show_l2_policy(ptg['l2_policy_id'], expected_res_status=404)
+        self.assertEqual([], self._plugin.get_ports(self._context))
+        self.assertEqual([], self._plugin.get_subnets(self._context))
+        self.assertEqual([], self._plugin.get_networks(self._context))
+        self.assertEqual([], self._plugin.get_address_scopes(self._context))
+        self.assertEqual([], self._plugin.get_subnetpools(self._context))
+        self.assertEqual([], self._l3_plugin.get_routers(self._context))
+
 
 class TestL2PolicyRollback(TestL2PolicyBase):
 

@@ -1202,6 +1202,12 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
     def delete_l2_policy(self, context, l2_policy_id):
         with context.session.begin(subtransactions=True):
             l2p_db = self._get_l2_policy(context, l2_policy_id)
+            # When delete_l2_policy is called implicitly (as a
+            # side effect of the last PTG deletion), the L2P's
+            # backref to PTGs is not getting reflected correctly
+            # here (at least in the UTs). This is fixed by the explicit
+            # call to refresh.
+            context.session.refresh(l2p_db)
             if l2p_db.policy_target_groups:
                 raise gpolicy.L2PolicyInUse(l2_policy_id=l2_policy_id)
             context.session.delete(l2p_db)
