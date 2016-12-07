@@ -524,10 +524,14 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
             session, context.current['provided_policy_rule_sets'])
         consumed_contracts = self._get_aim_contract_names(
             session, context.current['consumed_policy_rule_sets'])
+
         aim_epg = self._aim_endpoint_group(
             session, context.current, bd_name, bd_tenant_name,
             provided_contracts=provided_contracts,
-            consumed_contracts=consumed_contracts)
+            consumed_contracts=consumed_contracts,
+            policy_enforcement_pref=
+            self._get_policy_enforcement_pref(context.current))
+
         session = context._plugin_context.session
         aim_ctx = aim_context.AimContext(session)
         vmms, phys = self.aim_mech_driver.get_aim_domains(aim_ctx)
@@ -554,6 +558,8 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
             if not self._is_auto_ptg(context.current):
                 aim_epg.display_name = (
                     self.aim_display_name(context.current['name']))
+            aim_epg.policy_enforcement_pref = (
+                self._get_policy_enforcement_pref(context.current))
             aim_epg.provided_contract_names = (
                 list((set(aim_epg.provided_contract_names) -
                       set(old_provided_contracts)) |
@@ -860,7 +866,8 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
     def _aim_endpoint_group(self, session, ptg, bd_name=None,
                             bd_tenant_name=None,
                             provided_contracts=None,
-                            consumed_contracts=None):
+                            consumed_contracts=None,
+                            policy_enforcement_pref=True):
         # This returns a new AIM EPG resource
         # TODO(Sumit): Use _aim_resource_by_name
         tenant_id = ptg['tenant_id']
@@ -875,7 +882,8 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
         kwargs = {'tenant_name': str(tenant_name),
                   'name': str(epg_name),
                   'display_name': display_name,
-                  'app_profile_name': self.aim_mech_driver.ap_name}
+                  'app_profile_name': self.aim_mech_driver.ap_name,
+                  'policy_enforcement_pref': policy_enforcement_pref}
         if bd_name:
             kwargs['bd_name'] = bd_name
         if bd_tenant_name:
@@ -1920,6 +1928,15 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
 
     def _is_auto_ptg(self, ptg):
         return ptg['id'].startswith(AUTO_PTG_PREFIX)
+
+    def _get_policy_enforcement_pref(self, ptg):
+        if ptg.get('intra_ptg_allow'):
+            policy_enforcement_pref = (
+                aim_resource.EndpointGroup.POLICY_UNENFORCED)
+        else:
+            policy_enforcement_pref = (
+                aim_resource.EndpointGroup.POLICY_ENFORCED)
+        return policy_enforcement_pref
 
     def _get_epg_name_from_dn(self, context, epg_dn):
         aim_context = self._get_aim_context(context)

@@ -82,7 +82,8 @@ class AIMBaseTestCase(test_nr_base.CommonNeutronBaseTestCase,
                       test_ext_base.ExtensionDriverTestBase,
                       test_aim_md.ApicAimTestMixin,
                       test_address_scope.AddressScopeTestCase):
-    _extension_drivers = ['aim_extension', 'apic_segmentation_label']
+    _extension_drivers = ['aim_extension', 'apic_segmentation_label',
+                          'apic_intra_ptg']
     _extension_path = None
 
     def setUp(self, policy_drivers=None, core_plugin=None, ml2_options=None,
@@ -1523,6 +1524,25 @@ class TestPolicyTargetGroup(AIMBaseTestCase):
             self._context, router_id, {'subnet_id': subnet_id})
         self.assertIn(subnet_id, info['subnet_ids'])
         self.delete_policy_target_group(ptg_id, expected_res_status=204)
+
+    def test_policy_target_group_intra_ptg_allow(self):
+        ptg = self.create_policy_target_group(
+            intra_ptg_allow=False)['policy_target_group']
+        self.assertFalse(ptg['intra_ptg_allow'])
+        aim_epg_name = self.driver.apic_epg_name_for_policy_target_group(
+            self._neutron_context.session, ptg['id'])
+        aim_epgs = self.aim_mgr.find(
+            self._aim_context, aim_resource.EndpointGroup, name=aim_epg_name)
+        self.assertEqual(1, len(aim_epgs))
+        self.assertEqual(aim_resource.EndpointGroup.POLICY_ENFORCED,
+                         aim_epgs[0].policy_enforcement_pref)
+        ptg = self.update_policy_target_group(
+            ptg['id'], intra_ptg_allow=True)['policy_target_group']
+        self.assertTrue(ptg['intra_ptg_allow'])
+        aim_epgs = self.aim_mgr.find(
+            self._aim_context, aim_resource.EndpointGroup, name=aim_epg_name)
+        self.assertEqual(aim_resource.EndpointGroup.POLICY_UNENFORCED,
+                         aim_epgs[0].policy_enforcement_pref)
 
 
 # TODO(Sumit): Add tests here which tests different scenarios for subnet
