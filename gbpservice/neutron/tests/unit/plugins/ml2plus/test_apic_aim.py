@@ -18,6 +18,7 @@ import netaddr
 
 from aim.aim_lib import nat_strategy
 from aim import aim_manager
+from aim.api import infra as aim_infra
 from aim.api import resource as aim_resource
 from aim.api import status as aim_status
 from aim import config as aim_cfg
@@ -28,11 +29,13 @@ from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import (
     extension_db as extn_db)
 from keystoneclient.v3 import client as ksc_client
 from neutron.api import extensions
+from neutron.common import constants as n_constants
 from neutron import context
 from neutron.db import api as db_api
 from neutron import manager
 from neutron.plugins.common import constants as service_constants
 from neutron.plugins.ml2 import config
+from neutron.plugins.ml2 import db as ml2_db
 from neutron.tests.unit.api import test_extensions
 from neutron.tests.unit.db import test_db_base_plugin_v2 as test_plugin
 from neutron.tests.unit.extensions import test_address_scope
@@ -50,6 +53,12 @@ AGENT_CONF_OPFLEX = {'alive': True, 'binary': 'somebinary',
                      'configurations': {
                          'opflex_networks': None,
                          'bridge_mappings': {'physnet1': 'br-eth1'}}}
+
+AGENT_CONF_OVS = {'alive': True, 'binary': 'somebinary',
+                  'topic': 'sometopic',
+                  'agent_type': n_constants.AGENT_TYPE_OVS,
+                  'configurations': {
+                      'bridge_mappings': {'physnet1': 'br-eth1'}}}
 
 DN = 'apic:distinguished_names'
 CIDR = 'apic:external_cidrs'
@@ -111,22 +120,20 @@ class ApicAimTestMixin(object):
 class ApicAimTestCase(test_address_scope.AddressScopeTestCase,
                       test_l3.L3NatTestCaseMixin, ApicAimTestMixin):
 
-    def setUp(self):
+    def setUp(self, mechanism_drivers=None, tenant_network_types=None):
         # Enable the test mechanism driver to ensure that
         # we can successfully call through to all mechanism
         # driver apis.
-        config.cfg.CONF.set_override('mechanism_drivers',
-                                     ['logger', 'apic_aim'],
-                                     'ml2')
+        mech = mechanism_drivers or ['logger', 'apic_aim']
+        config.cfg.CONF.set_override('mechanism_drivers', mech, 'ml2')
         config.cfg.CONF.set_override('extension_drivers',
                                      ['apic_aim'],
                                      'ml2')
         config.cfg.CONF.set_override('type_drivers',
                                      ['opflex', 'local', 'vlan'],
                                      'ml2')
-        config.cfg.CONF.set_override('tenant_network_types',
-                                     ['opflex'],
-                                     'ml2')
+        net_type = tenant_network_types or ['opflex']
+        config.cfg.CONF.set_override('tenant_network_types', net_type, 'ml2')
         config.cfg.CONF.set_override('network_vlan_ranges',
                                      ['physnet1:1000:1099'],
                                      group='ml2_type_vlan')
@@ -2304,3 +2311,299 @@ class TestSnatIpAllocation(ApicAimTestCase):
         for x in range(0, 8):
             fip = self._make_floatingip(self.fmt, ext_net['id'])['floatingip']
             self.assertTrue(fip['floating_ip_address'] in ips)
+
+
+class TestPortVlanNetwork(ApicAimTestCase):
+
+    def setUp(self, **kwargs):
+        if kwargs.get('mechanism_drivers') is None:
+            kwargs['mechanism_drivers'] = ['logger', 'openvswitch', 'apic_aim']
+        if kwargs.get('tenant_network_types') is None:
+            kwargs['tenant_network_types'] = ['vlan']
+        super(TestPortVlanNetwork, self).setUp(**kwargs)
+
+        aim_ctx = aim_context.AimContext(self.db_session)
+        self.hlink1 = aim_infra.HostLink(
+            host_name='h1',
+            interface_name='eth0',
+            path='topology/pod-1/paths-102/pathep-[eth1/7]')
+        self._register_agent('h1', AGENT_CONF_OVS)
+        self.aim_mgr.create(aim_ctx, self.hlink1)
+
+        self.expected_binding_info = [('openvswitch', 'vlan')]
+
+    def _net_2_epg(self, network):
+        if network['router:external']:
+            epg = aim_resource.EndpointGroup.from_dn(
+                network['apic:distinguished_names']['EndpointGroup'])
+        else:
+            epg = aim_resource.EndpointGroup(
+                    tenant_name=network['tenant_id'],
+                    app_profile_name=self._app_profile_name,
+                    name=network['id'])
+        return epg
+
+    def _check_binding(self, port_id, expected_binding_info=None):
+        port_context = self.plugin.get_bound_port_context(
+            context.get_admin_context(), port_id)
+        self.assertIsNotNone(port_context)
+        binding_info = [(bl['bound_driver'],
+                         bl['bound_segment']['network_type'])
+                        for bl in port_context.binding_levels]
+        self.assertEqual(expected_binding_info or self.expected_binding_info,
+                         binding_info)
+        return port_context.bottom_bound_segment['segmentation_id']
+
+    def _check_no_dynamic_segment(self, network_id):
+        dyn_segments = ml2_db.get_network_segments(
+            context.get_admin_context().session, network_id,
+            filter_dynamic=True)
+        self.assertEqual(0, len(dyn_segments))
+
+    def _do_test_port_lifecycle(self, external_net=False):
+        aim_ctx = aim_context.AimContext(self.db_session)
+
+        if external_net:
+            net1 = self._make_ext_network('net1',
+                                          dn='uni/tn-t1/out-l1/instP-n1')
+        else:
+            net1 = self._make_network(self.fmt, 'net1', True)['network']
+
+        hlink2 = aim_infra.HostLink(
+            host_name='h2',
+            interface_name='eth0',
+            path='topology/pod-1/paths-201/pathep-[eth1/19]')
+        self.aim_mgr.create(aim_ctx, hlink2)
+        self._register_agent('h2', AGENT_CONF_OVS)
+
+        epg = self._net_2_epg(net1)
+        with self.subnet(network={'network': net1}) as sub1:
+            with self.port(subnet=sub1) as p1:
+                # unbound port -> no static paths expected
+                epg = self.aim_mgr.get(aim_ctx, epg)
+                self.assertEqual([], epg.static_paths)
+
+                # bind to host h1
+                p1 = self._bind_port_to_host(p1['port']['id'], 'h1')
+                vlan_h1 = self._check_binding(p1['port']['id'])
+                epg = self.aim_mgr.get(aim_ctx, epg)
+                self.assertEqual(
+                    [{'path': self.hlink1.path, 'encap': 'vlan-%s' % vlan_h1}],
+                    epg.static_paths)
+
+                # move port to host h2
+                p1 = self._bind_port_to_host(p1['port']['id'], 'h2')
+                vlan_h2 = self._check_binding(p1['port']['id'])
+                epg = self.aim_mgr.get(aim_ctx, epg)
+                self.assertEqual(
+                    [{'path': hlink2.path, 'encap': 'vlan-%s' % vlan_h2}],
+                    epg.static_paths)
+
+                # delete port
+                self._delete('ports', p1['port']['id'])
+                self._check_no_dynamic_segment(net1['id'])
+                epg = self.aim_mgr.get(aim_ctx, epg)
+                self.assertEqual([], epg.static_paths)
+
+    def test_port_lifecycle_internal_network(self):
+        self._do_test_port_lifecycle()
+
+    def test_port_lifecycle_external_network(self):
+        self._do_test_port_lifecycle(external_net=True)
+
+    def test_multiple_ports_on_host(self):
+        aim_ctx = aim_context.AimContext(self.db_session)
+
+        net1 = self._make_network(self.fmt, 'net1', True)['network']
+        epg = self._net_2_epg(net1)
+        with self.subnet(network={'network': net1}) as sub1:
+            with self.port(subnet=sub1) as p1:
+                # bind p1 to host h1
+                p1 = self._bind_port_to_host(p1['port']['id'], 'h1')
+                vlan_p1 = self._check_binding(p1['port']['id'])
+                epg = self.aim_mgr.get(aim_ctx, epg)
+                self.assertEqual(
+                    [{'path': self.hlink1.path, 'encap': 'vlan-%s' % vlan_p1}],
+                    epg.static_paths)
+
+                with self.port(subnet=sub1) as p2:
+                    # bind p2 to host h1
+                    p2 = self._bind_port_to_host(p2['port']['id'], 'h1')
+                    vlan_p2 = self._check_binding(p2['port']['id'])
+                    self.assertEqual(vlan_p1, vlan_p2)
+                    epg = self.aim_mgr.get(aim_ctx, epg)
+                    self.assertEqual(
+                        [{'path': self.hlink1.path,
+                          'encap': 'vlan-%s' % vlan_p2}],
+                        epg.static_paths)
+
+                    self._delete('ports', p2['port']['id'])
+                    self._check_binding(p1['port']['id'])
+                    epg = self.aim_mgr.get(aim_ctx, epg)
+                    self.assertEqual(
+                        [{'path': self.hlink1.path,
+                          'encap': 'vlan-%s' % vlan_p1}],
+                        epg.static_paths)
+
+                self._delete('ports', p1['port']['id'])
+                self._check_no_dynamic_segment(net1['id'])
+                epg = self.aim_mgr.get(aim_ctx, epg)
+                self.assertEqual([], epg.static_paths)
+
+    def test_multiple_networks_on_host(self):
+        aim_ctx = aim_context.AimContext(self.db_session)
+
+        net1 = self._make_network(self.fmt, 'net1', True)['network']
+        epg1 = self._net_2_epg(net1)
+
+        with self.subnet(network={'network': net1}) as sub1:
+            with self.port(subnet=sub1) as p1:
+                # bind p1 to host h1
+                p1 = self._bind_port_to_host(p1['port']['id'], 'h1')
+                vlan_p1 = self._check_binding(p1['port']['id'])
+
+        epg1 = self.aim_mgr.get(aim_ctx, epg1)
+        self.assertEqual(
+            [{'path': self.hlink1.path, 'encap': 'vlan-%s' % vlan_p1}],
+            epg1.static_paths)
+
+        net2 = self._make_network(self.fmt, 'net2', True)['network']
+        epg2 = self._net_2_epg(net2)
+
+        with self.subnet(network={'network': net2}) as sub2:
+            with self.port(subnet=sub2) as p2:
+                # bind p2 to host h1
+                p2 = self._bind_port_to_host(p2['port']['id'], 'h1')
+                vlan_p2 = self._check_binding(p2['port']['id'])
+
+        self.assertNotEqual(vlan_p1, vlan_p2)
+
+        epg2 = self.aim_mgr.get(aim_ctx, epg2)
+        self.assertEqual(
+            [{'path': self.hlink1.path, 'encap': 'vlan-%s' % vlan_p2}],
+            epg2.static_paths)
+
+        self._delete('ports', p2['port']['id'])
+        epg2 = self.aim_mgr.get(aim_ctx, epg2)
+        self._check_no_dynamic_segment(net2['id'])
+        self.assertEqual([], epg2.static_paths)
+
+        epg1 = self.aim_mgr.get(aim_ctx, epg1)
+        self.assertEqual(
+            [{'path': self.hlink1.path, 'encap': 'vlan-%s' % vlan_p1}],
+            epg1.static_paths)
+
+    def test_network_on_multiple_hosts(self):
+        aim_ctx = aim_context.AimContext(self.db_session)
+
+        net1 = self._make_network(self.fmt, 'net1', True)['network']
+        epg1 = self._net_2_epg(net1)
+
+        hlink2 = aim_infra.HostLink(
+            host_name='h2',
+            interface_name='eth0',
+            path='topology/pod-1/paths-201/pathep-[eth1/19]')
+        self.aim_mgr.create(aim_ctx, hlink2)
+        self._register_agent('h2', AGENT_CONF_OVS)
+
+        with self.subnet(network={'network': net1}) as sub1:
+            with self.port(subnet=sub1) as p1:
+                p1 = self._bind_port_to_host(p1['port']['id'], 'h1')
+                vlan_p1 = self._check_binding(p1['port']['id'])
+            with self.port(subnet=sub1) as p2:
+                p2 = self._bind_port_to_host(p2['port']['id'], 'h2')
+                vlan_p2 = self._check_binding(p2['port']['id'])
+
+            self.assertEqual(vlan_p1, vlan_p2)
+
+            epg1 = self.aim_mgr.get(aim_ctx, epg1)
+            self.assertEqual(
+                [{'path': self.hlink1.path, 'encap': 'vlan-%s' % vlan_p1},
+                 {'path': hlink2.path, 'encap': 'vlan-%s' % vlan_p2}],
+                sorted(epg1.static_paths, key=lambda x: x['path']))
+
+            self._delete('ports', p2['port']['id'])
+            epg1 = self.aim_mgr.get(aim_ctx, epg1)
+            self.assertEqual(
+                [{'path': self.hlink1.path, 'encap': 'vlan-%s' % vlan_p1}],
+                epg1.static_paths)
+
+            self._delete('ports', p1['port']['id'])
+            epg1 = self.aim_mgr.get(aim_ctx, epg1)
+            self._check_no_dynamic_segment(net1['id'])
+            self.assertEqual([], epg1.static_paths)
+
+    def test_port_binding_missing_hostlink(self):
+        aim_ctx = aim_context.AimContext(self.db_session)
+
+        net1 = self._make_network(self.fmt, 'net1', True)['network']
+        epg1 = self._net_2_epg(net1)
+
+        self._register_agent('h-42', AGENT_CONF_OVS)
+
+        with self.subnet(network={'network': net1}) as sub1:
+            with self.port(subnet=sub1) as p1:
+                p1 = self._bind_port_to_host(p1['port']['id'], 'h-42')
+                self._check_binding(p1['port']['id'])
+
+                epg1 = self.aim_mgr.get(aim_ctx, epg1)
+                self.assertEqual([], epg1.static_paths)
+
+            hlink42 = aim_infra.HostLink(host_name='h42',
+                                         interface_name='eth0')
+            self.aim_mgr.create(aim_ctx, hlink42)
+            with self.port(subnet=sub1) as p2:
+                p2 = self._bind_port_to_host(p2['port']['id'], 'h-42')
+                self._check_binding(p2['port']['id'])
+
+                epg1 = self.aim_mgr.get(aim_ctx, epg1)
+                self.assertEqual([], epg1.static_paths)
+
+
+class TestPortOnPhysicalNode(TestPortVlanNetwork):
+    # Tests for binding port on physical node where another ML2 mechanism
+    # driver completes port binding.
+
+    def setUp(self, mechanism_drivers=None):
+        super(TestPortOnPhysicalNode, self).setUp(
+            mechanism_drivers=mechanism_drivers,
+            tenant_network_types=['opflex'])
+        self.expected_binding_info = [('apic_aim', 'opflex'),
+                                      ('openvswitch', 'vlan')]
+
+    def test_mixed_ports_on_network(self):
+        aim_ctx = aim_context.AimContext(self.db_session)
+
+        self._register_agent('opflex-1', AGENT_CONF_OPFLEX)
+
+        net1 = self._make_network(self.fmt, 'net1', True)['network']
+        epg1 = self._net_2_epg(net1)
+
+        with self.subnet(network={'network': net1}) as sub1:
+            # "normal" port on opflex host
+            with self.port(subnet=sub1) as p1:
+                p1 = self._bind_port_to_host(p1['port']['id'], 'opflex-1')
+                self._check_binding(p1['port']['id'],
+                    expected_binding_info=[('apic_aim', 'opflex')])
+                epg1 = self.aim_mgr.get(aim_ctx, epg1)
+                self.assertEqual([], epg1.static_paths)
+
+            # port on non-opflex host
+            with self.port(subnet=sub1) as p2:
+                p2 = self._bind_port_to_host(p2['port']['id'], 'h1')
+                vlan_p2 = self._check_binding(p2['port']['id'])
+                epg1 = self.aim_mgr.get(aim_ctx, epg1)
+                self.assertEqual(
+                    [{'path': self.hlink1.path, 'encap': 'vlan-%s' % vlan_p2}],
+                    epg1.static_paths)
+
+
+class TestPortOnPhysicalNodeSingleDriver(TestPortOnPhysicalNode):
+    # Tests for binding port on physical node where no other ML2 mechanism
+    # driver fulfills port binding.
+
+    def setUp(self, service_plugins=None):
+        super(TestPortOnPhysicalNodeSingleDriver, self).setUp(
+            mechanism_drivers=['logger', 'apic_aim'])
+        self.expected_binding_info = [('apic_aim', 'opflex'),
+                                      ('apic_aim', 'vlan')]

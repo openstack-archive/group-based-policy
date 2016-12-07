@@ -17,6 +17,7 @@ import sqlalchemy as sa
 
 from aim.aim_lib import nat_strategy
 from aim import aim_manager
+from aim.api import infra as aim_infra
 from aim.api import resource as aim_resource
 from aim.common import utils
 from aim import config as aim_cfg
@@ -36,6 +37,7 @@ from neutron.extensions import portbindings
 from neutron import manager
 from neutron.plugins.common import constants as pconst
 from neutron.plugins.ml2 import driver_api as api
+from neutron.plugins.ml2 import models
 from opflexagent import constants as ofcst
 from opflexagent import rpc as ofrpc
 from oslo_log import log
@@ -905,8 +907,35 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
                 return
 
         # Try to bind OpFlex agent.
-        self._agent_bind_port(context, ofcst.AGENT_TYPE_OPFLEX_OVS,
-                              self._opflex_bind_port)
+        if self._agent_bind_port(context, ofcst.AGENT_TYPE_OPFLEX_OVS,
+                                 self._opflex_bind_port):
+            return
+
+        # If we reached here, it means that either there is no active opflex
+        # agent running on the host, or the agent on the host is not
+        # configured for this physical network. Treat the host as a physical
+        # node (i.e. has no OpFlex agent running) and try binding
+        # hierarchically if the network-type is OpFlex.
+        self._bind_physical_node(context)
+
+    def update_port_precommit(self, context):
+        port = context.current
+        if (self._use_static_path(context, use_original=True) and
+            context.original_host and
+            context.original_host != context.host):
+            # remove static binding for old host
+            self._update_static_path(context, host=context.original_host,
+                segment=context.original_bottom_bound_segment, remove=True)
+            self._release_dynamic_segment(context, use_original=True)
+
+        if self._is_port_bound(port) and self._use_static_path(context):
+            self._update_static_path(context)
+
+    def delete_port_postcommit(self, context):
+        port = context.current
+        if self._use_static_path(context) and self._is_port_bound(port):
+            self._update_static_path(context, remove=True)
+            self._release_dynamic_segment(context)
 
     def create_floatingip(self, context, current):
         if current['port_id']:
@@ -937,6 +966,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
                 for segment in context.segments_to_bind:
                     if bind_strategy(context, segment, agent):
                         LOG.debug("Bound using segment: %s", segment)
+                        return True
             else:
                 LOG.warning(_LW("Refusing to bind port %(port)s to dead "
                                 "agent: %(agent)s"),
@@ -944,7 +974,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
 
     def _opflex_bind_port(self, context, segment, agent):
         network_type = segment[api.NETWORK_TYPE]
-        if network_type == ofcst.TYPE_OPFLEX:
+        if self._is_opflex_type(network_type):
             opflex_mappings = agent['configurations'].get('opflex_networks')
             LOG.debug("Checking segment: %(segment)s "
                       "for physical network: %(mappings)s ",
@@ -955,14 +985,41 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
         elif network_type != 'local':
             return False
 
-        context.set_binding(segment[api.ID],
-                            portbindings.VIF_TYPE_OVS,
-                            {portbindings.CAP_PORT_FILTER: False,
-                             portbindings.OVS_HYBRID_PLUG: False})
+        self._complete_binding(context, segment)
+        return True
 
     def _dvs_bind_port(self, context, segment, agent):
         # TODO(rkukura): Implement DVS port binding
         return False
+
+    def _bind_physical_node(self, context):
+        # Bind physical nodes hierarchically by creating a dynamic segment.
+        for segment in context.segments_to_bind:
+            net_type = segment[api.NETWORK_TYPE]
+            # TODO(amitbose) For ports on baremetal (Ironic) hosts, use
+            # binding:profile to decide if dynamic segment should be created.
+            if self._is_opflex_type(net_type):
+                # TODO(amitbose) Consider providing configuration options
+                # for picking network-type and physical-network name
+                # for the dynamic segment
+                dyn_seg = context.allocate_dynamic_segment(
+                    {api.NETWORK_TYPE: pconst.TYPE_VLAN})
+                LOG.info(_LI('Allocated dynamic-segment %(s)s for port %(p)s'),
+                         {'s': dyn_seg, 'p': context.current['id']})
+                dyn_seg['aim_ml2_created'] = True
+                context.continue_binding(segment[api.ID], [dyn_seg])
+                return True
+            elif segment.get('aim_ml2_created'):
+                # Complete binding if another driver did not bind the
+                # dynamic segment that we created.
+                self._complete_binding(context, segment)
+                return True
+
+    def _complete_binding(self, context, segment):
+        context.set_binding(segment[api.ID],
+                            portbindings.VIF_TYPE_OVS,
+                            {portbindings.CAP_PORT_FILTER: False,
+                             portbindings.OVS_HYBRID_PLUG: False})
 
     @property
     def plugin(self):
@@ -1041,6 +1098,19 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
                                          app_profile_name=self.ap_name,
                                          name=aname)
         return bd, epg
+
+    def _map_external_network(self, session, network):
+        l3out, ext_net, ns = self._get_aim_nat_strategy(network)
+        if ext_net:
+            aim_ctx = aim_context.AimContext(db_session=session)
+            for o in (ns.get_l3outside_resources(aim_ctx, l3out) or []):
+                if isinstance(o, aim_resource.EndpointGroup):
+                    return o
+
+    def _map_network_to_epg(self, session, network):
+        if self._is_external(network):
+            return self._map_external_network(session, network)
+        return self._map_network(session, network)[1]
 
     def _map_subnet(self, subnet, gw_ip, bd):
         prefix_len = subnet['cidr'].split('/')[1]
@@ -1480,3 +1550,85 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
                                    extn_db_sn.snat_host_pool.is_(None)))
                     .all())
         return [s[0] for s in other_sn]
+
+    def _is_opflex_type(self, net_type):
+        return net_type == ofcst.TYPE_OPFLEX
+
+    def _is_supported_non_opflex_type(self, net_type):
+        return net_type in [pconst.TYPE_VLAN]
+
+    def _use_static_path(self, port_context, use_original=False):
+        bound_seg = (port_context.original_bottom_bound_segment if use_original
+                     else port_context.bottom_bound_segment)
+        return (bound_seg and
+                self._is_supported_non_opflex_type(
+                    bound_seg[api.NETWORK_TYPE]))
+
+    def _update_static_path(self, port_context, host=None, segment=None,
+                            remove=False):
+        host = host or port_context.host
+        segment = segment or port_context.bottom_bound_segment
+        session = port_context._plugin_context.session
+
+        if not segment:
+            LOG.debug('Port %s is not bound to any segment',
+                      port_context.current['id'])
+            return
+        if remove:
+            # check if there are any other ports from this network on the host
+            exist = (session.query(models.PortBindingLevel)
+                     .filter_by(host=host, segment_id=segment['id'])
+                     .filter(models.PortBindingLevel.port_id !=
+                             port_context.current['id'])
+                     .first())
+            if exist:
+                return
+        else:
+            if (segment.get(api.NETWORK_TYPE) in [pconst.TYPE_VLAN]):
+                seg = segment[api.SEGMENTATION_ID]
+            else:
+                LOG.info(_LI('Unsupported segmentation type for static path '
+                             'binding: %s'),
+                         segment.get(api.NETWORK_TYPE))
+                return
+
+        aim_ctx = aim_context.AimContext(db_session=session)
+        host_link = self.aim.find(aim_ctx, aim_infra.HostLink, host_name=host)
+        if not host_link or not host_link[0].path:
+            LOG.warning(_LW('No host link information found for host %s'),
+                        host)
+            return
+        host_link = host_link[0].path
+
+        epg = self._map_network_to_epg(session, port_context.network.current)
+        if not epg:
+            LOG.info(_LI('Network %s does not map to any EPG'),
+                     port_context.network.current['id'])
+            return
+        epg = self.aim.get(aim_ctx, epg)
+        static_paths = [p for p in epg.static_paths
+                        if p.get('path') != host_link]
+        if not remove:
+            static_paths.append({'path': host_link, 'encap': 'vlan-%s' % seg})
+        LOG.debug('Setting static paths for EPG %s to %s', epg, static_paths)
+        self.aim.update(aim_ctx, epg, static_paths=static_paths)
+
+    def _release_dynamic_segment(self, port_context, use_original=False):
+        top = (port_context.original_top_bound_segment if use_original
+               else port_context.top_bound_segment)
+        btm = (port_context.original_bottom_bound_segment if use_original
+               else port_context.bottom_bound_segment)
+        if (top and btm and
+            self._is_opflex_type(top[api.NETWORK_TYPE]) and
+            self._is_supported_non_opflex_type(btm[api.NETWORK_TYPE])):
+            # if there are no other ports bound to segment, release the segment
+            ports = (port_context._plugin_context.session
+                     .query(models.PortBindingLevel)
+                     .filter_by(segment_id=btm[api.ID])
+                     .filter(models.PortBindingLevel.port_id !=
+                             port_context.current['id'])
+                     .first())
+            if not ports:
+                LOG.info(_LI('Releasing dynamic-segment %(s)s for port %(p)s'),
+                         {'s': btm, 'p': port_context.current['id']})
+                port_context.release_dynamic_segment(btm[api.ID])
