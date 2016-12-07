@@ -405,6 +405,7 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
             self._configure_contracts_for_default_epg(
                 context, l2p, default_epg_dn)
         if self.create_auto_ptg:
+            default_epg = self._get_epg_by_dn(context, default_epg_dn)
             desc = "System created auto PTG for L2P: %s" % l2p['id']
             data = {
                 "id": self._get_auto_ptg_id(l2p['id']),
@@ -417,6 +418,8 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
                 "network_service_policy_id": None,
                 "service_management": False,
                 "shared": l2p['shared'],
+                "intra_ptg_allow":
+                self._map_policy_enforcement_pref(default_epg),
             }
             self._create_policy_target_group(
                 context._plugin_context, data, clean_session=False)
@@ -523,10 +526,14 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
             session, context.current['provided_policy_rule_sets'])
         consumed_contracts = self._get_aim_contract_names(
             session, context.current['consumed_policy_rule_sets'])
+
         aim_epg = self._aim_endpoint_group(
             session, context.current, bd_name, bd_tenant_name,
             provided_contracts=provided_contracts,
-            consumed_contracts=consumed_contracts)
+            consumed_contracts=consumed_contracts,
+            policy_enforcement_pref=
+            self._get_policy_enforcement_pref(context.current))
+
         session = context._plugin_context.session
         aim_ctx = aim_context.AimContext(session)
         vmms, phys = self.aim_mech_driver.get_aim_domains(aim_ctx)
@@ -553,6 +560,8 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
             if not self._is_auto_ptg(context.current):
                 aim_epg.display_name = (
                     self.aim_display_name(context.current['name']))
+            aim_epg.policy_enforcement_pref = (
+                self._get_policy_enforcement_pref(context.current))
             aim_epg.provided_contract_names = (
                 list((set(aim_epg.provided_contract_names) -
                       set(old_provided_contracts)) |
@@ -861,7 +870,8 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
     def _aim_endpoint_group(self, session, ptg, bd_name=None,
                             bd_tenant_name=None,
                             provided_contracts=None,
-                            consumed_contracts=None):
+                            consumed_contracts=None,
+                            policy_enforcement_pref=True):
         # This returns a new AIM EPG resource
         # TODO(Sumit): Use _aim_resource_by_name
         tenant_id = ptg['tenant_id']
@@ -876,7 +886,8 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
         kwargs = {'tenant_name': str(tenant_name),
                   'name': str(epg_name),
                   'display_name': display_name,
-                  'app_profile_name': self.aim_mech_driver.ap_name}
+                  'app_profile_name': self.aim_mech_driver.ap_name,
+                  'policy_enforcement_pref': policy_enforcement_pref}
         if bd_name:
             kwargs['bd_name'] = bd_name
         if bd_tenant_name:
@@ -1921,6 +1932,28 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
 
     def _is_auto_ptg(self, ptg):
         return ptg['id'].startswith(AUTO_PTG_PREFIX)
+
+    def _get_policy_enforcement_pref(self, ptg):
+        if ptg.get('intra_ptg_allow'):
+            policy_enforcement_pref = (
+                aim_resource.EndpointGroup.POLICY_UNENFORCED)
+        else:
+            policy_enforcement_pref = (
+                aim_resource.EndpointGroup.POLICY_ENFORCED)
+        return policy_enforcement_pref
+
+    def _map_policy_enforcement_pref(self, epg):
+        if epg.policy_enforcement_pref == (
+            aim_resource.EndpointGroup.POLICY_UNENFORCED):
+            return True
+        else:
+            return False
+
+    def _get_epg_by_dn(self, context, epg_dn):
+        aim_context = self._get_aim_context(context)
+        epg = self.aim.get(
+            aim_context, aim_resource.EndpointGroup.from_dn(epg_dn))
+        return epg
 
     def _get_epg_name_from_dn(self, context, epg_dn):
         aim_context = self._get_aim_context(context)
