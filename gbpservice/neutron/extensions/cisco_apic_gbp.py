@@ -11,6 +11,7 @@
 #    under the License.
 
 from neutron.api import extensions
+from neutron.api.v2 import attributes as attr
 
 from gbpservice.neutron.extensions import cisco_apic
 from gbpservice.neutron.extensions import group_policy as gp
@@ -26,6 +27,9 @@ EXTENDED_ATTRIBUTES_2_0 = {
     gp.POLICY_TARGET_GROUPS: {
         cisco_apic.DIST_NAMES: {
             'allow_post': False, 'allow_put': False, 'is_visible': True},
+        'intra_ptg_allow': {
+            'allow_post': True, 'allow_put': True, 'default': True,
+            'convert_to': attr.convert_to_boolean, 'is_visible': True},
     },
     gp.POLICY_RULES: {
         cisco_apic.DIST_NAMES: {

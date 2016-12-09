@@ -14,14 +14,19 @@ from neutron._i18n import _LI
 from neutron import manager as n_manager
 from oslo_log import log as logging
 
+from gbpservice.neutron.db.grouppolicy.extensions import (
+    apic_intra_ptg_db as db)
+from gbpservice.neutron.db.grouppolicy import group_policy_db as gp_db
 from gbpservice.neutron.extensions import cisco_apic_gbp
+from gbpservice.neutron.extensions import group_policy as gpolicy
 from gbpservice.neutron.services.grouppolicy import (
     group_policy_driver_api as api)
 
 LOG = logging.getLogger(__name__)
 
 
-class AIMExtensionDriver(api.ExtensionDriver):
+class AIMExtensionDriver(api.ExtensionDriver,
+                         db.ApicIntraPtgDBMixin):
     _supported_extension_alias = cisco_apic_gbp.ALIAS
     _extension_dict = cisco_apic_gbp.EXTENDED_ATTRIBUTES_2_0
 
@@ -45,7 +50,25 @@ class AIMExtensionDriver(api.ExtensionDriver):
     def extension_alias(self):
         return self._supported_extension_alias
 
+    def process_create_policy_target_group(self, session, data, result):
+        ptg = data['policy_target_group']
+        if 'intra_ptg_allow' in ptg:
+            ptg_db = (session.query(gp_db.PolicyTargetGroup)
+                      .filter_by(id=result['id']).one())
+            if not ptg_db:
+                raise gpolicy.PolicyTargetGroupNotFound(
+                    policy_target_group_id=result['id'])
+            self.set_intra_ptg_allow(
+                session, policy_target_group_id=result['id'],
+                intra_ptg_allow=ptg['intra_ptg_allow'])
+            result['intra_ptg_allow'] = ptg['intra_ptg_allow']
+
+    def process_update_policy_target_group(self, session, data, result):
+        self.process_create_policy_target_group(session, data, result)
+
     def extend_policy_target_group_dict(self, session, result):
+        result['intra_ptg_allow'] = self.get_intra_ptg_allow(
+            session, policy_target_group_id=result['id'])
         self._pd.extend_policy_target_group_dict(session, result)
 
     def extend_policy_rule_dict(self, session, result):
