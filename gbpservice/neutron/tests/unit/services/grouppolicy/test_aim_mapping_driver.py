@@ -1684,6 +1684,31 @@ class TestPolicyTarget(AIMBaseTestCase):
         res = req.get_response(self.api)
         self.assertEqual(webob.exc.HTTPNotFound.code, res.status_int)
 
+    def test_policy_target_segmentation_label_update(self):
+        if not 'apic_segmentation_label' in self._extension_drivers:
+            self.skipTest("apic_segmentation_label ED not configured")
+        mock_notif = mock.Mock()
+        self.driver.aim_mech_driver.notifier.port_update = mock_notif
+        ptg = self.create_policy_target_group(
+            name="ptg1")['policy_target_group']
+        pt = self.create_policy_target(
+            policy_target_group_id=ptg['id'])['policy_target']
+        self.assertItemsEqual([], pt['segmentation_labels'])
+        segmentation_labels = ['a=b', 'c=d']
+        self._bind_port_to_host(pt['port_id'], 'h1')
+        pt = self.update_policy_target(
+            pt['id'], expected_res_status=200,
+            segmentation_labels=segmentation_labels)['policy_target']
+        self.assertItemsEqual(segmentation_labels, pt['segmentation_labels'])
+        port = self._plugin.get_port(self._context, pt['port_id'])
+        mock_notif.assert_called_once_with(mock.ANY, port)
+        mock_notif.reset_mock()
+        pt = self.update_policy_target(
+            pt['id'], name='updated-pt',
+            expected_res_status=200)['policy_target']
+        self.assertItemsEqual(segmentation_labels, pt['segmentation_labels'])
+        mock_notif.assert_not_called()
+
     def _verify_gbp_details_assertions(self, mapping, req_mapping, port_id,
                                        expected_epg_name, expected_epg_tenant,
                                        subnet, default_route=None):
