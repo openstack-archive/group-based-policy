@@ -634,6 +634,13 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
         pass
 
     @log.log_method_call
+    def update_policy_target_postcommit(self, context):
+        if set(context.current['segmentation_labels']) != (
+            set(context.original['segmentation_labels'])):
+            self.aim_mech_driver._notify_port_update(
+                context._plugin_context, context.current['port_id'])
+
+    @log.log_method_call
     def delete_policy_target_precommit(self, context):
         pt_db = context._plugin._get_policy_target(
             context._plugin_context, context.current['id'])

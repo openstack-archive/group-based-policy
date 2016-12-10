@@ -62,6 +62,7 @@ class ApicSegmentationLabelExtensionDriver(api.ExtensionDriver,
             self.delete_policy_target_segmentation_label(
                 session, policy_target_id=result['id'],
                 segmentation_label=label)
+        result['segmentation_labels'] = pt['segmentation_labels']
 
     def extend_policy_target_dict(self, session, result):
         rows = self.get_policy_target_segmentation_labels(
