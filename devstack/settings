@@ -35,7 +35,10 @@ disable_service n-net
 enable_service n-novnc
 enable_service q-svc
 if [[ $ENABLE_APIC_AIM = True ]]; then
-   disable_service q-agt
+   # In a devstack-based setup run the Neutron l2 agent,
+   # but in an opflex environment disable it and run opflex agent
+   #disable_service q-agt
+   enable_service q-agt
    disable_service q-l3
 else
    enable_service q-agt
