@@ -1,7 +1,10 @@
 # Make sure the plugin name in local.conf is "gbp", as in: enable_plugin gbp <remote> <branch>
 source $DEST/gbp/devstack/lib/gbp
 
+ENABLE_APIC_AIM=${ENABLE_APIC_AIM:-False}
+ENABLE_APIC_AIM_GATE=${ENABLE_APIC_AIM_GATE:-False}
 [[ $ENABLE_APIC_AIM = True ]] && source $DEST/gbp/devstack/lib/apic_aim
+[[ $ENABLE_APIC_AIM_GATE = True ]] && source $DEST/gbp/devstack/lib/apic_aim
 
 ENABLE_NFP=${ENABLE_NFP:-False}
 [[ $ENABLE_NFP = True ]] && NFP_DEVSTACK_MODE=${NFP_DEVSTACK_MODE:-base}
@@ -36,6 +39,9 @@ enable_service n-novnc
 enable_service q-svc
 if [[ $ENABLE_APIC_AIM = True ]]; then
    disable_service q-agt
+   disable_service q-l3
+elif [[ $ENABLE_APIC_AIM_GATE = True ]]; then
+   enable_service q-agt
    disable_service q-l3
 else
    enable_service q-agt
