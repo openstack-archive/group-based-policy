@@ -2,10 +2,15 @@
 
 TOP_DIR="$BASE/new/devstack"
 NEW_BASE="$BASE/new"
-GBP_DIR="$NEW_BASE/group-based-policy"
 SCRIPTS_DIR="/usr/os-testr-env/bin"
 LOGS_DIR="$NEW_BASE/logs"
 ARCHIVE_LOGS_DIR="$BASE/logs"
+
+# The following config is legacy and is used for GBP non-devstack plugin
+# install
+GBP_DIR="$NEW_BASE/group-based-policy"
+GBP_FUNC_DIR=$GBP_DIR/gbpservice/tests/contrib/gbpfunctests
+
 XTRACE=$(set +o | grep xtrace)
 
 function prepare_gbp_devstack {
@@ -41,7 +46,11 @@ function prepare_gbp_aim_devstack {
     cd $TOP_DIR
     sudo git checkout stable/mitaka
     sudo cp $CONTRIB_DIR/devstack/local-aim.conf $TOP_DIR/local.conf
-    sudo cp $CONTRIB_DIR/devstack/exercises/gbp.sh $TOP_DIR/exercises/
+    sudo cp $CONTRIB_DIR/devstack/exercises-aim/gbp_aim.sh $TOP_DIR/exercises/
+    sudo sed -i 's/DEST=\/opt\/stack/DEST=\/opt\/stack\/new/g' $TOP_DIR/stackrc
+    # Use the aim version of the shared PRS test
+    sudo mv $GBP_FUNC_DIR/testcases/tc_gbp_prs_pr_shared_func.py.aim $GBP_FUNC_DIR/testcases/tc_gbp_prs_pr_shared_func.py 
+    sudo mv $GBP_FUNC_DIR/testcases/tc_gbp_prs_func.py.aim $GBP_FUNC_DIR/testcases/tc_gbp_prs_func.py
     source $TOP_DIR/functions
     source $TOP_DIR/functions-common
 }
