@@ -15,7 +15,6 @@ check_residual_resources admin admin
 check_residual_resources admin demo
 check_residual_resources demo demo
 
-GBP_FUNC_DIR=$GBP_DIR/gbpservice/tests/contrib/gbpfunctests
 # Run gbpfunc integration tests
 echo "Running gbpfunc test suite"
 export PYTHONPATH="$GBP_FUNC_DIR:${PYTHONPATH}"

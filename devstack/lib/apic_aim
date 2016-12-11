@@ -11,10 +11,25 @@ function configure_apic_aim {
     echo_summary "Configuring apic_aim"
 
     # devstack/lib/neutron_plugins/ml2 does not allow overriding
-    # Q_PLUGIN_CLASS in override_defaults, so do it here instread
+    # Q_PLUGIN_CLASS in override_defaults, so do it here instead
 
     # Neutron Configuration for AIM
     iniset $NEUTRON_CONF DEFAULT core_plugin ml2plus
+    iniset $NEUTRON_CONF DEFAULT service_plugins "group_policy,servicechain,apic_aim_l3"
+
+    if [[ $ENABLE_APIC_AIM_GATE = True ]]; then
+        iniset /$Q_PLUGIN_CONF_FILE ml2 type_drivers "local,flat,vlan,gre,vxlan"
+        iniset /$Q_PLUGIN_CONF_FILE ml2 tenant_network_types vlan
+        iniset /$Q_PLUGIN_CONF_FILE ml2_type_vlan network_vlan_ranges "100:1000"
+    else
+        iniset /$Q_PLUGIN_CONF_FILE ml2 type_drivers "opflex,local,flat,vlan,gre,vxlan"
+        iniset /$Q_PLUGIN_CONF_FILE ml2 tenant_network_types opflex
+        iniset /$Q_PLUGIN_CONF_FILE ml2_type_vxlan vni_ranges "10:100"
+        iniset /$Q_PLUGIN_CONF_FILE ml2_type_vxlan vxlan_group "224.0.0.1"
+    fi
+    iniset /$Q_PLUGIN_CONF_FILE ml2 mechanism_drivers apic_aim
+    iniset /$Q_PLUGIN_CONF_FILE ml2 extension_drivers apic_aim
+
 
     iniset /$Q_PLUGIN_CONF_FILE apic_aim_auth auth_plugin v3password
     iniset /$Q_PLUGIN_CONF_FILE apic_aim_auth auth_url $KEYSTONE_SERVICE_URI_V3
@@ -24,10 +39,17 @@ function configure_apic_aim {
     iniset /$Q_PLUGIN_CONF_FILE apic_aim_auth project_domain_name default
     iniset /$Q_PLUGIN_CONF_FILE apic_aim_auth project_name admin
 
+    # The following are used by apic_mapping and should not be needed once
+    # apic_mapping is no longer called from aim_mapping
+    iniset $NEUTRON_CONF keystone_authtoken identity_uri $KEYSTONE_SERVICE_URI
+    iniset $NEUTRON_CONF keystone_authtoken admin_user neutron
+    iniset $NEUTRON_CONF keystone_authtoken admin_tenant_name services
+    iniset $NEUTRON_CONF keystone_authtoken admin_password $ADMIN_PASSWORD
+
     # GBP Configuration for AIM
     # Policy drivers (REVISIT: chain_mapping might needed to be added later)
     iniset $NEUTRON_CONF group_policy policy_drivers "aim_mapping"
-    iniset $NEUTRON_CONF group_policy extension_drivers "aim_extension,proxy_group"
+    iniset $NEUTRON_CONF group_policy extension_drivers "aim_extension,proxy_group,apic_segmentation_label"
     # Service Chain (REVISIT: not overriding any defaults yet)
 
     init_aim
@@ -41,7 +63,8 @@ function install_aim {
 }
 
 function init_aim {
-    aim -c $NEUTRON_CONF db-migration upgrade
+    aimctl -c $NEUTRON_CONF db-migration upgrade
+    aimctl -c $NEUTRON_CONF config update
 }
 
 function install_opflex {
