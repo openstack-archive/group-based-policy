@@ -1,5 +1,8 @@
 #!/bin/bash
 
+# temporary, remove before merge
+exit
+
 source functions-gbp
 
 set -x
