@@ -1,14 +1,22 @@
 NEUTRON_CREATE_INITIAL_NETWORKS="False"
 
+# REVISIT: Everything mentioned below is already being set in
+# devstack/lib/apic_aim, so are these overrides required?
 ENABLE_APIC_AIM=${ENABLE_APIC_AIM:-False}
+ENABLE_APIC_AIM_GATE=${ENABLE_APIC_AIM_GATE:-False}
 
-if [[ $ENABLE_APIC_AIM = True ]]; then
+if [[ $ENABLE_APIC_AIM = True || $ENABLE_APIC_AIM_GATE = True ]]; then
     echo_summary "Overriding defaults for apic_aim"
 
     Q_PLUGIN=${Q_PLUGIN:-ml2}
-    Q_ML2_TENANT_NETWORK_TYPE=${Q_ML2_TENANT_NETWORK_TYPE:-opflex}
-    Q_ML2_PLUGIN_TYPE_DRIVERS=${Q_ML2_PLUGIN_TYPE_DRIVERS:-local,vlan,opflex}
     Q_ML2_PLUGIN_MECHANISM_DRIVERS=${Q_ML2_PLUGIN_MECHANISM_DRIVERS:-apic_aim}
     Q_ML2_PLUGIN_EXT_DRIVERS=${Q_ML2_PLUGIN_EXT_DRIVERS:-apic_aim,port_security}
     ML2_L3_PLUGIN=${ML2_L3_PLUGIN:-apic_aim_l3}
+fi
+if [[ $ENABLE_APIC_AIM = True ]]; then
+    Q_ML2_TENANT_NETWORK_TYPE=${Q_ML2_TENANT_NETWORK_TYPE:-opflex}
+    Q_ML2_PLUGIN_TYPE_DRIVERS=${Q_ML2_PLUGIN_TYPE_DRIVERS:-local,vlan,opflex}
+elif [[ $ENABLE_APIC_AIM_GATE = True ]]; then
+    Q_ML2_TENANT_NETWORK_TYPE=${Q_ML2_TENANT_NETWORK_TYPE:-local}
+    Q_ML2_PLUGIN_TYPE_DRIVERS=${Q_ML2_PLUGIN_TYPE_DRIVERS:-local}
 fi
