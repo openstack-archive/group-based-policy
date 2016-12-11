@@ -15,6 +15,13 @@ function configure_apic_aim {
 
     # Neutron Configuration for AIM
     iniset $NEUTRON_CONF DEFAULT core_plugin ml2plus
+    iniset $NEUTRON_CONF DEFAULT service_plugins "group_policy,servicechain,apic_aim_l3"
+    iniset $NEUTRON_CONF ml2 type_drivers "opflex,local,flat,vlan,gre,vxlan"
+    iniset $NEUTRON_CONF ml2 tenant_network_types opflex
+    iniset $NEUTRON_CONF ml2 mechanism_drivers apic_aim
+    iniset $NEUTRON_CONF ml2 extension_drivers apic_aim
+    iniset $NEUTRON_CONF ml2_type_vxlan vni_ranges "10:100"
+    iniset $NEUTRON_CONF ml2_type_vxlan vxlan_group "224.0.0.1"
 
     iniset /$Q_PLUGIN_CONF_FILE apic_aim_auth auth_plugin v3password
     iniset /$Q_PLUGIN_CONF_FILE apic_aim_auth auth_url $KEYSTONE_SERVICE_URI_V3
@@ -27,7 +34,7 @@ function configure_apic_aim {
     # GBP Configuration for AIM
     # Policy drivers (REVISIT: chain_mapping might needed to be added later)
     iniset $NEUTRON_CONF group_policy policy_drivers "aim_mapping"
-    iniset $NEUTRON_CONF group_policy extension_drivers "aim_extension,proxy_group"
+    iniset $NEUTRON_CONF group_policy extension_drivers "aim_extension,proxy_group,apic_segmentation_label"
     # Service Chain (REVISIT: not overriding any defaults yet)
 
     init_aim
@@ -41,7 +48,8 @@ function install_aim {
 }
 
 function init_aim {
-    aim -c $NEUTRON_CONF db-migration upgrade
+    aimctl -c $NEUTRON_CONF db-migration upgrade
+    aimctl -c $NEUTRON_CONF config update
 }
 
 function install_opflex {
