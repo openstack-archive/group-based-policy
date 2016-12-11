@@ -379,7 +379,7 @@ class test_gbp_l3p_func(object):
             "\n## Step 1: Create Policy L3Policy with non-default "
             "attrs and values ")
         l3p_uuid = self.gbpcfg.gbp_policy_cfg_all(
-            1, 'l3p', self.l3p_name, ip_pool='40.50.0.0/24',
+            1, 'l3p', self.l3p_name, ip_pool='40.50.0.0/16',
             subnet_prefix_length='25')
         if l3p_uuid == 0:
             self._log.info("\n## Step 1: Create L3Policy == Failed")
@@ -390,7 +390,7 @@ class test_gbp_l3p_func(object):
                 l3p_uuid,
                 id=l3p_uuid,
                 name=self.l3p_name,
-                ip_pool='40.50.0.0/24',
+                ip_pool='40.50.0.0/16',
                 subnet_prefix_length='25',
                 ip_version='4') == 0:
             self._log.info("\n## Step 1A: Verify non-default == Failed")
