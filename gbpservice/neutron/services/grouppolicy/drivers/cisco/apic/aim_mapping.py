@@ -137,7 +137,7 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
                          'this will result in automatic creation of a PTG '
                          'per L2 Policy'))
         self.setup_opflex_rpc_listeners()
-        self._ensure_apic_infra()
+        #self._ensure_apic_infra()
 
     def _ensure_apic_infra(self):
         # TODO(ivar): remove this code from here
