@@ -42,6 +42,7 @@ function prepare_gbp_aim_devstack {
     sudo git checkout stable/mitaka
     sudo cp $CONTRIB_DIR/devstack/local-aim.conf $TOP_DIR/local.conf
     sudo cp $CONTRIB_DIR/devstack/exercises/gbp.sh $TOP_DIR/exercises/
+    sudo sed -i 's/DEST=\/opt\/stack/DEST=\/opt\/stack\/new/g' $TOP_DIR/stackrc
     source $TOP_DIR/functions
     source $TOP_DIR/functions-common
 }
