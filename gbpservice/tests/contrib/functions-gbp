@@ -38,6 +38,8 @@ function prepare_nfp_devstack {
 }
 
 function prepare_gbp_aim_devstack {
+    TOP_DIR="$BASE/devstack"
+    NEW_BASE="$BASE"
     cd $TOP_DIR
     sudo git checkout stable/mitaka
     sudo cp $CONTRIB_DIR/devstack/local-aim.conf $TOP_DIR/local.conf
