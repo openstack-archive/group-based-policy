@@ -1,5 +1,8 @@
 #!/bin/bash
 
+# temporary, remove before merging
+exit
+
 CONTRIB_DIR="$BASE/new/group-based-policy/gbpservice/tests/contrib"
 cp $CONTRIB_DIR/functions-gbp .
 source functions-gbp
