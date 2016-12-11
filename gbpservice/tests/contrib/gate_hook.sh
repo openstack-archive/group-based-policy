@@ -1,5 +1,10 @@
 #!/bin/bash
 
+TOP_DIR="$BASE/new/devstack"
+NEW_BASE="$BASE/new"
+GBP_DIR="$NEW_BASE/group-based-policy"
+LOGS_DIR="$NEW_BASE/logs"
+
 CONTRIB_DIR="$BASE/new/group-based-policy/gbpservice/tests/contrib"
 cp $CONTRIB_DIR/functions-gbp .
 source functions-gbp
