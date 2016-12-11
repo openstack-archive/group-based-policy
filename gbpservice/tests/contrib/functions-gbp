@@ -2,6 +2,7 @@
 
 TOP_DIR="$BASE/new/devstack"
 NEW_BASE="$BASE/new"
+DEST=$NEW_BASE
 GBP_DIR="$NEW_BASE/group-based-policy"
 SCRIPTS_DIR="/usr/os-testr-env/bin"
 LOGS_DIR="$NEW_BASE/logs"
