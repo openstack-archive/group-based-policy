@@ -2,10 +2,14 @@
 
 TOP_DIR="$BASE/new/devstack"
 NEW_BASE="$BASE/new"
-GBP_DIR="$NEW_BASE/group-based-policy"
 SCRIPTS_DIR="/usr/os-testr-env/bin"
 LOGS_DIR="$NEW_BASE/logs"
 ARCHIVE_LOGS_DIR="$BASE/logs"
+
+# The following config is legacy and is used for GBP non-devstack plugin
+# install
+GBP_DIR="$NEW_BASE/group-based-policy"
+
 XTRACE=$(set +o | grep xtrace)
 
 function prepare_gbp_devstack {
@@ -42,6 +46,7 @@ function prepare_gbp_aim_devstack {
     sudo git checkout stable/mitaka
     sudo cp $CONTRIB_DIR/devstack/local-aim.conf $TOP_DIR/local.conf
     sudo cp $CONTRIB_DIR/devstack/exercises/gbp.sh $TOP_DIR/exercises/
+    sudo sed -i 's/DEST=\/opt\/stack/DEST=\/opt\/stack\/new/g' $TOP_DIR/stackrc
     source $TOP_DIR/functions
     source $TOP_DIR/functions-common
 }
