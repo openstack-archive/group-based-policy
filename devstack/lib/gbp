@@ -48,7 +48,8 @@ function init_gbpservice {
 
 # install_gbpservice() - Collect source and prepare
 function install_gbpservice {
-    git_clone $GBPSERVICE_REPO $GBPSERVICE_DIR $GBPSERVICE_BRANCH
+    if [[ $ENABLE_APIC_AIM_GATE = False ]]; then
+	git_clone $GBPSERVICE_REPO $GBPSERVICE_DIR $GBPSERVICE_BRANCH
     mv $GBPSERVICE_DIR/test-requirements.txt $GBPSERVICE_DIR/_test-requirements.txt
     setup_develop $GBPSERVICE_DIR
     mv -f $NEUTRON_CONF_DIR/policy.json $NEUTRON_CONF_DIR/policy.json.original 2>/dev/null; true
