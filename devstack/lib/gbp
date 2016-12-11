@@ -48,7 +48,7 @@ function init_gbpservice {
 
 # install_gbpservice() - Collect source and prepare
 function install_gbpservice {
-    git_clone $GBPSERVICE_REPO $GBPSERVICE_DIR $GBPSERVICE_BRANCH
+    git_clone $GBPSERVICE_REPO $GBPSERVICE_DIR $GBPSERVICE_BRANCH || echo "Repo: $GBPSERVICE_REPO branch: $GBPSERVICE_BRANCH already cloned in: $GBPSERVICE_DIR"
     mv $GBPSERVICE_DIR/test-requirements.txt $GBPSERVICE_DIR/_test-requirements.txt
     setup_develop $GBPSERVICE_DIR
     mv -f $NEUTRON_CONF_DIR/policy.json $NEUTRON_CONF_DIR/policy.json.original 2>/dev/null; true
