@@ -23,6 +23,7 @@ import unittest
 
 import uuid as pyuuid
 
+dummy_data = {}
 
 with mock.patch('oslo_config.cfg.CONF.register_opts') as opt:
     from gbpservice.nfp.orchestrator.modules import (
@@ -265,7 +266,7 @@ class DeviceOrchestratorTestCase(unittest.TestCase):
     def _initialize_ndo_handler(self):
         ndo_handler = device_orchestrator.DeviceOrchestrator(
             DummyController, cfg.CONF)
-        self.event = DummyEvent(100, 'PENDING_CREATE')
+        self.event = DummyEvent(dummy_data, 'PENDING_CREATE')
         return ndo_handler
 
     @unittest.skip('skipping')
@@ -274,7 +275,7 @@ class DeviceOrchestratorTestCase(unittest.TestCase):
     def test_handle_event(self, mock_device_configuration_complete):
         ndo_mgr = device_orchestrator.DeviceOrchestrator(object, cfg.CONF)
         mock_device_configuration_complete.return_value = True
-        self.event = DummyEvent(100, 'DEVICE_CONFIGURED')
+        self.event = DummyEvent(dummy_data, 'DEVICE_CONFIGURED')
         self.event.id = 'DEVICE_CONFIGURED'
 
         ndo_mgr.handle_event(self.event)
@@ -397,6 +398,48 @@ class DeviceOrchestratorTestCase(unittest.TestCase):
         ndo_handler._create_event = mock.MagicMock(return_value=True)
         ndo_handler._controller.event_complete = mock.MagicMock(
                             return_value=None)
+        self._update_event()
+        device = self._get_device()
+        ndo_handler.create_device_configuration(self.event)
+        event_id = "UPDATE_DEVICE_CONFIG_PARAMETERS"
+        nfp_context = copy.deepcopy(device['nfp_context'])
+        nfp_context.update(resource_owner_context=self.event.data[
+            'resource_owner_context'],
+                           management=self.event.data['management'],
+                           admin_token=self.event.data['admin_token'],
+                           service_chain_specs=self.event.data[
+                               'service_chain_specs'],
+                           network_function_device_id=self.event.data[
+                               'network_function_device_id'],
+                           provider=self.event.data['provider'],
+                           id=self.event.data['network_function_device_id'],
+                           reference_count=self.event.data['reference_count'],
+                           network_function_instance=self.event.data[
+                               'network_function_instance'],
+                           mgmt_port_id=[{'port_role': 'active',
+                                          'port_model': 'neutron',
+                                          'id': 'myid1',
+                                          'port_classification': (
+                                              'management')}],
+                           network_function=self.event.data[
+                               'network_function'],
+                           network_function_id='network_function_id',
+                           service_details=self.event.data['service_details'],
+                           network_function_instance_id=(
+                               'network_function_instance_id'),
+                           consumer=self.event.data['consumer'],
+                           ports=self.event.data['ports'],
+                           interfaces_in_use=self.event.data[
+                               'interfaces_in_use'],
+                           status='PENDING_CREATE')
+        nfp_context.pop('binding_key', None)
+        nfp_context.pop('key', None)
+        event_data = {'device': device, 'nfp_context': nfp_context,
+                      'config_params': config_params}
+        ndo_handler._create_event.assert_called_with(event_id=event_id,
+                                                     event_data=event_data)
+
+    def _update_event(self):
         self.event.data['management'] = {'port': {'ip_address': '127.0.0.1'}}
         self.event.data['provider']['port'] = {
             'ip_address': '127.0.0.1', 'mac_address': 'xx:xx:xx:xx'}
@@ -407,10 +450,12 @@ class DeviceOrchestratorTestCase(unittest.TestCase):
         self.event.data['consumer']['subnet'] = {
             'cidr': '11.0.0.0/24', 'gateway_ip': '11.0.0.1'}
         self.event.data['network_function_device'][
-                'mgmt_ip_address'] = self.event.data['management']['port'][
-                                        'ip_address']
+            'mgmt_ip_address'] = self.event.data['management']['port'][
+            'ip_address']
         self.event.data['service_chain_specs'] = []
         self.event.desc = Desc()
+
+    def _get_device(self):
         device = {}
         device['mgmt_ip_address'] = self.event.data[
             'management']['port']['ip_address']
@@ -426,9 +471,9 @@ class DeviceOrchestratorTestCase(unittest.TestCase):
                                  'binding_key': self.event.binding_key,
                                  'id': self.event.id, 'key': self.event.key,
                                  'network_function_device': self.event.data[
-            'network_function_device']}
+                                     'network_function_device']}
         device['tenant_id'] = self.event.data[
-                                'resource_owner_context']['admin_tenant_id']
+            'resource_owner_context']['admin_tenant_id']
         device.update({
             'provider_mac': self.event.data['provider']['port']['mac_address'],
             'network_function_instance_id': self.event.data[
@@ -439,8 +484,37 @@ class DeviceOrchestratorTestCase(unittest.TestCase):
             'consumer_ip': self.event.data['consumer']['port']['ip_address'],
             'consumer_cidr': self.event.data['consumer']['subnet']['cidr'],
             'provider_cidr': self.event.data['provider']['subnet']['cidr']})
+        return device
 
-        ndo_handler.create_device_configuration(self.event)
+    def test_update_config_params(self):
+        ndo_handler = self._initialize_ndo_handler()
+        ndo_handler._controller.event_complete = mock.MagicMock(
+                return_value=None)
+        ndo_handler.update_config_params(self.event)
+        ndo_handler._create_event.assert_called_with(
+                event_id='DEVICE_CONFIG_PARAMETERS_UPDATED',
+                event_data=self.event.data, is_internal_event=True)
+
+    def test_device_configuration_updated(self):
+        ndo_handler = self._initialize_ndo_handler()
+        ndo_handler._create_event = mock.MagicMock(return_value=True)
+        ndo_handler._controller.event_complete = mock.MagicMock(
+                            return_value=None)
+        ndo_handler.configurator_rpc.create_network_function_device_config = (
+            mock.MagicMock(return_value=True))
+
+        config_params = {
+            'param1': 'value1',
+            'param2': 'value2',
+            'config': [{'resource_data': {'forward_route': True}}]}
+        orchestration_driver.get_network_function_device_config = (
+            mock.MagicMock(return_value=config_params))
+        self._update_event()
+        device = self._get_device()
+        self.event.data['device'] = device
+        self.event.data['nfp_context'] = {'service_chain_specs': []}
+        self.event.data['config_params'] = config_params
+        ndo_handler.device_configuration_updated(self.event)
         ndo_handler.configurator_rpc.create_network_function_device_config.\
             assert_called_with(device, config_params)
 
@@ -492,7 +566,7 @@ class DeviceOrchestratorTestCase(unittest.TestCase):
     def test_delete_network_function_device(self, mock_get_port, mock_get_nf,
                                             mock_update_nfd, mock_get_nfd):
         ndo_handler = self._initialize_ndo_handler()
-        delete_event_req = DummyEvent(100, 'ACTIVE')
+        delete_event_req = DummyEvent(dummy_data, 'ACTIVE')
         delete_event_req.data = \
             {'network_function_device_id': 'device-id',
              'network_function_instance': {'id': 'nfi-id',
@@ -523,7 +597,7 @@ class DeviceOrchestratorTestCase(unittest.TestCase):
     def test_delete_device_configuration(self, mock_update_nfd):
         ndo_handler = self._initialize_ndo_handler()
         config_params = {'param1': 'value1', 'parama2': 'value2'}
-        self.event = DummyEvent(101, 'ACTIVE')
+        self.event = DummyEvent(dummy_data, 'ACTIVE')
         orchestration_driver.get_network_function_device_config = (
             mock.MagicMock(return_value=config_params))
         ndo_handler.configurator_rpc.delete_network_function_device_config = (
@@ -538,7 +612,7 @@ class DeviceOrchestratorTestCase(unittest.TestCase):
     def test_unplug_interfaces(self, mock_update_nfd, mock_get_nfd):
 
         ndo_handler = self._initialize_ndo_handler()
-        self.event = DummyEvent(101, 'ACTIVE')
+        self.event = DummyEvent(dummy_data, 'ACTIVE')
         ndo_handler._prepare_device_data = mock.MagicMock(
             return_value=self.event.data)
         orig_event_data = copy.deepcopy(self.event.data)
@@ -601,7 +675,7 @@ class DeviceOrchestratorTestCase(unittest.TestCase):
     def test_handle_device_create_error(self):
         ndo_handler = self._initialize_ndo_handler()
         event_id = status = 'DEVICE_CREATE_FAILED'
-        self.event = DummyEvent(101, status, 1)
+        self.event = DummyEvent(dummy_data, status, 1)
         orig_event_data = copy.deepcopy(self.event.data)
         orig_event_data['network_function_device_id'] = orig_event_data['id']
         ndo_handler._create_event = mock.MagicMock(return_value=True)
@@ -620,7 +694,7 @@ class DeviceOrchestratorTestCase(unittest.TestCase):
                     return_value=None)
         status = 'ERROR'
         desc = 'Device not became ACTIVE'
-        self.event = DummyEvent(101, status, 1)
+        self.event = DummyEvent(dummy_data, status, 1)
         orig_event_data = copy.deepcopy(self.event.data)
         orig_event_data['status_description'] = desc
         orig_event_data.pop('interfaces_in_use', None)
@@ -637,7 +711,7 @@ class DeviceOrchestratorTestCase(unittest.TestCase):
     def test_handle_device_not_reachable(self, mock_update_nfd):
         ndo_handler = self._initialize_ndo_handler()
         status = 'ERROR'
-        self.event = DummyEvent(101, status, 1)
+        self.event = DummyEvent(dummy_data, status, 1)
         desc = 'Device not reachable, Health Check Failed'
         tmp_data = copy.deepcopy(self.event.data)
         device = self.event.data
@@ -675,7 +749,7 @@ class DeviceOrchestratorTestCase(unittest.TestCase):
     def test_handle_device_config_failed(self, mock_update_nfd, mock_get_nfd):
         ndo_handler = self._initialize_ndo_handler()
         status = 'ERROR'
-        self.event = DummyEvent(101, status, 1)
+        self.event = DummyEvent(dummy_data, status, 1)
         desc = 'Configuring Device Failed.'
         tmp_data = copy.deepcopy(self.event.data)
         device = self.event.data

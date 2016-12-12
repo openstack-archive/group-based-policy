@@ -61,7 +61,9 @@ def events_init(controller, config, device_orchestrator):
               'DEVICE_BEING_DELETED',
               'DEVICE_NOT_REACHABLE',
               'DEVICE_CONFIGURATION_FAILED', 'PERFORM_HEALTH_CHECK',
-              'PLUG_INTERFACES', 'UNPLUG_INTERFACES']
+              'PLUG_INTERFACES', 'UNPLUG_INTERFACES',
+              'UPDATE_DEVICE_CONFIG_PARAMETERS',
+              'DEVICE_CONFIG_PARAMETERS_UPDATED']
     events_to_register = []
     for event in events:
         events_to_register.append(
@@ -255,7 +257,10 @@ class DeviceOrchestrator(nfp_api.NfpEventHandler):
             "DEVICE_CONFIGURATION_FAILED": self.handle_device_config_failed,
             "DEVICE_ERROR": self.handle_device_create_error,
             "DEVICE_NOT_UP": self.handle_device_not_up,
-            "DRIVER_ERROR": self.handle_driver_error
+            "DRIVER_ERROR": self.handle_driver_error,
+            'UPDATE_DEVICE_CONFIG_PARAMETERS': self.update_config_params,
+            'DEVICE_CONFIG_PARAMETERS_UPDATED': (
+                self.device_configuration_updated)
         }
         if event_id not in event_handler_mapping:
             raise Exception("Invalid event ID")
@@ -528,7 +533,8 @@ class DeviceOrchestrator(nfp_api.NfpEventHandler):
         consumer = nfp_context['consumer']
         provider = nfp_context['provider']
 
-        ports = self._make_ports_dict(consumer, provider, 'pt')
+        ports = self._make_ports_dict(nfp_context.get(
+                'explicit_consumer', consumer), provider, 'pt')
 
         device_data['provider_name'] = provider['ptg']['name']
         device_data['management_network_info'] = management_network_info
@@ -566,6 +572,11 @@ class DeviceOrchestrator(nfp_api.NfpEventHandler):
         # Update newly created device with required params
         device = self._update_device_data(driver_device_info, device_data)
         device['network_function_device_id'] = device['id']
+
+        # check for any explicit interface and its type.
+        for interface in nfp_context.get('explicit_interfaces', []):
+            if interface['type'] == 'gateway':
+                device['gateway_port'] = interface['port']
 
         name = '%s_%s_%s_%s' % (
                     device['provider_name'],
@@ -624,6 +635,8 @@ class DeviceOrchestrator(nfp_api.NfpEventHandler):
                 self.config.device_orchestrator.volume_support)
         device_data['volume_size'] = (
                 self.config.device_orchestrator.volume_size)
+        device_data['explicit_interfaces'] = nfp_context.get(
+                'explicit_interfaces', [])
         driver_device_info = (
                 orchestration_driver.create_network_function_device(
                         device_data))
@@ -936,7 +949,9 @@ class DeviceOrchestrator(nfp_api.NfpEventHandler):
         orchestration_driver = self._get_orchestration_driver(
             service_details['service_vendor'])
 
-        ports = self._make_ports_dict(consumer, provider, 'port')
+        ports = self._make_ports_dict(
+                nfp_context.get('explicit_consumer', consumer),
+                provider, 'port')
 
         device = {
             'id': network_function_device['id'],
@@ -1035,6 +1050,16 @@ class DeviceOrchestrator(nfp_api.NfpEventHandler):
                                is_internal_event=True)
             self._controller.event_complete(event, result="FAILED")
             return None
+
+        event_data = {'device': device, 'nfp_context': nfp_context,
+                      'config_params': config_params}
+        self._create_event(event_id='UPDATE_DEVICE_CONFIG_PARAMETERS',
+                           event_data=event_data)
+
+    def device_configuration_updated(self, event):
+        nfp_context, config_params, device = (
+            event.data['nfp_context'], event.data['config_params'],
+            event.data['device'])
         # Set forward_route as False in resource_data for configurator to
         # handle routes differently, when vpn is in service chain
         if nfp_utils.is_vpn_in_service_chain(
@@ -1047,6 +1072,7 @@ class DeviceOrchestrator(nfp_api.NfpEventHandler):
         # Sends RPC to configurator to create generic config
         self.configurator_rpc.create_network_function_device_config(
             device, config_params)
+        self._controller.event_complete(event=event, result='SUCCESS')
 
     def configuration_complete(self, event):
         nfp_context = event.data
@@ -1291,6 +1317,11 @@ class DeviceOrchestrator(nfp_api.NfpEventHandler):
         device['network_function_device_id'] = device['id']
         self._create_event(event_id='DEVICE_CREATE_FAILED',
                            event_data=device)
+
+    def update_config_params(self, event):
+        self._create_event(event_id='DEVICE_CONFIG_PARAMETERS_UPDATED',
+                           event_data=event.data, is_internal_event=True)
+        self._controller.event_complete(event=event, result='SUCCESS')
 
 
 class NDOConfiguratorRpcApi(object):
