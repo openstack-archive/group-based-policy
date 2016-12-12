@@ -142,6 +142,7 @@ class NetworkFunctionDevice(BASE, model_base.HasId, model_base.HasTenant,
     reference_count = sa.Column(sa.Integer(), nullable=False)
     interfaces_in_use = sa.Column(sa.Integer(), nullable=False)
     provider_metadata = sa.Column(sa.String(1024), nullable=True)
+    gateway_port = sa.Column(sa.String(36), nullable=True)
 
 
 class NetworkFunctionDeviceInterface(BASE, model_base.HasId,
@@ -173,3 +174,15 @@ class ClusterInfo(BASE, model_base.HasId, model_base.HasTenant):
     virtual_ip = sa.Column(sa.String(36), nullable=True)
     multicast_ip = sa.Column(sa.String(36), nullable=True)
     cluster_name = sa.Column(sa.String(36), nullable=True)
+
+
+class ServiceGatewayDetails(BASE, model_base.HasId):
+    __tablename__ = 'nfp_service_gateway_info'
+    network_function_id = sa.Column(sa.String(36), sa.ForeignKey(
+            'nfp_network_functions.id', ondelete='CASCADE'), nullable=False,
+                            primary_key=True)
+    gateway_ptg = sa.Column(sa.String(36), nullable=False)
+    primary_instance_gw_pt = sa.Column(sa.String(36), nullable=True)
+    secondary_instance_gw_pt = sa.Column(sa.String(36), nullable=True)
+    primary_gw_vip_pt = sa.Column(sa.String(36), nullable=True)
+    secondary_gw_vip_pt = sa.Column(sa.String(36), nullable=True)
