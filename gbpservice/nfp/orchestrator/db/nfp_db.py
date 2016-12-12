@@ -20,6 +20,8 @@ from gbpservice.nfp.orchestrator.db import common_db_mixin
 from gbpservice.nfp.orchestrator.db import nfp_db_model
 
 from gbpservice.nfp.core import log as nfp_logging
+from neutron._i18n import _LW
+
 LOG = nfp_logging.getLogger(__name__)
 
 
@@ -288,7 +290,8 @@ class NFPDbBase(common_db_mixin.CommonDbMixin):
                 max_interfaces=network_function_device['max_interfaces'],
                 reference_count=network_function_device['reference_count'],
                 interfaces_in_use=network_function_device['interfaces_in_use'],
-                status=network_function_device['status'])
+                status=network_function_device['status'],
+                gateway_port=network_function_device.get('gateway_port'))
             session.add(network_function_device_db)
             self._set_mgmt_port_for_nfd(
                 session, network_function_device_db, network_function_device)
@@ -635,7 +638,8 @@ class NFPDbBase(common_db_mixin.CommonDbMixin):
                'max_interfaces': nfd['max_interfaces'],
                'reference_count': nfd['reference_count'],
                'interfaces_in_use': nfd['interfaces_in_use'],
-               'status': nfd['status']
+               'status': nfd['status'],
+               'gateway_port': nfd.get('gateway_port')
                }
         if nfd.get('provider_metadata'):
             res.update({'provider_metadata': nfd['provider_metadata']})
@@ -710,3 +714,85 @@ class NFPDbBase(common_db_mixin.CommonDbMixin):
             'multicast_ip': cluster_info['multicast_ip'],
             'cluster_name': cluster_info['cluster_name']
         }
+
+    def add_service_gateway_details(self, session, service_gw_details):
+        primary_gw_vip_pt, secondary_gw_vip_pt = self._get_vip_pt_ids(
+                service_gw_details.get('gateway_vips'))
+        if isinstance(service_gw_details['primary_instance_gw_pt'], dict):
+            primary_instance_gw_pt = service_gw_details[
+                'primary_instance_gw_pt']['id']
+            secondary_instance_gw_pt = service_gw_details.get(
+                    'secondary_instance_gw_pt', {}).get('id')
+        else:
+            primary_instance_gw_pt = service_gw_details[
+                'primary_instance_gw_pt']
+            secondary_instance_gw_pt = service_gw_details.get(
+                    'secondary_instance_gw_pt')
+        with session.begin(subtransactions=True):
+            gw_detail = nfp_db_model.ServiceGatewayDetails(
+                    id=service_gw_details['id'],
+                    network_function_id=service_gw_details[
+                        'network_function_id'],
+                    gateway_ptg=service_gw_details['gw_ptg'],
+                    primary_instance_gw_pt=primary_instance_gw_pt,
+                    secondary_instance_gw_pt=secondary_instance_gw_pt,
+                    primary_gw_vip_pt=primary_gw_vip_pt,
+                    secondary_gw_vip_pt=secondary_gw_vip_pt
+            )
+            session.add(gw_detail)
+            return gw_detail
+
+    def _get_vip_pt_ids(self, vips):
+        if not vips:
+            return None, None
+        else:
+            if isinstance(vips, list):
+                primary_gw_vip_pt = vips[0]['id']
+                secondary_gw_vip_pt = vips[1]['id'] if len(vips) == 2 else None
+                return primary_gw_vip_pt, secondary_gw_vip_pt
+            elif isinstance(vips, dict):
+                return vips['primary_gw_vip_pt'], vips['secondary_gw_vip_pt']
+            else:
+                return None, None
+
+    def get_providers_for_gateway(self, session, _id):
+        svc_gw = nfp_db_model.ServiceGatewayDetails
+        try:
+            with session.begin(subtransactions=True):
+                return self._get_gw_info_dict(session.query(svc_gw).filter(
+                        svc_gw.gateway_ptg == _id).all())
+        except exc.NoResultFound:
+            raise
+
+    def get_gateway_detail(self, session, nf_id):
+        svc_gw = nfp_db_model.ServiceGatewayDetails
+        try:
+            with session.begin(subtransactions=True):
+                return self._get_gw_info_dict(session.query(svc_gw).filter(
+                        svc_gw.network_function_id == nf_id).one())
+        except exc.NoResultFound:
+            LOG.warning(_LW("Gateway detail doesn't exist for Network Function"
+                            " %s ") % nf_id)
+            raise
+
+    def _get_gw_info_dict(self, gw):
+        if not gw:
+            return
+        if isinstance(gw, list):
+            return [dict(id=info['id'],
+                         network_function_id=info['network_function_id'],
+                         gateway_ptg=info['gateway_ptg'],
+                         primary_instance_gw_pt=info['primary_instance_gw_pt'],
+                         secondary_instance_gw_pt=info[
+                             'secondary_instance_gw_pt'],
+                         primary_gw_vip_pt=info['primary_gw_vip_pt'],
+                         secondary_gw_vip_pt=info['secondary_gw_vip_pt']
+                         ) for info in gw]
+
+        return {'id': gw['id'],
+                'network_function_id': gw['network_function_id'],
+                'gateway_ptg': gw['gateway_ptg'],
+                'primary_instance_gw_pt': gw['primary_instance_gw_pt'],
+                'secondary_instance_gw_pt': gw['secondary_instance_gw_pt'],
+                'primary_gw_vip_pt': gw['primary_gw_vip_pt'],
+                'secondary_gw_vip_pt': gw['secondary_gw_vip_pt']}

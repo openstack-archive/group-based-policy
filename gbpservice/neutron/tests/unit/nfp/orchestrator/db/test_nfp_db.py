@@ -13,7 +13,6 @@
 
 import copy
 import fixtures
-
 from neutron import context
 from neutron.db import api as db_api
 from neutron.tests import base
@@ -22,6 +21,8 @@ from gbpservice.nfp.common import constants as nfp_constants
 from gbpservice.nfp.common import exceptions as nfp_exc
 from gbpservice.nfp.orchestrator.db import nfp_db
 from gbpservice.nfp.orchestrator.db import nfp_db_model
+from sqlalchemy.orm import exc
+import uuid
 
 
 class SqlFixture(fixtures.Fixture):
@@ -389,6 +390,7 @@ class NFPDBTestCase(SqlTestCase):
         }
         network_function_device = self.nfp_db.create_network_function_device(
             self.session, attrs)
+        self.assertIn('gateway_port', network_function_device)
         for key in attrs:
             if (key == 'mgmt_port_id') or (key == 'monitoring_port_id'):
                 self.assertEqual(attrs[key]['id'],
@@ -693,3 +695,58 @@ class NFPDBTestCase(SqlTestCase):
                           self.nfp_db.get_network_function_device_interface,
                           self.session,
                           network_function_device_interface['id'])
+
+    def _get_gateway_details(self):
+        return dict(
+                id=str(uuid.uuid4()),
+                network_function_id=self.create_network_function()['id'],
+                gw_ptg=str(uuid.uuid4()),
+                primary_instance_gw_pt=str(uuid.uuid4()),
+                secondary_instance_gw_pt=str(uuid.uuid4()),
+                gateway_vips=[dict(id=str(uuid.uuid4()))]
+        )
+
+    def test_add_service_gateway_details(self):
+        gateway_details = self._get_gateway_details()
+        gateway = self.nfp_db.add_service_gateway_details(
+                self.session, gateway_details)
+        self.assertIsNotNone(gateway['id'])
+        self.nfp_db.delete_network_function(
+                self.session, gateway_details['network_function_id'])
+        gateway_details.update(
+                network_function_id=self.create_network_function()['id'],
+                gateway_vips=dict(primary_gw_vip_pt=str(uuid.uuid4()),
+                                  secondary_gw_vip_pt=str(uuid.uuid4())))
+        gateway = self.nfp_db.add_service_gateway_details(
+                self.session, gateway_details)
+        self.assertIsNotNone(gateway['id'])
+
+    def test_get_gateway_detail(self):
+        gateway_details = self._get_gateway_details()
+        gateway = self.nfp_db.add_service_gateway_details(
+                self.session, gateway_details)
+        self.assertIsNotNone(gateway['id'])
+        _gateway = self.nfp_db.get_gateway_detail(
+                self.session, gateway_details['network_function_id'])
+        self.assertEqual((gateway['id'], gateway['network_function_id']),
+                         (_gateway['id'], _gateway['network_function_id']))
+
+    def test_get_providers_for_gateway(self):
+        gateway_details = self._get_gateway_details()
+        gateway = self.nfp_db.add_service_gateway_details(
+                self.session, gateway_details)
+        self.assertIsNotNone(gateway['id'])
+        _gateway = self.nfp_db.get_providers_for_gateway(
+                self.session, gateway_details['gw_ptg'])[0]
+        self.assertEqual((gateway['id'], gateway['network_function_id']),
+                         (_gateway['id'], _gateway['network_function_id']))
+
+    def test_delete_gateway(self):
+        gateway_details = self._get_gateway_details()
+        gateway = self.nfp_db.add_service_gateway_details(
+                self.session, gateway_details)
+        self.assertIsNotNone(gateway['id'])
+        self.nfp_db.delete_network_function(self.session, gateway_details[
+            'network_function_id'])
+        self.assertRaises(exc.NoResultFound, self.nfp_db.get_gateway_detail,
+            self.session, gateway_details['network_function_id'])
