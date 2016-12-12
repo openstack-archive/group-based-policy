@@ -13,6 +13,7 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+import netaddr
 import sqlalchemy as sa
 
 from aim.aim_lib import nat_strategy
@@ -28,6 +29,7 @@ from neutron._i18n import _LW
 from neutron.api.v2 import attributes
 from neutron.common import constants as n_constants
 from neutron.common import exceptions
+from neutron.common import rpc as n_rpc
 from neutron.common import topics as n_topics
 from neutron.db import address_scope_db
 from neutron.db import api as db_api
@@ -36,19 +38,22 @@ from neutron.db import models_v2
 from neutron.extensions import portbindings
 from neutron import manager
 from neutron.plugins.common import constants as pconst
+from neutron.plugins.ml2 import db
 from neutron.plugins.ml2 import driver_api as api
 from neutron.plugins.ml2 import models
 from opflexagent import constants as ofcst
 from opflexagent import rpc as ofrpc
 from oslo_log import log
+import oslo_messaging
 
+from apic_ml2.neutron.plugins.ml2.drivers.cisco.apic import (rpc as
+    apic_topo_rpc)
 from gbpservice.neutron.extensions import cisco_apic
 from gbpservice.neutron.extensions import cisco_apic_l3 as a_l3
 from gbpservice.neutron.plugins.ml2plus import driver_api as api_plus
 from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import apic_mapper
 from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import cache
 from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import extension_db
-from oslo_serialization.jsonutils import netaddr
 
 LOG = log.getLogger(__name__)
 
@@ -94,6 +99,18 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
     # TODO(rkukura): Derivations of tenant_aname throughout need to
     # take sharing into account.
 
+    class TopologyRpcEndpoint(object):
+        target = oslo_messaging.Target(version='1.2')
+
+        def __init__(self, mechanism_driver):
+            self.md = mechanism_driver
+
+        def update_link(self, *args, **kwargs):
+            self.md.update_link(*args, **kwargs)
+
+        def delete_link(self, *args, **kwargs):
+            self.md.delete_link(*args, **kwargs)
+
     def __init__(self):
         LOG.info(_LI("APIC AIM MD __init__"))
 
@@ -115,6 +132,12 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
         self.ap_name = self.aim_cfg_mgr.get_option_and_subscribe(
             self._set_ap_name, 'apic_app_profile_name', 'apic')
         self.notifier = ofrpc.AgentNotifierApi(n_topics.AGENT)
+        # setup APIC topology RPC handler
+        self.topology_conn = n_rpc.create_connection(new=True)
+        self.topology_conn.create_consumer(apic_topo_rpc.TOPIC_APIC_SERVICE,
+                                           [self.TopologyRpcEndpoint(self)],
+                                           fanout=False)
+        self.topology_conn.consume_in_threads()
 
     def ensure_tenant(self, plugin_context, tenant_id):
         LOG.debug("APIC AIM MD ensuring tenant_id: %s", tenant_id)
@@ -958,6 +981,68 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
         if current['port_id']:
             self._notify_port_update(context, current['port_id'])
 
+    # Topology RPC method handler
+    def update_link(self, context, host, interface, mac,
+                    switch, module, port, port_description=''):
+        LOG.debug('Topology RPC: update_link: %s',
+                  ', '.join([str(p) for p in
+                             (host, interface, mac, switch, module, port,
+                              port_description)]))
+        if not switch:
+            self.delete_link(context, host, interface, mac, switch, module,
+                             port)
+            return
+
+        session = context.session
+        aim_ctx = aim_context.AimContext(db_session=session)
+        hlink = self.aim.get(aim_ctx,
+                             aim_infra.HostLink(host_name=host,
+                                                interface_name=interface))
+        if not hlink or hlink.path != port_description:
+            attrs = dict(interface_mac=mac,
+                         switch_id=switch, module=module, port=port,
+                         path=port_description)
+            if hlink:
+                old_path = hlink.path
+                hlink = self.aim.update(aim_ctx, hlink, **attrs)
+            else:
+                old_path = None
+                hlink = aim_infra.HostLink(host_name=host,
+                                           interface_name=interface,
+                                           **attrs)
+                hlink = self.aim.create(aim_ctx, hlink)
+            # Update static paths of all EPGs with ports on the host
+            nets_segs = self._get_non_opflex_segments_on_host(context, host)
+            for net, seg in nets_segs:
+                self._update_static_path_for_network(session, net, seg,
+                                                     old_path=old_path,
+                                                     new_path=hlink.path)
+
+    # Topology RPC method handler
+    def delete_link(self, context, host, interface, mac, switch, module, port):
+        LOG.debug('Topology RPC: delete_link: %s',
+                  ', '.join([str(p) for p in
+                             (host, interface, mac, switch, module, port)]))
+        session = context.session
+        aim_ctx = aim_context.AimContext(db_session=session)
+
+        hlink = self.aim.get(aim_ctx,
+                             aim_infra.HostLink(host_name=host,
+                                                interface_name=interface))
+        if not hlink:
+            return
+
+        self.aim.delete(aim_ctx, hlink)
+        # if there are no more host-links for this host (multiple links may
+        # exist with VPC), update EPGs with ports on this host to remove
+        # the static path to this host
+        if not self.aim.find(aim_ctx, aim_infra.HostLink, host_name=host,
+                             path=hlink.path):
+            nets_segs = self._get_non_opflex_segments_on_host(context, host)
+            for net, seg in nets_segs:
+                self._update_static_path_for_network(session, net, seg,
+                                                     old_path=hlink.path)
+
     def _agent_bind_port(self, context, agent_type, bind_strategy):
         current = context.current
         for agent in context.host_agents(agent_type):
@@ -1564,6 +1649,38 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
                 self._is_supported_non_opflex_type(
                     bound_seg[api.NETWORK_TYPE]))
 
+    def _update_static_path_for_network(self, session, network, segment,
+                                        old_path=None, new_path=None):
+        if new_path and not segment:
+            return
+
+        epg = self._map_network_to_epg(session, network)
+        if not epg:
+            LOG.info(_LI('Network %s does not map to any EPG'), network['id'])
+            return
+
+        if segment:
+            if segment.get(api.NETWORK_TYPE) in [pconst.TYPE_VLAN]:
+                seg = 'vlan-%s' % segment[api.SEGMENTATION_ID]
+            else:
+                LOG.debug('Unsupported segmentation type for static path '
+                          'binding: %s',
+                          segment.get(api.NETWORK_TYPE))
+                return
+
+        aim_ctx = aim_context.AimContext(db_session=session)
+        epg = self.aim.get(aim_ctx, epg)
+        to_remove = [old_path] if old_path else []
+        to_remove.extend([new_path] if new_path else [])
+        if to_remove:
+            epg.static_paths = [p for p in epg.static_paths
+                                if p.get('path') not in to_remove]
+        if new_path:
+            epg.static_paths.append({'path': new_path, 'encap': seg})
+        LOG.debug('Setting static paths for EPG %s to %s',
+                  epg, epg.static_paths)
+        self.aim.update(aim_ctx, epg, static_paths=epg.static_paths)
+
     def _update_static_path(self, port_context, host=None, segment=None,
                             remove=False):
         host = host or port_context.host
@@ -1583,14 +1700,6 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
                      .first())
             if exist:
                 return
-        else:
-            if (segment.get(api.NETWORK_TYPE) in [pconst.TYPE_VLAN]):
-                seg = segment[api.SEGMENTATION_ID]
-            else:
-                LOG.info(_LI('Unsupported segmentation type for static path '
-                             'binding: %s'),
-                         segment.get(api.NETWORK_TYPE))
-                return
 
         aim_ctx = aim_context.AimContext(db_session=session)
         host_link = self.aim.find(aim_ctx, aim_infra.HostLink, host_name=host)
@@ -1600,18 +1709,9 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
             return
         host_link = host_link[0].path
 
-        epg = self._map_network_to_epg(session, port_context.network.current)
-        if not epg:
-            LOG.info(_LI('Network %s does not map to any EPG'),
-                     port_context.network.current['id'])
-            return
-        epg = self.aim.get(aim_ctx, epg)
-        static_paths = [p for p in epg.static_paths
-                        if p.get('path') != host_link]
-        if not remove:
-            static_paths.append({'path': host_link, 'encap': 'vlan-%s' % seg})
-        LOG.debug('Setting static paths for EPG %s to %s', epg, static_paths)
-        self.aim.update(aim_ctx, epg, static_paths=static_paths)
+        self._update_static_path_for_network(
+            session, port_context.network.current, segment,
+            **{'old_path' if remove else 'new_path': host_link})
 
     def _release_dynamic_segment(self, port_context, use_original=False):
         top = (port_context.original_top_bound_segment if use_original
@@ -1632,3 +1732,19 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
                 LOG.info(_LI('Releasing dynamic-segment %(s)s for port %(p)s'),
                          {'s': btm, 'p': port_context.current['id']})
                 port_context.release_dynamic_segment(btm[api.ID])
+
+    def _get_non_opflex_segments_on_host(self, context, host):
+        session = context.session
+        segments = (session.query(models.NetworkSegment)
+                    .join(models.PortBindingLevel)
+                    .filter_by(host=host)
+                    .all())
+        net_ids = set([])
+        result = []
+        for seg in segments:
+            if (self._is_supported_non_opflex_type(seg[api.NETWORK_TYPE]) and
+                    seg.network_id not in net_ids):
+                net = self.plugin.get_network(context, seg.network_id)
+                result.append((net, db._make_segment_dict(seg)))
+                net_ids.add(seg.network_id)
+        return result
