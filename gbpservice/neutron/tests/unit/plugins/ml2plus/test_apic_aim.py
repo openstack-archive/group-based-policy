@@ -2559,6 +2559,99 @@ class TestPortVlanNetwork(ApicAimTestCase):
                 epg1 = self.aim_mgr.get(aim_ctx, epg1)
                 self.assertEqual([], epg1.static_paths)
 
+    def test_topology_rpc_no_ports(self):
+        nctx = context.get_admin_context()
+        aim_ctx = aim_context.AimContext(self.db_session)
+
+        net1 = self._make_network(self.fmt, 'net1', True)['network']
+        epg1 = self._net_2_epg(net1)
+
+        # add hostlink for h10
+        self.driver.update_link(nctx, 'h10', 'eth0', 'A:A', 101, 1, 19,
+                               'topology/pod-1/paths-101/pathep-[eth1/19]')
+        expected_hlink10 = aim_infra.HostLink(host_name='h10',
+            interface_name='eth0', interface_mac='A:A',
+            switch_id='101', module='1', port='19',
+            path='topology/pod-1/paths-101/pathep-[eth1/19]')
+        self.assertEqual(expected_hlink10,
+                         self.aim_mgr.get(aim_ctx, expected_hlink10))
+        epg1 = self.aim_mgr.get(aim_ctx, epg1)
+        self.assertEqual([], epg1.static_paths)
+
+        # remove hostlink for h10
+        self.driver.delete_link(nctx, 'h10', 'eth0', 'A:A', 0, 0, 0)
+        self.assertIsNone(self.aim_mgr.get(aim_ctx, expected_hlink10))
+        epg1 = self.aim_mgr.get(aim_ctx, epg1)
+        self.assertEqual([], epg1.static_paths)
+
+    def test_topology_rpc(self):
+        nctx = context.get_admin_context()
+        aim_ctx = aim_context.AimContext(self.db_session)
+        epgs = []
+        vlans = []
+        self._register_agent('h10', AGENT_CONF_OVS)
+
+        for x in xrange(0, 2):
+            net = self._make_network(self.fmt, 'net%d' % x, True)['network']
+            epgs.append(self._net_2_epg(net))
+
+            with self.subnet(network={'network': net}) as sub:
+                with self.port(subnet=sub) as p:
+                    p = self._bind_port_to_host(p['port']['id'], 'h10')
+                    vlans.append(self._check_binding(p['port']['id']))
+
+            epgs[x] = self.aim_mgr.get(aim_ctx, epgs[x])
+            self.assertEqual([], epgs[x].static_paths)
+
+        def check_epg_static_paths(link_path):
+            for x in range(0, len(epgs)):
+                epgs[x] = self.aim_mgr.get(aim_ctx, epgs[x])
+                expected_path = ([{'path': link_path,
+                                   'encap': 'vlan-%s' % vlans[x]}]
+                                if link_path else [])
+                self.assertEqual(expected_path, epgs[x].static_paths)
+
+        # add hostlink for h10
+        self.driver.update_link(nctx, 'h10', 'eth0', 'A:A', 101, 1, 19,
+                                'topology/pod-1/paths-101/pathep-[eth1/19]')
+        expected_hlink10 = aim_infra.HostLink(host_name='h10',
+            interface_name='eth0', interface_mac='A:A',
+            switch_id='101', module='1', port='19',
+            path='topology/pod-1/paths-101/pathep-[eth1/19]')
+        self.assertEqual(expected_hlink10,
+                         self.aim_mgr.get(aim_ctx, expected_hlink10))
+        check_epg_static_paths(expected_hlink10.path)
+
+        # update link
+        self.driver.update_link(nctx, 'h10', 'eth0', 'A:A', 101, 1, 42,
+                                'topology/pod-1/paths-101/pathep-[eth1/42]')
+        expected_hlink10.port = '42'
+        expected_hlink10.path = 'topology/pod-1/paths-101/pathep-[eth1/42]'
+        self.assertEqual(expected_hlink10,
+                         self.aim_mgr.get(aim_ctx, expected_hlink10))
+        check_epg_static_paths(expected_hlink10.path)
+
+        # add another link (VPC like)
+        self.driver.update_link(nctx, 'h10', 'eth1', 'B:B', 201, 1, 24,
+                                'topology/pod-1/paths-101/pathep-[eth1/42]')
+        expected_hlink10_sec = aim_infra.HostLink(host_name='h10',
+            interface_name='eth1', interface_mac='B:B',
+            switch_id='201', module='1', port='24',
+            path='topology/pod-1/paths-101/pathep-[eth1/42]')
+        self.assertEqual(expected_hlink10_sec,
+                         self.aim_mgr.get(aim_ctx, expected_hlink10_sec))
+        check_epg_static_paths(expected_hlink10.path)
+
+        # remove second link
+        self.driver.delete_link(nctx, 'h10', 'eth1', 'B:B', 0, 0, 0)
+        self.assertIsNone(self.aim_mgr.get(aim_ctx, expected_hlink10_sec))
+        check_epg_static_paths(expected_hlink10.path)
+
+        # remove first link
+        self.driver.update_link(nctx, 'h10', 'eth0', 'A:A', 0, 0, 0, '')
+        self.assertIsNone(self.aim_mgr.get(aim_ctx, expected_hlink10))
+        check_epg_static_paths(None)
+
 
 class TestPortOnPhysicalNode(TestPortVlanNetwork):
     # Tests for binding port on physical node where another ML2 mechanism
