@@ -209,6 +209,51 @@ class OwnedResourcesOperations(object):
 
 class ImplicitResourceOperations(local_api.LocalAPI):
 
+    def _sg_rule(self, plugin_context, tenant_id, sg_id, direction,
+                 protocol=None, port_range=None, cidr=None,
+                 ethertype=const.IPv4, unset=False):
+        if port_range:
+            port_min, port_max = (gpdb.GroupPolicyDbPlugin.
+                                  _get_min_max_ports_from_range(port_range))
+        else:
+            port_min, port_max = None, None
+
+        attrs = {'tenant_id': tenant_id,
+                 'security_group_id': sg_id,
+                 'direction': direction,
+                 'ethertype': ethertype,
+                 'protocol': protocol,
+                 'port_range_min': port_min,
+                 'port_range_max': port_max,
+                 'remote_ip_prefix': cidr,
+                 'remote_group_id': None}
+        if unset:
+            filters = {}
+            for key in attrs:
+                value = attrs[key]
+                if value:
+                    filters[key] = [value]
+            rule = self._get_sg_rules(plugin_context, filters)
+            if rule:
+                self._delete_sg_rule(plugin_context, rule[0]['id'])
+        else:
+            return self._create_sg_rule(plugin_context, attrs)
+
+    def _create_gbp_sg(self, plugin_context, tenant_id, name, **kwargs):
+        # This method sets up the attributes of security group
+        attrs = {'tenant_id': tenant_id,
+                 'name': name,
+                 'description': '',
+                 'security_group_rules': ''}
+        attrs.update(kwargs)
+        sg = self._create_sg(plugin_context, attrs)
+        # Cleanup default rules
+        for rule in self._get_sg_rules(plugin_context,
+                                       filters={'security_group_id':
+                                                [sg['id']]}):
+            self._delete_sg_rule(plugin_context, rule['id'])
+        return sg
+
     def _create_implicit_address_scope(self, context, clean_session=True,
                                        **kwargs):
         attrs = {'tenant_id': context.current['tenant_id'],
@@ -2029,21 +2074,6 @@ class ResourceMappingDriver(api.PolicyDriver, ImplicitResourceOperations,
             context._plugin_context, context.current['tenant_id'],
             sg_name_prefix + '_' + context.current['name'])
 
-    def _create_gbp_sg(self, plugin_context, tenant_id, name, **kwargs):
-        # This method sets up the attributes of security group
-        attrs = {'tenant_id': tenant_id,
-                 'name': name,
-                 'description': '',
-                 'security_group_rules': ''}
-        attrs.update(kwargs)
-        sg = self._create_sg(plugin_context, attrs)
-        # Cleanup default rules
-        for rule in self._get_sg_rules(plugin_context,
-                                       filters={'security_group_id':
-                                                [sg['id']]}):
-            self._delete_sg_rule(plugin_context, rule['id'])
-        return sg
-
     def _handle_policy_rule_sets(self, context):
         # This method handles policy_rule_set => SG mapping
         # context is PTG context
@@ -2170,36 +2200,6 @@ class ResourceMappingDriver(api.PolicyDriver, ImplicitResourceOperations,
         with session.begin(subtransactions=True):
             return (session.query(PolicyRuleSetSGsMapping).
                     filter_by(policy_rule_set_id=policy_rule_set_id).one())
-
-    def _sg_rule(self, plugin_context, tenant_id, sg_id, direction,
-                 protocol=None, port_range=None, cidr=None,
-                 ethertype=const.IPv4, unset=False):
-        if port_range:
-            port_min, port_max = (gpdb.GroupPolicyDbPlugin.
-                                  _get_min_max_ports_from_range(port_range))
-        else:
-            port_min, port_max = None, None
-
-        attrs = {'tenant_id': tenant_id,
-                 'security_group_id': sg_id,
-                 'direction': direction,
-                 'ethertype': ethertype,
-                 'protocol': protocol,
-                 'port_range_min': port_min,
-                 'port_range_max': port_max,
-                 'remote_ip_prefix': cidr,
-                 'remote_group_id': None}
-        if unset:
-            filters = {}
-            for key in attrs:
-                value = attrs[key]
-                if value:
-                    filters[key] = [value]
-            rule = self._get_sg_rules(plugin_context, filters)
-            if rule:
-                self._delete_sg_rule(plugin_context, rule[0]['id'])
-        else:
-            return self._create_sg_rule(plugin_context, attrs)
 
     def _sg_ingress_rule(self, context, sg_id, protocol, port_range, cidr,
                          tenant_id, unset=False):
