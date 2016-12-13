@@ -468,7 +468,8 @@ class TestHeatDriver(unittest.TestCase):
         self.heat_driver_obj.keystoneclient.get_admin_token = (
                 mock.MagicMock(return_value='token'))
         self.heat_driver_obj._create_policy_target_for_vip(
-            auth_token, provider_tenant_id, provider)
+            auth_token, provider_tenant_id, provider,
+            'LOADBALANCER')
         pools.assert_called_once_with(
             subnet_id=[subnets.return_value['subnets'][0]['id']])
 

@@ -252,13 +252,13 @@ class HeatDriver(object):
             nfp_context)
         service_type = service_details['service_details']['service_type']
 
-        if service_type in [pconst.LOADBALANCER]:
+        if service_type in [pconst.LOADBALANCER, pconst.LOADBALANCERV2]:
             logging_context = nfp_logging.get_logging_context()
             auth_token = logging_context['auth_token']
             provider_tenant_id = nfp_context['tenant_id']
             provider = service_details['provider_ptg']
             self._create_policy_target_for_vip(
-                auth_token, provider_tenant_id, provider)
+                auth_token, provider_tenant_id, provider, service_type)
 
     def _get_provider_ptg_info(self, auth_token, sci_id):
         servicechain_instance = self.gbp_client.get_servicechain_instance(
@@ -278,13 +278,13 @@ class HeatDriver(object):
             service_profile['service_flavor'])
         base_mode_support = (True if service_details['device_type'] == 'None'
                              else False)
-        if (service_type in [pconst.LOADBALANCER]) and (
+        if (service_type in [pconst.LOADBALANCER, pconst.LOADBALANCERV2]) and (
             not base_mode_support):
             provider = self._get_provider_ptg_info(auth_token,
                     network_function['service_chain_id'])
             provider_tenant_id = provider['tenant_id']
             self._update_policy_targets_for_vip(
-                auth_token, provider_tenant_id, provider)
+                auth_token, provider_tenant_id, provider, service_type)
 
     def _post_stack_cleanup(self, network_function):
         #TODO(ashu): In post stack cleanup, need to delete vip pt, currently
@@ -303,7 +303,7 @@ class HeatDriver(object):
 
         return vip_pt
 
-    def _get_lb_vip(self, auth_token, provider):
+    def _get_lb_vip(self, auth_token, provider, service_type):
         provider_subnet = None
         lb_vip = None
         lb_vip_name = None
@@ -315,7 +315,12 @@ class HeatDriver(object):
             if not subnet['name'].startswith(APIC_OWNED_RES):
                 provider_subnet = subnet
                 break
-        if provider_subnet:
+        if not provider_subnet:
+            LOG.error(_LE("Unable to get provider subnet for provider "
+                          "policy target group %(provider_ptg)s") %
+                      {"provider_ptg": provider})
+            return lb_vip, lb_vip_name
+        if service_type == pconst.LOADBALANCER:
             lb_pool_ids = self.neutron_client.get_pools(
                 auth_token,
                 filters={'subnet_id': [provider_subnet['id']]})
@@ -324,16 +329,29 @@ class HeatDriver(object):
                     auth_token, lb_pool_ids[0]['vip_id'])['vip']
                 lb_vip_name = ("service_target_vip_pt" +
                         lb_pool_ids[0]['vip_id'])
+        elif service_type == pconst.LOADBALANCERV2:
+            loadbalancers = self.neutron_client.get_loadbalancers(
+                auth_token,
+                filters={'vip_subnet_id': [provider_subnet['id']]})
+            if loadbalancers:
+                loadbalancer = loadbalancers[0]
+                lb_vip = {}
+                lb_vip['ip_address'] = loadbalancer['vip_address']
+                lb_vip['port_id'] = loadbalancer['vip_port_id']
+                # lbaasv2 dont have vip resource, so considering loadbalancer
+                # id as vip_name
+                lb_vip_name = 'vip-' + loadbalancer['id']
         return lb_vip, lb_vip_name
 
     def _create_policy_target_for_vip(self, auth_token,
-                                      provider_tenant_id, provider):
+                                      provider_tenant_id,
+                                      provider, service_type):
         provider_pt_id = ''
         admin_token = self.keystoneclient.get_admin_token()
-        lb_vip, vip_name = self._get_lb_vip(auth_token, provider)
+        lb_vip, vip_name = self._get_lb_vip(auth_token, provider, service_type)
         provider_pt = self._get_provider_pt(admin_token, provider)
-        if not provider_pt:
-            return
+        if not (lb_vip and provider_pt):
+            return None
         provider_pt_id = provider_pt['id']
         provider_port_id = provider_pt['port_id']
 
@@ -360,13 +378,15 @@ class HeatDriver(object):
                 admin_token, provider_pt['port_id'], **updated_port)
 
     def _update_policy_targets_for_vip(self, auth_token,
-                                      provider_tenant_id, provider):
+                                      provider_tenant_id,
+                                      provider, service_type):
         provider_pt_id = ''
         admin_token = self.keystoneclient.get_admin_token()
-        lb_vip, vip_name = self._get_lb_vip(auth_token, provider)
+        lb_vip, vip_name = self._get_lb_vip(auth_token, provider, service_type)
         provider_pt = self._get_provider_pt(admin_token, provider)
-        if provider_pt:
-            provider_pt_id = provider_pt['id']
+        if not (lb_vip and provider_pt):
+            return None
+        provider_pt_id = provider_pt['id']
 
         policy_target_info = {'cluster_id': ''}
         vip_pt = self._get_vip_pt(auth_token, lb_vip.get('port_id'))
