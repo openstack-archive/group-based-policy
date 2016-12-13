@@ -27,6 +27,7 @@ from gbpservice.contrib.nfp.configurator.drivers.loadbalancer.\
 from gbpservice.contrib.nfp.configurator.drivers.loadbalancer.\
     v2.haproxy.rest_api_driver import HaproxyAmphoraLoadBalancerDriver
 from gbpservice.contrib.nfp.configurator.lib import constants as common_const
+from gbpservice.contrib.nfp.configurator.lib.data_parser import DataParser
 from gbpservice.contrib.nfp.configurator.lib import lb_constants
 from gbpservice.contrib.nfp.configurator.lib import lbv2_constants
 from gbpservice.nfp.common import exceptions
@@ -61,7 +62,8 @@ class LbGenericConfigDriver(object):
         send by neutron plugin
         Returns: SUCCESS/Failure message with reason.
         """
-
+        resource_data = self.parse.parse_data(
+            common_const.INTERFACES, resource_data)
         mgmt_ip = resource_data['mgmt_ip']
 
         try:
@@ -320,11 +322,12 @@ class OctaviaDataModelBuilder(object):
         return ret
 
 
+@base_driver.set_class_attr(
+    SERVICE_TYPE=lbv2_constants.SERVICE_TYPE,
+    SERVICE_VENDOR=haproxy_driver_constants.SERVICE_VENDOR)
 class HaproxyLoadBalancerDriver(LbGenericConfigDriver,
                                 base_driver.BaseDriver):
 
-    service_type = lbv2_constants.SERVICE_TYPE
-    service_vendor = haproxy_driver_constants.SERVICE_VENDOR
     # amphorae = {"loadbalancer_id": [o_data_models.Amphora(
     #                                 lb_network_ip, id, status)]}
     amphorae = {}
@@ -340,7 +343,7 @@ class HaproxyLoadBalancerDriver(LbGenericConfigDriver,
         super(HaproxyLoadBalancerDriver, self).__init__()
         self.conf = conf
         self.port = haproxy_driver_constants.CONFIGURATION_SERVER_PORT
-
+        self.parse = DataParser()
         self.amphora_driver = HaproxyAmphoraLoadBalancerDriver()
         self.cert_manager = LocalCertManager()
 
@@ -359,17 +362,17 @@ class HaproxyLoadBalancerDriver(LbGenericConfigDriver,
     def get_amphora(self, loadbalancer_id):
         return self.amphorae.get(loadbalancer_id)
 
-    def add_amphora(self, loadbalancer_id, description,
+    def add_amphora(self, context, loadbalancer_id, description,
                     status=constants.ACTIVE):
         sc_metadata = ast.literal_eval(description)
-        if not (sc_metadata.get('floating_ip') and
-                sc_metadata.get('network_function_id')):
+        rdata = self.parse.parse_data(common_const.LOADBALANCERV2, context)
+        if not (rdata['mgmt_ip'] and sc_metadata.get('network_function_id')):
             raise exceptions.IncompleteData(
                 "Amphora information is missing")
         if not self.get_amphora(loadbalancer_id):
             # REVISIT(jiahao): use network_function_id as amphora id
             amp = o_data_models.Amphora(
-                lb_network_ip=sc_metadata['floating_ip'],
+                lb_network_ip=rdata['mgmt_ip'],
                 id=sc_metadata['network_function_id'],
                 status=status)
             self.amphorae[loadbalancer_id] = [amp]
@@ -379,8 +382,9 @@ class HaproxyCommonManager(object):
 
     def __init__(self, driver):
         self.driver = driver
+        self.parse = DataParser()
 
-    def _deploy(self, obj):
+    def _deploy(self, context, obj):
         pass
 
     def create(self, context, obj):
@@ -456,10 +460,10 @@ class HaproxyLoadBalancerManager(HaproxyCommonManager):
                     raise exceptions.IncompleteData(
                         "VIP subnet information is not found")
 
-                sc_metadata = ast.literal_eval(
-                    loadbalancer_dict['description'])
+                sc_metadata = self.parse.parse_data(
+                    common_const.LOADBALANCERV2, context)
                 vrrp_port = n_data_models.Port(
-                    mac_address=sc_metadata['provider_interface_mac'])
+                    mac_address=sc_metadata['provider_mac'])
                 if vrrp_port is None:
                     raise exceptions.IncompleteData(
                         "VRRP port information is not found")
@@ -473,7 +477,7 @@ class HaproxyLoadBalancerManager(HaproxyCommonManager):
         return amphorae_network_config
 
     def create(self, context, loadbalancer):
-        self.driver.add_amphora(loadbalancer['id'],
+        self.driver.add_amphora(context, loadbalancer['id'],
                                 loadbalancer['description'])
         loadbalancer_o_obj = self.driver.o_models_builder.\
             get_loadbalancer_octavia_model(loadbalancer)
@@ -492,7 +496,7 @@ class HaproxyLoadBalancerManager(HaproxyCommonManager):
         LOG.info(msg)
 
     def update(self, context, old_loadbalancer, loadbalancer):
-        self.driver.add_amphora(loadbalancer['id'],
+        self.driver.add_amphora(context, loadbalancer['id'],
                                 loadbalancer['description'])
         loadbalancer_o_obj = self.driver.o_models_builder.\
             get_loadbalancer_octavia_model(loadbalancer)
@@ -546,8 +550,8 @@ class HaproxyLoadBalancerManager(HaproxyCommonManager):
 
 class HaproxyListenerManager(HaproxyCommonManager):
 
-    def _deploy(self, listener):
-        self.driver.add_amphora(listener['loadbalancer_id'],
+    def _deploy(self, context, listener):
+        self.driver.add_amphora(context, listener['loadbalancer_id'],
                                 listener['description'])
         listener_o_obj = self.driver.o_models_builder.\
             get_listener_octavia_model(listener)
@@ -557,17 +561,17 @@ class HaproxyListenerManager(HaproxyCommonManager):
         self.clean_certs(listener['tenant_id'], cert_ids)
 
     def create(self, context, listener):
-        self._deploy(listener)
+        self._deploy(context, listener)
         msg = ("LB %s, created %s" % (self.__class__.__name__, listener['id']))
         LOG.info(msg)
 
     def update(self, context, old_listener, listener):
-        self._deploy(listener)
+        self._deploy(context, listener)
         msg = ("LB %s, updated %s" % (self.__class__.__name__, listener['id']))
         LOG.info(msg)
 
     def delete(self, context, listener):
-        self.driver.add_amphora(listener['loadbalancer_id'],
+        self.driver.add_amphora(context, listener['loadbalancer_id'],
                                 listener['description'])
         listener_o_obj = self.driver.o_models_builder.\
             get_listener_octavia_model(listener)
@@ -586,8 +590,8 @@ class HaproxyPoolManager(HaproxyCommonManager):
         if default_pool['id'] == pool_id:
             pool['listener']['default_pool'] = None
 
-    def _deploy(self, pool):
-        self.driver.add_amphora(pool['loadbalancer_id'],
+    def _deploy(self, context, pool):
+        self.driver.add_amphora(context, pool['loadbalancer_id'],
                                 pool['description'])
         pool_o_obj = self.driver.o_models_builder.\
             get_pool_octavia_model(pool)
@@ -601,26 +605,26 @@ class HaproxyPoolManager(HaproxyCommonManager):
         self.clean_certs(pool['tenant_id'], cert_ids)
 
     def create(self, context, pool):
-        self._deploy(pool)
+        self._deploy(context, pool)
         msg = ("LB %s, created %s" % (self.__class__.__name__, pool['id']))
         LOG.info(msg)
 
     def update(self, context, old_pool, pool):
-        self._deploy(pool)
+        self._deploy(context, pool)
         msg = ("LB %s, updated %s" % (self.__class__.__name__, pool['id']))
         LOG.info(msg)
 
     def delete(self, context, pool):
         self._remove_pool(pool)
-        self._deploy(pool)
+        self._deploy(context, pool)
         msg = ("LB %s, deleted %s" % (self.__class__.__name__, pool['id']))
         LOG.info(msg)
 
 
 class HaproxyMemberManager(HaproxyCommonManager):
 
-    def _deploy(self, member):
-        self.driver.add_amphora(member['pool']['loadbalancer_id'],
+    def _deploy(self, context, member):
+        self.driver.add_amphora(context, member['pool']['loadbalancer_id'],
                                 member['description'])
         member_o_obj = self.driver.o_models_builder.\
             get_member_octavia_model(member)
@@ -642,26 +646,26 @@ class HaproxyMemberManager(HaproxyCommonManager):
                 break
 
     def create(self, context, member):
-        self._deploy(member)
+        self._deploy(context, member)
         msg = ("LB %s, created %s" % (self.__class__.__name__, member['id']))
         LOG.info(msg)
 
     def update(self, context, old_member, member):
-        self._deploy(member)
+        self._deploy(context, member)
         msg = ("LB %s, updated %s" % (self.__class__.__name__, member['id']))
         LOG.info(msg)
 
     def delete(self, context, member):
         self._remove_member(member)
-        self._deploy(member)
+        self._deploy(context, member)
         msg = ("LB %s, deleted %s" % (self.__class__.__name__, member['id']))
         LOG.info(msg)
 
 
 class HaproxyHealthMonitorManager(HaproxyCommonManager):
 
-    def _deploy(self, hm):
-        self.driver.add_amphora(hm['pool']['loadbalancer_id'],
+    def _deploy(self, context, hm):
+        self.driver.add_amphora(context, hm['pool']['loadbalancer_id'],
                                 hm['description'])
         hm_o_obj = self.driver.o_models_builder.\
             get_healthmonitor_octavia_model(hm)
@@ -680,17 +684,17 @@ class HaproxyHealthMonitorManager(HaproxyCommonManager):
             default_pool['healthmonitor'] = None
 
     def create(self, context, hm):
-        self._deploy(hm)
+        self._deploy(context, hm)
         msg = ("LB %s, created %s" % (self.__class__.__name__, hm['id']))
         LOG.info(msg)
 
     def update(self, context, old_hm, hm):
-        self._deploy(hm)
+        self._deploy(context, hm)
         msg = ("LB %s, updated %s" % (self.__class__.__name__, hm['id']))
         LOG.info(msg)
 
     def delete(self, context, hm):
         self._remove_healthmonitor(hm)
-        self._deploy(hm)
+        self._deploy(context, hm)
         msg = ("LB %s, deleted %s" % (self.__class__.__name__, hm['id']))
         LOG.info(msg)
