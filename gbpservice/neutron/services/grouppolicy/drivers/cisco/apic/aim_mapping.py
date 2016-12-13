@@ -43,8 +43,6 @@ from gbpservice.neutron.services.grouppolicy.drivers import (
 from gbpservice.neutron.services.grouppolicy.drivers.cisco.apic import (
     aim_mapping_rpc as aim_rpc)
 from gbpservice.neutron.services.grouppolicy.drivers.cisco.apic import (
-    apic_mapping as amap)
-from gbpservice.neutron.services.grouppolicy.drivers.cisco.apic import (
     apic_mapping_lib as alib)
 from gbpservice.neutron.services.grouppolicy import plugin as gbp_plugin
 
@@ -137,18 +135,6 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
                          'this will result in automatic creation of a PTG '
                          'per L2 Policy'))
         self.setup_opflex_rpc_listeners()
-        self._ensure_apic_infra()
-
-    def _ensure_apic_infra(self):
-        # TODO(ivar): remove this code from here
-        # with the old architecture, this is how we used to create APIC
-        # infra model. This is now undesirable for a plethora of reasons,
-        # some of which include the fact that we are adding a dependency
-        # to apic_ml2, apicapi, and we are also using the old configuration
-        # model to make this work. We need to decide how we actually want to
-        # infra configuration.
-        LOG.debug('Pushing APIC infra configuration')
-        amap.ApicMappingDriver.get_apic_manager()
 
     @property
     def aim_mech_driver(self):
