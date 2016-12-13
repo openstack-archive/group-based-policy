@@ -26,6 +26,7 @@ from aim import context as aim_context
 from aim import utils as aim_utils
 from neutron._i18n import _LI
 from neutron._i18n import _LW
+from neutron.agent import securitygroups_rpc
 from neutron.api.v2 import attributes
 from neutron.common import constants as n_constants
 from neutron.common import exceptions
@@ -132,6 +133,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
         self.ap_name = self.aim_cfg_mgr.get_option_and_subscribe(
             self._set_ap_name, 'apic_app_profile_name', 'apic')
         self.notifier = ofrpc.AgentNotifierApi(n_topics.AGENT)
+        self.sg_enabled = securitygroups_rpc.is_firewall_enabled()
         # setup APIC topology RPC handler
         self.topology_conn = n_rpc.create_connection(new=True)
         self.topology_conn.create_consumer(apic_topo_rpc.TOPIC_APIC_SERVICE,
@@ -1099,10 +1101,10 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
                 return True
 
     def _complete_binding(self, context, segment):
-        context.set_binding(segment[api.ID],
-                            portbindings.VIF_TYPE_OVS,
-                            {portbindings.CAP_PORT_FILTER: False,
-                             portbindings.OVS_HYBRID_PLUG: False})
+        context.set_binding(
+            segment[api.ID], portbindings.VIF_TYPE_OVS,
+            {portbindings.CAP_PORT_FILTER: self.sg_enabled,
+             portbindings.OVS_HYBRID_PLUG: self.sg_enabled})
 
     @property
     def plugin(self):
