@@ -46,6 +46,7 @@ from opflexagent import rpc
 from oslo_concurrency import lockutils
 from oslo_config import cfg
 from oslo_log import log as logging
+import oslo_messaging
 from oslo_serialization import jsonutils
 import sqlalchemy as sa
 
@@ -264,6 +265,42 @@ EOC_PREFIX = "opflex_eoc:"
 ICMP_REPLY_TYPES = ['echo-rep', 'dst-unreach', 'src-quench', 'time-exceeded']
 
 
+class KeystoneNotificationEndpoint(object):
+    filter_rule = oslo_messaging.NotificationFilter(
+        event_type='identity.project.update')
+
+    def __init__(self, mechanism_driver):
+        self._driver = mechanism_driver
+
+    def info(self, ctxt, publisher_id, event_type, payload, metadata):
+        LOG.debug("Keystone notification getting called!")
+
+        tenant_id = payload.get('resource_info')
+        # malformed notification?
+        if not tenant_id:
+            return None
+        if self._driver.single_tenant_mode:
+            return None
+        # we only update tenants which have been created in APIC. For other
+        # cases, their nameAlias will be set when the first PTG is being
+        # created under that tenant
+        if not (self._driver.apic_manager.apic_mapper.
+                is_tenant_in_apic(tenant_id)):
+            return None
+
+        new_tenant_name = (self._driver.apic_manager.apic_mapper.
+                           update_tenant_name(tenant_id))
+        if new_tenant_name:
+            obj = {}
+            obj['tenant_id'] = tenant_id
+            obj['name'] = new_tenant_name
+            apic_tenant_name = self._driver._tenant_by_sharing_policy(obj)
+            self._driver.apic_manager.update_name_alias(
+                self._driver.apic_manager.apic.fvTenant, apic_tenant_name,
+                nameAlias=new_tenant_name)
+        return oslo_messaging.NotificationResult.HANDLED
+
+
 class ApicMappingDriver(api.ResourceMappingDriver,
                         ha_ip_db.HAIPOwnerDbMixin):
     """Apic Mapping driver for Group Policy plugin.
@@ -315,6 +352,11 @@ class ApicMappingDriver(api.ResourceMappingDriver,
         self._setup_rpc_listeners()
         self.apic_manager = ApicMappingDriver.get_apic_manager()
         self.name_mapper = name_manager.ApicNameManager(self.apic_manager)
+        self.keystone_notification_exchange = (self.apic_manager.
+                                               keystone_notification_exchange)
+        self.keystone_notification_topic = (self.apic_manager.
+                                            keystone_notification_topic)
+        self._setup_keystone_notification_listeners()
         self.enable_dhcp_opt = self.apic_manager.enable_optimized_dhcp
         self.enable_metadata_opt = self.apic_manager.enable_optimized_metadata
         self.nat_enabled = self.apic_manager.use_vmm
@@ -331,6 +373,7 @@ class ApicMappingDriver(api.ResourceMappingDriver,
             LOG.info(_('Auto PTG creation configuration set, '
                        'this will result in automatic creation of a PTG '
                        'per L2 Policy'))
+        self.tenants_with_name_alias_set = set()
 
     def _setup_rpc_listeners(self):
         self.endpoints = [rpc.GBPServerRpcCallback(self, self.notifier)]
@@ -339,6 +382,17 @@ class ApicMappingDriver(api.ResourceMappingDriver,
         self.conn.create_consumer(self.topic, self.endpoints,
                                   fanout=False)
         return self.conn.consume_in_threads()
+
+    def _setup_keystone_notification_listeners(self):
+        transport = oslo_messaging.get_transport(cfg.CONF)
+        targets = [oslo_messaging.Target(
+                    exchange=self.keystone_notification_exchange,
+                    topic=self.keystone_notification_topic, fanout=True)]
+        endpoints = [KeystoneNotificationEndpoint(self)]
+        pool = "listener-workers"
+        server = oslo_messaging.get_notification_listener(
+            transport, targets, endpoints, executor='eventlet', pool=pool)
+        server.start()
 
     def _setup_rpc(self):
         self.notifier = rpc.AgentNotifierApi(topics.AGENT)
@@ -939,6 +993,22 @@ class ApicMappingDriver(api.ResourceMappingDriver,
             else:
                 self.name_mapper.has_valid_name(context.current)
 
+    def _update_tenant_name_alias(self, tenant_id, aci_tenant):
+        if self.single_tenant_mode or aci_tenant == apic_manager.TENANT_COMMON:
+            return
+        # set the tenant nameAlias if this is the
+        # first PTG being created under this tenant
+        if (tenant_id in self.tenants_with_name_alias_set):
+            return
+        tenant_name_alias = self.apic_manager.apic_mapper.get_tenant_name(
+            tenant_id, require_keystone_session=True)
+        if not tenant_name_alias:
+            return
+        self.apic_manager.update_name_alias(
+            self.apic_manager.apic.fvTenant, aci_tenant,
+            nameAlias=tenant_name_alias)
+        self.tenants_with_name_alias_set.add(tenant_id)
+
     def create_policy_target_group_postcommit(self, context):
         if not context.current['subnets']:
             self._use_implicit_subnet(context)
@@ -964,6 +1034,8 @@ class ApicMappingDriver(api.ResourceMappingDriver,
                 self.apic_manager.apic.fvAEPg, tenant,
                 self.apic_manager.app_profile_name,
                 epg, nameAlias=context.current['name'])
+            self._update_tenant_name_alias(context.current['tenant_id'],
+                                           tenant)
 
             l3p = context._plugin.get_l3_policy(
                 context._plugin_context, l2_policy_object['l3_policy_id'])
