@@ -24,6 +24,7 @@ from aim import context as aim_context
 from aim import utils as aim_utils
 from neutron._i18n import _LI
 from neutron._i18n import _LW
+from neutron.agent import securitygroups_rpc
 from neutron.api.v2 import attributes
 from neutron.common import constants as n_constants
 from neutron.common import exceptions
@@ -113,6 +114,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
         self.ap_name = self.aim_cfg_mgr.get_option_and_subscribe(
             self._set_ap_name, 'apic_app_profile_name', 'apic')
         self.notifier = ofrpc.AgentNotifierApi(n_topics.AGENT)
+        self.sg_enabled = securitygroups_rpc.is_firewall_enabled()
 
     def ensure_tenant(self, plugin_context, tenant_id):
         LOG.debug("APIC AIM MD ensuring tenant_id: %s", tenant_id)
@@ -955,10 +957,11 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
         elif network_type != 'local':
             return False
 
-        context.set_binding(segment[api.ID],
-                            portbindings.VIF_TYPE_OVS,
-                            {portbindings.CAP_PORT_FILTER: False,
-                             portbindings.OVS_HYBRID_PLUG: False})
+        sg_enabled_for_port = self.sg_enabled
+        context.set_binding(
+            segment[api.ID], portbindings.VIF_TYPE_OVS,
+            {portbindings.CAP_PORT_FILTER: sg_enabled_for_port,
+             portbindings.OVS_HYBRID_PLUG: sg_enabled_for_port})
 
     def _dvs_bind_port(self, context, segment, agent):
         # TODO(rkukura): Implement DVS port binding
