@@ -1737,6 +1737,7 @@ class TestPolicyTarget(AIMBaseTestCase):
         req = self.new_show_request('ports', pt['port_id'], fmt=self.fmt)
         res = self.deserialize(self.fmt, req.get_response(self.api))
         self.assertIsNotNone(res['port']['id'])
+        self.assertEqual(1, len(res['port']['security_groups']))
 
         self.update_policy_target(pt_id, expected_res_status=200,
                                   name="new name")
@@ -2506,12 +2507,24 @@ class NotificationTest(AIMBaseTestCase):
             mock.call().notify(mock.ANY, mock.ANY, "subnet.create.end"),
             mock.call().notify(mock.ANY, mock.ANY,
                                "policy_target_group.create.end"),
+            mock.call().notify(mock.ANY, mock.ANY,
+                               "security_group.create.end"),
+            mock.call().notify(mock.ANY, mock.ANY,
+                               "security_group_rule.delete.end"),
+            mock.call().notify(mock.ANY, mock.ANY,
+                               "security_group_rule.delete.end"),
+            mock.call().notify(mock.ANY, mock.ANY,
+                               "security_group_rule.create.end"),
+            mock.call().notify(mock.ANY, mock.ANY,
+                               "security_group_rule.create.end"),
+            mock.call().notify(mock.ANY, mock.ANY,
+                               "security_group_rule.create.end"),
+            mock.call().notify(mock.ANY, mock.ANY,
+                               "security_group_rule.create.end"),
             mock.call().notify(mock.ANY, mock.ANY, "port.create.end"),
-            mock.call().notify(mock.ANY, mock.ANY,
-                               "policy_target.create.end"),
+            mock.call().notify(mock.ANY, mock.ANY, "policy_target.create.end"),
             mock.call().notify(mock.ANY, mock.ANY, "port.delete.end"),
-            mock.call().notify(mock.ANY, mock.ANY,
-                               "policy_target.delete.end"),
+            mock.call().notify(mock.ANY, mock.ANY, "policy_target.delete.end"),
             mock.call().notify(mock.ANY, mock.ANY, "port.delete.end"),
             mock.call().notify(mock.ANY, mock.ANY, "subnet.delete.end"),
             mock.call().notify(mock.ANY, mock.ANY, "network.delete.end"),
@@ -2542,6 +2555,18 @@ class NotificationTest(AIMBaseTestCase):
             mock.call().notify("create_subnet", mock.ANY, mock.ANY),
             mock.call().notify("create_policy_target_group",
                                mock.ANY, mock.ANY),
+            mock.call().notify("create_security_group", mock.ANY, mock.ANY),
+            mock.call().notify("delete_security_group_rule", mock.ANY,
+                               mock.ANY),
+            mock.call().notify("delete_security_group_rule", mock.ANY,
+                               mock.ANY),
+            mock.call().notify("create_security_group_rule", mock.ANY,
+                               mock.ANY),
+            mock.call().notify("create_security_group_rule", mock.ANY,
+                               mock.ANY),
+            mock.call().notify("create_security_group_rule", mock.ANY,
+                               mock.ANY),
+            mock.call().notify("create_security_group_rule", mock.ANY, mock.ANY),
             mock.call().notify("create_port", mock.ANY, mock.ANY),
             mock.call().notify("create_policy_target", mock.ANY, mock.ANY),
             mock.call().notify("delete_port", mock.ANY, mock.ANY),
@@ -2553,8 +2578,8 @@ class NotificationTest(AIMBaseTestCase):
             mock.call().notify("delete_router", mock.ANY, mock.ANY),
             mock.call().notify("delete_policy_target_group",
                                mock.ANY, mock.ANY),
-            mock.call().notify("delete_security_group",
-                               mock.ANY, mock.ANY)]
+            mock.call().notify("delete_security_group", mock.ANY, mock.ANY),
+            mock.call().notify("delete_security_group", mock.ANY, mock.ANY)]
         return calls
 
     def _test_notifier(self, notifier, expected_calls,
@@ -2571,9 +2596,10 @@ class NotificationTest(AIMBaseTestCase):
                 'policy_target_groups', ptg_id).get_response(self.ext_api)
             sg_rules = self._plugin.get_security_group_rules(
                 self._neutron_context)
-            sg_id = sg_rules[0]['security_group_id']
-            self.new_delete_request(
-                'security-groups', sg_id).get_response(self.ext_api)
+            sg_ids = set([x['security_group_id'] for x in sg_rules])
+            for sg_id in sg_ids:
+                self.new_delete_request(
+                    'security-groups', sg_id).get_response(self.ext_api)
             notifier.assert_has_calls(expected_calls(), any_order=False)
             # test that no notifications have been left out
             self.assertEqual({}, local_api.NOTIFICATION_QUEUE)
