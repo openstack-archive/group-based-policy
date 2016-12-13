@@ -73,6 +73,7 @@ FILTERS = 'filters'
 FILTER_ENTRIES = 'filter_entries'
 ENFORCED = aim_resource.EndpointGroup.POLICY_ENFORCED
 UNENFORCED = aim_resource.EndpointGroup.POLICY_UNENFORCED
+DEFAULT_SG_NAME = 'gbp_default'
 
 # REVISIT: Auto-PTG is currently config driven to align with the
 # config driven behavior of the older driver but is slated for
@@ -612,7 +613,6 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
             subnets = self._get_subnets(
                 context._plugin_context, {'id': ptg['subnets']},
                 clean_session=False)
-
             self._use_implicit_port(context, subnets=subnets,
                                     clean_session=False)
 
@@ -1974,3 +1974,32 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
             return default_epg_name
         else:
             return ptg_id
+
+    def _get_default_security_group(self, plugin_context, ptg_id,
+                                    tenant_id, clean_session=True):
+        filters = {'name': [DEFAULT_SG_NAME], 'tenant_id': [tenant_id]}
+        default_group = self._get_sgs(plugin_context, filters,
+                                      clean_session=clean_session)
+        return default_group[0]['id'] if default_group else None
+
+    def _create_default_security_group(self, plugin_context, tenant_id):
+        # Allow all
+        sg_id = self._get_default_security_group(plugin_context, '', tenant_id)
+        ip_v = [(n_constants.IPv4, '0.0.0.0/0'), (n_constants.IPv6, '::/0')]
+        if not sg_id:
+            sg_name = DEFAULT_SG_NAME
+            sg = self._create_gbp_sg(plugin_context, tenant_id, sg_name,
+                                     description='default GBP security group')
+            sg_id = sg['id']
+
+            for v, g in ip_v:
+                self._sg_rule(plugin_context, tenant_id, sg_id,
+                              'ingress', cidr=g, ethertype=v)
+                self._sg_rule(plugin_context, tenant_id, sg_id,
+                              'egress', cidr=g, ethertype=v)
+
+    def _use_implicit_port(self, context, subnets=None, clean_session=True):
+        self._create_default_security_group(context._plugin_context,
+                                            context.current['tenant_id'])
+        super(AIMMappingDriver, self)._use_implicit_port(
+            context, subnets=subnets, clean_session=clean_session)
