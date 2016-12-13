@@ -131,6 +131,9 @@ class ApicMappingTestCase(
         mock.patch('gbpservice.neutron.services.grouppolicy.drivers.cisco.'
                    'apic.apic_mapping.ApicMappingDriver.'
                    '_setup_rpc_listeners').start()
+        mock.patch('gbpservice.neutron.services.grouppolicy.drivers.cisco.'
+                   'apic.apic_mapping.ApicMappingDriver.'
+                   '_setup_keystone_notification_listeners').start()
         nova_client = mock.patch(
             'gbpservice.neutron.services.grouppolicy.drivers.cisco.'
             'apic.nova_client.NovaClient.get_server').start()
@@ -261,6 +264,9 @@ class ApicMappingTestCase(
         if single_tenant_mode:
             self.driver.single_tenant_mode = True
             self.driver.single_tenant_name = APIC_SINGLE_TENANT_NAME
+        aci_mapper = self.driver.apic_manager.apic_mapper
+        aci_mapper.get_tenant_name.return_value = ('old_name')
+        aci_mapper.update_tenant_name.return_value = ('new_name')
 
     def tearDown(self):
         sys.modules["apicapi"] = self.saved_apicapi
@@ -1852,6 +1858,9 @@ class TestPolicyTargetGroup(ApicMappingTestCase):
                       nameAlias=amap.SHADOW_PREFIX + 'ptg1'),
             mock.call(mgr.apic.fvAEPg, tenant, mgr.app_profile_name,
                       ptg['id'], nameAlias='ptg1')]
+        if not shared and not self.single_tenant_mode:
+            expected_calls.append(
+                mock.call(mgr.apic.fvTenant, tenant, nameAlias='old_name'))
         self._check_call_list(expected_calls,
                               mgr.update_name_alias.call_args_list)
 
@@ -2138,6 +2147,20 @@ class TestPolicyTargetGroup(ApicMappingTestCase):
             return self.create_policy_target_group(
                 name="ptg1", l2_policy_id=l2p_id,
                 shared=shared)['policy_target_group']
+
+    def test_keystone_notification_endpoint(self):
+        self.driver.apic_manager.apic_mapper.is_tenant_in_apic = mock.Mock(
+            return_value=True)
+        payload = {}
+        payload['resource_info'] = 'some_id'
+        keystone_ep = amap.KeystoneNotificationEndpoint(self.driver)
+        keystone_ep.info(None, None, None, payload, None)
+        mgr = self.driver.apic_manager
+        if not self.driver.single_tenant_mode:
+            mgr.update_name_alias.assert_called_once_with(
+                mgr.apic.fvTenant, 'some_id', nameAlias='new_name')
+        else:
+            mgr.update_name_alias.assert_not_called()
 
 
 class TestPolicyTargetGroupSingleTenant(TestPolicyTargetGroup):
