@@ -1737,6 +1737,7 @@ class TestPolicyTarget(AIMBaseTestCase):
         req = self.new_show_request('ports', pt['port_id'], fmt=self.fmt)
         res = self.deserialize(self.fmt, req.get_response(self.api))
         self.assertIsNotNone(res['port']['id'])
+        self.assertEqual(1, len(res['port']['security_groups']))
 
         self.update_policy_target(pt_id, expected_res_status=200,
                                   name="new name")
