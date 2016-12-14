@@ -837,6 +837,29 @@ class NeutronClient(OpenstackApi):
             LOG.error(err)
             raise Exception(err)
 
+    def get_loadbalancers(self, token, filters=None):
+        """ List Loadbalancers
+
+        :param token: A scoped_token
+        :param filters: Parameters for list filter
+        example for filter: ?tenant_id=%s&id=%s
+
+        :return: Loadbalancers List
+
+        """
+        try:
+            neutron = neutron_client.Client(token=token,
+                                            endpoint_url=self.network_service)
+            loadbalancers = neutron.list_loadbalancers(**filters).get(
+                    'loadbalancers', [])
+            return loadbalancers
+        except Exception as ex:
+            err = ("Failed to read pool list from"
+                   " Openstack Neutron service's response"
+                   " KeyError :: %s" % (ex))
+            LOG.error(err)
+            raise Exception(err)
+
     def get_vip(self, token, vip_id):
         """ Get vip details
 
