@@ -485,7 +485,8 @@ class AIMBaseTestCase(test_nr_base.CommonNeutronBaseTestCase,
             # display_name of default EPG should not be mutated
             # if the name of the auto-ptg is edited, but should
             # and this should be validated in the auto-ptg tests
-            self.assertEqual(ptg['name'], aim_epgs[0].display_name)
+            epg_display_name = ptg['name'].replace(' ', '_')
+            self.assertEqual(epg_display_name, aim_epgs[0].display_name)
         self.assertEqual(bd.name, aim_epgs[0].bd_name)
 
         self._validate_contracts(ptg, aim_epgs[0], prs_lists, l2p)
@@ -2036,7 +2037,8 @@ class TestPolicyRuleBase(AIMBaseTestCase):
             self.assertEqual(1, len(aim_filters))
             self.assertEqual(filter_name, aim_filters[0].name)
             self.assertEqual(aim_tenant_name, aim_filters[0].tenant_name)
-            self.assertEqual(policy_rule['name'], aim_filters[0].display_name)
+            pr_display_name = policy_rule['name'].replace(' ', '_')
+            self.assertEqual(pr_display_name, aim_filters[0].display_name)
             aim_filter_entries = self.aim_mgr.find(
                 self._aim_context, aim_resource.FilterEntry,
                 tenant_name=aim_filters[0].tenant_name,
