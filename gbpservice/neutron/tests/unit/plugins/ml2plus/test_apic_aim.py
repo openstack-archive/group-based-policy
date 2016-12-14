@@ -426,7 +426,7 @@ class TestAimMapping(ApicAimTestCase):
             self.assertEqual(tenant_aname, aim_subnet.tenant_name)
             self.assertEqual(net_aname, aim_subnet.bd_name)
             self.assertEqual(gw_ip_mask, aim_subnet.gw_ip_mask)
-            self.assertEqual('private', aim_subnet.scope)
+            self.assertEqual('public', aim_subnet.scope)
             display_name = ("%s - %s" %
                             (router['name'],
                              (subnet['name'] or subnet['cidr'])))
