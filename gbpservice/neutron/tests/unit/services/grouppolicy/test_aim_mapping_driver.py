@@ -2036,7 +2036,8 @@ class TestPolicyRuleBase(AIMBaseTestCase):
             self.assertEqual(1, len(aim_filters))
             self.assertEqual(filter_name, aim_filters[0].name)
             self.assertEqual(aim_tenant_name, aim_filters[0].tenant_name)
-            self.assertEqual(policy_rule['name'], aim_filters[0].display_name)
+            pr_display_name = policy_rule['name'].replace(' ', '_')
+            self.assertEqual(pr_display_name, aim_filters[0].display_name)
             aim_filter_entries = self.aim_mgr.find(
                 self._aim_context, aim_resource.FilterEntry,
                 tenant_name=aim_filters[0].tenant_name,
