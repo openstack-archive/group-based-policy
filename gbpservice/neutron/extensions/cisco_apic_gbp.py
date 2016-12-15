@@ -30,6 +30,10 @@ EXTENDED_ATTRIBUTES_2_0 = {
         'intra_ptg_allow': {
             'allow_post': True, 'allow_put': True, 'default': True,
             'convert_to': attr.convert_to_boolean, 'is_visible': True},
+        'is_auto_ptg': {
+            'allow_post': False, 'allow_put': False,
+            'convert_to': attr.convert_to_boolean, 'is_visible': True,
+            'enforce_policy': True},
     },
     gp.POLICY_RULES: {
         cisco_apic.DIST_NAMES: {
