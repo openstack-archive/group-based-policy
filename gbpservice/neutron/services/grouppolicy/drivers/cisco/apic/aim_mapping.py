@@ -23,6 +23,7 @@ from neutron.common import constants as n_constants
 from neutron.common import exceptions as n_exc
 from neutron import context as n_context
 from neutron import manager
+from neutron import policy
 from oslo_concurrency import lockutils
 from oslo_config import cfg
 from oslo_log import helpers as log
@@ -131,6 +132,7 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
         super(AIMMappingDriver, self).initialize()
         self._apic_aim_mech_driver = None
         self._apic_segmentation_label_driver = None
+        self._aim_mapping_extension_driver = None
         self.create_auto_ptg = cfg.CONF.aim_mapping.create_auto_ptg
         if self.create_auto_ptg:
             LOG.info(_LI('Auto PTG creation configuration set, '
@@ -176,6 +178,17 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
                         driver.obj)
                     break
         return self._apic_segmentation_label_driver
+
+    @property
+    def aim_mapping_extension_driver(self):
+        if not self._aim_mapping_extension_driver:
+            ext_drivers = self.gbp_plugin.extension_manager.ordered_ext_drivers
+            for driver in ext_drivers:
+                if 'aim_extension' == driver.name:
+                    self._aim_mapping_extension_driver = (
+                        driver.obj)
+                    break
+        return self._aim_mapping_extension_driver
 
     @log.log_method_call
     def ensure_tenant(self, plugin_context, tenant_id):
@@ -616,11 +629,14 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
 
     @log.log_method_call
     def create_policy_target_precommit(self, context):
+        ptg = self._db_plugin(context._plugin).get_policy_target_group(
+            context._plugin_context, context.current['policy_target_group_id'])
+        ptg['is_auto_ptg'] = (
+            self.aim_mapping_extension_driver.get_is_auto_ptg(
+                context._plugin_context.session, ptg['id']))
+        policy.enforce(context._plugin_context, 'get_policy_target_group',
+                       ptg, pluralized='policy_target_groups')
         if not context.current['port_id']:
-            ptg = self._db_plugin(
-                context._plugin).get_policy_target_group(
-                    context._plugin_context,
-                    context.current['policy_target_group_id'])
             subnets = self._get_subnets(
                 context._plugin_context, {'id': ptg['subnets']},
                 clean_session=False)

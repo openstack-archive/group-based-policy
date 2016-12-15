@@ -20,10 +20,19 @@
     "shared_scn": "field:servicechain_nodes:shared=True",
     "shared_scs": "field:servicechain_specs:shared=True",
     "shared_sp": "field:service_profiles:shared=True",
+    "auto_ptg": "field:policy_target_groups:is_auto_ptg=True",
+    "non_auto_ptg_shared": "rule:admin_or_owner or rule:shared_ptg",
+    "non_auto_ptg": "rule:non_auto_ptg_shared and not rule:auto_ptg",
+    "admin_auto_ptg_shared": "rule:admin_only or rule:shared_ptg",
+    "admin_auto_ptg": "rule:admin_auto_ptg_shared and rule:auto_ptg",
 
     "create_policy_target_group": "",
     "create_policy_target_group:enforce_service_chains": "rule:admin_only",
-    "get_policy_target_group": "rule:admin_or_owner or rule:shared_ptg",
+    "get_policy_target_group": "rule:admin_auto_ptg or rule:non_auto_ptg",
+    "update_policy_target_group": "rule:admin_auto_ptg or rule:non_auto_ptg",
+    # If auto-ptg access is desired for non-admin, comment the above two and
+    # uncomment the line below
+    #"get_policy_target_group": "rule:admin_or_owner or rule:shared_ptg",
     "create_policy_target_group:service_management": "rule:admin_only",
 
     "create_l2_policy": "",
