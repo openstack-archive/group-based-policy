@@ -1944,7 +1944,7 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
         return ptg['id'].startswith(AUTO_PTG_PREFIX)
 
     def _get_policy_enforcement_pref(self, ptg):
-        if ptg.get('intra_ptg_allow'):
+        if ptg['intra_ptg_allow']:
             policy_enforcement_pref = UNENFORCED
         else:
             policy_enforcement_pref = ENFORCED
