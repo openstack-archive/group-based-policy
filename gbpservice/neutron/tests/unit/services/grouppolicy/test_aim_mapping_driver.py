@@ -458,8 +458,14 @@ class AIMBaseTestCase(test_nr_base.CommonNeutronBaseTestCase,
         self._validate_router_interface_created()
 
         ptg_id = ptg['id']
-        ptg_show = self.show_policy_target_group(
-            ptg_id, expected_res_status=200)['policy_target_group']
+        if ptg['id'].startswith(aimd.AUTO_PTG_PREFIX):
+            # the test policy.json restricts auto-ptg access to admin
+            ptg_show = self.show_policy_target_group(
+                ptg_id, is_admin_context=True,
+                expected_res_status=200)['policy_target_group']
+        else:
+            ptg_show = self.show_policy_target_group(
+                ptg_id, expected_res_status=200)['policy_target_group']
         aim_epg_name = self.driver.apic_epg_name_for_policy_target_group(
             self._neutron_context.session, ptg_id)
         aim_tenant_name = str(self.name_mapper.tenant(
@@ -1142,8 +1148,10 @@ class TestL2PolicyWithAutoPTG(TestL2PolicyBase):
         self.assertEqual(aimd.AUTO_PTG_NAME_PREFIX % l2p_id, str(ptg['name']))
         self.assertEqual(shared, ptg['shared'])
         prs_lists = self._get_provided_consumed_prs_lists(shared)
+        # the test policy.json restricts auto-ptg access to admin
         ptg = self.update_policy_target_group(
-            ptg['id'], expected_res_status=webob.exc.HTTPOk.code,
+            ptg['id'], is_admin_context=True,
+            expected_res_status=webob.exc.HTTPOk.code,
             name='new name', description='something-else',
             provided_policy_rule_sets={prs_lists['provided']['id']:
                                        'scope'},
@@ -1151,8 +1159,9 @@ class TestL2PolicyWithAutoPTG(TestL2PolicyBase):
                                        'scope'})['policy_target_group']
         self._test_policy_target_group_aim_mappings(
             ptg, prs_lists, l2p)
+        # the test policy.json restricts auto-ptg access to admin
         self.update_policy_target_group(
-            ptg['id'], shared=(not shared),
+            ptg['id'], is_admin_context=True, shared=(not shared),
             expected_res_status=webob.exc.HTTPBadRequest.code)
         # Auto PTG cannot be deleted by user
         res = self.delete_policy_target_group(
@@ -1167,6 +1176,7 @@ class TestL2PolicyWithAutoPTG(TestL2PolicyBase):
         aim_epg_display_name = aim_epg.display_name
         ptg = self.update_policy_target_group(
             ptg['id'], expected_res_status=webob.exc.HTTPOk.code,
+            is_admin_context=True,
             name='new name', description='something-else',
             provided_policy_rule_sets={},
             consumed_policy_rule_sets={})['policy_target_group']
@@ -1245,9 +1255,11 @@ class TestL2PolicyWithAutoPTG(TestL2PolicyBase):
         self._test_epg_policy_enforcement_attr(ptg)
 
         auto_ptg_id = self.driver._get_auto_ptg_id(ptg['l2_policy_id'])
-        self.show_policy_target_group(
-            auto_ptg_id, expected_res_status=200)['policy_target_group']
-        self._test_epg_policy_enforcement_attr(ptg)
+        # the test policy.json restricts auto-ptg access to admin
+        auto_ptg = self.show_policy_target_group(
+            auto_ptg_id, is_admin_context=True,
+            expected_res_status=200)['policy_target_group']
+        self._test_epg_policy_enforcement_attr(auto_ptg)
 
         self.delete_policy_target_group(ptg_id, expected_res_status=204)
         self.show_policy_target_group(ptg_id, expected_res_status=404)
@@ -1258,6 +1270,45 @@ class TestL2PolicyWithAutoPTG(TestL2PolicyBase):
         self.assertEqual([], self._plugin.get_address_scopes(self._context))
         self.assertEqual([], self._plugin.get_subnetpools(self._context))
         self.assertEqual([], self._l3_plugin.get_routers(self._context))
+
+    def test_auto_ptg_rbac(self):
+        ptg = self.create_policy_target_group()['policy_target_group']
+        # non-admin can create pt on non-auto-ptg
+        self.create_policy_target(policy_target_group_id=ptg['id'],
+                                  expected_res_status=201)
+        # admin can create pt on non-auto-ptg
+        self.create_policy_target(policy_target_group_id=ptg['id'],
+                                  is_admin_context=True,
+                                  expected_res_status=201)
+        # non-admin can retrieve and update non-auto-ptg
+        self.show_policy_target_group(ptg['id'], expected_res_status=200)
+        self.update_policy_target_group(
+            ptg['id'], expected_res_status=200, name='new_name')
+        # admin can retrieve and update non-auto-ptg
+        self.show_policy_target_group(ptg['id'], is_admin_context=True,
+                                      expected_res_status=200)
+        self.update_policy_target_group(
+            ptg['id'], is_admin_context=True, expected_res_status=200,
+            name='new_name')
+
+        auto_ptg_id = self.driver._get_auto_ptg_id(ptg['l2_policy_id'])
+        # non-admin cannot retrieve or update auto-ptg
+        self.show_policy_target_group(auto_ptg_id, expected_res_status=404)
+        self.update_policy_target_group(
+            auto_ptg_id, expected_res_status=403, name='new_name')
+        # admin can retrieve and update auto-ptg
+        self.show_policy_target_group(auto_ptg_id, is_admin_context=True,
+                                      expected_res_status=200)
+        self.update_policy_target_group(
+            auto_ptg_id, is_admin_context=True, expected_res_status=200,
+            name='new_name')
+        # admin can create pt on auto-ptg
+        self.create_policy_target(
+            policy_target_group_id=auto_ptg_id, is_admin_context=True,
+            expected_res_status=201)
+        # non-admin cannot create pt on auto-ptg
+        self.create_policy_target(policy_target_group_id=auto_ptg_id,
+                                  expected_res_status=403)
 
 
 class TestL2PolicyRollback(TestL2PolicyBase):
