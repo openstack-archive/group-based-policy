@@ -1226,8 +1226,10 @@ class TestL2PolicyWithAutoPTG(TestL2PolicyBase):
         aim_epg = self.aim_mgr.find(
             self._aim_context, aim_resource.EndpointGroup,
             name=aim_epg_name)[0]
+        # the test policy.json restricts auto-ptg access to admin
         auto_ptg = self.show_policy_target_group(
-            auto_ptg_id, expected_res_status=200)['policy_target_group']
+            auto_ptg_id, is_admin_context=True,
+            expected_res_status=200)['policy_target_group']
         if aim_epg.policy_enforcement_pref == (
             aim_resource.EndpointGroup.POLICY_UNENFORCED):
             self.assertTrue(auto_ptg['intra_ptg_allow'])
@@ -1244,6 +1246,45 @@ class TestL2PolicyWithAutoPTG(TestL2PolicyBase):
         self.assertEqual([], self._plugin.get_address_scopes(self._context))
         self.assertEqual([], self._plugin.get_subnetpools(self._context))
         self.assertEqual([], self._l3_plugin.get_routers(self._context))
+
+    def test_auto_ptg_rbac(self):
+        ptg = self.create_policy_target_group()['policy_target_group']
+        # non-admin can create pt on non-auto-ptg
+        self.create_policy_target(policy_target_group_id=ptg['id'],
+                                  expected_res_status=201)
+        # admin can create pt on non-auto-ptg
+        self.create_policy_target(policy_target_group_id=ptg['id'],
+                                  is_admin_context=True,
+                                  expected_res_status=201)
+        # non-admin can retrieve and update non-auto-ptg
+        self.show_policy_target_group(ptg['id'], expected_res_status=200)
+        self.update_policy_target_group(
+            ptg['id'], expected_res_status=200, name='new_name')
+        # admin can retrieve and update non-auto-ptg
+        self.show_policy_target_group(ptg['id'], is_admin_context=True,
+                                      expected_res_status=200)
+        self.update_policy_target_group(
+            ptg['id'], is_admin_context=True, expected_res_status=200,
+            name='new_name')
+
+        auto_ptg_id = self.driver._get_auto_ptg_id(ptg['l2_policy_id'])
+        # non-admin cannot retrieve or update auto-ptg
+        self.show_policy_target_group(auto_ptg_id, expected_res_status=404)
+        self.update_policy_target_group(
+            auto_ptg_id, expected_res_status=403, name='new_name')
+        # admin can retrieve and update auto-ptg
+        self.show_policy_target_group(auto_ptg_id, is_admin_context=True,
+                                      expected_res_status=200)
+        self.update_policy_target_group(
+            auto_ptg_id, is_admin_context=True, expected_res_status=200,
+            name='new_name')
+        # admin can create pt on auto-ptg
+        self.create_policy_target(
+            policy_target_group_id=auto_ptg_id, is_admin_context=True,
+            expected_res_status=201)
+        # non-admin cannot create pt on auto-ptg
+        self.create_policy_target(policy_target_group_id=auto_ptg_id,
+                                  expected_res_status=403)
 
 
 class TestL2PolicyRollback(TestL2PolicyBase):

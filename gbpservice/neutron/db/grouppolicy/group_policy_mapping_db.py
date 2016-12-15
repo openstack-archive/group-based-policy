@@ -139,6 +139,10 @@ class GroupPolicyMappingDbPlugin(gpdb.GroupPolicyDbPlugin):
         res = super(GroupPolicyMappingDbPlugin,
                     self)._make_policy_target_group_dict(ptg)
         res['subnets'] = [subnet.subnet_id for subnet in ptg.subnets]
+        if bool(gpolicy.AUTO_PTG_REGEX.match(ptg.id)):
+            res['is_auto_ptg'] = True
+        else:
+            res['is_auto_ptg'] = False
         return self._fields(res, fields)
 
     def _make_l2_policy_dict(self, l2p, fields=None):
