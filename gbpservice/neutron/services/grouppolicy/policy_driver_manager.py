@@ -15,6 +15,7 @@ from neutron._i18n import _LI
 from neutron.common import exceptions as n_exc
 from oslo_config import cfg
 from oslo_log import log
+from oslo_policy import policy as oslo_policy
 from oslo_utils import excutils
 import stevedore
 
@@ -121,7 +122,8 @@ class PolicyDriverManager(stevedore.named.NamedExtensionManager):
         for driver in drivers:
             try:
                 getattr(driver.obj, method_name)(context)
-            except (gp_exc.GroupPolicyException, n_exc.NeutronException):
+            except (gp_exc.GroupPolicyException, n_exc.NeutronException,
+                    oslo_policy.PolicyNotAuthorized):
                 with excutils.save_and_reraise_exception():
                     LOG.exception(
                         _LE("Policy driver '%(name)s' failed in %(method)s"),
