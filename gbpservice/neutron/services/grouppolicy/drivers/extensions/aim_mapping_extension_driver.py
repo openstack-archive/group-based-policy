@@ -50,29 +50,34 @@ class AIMExtensionDriver(api.ExtensionDriver,
     def extension_alias(self):
         return self._supported_extension_alias
 
-    def process_create_policy_target_group(self, session, data, result):
+    def _set_intra_ptg_allow(self, session, data, result):
         ptg = data['policy_target_group']
+        ptg_db = (session.query(gp_db.PolicyTargetGroup)
+                  .filter_by(id=result['id']).one())
+        if not ptg_db:
+            raise gpolicy.PolicyTargetGroupNotFound(
+                policy_target_group_id=result['id'])
         if 'intra_ptg_allow' in ptg:
-            ptg_db = (session.query(gp_db.PolicyTargetGroup)
-                      .filter_by(id=result['id']).one())
-            if not ptg_db:
-                raise gpolicy.PolicyTargetGroupNotFound(
-                    policy_target_group_id=result['id'])
             self.set_intra_ptg_allow(
                 session, policy_target_group_id=result['id'],
                 intra_ptg_allow=ptg['intra_ptg_allow'])
             result['intra_ptg_allow'] = ptg['intra_ptg_allow']
+        else:
+            self._extend_ptg_dict_with_intra_ptg_allow(session, result)
 
-    def process_update_policy_target_group(self, session, data, result):
-        self.process_create_policy_target_group(session, data, result)
-
-    def extend_policy_target_group_dict(self, session, result):
+    def _extend_ptg_dict_with_intra_ptg_allow(self, session, result):
         result['intra_ptg_allow'] = self.get_intra_ptg_allow(
             session, policy_target_group_id=result['id'])
-        self._pd.extend_policy_target_group_dict(session, result)
 
-    def extend_policy_rule_dict(self, session, result):
-        self._pd.extend_policy_rule_dict(session, result)
+    def process_create_policy_target_group(self, session, data, result):
+        self._set_intra_ptg_allow(session, data, result)
+
+    def process_update_policy_target_group(self, session, data, result):
+        self._set_intra_ptg_allow(session, data, result)
+
+    def extend_policy_target_group_dict(self, session, result):
+        self._extend_ptg_dict_with_intra_ptg_allow(session, result)
+        self._pd.extend_policy_target_group_dict(session, result)
 
     def extend_policy_rule_set_dict(self, session, result):
         self._pd.extend_policy_rule_set_dict(session, result)

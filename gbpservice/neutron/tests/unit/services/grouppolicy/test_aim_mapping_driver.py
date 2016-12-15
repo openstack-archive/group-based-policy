@@ -1196,11 +1196,25 @@ class TestL2PolicyWithAutoPTG(TestL2PolicyBase):
     def test_auto_ptg_lifecycle_unshared(self):
         self._test_multiple_l2p_post_create()
 
+    def _test_epg_policy_enforcement_attr(self, ptg):
+        aim_epg_name = self.driver.apic_epg_name_for_policy_target_group(
+            self._neutron_context.session, ptg['id'])
+        aim_epg = self.aim_mgr.find(
+            self._aim_context, aim_resource.EndpointGroup,
+            name=aim_epg_name)[0]
+        if aim_epg.policy_enforcement_pref == (
+            aim_resource.EndpointGroup.POLICY_UNENFORCED):
+            self.assertTrue(ptg['intra_ptg_allow'])
+        elif aim_epg.policy_enforcement_pref == (
+            aim_resource.EndpointGroup.POLICY_ENFORCED):
+            self.assertFalse(ptg['intra_ptg_allow'])
+
     def test_ptg_lifecycle(self):
         # Once the testing strategy evolves to always assuming auto_ptg
         # being present, this UT can be removed/merged with the UTs in the
         # TestPolicyTargetGroup class
         ptg = self.create_policy_target_group()['policy_target_group']
+        self._test_epg_policy_enforcement_attr(ptg)
         ptg_id = ptg['id']
         l2p = self.show_l2_policy(ptg['l2_policy_id'],
                                   expected_res_status=200)['l2_policy']
@@ -1221,20 +1235,19 @@ class TestL2PolicyWithAutoPTG(TestL2PolicyBase):
         self.assertEqual(l3p['subnetpools_v4'][0],
                          subnet['subnetpool_id'])
 
+        prs_lists = self._get_provided_consumed_prs_lists()
+        self.update_policy_target_group(
+            ptg_id, expected_res_status=200,
+            provided_policy_rule_sets={prs_lists['provided']['id']:
+                                       'scope'},
+            consumed_policy_rule_sets={prs_lists['consumed']['id']:
+                                       'scope'})['policy_target_group']
+        self._test_epg_policy_enforcement_attr(ptg)
+
         auto_ptg_id = self.driver._get_auto_ptg_id(ptg['l2_policy_id'])
-        aim_epg_name = self.driver.apic_epg_name_for_policy_target_group(
-            self._neutron_context.session, auto_ptg_id)
-        aim_epg = self.aim_mgr.find(
-            self._aim_context, aim_resource.EndpointGroup,
-            name=aim_epg_name)[0]
         auto_ptg = self.show_policy_target_group(
             auto_ptg_id, expected_res_status=200)['policy_target_group']
-        if aim_epg.policy_enforcement_pref == (
-            aim_resource.EndpointGroup.POLICY_UNENFORCED):
-            self.assertTrue(auto_ptg['intra_ptg_allow'])
-        elif aim_epg.policy_enforcement_pref == (
-            aim_resource.EndpointGroup.POLICY_ENFORCED):
-            self.assertFalse(ptg['intra_ptg_allow'])
+        self._test_epg_policy_enforcement_attr(ptg)
 
         self.delete_policy_target_group(ptg_id, expected_res_status=204)
         self.show_policy_target_group(ptg_id, expected_res_status=404)
