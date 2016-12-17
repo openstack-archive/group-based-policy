@@ -19,7 +19,6 @@ from aim.aim_lib import nat_strategy
 from aim import aim_manager
 from aim.api import resource as aim_resource
 from aim.common import utils
-from aim import config as aim_cfg
 from aim import context as aim_context
 from aim import utils as aim_utils
 from neutron._i18n import _LI
@@ -29,7 +28,6 @@ from neutron.common import constants as n_constants
 from neutron.common import exceptions
 from neutron.common import topics as n_topics
 from neutron.db import address_scope_db
-from neutron.db import api as db_api
 from neutron.db import l3_db
 from neutron.db import models_v2
 from neutron.extensions import portbindings
@@ -38,6 +36,7 @@ from neutron.plugins.common import constants as pconst
 from neutron.plugins.ml2 import driver_api as api
 from opflexagent import constants as ofcst
 from opflexagent import rpc as ofrpc
+from oslo_config import cfg
 from oslo_log import log
 
 from gbpservice.neutron.extensions import cisco_apic
@@ -45,11 +44,11 @@ from gbpservice.neutron.extensions import cisco_apic_l3 as a_l3
 from gbpservice.neutron.plugins.ml2plus import driver_api as api_plus
 from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import apic_mapper
 from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import cache
+from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import config  # noqa
 from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import extension_db
 from oslo_serialization.jsonutils import netaddr
 
 LOG = log.getLogger(__name__)
-
 DEVICE_OWNER_SNAT_PORT = 'apic:snat-pool'
 
 
@@ -102,16 +101,13 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
         self.aim = aim_manager.AimManager()
         self._core_plugin = None
         self._l3_plugin = None
-        self.aim_cfg_mgr = aim_cfg.ConfigManager(
-            aim_context.AimContext(db_api.get_session()),
-            host=aim_cfg.CONF.host)
         # Get APIC configuration and subscribe for changes
-        self.enable_metadata_opt = self.aim_cfg_mgr.get_option_and_subscribe(
-            self._set_enable_metadata_opt, 'enable_optimized_metadata', 'apic')
-        self.enable_dhcp_opt = self.aim_cfg_mgr.get_option_and_subscribe(
-            self._set_enable_dhcp_opt, 'enable_optimized_dhcp', 'apic')
-        self.ap_name = self.aim_cfg_mgr.get_option_and_subscribe(
-            self._set_ap_name, 'apic_app_profile_name', 'apic')
+        self.enable_metadata_opt = (
+            cfg.CONF.ml2_apic_aim.enable_optimized_metadata)
+        self.enable_dhcp_opt = (
+            cfg.CONF.ml2_apic_aim.enable_optimized_dhcp)
+        self.ap_name = 'OpenStack'
+        self.apic_system_id = cfg.CONF.apic_system_id
         self.notifier = ofrpc.AgentNotifierApi(n_topics.AGENT)
 
     def ensure_tenant(self, plugin_context, tenant_id):
@@ -1092,8 +1088,9 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
         return vrf
 
     def _map_unrouted_vrf(self):
-        vrf = aim_resource.VRF(tenant_name=COMMON_TENANT_NAME,
-                               name=UNROUTED_VRF_NAME)
+        vrf = aim_resource.VRF(
+            tenant_name=COMMON_TENANT_NAME,
+            name=self.apic_system_id + '_' + UNROUTED_VRF_NAME)
         return vrf
 
     def _get_tenant_name(self, session, project_id):
