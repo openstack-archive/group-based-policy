@@ -364,7 +364,7 @@ class TestAimMapping(ApicAimTestCase):
                 vrf_tenant_aname = tenant_aname
                 vrf_tenant_dname = ''
         else:
-            vrf_aname = 'UnroutedVRF'
+            vrf_aname = self.driver.apic_system_id + '_UnroutedVRF'
             vrf_dname = 'Common Unrouted VRF'
             vrf_tenant_aname = 'common'
             vrf_tenant_dname = 'Common Tenant'
