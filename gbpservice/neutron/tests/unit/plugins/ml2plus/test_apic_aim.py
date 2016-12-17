@@ -27,6 +27,7 @@ from aim.db import model_base as aim_model_base
 
 from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import (
     extension_db as extn_db)
+from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import config  # noqa
 from keystoneclient.v3 import client as ksc_client
 from neutron.api import extensions
 from neutron.common import constants as n_constants
@@ -102,7 +103,6 @@ class FakeKeystoneClient(object):
 class ApicAimTestMixin(object):
 
     def initialize_db_config(self, session):
-        aim_cfg.CONF.register_opts(aim_cfg.global_opts)
         aim_cfg._get_option_subscriber_manager = mock.Mock()
         self.aim_cfg_manager = aim_cfg.ConfigManager(
             aim_context.AimContext(db_session=session), '')
@@ -371,7 +371,7 @@ class TestAimMapping(ApicAimTestCase):
                 vrf_tenant_aname = tenant_aname
                 vrf_tenant_dname = ''
         else:
-            vrf_aname = 'UnroutedVRF'
+            vrf_aname = self.driver.apic_system_id + '_UnroutedVRF'
             vrf_dname = 'Common Unrouted VRF'
             vrf_tenant_aname = 'common'
             vrf_tenant_dname = 'Common Tenant'
