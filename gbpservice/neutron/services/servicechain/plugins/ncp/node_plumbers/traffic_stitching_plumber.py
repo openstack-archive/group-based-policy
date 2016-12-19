@@ -87,7 +87,11 @@ class TrafficStitchingPlumber(plumber_base.NodePlumberBase):
                     # No stitching needed, only provider side PT is created.
                     # overriding PT name in order to keep port security up
                     # for this kind of service.
-                    info['provider'][0]['name'] = "tscp_endpoint_service_"
+                    node = part_context.current_node
+                    instance = part_context.instance
+                    for provider_info in info.get('provider', []):
+                        provider_info['name'] = ("tscp_endpoint_service_%s_%s"
+                                % (node['id'][:5], instance['id'][:5]))
                     self._create_service_target(
                         context, part_context, info.get('provider', []),
                         provider, 'provider')
