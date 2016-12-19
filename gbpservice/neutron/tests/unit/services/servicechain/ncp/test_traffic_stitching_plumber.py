@@ -88,6 +88,45 @@ class TrafficStitchingPlumberTestCase(base.NodeCompositionPluginTestCase):
             provider['id'])['policy_target_group']
         self.assertIsNone(provider['proxy_group_id'])
 
+    def test_multiple_endpoint_pt_provider(self):
+        context = n_context.get_admin_context()
+        self.driver.get_plumbing_info.return_value = {
+            'provider': [{}, {}], 'consumer': [], 'plumbing_type': 'endpoint'}
+        provider, consumer, node = self._create_simple_chain()
+        provider = self.show_policy_target_group(
+            provider['id'])['policy_target_group']
+        # Verify Service PT created and contains proper name, description
+        targets = model.get_service_targets(context.session)
+        self.assertEqual(2, len(targets))
+        for target in targets:
+            pt = self.show_policy_target(
+                target.policy_target_id)['policy_target']
+            self.assertEqual(provider['id'],
+                             pt['policy_target_group_id'])
+            self.assertTrue(pt['name'].startswith('tscp_endpoint_service'),
+                            "Policy Target name doesn't start with "
+                            "'tscp_endpoint_service'.\npt:\n%s\n" % pt)
+            self.assertTrue(node['id'] in pt['description'],
+                            "Policy Target description doesn't contains "
+                            " node id.\nnode:\n%s\n" % node)
+
+            port = self._get_object('ports', pt['port_id'], self.api)['port']
+            self.assertTrue(port['name'].startswith('pt_tscp_endpoint_service'),
+                            "Port name doesn't start with "
+                            "'pt_tscp_endpoint_service'.\nport:\n%s\n" % port)
+
+        self.update_policy_target_group(
+            provider['id'], provided_policy_rule_sets={})
+        # With chain deletion, also the Service PTs are deleted
+        new_targets = model.get_service_targets(context.session)
+        self.assertEqual(0, len(new_targets))
+        for target in targets:
+            self.show_policy_target(
+                target.policy_target_id, expected_res_status=404)
+        provider = self.show_policy_target_group(
+            provider['id'])['policy_target_group']
+        self.assertIsNone(provider['proxy_group_id'])
+
     def get_plumbing_info_base(self, context):
         service_type = context.current_profile['service_type']
         plumbing_request = {'management': [], 'provider': [{}],
