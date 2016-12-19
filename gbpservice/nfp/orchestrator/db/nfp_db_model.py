@@ -168,7 +168,7 @@ class ClusterInfo(BASE, model_base.HasId, model_base.HasTenant):
     This table contains info about the ports participating in
     cluster and optional.
     """
-    __tablename__ = 'nfp_cluster_mapping_info'
+    __tablename__ = 'nfd_cluster_mapping_info'
     network_function_device_id = sa.Column(sa.String(36), nullable=False)
     cluster_group = sa.Column(sa.Integer(), nullable=True)
     virtual_ip = sa.Column(sa.String(36), nullable=True)
