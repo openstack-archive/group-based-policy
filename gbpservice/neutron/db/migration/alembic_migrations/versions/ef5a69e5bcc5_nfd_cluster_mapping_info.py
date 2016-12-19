@@ -11,10 +11,10 @@
 #    under the License.
 #
 
-"""nfp_ha_mapping_info
+"""nfd_cluster_mapping_info
 
 Revision ID: ef5a69e5bcc5
-Revises: 75aa8a37a8de
+Revises: fce38a8588a2
 Create Date: 2016-11-23 21:17:53.858242
 
 """
