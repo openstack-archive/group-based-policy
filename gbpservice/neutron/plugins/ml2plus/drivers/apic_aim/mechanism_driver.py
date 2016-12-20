@@ -167,15 +167,15 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
                 self.aim.create(aim_ctx, ap)
 
             filter = aim_resource.Filter(tenant_name=tenant_aname,
-                                         name=ANY_FILTER_NAME,
-                                         display_name='Any Filter')
+                name=ANY_FILTER_NAME,
+                display_name=aim_utils.sanitize_display_name('AnyFilter'))
             if not self.aim.get(aim_ctx, filter):
                 self.aim.create(aim_ctx, filter)
 
             entry = aim_resource.FilterEntry(tenant_name=tenant_aname,
-                                             filter_name=ANY_FILTER_NAME,
-                                             name=ANY_FILTER_ENTRY_NAME,
-                                             display_name='Any FilterEntry')
+                filter_name=ANY_FILTER_NAME,
+                name=ANY_FILTER_ENTRY_NAME,
+                display_name=aim_utils.sanitize_display_name('AnyFilterEntry'))
             if not self.aim.get(aim_ctx, entry):
                 self.aim.create(aim_ctx, entry)
 
@@ -401,7 +401,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
                 router_db = self.l3_plugin._get_router(context._plugin_context,
                                                        router_id)
                 dname = aim_utils.sanitize_display_name(
-                    router_db.name + " - " +
+                    router_db.name + "-" +
                     (current['name'] or current['cidr']))
 
                 sn = self._map_subnet(current, gw_ip, bd)
@@ -599,7 +599,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
                               one())
 
                 dname = aim_utils.sanitize_display_name(
-                    name + " - " + (subnet_db.name or subnet_db.cidr))
+                    name + "-" + (subnet_db.name or subnet_db.cidr))
 
                 bd = self._map_network(session, network_db, True)
                 sn = self._map_subnet(subnet_db, intf.ip_address, bd)
@@ -745,7 +745,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
             gw_ip = self._ip_for_subnet(subnet, port['fixed_ips'])
 
             dname = aim_utils.sanitize_display_name(
-                router['name'] + " - " +
+                router['name'] + "-" +
                 (subnet['name'] or subnet['cidr']))
 
             sn = self._map_subnet(subnet, gw_ip, bd)
@@ -1258,7 +1258,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
 
     def _ensure_common_tenant(self, aim_ctx):
         attrs = aim_resource.Tenant(name=COMMON_TENANT_NAME,
-                                    display_name='Common Tenant')
+            display_name=aim_utils.sanitize_display_name('CommonTenant'))
         tenant = self.aim.get(aim_ctx, attrs)
         if not tenant:
             LOG.info(_LI("Creating common tenant"))
@@ -1270,7 +1270,8 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
         attrs = self._map_unrouted_vrf()
         vrf = self.aim.get(aim_ctx, attrs)
         if not vrf:
-            attrs.display_name = 'Common Unrouted VRF'
+            attrs.display_name = (
+                aim_utils.sanitize_display_name('CommonUnroutedVRF'))
             LOG.info(_LI("Creating common unrouted VRF"))
             vrf = self.aim.create(aim_ctx, attrs)
         return vrf
@@ -1279,7 +1280,8 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
         attrs = self._map_default_vrf(aim_ctx.db_session, router)
         vrf = self.aim.get(aim_ctx, attrs)
         if not vrf:
-            attrs.display_name = 'Default Routed VRF'
+            attrs.display_name = (
+                aim_utils.sanitize_display_name('DefaultRoutedVRF'))
             LOG.info(_LI("Creating default VRF for %s"), attrs.tenant_name)
             vrf = self.aim.create(aim_ctx, attrs)
         return vrf

@@ -367,14 +367,14 @@ class TestAimMapping(ApicAimTestCase):
                 vrf_tenant_dname = ''
             else:
                 vrf_aname = 'DefaultVRF'
-                vrf_dname = 'Default Routed VRF'
+                vrf_dname = 'DefaultRoutedVRF'
                 vrf_tenant_aname = tenant_aname
                 vrf_tenant_dname = ''
         else:
             vrf_aname = self.driver.apic_system_id + '_UnroutedVRF'
-            vrf_dname = 'Common Unrouted VRF'
+            vrf_dname = 'CommonUnroutedVRF'
             vrf_tenant_aname = 'common'
-            vrf_tenant_dname = 'Common Tenant'
+            vrf_tenant_dname = 'CommonTenant'
 
         aim_bd = self._get_bd(aname, tenant_aname)
         self.assertEqual(tenant_aname, aim_bd.tenant_name)
@@ -434,7 +434,7 @@ class TestAimMapping(ApicAimTestCase):
             self.assertEqual(net_aname, aim_subnet.bd_name)
             self.assertEqual(gw_ip_mask, aim_subnet.gw_ip_mask)
             self.assertEqual('public', aim_subnet.scope)
-            display_name = ("%s_-_%s" %
+            display_name = ("%s-%s" %
                             (router['name'],
                              (subnet['name'] or subnet['cidr'])))
             self.assertEqual(display_name, aim_subnet.display_name)
@@ -502,7 +502,7 @@ class TestAimMapping(ApicAimTestCase):
                 vrf_tenant_dname = ''
             else:
                 vrf_aname = 'DefaultVRF'
-                vrf_dname = 'Default Routed VRF'
+                vrf_dname = 'DefaultRoutedVRF'
                 vrf_tenant_aname = tenant_aname
                 vrf_tenant_dname = ''
 
@@ -540,14 +540,14 @@ class TestAimMapping(ApicAimTestCase):
         aim_filter = self._get_filter('AnyFilter', tenant_aname)
         self.assertEqual(tenant_aname, aim_filter.tenant_name)
         self.assertEqual('AnyFilter', aim_filter.name)
-        self.assertEqual('Any Filter', aim_filter.display_name)
+        self.assertEqual('AnyFilter', aim_filter.display_name)
 
         aim_entry = self._get_filter_entry('AnyFilterEntry', 'AnyFilter',
                                            tenant_aname)
         self.assertEqual(tenant_aname, aim_entry.tenant_name)
         self.assertEqual('AnyFilter', aim_entry.filter_name)
         self.assertEqual('AnyFilterEntry', aim_entry.name)
-        self.assertEqual('Any FilterEntry', aim_entry.display_name)
+        self.assertEqual('AnyFilterEntry', aim_entry.display_name)
         self.assertEqual('unspecified', aim_entry.arp_opcode)
         self.assertEqual('unspecified', aim_entry.ether_type)
         self.assertEqual('unspecified', aim_entry.ip_protocol)
