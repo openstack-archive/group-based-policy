@@ -87,6 +87,8 @@ def dib():
         pecan_dir = os.path.realpath(pecan_dir)
         os.environ['PECAN_GIT_PATH'] = pecan_dir
         os.environ['SERVICE_GIT_PATH'] = service_dir
+
+
         if 'devuser' in dib['elements']:
             os.environ['DIB_DEV_USER_USERNAME'] = 'ubuntu'
             os.environ['DIB_DEV_USER_SHELL'] = '/bin/bash'
@@ -128,6 +130,26 @@ def dib():
     if 'nfp-reference-configurator' in dib['elements']:
         image_name = 'nfp_reference_service'
     dib_args.append(str(image_name))
+
+    # wily support is removed from ubuntu 'current' release,
+    # download/copy to loation as expected by diskimage-builder
+    if conf['ubuntu_release']['release'] == "wily":
+        wily_SHA256SUMS = "%s/SHA256SUMS.ubuntu.wily.amd64" % dib['cache_dir']
+        if not os.path.isfile(wily_SHA256SUMS):
+            ret = subprocess.call(["wget", "http://cloud-images-archive.ubuntu.com/releases/wily/release-20160715/SHA1SUMS", "-r", "-O", wily_SHA256SUMS])
+            if ret:
+                print "ERROR: failed to download ubuntu wily image SHA256SUMS"
+                return
+        if ((not os.path.isfile(dib['cache_dir'] + '/wily-server-cloudimg-amd64-root.tar.gz')) or (not dib['offline'])):
+            import commands
+            # mkdir -p dib['cache_dir']
+            commands.getoutput("mkdir -p %s" % dib['cache_dir'])
+            # wget the tar file and SHASUM file and save to dib['cache_dir']
+            wily_image = "%s/wily-server-cloudimg-amd64-root.tar.gz" % dib['cache_dir']
+            ret = subprocess.call(["wget", "http://cloud-images-archive.ubuntu.com/releases/wily/release-20160715/ubuntu-15.10-server-cloudimg-amd64-root.tar.gz", "-r", "-O", wily_image])
+            if ret:
+                print "ERROR: failed to download ubuntu wily image"
+                return
 
     os.chdir(cur_dir)
     out_dir = 'output'
