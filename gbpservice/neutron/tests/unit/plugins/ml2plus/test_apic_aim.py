@@ -357,12 +357,12 @@ class TestAimMapping(ApicAimTestCase):
                 vrf_aname = scope['id']
                 vrf_dname = scope['name']
                 vrf_tenant_aname = scope['tenant_id']
-                vrf_tenant_dname = ''
+                vrf_tenant_dname = 'TestTenantName'
             else:
                 vrf_aname = 'DefaultVRF'
                 vrf_dname = 'Default Routed VRF'
                 vrf_tenant_aname = tenant_aname
-                vrf_tenant_dname = ''
+                vrf_tenant_dname = 'TestTenantName'
         else:
             vrf_aname = 'UnroutedVRF'
             vrf_dname = 'Common Unrouted VRF'
@@ -492,12 +492,12 @@ class TestAimMapping(ApicAimTestCase):
                 vrf_aname = scope['id']
                 vrf_dname = scope['name']
                 vrf_tenant_aname = scope['tenant_id']
-                vrf_tenant_dname = ''
+                vrf_tenant_dname = 'TestTenantName'
             else:
                 vrf_aname = 'DefaultVRF'
                 vrf_dname = 'Default Routed VRF'
                 vrf_tenant_aname = tenant_aname
-                vrf_tenant_dname = ''
+                vrf_tenant_dname = 'TestTenantName'
 
             aim_tenant = self._get_tenant(vrf_tenant_aname)
             self.assertEqual(vrf_tenant_aname, aim_tenant.name)
