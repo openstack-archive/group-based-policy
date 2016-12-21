@@ -134,10 +134,12 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
         session = plugin_context.session
         with session.begin(subtransactions=True):
             tenant_aname = self._get_tenant_name(session, tenant_id)
-
+            project_name = self.project_name_cache.get_project_name(tenant_id)
+            if project_name is None:
+                project_name = ''
             aim_ctx = aim_context.AimContext(session)
-
-            tenant = aim_resource.Tenant(name=tenant_aname)
+            tenant = aim_resource.Tenant(name=tenant_aname,
+                display_name=aim_utils.sanitize_display_name(project_name))
             if not self.aim.get(aim_ctx, tenant):
                 self.aim.create(aim_ctx, tenant)
             ap = aim_resource.ApplicationProfile(tenant_name=tenant_aname,
