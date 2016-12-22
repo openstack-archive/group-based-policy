@@ -1356,9 +1356,14 @@ class HeatDriver(object):
                     stack_template[resources_key],
                     is_template_aws_version,
                     'OS::Neutron::VPNService')
+                vpn_description, _ = (
+                        utils.get_vpn_description_from_nf(network_function))
+                vpnsvc_desc = {'fip': vpn_description['user_access_ip'],
+                               'ip': vpn_description['fixed_ip'],
+                               'cidr': vpn_description['tunnel_local_cidr']}
+                vpnsvc_desc.update(common_desc)
                 stack_template[resources_key][vpnservice_key][properties_key][
-                    'description'] = str(common_desc)
-
+                    'description'] = str(vpnsvc_desc)
                 nf_desc = str(desc)
 
         if nf_desc:
