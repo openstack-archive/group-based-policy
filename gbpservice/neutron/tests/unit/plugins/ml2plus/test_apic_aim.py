@@ -1303,7 +1303,7 @@ class TestPortBinding(ApicAimTestCase):
         port_id = port['id']
         port = self._bind_port_to_host(port_id, 'host1')['port']
         self.assertEqual('ovs', port['binding:vif_type'])
-        self.assertEqual({'port_filter': False, 'ovs_hybrid_plug': False},
+        self.assertEqual({'port_filter': True, 'ovs_hybrid_plug': True},
                          port['binding:vif_details'])
 
     # TODO(rkukura): Add tests for promiscuous_mode cases.
