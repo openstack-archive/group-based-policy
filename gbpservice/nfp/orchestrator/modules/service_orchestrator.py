@@ -763,7 +763,7 @@ class ServiceOrchestrator(nfp_api.NfpEventHandler):
                                     'service_chain_node']['name'][:6],
                           network_function_info[
                                     'service_chain_instance']['name'][:6])
-        service_config_str = network_function_info.get('service_config')
+        service_config_str = network_function_info.pop('service_config')
         network_function = {
             'name': name,
             'description': '',
@@ -776,6 +776,7 @@ class ServiceOrchestrator(nfp_api.NfpEventHandler):
         }
         network_function = self.db_handler.create_network_function(
             self.db_session, network_function)
+        network_function.pop('service_config')
 
         nfp_logging.store_logging_context(
             meta_id=network_function['id'],
@@ -842,6 +843,9 @@ class ServiceOrchestrator(nfp_api.NfpEventHandler):
             auth_token=context.auth_token)
         network_function_details = self.get_network_function_details(
             network_function_id)
+        service_config = (
+            network_function_details['network_function'].pop(
+                'service_config'))
         service_profile_id = network_function_details[
             'network_function']['service_profile_id']
         base_mode_support, resource_data = (
@@ -886,7 +890,6 @@ class ServiceOrchestrator(nfp_api.NfpEventHandler):
                                            binding_key=network_function_id))
             GRAPH[dnf_event].append(ducf_event)
         else:
-            service_config = network_function['service_config']
             self.delete_network_function_user_config(network_function_id,
                                                      service_config)
         if not base_mode_support:
@@ -1052,8 +1055,8 @@ class ServiceOrchestrator(nfp_api.NfpEventHandler):
         network_function_instance['status'] = nfp_constants.ACTIVE
         network_function_instance[
             'network_function_device_id'] = network_function_device['id']
-
-        service_config = network_function['service_config']
+        # get service_config from nf
+        service_config = nfp_context['service_chain_node'].get('config')
         nfp_context['event_desc'] = event.desc.to_dict()
         nfp_context['key'] = event.key
         nfp_context['id'] = event.id
