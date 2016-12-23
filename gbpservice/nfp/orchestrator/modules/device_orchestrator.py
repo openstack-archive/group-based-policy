@@ -434,13 +434,13 @@ class DeviceOrchestrator(nfp_api.NfpEventHandler):
 
     def _increment_device_interface_count(self, device):
         self.nsf_db.increment_network_function_device_count(self.db_session,
-                device['id'], 'interfaces_in_use')
-        device['interfaces_in_use'] += 1
+                device['id'], 'interfaces_in_use', len(device['ports']))
+        device['interfaces_in_use'] += len(device['ports'])
 
     def _decrement_device_interface_count(self, device):
         self.nsf_db.decrement_network_function_device_count(self.db_session,
-                device['id'], 'interfaces_in_use')
-        device['interfaces_in_use'] -= 1
+                device['id'], 'interfaces_in_use', len(device['ports']))
+        device['interfaces_in_use'] -= len(device['ports'])
 
     def _get_orchestration_driver(self, service_vendor):
         return self.orchestration_driver
