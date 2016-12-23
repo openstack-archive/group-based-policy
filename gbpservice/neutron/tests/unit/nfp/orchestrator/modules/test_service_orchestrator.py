@@ -239,6 +239,8 @@ class ServiceOrchestratorTestCase(NSOModuleTestCase):
         self.assertIsNotNone(network_function)
         db_network_function = self.nfp_db.get_network_function(
             self.session, network_function['id'])
+        service_config = db_network_function.pop('service_config')
+        self.assertIsNone(service_config)
         self.assertEqual(network_function, db_network_function)
 
     def test_validate_create_service_input(self):
