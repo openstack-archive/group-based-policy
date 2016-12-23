@@ -1584,6 +1584,8 @@ class CallRecordWrapper(object):
 
 
 class TestExternalConnectivityBase(object):
+    tenant_1 = 'tenant_1'
+    tenant_2 = 'tenant_2'
 
     def setUp(self):
         self.call_wrapper = CallRecordWrapper()
@@ -1747,7 +1749,7 @@ class TestExternalConnectivityBase(object):
 
         objs = {}
         # Create the networks, subnets, routers etc
-        for t in ['tenant_1', 'tenant_2']:
+        for t in [self.tenant_1, self.tenant_2]:
             subnetpool = None
             addr_scope = None
             if use_addr_scope:
@@ -1758,7 +1760,7 @@ class TestExternalConnectivityBase(object):
                     address_scope_id=addr_scope['id'])['subnetpool']
             for ni in range(0, 2):
                 net = self._make_network(self.fmt, 'pvt-net%d' % ni, True,
-                                        tenant_id=t)['network']
+                                         tenant_id=t)['network']
                 sp_id = subnetpool['id'] if use_addr_scope else None
                 sub1 = self._make_subnet(
                     self.fmt, {'network': net}, '10.%d.1.1' % (10 + ni),
@@ -1869,7 +1871,8 @@ class TestExternalConnectivityBase(object):
             '200.200.200.0/24')
 
         objs = []
-        net = self._make_network(self.fmt, 'pvt-net1', True)['network']
+        net = self._make_network(self.fmt, 'pvt-net1', True,
+                                 tenant_id=self.tenant_1)['network']
         subnetpool = None
         addr_scope = None
         if use_addr_scope:
@@ -1980,7 +1983,8 @@ class TestExternalConnectivityBase(object):
                 tenant_name='t1', l3out_name='l%d' % x, name='n%d' % x)
             a_ext_nets.append(a_ext_net)
 
-        net = self._make_network(self.fmt, 'pvt-net1', True)['network']
+        net = self._make_network(self.fmt, 'pvt-net1', True,
+                                 tenant_id=self.tenant_1)['network']
         subnetpool = None
         addr_scope = None
         if use_addr_scope:
@@ -2119,6 +2123,8 @@ class TestExternalEdgeNat(TestExternalConnectivityBase,
 class TestExternalNoNat(TestExternalConnectivityBase,
                         ApicAimTestCase):
     nat_type = ''
+    tenant_1 = 't1'
+    tenant_2 = 'common'
 
 
 class TestSnatIpAllocation(ApicAimTestCase):
