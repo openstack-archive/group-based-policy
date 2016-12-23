@@ -346,58 +346,56 @@ class HeatDriver(object):
     def _create_policy_target_for_vip(self, auth_token,
                                       provider_tenant_id,
                                       provider, service_type):
-        provider_pt_id = ''
         admin_token = self.keystoneclient.get_admin_token()
         lb_vip, vip_name = self._get_lb_vip(auth_token, provider, service_type)
-        provider_pt = self._get_provider_pt(admin_token, provider)
-        if not (lb_vip and provider_pt):
+        service_targets = self._get_lb_service_targets(admin_token, provider)
+        if not (lb_vip and service_targets):
             return None
-        provider_pt_id = provider_pt['id']
-        provider_port_id = provider_pt['port_id']
 
         vip_pt = self.gbp_client.create_policy_target(
             auth_token, provider_tenant_id, provider['id'],
             vip_name, lb_vip['port_id'])
 
         # Set cluster_id as vip_pt
-        policy_target_info = {'cluster_id': vip_pt['id']}
-        self.gbp_client.update_policy_target(admin_token, provider_pt_id,
-               policy_target_info)
+        for service_target in service_targets:
+            service_target_id = service_target['id']
+            service_target_port_id = service_target['port_id']
 
-        provider_port = self.neutron_client.get_port(
-                        admin_token, provider_port_id)['port']
-        vip_ip = provider_port['allowed_address_pairs'][0]['ip_address']
+            policy_target_info = {'cluster_id': vip_pt['id']}
+            self.gbp_client.update_policy_target(admin_token,
+                    service_target_id, policy_target_info)
 
-        # Update allowed address pairs entry came through cluster_id updation
-        # with provider_port mac address.
-        updated_port = {
-                'allowed_address_pairs': [{'ip_address': vip_ip,
-                        'mac_address': provider_port['mac_address']}]
-                       }
-        self.neutron_client.update_port(
-                admin_token, provider_pt['port_id'], **updated_port)
+            service_target_port = self.neutron_client.get_port(
+                            admin_token, service_target_port_id)['port']
+            vip_ip = service_target_port[
+                            'allowed_address_pairs'][0]['ip_address']
+
+            # Update allowed address pairs entry came through cluster_id
+            # updation with provider_port mac address.
+            updated_port = {
+                    'allowed_address_pairs': [{'ip_address': vip_ip,
+                    'mac_address': service_target_port['mac_address']}]
+                           }
+            self.neutron_client.update_port(
+                    admin_token, service_target_port_id, **updated_port)
 
     def _update_policy_targets_for_vip(self, auth_token,
                                       provider_tenant_id,
                                       provider, service_type):
-        provider_pt_id = ''
         admin_token = self.keystoneclient.get_admin_token()
         lb_vip, vip_name = self._get_lb_vip(auth_token, provider, service_type)
-        provider_pt = self._get_provider_pt(admin_token, provider)
-        if not (lb_vip and provider_pt):
+        service_targets = self._get_lb_service_targets(admin_token, provider)
+        if not (lb_vip and service_targets):
             return None
-        provider_pt_id = provider_pt['id']
 
-        policy_target_info = {'cluster_id': ''}
-        vip_pt = self._get_vip_pt(auth_token, lb_vip.get('port_id'))
-        if vip_pt:
-            self.gbp_client.update_policy_target(auth_token, vip_pt['id'],
-                    policy_target_info)
+        for service_target in service_targets:
+            service_target_id = service_target['id']
+            policy_target_info = {'cluster_id': ''}
+            self.gbp_client.update_policy_target(admin_token,
+                    service_target_id, policy_target_info)
 
-        self.gbp_client.update_policy_target(admin_token, provider_pt_id,
-                policy_target_info)
-
-    def _get_provider_pt(self, auth_token, provider):
+    def _get_lb_service_targets(self, auth_token, provider):
+        service_targets = []
         if provider.get("policy_targets"):
             filters = {'id': provider.get("policy_targets")}
         else:
@@ -408,8 +406,8 @@ class HeatDriver(object):
         for policy_target in policy_targets:
             if ('endpoint' in policy_target['name'] and
                     self._is_service_target(policy_target)):
-                return policy_target
-        return None
+                service_targets.append(policy_target)
+        return service_targets
 
     def _is_service_target(self, policy_target):
         if policy_target['name'] and (policy_target['name'].startswith(
