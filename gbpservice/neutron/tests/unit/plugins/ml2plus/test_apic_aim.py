@@ -511,7 +511,7 @@ class TestAimMapping(ApicAimTestCase):
         self._vrf_should_not_exist(aname)
 
     def _check_router(self, router, expected_gw_ips, unexpected_gw_ips,
-                      scope=None):
+                      scope=None, unscoped_tenant=None):
         aname = router['id']
 
         aim_contract = self._get_contract(aname, 'common')
@@ -540,9 +540,7 @@ class TestAimMapping(ApicAimTestCase):
                 vrf_dname = scope['name']
                 vrf_tenant_aname = scope['tenant_id']
             else:
-                # TODO(rkukura): When unscoped sharing is implemented,
-                # we will need to pass in the expected Tenant.
-                vrf_tenant_aname = router['tenant_id']
+                vrf_tenant_aname = unscoped_tenant or router['tenant_id']
                 vrf_aname = 'DefaultVRF'
                 vrf_dname = 'DefaultRoutedVRF'
             vrf_tenant_dname = TEST_TENANT_NAMES[vrf_tenant_aname]
@@ -1093,8 +1091,7 @@ class TestAimMapping(ApicAimTestCase):
         subnet = self._show('subnets', subnet2_id)['subnet']
         self._check_subnet(subnet, net, [], [gw2_ip])
 
-    # TODO(rkukura): Enable when unscoped shared networks implemented.
-    def _test_shared_network(self):
+    def test_shared_network(self):
         # Create router as tenant_1.
         router = self._make_router(
             self.fmt, 'tenant_1', 'router')['router']
@@ -1131,6 +1128,20 @@ class TestAimMapping(ApicAimTestCase):
         subnet2_id = subnet2['id']
         self._check_subnet(subnet2, net2, [], [gw2_ip])
 
+        # Create net3 as tenant_1.
+        net3_resp = self._make_network(
+            self.fmt, 'net3', True, tenant_id='tenant_1')
+        net3 = net3_resp['network']
+        net3_id = net3['id']
+        self._check_network(net3)
+
+        # Create subnet3.
+        gw3_ip = '10.0.3.1'
+        subnet3 = self._make_subnet(
+            self.fmt, net3_resp, gw3_ip, '10.0.3.0/24')['subnet']
+        subnet3_id = subnet3['id']
+        self._check_subnet(subnet3, net3, [], [gw3_ip])
+
         # Add subnet1 to router.
         info = self.l3_plugin.add_router_interface(
             router_ctx, router_id, {'subnet_id': subnet1_id})
@@ -1138,7 +1149,8 @@ class TestAimMapping(ApicAimTestCase):
 
         # Check router.
         router = self._show('routers', router_id)['router']
-        self._check_router(router, [gw1_ip], [gw2_ip])
+        self._check_router(router, [gw1_ip], [gw2_ip, gw3_ip],
+                           unscoped_tenant='tenant_1')
 
         # Check net1.
         net1 = self._show('networks', net1_id)['network']
@@ -1156,6 +1168,14 @@ class TestAimMapping(ApicAimTestCase):
         subnet2 = self._show('subnets', subnet2_id)['subnet']
         self._check_subnet(subnet2, net2, [], [gw2_ip])
 
+        # Check net3.
+        net3 = self._show('networks', net3_id)['network']
+        self._check_network(net3)
+
+        # Check subnet3.
+        subnet3 = self._show('subnets', subnet3_id)['subnet']
+        self._check_subnet(subnet3, net3, [], [gw3_ip])
+
         # Add subnet2 to router.
         info = self.l3_plugin.add_router_interface(
             router_ctx, router_id, {'subnet_id': subnet2_id})
@@ -1163,7 +1183,8 @@ class TestAimMapping(ApicAimTestCase):
 
         # Check router.
         router = self._show('routers', router_id)['router']
-        self._check_router(router, [gw1_ip, gw2_ip], [])
+        self._check_router(router, [gw1_ip, gw2_ip], [gw3_ip],
+                           unscoped_tenant='tenant_2')
 
         # Check net1, which should be moved to tenant_2.
         net1 = self._show('networks', net1_id)['network']
@@ -1182,6 +1203,85 @@ class TestAimMapping(ApicAimTestCase):
         subnet2 = self._show('subnets', subnet2_id)['subnet']
         self._check_subnet(subnet2, net2, [(gw2_ip, router)], [])
 
+        # Check net3.
+        net3 = self._show('networks', net3_id)['network']
+        self._check_network(net3)
+
+        # Check subnet3.
+        subnet3 = self._show('subnets', subnet3_id)['subnet']
+        self._check_subnet(subnet3, net3, [], [gw3_ip])
+
+        # Add subnet3 to router.
+        info = self.l3_plugin.add_router_interface(
+            router_ctx, router_id, {'subnet_id': subnet3_id})
+        self.assertIn(subnet3_id, info['subnet_ids'])
+
+        # Check router.
+        router = self._show('routers', router_id)['router']
+        self._check_router(router, [gw1_ip, gw2_ip, gw3_ip], [],
+                           unscoped_tenant='tenant_2')
+
+        # Check net1, which should still be moved to tenant_2.
+        net1 = self._show('networks', net1_id)['network']
+        self._check_network(net1, [router], project='tenant_2')
+
+        # Check subnet1, which should still be moved to tenant_2.
+        subnet1 = self._show('subnets', subnet1_id)['subnet']
+        self._check_subnet(subnet1, net1, [(gw1_ip, router)], [],
+                           project='tenant_2')
+
+        # Check net2.
+        net2 = self._show('networks', net2_id)['network']
+        self._check_network(net2, [router])
+
+        # Check subnet2.
+        subnet2 = self._show('subnets', subnet2_id)['subnet']
+        self._check_subnet(subnet2, net2, [(gw2_ip, router)], [])
+
+        # Check net3, which should be moved to tenant_2.
+        net3 = self._show('networks', net3_id)['network']
+        self._check_network(net3, [router], project='tenant_2')
+
+        # Check subnet3, which should be moved to tenant_2.
+        subnet3 = self._show('subnets', subnet3_id)['subnet']
+        self._check_subnet(subnet3, net3, [(gw3_ip, router)], [],
+                           project='tenant_2')
+
+        # Remove subnet3 from router.
+        info = self.l3_plugin.remove_router_interface(
+            router_ctx, router_id, {'subnet_id': subnet3_id})
+        self.assertIn(subnet3_id, info['subnet_ids'])
+
+        # Check router.
+        router = self._show('routers', router_id)['router']
+        self._check_router(router, [gw1_ip, gw2_ip], [gw3_ip],
+                           unscoped_tenant='tenant_2')
+
+        # Check net1, which should still be moved to tenant_2.
+        net1 = self._show('networks', net1_id)['network']
+        self._check_network(net1, [router], project='tenant_2')
+
+        # Check subnet1, which should still be moved to tenant_2.
+        subnet1 = self._show('subnets', subnet1_id)['subnet']
+        self._check_subnet(subnet1, net1, [(gw1_ip, router)], [],
+                           project='tenant_2')
+
+        # Check net2.
+        net2 = self._show('networks', net2_id)['network']
+        self._check_network(net2, [router])
+
+        # Check subnet2.
+        subnet2 = self._show('subnets', subnet2_id)['subnet']
+        self._check_subnet(subnet2, net2, [(gw2_ip, router)], [])
+
+        # Check net3, which should be moved back to tenant_1.
+        net3 = self._show('networks', net3_id)['network']
+        self._check_network(net3)
+
+        # Check subnet3, which should be moved back to tenant_1.
+        subnet3 = self._show('subnets', subnet3_id)['subnet']
+        self._check_subnet(subnet3, net3, [], [gw3_ip])
+
         # Remove subnet2 from router.
         info = self.l3_plugin.remove_router_interface(
             router_ctx, router_id, {'subnet_id': subnet2_id})
@@ -1189,7 +1289,8 @@ class TestAimMapping(ApicAimTestCase):
 
         # Check router.
         router = self._show('routers', router_id)['router']
-        self._check_router(router, [gw1_ip], [gw2_ip])
+        self._check_router(router, [gw1_ip], [gw2_ip, gw3_ip],
+                           unscoped_tenant='tenant_1')
 
         # Check net1, which should be moved back to tenant_1.
         net1 = self._show('networks', net1_id)['network']
@@ -1207,6 +1308,14 @@ class TestAimMapping(ApicAimTestCase):
         subnet2 = self._show('subnets', subnet2_id)['subnet']
         self._check_subnet(subnet2, net2, [], [gw2_ip])
 
+        # Check net3.
+        net3 = self._show('networks', net3_id)['network']
+        self._check_network(net3)
+
+        # Check subnet3.
+        subnet3 = self._show('subnets', subnet3_id)['subnet']
+        self._check_subnet(subnet3, net3, [], [gw3_ip])
+
         # Remove subnet1 from router.
         info = self.l3_plugin.remove_router_interface(
             router_ctx, router_id, {'subnet_id': subnet1_id})
@@ -1214,7 +1323,8 @@ class TestAimMapping(ApicAimTestCase):
 
         # Check router.
         router = self._show('routers', router_id)['router']
-        self._check_router(router, [], [gw1_ip, gw2_ip])
+        self._check_router(router, [], [gw1_ip, gw2_ip, gw3_ip],
+                           unscoped_tenant='tenant_1')
 
         # Check net1.
         net1 = self._show('networks', net1_id)['network']
@@ -1231,6 +1341,198 @@ class TestAimMapping(ApicAimTestCase):
         # Check subnet2.
         subnet2 = self._show('subnets', subnet2_id)['subnet']
         self._check_subnet(subnet2, net2, [], [gw2_ip])
+
+        # Check net3.
+        net3 = self._show('networks', net3_id)['network']
+        self._check_network(net3)
+
+        # Check subnet3.
+        subnet3 = self._show('subnets', subnet3_id)['subnet']
+        self._check_subnet(subnet3, net3, [], [gw3_ip])
+
+    def test_shared_network_topologies(self):
+        def make_net_and_subnet(number, project, shared=False):
+            name = 'net%s' % number
+            net_resp = self._make_network(
+                self.fmt, name, True, tenant_id=project, shared=shared)
+            net = net_resp['network']
+            self._check_network(net)
+            cidr = '10.0.%s.0/24' % number
+            subnet = self._make_subnet(
+                self.fmt, net_resp, None, cidr, tenant_id=project)['subnet']
+            self._check_subnet(subnet, net, [], [])
+            return net['id'], subnet['id']
+
+        def make_router(letter, project):
+            name = 'router%s' % letter
+            router = self._make_router(self.fmt, project, name)['router']
+            self._check_router(router, [], [])
+            return router
+
+        def add_interface(router, net_id, subnet_id, gw_ip, project):
+            fixed_ips = [{'subnet_id': subnet_id, 'ip_address': gw_ip}]
+            port = self._make_port(
+                self.fmt, net_id, fixed_ips=fixed_ips,
+                tenant_id=project)['port']
+            router_ctx = context.Context(None, project)
+            info = self.l3_plugin.add_router_interface(
+                router_ctx, router['id'], {'port_id': port['id']})
+            self.assertIn(subnet_id, info['subnet_ids'])
+
+        def remove_interface(router, net_id, subnet_id, gw_ip, project):
+            router_ctx = context.Context(None, project)
+            info = self.l3_plugin.remove_router_interface(
+                router_ctx, router['id'], {'subnet_id': subnet_id})
+            self.assertIn(subnet_id, info['subnet_ids'])
+
+        def check_net(net_id, subnet_id, routers, expected_gws,
+                      unexpected_gw_ips, project):
+            net = self._show('networks', net_id)['network']
+            self._check_network(net, routers, project=project)
+            subnet = self._show('subnets', subnet_id)['subnet']
+            self._check_subnet(
+                subnet, net, expected_gws, unexpected_gw_ips, project=project)
+
+        def check_router(router, expected_gw_ips, unexpected_gw_ips, project):
+            router = self._show('routers', router['id'])['router']
+            self._check_router(
+                router, expected_gw_ips, unexpected_gw_ips,
+                unscoped_tenant=project)
+
+        t1 = 'tenant_1'
+        t2 = 'tenant_2'
+
+        net1, sn1 = make_net_and_subnet(1, t1)
+        net2, sn2 = make_net_and_subnet(2, t1)
+        net3, sn3 = make_net_and_subnet(3, t1)
+        net4, sn4 = make_net_and_subnet(4, t2, True)
+
+        rA = make_router('A', t1)
+        rB = make_router('B', t1)
+        rC = make_router('C', t1)
+
+        gw1A = '10.0.1.1'
+        gw2A = '10.0.2.1'
+        gw2B = '10.0.2.2'
+        gw3B = '10.0.3.2'
+        gw3C = '10.0.3.3'
+        gw4C = '10.0.4.3'
+
+        # Check initial state with no routing.
+        check_router(rA, [], [gw1A, gw2A], t1)
+        check_router(rB, [], [gw2B, gw3B], t1)
+        check_router(rC, [], [gw3C, gw4C], t1)
+        check_net(net1, sn1, [], [], [gw1A], t1)
+        check_net(net2, sn2, [], [], [gw2A, gw2B], t1)
+        check_net(net3, sn3, [], [], [gw3B, gw3C], t1)
+        check_net(net4, sn4, [], [], [gw4C], t2)
+
+        # Add subnet 1 to router A.
+        add_interface(rA, net1, sn1, gw1A, t1)
+        check_router(rA, [gw1A], [gw2A], t1)
+        check_router(rB, [], [gw2B, gw3B], t1)
+        check_router(rC, [], [gw3C, gw4C], t1)
+        check_net(net1, sn1, [rA], [(gw1A, rA)], [], t1)
+        check_net(net2, sn2, [], [], [gw2A, gw2B], t1)
+        check_net(net3, sn3, [], [], [gw3B, gw3C], t1)
+        check_net(net4, sn4, [], [], [gw4C], t2)
+
+        # Add subnet 2 to router A.
+        add_interface(rA, net2, sn2, gw2A, t1)
+        check_router(rA, [gw1A, gw2A], [], t1)
+        check_router(rB, [], [gw2B, gw3B], t1)
+        check_router(rC, [], [gw3C, gw4C], t1)
+        check_net(net1, sn1, [rA], [(gw1A, rA)], [], t1)
+        check_net(net2, sn2, [rA], [(gw2A, rA)], [gw2B], t1)
+        check_net(net3, sn3, [], [], [gw3B, gw3C], t1)
+        check_net(net4, sn4, [], [], [gw4C], t2)
+
+        # Add subnet 2 to router B.
+        add_interface(rB, net2, sn2, gw2B, t1)
+        check_router(rA, [gw1A, gw2A], [], t1)
+        check_router(rB, [gw2B], [gw3B], t1)
+        check_router(rC, [], [gw3C, gw4C], t1)
+        check_net(net1, sn1, [rA], [(gw1A, rA)], [], t1)
+        check_net(net2, sn2, [rA, rB], [(gw2A, rA), (gw2B, rB)], [], t1)
+        check_net(net3, sn3, [], [], [gw3B, gw3C], t1)
+        check_net(net4, sn4, [], [], [gw4C], t2)
+
+        # Add subnet 3 to router B.
+        add_interface(rB, net3, sn3, gw3B, t1)
+        check_router(rA, [gw1A, gw2A], [], t1)
+        check_router(rB, [gw2B, gw3B], [], t1)
+        check_router(rC, [], [gw3C, gw4C], t1)
+        check_net(net1, sn1, [rA], [(gw1A, rA)], [], t1)
+        check_net(net2, sn2, [rA, rB], [(gw2A, rA), (gw2B, rB)], [], t1)
+        check_net(net3, sn3, [rB], [(gw3B, rB)], [gw3C], t1)
+        check_net(net4, sn4, [], [], [gw4C], t2)
+
+        # Add subnet 3 to router C.
+        add_interface(rC, net3, sn3, gw3C, t1)
+        check_router(rA, [gw1A, gw2A], [], t1)
+        check_router(rB, [gw2B, gw3B], [], t1)
+        check_router(rC, [gw3C], [gw4C], t1)
+        check_net(net1, sn1, [rA], [(gw1A, rA)], [], t1)
+        check_net(net2, sn2, [rA, rB], [(gw2A, rA), (gw2B, rB)], [], t1)
+        check_net(net3, sn3, [rB, rC], [(gw3B, rB), (gw3C, rC)], [], t1)
+        check_net(net4, sn4, [], [], [gw4C], t2)
+
+        # Add shared subnet 4 to router C, which should move router
+        # C's topology (networks 1, 2 and 3 and routers A, B and C) to
+        # tenant 2.
+        add_interface(rC, net4, sn4, gw4C, t1)
+        check_router(rA, [gw1A, gw2A], [], t2)
+        check_router(rB, [gw2B, gw3B], [], t2)
+        check_router(rC, [gw3C, gw4C], [], t2)
+        check_net(net1, sn1, [rA], [(gw1A, rA)], [], t2)
+        check_net(net2, sn2, [rA, rB], [(gw2A, rA), (gw2B, rB)], [], t2)
+        check_net(net3, sn3, [rB, rC], [(gw3B, rB), (gw3C, rC)], [], t2)
+        check_net(net4, sn4, [rC], [(gw4C, rC)], [], t2)
+
+        # Remove subnet 3 from router B, which should move router B's
+        # topology (networks 1 and 2 and routers A and B) to tenant 1.
+        remove_interface(rB, net3, sn3, gw3B, t1)
+        check_router(rA, [gw1A, gw2A], [], t1)
+        check_router(rB, [gw2B], [gw3B], t1)
+        check_router(rC, [gw3C, gw4C], [], t2)
+        check_net(net1, sn1, [rA], [(gw1A, rA)], [], t1)
+        check_net(net2, sn2, [rA, rB], [(gw2A, rA), (gw2B, rB)], [], t1)
+        check_net(net3, sn3, [rC], [(gw3C, rC)], [gw3B], t2)
+        check_net(net4, sn4, [rC], [(gw4C, rC)], [], t2)
+
+        # Add subnet 3 back to router B, which should move router B's
+        # topology (networks 1 and 2 and routers A and B) to tenant 2
+        # again.
+        add_interface(rB, net3, sn3, gw3B, t1)
+        check_router(rA, [gw1A, gw2A], [], t2)
+        check_router(rB, [gw2B, gw3B], [], t2)
+        check_router(rC, [gw3C, gw4C], [], t2)
+        check_net(net1, sn1, [rA], [(gw1A, rA)], [], t2)
+        check_net(net2, sn2, [rA, rB], [(gw2A, rA), (gw2B, rB)], [], t2)
+        check_net(net3, sn3, [rB, rC], [(gw3B, rB), (gw3C, rC)], [], t2)
+        check_net(net4, sn4, [rC], [(gw4C, rC)], [], t2)
+
+        # Remove subnet 2 from router B, which should move network 2's
+        # topology (networks 1 and 2 and router A) back to tenant 1.
+        remove_interface(rB, net2, sn2, gw2B, t1)
+        check_router(rA, [gw1A, gw2A], [], t1)
+        check_router(rB, [gw3B], [gw2B], t2)
+        check_router(rC, [gw3C, gw4C], [], t2)
+        check_net(net1, sn1, [rA], [(gw1A, rA)], [], t1)
+        check_net(net2, sn2, [rA], [(gw2A, rA)], [gw2B], t1)
+        check_net(net3, sn3, [rB, rC], [(gw3B, rB), (gw3C, rC)], [], t2)
+        check_net(net4, sn4, [rC], [(gw4C, rC)], [], t2)
+
+        # Add subnet 2 back to router B, which should move network 2's
+        # topology (networks 1 and 2 and router A) to tenant 2 again.
+        add_interface(rB, net2, sn2, gw2B, t1)
+        check_router(rA, [gw1A, gw2A], [], t2)
+        check_router(rB, [gw2B, gw3B], [], t2)
+        check_router(rC, [gw3C, gw4C], [], t2)
+        check_net(net1, sn1, [rA], [(gw1A, rA)], [], t2)
+        check_net(net2, sn2, [rA, rB], [(gw2A, rA), (gw2B, rB)], [], t2)
+        check_net(net3, sn3, [rB, rC], [(gw3B, rB), (gw3C, rC)], [], t2)
+        check_net(net4, sn4, [rC], [(gw4C, rC)], [], t2)
 
     def test_address_scope_pre_existing_vrf(self):
         aim_ctx = aim_context.AimContext(self.db_session)
@@ -1771,8 +2073,48 @@ class TestTopology(ApicAimTestCase):
             context.get_admin_context(), router_id, {'subnet_id': subnet1_id})
 
     def test_reject_routing_shared_networks_from_different_projects(self):
-        # TODO(rkukura): Implement.
-        pass
+        # Create router as tenant_1.
+        router_id = self._make_router(
+            self.fmt, 'tenant_1', 'router')['router']['id']
+        router_ctx = context.get_admin_context()
+
+        # Create shared net1 and subnet1 as tenant_1.
+        net1_resp = self._make_network(
+            self.fmt, 'net1', True, tenant_id='tenant_1', shared=True)
+        gw1_ip = '10.0.1.1'
+        subnet1_id = self._make_subnet(
+            self.fmt, net1_resp, gw1_ip, '10.0.1.0/24',
+            tenant_id='tenant_1')['subnet']['id']
+
+        # Create shared net2 and subnet2 as tenant_2.
+        net2_resp = self._make_network(
+            self.fmt, 'net2', True, tenant_id='tenant_2', shared=True)
+        gw2_ip = '10.0.2.1'
+        subnet2_id = self._make_subnet(
+            self.fmt, net2_resp, gw2_ip, '10.0.2.0/24',
+            tenant_id='tenant_2')['subnet']['id']
+
+        # Create shared net3 and subnet3 as tenant_1.
+        net3_resp = self._make_network(
+            self.fmt, 'net3', True, tenant_id='tenant_1', shared=True)
+        gw3_ip = '10.0.3.1'
+        subnet3_id = self._make_subnet(
+            self.fmt, net3_resp, gw3_ip, '10.0.3.0/24',
+            tenant_id='tenant_1')['subnet']['id']
+
+        # Add shared subnet1 from tenant_1 to router.
+        self.l3_plugin.add_router_interface(
+            router_ctx, router_id, {'subnet_id': subnet1_id})
+
+        # Verify adding shared subnet2 tenant_2 to router fails.
+        self.assertRaises(
+            md.UnscopedSharedNetworkProjectConflict,
+            self.l3_plugin.add_router_interface,
+            router_ctx, router_id, {'subnet_id': subnet2_id})
+
+        # Add shared subnet3 from tenant_1 to router.
+        self.l3_plugin.add_router_interface(
+            router_ctx, router_id, {'subnet_id': subnet3_id})
 
     def test_reject_update_scope_of_routed_pool(self):
         # TODO(rkukura): When implemented, change this to verify
