@@ -31,6 +31,7 @@ import sqlalchemy as sa
 from sqlalchemy.orm.exc import NoResultFound
 
 from gbpservice.common import utils
+from gbpservice.neutron.services.grouppolicy.common import constants as gconst
 from gbpservice.neutron.services.servicechain.plugins.ncp import (
     exceptions as exc)
 from gbpservice.neutron.services.servicechain.plugins.ncp import (
@@ -576,6 +577,11 @@ class NFPNodeDriver(driver_base.NodeDriverBase):
         pass  # We are not using the classifier specified in redirect Rule
 
     def update_node_consumer_ptg_added(self, context, policy_target_group):
+
+        # When a group is created which is both consumer and provider.
+        # method is invoked for stitching group too.. ignoring.
+        if policy_target_group['proxied_group_id']:
+            return
         if context.current_profile['service_type'] == pconst.FIREWALL:
             context._plugin_context = self._get_resource_owner_context(
                 context._plugin_context)
@@ -596,6 +602,10 @@ class NFPNodeDriver(driver_base.NodeDriverBase):
                     operation=nfp_constants.UPDATE)
 
     def update_node_consumer_ptg_removed(self, context, policy_target_group):
+        # When a group is created which is both consumer and provider.
+        # method is invoked for stitching group too.. ignoring.
+        if policy_target_group['proxied_group_id']:
+            return
         if context.current_profile['service_type'] == pconst.FIREWALL:
             context._plugin_context = self._get_resource_owner_context(
                 context._plugin_context)
@@ -943,21 +953,39 @@ class NFPNodeDriver(driver_base.NodeDriverBase):
         }
         '''
 
+        consuming_ptgs = []
         consuming_ptgs_details = []
         consuming_eps_details = []
 
-        if not provider['provided_policy_rule_sets']:
+        filters = {'id': provider['provided_policy_rule_sets']}
+        provided_prs = context.gbp_plugin.get_policy_rule_sets(
+            context.plugin_context, filters=filters)
+        redirect_prs = None
+        for prs in provided_prs:
+            filters = {'id': prs['policy_rules']}
+            policy_rules = context.gbp_plugin.get_policy_rules(
+                context.plugin_context, filters=filters)
+            for policy_rule in policy_rules:
+                filters = {'id': policy_rule['policy_actions'],
+                           'action_type': [gconst.GP_ACTION_REDIRECT]}
+                policy_actions = context.gbp_plugin.get_policy_actions(
+                    context.plugin_context, filters=filters)
+                if policy_actions:
+                    redirect_prs = prs
+                    break
+
+        if not redirect_prs:
+            LOG.error(_LE("Redirect rule doesn't exist in policy target rule "
+                          " set"))
             return consuming_ptgs_details, consuming_eps_details
 
-        provided_prs_id = provider['provided_policy_rule_sets'][0]
-        provided_prs = context.gbp_plugin.get_policy_rule_set(
-            context.plugin_context, provided_prs_id)
-        consuming_ptg_ids = provided_prs['consuming_policy_target_groups']
-        consuming_ep_ids = provided_prs['consuming_external_policies']
-
-        consuming_ptgs = context.gbp_plugin.get_policy_target_groups(
+        consuming_ptg_ids = redirect_prs['consuming_policy_target_groups']
+        consuming_ep_ids = redirect_prs['consuming_external_policies']
+        if consuming_ptg_ids:
+            consuming_ptgs = context.gbp_plugin.get_policy_target_groups(
                 context.plugin_context, filters={'id': consuming_ptg_ids})
-        consuming_eps_details = context.gbp_plugin.get_external_policies(
+        if consuming_ep_ids:
+            consuming_eps_details = context.gbp_plugin.get_external_policies(
                 context.plugin_context, filters={'id': consuming_ep_ids})
 
         for ptg in consuming_ptgs:
