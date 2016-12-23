@@ -242,8 +242,13 @@ class NfpController(nfp_launcher.NfpLauncher, NfpService):
         return event
 
     def pipe_send(self, pipe, event):
-        self.compress(event)
-        pipe.send(event)
+        try:
+            self.compress(event)
+            pipe.send(event)
+        except Exception as e:
+            message = "Failed to send data via pipe, Reason: %s" % e
+            LOG.error(message)
+            raise e
 
     def _fork(self, args):
         proc = PROCESS(target=self.child, args=args)
