@@ -92,6 +92,9 @@ class FakeProjectManager(object):
             FakeTenant('test-tenant', 'TestTenantName'),
         ]
 
+    def get(self, project_id):
+        return FakeTenant('test-tenant', 'new_name')
+
 
 class FakeKeystoneClient(object):
     def __init__(self, **kwargs):
@@ -913,6 +916,17 @@ class TestAimMapping(ApicAimTestCase):
         # Check subnet2.
         subnet = self._show('subnets', subnet2_id)['subnet']
         self._check_subnet(subnet, net, [], [gw2_ip])
+
+    def test_keystone_notification_endpoint(self):
+        self.driver.aim.get = mock.Mock(return_value=True)
+        self.driver.aim.update = mock.Mock()
+        payload = {}
+        payload['resource_info'] = 'test-tenant'
+        keystone_ep = md.KeystoneNotificationEndpoint(self.driver)
+        keystone_ep.info(None, None, None, payload, None)
+        tenant = aim_resource.Tenant(name='test-tenant')
+        self.driver.aim.update.assert_called_once_with(
+            mock.ANY, tenant, display_name='new_name')
 
     # TODO(rkukura): Test IPv6 and dual stack router interfaces.
 

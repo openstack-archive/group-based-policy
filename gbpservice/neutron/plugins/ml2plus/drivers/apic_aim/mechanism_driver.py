@@ -32,6 +32,7 @@ from neutron.common import exceptions
 from neutron.common import rpc as n_rpc
 from neutron.common import topics as n_topics
 from neutron.db import address_scope_db
+from neutron.db import api as db_api
 from neutron.db import l3_db
 from neutron.db import models_v2
 from neutron.extensions import portbindings
@@ -95,6 +96,41 @@ class SnatPoolCannotBeUsedForFloatingIp(exceptions.InvalidInput):
 NO_ADDR_SCOPE = object()
 
 
+class KeystoneNotificationEndpoint(object):
+    filter_rule = oslo_messaging.NotificationFilter(
+        event_type='identity.project.update')
+
+    def __init__(self, mechanism_driver):
+        self._driver = mechanism_driver
+
+    def info(self, ctxt, publisher_id, event_type, payload, metadata):
+        LOG.debug("Keystone notification getting called!")
+
+        tenant_id = payload.get('resource_info')
+        # malformed notification?
+        if not tenant_id:
+            return None
+
+        new_project_name = (self._driver.project_name_cache.
+                            update_project_name(tenant_id))
+        if not new_project_name:
+            return None
+
+        # we only update tenants which have been created in APIC. For other
+        # cases, their nameAlias will be set when the first resource is being
+        # created under that tenant
+        session = db_api.get_session()
+        tenant_aname = self._driver._get_tenant_name(session, tenant_id)
+        aim_ctx = aim_context.AimContext(session)
+        tenant = aim_resource.Tenant(name=tenant_aname)
+        if not self._driver.aim.get(aim_ctx, tenant):
+            return None
+
+        self._driver.aim.update(aim_ctx, tenant,
+            display_name=aim_utils.sanitize_display_name(new_project_name))
+        return oslo_messaging.NotificationResult.HANDLED
+
+
 class ApicMechanismDriver(api_plus.MechanismDriver):
     # TODO(rkukura): Derivations of tenant_aname throughout need to
     # take sharing into account.
@@ -136,6 +172,22 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
                                            [self.TopologyRpcEndpoint(self)],
                                            fanout=False)
         self.topology_conn.consume_in_threads()
+        self.keystone_notification_exchange = (cfg.CONF.ml2_apic_aim.
+                                               keystone_notification_exchange)
+        self.keystone_notification_topic = (cfg.CONF.ml2_apic_aim.
+                                            keystone_notification_topic)
+        self._setup_keystone_notification_listeners()
+
+    def _setup_keystone_notification_listeners(self):
+        transport = oslo_messaging.get_transport(cfg.CONF)
+        targets = [oslo_messaging.Target(
+                    exchange=self.keystone_notification_exchange,
+                    topic=self.keystone_notification_topic, fanout=True)]
+        endpoints = [KeystoneNotificationEndpoint(self)]
+        pool = "listener-workers"
+        server = oslo_messaging.get_notification_listener(
+            transport, targets, endpoints, executor='eventlet', pool=pool)
+        server.start()
 
     def ensure_tenant(self, plugin_context, tenant_id):
         LOG.debug("APIC AIM MD ensuring tenant_id: %s", tenant_id)
