@@ -961,7 +961,9 @@ class DeviceOrchestrator(nfp_api.NfpEventHandler):
             'tenant_id': tenant_id,
             'interfaces_in_use': network_function_device['interfaces_in_use'],
             'status': network_function_device['status'],
-            'provider_metadata': nfp_context['provider_metadata']}
+            'provider_metadata': nfp_context['provider_metadata'],
+            'enable_port_security': nfp_context.get('enable_port_security')
+        }
 
         _ifaces_plugged_in = (
             orchestration_driver.plug_network_function_device_interfaces(
