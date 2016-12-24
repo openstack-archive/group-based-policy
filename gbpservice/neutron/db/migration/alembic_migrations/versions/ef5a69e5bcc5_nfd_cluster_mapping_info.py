@@ -11,7 +11,7 @@
 #    under the License.
 #
 
-"""nfp_ha_mapping_info
+"""nfd_cluster_mapping_info
 
 Revision ID: ef5a69e5bcc5
 Revises: 9cedbcd3e9ee
