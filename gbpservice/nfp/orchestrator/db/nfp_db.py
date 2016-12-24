@@ -407,12 +407,13 @@ class NFPDbBase(common_db_mixin.CommonDbMixin):
 
     def increment_network_function_device_count(self, session,
                                                 network_function_device_id,
-                                                field_name):
+                                                field_name,
+                                                updated_value=1):
         with session.begin(subtransactions=True):
             network_function_device = self._get_network_function_device(
                 session, network_function_device_id)
             value = network_function_device[field_name]
-            value += 1
+            value += updated_value
             update_device = (
                     {field_name: value})
             self.update_network_function_device(session,
@@ -421,12 +422,13 @@ class NFPDbBase(common_db_mixin.CommonDbMixin):
 
     def decrement_network_function_device_count(self, session,
                                                 network_function_device_id,
-                                                field_name):
+                                                field_name,
+                                                updated_value=1):
         with session.begin(subtransactions=True):
             network_function_device = self._get_network_function_device(
                 session, network_function_device_id)
             value = network_function_device[field_name]
-            value -= 1
+            value -= updated_value
             update_device = (
                     {field_name: value})
             self.update_network_function_device(session,
