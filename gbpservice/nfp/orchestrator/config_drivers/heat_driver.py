@@ -57,7 +57,7 @@ HEAT_DRIVER_OPTS = [
                help=_("Heat API server address to instantiate services "
                       "specified in the service chain.")),
     cfg.IntOpt('stack_action_wait_time',
-               default=120,
+               default=nfp_constants.STACK_ACTION_WAIT_TIME,
                help=_("Seconds to wait for pending stack operation "
                       "to complete")),
     cfg.BoolOpt('is_service_admin_owned',
