@@ -525,11 +525,15 @@ class AIMBaseTestCase(test_nr_base.CommonNeutronBaseTestCase,
         aim_filters = self.aim_mgr.find(
             self._aim_context, aim_resource.Filter,
             tenant_name=aim_tenant_name)
-        self.assertEqual(1, len(aim_filters))  # belongs to MD
+        # TODO(rkukura): Restore when GBP filters in common tenant.
+        # self.assertEqual(1, len(aim_filters))  # belongs to MD
+        self.assertEqual(0, len(aim_filters))
         aim_filter_entries = self.aim_mgr.find(
             self._aim_context, aim_resource.FilterEntry,
             tenant_name=aim_tenant_name)
-        self.assertEqual(1, len(aim_filter_entries))  # belongs to MD
+        # TODO(rkukura): Restore when GBP filters in common tenant.
+        # self.assertEqual(1, len(aim_filter_entries))  # belongs to MD
+        self.assertEqual(0, len(aim_filter_entries))
 
     def _validate_l2_policy_deleted(self, l2p):
         l2p_id = l2p['id']
@@ -1057,11 +1061,15 @@ class TestL2PolicyBase(test_nr_base.TestL2Policy, AIMBaseTestCase):
         aim_filters = self.aim_mgr.find(
             self._aim_context, aim_resource.Filter,
             tenant_name=aim_tenant_name)
-        self.assertEqual(10, len(aim_filters))  # 1 belongs to MD
+        # TODO(rkukura): Restore when GBP filters in common tenant.
+        # self.assertEqual(10, len(aim_filters))  # 1 belongs to MD
+        self.assertEqual(9, len(aim_filters))
         aim_filter_entries = self.aim_mgr.find(
             self._aim_context, aim_resource.FilterEntry,
             tenant_name=aim_tenant_name)
-        self.assertEqual(10, len(aim_filter_entries))  # 1 belongs to MD
+        # TODO(rkukura): Restore when GBP filters in common tenant.
+        # self.assertEqual(10, len(aim_filter_entries))  # 1 belongs to MD
+        self.assertEqual(9, len(aim_filter_entries))
         entries_attrs = alib.get_service_contract_filter_entries().values()
         entries_attrs.extend(alib.get_arp_filter_entry().values())
         expected_entries_attrs = []
@@ -1337,11 +1345,15 @@ class TestL2PolicyRollback(TestL2PolicyBase):
         aim_filters = self.aim_mgr.find(
             self._aim_context, aim_resource.Filter,
             tenant_name=aim_tenant_name)
-        self.assertEqual(1, len(aim_filters))  # belongs to MD
+        # TODO(rkukura): Restore when GBP filters in common tenant.
+        # self.assertEqual(1, len(aim_filters))  # belongs to MD
+        self.assertEqual(0, len(aim_filters))
         aim_filter_entries = self.aim_mgr.find(
             self._aim_context, aim_resource.FilterEntry,
             tenant_name=aim_tenant_name)
-        self.assertEqual(1, len(aim_filter_entries))  # belongs to MD
+        # TODO(rkukura): Restore when GBP filters in common tenant.
+        # self.assertEqual(1, len(aim_filter_entries))  # belongs to MD
+        self.assertEqual(0, len(aim_filter_entries))
         # restore mock
         self.dummy.create_l2_policy_precommit = orig_func
 
@@ -1600,10 +1612,12 @@ class TestPolicyTargetGroup(AIMBaseTestCase):
             ip_version=4, cidr1='192.168.0.0/24', prefixlen1=24,
             cidr2='10.0.0.0/16', prefixlen2=26)
 
-    def test_create_ptg_explicit_subnetpools_v6(self):
-        self._test_create_ptg_explicit_subnetpools(
-            ip_version=6, cidr1='2210::/64', prefixlen1=65,
-            cidr2='2220::/64', prefixlen2=66)
+    # TODO(rkukura): Re-enable when IPv6 routing is supported.
+    #
+    # def test_create_ptg_explicit_subnetpools_v6(self):
+    #     self._test_create_ptg_explicit_subnetpools(
+    #         ip_version=6, cidr1='2210::/64', prefixlen1=65,
+    #         cidr2='2220::/64', prefixlen2=66)
 
     def test_ptg_delete_no_subnet_delete(self):
         ptg = self.create_policy_target_group(
@@ -2191,10 +2205,14 @@ class TestPolicyRuleRollback(TestPolicyRuleBase):
                          self._gbp_plugin.get_policy_rules(self._context))
         aim_filters = self.aim_mgr.find(
             self._aim_context, aim_resource.Filter)
-        self.assertEqual(1, len(aim_filters))  # belongs to MD
+        # TODO(rkukura): Restore when GBP filters in common tenant.
+        # self.assertEqual(1, len(aim_filters))  # belongs to MD
+        self.assertEqual(0, len(aim_filters))
         aim_filter_entries = self.aim_mgr.find(
             self._aim_context, aim_resource.FilterEntry)
-        self.assertEqual(1, len(aim_filter_entries))  # belongs to MD
+        # TODO(rkukura): Restore when GBP filters in common tenant.
+        # self.assertEqual(1, len(aim_filter_entries))  # belongs to MD
+        self.assertEqual(0, len(aim_filter_entries))
         # restore mock
         self.dummy.create_policy_rule_precommit = orig_func
 
