@@ -22,6 +22,7 @@ from neutron import manager
 from neutron.notifiers import nova
 from neutron.plugins.common import constants as pconst
 from neutron import quota
+from neutron_lib import constants as lib_const
 from oslo_config import cfg
 from oslo_log import log as logging
 from oslo_utils import excutils
@@ -107,7 +108,7 @@ class LocalAPI(object):
         # REVISIT(rkukura): Need initialization method after all
         # plugins are loaded to grab and store plugin.
         plugins = manager.NeutronManager.get_service_plugins()
-        l3_plugin = plugins.get(pconst.L3_ROUTER_NAT)
+        l3_plugin = plugins.get(lib_const.L3)
         if not l3_plugin:
             LOG.error(_LE("No L3 router service plugin found."))
             raise exc.GroupPolicyDeploymentError()

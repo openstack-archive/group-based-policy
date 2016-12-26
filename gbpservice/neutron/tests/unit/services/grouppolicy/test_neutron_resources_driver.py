@@ -18,6 +18,7 @@ from neutron.db import model_base
 from neutron import manager
 from neutron.plugins.common import constants as pconst
 from neutron.tests.unit.plugins.ml2 import test_plugin as n_test_plugin
+from neutron_lib import constants as lib_const
 import webob.exc
 
 from gbpservice.neutron.services.grouppolicy import config
@@ -58,7 +59,7 @@ class CommonNeutronBaseTestCase(test_plugin.GroupPolicyPluginTestBase):
         self._context = nctx.get_admin_context()
         plugins = manager.NeutronManager.get_service_plugins()
         self._gbp_plugin = plugins.get(pconst.GROUP_POLICY)
-        self._l3_plugin = plugins.get(pconst.L3_ROUTER_NAT)
+        self._l3_plugin = plugins.get(lib_const.L3)
         config.cfg.CONF.set_override('debug', True)
         config.cfg.CONF.set_override('verbose', True)
 

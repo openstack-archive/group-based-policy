@@ -24,6 +24,7 @@ from neutron.plugins.common import constants
 from neutron import policy
 from neutron.tests.unit.api import test_extensions
 from neutron.tests.unit.db import test_db_base_plugin_v2
+from neutron_lib import constants as lib_constants
 from oslo_utils import importutils
 from oslo_utils import uuidutils
 
@@ -346,7 +347,7 @@ class GroupPolicyDbTestCase(GroupPolicyDBTestBase,
         plugins = manager.NeutronManager.get_service_plugins()
         self._gbp_plugin = plugins.get(constants.GROUP_POLICY)
         self._sc_plugin = plugins.get(constants.SERVICECHAIN)
-        self._l3_plugin = plugins.get(constants.L3_ROUTER_NAT)
+        self._l3_plugin = plugins.get(lib_constants.L3)
 
 
 class TestGroupResources(GroupPolicyDbTestCase):

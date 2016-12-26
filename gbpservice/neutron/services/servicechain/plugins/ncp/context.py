@@ -11,7 +11,7 @@
 #    under the License.
 
 from neutron import manager
-from neutron.plugins.common import constants as pconst
+from neutron_lib import constants
 
 from gbpservice.common import utils
 from gbpservice.neutron.services.grouppolicy.drivers import resource_mapping
@@ -120,7 +120,7 @@ class NodeDriverContext(object):
         self._relevant_specs = None
         self._core_plugin = manager.NeutronManager.get_plugin()
         self._l3_plugin = manager.NeutronManager.get_service_plugins().get(
-            pconst.L3_ROUTER_NAT)
+            constants.L3)
         self._position = position
 
     @property

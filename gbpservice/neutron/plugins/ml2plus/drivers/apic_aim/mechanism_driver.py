@@ -41,6 +41,7 @@ from neutron.plugins.common import constants as pconst
 from neutron.plugins.ml2 import db
 from neutron.plugins.ml2 import driver_api as api
 from neutron.plugins.ml2 import models
+from neutron_lib import constants as lib_const
 from opflexagent import constants as ofcst
 from opflexagent import rpc as ofrpc
 from oslo_config import cfg
@@ -1196,7 +1197,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
     def l3_plugin(self):
         if not self._l3_plugin:
             plugins = manager.NeutronManager.get_service_plugins()
-            self._l3_plugin = plugins[pconst.L3_ROUTER_NAT]
+            self._l3_plugin = plugins[lib_const.L3]
         return self._l3_plugin
 
     def _merge_status(self, aim_ctx, sync_state, resource):

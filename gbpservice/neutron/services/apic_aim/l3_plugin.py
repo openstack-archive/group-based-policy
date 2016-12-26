@@ -21,7 +21,7 @@ from neutron.db import db_base_plugin_v2
 from neutron.db import extraroute_db
 from neutron.db import l3_gwmode_db
 from neutron.extensions import l3
-from neutron.plugins.common import constants
+from neutron_lib import constants
 from neutron_lib import exceptions
 from oslo_log import log as logging
 from oslo_utils import excutils
@@ -44,7 +44,7 @@ class ApicL3Plugin(common_db_mixin.CommonDbMixin,
 
     @staticmethod
     def get_plugin_type():
-        return constants.L3_ROUTER_NAT
+        return constants.L3
 
     @staticmethod
     def get_plugin_description():

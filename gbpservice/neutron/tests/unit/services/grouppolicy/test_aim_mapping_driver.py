@@ -27,8 +27,8 @@ from neutron import context as nctx
 from neutron.db import api as db_api
 from neutron import manager
 from neutron.notifiers import nova
-from neutron.plugins.common import constants as service_constants
 from neutron.tests.unit.extensions import test_address_scope
+from neutron_lib import constants
 from opflexagent import constants as ocst
 from oslo_config import cfg
 from oslo_utils import uuidutils
@@ -118,7 +118,7 @@ class AIMBaseTestCase(test_nr_base.CommonNeutronBaseTestCase,
             ml2_options=ml2_opts, l3_plugin=l3_plugin,
             sc_plugin=sc_plugin)
         self.l3_plugin = manager.NeutronManager.get_service_plugins()[
-            service_constants.L3_ROUTER_NAT]
+            constants.L3]
         config.cfg.CONF.set_override('network_vlan_ranges',
                                      ['physnet1:1000:1099'],
                                      group='ml2_type_vlan')
