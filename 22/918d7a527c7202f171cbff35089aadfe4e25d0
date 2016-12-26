@@ -1,0 +1,8 @@
+Code-Review+2: Sumit Naiksatam <sumitnaiksatam@gmail.com>
+Workflow+1: Sumit Naiksatam <sumitnaiksatam@gmail.com>
+Verified+2: Jenkins
+Submitted-by: Jenkins
+Submitted-at: Mon, 26 Dec 2016 03:23:48 +0000
+Reviewed-on: https://review.openstack.org/414682
+Project: openstack/group-based-policy
+Branch: refs/heads/stable/liberty
