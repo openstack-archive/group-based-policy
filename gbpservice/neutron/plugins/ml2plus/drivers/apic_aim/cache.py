@@ -39,6 +39,19 @@ class ProjectNameCache(object):
         self.project_names = {}
         self.keystone = None
 
+    def _get_keystone_client(self):
+        LOG.debug("Getting keystone client")
+        auth = ksc_auth.load_from_conf_options(cfg.CONF, AUTH_GROUP)
+        LOG.debug("Got auth: %s" % auth)
+        if not auth:
+            LOG.warning(_LW('No auth_plugin configured in %s'),
+                        AUTH_GROUP)
+        session = ksc_session.Session.load_from_conf_options(
+            cfg.CONF, AUTH_GROUP, auth=auth)
+        LOG.debug("Got session: %s" % session)
+        self.keystone = ksc_client.Client(session=session)
+        LOG.debug("Got client: %s" % self.keystone)
+
     def ensure_project(self, project_id):
         """Ensure cache contains mapping for project.
 
@@ -60,17 +73,7 @@ class ProjectNameCache(object):
         # should use keystoneauth instead.
         if project_id not in self.project_names:
             if self.keystone is None:
-                LOG.debug("Getting keystone client")
-                auth = ksc_auth.load_from_conf_options(cfg.CONF, AUTH_GROUP)
-                LOG.debug("Got auth: %s" % auth)
-                if not auth:
-                    LOG.warning(_LW('No auth_plugin configured in %s'),
-                                AUTH_GROUP)
-                session = ksc_session.Session.load_from_conf_options(
-                    cfg.CONF, AUTH_GROUP, auth=auth)
-                LOG.debug("Got session: %s" % session)
-                self.keystone = ksc_client.Client(session=session)
-                LOG.debug("Got client: %s" % self.keystone)
+                self._get_keystone_client()
             LOG.debug("Calling project API")
             projects = self.keystone.projects.list()
             LOG.debug("Received projects: %s" % projects)
@@ -87,3 +90,15 @@ class ProjectNameCache(object):
         returned. If not, None is returned.
         """
         return self.project_names.get(project_id)
+
+    def update_project_name(self, project_id):
+        if self.keystone is None:
+            self._get_keystone_client()
+        if self.keystone:
+            LOG.debug("Calling project API")
+            project = self.keystone.projects.get(project_id)
+            # only return project name when there is a change
+            if project and self.project_names.get(project_id) != project.name:
+                self.project_names[project.id] = project.name
+                return project.name
+        return None

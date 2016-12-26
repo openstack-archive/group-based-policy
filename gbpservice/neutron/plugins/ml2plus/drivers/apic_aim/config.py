@@ -24,6 +24,14 @@ from apic_ml2.neutron.plugins.ml2.drivers.cisco.apic import config  # noqa
 apic_opts = [
     cfg.BoolOpt('enable_optimized_dhcp', default=True),
     cfg.BoolOpt('enable_optimized_metadata', default=False),
+    cfg.StrOpt('keystone_notification_exchange',
+               default='keystone',
+               help=("The exchange used to subscribe to Keystone "
+                     "notifications")),
+    cfg.StrOpt('keystone_notification_topic',
+               default='notifications',
+               help=("The topic used to subscribe to Keystone "
+                     "notifications")),
 ]
 
 
