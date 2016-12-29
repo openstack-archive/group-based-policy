@@ -1066,11 +1066,11 @@ class DeviceOrchestrator(nfp_api.NfpEventHandler):
         # handle routes differently, when vpn is in service chain
         if nfp_utils.is_vpn_in_service_chain(
                 nfp_context['service_chain_specs']):
-            config_params['config'][0][
-                'resource_data']['forward_route'] = False
+            for cfg in config_params['config']:
+                cfg['resource_data']['forward_route'] = False
         else:
-            config_params['config'][0][
-                'resource_data']['forward_route'] = True
+            for cfg in config_params['config']:
+                cfg['resource_data']['forward_route'] = True
         # Sends RPC to configurator to create generic config
         self.configurator_rpc.create_network_function_device_config(
             device, config_params)
