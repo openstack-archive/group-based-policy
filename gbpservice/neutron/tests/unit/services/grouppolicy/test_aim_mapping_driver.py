@@ -35,6 +35,8 @@ from oslo_utils import uuidutils
 import webob.exc
 
 from gbpservice.network.neutronv2 import local_api
+from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import (
+    mechanism_driver as md)
 from gbpservice.neutron.services.grouppolicy.common import (
     constants as gp_const)
 from gbpservice.neutron.services.grouppolicy import config
@@ -136,7 +138,6 @@ class AIMBaseTestCase(test_nr_base.CommonNeutronBaseTestCase,
         self._aim_mgr = None
         self._aim_context = aim_context.AimContext(
             self._neutron_context.session)
-        self._driver = None
         self._dummy = None
         self._name_mapper = None
         self._driver = None
@@ -468,7 +469,7 @@ class AIMBaseTestCase(test_nr_base.CommonNeutronBaseTestCase,
                 ptg_id, expected_res_status=200)['policy_target_group']
         aim_epg_name = self.driver.apic_epg_name_for_policy_target_group(
             self._neutron_context.session, ptg_id)
-        aim_tenant_name = str(self.name_mapper.tenant(
+        aim_tenant_name = str(self.driver._aim_tenant_name(
             self._neutron_context.session, self._tenant_id))
         aim_app_profile_name = self.driver.aim_mech_driver.ap_name
         aim_app_profiles = self.aim_mgr.find(
@@ -505,8 +506,8 @@ class AIMBaseTestCase(test_nr_base.CommonNeutronBaseTestCase,
         self._test_aim_resource_status(aim_epgs[0], ptg_show)
 
     def _validate_implicit_contracts_deleted(self, l2p):
-        aim_tenant_name = str(self.name_mapper.tenant(
-            self._neutron_context.session, l2p['tenant_id']))
+        aim_tenant_name = str(self.driver._aim_tenant_name(
+            self._neutron_context.session, md.COMMON_TENANT_NAME))
         contracts = [alib.SERVICE_PREFIX, alib.IMPLICIT_PREFIX]
 
         for contract_name_prefix in contracts:
@@ -522,18 +523,24 @@ class AIMBaseTestCase(test_nr_base.CommonNeutronBaseTestCase,
                 name=contract_name)
             self.assertEqual(0, len(aim_contract_subjects))
 
-        aim_filters = self.aim_mgr.find(
-            self._aim_context, aim_resource.Filter,
-            tenant_name=aim_tenant_name)
-        # TODO(rkukura): Restore when GBP filters in common tenant.
-        # self.assertEqual(1, len(aim_filters))  # belongs to MD
-        self.assertEqual(0, len(aim_filters))
         aim_filter_entries = self.aim_mgr.find(
             self._aim_context, aim_resource.FilterEntry,
             tenant_name=aim_tenant_name)
-        # TODO(rkukura): Restore when GBP filters in common tenant.
-        # self.assertEqual(1, len(aim_filter_entries))  # belongs to MD
+        for afilterentry in aim_filter_entries[:]:
+            # Remove filter_entries created by MD or created for other tenants
+            if not afilterentry.filter_name.endswith(l2p['tenant_id']):
+                aim_filter_entries.remove(afilterentry)
         self.assertEqual(0, len(aim_filter_entries))
+
+        aim_filters = self.aim_mgr.find(
+            self._aim_context, aim_resource.Filter,
+            tenant_name=aim_tenant_name)
+        for afilter in aim_filters[:]:
+            # Remove filters created by MD or created for other tenants
+            if not afilter.name.endswith(l2p['tenant_id']):
+                aim_filters.remove(afilter)
+
+        self.assertEqual(0, len(aim_filters))
 
     def _validate_l2_policy_deleted(self, l2p):
         l2p_id = l2p['id']
@@ -549,7 +556,7 @@ class AIMBaseTestCase(test_nr_base.CommonNeutronBaseTestCase,
         if len(l2ps) == 0:
             self._validate_implicit_contracts_deleted(l2p)
             self.show_l3_policy(l3p_id, expected_res_status=404)
-            apic_tenant_name = self.name_mapper.tenant(
+            apic_tenant_name = self.driver._aim_tenant_name(
                 self._neutron_context.session, self._tenant_id)
             epgs = self.aim_mgr.find(
                 self._aim_context, aim_resource.EndpointGroup,
@@ -1024,8 +1031,8 @@ class TestL3PolicyRollback(AIMBaseTestCase):
 class TestL2PolicyBase(test_nr_base.TestL2Policy, AIMBaseTestCase):
 
     def _validate_implicit_contracts_exist(self, l2p):
-        aim_tenant_name = str(self.name_mapper.tenant(
-            self._neutron_context.session, l2p['tenant_id']))
+        aim_tenant_name = str(self.driver._aim_tenant_name(
+            self._neutron_context.session, md.COMMON_TENANT_NAME))
         net = self._plugin.get_network(self._context, l2p['network_id'])
         default_epg_dn = net['apic:distinguished_names']['EndpointGroup']
         default_epg = self.aim_mgr.get(self._aim_context,
@@ -1061,15 +1068,23 @@ class TestL2PolicyBase(test_nr_base.TestL2Policy, AIMBaseTestCase):
         aim_filters = self.aim_mgr.find(
             self._aim_context, aim_resource.Filter,
             tenant_name=aim_tenant_name)
-        # TODO(rkukura): Restore when GBP filters in common tenant.
-        # self.assertEqual(10, len(aim_filters))  # 1 belongs to MD
+        for afilter in aim_filters[:]:
+            # Remove filters created by MD or created for other tenants
+            if not afilter.name.endswith(l2p['tenant_id']):
+                aim_filters.remove(afilter)
+
         self.assertEqual(9, len(aim_filters))
+
         aim_filter_entries = self.aim_mgr.find(
             self._aim_context, aim_resource.FilterEntry,
             tenant_name=aim_tenant_name)
-        # TODO(rkukura): Restore when GBP filters in common tenant.
-        # self.assertEqual(10, len(aim_filter_entries))  # 1 belongs to MD
+        for afilterentry in aim_filter_entries[:]:
+            # Remove filter_entries created by MD or created for other tenants
+            if not afilterentry.filter_name.endswith(l2p['tenant_id']):
+                aim_filter_entries.remove(afilterentry)
+
         self.assertEqual(9, len(aim_filter_entries))
+
         entries_attrs = alib.get_service_contract_filter_entries().values()
         entries_attrs.extend(alib.get_arp_filter_entry().values())
         expected_entries_attrs = []
@@ -1081,12 +1096,10 @@ class TestL2PolicyBase(test_nr_base.TestL2Policy, AIMBaseTestCase):
         entries_attrs = [x.__dict__ for x in aim_filter_entries]
         observed_entries_attrs = []
         for entry in entries_attrs:
-            # Ignore entry belonging to MD's filter.
-            if entry['filter_name'] != 'AnyFilter':
-                observed_entries_attrs.append(
-                    {k: unicode(entry[k]) for k in entry if k not in [
-                        'name', 'display_name', 'filter_name', 'tenant_name',
-                        'monitored']})
+            observed_entries_attrs.append(
+                {k: unicode(entry[k]) for k in entry if k not in [
+                    'name', 'display_name', 'filter_name', 'tenant_name',
+                    'monitored']})
         self.assertItemsEqual(expected_entries_attrs, observed_entries_attrs)
 
 
@@ -1330,8 +1343,8 @@ class TestL2PolicyRollback(TestL2PolicyBase):
         self.assertEqual([], self._gbp_plugin.get_l2_policies(self._context))
         self.assertEqual([], self._gbp_plugin.get_l3_policies(self._context))
 
-        aim_tenant_name = str(self.name_mapper.tenant(
-            self._neutron_context.session, self._tenant_id))
+        aim_tenant_name = str(self.driver._aim_tenant_name(
+            self._neutron_context.session, md.COMMON_TENANT_NAME))
 
         aim_contracts = self.aim_mgr.find(
             self._aim_context, aim_resource.Contract,
@@ -1345,14 +1358,10 @@ class TestL2PolicyRollback(TestL2PolicyBase):
         aim_filters = self.aim_mgr.find(
             self._aim_context, aim_resource.Filter,
             tenant_name=aim_tenant_name)
-        # TODO(rkukura): Restore when GBP filters in common tenant.
-        # self.assertEqual(1, len(aim_filters))  # belongs to MD
         self.assertEqual(0, len(aim_filters))
         aim_filter_entries = self.aim_mgr.find(
             self._aim_context, aim_resource.FilterEntry,
             tenant_name=aim_tenant_name)
-        # TODO(rkukura): Restore when GBP filters in common tenant.
-        # self.assertEqual(1, len(aim_filter_entries))  # belongs to MD
         self.assertEqual(0, len(aim_filter_entries))
         # restore mock
         self.dummy.create_l2_policy_precommit = orig_func
@@ -1413,7 +1422,7 @@ class TestPolicyTargetGroup(AIMBaseTestCase):
 
         aim_epg_name = self.driver.apic_epg_name_for_policy_target_group(
             self._neutron_context.session, ptg['id'])
-        aim_tenant_name = str(self.name_mapper.tenant(
+        aim_tenant_name = str(self.driver._aim_tenant_name(
             self._neutron_context.session, self._tenant_id))
         aim_app_profile_name = self.driver.aim_mech_driver.ap_name
         aim_app_profiles = self.aim_mgr.find(
@@ -1497,7 +1506,7 @@ class TestPolicyTargetGroup(AIMBaseTestCase):
         ptg_name = ptg['name']
         aim_epg_name = self.driver.apic_epg_name_for_policy_target_group(
             self._neutron_context.session, ptg_id, ptg_name)
-        aim_tenant_name = str(self.name_mapper.tenant(
+        aim_tenant_name = str(self.driver._aim_tenant_name(
             self._neutron_context.session, self._tenant_id))
         aim_app_profile_name = self.driver.aim_mech_driver.ap_name
         aim_app_profiles = self.aim_mgr.find(
@@ -1919,8 +1928,8 @@ class TestPolicyTarget(AIMBaseTestCase):
             host='h1')
         epg_name = self.driver.apic_epg_name_for_policy_target_group(
             self._neutron_context.session, ptg['id'], ptg['name'])
-        epg_tenant = self.name_mapper.tenant(self._neutron_context.session,
-                                             ptg['tenant_id'])
+        epg_tenant = self.driver._aim_tenant_name(
+            self._neutron_context.session, ptg['tenant_id'])
         subnet = self._get_object('subnets', ptg['subnets'][0], self.api)
 
         self._verify_gbp_details_assertions(
@@ -2006,7 +2015,7 @@ class TestPolicyTarget(AIMBaseTestCase):
                     epg_name = self.name_mapper.network(
                         self._neutron_context.session, network['id'],
                         network['name'])
-                    epg_tenant = self.name_mapper.tenant(
+                    epg_tenant = self.driver._aim_tenant_name(
                         self._neutron_context.session, network['tenant_id'])
 
                     self._verify_gbp_details_assertions(
@@ -2160,8 +2169,8 @@ class TestPolicyRule(TestPolicyRuleBase):
         aim_reverse_filter_name = str(self.name_mapper.policy_rule(
             self._neutron_context.session, pr_id, pr_name,
             prefix=alib.REVERSE_PREFIX))
-        aim_tenant_name = str(self.name_mapper.tenant(
-            self._neutron_context.session, self._tenant_id))
+        aim_tenant_name = str(self.driver._aim_tenant_name(
+            self._neutron_context.session, md.COMMON_TENANT_NAME))
         self._test_policy_rule_create_update_result(
             aim_tenant_name, aim_filter_name, aim_reverse_filter_name, pr)
 
@@ -2205,13 +2214,9 @@ class TestPolicyRuleRollback(TestPolicyRuleBase):
                          self._gbp_plugin.get_policy_rules(self._context))
         aim_filters = self.aim_mgr.find(
             self._aim_context, aim_resource.Filter)
-        # TODO(rkukura): Restore when GBP filters in common tenant.
-        # self.assertEqual(1, len(aim_filters))  # belongs to MD
         self.assertEqual(0, len(aim_filters))
         aim_filter_entries = self.aim_mgr.find(
             self._aim_context, aim_resource.FilterEntry)
-        # TODO(rkukura): Restore when GBP filters in common tenant.
-        # self.assertEqual(1, len(aim_filter_entries))  # belongs to MD
         self.assertEqual(0, len(aim_filter_entries))
         # restore mock
         self.dummy.create_policy_rule_precommit = orig_func
@@ -2271,8 +2276,8 @@ class TestPolicyRuleRollback(TestPolicyRuleBase):
         aim_reverse_filter_name = str(self.name_mapper.policy_rule(
             self._neutron_context.session, pr_id, pr_name,
             prefix=alib.REVERSE_PREFIX))
-        aim_tenant_name = str(self.name_mapper.tenant(
-            self._neutron_context.session, self._tenant_id))
+        aim_tenant_name = str(self.driver._aim_tenant_name(
+            self._neutron_context.session, md.COMMON_TENANT_NAME))
         self._test_policy_rule_create_update_result(
             aim_tenant_name, aim_filter_name, aim_reverse_filter_name, pr)
 
