@@ -468,7 +468,7 @@ class AIMBaseTestCase(test_nr_base.CommonNeutronBaseTestCase,
                 ptg_id, expected_res_status=200)['policy_target_group']
         aim_epg_name = self.driver.apic_epg_name_for_policy_target_group(
             self._neutron_context.session, ptg_id)
-        aim_tenant_name = str(self.name_mapper.tenant(
+        aim_tenant_name = str(self.driver._aim_tenant_name(
             self._neutron_context.session, self._tenant_id))
         aim_app_profile_name = self.driver.aim_mech_driver.ap_name
         aim_app_profiles = self.aim_mgr.find(
@@ -505,7 +505,7 @@ class AIMBaseTestCase(test_nr_base.CommonNeutronBaseTestCase,
         self._test_aim_resource_status(aim_epgs[0], ptg_show)
 
     def _validate_implicit_contracts_deleted(self, l2p):
-        aim_tenant_name = str(self.name_mapper.tenant(
+        aim_tenant_name = str(self.driver._aim_tenant_name(
             self._neutron_context.session, l2p['tenant_id']))
         contracts = [alib.SERVICE_PREFIX, alib.IMPLICIT_PREFIX]
 
@@ -549,7 +549,7 @@ class AIMBaseTestCase(test_nr_base.CommonNeutronBaseTestCase,
         if len(l2ps) == 0:
             self._validate_implicit_contracts_deleted(l2p)
             self.show_l3_policy(l3p_id, expected_res_status=404)
-            apic_tenant_name = self.name_mapper.tenant(
+            apic_tenant_name = self.driver._aim_tenant_name(
                 self._neutron_context.session, self._tenant_id)
             epgs = self.aim_mgr.find(
                 self._aim_context, aim_resource.EndpointGroup,
@@ -1024,7 +1024,7 @@ class TestL3PolicyRollback(AIMBaseTestCase):
 class TestL2PolicyBase(test_nr_base.TestL2Policy, AIMBaseTestCase):
 
     def _validate_implicit_contracts_exist(self, l2p):
-        aim_tenant_name = str(self.name_mapper.tenant(
+        aim_tenant_name = str(self.driver._aim_tenant_name(
             self._neutron_context.session, l2p['tenant_id']))
         net = self._plugin.get_network(self._context, l2p['network_id'])
         default_epg_dn = net['apic:distinguished_names']['EndpointGroup']
@@ -1330,7 +1330,7 @@ class TestL2PolicyRollback(TestL2PolicyBase):
         self.assertEqual([], self._gbp_plugin.get_l2_policies(self._context))
         self.assertEqual([], self._gbp_plugin.get_l3_policies(self._context))
 
-        aim_tenant_name = str(self.name_mapper.tenant(
+        aim_tenant_name = str(self.driver._aim_tenant_name(
             self._neutron_context.session, self._tenant_id))
 
         aim_contracts = self.aim_mgr.find(
@@ -1413,7 +1413,7 @@ class TestPolicyTargetGroup(AIMBaseTestCase):
 
         aim_epg_name = self.driver.apic_epg_name_for_policy_target_group(
             self._neutron_context.session, ptg['id'])
-        aim_tenant_name = str(self.name_mapper.tenant(
+        aim_tenant_name = str(self.driver._aim_tenant_name(
             self._neutron_context.session, self._tenant_id))
         aim_app_profile_name = self.driver.aim_mech_driver.ap_name
         aim_app_profiles = self.aim_mgr.find(
@@ -1497,7 +1497,7 @@ class TestPolicyTargetGroup(AIMBaseTestCase):
         ptg_name = ptg['name']
         aim_epg_name = self.driver.apic_epg_name_for_policy_target_group(
             self._neutron_context.session, ptg_id, ptg_name)
-        aim_tenant_name = str(self.name_mapper.tenant(
+        aim_tenant_name = str(self.driver._aim_tenant_name(
             self._neutron_context.session, self._tenant_id))
         aim_app_profile_name = self.driver.aim_mech_driver.ap_name
         aim_app_profiles = self.aim_mgr.find(
@@ -1919,8 +1919,8 @@ class TestPolicyTarget(AIMBaseTestCase):
             host='h1')
         epg_name = self.driver.apic_epg_name_for_policy_target_group(
             self._neutron_context.session, ptg['id'], ptg['name'])
-        epg_tenant = self.name_mapper.tenant(self._neutron_context.session,
-                                             ptg['tenant_id'])
+        epg_tenant = self.driver._aim_tenant_name(
+            self._neutron_context.session, ptg['tenant_id'])
         subnet = self._get_object('subnets', ptg['subnets'][0], self.api)
 
         self._verify_gbp_details_assertions(
@@ -2006,7 +2006,7 @@ class TestPolicyTarget(AIMBaseTestCase):
                     epg_name = self.name_mapper.network(
                         self._neutron_context.session, network['id'],
                         network['name'])
-                    epg_tenant = self.name_mapper.tenant(
+                    epg_tenant = self.driver._aim_tenant_name(
                         self._neutron_context.session, network['tenant_id'])
 
                     self._verify_gbp_details_assertions(
@@ -2160,7 +2160,7 @@ class TestPolicyRule(TestPolicyRuleBase):
         aim_reverse_filter_name = str(self.name_mapper.policy_rule(
             self._neutron_context.session, pr_id, pr_name,
             prefix=alib.REVERSE_PREFIX))
-        aim_tenant_name = str(self.name_mapper.tenant(
+        aim_tenant_name = str(self.driver._aim_tenant_name(
             self._neutron_context.session, self._tenant_id))
         self._test_policy_rule_create_update_result(
             aim_tenant_name, aim_filter_name, aim_reverse_filter_name, pr)
@@ -2271,7 +2271,7 @@ class TestPolicyRuleRollback(TestPolicyRuleBase):
         aim_reverse_filter_name = str(self.name_mapper.policy_rule(
             self._neutron_context.session, pr_id, pr_name,
             prefix=alib.REVERSE_PREFIX))
-        aim_tenant_name = str(self.name_mapper.tenant(
+        aim_tenant_name = str(self.driver._aim_tenant_name(
             self._neutron_context.session, self._tenant_id))
         self._test_policy_rule_create_update_result(
             aim_tenant_name, aim_filter_name, aim_reverse_filter_name, pr)
