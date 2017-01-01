@@ -68,8 +68,9 @@ class CommonNeutronBaseTestCase(test_plugin.GroupPolicyPluginTestBase):
 
 class TestL2Policy(CommonNeutronBaseTestCase):
 
-    def test_l2_policy_lifecycle(self):
-        l2p = self.create_l2_policy(name="l2p1")
+    def _test_l2_policy_lifecycle_implicit_l3p(self,
+                                               shared=False):
+        l2p = self.create_l2_policy(name="l2p1", shared=shared)
         l2p_id = l2p['l2_policy']['id']
         network_id = l2p['l2_policy']['network_id']
         l3p_id = l2p['l2_policy']['l3_policy_id']
@@ -88,6 +89,12 @@ class TestL2Policy(CommonNeutronBaseTestCase):
         res = req.get_response(self.api)
         self.assertEqual(webob.exc.HTTPNotFound.code, res.status_int)
         self.show_l3_policy(l3p_id, expected_res_status=404)
+
+    def test_unshared_l2_policy_lifecycle_implicit_l3p(self):
+        self._test_l2_policy_lifecycle_implicit_l3p()
+
+    def test_shared_l2_policy_lifecycle_implicit_l3p(self):
+        self._test_l2_policy_lifecycle_implicit_l3p(shared=True)
 
 
 class TestL2PolicyRollback(CommonNeutronBaseTestCase):
