@@ -35,6 +35,8 @@ from gbpservice.neutron.extensions import cisco_apic
 from gbpservice.neutron.extensions import cisco_apic_gbp as aim_ext
 from gbpservice.neutron.extensions import cisco_apic_l3
 from gbpservice.neutron.extensions import group_policy as gpolicy
+from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import (
+    mechanism_driver as md)
 from gbpservice.neutron.services.grouppolicy.common import (
     constants as gp_const)
 from gbpservice.neutron.services.grouppolicy.common import constants as g_const
@@ -74,6 +76,10 @@ FILTER_ENTRIES = 'filter_entries'
 ENFORCED = aim_resource.EndpointGroup.POLICY_ENFORCED
 UNENFORCED = aim_resource.EndpointGroup.POLICY_UNENFORCED
 DEFAULT_SG_NAME = 'gbp_default'
+COMMON_TENANT_AIM_RESOURCES = [aim_resource.Contract.__name__,
+                               aim_resource.ContractSubject.__name__,
+                               aim_resource.Filter.__name__,
+                               aim_resource.FilterEntry.__name__]
 
 # REVISIT: Auto-PTG is currently config driven to align with the
 # config driven behavior of the older driver but is slated for
@@ -211,6 +217,15 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
             # TODO(Sumit): check that l3p['ip_pool'] does not overlap with an
             # existing subnetpool associated with the explicit address_scope
             pass
+
+        if l3p[ascp]:
+            # In the case of explicitly provided address_scope, set shared
+            # flag of L3P to that of the explicit address_scope
+            ascp_db = self._get_address_scope(
+                context._plugin_context, l3p[ascp], clean_session=False)
+            l3p_db['shared'] = ascp_db['shared']
+            context.current['shared'] = l3p_db['shared']
+
         subpool = 'subnetpools_v4' if l3p_db['ip_version'] == 4 else (
             'subnetpools_v6')
         if not l3p[subpool]:
@@ -263,6 +278,13 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
                              "subnet_prefix_length attributes will be unset."))
                 l3p_db['ip_pool'] = None
                 l3p_db['subnet_prefix_length'] = None
+            # In the case of explicitly provided subnetpool(s) set shared
+            # flag of L3P to that of the address_scope assocaited with the
+            # subnetpool(s)
+            ascp_db = self._get_address_scope(
+                context._plugin_context, l3p_db[ascp], clean_session=False)
+            l3p_db['shared'] = ascp_db['shared']
+            context.current['shared'] = l3p_db['shared']
 
         # REVISIT: Check if the following constraint still holds
         if len(l3p['routers']) > 1:
@@ -858,9 +880,17 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
         if context.original.get('shared') != context.current.get('shared'):
             raise SharedAttributeUpdateNotSupported(type=type)
 
-    def _aim_tenant_name(self, session, tenant_id):
-        # TODO(ivar): manage shared objects
-        tenant_name = self.name_mapper.tenant(session, tenant_id)
+    def _aim_tenant_name(self, session, tenant_id, aim_resource_class=None,
+                         gbp_resource=None, gbp_obj=None):
+        if aim_resource_class and (
+            aim_resource_class.__name__ in COMMON_TENANT_AIM_RESOURCES):
+            # COMMON_TENANT_AIM_RESOURCES will always be created in the
+            # ACI common tenant
+            aim_ctx = aim_context.AimContext(session)
+            self.aim_mech_driver._ensure_common_tenant(aim_ctx)
+            tenant_name = md.COMMON_TENANT_NAME
+        else:
+            tenant_name = self.name_mapper.tenant(session, tenant_id)
         LOG.debug("Mapped tenant_id %(id)s to %(apic_name)s",
                   {'id': tenant_id, 'apic_name': tenant_name})
         return tenant_name
@@ -915,7 +945,8 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
         # This returns a new AIM Filter resource
         # TODO(Sumit): Use _aim_resource_by_name
         tenant_id = pr['tenant_id']
-        tenant_name = self._aim_tenant_name(session, tenant_id)
+        tenant_name = self._aim_tenant_name(session, tenant_id,
+                                            aim_resource.Filter)
         id = pr['id']
         name = pr['name']
         display_name = self.aim_display_name(pr['name'])
@@ -1353,14 +1384,18 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
         # name_mapper is resource independent, change the following call
         # and use for other aim resource object creation.
         aim_name = self.name_mapper.policy_rule_set(**kwargs)
-        tenant_name = self._aim_tenant_name(session, tenant_id)
+        tenant_name = self._aim_tenant_name(session, tenant_id,
+                                            aim_resource_class)
         LOG.debug("Mapped %(gbp_resource)s with id: %(id)s, name: %(name)s ",
                   "prefix: %(prefix)s tenant_name: %(tenant_name)s to "
                   "aim_name: %(aim_name)s",
                   {'gbp_resource': gbp_resource, 'id': gbp_resource_id,
                    'name': gbp_resource_name, 'prefix': prefix,
                    'aim_name': aim_name})
-        display_name = self.aim_display_name(gbp_resource_name)
+        if not gbp_resource_name or gbp_resource_name == alib.PER_PROJECT:
+            display_name = self.aim_display_name(str(aim_name))
+        else:
+            display_name = self.aim_display_name(gbp_resource_name)
         kwargs = {'tenant_name': str(tenant_name),
                   'name': str(aim_name),
                   'display_name': display_name}

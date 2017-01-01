@@ -35,6 +35,8 @@ from oslo_utils import uuidutils
 import webob.exc
 
 from gbpservice.network.neutronv2 import local_api
+from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import (
+    mechanism_driver as md)
 from gbpservice.neutron.services.grouppolicy.common import (
     constants as gp_const)
 from gbpservice.neutron.services.grouppolicy import config
@@ -136,7 +138,6 @@ class AIMBaseTestCase(test_nr_base.CommonNeutronBaseTestCase,
         self._aim_mgr = None
         self._aim_context = aim_context.AimContext(
             self._neutron_context.session)
-        self._driver = None
         self._dummy = None
         self._name_mapper = None
         self._driver = None
@@ -304,6 +305,7 @@ class AIMBaseTestCase(test_nr_base.CommonNeutronBaseTestCase,
             self.assertEqual(None, l3p['subnet_prefix_length'])
         self.assertEqual(l3p['ip_version'],
                          subpool['ip_version'])
+        self.assertEqual(l3p['shared'], subpool['shared'])
         router = self._get_object('routers', router_id, self.ext_api)['router']
         self.assertEqual('l3p_l3p1', router['name'])
 
@@ -468,8 +470,7 @@ class AIMBaseTestCase(test_nr_base.CommonNeutronBaseTestCase,
                 ptg_id, expected_res_status=200)['policy_target_group']
         aim_epg_name = self.driver.apic_epg_name_for_policy_target_group(
             self._neutron_context.session, ptg_id)
-        aim_tenant_name = str(self.name_mapper.tenant(
-            self._neutron_context.session, self._tenant_id))
+        aim_tenant_name = self._tenant_id
         aim_app_profile_name = self.driver.aim_mech_driver.ap_name
         aim_app_profiles = self.aim_mgr.find(
             self._aim_context, aim_resource.ApplicationProfile,
@@ -505,8 +506,7 @@ class AIMBaseTestCase(test_nr_base.CommonNeutronBaseTestCase,
         self._test_aim_resource_status(aim_epgs[0], ptg_show)
 
     def _validate_implicit_contracts_deleted(self, l2p):
-        aim_tenant_name = str(self.name_mapper.tenant(
-            self._neutron_context.session, l2p['tenant_id']))
+        aim_tenant_name = md.COMMON_TENANT_NAME
         contracts = [alib.SERVICE_PREFIX, alib.IMPLICIT_PREFIX]
 
         for contract_name_prefix in contracts:
@@ -522,18 +522,24 @@ class AIMBaseTestCase(test_nr_base.CommonNeutronBaseTestCase,
                 name=contract_name)
             self.assertEqual(0, len(aim_contract_subjects))
 
-        aim_filters = self.aim_mgr.find(
-            self._aim_context, aim_resource.Filter,
-            tenant_name=aim_tenant_name)
-        # TODO(rkukura): Restore when GBP filters in common tenant.
-        # self.assertEqual(1, len(aim_filters))  # belongs to MD
-        self.assertEqual(0, len(aim_filters))
         aim_filter_entries = self.aim_mgr.find(
             self._aim_context, aim_resource.FilterEntry,
             tenant_name=aim_tenant_name)
-        # TODO(rkukura): Restore when GBP filters in common tenant.
-        # self.assertEqual(1, len(aim_filter_entries))  # belongs to MD
+        for afilterentry in aim_filter_entries[:]:
+            # Remove filter_entries created by MD or created for other tenants
+            if not afilterentry.filter_name.endswith(l2p['tenant_id']):
+                aim_filter_entries.remove(afilterentry)
         self.assertEqual(0, len(aim_filter_entries))
+
+        aim_filters = self.aim_mgr.find(
+            self._aim_context, aim_resource.Filter,
+            tenant_name=aim_tenant_name)
+        for afilter in aim_filters[:]:
+            # Remove filters created by MD or created for other tenants
+            if not afilter.name.endswith(l2p['tenant_id']):
+                aim_filters.remove(afilter)
+
+        self.assertEqual(0, len(aim_filters))
 
     def _validate_l2_policy_deleted(self, l2p):
         l2p_id = l2p['id']
@@ -549,8 +555,7 @@ class AIMBaseTestCase(test_nr_base.CommonNeutronBaseTestCase,
         if len(l2ps) == 0:
             self._validate_implicit_contracts_deleted(l2p)
             self.show_l3_policy(l3p_id, expected_res_status=404)
-            apic_tenant_name = self.name_mapper.tenant(
-                self._neutron_context.session, self._tenant_id)
+            apic_tenant_name = self._tenant_id
             epgs = self.aim_mgr.find(
                 self._aim_context, aim_resource.EndpointGroup,
                 tenant_name=apic_tenant_name)
@@ -623,9 +628,10 @@ class TestAIMStatus(AIMBaseTestCase):
 
 class TestL3Policy(AIMBaseTestCase):
 
-    def test_l3_policy_v4_lifecycle_implicit_address_scope(self):
+    def _test_l3_policy_v4_lifecycle_implicit_address_scope(self,
+                                                            shared=False):
         # Create L3 policy with implicit router.
-        l3p = self.create_l3_policy(name="l3p1")['l3_policy']
+        l3p = self.create_l3_policy(name="l3p1", shared=shared)['l3_policy']
         self._validate_create_l3_policy(l3p, 'address_scope_v4_id')
         self._validate_status('show_l3_policy', l3p['id'])
         self.assertEqual(1, len(l3p['subnetpools_v4']))
@@ -633,11 +639,18 @@ class TestL3Policy(AIMBaseTestCase):
         self._validate_delete_l3_policy_implicit_resources(
             l3p, 'address_scope_v4_id')
 
-    def test_l3_policy_v6_lifecycle_implicit_address_scope(self):
+    def test_unshared_l3_policy_v4_lifecycle_implicit_address_scope(self):
+        self._test_l3_policy_v4_lifecycle_implicit_address_scope()
+
+    def test_shared_l3_policy_v4_lifecycle_implicit_address_scope(self):
+        self._test_l3_policy_v4_lifecycle_implicit_address_scope(shared=True)
+
+    def _test_l3_policy_v6_lifecycle_implicit_address_scope(self,
+                                                            shared=False):
         # Create L3 policy with implicit router.
         l3p = self.create_l3_policy(
             name="l3p1", ip_pool='2210::/64', subnet_prefix_length=64,
-            ip_version=6)['l3_policy']
+            ip_version=6, shared=shared)['l3_policy']
         self._validate_create_l3_policy(l3p, 'address_scope_v6_id')
         self._validate_status('show_l3_policy', l3p['id'])
         self.assertEqual(1, len(l3p['subnetpools_v6']))
@@ -645,8 +658,15 @@ class TestL3Policy(AIMBaseTestCase):
         self._validate_delete_l3_policy_implicit_resources(
             l3p, 'address_scope_v6_id')
 
-    def test_l3_policy_lifecycle_explicit_address_scope_v4(self):
-        with self.address_scope(ip_version=4) as ascp:
+    def test_unshared_l3_policy_v6_lifecycle_implicit_address_scope(self):
+        self._test_l3_policy_v6_lifecycle_implicit_address_scope()
+
+    def test_shared_l3_policy_v6_lifecycle_implicit_address_scope(self):
+        self._test_l3_policy_v6_lifecycle_implicit_address_scope(shared=True)
+
+    def _test_l3_policy_lifecycle_explicit_address_scope_v4(self,
+                                                            shared=False):
+        with self.address_scope(ip_version=4, shared=shared) as ascp:
             ascp = ascp['address_scope']
             l3p = self.create_l3_policy(
                 name="l3p1", address_scope_v4_id=ascp['id'])['l3_policy']
@@ -658,8 +678,15 @@ class TestL3Policy(AIMBaseTestCase):
             self._validate_delete_l3_policy_implicit_resources(
                 l3p, 'address_scope_v4_id')
 
-    def test_l3_policy_lifecycle_explicit_address_scope_v6(self):
-        with self.address_scope(ip_version=6) as ascp:
+    def test_unshared_l3_policy_lifecycle_explicit_address_scope_v4(self):
+        self._test_l3_policy_lifecycle_explicit_address_scope_v4()
+
+    def test_shared_l3_policy_lifecycle_explicit_address_scope_v4(self):
+        self._test_l3_policy_lifecycle_explicit_address_scope_v4(shared=True)
+
+    def _test_l3_policy_lifecycle_explicit_address_scope_v6(self,
+                                                            shared=False):
+        with self.address_scope(ip_version=6, shared=shared) as ascp:
             ascp = ascp['address_scope']
             l3p = self.create_l3_policy(
                 name="l3p1", address_scope_v6_id=ascp['id'],
@@ -673,6 +700,12 @@ class TestL3Policy(AIMBaseTestCase):
             self._validate_delete_l3_policy_implicit_resources(
                 l3p, 'address_scope_v6_id')
 
+    def test_unshared_l3_policy_lifecycle_explicit_address_scope_v6(self):
+        self._test_l3_policy_lifecycle_explicit_address_scope_v6()
+
+    def test_shared_l3_policy_lifecycle_explicit_address_scope_v6(self):
+        self._test_l3_policy_lifecycle_explicit_address_scope_v6(shared=True)
+
     def test_create_l3_policy_explicit_address_scope_v4_v6_fail(self):
         with self.address_scope(ip_version=4) as ascpv4:
             with self.address_scope(ip_version=6) as ascpv6:
@@ -685,13 +718,14 @@ class TestL3Policy(AIMBaseTestCase):
                     'SimultaneousV4V6AddressScopesNotSupportedOnAimDriver',
                     res['NeutronError']['type'])
 
-    def test_create_l3_policy_explicit_subnetpool_v4(self):
-        with self.address_scope(ip_version=4) as ascpv4:
+    def _test_create_l3_policy_explicit_subnetpool_v4(self,
+                                                      shared=False):
+        with self.address_scope(ip_version=4, shared=shared) as ascpv4:
             ascpv4 = ascpv4['address_scope']
             with self.subnetpool(
                 name='v4', prefixes=['192.168.0.0/16'],
                 tenant_id=ascpv4['tenant_id'], default_prefixlen=24,
-                address_scope_id=ascpv4['id']) as spv4:
+                address_scope_id=ascpv4['id'], shared=shared) as spv4:
                     spv4 = spv4['subnetpool']
                     l3p = self.create_l3_policy(
                         name="l3p1", subnetpools_v4=[spv4['id']])['l3_policy']
@@ -706,13 +740,19 @@ class TestL3Policy(AIMBaseTestCase):
                     self._validate_delete_l3_policy_explicit_resources(
                         l3p, 'address_scope_v4_id')
 
-    def test_create_l3_policy_explicit_subnetpool_v6(self):
-        with self.address_scope(ip_version=6) as ascpv6:
+    def test_unshared_create_l3_policy_explicit_subnetpool_v4(self):
+        self._test_create_l3_policy_explicit_subnetpool_v4()
+
+    def test_shared_create_l3_policy_explicit_subnetpool_v4(self):
+        self._test_create_l3_policy_explicit_subnetpool_v4(shared=True)
+
+    def _test_create_l3_policy_explicit_subnetpool_v6(self, share=False):
+        with self.address_scope(ip_version=6, shared=shared) as ascpv6:
             ascpv6 = ascpv6['address_scope']
             with self.subnetpool(
                 name='v6', prefixes=['2210::/64'],
                 tenant_id=ascpv6['tenant_id'], default_prefixlen=65,
-                address_scope_id=ascpv6['id']) as spv6:
+                address_scope_id=ascpv6['id'], shared=shared) as spv6:
                     spv6 = spv6['subnetpool']
                     l3p = self.create_l3_policy(
                         name="l3p1", subnetpools_v6=[spv6['id']])['l3_policy']
@@ -726,6 +766,12 @@ class TestL3Policy(AIMBaseTestCase):
                     # TODO(Sumit): Test update of relevant attributes
                     self._validate_delete_l3_policy_explicit_resources(
                         l3p, 'address_scope_v6_id')
+
+    def test_unshared_create_l3_policy_explicit_subnetpool_v6(self):
+        self._test_create_l3_policy_explicit_subnetpool_v6()
+
+    def test_shared_create_l3_policy_explicit_subnetpool_v6(self):
+        self._test_create_l3_policy_explicit_subnetpool_v6(shared=True)
 
     def test_create_l3_policy_explicit_subnetpools_v4_v6_fail(self):
         excp = 'SimultaneousV4V6SubnetpoolsNotSupportedOnAimDriver'
@@ -1024,8 +1070,7 @@ class TestL3PolicyRollback(AIMBaseTestCase):
 class TestL2PolicyBase(test_nr_base.TestL2Policy, AIMBaseTestCase):
 
     def _validate_implicit_contracts_exist(self, l2p):
-        aim_tenant_name = str(self.name_mapper.tenant(
-            self._neutron_context.session, l2p['tenant_id']))
+        aim_tenant_name = md.COMMON_TENANT_NAME
         net = self._plugin.get_network(self._context, l2p['network_id'])
         default_epg_dn = net['apic:distinguished_names']['EndpointGroup']
         default_epg = self.aim_mgr.get(self._aim_context,
@@ -1061,15 +1106,23 @@ class TestL2PolicyBase(test_nr_base.TestL2Policy, AIMBaseTestCase):
         aim_filters = self.aim_mgr.find(
             self._aim_context, aim_resource.Filter,
             tenant_name=aim_tenant_name)
-        # TODO(rkukura): Restore when GBP filters in common tenant.
-        # self.assertEqual(10, len(aim_filters))  # 1 belongs to MD
+        for afilter in aim_filters[:]:
+            # Remove filters created by MD or created for other tenants
+            if not afilter.name.endswith(l2p['tenant_id']):
+                aim_filters.remove(afilter)
+
         self.assertEqual(9, len(aim_filters))
+
         aim_filter_entries = self.aim_mgr.find(
             self._aim_context, aim_resource.FilterEntry,
             tenant_name=aim_tenant_name)
-        # TODO(rkukura): Restore when GBP filters in common tenant.
-        # self.assertEqual(10, len(aim_filter_entries))  # 1 belongs to MD
+        for afilterentry in aim_filter_entries[:]:
+            # Remove filter_entries created by MD or created for other tenants
+            if not afilterentry.filter_name.endswith(l2p['tenant_id']):
+                aim_filter_entries.remove(afilterentry)
+
         self.assertEqual(9, len(aim_filter_entries))
+
         entries_attrs = alib.get_service_contract_filter_entries().values()
         entries_attrs.extend(alib.get_arp_filter_entry().values())
         expected_entries_attrs = []
@@ -1081,12 +1134,10 @@ class TestL2PolicyBase(test_nr_base.TestL2Policy, AIMBaseTestCase):
         entries_attrs = [x.__dict__ for x in aim_filter_entries]
         observed_entries_attrs = []
         for entry in entries_attrs:
-            # Ignore entry belonging to MD's filter.
-            if entry['filter_name'] != 'AnyFilter':
-                observed_entries_attrs.append(
-                    {k: unicode(entry[k]) for k in entry if k not in [
-                        'name', 'display_name', 'filter_name', 'tenant_name',
-                        'monitored']})
+            observed_entries_attrs.append(
+                {k: unicode(entry[k]) for k in entry if k not in [
+                    'name', 'display_name', 'filter_name', 'tenant_name',
+                    'monitored']})
         self.assertItemsEqual(expected_entries_attrs, observed_entries_attrs)
 
 
@@ -1330,8 +1381,7 @@ class TestL2PolicyRollback(TestL2PolicyBase):
         self.assertEqual([], self._gbp_plugin.get_l2_policies(self._context))
         self.assertEqual([], self._gbp_plugin.get_l3_policies(self._context))
 
-        aim_tenant_name = str(self.name_mapper.tenant(
-            self._neutron_context.session, self._tenant_id))
+        aim_tenant_name = md.COMMON_TENANT_NAME
 
         aim_contracts = self.aim_mgr.find(
             self._aim_context, aim_resource.Contract,
@@ -1345,14 +1395,10 @@ class TestL2PolicyRollback(TestL2PolicyBase):
         aim_filters = self.aim_mgr.find(
             self._aim_context, aim_resource.Filter,
             tenant_name=aim_tenant_name)
-        # TODO(rkukura): Restore when GBP filters in common tenant.
-        # self.assertEqual(1, len(aim_filters))  # belongs to MD
         self.assertEqual(0, len(aim_filters))
         aim_filter_entries = self.aim_mgr.find(
             self._aim_context, aim_resource.FilterEntry,
             tenant_name=aim_tenant_name)
-        # TODO(rkukura): Restore when GBP filters in common tenant.
-        # self.assertEqual(1, len(aim_filter_entries))  # belongs to MD
         self.assertEqual(0, len(aim_filter_entries))
         # restore mock
         self.dummy.create_l2_policy_precommit = orig_func
@@ -1413,8 +1459,7 @@ class TestPolicyTargetGroup(AIMBaseTestCase):
 
         aim_epg_name = self.driver.apic_epg_name_for_policy_target_group(
             self._neutron_context.session, ptg['id'])
-        aim_tenant_name = str(self.name_mapper.tenant(
-            self._neutron_context.session, self._tenant_id))
+        aim_tenant_name = self._tenant_id
         aim_app_profile_name = self.driver.aim_mech_driver.ap_name
         aim_app_profiles = self.aim_mgr.find(
             self._aim_context, aim_resource.ApplicationProfile,
@@ -1497,8 +1542,7 @@ class TestPolicyTargetGroup(AIMBaseTestCase):
         ptg_name = ptg['name']
         aim_epg_name = self.driver.apic_epg_name_for_policy_target_group(
             self._neutron_context.session, ptg_id, ptg_name)
-        aim_tenant_name = str(self.name_mapper.tenant(
-            self._neutron_context.session, self._tenant_id))
+        aim_tenant_name = self._tenant_id
         aim_app_profile_name = self.driver.aim_mech_driver.ap_name
         aim_app_profiles = self.aim_mgr.find(
             self._aim_context, aim_resource.ApplicationProfile,
@@ -1919,8 +1963,7 @@ class TestPolicyTarget(AIMBaseTestCase):
             host='h1')
         epg_name = self.driver.apic_epg_name_for_policy_target_group(
             self._neutron_context.session, ptg['id'], ptg['name'])
-        epg_tenant = self.name_mapper.tenant(self._neutron_context.session,
-                                             ptg['tenant_id'])
+        epg_tenant = ptg['tenant_id']
         subnet = self._get_object('subnets', ptg['subnets'][0], self.api)
 
         self._verify_gbp_details_assertions(
@@ -2006,8 +2049,7 @@ class TestPolicyTarget(AIMBaseTestCase):
                     epg_name = self.name_mapper.network(
                         self._neutron_context.session, network['id'],
                         network['name'])
-                    epg_tenant = self.name_mapper.tenant(
-                        self._neutron_context.session, network['tenant_id'])
+                    epg_tenant = network['tenant_id']
 
                     self._verify_gbp_details_assertions(
                         mapping, req_mapping, port_id, epg_name, epg_tenant,
@@ -2160,8 +2202,7 @@ class TestPolicyRule(TestPolicyRuleBase):
         aim_reverse_filter_name = str(self.name_mapper.policy_rule(
             self._neutron_context.session, pr_id, pr_name,
             prefix=alib.REVERSE_PREFIX))
-        aim_tenant_name = str(self.name_mapper.tenant(
-            self._neutron_context.session, self._tenant_id))
+        aim_tenant_name = md.COMMON_TENANT_NAME
         self._test_policy_rule_create_update_result(
             aim_tenant_name, aim_filter_name, aim_reverse_filter_name, pr)
 
@@ -2205,13 +2246,9 @@ class TestPolicyRuleRollback(TestPolicyRuleBase):
                          self._gbp_plugin.get_policy_rules(self._context))
         aim_filters = self.aim_mgr.find(
             self._aim_context, aim_resource.Filter)
-        # TODO(rkukura): Restore when GBP filters in common tenant.
-        # self.assertEqual(1, len(aim_filters))  # belongs to MD
         self.assertEqual(0, len(aim_filters))
         aim_filter_entries = self.aim_mgr.find(
             self._aim_context, aim_resource.FilterEntry)
-        # TODO(rkukura): Restore when GBP filters in common tenant.
-        # self.assertEqual(1, len(aim_filter_entries))  # belongs to MD
         self.assertEqual(0, len(aim_filter_entries))
         # restore mock
         self.dummy.create_policy_rule_precommit = orig_func
@@ -2271,8 +2308,7 @@ class TestPolicyRuleRollback(TestPolicyRuleBase):
         aim_reverse_filter_name = str(self.name_mapper.policy_rule(
             self._neutron_context.session, pr_id, pr_name,
             prefix=alib.REVERSE_PREFIX))
-        aim_tenant_name = str(self.name_mapper.tenant(
-            self._neutron_context.session, self._tenant_id))
+        aim_tenant_name = md.COMMON_TENANT_NAME
         self._test_policy_rule_create_update_result(
             aim_tenant_name, aim_filter_name, aim_reverse_filter_name, pr)
 
