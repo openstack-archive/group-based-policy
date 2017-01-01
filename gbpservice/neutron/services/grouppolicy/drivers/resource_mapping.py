@@ -753,6 +753,37 @@ class ImplicitResourceOperations(local_api.LocalAPI):
             plugin_context, router_id, interface_info)
         return router
 
+    def _reject_non_shared_net_on_shared_l2p(self, context):
+        if context.current.get('shared') and context.current['network_id']:
+            net = self._get_network(
+                context._plugin_context, context.current['network_id'])
+            if not net.get('shared'):
+                raise exc.NonSharedNetworkOnSharedL2PolicyNotSupported()
+
+    def _reject_invalid_network_access(self, context):
+        # Validate if the explicit network belongs to the tenant.
+        # Are networks shared across tenants ??
+        # How to check if admin and if admin can access all networks ??
+        if context.current['network_id']:
+            network_id = context.current['network_id']
+            plugin_context = context._plugin_context
+            network = None
+            try:
+                network = self._get_network(plugin_context, network_id)
+            except n_exc.NetworkNotFound:
+                raise exc.InvalidNetworkAccess(
+                    msg="Can't access other tenants networks",
+                    network_id=context.current['network_id'],
+                    tenant_id=context.current['tenant_id'])
+
+            if network:
+                tenant_id_of_explicit_net = network['tenant_id']
+                if tenant_id_of_explicit_net != context.current['tenant_id']:
+                    raise exc.InvalidNetworkAccess(
+                        msg="Can't access other tenants networks",
+                        network_id=context.current['network_id'],
+                        tenant_id=context.current['tenant_id'])
+
 
 class ResourceMappingDriver(api.PolicyDriver, ImplicitResourceOperations,
                             nsp_manager.NetworkServicePolicyMappingMixin,
@@ -825,37 +856,6 @@ class ResourceMappingDriver(api.PolicyDriver, ImplicitResourceOperations,
             LOG.error(_LE("Wrong credentials provided: user: %(user)s, "
                         "password: %(pwd)s, tenant: %(tenant)s"),
                      {'user': user, 'pwd': pwd, 'tenant': tenant})
-
-    def _reject_non_shared_net_on_shared_l2p(self, context):
-        if context.current.get('shared') and context.current['network_id']:
-            net = self._get_network(
-                context._plugin_context, context.current['network_id'])
-            if not net.get('shared'):
-                raise exc.NonSharedNetworkOnSharedL2PolicyNotSupported()
-
-    def _reject_invalid_network_access(self, context):
-        # Validate if the explicit network belongs to the tenant.
-        # Are networks shared across tenants ??
-        # How to check if admin and if admin can access all networks ??
-        if context.current['network_id']:
-            network_id = context.current['network_id']
-            plugin_context = context._plugin_context
-            network = None
-            try:
-                network = self._get_network(plugin_context, network_id)
-            except n_exc.NetworkNotFound:
-                raise exc.InvalidNetworkAccess(
-                    msg="Can't access other tenants networks",
-                    network_id=context.current['network_id'],
-                    tenant_id=context.current['tenant_id'])
-
-            if network:
-                tenant_id_of_explicit_net = network['tenant_id']
-                if tenant_id_of_explicit_net != context.current['tenant_id']:
-                    raise exc.InvalidNetworkAccess(
-                        msg="Can't access other tenants networks",
-                        network_id=context.current['network_id'],
-                        tenant_id=context.current['tenant_id'])
 
     @log.log_method_call
     def create_policy_target_precommit(self, context):
