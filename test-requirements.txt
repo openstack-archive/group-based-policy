@@ -3,7 +3,7 @@
 # process, which may cause wedges in the gate later.
 
 setuptools>=19.2
--e git+https://git.openstack.org/openstack/neutron.git@stable/mitaka#egg=neutron
+-e git+https://git.openstack.org/openstack/neutron.git@5413853b85f1bcd61f66c768b53c5b30ebb093d7#egg=neutron
 # TODO(rkukura): Switch apicapi back to master branch eventually.
 -e git+https://github.com/noironetworks/apicapi.git@aci_integration_manager#egg=apicapi
 -e git+https://github.com/noironetworks/python-opflex-agent.git@master#egg=python-opflexagent-agent
