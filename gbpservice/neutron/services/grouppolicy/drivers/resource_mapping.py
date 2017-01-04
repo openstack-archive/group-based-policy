@@ -857,6 +857,11 @@ class ResourceMappingDriver(api.PolicyDriver, ImplicitResourceOperations,
                         network_id=context.current['network_id'],
                         tenant_id=context.current['tenant_id'])
 
+    def _get_subnet(self, context, subnet_id):
+        context.session.expire_all()
+        return super(ResourceMappingDriver, self)._get_subnet(
+            context, subnet_id)
+
     @log.log_method_call
     def create_policy_target_precommit(self, context):
         self._check_create_policy_target(context)
