@@ -2709,6 +2709,12 @@ class TestL3Policy(ApicMappingTestCase):
                              {'destination': '128.0.0.0/16',
                               'nexthop': None}])['external_segment']
         owner = self._tenant(es['tenant_id'], shared_es)
+        # Edge NAT requires a NAT pool
+        if is_edge_nat:
+            self.create_nat_pool(
+                external_segment_id=es['id'],
+                ip_version=4, ip_pool='192.168.1.0/24',
+                expected_res_status=webob.exc.HTTPCreated.code)['nat_pool']
 
         mgr = self.driver.apic_manager
         mgr.ensure_epg_created.reset_mock()
@@ -2890,6 +2896,34 @@ class TestL3Policy(ApicMappingTestCase):
         self._test_l3p_plugged_to_es_at_creation(shared_es=False,
                                                  shared_l3p=False,
                                                  is_edge_nat=True)
+
+    def test_l3p_plugged_to_es_at_creation_edge_nat_no_nat_pool(self):
+        shared_es = False
+        shared_l3p = False
+        is_edge_nat = True
+        # this mode is not supported
+        if self.driver.per_tenant_nat_epg and self.single_tenant_mode:
+            return
+        # Verify L3P is correctly plugged to ES on APIC during create
+        self._mock_external_dict([('supported', '192.168.0.2/24')],
+                                 is_edge_nat)
+        es = self.create_external_segment(
+            name='supported', cidr='192.168.0.0/24',
+            shared=shared_es,
+            external_routes=[{'destination': '0.0.0.0/0',
+                              'nexthop': '192.168.0.254'},
+                             {'destination': '128.0.0.0/16',
+                              'nexthop': None}])['external_segment']
+
+        # Creating the L3P and associating it with the Edge NAT
+        # segment should fail when there is no NAT pool
+        res = self.create_l3_policy(
+            name='myl3p',
+            shared=shared_l3p,
+            tenant_id=es['tenant_id'] if not shared_es else 'another_tenant',
+            external_segments={es['id']: []},
+            expected_res_status=400)
+        self.assertIsNone(res.get('l3_policy'))
 
     def test_l3p_plugged_to_es_at_creation_ptne_1(self):
         self.driver.per_tenant_nat_epg = True
