@@ -178,6 +178,20 @@ class EdgeNatWrongL3OutAuthTypeForOSPF(gpexc.GroupPolicyBadRequest):
                 "for OSPF interface profile when edge_nat is enabled.")
 
 
+class EdgeNatNatPoolRequiredForExternalSegment(gpexc.GroupPolicyBadRequest):
+    message = _("The external segment %(es_name)s is configured for Edge "
+                "NAT, and must be provisioned with a NAT IP pool before it "
+                "can be associated with an L3 Policy.")
+
+
+class EdgeNatNatPoolAssociatedWithExternalSegment(gpexc.GroupPolicyBadRequest):
+    message = _("The NAT pool %(pool)s is already associated with an external "
+                "segment %(es_name)s, and that segment is configured for Edge "
+                "NAT. If you wish to delete the NAT pool or associate it with "
+                "a different external segment, you must first disassociate "
+                "the external segment with all L3 Policies.")
+
+
 class ExplicitPortInWrongNetwork(gpexc.GroupPolicyBadRequest):
     message = _('Explicit port %(port)s for PT %(pt)s is in '
                 'wrong network %(net)s, expected %(exp_net)s')
@@ -1662,7 +1676,27 @@ class ApicMappingDriver(api.ResourceMappingDriver,
         self._manage_nat_pool_subnet(context, None, context.current)
 
     def update_nat_pool_precommit(self, context):
-        self._check_nat_pool_cidr(context, context.current)
+        cur_pool = context.current
+        orig_pool = context.original
+        self._check_nat_pool_cidr(context, cur_pool)
+        # For Edge NAT segments, we disallow updating NAT pools
+        # to change the external segment when the external segment
+        # is already associated with a Layer 3 Policy. This is to
+        # ensure that the physical router's external sub-interface has
+        # an IP
+        curr_seg_id = cur_pool['external_segment_id']
+        if curr_seg_id and (curr_seg_id !=
+                orig_pool.get('external_segment_id')):
+            es = context._plugin.get_external_segment(
+                context._plugin_context, orig_pool['external_segment_id'])
+            ext_info = self.apic_manager.ext_net_dict.get(es['name'])
+            if not ext_info:
+                LOG.warning(_LW("External Segment %s is not managed by APIC "
+                                "mapping driver.") % es['id'])
+                return
+            if self._is_edge_nat(ext_info) and es.get('l3_policies'):
+                raise EdgeNatNatPoolAssociatedWithExternalSegment(
+                    pool=cur_pool['name'], es_name=es['name'])
         super(ApicMappingDriver, self).update_nat_pool_precommit(context)
 
     def update_nat_pool_postcommit(self, context):
@@ -1671,6 +1705,24 @@ class ApicMappingDriver(api.ResourceMappingDriver,
         self._stash_es_subnet_for_nat_pool(context, context.current)
         self._manage_nat_pool_subnet(context, context.original,
                                      context.current)
+
+    def delete_nat_pool_precommit(self, context):
+        # For Edge NAT segments, we disallow deleting NAT pools
+        # when the external segment is already associated with
+        # a Layer 3 Policy. This is to ensure that the physical
+        # router's external sub-interface has an IP
+        nat_pool = context.current
+        if nat_pool.get('external_segment_id'):
+            es = context._plugin.get_external_segment(
+                context._plugin_context, nat_pool['external_segment_id'])
+            ext_info = self.apic_manager.ext_net_dict.get(es['name'])
+            if not ext_info:
+                LOG.warning(_LW("External Segment %s is not managed by APIC "
+                                "mapping driver.") % es['id'])
+                return
+            if self._is_edge_nat(ext_info) and es.get('l3_policies'):
+                raise EdgeNatNatPoolAssociatedWithExternalSegment(
+                    pool=nat_pool['name'], es_name=es['name'])
 
     def delete_nat_pool_postcommit(self, context):
         self._stash_es_subnet_for_nat_pool(context, context.current)
@@ -2121,6 +2173,15 @@ class ApicMappingDriver(api.ResourceMappingDriver,
         es_tenant = self._get_tenant_for_shadow(is_shadow, context.current, es)
         nat_enabled = self._is_nat_enabled_on_es(es)
         pre_existing = False if is_shadow else self._is_pre_existing(es)
+
+        num_nat_pools = context._plugin.get_nat_pools_count(
+            context._plugin_context.elevated(), {'id': es['nat_pools']})
+        # For Edge NAT, we need a NAT pool to exist. The reason is that
+        # a primary IP must be selected for the external sub-interface on
+        # the router, which requires a subnet to select the IP from.
+        if is_edge_nat and num_nat_pools <= 0:
+            raise EdgeNatNatPoolRequiredForExternalSegment(es_name=es_name)
+
         with self.apic_manager.apic.transaction() as trs:
             # Create External Routed Network connected to the proper
             # L3 Context
