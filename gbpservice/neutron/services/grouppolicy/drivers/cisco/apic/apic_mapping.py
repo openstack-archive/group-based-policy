@@ -178,6 +178,12 @@ class EdgeNatWrongL3OutAuthTypeForOSPF(gpexc.GroupPolicyBadRequest):
                 "for OSPF interface profile when edge_nat is enabled.")
 
 
+class EdgeNatNatPoolRequiredForExternalSegment(gpexc.GroupPolicyBadRequest):
+    message = _("The external segment %(es_name)s is configured for Edge "
+                "NAT, and must be provisioned with a NAT IP pool before it "
+                "can be associated with an L3 Policy.")
+
+
 class ExplicitPortInWrongNetwork(gpexc.GroupPolicyBadRequest):
     message = _('Explicit port %(port)s for PT %(pt)s is in '
                 'wrong network %(net)s, expected %(exp_net)s')
@@ -2121,6 +2127,15 @@ class ApicMappingDriver(api.ResourceMappingDriver,
         es_tenant = self._get_tenant_for_shadow(is_shadow, context.current, es)
         nat_enabled = self._is_nat_enabled_on_es(es)
         pre_existing = False if is_shadow else self._is_pre_existing(es)
+
+        num_nat_pools = context._plugin.get_nat_pools_count(
+            context._plugin_context.elevated(), {'id': es['nat_pools']})
+        # For Edge NAT, we need a NAT pool to exist. The reason is that
+        # a primary IP must be selected for the external sub-interface on
+        # the router, which requires a subnet to select the IP from.
+        if is_edge_nat and num_nat_pools <= 0:
+            raise EdgeNatNatPoolRequiredForExternalSegment(es_name=es_name)
+
         with self.apic_manager.apic.transaction() as trs:
             # Create External Routed Network connected to the proper
             # L3 Context

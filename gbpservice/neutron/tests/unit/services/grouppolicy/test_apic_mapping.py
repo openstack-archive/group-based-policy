@@ -2709,6 +2709,12 @@ class TestL3Policy(ApicMappingTestCase):
                              {'destination': '128.0.0.0/16',
                               'nexthop': None}])['external_segment']
         owner = self._tenant(es['tenant_id'], shared_es)
+        # Edge NAT requires a NAT pool
+        if is_edge_nat:
+            self.create_nat_pool(
+                external_segment_id=es['id'],
+                ip_version=4, ip_pool='192.168.1.0/24',
+                expected_res_status=webob.exc.HTTPCreated.code)['nat_pool']
 
         mgr = self.driver.apic_manager
         mgr.ensure_epg_created.reset_mock()
@@ -2891,6 +2897,34 @@ class TestL3Policy(ApicMappingTestCase):
                                                  shared_l3p=False,
                                                  is_edge_nat=True)
 
+    def test_l3p_plugged_to_es_at_creation_edge_nat_no_nat_pool(self):
+        shared_es = False
+        shared_l3p = False
+        is_edge_nat = True
+        # this mode is not supported
+        if self.driver.per_tenant_nat_epg and self.single_tenant_mode:
+            return
+        # Verify L3P is correctly plugged to ES on APIC during create
+        self._mock_external_dict([('supported', '192.168.0.2/24')],
+                                 is_edge_nat)
+        es = self.create_external_segment(
+            name='supported', cidr='192.168.0.0/24',
+            shared=shared_es,
+            external_routes=[{'destination': '0.0.0.0/0',
+                              'nexthop': '192.168.0.254'},
+                             {'destination': '128.0.0.0/16',
+                              'nexthop': None}])['external_segment']
+
+        # Creating the L3P and associating it with the Edge NAT
+        # segment should fail when there is no NAT pool
+        res = self.create_l3_policy(
+            name='myl3p',
+            shared=shared_l3p,
+            tenant_id=es['tenant_id'] if not shared_es else 'another_tenant',
+            external_segments={es['id']: []},
+            expected_res_status=400)
+        self.assertIsNone(res.get('l3_policy'))
+
     def test_l3p_plugged_to_es_at_creation_ptne_1(self):
         self.driver.per_tenant_nat_epg = True
         self._test_l3p_plugged_to_es_at_creation(shared_es=True,
@@ -2916,6 +2950,12 @@ class TestL3Policy(ApicMappingTestCase):
                               'nexthop': '192.168.0.254'},
                              {'destination': '128.0.0.0/16',
                               'nexthop': None}])['external_segment']
+        # Edge NAT requires a NAT pool
+        if is_edge_nat:
+            self.create_nat_pool(
+                external_segment_id=es['id'],
+                ip_version=4, ip_pool='192.168.1.0/24',
+                expected_res_status=webob.exc.HTTPCreated.code)['nat_pool']
 
         l3p = self.create_l3_policy(
             name='myl3p',
@@ -3130,6 +3170,17 @@ class TestL3Policy(ApicMappingTestCase):
             shared=shared_es, name='supported2',
             cidr='192.168.1.0/24')['external_segment']
 
+        # Edge NAT requires a NAT pool
+        if is_edge_nat:
+            self.create_nat_pool(
+                external_segment_id=es1['id'],
+                ip_version=4, ip_pool='192.168.3.0/24',
+                expected_res_status=webob.exc.HTTPCreated.code)['nat_pool']
+            self.create_nat_pool(
+                external_segment_id=es2['id'],
+                ip_version=4, ip_pool='192.168.4.0/24',
+                expected_res_status=webob.exc.HTTPCreated.code)['nat_pool']
+
         l3p_tenant = 'another_tenant'
         if not shared_es:
             l3p_tenant = es1['tenant_id']
@@ -3313,6 +3364,16 @@ class TestL3Policy(ApicMappingTestCase):
         es2 = self.create_external_segment(
             shared=shared_es,
             name='supported', cidr='192.168.1.0/24')['external_segment']
+        # Edge NAT requires a NAT pool
+        if is_edge_nat:
+            self.create_nat_pool(
+                external_segment_id=es1['id'],
+                ip_version=4, ip_pool='192.168.3.0/24',
+                expected_res_status=webob.exc.HTTPCreated.code)['nat_pool']
+            self.create_nat_pool(
+                external_segment_id=es2['id'],
+                ip_version=4, ip_pool='192.168.4.0/24',
+                expected_res_status=webob.exc.HTTPCreated.code)['nat_pool']
         l3p = self.create_l3_policy(
             name='myl3p',
             tenant_id=es1['tenant_id'] if not shared_es else 'another_tenant',
@@ -4471,6 +4532,12 @@ class TestExternalSegment(ApicMappingTestCase):
             tenants = (['tenant_a', 'tenant_b', 'tenant_c']
                        if self.nat_enabled and shared_es
                        else [es['tenant_id']])
+        # Edge NAT requires a NAT pool
+        if is_edge_nat:
+            self.create_nat_pool(
+                external_segment_id=es['id'],
+                ip_version=4, ip_pool='192.168.1.0/24',
+                expected_res_status=webob.exc.HTTPCreated.code)['nat_pool']
 
         l3p_list = []
         for x in xrange(len(tenants)):
@@ -4629,6 +4696,12 @@ class TestExternalSegment(ApicMappingTestCase):
             tenants = (['tenant_a', 'tenant_b', 'tenant_c']
                        if self.nat_enabled and shared_es
                        else [es['tenant_id']])
+        # Edge NAT requires a NAT pool
+        if is_edge_nat:
+            self.create_nat_pool(
+                external_segment_id=es['id'],
+                ip_version=4, ip_pool='192.168.1.0/24',
+                expected_res_status=webob.exc.HTTPCreated.code)['nat_pool']
 
         # create L3-policies
         l3p_list = []
@@ -5117,6 +5190,13 @@ class TestExternalPolicy(ApicMappingTestCase):
                     'destination': '128.0.0.0/16',
                     'nexthop': '192.168.0.254'}])['external_segment']
             for x in range(3)]
+        # Edge NAT requires a NAT pool
+        if is_edge_nat:
+            for x in xrange(len(es_list)):
+                self.create_nat_pool(
+                    external_segment_id=es_list[x]['id'],
+                    ip_version=4, ip_pool='192.168.1.0/24',
+                    expected_res_status=webob.exc.HTTPCreated.code)['nat_pool']
         l3p_list = []
         for x in xrange(len(es_list)):
             l3p = self.create_l3_policy(
@@ -5197,6 +5277,28 @@ class TestExternalPolicy(ApicMappingTestCase):
     def test_creation_no_prs_edge_nat_mode_2(self):
         self._test_creation_no_prs(shared_es=False, is_edge_nat=True)
 
+    def test_creation_no_prs_edge_nat_no_nat_pool(self):
+        shared_es = True
+        is_edge_nat = True
+        self._mock_external_dict([('supported', '192.168.0.2/24')],
+                                 is_edge_nat)
+        es_list = [
+            self.create_external_segment(
+                name='supported', cidr='192.168.0.0/24', shared=shared_es,
+                expected_res_status=201,
+                external_routes=[{
+                    'destination': '128.0.0.0/16',
+                    'nexthop': '192.168.0.254'}])['external_segment']
+            for x in range(3)]
+        # Edge NAT requires a NAT pool
+        for x in xrange(len(es_list)):
+            res = self.create_l3_policy(
+                shared=False,
+                tenant_id=shared_es and 'another' or es_list[x]['tenant_id'],
+                external_segments={es_list[x]['id']: []},
+                expected_res_status=400)
+            self.assertIsNone(res.get('l3_policy'))
+
     def _test_update_no_prs(self, shared_es, is_edge_nat=False):
         self._mock_external_dict([('supported', '192.168.0.2/24')],
                                  is_edge_nat)
@@ -5208,6 +5310,13 @@ class TestExternalPolicy(ApicMappingTestCase):
                     'destination': '128.0.0.0/16',
                     'nexthop': '192.168.0.254'}])['external_segment']
             for x in range(3)]
+        # Edge NAT requires a NAT pool
+        if is_edge_nat:
+            for x in xrange(len(es_list)):
+                self.create_nat_pool(
+                    external_segment_id=es_list[x]['id'],
+                    ip_version=4, ip_pool='192.168.1.0/24',
+                    expected_res_status=webob.exc.HTTPCreated.code)['nat_pool']
         l3p_list = []
         for x in xrange(len(es_list)):
             l3p = self.create_l3_policy(
@@ -5339,6 +5448,13 @@ class TestExternalPolicy(ApicMappingTestCase):
                     'destination': '128.0.0.0/16',
                     'nexthop': '192.168.0.254'}])['external_segment']
             for x in range(3)]
+        # Edge NAT requires a NAT pool
+        if is_edge_nat:
+            for x in xrange(len(es_list)):
+                self.create_nat_pool(
+                    external_segment_id=es_list[x]['id'],
+                    ip_version=4, ip_pool='192.168.1.0/24',
+                    expected_res_status=webob.exc.HTTPCreated.code)['nat_pool']
         l3p_list = []
         for x in xrange(len(es_list)):
             l3p = self.create_l3_policy(
@@ -5445,6 +5561,13 @@ class TestExternalPolicy(ApicMappingTestCase):
                     'destination': '128.0.0.0/16',
                     'nexthop': '192.168.0.254'}])['external_segment']
             for x in range(3)]
+        # Edge NAT requires a NAT pool
+        if is_edge_nat:
+            for x in xrange(len(es_list)):
+                self.create_nat_pool(
+                    external_segment_id=es_list[x]['id'],
+                    ip_version=4, ip_pool='192.168.1.0/24',
+                    expected_res_status=webob.exc.HTTPCreated.code)['nat_pool']
         l3p_list = []
         for x in xrange(len(es_list)):
             l3p = self.create_l3_policy(
