@@ -11,7 +11,9 @@
 #    under the License.
 
 import os
+import sys
 import time
+import traceback
 
 from oslo_service import service as oslo_service
 
@@ -164,7 +166,14 @@ class NfpWorker(Service):
                 handler(event, *args)
                 nfp_logging.clear_logging_context()
             except Exception as exc:
-                message = "Exception from module's event handler - %s" % exc
+                exc_type, exc_value, exc_traceback = sys.exc_info()
+                message = "Exception from module's event handler - %s" % (exc)
+                LOG.error(message)
+                # REVISIT(ashu): Format this traceback log properly.
+                # Currently, it is a single string, but there are some
+                # newline characters, which can be use to print it properly.
+                message = ("Traceback: %s" % traceback.format_exception(
+                              exc_type, exc_value, exc_traceback))
                 LOG.error(message)
 
     def dispatch(self, handler, event, *args):
