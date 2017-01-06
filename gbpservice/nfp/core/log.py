@@ -10,12 +10,19 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+from oslo_config import cfg as oslo_config
 from oslo_log import log as oslo_logging
+from oslo_utils import importutils
 
 import logging
 import os
 import sys
 import threading
+
+EVENT = 50
+logging.addLevelName(EVENT, "EVENT")
+CONF = oslo_config.CONF
+
 
 if hasattr(sys, 'frozen'):  # support for py2exe
     _srcfile = "logging%s__init__%s" % (os.sep, __file__[-4:])
@@ -36,6 +43,12 @@ def currentframe():
 
 if hasattr(sys, '_getframe'):
     currentframe = lambda: sys._getframe(3)
+
+
+class NfpLogAdapter(oslo_logging.KeywordArgumentAdapter):
+
+    def event(self, msg, *args, **kwargs):
+        self.log(EVENT, msg, *args, **kwargs)
 
 
 class WrappedLogger(logging.Logger):
@@ -69,7 +82,11 @@ class WrappedLogger(logging.Logger):
     def _get_nfp_msg(self, msg):
         context = getattr(logging_context_store, 'context', None)
         if context:
-            msg = "%s-%s" % (context.emit(), msg)
+            msg = "%s %s" % (context.emit(), msg)
+        component = ''
+        if hasattr(CONF, 'module'):
+            component = CONF.module
+        msg = "[%s] %s" % (component, msg)
         return msg
 
     def makeRecord(self, name, level, fn,
@@ -83,34 +100,53 @@ class WrappedLogger(logging.Logger):
             args, exc_info, func=func, extra=extra)
 
 
-logging.setLoggerClass(WrappedLogger)
+def init_logger(logger_class):
+    logging.setLoggerClass(importutils.import_class(logger_class))
+
+
 logging_context_store = threading.local()
 
 
 class NfpLogContext(object):
 
     def __init__(self, **kwargs):
-        self.meta_id = kwargs.get('meta_id', '')
+        self.meta_id = kwargs.get('meta_id', '-')
+        self.nfi_id = kwargs.get('nfi_id', '-')
+        self.nfd_id = kwargs.get('nfd_id', '-')
+        self.path = kwargs.get('path', '-')
         self.auth_token = kwargs.get('auth_token', '')
         self.namespace = kwargs.get('namespace', '')
 
     def emit(self):
-        return "[LogMetaID:%s]" % (self.meta_id)
+        return "[%s] [NFI:%s] [NFD:%s]" % (self.meta_id, self.nfi_id,
+                                           self.nfd_id)
 
     def to_dict(self):
         return {
             'meta_id': self.meta_id,
+            'nfi_id': self.nfi_id,
+            'nfd_id': self.nfd_id,
+            'path': self.path,
             'auth_token': self.auth_token,
             'namespace': self.namespace}
 
 
-def getLogger(name):
-    return oslo_logging.getLogger(name, project='nfp')
+def getLogger(name, **kwargs):
+    kwargs.update(project='nfp')
+    logger = NfpLogAdapter(logging.getLogger(name),
+                           kwargs)
+    return logger
 
 
 def store_logging_context(**kwargs):
     context = NfpLogContext(**kwargs)
     logging_context_store.context = context
+
+
+def update_logging_context(**kwargs):
+    for key, val in kwargs.iteritems():
+        if hasattr(logging_context_store.context, key):
+            setattr(logging_context_store.context, key, val)
 
 
 def clear_logging_context(**kwargs):
