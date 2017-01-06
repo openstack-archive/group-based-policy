@@ -23,10 +23,12 @@ from gbpservice.nfp.common import exceptions as nfp_exc
 from gbpservice.nfp.core import context as nfp_core_context
 from gbpservice.nfp.core import controller  # noqa
 from gbpservice.nfp.core.event import Event as NFP_EVENT
+from gbpservice.nfp.core import log as nfp_logging
 from gbpservice.nfp.lib import transport
 from gbpservice.nfp.orchestrator.modules import (
     service_orchestrator as nso)
 from gbpservice.nfp.orchestrator.openstack import openstack_driver
+
 
 import uuid as pyuuid
 
@@ -430,6 +432,7 @@ class ServiceOrchestratorTestCase(NSOModuleTestCase):
         }
         test_event = Event(data=request_data)
         self.assertIsNone(nfi['network_function_device_id'])
+        nfp_logging.store_logging_context(path='create')
         self.service_orchestrator.handle_device_create_failed(
             test_event)
         db_nfi = self.nfp_db.get_network_function_instance(
@@ -485,6 +488,7 @@ class ServiceOrchestratorTestCase(NSOModuleTestCase):
                                'uuid': 'a1251c79-f661-440e-aab2-a1f401865daf:'}
             }
             test_event = Event(data=request_data)
+            nfp_logging.store_logging_context(path='create')
             status = self.service_orchestrator.check_for_user_config_complete(
                 test_event)
             mock_is_config_complete.assert_called_once_with(
@@ -536,14 +540,18 @@ class ServiceOrchestratorTestCase(NSOModuleTestCase):
             'network_function_id': network_function['id']
         }
         test_event = Event(data=request_data)
+        nfp_logging.store_logging_context(path='create')
         self.service_orchestrator.handle_user_config_failed(test_event)
         db_nf = self.nfp_db.get_network_function(
             self.session, network_function['id'])
         self.assertEqual('ERROR', db_nf['status'])
 
     @mock.patch.object(
+        nso.ServiceOrchestrator, "_get_service_type")
+    @mock.patch.object(
         nso.ServiceOrchestrator, "_create_event")
-    def test_event_check_for_user_config_deleted(self, mock_create_event):
+    def test_event_check_for_user_config_deleted(self, mock_create_event,
+                                                 mock_service_type):
         network_function = self.create_network_function()
         with mock.patch.object(
                 self.service_orchestrator.config_driver,
@@ -555,6 +563,7 @@ class ServiceOrchestratorTestCase(NSOModuleTestCase):
                 'config_policy_id': 'config_policy_id',
                 'network_function_id': network_function['id']}
             test_event = Event(data=request_data)
+            mock_service_type.return_value = 'firewall'
             status = self.service_orchestrator.check_for_user_config_deleted(
                 test_event)
             mock_is_config_delete_complete.assert_called_once_with(
@@ -601,6 +610,7 @@ class ServiceOrchestratorTestCase(NSOModuleTestCase):
                 'network_function_id': network_function['id'],
                 'action': 'update'}
             test_event = Event(data=request_data)
+            nfp_logging.store_logging_context(path='create')
             status = self.service_orchestrator.check_for_user_config_deleted(
                 test_event)
             mock_is_config_delete_complete.assert_called_once_with(
@@ -677,7 +687,8 @@ class ServiceOrchestratorTestCase(NSOModuleTestCase):
     def test_event_handle_device_deleted(self):
         nfi = self.create_network_function_instance()
         ns_id = nfi['network_function_id']
-        request_data = {'network_function_instance_id': nfi['id']}
+        request_data = {'network_function_instance_id': nfi['id'],
+                        'service_type': 'service_type'}
         test_event = Event(data=request_data)
         self.service_orchestrator.handle_device_deleted(
             test_event)

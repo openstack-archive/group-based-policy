@@ -23,6 +23,7 @@ import sys
 import time
 import zlib
 
+from oslo_config import cfg as oslo_config
 from oslo_service import service as oslo_service
 
 from gbpservice.nfp.core import cfg as nfp_cfg
@@ -197,7 +198,21 @@ class NfpService(object):
 
 class NfpController(nfp_launcher.NfpLauncher, NfpService):
 
-    def __init__(self, conf):
+    def __new__(cls, *args, **kwargs):
+        singleton = kwargs.get('singleton', True)
+        if singleton is False:
+            return object.__new__(cls, *args, **kwargs)
+
+        if not hasattr(cls, '_instance'):
+            cls._instance = object.__new__(cls, *args, **kwargs)
+        else:
+            cls.__init__ = cls.__inited__
+        return cls._instance
+
+    def __inited__(self, conf):
+        pass
+
+    def __init__(self, conf, singleton=True):
         # Init the super classes.
         nfp_launcher.NfpLauncher.__init__(self, conf)
         NfpService.__init__(self, conf)
@@ -651,6 +666,7 @@ def main():
     conf = nfp_cfg.init(module, args)
     conf.module = module
     load_module_opts(conf)
+    nfp_logging.init_logger(oslo_config.CONF.logger_class)
     nfp_common.init()
     nfp_controller = NfpController(conf)
     # Load all nfp modules from path configured
