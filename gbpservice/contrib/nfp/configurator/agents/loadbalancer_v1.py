@@ -10,7 +10,6 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-from neutron import context
 
 from gbpservice.contrib.nfp.configurator.agents import agent_base
 from gbpservice.contrib.nfp.configurator.lib import data_filter
@@ -20,7 +19,11 @@ from gbpservice.nfp.core import event as nfp_event
 from gbpservice.nfp.core import log as nfp_logging
 from gbpservice.nfp.core import module as nfp_api
 
+from neutron import context
+from neutron import i18n
+
 LOG = nfp_logging.getLogger(__name__)
+_LI = i18n._LI
 
 
 class LBaasRpcSender(data_filter.Filter):
@@ -43,6 +46,9 @@ class LBaasRpcSender(data_filter.Filter):
         Returns: logical_device
 
         """
+        LOG.info(_LI("Sending RPC call 'Get Logical Device' "
+                     "for pool: %(pool_id)s"),
+                 {'pool_id': pool_id})
         return self.call(
             context,
             self.make_msg(
@@ -74,6 +80,11 @@ class LBaasRpcSender(data_filter.Filter):
                                           'status': status,
                                           obj_type: obj}}]
                }
+        LOG.info(_LI("Sending Notification 'Update Status' "
+                     "for resource: %(resource)s with status:"
+                     "%(status)s"),
+                 {'resource': agent_info['resource'],
+                  'status': status})
         self.notify._notification(msg)
 
     def update_pool_stats(self, pool_id, stats, context, pool=None):
@@ -94,6 +105,10 @@ class LBaasRpcSender(data_filter.Filter):
                                                         'update_pool_stats'),
                                           'pool': pool_id}}]
                }
+        LOG.info(_LI("Sending Notification 'Update Pool Stats' "
+                     "for pool: %(pool_id)s with stats:%(stats)s"),
+                 {'pool_id': pool_id,
+                  'stats': stats})
         self.notify._notification(msg)
 
     def vip_deleted(self, vip, status, agent_info):
@@ -114,6 +129,10 @@ class LBaasRpcSender(data_filter.Filter):
                                           'notification_type': 'vip_deleted',
                                           'status': status}}]
                }
+        LOG.info(_LI("Sending Notification 'VIP Deleted' "
+                     "for vip: %(vip_id)s with status:%(status)s"),
+                 {'vip_id': vip['id'],
+                  'status': status})
         self.notify._notification(msg)
 
 
@@ -169,6 +188,8 @@ class LBaaSRpcManager(agent_base.AgentBaseRPCManager):
         Returns: None
 
         """
+        LOG.info(_LI("Received request 'Create VIP' for VIP:%(vip_id)s "),
+                 {'vip_id': vip['id']})
         arg_dict = {'context': context,
                     'vip': vip,
                     }
@@ -186,10 +207,16 @@ class LBaaSRpcManager(agent_base.AgentBaseRPCManager):
         Returns: None
 
         """
+        old_val, new_val = self.get_diff_of_dict(old_vip, vip)
         arg_dict = {'context': context,
                     'old_vip': old_vip,
                     'vip': vip,
                     }
+        LOG.info(_LI("Received request 'Update VIP' for VIP:%(vip_id)s "
+                     "with new Param:%(new_val)s and old Param:%(old_val)s"),
+                 {'vip_id': vip['id'],
+                  'new_val': new_val,
+                  'old_val': old_val})
         self._send_event(lb_constants.EVENT_UPDATE_VIP, arg_dict,
                          serialize=True, binding_key=vip['pool_id'],
                          key=vip['id'])
@@ -206,6 +233,8 @@ class LBaaSRpcManager(agent_base.AgentBaseRPCManager):
         arg_dict = {'context': context,
                     'vip': vip,
                     }
+        LOG.info(_LI("Received 'Delete VIP' request for VIP:%(vip_id)s "),
+                 {'vip_id': vip['id']})
         self._send_event(lb_constants.EVENT_DELETE_VIP, arg_dict,
                          serialize=True, binding_key=vip['pool_id'],
                          key=vip['id'])
@@ -224,6 +253,8 @@ class LBaaSRpcManager(agent_base.AgentBaseRPCManager):
                     'pool': pool,
                     'driver_name': driver_name,
                     }
+        LOG.info(_LI("Received request 'Create Pool' for Pool:%(pool_id)s "),
+                 {'pool_id': pool['id']})
         self._send_event(lb_constants.EVENT_CREATE_POOL, arg_dict,
                          serialize=True, binding_key=pool['id'],
                          key=pool['id'])
@@ -238,10 +269,16 @@ class LBaaSRpcManager(agent_base.AgentBaseRPCManager):
         Returns: None
 
         """
+        old_val, new_val = self.get_diff_of_dict(old_pool, pool)
         arg_dict = {'context': context,
                     'old_pool': old_pool,
                     'pool': pool,
                     }
+        LOG.info(_LI("Received request 'Update Pool' for Pool:%(pool_id)s "
+                     "with new Param:%(new_val)s and old Param:%(old_val)s"),
+                 {'pool_id': pool['id'],
+                  'new_val': new_val,
+                  'old_val': old_val})
         self._send_event(lb_constants.EVENT_UPDATE_POOL, arg_dict,
                          serialize=True, binding_key=pool['id'],
                          key=pool['id'])
@@ -258,6 +295,8 @@ class LBaaSRpcManager(agent_base.AgentBaseRPCManager):
         arg_dict = {'context': context,
                     'pool': pool,
                     }
+        LOG.info(_LI("Received request 'Delete Pool' for Pool:%(pool_id)s "),
+                 {'pool_id': pool['id']})
         self._send_event(lb_constants.EVENT_DELETE_POOL, arg_dict,
                          serialize=True, binding_key=pool['id'],
                          key=pool['id'])
@@ -274,6 +313,9 @@ class LBaaSRpcManager(agent_base.AgentBaseRPCManager):
         arg_dict = {'context': context,
                     'member': member,
                     }
+        LOG.info(_LI("Received request 'Create Member' for Pool:"
+                     "%(pool_id)s "),
+                 {'pool_id': member['pool_id']})
         self._send_event(lb_constants.EVENT_CREATE_MEMBER, arg_dict,
                          serialize=True, binding_key=member['pool_id'],
                          key=member['id'])
@@ -288,10 +330,18 @@ class LBaaSRpcManager(agent_base.AgentBaseRPCManager):
         Returns: None
 
         """
+        old_val, new_val = self.get_diff_of_dict(old_member, member)
         arg_dict = {'context': context,
                     'old_member': old_member,
                     'member': member,
                     }
+        LOG.info(_LI("Received request 'Update Member' for Member:"
+                     "%(member_id)s in Pool:%(pool_id)s with new Param:"
+                     "%(new_val)s and old Param:%(old_val)s"),
+                 {'member_id': member['id'],
+                  'pool_id': member['pool_id'],
+                  'new_val': new_val,
+                  'old_val': old_val})
         self._send_event(lb_constants.EVENT_UPDATE_MEMBER, arg_dict,
                          serialize=True, binding_key=member['pool_id'],
                          key=member['id'])
@@ -308,6 +358,8 @@ class LBaaSRpcManager(agent_base.AgentBaseRPCManager):
         arg_dict = {'context': context,
                     'member': member,
                     }
+        LOG.info(_LI("Received request 'Delete Member' for Pool:%(pool_id)s "),
+                 {'pool_id': member['pool_id']})
         self._send_event(lb_constants.EVENT_DELETE_MEMBER, arg_dict,
                          serialize=True, binding_key=member['pool_id'],
                          key=member['id'])
@@ -326,6 +378,10 @@ class LBaaSRpcManager(agent_base.AgentBaseRPCManager):
                     'health_monitor': health_monitor,
                     'pool_id': pool_id,
                     }
+        LOG.info(_LI("Received request 'Create Pool Health Monitor' for "
+                     "Pool:%(pool_id)s and Health monitor:%(hm)s"),
+                 {'pool_id': pool_id,
+                  'hm': health_monitor['id']})
         self._send_event(lb_constants.EVENT_CREATE_POOL_HEALTH_MONITOR,
                          arg_dict, serialize=True, binding_key=pool_id,
                          key=health_monitor['id'])
@@ -342,11 +398,19 @@ class LBaaSRpcManager(agent_base.AgentBaseRPCManager):
         Returns: None
 
         """
+        old_val, new_val = self.get_diff_of_dict(
+                               old_health_monitor, health_monitor)
         arg_dict = {'context': context,
                     'old_health_monitor': old_health_monitor,
                     'health_monitor': health_monitor,
                     'pool_id': pool_id,
                     }
+        LOG.info(_LI("Received request 'Update Pool Health Monitor' for "
+                     "Pool Health Monitor:%(hm_id)s with new Param:"
+                     "%(new_val)s and old Param:%(old_val)s"),
+                 {'hm_id': health_monitor['id'],
+                  'new_val': new_val,
+                  'old_val': old_val})
         self._send_event(lb_constants.EVENT_UPDATE_POOL_HEALTH_MONITOR,
                          arg_dict, serialize=True, binding_key=pool_id,
                          key=health_monitor['id'])
@@ -365,6 +429,10 @@ class LBaaSRpcManager(agent_base.AgentBaseRPCManager):
                     'health_monitor': health_monitor,
                     'pool_id': pool_id,
                     }
+        LOG.info(_LI("Received request 'Delete Pool Health Monitor' for "
+                     "Pool:%(pool_id)s and Health monitor:%(hm)s"),
+                 {'pool_id': pool_id,
+                  'hm': health_monitor['id']})
         self._send_event(lb_constants.EVENT_DELETE_POOL_HEALTH_MONITOR,
                          arg_dict, serialize=True, binding_key=pool_id,
                          key=health_monitor['id'])
@@ -380,6 +448,7 @@ class LBaaSRpcManager(agent_base.AgentBaseRPCManager):
         """
         arg_dict = {'context': context,
                     'payload': payload}
+        LOG.info(_LI("Received request 'Agent Updated' "))
         self._send_event(lb_constants.EVENT_AGENT_UPDATED, arg_dict)
 
 
@@ -442,7 +511,7 @@ class LBaaSEventHandler(agent_base.AgentBaseEventHandler,
         Returns: None
 
         """
-        msg = ("Starting handling event %s" % (ev.id))
+        msg = ("Starting handling event '%s' " % (ev.id))
         LOG.info(msg)
         try:
             method = getattr(self, "_%s" % (ev.id.lower()))
@@ -458,7 +527,7 @@ class LBaaSEventHandler(agent_base.AgentBaseEventHandler,
                 """
                 pass
             else:
-                msg = ("Completed handling event %s" % (ev.id))
+                msg = ("Completed handling event '%s'" % (ev.id))
                 LOG.info(msg)
                 self.sc.event_complete(ev)
 

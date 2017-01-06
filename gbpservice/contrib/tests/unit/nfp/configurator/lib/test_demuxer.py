@@ -53,6 +53,9 @@ class ServiceAgentDemuxerTestCase(base.BaseTestCase):
         actual_val, service_type = self.demuxer.get_service_agent_info(
                                 'create', 'firewall', request_data, True)
 
+        for agent_info in expected_val:
+            agent_info['agent_info']['context']['nf_id'] = 'nf_id'
+            agent_info['agent_info']['context']['nfi_id'] = 'nfi_id'
         self.assertEqual(actual_val, expected_val)
 
     def test_get_service_agent_info_firewall(self):

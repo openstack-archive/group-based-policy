@@ -19,13 +19,14 @@ from gbpservice.nfp.common import data_formatter as df
 from gbpservice.nfp.core import log as nfp_logging
 from gbpservice.nfp.lib import transport
 
+from neutron import i18n
 from neutron_lbaas.db.loadbalancer import loadbalancer_db
 
 from oslo_log import helpers as log_helpers
 import oslo_messaging as messaging
 
 LOG = nfp_logging.getLogger(__name__)
-
+_LI = i18n._LI
 """
 RPC handler for Loadbalancer service
 """
@@ -199,6 +200,8 @@ class LbAgent(loadbalancer_db.LoadBalancerPluginDb):
 
     @log_helpers.log_method_call
     def create_vip(self, context, vip):
+        LOG.info(_LI("Received RPC CREATE VIP for VIP:%(vip)s"),
+                 {'vip': vip})
         # Fetch nf_id from description of the resource
         nf_id = self._fetch_nf_from_resource_desc(vip["description"])
         nfp_logging.store_logging_context(meta_id=nf_id)
@@ -208,6 +211,10 @@ class LbAgent(loadbalancer_db.LoadBalancerPluginDb):
 
     @log_helpers.log_method_call
     def update_vip(self, context, old_vip, vip):
+        LOG.info(_LI("Received RPC UPDATE VIP for VIP:%(vip)s "
+                     "and OLD_VIP:%(old_vip)s"),
+                 {'vip': vip,
+                  'old_vip': old_vip})
         # Fetch nf_id from description of the resource
         nf_id = self._fetch_nf_from_resource_desc(vip["description"])
         nfp_logging.store_logging_context(meta_id=nf_id)
@@ -218,6 +225,8 @@ class LbAgent(loadbalancer_db.LoadBalancerPluginDb):
 
     @log_helpers.log_method_call
     def delete_vip(self, context, vip):
+        LOG.info(_LI("Received RPC DELETE VIP for VIP:%(vip)s"),
+                 {'vip': vip})
         # Fetch nf_id from description of the resource
         nf_id = self._fetch_nf_from_resource_desc(vip["description"])
         nfp_logging.store_logging_context(meta_id=nf_id)
@@ -227,6 +236,8 @@ class LbAgent(loadbalancer_db.LoadBalancerPluginDb):
 
     @log_helpers.log_method_call
     def create_pool(self, context, pool, driver_name):
+        LOG.info(_LI("Received RPC CREATE POOL for Pool:%(pool)s"),
+                 {'pool': pool})
         # Fetch nf_id from description of the resource
         nf_id = self._fetch_nf_from_resource_desc(pool["description"])
         nfp_logging.store_logging_context(meta_id=nf_id)
@@ -238,6 +249,10 @@ class LbAgent(loadbalancer_db.LoadBalancerPluginDb):
 
     @log_helpers.log_method_call
     def update_pool(self, context, old_pool, pool):
+        LOG.info(_LI("Received RPC UPDATE POOL with Pool: %(pool)s "
+                     "and Old_Pool:%(old_pool)s"),
+                 {'pool': pool,
+                  'old_pool': old_pool})
         # Fetch nf_id from description of the resource
         nf_id = self._fetch_nf_from_resource_desc(pool["description"])
         nfp_logging.store_logging_context(meta_id=nf_id)
@@ -248,6 +263,8 @@ class LbAgent(loadbalancer_db.LoadBalancerPluginDb):
 
     @log_helpers.log_method_call
     def delete_pool(self, context, pool):
+        LOG.info(_LI("Received RPC DELETE POOL for Pool:%(pool)s"),
+                 {'pool': pool})
         # Fetch nf_id from description of the resource
         nf_id = self._fetch_nf_from_resource_desc(pool["description"])
         nfp_logging.store_logging_context(meta_id=nf_id)
@@ -257,6 +274,8 @@ class LbAgent(loadbalancer_db.LoadBalancerPluginDb):
 
     @log_helpers.log_method_call
     def create_member(self, context, member):
+        LOG.info(_LI("Received RPC CREATE MEMBER for Member:%(member)s"),
+                 {'member': member})
         # Fetch pool from pool_id
         pool = self._get_pool(context, member['pool_id'])
         # Fetch nf_id from description of the resource
@@ -268,6 +287,10 @@ class LbAgent(loadbalancer_db.LoadBalancerPluginDb):
 
     @log_helpers.log_method_call
     def update_member(self, context, old_member, member):
+        LOG.info(_LI("Received RPC UPDATE MEMBER with Member:%(member)s "
+                     "and Old_Member:%(old_member)s"),
+                 {'member': member,
+                  'old_member': old_member})
         # Fetch pool from pool_id
         pool = self._get_pool(context, member['pool_id'])
         # Fetch nf_id from description of the resource
@@ -280,6 +303,8 @@ class LbAgent(loadbalancer_db.LoadBalancerPluginDb):
 
     @log_helpers.log_method_call
     def delete_member(self, context, member):
+        LOG.info(_LI("Received RPC DELETE MEMBER for Member:%(member)s"),
+                 {'member': member})
         # Fetch pool from pool_id
         pool = self._get_pool(context, member['pool_id'])
         # Fetch nf_id from description of the resource
@@ -293,6 +318,8 @@ class LbAgent(loadbalancer_db.LoadBalancerPluginDb):
 
     @log_helpers.log_method_call
     def create_pool_health_monitor(self, context, health_monitor, pool_id):
+        LOG.info(_LI("Received RPC CREATE POOL HEALTH MONITOR for HM:%(hm)s"),
+                 {'hm': health_monitor})
         # Fetch pool from pool_id
         pool = self._get_pool(context, pool_id)
         # Fetch nf_id from description of the resource
@@ -307,6 +334,10 @@ class LbAgent(loadbalancer_db.LoadBalancerPluginDb):
     @log_helpers.log_method_call
     def update_pool_health_monitor(self, context, old_health_monitor,
                                    health_monitor, pool_id):
+        LOG.info(_LI("Received RPC UPDATE POOL HEALTH MONITOR with "
+                     "HM:%(hm)s and Old_HM:%(old_hm)s"),
+                 {'hm': health_monitor,
+                  'old_hm': old_health_monitor})
         # Fetch pool from pool_id
         pool = self._get_pool(context, pool_id)
         # Fetch nf_id from description of the resource
@@ -321,6 +352,8 @@ class LbAgent(loadbalancer_db.LoadBalancerPluginDb):
 
     @log_helpers.log_method_call
     def delete_pool_health_monitor(self, context, health_monitor, pool_id):
+        LOG.info(_LI("Received RPC DELETE POOL HEALTH MONITOR for HM:%(hm)s"),
+                 {'hm': health_monitor})
         # Fetch pool from pool_id
         pool = self._get_pool(context, pool_id)
         # Fetch nf_id from description of the resource

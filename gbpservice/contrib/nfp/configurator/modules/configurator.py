@@ -18,7 +18,10 @@ from gbpservice.contrib.nfp.configurator.lib import utils
 from gbpservice.nfp.core import log as nfp_logging
 from gbpservice.nfp.core import rpc
 
+from neutron import i18n
+
 LOG = nfp_logging.getLogger(__name__)
+_LI = i18n._LI
 
 
 class ConfiguratorRpcManager(object):
@@ -135,6 +138,12 @@ class ConfiguratorRpcManager(object):
             log_info = request_data.get('info')
             logging_context = log_info['context']['logging_context']
             nfp_logging.store_logging_context(**logging_context)
+            LOG.info(_LI("Received RPC CREATE NETWORK FUNCTION DEVICE CONFIG "
+                         "for %(service_type)s, NFI: %(nfi)s, "
+                         "NF_ID: %(nf_id)s"),
+                     {'service_type': request_data['info']['service_type'],
+                      'nfi': request_data['info']['context']['nfi_id'],
+                      'nf_id': request_data['info']['context']['nf_id']})
 
             self._invoke_service_agent('create', request_data, True)
         except Exception as err:
@@ -163,6 +172,12 @@ class ConfiguratorRpcManager(object):
             log_info = request_data.get('info')
             logging_context = log_info['context']['logging_context']
             nfp_logging.store_logging_context(**logging_context)
+            LOG.info(_LI("Received RPC DELETE NETWORK FUNCTION DEVICE CONFIG "
+                         "for %(service_type)s, NFI: %(nfi)s, "
+                         "NF_ID: %(nf_id)s"),
+                     {'service_type': request_data['info']['service_type'],
+                      'nfi': request_data['info']['context']['nfi_id'],
+                      'nf_id': request_data['info']['context']['nf_id']})
 
             self._invoke_service_agent('delete', request_data, True)
         except Exception as err:
@@ -191,6 +206,12 @@ class ConfiguratorRpcManager(object):
             log_info = request_data.get('info')
             logging_context = log_info['context']['logging_context']
             nfp_logging.store_logging_context(**logging_context)
+            LOG.info(_LI("Received RPC UPDATE NETWORK FUNCTION DEVICE CONFIG "
+                         "for %(service_type)s, NFI: %(nfi)s, "
+                         "NF_ID: %(nf_id)s"),
+                     {'service_type': request_data['info']['service_type'],
+                      'nfi': request_data['info']['context']['nfi_id'],
+                      'nf_id': request_data['info']['context']['nf_id']})
 
             self._invoke_service_agent('update', request_data, True)
         except Exception as err:
@@ -219,6 +240,9 @@ class ConfiguratorRpcManager(object):
             log_info = request_data.get('info')
             logging_context = log_info['context']['logging_context']
             nfp_logging.store_logging_context(**logging_context)
+            LOG.info(_LI("Received RPC CREATE NETWORK FUNCTION CONFIG "
+                         "for %(service_type)s "),
+                     {'service_type': request_data['info']['service_type']})
 
             self._invoke_service_agent('create', request_data)
         except Exception as err:
@@ -247,6 +271,9 @@ class ConfiguratorRpcManager(object):
             log_info = request_data.get('info')
             logging_context = log_info['context']['logging_context']
             nfp_logging.store_logging_context(**logging_context)
+            LOG.info(_LI("Received RPC DELETE NETWORK FUNCTION CONFIG "
+                         "for %(service_type)s "),
+                     {'service_type': request_data['info']['service_type']})
 
             self._invoke_service_agent('delete', request_data)
         except Exception as err:
@@ -275,6 +302,9 @@ class ConfiguratorRpcManager(object):
             log_info = request_data.get('info')
             logging_context = log_info['context']['logging_context']
             nfp_logging.store_logging_context(**logging_context)
+            LOG.info(_LI("Received RPC UPDATE NETWORK FUNCTION CONFIG "
+                         "for %(service_type)s "),
+                     {'service_type': request_data['info']['service_type']})
 
             self._invoke_service_agent('update', request_data)
         except Exception as err:
@@ -296,6 +326,7 @@ class ConfiguratorRpcManager(object):
 
         """
 
+        LOG.info(_LI("Received RPC GET NOTIFICATIONS "))
         events = self.sc.get_stashed_events()
         notifications = []
         for event in events:

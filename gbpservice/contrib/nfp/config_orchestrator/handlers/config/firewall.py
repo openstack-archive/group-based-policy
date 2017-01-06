@@ -19,13 +19,14 @@ from gbpservice.nfp.common import data_formatter as df
 from gbpservice.nfp.core import log as nfp_logging
 from gbpservice.nfp.lib import transport
 
+from neutron import i18n
 from neutron_fwaas.db.firewall import firewall_db
 
 from oslo_log import helpers as log_helpers
 import oslo_messaging as messaging
 
 LOG = nfp_logging.getLogger(__name__)
-
+_LI = i18n._LI
 """
 RPC handler for Firewall service
 """
@@ -151,6 +152,9 @@ class FwAgent(firewall_db.Firewall_db_mixin):
         nf_id = self._fetch_nf_from_resource_desc(firewall["description"])
         nfp_logging.store_logging_context(meta_id=nf_id)
         nf = common.get_network_function_details(context, nf_id)
+        LOG.info(_LI("Received RPC CREATE FIREWALL for "
+                     "Firewall: %(firewall)s"),
+                 {'firewall': firewall})
         body = self._data_wrapper(context, firewall, host, nf, 'CREATE')
         transport.send_request_to_configurator(self._conf,
                                                context, body, "CREATE")
@@ -162,6 +166,9 @@ class FwAgent(firewall_db.Firewall_db_mixin):
         nf_id = self._fetch_nf_from_resource_desc(firewall["description"])
         nfp_logging.store_logging_context(meta_id=nf_id)
         nf = common.get_network_function_details(context, nf_id)
+        LOG.info(_LI("Received RPC DELETE FIREWALL for "
+                     "Firewall: %(firewall)s"),
+                 {'firewall': firewall})
         body = self._data_wrapper(context, firewall, host, nf, 'DELETE')
         transport.send_request_to_configurator(self._conf,
                                                context, body, "DELETE")
