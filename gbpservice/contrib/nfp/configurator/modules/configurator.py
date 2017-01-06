@@ -422,7 +422,7 @@ def get_configurator_module_instance(sc, conf):
     conf_utils = utils.ConfiguratorUtils(conf)
 
     # Loads all the service agents under AGENT_PKG module path
-    cm.imported_sas = conf_utils.load_agents()
+    cm.imported_sas = conf_utils.load_agents(const.AGENTS_PKG)
     msg = ("Configurator loaded service agents from %s location."
            % (cm.imported_sas))
     LOG.info(msg)
