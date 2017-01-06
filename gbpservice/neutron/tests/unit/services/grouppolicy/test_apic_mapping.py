@@ -1652,7 +1652,7 @@ class TestPolicyTargetDvs(ApicMappingTestCase):
         newp1 = self._bind_port_to_host(pt['port_id'], 'h1')
         vif_details = newp1['port']['binding:vif_details']
         self.assertIsNotNone(vif_details.get('dvs_port_group_name'))
-        pg = self._pg_name(ptg['tenant_id'], mocked.APIC_AP, ptg['name'])
+        pg = self._pg_name(ptg['tenant_id'], mocked.APIC_AP, ptg['id'])
         self.assertEqual(pg, vif_details.get('dvs_port_group_name'))
         port_key = newp1['port']['binding:vif_details'].get('dvs_port_key')
         self.assertIsNotNone(port_key)
@@ -1686,7 +1686,7 @@ class TestPolicyTargetDvs(ApicMappingTestCase):
         self.assertEqual(port_key, BOOKED_PORT_VALUE)
         vif_details = newp1['port']['binding:vif_details']
         self.assertIsNotNone(vif_details.get('dvs_port_group_name'))
-        pg = self._pg_name(ptg['tenant_id'], mocked.APIC_AP, ptg['name'])
+        pg = self._pg_name(ptg['tenant_id'], mocked.APIC_AP, ptg['id'])
         self.assertEqual(pg, vif_details.get('dvs_port_group_name'))
         self._verify_dvs_notifier('update_postcommit_port_call',
                                   newp1['port'], 'h2')
@@ -1781,7 +1781,7 @@ class TestPolicyTargetDvs(ApicMappingTestCase):
         vif_details = newp1['port']['binding:vif_details']
         self.assertIsNotNone(vif_details.get('dvs_port_group_name'))
         pg = self._pg_name(amap.apic_manager.TENANT_COMMON,
-                           mocked.APIC_AP, ptg['name'])
+                           mocked.APIC_AP, ptg['id'])
         self.assertEqual(pg, vif_details.get('dvs_port_group_name'))
         port_key = newp1['port']['binding:vif_details'].get('dvs_port_key')
         self.assertIsNotNone(port_key)

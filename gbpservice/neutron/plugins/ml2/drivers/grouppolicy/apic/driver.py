@@ -145,8 +145,8 @@ class APICMechanismGBPDriver(api.MechanismDriver):
             if ptg is None:
                 LOG.warning(_("PTG for port %s does not exist"), port['id'])
                 return False
-            mapper = self.apic_gbp.name_mapper.name_mapper
-            ptg_name = mapper.policy_target_group(context, ptg['name'])
+            mapper = self.apic_gbp.name_mapper
+            ptg_name = mapper.policy_target_group(context, ptg)
             network_id = port.get('network_id')
             network = self.apic_gbp._get_network(context._plugin_context,
                                                  network_id)
