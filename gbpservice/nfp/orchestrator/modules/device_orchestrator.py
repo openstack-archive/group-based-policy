@@ -105,9 +105,20 @@ class RpcHandler(object):
         }
 
     def _log_event_created(self, event_id, event_data):
-        LOG.info(_LI("Device Orchestrator, RPC Handler, Created event "
-                     "%s(event_name)s with event data: %(event_data)s"),
-                 {'event_name': event_id, 'event_data': event_data})
+        NFD = event_data.get('network_function_device_id')
+        NF = event_data.get('network_function_id')
+        NFI = event_data.get('network_function_instance_id')
+
+        if NFD and NF and NFI:
+            LOG.info(_LI("Created event %(event_name)s with"
+                         " NF:%(nf)s ,NFI:%(nfi)s and NFD:%(nfd)s"),
+                     {'event_name': event_id,
+                      'nf': NF,
+                      'nfi': NFI,
+                      'nfd': NFD})
+        else:
+            LOG.info(_LI("Created event %(event_name)s "),
+                     {'event_name': event_id})
 
     def _create_event(self, event_id, event_data=None, key=None,
                       is_poll_event=False, original_event=False, max_times=10):
@@ -165,8 +176,8 @@ class RpcHandler(object):
                 event_id = self.rpc_event_mapping[resource][0]
 
             if result.lower() != 'success':
-                LOG.info(_LI("NDO RPC HAndler response data: %(data)s") % {
-                             'data': data})
+                LOG.info(_LI("RPC Handler response data:%(data)s"),
+                         {'data': data})
                 if is_delete_request:
                     # Ignore any deletion errors, generate SUCCESS event
                     event_id = self.rpc_event_mapping[resource][1]
@@ -298,26 +309,49 @@ class DeviceOrchestrator(nfp_api.NfpEventHandler):
 
     def handle_event(self, event):
         try:
-            nf_id = (event.data['network_function_id']
-                     if 'network_function_id' in event.data else None)
-            LOG.info(_LI("NDO: received event %(id)s for network function : "
-                         "%(nf_id)s"),
-                     {'id': event.id, 'nf_id': nf_id})
+            event_data = event.data
+            NFD = event_data.get('network_function_device_id')
+            NF = event_data.get('network_function_id')
+            NFI = event_data.get('network_function_instance_id')
+
+            if NFD and NF and NFI:
+                LOG.info(_LI("Received event %(event_name)s with "
+                             "NF:%(nf)s ,NFI:%(nfi)s and NFD:%(nfd)s"),
+                         {'event_name': event.id,
+                          'nf': NF,
+                          'nfi': NFI,
+                          'nfd': NFD})
+            else:
+                LOG.info(_LI("Received event %(event_name)s "),
+                         {'event_name': event.id})
             event_handler = self.event_method_mapping(event.id)
             event_handler(event)
         except Exception as e:
-            LOG.exception(_LE("Error in processing event: %(event_id)s for "
-                              "event data %(event_data)s. Error: %(error)s"),
-                          {'event_id': event.id, 'event_data': event.data,
-                           'error': e})
+            LOG.error(_LE("error in processing event: %(event_id)s for "
+                          "event data %(event_data)s. error: %(error)s"),
+                      {'event_id': event.id, 'event_data': event.data,
+                       'error': e})
             _, _, tb = sys.exc_info()
             traceback.print_tb(tb)
 
     # Helper functions
     def _log_event_created(self, event_id, event_data):
-        LOG.info(_LI("Device Orchestrator created event %s(event_name)s "
-                     "with event data: %(event_data)s"), {
-                         'event_name': event_id, 'event_data': event_data})
+        network_function_instance = event_data.get('network_function_instance')
+        if network_function_instance:
+            nf = network_function_instance.get('network_function_id')
+            nfi = network_function_instance.get('id')
+        else:
+            nf = None
+            nfi = None
+        if nf and nfi:
+            LOG.info(_LI("Created event %(event_name)s with NF:%(nf)s and "
+                         "NFI:%(nfi)s "),
+                     {'event_name': event_id,
+                      'nf': nf,
+                      'nfi': nfi})
+        else:
+            LOG.info(_LI("Created event %(event_name)s "),
+                     {'event_name': event_id})
 
     def _create_event(self, event_id, event_data=None,
                       is_poll_event=False, original_event=False,
@@ -352,6 +386,9 @@ class DeviceOrchestrator(nfp_api.NfpEventHandler):
                     data=device, key=nf_id + nfi_id)
         if 'binding_key' in device:
             ev.binding_key = device['binding_key']
+            LOG.debug("Releasing tenant based lock for "
+                      "CREATE_NETWORK_FUNCTION_DEVICE event with binding "
+                      "key: %s" % ev.binding_key)
         self._controller.event_complete(ev)
 
     def event_cancelled(self, ev, reason):
@@ -643,17 +680,16 @@ class DeviceOrchestrator(nfp_api.NfpEventHandler):
         nfd_request = self._prepare_failure_case_device_data(nfp_context)
         service_details = nfp_context['service_details']
 
-        LOG.info(_LI("Device Orchestrator received create network service "
-                     "device request with data %(data)s"),
-                 {'data': nfd_request})
+        LOG.info(_LI("Received event CREATE NETWORK FUNCTION "
+                     "DEVICE request."))
 
         orchestration_driver = self._get_orchestration_driver(
             service_details['service_vendor'])
 
         device_data = self._prepare_device_data_from_nfp_context(nfp_context)
 
-        LOG.info(_LI("Creating new device,"
-                     "device request: %(device)s"), {'device': nfd_request})
+        LOG.info(_LI("Creating new device:%(device)s"),
+                 {'device': nfd_request})
         device_data['volume_support'] = (
                 self.config.device_orchestrator.volume_support)
         device_data['volume_size'] = (
@@ -721,6 +757,10 @@ class DeviceOrchestrator(nfp_api.NfpEventHandler):
             orchestration_driver.get_network_function_device_status(device))
 
         if is_device_up == nfp_constants.ACTIVE:
+            LOG.info(_LI("Device with NFD:%(id)s came up for "
+                         "tenant:%(tenant)s "),
+                     {'id': network_function_device['id'],
+                      'tenant': tenant_id})
             self._post_device_up_event_graph(nfp_context)
 
             return STOP_POLLING
@@ -797,6 +837,9 @@ class DeviceOrchestrator(nfp_api.NfpEventHandler):
             desc_dict=nfp_context.pop('event_desc'))
         if 'binding_key' in nfp_context:
             nfd_event.binding_key = nfp_context['binding_key']
+            LOG.debug("Releasing tenant based lock for "
+                      "CREATE_NETWORK_FUNCTION_DEVICE event with binding "
+                      "key: %s" % nfd_event.binding_key)
 
         for result in results:
             if result.result.lower() != 'success':
@@ -813,12 +856,11 @@ class DeviceOrchestrator(nfp_api.NfpEventHandler):
             network_function_device, nfp_constants.ACTIVE)
 
         LOG.info(_LI(
-            "Device Configuration completed for device: %(device_id)s"
-            "Updated DB status to ACTIVE, Incremented device "
-            "reference count for %(device)s"),
-            {'device_id': network_function_device['id'],
-             'device': network_function_device})
-
+            "Configuration completed for device with NFD:%(device_id)s. "
+            "Updated DB status to ACTIVE."),
+            {'device_id': network_function_device['id']})
+        LOG.debug("Device detail:%s"
+                  % network_function_device)
         self._controller.event_complete(nfd_event)
         self._post_configure_device_graph(nfp_context,
                                           serialize=serialize_config)
@@ -1186,11 +1228,10 @@ class DeviceOrchestrator(nfp_api.NfpEventHandler):
             self._update_network_function_device_db(
                 device, nfp_constants.ACTIVE)
             LOG.info(_LI(
-                "Device Configuration completed for device: %(device_id)s"
-                "Updated DB status to ACTIVE, Incremented device "
-                "reference count for %(device)s"),
-                {'device_id': device['id'], 'device': device})
-
+                "Configuration completed for device with NFD:%(device_id)s. "
+                "Updated DB status to ACTIVE."),
+                {'device_id': device['id']})
+            LOG.debug("Device detail:%s" % device)
         # Invoke event_complete for original event which is
         # CREATE_DEVICE_CONFIGURATION
         self._increment_device_ref_count(device)
@@ -1208,9 +1249,8 @@ class DeviceOrchestrator(nfp_api.NfpEventHandler):
             self._controller.event_complete(event, result="SUCCESS")
             return
         device = self._prepare_device_data_fast(network_function_details)
-        LOG.info(_LI("Device Orchestrator received delete network service "
-                     "device request for device %(device)s"),
-                 {'device': device})
+        LOG.info(_LI("Recieved DELETE NETWORK FUNCTION "
+                     "DEVICE request "))
         device['event_desc'] = event.desc.to_dict()
         self._create_event(event_id='DELETE_CONFIGURATION',
                            event_data=device,
@@ -1319,8 +1359,8 @@ class DeviceOrchestrator(nfp_api.NfpEventHandler):
                 return STOP_POLLING
             except Exception as exc:
                 device['id'] = device_id
-                msg = "Exception - %s - in DEVICE_BEING_DELETED" % exc
-                LOG.error(msg)
+                err = ("Exception - %s - in DEVICE_BEING_DELETED" % (exc))
+                LOG.error(err)
                 return CONTINUE_POLLING
         else:
             return CONTINUE_POLLING
@@ -1476,8 +1516,8 @@ class NDOConfiguratorRpcApi(object):
                                               config_params):
         self._update_params(device_data, config_params, operation='create')
         LOG.info(_LI("Sending create NFD config request to configurator "
-                     "with config_params = %(config_params)s"),
-                 {'config_params': config_params})
+                     "for NF:%(nf_id)s "),
+                 {'nf_id': config_params['info']['context']['nf_id']})
 
         transport.send_request_to_configurator(self.conf,
                                                self.context,
@@ -1490,9 +1530,7 @@ class NDOConfiguratorRpcApi(object):
                                               config_params):
         self._update_params(device_data, config_params, operation='delete')
         config_params['info']['context']['nfp_context'] = device_data
-        LOG.info(_LI("Sending delete NFD config request to configurator "
-                     "with config_params = %(config_params)s"),
-                 {'config_params': config_params})
+        LOG.info(_LI("Sending delete NFD config request to configurator "))
 
         transport.send_request_to_configurator(self.conf,
                                                self.context,

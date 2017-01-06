@@ -10,13 +10,15 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-import oslo_messaging as messaging
 
 from gbpservice.contrib.nfp.configurator.lib import constants as const
 from gbpservice.nfp.core import log as nfp_logging
 from gbpservice.nfp.core import module as nfp_api
+
+from neutron._i18n import _LI
 from neutron.common import rpc as n_rpc
 from oslo_config import cfg
+import oslo_messaging as messaging
 
 n_rpc.init(cfg.CONF)
 
@@ -55,6 +57,29 @@ class AgentBaseRPCManager(object):
         else:
             return False
 
+    def get_diff_of_dict(self, old_dict, new_dict):
+        """Getting difference between two dict.
+
+        :param Two dictionary
+
+        Returns: Two dictionary which has different values for same keys.
+
+        """
+        diff_values = []
+        new_val = {}
+        old_val = {}
+        for key in new_dict:
+            if old_dict.get(key) != new_dict.get(key):
+                diff_values.append(key)
+
+        for value in diff_values:
+            if value == 'description':
+                pass
+            else:
+                new_val[value] = new_dict.get(value)
+                old_val[value] = old_dict.get(value)
+        return old_val, new_val
+
     def process_request(self, sa_req_list, notification_data):
         """Forwards the RPC message from configurator to service agents.
 
@@ -80,6 +105,7 @@ class AgentBaseRPCManager(object):
         # Multiple request data blobs needs batch processing. Send batch
         # processing event or do direct processing of single request data blob
         if (len(sa_req_list) > 1):
+            LOG.info(_LI("Creating event PROCESS BATCH"))
             args_dict = {
                 'sa_req_list': sa_req_list,
                 'notification_data': notification_data

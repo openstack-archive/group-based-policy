@@ -24,6 +24,13 @@ import time
 
 oslo_logging.register_options(oslo_config.CONF)
 
+if not hasattr(oslo_config.CONF, 'module'):
+    module_opts = [
+        oslo_config.StrOpt('module',
+                           default='proxy',
+                           help='component name for logging.')]
+    oslo_config.CONF.register_opts(module_opts)
+
 LOG = nfp_logging.getLogger(__name__)
 
 # Queue of proxy connections which workers will handle
