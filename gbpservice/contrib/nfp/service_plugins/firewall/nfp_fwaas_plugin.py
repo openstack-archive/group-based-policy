@@ -22,6 +22,7 @@ from neutron.common import topics as n_topics
 from neutron.db import l3_db
 from neutron.db import models_v2
 from neutron.extensions import l3
+from neutron import i18n
 from neutron.plugins.common import constants as n_const
 
 from oslo_config import cfg
@@ -37,6 +38,7 @@ from neutron_fwaas.services.firewall import fwaas_plugin as ref_fw_plugin
 from neutron_fwaas.db.firewall import firewall_db as n_firewall
 
 LOG = nfp_logging.getLogger(__name__)
+_LE = i18n._LE
 
 
 class NFPFirewallPlugin(ref_fw_plugin.FirewallPlugin):
@@ -263,10 +265,10 @@ def _resource_owner_tenant_id():
         return tenant.id
     except k_exceptions.NotFound:
         with excutils.save_and_reraise_exception(reraise=True):
-            LOG.error(_('No tenant with name %s exists.'), tenant)
+            LOG.error(_LE('No tenant with name %s exists.'), tenant)
     except k_exceptions.NoUniqueMatch:
         with excutils.save_and_reraise_exception(reraise=True):
-            LOG.error(_('Multiple tenants matches found for %s'),
+            LOG.error(_LE('Multiple tenants matches found for %s'),
                       tenant)
 
 
