@@ -50,25 +50,42 @@ def _filter_data(routers, networks, filters):
     _filtered_routers = []
     _filtered_subnets = []
     _filtered_ports = []
+    _filtered_networks = []
     for router in routers:
         if router['tenant_id'] == tenant_id:
             _filtered_routers.append({'id': router['id']})
     for network in networks:
-        subnets = network['subnets']
-        ports = network['ports']
-        for subnet in subnets:
-            if subnet['tenant_id'] == tenant_id:
-                _filtered_subnets.append({'id': subnet['id'],
-                                          'cidr': subnet['cidr'],
-                                          'gateway_ip': subnet['gateway_ip']})
-        for port in ports:
-            if port['tenant_id'] == tenant_id:
-                _filtered_ports.append({'id': port['id'],
-                                        'fixed_ips': port['fixed_ips']})
+        if network['tenant_id'] == tenant_id:
+            subnets = network['subnets']
+            ports = network['ports']
+            _filtered_networks.append(
+                {'id': network['id'],
+                 'tenant_id': network['tenant_id'],
+                 'provider:segmentation_id': network[
+                     'provider:segmentation_id'],
+                 'provider:network_type': network[
+                     'provider:network_type'],
+                 'shared': network['shared'],
+                 'router:external': network['router:external']})
+            for subnet in subnets:
+                if subnet['tenant_id'] == tenant_id:
+                    _filtered_subnets.append(
+                        {'id': subnet['id'],
+                         'cidr': subnet['cidr'],
+                         'gateway_ip': subnet['gateway_ip'],
+                         'network_id': subnet['network_id']})
+            for port in ports:
+                if port['tenant_id'] == tenant_id:
+                    _filtered_ports.append(
+                        {'id': port['id'],
+                         'fixed_ips': port['fixed_ips'],
+                         'binding:host_id': port['binding:host_id'],
+                         'network_id': port['network_id']})
 
     return {'subnets': _filtered_subnets,
             'routers': _filtered_routers,
-            'ports': _filtered_ports}
+            'ports': _filtered_ports,
+            'networks': _filtered_networks}
 
 
 def get_core_context(context, filters, host):
