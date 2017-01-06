@@ -31,13 +31,21 @@ NFP_OPTS = [
         'backend',
         default='rpc',
         help='Backend Support for communicationg with configurator.'
+    )
+]
+
+EXTRA_OPTS = [
+    oslo_config.StrOpt(
+        'logger_class',
+        default='gbpservice.nfp.core.log.WrappedLogger',
+        help='logger class path to handle logging seperately.'
     ),
 ]
 
 
 def init(module, args, **kwargs):
     """Initialize the configuration. """
-    oslo_config.CONF.register_opts(NFP_OPTS)
+    oslo_config.CONF.register_opts(EXTRA_OPTS)
     oslo_config.CONF.register_opts(NFP_OPTS, module)
     oslo_config.CONF(args=args, project='nfp',
                      version='%%(prog)s %s' % ('version'),
