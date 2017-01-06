@@ -96,11 +96,8 @@ class BaseDriver(object):
         except Exception as e:
             msg = ("VM health check failed. Command '%s' execution failed."
                    " Reason=%s" % (command, e))
-            LOG.warn(msg)
+            LOG.debug(msg)
             return const.FAILED
-        msg = ("VM Health check successful. Command '%s' executed"
-               " successfully" % (command))
-        LOG.debug(msg)
         return const.SUCCESS
 
     def _configure_log_forwarding(self, url, mgmt_ip, port):
