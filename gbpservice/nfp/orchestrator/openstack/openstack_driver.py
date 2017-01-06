@@ -544,15 +544,12 @@ class NeutronClient(OpenstackApi):
             LOG.error(err)
             raise Exception(err)
 
-    def get_floating_ips(self, token, tenant_id=None, port_id=None):
+    def get_floating_ips(self, token, **filters):
         """ Get list of floatingips, associated with port if passed"""
         try:
             neutron = neutron_client.Client(token=token,
                                             endpoint_url=self.network_service)
-            if port_id:
-                return neutron.list_floatingips(port_id=port_id)['floatingips']
-            else:
-                return neutron.list_floatingips()['floatingips']
+            return neutron.list_floatingips(**filters)['floatingips']
         except Exception as ex:
             err = ("Failed to read floatingips from"
                    " Openstack Neutron service's response"
@@ -754,7 +751,10 @@ class NeutronClient(OpenstackApi):
             neutron = neutron_client.Client(token=token,
                                             endpoint_url=self.network_service)
             port_ids = port_ids if port_ids is not None else []
-            ports = neutron.list_ports(id=port_ids).get('ports', [])
+            if port_ids:
+                ports = neutron.list_ports(id=port_ids).get('ports', [])
+            else:
+                ports = neutron.list_ports(**kwargs)
             return ports
         except Exception as ex:
             err = ("Failed to list ports %s" % ex)
@@ -812,6 +812,28 @@ class NeutronClient(OpenstackApi):
         except Exception as ex:
             err = ("Failed to delete port %s"
                    " Exception :: %s" % (port_id, ex))
+            LOG.error(err)
+            raise Exception(err)
+
+    def get_networks(self, token, filters=None):
+        """ List nets
+
+        :param token: A scoped_token
+        :param filters: Parameters for list filter
+        example for filter: ?tenant_id=%s&id=%s
+
+        :return: network List
+
+        """
+        try:
+            neutron = neutron_client.Client(token=token,
+                                            endpoint_url=self.network_service)
+            nets = neutron.list_networks(**filters).get('networks', [])
+            return nets
+        except Exception as ex:
+            err = ("Failed to read network list from"
+                   " Openstack Neutron service's response"
+                   " KeyError :: %s" % (ex))
             LOG.error(err)
             raise Exception(err)
 
