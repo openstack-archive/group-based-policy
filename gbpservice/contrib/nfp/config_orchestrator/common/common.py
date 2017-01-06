@@ -15,6 +15,7 @@ from gbpservice.contrib.nfp.config_orchestrator.common import (
 from gbpservice.nfp.core import log as nfp_logging
 from gbpservice.nfp.lib import transport
 
+from neutron._i18n import _LE
 from neutron.common import constants as n_constants
 from neutron.common import rpc as n_rpc
 from neutron.common import topics as n_topics
@@ -127,12 +128,13 @@ def get_network_function_details(context, network_function_id):
             'get_network_function_details',
             network_function_id=network_function_id)
         msg = (" %s " % (network_function_details))
-        LOG.info(msg)
+        LOG.debug(msg)
         return network_function_details['network_function']
 
     except Exception as e:
-        msg = (" %s " % (e))
-        LOG.info(msg)
+        LOG.error(_LE("Failed to get network function details of "
+                  "network_function_id %(network_function_id)s : %(ex)s "),
+                  {'ex': e, 'network_function_id': network_function_id})
 
 
 def get_network_function_map(context, network_function_id):
@@ -152,9 +154,10 @@ def get_network_function_map(context, network_function_id):
         request_data = _prepare_structure(network_function_details, ports_info,
                                           mngmt_port_info, monitor_port_info)
         msg = (" %s " % (request_data))
-        LOG.info(msg)
+        LOG.debug(msg)
         return request_data
     except Exception as e:
-        msg = (" %s " % (e))
-        LOG.info(msg)
+        LOG.error(_LE("Failed to get network function map of "
+                  "network_function_id %(network_function_id)s : %(ex)s "),
+                  {'ex': e, 'network_function_id': network_function_id})
         return request_data
