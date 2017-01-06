@@ -341,7 +341,8 @@ class DeviceOrchestratorTestCase(unittest.TestCase):
                                           'key': self.event.key}
         orig_event_data['tenant_id'] = self.event.data[
                 'resource_owner_context']['admin_tenant_id']
-        ndo_handler.perform_health_check(self.event)
+        orig_event_data['periodicity'] = 'initial'
+        ndo_handler.perform_initial_health_check(self.event)
         ndo_handler.configurator_rpc.create_network_function_device_config.\
             assert_called_with(orig_event_data, param_req)
 
