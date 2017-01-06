@@ -199,10 +199,9 @@ class OrchestrationDriver(object):
         if attr in provider_metadata:
             setattr(self, attr, provider_metadata[attr])
         else:
-            LOG.info(_LI("Provider metadata specified in image, doesn't"
-                         " contains %(attr)s value, proceeding with default"
-                         " value %(default)s"),
-                     {'attr': attr, 'default': attr_value})
+            LOG.debug("Provider metadata specified in image, doesn't contains "
+                      "%s value, proceeding with default value "
+                      "%s" % (attr, attr_value))
 
     def _update_provider_metadata(self, device_data, token=None):
         provider_metadata = {}
@@ -210,9 +209,8 @@ class OrchestrationDriver(object):
             image_name = self._get_image_name(device_data)
             provider_metadata = self._get_provider_metadata(device_data,
                                                         image_name)
-            LOG.info(_LI("Provider metadata, specified in image:"
-                         " %(provider_metadata)s"),
-                     {'provider_metadata': provider_metadata})
+            LOG.debug("Provider metadata, specified in image: %s"
+                      % provider_metadata)
             if provider_metadata:
                 self._update_self_with_provider_metadata(
                     provider_metadata,
@@ -221,8 +219,8 @@ class OrchestrationDriver(object):
                     provider_metadata,
                     nfp_constants.SUPPORTS_HOTPLUG)
             else:
-                LOG.info(_LI("No provider metadata specified in image,"
-                             " proceeding with default values"))
+                LOG.debug("No provider metadata specified in image,"
+                          " proceeding with default values")
         except Exception:
             LOG.error(_LE("Error while getting metadata for image name:"
                           "%(image_name)s, proceeding with default values"),
@@ -235,9 +233,8 @@ class OrchestrationDriver(object):
         try:
             provider_metadata = self._get_provider_metadata_fast(
                 token, admin_tenant_id, image_name, device_data)
-            LOG.info(_LI("Provider metadata, specified in image:"
-                         " %(provider_metadata)s"),
-                     {'provider_metadata': provider_metadata})
+            LOG.debug("Provider metadata, specified in image: %s"
+                      % provider_metadata)
             if provider_metadata:
                 self._update_self_with_provider_metadata(
                     provider_metadata,
@@ -246,8 +243,8 @@ class OrchestrationDriver(object):
                     provider_metadata,
                     nfp_constants.SUPPORTS_HOTPLUG)
             else:
-                LOG.info(_LI("No provider metadata specified in image,"
-                             " proceeding with default values"))
+                LOG.debug("No provider metadata specified in image,"
+                          " proceeding with default values")
         except Exception:
             LOG.error(_LE("Error while getting metadata for image name: "
                           "%(image_name)s, proceeding with default values"),
@@ -258,11 +255,10 @@ class OrchestrationDriver(object):
         if device_data['service_details'].get('image_name'):
             image_name = device_data['service_details']['image_name']
         else:
-            LOG.info(_LI("No image name provided in service profile's "
-                         "service flavor field, image will be selected "
-                         "based on service vendor's name : %(vendor)s"),
-                    {'vendor':
-                        device_data['service_details']['service_vendor']})
+            LOG.debug("No image name provided in service profile's "
+                      "service flavor field, image will be selected "
+                      "based on service vendor's name : %s"
+                      % (device_data['service_details']['service_vendor']))
             image_name = device_data['service_details']['service_vendor']
             image_name = '%s' % image_name.lower()
             device_data['service_details']['image_name'] = image_name
@@ -515,9 +511,9 @@ class OrchestrationDriver(object):
         if device_data['service_details'].get('flavor'):
             flavor = device_data['service_details']['flavor']
         else:
-            LOG.info(_LI("No Device flavor provided in service profile's "
-                         "service flavor field, using default "
-                         "flavor: m1.medium"))
+            LOG.debug("No Device flavor provided in service profile's "
+                      "service flavor field, using default "
+                      "flavor: m1.medium")
             flavor = 'm1.medium'
         return flavor
 
@@ -875,8 +871,8 @@ class OrchestrationDriver(object):
                                             device_data))
 
         if not provider_metadata:
-            LOG.warning(_LW('Failed to get provider metadata for'
-                            ' device deletion.'))
+            LOG.debug('Failed to get provider metadata for'
+                      ' device deletion.')
 
         if provider_metadata.get('supports_hotplug') is False:
             return True
