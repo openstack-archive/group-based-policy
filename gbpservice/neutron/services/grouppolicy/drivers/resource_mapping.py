@@ -207,7 +207,8 @@ class OwnedResourcesOperations(object):
                     first() is not None)
 
 
-class ImplicitResourceOperations(local_api.LocalAPI):
+class ImplicitResourceOperations(local_api.LocalAPI,
+                                 nsp_manager.NetworkServicePolicyMappingMixin):
 
     def _sg_rule(self, plugin_context, tenant_id, sg_id, direction,
                  protocol=None, port_range=None, cidr=None,
@@ -380,6 +381,11 @@ class ImplicitResourceOperations(local_api.LocalAPI):
                 context._plugin_context.elevated(), {'id': subnets},
                 clean_session=clean_session)]
         return cidrs
+
+    def _get_subnet(self, context, subnet_id):
+        context.session.expire_all()
+        return super(ImplicitResourceOperations, self)._get_subnet(
+            context, subnet_id)
 
     def _get_l3p_allocated_subnets(self, context, l3p_id, clean_session=True):
         ptgs = context._plugin._get_l3p_ptgs(
@@ -784,123 +790,192 @@ class ImplicitResourceOperations(local_api.LocalAPI):
                         network_id=context.current['network_id'],
                         tenant_id=context.current['tenant_id'])
 
+    def _add_nat_pool_to_segment(self, context):
+        external_segment = context._plugin.get_external_segment(
+            context._plugin_context, context.current['external_segment_id'])
+        if not external_segment['subnet_id']:
+            raise exc.ESSubnetRequiredForNatPool()
+        ext_sub = self._get_subnet(context._plugin_context,
+                                   external_segment['subnet_id'])
+        # Verify there's no overlap. This will also be verified by Neutron at
+        # subnet creation, but we try to fail as soon as possible to return
+        # a nicer error to the user (concurrency may still need to fallback on
+        # Neutron's validation).
+        ext_subs = self._get_subnets(context._plugin_context,
+                                     {'network_id': [ext_sub['network_id']]})
+        peer_pools = context._plugin.get_nat_pools(
+                context._plugin_context.elevated(),
+                {'id': external_segment['nat_pools']})
+        peer_set = netaddr.IPSet(
+            [x['ip_pool'] for x in peer_pools if
+             x['id'] != context.current['id']])
+        curr_ip_set = netaddr.IPSet([context.current['ip_pool']])
+        if peer_set & curr_ip_set:
+            # Raise for overlapping CIDRs
+            raise exc.OverlappingNATPoolInES(
+                es_id=external_segment['id'], np_id=context.current['id'])
+        # A perfect subnet overlap is allowed as long as the subnet can be
+        # assigned to the pool.
+        match = [x for x in ext_subs if x['cidr'] ==
+                 context.current['ip_pool']]
+        if match:
+            # There's no owning peer given the overlapping check above.
+            # Use this subnet on the current Nat pool
+            context._plugin._set_db_np_subnet(
+                context._plugin_context, context.current, match[0]['id'])
+        elif netaddr.IPSet([x['cidr'] for x in ext_subs]) & curr_ip_set:
+            # Partial overlapp not allowed
+            raise exc.OverlappingSubnetForNATPoolInES(
+                net_id=ext_sub['network_id'], np_id=context.current['id'])
+        # At this point, either a subnet was assigned to the NAT Pool, or a new
+        # one needs to be created by the postcommit operation.
+>>>>>>> 4e7b905... [aim-mapping] NAT-pool & NSP support
 
-class ResourceMappingDriver(api.PolicyDriver, ImplicitResourceOperations,
-                            nsp_manager.NetworkServicePolicyMappingMixin,
-                            OwnedResourcesOperations):
-    """Resource Mapping driver for Group Policy plugin.
+    def _use_implicit_nat_pool_subnet(self, context):
+        es = context._plugin.get_external_segment(
+            context._plugin_context, context.current['external_segment_id'])
+        ext_sub = self._get_subnet(context._plugin_context, es['subnet_id'])
+        attrs = {'tenant_id': context.current['tenant_id'],
+                 'name': 'ptg_' + context.current['name'],
+                 'network_id': ext_sub['network_id'],
+                 'ip_version': context.current['ip_version'],
+                 'cidr': context.current['ip_pool'],
+                 'enable_dhcp': False,
+                 'gateway_ip': attributes.ATTR_NOT_SPECIFIED,
+                 'allocation_pools': attributes.ATTR_NOT_SPECIFIED,
+                 'dns_nameservers': attributes.ATTR_NOT_SPECIFIED,
+                 'host_routes': attributes.ATTR_NOT_SPECIFIED}
+        subnet = self._create_subnet(context._plugin_context, attrs)
+        context._plugin._set_db_np_subnet(
+            context._plugin_context, context.current, subnet['id'])
+        self._mark_subnet_owned(context._plugin_context.session, subnet['id'])
+        return subnet
 
-    This driver implements group policy semantics by mapping group
-    policy resources to various other neutron resources.
-    """
+    def _process_ext_segment_update_for_nat_pool(self, context):
+        nsps_using_nat_pool = self._get_nsps_using_nat_pool(context)
+        if (context.original['external_segment_id'] !=
+                context.current['external_segment_id']):
+            if nsps_using_nat_pool:
+                raise exc.NatPoolinUseByNSP()
+            # Clean the current subnet_id. The subnet itself will be
+            # cleaned by the postcommit operation
+            context._plugin._set_db_np_subnet(
+                context._plugin_context, context.current, None)
+            self._add_nat_pool_to_segment(context)
 
-    @log.log_method_call
-    def initialize(self):
-        self._cached_agent_notifier = None
-        self._resource_owner_tenant_id = None
+    def _add_implicit_subnet_for_nat_pool_update(self, context):
+        # For backward compatibility, do the following only if the external
+        # segment changed
+        if (context.original['external_segment_id'] !=
+                context.current['external_segment_id']):
+            if context.original['subnet_id']:
+                if self._subnet_is_owned(context._plugin_context.session,
+                                         context.original['subnet_id']):
+                    self._delete_subnet(context._plugin_context,
+                                        context.original['subnet_id'])
+            if (context.current['external_segment_id'] and not
+                    context.current['subnet_id']):
+                self._use_implicit_nat_pool_subnet(context)
 
-    def _reject_shared(self, object, type):
-        if object.get('shared'):
-            raise exc.InvalidSharedResource(type=type,
-                                            driver='resource_mapping')
+    def _add_implicit_subnet_for_nat_pool_create(self, context):
+        if (context.current['external_segment_id'] and not
+                context.current['subnet_id']):
+            self._use_implicit_nat_pool_subnet(context)
 
-    def _reject_cross_tenant_ptg_l2p(self, context):
-        if context.current['l2_policy_id']:
-            l2p = context._plugin.get_l2_policy(
-                context._plugin_context, context.current['l2_policy_id'])
-            if l2p['tenant_id'] != context.current['tenant_id']:
-                raise (
-                    exc.
-                    CrossTenantPolicyTargetGroupL2PolicyNotSupported())
+    def _get_nsps_using_nat_pool(self, context):
+        external_segment = context._plugin.get_external_segment(
+            context._plugin_context, context.current['external_segment_id'])
+        l3_policies = external_segment['l3_policies']
+        l3_policies = context._plugin.get_l3_policies(
+                    context._plugin_context, filters={'id': l3_policies})
+        l2_policies = []
+        for x in l3_policies:
+            l2_policies.extend(x['l2_policies'])
+        l2_policies = context._plugin.get_l2_policies(
+                    context._plugin_context, filters={'id': l2_policies})
+        ptgs = []
+        for l2_policy in l2_policies:
+            ptgs.extend(l2_policy['policy_target_groups'])
+        ptgs = context._plugin.get_policy_target_groups(
+                    context._plugin_context, filters={'id': ptgs})
+        nsps = [x['network_service_policy_id'] for x in ptgs
+                if x['network_service_policy_id']]
+        nsps = context._plugin.get_network_service_policies(
+            context._plugin_context, filters={'id': nsps})
+        nsps_using_nat_pool = []
+        for nsp in nsps:
+            nsp_params = nsp.get("network_service_params")
+            for nsp_param in nsp_params:
+                if nsp_param['value'] == "nat_pool":
+                    nsps_using_nat_pool.append(nsp)
+                    break
+        return nsps_using_nat_pool
 
-    def _reject_cross_tenant_l2p_l3p(self, context):
-        if context.current['tenant_id'] == self.resource_owner_tenant_id:
-            # Relax cross tenancy condition when current tenant id is admin.
-            # Relaxing when l2policy tenant id is of admin, to address the
-            # case for proxy group where l2policy belongs to admin tenant
-            # but l3policy belongs to user tenant.
+    def _check_nat_pool_subnet_in_use(self, plugin_context, nat_pool):
+        if not self._subnet_is_owned(plugin_context.session,
+                                     nat_pool['subnet_id']):
             return
-        # Can't create non shared L2p on a shared L3p
-        if context.current['l3_policy_id']:
-            l3p = context._plugin.get_l3_policy(
-                context._plugin_context,
-                context.current['l3_policy_id'])
-            if l3p['tenant_id'] != context.current['tenant_id']:
-                raise exc.CrossTenantL2PolicyL3PolicyNotSupported()
+        # check if there are any ports with an address in nat-pool subnet
+        ports = self._get_ports(plugin_context.elevated(),
+            filters={'fixed_ips': {'subnet_id': [nat_pool['subnet_id']]}})
+        if ports:
+            raise exc.NatPoolInUseByPort()
 
-    @property
-    def resource_owner_tenant_id(self):
-        if not self._resource_owner_tenant_id:
-            self._resource_owner_tenant_id = (
-                self._get_resource_owner_tenant_id())
-        return self._resource_owner_tenant_id
+    def _nat_pool_in_use(self, context):
+        nsps_using_nat_pool = self._get_nsps_using_nat_pool(context)
+        if nsps_using_nat_pool:
+            raise exc.NatPoolinUseByNSP()
+        self._check_nat_pool_subnet_in_use(context._plugin_context,
+                                           context.current)
 
-    def _get_resource_owner_tenant_id(self):
-        # Returns service tenant id, which specified in neutron conf
-        try:
-            user, pwd, tenant, auth_url = utils.get_keystone_creds()
-            keystoneclient = k_client.Client(username=user, password=pwd,
-                                             auth_url=auth_url)
-            tenant = keystoneclient.tenants.find(name=tenant)
-            return tenant.id
-        except k_exceptions.NotFound:
-            with excutils.save_and_reraise_exception(reraise=True):
-                LOG.error(_LE('No tenant with name %s exists.'), tenant)
-        except k_exceptions.NoUniqueMatch:
-            with excutils.save_and_reraise_exception(reraise=True):
-                LOG.error(_LE('Multiple tenants matches found for %s'), tenant)
-        except k_exceptions.AuthorizationFailure:
-            LOG.error(_LE("User: %(user)s dont have permissions"),
-                     {'user': user})
-        except k_exceptions.Unauthorized:
-            LOG.error(_LE("Wrong credentials provided: user: %(user)s, "
-                        "password: %(pwd)s, tenant: %(tenant)s"),
-                     {'user': user, 'pwd': pwd, 'tenant': tenant})
+    def _delete_subnet_on_nat_pool_delete(self, context):
+        if context.current['subnet_id']:
+            if self._subnet_is_owned(context._plugin_context.session,
+                                     context.current['subnet_id']):
+                self._delete_subnet(context._plugin_context,
+                                    context.current['subnet_id'])
 
-    def _get_subnet(self, context, subnet_id):
-        context.session.expire_all()
-        return super(ResourceMappingDriver, self)._get_subnet(
-            context, subnet_id)
+    def _validate_nsp_parameters(self, context):
+        nsp = context.current
+        nsp_params = nsp.get("network_service_params")
+        supported_nsp_pars = {"ip_single": ["self_subnet", "nat_pool"],
+                              "ip_pool": "nat_pool"}
+        if (nsp_params and len(nsp_params) > 2 or len(nsp_params) == 2 and
+            nsp_params[0] == nsp_params[1]):
+            raise exc.InvalidNetworkServiceParameters()
+        for params in nsp_params:
+            type = params.get("type")
+            value = params.get("value")
+            if (type not in supported_nsp_pars or
+                value not in supported_nsp_pars[type]):
+                raise exc.InvalidNetworkServiceParameters()
 
-    @log.log_method_call
-    def create_policy_target_precommit(self, context):
-        self._check_create_policy_target(context)
-
-    def _check_create_policy_target(self, context, verify_port_subnet=True):
-        self._validate_cluster_id(context)
-        if not context.current['policy_target_group_id']:
-            raise exc.PolicyTargetRequiresPolicyTargetGroup()
-        if context.current['port_id'] and verify_port_subnet:
-            # Validate if explicit port's subnet
-            # is same as the subnet of PTG.
-            self._validate_pt_port_subnets(context)
-        group_id = context.current['policy_target_group_id']
-        if context.current.get('proxy_gateway'):
-            pts = context._plugin.get_policy_targets(
-                context._plugin_context, {'policy_target_group_id': group_id,
-                                          'proxy_gateway': True})
-            pts = [x['id'] for x in pts if x['id'] != context.current['id']]
-            if pts:
-                exc.OnlyOneProxyGatewayAllowed(group_id=group_id)
-        if context.current.get('group_default_gateway'):
-            pts = context._plugin.get_policy_targets(
-                context._plugin_context, {'policy_target_group_id': group_id,
-                                          'group_default_gateway': True})
-            pts = [x['id'] for x in pts if x['id'] != context.current['id']]
-            if pts:
-                exc.OnlyOneGroupDefaultGatewayAllowed(group_id=group_id)
-
-    @log.log_method_call
-    def create_policy_target_postcommit(self, context):
-        if not context.current['port_id']:
-            self._use_implicit_port(context)
-        self._update_cluster_membership(
-            context, new_cluster_id=context.current['cluster_id'])
-        self._assoc_ptg_sg_to_pt(context, context.current['id'],
-                                 context.current['policy_target_group_id'])
-        self._associate_fip_to_pt(context)
-        if context.current.get('proxy_gateway'):
-            self._set_proxy_gateway_routes(context, context.current)
+    def _validate_in_use_by_nsp(self, context):
+        # We do not allow ES update for L3p when it is used by NSP
+        # At present we do not support multiple ES, so adding a new ES is
+        # not an issue here
+        if (context.original['external_segments'] !=
+            context.current['external_segments'] and
+            context.original['external_segments']):
+            l2_policies = context.current['l2_policies']
+            l2_policies = context._plugin.get_l2_policies(
+                    context._plugin_context, filters={'id': l2_policies})
+            ptgs = []
+            for l2p in l2_policies:
+                ptgs.extend(l2p['policy_target_groups'])
+            ptgs = context._plugin.get_policy_target_groups(
+                    context._plugin_context, filters={'id': ptgs})
+            nsps = [x['network_service_policy_id'] for x in ptgs
+                    if x['network_service_policy_id']]
+            if nsps:
+                nsps = context._plugin.get_network_service_policies(
+                    context._plugin_context, filters={'id': nsps})
+                for nsp in nsps:
+                    nsp_params = nsp.get("network_service_params")
+                    for nsp_param in nsp_params:
+                        if nsp_param['value'] == "nat_pool":
+                            raise exc.L3PEsinUseByNSP()
+>>>>>>> 4e7b905... [aim-mapping] NAT-pool & NSP support
 
     def _associate_fip_to_pt(self, context):
         ptg_id = context.current['policy_target_group_id']
@@ -942,6 +1017,20 @@ class ResourceMappingDriver(api.PolicyDriver, ImplicitResourceOperations,
                 es_list_with_nat_pools.append(es)
         return es_list_with_nat_pools
 
+    def _gen_nat_pool_in_ext_seg(self, context, tenant_id, es):
+        nat_pools = context._plugin.get_nat_pools(
+            context._plugin_context.elevated(), {'id': es['nat_pools']})
+        no_subnet_pools = []
+        for nat_pool in nat_pools:
+            # For backward compatibility
+            if not nat_pool['subnet_id']:
+                no_subnet_pools.append(nat_pool)
+            else:
+                yield nat_pool
+        for nat_pool in no_subnet_pools:
+            # Use old allocation method
+            yield nat_pool
+
     def _allocate_floating_ips(self, context, l2_policy_id, fixed_port=None,
                                external_segments=None):
         if not external_segments:
@@ -981,88 +1070,60 @@ class ResourceMappingDriver(api.PolicyDriver, ImplicitResourceOperations,
                 fip_ids.append(fip_id)
         return fip_ids
 
-    def _gen_nat_pool_in_ext_seg(self, context, tenant_id, es):
-        nat_pools = context._plugin.get_nat_pools(
-            context._plugin_context.elevated(), {'id': es['nat_pools']})
-        no_subnet_pools = []
-        for nat_pool in nat_pools:
-            # For backward compatibility
-            if not nat_pool['subnet_id']:
-                no_subnet_pools.append(nat_pool)
-            else:
-                yield nat_pool
-        for nat_pool in no_subnet_pools:
-            # Use old allocation method
-            yield nat_pool
+    def _create_floatingip(self, plugin_context, tenant_id, ext_net_id,
+                           internal_port_id=None, floating_ip_address=None,
+                           subnet_id=None, router_id=None):
+        attrs = {'tenant_id': tenant_id,
+                 'floating_network_id': ext_net_id}
+        if subnet_id:
+            attrs.update({"subnet_id": subnet_id})
+        if router_id:
+            attrs['router_id'] = router_id
+        if internal_port_id:
+            attrs.update({"port_id": internal_port_id})
+        if floating_ip_address:
+            attrs.update({"floating_ip_address": floating_ip_address})
+        fip = self._create_fip(plugin_context, attrs)
+        return fip['id']
 
-    @log.log_method_call
-    def update_policy_target_precommit(self, context):
-        self._validate_cluster_id(context)
-        if (context.current['policy_target_group_id'] !=
-            context.original['policy_target_group_id']):
-            raise exc.PolicyTargetGroupUpdateOfPolicyTargetNotSupported()
+    def _cleanup_network_service_policy(self, context, ptg,
+                                        ipaddress=None, fip_maps=None):
+        if not ipaddress:
+            ipaddress = self._get_ptg_policy_ipaddress_mapping(
+                context._plugin_context.session, ptg['id'])
+        if ipaddress and ptg['subnets']:
+            # TODO(rkukura): Loop on subnets?
+            self._restore_ip_to_allocation_pool(
+                context, ptg['subnets'][0], ipaddress.ipaddress)
+            self._delete_policy_ipaddress_mapping(
+                context._plugin_context.session, ptg['id'])
+        if not fip_maps:
+            fip_maps = self._get_ptg_policy_fip_mapping(
+                context._plugin_context.session, ptg['id'])
+        for fip_map in fip_maps:
+            self._delete_fip(context._plugin_context, fip_map.floatingip_id)
+        self._delete_ptg_policy_fip_mapping(
+            context._plugin_context.session, ptg['id'])
 
-    @log.log_method_call
-    def update_policy_target_postcommit(self, context):
-        if context.current['cluster_id'] != context.original['cluster_id']:
-            self._update_cluster_membership(
-                context, new_cluster_id=context.current['cluster_id'],
-                old_cluster_id=context.original['cluster_id'])
+        for pt in ptg['policy_targets']:
+            pt_fip_maps = self._get_pt_floating_ip_mapping(
+                    context._plugin_context.session, pt)
+            for pt_fip_map in pt_fip_maps:
+                self._delete_fip(context._plugin_context,
+                                 pt_fip_map.floatingip_id)
+            self._delete_pt_floating_ip_mapping(
+                context._plugin_context.session, pt)
 
-    @log.log_method_call
-    def delete_policy_target_precommit(self, context):
-        self._validate_pt_in_use_by_cluster(context)
-        context.fips = self._get_pt_floating_ip_mapping(
-                    context._plugin_context.session,
-                    context.current['id'])
-
-    @log.log_method_call
-    def delete_policy_target_postcommit(self, context):
-        sg_list = self._generate_list_of_sg_from_ptg(
-            context, context.current['policy_target_group_id'])
-        self._disassoc_sgs_from_port(context._plugin_context,
-                                     context.current['port_id'], sg_list)
-        port_id = context.current['port_id']
-        for fip in context.fips:
-            self._delete_fip(context._plugin_context,
-                             fip.floatingip_id)
-        if context.current.get('proxy_gateway'):
-            self._unset_proxy_gateway_routes(context, context.current)
-        self._cleanup_port(context._plugin_context, port_id)
-
-    @log.log_method_call
-    def create_policy_target_group_precommit(self, context):
-        self._reject_cross_tenant_ptg_l2p(context)
-        self._validate_ptg_subnets(context)
-        self._validate_nat_pool_for_nsp(context)
-        self._validate_proxy_ptg(context)
-
-    @log.log_method_call
-    def create_policy_target_group_postcommit(self, context):
-        # REVISIT(ivar) this validates the PTG L2P after the IPD creates it
-        # (which happens in the postcommit phase)
-        self._validate_proxy_ptg(context)
-        subnets = context.current['subnets']
-        if not subnets:
-            self._use_implicit_subnet(
-                context,
-                is_proxy=bool(context.current.get('proxied_group_id')))
-            subnets = context.current['subnets']
-        # connect router to subnets of the PTG
-        l2p_id = context.current['l2_policy_id']
-        l2p = context._plugin.get_l2_policy(context._plugin_context,
-                                            l2p_id)
-        l3p_id = l2p['l3_policy_id']
-        l3p = context._plugin.get_l3_policy(context._plugin_context,
-                                            l3p_id)
-        self._stitch_ptg_to_l3p(context, context.current, l3p, subnets)
-
-        self._handle_network_service_policy(context)
-        self._handle_policy_rule_sets(context)
-        self._update_default_security_group(context._plugin_context,
-                                            context.current['id'],
-                                            context.current['tenant_id'],
-                                            context.current['subnets'])
+    def _handle_nsp_update_on_ptg(self, context):
+        old_nsp = context.original.get("network_service_policy_id")
+        new_nsp = context.current.get("network_service_policy_id")
+        if old_nsp != new_nsp:
+            if old_nsp:
+                self._cleanup_network_service_policy(
+                                        context,
+                                        context.original)
+            if new_nsp:
+                self._handle_network_service_policy(context)
 
     def _validate_nat_pool_for_nsp(self, context):
         network_service_policy_id = context.current.get(
@@ -1180,33 +1241,233 @@ class ResourceMappingDriver(api.PolicyDriver, ImplicitResourceOperations,
                     self._set_pts_floating_ips_mapping(
                         context._plugin_context.session, pt_fip_map)
 
-    def _cleanup_network_service_policy(self, context, ptg,
-                                        ipaddress=None, fip_maps=None):
-        if not ipaddress:
-            ipaddress = self._get_ptg_policy_ipaddress_mapping(
-                context._plugin_context.session, ptg['id'])
-        if ipaddress and ptg['subnets']:
-            # TODO(rkukura): Loop on subnets?
-            self._restore_ip_to_allocation_pool(
-                context, ptg['subnets'][0], ipaddress.ipaddress)
-            self._delete_policy_ipaddress_mapping(
-                context._plugin_context.session, ptg['id'])
-        if not fip_maps:
-            fip_maps = self._get_ptg_policy_fip_mapping(
-                context._plugin_context.session, ptg['id'])
-        for fip_map in fip_maps:
-            self._delete_fip(context._plugin_context, fip_map.floatingip_id)
-        self._delete_ptg_policy_fip_mapping(
-            context._plugin_context.session, ptg['id'])
+    def _restore_ip_to_allocation_pool(self, context, subnet_id, ip_address):
+        # TODO(Magesh):Pass subnets and loop on subnets. Better to add logic
+        # to Merge the pools together after Fragmentation
+        subnet = self._get_subnet(context._plugin_context, subnet_id)
+        allocation_pools = subnet['allocation_pools']
+        for allocation_pool in allocation_pools:
+            pool_end_ip = allocation_pool.get('end')
+            if ip_address == str(netaddr.IPAddress(pool_end_ip) + 1):
+                new_last_ip = ip_address
+                allocation_pool['end'] = new_last_ip
+                del subnet['gateway_ip']
+                subnet = self._update_subnet(context._plugin_context,
+                                             subnet['id'], subnet)
+                return
 
-        for pt in ptg['policy_targets']:
-            pt_fip_maps = self._get_pt_floating_ip_mapping(
-                    context._plugin_context.session, pt)
-            for pt_fip_map in pt_fip_maps:
-                self._delete_fip(context._plugin_context,
-                                 pt_fip_map.floatingip_id)
-            self._delete_pt_floating_ip_mapping(
-                context._plugin_context.session, pt)
+        # TODO(Magesh):Have to test this logic. Add proper unit tests
+        subnet['allocation_pools'].append({"start": ip_address,
+                                          "end": ip_address})
+        del subnet['gateway_ip']
+        subnet = self._update_subnet(context._plugin_context,
+                                     subnet['id'], subnet)
+
+    def _remove_ip_from_allocation_pool(self, context, subnet_id, ip_address):
+        # TODO(Magesh):Pass subnets and loop on subnets
+        subnet = self._get_subnet(context._plugin_context, subnet_id)
+        allocation_pools = subnet['allocation_pools']
+        for allocation_pool in reversed(allocation_pools):
+            if ip_address == allocation_pool.get('end'):
+                new_last_ip = str(netaddr.IPAddress(ip_address) - 1)
+                allocation_pool['end'] = new_last_ip
+                del subnet['gateway_ip']
+                self._update_subnet(context._plugin_context,
+                                    subnet['id'], subnet)
+                break
+
+    def _get_last_free_ip(self, context, subnets):
+        # Hope lock_mode update is not needed
+        range_qry = context.session.query(
+            models_v2.IPAvailabilityRange).join(
+                models_v2.IPAllocationPool)
+        for subnet_id in subnets:
+            ip_range = range_qry.filter_by(subnet_id=subnet_id).first()
+            if not ip_range:
+                continue
+            ip_address = ip_range['last_ip']
+            return ip_address
+
+
+class ResourceMappingDriver(api.PolicyDriver, ImplicitResourceOperations,
+                            OwnedResourcesOperations):
+    """Resource Mapping driver for Group Policy plugin.
+
+    This driver implements group policy semantics by mapping group
+    policy resources to various other neutron resources.
+    """
+
+    @log.log_method_call
+    def initialize(self):
+        self._cached_agent_notifier = None
+        self._resource_owner_tenant_id = None
+
+    def _reject_shared(self, object, type):
+        if object.get('shared'):
+            raise exc.InvalidSharedResource(type=type,
+                                            driver='resource_mapping')
+
+    def _reject_cross_tenant_ptg_l2p(self, context):
+        if context.current['l2_policy_id']:
+            l2p = context._plugin.get_l2_policy(
+                context._plugin_context, context.current['l2_policy_id'])
+            if l2p['tenant_id'] != context.current['tenant_id']:
+                raise (
+                    exc.
+                    CrossTenantPolicyTargetGroupL2PolicyNotSupported())
+
+    def _reject_cross_tenant_l2p_l3p(self, context):
+        if context.current['tenant_id'] == self.resource_owner_tenant_id:
+            # Relax cross tenancy condition when current tenant id is admin.
+            # Relaxing when l2policy tenant id is of admin, to address the
+            # case for proxy group where l2policy belongs to admin tenant
+            # but l3policy belongs to user tenant.
+            return
+        # Can't create non shared L2p on a shared L3p
+        if context.current['l3_policy_id']:
+            l3p = context._plugin.get_l3_policy(
+                context._plugin_context,
+                context.current['l3_policy_id'])
+            if l3p['tenant_id'] != context.current['tenant_id']:
+                raise exc.CrossTenantL2PolicyL3PolicyNotSupported()
+
+    @property
+    def resource_owner_tenant_id(self):
+        if not self._resource_owner_tenant_id:
+            self._resource_owner_tenant_id = (
+                self._get_resource_owner_tenant_id())
+        return self._resource_owner_tenant_id
+
+    def _get_resource_owner_tenant_id(self):
+        # Returns service tenant id, which specified in neutron conf
+        try:
+            user, pwd, tenant, auth_url = utils.get_keystone_creds()
+            keystoneclient = k_client.Client(username=user, password=pwd,
+                                             auth_url=auth_url)
+            tenant = keystoneclient.tenants.find(name=tenant)
+            return tenant.id
+        except k_exceptions.NotFound:
+            with excutils.save_and_reraise_exception(reraise=True):
+                LOG.error(_LE('No tenant with name %s exists.'), tenant)
+        except k_exceptions.NoUniqueMatch:
+            with excutils.save_and_reraise_exception(reraise=True):
+                LOG.error(_LE('Multiple tenants matches found for %s'), tenant)
+        except k_exceptions.AuthorizationFailure:
+            LOG.error(_LE("User: %(user)s dont have permissions"),
+                     {'user': user})
+        except k_exceptions.Unauthorized:
+            LOG.error(_LE("Wrong credentials provided: user: %(user)s, "
+                        "password: %(pwd)s, tenant: %(tenant)s"),
+                     {'user': user, 'pwd': pwd, 'tenant': tenant})
+
+    @log.log_method_call
+    def create_policy_target_precommit(self, context):
+        self._check_create_policy_target(context)
+
+    def _check_create_policy_target(self, context, verify_port_subnet=True):
+        self._validate_cluster_id(context)
+        if not context.current['policy_target_group_id']:
+            raise exc.PolicyTargetRequiresPolicyTargetGroup()
+        if context.current['port_id'] and verify_port_subnet:
+            # Validate if explicit port's subnet
+            # is same as the subnet of PTG.
+            self._validate_pt_port_subnets(context)
+        group_id = context.current['policy_target_group_id']
+        if context.current.get('proxy_gateway'):
+            pts = context._plugin.get_policy_targets(
+                context._plugin_context, {'policy_target_group_id': group_id,
+                                          'proxy_gateway': True})
+            pts = [x['id'] for x in pts if x['id'] != context.current['id']]
+            if pts:
+                exc.OnlyOneProxyGatewayAllowed(group_id=group_id)
+        if context.current.get('group_default_gateway'):
+            pts = context._plugin.get_policy_targets(
+                context._plugin_context, {'policy_target_group_id': group_id,
+                                          'group_default_gateway': True})
+            pts = [x['id'] for x in pts if x['id'] != context.current['id']]
+            if pts:
+                exc.OnlyOneGroupDefaultGatewayAllowed(group_id=group_id)
+
+    @log.log_method_call
+    def create_policy_target_postcommit(self, context):
+        if not context.current['port_id']:
+            self._use_implicit_port(context)
+        self._update_cluster_membership(
+            context, new_cluster_id=context.current['cluster_id'])
+        self._assoc_ptg_sg_to_pt(context, context.current['id'],
+                                 context.current['policy_target_group_id'])
+        self._associate_fip_to_pt(context)
+        if context.current.get('proxy_gateway'):
+            self._set_proxy_gateway_routes(context, context.current)
+
+    @log.log_method_call
+    def update_policy_target_precommit(self, context):
+        self._validate_cluster_id(context)
+        if (context.current['policy_target_group_id'] !=
+            context.original['policy_target_group_id']):
+            raise exc.PolicyTargetGroupUpdateOfPolicyTargetNotSupported()
+
+    @log.log_method_call
+    def update_policy_target_postcommit(self, context):
+        if context.current['cluster_id'] != context.original['cluster_id']:
+            self._update_cluster_membership(
+                context, new_cluster_id=context.current['cluster_id'],
+                old_cluster_id=context.original['cluster_id'])
+
+    @log.log_method_call
+    def delete_policy_target_precommit(self, context):
+        self._validate_pt_in_use_by_cluster(context)
+        context.fips = self._get_pt_floating_ip_mapping(
+                    context._plugin_context.session,
+                    context.current['id'])
+
+    @log.log_method_call
+    def delete_policy_target_postcommit(self, context):
+        sg_list = self._generate_list_of_sg_from_ptg(
+            context, context.current['policy_target_group_id'])
+        self._disassoc_sgs_from_port(context._plugin_context,
+                                     context.current['port_id'], sg_list)
+        port_id = context.current['port_id']
+        for fip in context.fips:
+            self._delete_fip(context._plugin_context,
+                             fip.floatingip_id)
+        if context.current.get('proxy_gateway'):
+            self._unset_proxy_gateway_routes(context, context.current)
+        self._cleanup_port(context._plugin_context, port_id)
+
+    @log.log_method_call
+    def create_policy_target_group_precommit(self, context):
+        self._reject_cross_tenant_ptg_l2p(context)
+        self._validate_ptg_subnets(context)
+        self._validate_nat_pool_for_nsp(context)
+        self._validate_proxy_ptg(context)
+
+    @log.log_method_call
+    def create_policy_target_group_postcommit(self, context):
+        # REVISIT(ivar) this validates the PTG L2P after the IPD creates it
+        # (which happens in the postcommit phase)
+        self._validate_proxy_ptg(context)
+        subnets = context.current['subnets']
+        if not subnets:
+            self._use_implicit_subnet(
+                context,
+                is_proxy=bool(context.current.get('proxied_group_id')))
+            subnets = context.current['subnets']
+        # connect router to subnets of the PTG
+        l2p_id = context.current['l2_policy_id']
+        l2p = context._plugin.get_l2_policy(context._plugin_context,
+                                            l2p_id)
+        l3p_id = l2p['l3_policy_id']
+        l3p = context._plugin.get_l3_policy(context._plugin_context,
+                                            l3p_id)
+        self._stitch_ptg_to_l3p(context, context.current, l3p, subnets)
+
+        self._handle_network_service_policy(context)
+        self._handle_policy_rule_sets(context)
+        self._update_default_security_group(context._plugin_context,
+                                            context.current['id'],
+                                            context.current['tenant_id'],
+                                            context.current['subnets'])
 
     @log.log_method_call
     def update_policy_target_group_precommit(self, context):
@@ -1285,17 +1546,6 @@ class ResourceMappingDriver(api.PolicyDriver, ImplicitResourceOperations,
         self._update_default_security_group(
             context._plugin_context, context.current['id'],
             context.current['tenant_id'], subnets=new_subnets)
-
-    def _handle_nsp_update_on_ptg(self, context):
-        old_nsp = context.original.get("network_service_policy_id")
-        new_nsp = context.current.get("network_service_policy_id")
-        if old_nsp != new_nsp:
-            if old_nsp:
-                self._cleanup_network_service_policy(
-                                        context,
-                                        context.original)
-            if new_nsp:
-                self._handle_network_service_policy(context)
 
     @log.log_method_call
     def delete_policy_target_group_precommit(self, context):
@@ -1633,10 +1883,6 @@ class ResourceMappingDriver(api.PolicyDriver, ImplicitResourceOperations,
         for sg in sg_list:
             self._delete_sg(context._plugin_context, sg)
 
-    @log.log_method_call
-    def create_network_service_policy_precommit(self, context):
-        self._validate_nsp_parameters(context)
-
     def create_external_segment_precommit(self, context):
         if context.current['subnet_id']:
             subnet = self._get_subnet(context._plugin_context,
@@ -1799,166 +2045,30 @@ class ResourceMappingDriver(api.PolicyDriver, ImplicitResourceOperations,
                 context.current['provided_policy_rule_sets'],
                 context.current['consumed_policy_rule_sets'])
 
+    @log.log_method_call
+    def create_network_service_policy_precommit(self, context):
+        self._validate_nsp_parameters(context)
+
+    def update_network_service_policy_precommit(self, context):
+        self._validate_nsp_parameters(context)
+
     def create_nat_pool_precommit(self, context):
         self._add_nat_pool_to_segment(context)
 
     def create_nat_pool_postcommit(self, context):
-        if (context.current['external_segment_id'] and not
-                context.current['subnet_id']):
-            self._use_implicit_nat_pool_subnet(context)
+        self._add_implicit_subnet_for_nat_pool_create(context)
 
     def update_nat_pool_precommit(self, context):
-        nsps_using_nat_pool = self._get_nsps_using_nat_pool(context)
-        if (context.original['external_segment_id'] !=
-                context.current['external_segment_id']):
-            if nsps_using_nat_pool:
-                raise exc.NatPoolinUseByNSP()
-            # Clean the current subnet_id. The subnet itself will be
-            # cleaned by the postcommit operation
-            context._plugin._set_db_np_subnet(
-                context._plugin_context, context.current, None)
-            self._add_nat_pool_to_segment(context)
+        self._process_ext_segment_update_for_nat_pool(context)
 
     def update_nat_pool_postcommit(self, context):
-        # For backward compatibility, do the following only if the external
-        # segment changed
-        if (context.original['external_segment_id'] !=
-                context.current['external_segment_id']):
-            if context.original['subnet_id']:
-                if self._subnet_is_owned(context._plugin_context.session,
-                                         context.original['subnet_id']):
-                    self._delete_subnet(context._plugin_context,
-                                        context.original['subnet_id'])
-            if (context.current['external_segment_id'] and not
-                    context.current['subnet_id']):
-                self._use_implicit_nat_pool_subnet(context)
+        self._add_implicit_subnet_for_nat_pool_update(context)
 
     def delete_nat_pool_precommit(self, context):
-        nsps_using_nat_pool = self._get_nsps_using_nat_pool(context)
-        if nsps_using_nat_pool:
-            raise exc.NatPoolinUseByNSP()
-        self._check_nat_pool_subnet_in_use(context._plugin_context,
-                                           context.current)
+        self._nat_pool_in_use(context)
 
     def delete_nat_pool_postcommit(self, context):
-        if context.current['subnet_id']:
-            if self._subnet_is_owned(context._plugin_context.session,
-                                     context.current['subnet_id']):
-                self._delete_subnet(context._plugin_context,
-                                    context.current['subnet_id'])
-
-    def _add_nat_pool_to_segment(self, context):
-        external_segment = context._plugin.get_external_segment(
-            context._plugin_context, context.current['external_segment_id'])
-        if not external_segment['subnet_id']:
-            raise exc.ESSubnetRequiredForNatPool()
-        ext_sub = self._get_subnet(context._plugin_context,
-                                   external_segment['subnet_id'])
-        # Verify there's no overlap. This will also be verified by Neutron at
-        # subnet creation, but we try to fail as soon as possible to return
-        # a nicer error to the user (concurrency may still need to fallback on
-        # Neutron's validation).
-        ext_subs = self._get_subnets(context._plugin_context,
-                                     {'network_id': [ext_sub['network_id']]})
-        peer_pools = context._plugin.get_nat_pools(
-                context._plugin_context.elevated(),
-                {'id': external_segment['nat_pools']})
-        peer_set = netaddr.IPSet(
-            [x['ip_pool'] for x in peer_pools if
-             x['id'] != context.current['id']])
-        curr_ip_set = netaddr.IPSet([context.current['ip_pool']])
-        if peer_set & curr_ip_set:
-            # Raise for overlapping CIDRs
-            raise exc.OverlappingNATPoolInES(
-                es_id=external_segment['id'], np_id=context.current['id'])
-        # A perfect subnet overlap is allowed as long as the subnet can be
-        # assigned to the pool.
-        match = [x for x in ext_subs if x['cidr'] ==
-                 context.current['ip_pool']]
-        if match:
-            # There's no owning peer given the overlapping check above.
-            # Use this subnet on the current Nat pool
-            context._plugin._set_db_np_subnet(
-                context._plugin_context, context.current, match[0]['id'])
-        elif netaddr.IPSet([x['cidr'] for x in ext_subs]) & curr_ip_set:
-            # Partial overlapp not allowed
-            raise exc.OverlappingSubnetForNATPoolInES(
-                net_id=ext_sub['network_id'], np_id=context.current['id'])
-        # At this point, either a subnet was assigned to the NAT Pool, or a new
-        # one needs to be created by the postcommit operation.
-
-    def _get_nsps_using_nat_pool(self, context):
-        external_segment = context._plugin.get_external_segment(
-            context._plugin_context, context.current['external_segment_id'])
-        l3_policies = external_segment['l3_policies']
-        l3_policies = context._plugin.get_l3_policies(
-                    context._plugin_context, filters={'id': l3_policies})
-        l2_policies = []
-        for x in l3_policies:
-            l2_policies.extend(x['l2_policies'])
-        l2_policies = context._plugin.get_l2_policies(
-                    context._plugin_context, filters={'id': l2_policies})
-        ptgs = []
-        for l2_policy in l2_policies:
-            ptgs.extend(l2_policy['policy_target_groups'])
-        ptgs = context._plugin.get_policy_target_groups(
-                    context._plugin_context, filters={'id': ptgs})
-        nsps = [x['network_service_policy_id'] for x in ptgs
-                if x['network_service_policy_id']]
-        nsps = context._plugin.get_network_service_policies(
-            context._plugin_context, filters={'id': nsps})
-        nsps_using_nat_pool = []
-        for nsp in nsps:
-            nsp_params = nsp.get("network_service_params")
-            for nsp_param in nsp_params:
-                if nsp_param['value'] == "nat_pool":
-                    nsps_using_nat_pool.append(nsp)
-                    break
-        return nsps_using_nat_pool
-
-    def _validate_in_use_by_nsp(self, context):
-        # We do not allow ES update for L3p when it is used by NSP
-        # At present we do not support multiple ES, so adding a new ES is
-        # not an issue here
-        if (context.original['external_segments'] !=
-            context.current['external_segments'] and
-            context.original['external_segments']):
-            l2_policies = context.current['l2_policies']
-            l2_policies = context._plugin.get_l2_policies(
-                    context._plugin_context, filters={'id': l2_policies})
-            ptgs = []
-            for l2p in l2_policies:
-                ptgs.extend(l2p['policy_target_groups'])
-            ptgs = context._plugin.get_policy_target_groups(
-                    context._plugin_context, filters={'id': ptgs})
-            nsps = [x['network_service_policy_id'] for x in ptgs
-                    if x['network_service_policy_id']]
-            if nsps:
-                nsps = context._plugin.get_network_service_policies(
-                    context._plugin_context, filters={'id': nsps})
-                for nsp in nsps:
-                    nsp_params = nsp.get("network_service_params")
-                    for nsp_param in nsp_params:
-                        if nsp_param['value'] == "nat_pool":
-                            raise exc.L3PEsinUseByNSP()
-
-    def _validate_nsp_parameters(self, context):
-        nsp = context.current
-        nsp_params = nsp.get("network_service_params")
-        supported_nsp_pars = {"ip_single": ["self_subnet", "nat_pool"],
-                              "ip_pool": "nat_pool"}
-        if (nsp_params and len(nsp_params) > 2 or len(nsp_params) == 2 and
-            nsp_params[0] == nsp_params[1]):
-            raise exc.InvalidNetworkServiceParameters()
-        for params in nsp_params:
-            type = params.get("type")
-            value = params.get("value")
-            if (type not in supported_nsp_pars or
-                value not in supported_nsp_pars[type]):
-                raise exc.InvalidNetworkServiceParameters()
-
-    def update_network_service_policy_precommit(self, context):
-        self._validate_nsp_parameters(context)
+        self._delete_subnet_on_nat_pool_delete(context)
 
     def _plug_router_to_external_segment(self, context, es_dict):
         es_list = context._plugin.get_external_segments(
@@ -1987,26 +2097,6 @@ class ResourceMappingDriver(api.PolicyDriver, ImplicitResourceOperations,
                 interface_info = {'network_id': subnet['network_id']}
                 self._remove_router_gw_interface(context._plugin_context,
                                                  router_id, interface_info)
-
-    def _use_implicit_nat_pool_subnet(self, context):
-        es = context._plugin.get_external_segment(
-            context._plugin_context, context.current['external_segment_id'])
-        ext_sub = self._get_subnet(context._plugin_context, es['subnet_id'])
-        attrs = {'tenant_id': context.current['tenant_id'],
-                 'name': 'ptg_' + context.current['name'],
-                 'network_id': ext_sub['network_id'],
-                 'ip_version': context.current['ip_version'],
-                 'cidr': context.current['ip_pool'],
-                 'enable_dhcp': False,
-                 'gateway_ip': attributes.ATTR_NOT_SPECIFIED,
-                 'allocation_pools': attributes.ATTR_NOT_SPECIFIED,
-                 'dns_nameservers': attributes.ATTR_NOT_SPECIFIED,
-                 'host_routes': attributes.ATTR_NOT_SPECIFIED}
-        subnet = self._create_subnet(context._plugin_context, attrs)
-        context._plugin._set_db_np_subnet(
-            context._plugin_context, context.current, subnet['id'])
-        self._mark_subnet_owned(context._plugin_context.session, subnet['id'])
-        return subnet
 
     def _stitch_ptg_to_l3p(self, context, ptg, l3p, subnet_ids):
         if l3p['routers']:
@@ -2127,70 +2217,6 @@ class ResourceMappingDriver(api.PolicyDriver, ImplicitResourceOperations,
                             gpdb.PolicyRuleActionAssociation.policy_rule_id)
         policy_rule_qry.filter_by(policy_action_id=action_id)
         return policy_rule_qry.all()
-
-    def _restore_ip_to_allocation_pool(self, context, subnet_id, ip_address):
-        # TODO(Magesh):Pass subnets and loop on subnets. Better to add logic
-        # to Merge the pools together after Fragmentation
-        subnet = self._get_subnet(context._plugin_context, subnet_id)
-        allocation_pools = subnet['allocation_pools']
-        for allocation_pool in allocation_pools:
-            pool_end_ip = allocation_pool.get('end')
-            if ip_address == str(netaddr.IPAddress(pool_end_ip) + 1):
-                new_last_ip = ip_address
-                allocation_pool['end'] = new_last_ip
-                del subnet['gateway_ip']
-                subnet = self._update_subnet(context._plugin_context,
-                                             subnet['id'], subnet)
-                return
-
-        # TODO(Magesh):Have to test this logic. Add proper unit tests
-        subnet['allocation_pools'].append({"start": ip_address,
-                                          "end": ip_address})
-        del subnet['gateway_ip']
-        subnet = self._update_subnet(context._plugin_context,
-                                     subnet['id'], subnet)
-
-    def _remove_ip_from_allocation_pool(self, context, subnet_id, ip_address):
-        # TODO(Magesh):Pass subnets and loop on subnets
-        subnet = self._get_subnet(context._plugin_context, subnet_id)
-        allocation_pools = subnet['allocation_pools']
-        for allocation_pool in reversed(allocation_pools):
-            if ip_address == allocation_pool.get('end'):
-                new_last_ip = str(netaddr.IPAddress(ip_address) - 1)
-                allocation_pool['end'] = new_last_ip
-                del subnet['gateway_ip']
-                self._update_subnet(context._plugin_context,
-                                    subnet['id'], subnet)
-                break
-
-    def _get_last_free_ip(self, context, subnets):
-        # Hope lock_mode update is not needed
-        range_qry = context.session.query(
-            models_v2.IPAvailabilityRange).join(
-                models_v2.IPAllocationPool)
-        for subnet_id in subnets:
-            ip_range = range_qry.filter_by(subnet_id=subnet_id).first()
-            if not ip_range:
-                continue
-            ip_address = ip_range['last_ip']
-            return ip_address
-
-    # Do Not Pass floating_ip_address to this method until after Kilo Release
-    def _create_floatingip(self, plugin_context, tenant_id, ext_net_id,
-                           internal_port_id=None, floating_ip_address=None,
-                           subnet_id=None, router_id=None):
-        attrs = {'tenant_id': tenant_id,
-                 'floating_network_id': ext_net_id}
-        if subnet_id:
-            attrs.update({"subnet_id": subnet_id})
-        if router_id:
-            attrs['router_id'] = router_id
-        if internal_port_id:
-            attrs.update({"port_id": internal_port_id})
-        if floating_ip_address:
-            attrs.update({"floating_ip_address": floating_ip_address})
-        fip = self._create_fip(plugin_context, attrs)
-        return fip['id']
 
     def _set_policy_rule_set_sg_mapping(
         self, session, policy_rule_set_id, consumed_sg_id, provided_sg_id):
@@ -2865,13 +2891,3 @@ class ResourceMappingDriver(api.PolicyDriver, ImplicitResourceOperations,
         master_mac = master_port['mac_address']
         master_ips = [x['ip_address'] for x in master_port['fixed_ips']]
         return master_mac, master_ips
-
-    def _check_nat_pool_subnet_in_use(self, plugin_context, nat_pool):
-        if not self._subnet_is_owned(plugin_context.session,
-                                     nat_pool['subnet_id']):
-            return
-        # check if there are any ports with an address in nat-pool subnet
-        ports = self._get_ports(plugin_context.elevated(),
-            filters={'fixed_ips': {'subnet_id': [nat_pool['subnet_id']]}})
-        if ports:
-            raise exc.NatPoolInUseByPort()

@@ -249,7 +249,7 @@ class InvalidESSubnetCidrForNatPool(GroupPolicyBadRequest):
 
 
 class NSPRequiresES(GroupPolicyBadRequest):
-    message = _("Resource Mapping Driver requires an External Segment in "
+    message = _("Driver requires an External Segment in "
                 "l3policy to associate a NSP with value nat_pool to a PTG")
 
 
