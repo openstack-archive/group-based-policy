@@ -483,6 +483,21 @@ class NfpController(nfp_launcher.NfpLauncher, NfpService):
             # Send to the distributor process.
             self.pipe_send(self._pipe, event)
 
+    def stop_poll_event(self, key, id):
+        """To stop the running poll event
+
+        :param key: key of polling event
+        :param id: id of polling event
+        """
+        key = key + ":" + id
+        event = self.new_event(id='STOP_POLL_EVENT', data={'key': key})
+        event.desc.type = nfp_event.POLL_EVENT
+        event.desc.flag = nfp_event.POLL_EVENT_STOP
+        if self.PROCESS_TYPE == "worker":
+            self.pipe_send(self._pipe, event)
+        else:
+            self._manager.process_events([event])
+
     def stash_event(self, event):
         """To stash an event.
 
@@ -614,6 +629,8 @@ def controller_init(conf, nfp_controller):
 def nfp_modules_post_init(conf, nfp_modules, nfp_controller):
     for module in nfp_modules:
         try:
+            namespace = module.__name__.split(".")[-1]
+            nfp_logging.store_logging_context(namespace=namespace)
             module.nfp_module_post_init(nfp_controller, conf)
         except AttributeError:
             message = ("(module - %s) - does not implement"
