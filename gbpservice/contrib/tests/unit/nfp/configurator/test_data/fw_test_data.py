@@ -113,7 +113,9 @@ class FakeObjects(object):
                 "service_vendor": "vyos",
                 "context": {
                         "requester": "device_orch",
-                        "logging_context": {}
+                        "logging_context": {},
+                        "nf_id": "nf_id",
+                        "nfi_id": "nfi_id"
                 }
             },
             "config": [{

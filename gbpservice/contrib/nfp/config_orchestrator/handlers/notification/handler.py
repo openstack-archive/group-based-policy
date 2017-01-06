@@ -21,6 +21,7 @@ from gbpservice.nfp.common import constants as const
 from gbpservice.nfp.core import log as nfp_logging
 from gbpservice.nfp.lib import transport
 
+from neutron._i18n import _LI
 import oslo_messaging as messaging
 
 
@@ -38,6 +39,9 @@ class RpcHandler(object):
 
     def network_function_notification(self, context, notification_data):
         try:
+            LOG.info(_LI("Received NETWORK FUNCTION NOTIFICATION:"
+                         "%(notification)s"),
+                     {'notification': notification_data['notification']})
             if notification_data['info']['service_type'] is not None:
                 handler = NaasNotificationHandler(self.conf, self.sc)
                 handler.\
@@ -59,7 +63,7 @@ class RpcHandler(object):
                       traceback.format_exception(exc_type,
                                                  exc_value,
                                                  exc_traceback)))
-            LOG.info(msg)
+            LOG.error(msg)
 
 
 class FirewallNotifier(object):
@@ -80,11 +84,11 @@ class FirewallNotifier(object):
         firewall_id = resource_data['firewall_id']
         status = resource_data['status']
 
-        msg = ("Config Orchestrator received "
-               "firewall_configuration_create_complete API, making an "
-               "set_firewall_status RPC call for firewall: %s & status "
-               " %s" % (firewall_id, status))
-        LOG.info(msg)
+        LOG.info(_LI("Received firewall configuration create complete API, "
+                     "making an RPC call set firewall status for "
+                     "firewall:%(firewall)s and status: %(status)s"),
+                 {'firewall': firewall_id,
+                  'status': status})
 
         # RPC call to plugin to set firewall status
         rpcClient = transport.RPCClient(a_topics.FW_NFP_PLUGIN_TOPIC)
@@ -105,10 +109,10 @@ class FirewallNotifier(object):
         resource_data = notification['data']
         firewall_id = resource_data['firewall_id']
 
-        msg = ("Config Orchestrator received "
-               "firewall_configuration_delete_complete API, making an "
-               "firewall_deleted RPC call for firewall: %s" % (firewall_id))
-        LOG.info(msg)
+        LOG.info(_LI("Received firewall_configuration_delete_complete API, "
+                     "making an RPC call firewall_deleted  for firewall:"
+                     "%(firewall)s "),
+                 {'firewall': firewall_id})
 
         # RPC call to plugin to update firewall deleted
         rpcClient = transport.RPCClient(a_topics.FW_NFP_PLUGIN_TOPIC)
@@ -137,10 +141,12 @@ class LoadbalancerNotifier(object):
         obj_id = resource_data['obj_id']
         status = resource_data['status']
 
-        msg = ("NCO received LB's update_status API, making an update_status"
-               "RPC call to plugin for %s: %s with status %s" % (
-                   obj_type, obj_id, status))
-        LOG.info(msg)
+        LOG.info(_LI("Received LB's update_status API. Making an "
+                     "update_status RPC call to plugin for %(obj_type)s:"
+                     "%(obj_id)s with status:%(status)s"),
+                 {'obj_type': obj_type,
+                  'obj_id': obj_id,
+                  'status': status})
         nfp_logging.clear_logging_context()
 
         # RPC call to plugin to update status of the resource
@@ -165,10 +171,10 @@ class LoadbalancerNotifier(object):
         stats = resource_data['stats']
         host = resource_data['host']
 
-        msg = ("NCO received LB's update_pool_stats API, making an "
-               "update_pool_stats RPC cast to plugin for updating"
-               "pool: %s stats" % (pool_id))
-        LOG.info(msg)
+        LOG.info(_LI("Received LB's update_pool_stats API, making an "
+                     "update_pool_stats RPC cast to plugin for updating "
+                     "pool stats for pool: %(pool)s"),
+                 {'pool': pool_id})
 
         # RPC cast to plugin to update stats of pool
         rpcClient = transport.RPCClient(a_topics.LB_NFP_PLUGIN_TOPIC)
@@ -211,10 +217,12 @@ class LoadbalancerV2Notifier(object):
         obj_p_status = resource_data['provisioning_status']
         obj_o_status = resource_data['operating_status']
 
-        msg = ("NCO received LB's update_status API, making an update_status "
-               "RPC call to plugin for %s: %s with status %s" % (
-                   obj_type, obj_id, obj_p_status))
-        LOG.info(msg)
+        LOG.info(_LI("Received LB's update_status API. Making an "
+                     "update_status RPC call to plugin for %(obj_type)s:"
+                     "%(obj_id)s with status: %(status)s"),
+                 {'obj_type': obj_type,
+                  'obj_id': obj_id,
+                  'status': obj_p_status})
 
         if obj_type == 'healthmonitor':
                 obj_o_status = None
@@ -258,10 +266,10 @@ class VpnNotifier(object):
         nfp_logging.store_logging_context(**logging_context)
 
         status = resource_data['status']
-        msg = ("NCO received VPN's update_status API,"
-               "making an update_status RPC cast to plugin for object"
-               "with status %s" % (status))
-        LOG.info(msg)
+        LOG.info(_LI("Received VPN's update_status API. "
+                     "Making an update_status RPC cast to plugin for object"
+                     "with status: %(status)s"),
+                 {'status': status})
         rpcClient = transport.RPCClient(a_topics.VPN_NFP_PLUGIN_TOPIC)
         rpcClient.cctxt.cast(context, 'update_status',
                              status=status)
@@ -285,6 +293,8 @@ class NaasNotificationHandler(object):
 
     def handle_notification(self, context, notification_data):
         try:
+            LOG.debug("Handling Notification with Data:%s"
+                      % notification_data)
             resource_data = notification_data['notification'][0]['data']
             handler = ServicetypeToHandlerMap[notification_data[
                 'info']['service_type']](self.conf, self.sc)
