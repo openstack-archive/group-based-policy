@@ -38,6 +38,11 @@ CREATE = "create"
 UPDATE = "update"
 DELETE = "delete"
 
+SUCCESS = 'SUCCESS'
+
+FOREVER = 'forever'
+INITIAL = 'initial'
+
 ACTIVE_PORT = "ACTIVE"
 STANDBY_PORT = "STANDBY"
 MASTER_PORT = "MASTER"
@@ -73,6 +78,9 @@ CONFIG_TAG_RESOURCE_MAP = {
 MAXIMUM_INTERFACES = 'maximum_interfaces'
 SUPPORTS_SHARING = 'supports_device_sharing'
 SUPPORTS_HOTPLUG = 'supports_hotplug'
+
+PERIODIC_HM = 'periodic_healthmonitor'
+DEVICE_TO_BECOME_DOWN = 'DEVICE_TO_BECOME_DOWN'
 
 METADATA_SUPPORTED_ATTRIBUTES = [MAXIMUM_INTERFACES,
                                  SUPPORTS_SHARING,
