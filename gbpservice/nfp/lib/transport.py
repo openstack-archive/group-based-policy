@@ -235,13 +235,13 @@ def send_request_to_configurator(conf, context, body,
                                              body=body)
                 message = ("%s -> POST response: (%s) body : %s " %
                         (method_name, content, body))
-                LOG.info(message)
+                LOG.debug(message)
             elif method_type.lower() in [nfp_constants.UPDATE]:
                 resp, content = unix_rc.put(method_name,
                                             body=body)
                 message = ("%s -> PUT response: (%s) body : %s " %
                         (method_name, content, body))
-                LOG.info(message)
+                LOG.debug(message)
             else:
                 message = ("%s api not supported" % (method_name))
                 LOG.error(message)
@@ -251,8 +251,7 @@ def send_request_to_configurator(conf, context, body,
             LOG.error(message)
 
     else:
-        message = ("%s -> RPC request sent ! with body : %s " % (
-            (method_name, body)))
+        message = ("%s -> RPC request sent. " % (method_name))
         LOG.info(message)
         rpcClient = RPCClient(conf.RPC.topic)
         rpcClient.cctxt.cast(context, method_name,
@@ -300,7 +299,7 @@ def get_response_from_configurator(conf):
             if content:
                 message = ("get_notification ->"
                            "GET response: (%s)" % (content))
-                LOG.info(message)
+                LOG.debug(message)
             return content
         except unix_rc.RestClientException as rce:
             message = ("get_notification ->"
