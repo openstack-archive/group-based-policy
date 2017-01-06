@@ -76,10 +76,10 @@ class RestApi(object):
             resp = requests.post(url, data=data, timeout=self.timeout)
             message = jsonutils.loads(resp.text)
             msg = "POST url %s %d" % (url, resp.status_code)
-            LOG.info(msg)
+            LOG.debug(msg)
             if resp.status_code == 200 and message.get("status", False):
                 msg = "POST Rest API %s - Success" % (url)
-                LOG.info(msg)
+                LOG.debug(msg)
             else:
                 msg = ("POST Rest API %s - Failed with status %s, %s"
                        % (url, resp.status_code,
