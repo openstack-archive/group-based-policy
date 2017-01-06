@@ -153,6 +153,12 @@ class NFPClientApi(object):
         self.client = n_rpc.get_client(target)
 
     def create_network_function(self, context, network_function):
+        LOG.info(_LI("Sending RPC CREATE NETWORK FUNCTION to Service "
+                     "Orchestrator for tenant:%(tenant_id)s with "
+                     "service profile:%(service_profile_id)s"),
+                 {'tenant_id': network_function['tenant_id'],
+                  'service_profile_id': network_function[
+                                            'service_profile']['id']})
         cctxt = self.client.prepare(
             fanout=False, topic=nfp_rpc_topics.NFP_NSO_TOPIC)
         return cctxt.call(
@@ -161,6 +167,10 @@ class NFPClientApi(object):
             network_function=network_function)
 
     def delete_network_function(self, context, network_function_id):
+        LOG.info(_LI("Sending RPC DELETE NETWORK FUNCTION to Service "
+                     "Orchestrator for NF:"
+                     "%(network_function_id)s"),
+                 {'network_function_id': network_function_id})
         cctxt = self.client.prepare(version=self.RPC_API_VERSION)
         return cctxt.call(
             context,
@@ -168,6 +178,10 @@ class NFPClientApi(object):
             network_function_id=network_function_id)
 
     def update_network_function(self, context, network_function_id, config):
+        LOG.info(_LI("Sending RPC UPDATE NETWORK FUNCTION to Service "
+                     "Orchestrator for NF:"
+                     "%(network_function_id)s"),
+                 {'network_function_id': network_function_id})
         cctxt = self.client.prepare(version=self.RPC_API_VERSION)
         return cctxt.call(
             context,
@@ -176,6 +190,8 @@ class NFPClientApi(object):
             config=config)
 
     def get_network_function(self, context, network_function_id):
+        LOG.debug("Sending RPC GET NETWORK FUNCTION to Service "
+                  "Orchestrator for NF: %s" % network_function_id)
         cctxt = self.client.prepare(version=self.RPC_API_VERSION)
         return cctxt.call(
             context,
@@ -184,6 +200,10 @@ class NFPClientApi(object):
 
     def consumer_ptg_added_notification(self, context, network_function_id,
                                         policy_target_group):
+        LOG.info(_LI("Sending RPC CONSUMER PTG ADDED NOTIFICATION to Service "
+                     "Orchestrator for NF:"
+                     "%(network_function_id)s"),
+                 {'network_function_id': network_function_id})
         cctxt = self.client.prepare(version=self.RPC_API_VERSION)
         return cctxt.call(context,
                    'consumer_ptg_added_notification',
@@ -192,6 +212,9 @@ class NFPClientApi(object):
 
     def consumer_ptg_removed_notification(self, context, network_function_id,
                                           policy_target_group):
+        LOG.info(_LI("Sending RPC CONSUMER PTG REMOVED NOTIFICATION to "
+                     " Service Orchestrator for NF:%(network_function_id)s"),
+                 {'network_function_id': network_function_id})
         cctxt = self.client.prepare(version=self.RPC_API_VERSION)
         return cctxt.call(context,
                    'consumer_ptg_removed_notification',
@@ -200,6 +223,9 @@ class NFPClientApi(object):
 
     def policy_target_added_notification(self, context, network_function_id,
                                          policy_target):
+        LOG.info(_LI("Sending RPC POLICY TARGET ADDED NOTIFICATION to "
+                     "Service Orchestrator for NF:%(network_function_id)s"),
+                 {'network_function_id': network_function_id})
         cctxt = self.client.prepare(version=self.RPC_API_VERSION)
         return cctxt.call(context,
                    'policy_target_added_notification',
@@ -208,6 +234,9 @@ class NFPClientApi(object):
 
     def policy_target_removed_notification(self, context, network_function_id,
                                            policy_target):
+        LOG.info(_LI("Sending RPC POLICY TARGET REMOVED NOTIFICATION to "
+                     "Service Orchestrator for NF:%(network_function_id)s"),
+                 {'network_function_id': network_function_id})
         cctxt = self.client.prepare(version=self.RPC_API_VERSION)
         return cctxt.call(context,
                    'policy_target_removed_notification',
@@ -215,6 +244,7 @@ class NFPClientApi(object):
                    policy_target=policy_target)
 
     def get_plumbing_info(self, context, node_driver_ctxt):
+        LOG.info(_LI("Sending RPC GET PLUMBING INFO to Service Orchestrator "))
         request_info = dict(profile=node_driver_ctxt.current_profile,
                             tenant_id=node_driver_ctxt.provider['tenant_id'],
                             provider=node_driver_ctxt.provider)
@@ -368,8 +398,9 @@ class NFPNodeDriver(driver_base.NodeDriverBase):
             plumbing_request = self.nfp_notifier.get_plumbing_info(
                     context._plugin_context, context)
 
-        LOG.info(_LI("Requesting plumber for %(plumbing_request)s PTs for "
-                   "service type %(service_type)s"),
+        LOG.info(_LI("Requesting plumber for PTs for "
+                     "service type %(service_type)s with "
+                     "%(plumbing_request)s "),
                  {'plumbing_request': plumbing_request,
                   'service_type': service_type})
         return plumbing_request
@@ -579,7 +610,7 @@ class NFPNodeDriver(driver_base.NodeDriverBase):
 
         # When a group is created which is both consumer and provider.
         # method is invoked for stitching group too.. ignoring.
-        if policy_target_group['proxied_group_id']:
+        if policy_target_group.get('proxied_group_id'):
             return
         if context.current_profile['service_type'] == pconst.FIREWALL:
             context._plugin_context = self._get_resource_owner_context(
@@ -688,23 +719,31 @@ class NFPNodeDriver(driver_base.NodeDriverBase):
                 time_waited = time_waited + 5
                 continue
             else:
-                LOG.info(_LI("%(operation)s network function result: "
-                             "%(network_function)s"),
-                         {'network_function': network_function,
-                          'operation': operation})
+                if time_waited == 0:
+                    LOG.info(_LI("STARTED POLLING for %(operation)s network "
+                                 "function for NF:%(network_function_id)s "
+                                 "with initial result: %(result)s "),
+                             {'operation': operation,
+                              'network_function_id': network_function_id,
+                              'result': network_function})
             if (network_function['status'] == nfp_constants.ACTIVE or
                 network_function['status'] == nfp_constants.ERROR):
+                LOG.info(_LI("COMPLETED POLLING for  %(operation)s network "
+                             "function for NF:%(network_function_id)s "),
+                         {'network_function_id': network_function_id,
+                          'operation': operation})
                 break
             eventlet.sleep(5)
             time_waited = time_waited + 5
 
-        LOG.info(_LI("%(operation)s Got network function result: "
-                     "%(network_function)s"),
-                 {'network_function': network_function,
-                  'operation': operation})
+        LOG.info(_LI("Got %(operation)s network function result for NF:"
+                     "%(network_function_id)s with status:%(status)s"),
+                 {'network_function_id': network_function_id,
+                  'operation': operation,
+                  'status': network_function['status']})
 
         if network_function['status'] != nfp_constants.ACTIVE:
-            LOG.error(_LE("%(operation)s network function"
+            LOG.error(_LE("%(operation)s network function:"
                           "%(network_function)s "
                           "failed. Status: %(status)s"),
                       {'network_function': network_function_id,
@@ -733,10 +772,12 @@ class NFPNodeDriver(driver_base.NodeDriverBase):
             return tenant.id
         except k_exceptions.NotFound:
             with excutils.save_and_reraise_exception(reraise=True):
-                LOG.error(_LE('No tenant with name %s exists.'), tenant)
+                LOG.error(_LE('No tenant with name %(tenant)s exists.'),
+                          {'tenant': tenant})
         except k_exceptions.NoUniqueMatch:
             with excutils.save_and_reraise_exception(reraise=True):
-                LOG.error(_LE('Multiple tenants matches found for %s'), tenant)
+                LOG.error(_LE('Multiple tenants matches found for %(tenant)s'),
+                          {'tenant': tenant})
 
     def _get_resource_owner_context(self, plugin_context):
         # REVISIT(AKASH) Need to revisit as this api is not needed
@@ -845,7 +886,7 @@ class NFPNodeDriver(driver_base.NodeDriverBase):
             not provider_service_targets or (service_type in
             [pconst.FIREWALL, pconst.VPN] and not consumer_service_targets))):
                 LOG.error(_LE("Service Targets are not created for the Node "
-                            "of service_type %(service_type)s"),
+                              "of service_type %(service_type)s"),
                           {'service_type': service_type})
                 raise Exception("Service Targets are not created for the Node")
 
@@ -1088,7 +1129,11 @@ class NFPNodeDriver(driver_base.NodeDriverBase):
             'consuming_ptgs_details': consuming_ptgs_details,
             'consuming_eps_details': consuming_eps_details,
             'service_chain_specs': service_chain_specs}
-
+        LOG.info(_LI("Received Call CREATE NETWORK FUNCTION for tenant: "
+                     "%(tenant_id)s with service profile:"
+                     "%(service_profile)s"),
+                 {'tenant_id': nfp_create_nf_data['tenant_id'],
+                  'service_profile': nfp_create_nf_data['service_profile']})
         return self.nfp_notifier.create_network_function(
             context.plugin_context, network_function=nfp_create_nf_data)['id']
 
