@@ -23,6 +23,7 @@ import sys
 import time
 import zlib
 
+from oslo_config import cfg as oslo_config
 from oslo_service import service as oslo_service
 
 from gbpservice.nfp.core import cfg as nfp_cfg
@@ -651,6 +652,7 @@ def main():
     conf = nfp_cfg.init(module, args)
     conf.module = module
     load_module_opts(conf)
+    nfp_logging.init_logger(oslo_config.CONF.logger_class)
     nfp_common.init()
     nfp_controller = NfpController(conf)
     # Load all nfp modules from path configured
