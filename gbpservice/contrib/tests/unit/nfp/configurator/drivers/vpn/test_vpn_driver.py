@@ -87,8 +87,8 @@ class VpnaasIpsecDriverTestCase(base.BaseTestCase):
             self.driver.vpnservice_updated(context, kwargs)
 
             mock_post.assert_called_with(
-                self.test_dict.url_create_ipsec_tunnel,
-                data=jsonutils.dumps(self.test_dict.data_),
+                self.test_dict.url_create_ipsec_conn,
+                data=jsonutils.dumps(self.test_dict.svc_context),
                 timeout=self.test_dict.timeout)
             mock_update_status.assert_called_with(
                 context,
@@ -122,8 +122,7 @@ class VpnaasIpsecDriverTestCase(base.BaseTestCase):
             tunnel['local_cidr'] = cidr
             tunnel['peer_cidrs'] = resource['peer_cidrs']
 
-            url = (self.test_dict.url_delete_ipsec_tunnel + '?' +
-                   self._dict_to_query_str(tunnel))
+            url = self.test_dict.url_delete_ipsec_conn
 
             mock_delete.assert_called_with(
                 url.encode('ascii', 'ignore'),

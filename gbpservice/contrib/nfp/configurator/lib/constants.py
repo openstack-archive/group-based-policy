@@ -51,6 +51,7 @@ STATUS_UPDATED = "UPDATED"
 STATUS_ERROR = "ERROR"
 STATUS_SUCCESS = "SUCCESS"
 UNHANDLED = "UNHANDLED"
+DOWN = "Down"
 
 AGENTS_PKG = ['gbpservice.contrib.nfp.configurator.agents']
 CONFIGURATOR_RPC_TOPIC = 'configurator'
