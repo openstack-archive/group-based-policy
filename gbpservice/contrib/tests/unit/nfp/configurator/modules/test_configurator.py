@@ -116,6 +116,9 @@ class ConfiguratorRpcManagerTestCase(base.BaseTestCase):
                 if operation == 'delete':
                     data[0]['method'] = data[0]['method'].replace(
                                                     'configure', 'clear', 1)
+            for agent_info in data:
+                agent_info['agent_info']['context']['nf_id'] = 'nf_id'
+                agent_info['agent_info']['context']['nfi_id'] = 'nfi_id'
             mock_request.assert_called_with(data,
                                             notification_data)
 
