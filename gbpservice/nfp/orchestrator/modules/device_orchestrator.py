@@ -792,6 +792,10 @@ class DeviceOrchestrator(nfp_api.NfpEventHandler):
         # events results.
         nf_id = nfp_context['network_function']['id']
         nfi_id = nfp_context['network_function_instance']['id']
+        nfi = {
+            'status': nfp_constants.ACTIVE}
+        nfi = self.nsf_db.update_network_function_instance(
+            self.db_session, nfi_id, nfi)
         event_key = nf_id + nfi_id
         results = event.result
         nfd_event = self._controller.new_event(
@@ -1251,6 +1255,11 @@ class DeviceOrchestrator(nfp_api.NfpEventHandler):
                                            desc_dict=device.get(
                                                'event_desc')))
             self._controller.event_complete(dnfd_event, result='FAILED')
+            # TODO(Mahesh): If driver returns ERROR, then we are not
+            # proceeding further.
+            # Stale vms will exist in this case. Need to handle this case where
+            # driver returned None So dont initiate configurator API but call
+            # unplug_interfaces and device delete to delete vms.
             return None
 
         # Sends RPC call to configurator to delete generic config API
@@ -1468,7 +1477,7 @@ class NDOConfiguratorRpcApi(object):
             # So that notification callbacks can work on cached data
             'nfp_context': device.get('nfp_context', None)
         }
-        nfd_ip = device['mgmt_ip_address']
+        nfd_ip = device.get('mgmt_ip_address')
         request_info.update({'device_ip': nfd_ip})
         return request_info
 
