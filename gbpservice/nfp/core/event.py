@@ -32,6 +32,7 @@ EVENT_EXPIRED = 'event_expired'
 EVENT_NEW = 'new_event'
 EVENT_COMPLETE = 'event_done'
 EVENT_ACK = 'event_ack'
+POLL_EVENT_STOP = 'poll_event_stop'
 
 """Sequencer status. """
 SequencerEmpty = nfp_seq.SequencerEmpty
