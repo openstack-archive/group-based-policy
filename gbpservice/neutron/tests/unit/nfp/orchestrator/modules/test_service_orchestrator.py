@@ -594,11 +594,8 @@ class ServiceOrchestratorTestCase(NSOModuleTestCase):
                 request_data['config_policy_id'],
                 network_function['tenant_id'],
                 network_function)
-            event_data = {
-                'network_function_id': network_function['id']
-            }
             mock_create_event.assert_called_once_with(
-                'USER_CONFIG_DELETE_FAILED', event_data=event_data,
+                'USER_CONFIG_DELETE_FAILED', event_data=request_data,
                 is_internal_event=True)
             self.assertEqual(status, nso.STOP_POLLING)
 
@@ -622,10 +619,7 @@ class ServiceOrchestratorTestCase(NSOModuleTestCase):
                 network_function)
             db_nf = self.nfp_db.get_network_function(
                 self.session, network_function['id'])
-            self.assertEqual(None, db_nf['config_policy_id'])
-            mock_create_event.assert_called_once_with(
-                'UPDATE_USER_CONFIG_IN_PROGRESS', event_data=request_data,
-                original_event=test_event)
+            self.assertEqual('config_policy_id', db_nf['config_policy_id'])
             self.assertEqual(status, nso.STOP_POLLING)
 
     def test_event_handle_user_config_delete_failed(self):
