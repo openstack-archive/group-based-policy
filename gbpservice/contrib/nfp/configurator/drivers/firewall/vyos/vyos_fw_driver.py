@@ -106,10 +106,7 @@ class FwGenericConfigDriver(base_driver.BaseDriver):
                     provider_mac=resource_data.get('provider_mac'),
                     stitching_ip=resource_data.get('stitching_ip'),
                     stitching_cidr=resource_data.get('stitching_cidr'),
-                    stitching_mac=resource_data.get('stitching_mac'),
-                    monitoring_ip=resource_data.get('monitoring_ip'),
-                    monitoring_cidr=resource_data.get('monitoring_cidr'),
-                    monitoring_mac=resource_data.get('monitoring_mac'))
+                    stitching_mac=resource_data.get('stitching_mac'))
         mgmt_ip = resource_data['mgmt_ip']
 
         url = const.request_url % (mgmt_ip,
