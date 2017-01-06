@@ -66,8 +66,8 @@ class LbGenericConfigDriver(base_driver.BaseDriver):
                 # creation. However, error will be logged for detecting
                 # failure.
             else:
-                msg = ("Configured log forwarding for service at %s. "
-                       "Result: %s" % (mgmt_ip, result_log_forward))
+                msg = ("Configured log forwarding for service at %s."
+                       % (mgmt_ip))
                 LOG.info(msg)
 
         return lb_constants.STATUS_SUCCESS
@@ -489,7 +489,9 @@ class HaproxyOnVmDriver(LbGenericConfigDriver):
     def create_vip(self, vip, context):
         resource_data = self.parse.parse_data(common_const.LOADBALANCER,
                                               context)
-        msg = ("Handling create vip [vip=%s]" % (vip))
+        msg = ("Handling 'Create VIP' for VIP:%s with Pool:%s"
+               "and tenant:%s"
+               % (vip['id'], vip['pool_id'], vip['tenant_id']))
         LOG.info(msg)
         try:
             device_addr = self._get_device_for_pool(vip['pool_id'], context)
@@ -516,7 +518,8 @@ class HaproxyOnVmDriver(LbGenericConfigDriver):
     def update_vip(self, old_vip, vip, context):
         resource_data = self.parse.parse_data(common_const.LOADBALANCER,
                                               context)
-        msg = ("Handling update vip [old_vip=%s, vip=%s]" % (old_vip, vip))
+        msg = ("Handling 'Update VIP' for VIP:%s and Old_VIP:%s" % (
+                   vip['id'], old_vip['id']))
         LOG.info(msg)
         try:
             device_addr = self._get_device_for_pool(old_vip['pool_id'],
@@ -530,9 +533,8 @@ class HaproxyOnVmDriver(LbGenericConfigDriver):
 
             # is vip's pool changed
             if not vip['pool_id'] == old_vip['pool_id']:
-                msg = (" vip pool id changed. first deleting old vip "
-                       " [old pool=%s, new pool=%s]" % (old_vip['pool_id'],
-                                                        vip['pool_id']))
+                msg = (" VIP pool id changed to %s. Deleting old VIP:%s "
+                       % (vip['pool_id'], old_vip['pool_id']))
                 LOG.info(msg)
                 # Delete the old VIP
                 self._delete_vip(old_vip, device_addr)
@@ -555,11 +557,11 @@ class HaproxyOnVmDriver(LbGenericConfigDriver):
             LOG.error(msg)
             raise e
         else:
-            msg = ("Updated vip %s." % vip['id'])
+            msg = ("Updated VIP:%s." % vip['id'])
             LOG.info(msg)
 
     def delete_vip(self, vip, context):
-        msg = ("Handling delete vip [vip=%s]" % (vip))
+        msg = ("Handling 'Delete VIP' for VIP:%s" % (vip['id']))
         LOG.info(msg)
         try:
             device_addr = self._get_device_for_pool(vip['pool_id'], context)
@@ -579,12 +581,12 @@ class HaproxyOnVmDriver(LbGenericConfigDriver):
 
     def create_pool(self, pool, context):
         # nothing to do here because a pool needs a vip to be useful
-        msg = ("Handled create pool [pool=%s]" % (pool))
+        msg = ("Handled 'Create Pool' for Pool:%s" % (pool['id']))
         LOG.info(msg)
 
     def update_pool(self, old_pool, pool, context):
-        msg = ("Handling update pool [old_pool=%s, pool=%s]"
-               % (old_pool, pool))
+        msg = ("Handling 'Update Pool' for Pool:%s and Old_Pool:%s"
+               % (pool['id'], old_pool['id']))
         LOG.info(msg)
         try:
             device_addr = self._get_device_for_pool(pool['id'], context)
@@ -605,7 +607,7 @@ class HaproxyOnVmDriver(LbGenericConfigDriver):
             LOG.info(msg)
 
     def delete_pool(self, pool, context):
-        msg = ("Handling delete pool [pool=%s]" % (pool))
+        msg = ("Handling 'Delete Pool' for Pool:%s" % (pool['id']))
         LOG.info(msg)
         try:
             device_addr = self._get_device_for_pool(pool['id'], context)
@@ -620,11 +622,12 @@ class HaproxyOnVmDriver(LbGenericConfigDriver):
             LOG.error(msg)
             raise e
         else:
-            msg = ("Deleted pool: %s." % pool['id'])
+            msg = ("Deleted pool:%s." % pool['id'])
             LOG.info(msg)
 
     def create_member(self, member, context):
-        msg = ("Handling create member [member=%s] " % (member))
+        msg = ("Handling 'Create Member' for Member:%s with Pool:%s "
+               % (member['id'], member['pool_id']))
         LOG.info(msg)
         try:
             device_addr = self._get_device_for_pool(member['pool_id'],
@@ -641,8 +644,8 @@ class HaproxyOnVmDriver(LbGenericConfigDriver):
             LOG.info(msg)
 
     def update_member(self, old_member, member, context):
-        msg = ("Handling update member [old_member=%s, member=%s] "
-               % (old_member, member))
+        msg = ("Handling 'Update Member' for Member:%s with Old_Member:%s"
+               % (member['id'], old_member['id']))
         LOG.info(msg)
         try:
             device_addr = self._get_device_for_pool(old_member['pool_id'],
@@ -664,7 +667,7 @@ class HaproxyOnVmDriver(LbGenericConfigDriver):
             LOG.info(msg)
 
     def delete_member(self, member, context):
-        msg = ("Handling delete member [member=%s] " % (member))
+        msg = ("Handling 'Delete Member' for Member:%s " % (member['id']))
         LOG.info(msg)
         try:
             device_addr = self._get_device_for_pool(member['pool_id'],
@@ -681,8 +684,9 @@ class HaproxyOnVmDriver(LbGenericConfigDriver):
             LOG.info(msg)
 
     def create_pool_health_monitor(self, health_monitor, pool_id, context):
-        msg = ("Handling create pool health monitor [hm=%s, pool_id=%s]"
-               % (health_monitor, pool_id))
+        msg = ("Handling 'Create Pool Health Monitor' for "
+               "Healthmonitor:%s and Pool:%s"
+               % (health_monitor['id'], pool_id))
         LOG.info(msg)
         try:
             device_addr = self._get_device_for_pool(pool_id, context)
@@ -696,14 +700,15 @@ class HaproxyOnVmDriver(LbGenericConfigDriver):
             LOG.error(msg)
             raise e
         else:
-            msg = ("Created pool health monitor: %s with pool ID: %s"
-                   % (str(health_monitor), pool_id))
+            msg = ("Created pool health monitor:%s with Pool: %s"
+                   % (health_monitor['id'], pool_id))
             LOG.info(msg)
 
     def update_pool_health_monitor(self, old_health_monitor, health_monitor,
                                    pool_id, context):
-        msg = ("Handling update pool health monitor [old_hm=%s, hm=%s,"
-               "pool_id=%s]" % (old_health_monitor, health_monitor, pool_id))
+        msg = ("Handling 'Update Pool Health Monitor' for HM:%s "
+               "with Old_HM:%s and Pool:%s"
+               % (health_monitor['id'], old_health_monitor['id'], pool_id))
         LOG.info(msg)
         try:
             device_addr = self._get_device_for_pool(pool_id, context)
@@ -728,13 +733,14 @@ class HaproxyOnVmDriver(LbGenericConfigDriver):
             LOG.error(msg)
             raise e
         else:
-            msg = ("Updated health monitor from %s to %s for pool: %s"
-                   % (str(old_health_monitor), str(health_monitor), pool_id))
+            msg = ("Updated health monitor from %s to %s for Pool:%s"
+                   % (old_health_monitor['id'],
+                      health_monitor['id'], pool_id))
             LOG.info(msg)
 
     def delete_pool_health_monitor(self, health_monitor, pool_id, context):
-        msg = ("Handling delete pool health monitor [hm=%s, pool_id=%s]"
-               % (health_monitor, pool_id))
+        msg = ("Handling 'Delete Pool Health Monitor' for HM:%s Pool:%s"
+               % (health_monitor['id'], pool_id))
         LOG.info(msg)
         try:
             device_addr = self._get_device_for_pool(pool_id, context)
@@ -748,6 +754,6 @@ class HaproxyOnVmDriver(LbGenericConfigDriver):
             LOG.error(msg)
             raise e
         else:
-            msg = ("Deleted pool health monitor: %s with pool ID: %s"
-                   % (str(health_monitor), pool_id))
+            msg = ("Deleted pool health monitor: %s for Pool:%s"
+                   % (health_monitor['id'], pool_id))
             LOG.info(msg)
