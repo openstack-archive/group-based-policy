@@ -12,6 +12,7 @@
 
 import ast
 import copy
+
 from gbpservice.contrib.nfp.config_orchestrator.common import common
 from gbpservice.nfp.common import constants as const
 from gbpservice.nfp.common import data_formatter as df
@@ -19,6 +20,7 @@ from gbpservice.nfp.common import utils
 from gbpservice.nfp.core import log as nfp_logging
 from gbpservice.nfp.lib import transport
 
+from neutron._i18n import _LI
 from neutron_vpnaas.db.vpn import vpn_db
 
 from oslo_log import helpers as log_helpers
@@ -142,6 +144,8 @@ class VpnAgent(vpn_db.VPNPluginDb, vpn_db.VPNPluginRpcDbMixin):
 
     @log_helpers.log_method_call
     def vpnservice_updated(self, context, **kwargs):
+        LOG.info(_LI("Received RPC VPN SERVICE UPDATED with data:%(data)s"),
+                 {'data': kwargs})
         # Fetch nf_id from description of the resource
         nf_id = self._fetch_nf_from_resource_desc(kwargs[
             'resource']['description'])
