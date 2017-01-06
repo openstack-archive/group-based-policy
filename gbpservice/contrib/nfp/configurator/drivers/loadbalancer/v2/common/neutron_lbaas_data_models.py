@@ -390,6 +390,11 @@ class Pool(BaseDataModel):
         model_dict['l7_policies'] = [L7Policy.from_dict(policy)
                                      for policy in l7_policies]
 
+        # handle old attribute for out of tree drivers
+        listener = model_dict.pop('listener', None)
+        if listener:
+            model_dict['listener'] = Listener.from_dict(listener)
+
         if healthmonitor:
             model_dict['healthmonitor'] = HealthMonitor.from_dict(
                 healthmonitor)
@@ -702,3 +707,18 @@ class LoadBalancer(BaseDataModel):
             model_dict['provider'] = ProviderResourceAssociation.from_dict(
                 provider)
         return super(LoadBalancer, cls).from_dict(model_dict)
+
+
+NAME_TO_DATA_MODEL_MAP = {
+    "loadbalancer": LoadBalancer,
+    "healthmonitor": HealthMonitor,
+    "listener": Listener,
+    "sni": SNI,
+    "pool": Pool,
+    "member": Member,
+    "loadbalancerstatistics": LoadBalancerStatistics,
+    "sessionpersistence": SessionPersistence,
+    "ipallocation": IPAllocation,
+    "port": Port,
+    "providerresourceassociation": ProviderResourceAssociation
+}
