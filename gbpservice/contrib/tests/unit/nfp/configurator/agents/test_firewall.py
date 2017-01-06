@@ -110,6 +110,16 @@ class FwaasHandlerTestCase(base.BaseTestCase):
         super(FwaasHandlerTestCase, self).__init__(*args, **kwargs)
         self.fo = fo.FakeObjects()
         self.ev = fo.FakeEventFirewall()
+        self.firewall_rule = {
+                            'id': 'rule-id', 'action': 'allow',
+                            'destination_ip_address': '',
+                            'destination_port': '80',
+                            'enabled': 'enabled', 'ip_version': 'v4',
+                            'protocol': 'tcp', 'source_ip_address': '',
+                            'source_port': '', 'shared': False,
+                            'position': 1
+                            }
+
         self.ev.data['context']['agent_info']['resource'] = 'firewall'
 
     @mock.patch(__name__ + '.fo.FakeObjects.rpcmgr')
@@ -164,12 +174,12 @@ class FwaasHandlerTestCase(base.BaseTestCase):
 
             firewall = self.fo._fake_firewall_obj()
             if not rule_list_info:
-                firewall.update({'firewall_rule_list': False})
-                self.ev.data.get('firewall').update(
-                                            {'firewall_rule_list': False})
+                firewall_rule_list = []
             else:
-                self.ev.data.get('firewall').update(
-                                            {'firewall_rule_list': True})
+                firewall_rule_list = [self.firewall_rule]
+            firewall.update({'firewall_rule_list': firewall_rule_list})
+            self.ev.data.get('firewall').update(
+                        {'firewall_rule_list': firewall_rule_list})
 
             agent_info = self.ev.data['context']['agent_info']
             agent.handle_event(self.ev)
