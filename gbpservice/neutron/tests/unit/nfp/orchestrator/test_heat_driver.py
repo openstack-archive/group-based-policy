@@ -421,20 +421,6 @@ class TestHeatDriver(unittest.TestCase):
             stack_template['resources']['sc_firewall_policy'],
             copy.deepcopy(self.mock_dict.updated_template_sc_firewall_policy))
 
-    @mock.patch.object(gbp_client.Client, "list_l3_policies")
-    def test_get_rvpn_l3_policy(self, mock_obj):
-        mock_obj.return_value = self.mock_dict.l3_policies
-        auth_token = 'asdaddasd'
-        node_update = True
-        expected_rvpn_l3_policy = {
-            u'tenant_id': '8ae6701128994ab281dde6b92207bb19',
-            u'name': u'remote-vpn-client-pool-cidr-l3policy'
-        }
-        rvpn_l3_policy = self.heat_driver_obj._get_rvpn_l3_policy(
-            auth_token,
-            self.mock_dict.provider_ptg, node_update)
-        self.assertEqual(rvpn_l3_policy, expected_rvpn_l3_policy)
-
     @mock.patch.object(gbp_client.Client, "create_policy_target")
     @mock.patch.object(gbp_client.Client, "update_policy_target")
     @mock.patch.object(neutron_client.Client, "list_subnets")
@@ -473,7 +459,8 @@ class TestHeatDriver(unittest.TestCase):
         pools.assert_called_once_with(
             subnet_id=[subnets.return_value['subnets'][0]['id']])
 
-    def test_create_node_config_data_vpn(self):
+    @mock.patch.object(neutron_client.Client, "list_networks")
+    def test_create_node_config_data_vpn(self, mock_list_networks):
         self.mock_objects()
         auth_token = 'asdasasd'
         tenant_id = '8ae6701128994ab281dde6b92207bb19'
