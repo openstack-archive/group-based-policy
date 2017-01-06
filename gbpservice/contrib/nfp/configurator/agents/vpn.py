@@ -22,7 +22,9 @@ from gbpservice.nfp.core import event as nfp_event
 from gbpservice.nfp.core import log as nfp_logging
 from gbpservice.nfp.core import module as nfp_api
 
+from neutron._i18n import _LI
 import oslo_messaging as messaging
+
 
 LOG = nfp_logging.getLogger(__name__)
 
@@ -55,6 +57,8 @@ class VpnaasRpcSender(data_filter.Filter):
 
         Returns: Dictionary of vpn service type which matches with the filters.
         """
+        LOG.info(_LI("Sending RPC for GET VPN SERVICES with %(filters)s "),
+                 {'filters': filters})
         return self.call(
             context,
             self.make_msg('get_vpn_services', ids=ids, filters=filters))
@@ -71,6 +75,9 @@ class VpnaasRpcSender(data_filter.Filter):
 
         Returns: dictionary of vpnservice
         """
+        LOG.info(_LI("Sending RPC for GET VPN SERVICECONTEXT with "
+                     "Filters:%(filters)s "),
+                 {'filters': filters})
         return self.call(
             context,
             self.make_msg(
@@ -81,6 +88,9 @@ class VpnaasRpcSender(data_filter.Filter):
         Get list of ipsec conns with filters
         specified.
         """
+        LOG.info(_LI("Sending RPC for GET IPSEC CONNS with Filters:"
+                     "%(filters)s "),
+                 {'filters': filters})
         return self.call(
             context,
             self.make_msg(
@@ -101,6 +111,9 @@ class VpnaasRpcSender(data_filter.Filter):
                               'notification_type': (
                                     'update_status')}}]
                }
+        LOG.info(_LI("Sending Notification 'Update Status' with "
+                     "status:%(status)s "),
+                 {'status': status})
         self._notify._notification(msg)
 
     def ipsec_site_conn_deleted(self, context, resource_id):
@@ -114,6 +127,9 @@ class VpnaasRpcSender(data_filter.Filter):
                               'notification_type': (
                                     'ipsec_site_conn_deleted')}}]
                }
+        LOG.info(_LI("Sending Notification 'Ipsec Site Conn Deleted' "
+                     "for resource:%(resource_id)s "),
+                 {'resource_id': resource_id})
         self._notify._notification(msg)
 
 
@@ -155,6 +171,9 @@ class VPNaasRpcManager(agent_base.AgentBaseRPCManager):
 
         Returns: None
         """
+        LOG.info(_LI("Received request 'VPN Service Updated'."
+                     "for API '%(api)s'"),
+                 {'api': resource_data.get('reason', '')})
         arg_dict = {'context': context,
                     'resource_data': resource_data}
         ev = self.sc.new_event(id='VPNSERVICE_UPDATED', data=arg_dict)
@@ -207,6 +226,9 @@ class VPNaasEventHandler(nfp_api.NfpEventHandler):
                 service_vendor = agent_info['service_vendor']
                 service_feature = agent_info['service_feature']
                 driver = self._get_driver(service_vendor, service_feature)
+                LOG.info(_LI("Invoking driver with service vendor:"
+                             "%(service_vendor)s "),
+                         {'service_vendor': service_vendor})
                 setattr(VPNaasEventHandler, "service_driver", driver)
                 self._vpnservice_updated(ev, driver)
             except Exception as err:
@@ -226,7 +248,7 @@ class VPNaasEventHandler(nfp_api.NfpEventHandler):
         context = ev.data.get('context')
         resource_data = ev.data.get('resource_data')
         msg = "Vpn service updated from server side"
-        LOG.debug(msg)
+        LOG.info(msg)
 
         try:
             driver.vpnservice_updated(context, resource_data)
@@ -243,7 +265,8 @@ class VPNaasEventHandler(nfp_api.NfpEventHandler):
                         self._sc.post_event(ev1)
                     break
         except Exception as err:
-            msg = ("Failed to update VPN service. %s" % str(err).capitalize())
+            msg = ("Failed to update VPN service. %s"
+                   % str(err).capitalize())
             LOG.error(msg)
         reason = resource_data.get('reason')
         rsrc = resource_data.get('rsrc_type')
@@ -376,7 +399,8 @@ def init_agent(cm, sc, conf):
     try:
         drivers = load_drivers(sc, conf)
     except Exception as err:
-        msg = ("VPNaas failed to load drivers. %s" % (str(err).capitalize()))
+        msg = ("VPNaas failed to load drivers. %s"
+               % (str(err).capitalize()))
         LOG.error(msg)
         raise err
     else:
