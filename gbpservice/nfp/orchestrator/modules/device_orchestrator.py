@@ -649,7 +649,10 @@ class DeviceOrchestrator(nfp_api.NfpEventHandler):
             return None
 
         device = self._create_nfd_entry(nfp_context, driver_device_info,
-                               device_data, service_details)
+                                        device_data, service_details)
+        nfd_id = device.get('network_function_device_id',
+                            '-') if device else '-'
+        nfp_logging.update_logging_context(nfd_id=nfd_id)
         self._update_nfp_context_with_ports(nfp_context, driver_device_info)
 
         self._post_create_nfd_events(event, nfp_context, device)
@@ -767,6 +770,11 @@ class DeviceOrchestrator(nfp_api.NfpEventHandler):
                 return self._controller.event_complete(event, result='FAILED')
 
         network_function_device = nfp_context['network_function_device']
+
+        nfd_id = network_function_device.get('id',
+                 '-') if network_function_device else '-'
+        nfp_logging.update_logging_context(nfd_id=nfd_id)
+
         self._update_network_function_device_db(
             network_function_device, nfp_constants.ACTIVE)
 
