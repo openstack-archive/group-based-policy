@@ -19,9 +19,9 @@ from octavia.network import data_models as network_data_models
 
 from gbpservice.contrib.nfp.configurator.drivers.base import base_driver
 from gbpservice.contrib.nfp.configurator.drivers.loadbalancer.\
-    v2.haproxy import haproxy_driver_constants
+    v2.common import neutron_lbaas_data_models as n_data_models
 from gbpservice.contrib.nfp.configurator.drivers.loadbalancer.\
-    v2.haproxy import neutron_lbaas_data_models as n_data_models
+    v2.haproxy import haproxy_driver_constants
 from gbpservice.contrib.nfp.configurator.drivers.loadbalancer.\
     v2.haproxy.local_cert_manager import LocalCertManager
 from gbpservice.contrib.nfp.configurator.drivers.loadbalancer.\
