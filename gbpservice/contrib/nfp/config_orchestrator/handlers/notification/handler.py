@@ -42,15 +42,6 @@ class RpcHandler(object):
                 handler = NaasNotificationHandler(self.conf, self.sc)
                 handler.\
                     handle_notification(context, notification_data)
-            else:
-                # Handle Event
-                request_data = {'context': context.to_dict(),
-                                'notification_data': notification_data
-                                }
-                event = self.sc.new_event(id='OTC_EVENT',
-                                          key='OTC_EVENT',
-                                          data=request_data)
-                self.sc.post_event(event)
         except Exception as e:
             exc_type, exc_value, exc_traceback = sys.exc_info()
             msg = ("Generic exception (%s) while handling message (%s) : %s"
@@ -291,16 +282,6 @@ class NaasNotificationHandler(object):
             method = getattr(handler, resource_data['notification_type'])
             # Handle RPC Event
             method(context, notification_data)
-            # Handle Event
-            request_data = {'context': context.to_dict(),
-                            'notification_data': notification_data
-                            }
-            event = self.sc.new_event(id=resource_data[
-                'notification_type'].upper(),
-                key=resource_data[
-                'notification_type'].upper(),
-                data=request_data)
-            self.sc.post_event(event)
         except Exception as e:
             exc_type, exc_value, exc_traceback = sys.exc_info()
             msg = ("Generic exception (%s) while handling message (%s) : %s"
