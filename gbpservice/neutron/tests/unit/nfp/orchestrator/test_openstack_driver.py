@@ -250,9 +250,10 @@ class TestNeutronClient(SampleData):
     def test_get_floating_ips(self, mock_obj):
         instance = mock_obj.return_value
         obj = instance.list_floatingips()['floatingips']
+        filters = {'tenant_id': self.TENANT_ID,
+                   'port_id': self.PORT_ID}
         retval = self.neutron_obj.get_floating_ips(self.AUTH_TOKEN,
-                                                   self.TENANT_ID,
-                                                   self.PORT_ID)
+                                                   **filters)
         self.assertEqual(retval, obj)
         mock_obj.assert_called_once_with(token=self.AUTH_TOKEN,
                                          endpoint_url=self.ENDPOINT_URL)
