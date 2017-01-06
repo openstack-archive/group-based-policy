@@ -61,10 +61,7 @@ class FakeObjects(object):
                     provider_mac="fa:16:3e:d9:4c:33",
                     stitching_ip="192.168.0.3",
                     stitching_cidr="192.168.0.0/28",
-                    stitching_mac="fa:16:3e:da:ca:4d",
-                    monitoring_cidr=None,
-                    monitoring_ip=None,
-                    monitoring_mac=None)
+                    stitching_mac="fa:16:3e:da:ca:4d")
 
     def firewall_api_context(self):
         fw_context = {
