@@ -65,6 +65,8 @@ HEAT_DRIVER_OPTS = [
                default='v3',
                help=_("Parameter to indicate version of keystone "
                        "used by heat_driver")),
+    cfg.StrOpt('internet_out_network_name', default=None,
+               help=_("Public external network name")),
 ]
 
 cfg.CONF.register_opts(HEAT_DRIVER_OPTS,
@@ -82,6 +84,7 @@ STACK_ACTION_WAIT_TIME = (
     cfg.CONF.heat_driver.stack_action_wait_time)
 STACK_ACTION_RETRY_WAIT = 5  # Retry after every 5 seconds
 APIC_OWNED_RES = 'apic_owned_res_'
+INTERNET_OUT_EXT_NET_NAME = cfg.CONF.heat_driver.internet_out_network_name
 
 LOG = nfp_logging.getLogger(__name__)
 
@@ -114,13 +117,13 @@ class HeatDriver(object):
             return tenant_id
         except k_exceptions.NotFound:
             with excutils.save_and_reraise_exception(reraise=True):
-                LOG.error(_LE('No tenant with name %s exists.'),
-                          self.keystone_conf.admin_tenant_name)
+                LOG.error(_LE('No tenant with name %(tenant)s exists.'),
+                          {'tenant': self.keystone_conf.admin_tenant_name})
         except k_exceptions.NoUniqueMatch:
             with excutils.save_and_reraise_exception(reraise=True):
                 LOG.error(
-                    _LE('Multiple tenants matches found for %s'),
-                    self.keystone_conf.admin_tenant_name)
+                    _LE('Multiple tenants matches found for %(tenant)s'),
+                    {'tenant': self.keystone_conf.admin_tenant_name})
 
     def _get_resource_owner_context(self):
         if cfg.CONF.heat_driver.is_service_admin_owned:
@@ -600,12 +603,16 @@ class HeatDriver(object):
             fw_rule_name = (rule_name + '_' + str(i))
             stack_template[resources_key][fw_rule_name] = (
                 copy.deepcopy(stack_template[resources_key][fw_rule_key]))
-            stack_template[resources_key][fw_rule_name][
-                properties_key]['destination_ip_address'] = provider_cidr
+            if not stack_template[resources_key][fw_rule_name][
+                properties_key].get('destination_ip_address', None):
+                stack_template[resources_key][fw_rule_name][
+                    properties_key]['destination_ip_address'] = provider_cidr
             # Use user provided Source for N-S
             if consumer_cidr != "0.0.0.0/0":
-                stack_template[resources_key][fw_rule_name][
-                    properties_key]['source_ip_address'] = consumer_cidr
+                if not stack_template[resources_key][fw_rule_name][
+                    properties_key].get('source_ip_address'):
+                    stack_template[resources_key][fw_rule_name][
+                        properties_key]['source_ip_address'] = consumer_cidr
 
             if stack_template[resources_key][fw_policy_key][
                     properties_key].get('firewall_rules'):
@@ -791,46 +798,6 @@ class HeatDriver(object):
         stack_template[resources_key][fw_key][
             properties_key]['name'] += ptg_name
 
-    def _get_rvpn_l3_policy(self, auth_token, provider, node_update):
-        # For remote vpn - we need to create a implicit l3 policy
-        # for client pool cidr, to avoid this cidr being reused.
-        # Check for this tenant if this l3 policy is defined.
-        # 1) If yes, get the cidr
-        # 2) Else Create one for this tenant with the user provided cidr
-        rvpn_l3policy_filter = {
-            'tenant_id': [provider['tenant_id']],
-            'name': ["remote-vpn-client-pool-cidr-l3policy"]}
-        rvpn_l3_policy = self.gbp_client.get_l3_policies(
-            auth_token,
-            rvpn_l3policy_filter)
-
-        if node_update and not rvpn_l3_policy:
-            LOG.error(_LE("Unable to get L3 policy for remote VPN "
-                          "while updating node"))
-            return None
-
-        if not rvpn_l3_policy:
-            remote_vpn_client_pool_cidr = (
-                cfg.CONF.heat_driver.
-                remote_vpn_client_pool_cidr)
-            rvpn_l3_policy = {
-                'l3_policy': {
-                    'name': "remote-vpn-client-pool-cidr-l3policy",
-                    'description': ("L3 Policy for remote vpn "
-                                    "client pool cidr"),
-                    'ip_pool': remote_vpn_client_pool_cidr,
-                    'ip_version': 4,
-                    'subnet_prefix_length': 24,
-                    'proxy_ip_pool': remote_vpn_client_pool_cidr,
-                    'proxy_subnet_prefix_length': 24,
-                    'external_segments': {},
-                    'tenant_id': provider['tenant_id']}}
-            rvpn_l3_policy = self.gbp_client.create_l3_policy(
-                auth_token, rvpn_l3_policy)
-        else:
-            rvpn_l3_policy = rvpn_l3_policy[0]
-        return rvpn_l3_policy
-
     def _get_management_gw_ip(self, auth_token):
         filters = {'name': [SVC_MGMT_PTG_NAME]}
         svc_mgmt_ptgs = self.gbp_client.get_policy_target_groups(
@@ -947,7 +914,7 @@ class HeatDriver(object):
                 return None
 
             stitching_port_fip = self._get_consumer_fip(auth_token,
-                                        consumer_port['id'])
+                                        consumer_port)
             if not stitching_port_fip:
                 return None
             desc = ('fip=' + mgmt_ip +
@@ -1080,7 +1047,7 @@ class HeatDriver(object):
                 return None, None
 
             stitching_port_fip = self._get_consumer_fip(auth_token,
-                                        consumer_port['id'])
+                                        consumer_port)
             if not stitching_port_fip:
                 return None
             if not base_mode_support:
@@ -1115,22 +1082,25 @@ class HeatDriver(object):
         return (stack_template, stack_params)
 
     def _get_consumer_fip(self, token, consumer_port):
-        stitching_port_fip = None
-        floatingips = (
-            self.neutron_client.get_floating_ips(token))
-        if not floatingips:
-            LOG.error(_LE("Floating IP for VPN Service has been "
-                          "disassociated Manually"))
+        ext_net = self.neutron_client.get_networks(
+            token, filters={'name': [INTERNET_OUT_EXT_NET_NAME]})
+        if not ext_net:
+            LOG.error(_LE("'internet_out_network_name' not configured"
+                          " in [heat_driver] or Network %(network)s is"
+                          " not found"),
+                      {'network': INTERNET_OUT_EXT_NET_NAME})
             return None
-
-        for fip in floatingips:
-            if consumer_port == fip['port_id']:
-                stitching_port_fip = fip['floating_ip_address']
-                break
-        if not stitching_port_fip:
-            LOG.error(_LE("Floatingip retrival has failed."))
+        # There is a case where consumer port has multiple fips
+        filters = {'port_id': [consumer_port['id']],
+                   'floating_network_id': [ext_net[0]['id']]}
+        try:
+            # return floatingip of the stitching port -> consumer_port['id']
+            return self.neutron_client.get_floating_ips(token,
+                                 **filters)[0]['floating_ip_address']
+        except Exception:
+            LOG.error(_LE("Floating IP for VPN Service has either exhausted"
+                          " or has been disassociated Manually"))
             return None
-        return stitching_port_fip
 
     def _update_node_config(self, auth_token, tenant_id, service_profile,
                             service_chain_node, service_chain_instance,
@@ -1315,8 +1285,18 @@ class HeatDriver(object):
                     {'policy_target_group': {
                         'network_service_policy_id': nsp['id']}})
             if not base_mode_support:
+                ext_net = self.neutron_client.get_networks(
+                    auth_token, filters={'name': [INTERNET_OUT_EXT_NET_NAME]})
+                if not ext_net:
+                    LOG.error(_LE("'internet_out_network_name' not configured"
+                                  " in [heat_driver] or Network %(network)s is"
+                                  " not found"),
+                              {'network': INTERNET_OUT_EXT_NET_NAME})
+                    return None, None
+                filters = {'port_id': [consumer_port['id']],
+                           'floating_network_id': [ext_net[0]['id']]}
                 floatingips = self.neutron_client.get_floating_ips(
-                    auth_token, consumer_port['id'])
+                    auth_token, filters=filters)
                 if not floatingips:
                     LOG.error(_LE("Floating IP for VPN Service has been "
                                   "disassociated Manually"))
@@ -1465,7 +1445,8 @@ class HeatDriver(object):
                                 admin_token,
                                 policy_target['policy_target_group_id']))
                 elif port_classification == nfp_constants.PROVIDER:
-                    LOG.info(_LI("provider info: %s") % (port_id))
+                    LOG.info(_LI("provider info: %(p_info)s"),
+                             {'p_info': port_id})
                     provider_port = self.neutron_client.get_port(
                         admin_token, port_id)['port']
                     if policy_target:
@@ -1856,8 +1837,7 @@ class HeatDriver(object):
     def is_update_config_supported(self, service_type):
         return (
             False
-            if (service_type == pconst.VPN or
-                service_type == pconst.FIREWALL)
+            if (service_type == pconst.FIREWALL)
             else True
         )
 
@@ -1866,7 +1846,6 @@ class HeatDriver(object):
                 consumer_port, network_function, provider_port, stack_id,
                 consumer=None, mgmt_ip=None, pt_added_or_removed=False):
         # If it is not a Node config update or PT change for LB, no op
-        service_type = service_profile['service_type']
         service_details = transport.parse_service_flavor_string(
             service_profile['service_flavor'])
         base_mode_support = (True if service_details['device_type'] == 'None'
@@ -1890,42 +1869,24 @@ class HeatDriver(object):
             return None
 
         if stack_id:
-            if service_type == pconst.VPN or service_type == pconst.FIREWALL:
-                stack_name = ("stack_" + service_chain_instance['name'] +
-                              service_chain_node['name'] +
-                              service_chain_instance['id'][:8] +
-                              service_chain_node['id'][:8] + '-' +
-                              time.strftime("%Y%m%d%H%M%S"))
-                try:
-                    stack = heatclient.create(stack_name, stack_template,
-                                              stack_params)
-                except Exception as err:
-                    msg = ('Fatal error. Heat Stack creation failed while '
-                           'update of node. To recover,please delete the '
-                           'associated provider of Tenant ID -  %r . Details '
-                           '- %r' % (provider_tenant_id, str(err)))
-                    LOG.exception(_LE('%(msg)s') % {'msg': msg})
-                    return None
-                stack_id = stack["stack"]["id"]
-            else:
-                try:
-                    heatclient.update(stack_id, stack_template, stack_params)
-                except Exception as err:
-                    msg = ('Node update failed. There can be a chance if the '
-                           'service is LOADBALANCER, the related '
-                           'configuration would have been lost. Please check '
-                           'with the ADMIN for issue of failure and '
-                           're-initiate the update node once again.')
-                    LOG.exception(_LE('%(msg)s NODE-ID: %(node_id)s '
-                                      'INSTANCE-ID: %(instance_id)s '
-                                      'TenantID: %(tenant_id)s . '
-                                      'ERROR: %(err)s') %
-                                  {'msg': msg,
-                                   'node_id': service_chain_node['id'],
-                                   'instance_id': service_chain_instance['id'],
-                                   'tenant_id': provider_tenant_id,
-                                   'err': str(err)})
-                    return None
+            try:
+                heatclient.update(stack_id, stack_template, stack_params)
+            except Exception as err:
+                msg = ('Node update failed. There can be a chance if the '
+                       'service is LOADBALANCER, the related '
+                       'configuration would have been lost. Please check '
+                       'with the ADMIN for issue of failure and '
+                       're-initiate the update node once again.')
+                LOG.exception(_LE('%(msg)s NODE-ID: %(node_id)s '
+                                  'INSTANCE-ID: %(instance_id)s '
+                                  'TenantID: %(tenant_id)s . '
+                                  'ERROR: %(err)s') %
+                              {'msg': msg,
+                               'node_id': service_chain_node['id'],
+                               'instance_id': service_chain_instance['id'],
+                               'tenant_id': provider_tenant_id,
+                               'err': str(err)})
+                return None
         if not stack_id:
             stack_name = ("stack_" + service_chain_instance['name'] +
                           service_chain_node['name'] +
