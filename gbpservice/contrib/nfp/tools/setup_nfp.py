@@ -54,6 +54,14 @@ parser.add_argument('--create-resources', action='store_true',
 parser.add_argument('--launch-controller', action='store_true',
                     dest='launch_controller',
                     default=False, help='enable to launch controller vm')
+parser.add_argument('--configure-ext-net',
+                    action='store_true', default=False,
+                    help=('Configure heat driver section in nfp.ini.'
+                          ' Specify external network name with --ext-net-name option.'))
+parser.add_argument('--ext-net-name', type=str,
+                    default='',
+                    help=('Provide external network(neutron network) name.'
+                          ' Use along with --configure-ext-net.'))
 parser.add_argument('--clean-up', action='store_true', dest='clean_up_nfp',
                     default=False,
                     help='enable to clean up nfp services and resources')
@@ -692,6 +700,13 @@ def launch_configurator():
         sys.exit(1)
 
 
+def configure_ext_net(ext_net_name):
+    os.system("crudini --set /etc/nfp.ini heat_driver"
+              " internet_out_network_name %s"
+              % (ext_net_name))
+    subprocess.call("systemctl restart nfp_orchestrator".split(' '))
+
+
 def clean_up():
     """
     clean up nfp resources
@@ -758,6 +773,11 @@ def main():
     elif args.launch_controller:
         if args.controller_path:
             launch_configurator()
+        else:
+            parser.print_help()
+    elif args.configure_ext_net:
+        if args.ext_net_name != '':
+            configure_ext_net(args.ext_net_name)
         else:
             parser.print_help()
     elif args.clean_up_nfp:
