@@ -91,9 +91,11 @@ class NSORpcHandlerTestCase(NSOModuleTestCase):
     def test_rpc_create_network_function(self, mock_create_network_function):
         with mock.patch.object(identity_client, "Client"):
             self.rpc_handler.create_network_function(
-                "context", "network_function")
+                "context", {'resource_owner_context':
+                           {'tenant_id': 'tenant_id'}})
             mock_create_network_function.assert_called_once_with(
-                "context", "network_function")
+                "context", {'resource_owner_context':
+                           {'tenant_id': 'tenant_id'}})
 
     @mock.patch.object(nso.ServiceOrchestrator,
                        "get_network_function")
@@ -375,6 +377,7 @@ class ServiceOrchestratorTestCase(NSOModuleTestCase):
             'provider': {'pt': None}
         }
         test_event = Event(data=create_nfi_request)
+        nfp_logging.store_logging_context(path='create')
         self.service_orchestrator.create_network_function_instance(
             test_event)
 

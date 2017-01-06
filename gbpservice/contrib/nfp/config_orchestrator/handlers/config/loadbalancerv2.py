@@ -20,6 +20,7 @@ from gbpservice.nfp.common import data_formatter as df
 from gbpservice.nfp.core import log as nfp_logging
 from gbpservice.nfp.lib import transport
 
+from neutron._i18n import _LI
 from neutron_lbaas.common import cert_manager
 from neutron_lbaas.common.tls_utils import cert_parser
 from neutron_lbaas.db.loadbalancer import loadbalancer_dbv2
@@ -271,6 +272,8 @@ class Lbv2Agent(loadbalancer_dbv2.LoadBalancerPluginDbv2):
     @log_helpers.log_method_call
     def create_loadbalancer(self, context, loadbalancer, driver_name,
                             allocate_vip=True):
+        LOG.info(_LI("Received RPC CREATE LOADBALANCER for LB:%(lb)s"),
+                 {'lb': loadbalancer})
         # Fetch nf_id from description of the resource
         nf_id = self._fetch_nf_from_resource_desc(loadbalancer["description"])
         nfp_logging.store_logging_context(meta_id=nf_id)
@@ -298,6 +301,8 @@ class Lbv2Agent(loadbalancer_dbv2.LoadBalancerPluginDbv2):
     @log_helpers.log_method_call
     def delete_loadbalancer(self, context, loadbalancer,
                             delete_vip_port=True):
+        LOG.info(_LI("Received RPC DELETE LOADBALANCER for LB:"
+                     "%(lb)s"), {'lb': loadbalancer})
         # Fetch nf_id from description of the resource
         nf_id = self._fetch_nf_from_resource_desc(loadbalancer["description"])
         nfp_logging.store_logging_context(meta_id=nf_id)
@@ -310,6 +315,8 @@ class Lbv2Agent(loadbalancer_dbv2.LoadBalancerPluginDbv2):
 
     @log_helpers.log_method_call
     def create_listener(self, context, listener):
+        LOG.info(_LI("Received RPC CREATE LISTENER for Listener:%(listener)s"),
+                 {'listener': listener})
         loadbalancer = listener['loadbalancer']
         # Fetch nf_id from description of the resource
         nf_id = self._fetch_nf_from_resource_desc(loadbalancer["description"])
@@ -336,6 +343,8 @@ class Lbv2Agent(loadbalancer_dbv2.LoadBalancerPluginDbv2):
 
     @log_helpers.log_method_call
     def delete_listener(self, context, listener):
+        LOG.info(_LI("Received RPC DELETE LISTENER for Listener:%(listener)s"),
+                 {'listener': listener})
         loadbalancer = listener['loadbalancer']
         # Fetch nf_id from description of the resource
         nf_id = self._fetch_nf_from_resource_desc(loadbalancer["description"])
@@ -349,6 +358,8 @@ class Lbv2Agent(loadbalancer_dbv2.LoadBalancerPluginDbv2):
 
     @log_helpers.log_method_call
     def create_pool(self, context, pool):
+        LOG.info(_LI("Received RPC CREATE POOL for Pool:%(pool)s"),
+                 {'pool': pool})
         loadbalancer = pool['loadbalancer']
         # Fetch nf_id from description of the resource
         nf_id = self._fetch_nf_from_resource_desc(loadbalancer["description"])
@@ -375,6 +386,8 @@ class Lbv2Agent(loadbalancer_dbv2.LoadBalancerPluginDbv2):
 
     @log_helpers.log_method_call
     def delete_pool(self, context, pool):
+        LOG.info(_LI("Received RPC DELETE POOL for Pool:%(pool)s"),
+                 {'pool': pool})
         loadbalancer = pool['loadbalancer']
         # Fetch nf_id from description of the resource
         nf_id = self._fetch_nf_from_resource_desc(loadbalancer["description"])
@@ -388,6 +401,8 @@ class Lbv2Agent(loadbalancer_dbv2.LoadBalancerPluginDbv2):
 
     @log_helpers.log_method_call
     def create_member(self, context, member):
+        LOG.info(_LI("Received RPC CREATE MEMBER for Member:%(member)s"),
+                 {'member': member})
         loadbalancer = member['pool']['loadbalancer']
         # Fetch nf_id from description of the resource
         nf_id = self._fetch_nf_from_resource_desc(loadbalancer["description"])
@@ -414,6 +429,8 @@ class Lbv2Agent(loadbalancer_dbv2.LoadBalancerPluginDbv2):
 
     @log_helpers.log_method_call
     def delete_member(self, context, member):
+        LOG.info(_LI("Received RPC DELETE MEMBER for Member:%(member)s"),
+                 {'member': member})
         loadbalancer = member['pool']['loadbalancer']
         # Fetch nf_id from description of the resource
         nf_id = self._fetch_nf_from_resource_desc(loadbalancer["description"])
@@ -427,6 +444,8 @@ class Lbv2Agent(loadbalancer_dbv2.LoadBalancerPluginDbv2):
 
     @log_helpers.log_method_call
     def create_healthmonitor(self, context, healthmonitor):
+        LOG.info(_LI("Received RPC CREATE HEALTH MONITOR for HM:%(hm)s"),
+                 {'hm': healthmonitor})
         loadbalancer = healthmonitor['pool']['loadbalancer']
         # Fetch nf_id from description of the resource
         nf_id = self._fetch_nf_from_resource_desc(loadbalancer["description"])
@@ -454,6 +473,8 @@ class Lbv2Agent(loadbalancer_dbv2.LoadBalancerPluginDbv2):
 
     @log_helpers.log_method_call
     def delete_healthmonitor(self, context, healthmonitor):
+        LOG.info(_LI("Received RPC DELETE HEALTH MONITOR for HM:%(hm)s"),
+                 {'hm': healthmonitor})
         loadbalancer = healthmonitor['pool']['loadbalancer']
         # Fetch nf_id from description of the resource
         nf_id = self._fetch_nf_from_resource_desc(loadbalancer["description"])
