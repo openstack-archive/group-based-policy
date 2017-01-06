@@ -208,7 +208,22 @@ class GenericConfigEventHandler(agent_base.AgentBaseEventHandler,
         Returns: None
 
         """
-        msg = ("Handling event ev.id %s" % (ev.id))
+        try:
+            event_data = ev.data
+            if ev.id == 'PROCESS_BATCH':
+                NFI = event_data['sa_req_list'][0][
+                          'agent_info']['context']['nfi_id']
+                NF = event_data['sa_req_list'][0][
+                          'agent_info']['context']['nf_id']
+            else:
+                NFI = event_data['context']['context']['nfi_id']
+                NF = event_data['context']['context']['nf_id']
+        except Exception:
+            NFI = None
+            NF = None
+
+        msg = ("Handling event '%s', with NF:%s and NFI:%s"
+               % (ev.id, NF, NFI))
         LOG.info(msg)
 
         # Process batch of request data blobs
@@ -233,7 +248,8 @@ class GenericConfigEventHandler(agent_base.AgentBaseEventHandler,
             else:
                 self._process_event(ev)
         except Exception as err:
-            msg = ("Failed to process event %s, reason %s " % (ev.data, err))
+            msg = ("Failed to process event %s, reason %s "
+                   % (ev.data, err))
             LOG.error(msg)
             return
 
@@ -424,9 +440,9 @@ def load_drivers(conf):
     for service_type, driver_name in drivers.iteritems():
         driver_obj = driver_name(conf=conf)
         drivers[service_type] = driver_obj
-
-    msg = ("Generic config agent loaded drivers: %s" % drivers)
-    LOG.info(msg)
+    LOG.info(_LI("Generic config agent loaded drivers drivers:"
+                 "%(drivers)s"),
+             {'drivers': drivers})
     return drivers
 
 
@@ -457,7 +473,8 @@ def init_agent(cm, sc, conf):
     try:
         drivers = load_drivers(conf)
     except Exception as err:
-        msg = ("Generic configuration agent failed to load service drivers. %s"
+        msg = ("Generic configuration agent failed to load service drivers."
+               "Error:%s"
                % (str(err).capitalize()))
         LOG.error(msg)
         raise err
