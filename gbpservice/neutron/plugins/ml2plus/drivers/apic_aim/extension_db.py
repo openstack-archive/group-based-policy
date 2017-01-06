@@ -62,6 +62,16 @@ class RouterExtensionContractDb(model_base.BASEV2):
     provides = sa.Column(sa.Boolean, primary_key=True)
 
 
+class AddressScopeExtensionDb(model_base.BASEV2):
+
+    __tablename__ = 'apic_aim_addr_scope_extensions'
+
+    address_scope_id = sa.Column(
+        sa.String(36), sa.ForeignKey('address_scopes.id', ondelete="CASCADE"),
+        primary_key=True)
+    vrf_dn = sa.Column(sa.String(1024))
+
+
 class ExtensionDbMixin(object):
 
     def _set_if_not_none(self, res_dict, res_attr, db_attr):
@@ -98,7 +108,6 @@ class ExtensionDbMixin(object):
                 self._update_list_attr(session, NetworkExtensionCidrDb, 'cidr',
                                        res_dict[cisco_apic.EXTERNAL_CIDRS],
                                        network_id=network_id)
-        return True
 
     def get_subnet_extn_db(self, session, subnet_id):
         db_obj = (session.query(SubnetExtensionDb).filter_by(
@@ -153,3 +162,26 @@ class ExtensionDbMixin(object):
                     'contract_name',
                     res_dict[cisco_apic_l3.EXTERNAL_CONSUMED_CONTRACTS],
                     router_id=router_id, provides=False)
+
+    def get_address_scope_extn_db(self, session, addr_scope_id):
+        db_obj = (session.query(AddressScopeExtensionDb)
+                  .filter_by(address_scope_id=addr_scope_id).first())
+        result = {}
+        if db_obj:
+            self._set_if_not_none(result, cisco_apic.VRF, db_obj.vrf_dn)
+        return result
+
+    def set_address_scope_extn_db(self, session, addr_scope_id, res_dict):
+        with session.begin(subtransactions=True):
+            db_obj = (session.query(AddressScopeExtensionDb)
+                      .filter_by(address_scope_id=addr_scope_id).first())
+            db_obj = (db_obj or
+                      AddressScopeExtensionDb(address_scope_id=addr_scope_id))
+            if cisco_apic.VRF in res_dict:
+                db_obj.vrf_dn = res_dict[cisco_apic.VRF]
+            session.add(db_obj)
+
+    def get_address_scope_by_vrf_dn(self, session, vrf_dn):
+        db_obj = (session.query(AddressScopeExtensionDb)
+                  .filter_by(vrf_dn=vrf_dn).first())
+        return db_obj.address_scope_id if db_obj else None
