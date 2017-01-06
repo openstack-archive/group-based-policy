@@ -31,6 +31,7 @@ LOG = nfp_logging.getLogger(__name__)
 BASE_VPN_VERSION = '1.0'
 AGENT_TYPE_VPN = 'NFP Vpn agent'
 ACTIVE = 'ACTIVE'
+DOWN = 'DOWN'
 ERROR = 'ERROR'
 TIMEOUT = 80
 
@@ -202,7 +203,11 @@ class NFPIPsecVPNDriver(base_ipsec.BaseIPsecVPNDriver):
             vpnservice = self.service_plugin.get_vpnservice(
                                         context,
                                         ipsec_site_connection['vpnservice_id'])
-            if vpnservice['status'] == ACTIVE:
+            #(Revisit):Due to device driver issue neutron is making vpnservice
+            #          state in Down state, At this point of time,
+            #           Allowing ipsec site connection to gets created though
+            #          vpnservice is in down state.
+            if vpnservice['status'] in [ACTIVE, DOWN]:
                 self.agent_rpc.vpnservice_updated(
                     context,
                     ipsec_site_connection['vpnservice_id'],
@@ -275,4 +280,7 @@ class NFPIPsecVPNDriver(base_ipsec.BaseIPsecVPNDriver):
             reason='create', service_vendor=service_vendor)
 
     def delete_vpnservice(self, context, vpnservice):
+        pass
+
+    def update_vpnservice(self, context, old_vpnservice, new_vpnservice):
         pass
