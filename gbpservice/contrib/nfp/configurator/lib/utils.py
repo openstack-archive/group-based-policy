@@ -83,7 +83,7 @@ class ConfiguratorUtils(object):
 
         return driver_objects
 
-    def load_agents(self):
+    def load_agents(self, pkgs):
         """Load all the agents inside pkg.
 
         @param pkg : package
