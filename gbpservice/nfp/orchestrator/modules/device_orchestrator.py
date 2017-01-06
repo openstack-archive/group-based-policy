@@ -792,6 +792,10 @@ class DeviceOrchestrator(nfp_api.NfpEventHandler):
         # events results.
         nf_id = nfp_context['network_function']['id']
         nfi_id = nfp_context['network_function_instance']['id']
+        nfi = {
+            'status': nfp_constants.ACTIVE}
+        nfi = self.nsf_db.update_network_function_instance(
+            self.db_session, nfi_id, nfi)
         event_key = nf_id + nfi_id
         results = event.result
         nfd_event = self._controller.new_event(
