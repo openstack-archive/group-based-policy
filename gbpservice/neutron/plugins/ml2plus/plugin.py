@@ -197,10 +197,10 @@ class Ml2PlusPlugin(ml2_plugin.Ml2Plugin):
         session = context.session
         with session.begin(subtransactions=True):
             subnetpool = super(Ml2PlusPlugin, self).get_subnetpool(context, id)
-            super(Ml2PlusPlugin, self).delete_subnetpool(context, id)
             mech_context = driver_context.SubnetPoolContext(
                 self, context, subnetpool)
             self.mechanism_manager.delete_subnetpool_precommit(mech_context)
+            super(Ml2PlusPlugin, self).delete_subnetpool(context, id)
         self.mechanism_manager.delete_subnetpool_postcommit(mech_context)
 
     def create_address_scope(self, context, address_scope):
@@ -252,10 +252,10 @@ class Ml2PlusPlugin(ml2_plugin.Ml2Plugin):
         with session.begin(subtransactions=True):
             address_scope = super(Ml2PlusPlugin, self).get_address_scope(
                 context, id)
-            super(Ml2PlusPlugin, self).delete_address_scope(context, id)
             mech_context = driver_context.AddressScopeContext(
                 self, context, address_scope)
             self.mechanism_manager.delete_address_scope_precommit(mech_context)
+            super(Ml2PlusPlugin, self).delete_address_scope(context, id)
         self.mechanism_manager.delete_address_scope_postcommit(mech_context)
 
     def _ensure_tenant(self, context, resource):

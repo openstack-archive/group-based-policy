@@ -16,6 +16,7 @@
 from neutron._i18n import _LE
 from neutron._i18n import _LI
 from neutron.api import extensions
+from neutron.db import address_scope_db
 from neutron import manager as n_manager
 from neutron_lib import exceptions as n_exc
 from oslo_log import log
@@ -133,6 +134,39 @@ class ApicExtensionDriver(api_plus.ExtensionDriver,
     def extend_address_scope_dict(self, session, base_model, result):
         try:
             self._md.extend_address_scope_dict(session, base_model, result)
+            res_dict = self.get_address_scope_extn_db(session, result['id'])
+            if cisco_apic.VRF in res_dict:
+                result.setdefault(cisco_apic.DIST_NAMES, {})[
+                    cisco_apic.VRF] = res_dict.pop(cisco_apic.VRF)
         except Exception:
             with excutils.save_and_reraise_exception():
                 LOG.exception(_LE("APIC AIM extend_address_scope_dict failed"))
+
+    def process_create_address_scope(self, plugin_context, data, result):
+        if (data.get(cisco_apic.DIST_NAMES) and
+            data[cisco_apic.DIST_NAMES].get(cisco_apic.VRF)):
+            dn = data[cisco_apic.DIST_NAMES][cisco_apic.VRF]
+            try:
+                vrf = aim_res.VRF.from_dn(dn)
+            except aim_exc.InvalidDNForAciResource:
+                raise n_exc.InvalidInput(
+                    error_message=('%s is not valid VRF DN' % dn))
+            session = plugin_context.session
+            # check if there is another address-scope mapping to same VRF
+            # Case 1: Another address-scope with pre-existing VRF
+            scope = self.get_address_scope_by_vrf_dn(session, dn)
+            if scope:
+                raise n_exc.InvalidInput(
+                     error_message=('VRF %s is already in use by '
+                                    'address-scope %s' % (dn, scope)))
+            # Case 2: Another address-scope with orchestrated VRF
+            scope = (session.query(address_scope_db.AddressScope)
+                     .filter_by(tenant_id=vrf.tenant_name, id=vrf.name)
+                     .first())
+            if scope:
+                raise n_exc.InvalidInput(
+                     error_message=('VRF %s is already in use by '
+                                    'address-scope %s' % (dn, scope)))
+            self.set_address_scope_extn_db(session, result['id'],
+                                           {cisco_apic.VRF: dn})
+            result.setdefault(cisco_apic.DIST_NAMES, {})[cisco_apic.VRF] = dn
