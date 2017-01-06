@@ -10,6 +10,7 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+import operator
 import os
 import oslo_messaging as messaging
 import requests
@@ -234,6 +235,29 @@ class FWaasEventHandler(nfp_api.NfpEventHandler):
                    % (ev.id, str(err).capitalize()))
             LOG.error(msg)
 
+    def _remove_duplicate_fw_rules(self, rules):
+        """ Removes duplicate rules from the rules list. """
+        # 'description' filter field needs to be added if required
+        filter_keys = ['action', 'destination_ip_address', 'destination_port',
+                       'enabled', 'ip_version', 'protocol',
+                       'source_ip_address', 'source_port', 'shared']
+        filter_rules = []
+        for rule in rules:
+            filter_rules.append({k: rule[k] for k in filter_keys})
+
+        unique_rules = [dict(tupleized) for tupleized in set(
+                            tuple(rule.items()) for rule in filter_rules)]
+        result = []
+        for d1 in unique_rules:
+            for d2 in rules:
+                if d1.viewitems() <= d2.viewitems():
+                    result.append(d2)
+                    break
+        result.sort(key=operator.itemgetter('position'))
+        for index, x in enumerate(result):
+            x['position'] = index + 1
+        return result
+
     def invoke_driver_for_plugin_api(self, ev):
         """ Invokes the appropriate driver methods
 
@@ -245,6 +269,8 @@ class FWaasEventHandler(nfp_api.NfpEventHandler):
         agent_info = context.pop('agent_info')
         firewall = ev.data.get('firewall')
         host = ev.data.get('host')
+        firewall['firewall_rule_list'] = self._remove_duplicate_fw_rules(
+                                             firewall['firewall_rule_list'])
 
         if ev.id == const.FIREWALL_CREATE_EVENT:
             if not self._is_firewall_rule_exists(firewall):
