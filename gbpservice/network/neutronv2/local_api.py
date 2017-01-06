@@ -181,7 +181,7 @@ class LocalAPI(object):
                 # explicit resource creation request, and hence the above
                 # method will be invoked in the API layer.
             if do_notify:
-                if BATCH_NOTIFICATIONS and not clean_session:
+                if BATCH_NOTIFICATIONS:
                     outer_transaction = (_get_outer_transaction(
                         context._session.transaction))
                 else:
