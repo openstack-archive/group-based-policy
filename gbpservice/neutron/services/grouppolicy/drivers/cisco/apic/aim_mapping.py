@@ -292,6 +292,9 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
         # Currently there is no support for router update in l3p update.
         # Added this check just in case it is supported in future.
         self._reject_invalid_router_access(context, clean_session=False)
+
+        self._validate_in_use_by_nsp(context)
+
         # TODO(Sumit): For extra safety add validation for address_scope change
         self._check_l3policy_ext_segment(context, context.current)
         old_segment_dict = context.original['external_segments']
@@ -485,6 +488,7 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
 
         if self._is_auto_ptg(context.current):
             self._use_implicit_subnet(context)
+            self._handle_create_network_service_policy(context)
             return
 
         if context.current['subnets']:
@@ -506,6 +510,8 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
             clean_session=False)
 
         self._use_implicit_subnet(context)
+
+        self._handle_create_network_service_policy(context)
 
         bd_name = str(self.name_mapper.network(
             session, net['id'], net['name']))
@@ -544,6 +550,11 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
             session, context.current['provided_policy_rule_sets'])
         new_consumed_contracts = self._get_aim_contract_names(
             session, context.current['consumed_policy_rule_sets'])
+
+        if (context.current['network_service_policy_id'] !=
+            context.original['network_service_policy_id']):
+            self._validate_nat_pool_for_nsp(context)
+            self._handle_nsp_update_on_ptg(context)
 
         aim_epg = self._get_aim_endpoint_group(session, context.current)
         if aim_epg:
@@ -590,6 +601,16 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
                     self._is_auto_ptg(l2p_db['policy_target_groups'][0]))):
                 self._cleanup_l2_policy(context, l2p_id, clean_session=False)
 
+        if ptg_db['network_service_policy_id']:
+            ptg_db.update({'network_service_policy_id': None})
+            # REVISIT: Note that the RMD puts the following call in
+            # try/except block since in deployment it was observed
+            # that there are certain situations when the
+            # sa_exc.ObjectDeletedError is thrown.
+            self._cleanup_network_service_policy(
+                context, context.current, context.nsp_cleanup_ipaddress,
+                context.nsp_cleanup_fips)
+
     @log.log_method_call
     def extend_policy_target_group_dict(self, session, result):
         epg = self._aim_endpoint_group(session, result)
@@ -615,6 +636,7 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
                 clean_session=False)
             self._use_implicit_port(context, subnets=subnets,
                                     clean_session=False)
+        self._associate_fip_to_pt(context)
 
     @log.log_method_call
     def update_policy_target_precommit(self, context):
@@ -631,6 +653,10 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
 
     @log.log_method_call
     def delete_policy_target_precommit(self, context):
+        fips = self._get_pt_floating_ip_mapping(
+            context._plugin_context.session, context.current['id'])
+        for fip in fips:
+            self._delete_fip(context._plugin_context, fip.floatingip_id)
         pt_db = context._plugin._get_policy_target(
             context._plugin_context, context.current['id'])
         if pt_db['port_id']:
@@ -853,6 +879,32 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
             context.current, context.current['external_segments'])
         for r in routers:
             self._set_router_ext_contracts(context, r, None)
+
+    @log.log_method_call
+    def create_network_service_policy_precommit(self, context):
+        self._validate_nsp_parameters(context)
+
+    @log.log_method_call
+    def update_network_service_policy_precommit(self, context):
+        self._validate_nsp_parameters(context)
+
+    @log.log_method_call
+    def create_nat_pool_precommit(self, context):
+        self._add_nat_pool_to_segment(context)
+        self._add_implicit_subnet_for_nat_pool_create(context)
+
+    @log.log_method_call
+    def update_nat_pool_precommit(self, context):
+        self._process_ext_segment_update_for_nat_pool(context)
+        self._add_implicit_subnet_for_nat_pool_update(context)
+
+    @log.log_method_call
+    def delete_nat_pool_precommit(self, context):
+        self._nat_pool_in_use(context)
+        np_db = context._plugin._get_nat_pool(
+            context._plugin_context, context.current['id'])
+        np_db.update({'subnet_id': None})
+        self._delete_subnet_on_nat_pool_delete(context)
 
     def _reject_shared_update(self, context, type):
         if context.original.get('shared') != context.current.get('shared'):
@@ -2003,3 +2055,7 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
                                             context.current['tenant_id'])
         super(AIMMappingDriver, self)._use_implicit_port(
             context, subnets=subnets, clean_session=clean_session)
+
+    def _handle_create_network_service_policy(self, context):
+        self._validate_nat_pool_for_nsp(context)
+        self._handle_network_service_policy(context)

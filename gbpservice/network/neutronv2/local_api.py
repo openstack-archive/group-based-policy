@@ -146,6 +146,28 @@ class LocalAPI(object):
                 dhcp_rpc_agent_api.DhcpAgentNotifyAPI())
         return self._cached_agent_notifier
 
+    def _process_notifications(self, context, action, resource, obj,
+                               orig_obj=None):
+        if BATCH_NOTIFICATIONS:
+            outer_transaction = (_get_outer_transaction(
+                context._session.transaction))
+        else:
+            outer_transaction = None
+            if orig_obj:
+                args = [action, orig_obj, {resource: obj}]
+            else:
+                args = [action, {}, {resource: obj}]
+            send_or_queue_notification(
+                outer_transaction, self._nova_notifier,
+                'send_network_change', args)
+            # REVISIT(rkukura): Do create.end notification?
+            if cfg.CONF.dhcp_agent_notification:
+                action_state = ".%s.end" % action.split('_')[0]
+                args = [context, {resource: obj}, resource + action_state]
+                send_or_queue_notification(
+                    outer_transaction, self._dhcp_agent_notifier,
+                    'notify', args)
+
     def _create_resource(self, plugin, context, resource, attrs,
                          do_notify=True, clean_session=True):
         # REVISIT(rkukura): Do create.start notification?
@@ -181,7 +203,7 @@ class LocalAPI(object):
                 # explicit resource creation request, and hence the above
                 # method will be invoked in the API layer.
             if do_notify:
-                if BATCH_NOTIFICATIONS and not clean_session:
+                if BATCH_NOTIFICATIONS:
                     outer_transaction = (_get_outer_transaction(
                         context._session.transaction))
                 else:
@@ -211,13 +233,8 @@ class LocalAPI(object):
             obj_updater = getattr(plugin, action)
             obj = obj_updater(context, resource_id, {resource: attrs})
             if do_notify:
-                self._nova_notifier.send_network_change(action, orig_obj,
-                                                        {resource: obj})
-                # REVISIT(rkukura): Do update.end notification?
-                if cfg.CONF.dhcp_agent_notification:
-                    self._dhcp_agent_notifier.notify(context,
-                                                     {resource: obj},
-                                                     resource + '.update.end')
+                self._process_notifications(context, action, resource, obj,
+                                            orig_obj)
         return obj
 
     def _delete_resource(self, plugin, context, resource, resource_id,
@@ -232,13 +249,7 @@ class LocalAPI(object):
             obj_deleter = getattr(plugin, action)
             obj_deleter(context, resource_id)
             if do_notify:
-                self._nova_notifier.send_network_change(action, {},
-                                                        {resource: obj})
-                # REVISIT(rkukura): Do delete.end notification?
-                if cfg.CONF.dhcp_agent_notification:
-                    self._dhcp_agent_notifier.notify(context,
-                                                     {resource: obj},
-                                                     resource + '.delete.end')
+                self._process_notifications(context, action, resource, obj)
 
     def _get_resource(self, plugin, context, resource, resource_id,
                       clean_session=True):
