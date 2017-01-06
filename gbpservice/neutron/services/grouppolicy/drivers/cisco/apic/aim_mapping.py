@@ -854,6 +854,32 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
         for r in routers:
             self._set_router_ext_contracts(context, r, None)
 
+    @log.log_method_call
+    def create_network_service_policy_precommit(self, context):
+        self._validate_nsp_parameters(context)
+
+    @log.log_method_call
+    def update_network_service_policy_precommit(self, context):
+        self._validate_nsp_parameters(context)
+
+    @log.log_method_call
+    def create_nat_pool_precommit(self, context):
+        self._add_nat_pool_to_segment(context)
+        self._add_implicit_subnet_for_nat_pool_create(context)
+
+    @log.log_method_call
+    def update_nat_pool_precommit(self, context):
+        self._process_ext_segment_update_for_nat_pool(context)
+        self._add_implicit_subnet_for_nat_pool_update(context)
+
+    @log.log_method_call
+    def delete_nat_pool_precommit(self, context):
+        self._nat_pool_in_use(context)
+        np_db = context._plugin._get_nat_pool(
+            context._plugin_context, context.current['id'])
+        np_db.update({'subnet_id': None})
+        self._delete_subnet_on_nat_pool_delete(context)
+
     def _reject_shared_update(self, context, type):
         if context.original.get('shared') != context.current.get('shared'):
             raise SharedAttributeUpdateNotSupported(type=type)
