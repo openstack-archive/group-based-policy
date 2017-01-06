@@ -13,7 +13,7 @@
 import copy
 import os
 
-from neutron._i18n import _LI
+from neutron import i18n
 
 from gbpservice.contrib.nfp.configurator.agents import agent_base
 from gbpservice.contrib.nfp.configurator.lib import (
@@ -26,6 +26,8 @@ from gbpservice.nfp.core import log as nfp_logging
 from gbpservice.nfp.core import module as nfp_api
 
 LOG = nfp_logging.getLogger(__name__)
+
+_LI = i18n._LI
 
 
 class GenericConfigRpcManager(agent_base.AgentBaseRPCManager):
