@@ -12,6 +12,8 @@
 
 import os
 
+from neutron._i18n import _LI
+
 from gbpservice.contrib.nfp.configurator.agents import agent_base
 from gbpservice.contrib.nfp.configurator.lib import data_filter
 from gbpservice.contrib.nfp.configurator.lib import lbv2_constants as lb_const
@@ -62,6 +64,12 @@ class LBaaSV2RpcSender(data_filter.Filter):
                                              operating_status,
                                          obj_type: obj}}]
                }
+        LOG.info(_LI("Sending Notification 'Update Status' "
+                     "for resource: %(resource)s with Provisioning status:"
+                     "%(p_status)s and Operating status:%(o_status)s"),
+                 {'resource': agent_info['resource'],
+                  'p_status': provisioning_status,
+                  'o_status': operating_status})
         self.notify._notification(msg)
 
     # REVISIT(jiahao): need to revisit how lbaasv2 update lb stats,
@@ -82,6 +90,10 @@ class LBaaSV2RpcSender(data_filter.Filter):
                                                         'update_pool_stats'),
                                           'pool': pool_id}}]
                }
+        LOG.info(_LI("Sending Notification 'Update Pool Stats' "
+                     "for pool: %(pool_id)s with stats:%(stats)s"),
+                 {'pool_id': pool_id,
+                  'stats': stats})
         self.notify._notification(msg)
 
 
@@ -136,6 +148,10 @@ class LBaaSv2RpcManager(agent_base.AgentBaseRPCManager):
         Returns: None
 
         """
+        LOG.info(_LI("Received request 'Create Loadbalancer' for LB:%(lb)s "
+                     "with driver:%(driver_name)s"),
+                 {'lb': loadbalancer['id'],
+                  'driver_name': driver_name})
         arg_dict = {'context': context,
                     lb_const.LOADBALANCER: loadbalancer,
                     'driver_name': driver_name
@@ -154,10 +170,17 @@ class LBaaSv2RpcManager(agent_base.AgentBaseRPCManager):
         Returns: None
 
         """
+        old_val, new_val = self.get_diff_of_dict(
+                               old_loadbalancer, loadbalancer)
         arg_dict = {'context': context,
                     lb_const.OLD_LOADBALANCER: old_loadbalancer,
                     lb_const.LOADBALANCER: loadbalancer,
                     }
+        LOG.info(_LI("Received request 'Update Loadbalancer' for LB:%(lb)s "
+                     "with new Param:%(new_val)s and old Param:%(old_val)s"),
+                 {'lb': loadbalancer['id'],
+                  'new_val': new_val,
+                  'old_val': old_val})
         self._send_event(lb_const.EVENT_UPDATE_LOADBALANCER_V2, arg_dict,
                          serialize=True, binding_key=loadbalancer['id'],
                          key=loadbalancer['id'])
@@ -171,6 +194,9 @@ class LBaaSv2RpcManager(agent_base.AgentBaseRPCManager):
         Returns: None
 
         """
+        LOG.info(_LI("Received request 'Delete Loadbalancer' for LB:%(lb)s "),
+                 {'lb': loadbalancer['id']})
+
         arg_dict = {'context': context,
                     lb_const.LOADBALANCER: loadbalancer,
                     }
@@ -187,6 +213,8 @@ class LBaaSv2RpcManager(agent_base.AgentBaseRPCManager):
         Returns: None
 
         """
+        LOG.info(_LI("Received request 'Create Listener' for LB:%(lb)s "),
+                 {'lb': listener['loadbalancer_id']})
         arg_dict = {'context': context,
                     lb_const.LISTENER: listener,
                     }
@@ -205,6 +233,14 @@ class LBaaSv2RpcManager(agent_base.AgentBaseRPCManager):
         Returns: None
 
         """
+        old_val, new_val = self.get_diff_of_dict(old_listener, listener)
+        LOG.info(_LI("Received request 'Update Listener' for Listener:"
+                     "%(listener)s in LB:%(lb_id)s with new Param:"
+                     "%(new_val)s and old Param:%(old_val)s"),
+                 {'lb_id': listener['loadbalancer_id'],
+                  'listener': listener['id'],
+                  'old_val': old_val,
+                  'new_val': new_val})
         arg_dict = {'context': context,
                     lb_const.OLD_LISTENER: old_listener,
                     lb_const.LISTENER: listener,
@@ -223,6 +259,8 @@ class LBaaSv2RpcManager(agent_base.AgentBaseRPCManager):
         Returns: None
 
         """
+        LOG.info(_LI("Received request 'Delete Listener' for LB:%(lb)s "),
+                 {'lb': listener['loadbalancer_id']})
         arg_dict = {'context': context,
                     lb_const.LISTENER: listener,
                     }
@@ -240,6 +278,8 @@ class LBaaSv2RpcManager(agent_base.AgentBaseRPCManager):
         Returns: None
 
         """
+        LOG.info(_LI("Received request 'Create Pool' for Pool:%(pool_id)s "),
+                 {'pool_id': pool['id']})
         arg_dict = {'context': context,
                     lb_const.POOL: pool
                     }
@@ -259,6 +299,14 @@ class LBaaSv2RpcManager(agent_base.AgentBaseRPCManager):
         Returns: None
 
         """
+        old_val, new_val = self.get_diff_of_dict(old_pool, pool)
+        LOG.info(_LI("Received request 'Update Pool' for Pool:%(pool)s "
+                     "in LB:%(lb_id)s with new Param:%(new_val)s and "
+                     "old Param:%(old_val)s"),
+                 {'pool': pool['id'],
+                  'lb_id': pool['loadbalancer_id'],
+                  'old_val': old_val,
+                  'new_val': new_val})
         arg_dict = {'context': context,
                     lb_const.OLD_POOL: old_pool,
                     lb_const.POOL: pool,
@@ -277,6 +325,8 @@ class LBaaSv2RpcManager(agent_base.AgentBaseRPCManager):
         Returns: None
 
         """
+        LOG.info(_LI("Received request 'Delete Pool' for Pool:%(pool_id)s "),
+                 {'pool_id': pool['id']})
         arg_dict = {'context': context,
                     lb_const.POOL: pool,
                     }
@@ -294,6 +344,8 @@ class LBaaSv2RpcManager(agent_base.AgentBaseRPCManager):
         Returns: None
 
         """
+        LOG.info(_LI("Received request 'Create Member' for Pool:%(pool_id)s "),
+                 {'pool_id': member['pool_id']})
         arg_dict = {'context': context,
                     lb_const.MEMBER: member,
                     }
@@ -312,6 +364,14 @@ class LBaaSv2RpcManager(agent_base.AgentBaseRPCManager):
         Returns: None
 
         """
+        old_val, new_val = self.get_diff_of_dict(old_member, member)
+        LOG.info(_LI("Received request 'Update Member' for Member:"
+                     "%(member_id)s in Pool:%(pool_id)s with new Param:"
+                     "%(new_val)s and old Param:%(old_val)s"),
+                 {'pool_id': member['pool_id'],
+                  'member_id': member['id'],
+                  'old_val': old_val,
+                  'new_val': new_val})
         arg_dict = {'context': context,
                     lb_const.OLD_MEMBER: old_member,
                     lb_const.MEMBER: member,
@@ -330,6 +390,9 @@ class LBaaSv2RpcManager(agent_base.AgentBaseRPCManager):
         Returns: None
 
         """
+        LOG.info(_LI("Received request 'Delete Member' for Pool:"
+                     "%(pool_id)s "),
+                 {'pool_id': member['pool_id']})
         arg_dict = {'context': context,
                     lb_const.MEMBER: member,
                     }
@@ -348,6 +411,9 @@ class LBaaSv2RpcManager(agent_base.AgentBaseRPCManager):
         Returns: None
 
         """
+        LOG.info(_LI("Received request 'Create Pool Health Monitor' for"
+                     "Health monitor:%(hm)s"),
+                 {'hm': healthmonitor['id']})
         arg_dict = {'context': context,
                     lb_const.HEALTHMONITOR: healthmonitor
                     }
@@ -368,6 +434,14 @@ class LBaaSv2RpcManager(agent_base.AgentBaseRPCManager):
         Returns: None
 
         """
+        old_val, new_val = self.get_diff_of_dict(
+                               old_healthmonitor, healthmonitor)
+        LOG.info(_LI("Received request 'Update Pool Health Monitor' for "
+                     "Health monitor:%(hm)s with new Param:%(new_val)s and "
+                     "old Param:%(old_val)s"),
+                 {'hm': healthmonitor['id'],
+                  'old_val': old_val,
+                  'new_val': new_val})
         arg_dict = {'context': context,
                     lb_const.OLD_HEALTHMONITOR: old_healthmonitor,
                     lb_const.HEALTHMONITOR: healthmonitor
@@ -388,6 +462,9 @@ class LBaaSv2RpcManager(agent_base.AgentBaseRPCManager):
         Returns: None
 
         """
+        LOG.info(_LI("Received request 'Delete Pool Health Monitor' for "
+                     "Health monitor:%(hm)s"),
+                 {'hm': healthmonitor['id']})
         arg_dict = {'context': context,
                     lb_const.HEALTHMONITOR: healthmonitor
                     }
@@ -406,6 +483,7 @@ class LBaaSv2RpcManager(agent_base.AgentBaseRPCManager):
         Returns: None
 
         """
+        LOG.info(_LI("Received request 'Agent Updated' "))
         arg_dict = {'context': context,
                     'payload': payload}
         self._send_event(lb_const.EVENT_AGENT_UPDATED_V2, arg_dict)
@@ -511,7 +589,7 @@ class LBaaSV2EventHandler(agent_base.AgentBaseEventHandler,
         Returns: None
 
         """
-        msg = ("Handling event=%s" % (ev.id))
+        msg = ("Handling event '%s' " % (ev.id))
         LOG.info(msg)
         try:
             msg = ("Worker process with ID: %s starting "
@@ -532,7 +610,7 @@ class LBaaSV2EventHandler(agent_base.AgentBaseEventHandler,
                 """
                 pass
             else:
-                msg = ("Calling event done for event=%s" % (ev.id))
+                msg = ("Calling event done for event '%s' " % (ev.id))
                 LOG.info(msg)
                 self.sc.event_complete(ev)
 
