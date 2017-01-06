@@ -10,7 +10,10 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+import copy
 import os
+
+from neutron._i18n import _LI
 
 from gbpservice.contrib.nfp.configurator.agents import agent_base
 from gbpservice.contrib.nfp.configurator.lib import (
@@ -139,7 +142,9 @@ class GenericConfigRpcManager(agent_base.AgentBaseRPCManager):
         Returns: None
 
         """
-
+        LOG.info(_LI("Received configure health monitor api for nfds:"
+                     "%(nfds)s"),
+                 {'nfds': resource_data['nfds']})
         resource_data['fail_count'] = 0
         self._send_event(context,
                          resource_data,
@@ -156,11 +161,12 @@ class GenericConfigRpcManager(agent_base.AgentBaseRPCManager):
         Returns: None
 
         """
-
-        self._send_event(context,
-                         resource_data,
-                         gen_cfg_const.EVENT_CLEAR_HEALTHMONITOR,
-                         resource_data['nfds'][0]['vmid'])
+        LOG.info(_LI("Received clear health monitor api for nfds:"
+                     "%(nfds)s"),
+                 {'nfds': resource_data['nfds']})
+        event_key = resource_data['nfds'][0]['vmid']
+        poll_event_id = gen_cfg_const.EVENT_CONFIGURE_HEALTHMONITOR
+        self.sc.stop_poll_event(event_key, poll_event_id)
 
 
 class GenericConfigEventHandler(agent_base.AgentBaseEventHandler,
@@ -237,6 +243,46 @@ class GenericConfigEventHandler(agent_base.AgentBaseEventHandler,
             LOG.error(msg)
             return
 
+    def send_periodic_hm_notification(self, ev, nfd, result, notification_id):
+        ev_copy = copy.deepcopy(ev)
+        ev_copy.data["context"]["notification_data"] = {}
+        ev_copy.data["context"]["context"]["nfp_context"]["id"] = (
+                                                            notification_id)
+        ev_copy.data['context']['context']['nfd_id'] = nfd.get('vmid')
+        notification_data = self._prepare_notification_data(ev_copy, result)
+        self.notify._notification(notification_data)
+
+    def handle_periodic_hm(self, ev, result):
+        resource_data = ev.data['resource_data']
+        nfd = ev.data["resource_data"]['nfds'][0]
+        periodic_polling_reason = nfd["periodic_polling_reason"]
+        if result == common_const.FAILED:
+            """If health monitoring fails continuously for MAX_FAIL_COUNT times
+                send fail notification to orchestrator
+            """
+            resource_data['fail_count'] = resource_data.get('fail_count') + 1
+            if (resource_data.get('fail_count') >=
+                    gen_cfg_const.MAX_FAIL_COUNT):
+                # REVISIT(Shishir): Remove statefull logic from here,
+                # need to come up with statleless logic.
+                if periodic_polling_reason == (
+                        gen_cfg_const.DEVICE_TO_BECOME_DOWN):
+                    notification_id = gen_cfg_const.DEVICE_NOT_REACHABLE
+                    self.send_periodic_hm_notification(ev, nfd, result,
+                                                       notification_id)
+                    nfd["periodic_polling_reason"] = (
+                        gen_cfg_const.DEVICE_TO_BECOME_UP)
+        elif result == common_const.SUCCESS:
+            """set fail_count to 0 if it had failed earlier even once
+            """
+            resource_data['fail_count'] = 0
+            if periodic_polling_reason == gen_cfg_const.DEVICE_TO_BECOME_UP:
+                notification_id = gen_cfg_const.DEVICE_REACHABLE
+                self.send_periodic_hm_notification(ev, nfd, result,
+                                                   notification_id)
+                nfd["periodic_polling_reason"] = (
+                    gen_cfg_const.DEVICE_TO_BECOME_DOWN)
+
     def _process_event(self, ev):
         LOG.debug(" Handling event %s " % (ev.data))
         # Process single request data blob
@@ -274,37 +320,25 @@ class GenericConfigEventHandler(agent_base.AgentBaseEventHandler,
                     result == common_const.SUCCESS):
                 notification_data = self._prepare_notification_data(ev, result)
                 self.notify._notification(notification_data)
+                msg = ("VM Health check successful")
+                LOG.info(msg)
                 return {'poll': False}
-            elif resource_data['nfds'][0][
-                                'periodicity'] == gen_cfg_const.FOREVER:
-                if result == common_const.FAILED:
-                    """If health monitoring fails continuously for 5 times
-                       send fail notification to orchestrator
-                    """
-                    resource_data['fail_count'] = resource_data.get(
-                                                            'fail_count') + 1
-                    if (resource_data.get('fail_count') >=
-                            gen_cfg_const.MAX_FAIL_COUNT):
-                        notification_data = self._prepare_notification_data(
-                                                                    ev,
-                                                                    result)
-                        self.notify._notification(notification_data)
-                        return {'poll': False}
-                elif result == common_const.SUCCESS:
-                    """set fail_count to 0 if it had failed earlier even once
-                    """
-                    resource_data['fail_count'] = 0
-        elif ev.id == gen_cfg_const.EVENT_CLEAR_HEALTHMONITOR:
-            """Stop current poll event. event.key is vmid which will stop
-               that particular service vm's health monitor
-            """
-            notification_data = self._prepare_notification_data(ev, result)
-            self.notify._notification(notification_data)
-            return {'poll': False}
+            elif resource_data['nfds'][0]['periodicity'] == (
+                    gen_cfg_const.FOREVER):
+                ev.data["context"]["resource"] = gen_cfg_const.PERIODIC_HM
+                self.handle_periodic_hm(ev, result)
         else:
             """For other events, irrespective of result send notification"""
             notification_data = self._prepare_notification_data(ev, result)
             self.notify._notification(notification_data)
+
+    def prepare_notification_result(self, result):
+        if result in common_const.SUCCESS:
+            data = {'status_code': common_const.SUCCESS}
+        else:
+            data = {'status_code': common_const.FAILURE,
+                    'error_msg': result}
+        return data
 
     def _prepare_notification_data(self, ev, result):
         """Prepare notification data as expected by config agent
@@ -326,12 +360,7 @@ class GenericConfigEventHandler(agent_base.AgentBaseEventHandler,
         service_type = agent_info['resource_type']
         resource = agent_info['resource']
 
-        if result in common_const.SUCCESS:
-            data = {'status_code': common_const.SUCCESS}
-        else:
-            data = {'status_code': common_const.FAILURE,
-                    'error_msg': result}
-
+        data = self.prepare_notification_result(result)
         msg = {'info': {'service_type': service_type,
                         'context': context},
                'notification': [{'resource': resource,

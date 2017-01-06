@@ -45,6 +45,10 @@ def IS_EVENT_GRAPH(event):
     return event.desc.graph
 
 
+def IS_POLL_EVENT_STOP(event):
+    return event.desc.type == nfp_event.POLL_EVENT and (
+        event.desc.flag == nfp_event.POLL_EVENT_STOP)
+
 """Manages the forked childs.
 
     Invoked periodically, compares the alive childs with
@@ -252,8 +256,19 @@ class NfpResourceManager(NfpProcessManager, NfpEventManager):
             self._event_sequencer.release(event.binding_key, event)
             self._graph_event_complete(event)
 
+    def _stop_poll_event(self, event):
+        try:
+            poll_event = self._event_cache[event.data['key']]
+            poll_event.desc.poll_desc = None
+        except KeyError:
+            message = "(event - uuid=%s) - polling event not in cache" % (
+                event.data['key'])
+            LOG.debug(message)
+
     def _non_schedule_event(self, event):
-        if event.desc.type == nfp_event.POLL_EVENT:
+        if IS_POLL_EVENT_STOP(event):
+            self._stop_poll_event(event)
+        elif event.desc.type == nfp_event.POLL_EVENT:
             message = "(event - %s) - polling for event, spacing(%d)" % (
                 event.identify(), event.desc.poll_desc.spacing)
             LOG.debug(message)
@@ -265,6 +280,9 @@ class NfpResourceManager(NfpProcessManager, NfpEventManager):
                 # Assign random worker for this poll event
                 event.desc.worker = self._resource_map.keys()[0]
                 self._event_cache[ref_uuid] = event
+
+            cached_event = self._event_cache[ref_uuid]
+            cached_event.desc.poll_desc = event.desc.poll_desc
 
             self._controller.poll_add(
                 event,
@@ -407,7 +425,9 @@ class NfpResourceManager(NfpProcessManager, NfpEventManager):
         message = "(event - %s) - timedout" % (event.identify())
         LOG.debug(message)
         try:
+            assert event.desc.poll_desc
             ref_event = self._event_cache[event.desc.poll_desc.ref]
+            assert ref_event.desc.poll_desc
             evmanager = self._get_event_manager(ref_event.desc.worker)
             assert evmanager
             evmanager.dispatch_event(
