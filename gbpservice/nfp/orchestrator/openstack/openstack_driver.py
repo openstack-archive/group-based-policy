@@ -544,17 +544,84 @@ class NeutronClient(OpenstackApi):
             LOG.error(err)
             raise Exception(err)
 
-    def get_floating_ips(self, token, tenant_id=None, port_id=None):
+    def get_floating_ips(self, token, **filters):
         """ Get list of floatingips, associated with port if passed"""
         try:
             neutron = neutron_client.Client(token=token,
                                             endpoint_url=self.network_service)
-            if port_id:
-                return neutron.list_floatingips(port_id=port_id)['floatingips']
-            else:
-                return neutron.list_floatingips()['floatingips']
+            return neutron.list_floatingips(**filters)['floatingips']
         except Exception as ex:
             err = ("Failed to read floatingips from"
+                   " Openstack Neutron service's response"
+                   " KeyError :: %s" % (ex))
+            LOG.error(err)
+            raise Exception(err)
+
+    def get_security_groups(self, token, tenant_id=None, filters=None):
+        """ Get list of security groups"""
+        try:
+            neutron = neutron_client.Client(token=token,
+                                            endpoint_url=self.network_service)
+            filters = filters if filters is not None else {}
+            return neutron.list_security_groups(**filters)['security_groups']
+        except Exception as ex:
+            err = ("Failed to get security groups from"
+                   " Openstack Neutron service's response"
+                   " KeyError :: %s" % (ex))
+            LOG.error(err)
+            raise Exception(err)
+
+    def create_security_group(self, token, attrs=None):
+        """ Create security group"""
+        try:
+            neutron = neutron_client.Client(token=token,
+                                            endpoint_url=self.network_service)
+
+            sg_info = {"security_group": attrs}
+            return neutron.create_security_group(body=sg_info)[
+                'security_group']
+        except Exception as ex:
+            err = ("Failed to get security groups from"
+                   " Openstack Neutron service's response"
+                   " KeyError :: %s" % (ex))
+            LOG.error(err)
+            raise Exception(err)
+
+    def create_security_group_rule(self, token, attrs=None):
+        """ Create security group rule"""
+        try:
+            neutron = neutron_client.Client(token=token,
+                                            endpoint_url=self.network_service)
+
+            # attrs={'direction': 'egress', 'protocol': 'TCP',
+            # 'security_group_id': 'c90c7b29-f653-4c41-ae1a-0290dc64e020'}
+            sg_rule_info = {"security_group_rule": attrs}
+            return neutron.create_security_group_rule(
+                                body=sg_rule_info)['security_group_rule']
+        except Exception as ex:
+            err = ("Failed to get security groups from"
+                   " Openstack Neutron service's response"
+                   " KeyError :: %s" % (ex))
+            LOG.error(err)
+            #raise Exception(err)
+
+    def get_ports(self, token, filters=None):
+        """ List Ports
+
+        :param token: A scoped_token
+        :param filters: Parameters for list filter
+        example for filter: ?tenant_id=%s&id=%s
+
+        :return: Port List
+
+        """
+        try:
+            neutron = neutron_client.Client(token=token,
+                                            endpoint_url=self.network_service)
+            ports = neutron.list_ports(**filters).get('ports', [])
+            return ports
+        except Exception as ex:
+            err = ("Failed to read port list from"
                    " Openstack Neutron service's response"
                    " KeyError :: %s" % (ex))
             LOG.error(err)
@@ -576,28 +643,6 @@ class NeutronClient(OpenstackApi):
         except Exception as ex:
             err = ("Failed to read port information"
                    " Exception :: %s" % (ex))
-            LOG.error(err)
-            raise Exception(err)
-
-    def get_ports(self, token, filters=None):
-        """ List Ports
-
-        :param token: A scoped_token
-        :param filters: Parameters for list filter
-        example for filter: ?tenant_id=%s&id=%s
-
-        :return: Port List
-
-        """
-        try:
-            neutron = neutron_client.Client(token=token,
-                                            endpoint_url=self.network_service)
-            ports = neutron.list_ports(**filters).get('ports', [])
-            return ports
-        except Exception as ex:
-            err = ("Failed to read port list from"
-                   " Openstack Neutron service's response"
-                   " KeyError :: %s" % (ex))
             LOG.error(err)
             raise Exception(err)
 
@@ -754,7 +799,10 @@ class NeutronClient(OpenstackApi):
             neutron = neutron_client.Client(token=token,
                                             endpoint_url=self.network_service)
             port_ids = port_ids if port_ids is not None else []
-            ports = neutron.list_ports(id=port_ids).get('ports', [])
+            if port_ids:
+                ports = neutron.list_ports(id=port_ids).get('ports', [])
+            else:
+                ports = neutron.list_ports(**kwargs)
             return ports
         except Exception as ex:
             err = ("Failed to list ports %s" % ex)
@@ -814,6 +862,42 @@ class NeutronClient(OpenstackApi):
                    " Exception :: %s" % (port_id, ex))
             LOG.error(err)
             raise Exception(err)
+
+    def get_networks(self, token, filters=None):
+        """ List nets
+
+        :param token: A scoped_token
+        :param filters: Parameters for list filter
+        example for filter: ?tenant_id=%s&id=%s
+
+        :return: network List
+
+        """
+        try:
+            neutron = neutron_client.Client(token=token,
+                                            endpoint_url=self.network_service)
+            nets = neutron.list_networks(**filters).get('networks', [])
+            return nets
+        except Exception as ex:
+            err = ("Failed to read network list from"
+                   " Openstack Neutron service's response"
+                   " KeyError :: %s" % (ex))
+            LOG.error(err)
+            raise Exception(err)
+
+    def delete_nw(self, token, net_id):
+        """
+        :param token:
+        :param net_id:
+        :return:
+        """
+        try:
+            neutron = neutron_client.Client(token=token,
+                                            endpoint_url=self.network_service)
+            return neutron.delete_network(net_id)
+        except Exception as ex:
+            err = ('Failed to delete network %s . %s' % (net_id, str(ex)))
+            LOG.error(err)
 
     def get_pools(self, token, filters=None):
         """ List Pools
@@ -1040,9 +1124,10 @@ class GBPClient(OpenstackApi):
             raise Exception(err)
 
     def create_policy_target_group(self, token, tenant_id, name,
-                                   l2_policy_id=None):
+                                   l2_policy_id=None, ext_data=None):
         """ Creates a GBP Policy Target Group
 
+        :param ext_data:
         :param token: A scoped token
         :param tenant_id: Tenant UUID
         :param name: PTG name
@@ -1055,10 +1140,11 @@ class GBPClient(OpenstackApi):
                 "name": name,
             }
         }
-
+        ext_data = ext_data or {}
         if l2_policy_id:
             policy_target_group_info["policy_target_group"].update(
                 {"l2_policy_id": l2_policy_id})
+        policy_target_group_info['policy_target_group'].update(ext_data)
 
         try:
             gbp = gbp_client.Client(token=token,
@@ -1381,4 +1467,4 @@ class GBPClient(OpenstackApi):
         gbp = gbp_client.Client(token=token,
                                 endpoint_url=self.network_service)
         return gbp.show_servicechain_instance(instance_id)[
-                                                    'servicechain_instance']
+            'servicechain_instance']
