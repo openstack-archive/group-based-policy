@@ -49,6 +49,7 @@ import oslo_messaging
 
 from apic_ml2.neutron.plugins.ml2.drivers.cisco.apic import (rpc as
     apic_topo_rpc)
+from gbpservice.network.neutronv2 import local_api
 from gbpservice.neutron.extensions import cisco_apic
 from gbpservice.neutron.extensions import cisco_apic_l3 as a_l3
 from gbpservice.neutron.plugins.ml2plus import driver_api as api_plus
@@ -59,7 +60,7 @@ from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import extension_db
 
 LOG = log.getLogger(__name__)
 DEVICE_OWNER_SNAT_PORT = 'apic:snat-pool'
-
+local_api.BATCH_NOTIFICATIONS = True
 
 # REVISIT(rkukura): Consider making these APIC name constants
 # configurable, although changing them would break an existing
@@ -680,12 +681,26 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
 
             if old_net == new_net:
                 old_net = None
+                affected_port_ids = []
+            else:
+                # SNAT information of ports on the subnet that interface
+                # with the router will change because router's gateway
+                # changed.
+                sub_ids = self._get_router_interface_subnets(session,
+                                                             current['id'])
+                affected_port_ids = self._get_non_router_ports_in_subnets(
+                    session, sub_ids)
+
             old_net = self.plugin.get_network(context,
                                               old_net) if old_net else None
             new_net = self.plugin.get_network(context,
                                               new_net) if new_net else None
             self._manage_external_connectivity(context,
                                                current, old_net, new_net)
+
+            # Send a port update so that SNAT info may be recalculated for
+            # affected ports in the interfaced subnets.
+            self._notify_port_update_bulk(context, affected_port_ids)
 
         # REVISIT(rkukura): Update extension attributes?
 
@@ -911,13 +926,22 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
             epg = self.aim.update(aim_ctx, epg,
                                   provided_contract_names=contracts)
 
-        # If this is first interface-port, then that will determine
-        # the VRF for this router. Setup exteral-connectivity for VRF
-        # if external-gateway is set.
-        if (router.gw_port_id and not router_intf_count):
-            net = self.plugin.get_network(context,
-                                          router.gw_port.network_id)
-            self._manage_external_connectivity(context, router, None, net, vrf)
+        if router.gw_port_id:
+            # If this is first interface-port, then that will determine
+            # the VRF for this router. Setup exteral-connectivity for VRF
+            # if external-gateway is set.
+            if not router_intf_count:
+                net = self.plugin.get_network(context,
+                                              router.gw_port.network_id)
+                self._manage_external_connectivity(context, router, None, net,
+                                                   vrf)
+            # SNAT information of ports on the subnet will change because
+            # of router interface addition. Send a port update so that it may
+            # be recalculated.
+            port_ids = self._get_non_router_ports_in_subnets(
+                session,
+                [subnet['id'] for subnet in subnets])
+            self._notify_port_update_bulk(context, port_ids)
 
     def remove_router_interface(self, context, router_id, port_db, subnets):
         LOG.debug("APIC AIM MD removing subnets %(subnets)s from router "
@@ -977,18 +1001,25 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
         if not router_ids:
             self._dissassociate_network_from_vrf(aim_ctx, network_db, vrf)
 
-        # If this was the last interface-port, then we no longer know
-        # the VRF for this router. So update external-conectivity to
-        # exclude this router.
-        if (router_db.gw_port_id and
-            not self._get_router_intf_count(session, router_db)):
-            net = self.plugin.get_network(context,
-                                          router_db.gw_port.network_id)
-            self._manage_external_connectivity(
-                context, router_db, net, None, vrf)
+        if router_db.gw_port_id:
+            # If this was the last interface-port, then we no longer know
+            # the VRF for this router. So update external-conectivity to
+            # exclude this router.
+            if not self._get_router_intf_count(session, router_db):
+                net = self.plugin.get_network(context,
+                                              router_db.gw_port.network_id)
+                self._manage_external_connectivity(
+                    context, router_db, net, None, vrf)
 
-            self._delete_snat_ip_ports_if_reqd(context, net['id'],
-                                               router_id)
+                self._delete_snat_ip_ports_if_reqd(context, net['id'],
+                                                   router_id)
+            # SNAT information of ports on the subnet will change because
+            # of router interface removal. Send a port update so that it may
+            # be recalculated.
+            port_ids = self._get_non_router_ports_in_subnets(
+                session,
+                [subnet['id'] for subnet in subnets])
+            self._notify_port_update_bulk(context, port_ids)
 
     def bind_port(self, context):
         current = context.current
@@ -1777,8 +1808,16 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
     def _notify_port_update(self, plugin_context, port_id):
         port = self.plugin.get_port(plugin_context, port_id)
         if self._is_port_bound(port):
-            LOG.debug("APIC notify port %s", port['id'])
-            self.notifier.port_update(plugin_context, port)
+            LOG.debug("Enqueing notify for port %s", port['id'])
+            txn = local_api.get_outer_transaction(
+                plugin_context.session.transaction)
+            local_api.send_or_queue_notification(txn, self.notifier,
+                                                 'port_update',
+                                                 [plugin_context, port])
+
+    def _notify_port_update_bulk(self, plugin_context, port_ids):
+        for p_id in port_ids:
+            self._notify_port_update(plugin_context, p_id)
 
     def get_or_allocate_snat_ip(self, plugin_context, host_or_vrf,
                                 ext_network):
@@ -2020,3 +2059,23 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
                 result.append((net, db._make_segment_dict(seg)))
                 net_ids.add(seg.network_id)
         return result
+
+    def _get_router_interface_subnets(self, session, router_id):
+        subnet_ids = (session.query(models_v2.IPAllocation.subnet_id)
+                      .join(l3_db.RouterPort,
+                            models_v2.IPAllocation.port_id ==
+                            l3_db.RouterPort.port_id)
+                      .filter(l3_db.RouterPort.router_id == router_id)
+                      .distinct())
+        return [s[0] for s in subnet_ids]
+
+    def _get_non_router_ports_in_subnets(self, session, subnet_ids):
+        if not subnet_ids:
+            return []
+        port_ids = (session.query(models_v2.IPAllocation.port_id)
+                    .join(models_v2.Port)
+                    .filter(models_v2.IPAllocation.subnet_id.in_(subnet_ids))
+                    .filter(models_v2.Port.device_owner !=
+                            n_constants.DEVICE_OWNER_ROUTER_INTF)
+                    .all())
+        return [p[0] for p in port_ids]
