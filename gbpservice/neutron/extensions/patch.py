@@ -216,7 +216,7 @@ def get_session(autocommit=True, expire_on_commit=False, use_slave=False):
         global LOCAL_API_NOTIFICATION_QUEUE
         if transaction and not transaction._parent and (
             not transaction.is_active and not transaction.nested):
-            if transaction in LOCAL_API_NOTIFICATION_QUEUE:
+            if transaction in (LOCAL_API_NOTIFICATION_QUEUE or []):
                 # push the queued notifications only when the
                 # outermost transaction completes
                 PUSH_NOTIFICATIONS_METHOD(transaction)
