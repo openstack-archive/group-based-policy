@@ -34,13 +34,13 @@ from gbpservice.neutron.services.grouppolicy.common import exceptions as exc
 LOG = logging.getLogger(__name__)
 
 
-def _get_outer_transaction(transaction):
+def get_outer_transaction(transaction):
     if not transaction:
         return
     if not transaction._parent:
         return transaction
     else:
-        return _get_outer_transaction(transaction._parent)
+        return get_outer_transaction(transaction._parent)
 
 
 BATCH_NOTIFICATIONS = False
@@ -182,7 +182,7 @@ class LocalAPI(object):
                 # method will be invoked in the API layer.
             if do_notify:
                 if BATCH_NOTIFICATIONS and not clean_session:
-                    outer_transaction = (_get_outer_transaction(
+                    outer_transaction = (get_outer_transaction(
                         context._session.transaction))
                 else:
                     outer_transaction = None
