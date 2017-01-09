@@ -454,11 +454,19 @@ function copy_nfp_files_and_start_process {
     admin_password=`iniget $NEUTRON_CONF keystone_authtoken admin_password`
     admin_tenant_name=`iniget $NEUTRON_CONF keystone_authtoken admin_tenant_name`
     auth_uri=`iniget $NEUTRON_CONF keystone_authtoken auth_uri`
+    auth_protocol=$(echo $auth_uri | tr ':/' ' ' | awk '{print $1}')
+    auth_host=$(echo $auth_uri | tr ':/' ' ' | awk '{print $2}')
+    auth_port=$(echo $auth_uri | tr ':/' ' ' | awk '{print $3}')
+    auth_version=$(echo $auth_uri | tr ':/' ' ' | awk '{print $4}')
+    auth_version=${auth_version:-v2.0}
 
     iniset -sudo /etc/nfp.ini nfp_keystone_authtoken admin_user $admin_user
     iniset -sudo /etc/nfp.ini nfp_keystone_authtoken admin_password $admin_password
     iniset -sudo /etc/nfp.ini nfp_keystone_authtoken admin_tenant_name $admin_tenant_name
-    iniset -sudo /etc/nfp.ini nfp_keystone_authtoken auth_uri $auth_uri
+    iniset -sudo /etc/nfp.ini nfp_keystone_authtoken auth_protocol $auth_protocol
+    iniset -sudo /etc/nfp.ini nfp_keystone_authtoken auth_host $auth_host
+    iniset -sudo /etc/nfp.ini nfp_keystone_authtoken auth_port $auth_port
+    iniset -sudo /etc/nfp.ini nfp_keystone_authtoken auth_version $auth_version
 
     sed -i 's#source.*#source '$DEVSTACK_DIR'/openrc demo demo#g' $NFPSERVICE_DIR/devstack/exercises/nfp_service/*.sh
     source $DEVSTACK_DIR/functions-common
