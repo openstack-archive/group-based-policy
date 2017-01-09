@@ -82,10 +82,19 @@ def set_keystone_authtoken_section():
     admin_password = commands.getoutput("crudini --get " + NEUTRON_CONF + " keystone_authtoken admin_password")
     admin_tenant_name = commands.getoutput("crudini --get " + NEUTRON_CONF + " keystone_authtoken admin_tenant_name")
     auth_uri = commands.getoutput("crudini --get " + NEUTRON_CONF + " keystone_authtoken auth_uri")
+    auth_protocol = commands.getoutput("echo " + auth_uri + " | cut -d':' -f1")
+    auth_host = commands.getoutput("echo " + auth_uri + " | cut -d'/' -f3 | cut -d':' -f1")
+    auth_port = commands.getoutput("echo " + auth_uri + " | cut -d'/' -f3 | cut -d':' -f2")
+    auth_version = commands.getoutput("echo " + auth_uri + " | cut -d'/' -f4")
+    if auth_version == '':
+        auth_version = 'v2.0'
     subprocess.call(("crudini --set " + nfp_conf + " nfp_keystone_authtoken admin_user " + admin_user).split(' '))
     subprocess.call(("crudini --set " + nfp_conf + " nfp_keystone_authtoken admin_password " + admin_password).split(' '))
     subprocess.call(("crudini --set " + nfp_conf + " nfp_keystone_authtoken admin_tenant_name " + admin_tenant_name).split(' '))
-    subprocess.call(("crudini --set " + nfp_conf + " nfp_keystone_authtoken auth_uri " + auth_uri).split(' '))
+    subprocess.call(("crudini --set " + nfp_conf + " nfp_keystone_authtoken auth_protocol " + auth_protocol).split(' '))
+    subprocess.call(("crudini --set " + nfp_conf + " nfp_keystone_authtoken auth_host " + auth_host).split(' '))
+    subprocess.call(("crudini --set " + nfp_conf + " nfp_keystone_authtoken auth_port " + auth_port).split(' '))
+    subprocess.call(("crudini --set " + nfp_conf + " nfp_keystone_authtoken auth_version " + auth_version).split(' '))
 
 def configure_nfp():
     commands.getoutput("cat /usr/lib/python2.7/site-packages/gbpservice/contrib/nfp/bin/nfp.ini >> /etc/nfp.ini")
