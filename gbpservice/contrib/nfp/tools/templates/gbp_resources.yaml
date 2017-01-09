@@ -376,27 +376,6 @@ resources:
             - { get_resource: NODE-LB }
          shared: true
 
-
-  SPEC-VPN-FW-LB-MANAGED:
-     type: OS::GroupBasedPolicy::ServiceChainSpec
-     properties:
-         name: SPEC-VPN-FW-LB-MANAGED
-         nodes: 
-            - { get_resource: NODE-VPN-ASAv }
-            - { get_resource: NODE-FW-ASAv }
-            - { get_resource: NODE-LB-F5 }
-         shared: true 
-
-
-  SPEC-ASAvFW-LB:
-     type: OS::GroupBasedPolicy::ServiceChainSpec
-     properties:
-         name: SPEC-ASAvFW-LB-MANAGED
-         nodes: 
-            - { get_resource: NODE-FW-ASAv }
-            - { get_resource: NODE-LB-F5 }
-         shared: true 
-
   NODE-FW:
     type: OS::GroupBasedPolicy::ServiceChainNode
     properties:
@@ -420,38 +399,6 @@ resources:
         service_profile_id: {get_resource: PROFILE-VPN}
         config: { get_file: vpn.template }
         shared: true
-
-  NODE-LB-F5:
-    type: OS::GroupBasedPolicy::ServiceChainNode
-    properties:
-        name: LB-F5
-        service_profile_id: {get_resource: PROFILE-LB-F5}
-        config: { get_file: lb.template }
-        shared: true
-
-  NODE-FW-ASAv:
-    type: OS::GroupBasedPolicy::ServiceChainNode
-    properties:
-        name: FW-ASAv
-        service_profile_id: {get_resource: PROFILE-FW-ASAV}
-        config: { get_file: fw.template }
-        shared: True
-
-  NODE-VPN-ASAv:
-    type: OS::GroupBasedPolicy::ServiceChainNode
-    properties:
-        name: VPN-ASAv
-        service_profile_id: {get_resource: PROFILE-VPN-ASAV}
-        config: { get_file: vpn.template }
-        shared: True
-
-  NODE-FW-NEXTGEN:
-    type: OS::GroupBasedPolicy::ServiceChainNode
-    properties:
-        name: FW-NEXTGEN
-        service_profile_id: {get_resource: PROFILE-FW-PALOALTO}
-        config: { get_file: fw.template }
-        shared: True
 
   PROFILE-FW:
     type: OS::GroupBasedPolicy::ServiceProfile
@@ -482,46 +429,6 @@ resources:
        service_type: LOADBALANCER
        insertion_mode: l3
        service_flavor: service_vendor=haproxy,device_type=nova
-       shared: true
-
-  PROFILE-FW-ASAV:
-    type: OS::GroupBasedPolicy::ServiceProfile
-    properties:
-       name: FW-ASAV
-       vendor: NFP
-       service_type: FIREWALL
-       insertion_mode: l3
-       service_flavor: service_vendor=asav,device_type=nova
-       shared: true
-
-  PROFILE-VPN-ASAV:
-    type: OS::GroupBasedPolicy::ServiceProfile
-    properties:
-       name: VPN-ASAV
-       vendor: NFP
-       service_type: VPN
-       insertion_mode: l3
-       service_flavor: service_vendor=asav,device_type=nova
-       shared: true
-
-  PROFILE-FW-PALOALTO:
-    type: OS::GroupBasedPolicy::ServiceProfile
-    properties:
-       name: FW-PALOALTO
-       vendor: NFP
-       service_type: FIREWALL
-       insertion_mode: l3
-       service_flavor: service_vendor=paloalto,device_type=nova
-       shared: true
-
-  PROFILE-LB-F5:
-    type: OS::GroupBasedPolicy::ServiceProfile
-    properties:
-       name: LB-F5
-       vendor: NFP
-       service_type: LOADBALANCER
-       insertion_mode: l3
-       service_flavor: service_vendor=f5,device_type=nova
        shared: true
 
   LBVIP-IP-POLICY:
