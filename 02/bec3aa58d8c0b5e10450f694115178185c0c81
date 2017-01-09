@@ -1,0 +1,10 @@
+Code-Review+2: Robert Kukura <kukura@noironetworks.com>
+Code-Review+2: Ivar Lazzaro <ivarlazzaro@gmail.com>
+Workflow+1: Ivar Lazzaro <ivarlazzaro@gmail.com>
+Workflow+1: Robert Kukura <kukura@noironetworks.com>
+Verified+2: Jenkins
+Submitted-by: Jenkins
+Submitted-at: Mon, 09 Jan 2017 21:37:07 +0000
+Reviewed-on: https://review.openstack.org/415944
+Project: openstack/group-based-policy
+Branch: refs/heads/master
