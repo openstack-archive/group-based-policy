@@ -22,6 +22,7 @@ from neutron.db import securitygroups_db
 from neutron.plugins.ml2 import db as ml2_db
 from oslo_log import log
 from sqlalchemy import event
+import threading
 
 LOG = log.getLogger(__name__)
 
@@ -187,6 +188,7 @@ ml2_db.get_port_from_device_mac = get_port_from_device_mac
 LOCAL_API_NOTIFICATION_QUEUE = None
 PUSH_NOTIFICATIONS_METHOD = None
 DISCARD_NOTIFICATIONS_METHOD = None
+LOCAL_API_NOTIFICATION_QUEUE_LOCK = threading.RLock()
 
 
 def get_session(autocommit=True, expire_on_commit=False, use_slave=False):
@@ -195,15 +197,20 @@ def get_session(autocommit=True, expire_on_commit=False, use_slave=False):
     global LOCAL_API_NOTIFICATION_QUEUE
     global PUSH_NOTIFICATIONS_METHOD
     global DISCARD_NOTIFICATIONS_METHOD
-    # This conditional logic is to ensure that local_api
-    # is imported only once.
-    if 'local_api' not in locals():
-        from gbpservice.network.neutronv2 import local_api
-        LOCAL_API_NOTIFICATION_QUEUE = local_api.NOTIFICATION_QUEUE
-        PUSH_NOTIFICATIONS_METHOD = (
-            local_api.post_notifications_from_queue)
-        DISCARD_NOTIFICATIONS_METHOD = (
-            local_api.discard_notifications_after_rollback)
+    global LOCAL_API_NOTIFICATION_QUEUE_LOCK
+    LOCAL_API_NOTIFICATION_QUEUE_LOCK.acquire()
+    try:
+        # This conditional logic is to ensure that local_api
+        # is imported only once.
+        if 'local_api' not in locals():
+            from gbpservice.network.neutronv2 import local_api
+            LOCAL_API_NOTIFICATION_QUEUE = local_api.NOTIFICATION_QUEUE
+            PUSH_NOTIFICATIONS_METHOD = (
+                local_api.post_notifications_from_queue)
+            DISCARD_NOTIFICATIONS_METHOD = (
+                local_api.discard_notifications_after_rollback)
+    finally:
+        LOCAL_API_NOTIFICATION_QUEUE_LOCK.release()
     # The following two lines are copied from the original
     # implementation of db_api.get_session() and should be updated
     # if the original implementation changes.
