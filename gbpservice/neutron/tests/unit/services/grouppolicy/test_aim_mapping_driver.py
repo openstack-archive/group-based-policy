@@ -2745,14 +2745,14 @@ class NotificationTest(AIMBaseTestCase):
         # The two functions are patched below to instrument how
         # many times the functions are called and also to track
         # the queue length.
-        def _queue_notification(
+        def _queue_notification(session,
             transaction_key, notifier_obj, notifier_method, args):
             self.queue_notification_call_count += 1
-            self.orig_queue_notification(
+            self.orig_queue_notification(session,
                 transaction_key, notifier_obj, notifier_method, args)
-            if local_api.NOTIFICATION_QUEUE:
-                key = local_api.NOTIFICATION_QUEUE.keys()[0]
-                length = len(local_api.NOTIFICATION_QUEUE[key])
+            if session.notification_queue:
+                key = session.notification_queue.keys()[0]
+                length = len(session.notification_queue[key])
                 if length > self.max_notification_queue_length:
                     self.max_notification_queue_length = length
 
@@ -2761,9 +2761,9 @@ class NotificationTest(AIMBaseTestCase):
         self.orig_post_notifications_from_queue = (
             local_api.post_notifications_from_queue)
 
-        def post_notifications_from_queue(transaction_key):
+        def post_notifications_from_queue(session, transaction_key):
             self.post_notifications_from_queue_call_count += 1
-            self.orig_post_notifications_from_queue(transaction_key)
+            self.orig_post_notifications_from_queue(session, transaction_key)
 
         local_api.post_notifications_from_queue = (
             post_notifications_from_queue)
