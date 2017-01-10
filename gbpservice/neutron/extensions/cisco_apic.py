@@ -82,12 +82,31 @@ EXT_SUBNET_ATTRIBUTES = {
     }
 }
 
+ADDRESS_SCOPE_ATTRIBUTES = {
+    DIST_NAMES: {
+        # DN of corresponding APIC VRF; can be specified only on create.
+        # Change 'allow_put' if updates on other DNs is allowed later,
+        # and validate that VRF DN may not be updated.
+        'allow_post': True, 'allow_put': False,
+        'is_visible': True,
+        'default': None,
+        'validate': {
+            'type:dict_or_none': {
+                VRF: {'type:string': None,
+                      'required': True}
+            }
+        }
+    }
+}
+
+
 EXTENDED_ATTRIBUTES_2_0 = {
     attributes.NETWORKS: dict(
         APIC_ATTRIBUTES.items() + EXT_NET_ATTRIBUTES.items()),
     attributes.SUBNETS: dict(
         APIC_ATTRIBUTES.items() + EXT_SUBNET_ATTRIBUTES.items()),
-    address_scope.ADDRESS_SCOPES: APIC_ATTRIBUTES
+    address_scope.ADDRESS_SCOPES: dict(
+        APIC_ATTRIBUTES.items() + ADDRESS_SCOPE_ATTRIBUTES.items())
 }
 
 

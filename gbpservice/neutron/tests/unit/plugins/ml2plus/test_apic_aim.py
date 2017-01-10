@@ -229,6 +229,28 @@ class ApicAimTestCase(test_address_scope.AddressScopeTestCase,
                                   arg_list=self.extension_attributes,
                                   **kwargs)['network']
 
+    def _make_address_scope_for_vrf(self, vrf_dn,
+                                    ip_version=n_constants.IP_VERSION_4,
+                                    expected_status=None,
+                                    **kwargs):
+        attrs = {'ip_version': ip_version}
+        if vrf_dn:
+            attrs[DN] = {'VRF': vrf_dn}
+        attrs.update(kwargs)
+
+        req = self.new_create_request('address-scopes',
+                                      {'address_scope': attrs}, self.fmt)
+        neutron_context = context.Context('', kwargs.get('tenant_id',
+                                                         self._tenant_id))
+        req.environ['neutron.context'] = neutron_context
+
+        res = req.get_response(self.ext_api)
+        if expected_status:
+            self.assertEqual(expected_status, res.status_int)
+        elif res.status_int >= webob.exc.HTTPClientError.code:
+            raise webob.exc.HTTPClientError(code=res.status_int)
+        return self.deserialize(self.fmt, res)
+
 
 class TestAimMapping(ApicAimTestCase):
     def _get_tenant(self, tenant_name):
@@ -358,7 +380,8 @@ class TestAimMapping(ApicAimTestCase):
         self.assertIsNotNone(entry)
         return entry
 
-    def _check_network(self, net, routers=None, scope=None, project=None):
+    def _check_network(self, net, routers=None, scope=None, project=None,
+                       vrf=None):
         tenant_aname = project or net['tenant_id']
         self._get_tenant(tenant_aname)
 
@@ -366,16 +389,26 @@ class TestAimMapping(ApicAimTestCase):
         router_anames = [router['id'] for router in routers or []]
 
         if routers:
-            if scope:
+            if vrf:
+                vrf_aname = vrf.name
+                vrf_dname = vrf.display_name
+                vrf_tenant_aname = vrf.tenant_name
+                if vrf.tenant_name != 'common':
+                    tenant_aname = vrf.tenant_name
+                    vrf_tenant_dname = TEST_TENANT_NAMES[vrf_tenant_aname]
+                else:
+                    vrf_tenant_dname = 'CommonTenant'
+            elif scope:
                 vrf_aname = scope['id']
                 vrf_dname = scope['name']
                 vrf_tenant_aname = scope['tenant_id']
                 tenant_aname = vrf_tenant_aname
+                vrf_tenant_dname = TEST_TENANT_NAMES[vrf_tenant_aname]
             else:
                 vrf_aname = 'DefaultVRF'
                 vrf_dname = 'DefaultRoutedVRF'
                 vrf_tenant_aname = tenant_aname
-            vrf_tenant_dname = TEST_TENANT_NAMES[vrf_tenant_aname]
+                vrf_tenant_dname = TEST_TENANT_NAMES[vrf_tenant_aname]
         else:
             vrf_aname = self.driver.apic_system_id + '_UnroutedVRF'
             vrf_dname = 'CommonUnroutedVRF'
@@ -1197,6 +1230,72 @@ class TestAimMapping(ApicAimTestCase):
         subnet2 = self._show('subnets', subnet2_id)['subnet']
         self._check_subnet(subnet2, net2, [], [gw2_ip])
 
+    def test_address_scope_pre_existing_vrf(self):
+        aim_ctx = aim_context.AimContext(self.db_session)
+
+        self.aim_mgr.create(aim_ctx,
+                            aim_resource.Tenant(name='t1', monitored=True))
+        vrf = aim_resource.VRF(tenant_name='t1', name='ctx1',
+                               display_name='CTX1', monitored=True)
+        self.aim_mgr.create(aim_ctx, vrf)
+
+        # create
+        scope = self._make_address_scope_for_vrf(vrf.dn,
+                                                 name='as1')['address_scope']
+        vrf = self.aim_mgr.get(aim_ctx, vrf)
+        self.assertEqual('CTX1', vrf.display_name)
+
+        # update name -> no-op for AIM object
+        self._update('address-scopes', scope['id'],
+                     {'address_scope': {'name': 'as2'}})
+        vrf = self.aim_mgr.get(aim_ctx, vrf)
+        self.assertEqual('CTX1', vrf.display_name)
+
+        # delete
+        self._delete('address-scopes', scope['id'])
+        vrf = self.aim_mgr.get(aim_ctx, vrf)
+        self.assertIsNotNone(vrf)
+        self.assertEqual('CTX1', vrf.display_name)
+
+    def test_network_in_address_scope_pre_existing_vrf(self, common_vrf=False):
+        aim_ctx = aim_context.AimContext(self.db_session)
+
+        tenant = aim_resource.Tenant(name='common' if common_vrf else 't1',
+            display_name=('CommonTenant' if common_vrf
+                          else TEST_TENANT_NAMES['t1']),
+            monitored=True)
+        self.aim_mgr.create(aim_ctx, tenant)
+        vrf = aim_resource.VRF(tenant_name='common' if common_vrf else 't1',
+                               name='ctx1', monitored=True)
+        vrf = self.aim_mgr.create(aim_ctx, vrf)
+
+        scope = self._make_address_scope_for_vrf(vrf.dn,
+                                                 name='as1')['address_scope']
+
+        pool = self._make_subnetpool(
+            self.fmt, ['10.0.0.0/8'], name='sp', address_scope_id=scope['id'],
+            tenant_id=scope['tenant_id'], default_prefixlen=24)['subnetpool']
+
+        net = self._make_network(self.fmt, 'net1', True)['network']
+        subnet = self._make_subnet(
+            self.fmt, {'network': net}, '10.0.1.1', '10.0.1.0/24',
+            subnetpool_id=pool['id'])['subnet']
+        self._check_network(net)
+
+        router = self._make_router(self.fmt, self._tenant_id,
+                                   'router1')['router']
+        self._router_interface_action('add', router['id'], subnet['id'], None)
+        net = self._show('networks', net['id'])['network']
+        self._check_network(net, routers=[router], vrf=vrf)
+
+        self._router_interface_action('remove', router['id'], subnet['id'],
+                                      None)
+        net = self._show('networks', net['id'])['network']
+        self._check_network(net)
+
+    def test_network_in_address_scope_pre_existing_common_vrf(self):
+        self.test_network_in_address_scope_pre_existing_vrf(common_vrf=True)
+
 
 class TestSyncState(ApicAimTestCase):
     @staticmethod
@@ -1993,6 +2092,67 @@ class TestExtensionAttributes(ApicAimTestCase):
                             {'router': {PROV: ['p1', 'p2']}})['router']
         self.assertEqual(['p1', 'p2'], sorted(rtr2[PROV]))
         self.assertEqual([], rtr2[CONS])
+
+    def test_address_scope_lifecycle(self):
+        session = db_api.get_session()
+        extn = extn_db.ExtensionDbMixin()
+        aim_ctx = aim_context.AimContext(db_session=session)
+
+        # create with APIC DN
+        self.aim_mgr.create(aim_ctx,
+                            aim_resource.Tenant(name='t1', monitored=True))
+        vrf = aim_resource.VRF(tenant_name='t1', name='ctx1',
+                               monitored=True)
+        self.aim_mgr.create(aim_ctx, vrf)
+        scope = self._make_address_scope_for_vrf(vrf.dn)['address_scope']
+        self.assertEqual({'VRF': vrf.dn},
+                         extn.get_address_scope_extn_db(session, scope['id']))
+        self._check_dn(scope, vrf, 'VRF')
+
+        scope = self._show('address-scopes', scope['id'])['address_scope']
+        self._check_dn(scope, vrf, 'VRF')
+
+        self._delete('address-scopes', scope['id'])
+        self.assertFalse(extn.get_address_scope_extn_db(session, scope['id']))
+
+    def test_address_scope_fail(self):
+        # APIC DN not specified
+        resp = self._make_address_scope_for_vrf(None, expected_status=400,
+                                                **{DN: {}})
+        self.assertIn('Invalid input for apic:distinguished_names',
+                      resp['NeutronError']['message'])
+
+        # APIC DN is wrong
+        resp = self._make_address_scope_for_vrf('uni/tn-1',
+                                                expected_status=400)
+        self.assertIn('is not valid VRF DN', resp['NeutronError']['message'])
+
+        # Update APIC DN
+        aim_ctx = aim_context.AimContext(db_session=db_api.get_session())
+        self.aim_mgr.create(aim_ctx,
+                            aim_resource.Tenant(name='t1', monitored=True))
+        vrf = aim_resource.VRF(tenant_name='t1', name='default',
+                               monitored=True)
+        self.aim_mgr.create(aim_ctx, vrf)
+        scope = self._make_address_scope_for_vrf(vrf.dn)
+
+        self._update('address-scopes', scope['address_scope']['id'],
+                     {'address_scope':
+                      {DN: {'VRF': 'uni/tn-t2/ctx-default2'}}},
+                     400)
+
+        # Pre-existing VRF already used
+        resp = self._make_address_scope_for_vrf(vrf.dn, expected_status=400)
+        self.assertIn('is already in use by address-scope',
+                      resp['NeutronError']['message'])
+
+        # Orchestrated VRF already used
+        with self.address_scope() as scope1:
+            scope1 = scope1['address_scope']
+            resp = self._make_address_scope_for_vrf(scope1[DN]['VRF'],
+                                                    expected_status=400)
+            self.assertIn('is already in use by address-scope',
+                          resp['NeutronError']['message'])
 
 
 class CallRecordWrapper(object):

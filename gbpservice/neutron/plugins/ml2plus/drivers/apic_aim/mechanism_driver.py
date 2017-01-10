@@ -533,8 +533,9 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
         dname = aim_utils.sanitize_display_name(current['name'])
 
         vrf = self._map_address_scope(session, current)
-        vrf.display_name = dname
-        self.aim.create(aim_ctx, vrf)
+        if not self.aim.get(aim_ctx, vrf):
+            vrf.display_name = dname
+            self.aim.create(aim_ctx, vrf)
 
         # ML2Plus does not extend address scope dict after precommit.
         sync_state = cisco_apic.SYNC_SYNCED
@@ -553,9 +554,10 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
         if current['name'] != original['name']:
             dname = aim_utils.sanitize_display_name(current['name'])
 
-            vrf = self._map_address_scope(session, current)
-
-            self.aim.update(aim_ctx, vrf, display_name=dname)
+            vrf = self.aim.get(aim_ctx,
+                               self._map_address_scope(session, current))
+            if vrf and not vrf.monitored:
+                self.aim.update(aim_ctx, vrf, display_name=dname)
 
     def delete_address_scope_precommit(self, context):
         current = context.current
@@ -564,9 +566,9 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
         session = context._plugin_context.session
         aim_ctx = aim_context.AimContext(session)
 
-        vrf = self._map_address_scope(session, current)
-
-        self.aim.delete(aim_ctx, vrf)
+        vrf = self.aim.get(aim_ctx, self._map_address_scope(session, current))
+        if vrf and not vrf.monitored:
+            self.aim.delete(aim_ctx, vrf)
 
         self.name_mapper.delete_apic_name(session, current['id'])
 
@@ -1356,7 +1358,8 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
             old_vrf.tenant_name if old_vrf else
             self._get_tenant_name(session, network_db.tenant_id))
 
-        if old_tenant_name != new_vrf.tenant_name:
+        if (new_vrf.tenant_name != COMMON_TENANT_NAME and
+            old_tenant_name != new_vrf.tenant_name):
             # Move BD and EPG to new VRF's Tenant, set VRF, and make
             # sure routing is enabled.
             LOG.debug("Moving network from tenant %(old)s to tenant %(new)s",
@@ -1375,6 +1378,11 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
 
             epg = self.aim.get(aim_ctx, epg)
             self.aim.delete(aim_ctx, epg)
+            # ensure app profile exists in destination tenant
+            ap = aim_resource.ApplicationProfile(
+                tenant_name=new_vrf.tenant_name, name=self.ap_name)
+            if not self.aim.get(aim_ctx, ap):
+                self.aim.create(aim_ctx, ap)
             epg.tenant_name = new_vrf.tenant_name
             epg = self.aim.create(aim_ctx, epg)
         else:
@@ -1399,7 +1407,8 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
         new_tenant_name = self._get_tenant_name(session, network_db.tenant_id)
 
         # REVISIT(rkukura): Share code with _associate_network_with_vrf?
-        if old_vrf.tenant_name != new_tenant_name:
+        if (old_vrf.tenant_name != COMMON_TENANT_NAME and
+            old_vrf.tenant_name != new_tenant_name):
             # Move BD and EPG to network's Tenant, set unrouted VRF,
             # and disable routing.
             LOG.debug("Moving network from tenant %(old)s to tenant %(new)s",
@@ -1443,8 +1452,10 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
                 one())
 
     def _map_network(self, session, network, vrf, bd_only=False):
-        tenant_aname = (vrf.tenant_name if vrf else
-                        self._get_tenant_name(session, network['tenant_id']))
+        tenant_aname = (vrf.tenant_name
+                        if vrf and vrf.tenant_name != COMMON_TENANT_NAME
+                        else self._get_tenant_name(session,
+                                                   network['tenant_id']))
 
         id = network['id']
         name = network['name']
@@ -1479,17 +1490,20 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
         return sn
 
     def _map_address_scope(self, session, scope):
-        tenant_aname = self._get_tenant_name(session, scope['tenant_id'])
-
         id = scope['id']
         name = scope['name']
-        aname = self.name_mapper.address_scope(session, id, name)
-        LOG.debug("Mapped address_scope_id %(id)s with name %(name)s to "
-                  "%(aname)s",
-                  {'id': id, 'name': name, 'aname': aname})
 
-        vrf = aim_resource.VRF(tenant_name=tenant_aname,
-                               name=aname)
+        extn_db = extension_db.ExtensionDbMixin()
+        scope_extn = extn_db.get_address_scope_extn_db(session, id)
+        if scope_extn and scope_extn.get(cisco_apic.VRF):
+            vrf = aim_resource.VRF.from_dn(scope_extn[cisco_apic.VRF])
+        else:
+            tenant_aname = self._get_tenant_name(session, scope['tenant_id'])
+            aname = self.name_mapper.address_scope(session, id, name)
+            vrf = aim_resource.VRF(tenant_name=tenant_aname, name=aname)
+        LOG.debug("Mapped address_scope_id %(id)s with name %(name)s to "
+                  "%(vrf)s",
+                  {'id': id, 'name': name, 'vrf': vrf})
         return vrf
 
     def _map_router(self, session, router, contract_only=False):
