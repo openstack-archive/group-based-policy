@@ -22,6 +22,7 @@ from neutron.db import securitygroups_db
 from neutron.plugins.ml2 import db as ml2_db
 from oslo_log import log
 from sqlalchemy import event
+import threading
 
 LOG = log.getLogger(__name__)
 
@@ -184,26 +185,48 @@ def get_port_from_device_mac(context, device_mac):
 
 ml2_db.get_port_from_device_mac = get_port_from_device_mac
 
-LOCAL_API_NOTIFICATION_QUEUE = None
 PUSH_NOTIFICATIONS_METHOD = None
 DISCARD_NOTIFICATIONS_METHOD = None
+LOCAL_API_NOTIFICATION_QUEUE_LOCK = threading.RLock()
 
 
 def get_session(autocommit=True, expire_on_commit=False, use_slave=False):
     # The folowing are declared as global so that they can
     # used in the inner functions that follow.
-    global LOCAL_API_NOTIFICATION_QUEUE
     global PUSH_NOTIFICATIONS_METHOD
     global DISCARD_NOTIFICATIONS_METHOD
+    global LOCAL_API_NOTIFICATION_QUEUE_LOCK
     # This conditional logic is to ensure that local_api
     # is imported only once.
+    """ good 1
     if 'local_api' not in locals():
         from gbpservice.network.neutronv2 import local_api
-        LOCAL_API_NOTIFICATION_QUEUE = local_api.NOTIFICATION_QUEUE
         PUSH_NOTIFICATIONS_METHOD = (
             local_api.post_notifications_from_queue)
         DISCARD_NOTIFICATIONS_METHOD = (
             local_api.discard_notifications_after_rollback)
+    """
+    """
+    if 'local_api' not in globals():
+        from gbpservice.network.neutronv2 import local_api
+        PUSH_NOTIFICATIONS_METHOD = (
+            local_api.post_notifications_from_queue)
+        DISCARD_NOTIFICATIONS_METHOD = (
+            local_api.discard_notifications_after_rollback)
+    """
+    """ good 2
+    LOCAL_API_NOTIFICATION_QUEUE_LOCK.acquire()
+    try:
+        # This conditional logic is to ensure that local_api
+        # is imported only once.
+        if 'local_api' not in locals():
+            from gbpservice.network.neutronv2 import local_api
+            PUSH_NOTIFICATIONS_METHOD = (
+                local_api.post_notifications_from_queue)
+            DISCARD_NOTIFICATIONS_METHOD = (
+                local_api.discard_notifications_after_rollback)
+    finally:
+        LOCAL_API_NOTIFICATION_QUEUE_LOCK.release()
     # The following two lines are copied from the original
     # implementation of db_api.get_session() and should be updated
     # if the original implementation changes.
@@ -211,25 +234,92 @@ def get_session(autocommit=True, expire_on_commit=False, use_slave=False):
     new_session = facade.get_session(autocommit=autocommit,
                                      expire_on_commit=expire_on_commit,
                                      use_slave=use_slave)
+    new_session.notification_queue = {}
+    """
+    """ good 3
+    LOCAL_API_NOTIFICATION_QUEUE_LOCK.acquire()
+    try:
+        # This conditional logic is to ensure that local_api
+        # is imported only once.
+        if 'local_api' not in locals():
+            from gbpservice.network.neutronv2 import local_api
+            PUSH_NOTIFICATIONS_METHOD = (
+                local_api.post_notifications_from_queue)
+            DISCARD_NOTIFICATIONS_METHOD = (
+                local_api.discard_notifications_after_rollback)
+            # The following two lines are copied from the original
+            # implementation of db_api.get_session() and should be updated
+            # if the original implementation changes.
+            facade = db_api._create_facade_lazily()
+            new_session = facade.get_session(autocommit=autocommit,
+                                             expire_on_commit=expire_on_commit,
+                                             use_slave=use_slave)
+            new_session.notification_queue = {}
+    finally:
+        LOCAL_API_NOTIFICATION_QUEUE_LOCK.release()
+    """
+    LOCAL_API_NOTIFICATION_QUEUE_LOCK.acquire()
+    try:
+        from gbpservice.network.neutronv2 import local_api
+        PUSH_NOTIFICATIONS_METHOD = (
+            local_api.post_notifications_from_queue)
+        DISCARD_NOTIFICATIONS_METHOD = (
+            local_api.discard_notifications_after_rollback)
+        # The following two lines are copied from the original
+        # implementation of db_api.get_session() and should be updated
+        # if the original implementation changes.
+        facade = db_api._create_facade_lazily()
+        new_session = facade.get_session(autocommit=autocommit,
+                                         expire_on_commit=expire_on_commit,
+                                         use_slave=use_slave)
+        new_session.notification_queue = {}
+    finally:
+        LOCAL_API_NOTIFICATION_QUEUE_LOCK.release()
 
     def gbp_after_transaction(session, transaction):
-        global LOCAL_API_NOTIFICATION_QUEUE
         if transaction and not transaction._parent and (
             not transaction.is_active and not transaction.nested):
-            if transaction in (LOCAL_API_NOTIFICATION_QUEUE or []):
+            if transaction in session.notification_queue:
                 # push the queued notifications only when the
                 # outermost transaction completes
-                PUSH_NOTIFICATIONS_METHOD(transaction)
+                PUSH_NOTIFICATIONS_METHOD(session, transaction)
 
     def gbp_after_rollback(session):
         # We discard all queued notifiactions if the transaction fails.
-        DISCARD_NOTIFICATIONS_METHOD(session.transaction)
+        DISCARD_NOTIFICATIONS_METHOD(session)
 
     if local_api.BATCH_NOTIFICATIONS:
         event.listen(new_session, "after_transaction_end",
                      gbp_after_transaction)
         event.listen(new_session, "after_rollback",
                      gbp_after_rollback)
+    """
+    from gbpservice.network.neutronv2 import local_api
+    if not PUSH_NOTIFICATIONS_METHOD:
+        PUSH_NOTIFICATIONS_METHOD = (
+            local_api.post_notifications_from_queue)
+        if not DISCARD_NOTIFICATIONS_METHOD:
+            DISCARD_NOTIFICATIONS_METHOD = (
+                local_api.discard_notifications_after_rollback)
+
+        def gbp_after_transaction(session, transaction):
+            if transaction and not transaction._parent and (
+                not transaction.is_active and not transaction.nested):
+                if transaction in session.notification_queue:
+                    # push the queued notifications only when the
+                    # outermost transaction completes
+                    PUSH_NOTIFICATIONS_METHOD(session, transaction)
+
+        def gbp_after_rollback(session):
+            # We discard all queued notifiactions if the transaction fails.
+            DISCARD_NOTIFICATIONS_METHOD(session)
+
+        if local_api.BATCH_NOTIFICATIONS:
+            event.listen(new_session, "after_transaction_end",
+                         gbp_after_transaction)
+            event.listen(new_session, "after_rollback",
+                         gbp_after_rollback)
+    """
 
     return new_session
 
