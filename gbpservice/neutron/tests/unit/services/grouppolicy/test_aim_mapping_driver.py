@@ -1565,6 +1565,42 @@ class TestL2PolicyWithAutoPTG(TestL2PolicyBase):
         self._switch_to_tenant1()
         self.delete_l3_policy(l3p['id'])
 
+    def test_unshared_l2_policy_shared_l3p_get_gbp_details(self):
+        l3p = self.create_l3_policy(name="l3p1",
+                                    shared=True)['l3_policy']
+        self._switch_to_tenant2()
+        l2p = self.create_l2_policy(name="l2p1",
+                                    shared=False,
+                                    l3_policy_id=l3p['id'])['l2_policy']
+        self.assertEqual(gp_const.STATUS_BUILD, l2p['status'])
+        self.assertEqual(l2p['shared'], not l3p['shared'])
+        self._validate_implicit_contracts_exist(l2p)
+
+        # After creation of auto-ptg, BD is now in L3P's tenant
+        self._validate_bd_tenant(l2p, l3p['tenant_id'])
+
+        ptg = self._get_auto_ptg(l2p)
+        # Default EPG is in L3P's tenant
+        self._validate_epg_tenant(ptg, l3p['tenant_id'])
+
+        subnet_id = ptg['subnets'][0]
+        req = self.new_show_request('subnets', subnet_id)
+        subnet = self.deserialize(self.fmt, req.get_response(self.api))
+
+        with self.port(subnet=subnet) as port:
+            port_id = port['port']['id']
+            self._bind_port_to_host(port_id, 'h1')
+            self.driver.get_gbp_details(
+                self._neutron_admin_context, device='tap%s' % port_id,
+                host='h1')
+            req = self.new_delete_request('ports', port_id)
+            res = req.get_response(self.api)
+            self.assertEqual(webob.exc.HTTPNoContent.code, res.status_int)
+
+        self._validate_l2_policy_deleted(l2p, implicit_l3p=False)
+        self._switch_to_tenant1()
+        self.delete_l3_policy(l3p['id'])
+
 
 class TestL2PolicyRollback(TestL2PolicyBase):
 
