@@ -184,7 +184,6 @@ def get_port_from_device_mac(context, device_mac):
 
 ml2_db.get_port_from_device_mac = get_port_from_device_mac
 
-LOCAL_API_NOTIFICATION_QUEUE = None
 PUSH_NOTIFICATIONS_METHOD = None
 DISCARD_NOTIFICATIONS_METHOD = None
 
@@ -192,18 +191,15 @@ DISCARD_NOTIFICATIONS_METHOD = None
 def get_session(autocommit=True, expire_on_commit=False, use_slave=False):
     # The folowing are declared as global so that they can
     # used in the inner functions that follow.
-    global LOCAL_API_NOTIFICATION_QUEUE
     global PUSH_NOTIFICATIONS_METHOD
     global DISCARD_NOTIFICATIONS_METHOD
-    # This conditional logic is to ensure that local_api
-    # is imported only once.
-    if 'local_api' not in locals():
-        from gbpservice.network.neutronv2 import local_api
-        LOCAL_API_NOTIFICATION_QUEUE = local_api.NOTIFICATION_QUEUE
-        PUSH_NOTIFICATIONS_METHOD = (
-            local_api.post_notifications_from_queue)
-        DISCARD_NOTIFICATIONS_METHOD = (
-            local_api.discard_notifications_after_rollback)
+    global LOCAL_API_NOTIFICATION_QUEUE_LOCK
+    from gbpservice.network.neutronv2 import local_api
+    PUSH_NOTIFICATIONS_METHOD = (
+        local_api.post_notifications_from_queue)
+    DISCARD_NOTIFICATIONS_METHOD = (
+        local_api.discard_notifications_after_rollback)
+
     # The following two lines are copied from the original
     # implementation of db_api.get_session() and should be updated
     # if the original implementation changes.
@@ -212,18 +208,19 @@ def get_session(autocommit=True, expire_on_commit=False, use_slave=False):
                                      expire_on_commit=expire_on_commit,
                                      use_slave=use_slave)
 
+    new_session.notification_queue = {}
+
     def gbp_after_transaction(session, transaction):
-        global LOCAL_API_NOTIFICATION_QUEUE
         if transaction and not transaction._parent and (
             not transaction.is_active and not transaction.nested):
-            if transaction in (LOCAL_API_NOTIFICATION_QUEUE or []):
+            if transaction in session.notification_queue:
                 # push the queued notifications only when the
                 # outermost transaction completes
-                PUSH_NOTIFICATIONS_METHOD(transaction)
+                PUSH_NOTIFICATIONS_METHOD(session, transaction)
 
     def gbp_after_rollback(session):
         # We discard all queued notifiactions if the transaction fails.
-        DISCARD_NOTIFICATIONS_METHOD(session.transaction)
+        DISCARD_NOTIFICATIONS_METHOD(session)
 
     if local_api.BATCH_NOTIFICATIONS:
         event.listen(new_session, "after_transaction_end",
