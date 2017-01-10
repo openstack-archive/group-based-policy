@@ -1241,14 +1241,7 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
         self.aim.delete(aim_context, aim_contract_subject)
 
     def _get_aim_default_endpoint_group(self, session, network):
-        epg_name = self.name_mapper.network(session, network['id'],
-                                            network['name'])
-        tenant_name = self.name_mapper.tenant(session, network['tenant_id'])
-        aim_ctx = aim_context.AimContext(session)
-        epg = aim_resource.EndpointGroup(
-            tenant_name=tenant_name,
-            app_profile_name=self.aim_mech_driver.ap_name, name=epg_name)
-        return self.aim.get(aim_ctx, epg)
+        return self.aim_mech_driver._get_epg_for_network(session, network)
 
     def _aim_bridge_domain(self, session, l2p, tenant_id, network_id,
                            network_name):
