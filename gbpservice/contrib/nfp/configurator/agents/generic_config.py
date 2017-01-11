@@ -28,6 +28,8 @@ from gbpservice.nfp.core import module as nfp_api
 LOG = nfp_logging.getLogger(__name__)
 _LI = i18n._LI
 
+_LI = i18n._LI
+
 
 class GenericConfigRpcManager(agent_base.AgentBaseRPCManager):
     """Implements APIs invoked by configurator for processing RPC messages.
