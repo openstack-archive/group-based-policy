@@ -12,6 +12,7 @@
 
 from neutron._i18n import _LE
 from neutron._i18n import _LI
+from neutron._i18n import _LW
 from neutron.common import rpc as n_rpc
 from neutron import context as n_context
 from neutron.db import api as db_api
@@ -1018,7 +1019,6 @@ class ServiceOrchestrator(nfp_api.NfpEventHandler):
                                   service_details['service_vendor'])
 
         nfp_context['network_function_instance'] = nfi_db
-        LOG.info(_LI("[Event:CreateService]"))
 
         self._update_nfp_context(nfp_context)
 
@@ -1084,18 +1084,6 @@ class ServiceOrchestrator(nfp_api.NfpEventHandler):
         network_function_instance = nfp_context['network_function_instance']
         network_function_device = nfp_context['network_function_device']
         network_function = nfp_context['network_function']
-
-        request_data = {
-            'network_function_device_id': network_function_device['id'],
-            'network_function_instance_id': network_function_instance['id']}
-
-        nfi = {
-            'status': nfp_constants.ACTIVE,
-            'network_function_device_id': request_data[
-                'network_function_device_id']
-        }
-        nfi = self.db_handler.update_network_function_instance(
-            self.db_session, request_data['network_function_instance_id'], nfi)
         network_function_instance['status'] = nfp_constants.ACTIVE
         network_function_instance[
             'network_function_device_id'] = network_function_device['id']
@@ -1263,43 +1251,15 @@ class ServiceOrchestrator(nfp_api.NfpEventHandler):
         request_data = event.data
         network_function_details = self.get_network_function_details(
             request_data['network_function_id'])
-        stack_id = network_function_details['network_function'
-                                            ]['config_policy_id']
         network_function = network_function_details['network_function']
         service_profile_id = network_function['service_profile_id']
         service_type = self._get_service_type(service_profile_id)
-        if not self.config_driver.is_update_config_supported(service_type):
-            service_chain_id = network_function['service_chain_id']
-            admin_token = self.keystoneclient.get_admin_token()
-            servicechain_instance = self.gbpclient.get_servicechain_instance(
-                admin_token,
-                service_chain_id)
-            provider_ptg_id = servicechain_instance['provider_ptg_id']
-            provider_ptg = self.gbpclient.get_policy_target_group(
-                admin_token,
-                provider_ptg_id)
-            provider_tenant_id = provider_ptg['tenant_id']
-            stack_id = self.config_driver.delete_config(stack_id,
-                                                        provider_tenant_id)
-            request_data = {
-                'config_policy_id': stack_id,
-                'network_function_id': network_function['id'],
-                'tenant_id': provider_tenant_id,
-                'action': 'update',
-                'operation': request_data['operation']
-            }
-            self._controller.event_complete(event)
-            self._create_event(
-                'UPDATE_USER_CONFIG_PREPARING_TO_START',
-                event_data=request_data,
-                is_poll_event=True, original_event=event,
-                max_times=self.UPDATE_USER_CONFIG_MAXRETRY)
-        else:
-            self._controller.event_complete(event)
-            self._create_event('UPDATE_USER_CONFIG_IN_PROGRESS',
-                               event_data=request_data,
-                               is_internal_event=True,
-                               original_event=event)
+        request_data.update({'service_type': service_type})
+        self._controller.event_complete(event)
+        self._create_event('UPDATE_USER_CONFIG_IN_PROGRESS',
+                           event_data=request_data,
+                           is_internal_event=True,
+                           original_event=event)
 
     def handle_continue_update_user_config(self, event):
         request_data = event.data
@@ -1315,6 +1275,13 @@ class ServiceOrchestrator(nfp_api.NfpEventHandler):
         nfi_id = nfi.get('id', '-') if nfi else '-'
         nfd_id = nfd.get('id', '-') if nfd else '-'
         nfp_logging.update_logging_context(nfi_id=nfi_id, nfd_id=nfd_id)
+
+        original_stack_id = (
+            network_function_details['network_function']['config_policy_id'])
+        service_type = request_data['service_type']
+        if not self.config_driver.is_update_config_supported(service_type):
+            network_function_details['network_function'][
+                'config_policy_id'] = None
 
         if request_data['operation'] == 'update':
             config_id = self.config_driver.update_config(
@@ -1332,14 +1299,17 @@ class ServiceOrchestrator(nfp_api.NfpEventHandler):
         else:
             return
 
-        request_data = {
-            'config_policy_id': config_id,
-            'tenant_id': network_function['tenant_id'],
-            'network_function_id': network_function['id'],
-            'network_function_details': network_function_details,
-            'operation': request_data['operation']
-        }
-        if not config_id:
+        if config_id:
+            request_data = {
+                'config_policy_id': config_id,
+                'tenant_id': network_function['tenant_id'],
+                'network_function_id': network_function['id'],
+                'network_function_details': network_function_details,
+                'operation': request_data['operation'],
+                'stack_id_to_delete': original_stack_id,
+                'service_type': service_type
+            }
+        else:
             event_id = ('USER_CONFIG_UPDATE_FAILED'
                         if request_data['operation'] == 'update'
                         else 'USER_CONFIG_FAILED')
@@ -1477,6 +1447,28 @@ class ServiceOrchestrator(nfp_api.NfpEventHandler):
             return STOP_POLLING
             # Trigger RPC to notify the Create_Service caller with status
         elif config_status == nfp_constants.COMPLETED:
+            if (request_data.get('operation') in ['consumer_add',
+                'consumer_remove', 'update'] and not
+                self.config_driver.is_update_config_supported(
+                    request_data['service_type'])):
+                self.config_driver.delete_config(
+                    request_data['stack_id_to_delete'],
+                    request_data['tenant_id'])
+                request_data = {
+                    'config_policy_id': request_data['stack_id_to_delete'],
+                    'network_function_id': request_data['network_function_id'],
+                    'tenant_id': request_data['tenant_id'],
+                    'action': 'update',
+                    'operation': request_data['operation'],
+                    'service_type': request_data['service_type']
+                }
+                self._controller.event_complete(event)
+                self._create_event(
+                    'UPDATE_USER_CONFIG_PREPARING_TO_START',
+                    event_data=request_data,
+                    is_poll_event=True, original_event=event,
+                    max_times=self.UPDATE_USER_CONFIG_MAXRETRY)
+                return STOP_POLLING
             updated_network_function = {'status': nfp_constants.ACTIVE}
             LOG.info(_LI("NSO: applying user config is successfull moving "
                          "network function %(network_function_id)s to ACTIVE"),
@@ -1601,9 +1593,6 @@ class ServiceOrchestrator(nfp_api.NfpEventHandler):
         spacing=nfp_constants.UPDATE_USER_CONFIG_PREPARING_TO_START_SPACING)
     def check_for_user_config_deleted(self, event):
         request_data = event.data
-        event_data = {
-            'network_function_id': request_data['network_function_id']
-        }
         try:
             network_function = self.db_handler.get_network_function(
                 self.db_session,
@@ -1616,7 +1605,7 @@ class ServiceOrchestrator(nfp_api.NfpEventHandler):
             LOG.error(_LE("Error: %(err)s while verifying configuration delete"
                           " completion."), {'err': err})
             self._create_event('USER_CONFIG_DELETE_FAILED',
-                               event_data=event_data, is_internal_event=True)
+                               event_data=request_data, is_internal_event=True)
             self._controller.event_complete(event)
             return STOP_POLLING
         service_profile_id = network_function['service_profile_id']
@@ -1624,12 +1613,16 @@ class ServiceOrchestrator(nfp_api.NfpEventHandler):
         service_type = self._get_service_type(service_profile_id)
         if config_status == nfp_constants.ERROR:
             self._create_event('USER_CONFIG_DELETE_FAILED',
-                               event_data=event_data, is_internal_event=True)
+                               event_data=request_data, is_internal_event=True)
             self._controller.event_complete(event)
             return STOP_POLLING
             # Trigger RPC to notify the Create_Service caller with status
         elif config_status == nfp_constants.COMPLETED:
-            updated_network_function = {'config_policy_id': None}
+            updated_network_function = {'status': nfp_constants.ACTIVE}
+            LOG.info(_LI("Applying user config is successfull moving "
+                         "NF:%(network_function_id)s to ACTIVE"),
+                     {'network_function_id':
+                         request_data['network_function_id']})
             self.db_handler.update_network_function(
                 self.db_session,
                 request_data['network_function_id'],
@@ -1647,13 +1640,7 @@ class ServiceOrchestrator(nfp_api.NfpEventHandler):
                       nf_id=nf_id,
                       service_type=service_type)
 
-            if request_data['action'] == 'update':
-                self._create_event("UPDATE_USER_CONFIG_IN_PROGRESS",
-                                   event_data=request_data,
-                                   original_event=event)
-                self._controller.event_complete(event)
-            else:
-                self._controller.event_complete(event)
+            self._controller.event_complete(event)
             return STOP_POLLING
             # Trigger RPC to notify the Create_Service caller with status
         elif config_status == nfp_constants.IN_PROGRESS:
@@ -1794,6 +1781,18 @@ class ServiceOrchestrator(nfp_api.NfpEventHandler):
         updated_network_function = {
             'status': nfp_constants.ERROR,
         }
+        #If stack delete fails after successfull  heat stack create
+        # in fw update case  still we make network function status
+        # active to allow subsequent sharing
+        if (request_data.get('operation') in ['consumer_add',
+            'consumer_remove', 'update'] and not
+            self.config_driver.is_update_config_supported(
+                request_data['service_type'])):
+            updated_network_function.update({'status': nfp_constants.ACTIVE})
+            LOG.warning(_LW("Failed to delete old stack id: %(stack_id)s in"
+                            "firewall update case, Need to manually"
+                            " delete it"),
+                       {"stack_id": request_data['config_policy_id']})
         self.db_handler.update_network_function(
             self.db_session,
             request_data['network_function_id'],
@@ -1840,7 +1839,7 @@ class ServiceOrchestrator(nfp_api.NfpEventHandler):
                       nf_id= nf_id,
                       service_type=service_type)
 
-        LOG.info(_LI("NSO: Deleted network function: %(nf_id)s"),
+        LOG.info(_LI("Deleted NF:%(nf_id)s "),
                  {'nf_id': nf['id']})
 
     def handle_device_deleted(self, event):
@@ -2081,35 +2080,15 @@ class ServiceOrchestrator(nfp_api.NfpEventHandler):
         request_data = event.data
         network_function_details = self.get_network_function_details(
             request_data['network_function_id'])
-        consumer_ptg = request_data['consumer_ptg']
-        stack_id = network_function_details['network_function'
-                                            ]['config_policy_id']
         network_function = network_function_details['network_function']
         service_profile_id = network_function['service_profile_id']
         service_type = self._get_service_type(service_profile_id)
-        if not self.config_driver.is_update_config_supported(service_type):
-            stack_id = self.config_driver.delete_config(
-                stack_id,
-                consumer_ptg['tenant_id'])
-            request_data = {
-                'config_policy_id': stack_id,
-                'network_function_id': network_function['id'],
-                'tenant_id': consumer_ptg['tenant_id'],
-                'action': 'update',
-                'operation': request_data['operation'],
-                'consumer_ptg': request_data['consumer_ptg']
-            }
-            self._controller.event_complete(event)
-            self._create_event(
-                'UPDATE_USER_CONFIG_PREPARING_TO_START',
-                event_data=request_data,
-                is_poll_event=True, original_event=event,
-                max_times=self.UPDATE_USER_CONFIG_MAXRETRY)
-        else:
-            self._controller.event_complete(event)
-            self._create_event('UPDATE_USER_CONFIG_IN_PROGRESS',
-                               event_data=event.data,
-                               is_internal_event=True)
+        request_data.update({'service_type': service_type})
+        self._controller.event_complete(event)
+        self._create_event('UPDATE_USER_CONFIG_IN_PROGRESS',
+                           event_data=request_data,
+                           is_internal_event=True,
+                           original_event=event)
 
     def handle_consumer_ptg_removed(self, context, network_function_id,
                                     consumer_ptg):
@@ -2155,35 +2134,15 @@ class ServiceOrchestrator(nfp_api.NfpEventHandler):
         request_data = event.data
         network_function_details = self.get_network_function_details(
             request_data['network_function_id'])
-        consumer_ptg = request_data['consumer_ptg']
-        stack_id = network_function_details['network_function'
-                                            ]['config_policy_id']
         network_function = network_function_details['network_function']
         service_profile_id = network_function['service_profile_id']
         service_type = self._get_service_type(service_profile_id)
-        if not self.config_driver.is_update_config_supported(service_type):
-            stack_id = self.config_driver.delete_config(
-                stack_id,
-                consumer_ptg['tenant_id'])
-            request_data = {
-                'config_policy_id': stack_id,
-                'network_function_id': network_function['id'],
-                'tenant_id': consumer_ptg['tenant_id'],
-                'action': 'update',
-                'operation': request_data['operation'],
-                'consumer_ptg': request_data['consumer_ptg']
-            }
-
-            self._controller.event_complete(event)
-            self._create_event('UPDATE_USER_CONFIG_PREPARING_TO_START',
-                               event_data=request_data,
-                               is_poll_event=True, original_event=event,
-                               max_times=self.UPDATE_USER_CONFIG_MAXRETRY)
-        else:
-            self._controller.event_complete(event)
-            self._create_event('UPDATE_USER_CONFIG_IN_PROGRESS',
-                               event_data=event.data,
-                               is_internal_event=True)
+        request_data.update({'service_type': service_type})
+        self._controller.event_complete(event)
+        self._create_event('UPDATE_USER_CONFIG_IN_PROGRESS',
+                           event_data=request_data,
+                           is_internal_event=True,
+                           original_event=event)
 
     def get_port_info(self, port_id):
         try:
