@@ -296,12 +296,14 @@ class OrchestrationDriver(object):
     def create_instance(self, nova, token, admin_tenant_id,
                         image_id, flavor, interfaces_to_attach,
                         instance_name, volume_support,
-                        volume_size, files=None, server_grp_id=None):
+                        volume_size, files=None, user_data=None,
+                        server_grp_id=None):
         try:
             instance_id = nova.create_instance(
                 token, admin_tenant_id, image_id, flavor,
                 interfaces_to_attach, instance_name, volume_support,
-                volume_size, files=files, server_grp_id=server_grp_id)
+                volume_size, files=files, userdata=user_data,
+                server_grp_id=server_grp_id)
             return instance_id
         except Exception as e:
             LOG.error(_LE('Failed to create instance.'
@@ -566,7 +568,9 @@ class OrchestrationDriver(object):
         admin_tenant_id = device_data['admin_tenant_id']
         instance_id = instance_id_result.get('result', None)
         if not instance_id:
-            LOG.error(_LE('Failed to create %(device_type)s instance.'))
+            LOG.error(_LE('Failed to create instance with device data:'
+                          '%(data)s.'),
+                      {'data': device_data})
             self._delete_interfaces(device_data, interfaces,
                                     network_handler=network_handler)
             return None, _
