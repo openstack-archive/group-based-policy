@@ -24,6 +24,7 @@ from aim.api import status as aim_status
 from aim import config as aim_cfg
 from aim import context as aim_context
 from aim.db import model_base as aim_model_base
+from aim import utils as aim_utils
 
 from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import (
     extension_db as extn_db)
@@ -477,6 +478,7 @@ class TestAimMapping(ApicAimTestCase):
             display_name = ("%s-%s" %
                             (router['name'],
                              (subnet['name'] or subnet['cidr'])))
+            display_name = aim_utils.sanitize_display_name(display_name)
             self.assertEqual(display_name, aim_subnet.display_name)
             self._check_dn(subnet, aim_subnet, gw_ip)
 
