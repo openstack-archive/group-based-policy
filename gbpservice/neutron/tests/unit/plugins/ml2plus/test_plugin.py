@@ -50,6 +50,13 @@ class Ml2PlusPluginV2TestCase(test_address_scope.AddressScopeTestCase):
         self.plugin = manager.NeutronManager.get_plugin()
         self.plugin.start_rpc_listeners()
 
+    def exist_checker(self, getter):
+        def verify(context):
+            obj = getter(context._plugin_context, context.current['id'])
+            self.assertIsNotNone(obj)
+            return mock.DEFAULT
+        return verify
+
 
 class TestEnsureTenant(Ml2PlusPluginV2TestCase):
     def test_network(self):
@@ -203,6 +210,8 @@ class TestSubnetPool(Ml2PlusPluginV2TestCase):
             self.fmt, ['10.0.0.0/8'], name='sp1', tenant_id='t1')['subnetpool']
         with mock.patch.object(mech_logger.LoggerPlusMechanismDriver,
                                'delete_subnetpool_precommit') as pre:
+            pre.side_effect = self.exist_checker(
+                                self.plugin.get_subnetpool)
             with mock.patch.object(mech_logger.LoggerPlusMechanismDriver,
                                    'delete_subnetpool_postcommit') as post:
                 self._delete('subnetpools', subnetpool['id'])
@@ -266,6 +275,7 @@ class TestAddressScope(Ml2PlusPluginV2TestCase):
             self.fmt, 4, name='as1', tenant_id='t1')['address_scope']
         with mock.patch.object(mech_logger.LoggerPlusMechanismDriver,
                                'delete_address_scope_precommit') as pre:
+            pre.side_effect = self.exist_checker(self.plugin.get_address_scope)
             with mock.patch.object(mech_logger.LoggerPlusMechanismDriver,
                                    'delete_address_scope_postcommit') as post:
                 self._delete('address-scopes', address_scope['id'])
