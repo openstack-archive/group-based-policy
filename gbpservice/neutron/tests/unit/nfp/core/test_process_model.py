@@ -64,7 +64,7 @@ class MockedProcess(object):
         self.worker.parent_pipe = self.parent_pipe
         self.worker.pipe = self.child_pipe
         self.worker.controller = nfp_controller.NfpController(
-            self.controller._conf)
+            self.controller._conf, singleton=False)
 
         # fork a new controller object
         self.worker.controller.PROCESS_TYPE = "worker"
@@ -119,7 +119,7 @@ class Test_Process_Model(unittest.TestCase):
     def test_nfp_module_init(self):
         conf = oslo_config.CONF
         conf.nfp_modules_path = NFP_MODULES_PATH
-        controller = nfp_controller.NfpController(conf)
+        controller = nfp_controller.NfpController(conf, singleton=False)
         wait_obj = multiprocessing.Event()
         setattr(controller, 'nfp_module_init_wait_obj', wait_obj)
         nfp_controller.load_nfp_modules(conf, controller)
@@ -130,7 +130,8 @@ class Test_Process_Model(unittest.TestCase):
     def test_nfp_module_init_wrong_path(self):
         conf = oslo_config.CONF
         conf.nfp_modules_path = ['tmp.nfp']
-        controller = nfp_controller.NfpController(oslo_config.CONF)
+        controller = nfp_controller.NfpController(oslo_config.CONF,
+                                                  singleton=False)
         wait_obj = multiprocessing.Event()
         setattr(controller, 'nfp_module_init_wait_obj', wait_obj)
         nfp_controller.load_nfp_modules(conf, controller)
@@ -141,7 +142,7 @@ class Test_Process_Model(unittest.TestCase):
     def test_nfp_module_post_init_called(self):
         conf = oslo_config.CONF
         conf.nfp_modules_path = NFP_MODULES_PATH
-        controller = nfp_controller.NfpController(conf)
+        controller = nfp_controller.NfpController(conf, singleton=False)
         wait_obj = multiprocessing.Event()
         setattr(controller, 'nfp_module_post_init_wait_obj', wait_obj)
         nfp_modules = nfp_controller.load_nfp_modules(conf, controller)
@@ -156,7 +157,7 @@ class Test_Process_Model(unittest.TestCase):
 
         conf = oslo_config.CONF
         conf.nfp_modules_path = NFP_MODULES_PATH
-        controller = nfp_controller.NfpController(conf)
+        controller = nfp_controller.NfpController(conf, singleton=False)
         wait_obj = multiprocessing.Event()
         setattr(controller, 'nfp_module_post_init_wait_obj', wait_obj)
         nfp_modules = nfp_controller.load_nfp_modules(conf, controller)
@@ -172,7 +173,7 @@ class Test_Process_Model(unittest.TestCase):
         mock_fork.side_effect = self._mocked_fork
         conf = oslo_config.CONF
         conf.nfp_modules_path = []
-        controller = nfp_controller.NfpController(conf)
+        controller = nfp_controller.NfpController(conf, singleton=False)
         controller.launch(2)
         # Check if 2 workers are created
         workers = controller.get_childrens()
@@ -187,7 +188,7 @@ class Test_Process_Model(unittest.TestCase):
         mock_fork.side_effect = self._mocked_fork
         conf = oslo_config.CONF
         conf.nfp_modules_path = []
-        controller = nfp_controller.NfpController(conf)
+        controller = nfp_controller.NfpController(conf, singleton=False)
         controller.launch(4)
         # Check if 4 workers are created
         workers = controller.get_childrens()
@@ -202,7 +203,7 @@ class Test_Process_Model(unittest.TestCase):
         mock_fork.side_effect = self._mocked_fork
         conf = oslo_config.CONF
         conf.nfp_modules_path = []
-        controller = nfp_controller.NfpController(conf)
+        controller = nfp_controller.NfpController(conf, singleton=False)
         controller.launch(2)
         controller._update_manager()
         # Check if 2 workers are added to manager
@@ -217,7 +218,7 @@ class Test_Process_Model(unittest.TestCase):
         mock_fork.side_effect = self._mocked_fork
         conf = oslo_config.CONF
         conf.nfp_modules_path = []
-        controller = nfp_controller.NfpController(conf)
+        controller = nfp_controller.NfpController(conf, singleton=False)
         controller.launch(2)
         controller._update_manager()
         # run so that it stores the snapshot
@@ -242,7 +243,7 @@ class Test_Process_Model(unittest.TestCase):
     def test_post_event_with_no_handler(self):
         conf = oslo_config.CONF
         conf.nfp_modules_path = []
-        controller = nfp_controller.NfpController(conf)
+        controller = nfp_controller.NfpController(conf, singleton=False)
         event = controller.create_event(
             id='EVENT_INVALID', data='INVALID_DATA',
             binding_key='EVENT_INVALID')
@@ -285,7 +286,7 @@ class Test_Process_Model(unittest.TestCase):
         mock_pipe_send.side_effect = self.mocked_pipe_send
         conf = oslo_config.CONF
         conf.nfp_modules_path = NFP_MODULES_PATH
-        controller = nfp_controller.NfpController(conf)
+        controller = nfp_controller.NfpController(conf, singleton=False)
         nfp_controller.load_nfp_modules(conf, controller)
         # Mock launching of a worker
         controller.launch(1)
@@ -310,7 +311,7 @@ class Test_Process_Model(unittest.TestCase):
         mock_pipe_send.side_effect = self.mocked_pipe_send
         conf = oslo_config.CONF
         conf.nfp_modules_path = NFP_MODULES_PATH
-        controller = nfp_controller.NfpController(conf)
+        controller = nfp_controller.NfpController(conf, singleton=False)
         self.controller = controller
         nfp_controller.load_nfp_modules(conf, controller)
         # Mock launching of a worker
@@ -356,7 +357,7 @@ class Test_Process_Model(unittest.TestCase):
     def test_new_event_with_sequence_and_no_binding_key(self):
         conf = oslo_config.CONF
         conf.nfp_modules_path = []
-        controller = nfp_controller.NfpController(conf)
+        controller = nfp_controller.NfpController(conf, singleton=False)
         event = controller.create_event(
             id='EVENT_SEQUENCE', data='NO_DATA',
             serialize=True)
@@ -369,7 +370,7 @@ class Test_Process_Model(unittest.TestCase):
         mock_pipe_send.side_effect = self.mocked_pipe_send
         conf = oslo_config.CONF
         conf.nfp_modules_path = NFP_MODULES_PATH
-        controller = nfp_controller.NfpController(conf)
+        controller = nfp_controller.NfpController(conf, singleton=False)
         self.controller = controller
         nfp_controller.load_nfp_modules(conf, controller)
         # Mock launching of a worker
@@ -408,7 +409,7 @@ class Test_Process_Model(unittest.TestCase):
         mock_pipe_send.side_effect = self.mocked_pipe_send
         conf = oslo_config.CONF
         conf.nfp_modules_path = NFP_MODULES_PATH
-        controller = nfp_controller.NfpController(conf)
+        controller = nfp_controller.NfpController(conf, singleton=False)
         self.controller = controller
         nfp_controller.load_nfp_modules(conf, controller)
         # Mock launching of a worker
@@ -444,7 +445,7 @@ class Test_Process_Model(unittest.TestCase):
         mock_pipe_send.side_effect = self.mocked_pipe_send
         conf = oslo_config.CONF
         conf.nfp_modules_path = NFP_MODULES_PATH
-        controller = nfp_controller.NfpController(conf)
+        controller = nfp_controller.NfpController(conf, singleton=False)
         self.controller = controller
         nfp_controller.load_nfp_modules(conf, controller)
         # Mock launching of a worker
@@ -484,7 +485,7 @@ class Test_Process_Model(unittest.TestCase):
         mock_pipe_send.side_effect = self.mocked_pipe_send
         conf = oslo_config.CONF
         conf.nfp_modules_path = NFP_MODULES_PATH
-        controller = nfp_controller.NfpController(conf)
+        controller = nfp_controller.NfpController(conf, singleton=False)
         self.controller = controller
         nfp_controller.load_nfp_modules(conf, controller)
         # Mock launching of a worker
@@ -523,7 +524,7 @@ class Test_Process_Model(unittest.TestCase):
         mock_pipe_send.side_effect = self.mocked_pipe_send
         conf = oslo_config.CONF
         conf.nfp_modules_path = NFP_MODULES_PATH
-        controller = nfp_controller.NfpController(conf)
+        controller = nfp_controller.NfpController(conf, singleton=False)
         self.controller = controller
         nfp_controller.load_nfp_modules(conf, controller)
         # Mock launching of a worker
@@ -563,7 +564,7 @@ class Test_Process_Model(unittest.TestCase):
         mock_pipe_send.side_effect = self.mocked_pipe_send
         conf = oslo_config.CONF
         conf.nfp_modules_path = NFP_MODULES_PATH
-        controller = nfp_controller.NfpController(conf)
+        controller = nfp_controller.NfpController(conf, singleton=False)
         self.controller = controller
         nfp_controller.load_nfp_modules(conf, controller)
         # Mock launching of a worker
@@ -599,7 +600,7 @@ class Test_Process_Model(unittest.TestCase):
     def test_poll_event_with_no_spacing(self):
         conf = oslo_config.CONF
         conf.nfp_modules_path = NFP_MODULES_PATH
-        controller = nfp_controller.NfpController(conf)
+        controller = nfp_controller.NfpController(conf, singleton=False)
         event = controller.create_event(
             id='POLL_EVENT_WITHOUT_SPACING', data='NO_DATA')
 
@@ -622,7 +623,7 @@ class Test_Process_Model(unittest.TestCase):
     def test_poll_event_with_no_handler(self):
         conf = oslo_config.CONF
         conf.nfp_modules_path = NFP_MODULES_PATH
-        controller = nfp_controller.NfpController(conf)
+        controller = nfp_controller.NfpController(conf, singleton=False)
         event = controller.create_event(
             id='POLL_EVENT_WITHOUT_HANDLER', data='NO_DATA')
 
@@ -648,7 +649,7 @@ class Test_Process_Model(unittest.TestCase):
         mock_event_acked.side_effect = self._mocked_event_ack
         conf = oslo_config.CONF
         conf.nfp_modules_path = NFP_MODULES_PATH
-        controller = nfp_controller.NfpController(conf)
+        controller = nfp_controller.NfpController(conf, singleton=False)
         self.controller = controller
         nfp_controller.load_nfp_modules(conf, controller)
         # Mock launching of a worker
@@ -683,7 +684,7 @@ class Test_Process_Model(unittest.TestCase):
     def test_post_event_from_worker(self):
         conf = oslo_config.CONF
         conf.nfp_modules_path = NFP_MODULES_PATH
-        controller = nfp_controller.NfpController(conf)
+        controller = nfp_controller.NfpController(conf, singleton=False)
         self.controller = controller
         nfp_controller.load_nfp_modules(conf, controller)
         # Mock launching of a worker
@@ -713,7 +714,7 @@ class Test_Process_Model(unittest.TestCase):
     def test_poll_event_from_worker(self):
         conf = oslo_config.CONF
         conf.nfp_modules_path = NFP_MODULES_PATH
-        controller = nfp_controller.NfpController(conf)
+        controller = nfp_controller.NfpController(conf, singleton=False)
         self.controller = controller
         nfp_controller.load_nfp_modules(conf, controller)
         # Mock launching of a worker
@@ -753,7 +754,7 @@ class Test_Process_Model(unittest.TestCase):
     def test_poll_event_cancelled_from_worker(self):
         conf = oslo_config.CONF
         conf.nfp_modules_path = NFP_MODULES_PATH
-        controller = nfp_controller.NfpController(conf)
+        controller = nfp_controller.NfpController(conf, singleton=False)
         self.controller = controller
         nfp_controller.load_nfp_modules(conf, controller)
         # Mock launching of a worker
