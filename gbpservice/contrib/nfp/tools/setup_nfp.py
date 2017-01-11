@@ -639,7 +639,7 @@ def create_nfp_resources():
               " --l2-policy " + l2policy_Id)
 
     # Create GBP Resources Heat stack
-    os.system("heat stack-create --template-file " + TEMPLATES_PATH +
+    os.system("heat stack-create --poll --template-file " + TEMPLATES_PATH +
               " gbp_services_stack")
 
 
