@@ -47,7 +47,7 @@ class VPNTestData(object):
         self.ipsec_vpnsvc_status = [{
             'status': 'ACTIVE',
             'ipsec_site_connections': {
-                                    'ac3a0e54-cdf2-4ea7-ac2f-7c0225ab9af9': {
+                                    'ac3a0e54-cdf2-4ea7-ac2f-7c0225ab9af6': {
                                         'status': 'INIT',
                                         'updated_pending_status': True}},
             'updated_pending_status': False,

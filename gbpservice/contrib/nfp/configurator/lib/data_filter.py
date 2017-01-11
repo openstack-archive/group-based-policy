@@ -214,13 +214,6 @@ class Filter(object):
             ipsecpolicy = [ipsecpolicy for ipsecpolicy in
                            service_info['ipsecpolicies']
                            if ipsecpolicy['id'] == conn['ipsecpolicy_id']][0]
-            """
-            Get the local subnet cidr
-            """
-            description = vpnservice['description']
-            tokens = description.split(';')
-            cidr = tokens[5].split('=')[1]
-            vpnservice['cidr'] = cidr
 
             siteconn = {}
             siteconn['connection'] = conn
