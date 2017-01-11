@@ -384,14 +384,14 @@ class ApicMappingDriver(api.ResourceMappingDriver,
         return self.conn.consume_in_threads()
 
     def _setup_keystone_notification_listeners(self):
-        transport = oslo_messaging.get_transport(cfg.CONF)
         targets = [oslo_messaging.Target(
                     exchange=self.keystone_notification_exchange,
                     topic=self.keystone_notification_topic, fanout=True)]
         endpoints = [KeystoneNotificationEndpoint(self)]
         pool = "cisco_gbp_listener-workers"
         server = oslo_messaging.get_notification_listener(
-            transport, targets, endpoints, executor='eventlet', pool=pool)
+            n_rpc.TRANSPORT, targets, endpoints,
+            executor='eventlet', pool=pool)
         server.start()
 
     def _setup_rpc(self):
