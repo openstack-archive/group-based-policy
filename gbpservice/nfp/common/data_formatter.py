@@ -114,7 +114,8 @@ def get_network_function_info(device_data, resource_type):
     nfd['svc_mgmt_fixed_ip'] = mgmt_ip
 
     if resource_type == const.HEALTHMONITOR_RESOURCE:
-        nfd['periodicity'] = 'initial'
+        nfd['periodicity'] = device_data.get('periodicity')
+        nfd['periodic_polling_reason'] = const.DEVICE_TO_BECOME_DOWN
         nfd['vmid'] = device_data['id']
         config['config'][0]['resource'] = const.HEALTHMONITOR_RESOURCE
         return config
