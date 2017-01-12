@@ -29,6 +29,7 @@ from aim import utils as aim_utils
 from gbpservice.neutron.db import implicitsubnetpool_db  # noqa
 from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import (
     extension_db as extn_db)
+from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import apic_mapper
 from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import config  # noqa
 from keystoneclient.v3 import client as ksc_client
 from neutron.api import extensions
@@ -175,6 +176,13 @@ class ApicAimTestCase(test_address_scope.AddressScopeTestCase,
         self.extension_attributes = ('router:external', DN,
                                      'apic:nat_type', SNAT_POOL,
                                      CIDR, PROV, CONS)
+        self.name_mapper = apic_mapper.APICNameMapper()
+        self.t1_aname = self.name_mapper.project(None, 't1')
+        self.t2_aname = self.name_mapper.project(None, 't2')
+        self.dn_t1_l1_n1 = ('uni/tn-%s/out-l1/instP-n1' %
+                            self.t1_aname)
+        self.dn_t1_l2_n2 = ('uni/tn-%s/out-l2/instP-n2' %
+                            self.t1_aname)
 
     def tearDown(self):
         engine = db_api.get_engine()
@@ -390,11 +398,13 @@ class TestAimMapping(ApicAimTestCase):
 
     def _check_network(self, net, routers=None, scope=None, project=None,
                        vrf=None):
-        tenant_aname = project or net['tenant_id']
+        project = project or net['tenant_id']
+        tenant_aname = self.name_mapper.project(None, project)
         self._get_tenant(tenant_aname)
 
-        aname = net['id']
-        router_anames = [router['id'] for router in routers or []]
+        aname = self.name_mapper.network(None, net['id'])
+        router_anames = [self.name_mapper.router(None, router['id'])
+                         for router in routers or []]
 
         if routers:
             if vrf:
@@ -403,20 +413,21 @@ class TestAimMapping(ApicAimTestCase):
                 vrf_tenant_aname = vrf.tenant_name
                 if vrf.tenant_name != 'common':
                     tenant_aname = vrf.tenant_name
-                    vrf_tenant_dname = TEST_TENANT_NAMES[vrf_tenant_aname]
+                    vrf_tenant_dname = None
                 else:
                     vrf_tenant_dname = 'CommonTenant'
             elif scope:
-                vrf_aname = scope['id']
+                vrf_aname = self.name_mapper.address_scope(None, scope['id'])
                 vrf_dname = scope['name']
-                vrf_tenant_aname = scope['tenant_id']
+                vrf_project = scope['tenant_id']
+                vrf_tenant_aname = self.name_mapper.project(None, vrf_project)
                 tenant_aname = vrf_tenant_aname
-                vrf_tenant_dname = TEST_TENANT_NAMES[vrf_tenant_aname]
+                vrf_tenant_dname = TEST_TENANT_NAMES[vrf_project]
             else:
                 vrf_aname = 'DefaultVRF'
                 vrf_dname = 'DefaultRoutedVRF'
                 vrf_tenant_aname = tenant_aname
-                vrf_tenant_dname = TEST_TENANT_NAMES[vrf_tenant_aname]
+                vrf_tenant_dname = TEST_TENANT_NAMES[project]
         else:
             vrf_aname = self.driver.apic_system_id + '_UnroutedVRF'
             vrf_dname = 'CommonUnroutedVRF'
@@ -452,7 +463,8 @@ class TestAimMapping(ApicAimTestCase):
 
         aim_tenant = self._get_tenant(vrf_tenant_aname)
         self.assertEqual(vrf_tenant_aname, aim_tenant.name)
-        self.assertEqual(vrf_tenant_dname, aim_tenant.display_name)
+        if vrf_tenant_dname is not None:
+            self.assertEqual(vrf_tenant_dname, aim_tenant.display_name)
 
         aim_vrf = self._get_vrf(vrf_aname, vrf_tenant_aname)
         self.assertEqual(vrf_tenant_aname, aim_vrf.tenant_name)
@@ -462,7 +474,7 @@ class TestAimMapping(ApicAimTestCase):
         self._check_dn(net, aim_vrf, 'VRF')
 
     def _check_network_deleted(self, net):
-        aname = net['id']
+        aname = self.name_mapper.network(None, net['id'])
         self._bd_should_not_exist(aname)
         self._epg_should_not_exist(aname)
 
@@ -470,10 +482,11 @@ class TestAimMapping(ApicAimTestCase):
                       scope=None, project=None):
         prefix_len = subnet['cidr'].split('/')[1]
 
-        tenant_aname = project or (scope or net)['tenant_id']
+        project = project or (scope or net)['tenant_id']
+        tenant_aname = self.name_mapper.project(None, project)
         self._get_tenant(tenant_aname)
 
-        net_aname = net['id']
+        net_aname = self.name_mapper.network(None, net['id'])
 
         for gw_ip, router in expected_gws:
             gw_ip_mask = gw_ip + '/' + prefix_len
@@ -501,10 +514,10 @@ class TestAimMapping(ApicAimTestCase):
         pass
 
     def _check_address_scope(self, scope):
-        tenant_aname = scope['tenant_id']
+        tenant_aname = self.name_mapper.project(None, scope['tenant_id'])
         self._get_tenant(tenant_aname)
 
-        aname = scope['id']
+        aname = self.name_mapper.address_scope(None, scope['id'])
 
         aim_vrf = self._get_vrf(aname, tenant_aname)
         self.assertEqual(tenant_aname, aim_vrf.tenant_name)
@@ -514,12 +527,12 @@ class TestAimMapping(ApicAimTestCase):
         self._check_dn(scope, aim_vrf, 'VRF')
 
     def _check_address_scope_deleted(self, scope):
-        aname = scope['id']
+        aname = self.name_mapper.address_scope(None, scope['id'])
         self._vrf_should_not_exist(aname)
 
     def _check_router(self, router, expected_gw_ips, unexpected_gw_ips,
-                      scope=None, unscoped_tenant=None):
-        aname = router['id']
+                      scope=None, unscoped_project=None):
+        aname = self.name_mapper.router(None, router['id'])
 
         aim_contract = self._get_contract(aname, 'common')
         self.assertEqual('common', aim_contract.tenant_name)
@@ -543,14 +556,16 @@ class TestAimMapping(ApicAimTestCase):
 
         if expected_gw_ips:
             if scope:
-                vrf_aname = scope['id']
+                vrf_aname = self.name_mapper.address_scope(
+                    None, scope['id'])
                 vrf_dname = scope['name']
-                vrf_tenant_aname = scope['tenant_id']
+                vrf_project = scope['tenant_id']
             else:
-                vrf_tenant_aname = unscoped_tenant or router['tenant_id']
                 vrf_aname = 'DefaultVRF'
                 vrf_dname = 'DefaultRoutedVRF'
-            vrf_tenant_dname = TEST_TENANT_NAMES[vrf_tenant_aname]
+                vrf_project = unscoped_project or router['tenant_id']
+            vrf_tenant_aname = self.name_mapper.project(None, vrf_project)
+            vrf_tenant_dname = TEST_TENANT_NAMES[vrf_project]
 
             aim_tenant = self._get_tenant(vrf_tenant_aname)
             self.assertEqual(vrf_tenant_aname, aim_tenant.name)
@@ -578,7 +593,7 @@ class TestAimMapping(ApicAimTestCase):
             self.assertNotIn(gw_ip, dist_names)
 
     def _check_router_deleted(self, router):
-        aname = router['id']
+        aname = self.name_mapper.router(None, router['id'])
         self._subject_should_not_exist('route', aname)
         self._contract_should_not_exist(aname)
 
@@ -968,7 +983,8 @@ class TestAimMapping(ApicAimTestCase):
         payload['resource_info'] = 'test-tenant'
         keystone_ep = md.KeystoneNotificationEndpoint(self.driver)
         keystone_ep.info(None, None, None, payload, None)
-        tenant = aim_resource.Tenant(name='test-tenant')
+        tenant_aname = self.name_mapper.project(None, 'test-tenant')
+        tenant = aim_resource.Tenant(name=tenant_aname)
         self.driver.aim.update.assert_called_once_with(
             mock.ANY, tenant, display_name='new_name')
 
@@ -1160,7 +1176,7 @@ class TestAimMapping(ApicAimTestCase):
         # Check router.
         router = self._show('routers', router_id)['router']
         self._check_router(router, [gw1_ip], [gw2_ip, gw3_ip],
-                           unscoped_tenant='tenant_1')
+                           unscoped_project='tenant_1')
 
         # Check net1.
         net1 = self._show('networks', net1_id)['network']
@@ -1194,7 +1210,7 @@ class TestAimMapping(ApicAimTestCase):
         # Check router.
         router = self._show('routers', router_id)['router']
         self._check_router(router, [gw1_ip, gw2_ip], [gw3_ip],
-                           unscoped_tenant='tenant_2')
+                           unscoped_project='tenant_2')
 
         # Check net1, which should be moved to tenant_2.
         net1 = self._show('networks', net1_id)['network']
@@ -1229,7 +1245,7 @@ class TestAimMapping(ApicAimTestCase):
         # Check router.
         router = self._show('routers', router_id)['router']
         self._check_router(router, [gw1_ip, gw2_ip, gw3_ip], [],
-                           unscoped_tenant='tenant_2')
+                           unscoped_project='tenant_2')
 
         # Check net1, which should still be moved to tenant_2.
         net1 = self._show('networks', net1_id)['network']
@@ -1265,7 +1281,7 @@ class TestAimMapping(ApicAimTestCase):
         # Check router.
         router = self._show('routers', router_id)['router']
         self._check_router(router, [gw1_ip, gw2_ip], [gw3_ip],
-                           unscoped_tenant='tenant_2')
+                           unscoped_project='tenant_2')
 
         # Check net1, which should still be moved to tenant_2.
         net1 = self._show('networks', net1_id)['network']
@@ -1300,7 +1316,7 @@ class TestAimMapping(ApicAimTestCase):
         # Check router.
         router = self._show('routers', router_id)['router']
         self._check_router(router, [gw1_ip], [gw2_ip, gw3_ip],
-                           unscoped_tenant='tenant_1')
+                           unscoped_project='tenant_1')
 
         # Check net1, which should be moved back to tenant_1.
         net1 = self._show('networks', net1_id)['network']
@@ -1334,7 +1350,7 @@ class TestAimMapping(ApicAimTestCase):
         # Check router.
         router = self._show('routers', router_id)['router']
         self._check_router(router, [], [gw1_ip, gw2_ip, gw3_ip],
-                           unscoped_tenant='tenant_1')
+                           unscoped_project='tenant_1')
 
         # Check net1.
         net1 = self._show('networks', net1_id)['network']
@@ -1407,7 +1423,7 @@ class TestAimMapping(ApicAimTestCase):
             router = self._show('routers', router['id'])['router']
             self._check_router(
                 router, expected_gw_ips, unexpected_gw_ips,
-                unscoped_tenant=project)
+                unscoped_project=project)
 
         t1 = 'tenant_1'
         t2 = 'tenant_2'
@@ -1547,9 +1563,9 @@ class TestAimMapping(ApicAimTestCase):
     def test_address_scope_pre_existing_vrf(self):
         aim_ctx = aim_context.AimContext(self.db_session)
 
-        self.aim_mgr.create(aim_ctx,
-                            aim_resource.Tenant(name='t1', monitored=True))
-        vrf = aim_resource.VRF(tenant_name='t1', name='ctx1',
+        self.aim_mgr.create(
+            aim_ctx, aim_resource.Tenant(name=self.t1_aname, monitored=True))
+        vrf = aim_resource.VRF(tenant_name=self.t1_aname, name='ctx1',
                                display_name='CTX1', monitored=True)
         self.aim_mgr.create(aim_ctx, vrf)
 
@@ -1574,13 +1590,15 @@ class TestAimMapping(ApicAimTestCase):
     def test_network_in_address_scope_pre_existing_vrf(self, common_vrf=False):
         aim_ctx = aim_context.AimContext(self.db_session)
 
-        tenant = aim_resource.Tenant(name='common' if common_vrf else 't1',
+        tenant = aim_resource.Tenant(
+            name='common' if common_vrf else self.t1_aname,
             display_name=('CommonTenant' if common_vrf
                           else TEST_TENANT_NAMES['t1']),
             monitored=True)
         self.aim_mgr.create(aim_ctx, tenant)
-        vrf = aim_resource.VRF(tenant_name='common' if common_vrf else 't1',
-                               name='ctx1', monitored=True)
+        vrf = aim_resource.VRF(
+            tenant_name='common' if common_vrf else self.t1_aname,
+            name='ctx1', monitored=True)
         vrf = self.aim_mgr.create(aim_ctx, vrf)
 
         scope = self._make_address_scope_for_vrf(vrf.dn,
@@ -1929,7 +1947,7 @@ class TestSyncState(ApicAimTestCase):
         with mock.patch('aim.aim_manager.AimManager.get_status',
                         TestSyncState._get_synced_status):
             self._test_external_network('synced',
-                                        dn='uni/tn-t1/out-l1/instP-n1')
+                                        dn=self.dn_t1_l1_n1)
 
         for expected_status, status_func in [
                 ('build', TestSyncState._get_pending_status_for_type),
@@ -1943,7 +1961,7 @@ class TestSyncState(ApicAimTestCase):
                 with mock.patch('aim.aim_manager.AimManager.get_status',
                                 get_status):
                     self._test_external_network(expected_status,
-                                                dn='uni/tn-t1/out-l1/instP-n1',
+                                                dn=self.dn_t1_l1_n1,
                                                 msg='%s' % a_res)
 
     def test_unmanaged_external_network(self):
@@ -1961,7 +1979,7 @@ class TestSyncState(ApicAimTestCase):
         with mock.patch('aim.aim_manager.AimManager.get_status',
                         TestSyncState._get_synced_status):
             self._test_external_subnet('synced',
-                                       dn='uni/tn-t1/out-l1/instP-n1')
+                                       dn=self.dn_t1_l1_n1)
 
         for expected_status, status_func in [
                 ('build', TestSyncState._get_pending_status_for_type),
@@ -1971,7 +1989,7 @@ class TestSyncState(ApicAimTestCase):
             with mock.patch('aim.aim_manager.AimManager.get_status',
                             get_status):
                 self._test_external_subnet(expected_status,
-                                           dn='uni/tn-t1/out-l1/instP-n1')
+                                           dn=self.dn_t1_l1_n1)
 
     def test_unmanaged_external_subnet(self):
         self._test_external_subnet('N/A')
@@ -2357,17 +2375,17 @@ class TestExtensionAttributes(ApicAimTestCase):
 
         # create with APIC DN, nat_typeand default CIDR
         net1 = self._make_ext_network('net1',
-                                      dn='uni/tn-t1/out-l1/instP-n1',
+                                      dn=self.dn_t1_l1_n1,
                                       nat_type='')
 
-        self.assertEqual('uni/tn-t1/out-l1/instP-n1',
+        self.assertEqual(self.dn_t1_l1_n1,
                          net1[DN]['ExternalNetwork'])
         self.assertEqual('', net1['apic:nat_type'])
         self.assertEqual(['0.0.0.0/0'], net1[CIDR])
 
         # create with nat_type set to default, and CIDR specified
         net2 = self._make_ext_network('net2',
-                                      dn='uni/tn-t1/out-l2/instP-n2',
+                                      dn=self.dn_t1_l2_n2,
                                       cidrs=['5.5.5.0/24', '10.20.0.0/16'])
         self.assertEqual('distributed', net2['apic:nat_type'])
         self.assertEqual(['10.20.0.0/16', '5.5.5.0/24'],
@@ -2420,7 +2438,7 @@ class TestExtensionAttributes(ApicAimTestCase):
 
         # Update APIC DN, nat-type
         net1 = self._make_ext_network('net1',
-                                      dn='uni/tn-t1/out-l1/instP-n1',
+                                      dn=self.dn_t1_l1_n1,
                                       nat_type='edge')
 
         self._update('networks', net1['id'],
@@ -2434,7 +2452,7 @@ class TestExtensionAttributes(ApicAimTestCase):
         extn = extn_db.ExtensionDbMixin()
 
         net1 = self._make_ext_network('net1',
-                                      dn='uni/tn-t1/out-l1/instP-n1')
+                                      dn=self.dn_t1_l1_n1)
         # create with default value for snat_host_pool
         subnet = self._make_subnet(
             self.fmt, {'network': net1}, '10.0.0.1', '10.0.0.0/24')['subnet']
@@ -2533,9 +2551,9 @@ class TestExtensionAttributes(ApicAimTestCase):
         aim_ctx = aim_context.AimContext(db_session=session)
 
         # create with APIC DN
-        self.aim_mgr.create(aim_ctx,
-                            aim_resource.Tenant(name='t1', monitored=True))
-        vrf = aim_resource.VRF(tenant_name='t1', name='ctx1',
+        self.aim_mgr.create(
+            aim_ctx, aim_resource.Tenant(name=self.t1_aname, monitored=True))
+        vrf = aim_resource.VRF(tenant_name=self.t1_aname, name='ctx1',
                                monitored=True)
         self.aim_mgr.create(aim_ctx, vrf)
         scope = self._make_address_scope_for_vrf(vrf.dn)['address_scope']
@@ -2563,16 +2581,16 @@ class TestExtensionAttributes(ApicAimTestCase):
 
         # Update APIC DN
         aim_ctx = aim_context.AimContext(db_session=db_api.get_session())
-        self.aim_mgr.create(aim_ctx,
-                            aim_resource.Tenant(name='t1', monitored=True))
-        vrf = aim_resource.VRF(tenant_name='t1', name='default',
+        self.aim_mgr.create(
+            aim_ctx, aim_resource.Tenant(name=self.t1_aname, monitored=True))
+        vrf = aim_resource.VRF(tenant_name=self.t1_aname, name='default',
                                monitored=True)
         self.aim_mgr.create(aim_ctx, vrf)
         scope = self._make_address_scope_for_vrf(vrf.dn)
 
         self._update('address-scopes', scope['address_scope']['id'],
                      {'address_scope':
-                      {DN: {'VRF': 'uni/tn-t2/ctx-default2'}}},
+                      {DN: {'VRF': 'uni/tn-%s/ctx-default2' % self.t2_aname}}},
                      400)
 
         # Pre-existing VRF already used
@@ -2637,22 +2655,23 @@ class TestExternalConnectivityBase(object):
 
     def test_external_network_lifecycle(self):
         net1 = self._make_ext_network('net1',
-                                      dn='uni/tn-t1/out-l1/instP-n1',
+                                      dn=self.dn_t1_l1_n1,
                                       cidrs=['20.10.0.0/16', '4.4.4.0/24'])
         self.mock_ns.create_l3outside.assert_called_once_with(
             mock.ANY,
-            aim_resource.L3Outside(tenant_name='t1', name='l1'))
+            aim_resource.L3Outside(tenant_name=self.t1_aname, name='l1'))
         a_ext_net = aim_resource.ExternalNetwork(
-            tenant_name='t1', l3out_name='l1', name='n1')
+            tenant_name=self.t1_aname, l3out_name='l1', name='n1')
         self.mock_ns.create_external_network.assert_called_once_with(
             mock.ANY, a_ext_net)
         self.mock_ns.update_external_cidrs.assert_called_once_with(
             mock.ANY, a_ext_net, ['20.10.0.0/16', '4.4.4.0/24'])
         ext_epg = aim_resource.EndpointGroup(
-            tenant_name='t1', app_profile_name=self._app_profile_name,
+            tenant_name=self.t1_aname, app_profile_name=self._app_profile_name,
             name='EXT-l1')
-        ext_bd = aim_resource.BridgeDomain(tenant_name='t1', name='EXT-l1')
-        ext_vrf = aim_resource.VRF(tenant_name='t1', name='EXT-l1')
+        ext_bd = aim_resource.BridgeDomain(
+            tenant_name=self.t1_aname, name='EXT-l1')
+        ext_vrf = aim_resource.VRF(tenant_name=self.t1_aname, name='EXT-l1')
         self._check_dn(net1, ext_epg, 'EndpointGroup')
         self._check_dn(net1, ext_bd, 'BridgeDomain')
         self._check_dn(net1, ext_vrf, 'VRF')
@@ -2680,16 +2699,16 @@ class TestExternalConnectivityBase(object):
         self._delete('networks', net1['id'])
         self.mock_ns.delete_l3outside.assert_called_once_with(
             mock.ANY,
-            aim_resource.L3Outside(tenant_name='t1', name='l1'))
+            aim_resource.L3Outside(tenant_name=self.t1_aname, name='l1'))
         self.mock_ns.delete_external_network.assert_called_once_with(
             mock.ANY,
-            aim_resource.ExternalNetwork(tenant_name='t1', l3out_name='l1',
-                                         name='n1'))
+            aim_resource.ExternalNetwork(
+                tenant_name=self.t1_aname, l3out_name='l1', name='n1'))
 
         # create with default CIDR
         self.mock_ns.reset_mock()
         self._make_ext_network('net2',
-                               dn='uni/tn-t1/out-l1/instP-n1')
+                               dn=self.dn_t1_l1_n1)
         self.mock_ns.create_external_network.assert_called_once_with(
             mock.ANY, a_ext_net)
         self.mock_ns.update_external_cidrs.assert_called_once_with(
@@ -2710,18 +2729,19 @@ class TestExternalConnectivityBase(object):
 
     def test_external_subnet_lifecycle(self):
         net1 = self._make_ext_network('net1',
-                                      dn='uni/tn-t1/out-l1/instP-n1')
+                                      dn=self.dn_t1_l1_n1)
         subnet = self._make_subnet(
             self.fmt, {'network': net1}, '10.0.0.1', '10.0.0.0/24',
             allocation_pools=[{'start': '10.0.0.2',
                                'end': '10.0.0.250'}])['subnet']
         subnet = self._show('subnets', subnet['id'])['subnet']
 
-        l3out = aim_resource.L3Outside(tenant_name='t1', name='l1')
+        l3out = aim_resource.L3Outside(tenant_name=self.t1_aname, name='l1')
         self.mock_ns.create_subnet.assert_called_once_with(
             mock.ANY, l3out, '10.0.0.1/24')
-        ext_sub = aim_resource.Subnet(tenant_name='t1', bd_name='EXT-l1',
-                                      gw_ip_mask='10.0.0.1/24')
+        ext_sub = aim_resource.Subnet(
+            tenant_name=self.t1_aname, bd_name='EXT-l1',
+            gw_ip_mask='10.0.0.1/24')
         self._check_dn(subnet, ext_sub, 'Subnet')
 
         # Update gateway
@@ -2770,7 +2790,7 @@ class TestExternalConnectivityBase(object):
         dv = self.mock_ns.disconnect_vrf
 
         ext_net1 = self._make_ext_network('ext-net1',
-                                          dn='uni/tn-t1/out-l1/instP-n1')
+                                          dn=self.dn_t1_l1_n1)
         self._make_subnet(
             self.fmt, {'network': ext_net1}, '100.100.100.1',
             '100.100.100.0/24')
@@ -2821,14 +2841,16 @@ class TestExternalConnectivityBase(object):
         # Connect the router interfaces to the subnets
         vrf_objs = {}
         for tenant, router_list in objs.iteritems():
-            a_vrf = aim_resource.VRF(tenant_name=tenant,
+            tenant_aname = self.name_mapper.project(None, tenant)
+            a_vrf = aim_resource.VRF(tenant_name=tenant_aname,
                                      name='DefaultVRF')
             a_ext_net = aim_resource.ExternalNetwork(
-                tenant_name='t1', l3out_name='l1', name='n1')
+                tenant_name=self.t1_aname, l3out_name='l1', name='n1')
             for router, subnets, addr_scope in router_list:
                 if addr_scope:
-                    a_vrf.name = addr_scope['id']
-                contract = router['id']
+                    a_vrf.name = self.name_mapper.address_scope(
+                        None, addr_scope['id'])
+                contract = self.name_mapper.router(None, router['id'])
                 a_ext_net.provided_contract_names.append(contract)
                 a_ext_net.provided_contract_names.extend(
                     router[PROV])
@@ -2850,14 +2872,16 @@ class TestExternalConnectivityBase(object):
 
         # Remove the router interfaces
         for tenant, router_list in objs.iteritems():
-            a_vrf = aim_resource.VRF(tenant_name=tenant,
+            tenant_aname = self.name_mapper.project(None, tenant)
+            a_vrf = aim_resource.VRF(tenant_name=tenant_aname,
                                      name='DefaultVRF')
             a_ext_net = vrf_objs.pop(tenant)
             num_router = len(router_list)
             for router, subnets, addr_scope in router_list:
                 if addr_scope:
-                    a_vrf.name = addr_scope['id']
-                contract = router['id']
+                    a_vrf.name = self.name_mapper.address_scope(
+                        None, addr_scope['id'])
+                contract = self.name_mapper.router(None, router['id'])
                 a_ext_net.provided_contract_names.remove(contract)
                 a_ext_net.consumed_contract_names.remove(contract)
                 for c in router[PROV]:
@@ -2896,12 +2920,12 @@ class TestExternalConnectivityBase(object):
         dv = self.mock_ns.disconnect_vrf
 
         ext_net1 = self._make_ext_network('ext-net1',
-                                          dn='uni/tn-t1/out-l1/instP-n1')
+                                          dn=self.dn_t1_l1_n1)
         self._make_subnet(
             self.fmt, {'network': ext_net1}, '100.100.100.1',
             '100.100.100.0/24')
         ext_net2 = self._make_ext_network('ext-net1',
-                                          dn='uni/tn-t1/out-l2/instP-n2')
+                                          dn=self.dn_t1_l2_n2)
         self._make_subnet(
             self.fmt, {'network': ext_net2}, '200.200.200.1',
             '200.200.200.0/24')
@@ -2939,16 +2963,17 @@ class TestExternalConnectivityBase(object):
                      {'router':
                       {'external_gateway_info': {'network_id':
                                                  ext_net1['id']}}})
-        contract = router['id']
+        contract = self.name_mapper.router(None, router['id'])
         a_ext_net1 = aim_resource.ExternalNetwork(
-            tenant_name='t1', l3out_name='l1', name='n1',
+            tenant_name=self.t1_aname, l3out_name='l1', name='n1',
             provided_contract_names=sorted(['pr-1', contract]),
             consumed_contract_names=sorted(['co-1', contract]))
-        tenant_aname = net['tenant_id']  # REVISIT
+        tenant_aname = self.name_mapper.project(
+            None, net['tenant_id'])  # REVISIT
         a_vrf = aim_resource.VRF(tenant_name=tenant_aname,
                                  name='DefaultVRF')
         if use_addr_scope:
-            a_vrf.name = addr_scope['id']
+            a_vrf.name = self.name_mapper.address_scope(None, addr_scope['id'])
         cv.assert_called_once_with(mock.ANY, a_ext_net1, a_vrf)
 
         self.mock_ns.reset_mock()
@@ -2957,7 +2982,7 @@ class TestExternalConnectivityBase(object):
                       {'external_gateway_info': {'network_id':
                                                  ext_net2['id']}}})
         a_ext_net2 = aim_resource.ExternalNetwork(
-            tenant_name='t1', l3out_name='l2', name='n2',
+            tenant_name=self.t1_aname, l3out_name='l2', name='n2',
             provided_contract_names=sorted(['pr-1', contract]),
             consumed_contract_names=sorted(['co-1', contract]))
         a_ext_net1.provided_contract_names = []
@@ -3010,13 +3035,14 @@ class TestExternalConnectivityBase(object):
         a_ext_nets = []
         for x in range(0, 2):
             ext_net = self._make_ext_network('ext-net%d' % x,
-                dn='uni/tn-t1/out-l%d/instP-n%d' % (x, x))
+                dn='uni/tn-%s/out-l%d/instP-n%d' % (self.t1_aname, x, x))
             self._make_subnet(
                 self.fmt, {'network': ext_net}, '100.%d.100.1' % x,
                 '100.%d.100.0/24' % x)
             ext_nets.append(ext_net['id'])
             a_ext_net = aim_resource.ExternalNetwork(
-                tenant_name='t1', l3out_name='l%d' % x, name='n%d' % x)
+                tenant_name=self.t1_aname,
+                l3out_name='l%d' % x, name='n%d' % x)
             a_ext_nets.append(a_ext_net)
 
         net = self._make_network(self.fmt, 'pvt-net1', True,
@@ -3035,11 +3061,12 @@ class TestExternalConnectivityBase(object):
             self.fmt, {'network': net}, '10.10.1.1',
             '10.10.1.0/24',
             subnetpool_id=subnetpool['id'] if addr_scope else None)['subnet']
-        tenant_aname = net['tenant_id']  # REVISIT
+        tenant_aname = self.name_mapper.project(
+            None, net['tenant_id'])  # REVISIT
         a_vrf = aim_resource.VRF(tenant_name=tenant_aname,
                                  name='DefaultVRF')
         if use_addr_scope:
-            a_vrf.name = addr_scope['id']
+            a_vrf.name = self.name_mapper.address_scope(None, addr_scope['id'])
 
         routers = []
         contracts = []
@@ -3056,7 +3083,7 @@ class TestExternalConnectivityBase(object):
             self._router_interface_action('add', r['id'], sub_id,
                                           intf_port)
             routers.append(r['id'])
-            contracts.append(r['id'])
+            contracts.append(self.name_mapper.router(None, r['id']))
         cv.assert_not_called()
 
         self._add_external_gateway_to_router(routers[0], ext_nets[0])
@@ -3157,7 +3184,7 @@ class TestExternalConnectivityBase(object):
         self._register_agent('host1', AGENT_CONF_OPFLEX)
 
         ext_net1 = self._make_ext_network('ext-net1',
-                                          dn='uni/tn-t1/out-l1/instP-n1')
+                                          dn=self.dn_t1_l1_n1)
         self._make_subnet(
             self.fmt, {'network': ext_net1}, '100.100.100.1',
             '100.100.100.0/24')
@@ -3199,7 +3226,7 @@ class TestExternalConnectivityBase(object):
         self._register_agent('host1', AGENT_CONF_OPFLEX)
 
         ext_net1 = self._make_ext_network('ext-net1',
-                                          dn='uni/tn-t1/out-l1/instP-n1')
+                                          dn=self.dn_t1_l1_n1)
         self._make_subnet(
             self.fmt, {'network': ext_net1}, '100.100.100.1',
             '100.100.100.0/24')
@@ -3254,7 +3281,7 @@ class TestExternalConnectivityBase(object):
         dv = self.mock_ns.disconnect_vrf
 
         ext_net1 = self._make_ext_network('ext-net1',
-                                          dn='uni/tn-t1/out-l1/instP-n1')
+                                          dn=self.dn_t1_l1_n1)
         self._make_subnet(
             self.fmt, {'network': ext_net1}, '100.100.100.1',
             '100.100.100.0/24')
@@ -3264,13 +3291,13 @@ class TestExternalConnectivityBase(object):
         cv.assert_not_called()
         dv.assert_not_called()
 
-        contract = router['id']
+        contract = self.name_mapper.router(None, router['id'])
         a_ext_net1 = aim_resource.ExternalNetwork(
-            tenant_name='t1', l3out_name='l1', name='n1',
+            tenant_name=self.t1_aname, l3out_name='l1', name='n1',
             provided_contract_names=[contract],
             consumed_contract_names=[contract])
         a_ext_net1_no_contracts = aim_resource.ExternalNetwork(
-            tenant_name='t1', l3out_name='l1', name='n1')
+            tenant_name=self.t1_aname, l3out_name='l1', name='n1')
 
         # 1. Create unshared network net1 in tenant tenant_1, then connect
         #    it to router r1
@@ -3279,7 +3306,9 @@ class TestExternalConnectivityBase(object):
         sub1 = self._make_subnet(self.fmt, {'network': net1},
                                  '10.10.10.1', '10.10.10.0/24')['subnet']
         self._router_interface_action('add', router['id'], sub1['id'], None)
-        a_vrf1 = aim_resource.VRF(tenant_name='tenant_1', name='DefaultVRF')
+        a_vrf1 = aim_resource.VRF(
+            tenant_name=self.name_mapper.project(None, 'tenant_1'),
+            name='DefaultVRF')
         cv.assert_called_once_with(mock.ANY, a_ext_net1, a_vrf1)
         dv.assert_not_called()
 
@@ -3291,7 +3320,9 @@ class TestExternalConnectivityBase(object):
         sub2 = self._make_subnet(self.fmt, {'network': net2},
                                  '20.20.20.1', '20.20.20.0/24')['subnet']
         self._router_interface_action('add', router['id'], sub2['id'], None)
-        a_vrf2 = aim_resource.VRF(tenant_name='tenant_2', name='DefaultVRF')
+        a_vrf2 = aim_resource.VRF(
+            tenant_name=self.name_mapper.project(None, 'tenant_2'),
+            name='DefaultVRF')
         cv.assert_called_once_with(mock.ANY, a_ext_net1, a_vrf2)
         dv.assert_called_once_with(mock.ANY, a_ext_net1_no_contracts, a_vrf1)
 
@@ -3351,7 +3382,7 @@ class TestSnatIpAllocation(ApicAimTestCase):
     def test_get_alloc_ip(self):
         admin_ctx = context.get_admin_context()
         ext_net = self._make_ext_network('ext-net1',
-                                         dn='uni/tn-t1/out-l1/instP-n1')
+                                         dn=self.dn_t1_l1_n1)
         sub1 = self._make_subnet(
             self.fmt, {'network': ext_net}, '100.100.100.1',
             '100.100.100.0/29')['subnet']
@@ -3394,7 +3425,7 @@ class TestSnatIpAllocation(ApicAimTestCase):
 
     def test_snat_pool_flag_update_no_ip(self):
         ext_net = self._make_ext_network('ext-net1',
-                                         dn='uni/tn-t1/out-l1/instP-n1')
+                                         dn=self.dn_t1_l1_n1)
         sub1 = self._make_subnet(
             self.fmt, {'network': ext_net}, '100.100.100.1',
             '100.100.100.0/29')['subnet']
@@ -3410,7 +3441,7 @@ class TestSnatIpAllocation(ApicAimTestCase):
 
     def test_snat_pool_flag_update_with_ip(self):
         ext_net = self._make_ext_network('ext-net1',
-                                         dn='uni/tn-t1/out-l1/instP-n1')
+                                         dn=self.dn_t1_l1_n1)
         sub1 = self._make_subnet(
             self.fmt, {'network': ext_net}, '100.100.100.1',
             '100.100.100.0/29')['subnet']
@@ -3426,7 +3457,7 @@ class TestSnatIpAllocation(ApicAimTestCase):
 
     def _setup_router_with_ext_net(self):
         ext_net = self._make_ext_network('ext-net1',
-                                         dn='uni/tn-t1/out-l1/instP-n1')
+                                         dn=self.dn_t1_l1_n1)
         self._make_subnet(
             self.fmt, {'network': ext_net}, '100.100.100.1',
             '100.100.100.0/24')
@@ -3481,7 +3512,7 @@ class TestSnatIpAllocation(ApicAimTestCase):
 
     def test_floatingip_alloc_in_snat_pool(self):
         ext_net = self._make_ext_network('ext-net1',
-                                         dn='uni/tn-t1/out-l1/instP-n1')
+                                         dn=self.dn_t1_l1_n1)
         snat_sub = self._make_subnet(
             self.fmt, {'network': ext_net}, '100.100.100.1',
             '100.100.100.0/24')['subnet']
@@ -3505,7 +3536,7 @@ class TestSnatIpAllocation(ApicAimTestCase):
 
     def test_floatingip_alloc_in_non_snat_pool(self):
         ext_net = self._make_ext_network('ext-net1',
-                                         dn='uni/tn-t1/out-l1/instP-n1')
+                                         dn=self.dn_t1_l1_n1)
         snat_sub = self._make_subnet(
             self.fmt, {'network': ext_net}, '100.100.100.1',
             '100.100.100.0/24')['subnet']
@@ -3563,9 +3594,10 @@ class TestPortVlanNetwork(ApicAimTestCase):
                 network['apic:distinguished_names']['EndpointGroup'])
         else:
             epg = aim_resource.EndpointGroup(
-                    tenant_name=network['tenant_id'],
-                    app_profile_name=self._app_profile_name,
-                    name=network['id'])
+                tenant_name=self.name_mapper.project(
+                    None, network['tenant_id']),
+                app_profile_name=self._app_profile_name,
+                name=self.name_mapper.network(None, network['id']))
         return epg
 
     def _check_binding(self, port_id, expected_binding_info=None):
@@ -3590,7 +3622,7 @@ class TestPortVlanNetwork(ApicAimTestCase):
 
         if external_net:
             net1 = self._make_ext_network('net1',
-                                          dn='uni/tn-t1/out-l1/instP-n1')
+                                          dn=self.dn_t1_l1_n1)
         else:
             net1 = self._make_network(self.fmt, 'net1', True)['network']
 
