@@ -252,6 +252,12 @@ class ApicAimTestCase(test_address_scope.AddressScopeTestCase,
             raise webob.exc.HTTPClientError(code=res.status_int)
         return self.deserialize(self.fmt, res)
 
+    def port_notif_verifier(self):
+        def verify(plugin_context, port):
+            self.assertFalse(plugin_context.session.is_active)
+            return mock.DEFAULT
+        return verify
+
 
 class TestAimMapping(ApicAimTestCase):
     def _get_tenant(self, tenant_name):
@@ -2675,14 +2681,16 @@ class TestExternalConnectivityBase(object):
                 port['port']['dns_name'] = None
                 p.append(port['port'])
 
-        mock_notif = mock.Mock()
+        mock_notif = mock.Mock(side_effect=self.port_notif_verifier())
         self.driver.notifier.port_update = mock_notif
 
         with self.floatingip_no_assoc(sub1) as fip1:
             fip1 = fip1['floatingip']
             self.assertEqual('DOWN', fip1['status'])
-            mock_notif.assert_not_called()
+            # this notification is for SNAT info recalculation
+            mock_notif.assert_called_once_with(mock.ANY, p[0])
 
+            mock_notif.reset_mock()
             fip1 = self._update('floatingips', fip1['id'],
                                 {'floatingip': {'port_id': p[0]['id']}})
             fip1 = fip1['floatingip']
@@ -2700,7 +2708,10 @@ class TestExternalConnectivityBase(object):
         with self.floatingip_with_assoc(port_id=p[1]['id']) as fip2:
             fip2 = fip2['floatingip']
             self.assertEqual('ACTIVE', fip2['status'])
-            mock_notif.assert_called_once_with(mock.ANY, p[1])
+            # notification on p[2] is for SNAT info recalculation
+            mock_notif.has_calls([mock.call(mock.ANY, p[1]),
+                                  mock.call(mock.ANY, p[2])],
+                                 any_order=True)
 
             mock_notif.reset_mock()
             fip2 = self._update('floatingips', fip2['id'],
@@ -2714,6 +2725,94 @@ class TestExternalConnectivityBase(object):
             mock_notif.reset_mock()
         # fip2 should be deleted at this point
         mock_notif.assert_called_once_with(mock.ANY, p[2])
+
+    def test_port_notif_router_interface_op(self):
+        mock_notif = mock.Mock(side_effect=self.port_notif_verifier())
+        self.driver.notifier.port_update = mock_notif
+
+        self._register_agent('host1', AGENT_CONF_OPFLEX)
+
+        ext_net1 = self._make_ext_network('ext-net1',
+                                          dn='uni/tn-t1/out-l1/instP-n1')
+        self._make_subnet(
+            self.fmt, {'network': ext_net1}, '100.100.100.1',
+            '100.100.100.0/24')
+
+        net = self._make_network(self.fmt, 'pvt-net1', True,
+                                 tenant_id=self.tenant_1)['network']
+        sub = self._make_subnet(
+            self.fmt, {'network': net}, '10.10.1.1', '10.10.1.0/24')['subnet']
+        port_calls = []
+        for x in xrange(0, 2):
+            with self.port(subnet={'subnet': sub}) as p:
+                p = self._bind_port_to_host(p['port']['id'], 'host1')['port']
+                p['dns_name'] = None
+                port_calls.append(mock.call(mock.ANY, p))
+
+        router = self._make_router(
+            self.fmt, net['tenant_id'], 'router1')['router']
+
+        # set external gateway - expect no notifications
+        self._update('routers', router['id'],
+                     {'router':
+                      {'external_gateway_info': {'network_id':
+                                                 ext_net1['id']}}})
+        mock_notif.assert_not_called()
+
+        # connect subnet to router - notifications expected
+        self._router_interface_action('add', router['id'], sub['id'], None)
+        mock_notif.assert_has_calls(port_calls, any_order=True)
+
+        # disconnect subnet from router - notifications expected
+        mock_notif.reset_mock()
+        self._router_interface_action('remove', router['id'], sub['id'], None)
+        mock_notif.assert_has_calls(port_calls, any_order=True)
+
+    def test_port_notif_router_gateway_op(self):
+        mock_notif = mock.Mock(side_effect=self.port_notif_verifier())
+        self.driver.notifier.port_update = mock_notif
+
+        self._register_agent('host1', AGENT_CONF_OPFLEX)
+
+        ext_net1 = self._make_ext_network('ext-net1',
+                                          dn='uni/tn-t1/out-l1/instP-n1')
+        self._make_subnet(
+            self.fmt, {'network': ext_net1}, '100.100.100.1',
+            '100.100.100.0/24')
+
+        net = self._make_network(self.fmt, 'pvt-net1', True,
+                                 tenant_id=self.tenant_1)['network']
+        port_calls = []
+        subnets = []
+        for x in xrange(0, 2):
+            sub = self._make_subnet(
+                self.fmt, {'network': net}, '10.10.%d.1' % x,
+                '10.10.%d.0/24' % x)
+            with self.port(subnet=sub) as p:
+                p = self._bind_port_to_host(p['port']['id'], 'host1')['port']
+                p['dns_name'] = None
+                subnets.append(sub['subnet'])
+                port_calls.append(mock.call(mock.ANY, p))
+
+        # add router - no notifications expected
+        router = self._make_router(
+            self.fmt, net['tenant_id'], 'router1')['router']
+        for sub in subnets:
+            self._router_interface_action('add', router['id'], sub['id'], None)
+        mock_notif.assert_not_called()
+
+        # set external gateway - expect notifications
+        self._update('routers', router['id'],
+                     {'router':
+                      {'external_gateway_info': {'network_id':
+                                                 ext_net1['id']}}})
+        mock_notif.assert_has_calls(port_calls, any_order=True)
+
+        # unset external gateway - expect notifications
+        mock_notif.reset_mock()
+        self._update('routers', router['id'],
+                     {'router': {'external_gateway_info': {}}})
+        mock_notif.assert_has_calls(port_calls, any_order=True)
 
 
 class TestExternalDistributedNat(TestExternalConnectivityBase,
