@@ -22,6 +22,7 @@ from neutron.tests.unit.api import test_extensions
 from neutron.tests.unit.db import test_db_base_plugin_v2 as test_plugin
 from neutron.tests.unit.extensions import test_address_scope
 
+import gbpservice.neutron.extensions
 from gbpservice.neutron.tests.unit.plugins.ml2plus.drivers import (
     mechanism_logger as mech_logger)
 
@@ -43,6 +44,9 @@ class Ml2PlusPluginV2TestCase(test_address_scope.AddressScopeTestCase):
         config.cfg.CONF.set_override('network_vlan_ranges',
                                      ['physnet1:1000:1099'],
                                      group='ml2_type_vlan')
+
+        extensions.append_api_extensions_path(
+            gbpservice.neutron.extensions.__path__)
         super(Ml2PlusPluginV2TestCase, self).setUp(PLUGIN_NAME)
         ext_mgr = extensions.PluginAwareExtensionManager.get_instance()
         self.ext_api = test_extensions.setup_extensions_middleware(ext_mgr)
