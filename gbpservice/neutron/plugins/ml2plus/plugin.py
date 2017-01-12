@@ -16,6 +16,7 @@
 from neutron._i18n import _LE
 from neutron._i18n import _LI
 from neutron.api.v2 import attributes
+from neutron.common import exceptions as n_exc
 from neutron.db import db_base_plugin_v2
 from neutron.db import models_v2
 from neutron.db import securitygroups_db
@@ -28,6 +29,7 @@ from oslo_log import log
 from oslo_utils import excutils
 from sqlalchemy import inspect
 
+from gbpservice.neutron.db import lastresortsubnetpool_db
 from gbpservice.neutron.plugins.ml2plus import driver_context
 from gbpservice.neutron.plugins.ml2plus import managers
 from gbpservice.neutron.plugins.ml2plus import patch_neutron  # noqa
@@ -35,7 +37,8 @@ from gbpservice.neutron.plugins.ml2plus import patch_neutron  # noqa
 LOG = log.getLogger(__name__)
 
 
-class Ml2PlusPlugin(ml2_plugin.Ml2Plugin):
+class Ml2PlusPlugin(ml2_plugin.Ml2Plugin,
+                    lastresortsubnetpool_db.LastResortSubnetpoolMixin):
 
     """Extend the ML2 core plugin with missing functionality.
 
@@ -52,6 +55,8 @@ class Ml2PlusPlugin(ml2_plugin.Ml2Plugin):
     __native_bulk_support = True
     __native_pagination_support = True
     __native_sorting_support = True
+    ml2_plugin.Ml2Plugin._supported_extension_aliases += [
+        "last-resort-subnetpools"]
 
     # Override and bypass immediate base class's __init__ in order to
     # instantate extended manager class(es).
@@ -159,6 +164,7 @@ class Ml2PlusPlugin(ml2_plugin.Ml2Plugin):
         with session.begin(subtransactions=True):
             result = super(Ml2PlusPlugin, self).create_subnetpool(context,
                                                                   subnetpool)
+            self._update_last_resort_subnetpool(context, subnetpool, result)
             self.extension_manager.process_create_subnetpool(
                 context, subnetpool[attributes.SUBNETPOOL], result)
             mech_context = driver_context.SubnetPoolContext(
@@ -183,6 +189,8 @@ class Ml2PlusPlugin(ml2_plugin.Ml2Plugin):
                 context, id)
             updated_subnetpool = super(Ml2PlusPlugin, self).update_subnetpool(
                 context, id, subnetpool)
+            self._update_last_resort_subnetpool(context, subnetpool,
+                                                updated_subnetpool)
             self.extension_manager.process_update_subnetpool(
                 context, subnetpool[attributes.SUBNETPOOL],
                 updated_subnetpool)
@@ -202,6 +210,12 @@ class Ml2PlusPlugin(ml2_plugin.Ml2Plugin):
             self.mechanism_manager.delete_subnetpool_precommit(mech_context)
             super(Ml2PlusPlugin, self).delete_subnetpool(context, id)
         self.mechanism_manager.delete_subnetpool_postcommit(mech_context)
+
+    def _update_last_resort_subnetpool(self, context, request, result):
+        if attributes.is_attr_set(request['subnetpool'].get('is_last_resort')):
+            result['is_last_resort'] = request['subnetpool']['is_last_resort']
+            result['is_last_resort'] = (
+                self.update_last_resort_subnetpool(context, result))
 
     def create_address_scope(self, context, address_scope):
         self._ensure_tenant(context, address_scope[as_ext.ADDRESS_SCOPE])
@@ -267,3 +281,12 @@ class Ml2PlusPlugin(ml2_plugin.Ml2Plugin):
                       for resource in resources]
         for tenant_id in set(tenant_ids):
             self.mechanism_manager.ensure_tenant(context, tenant_id)
+
+    def _get_subnetpool_id(self, context, subnet):
+        # Check for regular subnetpool ID first, then Tenant's last resort,
+        # then global last resort.
+        return (
+            super(Ml2PlusPlugin, self)._get_subnetpool_id(context, subnet) or
+            self.get_subnetpool_of_last_resort_id(
+                context, tenant=subnet['tenant_id']) or
+            self.get_subnetpool_of_last_resort_id(context, tenant=None))
