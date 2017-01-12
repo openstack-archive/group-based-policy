@@ -546,8 +546,11 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
 
         self._handle_create_network_service_policy(context)
 
-        bd_name = str(self.name_mapper.network(
-            session, net['id'], net['name']))
+        # REVISIT: Consider instead calling
+        # _get_routed_vrf_for_network and _map_network on the MD, or
+        # adding a _get_bd_for_network function to the MD similar to
+        # _get_epg_for_network.
+        bd_name = str(self.name_mapper.network(session, net['id']))
         bd_tenant_name = str(self._aim_tenant_name(
             session, context.current['tenant_id'],
             aim_resource_class=aim_resource.BridgeDomain, gbp_obj=l2p_db))
@@ -743,7 +746,6 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
         for afilter in [aim_filter, aim_reverse_filter]:
             self._delete_aim_filter_entries(aim_ctx, afilter)
             self.aim.delete(aim_ctx, afilter)
-        self.name_mapper.delete_apic_name(session, context.current['id'])
 
     @log.log_method_call
     def extend_policy_rule_dict(self, session, result):
@@ -801,7 +803,6 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
         aim_contract = self._aim_contract(session, context.current)
         self._delete_aim_contract_subject(aim_ctx, aim_contract)
         self.aim.delete(aim_ctx, aim_contract)
-        self.name_mapper.delete_apic_name(session, context.current['id'])
 
     @log.log_method_call
     def extend_policy_rule_set_dict(self, session, result):
@@ -1022,7 +1023,7 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
                 l3p_db = session.query(
                     gpmdb.L3PolicyMapping).filter_by(id=l3p_id).first()
                 tenant_id = l3p_db['tenant_id']
-            tenant_name = self.name_mapper.tenant(session, tenant_id)
+            tenant_name = self.name_mapper.project(session, tenant_id)
         LOG.debug("Mapped tenant_id %(id)s to %(apic_name)s",
                   {'id': tenant_id, 'apic_name': tenant_name})
         return tenant_name
@@ -1086,10 +1087,9 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
         display_name = self.aim_display_name(pr['name'])
         if reverse_prefix:
             filter_name = self.name_mapper.policy_rule(
-                session, id, resource_name=name, prefix=alib.REVERSE_PREFIX)
+                session, id, prefix=alib.REVERSE_PREFIX)
         else:
-            filter_name = self.name_mapper.policy_rule(session, id,
-                                                       resource_name=name)
+            filter_name = self.name_mapper.policy_rule(session, id)
         LOG.debug("Mapped policy_rule_id %(id)s with name %(name)s to",
                   "%(apic_name)s",
                   {'id': id, 'name': name, 'apic_name': filter_name})
@@ -1280,12 +1280,17 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
 
     def _aim_bridge_domain(self, session, l2p, tenant_id, network_id,
                            network_name):
+        # REVISIT: Consider instead calling
+        # _get_routed_vrf_for_network and _map_network on the MD, or
+        # adding a _get_bd_for_network function to the MD similar to
+        # _get_epg_for_network.
+
         # This returns a new AIM BD resource
         # TODO(Sumit): Use _aim_resource_by_name
         tenant_name = self._aim_tenant_name(
             session, tenant_id, aim_resource_class=aim_resource.BridgeDomain,
             gbp_obj=l2p)
-        bd_name = self.name_mapper.network(session, network_id, network_name)
+        bd_name = self.name_mapper.network(session, network_id)
         display_name = self.aim_display_name(network_name)
         LOG.info(_LI("Mapped network_id %(id)s with name %(name)s to "
                      "%(apic_name)s"),
@@ -1401,8 +1406,7 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
 
         for contract_name_prefix, entries in contracts.iteritems():
             contract_name = str(self.name_mapper.policy_rule_set(
-                session, l2p['tenant_id'], l2p['tenant_id'],
-                prefix=contract_name_prefix))
+                session, l2p['tenant_id'], prefix=contract_name_prefix))
             # Create Contract (one per tenant)
             # REVIST(Sumit): Naming convention used for this Filter
             aim_contract = self._aim_resource_by_name(
@@ -1483,11 +1487,9 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
         session = context._plugin_context.session
         aim_ctx = aim_context.AimContext(session)
         implicit_contract_name = str(self.name_mapper.policy_rule_set(
-            session, l2p['tenant_id'], l2p['tenant_id'],
-            prefix=alib.IMPLICIT_PREFIX))
+            session, l2p['tenant_id'], prefix=alib.IMPLICIT_PREFIX))
         service_contract_name = str(self.name_mapper.policy_rule_set(
-            session, l2p['tenant_id'], l2p['tenant_id'],
-            prefix=alib.SERVICE_PREFIX))
+            session, l2p['tenant_id'], prefix=alib.SERVICE_PREFIX))
         self._add_contracts_for_epg(aim_ctx, aim_epg, consumed_contracts=[
             implicit_contract_name, service_contract_name])
 
@@ -1505,9 +1507,7 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
                               gbp_resource_name=None, prefix=None):
         kwargs = {'session': session}
         if gbp_resource_id:
-            kwargs['resource_id'] = gbp_resource_id
-        if gbp_resource_name:
-            kwargs['resource_name'] = gbp_resource_name
+            kwargs['id'] = gbp_resource_id
         if prefix:
             kwargs['prefix'] = prefix
         # TODO(Sumit): Current only PRS is mapped via this method. Once
@@ -1735,23 +1735,17 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
                 plugin_context.session, net_db) or
             self.aim_mech_driver._ensure_unrouted_vrf(aim_ctx))
 
-    def _get_vrf(self, plugin_context, vrf_tenant_name, vrf_name, details):
-        aim_ctx = aim_context.AimContext(db_session=plugin_context.session)
-        # REVISIT(ivar): we assume that VRF names are unique regardless of the
-        # tenant!
-        return self.aim.get(aim_ctx, aim_resource.VRF(
-            tenant_name=vrf_tenant_name, name=vrf_name))
-
     def _get_vrf_subnets(self, plugin_context, vrf_tenant_name, vrf_name,
                          details):
+        session = plugin_context.session
         result = []
         # get all subnets of the unrouted VRF
-        with plugin_context.session.begin(subtransactions=True):
+        with session.begin(subtransactions=True):
             # Find VRF address_scope first
-            # REVISIT(ivar): use reverse name mapping once available
-            # instead of assuming the name format.
+            address_scope_id = self.name_mapper.reverse_address_scope(
+                session, vrf_name)
             address_scope = self._get_address_scopes(
-                plugin_context, {'id': [vrf_name.split('_')[-1]]})
+                plugin_context, {'id': [address_scope_id]})
             if address_scope:
                 subnetpools = self._get_subnetpools(
                     plugin_context,
@@ -1759,9 +1753,8 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
                 for pool in subnetpools:
                     result.extend(pool['prefixes'])
             else:
-                aim_ctx = aim_context.AimContext(
-                    db_session=plugin_context.session)
-                if vrf_tenant_name is not 'common':
+                aim_ctx = aim_context.AimContext(db_session=session)
+                if vrf_tenant_name is not md.COMMON_TENANT_NAME:
                     bds = self.aim.find(aim_ctx, aim_resource.BridgeDomain,
                                         tenant_name=vrf_tenant_name,
                                         vrf_name=vrf_name)
@@ -1777,17 +1770,13 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
                     # already
                     bds = [x for x in bds if x['tenant_name'] in valid_tenants]
                 # Retrieve subnets from BDs
-                net_ids = self._get_network_ids_from_bds(plugin_context, bds)
+                net_ids = [self.name_mapper.reverse_network(session, bd.name)
+                           for bd in bds]
                 if net_ids:
                     subnets = self._get_subnets(plugin_context,
                                                 {'network_id': net_ids})
                     result = [x['cidr'] for x in subnets]
         return result
-
-    def _get_network_ids_from_bds(self, plugin_context, aim_bds):
-        # REVISIT(ivar): use reverse name mapping once available
-        # instead of assuming the name format.
-        return [x.name.split('_')[-1] for x in aim_bds]
 
     def _get_segmentation_labels(self, plugin_context, port, details):
         pt = self._port_id_to_pt(plugin_context, port['id'])
