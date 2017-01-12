@@ -24,6 +24,7 @@ from neutron.plugins.ml2.common import exceptions as ml2_exc
 from neutron.plugins.ml2 import managers as ml2_managers
 from neutron.plugins.ml2 import plugin as ml2_plugin
 from neutron.quota import resource_registry
+from oslo_config import cfg
 from oslo_log import log
 from oslo_utils import excutils
 from sqlalchemy import inspect
@@ -33,6 +34,62 @@ from gbpservice.neutron.plugins.ml2plus import managers
 from gbpservice.neutron.plugins.ml2plus import patch_neutron  # noqa
 
 LOG = log.getLogger(__name__)
+
+
+opts = [
+    cfg.BoolOpt('refresh_network_db_obj',
+                default=False,
+                help=_("Refresh the network DB object to correctly "
+                       "reflect the most recent state of all its "
+                       "attributes. This refresh will be performed "
+                       "in the _ml2_md_extend_network_dict method "
+                       "inside the ml2plus plugin. The refresh option "
+                       "may have a significant performace impact "
+                       "and should be avoided. Hence this configuration "
+                       "is set to False by default.")),
+    cfg.BoolOpt('refresh_port_db_obj',
+                default=False,
+                help=_("Refresh the port DB object to correctly "
+                       "reflect the most recent state of all its "
+                       "attributes. This refresh will be performed "
+                       "in the _ml2_md_extend_port_dict method "
+                       "inside the ml2plus plugin. The refresh option "
+                       "may have a significant performace impact "
+                       "and should be avoided. Hence this configuration "
+                       "is set to False by default.")),
+    cfg.BoolOpt('refresh_subnet_db_obj',
+                default=False,
+                help=_("Refresh the subnet DB object to correctly "
+                       "reflect the most recent state of all its "
+                       "attributes. This refresh will be performed "
+                       "in the _ml2_md_extend_subnet_dict method "
+                       "inside the ml2plus plugin. The refresh option "
+                       "may have a significant performace impact "
+                       "and should be avoided. Hence this configuration "
+                       "is set to False by default.")),
+    cfg.BoolOpt('refresh_subnetpool_db_obj',
+                default=False,
+                help=_("Refresh the subnetpool DB object to correctly "
+                       "reflect the most recent state of all its "
+                       "attributes. This refresh will be performed "
+                       "in the _ml2_md_extend_subnetpool_dict method "
+                       "inside the ml2plus plugin. The refresh option "
+                       "may have a significant performace impact "
+                       "and should be avoided. Hence this configuration "
+                       "is set to False by default.")),
+    cfg.BoolOpt('refresh_address_scope_db_obj',
+                default=False,
+                help=_("Refresh the address_scope DB object to correctly "
+                       "reflect the most recent state of all its "
+                       "attributes. This refresh will be performed "
+                       "in the _ml2_md_extend_address_scope_dict method "
+                       "inside the ml2plus plugin. The refresh option "
+                       "may have a significant performace impact "
+                       "and should be avoided. Hence this configuration "
+                       "is set to False by default.")),
+]
+
+cfg.CONF.register_opts(opts, "ml2plus")
 
 
 class Ml2PlusPlugin(ml2_plugin.Ml2Plugin):
@@ -76,6 +133,13 @@ class Ml2PlusPlugin(ml2_plugin.Ml2Plugin):
         self._start_rpc_notifiers()
         self.add_agent_status_check(self.agent_health_check)
         self._verify_service_plugins_requirements()
+        self.refresh_network_db_obj = cfg.CONF.ml2plus.refresh_network_db_obj
+        self.refresh_port_db_obj = cfg.CONF.ml2plus.refresh_port_db_obj
+        self.refresh_subnet_db_obj = cfg.CONF.ml2plus.refresh_subnet_db_obj
+        self.refresh_subnetpool_db_obj = (
+            cfg.CONF.ml2plus.refresh_subnetpool_db_obj)
+        self.refresh_address_scope_db_obj = (
+            cfg.CONF.ml2plus.refresh_address_scope_db_obj)
         LOG.info(_LI("Modular L2 Plugin (extended) initialization complete"))
 
     db_base_plugin_v2.NeutronDbPluginV2.register_dict_extend_funcs(
@@ -87,28 +151,43 @@ class Ml2PlusPlugin(ml2_plugin.Ml2Plugin):
     def _ml2_md_extend_network_dict(self, result, netdb):
         session = inspect(netdb).session
         with session.begin(subtransactions=True):
+            if self.refresh_network_db_obj:
+                # In deployment it has been observed that the subnet
+                # backref is sometimes stale inside the driver's
+                # extend_network_dict. The call to refresh below
+                # ensures the backrefs and other attributes are
+                # not stale.
+                session.refresh(netdb)
             self.extension_manager.extend_network_dict(session, netdb, result)
 
     def _ml2_md_extend_port_dict(self, result, portdb):
         session = inspect(portdb).session
         with session.begin(subtransactions=True):
+            if self.refresh_port_db_obj:
+                session.refresh(portdb)
             self.extension_manager.extend_port_dict(session, portdb, result)
 
     def _ml2_md_extend_subnet_dict(self, result, subnetdb):
         session = inspect(subnetdb).session
         with session.begin(subtransactions=True):
+            if self.refresh_subnet_db_obj:
+                session.refresh(subnetdb)
             self.extension_manager.extend_subnet_dict(
                 session, subnetdb, result)
 
     def _ml2_md_extend_subnetpool_dict(self, result, subnetpooldb):
         session = inspect(subnetpooldb).session
         with session.begin(subtransactions=True):
+            if self.refresh_subnetpool_db_obj:
+                session.refresh(subnetpooldb)
             self.extension_manager.extend_subnetpool_dict(
                 session, subnetpooldb, result)
 
     def _ml2_md_extend_address_scope_dict(self, result, address_scopedb):
         session = inspect(address_scopedb).session
         with session.begin(subtransactions=True):
+            if self.refresh_address_scope_db_obj:
+                session.refresh(address_scopedb)
             self.extension_manager.extend_address_scope_dict(
                 session, address_scopedb, result)
 
