@@ -26,6 +26,7 @@ from aim import context as aim_context
 from aim.db import model_base as aim_model_base
 from aim import utils as aim_utils
 
+from gbpservice.neutron.db import implicitsubnetpool_db  # noqa
 from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import (
     extension_db as extn_db)
 from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import config  # noqa
@@ -1608,6 +1609,86 @@ class TestAimMapping(ApicAimTestCase):
 
     def test_network_in_address_scope_pre_existing_common_vrf(self):
         self.test_network_in_address_scope_pre_existing_vrf(common_vrf=True)
+
+    def test_default_subnetpool(self):
+        # Create a non-default non-shared SP
+        subnetpool = self._make_subnetpool(
+            self.fmt, ['10.0.0.0/8'], name='spool1',
+            tenant_id='t1')['subnetpool']
+        net = self._make_network(self.fmt, 'pvt-net1', True,
+                                 tenant_id='t1')['network']
+        sub = self._make_subnet(
+            self.fmt, {'network': net}, '10.0.1.1', '10.0.1.0/24',
+            tenant_id='t1')['subnet']
+        self.assertIsNone(sub['subnetpool_id'])
+        # Make SP default
+        data = {'subnetpool': {'is_implicit': True}}
+        self._update('subnetpools', subnetpool['id'], data)
+        # Make a new network since Subnets hosted on the same network must be
+        # allocated from the same subnet pool
+        net = self._make_network(self.fmt, 'pvt-net2', True,
+                                 tenant_id='t1')['network']
+        # Create another subnet
+        sub = self._make_subnet(
+            self.fmt, {'network': net}, '10.0.2.1',
+            '10.0.2.0/24', tenant_id='t1')['subnet']
+        # This time, SP ID is set
+        self.assertEqual(subnetpool['id'], sub['subnetpool_id'])
+        # Create a shared SP in a different tenant
+        subnetpool_shared = self._make_subnetpool(
+            self.fmt, ['10.0.0.0/8'], name='spool1', is_implicit=True,
+            shared=True, tenant_id='t2', admin=True)['subnetpool']
+        # A subnet created in T1 still gets the old pool ID
+        sub = self._make_subnet(
+            self.fmt, {'network': net}, '10.0.3.1',
+            '10.0.3.0/24', tenant_id='t1')['subnet']
+        # This time, SP ID is set
+        self.assertEqual(subnetpool['id'], sub['subnetpool_id'])
+        # Creating a subnet somewhere else, however, will get the SP ID from
+        # the shared SP
+        net = self._make_network(self.fmt, 'pvt-net3', True,
+                                 tenant_id='t3')['network']
+        sub = self._make_subnet(
+            self.fmt, {'network': net}, '10.0.1.1',
+            '10.0.1.0/24', tenant_id='t3')['subnet']
+        self.assertEqual(subnetpool_shared['id'], sub['subnetpool_id'])
+
+    def test_implicit_subnetpool(self):
+        # Create last resort SP (non-shared)
+        sp = self._make_subnetpool(
+            self.fmt, ['10.0.0.0/8'], name='spool1',
+            tenant_id='t1', is_implicit=True)['subnetpool']
+        self.assertTrue(sp['is_implicit'])
+        # Update is_implicit to false
+        sp = self._update(
+            'subnetpools', sp['id'],
+            {'subnetpool': {'is_implicit': False}})['subnetpool']
+        self.assertFalse(sp['is_implicit'])
+        # Update to True
+        sp = self._update(
+            'subnetpools', sp['id'],
+            {'subnetpool': {'is_implicit': True}})['subnetpool']
+        self.assertTrue(sp['is_implicit'])
+        # Create another last resort in the same tenant, it will fail
+        self.assertRaises(webob.exc.HTTPClientError, self._make_subnetpool,
+                          self.fmt, ['11.0.0.0/8'], name='spool1',
+                          tenant_id='t1', is_implicit=True)
+        # Create a normal SP, will succeed
+        sp2 = self._make_subnetpool(
+            self.fmt, ['11.0.0.0/8'], name='spool2',
+            tenant_id='t1')['subnetpool']
+        self.assertFalse(sp2['is_implicit'])
+        # Try to update to last resort, will fail
+        self._update('subnetpools', sp2['id'],
+                     {'subnetpool': {'is_implicit': True}},
+                     expected_code=webob.exc.HTTPBadRequest.code)
+        # Create a shared last resort SP in a different tenant
+        sp3 = self._make_subnetpool(
+            self.fmt, ['11.0.0.0/8'], name='spoolShared',
+            tenant_id='t2', shared=True, admin=True,
+            is_implicit=True)['subnetpool']
+        self.assertTrue(sp3['is_implicit'])
+        # Update SP shared state is not supported by Neutron
 
 
 class TestSyncState(ApicAimTestCase):
