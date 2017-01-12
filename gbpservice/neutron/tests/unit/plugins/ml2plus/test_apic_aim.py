@@ -26,6 +26,7 @@ from aim import context as aim_context
 from aim.db import model_base as aim_model_base
 from aim import utils as aim_utils
 
+from gbpservice.neutron.db import lastresortsubnetpool_db  # noqa
 from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import (
     extension_db as extn_db)
 from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import config  # noqa
@@ -1297,6 +1298,48 @@ class TestAimMapping(ApicAimTestCase):
 
     def test_network_in_address_scope_pre_existing_common_vrf(self):
         self.test_network_in_address_scope_pre_existing_vrf(common_vrf=True)
+
+    def test_default_subnetpool(self):
+        # Create a non-default non-shared SP
+        subnetpool = self._make_subnetpool(
+            self.fmt, ['10.0.0.0/8'], name='spool1',
+            tenant_id='t1')['subnetpool']
+        net = self._make_network(self.fmt, 'pvt-net1', True,
+                                 tenant_id='t1')['network']
+        sub = self._make_subnet(
+            self.fmt, {'network': net}, '10.0.1.1', '10.0.1.0/24',
+            tenant_id='t1')['subnet']
+        self.assertIsNone(sub['subnetpool_id'])
+        # Make SP default
+        data = {'subnetpool': {'is_last_resort': True}}
+        # Make a new network since Subnets hosted on the same network must be
+        # allocated from the same subnet pool
+        net = self._make_network(self.fmt, 'pvt-net2', True,
+                                 tenant_id='t1')['network']
+        # Create another subnet
+        sub = self._make_subnet(
+            self.fmt, {'network': net}, '10.0.2.1',
+            '10.0.2.0/24', tenant_id='t1')['subnet']
+        # This time, SP ID is set
+        self.assertEqual(subnetpool['id'], sub['subnetpool_id'])
+        # Create a shared SP in a different tenant
+        subnetpool_shared = self._make_subnetpool(
+            self.fmt, ['10.0.0.0/8'], name='spool1', is_default=True,
+            shared=True, tenant_id='t2')['subnetpool']
+        # A subnet created in T1 still gets the old pool ID
+        sub = self._make_subnet(
+            self.fmt, {'network': net}, '10.0.3.1',
+            '10.0.3.0/24', tenant_id='t1')['subnet']
+        # This time, SP ID is set
+        self.assertEqual(subnetpool['id'], sub['subnetpool_id'])
+        # Creating a subnet somewhere else, however, will get the SP ID from
+        # the shared SP
+        net = self._make_network(self.fmt, 'pvt-net3', True,
+                                 tenant_id='t3')['network']
+        sub = self._make_subnet(
+            self.fmt, {'network': net}, '10.0.1.1',
+            '10.0.1.0/24', tenant_id='t3')['subnet']
+        self.assertEqual(subnetpool_shared['id'], sub['subnetpool_id'])
 
 
 class TestSyncState(ApicAimTestCase):
