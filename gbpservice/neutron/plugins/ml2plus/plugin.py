@@ -87,6 +87,12 @@ class Ml2PlusPlugin(ml2_plugin.Ml2Plugin):
     def _ml2_md_extend_network_dict(self, result, netdb):
         session = inspect(netdb).session
         with session.begin(subtransactions=True):
+            # In deployment it has been observed that the subnet
+            # backref is sometimes stale inside the driver's
+            # extend_network_dict. The call to refresh below
+            # ensures the backrefs and other attributes are
+            # not stale.
+            session.refresh(netdb)
             self.extension_manager.extend_network_dict(session, netdb, result)
 
     def _ml2_md_extend_port_dict(self, result, portdb):
