@@ -13,104 +13,58 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-from neutron.common import exceptions
+PROJECT_TYPE_TAG = 'proj'
+NETWORK_TYPE_TAG = 'net'
+ADDRESS_SCOPE_TYPE_TAG = 'as'
+ROUTER_TYPE_TAG = 'rtr'
+POLICY_RULE_SET_TYPE_TAG = 'prs'
+POLICY_RULE_TYPE_TAG = 'pr'
 
-NAME_TYPE_TENANT = 'tenant'
-NAME_TYPE_NETWORK = 'network'
-NAME_TYPE_ADDRESS_SCOPE = 'address_scope'
-NAME_TYPE_ROUTER = 'router'
-NAME_TYPE_POLICY_TARGET_GROUP = 'policy_target_group'
-NAME_TYPE_L3_POLICY = 'l3_policy'
-NAME_TYPE_L2_POLICY = 'l2_policy'
-NAME_TYPE_POLICY_RULE_SET = 'policy_rule_set'
-NAME_TYPE_POLICY_RULE = 'policy_rule'
-NAME_TYPE_EXTERNAL_SEGMENT = 'external_segment'
-NAME_TYPE_EXTERNAL_POLICY = 'external_policy'
-NAME_TYPE_NAT_POOL = 'nat_pool'
-
-
-class InvalidResourceId(exceptions.BadRequest):
-    message = _("The %(type)s ID '%(id)s' is invalid.")
-
-
-# TODO(rkukura): This module and class are being phased out. Uses of
-# this class should be replaced with calls to a function, similar to
-# aim.utils.sanitize_display_name, that does any concatenation,
-# character or substring translation, or truncation is needed to
-# ensure the supplied string (and optional prefix) form a valid APIC
-# name. One this phase out is complete, this module will be deleted.
 
 class APICNameMapper(object):
-    def mapper(name_type):
-        """Wrapper to land all the common operations between mappers."""
-        def wrap(func):
-            def inner(inst, session, resource_id, resource_name=None,
-                      prefix=None):
-                if not resource_id:
-                    raise InvalidResourceId(type=name_type, id=resource_id)
-                result = resource_id
-                if prefix:
-                    result = prefix + result
-                return result
-            return inner
-        return wrap
+    # This class may be overriden to customize the mapping from
+    # OpenStack resource IDs to APIC resource names. Certain resource
+    # mappings support prefixes in order to allow mapping a single
+    # OpenStack resource to multiple APIC resources of the same type,
+    # and there are reverse mapping methods for resources that need
+    # them. Note that there is no reverse_project method, since there
+    # are potential use cases for mapping multiple OpenStack project
+    # IDs to the same APIC Tenant.
 
-    @mapper(NAME_TYPE_TENANT)
-    def tenant(self, session, tenant_id, tenant_name=None):
-        return tenant_name
+    def project(self, session, id):
+        # REVISIT: The external connectiviy unit tests pass "common"
+        # as a project_id, and expect this to be mapped to the AIM
+        # common Tenant. Its not clear how a real deployment using
+        # Keystone would arrange to have "common" as a valid
+        # project_id, so maybe this special handling is not really
+        # needed.
+        return (id if id == "common" else
+                self._map(session, id, PROJECT_TYPE_TAG))
 
-    @mapper(NAME_TYPE_NETWORK)
-    def network(self, session, network_id, network_name=None):
-        return network_name
+    def network(self, session, id):
+        return self._map(session, id, NETWORK_TYPE_TAG)
 
-    @mapper(NAME_TYPE_ADDRESS_SCOPE)
-    def address_scope(self, session, address_scope_id,
-                      address_scope_name=None):
-        return address_scope_name
+    def reverse_network(self, session, name):
+        return self._unmap(session, name)
 
-    @mapper(NAME_TYPE_ROUTER)
-    def router(self, session, router_id, router_name=None):
-        return router_name
+    def address_scope(self, session, id):
+        return self._map(session, id, ADDRESS_SCOPE_TYPE_TAG)
 
-    @mapper(NAME_TYPE_L3_POLICY)
-    def l3_policy(self, context, l3_policy_id):
-        l3_policy = context._plugin.get_l3_policy(context._plugin_context,
-                                                  l3_policy_id)
-        return l3_policy['name']
+    def reverse_address_scope(self, session, name):
+        return self._unmap(session, name)
 
-    @mapper(NAME_TYPE_L2_POLICY)
-    def l2_policy(self, context, l2_policy_id, l2_policy_name=None):
-        return l2_policy_name
+    def router(self, session, id):
+        return self._map(session, id, ROUTER_TYPE_TAG)
 
-    @mapper(NAME_TYPE_POLICY_RULE_SET)
-    def policy_rule_set(self, context, policy_rule_set_id,
-                        policy_rule_set_name=None):
-        return policy_rule_set_name
+    def policy_rule_set(self, session, id, prefix=""):
+        return self._map(session, id, POLICY_RULE_SET_TYPE_TAG, prefix)
 
-    @mapper(NAME_TYPE_POLICY_RULE)
-    def policy_rule(self, context, policy_rule_id,
-                    policy_rule_name=None):
-        return policy_rule_name
+    def policy_rule(self, session, id, prefix=""):
+        return self._map(session, id, POLICY_RULE_TYPE_TAG, prefix)
 
-    @mapper(NAME_TYPE_EXTERNAL_SEGMENT)
-    def external_segment(self, context, external_segment_id):
-        external_segment = context._plugin.get_external_segment(
-            context._plugin_context, external_segment_id)
-        return external_segment['name']
+    def _map(self, session, id, type_tag, prefix=""):
+        return ("%(prefix)s%(type_tag)s_%(id)s" %
+                {'prefix': prefix, 'type_tag': type_tag, 'id': id})
 
-    @mapper(NAME_TYPE_EXTERNAL_POLICY)
-    def external_policy(self, context, external_policy_id):
-        external_policy = context._plugin.get_external_policy(
-            context._plugin_context, external_policy_id)
-        return external_policy['name']
-
-    @mapper(NAME_TYPE_NAT_POOL)
-    def nat_pool(self, context, nat_pool_id):
-        nat_pool = context._plugin.get_nat_pool(context._plugin_context,
-                                                nat_pool_id)
-        return nat_pool['name']
-
-    def delete_apic_name(self, session, object_id):
-        # This method is kept for compatibility with existing code
-        # until the name mapper is phased out entirely.
-        pass
+    def _unmap(self, session, name):
+        return name.split('_', 1)[-1]
