@@ -278,8 +278,17 @@ class ImplicitResourceOperations(local_api.LocalAPI,
                                clean_session=True):
         if self._address_scope_is_owned(plugin_context.session,
                                         address_scope_id):
-            self._delete_address_scope(plugin_context, address_scope_id,
-                                       clean_session)
+            subpools = self._get_subnetpools(plugin_context,
+                                             filters={'address_scope_id':
+                                                      [address_scope_id]})
+            if subpools:
+                LOG.warning(_LW("Cannot delete implicitly created "
+                                "address_scope %(id)s since it has "
+                                "associated subnetpools: %(pools)s"),
+                            {'id': address_scope_id, 'pools': subpools})
+            else:
+                self._delete_address_scope(plugin_context, address_scope_id,
+                                           clean_session)
 
     def _create_implicit_subnetpool(self, context, clean_session=True,
                                     **kwargs):
@@ -311,8 +320,17 @@ class ImplicitResourceOperations(local_api.LocalAPI,
                             clean_session=True):
         if self._subnetpool_is_owned(plugin_context.session,
                                      subnetpool_id):
-            self._delete_subnetpool(plugin_context, subnetpool_id,
-                                    clean_session)
+            subnets = self._get_subnets(plugin_context,
+                                        filters={'subnetpool_id':
+                                                 [subnetpool_id]})
+            if subnets:
+                LOG.warning(_LW("Cannot delete implicitly created "
+                                "subnetpool %(id)s since it has "
+                                "associated subnets: %(subnets)s"),
+                            {'id': subnetpool_id, 'subnets': subnets})
+            else:
+                self._delete_subnetpool(plugin_context, subnetpool_id,
+                                        clean_session)
 
     def _create_implicit_network(self, context, clean_session=True, **kwargs):
         attrs = {'tenant_id': context.current['tenant_id'],
