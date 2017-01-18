@@ -435,6 +435,7 @@ class TestPolicyTarget(ApicMappingTestCase):
     def _do_test_get_gbp_details(self):
         if self.single_tenant_mode and self.driver.per_tenant_nat_epg:
             return
+        self.driver.apic_optimized_dhcp_lease_time = 100
         self._mock_external_dict([('supported', '192.168.0.2/24')])
         self.driver.apic_manager.ext_net_dict[
                 'supported']['host_pool_cidr'] = '192.168.200.1/24'
@@ -529,6 +530,7 @@ class TestPolicyTarget(ApicMappingTestCase):
         self.assertEqual("192.168.200.3",
             mapping['host_snat_ips'][0]['host_snat_ip'])
         self.assertEqual(24, mapping['host_snat_ips'][0]['prefixlen'])
+        self.assertEqual(100, mapping['dhcp_lease_time'])
 
     def test_get_gbp_details(self):
         self._do_test_get_gbp_details()

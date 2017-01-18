@@ -374,6 +374,8 @@ class ApicMappingDriver(api.ResourceMappingDriver,
                        'this will result in automatic creation of a PTG '
                        'per L2 Policy'))
         self.tenants_with_name_alias_set = set()
+        self.apic_optimized_dhcp_lease_time = (
+            self.apic_manager.apic_optimized_dhcp_lease_time)
 
     def _setup_rpc_listeners(self):
         self.endpoints = [rpc.GBPServerRpcCallback(self, self.notifier)]
@@ -593,6 +595,8 @@ class ApicMappingDriver(api.ResourceMappingDriver,
         if self.apic_segmentation_label_driver and pt and (
             'segmentation_labels' in pt):
             details['segmentation_labels'] = pt['segmentation_labels']
+        if self.apic_optimized_dhcp_lease_time > 0:
+            details['dhcp_lease_time'] = self.apic_optimized_dhcp_lease_time
         return details
 
     # RPC Method
