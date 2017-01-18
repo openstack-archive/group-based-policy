@@ -2226,14 +2226,16 @@ class TestPolicyTarget(AIMBaseTestCase):
         self._verify_host_snat_ip_details(mapping,
             'uni:tn-t1:out-l2:instP-n2', '200.200.0.3', '200.200.0.1/16')
 
-    def _do_test_gbp_details_no_pt(self):
+    def _do_test_gbp_details_no_pt(self, use_as=True):
         # Create port and bind it
         address_scope = self._make_address_scope(
             self.fmt, 4, name='as1')['address_scope']
+        kargs = {}
+        if use_as:
+            kargs['address_scope_id'] = address_scope['id']
         subnetpool = self._make_subnetpool(
             self.fmt, ['10.10.0.0/26', '1.1.0.0/16'],
-            name='as1', address_scope_id=address_scope['id'],
-            tenant_id=self._tenant_id)['subnetpool']
+            name='as1', tenant_id=self._tenant_id, **kargs)['subnetpool']
         self._make_subnetpool(
             self.fmt, ['2.1.0.0/16'],
             name='as2', address_scope_id=address_scope['id'],
@@ -2277,9 +2279,11 @@ class TestPolicyTarget(AIMBaseTestCase):
                         request={'device': 'tap%s' % port_id,
                                  'timestamp': 0, 'request_id': 'request_id'},
                         host='h1')
+                    vrf_id = '%s %s' % (self._tenant_id,
+                                        address_scope['id']
+                                        if use_as else 'DefaultVRF')
                     vrf_mapping = self.driver.get_vrf_details(
-                        self._neutron_admin_context,
-                        vrf_id=address_scope['id'])
+                        self._neutron_admin_context, vrf_id=vrf_id)
 
                     epg_name = self.name_mapper.network(
                         self._neutron_context.session, network['id'],
@@ -2289,18 +2293,19 @@ class TestPolicyTarget(AIMBaseTestCase):
                     self._verify_gbp_details_assertions(
                         mapping, req_mapping, port_id, epg_name, epg_tenant,
                         subnet, default_route='1.1.2.1')
-                    vrf_name = self.name_mapper.address_scope(
-                        self._neutron_context.session, address_scope['id'],
-                        address_scope['name'])
+                    vrf_name = 'DefaultVRF'
+                    if use_as:
+                        vrf_name = self.name_mapper.address_scope(
+                            self._neutron_context.session, address_scope['id'],
+                            address_scope['name'])
                     # Verify for both GBP details and VRF details
+                    supernet = ['1.1.2.0/24']
+                    if use_as:
+                        supernet = ['10.10.0.0/26', '1.1.0.0/16', '2.1.0.0/16']
                     self._verify_vrf_details_assertions(
-                        mapping, vrf_name, address_scope['id'],
-                        ['10.10.0.0/26', '1.1.0.0/16', '2.1.0.0/16'],
-                        epg_tenant)
+                        mapping, vrf_name, vrf_id, supernet, epg_tenant)
                     self._verify_vrf_details_assertions(
-                        vrf_mapping, vrf_name, address_scope['id'],
-                        ['10.10.0.0/26', '1.1.0.0/16', '2.1.0.0/16'],
-                        epg_tenant)
+                        vrf_mapping, vrf_name, vrf_id, supernet, epg_tenant)
                     self._verify_fip_details(mapping, fip, 't1', 'EXT-l1')
                     self._verify_ip_mapping_details(mapping,
                         'uni:tn-t1:out-l2:instP-n2', 't1', 'EXT-l2')
@@ -2315,6 +2320,9 @@ class TestPolicyTarget(AIMBaseTestCase):
         # Test that traditional Neutron ports behave correctly from the
         # RPC perspective
         self._do_test_gbp_details_no_pt()
+
+    def test_get_gbp_details_no_pt_no_as(self):
+        self._do_test_gbp_details_no_pt(use_as=False)
 
 
 class TestPolicyTargetRollback(AIMBaseTestCase):

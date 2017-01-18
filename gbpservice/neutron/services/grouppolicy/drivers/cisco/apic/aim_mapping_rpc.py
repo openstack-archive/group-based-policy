@@ -18,12 +18,18 @@ from neutron.common import rpc as n_rpc
 from neutron.common import topics
 from neutron.plugins.ml2 import rpc as ml2_rpc
 from opflexagent import rpc as o_rpc
+from oslo_db import api as oslo_db_api
 from oslo_log import log
 
 from gbpservice.neutron.services.grouppolicy.drivers.cisco.apic import (
     nova_client as nclient)
 
 LOG = log.getLogger(__name__)
+MAX_RETRIES = 5
+
+db_exc_retry = oslo_db_api.wrap_db_retry(max_retries=MAX_RETRIES,
+                                         retry_on_request=True,
+                                         retry_on_deadlock=True)
 
 
 class AIMMappingRPCMixin(ha_ip_db.HAIPOwnerDbMixin):
@@ -48,15 +54,31 @@ class AIMMappingRPCMixin(ha_ip_db.HAIPOwnerDbMixin):
             self.opflex_topic, self.opflex_endpoints, fanout=False)
         self.opflex_conn.consume_in_threads()
 
-    def get_vrf_details(self, context, **kwargs):
-        details = {'l3_policy_id': kwargs['vrf_id']}
-        details['_cache'] = {}
-        self._add_vrf_details(context, details['l3_policy_id'], details)
-        details.pop('_cache', None)
+    @db_exc_retry
+    def _retrieve_vrf_details(self, context, **kwargs):
+        with context.session.begin(subtransactions=True):
+            details = {'l3_policy_id': kwargs['vrf_id']}
+            details['_cache'] = {}
+            self._add_vrf_details(context, details['l3_policy_id'], details)
+            details.pop('_cache', None)
         return details
 
+    def _get_vrf_details(self, context, **kwargs):
+        LOG.debug("APIC AIM handling _get_vrf_details for: %s", kwargs)
+        try:
+            return self._retrieve_vrf_details(context, **kwargs)
+        except Exception as e:
+            vrf = kwargs.get('vrf_id')
+            LOG.error(_LE("An exception has occurred while retrieving vrf "
+                          "gbp details for %s"), vrf)
+            LOG.exception(e)
+            return {'l3_policy_id': vrf}
+
+    def get_vrf_details(self, context, **kwargs):
+        return self._get_vrf_details(context, **kwargs)
+
     def request_vrf_details(self, context, **kwargs):
-        return self.get_vrf_details(context, **kwargs)
+        return self._get_vrf_details(context, **kwargs)
 
     def get_gbp_details(self, context, **kwargs):
         LOG.debug("APIC AIM MD handling get_gbp_details for: %s", kwargs)
@@ -97,70 +119,71 @@ class AIMMappingRPCMixin(ha_ip_db.HAIPOwnerDbMixin):
     # for both Neutron and GBP.
     # - self._is_dhcp_optimized(context, port);
     # - self._is_metadata_optimized(context, port);
-    # - self._get_vrf_id(context, port, details): VRF identified for the port;
+    @db_exc_retry
     def _get_gbp_details(self, context, request, host):
-        # TODO(ivar): should this happen within a single transaction? what are
-        # the concurrency risks?
-        device = request.get('device')
+        with context.session.begin(subtransactions=True):
+            device = request.get('device')
 
-        core_plugin = self._core_plugin
-        port_id = core_plugin._device_to_port_id(context, device)
-        port_context = core_plugin.get_bound_port_context(context, port_id,
-                                                          host)
-        if not port_context:
-            LOG.warning(_LW("Device %(device)s requested by agent "
-                            "%(agent_id)s not found in database"),
-                        {'device': port_id,
-                         'agent_id': request.get('agent_id')})
-            return {'device': request.get('device')}
-        port = port_context.current
+            core_plugin = self._core_plugin
+            port_id = core_plugin._device_to_port_id(context, device)
+            port_context = core_plugin.get_bound_port_context(context, port_id,
+                                                              host)
+            if not port_context:
+                LOG.warning(_LW("Device %(device)s requested by agent "
+                                "%(agent_id)s not found in database"),
+                            {'device': port_id,
+                             'agent_id': request.get('agent_id')})
+                return {'device': request.get('device')}
+            port = port_context.current
 
-        # NOTE(ivar): removed the PROXY_PORT_PREFIX hack.
-        # This was needed to support network services without hotplug.
+            # NOTE(ivar): removed the PROXY_PORT_PREFIX hack.
+            # This was needed to support network services without hotplug.
 
-        epg = self._get_port_epg(context, port)
+            epg = self._get_port_epg(context, port)
 
-        details = {'device': request.get('device'),
-                   'enable_dhcp_optimization': self._is_dhcp_optimized(
-                       context, port),
-                   'enable_metadata_optimization': self._is_metadata_optimized(
-                       context, port),
-                   'port_id': port_id,
-                   'mac_address': port['mac_address'],
-                   'app_profile_name': epg.app_profile_name,
-                   'tenant_id': port['tenant_id'],
-                   'host': host,
-                   # TODO(ivar): scope names, possibly through AIM or the name
-                   # mapper
-                   'ptg_tenant': epg.tenant_name,
-                   'endpoint_group_name': epg.name,
-                   'promiscuous_mode': self._is_port_promiscuous(context,
-                                                                 port),
-                   'extra_ips': [],
-                   'floating_ip': [],
-                   'ip_mapping': [],
-                   # Put per mac-address extra info
-                   'extra_details': {}}
+            details = {'device': request.get('device'),
+                       'enable_dhcp_optimization': self._is_dhcp_optimized(
+                           context, port),
+                       'enable_metadata_optimization': (
+                           self._is_metadata_optimized(context, port)),
+                       'port_id': port_id,
+                       'mac_address': port['mac_address'],
+                       'app_profile_name': epg.app_profile_name,
+                       'tenant_id': port['tenant_id'],
+                       'host': host,
+                       # TODO(ivar): scope names, possibly through AIM or the
+                       # name mapper
+                       'ptg_tenant': epg.tenant_name,
+                       'endpoint_group_name': epg.name,
+                       'promiscuous_mode': self._is_port_promiscuous(context,
+                                                                     port),
+                       'extra_ips': [],
+                       'floating_ip': [],
+                       'ip_mapping': [],
+                       # Put per mac-address extra info
+                       'extra_details': {}}
 
-        # Set VM name if needed.
-        if port['device_owner'].startswith('compute:') and port['device_id']:
-            vm = nclient.NovaClient().get_server(port['device_id'])
-            details['vm-name'] = vm.name if vm else port['device_id']
+            # Set VM name if needed.
+            if port['device_owner'].startswith(
+                    'compute:') and port['device_id']:
+                vm = nclient.NovaClient().get_server(port['device_id'])
+                details['vm-name'] = vm.name if vm else port['device_id']
 
-        # NOTE(ivar): having these methods cleanly separated actually makes
-        # things less efficient by requiring lots of calls duplication.
-        # we could alleviate this by passing down a cache that stores commonly
-        # requested objects (like EPGs). 'details' itself could be used for
-        # such caching.
-        details['_cache'] = {}
-        details['l3_policy_id'] = self._get_vrf_id(context, port, details)
-        self._add_subnet_details(context, port, details)
-        self._add_allowed_address_pairs_details(context, port, details)
-        self._add_vrf_details(context, details['l3_policy_id'], details)
-        self._add_nat_details(context, port, host, details)
-        self._add_extra_details(context, port, details)
-        self._add_segmentation_label_details(context, port, details)
-        details.pop('_cache', None)
+            # NOTE(ivar): having these methods cleanly separated actually makes
+            # things less efficient by requiring lots of calls duplication.
+            # we could alleviate this by passing down a cache that stores
+            # commonly requested objects (like EPGs). 'details' itself could
+            # be used for such caching.
+            details['_cache'] = {}
+            vrf = self._get_port_vrf(context, port, details)
+            details['l3_policy_id'] = '%s %s' % (vrf.tenant_name, vrf.name)
+            self._add_subnet_details(context, port, details)
+            self._add_allowed_address_pairs_details(context, port, details)
+            self._add_vrf_details(context, details['l3_policy_id'], details)
+            self._add_nat_details(context, port, host, details)
+            self._add_extra_details(context, port, details)
+            self._add_segmentation_label_details(context, port, details)
+            details.pop('_cache', None)
 
         LOG.debug("Details for port %s : %s" % (port['id'], details))
         return details
@@ -198,24 +221,20 @@ class AIMMappingRPCMixin(ha_ip_db.HAIPOwnerDbMixin):
                                                                  details)
 
     # Child class needs to support:
-    # - self._get_port_vrf(context, port, details): AIM VRF for the port;
-    # - self._get_vrf_subnets(context, port, details): Subnets managed
-    # by the port's VRF.
+    # - self._get_vrf_subnets(context, vrf_tenant_name, vrf_name, details):
+    # Subnets managed by the specific VRF.
     def _add_vrf_details(self, context, vrf_id, details):
-        # TODO(ivar): VRF details depend on Address Scopes from Neutron
         # This method needs to define requirements for this Mixin's child
         # classes in order to fill the following result parameters:
         # - l3_policy_id;
         # - vrf_tenant;
         # - vrf_name;
         # - vrf_subnets.
-        aim_vrf = self._get_port_vrf(context, vrf_id, details)
-        if aim_vrf:
-            # TODO(ivar): scope
-            details['vrf_tenant'] = aim_vrf.tenant_name
-            details['vrf_name'] = aim_vrf.name
-            details['vrf_subnets'] = self._get_vrf_subnets(context, vrf_id,
-                                                           details)
+        tenant_name, name = vrf_id.split(' ')
+        details['vrf_tenant'] = tenant_name
+        details['vrf_name'] = name
+        details['vrf_subnets'] = self._get_vrf_subnets(context, tenant_name,
+                                                       name, details)
 
     # Child class needs to support:
     # - self._get_segmentation_labels(context, port, details)
