@@ -30,8 +30,8 @@ from neutron import context
 from neutron.db import api as db_api
 from neutron.db import db_base_plugin_v2 as n_db
 from neutron.db import model_base
-from neutron.extensions import portbindings
 from neutron import manager
+from neutron_lib.api.definitions import portbindings
 from opflexagent import constants as ocst
 from oslo_config import cfg
 from oslo_serialization import jsonutils

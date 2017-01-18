@@ -38,12 +38,12 @@ from neutron.db import api as db_api
 from neutron.db import l3_db
 from neutron.db import models_v2
 from neutron.db import rbac_db_models
-from neutron.extensions import portbindings
 from neutron import manager
 from neutron.plugins.common import constants as pconst
 from neutron.plugins.ml2 import db
 from neutron.plugins.ml2 import driver_api as api
 from neutron.plugins.ml2 import models
+from neutron_lib.api.definitions import portbindings
 from opflexagent import constants as ofcst
 from opflexagent import rpc as ofrpc
 from oslo_config import cfg

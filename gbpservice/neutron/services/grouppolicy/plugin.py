@@ -16,10 +16,10 @@ from neutron._i18n import _LE
 from neutron._i18n import _LW
 from neutron.api.v2 import attributes as nattr
 from neutron import context as n_ctx
-from neutron.extensions import portbindings
 from neutron import manager as n_manager
 from neutron.plugins.common import constants as pconst
 from neutron.quota import resource_registry
+from neutron_lib.api.definitions import portbindings
 from oslo_log import helpers as log
 from oslo_log import log as logging
 from oslo_utils import excutils
