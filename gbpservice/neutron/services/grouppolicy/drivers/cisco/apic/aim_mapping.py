@@ -1715,69 +1715,73 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
                     allowed['active'] = True
         return aaps
 
-    def _get_port_address_scope(self, plugin_context, port):
-        for ip in port['fixed_ips']:
-            subnet = self._get_subnet(plugin_context, ip['subnet_id'])
-            subnetpool = self._get_subnetpools(
-                plugin_context, filters={'id': [subnet['subnetpool_id']]})
-            if subnetpool:
-                address_scope = self._get_address_scopes(
-                    plugin_context,
-                    filters={'id': [subnetpool[0]['address_scope_id']]})
-                if address_scope:
-                    return address_scope[0]
+    def _get_port_vrf(self, plugin_context, port, details):
+        net_db = self._core_plugin._get_network(plugin_context,
+                                                port['network_id'])
+        aim_ctx = aim_context.AimContext(db_session=plugin_context.session)
+        return (
+            self.aim_mech_driver._get_routed_vrf_for_network(
+                plugin_context.session, net_db) or
+            self.aim_mech_driver._ensure_unrouted_vrf(aim_ctx))
 
-    def _get_port_address_scope_cached(self, plugin_context, port, cache):
-        if not cache.get('gbp_map_address_scope'):
-            cache['gbp_map_address_scope'] = (
-                self._get_port_address_scope(plugin_context, port))
-        return cache['gbp_map_address_scope']
+    def _get_vrf(self, plugin_context, vrf_tenant_name, vrf_name, details):
+        aim_ctx = aim_context.AimContext(db_session=plugin_context.session)
+        # REVISIT(ivar): we assume that VRF names are unique regardless of the
+        # tenant!
+        return self.aim.get(aim_ctx, aim_resource.VRF(
+            tenant_name=vrf_tenant_name, name=vrf_name))
 
-    def _get_address_scope_cached(self, plugin_context, vrf_id, cache):
-        if not cache.get('gbp_map_address_scope'):
+    def _get_vrf_subnets(self, plugin_context, vrf_tenant_name, vrf_name,
+                         details):
+        result = []
+        # get all subnets of the unrouted VRF
+        with plugin_context.session.begin(subtransactions=True):
+            # Find VRF address_scope first
+            # REVISIT(ivar): use reverse name mapping once available
+            # instead of assuming the name format.
             address_scope = self._get_address_scopes(
-                plugin_context, filters={'id': [vrf_id]})
-            cache['gbp_map_address_scope'] = (address_scope[0] if
-                                              address_scope else None)
-        return cache['gbp_map_address_scope']
+                plugin_context, {'id': [vrf_name.split('_')[-1]]})
+            if address_scope:
+                subnetpools = self._get_subnetpools(
+                    plugin_context,
+                    filters={'address_scope_id': [address_scope[0]['id']]})
+                for pool in subnetpools:
+                    result.extend(pool['prefixes'])
+            else:
+                aim_ctx = aim_context.AimContext(
+                    db_session=plugin_context.session)
+                if vrf_tenant_name is not 'common':
+                    bds = self.aim.find(aim_ctx, aim_resource.BridgeDomain,
+                                        tenant_name=vrf_tenant_name,
+                                        vrf_name=vrf_name)
+                else:
+                    bds = self.aim.find(aim_ctx, aim_resource.BridgeDomain,
+                                        vrf_name=vrf_name)
+                    other_vrfs = self.aim.find(aim_ctx, aim_resource.VRF,
+                                               name=vrf_name)
+                    bd_tenants = set([x['tenant_name'] for x in bds])
+                    vrf_tenants = set([x['tenant_name'] for x in other_vrfs])
+                    valid_tenants = bd_tenants - vrf_tenants
+                    # Only keep BDs that don't have a VRF with that name
+                    # already
+                    bds = [x for x in bds if x['tenant_name'] in valid_tenants]
+                # Retrieve subnets from BDs
+                net_ids = self._get_network_ids_from_bds(plugin_context, bds)
+                if net_ids:
+                    subnets = self._get_subnets(plugin_context,
+                                                {'network_id': net_ids})
+                    result = [x['cidr'] for x in subnets]
+        return result
 
-    def _get_vrf_id(self, plugin_context, port, details):
-        # retrieve the Address Scope from the Neutron port
-        address_scope = self._get_port_address_scope_cached(
-            plugin_context, port, details['_cache'])
-        # TODO(ivar): what should we return if Address Scope doesn't exist?
-        return address_scope['id'] if address_scope else None
-
-    def _get_port_vrf(self, plugin_context, vrf_id, details):
-        address_scope = self._get_address_scope_cached(
-            plugin_context, vrf_id, details['_cache'])
-        if address_scope:
-            vrf_name = self.name_mapper.address_scope(
-                plugin_context.session, address_scope['id'],
-                address_scope['name'])
-            tenant_name = self.name_mapper.tenant(
-                plugin_context.session, address_scope['tenant_id'])
-            aim_ctx = aim_context.AimContext(plugin_context.session)
-            epg = aim_resource.VRF(tenant_name=tenant_name, name=vrf_name)
-            return self.aim.get(aim_ctx, epg)
-
-    def _get_vrf_subnets(self, plugin_context, vrf_id, details):
-        subnets = []
-        address_scope = self._get_address_scope_cached(
-            plugin_context, vrf_id, details['_cache'])
-        if address_scope:
-            # Get all the subnetpools associated with this Address Scope
-            subnetpools = self._get_subnetpools(
-                plugin_context,
-                filters={'address_scope_id': [address_scope['id']]})
-            for pool in subnetpools:
-                subnets.extend(pool['prefixes'])
-        return subnets
+    def _get_network_ids_from_bds(self, plugin_context, aim_bds):
+        # REVISIT(ivar): use reverse name mapping once available
+        # instead of assuming the name format.
+        return [x.name.split('_')[-1] for x in aim_bds]
 
     def _get_segmentation_labels(self, plugin_context, port, details):
         pt = self._port_id_to_pt(plugin_context, port['id'])
         if self.apic_segmentation_label_driver and pt and (
-            'segmentation_labels' in pt):
+                    'segmentation_labels' in pt):
             return pt['segmentation_labels']
 
     def _get_nat_details(self, plugin_context, port, host, details):
