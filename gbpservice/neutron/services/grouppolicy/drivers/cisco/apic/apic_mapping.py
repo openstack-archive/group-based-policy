@@ -37,12 +37,12 @@ from neutron import context as nctx
 from neutron.db import db_base_plugin_v2 as n_db
 from neutron.db import model_base
 from neutron.extensions import portbindings
-from neutron.extensions import providernet
 from neutron import manager
 from neutron.plugins.common import constants as p_const
 from neutron.plugins.ml2 import driver_api as n_api
 from neutron.plugins.ml2 import models as ml2_models
 from neutron.plugins.ml2 import rpc as neu_rpc
+from neutron_lib.api.definitions import provider_net as providernet
 from opflexagent import constants as ofcst
 from opflexagent import rpc
 from oslo_concurrency import lockutils
