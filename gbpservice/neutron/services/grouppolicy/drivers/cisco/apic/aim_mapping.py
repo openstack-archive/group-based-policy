@@ -22,6 +22,7 @@ from neutron.api.v2 import attributes
 from neutron.common import constants as n_constants
 from neutron.common import exceptions as n_exc
 from neutron import context as n_context
+from neutron.db import models_v2
 from neutron import manager
 from neutron import policy
 from oslo_concurrency import lockutils
@@ -123,6 +124,12 @@ class AutoPTGDeleteNotSupported(exc.GroupPolicyBadRequest):
 class SharedAttributeUpdateNotSupported(exc.GroupPolicyBadRequest):
     message = _("Resource shared attribute update not supported with AIM "
                 "GBP driver for resource of type %(type)s")
+
+
+class IncorrectSubnetpoolUpdate(exc.GroupPolicyBadRequest):
+    message = _("Subnetpool %(subnetpool_id)s cannot be disassociated "
+                "from L3 Policy %(l3p_id)s since it has allocated subnet(s) "
+                "associated with that L3 Policy")
 
 
 class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
@@ -290,6 +297,9 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
             removedv6 = list(set(context.original['subnetpools_v6']) -
                              set(context.current['subnetpools_v6']))
             for sp_id in (removedv4 + removedv6):
+                if sp_id in self._get_in_use_subnetpools_for_l3p(context):
+                    raise IncorrectSubnetpoolUpdate(
+                        subnetpool_id=sp_id, l3p_id=context.current['id'])
                 # If an implicitly created subnetpool is being disassocaited
                 # we try to delete it
                 self._cleanup_subnetpool(context._plugin_context, sp_id,
@@ -941,8 +951,9 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
             'subnetpools_v6')
         if len(l3p_db[subpool]) == 1:
             sp_id = l3p_db[subpool][0]['subnetpool_id']
+            # admin context to retrieve subnetpools from a different tenant
             sp = self._get_subnetpool(
-                context._plugin_context, sp_id, clean_session=False)
+                context._plugin_context.elevated(), sp_id, clean_session=False)
             if not sp['address_scope_id']:
                 raise NoAddressScopeForSubnetpool()
             if len(sp['prefixes']) == 1:
@@ -2167,3 +2178,17 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
     def _handle_create_network_service_policy(self, context):
         self._validate_nat_pool_for_nsp(context)
         self._handle_network_service_policy(context)
+
+    def _get_in_use_subnetpools_for_l3p(self, context):
+        return [x.subnetpool_id for x in
+                context._plugin_context.session.query(models_v2.Subnet).join(
+                    gpmdb.PTGToSubnetAssociation,
+                    gpmdb.PTGToSubnetAssociation.subnet_id ==
+                    models_v2.Subnet.id
+                ).join(gpmdb.PolicyTargetGroupMapping,
+                       gpmdb.PTGToSubnetAssociation.policy_target_group_id ==
+                       gpmdb.PolicyTargetGroupMapping.id).join(
+                           gpmdb.L2PolicyMapping).join(
+                               gpmdb.L3PolicyMapping).filter(
+                                   gpmdb.L2PolicyMapping.l3_policy_id ==
+                                   context.current['id']).all()]
