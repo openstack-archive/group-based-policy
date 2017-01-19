@@ -352,6 +352,8 @@ def create_orchestrator_ctl():
         print("Error: /usr/lib/systemd/system not present")
         sys.exit(1)
 
+    subprocess.call(["systemctl", "enable", "nfp_orchestrator"])
+
     orch_config_file = TEMP_WORK_DIR + "/nfp_config_orch.service"
     try:
         file = open(orch_config_file, 'w+')
@@ -375,6 +377,8 @@ def create_orchestrator_ctl():
     else:
         print("Error: /usr/lib/systemd/system not present")
         sys.exit(1)
+
+    subprocess.call(["systemctl", "enable", "nfp_config_orch"])
 
     try:
         shutil.rmtree(TEMP_WORK_DIR)
@@ -582,6 +586,8 @@ def create_proxy_ctl():
         print("error: /usr/bin not present")
         sys.exit(1)
 
+    subprocess.call(["systemctl", "enable", "nfp_proxy"])
+
     try:
         shutil.rmtree(TEMP_WORK_DIR)
     except:
@@ -618,6 +624,8 @@ def create_proxy_agent_ctl():
     else:
         print("error: /usr/lib/systemd/system not present")
         sys.exit(1)
+
+    subprocess.call(["systemctl", "enable", "nfp_proxy_agent"])
 
     try:
         shutil.rmtree(TEMP_WORK_DIR)
