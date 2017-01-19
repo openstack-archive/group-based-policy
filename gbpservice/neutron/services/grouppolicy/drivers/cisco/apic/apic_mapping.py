@@ -656,7 +656,10 @@ class ApicMappingDriver(api.ResourceMappingDriver,
                              'network_id': [network['id']],
                              'device_id': [host_or_vrf]})
             snat_ip = None
-            if not snat_ports:
+            if not snat_ports or not snat_ports[0]['fixed_ips']:
+                if snat_ports:
+                    # Fixed IP disappeared
+                    self._delete_port(context, snat_ports[0]['id'])
                 # Note that the following port is created for only getting
                 # an IP assignment in the
                 attrs = {'device_id': host_or_vrf,
@@ -682,16 +685,8 @@ class ApicMappingDriver(api.ResourceMappingDriver,
                                  'net_id': network['id'],
                                  'host_or_vrf': host_or_vrf})
                     return {}
-            elif snat_ports[0]['fixed_ips']:
-                snat_ip = snat_ports[0]['fixed_ips'][0]['ip_address']
             else:
-                LOG.warning(_("SNAT-port %(port)s for external network "
-                              "%(net)s on host or VRF %(host_or_vrf)s doesn't "
-                              "have an IP-address"),
-                            {'port': snat_ports[0]['id'],
-                             'net': network['id'],
-                             'host_or_vrf': host_or_vrf})
-                return {}
+                snat_ip = snat_ports[0]['fixed_ips'][0]['ip_address']
 
             return {'external_segment_name': es_name,
                     'host_snat_ip': snat_ip,
