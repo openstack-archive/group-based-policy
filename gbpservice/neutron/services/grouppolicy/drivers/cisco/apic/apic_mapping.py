@@ -634,7 +634,10 @@ class ApicMappingDriver(api.ResourceMappingDriver,
                              'network_id': [network['id']],
                              'device_id': [host_or_vrf]})
             snat_ip = None
-            if not snat_ports:
+            if not snat_ports or not snat_ports[0]['fixed_ips']:
+                if snat_ports:
+                    # Fixed IP disappeared
+                    self._delete_port(context, snat_ports[0]['id'])
                 # Note that the following port is created for only getting
                 # an IP assignment in the
                 attrs = {'device_id': host_or_vrf,
