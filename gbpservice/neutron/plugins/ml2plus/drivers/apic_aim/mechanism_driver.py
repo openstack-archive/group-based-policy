@@ -871,6 +871,8 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
             if different_router and different_subnet:
                 raise UnsupportedRoutingTopology()
 
+        router_topo_moved = False
+
         # Ensure that all the BDs and EPGs in the resulting topology
         # are mapped under the same Tenant so that the BDs can all
         # reference the topology's VRF and the EPGs can all provide
@@ -920,6 +922,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
                     vrf = self._ensure_default_vrf(aim_ctx, intf_vrf)
                     self._move_topology(
                         aim_ctx, router_topology, router_vrf, vrf)
+                    router_topo_moved = True
                     # REVISIT: Delete router_vrf if no longer used?
                 elif router_shared_net:
                     # Router topology has shared network, so move
@@ -980,15 +983,25 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
             epg = self.aim.update(aim_ctx, epg,
                                   provided_contract_names=contracts)
 
+        # If external-gateway is set, handle external-connectivity changes.
         if router.gw_port_id:
+            net = self.plugin.get_network(context,
+                                          router.gw_port.network_id)
             # If this is first interface-port, then that will determine
-            # the VRF for this router. Setup exteral-connectivity for VRF
-            # if external-gateway is set.
+            # the VRF for this router. Setup external-connectivity for VRF.
             if not router_intf_count:
-                net = self.plugin.get_network(context,
-                                              router.gw_port.network_id)
                 self._manage_external_connectivity(context, router, None, net,
                                                    vrf)
+            elif router_topo_moved:
+                # Router moved from router_vrf to vrf, so
+                # 1. Update router_vrf's external connectivity to exclude
+                #    router
+                # 2. Update vrf's external connectivity to include router
+                self._manage_external_connectivity(context, router, net, None,
+                                                   router_vrf)
+                self._manage_external_connectivity(context, router, None, net,
+                                                   vrf)
+
             # SNAT information of ports on the subnet will change because
             # of router interface addition. Send a port update so that it may
             # be recalculated.
@@ -1052,6 +1065,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
             epg = self.aim.update(aim_ctx, epg,
                                   provided_contract_names=contracts)
 
+        router_topo_moved = False
         # If unscoped topologies have split, move VRFs as needed.
         if scope_id == NO_ADDR_SCOPE:
             # If the interface's network has not become unrouted, see
@@ -1075,24 +1089,36 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
                 if old_vrf.identity != router_vrf.identity:
                     self._move_topology(
                         aim_ctx, router_topology, old_vrf, router_vrf)
+                    router_topo_moved = True
 
         # If network is no longer connected to any router, make the
         # network's BD unrouted.
         if not router_ids:
             self._dissassociate_network_from_vrf(aim_ctx, network_db, old_vrf)
 
+        # If external-gateway is set, handle external-connectivity changes.
         if router_db.gw_port_id:
+            net = self.plugin.get_network(context,
+                                          router_db.gw_port.network_id)
             # If this was the last interface-port, then we no longer know
             # the VRF for this router. So update external-conectivity to
             # exclude this router.
             if not self._get_router_intf_count(session, router_db):
-                net = self.plugin.get_network(context,
-                                              router_db.gw_port.network_id)
                 self._manage_external_connectivity(
                     context, router_db, net, None, old_vrf)
 
                 self._delete_snat_ip_ports_if_reqd(context, net['id'],
                                                    router_id)
+            elif router_topo_moved:
+                # Router moved from old_vrf to router_vrf, so
+                # 1. Update old_vrf's external connectivity to exclude router
+                # 2. Update router_vrf's external connectivity to include
+                #    router
+                self._manage_external_connectivity(context, router_db, net,
+                                                   None, old_vrf)
+                self._manage_external_connectivity(context, router_db, None,
+                                                   net, router_vrf)
+
             # SNAT information of ports on the subnet will change because
             # of router interface removal. Send a port update so that it may
             # be recalculated.
@@ -1925,6 +1951,10 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
         aim_ctx = aim_context.AimContext(db_session=session)
 
         vrf = vrf or self._get_vrf_for_router(session, router)
+        # Keep only the identity attributes of the VRF so that calls to
+        # nat-library have consistent resource values. This
+        # is mainly required to ease unit-test verification.
+        vrf = aim_resource.VRF(tenant_name=vrf.tenant_name, name=vrf.name)
         rtr_dbs = self._get_routers_for_vrf(session, vrf)
         ext_db = extension_db.ExtensionDbMixin()
 
