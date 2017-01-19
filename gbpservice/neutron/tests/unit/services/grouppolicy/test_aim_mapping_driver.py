@@ -717,11 +717,11 @@ class TestL3Policy(AIMBaseTestCase):
         res = req.get_response(self.api)
         self.assertEqual(webob.exc.HTTPNoContent.code, res.status_int)
 
-    def _test_l3_policy_lifecycle(self, explicit_address_scope=False,
-                                  explicit_subnetpool=False,
-                                  ip_version=4, ip_pool='192.168.0.0/16',
-                                  subnet_prefix_length=24, tenant_id=None,
-                                  shared=False):
+    def _create_l3_policy_for_lifecycle_tests(
+        self, explicit_address_scope=False, explicit_subnetpool=False,
+        ip_version=4, ip_pool='192.168.0.0/16', subnet_prefix_length=24,
+        tenant_id=None, shared=False):
+
         if not tenant_id:
             tenant_id = self._tenant_id
 
@@ -752,6 +752,21 @@ class TestL3Policy(AIMBaseTestCase):
         l3p = self.create_l3_policy(**attrs)['l3_policy']
         self._validate_create_l3_policy(l3p, [ip_pool])
         self._validate_status('show_l3_policy', l3p['id'])
+        return l3p
+
+    def _test_l3_policy_lifecycle(self, explicit_address_scope=False,
+                                  explicit_subnetpool=False,
+                                  ip_version=4, ip_pool='192.168.0.0/16',
+                                  subnet_prefix_length=24, tenant_id=None,
+                                  shared=False):
+        l3p = self._create_l3_policy_for_lifecycle_tests(
+            explicit_address_scope=explicit_address_scope,
+            explicit_subnetpool=explicit_subnetpool, ip_version=ip_version,
+            ip_pool=ip_pool, subnet_prefix_length=subnet_prefix_length,
+            tenant_id=tenant_id, shared=shared)
+        if not tenant_id:
+            tenant_id = l3p['tenant_id']
+
         if ip_version == 4:
             self._test_update_l3_policy_subnetpool(
                 l3p, prefixes=['10.0.0.0/8'], ip_version=4, shared=shared,
@@ -760,8 +775,8 @@ class TestL3Policy(AIMBaseTestCase):
             self._test_update_l3_policy_subnetpool(
                 l3p, prefixes=['fd6d:8d64:af0c:1::/64'], ip_version=6,
                 shared=shared, tenant_id=tenant_id)
-
         # TODO(Sumit): Test update of other relevant attributes
+
         self._validate_delete_l3_policy(
             l3p, explicit_address_scope=explicit_address_scope,
             explicit_subnetpool=explicit_subnetpool)
@@ -835,14 +850,14 @@ class TestL3Policy(AIMBaseTestCase):
         with self.address_scope(ip_version=4, shared=True) as ascpv4:
             ascpv4 = ascpv4['address_scope']
             with self.subnetpool(
-                name='v4', prefixes=['192.168.0.0/16'],
+                name='sp1v4', prefixes=['192.168.0.0/16'],
                 tenant_id=ascpv4['tenant_id'], default_prefixlen=24,
                 address_scope_id=ascpv4['id'], shared=False) as sp1v4:
                 sp1v4 = sp1v4['subnetpool']
                 # As admin, create a subnetpool in a different tenant
                 # but associated with the same address_scope
                 sp2v4 = self._make_subnetpool(
-                    self.fmt, ['10.0.0.0/8'], name='sp1',
+                    self.fmt, ['10.1.0.0/16'], name='sp2v4',
                     tenant_id='test-tenant-2', address_scope_id=ascpv4['id'],
                     default_prefixlen=24, shared=False,
                     admin=True)['subnetpool']
@@ -856,7 +871,18 @@ class TestL3Policy(AIMBaseTestCase):
                 self._validate_create_l3_policy(
                     l3p, compare_subnetpool_shared_attr=False)
                 self.assertEqual(2, len(l3p['subnetpools_v4']))
-                # TODO(Sumit): Test update of relevant attributes
+                sp3v4 = self._make_subnetpool(
+                    self.fmt, ['10.2.0.0/16'], name='sp3v4',
+                    tenant_id='test-tenant-3', address_scope_id=ascpv4['id'],
+                    default_prefixlen=24, shared=False,
+                    admin=True)['subnetpool']
+                l3p = self.update_l3_policy(
+                    l3p['id'],
+                    subnetpools_v4=[sp1v4['id'], sp2v4['id'], sp3v4['id']])[
+                        'l3_policy']
+                self.assertEqual(3, len(l3p['subnetpools_v4']))
+                self._validate_create_l3_policy(
+                    l3p, compare_subnetpool_shared_attr=False)
                 self._validate_delete_l3_policy(
                     l3p, explicit_address_scope=True, explicit_subnetpool=True)
 
@@ -943,6 +969,70 @@ class TestL3Policy(AIMBaseTestCase):
                             subnetpools_v4=[spv4['id']],
                             expected_res_status=400)
                         self.assertEqual(excp, res['NeutronError']['type'])
+
+    def _test_update_l3_policy_replace_implicit_subnetpool(
+        self, in_use=False, shared=False):
+        if in_use:
+            # We will create a L2P with auto-ptg so that a subnet
+            # is created that is associated with the implcit
+            # subnetpool of the l3p
+            self.driver.create_auto_ptg = True
+
+        l3p = self._create_l3_policy_for_lifecycle_tests(shared=shared)
+        ascp_id = l3p['address_scope_v4_id']
+        implicit_ip_pool = l3p['ip_pool']
+        implicit_subnet_prefix_length = l3p['subnet_prefix_length']
+        implicit_subpool_id = l3p['subnetpools_v4'][0]
+
+        # if address_scope is shared, use a different tenant for subnetpool
+        # to simulate cross-tenant scenario
+        sp_tenant_id = 'test-tenant-2' if shared else self._tenant_id
+        new_prefixes = ['10.0.0.0/16']
+        # if address_scope is shared, subnetpool is created in a different
+        # tenant, so use admin role
+        sp2 = self._make_subnetpool(
+            self.fmt, new_prefixes, name='sp2', address_scope_id=ascp_id,
+            tenant_id=sp_tenant_id, admin=shared)['subnetpool']
+        self.assertEqual(ascp_id, sp2['address_scope_id'])
+        self.assertEqual(new_prefixes, sp2['prefixes'])
+
+        attrs = {'id': l3p['id'], 'subnetpools_v4': [sp2['id']]}
+        if in_use:
+            l2p = self.create_l2_policy(name="l2p0",
+                                        l3_policy_id=l3p['id'])['l2_policy']
+            attrs['expected_res_status'] = webob.exc.HTTPBadRequest.code
+            self.update_l3_policy(**attrs)
+            self.delete_l2_policy(l2p['id'], expected_res_status=204)
+            attrs['expected_res_status'] = webob.exc.HTTPOk.code
+
+        l3p = self.update_l3_policy(**attrs)['l3_policy']
+
+        self.assertEqual(sp2['id'], l3p['subnetpools_v4'][0])
+        self.assertEqual(sp2['prefixes'][0], l3p['ip_pool'])
+        self.assertNotEqual(implicit_ip_pool, l3p['ip_pool'])
+
+        self.assertEqual(sp2['default_prefixlen'],
+                         str(l3p['subnet_prefix_length']))
+        self.assertNotEqual(implicit_subnet_prefix_length,
+                            l3p['subnet_prefix_length'])
+
+        # implicit subnetpool is deleted
+        req = self.new_show_request('subnetpools', implicit_subpool_id,
+                                    fmt=self.fmt)
+        res = req.get_response(self.api)
+        self.assertEqual(webob.exc.HTTPNotFound.code, res.status_int)
+        # Reset in case it was set earlier
+        self.driver.create_auto_ptg = False
+
+    def test_update_unshared_l3_policy_replace_implicit_subnetpool(self):
+        self._test_update_l3_policy_replace_implicit_subnetpool()
+
+    def test_update_shared_l3_policy_replace_implicit_subnetpool(self):
+        self._test_update_l3_policy_replace_implicit_subnetpool(shared=True)
+
+    def test_update_shared_l3_policy_replace_in_use_implicit_subnetpool(self):
+        self._test_update_l3_policy_replace_implicit_subnetpool(in_use=True,
+                                                                shared=True)
 
     def _check_routers_connections(self, l3p, ext_nets, eps, subnets):
         routers = self._show_all('router', l3p['routers'])
