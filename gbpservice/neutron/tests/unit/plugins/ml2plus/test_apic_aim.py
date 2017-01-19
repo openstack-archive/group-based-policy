@@ -2747,8 +2747,6 @@ class TestExternalConnectivityBase(object):
             for router, subnets, addr_scope in router_list:
                 if addr_scope:
                     a_vrf.name = addr_scope['id']
-                else:
-                    a_vrf.display_name = 'DefaultRoutedVRF'
                 contract = router['id']
                 a_ext_net.provided_contract_names.append(contract)
                 a_ext_net.provided_contract_names.extend(
@@ -3159,6 +3157,92 @@ class TestExternalConnectivityBase(object):
                      {'router': {'external_gateway_info': {}}})
         mock_notif.assert_has_calls(port_calls, any_order=True)
 
+    def test_shared_unscoped_network(self):
+        # 0. Initial state: Router r1 is connected to external-network
+        # 1. Create unshared network net1 in tenant tenant_1, then connect
+        #    it to router r1
+        # 2. Create shared network net2 in tenant tenant_2, then connect
+        #    it to router r1
+        # 3. Create unshared network net3 in tenant test-tenant, then connect
+        #    it to router r1
+        # 4. Disconnect net3 from r1
+        # 5. Disconnect net2 from r1
+        # 6. Disconnect net1 from r1
+
+        cv = self.mock_ns.connect_vrf
+        dv = self.mock_ns.disconnect_vrf
+
+        ext_net1 = self._make_ext_network('ext-net1',
+                                          dn='uni/tn-t1/out-l1/instP-n1')
+        self._make_subnet(
+            self.fmt, {'network': ext_net1}, '100.100.100.1',
+            '100.100.100.0/24')
+        router = self._make_router(
+            self.fmt, ext_net1['tenant_id'], 'router1',
+            external_gateway_info={'network_id': ext_net1['id']})['router']
+        cv.assert_not_called()
+        dv.assert_not_called()
+
+        contract = router['id']
+        a_ext_net1 = aim_resource.ExternalNetwork(
+            tenant_name='t1', l3out_name='l1', name='n1',
+            provided_contract_names=[contract],
+            consumed_contract_names=[contract])
+        a_ext_net1_no_contracts = aim_resource.ExternalNetwork(
+            tenant_name='t1', l3out_name='l1', name='n1')
+
+        # 1. Create unshared network net1 in tenant tenant_1, then connect
+        #    it to router r1
+        net1 = self._make_network(self.fmt, 'net1', True,
+                                 tenant_id='tenant_1')['network']
+        sub1 = self._make_subnet(self.fmt, {'network': net1},
+                                 '10.10.10.1', '10.10.10.0/24')['subnet']
+        self._router_interface_action('add', router['id'], sub1['id'], None)
+        a_vrf1 = aim_resource.VRF(tenant_name='tenant_1', name='DefaultVRF')
+        cv.assert_called_once_with(mock.ANY, a_ext_net1, a_vrf1)
+        dv.assert_not_called()
+
+        # 2. Create shared network net2 in tenant tenant_2, then connect
+        #    it to router r1
+        self.mock_ns.reset_mock()
+        net2 = self._make_network(self.fmt, 'net2', True,
+                                 tenant_id='tenant_2', shared=True)['network']
+        sub2 = self._make_subnet(self.fmt, {'network': net2},
+                                 '20.20.20.1', '20.20.20.0/24')['subnet']
+        self._router_interface_action('add', router['id'], sub2['id'], None)
+        a_vrf2 = aim_resource.VRF(tenant_name='tenant_2', name='DefaultVRF')
+        cv.assert_called_once_with(mock.ANY, a_ext_net1, a_vrf2)
+        dv.assert_called_once_with(mock.ANY, a_ext_net1_no_contracts, a_vrf1)
+
+        # 3. Create unshared network net3 in tenant test-tenant, then connect
+        #    it to router r1
+        self.mock_ns.reset_mock()
+        net3 = self._make_network(self.fmt, 'net3', True,
+                                 tenant_id='test-tenant')['network']
+        sub3 = self._make_subnet(self.fmt, {'network': net3},
+                                 '30.30.30.1', '30.30.30.0/24')['subnet']
+        self._router_interface_action('add', router['id'], sub3['id'], None)
+        cv.assert_not_called()
+        dv.assert_not_called()
+
+        # 4. Disconnect net3 from r1
+        self.mock_ns.reset_mock()
+        self._router_interface_action('remove', router['id'], sub3['id'], None)
+        cv.assert_not_called()
+        dv.assert_not_called()
+
+        # 5. Disconnect net2 from r1
+        self.mock_ns.reset_mock()
+        self._router_interface_action('remove', router['id'], sub2['id'], None)
+        cv.assert_called_once_with(mock.ANY, a_ext_net1, a_vrf1)
+        dv.assert_called_once_with(mock.ANY, a_ext_net1_no_contracts, a_vrf2)
+
+        # 6. Disconnect net1 from r1
+        self.mock_ns.reset_mock()
+        self._router_interface_action('remove', router['id'], sub1['id'], None)
+        cv.assert_not_called()
+        dv.assert_called_once_with(mock.ANY, a_ext_net1_no_contracts, a_vrf1)
+
 
 class TestExternalDistributedNat(TestExternalConnectivityBase,
                                  ApicAimTestCase):
@@ -3175,6 +3259,10 @@ class TestExternalNoNat(TestExternalConnectivityBase,
     nat_type = ''
     tenant_1 = 't1'
     tenant_2 = 'common'
+
+    def test_shared_unscoped_network(self):
+        # Skip test since the topology tested is not valid with no-NAT
+        pass
 
 
 class TestSnatIpAllocation(ApicAimTestCase):
