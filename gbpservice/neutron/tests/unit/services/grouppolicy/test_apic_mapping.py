@@ -702,7 +702,7 @@ class TestPolicyTarget(ApicMappingTestCase):
             snat_ports[0]['id'], {'port': {'fixed_ips': []}})
         mapping = self.driver.get_gbp_details(admin_ctx,
             device='tap%s' % pt1['port_id'], host='h1')
-        self.assertEqual(0, len(mapping['host_snat_ips']))
+        self.assertEqual(1, len(mapping['host_snat_ips']))
 
     def test_ip_address_owner_update(self):
         l3p = self.create_l3_policy(name='myl3')['l3_policy']
