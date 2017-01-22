@@ -193,7 +193,8 @@ class OnlyOneEPPerTenantAllowed(GroupPolicyBadRequest):
 
 
 class ImplicitSubnetNotSupported(GroupPolicyBadRequest):
-    message = _("RMD doesn't support implicit external subnet creation.")
+    message = _("This policy driver doesn't support implicit external "
+                "subnet creation.")
 
 
 class DefaultL3PolicyAlreadyExists(GroupPolicyBadRequest):
