@@ -116,6 +116,7 @@ class AIMBaseTestCase(test_nr_base.CommonNeutronBaseTestCase,
         amap.ApicMappingDriver.get_apic_manager = mock.Mock()
         self.db_session = db_api.get_session()
         self.initialize_db_config(self.db_session)
+        self._default_es_name = 'default'
         super(AIMBaseTestCase, self).setUp(
             policy_drivers=policy_drivers, core_plugin=core_plugin,
             ml2_options=ml2_opts, l3_plugin=l3_plugin,
@@ -125,6 +126,9 @@ class AIMBaseTestCase(test_nr_base.CommonNeutronBaseTestCase,
         config.cfg.CONF.set_override('network_vlan_ranges',
                                      ['physnet1:1000:1099'],
                                      group='ml2_type_vlan')
+        cfg.CONF.set_override(
+            'default_external_segment_name', self._default_es_name,
+            group='group_policy_implicit_policy')
 
         self.saved_keystone_client = ksc_client.Client
         ksc_client.Client = test_aim_md.FakeKeystoneClient
@@ -3127,6 +3131,34 @@ class NotificationTest(AIMBaseTestCase):
 
 
 class TestExternalSegment(AIMBaseTestCase):
+
+    def _create_default_es(self, **kwargs):
+        es_sub = self._make_ext_subnet('net1', '90.90.0.0/16',
+                                       dn='uni/tn-t1/out-l1/instP-n1')
+        res = self.create_external_segment(
+            name=self._default_es_name, subnet_id=es_sub['id'],
+            external_routes=[{'destination': '129.0.0.0/24',
+                              'nexthop': None},
+                             {'destination': '128.0.0.0/16',
+                              'nexthop': None}], **kwargs)
+        if 'external_segment' in res:
+            es = res['external_segment']
+            self.assertEqual('90.90.0.0/16', es['cidr'])
+            self.assertEqual(4, es['ip_version'])
+            es_net = self._show('networks', es_sub['network_id'])['network']
+            self.assertEqual(['128.0.0.0/16', '129.0.0.0/24'],
+                            sorted(es_net[CIDR]))
+        return res
+
+    def test_implicit_external_segment_lifecycle(self):
+
+        es = self._create_default_es()['external_segment']
+        res = self._create_default_es(expected_res_status=400)
+        self.assertEqual('DefaultExternalSegmentAlreadyExists',
+                         res['NeutronError']['type'])
+
+        l3p = self.create_l3_policy()['l3_policy']
+        self.assertEqual(es['id'], l3p['external_segments'].keys()[0])
 
     def test_external_segment_lifecycle(self):
         es_sub = self._make_ext_subnet('net1', '90.90.0.0/16',

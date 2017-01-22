@@ -262,6 +262,8 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
         self._reject_invalid_router_access(context, clean_session=False)
         if not l3p['routers']:
             self._use_implicit_router(context, clean_session=False)
+        if not context.current['external_segments']:
+            self._use_implicit_external_segment(context)
         external_segments = context.current['external_segments']
         if external_segments:
             self._plug_l3p_routers_to_ext_segment(context, l3p,
@@ -822,6 +824,7 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
 
     @log.log_method_call
     def create_external_segment_precommit(self, context):
+        self._validate_default_external_segment(context)
         if not context.current['subnet_id']:
             raise exc.ImplicitSubnetNotSupported()
         subnet = self._get_subnet(context._plugin_context,
