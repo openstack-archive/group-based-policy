@@ -211,6 +211,35 @@ class ImplicitPolicyBase(api.PolicyDriver, local_api.LocalAPI):
                     "Cannot delete implicit L2 Policy %s because it's "
                     "in use."), l2p_id)
 
+    def _validate_default_external_segment(self, context):
+        # REVISIT(ivar): find a better way to retrieve the default ES
+        if self._default_es_name == context.current['name']:
+            filters = {'name': [self._default_es_name]}
+            ess = context._plugin.get_external_segments(
+                context._plugin_context, filters)
+            if [x for x in ess if x['id'] != context.current['id']]:
+                raise exc.DefaultExternalSegmentAlreadyExists(
+                    es_name=self._default_es_name)
+
+    def _use_implicit_external_segment(self, context):
+        if not self._default_es_name:
+            return
+
+        filter = {'name': [self._default_es_name]}
+        ess = self._get_external_segments(context._plugin_context, filter)
+        # Multiple default ES may exist, this can happen when a per-tenant
+        # default ES gets his shared attribute flipped. Always prefer the
+        # specific tenant's ES if any.
+        for es in ess:
+            if es['tenant_id'] == context.current['tenant_id']:
+                default = es
+                break
+        else:
+            default = ess and ess[0]
+        if default:
+            # Set default ES
+            context.set_external_segment(default['id'])
+
 
 class ImplicitPolicyDriver(ImplicitPolicyBase):
     """Implicit Policy driver for Group Policy plugin.
@@ -265,14 +294,7 @@ class ImplicitPolicyDriver(ImplicitPolicyBase):
 
     @log.log_method_call
     def create_external_segment_precommit(self, context):
-        # REVISIT(ivar): find a better way to retrieve the default ES
-        if self._default_es_name == context.current['name']:
-            filters = {'name': [self._default_es_name]}
-            ess = context._plugin.get_external_segments(
-                context._plugin_context, filters)
-            if [x for x in ess if x['id'] != context.current['id']]:
-                raise exc.DefaultExternalSegmentAlreadyExists(
-                    es_name=self._default_es_name)
+        self._validate_default_external_segment(context)
 
     @log.log_method_call
     def create_external_policy_postcommit(self, context):
@@ -305,22 +327,3 @@ class ImplicitPolicyDriver(ImplicitPolicyBase):
     @log.log_method_call
     def update_l3_policy_postcommit(self, context):
         pass
-
-    def _use_implicit_external_segment(self, context):
-        if not self._default_es_name:
-            return
-
-        filter = {'name': [self._default_es_name]}
-        ess = self._get_external_segments(context._plugin_context, filter)
-        # Multiple default ES may exist, this can happen when a per-tenant
-        # default ES gets his shared attribute flipped. Always prefer the
-        # specific tenant's ES if any.
-        for es in ess:
-            if es['tenant_id'] == context.current['tenant_id']:
-                default = es
-                break
-        else:
-            default = ess and ess[0]
-        if default:
-            # Set default ES
-            context.set_external_segment(default['id'])

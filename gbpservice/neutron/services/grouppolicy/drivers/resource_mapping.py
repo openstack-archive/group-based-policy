@@ -763,7 +763,7 @@ class ImplicitResourceOperations(local_api.LocalAPI,
 
     def _create_router_gw_for_external_segment(self, plugin_context, es,
                                                es_dict, router_id):
-        subnet = self._get_subnet(plugin_context, es['subnet_id'])
+        subnet = self._get_subnet(plugin_context.elevated(), es['subnet_id'])
         external_fixed_ips = [
             {'subnet_id': es['subnet_id'], 'ip_address': x}
             if x else {'subnet_id': es['subnet_id']}

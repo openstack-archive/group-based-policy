@@ -116,6 +116,7 @@ class AIMBaseTestCase(test_nr_base.CommonNeutronBaseTestCase,
         amap.ApicMappingDriver.get_apic_manager = mock.Mock()
         self.db_session = db_api.get_session()
         self.initialize_db_config(self.db_session)
+        self._default_es_name = 'default'
         super(AIMBaseTestCase, self).setUp(
             policy_drivers=policy_drivers, core_plugin=core_plugin,
             ml2_options=ml2_opts, l3_plugin=l3_plugin,
@@ -125,6 +126,9 @@ class AIMBaseTestCase(test_nr_base.CommonNeutronBaseTestCase,
         config.cfg.CONF.set_override('network_vlan_ranges',
                                      ['physnet1:1000:1099'],
                                      group='ml2_type_vlan')
+        cfg.CONF.set_override(
+            'default_external_segment_name', self._default_es_name,
+            group='group_policy_implicit_policy')
 
         self.saved_keystone_client = ksc_client.Client
         ksc_client.Client = test_aim_md.FakeKeystoneClient
@@ -389,7 +393,7 @@ class AIMBaseTestCase(test_nr_base.CommonNeutronBaseTestCase,
             prs_dict[ptype] = prs
         return prs_dict
 
-    def _make_ext_subnet(self, network_name, cidr, dn=None,
+    def _make_ext_subnet(self, network_name, cidr, tenant_id=None, dn=None,
                          nat_type=None, ext_cidrs=None, enable_dhcp=True,
                          shared_net=False):
         kwargs = {'router:external': True}
@@ -403,6 +407,8 @@ class AIMBaseTestCase(test_nr_base.CommonNeutronBaseTestCase,
             kwargs[CIDR] = ext_cidrs
         if shared_net:
             kwargs['shared'] = True
+        if tenant_id:
+            kwargs['tenant_id'] = tenant_id
 
         net = self._make_network(self.fmt, network_name, True,
                                  arg_list=self.extension_attributes,
@@ -410,7 +416,8 @@ class AIMBaseTestCase(test_nr_base.CommonNeutronBaseTestCase,
         gw = str(netaddr.IPAddress(netaddr.IPNetwork(cidr).first + 1))
         subnet = self._make_subnet(
             self.fmt, {'network': net}, gw, cidr,
-            enable_dhcp=enable_dhcp)['subnet']
+            enable_dhcp=enable_dhcp,
+            tenant_id=(kwargs.get('tenant_id') or self._tenant_id))['subnet']
         return subnet
 
     def _router_gw(self, router):
@@ -3124,6 +3131,103 @@ class NotificationTest(AIMBaseTestCase):
             key = local_api.NOTIFICATION_QUEUE.keys()[0]
             self.assertLess(0, len(local_api.NOTIFICATION_QUEUE[key]))
         local_api.NOTIFICATION_QUEUE = {}
+
+
+class TestImplicitExternalSegment(AIMBaseTestCase):
+
+    def setUp(self):
+        self._default_es_name = 'default'
+        super(TestImplicitExternalSegment, self).setUp()
+        cfg.CONF.set_override(
+            'default_external_segment_name', self._default_es_name,
+            group='group_policy_implicit_policy')
+
+    def _create_external_segment(self, **kwargs):
+        es_sub = self._make_ext_subnet(
+            'net', '100.90.0.0/16',
+            tenant_id=(kwargs.get('tenant_id') or self._tenant_id),
+            dn='uni/tn-t1/out-l0/instP-n')
+        return self.create_external_segment(subnet_id=es_sub['id'],
+                                            **kwargs)
+
+    def _create_default_es(self, **kwargs):
+        es_sub = self._make_ext_subnet(
+            'net1', '90.90.0.0/16',
+            tenant_id=(kwargs.get('tenant_id') or self._tenant_id),
+            dn='uni/tn-t1/out-l1/instP-n1')
+        return self.create_external_segment(name=self._default_es_name,
+                                            subnet_id=es_sub['id'],
+                                            **kwargs)
+
+    def _test_implicit_lifecycle(self, shared=False):
+        # Create default ES
+        es = self._create_default_es(shared=shared)['external_segment']
+        # Create non-default ES
+        ndes = self._create_external_segment(
+            name='non-default-name')['external_segment']
+
+        # Create EP without ES set
+        ep = self.create_external_policy()['external_policy']
+        self.assertEqual(es['id'], ep['external_segments'][0])
+        # Verify persisted
+        req = self.new_show_request('external_policies', ep['id'],
+                                    fmt=self.fmt)
+        ep = self.deserialize(
+            self.fmt, req.get_response(self.ext_api))['external_policy']
+        self.assertEqual(es['id'], ep['external_segments'][0])
+
+        # Verify update
+        ep = self.update_external_policy(
+            ep['id'], expected_res_status=200,
+            external_segments=[ndes['id']])['external_policy']
+        self.assertEqual(ndes['id'], ep['external_segments'][0])
+        self.assertEqual(1, len(ep['external_segments']))
+
+        # Create L3P without ES set
+        l3p = self.create_l3_policy()['l3_policy']
+        self.assertEqual(es['id'], l3p['external_segments'].keys()[0])
+        # Verify persisted
+        req = self.new_show_request('l3_policies', l3p['id'],
+                                    fmt=self.fmt)
+        l3p = self.deserialize(
+            self.fmt, req.get_response(self.ext_api))['l3_policy']
+        self.assertEqual(es['id'], l3p['external_segments'].keys()[0])
+
+        # Verify update
+        l3p = self.update_l3_policy(
+            l3p['id'], expected_res_status=200,
+            external_segments={ndes['id']: []})['l3_policy']
+        self.assertEqual(ndes['id'], l3p['external_segments'].keys()[0])
+        self.assertEqual(1, len(l3p['external_segments']))
+
+        # Verify only one visible ES can exist
+        res = self._create_default_es(expected_res_status=400)
+        self.assertEqual('DefaultExternalSegmentAlreadyExists',
+                         res['NeutronError']['type'])
+
+    def test_impicit_lifecycle(self):
+        self._test_implicit_lifecycle()
+
+    def test_implicit_lifecycle_shared(self):
+        self._test_implicit_lifecycle(True)
+
+    def test_implicit_shared_visibility(self):
+        es = self._create_default_es(shared=True,
+                                     tenant_id='onetenant')['external_segment']
+        ep = self.create_external_policy(
+            tenant_id='anothertenant')['external_policy']
+        self.assertEqual(es['id'], ep['external_segments'][0])
+        self.assertEqual(1, len(ep['external_segments']))
+
+        l3p = self.create_l3_policy(
+            tenant_id='anothertenant')['l3_policy']
+        self.assertEqual(es['id'], l3p['external_segments'].keys()[0])
+        self.assertEqual(1, len(ep['external_segments']))
+
+        res = self._create_default_es(expected_res_status=400,
+                                      tenant_id='anothertenant')
+        self.assertEqual('DefaultExternalSegmentAlreadyExists',
+                         res['NeutronError']['type'])
 
 
 class TestExternalSegment(AIMBaseTestCase):
