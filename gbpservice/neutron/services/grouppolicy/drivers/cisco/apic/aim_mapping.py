@@ -629,6 +629,10 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
     def delete_policy_target_group_precommit(self, context):
         plugin_context = context._plugin_context
         auto_ptg_id = self._get_auto_ptg_id(context.current['l2_policy_id'])
+        context.nsp_cleanup_ipaddress = self._get_ptg_policy_ipaddress_mapping(
+            context._plugin_context.session, context.current['id'])
+        context.nsp_cleanup_fips = self._get_ptg_policy_fip_mapping(
+            context._plugin_context.session, context.current['id'])
         if context.current['id'] == auto_ptg_id:
             raise AutoPTGDeleteNotSupported(id=context.current['id'])
         ptg_db = context._plugin._get_policy_target_group(
@@ -658,7 +662,7 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
             # that there are certain situations when the
             # sa_exc.ObjectDeletedError is thrown.
             self._cleanup_network_service_policy(
-                context, context.current, context.nsp_cleanup_ipaddress,
+                context, ptg_db, context.nsp_cleanup_ipaddress,
                 context.nsp_cleanup_fips)
 
     @log.log_method_call
