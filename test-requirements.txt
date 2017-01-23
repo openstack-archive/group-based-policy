@@ -2,7 +2,7 @@
 # of appearance. Changing the order has an impact on the overall integration
 # process, which may cause wedges in the gate later.
 
-setuptools>=19.2
+setuptools>=19.2,<34.0.0
 -e git+https://git.openstack.org/openstack/neutron.git@stable/mitaka#egg=neutron
 # TODO(rkukura): Switch apicapi back to master branch eventually.
 -e git+https://github.com/noironetworks/apicapi.git@aci_integration_manager#egg=apicapi
