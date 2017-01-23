@@ -148,7 +148,7 @@ class KeystoneNotificationEndpoint(object):
         # cases, their nameAlias will be set when the first resource is being
         # created under that tenant
         session = db_api.get_session()
-        tenant_aname = self._driver._get_tenant_name(session, tenant_id)
+        tenant_aname = self._driver.name_mapper.project(session, tenant_id)
         aim_ctx = aim_context.AimContext(session)
         tenant = aim_resource.Tenant(name=tenant_aname)
         if not self._driver.aim.get(aim_ctx, tenant):
@@ -215,10 +215,11 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
             executor='eventlet', pool=pool)
         server.start()
 
-    def ensure_tenant(self, plugin_context, tenant_id):
-        LOG.debug("APIC AIM MD ensuring tenant_id: %s", tenant_id)
+    def ensure_tenant(self, plugin_context, project_id):
+        LOG.debug("APIC AIM MD ensuring AIM Tenant for project_id: %s",
+                  project_id)
 
-        if not tenant_id:
+        if not project_id:
             # The l3_db module creates gateway ports with empty string
             # project IDs in order to hide those ports from
             # users. Since we are not currently mapping ports to
@@ -227,15 +228,15 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
             # mapping AIM resources under some actual Tenant.
             return
 
-        self.project_name_cache.ensure_project(tenant_id)
+        self.project_name_cache.ensure_project(project_id)
 
         # TODO(rkukura): Move the following to calls made from
         # precommit methods so AIM Tenants, ApplicationProfiles, and
         # Filters are [re]created whenever needed.
         session = plugin_context.session
         with session.begin(subtransactions=True):
-            tenant_aname = self._get_tenant_name(session, tenant_id)
-            project_name = self.project_name_cache.get_project_name(tenant_id)
+            tenant_aname = self.name_mapper.project(session, project_id)
+            project_name = self.project_name_cache.get_project_name(project_id)
             if project_name is None:
                 project_name = ''
             aim_ctx = aim_context.AimContext(session)
@@ -340,8 +341,6 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
 
             self.aim.delete(aim_ctx, epg)
             self.aim.delete(aim_ctx, bd)
-
-            self.name_mapper.delete_apic_name(session, current['id'])
 
     def extend_network_dict(self, session, network_db, result):
         LOG.debug("APIC AIM MD extending dict for network: %s", result)
@@ -584,8 +583,6 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
         if vrf and not vrf.monitored:
             self.aim.delete(aim_ctx, vrf)
 
-        self.name_mapper.delete_apic_name(session, current['id'])
-
     def extend_address_scope_dict(self, session, scope_db, result):
         LOG.debug("APIC AIM MD extending dict for address scope: %s", result)
 
@@ -734,8 +731,6 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
 
         self.aim.delete(aim_ctx, subject)
         self.aim.delete(aim_ctx, contract)
-
-        self.name_mapper.delete_apic_name(session, current['id'])
 
     def extend_router_dict(self, session, router_db, result):
         LOG.debug("APIC AIM MD extending dict for router: %s", result)
@@ -1374,8 +1369,9 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
         # avoiding the need to use this function to get the VRF and
         # then call _map_network.
         aim_ctx = aim_context.AimContext(session)
+        bd_name = self.name_mapper.network(session, network_db.id)
         bds = self.aim.find(
-            aim_ctx, aim_resource.BridgeDomain, name=network_db.id)
+            aim_ctx, aim_resource.BridgeDomain, name=bd_name)
         if len(bds) != 1:
             LOG.error(_LE("Failed to determine VRF for network %(net)s "
                           "due to missing or extra BDs: %(bds)s"),
@@ -1434,7 +1430,8 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
                        .filter(l3_db.RouterPort.port_type ==
                                n_constants.DEVICE_OWNER_ROUTER_INTF)
                        .filter(models_v2.SubnetPool.address_scope_id ==
-                               vrf.name)
+                               self.name_mapper.reverse_address_scope(
+                                   session, vrf.name))
                        .distinct())
         else:
             # For an unscoped VRF, first find all the routed BDs
@@ -1447,7 +1444,8 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
                 enable_routing=True)
 
             # Then find routers interfaced to those BDs' networks.
-            net_ids = [bd.name for bd in bds]
+            net_ids = [self.name_mapper.reverse_network(session, bd.name)
+                       for bd in bds]
             rtr_dbs = (session.query(l3_db.Router).
                        join(l3_db.RouterPort).
                        join(models_v2.Port).
@@ -1468,7 +1466,8 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
 
         session = aim_ctx.db_session
 
-        old_tenant_name = self._get_tenant_name(session, network_db.tenant_id)
+        old_tenant_name = self.name_mapper.project(
+            session, network_db.tenant_id)
 
         if (new_vrf.tenant_name != COMMON_TENANT_NAME and
             old_tenant_name != new_vrf.tenant_name):
@@ -1514,7 +1513,8 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
         bd, epg = self._map_network(session, network_db, old_vrf)
         new_vrf = self._map_unrouted_vrf()
 
-        new_tenant_name = self._get_tenant_name(session, network_db.tenant_id)
+        new_tenant_name = self.name_mapper.project(
+            session, network_db.tenant_id)
 
         # REVISIT(rkukura): Share code with _associate_network_with_vrf?
         if (old_vrf.tenant_name != COMMON_TENANT_NAME and
@@ -1685,14 +1685,10 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
     def _map_network(self, session, network, vrf, bd_only=False):
         tenant_aname = (vrf.tenant_name
                         if vrf and vrf.tenant_name != COMMON_TENANT_NAME
-                        else self._get_tenant_name(session,
-                                                   network['tenant_id']))
-
+                        else self.name_mapper.project(
+                                session, network['tenant_id']))
         id = network['id']
-        name = network['name']
-        aname = self.name_mapper.network(session, id, name)
-        LOG.debug("Mapped network_id %(id)s with name %(name)s to %(aname)s",
-                  {'id': id, 'name': name, 'aname': aname})
+        aname = self.name_mapper.network(session, id)
 
         bd = aim_resource.BridgeDomain(tenant_name=tenant_aname,
                                        name=aname)
@@ -1722,28 +1718,20 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
 
     def _map_address_scope(self, session, scope):
         id = scope['id']
-        name = scope['name']
-
         extn_db = extension_db.ExtensionDbMixin()
         scope_extn = extn_db.get_address_scope_extn_db(session, id)
         if scope_extn and scope_extn.get(cisco_apic.VRF):
             vrf = aim_resource.VRF.from_dn(scope_extn[cisco_apic.VRF])
         else:
-            tenant_aname = self._get_tenant_name(session, scope['tenant_id'])
-            aname = self.name_mapper.address_scope(session, id, name)
+            tenant_aname = self.name_mapper.project(
+                session, scope['tenant_id'])
+            aname = self.name_mapper.address_scope(session, id)
             vrf = aim_resource.VRF(tenant_name=tenant_aname, name=aname)
-        LOG.debug("Mapped address_scope_id %(id)s with name %(name)s to "
-                  "%(vrf)s",
-                  {'id': id, 'name': name, 'vrf': vrf})
         return vrf
 
     def _map_router(self, session, router, contract_only=False):
         id = router['id']
-        name = router['name']
-        aname = self.name_mapper.router(session, id, name)
-        LOG.debug("Mapped router_id %(id)s with name %(name)s to "
-                  "%(aname)s",
-                  {'id': id, 'name': name, 'aname': aname})
+        aname = self.name_mapper.router(session, id)
 
         contract = aim_resource.Contract(tenant_name=COMMON_TENANT_NAME,
                                          name=aname)
@@ -1755,7 +1743,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
         return contract, subject
 
     def _map_default_vrf(self, session, network):
-        tenant_aname = self._get_tenant_name(session, network['tenant_id'])
+        tenant_aname = self.name_mapper.project(session, network['tenant_id'])
 
         vrf = aim_resource.VRF(tenant_name=tenant_aname,
                                name=DEFAULT_VRF_NAME)
@@ -1766,16 +1754,6 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
             tenant_name=COMMON_TENANT_NAME,
             name=self.apic_system_id + '_' + UNROUTED_VRF_NAME)
         return vrf
-
-    def _get_tenant_name(self, session, project_id):
-        project_name = self.project_name_cache.get_project_name(project_id)
-        # REVISIT(rkukura): This should be name_mapper.project.
-        tenant_aname = self.name_mapper.tenant(session, project_id,
-                                               project_name)
-        LOG.debug("Mapped project_id %(id)s with name %(name)s to %(aname)s",
-                  {'id': project_id, 'name': project_name,
-                   'aname': tenant_aname})
-        return tenant_aname
 
     def _ensure_common_tenant(self, aim_ctx):
         attrs = aim_resource.Tenant(name=COMMON_TENANT_NAME,
@@ -1961,13 +1939,12 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
         prov = set()
         cons = set()
 
-        def update_contracts(r_id, r_name):
-            # TODO(rkukura): Use _map_router once name isn't needed.
-            contract_aname = self.name_mapper.router(session, r_id, r_name)
-            prov.add(contract_aname)
-            cons.add(contract_aname)
+        def update_contracts(router):
+            contract = self._map_router(session, router, True)
+            prov.add(contract.name)
+            cons.add(contract.name)
 
-            r_info = ext_db.get_router_extn_db(session, r_id)
+            r_info = ext_db.get_router_extn_db(session, router['id'])
             prov.update(r_info[a_l3.EXTERNAL_PROVIDED_CONTRACTS])
             cons.update(r_info[a_l3.EXTERNAL_CONSUMED_CONTRACTS])
 
@@ -1980,7 +1957,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
                 prov = set()
                 cons = set()
                 for r in rtr_old:
-                    update_contracts(r.id, r.name)
+                    update_contracts(r)
 
                 if rtr_old:
                     ext_net.provided_contract_names = sorted(prov)
@@ -1997,8 +1974,8 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
                 prov = set()
                 cons = set()
                 for r in rtr_new:
-                    update_contracts(r.id, r.name)
-                update_contracts(router['id'], router['name'])
+                    update_contracts(r)
+                update_contracts(router)
                 ext_net.provided_contract_names = sorted(prov)
                 ext_net.consumed_contract_names = sorted(cons)
                 ns.connect_vrf(aim_ctx, ext_net, vrf)
