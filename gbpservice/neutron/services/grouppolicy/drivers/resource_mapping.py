@@ -1093,8 +1093,8 @@ class ImplicitResourceOperations(local_api.LocalAPI,
             # TODO(rkukura): Loop on subnets?
             self._restore_ip_to_allocation_pool(
                 context, ptg['subnets'][0], ipaddress.ipaddress)
-            self._delete_policy_ipaddress_mapping(
-                context._plugin_context.session, ptg['id'])
+        self._delete_policy_ipaddress_mapping(
+            context._plugin_context.session, ptg['id'])
         if not fip_maps:
             fip_maps = self._get_ptg_policy_fip_mapping(
                 context._plugin_context.session, ptg['id'])
