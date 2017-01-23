@@ -2827,6 +2827,7 @@ class NotificationTest(AIMBaseTestCase):
         self.mac_prefix = '12:34:56:78:5d:'
         self.queue_notification_call_count = 0
         self.max_notification_queue_length = 0
+        self.notification_queue = None
         self.post_notifications_from_queue_call_count = 0
         self.orig_generate_uuid = uuidutils.generate_uuid
         self.orig_is_uuid_like = uuidutils.is_uuid_like
@@ -2857,33 +2858,57 @@ class NotificationTest(AIMBaseTestCase):
             sc_plugin=sc_plugin, **kwargs)
         self.orig_generate_mac = self._plugin._generate_mac
         self._plugin._generate_mac = _generate_mac
+
         self.orig_queue_notification = local_api._queue_notification
 
-        # The two functions are patched below to instrument how
+        # The functions are patched below to instrument how
         # many times the functions are called and also to track
         # the queue length.
-        def _queue_notification(
+        def _queue_notification(session,
             transaction_key, notifier_obj, notifier_method, args):
             self.queue_notification_call_count += 1
-            self.orig_queue_notification(
+            self.orig_queue_notification(session,
                 transaction_key, notifier_obj, notifier_method, args)
-            if local_api.NOTIFICATION_QUEUE:
-                key = local_api.NOTIFICATION_QUEUE.keys()[0]
-                length = len(local_api.NOTIFICATION_QUEUE[key])
+            if session.notification_queue:
+                key = session.notification_queue.keys()[0]
+                length = len(session.notification_queue[key])
                 if length > self.max_notification_queue_length:
                     self.max_notification_queue_length = length
+            self.notification_queue = session.notification_queue
 
         local_api._queue_notification = _queue_notification
+
+        self.orig_send_or_queue_notification = (
+            local_api.send_or_queue_notification)
+
+        def send_or_queue_notification(
+            session, transaction_key, notifier_obj, notifier_method, args):
+            self.orig_send_or_queue_notification(session,
+                transaction_key, notifier_obj, notifier_method, args)
+            self.notification_queue = session.notification_queue
+
+        local_api.send_or_queue_notification = send_or_queue_notification
 
         self.orig_post_notifications_from_queue = (
             local_api.post_notifications_from_queue)
 
-        def post_notifications_from_queue(transaction_key):
+        def post_notifications_from_queue(session, transaction_key):
             self.post_notifications_from_queue_call_count += 1
-            self.orig_post_notifications_from_queue(transaction_key)
+            self.orig_post_notifications_from_queue(session, transaction_key)
+            self.notification_queue = session.notification_queue
 
         local_api.post_notifications_from_queue = (
             post_notifications_from_queue)
+
+        self.orig_discard_notifications_after_rollback = (
+            local_api.discard_notifications_after_rollback)
+
+        def discard_notifications_after_rollback(session):
+            self.orig_discard_notifications_after_rollback(session)
+            self.notification_queue = session.notification_queue
+
+        local_api.discard_notifications_after_rollback = (
+            discard_notifications_after_rollback)
 
     def tearDown(self):
         super(NotificationTest, self).tearDown()
@@ -2892,8 +2917,12 @@ class NotificationTest(AIMBaseTestCase):
         uuidutils.is_uuid_like = self.orig_is_uuid_like
         local_api.BATCH_NOTIFICATIONS = False
         local_api._queue_notification = self.orig_queue_notification
+        local_api.send_or_queue_notification = (
+            self.orig_send_or_queue_notification)
         local_api.post_notifications_from_queue = (
             self.orig_post_notifications_from_queue)
+        local_api.discard_notifications_after_rollback = (
+            self.orig_discard_notifications_after_rollback)
 
     def _expected_dhcp_agent_call_list(self):
         # This testing strategy assumes the sequence of notifications
@@ -3011,7 +3040,7 @@ class NotificationTest(AIMBaseTestCase):
                     'security-groups', sg_id).get_response(self.ext_api)
             notifier.assert_has_calls(expected_calls(), any_order=False)
             # test that no notifications have been left out
-            self.assertEqual({}, local_api.NOTIFICATION_QUEUE)
+            self.assertEqual({}, self.notification_queue)
 
     def _disable_checks(self, no_batch_event, with_batch_event):
         # this is a temporarty workaround to avoid having to repeatedly
@@ -3109,21 +3138,12 @@ class NotificationTest(AIMBaseTestCase):
                 self.assertEqual([], dhcp_notifier.call_args_list)
                 self.assertEqual([], nova_notifier.call_args_list)
                 # test that notification queue has been flushed
-                self.assertEqual({}, local_api.NOTIFICATION_QUEUE)
+                self.assertEqual({}, self.notification_queue)
                 # test that the push notifications func itself was not called
                 self.assertEqual(
                     0, self.post_notifications_from_queue_call_count)
         # restore mock
         self.dummy.create_policy_target_group_precommit = orig_func
-
-    def test_notifier_queue_populated(self):
-        local_api.BATCH_NOTIFICATIONS = True
-        with mock.patch.object(local_api, 'post_notifications_from_queue'):
-            self.create_policy_target_group(name="ptg1")
-            self.assertEqual(1, len(local_api.NOTIFICATION_QUEUE))
-            key = local_api.NOTIFICATION_QUEUE.keys()[0]
-            self.assertLess(0, len(local_api.NOTIFICATION_QUEUE[key]))
-        local_api.NOTIFICATION_QUEUE = {}
 
 
 class TestExternalSegment(AIMBaseTestCase):

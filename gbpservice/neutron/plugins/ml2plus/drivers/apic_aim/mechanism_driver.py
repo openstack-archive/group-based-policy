@@ -2014,7 +2014,8 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
             LOG.debug("Enqueing notify for port %s", port['id'])
             txn = local_api.get_outer_transaction(
                 plugin_context.session.transaction)
-            local_api.send_or_queue_notification(txn, self.notifier,
+            local_api.send_or_queue_notification(plugin_context.session,
+                                                 txn, self.notifier,
                                                  'port_update',
                                                  [plugin_context, port])
 
