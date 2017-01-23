@@ -3490,6 +3490,15 @@ class TestNetworkServicePolicy(AIMBaseTestCase):
                     network_service_policy_id=None,
                     expected_res_status=webob.exc.HTTPOk.code)
 
+        self.update_policy_target_group(
+                    ptg1['id'],
+                    network_service_policy_id=nsp['id'],
+                    expected_res_status=webob.exc.HTTPOk.code)
+
+        self.delete_policy_target_group(
+                    ptg1['id'],
+                    expected_res_status=204)
+
     def test_unsupported_nsp_parameters_rejected(self):
         self.create_network_service_policy(
             network_service_params=[
@@ -3610,6 +3619,12 @@ class TestNetworkServicePolicy(AIMBaseTestCase):
             ptg2['id'], network_service_policy_id=None,
             expected_res_status=webob.exc.HTTPOk.code)
 
+        self.delete_policy_target_group(
+            ptg1['id'], expected_res_status=204)
+
+        self.delete_policy_target_group(
+            ptg2['id'], expected_res_status=204)
+
     def test_nsp_fip_single(self):
         routes = [{'destination': '0.0.0.0/0', 'nexthop': None}]
         sub = self._make_ext_subnet('net1', '192.168.0.0/24',
@@ -3655,6 +3670,9 @@ class TestNetworkServicePolicy(AIMBaseTestCase):
             expected_res_status=webob.exc.HTTPOk.code)
         mapping = self._get_nsp_ptg_fip_mapping(ptg['id'])
         self.assertEqual([], mapping)
+
+        self.delete_policy_target_group(
+            ptg['id'], expected_res_status=204)
 
     def test_nsp_fip_single_different_pool(self):
         routes = [{'destination': '0.0.0.0/0', 'nexthop': None}]
@@ -3712,6 +3730,9 @@ class TestNetworkServicePolicy(AIMBaseTestCase):
             expected_res_status=webob.exc.HTTPOk.code)
         mapping = self._get_nsp_ptg_fip_mapping(ptg['id'])
         self.assertEqual([], mapping)
+
+        self.delete_policy_target_group(
+            ptg1['id'], expected_res_status=204)
 
     def test_nsp_rejected_without_nat_pool(self):
         routes = [{'destination': '0.0.0.0/0', 'nexthop': None}]
