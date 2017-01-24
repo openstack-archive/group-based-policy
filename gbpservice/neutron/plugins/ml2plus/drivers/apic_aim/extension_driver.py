@@ -160,8 +160,14 @@ class ApicExtensionDriver(api_plus.ExtensionDriver,
                      error_message=('VRF %s is already in use by '
                                     'address-scope %s' % (dn, scope)))
             # Case 2: Another address-scope with orchestrated VRF
+            #
+            # REVISIT: We don't filter by the project ID because the
+            # mapping of these to AIM Tenant names is not necessarily
+            # reversible. Consider persisting the APIC VRF identities.
+            scope_id = self._md.name_mapper.reverse_address_scope(
+                session, vrf.name)
             scope = (session.query(address_scope_db.AddressScope)
-                     .filter_by(tenant_id=vrf.tenant_name, id=vrf.name)
+                     .filter_by(id=scope_id)
                      .first())
             if scope:
                 raise n_exc.InvalidInput(
