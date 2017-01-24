@@ -45,23 +45,23 @@ def get_outer_transaction(transaction):
 
 
 BATCH_NOTIFICATIONS = False
-NOTIFICATION_QUEUE = {}
 NOTIFIER_REF = 'notifier_object_reference'
 NOTIFIER_METHOD = 'notifier_method_name'
 NOTIFICATION_ARGS = 'notification_args'
 
 
-def _queue_notification(transaction_key, notifier_obj, notifier_method, args):
+def _queue_notification(session, transaction_key, notifier_obj,
+                        notifier_method, args):
     entry = {NOTIFIER_REF: notifier_obj, NOTIFIER_METHOD: notifier_method,
              NOTIFICATION_ARGS: args}
-    if transaction_key not in NOTIFICATION_QUEUE:
-        NOTIFICATION_QUEUE[transaction_key] = [entry]
+    if transaction_key not in session.notification_queue:
+        session.notification_queue[transaction_key] = [entry]
     else:
-        NOTIFICATION_QUEUE[transaction_key].append(entry)
+        session.notification_queue[transaction_key].append(entry)
 
 
-def send_or_queue_notification(transaction_key, notifier_obj, notifier_method,
-                               args):
+def send_or_queue_notification(session, transaction_key, notifier_obj,
+                               notifier_method, args):
     if not transaction_key or 'subnet.delete.end' in args:
         # We make an exception for the dhcp agent notification
         # for subnet delete since the implementation for sending
@@ -72,19 +72,20 @@ def send_or_queue_notification(transaction_key, notifier_obj, notifier_method,
         getattr(notifier_obj, notifier_method)(*args)
         return
 
-    _queue_notification(transaction_key, notifier_obj, notifier_method, args)
+    _queue_notification(session, transaction_key, notifier_obj,
+                        notifier_method, args)
 
 
-def post_notifications_from_queue(transaction_key):
-    queue = NOTIFICATION_QUEUE[transaction_key]
+def post_notifications_from_queue(session, transaction_key):
+    queue = session.notification_queue[transaction_key]
     for entry in queue:
         getattr(entry[NOTIFIER_REF],
                 entry[NOTIFIER_METHOD])(*entry[NOTIFICATION_ARGS])
-    del NOTIFICATION_QUEUE[transaction_key]
+    del session.notification_queue[transaction_key]
 
 
-def discard_notifications_after_rollback(transaction_key):
-    NOTIFICATION_QUEUE.pop(transaction_key, None)
+def discard_notifications_after_rollback(session):
+    session.notification_queue.pop(session.transaction, None)
 
 
 class dummy_context_mgr(object):
@@ -164,14 +165,14 @@ class LocalAPI(object):
             args = [action, orig_obj, {resource: obj}]
         else:
             args = [action, {}, {resource: obj}]
-        send_or_queue_notification(
+        send_or_queue_notification(context._session,
             outer_transaction, self._nova_notifier,
             'send_network_change', args)
         # REVISIT(rkukura): Do create.end notification?
         if cfg.CONF.dhcp_agent_notification:
             action_state = ".%s.end" % action.split('_')[0]
             args = [context, {resource: obj}, resource + action_state]
-            send_or_queue_notification(
+            send_or_queue_notification(context._session,
                 outer_transaction, self._dhcp_agent_notifier,
                 'notify', args)
 
