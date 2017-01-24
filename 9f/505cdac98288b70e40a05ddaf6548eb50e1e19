@@ -1,0 +1,9 @@
+Code-Review+2: Robert Kukura <kukura@noironetworks.com>
+Code-Review+2: Amit Bose <amitbose@gmail.com>
+Workflow+1: Amit Bose <amitbose@gmail.com>
+Verified+2: Jenkins
+Submitted-by: Jenkins
+Submitted-at: Tue, 24 Jan 2017 01:09:43 +0000
+Reviewed-on: https://review.openstack.org/424091
+Project: openstack/group-based-policy
+Branch: refs/heads/stable/mitaka
