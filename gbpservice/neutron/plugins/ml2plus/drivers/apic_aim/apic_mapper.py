@@ -13,6 +13,13 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+from neutron._i18n import _LE
+from oslo_log import log
+
+from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import exceptions
+
+LOG = log.getLogger(__name__)
+
 PROJECT_TYPE_TAG = 'prj'
 NETWORK_TYPE_TAG = 'net'
 ADDRESS_SCOPE_TYPE_TAG = 'as'
@@ -43,37 +50,46 @@ class APICNameMapper(object):
     def network(self, session, id, prefix=""):
         return self._map(session, id, NETWORK_TYPE_TAG, prefix)
 
-    def reverse_network(self, session, name, prefix=""):
-        return self._unmap(session, name, NETWORK_TYPE_TAG, prefix)
+    def reverse_network(self, session, name, prefix="", enforce=True):
+        return self._unmap(
+            session, name, NETWORK_TYPE_TAG, prefix, enforce)
 
     def address_scope(self, session, id, prefix=""):
         return self._map(session, id, ADDRESS_SCOPE_TYPE_TAG, prefix)
 
-    def reverse_address_scope(self, session, name, prefix=""):
-        return self._unmap(session, name, ADDRESS_SCOPE_TYPE_TAG, prefix)
+    def reverse_address_scope(self, session, name, prefix="", enforce=True):
+        return self._unmap(
+            session, name, ADDRESS_SCOPE_TYPE_TAG, prefix, enforce)
 
     def router(self, session, id, prefix=""):
         return self._map(session, id, ROUTER_TYPE_TAG, prefix)
 
-    def reverse_router(self, session, name, prefix=""):
-        return self._unmap(session, name, ROUTER_TYPE_TAG, prefix)
+    def reverse_router(self, session, name, prefix="", enforce=True):
+        return self._unmap(session, name, ROUTER_TYPE_TAG, prefix, enforce)
 
     def policy_rule_set(self, session, id, prefix=""):
         return self._map(session, id, POLICY_RULE_SET_TYPE_TAG, prefix)
 
-    def reverse_policy_rule_set(self, session, name, prefix=""):
-        return self._unmap(session, name, POLICY_RULE_SET_TYPE_TAG, prefix)
+    def reverse_policy_rule_set(self, session, name, prefix="", enforce=True):
+        return self._unmap(
+            session, name, POLICY_RULE_SET_TYPE_TAG, prefix, enforce)
 
     def policy_rule(self, session, id, prefix=""):
         return self._map(session, id, POLICY_RULE_TYPE_TAG, prefix)
 
-    def reverse_policy_rule(self, session, name, prefix=""):
-        return self._unmap(session, name, POLICY_RULE_TYPE_TAG, prefix)
+    def reverse_policy_rule(self, session, name, prefix="", enforce=True):
+        return self._unmap(
+            session, name, POLICY_RULE_TYPE_TAG, prefix, enforce)
 
     def _map(self, session, id, type_tag, prefix):
         return ("%(prefix)s%(type_tag)s_%(id)s" %
                 {'prefix': prefix, 'type_tag': type_tag, 'id': id})
 
-    def _unmap(self, session, name, type_tag, prefix):
+    def _unmap(self, session, name, type_tag, prefix, enforce):
         pos = len(prefix) + len(type_tag) + 1
-        return name[pos:]
+        if self._map(session, "", type_tag, prefix) == name[:pos]:
+            return name[pos:]
+        elif enforce:
+            LOG.error(_LE("Attempted to reverse-map invalid APIC name '%s'"),
+                      name)
+            raise exceptions.InternalError()

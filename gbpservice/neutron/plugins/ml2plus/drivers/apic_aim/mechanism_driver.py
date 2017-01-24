@@ -30,7 +30,7 @@ from neutron._i18n import _LW
 from neutron.agent import securitygroups_rpc
 from neutron.api.v2 import attributes
 from neutron.common import constants as n_constants
-from neutron.common import exceptions
+from neutron.common import exceptions as n_exceptions
 from neutron.common import rpc as n_rpc
 from neutron.common import topics as n_topics
 from neutron.db import address_scope_db
@@ -59,6 +59,7 @@ from gbpservice.neutron.plugins.ml2plus import driver_api as api_plus
 from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import apic_mapper
 from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import cache
 from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import config  # noqa
+from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import exceptions
 from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import extension_db
 
 LOG = log.getLogger(__name__)
@@ -80,46 +81,6 @@ AGENT_TYPE_DVS = 'DVS agent'
 VIF_TYPE_DVS = 'dvs'
 PROMISCUOUS_TYPES = [n_constants.DEVICE_OWNER_DHCP,
                      n_constants.DEVICE_OWNER_LOADBALANCER]
-
-
-class InternalError(exceptions.NeutronException):
-    message = _("Internal mechanism driver error - see error log for details.")
-
-
-class UnsupportedRoutingTopology(exceptions.BadRequest):
-    message = _("All router interfaces for a network must share either the "
-                "same router or the same subnet.")
-
-
-class UnscopedSharedNetworkProjectConflict(exceptions.BadRequest):
-    message = _("Shared network %(net1)s from project %(proj1)s and shared "
-                "network %(net2)s from project %(proj2)s cannot be combined "
-                "in the same topology.")
-
-
-class IPv6RoutingNotSupported(exceptions.BadRequest):
-    message = _("IPv6 routing is not currently supported.")
-
-
-class MultiScopeRoutingNotSupported(exceptions.BadRequest):
-    message = _("Attaching interfaces from multiple address_scopes to the "
-                "same router is not currently supported.")
-
-
-class ScopeUpdateNotSupported(exceptions.BadRequest):
-    message = _("Updating the address_scope of a subnetpool that is "
-                "associated with routers is not currently supported.")
-
-
-class SnatPortsInUse(exceptions.SubnetInUse):
-    def __init__(self, **kwargs):
-        kwargs['reason'] = _('Subnet has SNAT IP addresses allocated')
-        super(SnatPortsInUse, self).__init__(**kwargs)
-
-
-class SnatPoolCannotBeUsedForFloatingIp(exceptions.InvalidInput):
-    message = _("Floating IP cannot be allocated in SNAT host pool subnet.")
-
 
 NO_ADDR_SCOPE = object()
 
@@ -419,7 +380,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
         if (is_ext and original[cisco_apic.SNAT_HOST_POOL] and
             not current[cisco_apic.SNAT_HOST_POOL] and
             self._has_snat_ip_ports(context._plugin_context, current['id'])):
-                raise SnatPortsInUse(subnet_id=current['id'])
+                raise exceptions.SnatPortsInUse(subnet_id=current['id'])
 
         if (not is_ext and
             current['name'] != original['name']):
@@ -534,7 +495,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
                 # unscoped might still need to be rejected due to
                 # overlap within a Tenant's default VRF. For now, we
                 # just reject the update.
-                raise ScopeUpdateNotSupported()
+                raise exceptions.ScopeUpdateNotSupported()
 
     def create_address_scope_precommit(self, context):
         current = context.current
@@ -816,7 +777,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
         # v6 scope's VRF.
         for subnet in subnets:
             if subnet['ip_version'] != 4:
-                raise IPv6RoutingNotSupported()
+                raise exceptions.IPv6RoutingNotSupported()
         scope_id = self._get_address_scope_id_for_subnets(context, subnets)
 
         # Find number of existing interface ports on the router,
@@ -829,7 +790,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
         if (router_intf_count and
             (scope_id !=
              self._get_address_scope_id_for_router(session, router))):
-            raise MultiScopeRoutingNotSupported()
+            raise exceptions.MultiScopeRoutingNotSupported()
 
         # Find up to two existing router interfaces for this
         # network. The interface currently being added is not
@@ -864,7 +825,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
                     if subnet_id != existing_subnet_id:
                         different_subnet = True
             if different_router and different_subnet:
-                raise UnsupportedRoutingTopology()
+                raise exceptions.UnsupportedRoutingTopology()
 
         router_topo_moved = False
 
@@ -906,7 +867,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
             # Choose VRF and move one topology if necessary.
             if router_vrf and intf_vrf.identity != router_vrf.identity:
                 if intf_shared_net and router_shared_net:
-                    raise UnscopedSharedNetworkProjectConflict(
+                    raise exceptions.UnscopedSharedNetworkProjectConflict(
                         net1=intf_shared_net.id,
                         proj1=intf_shared_net.tenant_id,
                         net2=router_shared_net.id,
@@ -935,7 +896,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
                                   "different VRFs, but neither is shared"),
                               {'intf_topology': intf_topology,
                                'router_topology': router_topology})
-                    raise InternalError()
+                    raise exceptions.InternalError()
             else:
                 vrf = self._ensure_default_vrf(aim_ctx, intf_vrf)
 
@@ -1443,9 +1404,15 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
                 vrf_name=DEFAULT_VRF_NAME,
                 enable_routing=True)
 
-            # Then find routers interfaced to those BDs' networks.
-            net_ids = [self.name_mapper.reverse_network(session, bd.name)
-                       for bd in bds]
+            # Then find network IDs for those BDs mapped from networks.
+            net_ids = []
+            for bd in bds:
+                id = self.name_mapper.reverse_network(
+                    session, bd.name, enforce=False)
+                if id:
+                    net_ids.append(id)
+
+            # Then find routers interfaced to those networks.
             rtr_dbs = (session.query(l3_db.Router).
                        join(l3_db.RouterPort).
                        join(models_v2.Port).
@@ -2050,7 +2017,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
                     if port and port['fixed_ips']:
                         snat_ip = port['fixed_ips'][0]['ip_address']
                         break
-                except exceptions.IpAddressGenerationFailure:
+                except n_exceptions.IpAddressGenerationFailure:
                     LOG.info(_LI('No more addresses available in subnet %s '
                                  'for SNAT IP allocation'),
                              snat_subnet['id'])
@@ -2093,7 +2060,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
             for p in snat_ports:
                 try:
                     self.plugin.delete_port(plugin_context, p[0])
-                except exceptions.NeutronException as ne:
+                except n_exceptions.NeutronException as ne:
                     LOG.warning(_LW('Failed to delete SNAT port %(port)s: '
                                     '%(ex)s'),
                                 {'port': p, 'ex': ne})
@@ -2105,7 +2072,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
                       .get_subnet_extn_db(session,
                                           floatingip['subnet_id']))
             if sn_ext.get(cisco_apic.SNAT_HOST_POOL, False):
-                raise SnatPoolCannotBeUsedForFloatingIp()
+                raise exceptions.SnatPoolCannotBeUsedForFloatingIp()
         elif floatingip.get('floating_ip_address'):
             extn_db_sn = extension_db.SubnetExtensionDb
             cidrs = (session.query(models_v2.Subnet.cidr)
@@ -2116,7 +2083,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
                     .all())
             cidrs = netaddr.IPSet([c[0] for c in cidrs])
             if floatingip['floating_ip_address'] in cidrs:
-                raise SnatPoolCannotBeUsedForFloatingIp()
+                raise exceptions.SnatPoolCannotBeUsedForFloatingIp()
 
     def get_subnets_for_fip(self, context, floatingip):
         session = context.session
