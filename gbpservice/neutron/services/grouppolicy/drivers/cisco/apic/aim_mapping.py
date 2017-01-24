@@ -1716,13 +1716,17 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
                          details):
         session = plugin_context.session
         result = []
-        # get all subnets of the unrouted VRF
+        # get all subnets of the specified VRF
         with session.begin(subtransactions=True):
-            # Find VRF address_scope first
-            address_scope_id = self.name_mapper.reverse_address_scope(
-                session, vrf_name)
-            address_scope = self._get_address_scopes(
-                plugin_context, {'id': [address_scope_id]})
+            # Find VRF's address_scope first
+            address_scope = None
+            if vrf_name != md.DEFAULT_VRF_NAME:
+                # REVISIT: Handle pre-existing VRF whose name isn't
+                # mapped?
+                address_scope_id = self.name_mapper.reverse_address_scope(
+                    session, vrf_name)
+                address_scope = self._get_address_scopes(
+                    plugin_context, {'id': [address_scope_id]})
             if address_scope:
                 subnetpools = self._get_subnetpools(
                     plugin_context,

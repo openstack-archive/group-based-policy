@@ -165,14 +165,15 @@ class ApicExtensionDriver(api_plus.ExtensionDriver,
             # mapping of these to AIM Tenant names is not necessarily
             # reversible. Consider persisting the APIC VRF identities.
             scope_id = self._md.name_mapper.reverse_address_scope(
-                session, vrf.name)
-            scope = (session.query(address_scope_db.AddressScope)
-                     .filter_by(id=scope_id)
-                     .first())
-            if scope:
-                raise n_exc.InvalidInput(
-                     error_message=('VRF %s is already in use by '
-                                    'address-scope %s' % (dn, scope)))
+                session, vrf.name, enforce=False)
+            if scope_id:
+                scope = (session.query(address_scope_db.AddressScope)
+                         .filter_by(id=scope_id)
+                         .first())
+                if scope:
+                    raise n_exc.InvalidInput(
+                        error_message=('VRF %s is already in use by '
+                                       'address-scope %s' % (dn, scope)))
             self.set_address_scope_extn_db(session, result['id'],
                                            {cisco_apic.VRF: dn})
             result.setdefault(cisco_apic.DIST_NAMES, {})[cisco_apic.VRF] = dn

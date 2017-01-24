@@ -26,11 +26,6 @@ from aim import context as aim_context
 from aim.db import model_base as aim_model_base
 from aim import utils as aim_utils
 
-from gbpservice.neutron.db import implicitsubnetpool_db  # noqa
-from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import (
-    extension_db as extn_db)
-from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import apic_mapper
-from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import config  # noqa
 from keystoneclient.v3 import client as ksc_client
 from neutron.api import extensions
 from neutron.common import constants as n_constants
@@ -47,6 +42,13 @@ from neutron.tests.unit.extensions import test_l3
 from opflexagent import constants as ofcst
 import webob.exc
 
+from gbpservice.neutron.db import implicitsubnetpool_db  # noqa
+from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import apic_mapper
+from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import config  # noqa
+from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import exceptions
+
+from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import (
+    extension_db as extn_db)
 from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import (
     mechanism_driver as md)
 
@@ -2025,7 +2027,7 @@ class TestTopology(ApicAimTestCase):
         subnet3_id = self._make_subnet(
             self.fmt, net_resp, '10.0.3.1', '10.0.3.0/24')['subnet']['id']
         self.assertRaises(
-            md.UnsupportedRoutingTopology,
+            exceptions.UnsupportedRoutingTopology,
             self.l3_plugin.add_router_interface,
             context.get_admin_context(), router2_id, {'subnet_id': subnet3_id})
 
@@ -2034,7 +2036,7 @@ class TestTopology(ApicAimTestCase):
         port_id = self._make_port(
             self.fmt, net_id, fixed_ips=fixed_ips)['port']['id']
         self.assertRaises(
-            md.UnsupportedRoutingTopology,
+            exceptions.UnsupportedRoutingTopology,
             self.l3_plugin.add_router_interface,
             context.get_admin_context(), router2_id, {'port_id': port_id})
 
@@ -2043,7 +2045,7 @@ class TestTopology(ApicAimTestCase):
         port_id = self._make_port(
             self.fmt, net_id, fixed_ips=fixed_ips)['port']['id']
         self.assertRaises(
-            md.UnsupportedRoutingTopology,
+            exceptions.UnsupportedRoutingTopology,
             self.l3_plugin.add_router_interface,
             context.get_admin_context(), router2_id, {'port_id': port_id})
 
@@ -2077,11 +2079,11 @@ class TestTopology(ApicAimTestCase):
         subnet2_id = self._make_subnet(
             self.fmt, net_resp, '10.0.2.1', '10.0.2.0/24')['subnet']['id']
         self.assertRaises(
-            md.UnsupportedRoutingTopology,
+            exceptions.UnsupportedRoutingTopology,
             self.l3_plugin.add_router_interface,
             context.get_admin_context(), router1_id, {'subnet_id': subnet2_id})
         self.assertRaises(
-            md.UnsupportedRoutingTopology,
+            exceptions.UnsupportedRoutingTopology,
             self.l3_plugin.add_router_interface,
             context.get_admin_context(), router2_id, {'subnet_id': subnet2_id})
 
@@ -2102,7 +2104,7 @@ class TestTopology(ApicAimTestCase):
 
         # Verify adding IPv6 subnet to router fails.
         self.assertRaises(
-            md.IPv6RoutingNotSupported,
+            exceptions.IPv6RoutingNotSupported,
             self.l3_plugin.add_router_interface,
             context.get_admin_context(), router1_id, {'subnet_id': subnet1_id})
 
@@ -2156,13 +2158,13 @@ class TestTopology(ApicAimTestCase):
 
         # Verify adding second scoped subnet to router fails.
         self.assertRaises(
-            md.MultiScopeRoutingNotSupported,
+            exceptions.MultiScopeRoutingNotSupported,
             self.l3_plugin.add_router_interface,
             context.get_admin_context(), router_id, {'subnet_id': subnet2_id})
 
         # Verify adding unscoped subnet to router fails.
         self.assertRaises(
-            md.MultiScopeRoutingNotSupported,
+            exceptions.MultiScopeRoutingNotSupported,
             self.l3_plugin.add_router_interface,
             context.get_admin_context(), router_id, {'subnet_id': subnet3_id})
 
@@ -2176,7 +2178,7 @@ class TestTopology(ApicAimTestCase):
 
         # Verify adding scoped subnet to router fails.
         self.assertRaises(
-            md.MultiScopeRoutingNotSupported,
+            exceptions.MultiScopeRoutingNotSupported,
             self.l3_plugin.add_router_interface,
             context.get_admin_context(), router_id, {'subnet_id': subnet1_id})
 
@@ -2216,7 +2218,7 @@ class TestTopology(ApicAimTestCase):
 
         # Verify adding shared subnet2 tenant_2 to router fails.
         self.assertRaises(
-            md.UnscopedSharedNetworkProjectConflict,
+            exceptions.UnscopedSharedNetworkProjectConflict,
             self.l3_plugin.add_router_interface,
             router_ctx, router_id, {'subnet_id': subnet2_id})
 
