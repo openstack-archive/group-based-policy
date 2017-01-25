@@ -1409,7 +1409,7 @@ class ServiceOrchestrator(nfp_api.NfpEventHandler):
                                event_data=request_data,
                                is_internal_event=True)
             if event.binding_key:
-                self._controller.event_done(event)
+                self._controller.event_complete(event)
             return
         self.db_handler.update_network_function(
             self.db_session,
