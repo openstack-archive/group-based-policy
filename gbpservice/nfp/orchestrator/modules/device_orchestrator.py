@@ -1344,6 +1344,16 @@ class DeviceOrchestrator(nfp_api.NfpEventHandler):
         device = event.data
         orchestration_driver = self._get_orchestration_driver(
             device['service_details']['service_vendor'])
+        network_function = (
+            self.nsf_db.get_network_function(
+                self.db_session,
+                device['network_function_id']))
+        device['network_function'] = network_function
+        chm_event = self._controller.new_event(
+            id='PERFORM_CLEAR_HM',
+            key=device['network_function_id'],
+            data=device)
+        self._controller.post_event(chm_event)
 
         self._decrement_device_ref_count(device)
         orchestration_driver.delete_network_function_device(device)
