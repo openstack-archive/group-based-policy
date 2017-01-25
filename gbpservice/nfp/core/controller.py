@@ -42,6 +42,7 @@ from neutron.common import config
 
 LOG = nfp_logging.getLogger(__name__)
 PIPE = multiprocessing.Pipe
+LOCK = multiprocessing.Lock
 PROCESS = multiprocessing.Process
 identify = nfp_common.identify
 
@@ -121,6 +122,7 @@ class NfpService(object):
         """
         for node in graph_nodes:
             self.post_event(node)
+
         self.post_event(root_node)
 
     def post_event(self, event, target=None):
@@ -250,18 +252,30 @@ class NfpController(nfp_launcher.NfpLauncher, NfpService):
                 LOG.error(message)
                 raise e
 
-    def pipe_recv(self, pipe):
+    def pipe_lock(self, lock):
+        if lock:
+            lock.acquire()
+
+    def pipe_unlock(self, lock):
+        if lock:
+            lock.release()
+
+    def pipe_recv(self, pipe, lock):
+        self.pipe_lock(lock)
         event = pipe.recv()
+        self.pipe_unlock(lock)
         if event:
             self.decompress(event)
         return event
 
-    def pipe_send(self, pipe, event):
+    def pipe_send(self, pipe, lock, event):
         try:
             self.compress(event)
+            self.pipe_lock(lock)
             pipe.send(event)
+            self.pipe_unlock(lock)
         except Exception as e:
-            message = "Failed to send data via pipe, Reason: %s" % e
+            message = "Failed to send data via pipe, Reason: %s" % (e)
             LOG.error(message)
             raise e
 
@@ -281,9 +295,9 @@ class NfpController(nfp_launcher.NfpLauncher, NfpService):
     def _update_manager(self):
         childs = self.get_childrens()
         for pid, wrapper in childs.iteritems():
-            pipe = wrapper.child_pipe_map[pid]
+            pipe, lock = wrapper.child_pipe_map[pid]
             # Inform 'Manager' class about the new_child.
-            self._manager.new_child(pid, pipe)
+            self._manager.new_child(pid, pipe, lock)
 
     def _process_event(self, event):
         self._manager.process_events([event])
@@ -304,10 +318,18 @@ class NfpController(nfp_launcher.NfpLauncher, NfpService):
 
         parent_pipe, child_pipe = PIPE(duplex=True)
 
+        # Sometimes Resource Temporarily Not Available (errno=11)
+        # is observed with python pipe. There could be many reasons,
+        # One theory is if read &
+        # write happens at the same instant, pipe does report this
+        # error. Using lock to avoid this.
+        lock = LOCK()
+
         # Registered event handlers of nfp module.
         # Workers need copy of this data to dispatch an
         # event to module.
-        proc = self._fork(args=(wrap.service, parent_pipe, child_pipe, self))
+        proc = self._fork(args=(wrap.service, parent_pipe, child_pipe, 
+                                lock, self))
 
         message = ("Forked a new child: %d"
                    "Parent Pipe: % s, Child Pipe: % s") % (
@@ -315,10 +337,10 @@ class NfpController(nfp_launcher.NfpLauncher, NfpService):
         LOG.info(message)
 
         try:
-            wrap.child_pipe_map[proc.pid] = parent_pipe
+            wrap.child_pipe_map[proc.pid] = (parent_pipe, lock)
         except AttributeError:
             setattr(wrap, 'child_pipe_map', {})
-            wrap.child_pipe_map[proc.pid] = parent_pipe
+            wrap.child_pipe_map[proc.pid] = (parent_pipe, lock)
 
         self._worker_process[proc.pid] = proc
         return proc.pid
@@ -450,7 +472,7 @@ class NfpController(nfp_launcher.NfpLauncher, NfpService):
 
             LOG.debug(message)
             # Send it to the distributor process
-            self.pipe_send(self._pipe, event)
+            self.pipe_send(self._pipe, self._lock, event)
         else:
             message = ("(event - %s) - new event in distributor"
                        "processing event") % (event.identify())
@@ -496,7 +518,7 @@ class NfpController(nfp_launcher.NfpLauncher, NfpService):
             event = super(NfpController, self).poll_event(
                 event, spacing=spacing, max_times=max_times)
             # Send to the distributor process.
-            self.pipe_send(self._pipe, event)
+            self.pipe_send(self._pipe, self._lock, event)
 
     def stop_poll_event(self, key, id):
         """To stop the running poll event
@@ -509,7 +531,7 @@ class NfpController(nfp_launcher.NfpLauncher, NfpService):
         event.desc.type = nfp_event.POLL_EVENT
         event.desc.flag = nfp_event.POLL_EVENT_STOP
         if self.PROCESS_TYPE == "worker":
-            self.pipe_send(self._pipe, event)
+            self.pipe_send(self._pipe, self._lock, event)
         else:
             self._manager.process_events([event])
 
@@ -525,7 +547,7 @@ class NfpController(nfp_launcher.NfpLauncher, NfpService):
         if self.PROCESS_TYPE == "distributor":
             message = "(event - %s) - distributor cannot stash" % (
                 event.identify())
-            LOG.error(message)
+            LOG.debug(message)
         else:
             message = "(event - %s) - stashed" % (event.identify())
             LOG.debug(message)
@@ -578,7 +600,7 @@ class NfpController(nfp_launcher.NfpLauncher, NfpService):
             self._manager.process_events([event])
         else:
             # Send to the distributor process.
-            self.pipe_send(self._pipe, event)
+            self.pipe_send(self._pipe, self._lock, event)
 
 
 def load_nfp_modules(conf, controller):
