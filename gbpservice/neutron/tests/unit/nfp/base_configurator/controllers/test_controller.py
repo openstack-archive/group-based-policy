@@ -66,33 +66,38 @@ class ControllerTestCase(base.BaseTestCase, rest.RestController):
                                                 'some_data': 'some_value'}}]
                               }
 
-    def post_create_network_function_config_with_heat(self):
+    def post_create_network_function_config_with_heat(self,
+            operation='create'):
         """Tests HTTP post request create_network_function_device_config.
 
         Returns: none
 
         """
 
+        self.data['info']['context']['operation'] = operation
         response = self.app.post(
                 '/v1/nfp/create_network_function_config',
                 zlib.compress(jsonutils.dumps(self.data)),
                 content_type='application/octet-stream')
         self.assertEqual(response.status_code, 200)
 
-    def post_create_network_function_config_with_others(self):
+    def post_create_network_function_config_with_others(self,
+            operation='create'):
         """Tests HTTP post request create_network_function_device_config.
 
         Returns: none
 
         """
 
+        self.data_non_heat['info']['context']['operation'] = operation
         response = self.app.post(
                 '/v1/nfp/create_network_function_config',
                 zlib.compress(jsonutils.dumps(self.data_non_heat)),
                 content_type='application/octet-stream')
         self.assertEqual(response.status_code, 200)
 
-    def post_delete_network_function_config_with_heat(self):
+    def post_delete_network_function_config_with_heat(self,
+            operation='delete'):
         """Tests HTTP post request delete_network_function_device_config.
 
         Returns: none
@@ -105,7 +110,8 @@ class ControllerTestCase(base.BaseTestCase, rest.RestController):
                 content_type='application/octet-stream')
         self.assertEqual(response.status_code, 200)
 
-    def post_delete_network_function_config_with_others(self):
+    def post_delete_network_function_config_with_others(self,
+            operation='delete'):
         """Tests HTTP post request delete_network_function_device_config.
 
         Returns: none
@@ -145,10 +151,12 @@ class ControllerTestCase(base.BaseTestCase, rest.RestController):
                                         'error_msg': (
                                             'Unsupported resource type')}}]
                           }
-        self.post_create_network_function_config_with_heat()
-        self.post_delete_network_function_config_with_heat()
-        self.post_create_network_function_config_with_others()
-        self.post_delete_network_function_config_with_others()
+        self.post_create_network_function_config_with_heat(operation='create')
+        self.post_delete_network_function_config_with_heat(operation='delete')
+        self.post_create_network_function_config_with_others(
+                operation='create')
+        self.post_delete_network_function_config_with_others(
+                operation='delete')
         response = self.app.get(
                 '/v1/nfp/get_notifications')
         response_str = zlib.decompress(response.body)

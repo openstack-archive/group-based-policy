@@ -156,12 +156,18 @@ class Controller(base_controller.BaseController):
             context = info_data['context']
             service_type = info_data['service_type']
             resource = config_data['resource']
+            operation = context['operation']
 
             if 'device_ip' in context:
                 msg = ("POSTING DATA TO VM :: %s" % body)
                 LOG.info(msg)
                 device_ip = context['device_ip']
                 ip = str(device_ip)
+                resource_id = (context['nfp_context']['nfp_context']['id']
+                    if context.get('nfp_context') and
+                        context['nfp_context'].get('nfp_context') else '')
+                if operation == 'delete' and resource_id == 'PERFORM_CLEAR_HM':
+                    return
                 is_vm_reachable = self._verify_vm_reachability(ip,
                                                                self.vm_port)
                 if is_vm_reachable:
