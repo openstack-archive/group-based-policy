@@ -634,7 +634,7 @@ class NFPNodeDriver(driver_base.NodeDriverBase):
     def update_node_consumer_ptg_removed(self, context, policy_target_group):
         # When a group is created which is both consumer and provider.
         # method is invoked for stitching group too.. ignoring.
-        if policy_target_group['proxied_group_id']:
+        if policy_target_group.get('proxied_group_id'):
             return
         if context.current_profile['service_type'] == pconst.FIREWALL:
             context._plugin_context = self._get_resource_owner_context(
