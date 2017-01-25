@@ -38,6 +38,7 @@
     "resources": {
         "monitor": {
             "type": "OS::Neutron::LBaaS::HealthMonitor",
+            "depends_on": "pool",
             "properties": {
                 "delay": 3,
                 "type": "HTTP",
@@ -50,6 +51,7 @@
         },
         "pool": {
             "type": "OS::Neutron::LBaaS::Pool",
+            "depends_on": "listener2",
             "description": "{'app_port_param_name': 'app_port'}",
             "properties": {
                 "lb_algorithm": "ROUND_ROBIN",
@@ -61,6 +63,7 @@
         },
         "pool2": {
             "type": "OS::Neutron::LBaaS::Pool",
+            "depends_on": "monitor",
             "description": "{'app_port_param_name': 'app_port2'}",
             "properties": {
                 "lb_algorithm": "ROUND_ROBIN",
@@ -72,6 +75,7 @@
         },
         "listener": {
             "type": "OS::Neutron::LBaaS::Listener",
+            "depends_on": "loadbalancer",
             "properties": {
                 "loadbalancer": {
                     "get_resource": "loadbalancer"
@@ -84,6 +88,7 @@
         },
         "listener2": {
             "type": "OS::Neutron::LBaaS::Listener",
+            "depends_on": "listener",
             "properties": {
                 "loadbalancer": {
                     "get_resource": "loadbalancer"
