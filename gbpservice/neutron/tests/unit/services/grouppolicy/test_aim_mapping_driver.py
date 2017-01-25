@@ -617,6 +617,83 @@ class AIMBaseTestCase(test_nr_base.CommonNeutronBaseTestCase,
                     filter_by(policy_target_group_id=ptg_id).
                     all())
 
+    def _validate_contract_subject_filters(
+        self, contract_subject, policy_rules):
+        # In this setup sach policy_rule should result in forward and reverse
+        # filters
+        in_filters = contract_subject.in_filters
+        out_filters = contract_subject.out_filters
+        bi_filters = contract_subject.bi_filters
+
+        in_filters_count = 0
+        out_filters_count = 0
+        bi_filters_count = 0
+
+        for pr in policy_rules:
+            pc = self.show_policy_classifier(pr['policy_classifier_id'])[
+                'policy_classifier']
+            if pc['direction'] == gp_const.GP_DIRECTION_IN:
+                in_filters_count += 2  # assumed to be reversible
+            elif pc['direction'] == gp_const.GP_DIRECTION_OUT:
+                out_filters_count += 2  # assumed to be reversible
+            else:
+                bi_filters_count += 2  # assumed to be reversible
+
+        i = 0
+        for filters, filters_count in zip(
+            [bi_filters, in_filters, out_filters],
+            [bi_filters_count, in_filters_count, out_filters_count]):
+            # Validating in this order also implicitly checks that
+            # the filters are populated for the corresponding
+            # classifier direction
+            self.assertEqual(filters_count, len(filters))
+
+            if filters_count == 0:
+                continue
+
+            policy_rule_id = self.name_mapper.policy_rule(
+                None, policy_rules[i]['id'])
+            if len(filters[0]) < len(filters[1]):
+                self.assertEqual(policy_rule_id, filters[0])
+                self.assertEqual(policy_rule_id,
+                                 filters[1].replace('reverse-', ''))
+            else:
+                self.assertEqual(policy_rule_id, filters[1])
+                self.assertEqual(policy_rule_id,
+                                 filters[0].replace('reverse-', ''))
+            i += 1
+
+    def _validate_merged_status(self, contract, contract_subject, prs):
+        merged_status = self.driver._merge_aim_status(
+            self._neutron_context.session,
+            [contract, contract_subject])
+        self.assertEqual(merged_status, prs['status'])
+
+    def _validate_policy_rule_set_aim_mapping(self, prs, rules):
+        self.show_policy_rule_set(prs['id'], expected_res_status=200)
+        aim_contract_name = str(self.name_mapper.policy_rule_set(
+            self._neutron_context.session, prs['id']))
+        aim_contracts = self.aim_mgr.find(
+            self._aim_context, aim_resource.Contract, name=aim_contract_name)
+        self.assertEqual(1, len(aim_contracts))
+        self.assertEqual(prs['name'], aim_contracts[0].display_name)
+        aim_contract_subjects = self.aim_mgr.find(
+            self._aim_context, aim_resource.ContractSubject,
+            name=aim_contract_name)
+        self.assertEqual(1, len(aim_contract_subjects))
+        self._validate_contract_subject_filters(
+            aim_contract_subjects[0], rules)
+        self._validate_merged_status(
+            aim_contracts[0], aim_contract_subjects[0], prs)
+
+    def _validate_policy_rule_deleted(self, prs):
+        aim_contract_name = str(self.name_mapper.policy_rule_set(
+            self._neutron_context.session, prs['id']))
+        self.show_policy_rule_set(prs['id'], expected_res_status=404)
+        aim_contracts = self.aim_mgr.find(
+            self._aim_context, aim_resource.Contract, name=aim_contract_name)
+        self.assertEqual(0, len(aim_contracts))
+
 
 class TestGBPStatus(AIMBaseTestCase):
 
@@ -2516,10 +2593,13 @@ class TestPolicyTargetRollback(AIMBaseTestCase):
 
 class TestPolicyRuleBase(AIMBaseTestCase):
 
-    def _test_policy_rule_create_update_result(self, aim_tenant_name,
-                                               aim_filter_name,
-                                               aim_reverse_filter_name,
-                                               policy_rule):
+    def _test_policy_rule_aim_mapping(self, policy_rule):
+        aim_filter_name = str(self.name_mapper.policy_rule(
+            self._neutron_context.session, policy_rule['id']))
+        aim_reverse_filter_name = str(self.name_mapper.policy_rule(
+            self._neutron_context.session, policy_rule['id'],
+            prefix=alib.REVERSE_PREFIX))
+        aim_tenant_name = md.COMMON_TENANT_NAME
         filter_entries = []
         aim_obj_list = []
         for filter_name in [aim_filter_name, aim_reverse_filter_name]:
@@ -2551,8 +2631,60 @@ class TestPolicyRuleBase(AIMBaseTestCase):
                                                  aim_obj_list)
         self.assertEqual(merged_status, prule['status'])
 
+    def _test_policy_rule_delete_aim_mapping(self, policy_rule):
+        aim_filter_name = str(self.name_mapper.policy_rule(
+            self._neutron_context.session, policy_rule['id']))
+        aim_reverse_filter_name = str(self.name_mapper.policy_rule(
+            self._neutron_context.session, policy_rule['id'],
+            prefix=alib.REVERSE_PREFIX))
+
+        for filter_name in [aim_filter_name, aim_reverse_filter_name]:
+            aim_filters = self.aim_mgr.find(
+                self._aim_context, aim_resource.Filter, name=filter_name)
+            self.assertEqual(0, len(aim_filters))
+
 
 class TestPolicyRule(TestPolicyRuleBase):
+
+    def _test_policy_classifier_update(self, pr):
+        orig_pc_id = pr['policy_classifier_id']
+        pc = self.create_policy_classifier(
+            direction='in', protocol='tcp', port_range=80)['policy_classifier']
+        new_pr = self.update_policy_rule(
+            pr['id'], expected_res_status=200,
+            policy_classifier_id=pc['id'])['policy_rule']
+        self._test_policy_rule_aim_mapping(new_pr)
+
+        prs = self.create_policy_rule_set(
+            name="ctr", policy_rules=[new_pr['id']])[
+                'policy_rule_set']
+        self._validate_policy_rule_set_aim_mapping(prs, [new_pr])
+
+        # Remove Classifier port
+        self.update_policy_classifier(pc['id'], port_range=None)
+        new_pr = self.update_policy_rule(
+            pr['id'], expected_res_status=200,
+            policy_classifier_id=pc['id'])['policy_rule']
+        self._test_policy_rule_aim_mapping(pr)
+
+        # Change direction
+        self.update_policy_classifier(pc['id'], direction='out')
+        new_pr = self.update_policy_rule(
+            pr['id'], expected_res_status=200,
+            policy_classifier_id=pc['id'])['policy_rule']
+        self._test_policy_rule_aim_mapping(pr)
+
+        # TODO(Sumit): Check with protocol that does not
+        # require reverse filter
+
+        self.delete_policy_rule_set(prs['id'], expected_res_status=204)
+
+        new_pr = self.update_policy_rule(
+            pr['id'], expected_res_status=200,
+            policy_classifier_id=orig_pc_id)['policy_rule']
+        self._test_policy_rule_aim_mapping(new_pr)
+
+        self.delete_policy_classifier(pc['id'], expected_res_status=204)
 
     def test_policy_rule_lifecycle(self):
         action1 = self.create_policy_action(
@@ -2568,33 +2700,19 @@ class TestPolicyRule(TestPolicyRuleBase):
         pr_name = pr['name']
         self.show_policy_rule(pr_id, expected_res_status=200)
 
-        aim_filter_name = str(self.name_mapper.policy_rule(
-            self._neutron_context.session, pr_id))
-        aim_reverse_filter_name = str(self.name_mapper.policy_rule(
-            self._neutron_context.session, pr_id,
-            prefix=alib.REVERSE_PREFIX))
-        aim_tenant_name = md.COMMON_TENANT_NAME
-        self._test_policy_rule_create_update_result(
-            aim_tenant_name, aim_filter_name, aim_reverse_filter_name, pr)
+        self._test_policy_rule_aim_mapping(pr)
 
         pr_name = 'new name'
         new_pr = self.update_policy_rule(pr_id, expected_res_status=200,
                                          name=pr_name)['policy_rule']
-        aim_filter_name = str(self.name_mapper.policy_rule(
-            self._neutron_context.session, pr_id))
-        aim_reverse_filter_name = str(self.name_mapper.policy_rule(
-            self._neutron_context.session, pr_id,
-            prefix=alib.REVERSE_PREFIX))
-        self._test_policy_rule_create_update_result(
-            aim_tenant_name, aim_filter_name, aim_reverse_filter_name, new_pr)
+        self._test_policy_rule_aim_mapping(new_pr)
+
+        self._test_policy_classifier_update(new_pr)
 
         self.delete_policy_rule(pr_id, expected_res_status=204)
         self.show_policy_rule(pr_id, expected_res_status=404)
 
-        for filter_name in [aim_filter_name, aim_reverse_filter_name]:
-            aim_filters = self.aim_mgr.find(
-                self._aim_context, aim_resource.Filter, name=filter_name)
-            self.assertEqual(0, len(aim_filters))
+        self._test_policy_rule_delete_aim_mapping(new_pr)
 
 
 class TestPolicyRuleRollback(TestPolicyRuleBase):
@@ -2679,94 +2797,31 @@ class TestPolicyRuleRollback(TestPolicyRuleBase):
             self._neutron_context.session, pr_id,
             prefix=alib.REVERSE_PREFIX))
         aim_tenant_name = md.COMMON_TENANT_NAME
-        self._test_policy_rule_create_update_result(
-            aim_tenant_name, aim_filter_name, aim_reverse_filter_name, pr)
+        self._test_policy_rule_aim_mapping(pr)
 
         # restore mock
         self.dummy.delete_policy_rule_precommit = orig_func
 
 
-class TestPolicyRuleSetBase(AIMBaseTestCase):
-
-    def _validate_contract_subject_filters(
-        self, contract_subject, policy_rules):
-        # In this setup sach policy_rule should result in forward and reverse
-        # filters
-        in_filters = contract_subject.in_filters
-        out_filters = contract_subject.out_filters
-        bi_filters = contract_subject.bi_filters
-
-        i = 0
-        for filters in [bi_filters, in_filters, out_filters]:
-            # Validating in this order also implicitly checks that
-            # the filters are populated for the corresponding
-            # classifier direction
-            self.assertEqual(2, len(filters))
-
-            policy_rule_id = self.name_mapper.policy_rule(
-                None, policy_rules[i]['id'])
-            if len(filters[0]) < len(filters[1]):
-                self.assertEqual(policy_rule_id, filters[0])
-                self.assertEqual(policy_rule_id,
-                                 filters[1].replace('reverse-', ''))
-            else:
-                self.assertEqual(policy_rule_id, filters[1])
-                self.assertEqual(policy_rule_id,
-                                 filters[0].replace('reverse-', ''))
-            i += 1
-
-    def _validate_merged_status(self, contract, contract_subject, prs):
-        merged_status = self.driver._merge_aim_status(
-            self._neutron_context.session,
-            [contract, contract_subject])
-        self.assertEqual(merged_status, prs['status'])
-
-
-class TestPolicyRuleSet(TestPolicyRuleSetBase):
+class TestPolicyRuleSet(AIMBaseTestCase):
 
     def test_policy_rule_set_lifecycle(self):
         rules = self._create_3_direction_rules()
         prs = self.create_policy_rule_set(
             name="ctr", policy_rules=[x['id'] for x in rules])[
                 'policy_rule_set']
-        self.show_policy_rule_set(prs['id'], expected_res_status=200)
-
-        aim_contract_name = str(self.name_mapper.policy_rule_set(
-            self._neutron_context.session, prs['id']))
-        aim_contracts = self.aim_mgr.find(
-            self._aim_context, aim_resource.Contract, name=aim_contract_name)
-        self.assertEqual(1, len(aim_contracts))
-        self.assertEqual(prs['name'], aim_contracts[0].display_name)
-        aim_contract_subjects = self.aim_mgr.find(
-            self._aim_context, aim_resource.ContractSubject,
-            name=aim_contract_name)
-        self.assertEqual(1, len(aim_contract_subjects))
-        self._validate_contract_subject_filters(
-            aim_contract_subjects[0], rules)
-        self._validate_merged_status(
-            aim_contracts[0], aim_contract_subjects[0], prs)
+        self._validate_policy_rule_set_aim_mapping(prs, rules)
 
         new_rules = self._create_3_direction_rules()
         prs = self.update_policy_rule_set(
             prs['id'], policy_rules=[x['id'] for x in new_rules],
             expected_res_status=200)['policy_rule_set']
-        aim_contract_subjects = self.aim_mgr.find(
-            self._aim_context, aim_resource.ContractSubject,
-            name=aim_contract_name)
-        self.assertEqual(1, len(aim_contract_subjects))
-        self._validate_contract_subject_filters(
-            aim_contract_subjects[0], new_rules)
-        self._validate_merged_status(
-            aim_contracts[0], aim_contract_subjects[0], prs)
+        self._validate_policy_rule_set_aim_mapping(prs, new_rules)
 
         self.delete_policy_rule_set(prs['id'], expected_res_status=204)
-        self.show_policy_rule_set(prs['id'], expected_res_status=404)
-        aim_contracts = self.aim_mgr.find(
-            self._aim_context, aim_resource.Contract, name=aim_contract_name)
-        self.assertEqual(0, len(aim_contracts))
 
 
-class TestPolicyRuleSetRollback(TestPolicyRuleSetBase):
+class TestPolicyRuleSetRollback(AIMBaseTestCase):
 
     def test_policy_rule_set_create_fail(self):
         orig_func = self.dummy.create_policy_rule_set_precommit
@@ -2800,15 +2855,7 @@ class TestPolicyRuleSetRollback(TestPolicyRuleSetBase):
         self.update_policy_rule_set(
             prs['id'], expected_res_status=500, name='new name')
 
-        aim_contract_name = str(self.name_mapper.policy_rule_set(
-            self._neutron_context.session, prs['id']))
-        aim_contracts = self.aim_mgr.find(
-            self._aim_context, aim_resource.Contract, name=aim_contract_name)
-        self.assertEqual(1, len(aim_contracts))
-        aim_contract_subjects = self.aim_mgr.find(
-            self._aim_context, aim_resource.ContractSubject,
-            name=aim_contract_name)
-        self.assertEqual(1, len(aim_contract_subjects))
+        self._validate_policy_rule_set_aim_mapping(prs, rules)
 
         # restore mock
         self.dummy.update_policy_rule_set_precommit = orig_func
@@ -2824,15 +2871,7 @@ class TestPolicyRuleSetRollback(TestPolicyRuleSetBase):
 
         self.delete_policy_rule_set(prs['id'], expected_res_status=500)
 
-        aim_contract_name = str(self.name_mapper.policy_rule_set(
-            self._neutron_context.session, prs['id']))
-        aim_contracts = self.aim_mgr.find(
-            self._aim_context, aim_resource.Contract, name=aim_contract_name)
-        self.assertEqual(1, len(aim_contracts))
-        aim_contract_subjects = self.aim_mgr.find(
-            self._aim_context, aim_resource.ContractSubject,
-            name=aim_contract_name)
-        self.assertEqual(1, len(aim_contract_subjects))
+        self._validate_policy_rule_set_aim_mapping(prs, rules)
 
         # restore mock
         self.dummy.delete_policy_rule_set_precommit = orig_func
