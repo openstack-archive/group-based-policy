@@ -59,6 +59,48 @@ class OnlyOneAddressIsAllowedPerExternalSegment(gpexc.GroupPolicyBadRequest):
                 "APIC GBP driver.")
 
 
+def get_filter_entries_for_policy_classifier(classifier):
+    # forward_rules and reverse_rules is each a dict of filter_entries
+    # with each entry in the dict having the filter_entry name as the
+    # key and the filter_entry attributes as the value
+    entries = {'forward_rules': None, 'reverse_rules': None}
+    x = 0
+    port_min, port_max = (
+        gpdb.GroupPolicyMappingDbPlugin._get_min_max_ports_from_range(
+            classifier['port_range']))
+    f_attrs = {'etherT': 'unspecified'}
+    if classifier['protocol']:
+        f_attrs['etherT'] = 'ip'
+        f_attrs['prot'] = classifier['protocol'].lower()
+    if port_min and port_max:
+        f_attrs['dToPort'] = port_max
+        f_attrs['dFromPort'] = port_min
+    entries['forward_rules'] = {_get_filter_entry_name(x): f_attrs}
+    # Also create reverse rule
+    if f_attrs.get('prot') in REVERSIBLE_PROTOCOLS:
+        r_entries = {}
+        r_attrs = copy.deepcopy(f_attrs)
+        if r_attrs.get('dToPort') and r_attrs.get('dFromPort'):
+            r_attrs.pop('dToPort')
+            r_attrs.pop('dFromPort')
+            r_attrs['sToPort'] = port_max
+            r_attrs['sFromPort'] = port_min
+        if r_attrs['prot'] == n_constants.PROTO_NAME_TCP.lower():
+            # Only match on established sessions
+            r_attrs['tcpRules'] = 'est'
+        r_entries[_get_filter_entry_name(x)] = r_attrs
+        if r_attrs['prot'] == n_constants.PROTO_NAME_ICMP.lower():
+            r_entries = {}
+            # create more entries:
+            for reply_type in ICMP_REPLY_TYPES:
+                x += 1
+                r_entry = copy.deepcopy(r_attrs)
+                r_entry['icmpv4T'] = reply_type
+                r_entries[_get_filter_entry_name(x)] = r_entry
+        entries['reverse_rules'] = r_entries
+    return entries
+
+
 def get_filter_entries_for_policy_rule(context):
     # forward_rules and reverse_rules is each a dict of filter_entries
     # with each entry in the dict having the filter_entry name as the
@@ -69,41 +111,8 @@ def get_filter_entries_for_policy_rule(context):
     classifier = context._plugin.get_policy_classifier(
         context._plugin_context,
         context.current['policy_classifier_id'])
-    x = 0
     if action['action_type'] in ALLOWING_ACTIONS:
-        port_min, port_max = (
-            gpdb.GroupPolicyMappingDbPlugin._get_min_max_ports_from_range(
-                classifier['port_range']))
-        f_attrs = {'etherT': 'unspecified'}
-        if classifier['protocol']:
-            f_attrs['etherT'] = 'ip'
-            f_attrs['prot'] = classifier['protocol'].lower()
-        if port_min and port_max:
-            f_attrs['dToPort'] = port_max
-            f_attrs['dFromPort'] = port_min
-        entries['forward_rules'] = {_get_filter_entry_name(x): f_attrs}
-        # Also create reverse rule
-        if f_attrs.get('prot') in REVERSIBLE_PROTOCOLS:
-            r_entries = {}
-            r_attrs = copy.deepcopy(f_attrs)
-            if r_attrs.get('dToPort') and r_attrs.get('dFromPort'):
-                r_attrs.pop('dToPort')
-                r_attrs.pop('dFromPort')
-                r_attrs['sToPort'] = port_max
-                r_attrs['sFromPort'] = port_min
-            if r_attrs['prot'] == n_constants.PROTO_NAME_TCP.lower():
-                # Only match on established sessions
-                r_attrs['tcpRules'] = 'est'
-            r_entries[_get_filter_entry_name(x)] = r_attrs
-            if r_attrs['prot'] == n_constants.PROTO_NAME_ICMP.lower():
-                r_entries = {}
-                # create more entries:
-                for reply_type in ICMP_REPLY_TYPES:
-                    x += 1
-                    r_entry = copy.deepcopy(r_attrs)
-                    r_entry['icmpv4T'] = reply_type
-                    r_entries[_get_filter_entry_name(x)] = r_entry
-            entries['reverse_rules'] = r_entries
+        entries = get_filter_entries_for_policy_classifier(classifier)
     return entries
 
 

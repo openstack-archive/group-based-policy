@@ -31,6 +31,7 @@ from oslo_log import helpers as log
 from oslo_log import log as logging
 from oslo_utils import excutils
 
+from gbpservice.neutron.db.grouppolicy import group_policy_db as gpdb
 from gbpservice.neutron.db.grouppolicy import group_policy_mapping_db as gpmdb
 from gbpservice.neutron.extensions import cisco_apic
 from gbpservice.neutron.extensions import cisco_apic_gbp as aim_ext
@@ -709,31 +710,111 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
         c_dir = context.current['direction']
         o_prot = context.original['protocol']
         c_prot = context.current['protocol']
-        # Process classifier update for direction or protocol change
-        if ((o_dir != c_dir) or (
-            (o_prot in alib.REVERSIBLE_PROTOCOLS) != (
-                c_prot in alib.REVERSIBLE_PROTOCOLS))):
-            # TODO(Sumit): Update corresponding AIM FilterEntries
-            # and ContractSubjects
-            raise Exception
+        o_port_min, o_port_max = (
+            gpmdb.GroupPolicyMappingDbPlugin._get_min_max_ports_from_range(
+                context.original['port_range']))
+        c_port_min, c_port_max = (
+            gpmdb.GroupPolicyMappingDbPlugin._get_min_max_ports_from_range(
+                context.current['port_range']))
+
+        if ((o_dir == c_dir) and (o_prot == c_prot) and (
+            o_port_min == c_port_min) and (o_port_max == c_port_max)):
+            # none of the fields relevant to the aim_mapping have changed
+            # so no further processing is required
+            return
+
+        prules = self._db_plugin(context._plugin).get_policy_rules(
+            context._plugin_context,
+            filters={'policy_classifier_id': [context.current['id']]})
+
+        prule_ids = [x['id'] for x in prules]
+
+        prule_sets = self._get_prs_for_policy_rules(context, prule_ids)
+
+        if not prules:
+            # this policy_classifier has not yet been assocaited with
+            # a policy_rule and hence will not have any mapped aim
+            # resources
+            return
+
+        for pr in prules:
+            session = context._plugin_context.session
+            aim_ctx = self._get_aim_context(context)
+            # delete old filter_entries
+            self._delete_filter_entries_for_policy_rule(
+                session, aim_ctx, pr)
+
+            aim_filter = self._aim_filter(session, pr)
+            aim_reverse_filter = self._aim_filter(
+                session, pr, reverse_prefix=True)
+
+            entries = alib.get_filter_entries_for_policy_classifier(
+                context.current)
+
+            remove_aim_reverse_filter = None
+            if not entries['reverse_rules']:
+                # the updated classifier's protocol does not have
+                # reverse filter_entries
+                if self.aim.get(aim_ctx, aim_reverse_filter):
+                    # so remove the older reverse filter if it exists
+                    self.aim.delete(aim_ctx, aim_reverse_filter)
+                    remove_aim_reverse_filter = aim_reverse_filter.name
+                    # Unset the reverse filter name so that its not
+                    # used in further processing
+                    aim_reverse_filter.name = None
+
+            # create new filter_entries mapping to the updated
+            # classifier and associated with aim_filters
+            self._create_policy_rule_aim_mappings(
+                session, aim_ctx, pr, entries)
+
+            # update contract_subject to put the filter in the
+            # appropriate in/out buckets corresponding to the
+            # updated direction of the policy_classifier
+            if remove_aim_reverse_filter or (o_dir != c_dir):
+                for prs in prule_sets:
+                    aim_contract_subject = self._get_aim_contract_subject(
+                        session, prs)
+                    # Remove the older reverse filter if needed
+                    for filters in [aim_contract_subject.in_filters,
+                                    aim_contract_subject.out_filters,
+                                    aim_contract_subject.bi_filters]:
+                        if remove_aim_reverse_filter in filters:
+                            filters.remove(remove_aim_reverse_filter)
+                    if o_dir != c_dir:
+                        # First remove the filter from the older
+                        # direction list
+                        for flist in [aim_contract_subject.in_filters,
+                                      aim_contract_subject.out_filters,
+                                      aim_contract_subject.bi_filters]:
+                            for fname in [aim_filter.name,
+                                          aim_reverse_filter.name]:
+                                if fname in flist:
+                                    flist.remove(fname)
+                        # Now add it to the relevant direct list(s)
+                        if c_dir == g_const.GP_DIRECTION_IN:
+                            for fname in filter(
+                                None, [aim_filter.name,
+                                       aim_reverse_filter.name]):
+                                aim_contract_subject.in_filters.append(fname)
+                        elif c_dir == g_const.GP_DIRECTION_OUT:
+                            for fname in filter(
+                                None, [aim_filter.name,
+                                       aim_reverse_filter.name]):
+                                aim_contract_subject.out_filters.append(fname)
+                        elif c_dir == g_const.GP_DIRECTION_BI:
+                            for fname in filter(
+                                None, [aim_filter.name,
+                                       aim_reverse_filter.name]):
+                                aim_contract_subject.bi_filters.append(fname)
 
     @log.log_method_call
     def create_policy_rule_precommit(self, context):
         entries = alib.get_filter_entries_for_policy_rule(context)
-        if entries['forward_rules']:
-            session = context._plugin_context.session
-            aim_ctx = self._get_aim_context(context)
-            aim_filter = self._aim_filter(session, context.current)
-            self.aim.create(aim_ctx, aim_filter)
-            self._create_aim_filter_entries(session, aim_ctx, aim_filter,
-                                            entries['forward_rules'])
-            if entries['reverse_rules']:
-                # Also create reverse rule
-                aim_filter = self._aim_filter(session, context.current,
-                                              reverse_prefix=True)
-                self.aim.create(aim_ctx, aim_filter)
-                self._create_aim_filter_entries(session, aim_ctx, aim_filter,
-                                                entries['reverse_rules'])
+        session = context._plugin_context.session
+        aim_ctx = self._get_aim_context(context)
+        self._create_policy_rule_aim_mappings(
+            session, aim_ctx, context.current, entries)
 
     @log.log_method_call
     def update_policy_rule_precommit(self, context):
@@ -744,11 +825,12 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
     def delete_policy_rule_precommit(self, context):
         session = context._plugin_context.session
         aim_ctx = self._get_aim_context(context)
+        self._delete_filter_entries_for_policy_rule(session,
+                                                    aim_ctx, context.current)
         aim_filter = self._aim_filter(session, context.current)
         aim_reverse_filter = self._aim_filter(
             session, context.current, reverse_prefix=True)
-        for afilter in [aim_filter, aim_reverse_filter]:
-            self._delete_aim_filter_entries(aim_ctx, afilter)
+        for afilter in filter(None, [aim_filter, aim_reverse_filter]):
             self.aim.delete(aim_ctx, afilter)
 
     @log.log_method_call
@@ -1117,6 +1199,21 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
         aim_filter_entry = aim_resource.FilterEntry(**kwargs)
         return aim_filter_entry
 
+    def _create_policy_rule_aim_mappings(
+        self, session, aim_context, pr, entries):
+        if entries['forward_rules']:
+            aim_filter = self._aim_filter(session, pr)
+            self.aim.create(aim_context, aim_filter, overwrite=True)
+            self._create_aim_filter_entries(session, aim_context, aim_filter,
+                                            entries['forward_rules'])
+            if entries['reverse_rules']:
+                # Also create reverse rule
+                aim_filter = self._aim_filter(session, pr,
+                                              reverse_prefix=True)
+                self.aim.create(aim_context, aim_filter, overwrite=True)
+                self._create_aim_filter_entries(
+                    session, aim_context, aim_filter, entries['reverse_rules'])
+
     def _delete_aim_filter_entries(self, aim_context, aim_filter):
         aim_filter_entries = self.aim.find(
             aim_context, aim_resource.FilterEntry,
@@ -1124,6 +1221,13 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
             filter_name=aim_filter.name)
         for entry in aim_filter_entries:
             self.aim.delete(aim_context, entry)
+
+    def _delete_filter_entries_for_policy_rule(self, session, aim_context, pr):
+        aim_filter = self._aim_filter(session, pr)
+        aim_reverse_filter = self._aim_filter(
+            session, pr, reverse_prefix=True)
+        for afilter in filter(None, [aim_filter, aim_reverse_filter]):
+            self._delete_aim_filter_entries(aim_context, afilter)
 
     def _create_aim_filter_entries(self, session, aim_ctx, aim_filter,
                                    filter_entries):
@@ -2156,3 +2260,16 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
                                gpmdb.L3PolicyMapping).filter(
                                    gpmdb.L2PolicyMapping.l3_policy_id ==
                                    context.current['id']).all()]
+
+    def _get_prs_for_policy_rules(self, context, pr_ids):
+        return [self._get_policy_rule_set(
+            context._plugin_context, x['id']) for x in (
+                context._plugin_context.session.query(
+                    gpdb.PolicyRuleSet).join(
+                        gpdb.PRSToPRAssociation,
+                        gpdb.PRSToPRAssociation.policy_rule_set_id ==
+                        gpdb.PolicyRuleSet.id).join(
+                            gpdb.PolicyRule,
+                            gpdb.PRSToPRAssociation.policy_rule_id ==
+                            gpdb.PolicyRule.id).filter(
+                                gpdb.PolicyRule.id.in_(pr_ids)).all())]
