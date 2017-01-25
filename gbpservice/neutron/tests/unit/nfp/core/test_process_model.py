@@ -50,9 +50,12 @@ class MockedPipe(object):
 
 class MockedProcess(object):
 
-    def __init__(self, parent_pipe=None, child_pipe=None, controller=None):
+    def __init__(self, parent_pipe=None, child_pipe=None,
+        lock=None, controller=None):
+
         self.parent_pipe = parent_pipe
         self.child_pipe = child_pipe
+        self.lock = lock
         self.controller = controller
         self.daemon = True
         self.pid = random.randint(8888, 9999)
@@ -61,12 +64,14 @@ class MockedProcess(object):
         self.worker = nfp_worker.NfpWorker({}, threads=0)
         self.worker.parent_pipe = self.parent_pipe
         self.worker.pipe = self.child_pipe
+        self.worker.lock = self.lock
         self.worker.controller = nfp_controller.NfpController(
             self.controller._conf, singleton=False)
 
         # fork a new controller object
         self.worker.controller.PROCESS_TYPE = "worker"
         self.worker.controller._pipe = self.worker.pipe
+        self.worker.controller._lock = self.worker.lock
         self.worker.controller._event_handlers = (
             self.controller._event_handlers)
         self.worker.event_handlers = self.controller.get_event_handlers()
@@ -77,16 +82,34 @@ class MockedProcess(object):
             self.controller._process_event)
 
 
+class MockedLock(object):
+    def __init__(self):
+        pass
+
+    def acquire(self):
+        pass
+
+    def release(self):
+        pass
+
+
 def mocked_pipe(**kwargs):
     return MockedPipe(), MockedPipe()
 
 
 def mocked_process(target=None, args=None):
     return MockedProcess(parent_pipe=args[1],
-                         child_pipe=args[2], controller=args[3])
+                         child_pipe=args[2], lock=args[3],
+                         controller=args[4])
+
+
+def mocked_lock():
+    return MockedLock()
+
 
 nfp_controller.PIPE = mocked_pipe
 nfp_controller.PROCESS = mocked_process
+nfp_controller.LOCK = mocked_lock
 
 
 class Object(object):
@@ -254,7 +277,7 @@ class Test_Process_Model(unittest.TestCase):
 
         self.assertTrue(False)
 
-    def mocked_pipe_send(self, pipe, event):
+    def mocked_pipe_send(self, pipe, lock, event):
         if event.id == 'EVENT_1':
             if hasattr(event, 'desc'):
                 if event.desc.worker:
