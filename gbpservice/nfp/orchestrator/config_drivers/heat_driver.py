@@ -416,7 +416,7 @@ class HeatDriver(object):
         if policy_target['name'] and (policy_target['name'].startswith(
                 plumber_base.SERVICE_TARGET_NAME_PREFIX) or
                 policy_target['name'].startswith('tscp_endpoint_service') or
-                policy_target['name'].startswith('vip_pt')):
+                policy_target['name'].startswith('vip')):
             return True
         else:
             return False
