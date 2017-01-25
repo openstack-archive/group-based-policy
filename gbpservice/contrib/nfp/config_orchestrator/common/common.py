@@ -14,6 +14,7 @@ from gbpservice.contrib.nfp.config_orchestrator.common import (
     topics as a_topics)
 from gbpservice.nfp.core import log as nfp_logging
 from gbpservice.nfp.lib import transport
+from gbpservice.nfp.orchestrator.openstack import openstack_driver
 
 from neutron._i18n import _LE
 from neutron.common import constants as n_constants
@@ -89,9 +90,10 @@ def _filter_data(routers, networks, filters):
             'networks': _filtered_networks}
 
 
-def get_core_context(context, filters, host):
-    routers = get_routers(context, host)
-    networks = get_networks(context, host)
+def get_core_context(context, filters, config):
+    #routers = get_routers(context, config.host)
+    routers = []
+    networks = get_networks(context, config)
     return _filter_data(routers, networks, filters)
 
 
@@ -103,7 +105,24 @@ def get_routers(context, host):
                       router_ids=None)
 
 
-def get_networks(context, host):
+def get_dhcp_agent_host(config):
+    try:
+        neutronclient = openstack_driver.NeutronClient(config)
+        keystoneclient = openstack_driver.KeystoneClient(config)
+        token = keystoneclient.get_admin_token()
+        filters = {'agent_type': 'DHCP agent', 'alive': True}
+        agents = neutronclient.get_agents(token, filters)
+        if agents:
+            return agents[0].get('host', None)
+    except Exception as exc:
+        LOG.error(_LE("Failed to get dhcp agent host : %(exc)s"),
+                  {'exc': exc})
+
+
+def get_networks(context, config):
+    host = get_dhcp_agent_host(config)
+    if not host:
+        return []
     target = messaging.Target(
         topic=n_topics.PLUGIN,
         namespace=n_constants.RPC_NAMESPACE_DHCP_PLUGIN,
