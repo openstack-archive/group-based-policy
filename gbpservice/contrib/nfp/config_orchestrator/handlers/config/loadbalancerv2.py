@@ -71,7 +71,7 @@ class Lbv2Agent(loadbalancer_dbv2.LoadBalancerPluginDbv2):
         filters = {'tenant_id': [tenant_id]}
         core_context_dict = common.get_core_context(context,
                                                     filters,
-                                                    self._conf.host)
+                                                    self._conf)
         del core_context_dict['routers']
         return core_context_dict
 
