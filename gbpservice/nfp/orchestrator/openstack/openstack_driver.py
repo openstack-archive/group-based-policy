@@ -966,6 +966,25 @@ class NeutronClient(OpenstackApi):
             LOG.error(err)
             raise Exception(err)
 
+    def get_agents(self, token, filters=None):
+        """ Get neutron agents
+
+        :param token: A scoped_token
+        :param filters: Parameters for list filter
+
+        :return: neutron agents List
+
+        """
+        try:
+            neutron = neutron_client.Client(token=token,
+                                            endpoint_url=self.network_service)
+            return neutron.list_agents(**filters).get('agents', [])
+        except Exception as ex:
+            err = ("Failed to read agents information"
+                   " Exception :: %s" % (ex))
+            LOG.error(err)
+            raise Exception(err)
+
 
 class GBPClient(OpenstackApi):
     """ GBP Client Api Driver. """
