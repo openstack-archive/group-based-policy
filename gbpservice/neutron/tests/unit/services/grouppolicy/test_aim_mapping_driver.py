@@ -459,6 +459,7 @@ class AIMBaseTestCase(test_nr_base.CommonNeutronBaseTestCase,
             expected_cons_contract_names = [implicit_contract_name,
                                             router_contract_name]
         else:
+            expected_prov_contract_names = [implicit_contract_name]
             expected_cons_contract_names = [implicit_contract_name,
                                             service_contract_name]
         if prs_lists['provided']:
@@ -2690,30 +2691,28 @@ class TestPolicyRuleSetBase(AIMBaseTestCase):
 
     def _validate_contract_subject_filters(
         self, contract_subject, policy_rules):
-        # In this setup sach policy_rule should result in forward and reverse
-        # filters
-        in_filters = contract_subject.in_filters
-        out_filters = contract_subject.out_filters
-        bi_filters = contract_subject.bi_filters
 
-        i = 0
-        for filters in [bi_filters, in_filters, out_filters]:
-            # Validating in this order also implicitly checks that
-            # the filters are populated for the corresponding
-            # classifier direction
-            self.assertEqual(2, len(filters))
+        expected_in_filters = []
+        expected_out_filters = []
+        for idx in xrange(0, len(policy_rules)):
+            # In this setup each policy_rule should result in
+            # forward and reverse filters
+            fwd_filter = self.name_mapper.policy_rule(None,
+                                                      policy_rules[idx]['id'])
+            rev_filter = 'reverse-%s' % fwd_filter
 
-            policy_rule_id = self.name_mapper.policy_rule(
-                None, policy_rules[i]['id'])
-            if len(filters[0]) < len(filters[1]):
-                self.assertEqual(policy_rule_id, filters[0])
-                self.assertEqual(policy_rule_id,
-                                 filters[1].replace('reverse-', ''))
-            else:
-                self.assertEqual(policy_rule_id, filters[1])
-                self.assertEqual(policy_rule_id,
-                                 filters[0].replace('reverse-', ''))
-            i += 1
+            if idx < 2:  # in/bi-directional classifier
+                expected_in_filters.append(fwd_filter)
+                expected_in_filters.append(rev_filter)
+            if idx != 1:  # out/bi-directional classifier
+                expected_out_filters.append(fwd_filter)
+                expected_out_filters.append(rev_filter)
+
+        self.assertFalse(contract_subject.bi_filters)
+        self.assertItemsEqual(expected_in_filters,
+                              contract_subject.in_filters)
+        self.assertItemsEqual(expected_out_filters,
+                              contract_subject.out_filters)
 
     def _validate_merged_status(self, contract, contract_subject, prs):
         merged_status = self.driver._merge_aim_status(

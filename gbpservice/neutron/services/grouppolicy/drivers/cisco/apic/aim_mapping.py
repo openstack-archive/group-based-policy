@@ -1217,7 +1217,7 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
 
     def _populate_aim_contract_subject(self, context, aim_contract,
                                        policy_rules):
-        in_filters, out_filters, bi_filters = [], [], []
+        in_filters, out_filters = [], []
         session = context._plugin_context.session
         for rule in policy_rules:
             aim_filters = self._get_aim_filter_names(session, rule)
@@ -1228,9 +1228,10 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
             elif classifier['direction'] == g_const.GP_DIRECTION_OUT:
                 out_filters += aim_filters
             else:
-                bi_filters += aim_filters
+                in_filters += aim_filters
+                out_filters += aim_filters
         self._populate_aim_contract_subject_by_filters(
-            context, aim_contract, in_filters, out_filters, bi_filters)
+            context, aim_contract, in_filters, out_filters)
 
     def _populate_aim_contract_subject_by_filters(
         self, context, aim_contract, in_filters=None, out_filters=None,
@@ -1498,8 +1499,9 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
             session, l2p['tenant_id'], prefix=alib.IMPLICIT_PREFIX)
         service_contract_name = self.name_mapper.project(
             session, l2p['tenant_id'], prefix=alib.SERVICE_PREFIX)
-        self._add_contracts_for_epg(aim_ctx, aim_epg, consumed_contracts=[
-            implicit_contract_name, service_contract_name])
+        self._add_contracts_for_epg(aim_ctx, aim_epg,
+            provided_contracts=[implicit_contract_name],
+            consumed_contracts=[implicit_contract_name, service_contract_name])
 
     def _add_contracts_for_epg(self, aim_ctx, aim_epg, provided_contracts=None,
                                consumed_contracts=None):
