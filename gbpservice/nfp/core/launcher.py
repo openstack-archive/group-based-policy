@@ -35,9 +35,10 @@ class NfpLauncher(ProcessLauncher):
     def __init__(self, conf):
         super(NfpLauncher, self).__init__(conf)
 
-    def child(self, service, ppipe, cpipe, controller):
+    def child(self, service, ppipe, cpipe, lock, controller):
         service.parent_pipe = ppipe
         service.pipe = cpipe
+        service.lock = lock
         service.controller = controller
         self.launcher = self._child_process(service)
         while True:

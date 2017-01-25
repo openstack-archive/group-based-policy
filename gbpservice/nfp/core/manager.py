@@ -63,7 +63,7 @@ class NfpProcessManager(object):
         self._controller = controller
         self._child_snapshot = []
 
-    def new_child(self, pid, pipe):
+    def new_child(self, pid, pipe, lock):
         # Pass, as we will learn from comparision as watcher
         pass
 
@@ -117,7 +117,7 @@ class NfpResourceManager(NfpProcessManager, NfpEventManager):
         NfpProcessManager.__init__(self, conf, controller)
         NfpEventManager.__init__(self, conf, controller, self._event_sequencer)
 
-    def new_child(self, pid, pipe):
+    def new_child(self, pid, pipe, lock):
         """Invoked when a new child is spawned.
 
             Associates an event manager with this child, maintains
@@ -130,9 +130,9 @@ class NfpResourceManager(NfpProcessManager, NfpEventManager):
         ev_manager = NfpEventManager(
             self._conf, self._controller,
             self._event_sequencer,
-            pipe=pipe, pid=pid)
+            pipe=pipe, pid=pid, lock=lock)
         self._resource_map.update(dict({pid: ev_manager}))
-        super(NfpResourceManager, self).new_child(pid, pipe)
+        super(NfpResourceManager, self).new_child(pid, pipe, lock)
 
     def manager_run(self):
         """Invoked periodically to check on resources.
@@ -353,8 +353,8 @@ class NfpResourceManager(NfpProcessManager, NfpEventManager):
     def _replace_child(self, killed, new):
         childrens = self._controller.get_childrens()
         wrap = childrens[new]
-        pipe = wrap.child_pipe_map[new]
-        self.new_child(new, pipe)
+        pipe, lock = wrap.child_pipe_map[new]
+        self.new_child(new, pipe, lock)
         new_em = self._resource_map[new]
         killed_em = self._resource_map[killed]
         new_em.init_from_event_manager(killed_em)

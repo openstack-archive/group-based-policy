@@ -292,13 +292,15 @@ class NfpEventHandlers(object):
 
 class NfpEventManager(object):
 
-    def __init__(self, conf, controller, sequencer, pipe=None, pid=-1):
+    def __init__(self, conf, controller, sequencer, pipe=None, pid=-1, lock=None):
         self._conf = conf
         self._controller = controller
         # PID of process to which this event manager is associated
         self._pid = pid
         # Duplex pipe to read & write events
         self._pipe = pipe
+        # Lock over pipe access
+        self._lock = lock
         # Cache of UUIDs of events which are dispatched to
         # the worker which is handled by this em.
         self._cache = deque()
@@ -312,7 +314,7 @@ class NfpEventManager(object):
         else:
             return "(event_manager - %d" % (self._pid)
 
-    def _wait_for_events(self, pipe, timeout=0.01):
+    def _wait_for_events(self, pipe, lock, timeout=0.01):
         """Wait & pull event from the pipe.
 
             Wait till timeout for the first event and then
@@ -321,9 +323,11 @@ class NfpEventManager(object):
         """
         events = []
         try:
-            while pipe.poll(timeout):
-                timeout = 0
-                event = self._controller.pipe_recv(pipe)
+            self._controller.pipe_lock(lock)
+            ret = pipe.poll(timeout)
+            self._controller.pipe_unlock(lock)
+            if ret:
+                event = self._controller.pipe_recv(pipe, lock)
                 events.append(event)
         except multiprocessing.TimeoutError as err:
             message = "%s" % (err)
@@ -387,7 +391,7 @@ class NfpEventManager(object):
         if event_type:
             event.desc.type = event_type
         # Send to the worker
-        self._controller.pipe_send(self._pipe, event)
+        self._controller.pipe_send(self._pipe, self._lock, event)
 
         self._load = (self._load + 1) if inc_load else self._load
         # Add to the cache
@@ -396,4 +400,4 @@ class NfpEventManager(object):
 
     def event_watcher(self, timeout=0.01):
         """Watch for events. """
-        return self._wait_for_events(self._pipe, timeout=timeout)
+        return self._wait_for_events(self._pipe, self._lock, timeout=timeout)
