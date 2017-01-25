@@ -43,6 +43,7 @@ class NfpWorker(Service):
         self.parent_pipe = None
         # Pipe to recv/send messages to distributor
         self.pipe = None
+        self.lock = None
         # Cache of event handlers
         self.controller = None
         self._conf = conf
@@ -59,12 +60,16 @@ class NfpWorker(Service):
         # Update the process type in controller.
         self.controller.PROCESS_TYPE = "worker"
         self.controller._pipe = self.pipe
+        self.controller._lock = self.lock
         self.event_handlers = self.controller.get_event_handlers()
         while True:
             try:
                 event = None
-                if self.pipe.poll(0.1):
-                    event = self.controller.pipe_recv(self.pipe)
+                self.controller.pipe_lock(self.lock)
+                ret = self.pipe.poll(0.1)
+                self.controller.pipe_unlock(self.lock)
+                if ret:
+                    event = self.controller.pipe_recv(self.pipe, self.lock)
                 if event:
                     message = "%s - received event" % (
                         self._log_meta(event))
@@ -92,7 +97,7 @@ class NfpWorker(Service):
         desc.uuid = event.desc.uuid
         desc.flag = nfp_event.EVENT_ACK
         setattr(ack_event, 'desc', desc)
-        self.controller.pipe_send(self.pipe, ack_event)
+        self.controller.pipe_send(self.pipe, self.lock, ack_event)
 
     def _process_event(self, event):
         """Process & dispatch the event.
@@ -133,7 +138,7 @@ class NfpWorker(Service):
                 event.identify(), event.desc.poll_desc.max_times)
             LOG.debug(message)
             if event.desc.poll_desc.max_times:
-                self.controller.pipe_send(self.pipe, status['event'])
+                self.controller.pipe_send(self.pipe, self.lock, status['event'])
             else:
                 message = ("(event - %s) - max timed out,"
                            "calling event_cancelled") % (event.identify())
