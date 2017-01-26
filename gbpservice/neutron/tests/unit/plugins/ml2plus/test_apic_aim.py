@@ -710,6 +710,11 @@ class TestAimMapping(ApicAimTestCase):
         self._check_router_deleted(router)
 
     def test_router_interface(self):
+        mock_notif = mock.Mock(side_effect=self.port_notif_verifier())
+        self.driver.notifier.port_update = mock_notif
+
+        self._register_agent('host1', AGENT_CONF_OPFLEX)
+
         # Create router.
         router = self._make_router(
             self.fmt, 'test-tenant', 'router1')['router']
@@ -729,6 +734,13 @@ class TestAimMapping(ApicAimTestCase):
         subnet1_id = subnet['id']
         self._check_subnet(subnet, net, [], [gw1_ip])
 
+        # Create port on subnet1.
+        fixed_ips = [{'subnet_id': subnet1_id, 'ip_address': '10.0.1.100'}]
+        port = self._make_port(self.fmt, net_id, fixed_ips=fixed_ips)['port']
+        port = self._bind_port_to_host(port['id'], 'host1')['port']
+        port['dns_name'] = None
+        port_calls = [mock.call(mock.ANY, port)]
+
         # Create subnet2.
         gw2_ip = '10.0.2.1'
         subnet = self._make_subnet(self.fmt, net_resp, gw2_ip,
@@ -736,10 +748,21 @@ class TestAimMapping(ApicAimTestCase):
         subnet2_id = subnet['id']
         self._check_subnet(subnet, net, [], [gw2_ip])
 
+        # Create port on subnet2.
+        fixed_ips = [{'subnet_id': subnet2_id, 'ip_address': '10.0.2.100'}]
+        port = self._make_port(self.fmt, net_id, fixed_ips=fixed_ips)['port']
+        port = self._bind_port_to_host(port['id'], 'host1')['port']
+        port['dns_name'] = None
+        port_calls.append(mock.call(mock.ANY, port))
+
         # Add subnet1 to router by subnet.
+        mock_notif.reset_mock()
         info = self.l3_plugin.add_router_interface(
             context.get_admin_context(), router_id, {'subnet_id': subnet1_id})
         self.assertIn(subnet1_id, info['subnet_ids'])
+
+        # Verify ports were notified.
+        mock_notif.assert_has_calls(port_calls, any_order=True)
 
         # Check router.
         router = self._show('routers', router_id)['router']
@@ -772,9 +795,13 @@ class TestAimMapping(ApicAimTestCase):
         fixed_ips = [{'subnet_id': subnet2_id, 'ip_address': gw2_ip}]
         port = self._make_port(self.fmt, net_id, fixed_ips=fixed_ips)['port']
         port2_id = port['id']
+        mock_notif.reset_mock()
         info = self.l3_plugin.add_router_interface(
             context.get_admin_context(), router_id, {'port_id': port2_id})
         self.assertIn(subnet2_id, info['subnet_ids'])
+
+        # Verify ports were not notified.
+        mock_notif.assert_not_called()
 
         # Check router.
         router = self._show('routers', router_id)['router']
@@ -793,9 +820,13 @@ class TestAimMapping(ApicAimTestCase):
         self._check_subnet(subnet, net, [(gw2_ip, router)], [])
 
         # Remove subnet1 from router by subnet.
+        mock_notif.reset_mock()
         info = self.l3_plugin.remove_router_interface(
             context.get_admin_context(), router_id, {'subnet_id': subnet1_id})
         self.assertIn(subnet1_id, info['subnet_ids'])
+
+        # Verify ports were not notified.
+        mock_notif.assert_not_called()
 
         # Check router.
         router = self._show('routers', router_id)['router']
@@ -814,9 +845,13 @@ class TestAimMapping(ApicAimTestCase):
         self._check_subnet(subnet, net, [(gw2_ip, router)], [])
 
         # Remove subnet2 from router by port.
+        mock_notif.reset_mock()
         info = self.l3_plugin.remove_router_interface(
             context.get_admin_context(), router_id, {'port_id': port2_id})
         self.assertIn(subnet2_id, info['subnet_ids'])
+
+        # Verify ports were notified.
+        mock_notif.assert_has_calls(port_calls, any_order=True)
 
         # Check router.
         router = self._show('routers', router_id)['router']
@@ -838,6 +873,11 @@ class TestAimMapping(ApicAimTestCase):
         # REVISIT(rkukura): Currently follows same workflow as above,
         # but might be sufficient to test with a single subnet with
         # its CIDR allocated from the subnet pool.
+
+        mock_notif = mock.Mock(side_effect=self.port_notif_verifier())
+        self.driver.notifier.port_update = mock_notif
+
+        self._register_agent('host1', AGENT_CONF_OPFLEX)
 
         # Create address scope.
         scope = self._make_address_scope(
@@ -872,6 +912,13 @@ class TestAimMapping(ApicAimTestCase):
         subnet1_id = subnet['id']
         self._check_subnet(subnet, net, [], [gw1_ip])
 
+        # Create port on subnet1.
+        fixed_ips = [{'subnet_id': subnet1_id, 'ip_address': '10.0.1.100'}]
+        port = self._make_port(self.fmt, net_id, fixed_ips=fixed_ips)['port']
+        port = self._bind_port_to_host(port['id'], 'host1')['port']
+        port['dns_name'] = None
+        port_calls = [mock.call(mock.ANY, port)]
+
         # Create subnet2.
         gw2_ip = '10.0.2.1'
         subnet = self._make_subnet(
@@ -880,10 +927,21 @@ class TestAimMapping(ApicAimTestCase):
         subnet2_id = subnet['id']
         self._check_subnet(subnet, net, [], [gw2_ip])
 
+        # Create port on subnet2.
+        fixed_ips = [{'subnet_id': subnet2_id, 'ip_address': '10.0.2.100'}]
+        port = self._make_port(self.fmt, net_id, fixed_ips=fixed_ips)['port']
+        port = self._bind_port_to_host(port['id'], 'host1')['port']
+        port['dns_name'] = None
+        port_calls.append(mock.call(mock.ANY, port))
+
         # Add subnet1 to router by subnet.
+        mock_notif.reset_mock()
         info = self.l3_plugin.add_router_interface(
             context.get_admin_context(), router_id, {'subnet_id': subnet1_id})
         self.assertIn(subnet1_id, info['subnet_ids'])
+
+        # Verify ports were notified.
+        mock_notif.assert_has_calls(port_calls, any_order=True)
 
         # Check router.
         router = self._show('routers', router_id)['router']
@@ -916,9 +974,13 @@ class TestAimMapping(ApicAimTestCase):
         fixed_ips = [{'subnet_id': subnet2_id, 'ip_address': gw2_ip}]
         port = self._make_port(self.fmt, net_id, fixed_ips=fixed_ips)['port']
         port2_id = port['id']
+        mock_notif.reset_mock()
         info = self.l3_plugin.add_router_interface(
             context.get_admin_context(), router_id, {'port_id': port2_id})
         self.assertIn(subnet2_id, info['subnet_ids'])
+
+        # Verify ports were not notified.
+        mock_notif.assert_not_called()
 
         # Check router.
         router = self._show('routers', router_id)['router']
@@ -937,9 +999,13 @@ class TestAimMapping(ApicAimTestCase):
         self._check_subnet(subnet, net, [(gw2_ip, router)], [], scope)
 
         # Remove subnet1 from router by subnet.
+        mock_notif.reset_mock()
         info = self.l3_plugin.remove_router_interface(
             context.get_admin_context(), router_id, {'subnet_id': subnet1_id})
         self.assertIn(subnet1_id, info['subnet_ids'])
+
+        # Verify ports were not notified.
+        mock_notif.assert_not_called()
 
         # Check router.
         router = self._show('routers', router_id)['router']
@@ -958,9 +1024,13 @@ class TestAimMapping(ApicAimTestCase):
         self._check_subnet(subnet, net, [(gw2_ip, router)], [], scope)
 
         # Remove subnet2 from router by port.
+        mock_notif.reset_mock()
         info = self.l3_plugin.remove_router_interface(
             context.get_admin_context(), router_id, {'port_id': port2_id})
         self.assertIn(subnet2_id, info['subnet_ids'])
+
+        # Verify ports were notified.
+        mock_notif.assert_has_calls(port_calls, any_order=True)
 
         # Check router.
         router = self._show('routers', router_id)['router']
@@ -1379,17 +1449,27 @@ class TestAimMapping(ApicAimTestCase):
         self._check_subnet(subnet3, net3, [], [gw3_ip])
 
     def test_shared_network_topologies(self):
-        def make_net_and_subnet(number, project, shared=False):
+        def make_net(number, project, shared=False):
             name = 'net%s' % number
             net_resp = self._make_network(
                 self.fmt, name, True, tenant_id=project, shared=shared)
             net = net_resp['network']
+            net_id = net['id']
             self._check_network(net)
             cidr = '10.0.%s.0/24' % number
             subnet = self._make_subnet(
                 self.fmt, net_resp, None, cidr, tenant_id=project)['subnet']
+            subnet_id = subnet['id']
             self._check_subnet(subnet, net, [], [])
-            return net['id'], subnet['id']
+            ip = '10.0.%s.100' % number
+            fixed_ips = [{'subnet_id': subnet_id, 'ip_address': ip}]
+            port = self._make_port(
+                self.fmt, net_id, fixed_ips=fixed_ips,
+                tenant_id=project)['port']
+            port_id = port['id']
+            port = self._bind_port_to_host(port_id, 'host1')['port']
+            port['dns_name'] = None
+            return net_id, subnet_id, port
 
         def make_router(letter, project):
             name = 'router%s' % letter
@@ -1427,13 +1507,26 @@ class TestAimMapping(ApicAimTestCase):
                 router, expected_gw_ips, unexpected_gw_ips,
                 unscoped_project=project)
 
+        def check_port_notify(ports=None):
+            if not ports:
+                mock_notif.assert_not_called()
+            else:
+                calls = [mock.call(mock.ANY, port) for port in ports]
+                mock_notif.assert_has_calls(calls, any_order=True)
+                mock_notif.reset_mock()
+
+        mock_notif = mock.Mock(side_effect=self.port_notif_verifier())
+        self.driver.notifier.port_update = mock_notif
+
+        self._register_agent('host1', AGENT_CONF_OPFLEX)
+
         t1 = 'tenant_1'
         t2 = 'tenant_2'
 
-        net1, sn1 = make_net_and_subnet(1, t1)
-        net2, sn2 = make_net_and_subnet(2, t1)
-        net3, sn3 = make_net_and_subnet(3, t1)
-        net4, sn4 = make_net_and_subnet(4, t2, True)
+        net1, sn1, p1 = make_net(1, t1)
+        net2, sn2, p2 = make_net(2, t1)
+        net3, sn3, p3 = make_net(3, t1)
+        net4, sn4, p4 = make_net(4, t2, True)
 
         rA = make_router('A', t1)
         rB = make_router('B', t1)
@@ -1457,6 +1550,7 @@ class TestAimMapping(ApicAimTestCase):
 
         # Add subnet 1 to router A.
         add_interface(rA, net1, sn1, gw1A, t1)
+        check_port_notify([p1])
         check_router(rA, [gw1A], [gw2A], t1)
         check_router(rB, [], [gw2B, gw3B], t1)
         check_router(rC, [], [gw3C, gw4C], t1)
@@ -1467,6 +1561,7 @@ class TestAimMapping(ApicAimTestCase):
 
         # Add subnet 2 to router A.
         add_interface(rA, net2, sn2, gw2A, t1)
+        check_port_notify([p2])
         check_router(rA, [gw1A, gw2A], [], t1)
         check_router(rB, [], [gw2B, gw3B], t1)
         check_router(rC, [], [gw3C, gw4C], t1)
@@ -1477,6 +1572,7 @@ class TestAimMapping(ApicAimTestCase):
 
         # Add subnet 2 to router B.
         add_interface(rB, net2, sn2, gw2B, t1)
+        check_port_notify()
         check_router(rA, [gw1A, gw2A], [], t1)
         check_router(rB, [gw2B], [gw3B], t1)
         check_router(rC, [], [gw3C, gw4C], t1)
@@ -1487,6 +1583,7 @@ class TestAimMapping(ApicAimTestCase):
 
         # Add subnet 3 to router B.
         add_interface(rB, net3, sn3, gw3B, t1)
+        check_port_notify([p3])
         check_router(rA, [gw1A, gw2A], [], t1)
         check_router(rB, [gw2B, gw3B], [], t1)
         check_router(rC, [], [gw3C, gw4C], t1)
@@ -1497,6 +1594,7 @@ class TestAimMapping(ApicAimTestCase):
 
         # Add subnet 3 to router C.
         add_interface(rC, net3, sn3, gw3C, t1)
+        check_port_notify()
         check_router(rA, [gw1A, gw2A], [], t1)
         check_router(rB, [gw2B, gw3B], [], t1)
         check_router(rC, [gw3C], [gw4C], t1)
@@ -1509,6 +1607,7 @@ class TestAimMapping(ApicAimTestCase):
         # C's topology (networks 1, 2 and 3 and routers A, B and C) to
         # tenant 2.
         add_interface(rC, net4, sn4, gw4C, t1)
+        check_port_notify([p1, p2, p3])
         check_router(rA, [gw1A, gw2A], [], t2)
         check_router(rB, [gw2B, gw3B], [], t2)
         check_router(rC, [gw3C, gw4C], [], t2)
@@ -1520,6 +1619,7 @@ class TestAimMapping(ApicAimTestCase):
         # Remove subnet 3 from router B, which should move router B's
         # topology (networks 1 and 2 and routers A and B) to tenant 1.
         remove_interface(rB, net3, sn3, gw3B, t1)
+        check_port_notify([p1, p2])
         check_router(rA, [gw1A, gw2A], [], t1)
         check_router(rB, [gw2B], [gw3B], t1)
         check_router(rC, [gw3C, gw4C], [], t2)
@@ -1532,6 +1632,7 @@ class TestAimMapping(ApicAimTestCase):
         # topology (networks 1 and 2 and routers A and B) to tenant 2
         # again.
         add_interface(rB, net3, sn3, gw3B, t1)
+        check_port_notify([p1, p2])
         check_router(rA, [gw1A, gw2A], [], t2)
         check_router(rB, [gw2B, gw3B], [], t2)
         check_router(rC, [gw3C, gw4C], [], t2)
@@ -1543,6 +1644,7 @@ class TestAimMapping(ApicAimTestCase):
         # Remove subnet 2 from router B, which should move network 2's
         # topology (networks 1 and 2 and router A) back to tenant 1.
         remove_interface(rB, net2, sn2, gw2B, t1)
+        check_port_notify([p1, p2])
         check_router(rA, [gw1A, gw2A], [], t1)
         check_router(rB, [gw3B], [gw2B], t2)
         check_router(rC, [gw3C, gw4C], [], t2)
@@ -1554,6 +1656,7 @@ class TestAimMapping(ApicAimTestCase):
         # Add subnet 2 back to router B, which should move network 2's
         # topology (networks 1 and 2 and router A) to tenant 2 again.
         add_interface(rB, net2, sn2, gw2B, t1)
+        check_port_notify([p1, p2])
         check_router(rA, [gw1A, gw2A], [], t2)
         check_router(rB, [gw2B, gw3B], [], t2)
         check_router(rC, [gw3C, gw4C], [], t2)
@@ -3272,14 +3375,15 @@ class TestExternalConnectivityBase(object):
                 subnets.append(sub['subnet'])
                 port_calls.append(mock.call(mock.ANY, p))
 
-        # add router - no notifications expected
+        # add router - expect notifications
         router = self._make_router(
             self.fmt, net['tenant_id'], 'router1')['router']
         for sub in subnets:
             self._router_interface_action('add', router['id'], sub['id'], None)
-        mock_notif.assert_not_called()
+        mock_notif.assert_has_calls(port_calls, any_order=True)
 
         # set external gateway - expect notifications
+        mock_notif.reset_mock()
         self._update('routers', router['id'],
                      {'router':
                       {'external_gateway_info': {'network_id':
