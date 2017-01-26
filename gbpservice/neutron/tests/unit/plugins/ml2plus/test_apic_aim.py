@@ -2288,6 +2288,31 @@ class TestTopology(ApicAimTestCase):
         self.assertEqual('MechanismDriverError',
                          result['NeutronError']['type'])
 
+    def test_unscoped_subnetpool_subnets_with_router(self):
+        # Test that subnets from a subnetpool that has no address-scope
+        # can be connected to a router.
+        sp = self._make_subnetpool(
+            self.fmt, ['10.0.0.0/8'], name='spool1',
+            tenant_id='t1', shared=True, admin=True)['subnetpool']
+        net = self._make_network(self.fmt, 'net', True, tenant_id='t1',
+                                 shared=True)
+
+        sub1 = self._make_subnet(self.fmt, net, '10.10.10.1',
+                                 '10.10.10.0/24', sp['id'],
+                                 tenant_id='t1')['subnet']
+        sub2 = self._make_subnet(self.fmt, net, '10.10.20.1',
+                                 '10.10.20.0/24', sp['id'],
+                                 tenant_id='t1')['subnet']
+        sub3 = self._make_subnet(self.fmt, net, '10.20.10.1',
+                                 '10.20.10.0/24', sp['id'],
+                                 tenant_id='t2')['subnet']
+
+        rtr = self._make_router(self.fmt, 't1', 'rtr')['router']
+
+        self._router_interface_action('add', rtr['id'], sub1['id'], None)
+        self._router_interface_action('add', rtr['id'], sub2['id'], None)
+        self._router_interface_action('add', rtr['id'], sub3['id'], None)
+
 
 class TestPortBinding(ApicAimTestCase):
     def test_bind_opflex_agent(self):

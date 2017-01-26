@@ -1880,8 +1880,8 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
                         .filter(l3_db.RouterPort.router_id == router['id'],
                                 l3_db.RouterPort.port_type ==
                                 n_constants.DEVICE_OWNER_ROUTER_INTF)
-                        .filter(models_v2.SubnetPool.address_scope_id is not
-                                None)
+                        .filter(models_v2.SubnetPool
+                                .address_scope_id.isnot(None))
                         .distinct()):
             if pool_db.ip_version == 4:
                 scope_id = pool_db.address_scope_id
