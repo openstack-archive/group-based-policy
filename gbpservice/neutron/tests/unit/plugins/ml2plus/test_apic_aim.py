@@ -3486,6 +3486,65 @@ class TestExternalConnectivityBase(object):
         cv.assert_not_called()
         dv.assert_called_once_with(mock.ANY, a_ext_net1_no_contracts, a_vrf1)
 
+    def test_address_scope_pre_existing_vrf(self):
+        cv = self.mock_ns.connect_vrf
+        dv = self.mock_ns.disconnect_vrf
+
+        aim_ctx = aim_context.AimContext(self.db_session)
+
+        # create pre-existing VRF
+        tenant = aim_resource.Tenant(name='common', monitored=True)
+        self.aim_mgr.create(aim_ctx, tenant)
+        vrf = aim_resource.VRF(tenant_name='common', name='ctx1',
+                               monitored=True)
+        vrf = self.aim_mgr.create(aim_ctx, vrf)
+        vrf.monitored = False
+
+        # create address-scope for pre-existing VRF
+        scope = self._make_address_scope_for_vrf(vrf.dn,
+                                                 name='as1')['address_scope']
+
+        pool = self._make_subnetpool(
+            self.fmt, ['10.0.0.0/8'], name='sp', address_scope_id=scope['id'],
+            tenant_id=scope['tenant_id'], default_prefixlen=24)['subnetpool']
+
+        # create external stuff
+        ext_net1 = self._make_ext_network('ext-net1',
+                                          dn=self.dn_t1_l1_n1)
+        self._make_subnet(
+            self.fmt, {'network': ext_net1}, '100.100.100.1',
+            '100.100.100.0/24')
+        router = self._make_router(self.fmt, self._tenant_id,
+           'router1',
+           external_gateway_info={'network_id': ext_net1['id']})['router']
+
+        contract = self.name_mapper.router(None, router['id'])
+        a_ext_net1 = aim_resource.ExternalNetwork(
+            tenant_name=self.t1_aname, l3out_name='l1', name='n1',
+            provided_contract_names=[contract],
+            consumed_contract_names=[contract])
+
+        # create private stuff
+        net = self._make_network(self.fmt, 'net1', True)['network']
+        subnet = self._make_subnet(
+            self.fmt, {'network': net}, '10.0.1.1', '10.0.1.0/24',
+            subnetpool_id=pool['id'])['subnet']
+
+        cv.assert_not_called()
+        dv.assert_not_called()
+
+        self._router_interface_action('add', router['id'], subnet['id'], None)
+        cv.assert_called_once_with(mock.ANY, a_ext_net1, vrf)
+        dv.assert_not_called()
+
+        self.mock_ns.reset_mock()
+        a_ext_net1.provided_contract_names = []
+        a_ext_net1.consumed_contract_names = []
+        self._router_interface_action('remove', router['id'], subnet['id'],
+                                      None)
+        cv.assert_not_called()
+        dv.assert_called_once_with(mock.ANY, a_ext_net1, vrf)
+
 
 class TestExternalDistributedNat(TestExternalConnectivityBase,
                                  ApicAimTestCase):

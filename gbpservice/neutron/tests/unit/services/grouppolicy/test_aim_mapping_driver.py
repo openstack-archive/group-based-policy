@@ -2353,7 +2353,27 @@ class TestPolicyTarget(AIMBaseTestCase):
                           'prefixlen': int(prefix)},
                          mapping['host_snat_ips'][0])
 
-    def _do_test_get_gbp_details(self):
+    def _make_address_scope_for_vrf(self, vrf_dn, ip_version=4,
+                                    expected_status=None, **kwargs):
+        attrs = {'ip_version': ip_version}
+        if vrf_dn:
+            attrs[DN] = {'VRF': vrf_dn}
+        attrs.update(kwargs)
+
+        req = self.new_create_request('address-scopes',
+                                      {'address_scope': attrs}, self.fmt)
+        neutron_context = nctx.Context('', kwargs.get('tenant_id',
+                                                      self._tenant_id))
+        req.environ['neutron.context'] = neutron_context
+
+        res = req.get_response(self.ext_api)
+        if expected_status:
+            self.assertEqual(expected_status, res.status_int)
+        elif res.status_int >= webob.exc.HTTPClientError.code:
+            raise webob.exc.HTTPClientError(code=res.status_int)
+        return self.deserialize(self.fmt, res)
+
+    def _do_test_get_gbp_details(self, pre_vrf=None):
         es1, es1_sub = self._setup_external_segment(
             'es1', dn='uni/tn-t1/out-l1/instP-n1')
         es2, es2_sub1 = self._setup_external_segment(
@@ -2365,8 +2385,13 @@ class TestPolicyTarget(AIMBaseTestCase):
         self._update('subnets', es2_sub2['id'],
                      {'subnet': {'apic:snat_host_pool': True}})
 
+        as_id = (self._make_address_scope_for_vrf(
+            pre_vrf.dn, name='as1')['address_scope']['id']
+            if pre_vrf else None)
+
         l3p = self.create_l3_policy(name='myl3',
-            external_segments={es1['id']: [], es2['id']: []})['l3_policy']
+            external_segments={es1['id']: [], es2['id']: []},
+            address_scope_v4_id=as_id)['l3_policy']
         l2p = self.create_l2_policy(name='myl2',
                                     l3_policy_id=l3p['id'])['l2_policy']
         ptg = self.create_policy_target_group(
@@ -2397,6 +2422,19 @@ class TestPolicyTarget(AIMBaseTestCase):
 
         self._verify_gbp_details_assertions(
             mapping, req_mapping, pt1['port_id'], epg_name, epg_tenant, subnet)
+
+        if pre_vrf:
+            vrf_name = pre_vrf.name
+            vrf_tenant = pre_vrf.tenant_name
+        else:
+            vrf_name = self.name_mapper.address_scope(
+                None, l3p['address_scope_v4_id'])
+            vrf_tenant = self.name_mapper.project(None,
+                                                  self._tenant_id)
+        vrf_id = '%s %s' % (vrf_tenant, vrf_name)
+        self._verify_vrf_details_assertions(
+            mapping, vrf_name, vrf_id, [l3p['ip_pool']], vrf_tenant)
+
         self._verify_fip_details(mapping, fip, 't1', 'EXT-l1')
         self._verify_ip_mapping_details(mapping,
             'uni:tn-t1:out-l2:instP-n2', 't1', 'EXT-l2')
@@ -2420,10 +2458,12 @@ class TestPolicyTarget(AIMBaseTestCase):
         self._verify_host_snat_ip_details(mapping,
             'uni:tn-t1:out-l2:instP-n2', '200.200.0.3', '200.200.0.1/16')
 
-    def _do_test_gbp_details_no_pt(self, use_as=True, routed=True):
+    def _do_test_gbp_details_no_pt(self, use_as=True, routed=True,
+                                   pre_vrf=None):
         # Create port and bind it
-        address_scope = self._make_address_scope(
-            self.fmt, 4, name='as1')['address_scope']
+        address_scope = self._make_address_scope_for_vrf(
+            pre_vrf.dn if pre_vrf else None,
+            name='as1')['address_scope']
         kargs = {}
         if use_as:
             kargs['address_scope_id'] = address_scope['id']
@@ -2481,6 +2521,9 @@ class TestPolicyTarget(AIMBaseTestCase):
                         vrf_name = ('%s_UnroutedVRF' %
                                     self.driver.aim_mech_driver.apic_system_id)
                         vrf_tenant = 'common'
+                    elif use_as and pre_vrf:
+                        vrf_name = pre_vrf.name
+                        vrf_tenant = pre_vrf.tenant_name
                     else:
                         vrf_name = (self.name_mapper.address_scope(
                                         None, address_scope['id'])
@@ -2520,10 +2563,28 @@ class TestPolicyTarget(AIMBaseTestCase):
     def test_get_gbp_details(self):
         self._do_test_get_gbp_details()
 
+    def test_get_gbp_details_pre_existing_vrf(self):
+        aim_ctx = aim_context.AimContext(self.db_session)
+        self.aim_mgr.create(
+            aim_ctx, aim_resource.Tenant(name='common', monitored=True))
+        vrf = self.aim_mgr.create(
+            aim_ctx, aim_resource.VRF(tenant_name='common', name='ctx1',
+                                      monitored=True))
+        self._do_test_get_gbp_details(pre_vrf=vrf)
+
     def test_get_gbp_details_no_pt(self):
         # Test that traditional Neutron ports behave correctly from the
         # RPC perspective
         self._do_test_gbp_details_no_pt()
+
+    def test_get_gbp_details_no_pt_pre_existing_vrf(self):
+        aim_ctx = aim_context.AimContext(self.db_session)
+        self.aim_mgr.create(
+            aim_ctx, aim_resource.Tenant(name='common', monitored=True))
+        vrf = self.aim_mgr.create(
+            aim_ctx, aim_resource.VRF(tenant_name='common', name='ctx1',
+                                      monitored=True))
+        self._do_test_gbp_details_no_pt(pre_vrf=vrf)
 
     def test_get_gbp_details_no_pt_no_as(self):
         self._do_test_gbp_details_no_pt(use_as=False)
