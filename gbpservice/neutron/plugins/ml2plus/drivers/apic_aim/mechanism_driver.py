@@ -1403,9 +1403,29 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
         if network_db:
             return self._get_routed_vrf_for_network(session, network_db)
 
+    def _get_address_scope_id_for_vrf(self, session, vrf):
+        # Returns the ID of an address-scope that corresponds to a VRF,
+        # if any.
+
+        # Check if unrouted VRF
+        if self._map_unrouted_vrf().identity == vrf.identity:
+            return
+
+        # Check if pre-existing VRF for an address-scope
+        extn_db = extension_db.ExtensionDbMixin()
+        scope_id = extn_db.get_address_scope_by_vrf_dn(session, vrf.dn)
+
+        # Check if orchestrated VRF for an address-scope
+        if not scope_id and vrf.name != DEFAULT_VRF_NAME:
+            scope_id = self.name_mapper.reverse_address_scope(session,
+                                                              vrf.name)
+        return scope_id
+
     def _get_routers_for_vrf(self, session, vrf):
         # REVISIT: Persist router/VRF relationship?
-        if vrf.name != DEFAULT_VRF_NAME:
+
+        scope_id = self._get_address_scope_id_for_vrf(session, vrf)
+        if scope_id:
             rtr_dbs = (session.query(l3_db.Router)
                        .join(l3_db.RouterPort)
                        .join(models_v2.Port)
@@ -1417,8 +1437,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
                        .filter(l3_db.RouterPort.port_type ==
                                n_constants.DEVICE_OWNER_ROUTER_INTF)
                        .filter(models_v2.SubnetPool.address_scope_id ==
-                               self.name_mapper.reverse_address_scope(
-                                   session, vrf.name))
+                               scope_id)
                        .distinct())
         else:
             # For an unscoped VRF, first find all the routed BDs
