@@ -1065,18 +1065,31 @@ class ImplicitResourceOperations(local_api.LocalAPI,
                                             l2_policy_id)
         l3p = context._plugin.get_l3_policy(context._plugin_context,
                                             l2p['l3_policy_id'])
+        routers = self._get_routers(context._plugin_context,
+                                    filters={'id': l3p.get('routers', [])})
         for es in external_segments:
             ext_sub = self._get_subnet(context._plugin_context,
                                        es['subnet_id'])
             ext_net_id = ext_sub['network_id']
             fip_id = None
+            # For each L3P for an ES, we need to find the router
+            # that's connected to the external segment, so we can
+            # use that router ID in the floating IP allocated by
+            # a NAT pool on that ES.
+            rid = None
+            for router in routers:
+                net = router['external_gateway_info'].get('network_id')
+                if net == ext_net_id:
+                    rid = router['id']
+                    break
+
             for nat_pool in self._gen_nat_pool_in_ext_seg(
                 context, tenant_id, es):
                 try:
                     fip_id = self._create_floatingip(
                         context._plugin_context, tenant_id, ext_net_id,
                         fixed_port, subnet_id=nat_pool['subnet_id'],
-                        router_id=l3p.get('routers', [None])[0])
+                        router_id=rid)
                     # FIP allocated, no need to try further allocation
                     break
                 except n_exc.IpAddressGenerationFailure as ex:
