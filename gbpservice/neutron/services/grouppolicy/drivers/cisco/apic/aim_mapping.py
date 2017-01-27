@@ -1822,21 +1822,15 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
         # get all subnets of the specified VRF
         with session.begin(subtransactions=True):
             # Find VRF's address_scope first
-            address_scope = None
-            unrouted_vrf = self.aim_mech_driver._map_unrouted_vrf()
-            is_unrouted = (vrf_tenant_name == unrouted_vrf.tenant_name and
-                           vrf_name == unrouted_vrf.name)
-            if not is_unrouted and vrf_name != md.DEFAULT_VRF_NAME:
-                # REVISIT: Handle pre-existing VRF whose name isn't
-                # mapped?
-                address_scope_id = self.name_mapper.reverse_address_scope(
-                    session, vrf_name)
-                address_scope = self._get_address_scopes(
-                    plugin_context, {'id': [address_scope_id]})
-            if address_scope:
+            address_scope_id = (
+                self.aim_mech_driver._get_address_scope_id_for_vrf(
+                    session,
+                    aim_resource.VRF(tenant_name=vrf_tenant_name,
+                                     name=vrf_name)))
+            if address_scope_id:
                 subnetpools = self._get_subnetpools(
                     plugin_context,
-                    filters={'address_scope_id': [address_scope[0]['id']]})
+                    filters={'address_scope_id': [address_scope_id]})
                 for pool in subnetpools:
                     result.extend(pool['prefixes'])
             else:
