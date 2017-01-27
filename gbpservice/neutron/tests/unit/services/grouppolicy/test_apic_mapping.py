@@ -607,6 +607,55 @@ class TestPolicyTarget(ApicMappingTestCase):
             details['host_snat_ip'])
         self.assertEqual(24, details['prefixlen'])
 
+    def test_two_es_two_nat_pools_two_nsps_shared_es(self):
+        self._test_two_es_nat_pools(shared_es=True)
+
+    def test_two_es_two_nat_pools_two_nsps(self):
+        self._test_two_es_nat_pools(shared_es=False)
+
+    def _test_two_es_nat_pools(self, shared_es=False):
+        self._mock_external_dict([('supported1', '192.168.0.2/24'),
+                                 ('supported2', '192.168.1.2/24')])
+        self.driver.apic_manager.ext_net_dict[
+                'supported1']['host_pool_cidr'] = '192.168.200.1/24'
+        self.driver.apic_manager.ext_net_dict[
+                'supported2']['host_pool_cidr'] = '192.168.210.1/24'
+        es1 = self.create_external_segment(
+            name='supported1', cidr='192.168.0.0/24', shared=shared_es,
+            external_routes=[{'destination': '0.0.0.0/0',
+                              'nexthop': '192.168.0.254'}])['external_segment']
+        es2 = self.create_external_segment(
+            shared=shared_es, name='supported2',
+            cidr='192.168.1.0/24',
+            external_routes=[{'destination': '8.8.8.0/24',
+                              'nexthop': '192.168.1.254'}])['external_segment']
+
+        np1 = self.create_nat_pool(external_segment_id=es1['id'],
+                                   name='nat-pool-1',
+                                   ip_pool='20.20.20.0/24')['nat_pool']
+        np2 = self.create_nat_pool(external_segment_id=es2['id'],
+                                   name='nat-pool-2',
+                                   ip_pool='30.30.30.0/24')['nat_pool']
+        nsp1 = self.create_network_service_policy(
+            network_service_params=[
+                {"type": "ip_pool",
+                 "value": "nat_pool",
+                 "name": np1['name']}])['network_service_policy']
+        ptg1 = self.create_policy_target_group(
+            name="ptg1",
+            network_service_policy_id=nsp1['id'])['policy_target_group']
+        external_segments = {es1['id']: [], es2['id']: []}
+        l3p_list = self._list('l3_policies')['l3_policies']
+        res = self.update_l3_policy(
+            l3p_list[0]['id'], expected_res_status=200,
+            external_segments=external_segments)
+        self.create_policy_target(
+            policy_target_group_id=ptg1['id'])['policy_target']
+        res = self._list('floatingips')['floatingips']
+        self.assertEqual(2, len(res))
+        self.assertNotEqual(res[0]['router_id'],
+                            res[1]['router_id'])
+
     def test_get_gbp_details_extra_ips_explicit_eoc(self):
         ptg = self.create_policy_target_group(
             name="ptg1")['policy_target_group']
