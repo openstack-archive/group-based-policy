@@ -1823,7 +1823,10 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
         with session.begin(subtransactions=True):
             # Find VRF's address_scope first
             address_scope = None
-            if vrf_name != md.DEFAULT_VRF_NAME:
+            unrouted_vrf = self.aim_mech_driver._map_unrouted_vrf()
+            is_unrouted = (vrf_tenant_name == unrouted_vrf.tenant_name and
+                           vrf_name == unrouted_vrf.name)
+            if not is_unrouted and vrf_name != md.DEFAULT_VRF_NAME:
                 # REVISIT: Handle pre-existing VRF whose name isn't
                 # mapped?
                 address_scope_id = self.name_mapper.reverse_address_scope(
@@ -1838,7 +1841,7 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
                     result.extend(pool['prefixes'])
             else:
                 aim_ctx = aim_context.AimContext(db_session=session)
-                if vrf_tenant_name is not md.COMMON_TENANT_NAME:
+                if vrf_tenant_name != md.COMMON_TENANT_NAME:
                     bds = self.aim.find(aim_ctx, aim_resource.BridgeDomain,
                                         tenant_name=vrf_tenant_name,
                                         vrf_name=vrf_name)
@@ -1847,12 +1850,12 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
                                         vrf_name=vrf_name)
                     other_vrfs = self.aim.find(aim_ctx, aim_resource.VRF,
                                                name=vrf_name)
-                    bd_tenants = set([x['tenant_name'] for x in bds])
-                    vrf_tenants = set([x['tenant_name'] for x in other_vrfs])
+                    bd_tenants = set([x.tenant_name for x in bds])
+                    vrf_tenants = set([x.tenant_name for x in other_vrfs])
                     valid_tenants = bd_tenants - vrf_tenants
                     # Only keep BDs that don't have a VRF with that name
                     # already
-                    bds = [x for x in bds if x['tenant_name'] in valid_tenants]
+                    bds = [x for x in bds if x.tenant_name in valid_tenants]
                 # Retrieve subnets from BDs
                 net_ids = [self.name_mapper.reverse_network(session, bd.name)
                            for bd in bds]
