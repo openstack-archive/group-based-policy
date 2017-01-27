@@ -3,7 +3,7 @@ resources:
   HTTP-REDIRECT-FW-LB:
     type: OS::GroupBasedPolicy::PolicyRule
     depends_on: [ HTTP, REDIRECT-FW-LB ]
-    properties: 
+    properties:
       name: HTTP-REDIRECT-FW-LB
       enabled: true
       policy_classifier_id: { get_resource: HTTP }
@@ -13,7 +13,7 @@ resources:
   HTTP-REDIRECT-LB:
     type: OS::GroupBasedPolicy::PolicyRule
     depends_on: [ HTTP, REDIRECT-LB ]
-    properties: 
+    properties:
       name: HTTP-REDIRECT-LB
       enabled: true
       policy_classifier_id: { get_resource: HTTP }
@@ -23,37 +23,37 @@ resources:
   MySQL-REDIRECT-FW:
     type: OS::GroupBasedPolicy::PolicyRule
     depends_on: [ MySQL, REDIRECT-FW ]
-    properties: 
+    properties:
       name: MySQL-REDIRECT-FW
       enabled: true
       policy_classifier_id: { get_resource: MySQL }
       policy_actions: [ { get_resource: REDIRECT-FW } ]
       shared: true
 
-  ANY-REDIRECT-VPN-FW-LB:
+  ANY-REDIRECT-VPN:
     type: OS::GroupBasedPolicy::PolicyRule
-    depends_on: [ ANY, REDIRECT-VPN-FW-LB ]
-    properties: 
-      name: ANY-REDIRECT-VPN-FW-LB
+    depends_on: [ ANY, REDIRECT-VPN ]
+    properties:
+      name: ANY-REDIRECT-VPN
       enabled: true
       policy_classifier_id: { get_resource: ANY }
-      policy_actions: [ { get_resource: REDIRECT-VPN-FW-LB } ]
+      policy_actions: [ { get_resource: REDIRECT-VPN } ]
       shared: true
-  
-  HTTP-ALLOW: 
+
+  HTTP-ALLOW:
     type: OS::GroupBasedPolicy::PolicyRule
     depends_on: [ HTTP, ALLOW ]
-    properties: 
+    properties:
       name: HTTP-ALLOW
       enabled: true
       policy_classifier_id: { get_resource: HTTP }
       policy_actions: [ { get_resource: ALLOW } ]
       shared: true
 
-  HTTPS-ALLOW: 
+  HTTPS-ALLOW:
     type: OS::GroupBasedPolicy::PolicyRule
     depends_on: [ HTTPS, ALLOW ]
-    properties: 
+    properties:
       name: HTTPS-ALLOW
       enabled: true
       policy_classifier_id: { get_resource: HTTPS }
@@ -73,27 +73,27 @@ resources:
   ICMP-ALLOW:
     type: OS::GroupBasedPolicy::PolicyRule
     depends_on: [ ICMP, ALLOW ]
-    properties: 
+    properties:
       name: ICMP-ALLOW
       enabled: true
       policy_classifier_id: { get_resource: ICMP }
       policy_actions: [ { get_resource: ALLOW } ]
       shared: true
 
-  SSH-ALLOW: 
+  SSH-ALLOW:
     type: OS::GroupBasedPolicy::PolicyRule
     depends_on: [ SSH, ALLOW ]
-    properties: 
+    properties:
       name: SSH-ALLOW
       enabled: true
       policy_classifier_id: { get_resource: SSH }
       policy_actions: [ { get_resource: ALLOW } ]
       shared: true
 
-  SNMP-ALLOW: 
+  SNMP-ALLOW:
     type: OS::GroupBasedPolicy::PolicyRule
     depends_on: [ SNMP, ALLOW ]
-    properties: 
+    properties:
       name: SNMP-ALLOW
       enabled: true
       policy_classifier_id: { get_resource: SNMP }
@@ -119,7 +119,7 @@ resources:
       policy_classifier_id: { get_resource: ANY-TCP }
       policy_actions: [ { get_resource: ALLOW } ]
       shared: true
- 
+
   UDP-ALLOW:
     type: OS::GroupBasedPolicy::PolicyRule
     depends_on: [ ANY-UDP, ALLOW ]
@@ -190,9 +190,9 @@ resources:
       policy_actions: [ { get_resource: ALLOW } ]
       shared: true
 
-  ICMP: 
+  ICMP:
     type: OS::GroupBasedPolicy::PolicyClassifier
-    properties: 
+    properties:
       name: ICMP
       protocol: icmp
       direction: bi
@@ -242,7 +242,7 @@ resources:
       port_range: 514
       direction: bi
       shared: true
-  
+
   ANY:
     type: OS::GroupBasedPolicy::PolicyClassifier
     properties:
@@ -257,7 +257,7 @@ resources:
       protocol: tcp
       direction: in
       shared: true
-  
+
   ANY-UDP:
     type: OS::GroupBasedPolicy::PolicyClassifier
     properties:
@@ -265,7 +265,7 @@ resources:
       protocol: udp
       direction: bi
       shared: true
-  
+
   MySQL:
     type: OS::GroupBasedPolicy::PolicyClassifier
     properties:
@@ -320,50 +320,48 @@ resources:
       direction: out
       shared: true
 
-  ALLOW: 
+  ALLOW:
     type: OS::GroupBasedPolicy::PolicyAction
-    properties: 
+    properties:
       name: ALLOW
       action_type: allow
       shared: true
 
-  REDIRECT-LB: 
+  REDIRECT-LB:
     type: OS::GroupBasedPolicy::PolicyAction
     depends_on: [ SPEC-LB ]
-    properties: 
+    properties:
       name: REDIRECT-LB
       action_type: redirect
       action_value: { get_resource: SPEC-LB }
       shared: true
 
-  REDIRECT-FW: 
+  REDIRECT-FW:
     type: OS::GroupBasedPolicy::PolicyAction
     depends_on: [ SPEC-FW ]
-    properties: 
+    properties:
       name: REDIRECT-FW
       action_type: redirect
       action_value: { get_resource: SPEC-FW }
       shared: true
 
-  REDIRECT-FW-LB: 
+  REDIRECT-FW-LB:
     type: OS::GroupBasedPolicy::PolicyAction
     depends_on: [ SPEC-FW-LB ]
-    properties: 
+    properties:
       name: REDIRECT-FW-LB
       action_type: redirect
       action_value: { get_resource: SPEC-FW-LB }
       shared: true
 
-  
-  REDIRECT-VPN-FW-LB: 
+  REDIRECT-VPN:
     type: OS::GroupBasedPolicy::PolicyAction
-    depends_on: [ SPEC-VPN-FW-LB ]
-    properties: 
-      name: REDIRECT-VPN-FW-LB
+    depends_on: [ SPEC-VPN ]
+    properties:
+      name: REDIRECT-VPN
       action_type: redirect
-      action_value: { get_resource: SPEC-VPN-FW-LB }
+      action_value: { get_resource: SPEC-VPN }
       shared: true
-
 
   SPEC-LB:
     type: OS::GroupBasedPolicy::ServiceChainSpec
@@ -386,20 +384,18 @@ resources:
     depends_on: [ NODE-FW, NODE-LB ]
     properties:
       name: FW-LB
-      nodes: 
+      nodes:
         - { get_resource: NODE-FW }
         - { get_resource: NODE-LB }
       shared: true
 
-  SPEC-VPN-FW-LB:
+  SPEC-VPN:
     type: OS::GroupBasedPolicy::ServiceChainSpec
-    depends_on: [ NODE-VPN, NODE-FW, NODE-LB ]
+    depends_on: [ NODE-VPN ]
     properties:
-      name: VPN-FW-LB
-      nodes: 
+      name: VPN
+      nodes:
         - { get_resource: NODE-VPN }
-        - { get_resource: NODE-FW }
-        - { get_resource: NODE-LB }
       shared: true
 
   NODE-FW:
@@ -419,7 +415,7 @@ resources:
       service_profile_id: { get_resource: PROFILE-LB }
       config: { get_file: lb.template }
       shared: true
-  
+
   NODE-VPN:
     type: OS::GroupBasedPolicy::ServiceChainNode
     depends_on: [ PROFILE-VPN ]
@@ -478,4 +474,3 @@ resources:
           name: fip
           value: nat_pool
       shared: True
-
