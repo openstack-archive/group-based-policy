@@ -1073,10 +1073,24 @@ class ImplicitResourceOperations(local_api.LocalAPI,
             for nat_pool in self._gen_nat_pool_in_ext_seg(
                 context, tenant_id, es):
                 try:
+                    # For each NAT pool, we need to find the router
+                    # that's connected to the external segment where
+                    # the NAT pool is located.
+                    rid = None
+                    if l3p.get('routers'):
+                        for router_id in l3p['routers']:
+                            # TODO(tbachman): clean_session?
+                            router = self._get_router(context._plugin_context,
+                                                      router_id)
+                            net = router['external_gateway_info'].get(
+                                'network_id')
+                            if net and net == ext_net_id:
+                                rid = router_id
+                                break
                     fip_id = self._create_floatingip(
                         context._plugin_context, tenant_id, ext_net_id,
                         fixed_port, subnet_id=nat_pool['subnet_id'],
-                        router_id=l3p.get('routers', [None])[0])
+                        router_id=rid)
                     # FIP allocated, no need to try further allocation
                     break
                 except n_exc.IpAddressGenerationFailure as ex:
