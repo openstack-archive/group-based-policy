@@ -827,6 +827,8 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
             if different_router and different_subnet:
                 raise exceptions.UnsupportedRoutingTopology()
 
+        nets_to_notify = set()
+        ports_to_notify = set()
         router_topo_moved = False
 
         # Ensure that all the BDs and EPGs in the resulting topology
@@ -857,10 +859,10 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
             router_shared_net = self._topology_shared(router_topology)
 
             intf_vrf = self._map_default_vrf(
-                aim_ctx, intf_shared_net or network_db)
+                session, intf_shared_net or network_db)
             router_vrf = (
                 self._map_default_vrf(
-                    aim_ctx,
+                    session,
                     router_shared_net or router_topology.itervalues().next())
                 if router_topology else None)
 
@@ -877,7 +879,8 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
                     # router topology.
                     vrf = self._ensure_default_vrf(aim_ctx, intf_vrf)
                     self._move_topology(
-                        aim_ctx, router_topology, router_vrf, vrf)
+                        aim_ctx, router_topology, router_vrf, vrf,
+                        nets_to_notify)
                     router_topo_moved = True
                     # REVISIT: Delete router_vrf if no longer used?
                 elif router_shared_net:
@@ -887,7 +890,8 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
                     vrf = router_vrf
                     if net_intfs:
                         self._move_topology(
-                            aim_ctx, intf_topology, intf_vrf, vrf)
+                            aim_ctx, intf_topology, intf_vrf, vrf,
+                            nets_to_notify)
                     # REVISIT: Delete intf_vrf if no longer used?
                 else:
                     # This should never happen.
@@ -905,10 +909,10 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
         if not net_intfs:
             # First interface for network.
             bd, epg = self._associate_network_with_vrf(
-                aim_ctx, network_db, vrf)
+                aim_ctx, network_db, vrf, nets_to_notify)
         else:
             # Network is already routed.
-            bd, epg = self._map_network(aim_ctx, network_db, vrf)
+            bd, epg = self._map_network(session, network_db, vrf)
 
         # Create AIM Subnet(s) for each added Neutron subnet.
         for subnet in subnets:
@@ -964,7 +968,15 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
             port_ids = self._get_non_router_ports_in_subnets(
                 session,
                 [subnet['id'] for subnet in subnets])
-            self._notify_port_update_bulk(context, port_ids)
+            ports_to_notify.update(port_ids)
+
+        # Enqueue notifications for all affected ports.
+        if nets_to_notify:
+            port_ids = self._get_non_router_ports_in_networks(
+                session, nets_to_notify)
+            ports_to_notify.update(port_ids)
+        if ports_to_notify:
+            self._notify_port_update_bulk(context, ports_to_notify)
 
     def remove_router_interface(self, context, router_id, port_db, subnets):
         LOG.debug("APIC AIM MD removing subnets %(subnets)s from router "
@@ -1021,7 +1033,10 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
             epg = self.aim.update(aim_ctx, epg,
                                   provided_contract_names=contracts)
 
+        nets_to_notify = set()
+        ports_to_notify = set()
         router_topo_moved = False
+
         # If unscoped topologies have split, move VRFs as needed.
         if scope_id == NO_ADDR_SCOPE:
             # If the interface's network has not become unrouted, see
@@ -1030,27 +1045,30 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
                 intf_topology = self._network_topology(session, network_db)
                 intf_shared_net = self._topology_shared(intf_topology)
                 intf_vrf = self._map_default_vrf(
-                    aim_ctx, intf_shared_net or network_db)
+                    session, intf_shared_net or network_db)
                 if old_vrf.identity != intf_vrf.identity:
                     self._move_topology(
-                        aim_ctx, intf_topology, old_vrf, intf_vrf)
+                        aim_ctx, intf_topology, old_vrf, intf_vrf,
+                        nets_to_notify)
 
             # See if the router's topology must be moved.
             router_topology = self._router_topology(session, router_db.id)
             if router_topology:
                 router_shared_net = self._topology_shared(router_topology)
                 router_vrf = self._map_default_vrf(
-                    aim_ctx,
+                    session,
                     router_shared_net or router_topology.itervalues().next())
                 if old_vrf.identity != router_vrf.identity:
                     self._move_topology(
-                        aim_ctx, router_topology, old_vrf, router_vrf)
+                        aim_ctx, router_topology, old_vrf, router_vrf,
+                        nets_to_notify)
                     router_topo_moved = True
 
         # If network is no longer connected to any router, make the
         # network's BD unrouted.
         if not router_ids:
-            self._dissassociate_network_from_vrf(aim_ctx, network_db, old_vrf)
+            self._dissassociate_network_from_vrf(
+                aim_ctx, network_db, old_vrf, nets_to_notify)
 
         # If external-gateway is set, handle external-connectivity changes.
         if router_db.gw_port_id:
@@ -1081,7 +1099,15 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
             port_ids = self._get_non_router_ports_in_subnets(
                 session,
                 [subnet['id'] for subnet in subnets])
-            self._notify_port_update_bulk(context, port_ids)
+            ports_to_notify.update(port_ids)
+
+        # Enqueue notifications for all affected ports.
+        if nets_to_notify:
+            port_ids = self._get_non_router_ports_in_networks(
+                session, nets_to_notify)
+            ports_to_notify.update(port_ids)
+        if ports_to_notify:
+            self._notify_port_update_bulk(context, ports_to_notify)
 
     def bind_port(self, context):
         current = context.current
@@ -1422,7 +1448,8 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
                        distinct())
         return rtr_dbs
 
-    def _associate_network_with_vrf(self, aim_ctx, network_db, new_vrf):
+    def _associate_network_with_vrf(self, aim_ctx, network_db, new_vrf,
+                                    nets_to_notify):
         LOG.debug("Associating previously unrouted network %(net_id)s named "
                   "'%(net_name)s' in project %(net_tenant)s with VRF %(vrf)s",
                   {'net_id': network_db.id, 'net_name': network_db.name,
@@ -1467,9 +1494,15 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
             bd = self.aim.update(aim_ctx, bd, enable_routing=True,
                                  vrf_name=new_vrf.name)
 
+        # All non-router ports on this network need to be notified
+        # since their BD's VRF and possibly their BD's and EPG's
+        # Tenants have changed.
+        nets_to_notify.add(network_db.id)
+
         return bd, epg
 
-    def _dissassociate_network_from_vrf(self, aim_ctx, network_db, old_vrf):
+    def _dissassociate_network_from_vrf(self, aim_ctx, network_db, old_vrf,
+                                        nets_to_notify):
         LOG.debug("Dissassociating network %(net_id)s named '%(net_name)s' in "
                   "project %(net_tenant)s from VRF %(vrf)s",
                   {'net_id': network_db.id, 'net_name': network_db.name,
@@ -1507,7 +1540,13 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
             bd = self.aim.update(aim_ctx, bd, enable_routing=False,
                                  vrf_name=new_vrf.name)
 
-    def _move_topology(self, aim_ctx, topology, old_vrf, new_vrf):
+        # All non-router ports on this network need to be notified
+        # since their BD's VRF and possibly their BD's and EPG's
+        # Tenants have changed.
+        nets_to_notify.add(network_db.id)
+
+    def _move_topology(self, aim_ctx, topology, old_vrf, new_vrf,
+                       nets_to_notify):
         LOG.info(_LI("Moving routed networks %(topology)s from VRF "
                      "%(old_vrf)s to VRF %(new_vrf)s"),
                  {'topology': topology.keys(),
@@ -1523,7 +1562,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
             if old_vrf.tenant_name != new_vrf.tenant_name:
                 # New VRF is in different Tenant, so move BD, EPG, and
                 # all Subnets to new VRF's Tenant and set BD's VRF.
-                LOG.debug("Moving network %(net) from tenant %(old)s to "
+                LOG.debug("Moving network %(net)s from tenant %(old)s to "
                           "tenant %(new)s",
                           {'net': network_db.id,
                            'old': old_vrf.tenant_name,
@@ -1552,6 +1591,11 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
                 # New VRF is in same Tenant, so just set BD's VRF.
                 bd, _ = self._map_network(session, network_db, new_vrf)
                 bd = self.aim.update(aim_ctx, bd, vrf_name=new_vrf.name)
+
+        # All non-router ports on all networks in topology need to be
+        # notified since their BDs' VRFs and possibly their BDs' and
+        # EPGs' Tenants have changed.
+        nets_to_notify.update(topology.keys())
 
     def _router_topology(self, session, router_id):
         LOG.debug("Getting topology for router %s", router_id)
@@ -1953,7 +1997,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
             portbindings.VIF_TYPE_BINDING_FAILED]
 
     def _notify_port_update(self, plugin_context, port_id):
-        port = self.plugin.get_port(plugin_context, port_id)
+        port = self.plugin.get_port(plugin_context.elevated(), port_id)
         if self._is_port_bound(port):
             LOG.debug("Enqueing notify for port %s", port['id'])
             txn = local_api.get_outer_transaction(
@@ -1964,6 +2008,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
                                                  [plugin_context, port])
 
     def _notify_port_update_bulk(self, plugin_context, port_ids):
+        # REVISIT: Is a single query for all ports possible?
         for p_id in port_ids:
             self._notify_port_update(plugin_context, p_id)
 
@@ -2226,4 +2271,14 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
                     .filter(models_v2.Port.device_owner !=
                             n_constants.DEVICE_OWNER_ROUTER_INTF)
                     .all())
+        return [p[0] for p in port_ids]
+
+    def _get_non_router_ports_in_networks(self, session, network_ids):
+        if not network_ids:
+            return []
+        port_ids = (session.query(models_v2.Port.id).
+                    filter(models_v2.Port.network_id.in_(network_ids)).
+                    filter(models_v2.Port.device_owner !=
+                           n_constants.DEVICE_OWNER_ROUTER_INTF).
+                    all())
         return [p[0] for p in port_ids]
