@@ -2287,9 +2287,7 @@ class TestPolicyTarget(AIMBaseTestCase):
                                        expected_l3p_id, expected_subnets,
                                        expected_vrf_tenant):
         self.assertEqual(expected_vrf_name, vrf_mapping['vrf_name'])
-        self.assertEqual(
-            self.name_mapper.project(None, expected_vrf_tenant),
-            vrf_mapping['vrf_tenant'])
+        self.assertEqual(expected_vrf_tenant, vrf_mapping['vrf_tenant'])
         self.assertEqual(set(expected_subnets),
                          set(vrf_mapping['vrf_subnets']))
         self.assertEqual(expected_l3p_id,
@@ -2422,7 +2420,7 @@ class TestPolicyTarget(AIMBaseTestCase):
         self._verify_host_snat_ip_details(mapping,
             'uni:tn-t1:out-l2:instP-n2', '200.200.0.3', '200.200.0.1/16')
 
-    def _do_test_gbp_details_no_pt(self, use_as=True):
+    def _do_test_gbp_details_no_pt(self, use_as=True, routed=True):
         # Create port and bind it
         address_scope = self._make_address_scope(
             self.fmt, 4, name='as1')['address_scope']
@@ -2450,21 +2448,25 @@ class TestPolicyTarget(AIMBaseTestCase):
         with self.network() as network:
             with self.subnet(network=network, cidr='1.1.2.0/24',
                              subnetpool_id=subnetpool['id']) as subnet:
-                self.l3_plugin.add_router_interface(
-                    nctx.get_admin_context(), router1['id'],
-                    {'subnet_id': subnet['subnet']['id']})
-                with self.port(subnet=subnet) as intf_port:
+                if routed:
                     self.l3_plugin.add_router_interface(
-                        nctx.get_admin_context(), router2['id'],
-                        {'port_id': intf_port['port']['id']})
+                        nctx.get_admin_context(), router1['id'],
+                        {'subnet_id': subnet['subnet']['id']})
+                with self.port(subnet=subnet) as intf_port:
+                    if routed:
+                        self.l3_plugin.add_router_interface(
+                            nctx.get_admin_context(), router2['id'],
+                            {'port_id': intf_port['port']['id']})
                 with self.port(subnet=subnet) as port:
                     port_id = port['port']['id']
                     network = network['network']
-                    fip = self.l3_plugin.create_floatingip(
-                        nctx.get_admin_context(),
-                        {'floatingip': {'floating_network_id': ext_net1['id'],
-                                        'tenant_id': network['tenant_id'],
-                                        'port_id': port_id}})
+                    if routed:
+                        fip = self.l3_plugin.create_floatingip(
+                            nctx.get_admin_context(),
+                            {'floatingip': {'floating_network_id':
+                                            ext_net1['id'],
+                                            'tenant_id': network['tenant_id'],
+                                            'port_id': port_id}})
 
                     self._bind_port_to_host(port_id, 'h1')
                     mapping = self.driver.get_gbp_details(
@@ -2475,12 +2477,17 @@ class TestPolicyTarget(AIMBaseTestCase):
                         request={'device': 'tap%s' % port_id,
                                  'timestamp': 0, 'request_id': 'request_id'},
                         host='h1')
-                    vrf_id = '%s %s' % (
-                        self.name_mapper.project(
-                            None, self._tenant_id),
-                        self.name_mapper.address_scope(
-                            None, address_scope['id'])
-                        if use_as else 'DefaultVRF')
+                    if not routed:
+                        vrf_name = ('%s_UnroutedVRF' %
+                                    self.driver.aim_mech_driver.apic_system_id)
+                        vrf_tenant = 'common'
+                    else:
+                        vrf_name = (self.name_mapper.address_scope(
+                                        None, address_scope['id'])
+                                    if use_as else 'DefaultVRF')
+                        vrf_tenant = self.name_mapper.project(None,
+                                                              self._tenant_id)
+                    vrf_id = '%s %s' % (vrf_tenant, vrf_name)
                     vrf_mapping = self.driver.get_vrf_details(
                         self._neutron_admin_context, vrf_id=vrf_id)
 
@@ -2491,24 +2498,24 @@ class TestPolicyTarget(AIMBaseTestCase):
                     self._verify_gbp_details_assertions(
                         mapping, req_mapping, port_id, epg_name, epg_tenant,
                         subnet, default_route='1.1.2.1')
-                    vrf_name = 'DefaultVRF'
-                    if use_as:
-                        vrf_name = self.name_mapper.address_scope(
-                            self._neutron_context.session, address_scope['id'])
-                    # Verify for both GBP details and VRF details
                     supernet = ['1.1.2.0/24']
                     if use_as:
                         supernet = ['10.10.0.0/26', '1.1.0.0/16', '2.1.0.0/16']
                     self._verify_vrf_details_assertions(
-                        mapping, vrf_name, vrf_id, supernet, epg_tenant)
+                        mapping, vrf_name, vrf_id, supernet, vrf_tenant)
                     self._verify_vrf_details_assertions(
-                        vrf_mapping, vrf_name, vrf_id, supernet, epg_tenant)
-                    self._verify_fip_details(mapping, fip, 't1', 'EXT-l1')
-                    self._verify_ip_mapping_details(mapping,
-                        'uni:tn-t1:out-l2:instP-n2', 't1', 'EXT-l2')
-                    self._verify_host_snat_ip_details(mapping,
-                        'uni:tn-t1:out-l2:instP-n2', '200.200.0.2',
-                        '200.200.0.1/16')
+                        vrf_mapping, vrf_name, vrf_id, supernet, vrf_tenant)
+                    if routed:
+                        self._verify_fip_details(mapping, fip, 't1', 'EXT-l1')
+                        self._verify_ip_mapping_details(mapping,
+                            'uni:tn-t1:out-l2:instP-n2', 't1', 'EXT-l2')
+                        self._verify_host_snat_ip_details(mapping,
+                            'uni:tn-t1:out-l2:instP-n2', '200.200.0.2',
+                            '200.200.0.1/16')
+                    else:
+                        self.assertFalse(mapping['floating_ip'])
+                        self.assertFalse(mapping['ip_mapping'])
+                        self.assertFalse(mapping['host_snat_ips'])
 
     def test_get_gbp_details(self):
         self._do_test_get_gbp_details()
@@ -2520,6 +2527,9 @@ class TestPolicyTarget(AIMBaseTestCase):
 
     def test_get_gbp_details_no_pt_no_as(self):
         self._do_test_gbp_details_no_pt(use_as=False)
+
+    def test_get_gbp_details_no_pt_no_as_unrouted(self):
+        self._do_test_gbp_details_no_pt(use_as=False, routed=False)
 
 
 class TestPolicyTargetRollback(AIMBaseTestCase):
