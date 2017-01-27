@@ -2,7 +2,7 @@
 # of appearance. Changing the order has an impact on the overall integration
 # process, which may cause wedges in the gate later.
 
-setuptools>=19.2
+setuptools<=33.1.1,>=19.2
 -e git+https://github.com/openstack/neutron.git@stable/liberty#egg=neutron
 -e git+https://github.com/noironetworks/apic-ml2-driver.git@liberty#egg=apic_ml2
 -e git+https://git.openstack.org/openstack/neutron-vpnaas@stable/liberty#egg=neutron-vpnaas
