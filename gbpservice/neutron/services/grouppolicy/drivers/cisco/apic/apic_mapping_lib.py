@@ -59,6 +59,11 @@ class OnlyOneAddressIsAllowedPerExternalSegment(gpexc.GroupPolicyBadRequest):
                 "APIC GBP driver.")
 
 
+class PTGChangeDisallowedWithNonOpFlexNetwork(gpexc.GroupPolicyBadRequest):
+    message = _('Policy target group for policy target cannot be changed '
+                'when using network of type other than %(net_type)s')
+
+
 def get_filter_entries_for_policy_classifier(classifier):
     # forward_rules and reverse_rules is each a dict of filter_entries
     # with each entry in the dict having the filter_entry name as the

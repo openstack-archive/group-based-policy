@@ -1304,6 +1304,32 @@ class ImplicitResourceOperations(local_api.LocalAPI,
             ip_address = ip_range['last_ip']
             return ip_address
 
+    def _validate_pt_port_subnets(self, context, subnets=None):
+        # Validate if explicit port's subnet
+        # is same as the subnet of PTG.
+        port_id = context.current['port_id']
+        port = self._get_port(context._plugin_context, port_id)
+
+        port_subnet_id = None
+        fixed_ips = port['fixed_ips']
+        if fixed_ips:
+            # TODO(krishna-sunitha): Check if there is a case when
+            # there is more than one fixed_ip?
+            port_subnet_id = fixed_ips[0]['subnet_id']
+
+        ptg_id = context.current['policy_target_group_id']
+        ptg = context._plugin.get_policy_target_group(
+                                context._plugin_context,
+                                ptg_id)
+        for subnet in ptg.get('subnets') or subnets:
+            if subnet == port_subnet_id:
+                break
+        else:
+            raise exc.InvalidPortForPTG(
+                port_id=port_id, ptg_subnet_id=",".join(ptg.get('subnets')),
+                port_subnet_id=port_subnet_id,
+                policy_target_group_id=ptg_id)
+
 
 class ResourceMappingDriver(api.PolicyDriver, ImplicitResourceOperations,
                             OwnedResourcesOperations):
@@ -2762,32 +2788,6 @@ class ResourceMappingDriver(api.PolicyDriver, ImplicitResourceOperations,
         else:
             return context._plugin.get_policy_rules(
                 context._plugin_context, {'id': set(subset)})
-
-    def _validate_pt_port_subnets(self, context, subnets=None):
-        # Validate if explicit port's subnet
-        # is same as the subnet of PTG.
-        port_id = context.current['port_id']
-        port = self._get_port(context._plugin_context, port_id)
-
-        port_subnet_id = None
-        fixed_ips = port['fixed_ips']
-        if fixed_ips:
-            # TODO(krishna-sunitha): Check if there is a case when
-            # there is more than one fixed_ip?
-            port_subnet_id = fixed_ips[0]['subnet_id']
-
-        ptg_id = context.current['policy_target_group_id']
-        ptg = context._plugin.get_policy_target_group(
-                                context._plugin_context,
-                                ptg_id)
-        for subnet in ptg.get('subnets') or subnets:
-            if subnet == port_subnet_id:
-                break
-        else:
-            raise exc.InvalidPortForPTG(
-                port_id=port_id, ptg_subnet_id=",".join(ptg.get('subnets')),
-                port_subnet_id=port_subnet_id,
-                policy_target_group_id=ptg_id)
 
     def _get_ptg_l3p(self, context, ptg):
         l3p_id = context._plugin.get_l2_policy(

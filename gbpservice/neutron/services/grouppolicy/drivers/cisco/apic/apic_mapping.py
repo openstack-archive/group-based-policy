@@ -183,11 +183,6 @@ class ExplicitPortInWrongNetwork(gpexc.GroupPolicyBadRequest):
                 'wrong network %(net)s, expected %(exp_net)s')
 
 
-class PTGChangeDisallowedWithNonOpFlexNetwork(gpexc.GroupPolicyBadRequest):
-    message = _('Policy target group for policy target cannot be changed '
-                'when using network of type other than %(net_type)s')
-
-
 class ExplicitPortOverlap(gpexc.GroupPolicyBadRequest):
     message = _('Explicit port %(port)s, MAC address %(mac)s, IP address '
                 '%(ip)s has overlapping IP or MAC address with another port '
@@ -1317,7 +1312,7 @@ class ApicMappingDriver(api.ResourceMappingDriver,
                 context.current['policy_target_group_id']):
             if self._is_supported_non_opflex_port(context,
                                                 context.current['port_id']):
-                raise PTGChangeDisallowedWithNonOpFlexNetwork(
+                raise alib.PTGChangeDisallowedWithNonOpFlexNetwork(
                     net_type=ofcst.TYPE_OPFLEX)
             if context.current['policy_target_group_id']:
                 self._validate_pt_port_subnets(context)

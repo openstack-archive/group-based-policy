@@ -23,7 +23,9 @@ from neutron.common import constants as n_constants
 from neutron.common import exceptions as n_exc
 from neutron import context as n_context
 from neutron.db import models_v2
+from neutron.extensions import providernet
 from neutron import manager
+from neutron.plugins.common import constants as p_const
 from neutron import policy
 from oslo_concurrency import lockutils
 from oslo_config import cfg
@@ -684,8 +686,14 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
 
     @log.log_method_call
     def update_policy_target_precommit(self, context):
-        # TODO(Sumit): Implement
-        pass
+        if (context.original['policy_target_group_id'] !=
+                context.current['policy_target_group_id']):
+            if self._is_supported_non_opflex_port(context,
+                                                context.current['port_id']):
+                raise alib.PTGChangeDisallowedWithNonOpFlexNetwork(
+                    net_type=ofcst.TYPE_OPFLEX)
+            if context.current['policy_target_group_id']:
+                self._validate_pt_port_subnets(context)
 
     @log.log_method_call
     def update_policy_target_postcommit(self, context):
@@ -2258,6 +2266,19 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
     def _handle_create_network_service_policy(self, context):
         self._validate_nat_pool_for_nsp(context)
         self._handle_network_service_policy(context)
+
+    def _is_supported_non_opflex_network_type(self, net_type):
+        return net_type in [p_const.TYPE_VLAN]
+
+    def _is_supported_non_opflex_network(self, network):
+        return self._is_supported_non_opflex_network_type(
+            network[providernet.NETWORK_TYPE])
+
+    def _is_supported_non_opflex_port(self, context, port_id):
+        port = self._get_port(context._plugin_context, port_id)
+        network = self._get_network(context._plugin_context,
+                                    port['network_id'])
+        return self._is_supported_non_opflex_network(network)
 
     def _get_in_use_subnetpools_for_l3p(self, context):
         return [x.subnetpool_id for x in
