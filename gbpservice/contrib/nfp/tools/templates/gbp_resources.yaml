@@ -30,14 +30,14 @@ resources:
       policy_actions: [ { get_resource: REDIRECT-FW } ]
       shared: true
 
-  ANY-REDIRECT-VPN-FW-LB:
+  ANY-REDIRECT-VPN:
     type: OS::GroupBasedPolicy::PolicyRule
-    depends_on: [ ANY, REDIRECT-VPN-FW-LB ]
+    depends_on: [ ANY, REDIRECT-VPN ]
     properties: 
-      name: ANY-REDIRECT-VPN-FW-LB
+      name: ANY-REDIRECT-VPN
       enabled: true
       policy_classifier_id: { get_resource: ANY }
-      policy_actions: [ { get_resource: REDIRECT-VPN-FW-LB } ]
+      policy_actions: [ { get_resource: REDIRECT-VPN } ]
       shared: true
   
   HTTP-ALLOW: 
@@ -355,13 +355,13 @@ resources:
       shared: true
 
   
-  REDIRECT-VPN-FW-LB: 
+  REDIRECT-VPN: 
     type: OS::GroupBasedPolicy::PolicyAction
-    depends_on: [ SPEC-VPN-FW-LB ]
+    depends_on: [ SPEC-VPN ]
     properties: 
-      name: REDIRECT-VPN-FW-LB
+      name: REDIRECT-VPN
       action_type: redirect
-      action_value: { get_resource: SPEC-VPN-FW-LB }
+      action_value: { get_resource: SPEC-VPN }
       shared: true
 
 
@@ -391,15 +391,13 @@ resources:
         - { get_resource: NODE-LB }
       shared: true
 
-  SPEC-VPN-FW-LB:
+  SPEC-VPN:
     type: OS::GroupBasedPolicy::ServiceChainSpec
-    depends_on: [ NODE-VPN, NODE-FW, NODE-LB ]
+    depends_on: [ NODE-VPN ]
     properties:
-      name: VPN-FW-LB
+      name: VPN
       nodes: 
         - { get_resource: NODE-VPN }
-        - { get_resource: NODE-FW }
-        - { get_resource: NODE-LB }
       shared: true
 
   NODE-FW:
