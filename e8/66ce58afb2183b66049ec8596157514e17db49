@@ -1,0 +1,9 @@
+Code-Review+2: Amit Bose <amitbose@gmail.com>
+Code-Review+2: Ivar Lazzaro <ivarlazzaro@gmail.com>
+Workflow+1: Ivar Lazzaro <ivarlazzaro@gmail.com>
+Verified+2: Jenkins
+Submitted-by: Jenkins
+Submitted-at: Fri, 27 Jan 2017 01:35:28 +0000
+Reviewed-on: https://review.openstack.org/425930
+Project: openstack/group-based-policy
+Branch: refs/heads/stable/mitaka
