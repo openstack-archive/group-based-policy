@@ -51,10 +51,12 @@ class ResourceMappingStitchingPlumberGBPTestCase(
             'extension_drivers', ['proxy_group'], group='group_policy')
         cfg.CONF.set_override('node_plumber', 'stitching_plumber',
                               group='node_composition_plugin')
-        ml2_opts = {'mechanism_drivers': ['stitching_gbp']}
+        ml2_opts = {'mechanism_drivers': ['stitching_gbp'],
+                    'extension_drivers': ['qos']}
         host_agents = mock.patch('neutron.plugins.ml2.driver_context.'
                                  'PortContext.host_agents').start()
         host_agents.return_value = [self.agent_conf]
+        print("IGOR before SC calls parent, %s", base.SC_PLUGIN_KLASS)
         super(ResourceMappingStitchingPlumberGBPTestCase, self).setUp(
             sc_plugin=base.SC_PLUGIN_KLASS, ml2_options=ml2_opts)
 
@@ -67,6 +69,7 @@ class ResourceMappingStitchingPlumberGBPTestCase(
     @property
     def sc_plugin(self):
         plugins = manager.NeutronManager.get_service_plugins()
+        print("IGOR sc_plugin/plugins: %s", plugins)
         servicechain_plugin = plugins.get('SERVICECHAIN')
         return servicechain_plugin
 

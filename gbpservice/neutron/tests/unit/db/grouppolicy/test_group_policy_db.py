@@ -17,6 +17,7 @@ import webob.exc
 
 import mock
 from neutron.api import extensions
+from neutron.api.rpc.callbacks.producer import registry
 from neutron import context
 from neutron.db import api as db_api
 from neutron import manager
@@ -350,6 +351,8 @@ class GroupPolicyDbTestCase(GroupPolicyDBTestBase,
 
         extensions.append_api_extensions_path(
             gbpservice.neutron.extensions.__path__)
+        service_plugins['flavors_plugin_name'] =\
+            'neutron.services.flavors.flavors_plugin.FlavorsPlugin'
         super(GroupPolicyDbTestCase, self).setUp(
             plugin=core_plugin, ext_mgr=ext_mgr,
             service_plugins=service_plugins
@@ -372,6 +375,7 @@ class GroupPolicyDbTestCase(GroupPolicyDBTestBase,
 
     def tearDown(self):
         self._unset_notification_mocks()
+        registry.clear()
         super(GroupPolicyDbTestCase, self).tearDown()
 
 
