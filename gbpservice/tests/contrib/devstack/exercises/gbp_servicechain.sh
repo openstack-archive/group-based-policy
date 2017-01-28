@@ -48,7 +48,9 @@ gbp service-profile-create --vendor heat_based_node_driver --insertion-mode l3 -
 gbp  servicechain-node-create loadbalancer-node --template-file $TOP_DIR/gbp-templates/firewall-lb-servicechain/lb.template --service-profile lb-profile
 gbp  servicechain-node-create firewall-node --template-file $TOP_DIR/gbp-templates/firewall-lb-servicechain/fw.template  --service-profile fw-profile
 
-gbp servicechain-spec-create firewall-loadbalancer-spec --description spec --nodes "firewall-node loadbalancer-node"
+# REVISIT: Removing loadbalancer-node, should be replaced with lbaas-v2
+# gbp servicechain-spec-create firewall-loadbalancer-spec --description spec --nodes "firewall-node loadbalancer-node"
+gbp servicechain-spec-create firewall-loadbalancer-spec --description spec --nodes "firewall-node"
 
 gbp network-service-policy-create --network-service-params type=ip_single,name=vip_ip,value=self_subnet vip_ip_policy
 
