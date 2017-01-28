@@ -13,7 +13,6 @@
 
 import copy
 import os
-import warnings
 import webob.exc
 
 from neutron.api import extensions
@@ -334,7 +333,6 @@ class GroupPolicyDbTestCase(GroupPolicyDBTestBase,
             plugin=core_plugin, ext_mgr=ext_mgr,
             service_plugins=service_plugins
         )
-        warnings.resetwarnings()
         test_policy_file = ETCDIR + "/test-policy.json"
         policy.refresh(policy_file=test_policy_file)
         self.plugin = importutils.import_object(gp_plugin)

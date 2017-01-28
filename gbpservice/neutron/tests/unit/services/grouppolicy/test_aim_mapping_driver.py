@@ -111,16 +111,16 @@ class AIMBaseTestCase(test_nr_base.CommonNeutronBaseTestCase,
                                    'extension_drivers': ['apic_aim'],
                                    'type_drivers': ['opflex', 'local', 'vlan'],
                                    'tenant_network_types': ['opflex']}
-        engine = db_api.get_engine()
-        aim_model_base.Base.metadata.create_all(engine)
         amap.ApicMappingDriver.get_apic_manager = mock.Mock()
-        self.db_session = db_api.get_session()
-        self.initialize_db_config(self.db_session)
         self._default_es_name = 'default'
         super(AIMBaseTestCase, self).setUp(
             policy_drivers=policy_drivers, core_plugin=core_plugin,
             ml2_options=ml2_opts, l3_plugin=l3_plugin,
             sc_plugin=sc_plugin)
+        engine = db_api.get_engine()
+        aim_model_base.Base.metadata.create_all(engine)
+        self.db_session = db_api.get_session()
+        self.initialize_db_config(self.db_session)
         self.l3_plugin = manager.NeutronManager.get_service_plugins()[
             service_constants.L3_ROUTER_NAT]
         config.cfg.CONF.set_override('network_vlan_ranges',
@@ -136,7 +136,7 @@ class AIMBaseTestCase(test_nr_base.CommonNeutronBaseTestCase,
         self._tenant_id = 'test_tenant'
         self._neutron_context = nctx.Context(
             '', kwargs.get('tenant_id', self._tenant_id),
-            is_admin_context=False)
+            is_admin=False)
         self._neutron_context._session = self.db_session
         self._neutron_admin_context = nctx.get_admin_context()
 
