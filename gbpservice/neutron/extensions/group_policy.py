@@ -20,6 +20,9 @@ from neutron.common import constants as n_constants
 from neutron.common import exceptions as nexc
 from neutron.plugins.common import constants
 from neutron.services import service_base
+from neutron_lib.api import converters as conv
+from neutron_lib.api import validators as valid
+from neutron_lib import constants as nlib_const
 from oslo_config import cfg
 from oslo_log import log as logging
 from oslo_utils import uuidutils
@@ -250,10 +253,10 @@ def convert_port_to_string(value):
 
 
 def convert_to_int_if_needed(value):
-    if not value or value is attr.ATTR_NOT_SPECIFIED:
+    if not value or value is nlib_const.ATTR_NOT_SPECIFIED:
         return value
     else:
-        return attr.convert_to_int(value)
+        return conv.convert_to_int(value)
 
 
 def _validate_gbp_port_range(data, key_specs=None):
@@ -350,16 +353,16 @@ def _validate_gbproutes(data, valid_values=None):
     expected_keys = ['destination', 'nexthop']
     hostroutes = []
     for hostroute in data:
-        msg = attr._verify_dict_keys(expected_keys, hostroute)
+        msg = valid._verify_dict_keys(expected_keys, hostroute)
         if msg:
             LOG.debug(msg)
             return msg
-        msg = attr._validate_subnet(hostroute['destination'])
+        msg = valid.validate_subnet(hostroute['destination'])
         if msg:
             LOG.debug(msg)
             return msg
         if hostroute['nexthop']:
-            msg = attr._validate_ip_address(hostroute['nexthop'])
+            msg = valid.validate_ip_address(hostroute['nexthop'])
         if msg:
             LOG.debug(msg)
             return msg
@@ -372,7 +375,7 @@ def _validate_gbproutes(data, valid_values=None):
 
 def _validate_gbp_resource_name(data, valid_values=None):
     # Any REST API defined GBP resource name is restricted to 128 characters
-    return attr._validate_string(data, max_len=128)
+    return valid.validate_string(data, max_len=128)
 
 
 AUTO_PTG_REGEX = re.compile('auto[0-9a-f]{32}\Z', re.I)
@@ -381,15 +384,15 @@ AUTO_PTG_REGEX = re.compile('auto[0-9a-f]{32}\Z', re.I)
 def _validate_gbp_uuid_or_none(data, valid_values=None):
     if data is not None:
         if not bool(AUTO_PTG_REGEX.match(data)):
-            return attr._validate_uuid_or_none(data)
+            return valid.validate_uuid_or_none(data)
 
 
-attr.validators['type:gbp_port_range'] = _validate_gbp_port_range
-attr.validators['type:network_service_params'] = _validate_network_svc_params
-attr.validators['type:external_dict'] = _validate_external_dict
-attr.validators['type:gbproutes'] = _validate_gbproutes
-attr.validators['type:gbp_resource_name'] = _validate_gbp_resource_name
-attr.validators['type:gbp_uuid_or_none'] = _validate_gbp_uuid_or_none
+valid.validators['type:gbp_port_range'] = _validate_gbp_port_range
+valid.validators['type:network_service_params'] = _validate_network_svc_params
+valid.validators['type:external_dict'] = _validate_external_dict
+valid.validators['type:gbproutes'] = _validate_gbproutes
+valid.validators['type:gbp_resource_name'] = _validate_gbp_resource_name
+valid.validators['type:gbp_uuid_or_none'] = _validate_gbp_uuid_or_none
 
 
 POLICY_TARGETS = 'policy_targets'
@@ -449,7 +452,7 @@ RESOURCE_ATTRIBUTE_MAP = {
                            'is_visible': True},
         'policy_targets': {'allow_post': False, 'allow_put': False,
                            'validate': {'type:uuid_list': None},
-                           'convert_to': attr.convert_none_to_empty_list,
+                           'convert_to': conv.convert_none_to_empty_list,
                            'default': None, 'is_visible': True},
         'l2_policy_id': {'allow_post': True, 'allow_put': True,
                          'validate': {'type:uuid_or_none': None},
@@ -457,23 +460,23 @@ RESOURCE_ATTRIBUTE_MAP = {
         'provided_policy_rule_sets': {'allow_post': True, 'allow_put': True,
                                       'validate': {'type:dict_or_none': None},
                                       'convert_to':
-                                      attr.convert_none_to_empty_dict,
+                                      conv.convert_none_to_empty_dict,
                                       'default': None, 'is_visible': True},
         'consumed_policy_rule_sets': {'allow_post': True, 'allow_put': True,
                                       'validate': {'type:dict_or_none': None},
                                       'convert_to':
-                                      attr.convert_none_to_empty_dict,
+                                      conv.convert_none_to_empty_dict,
                                       'default': None, 'is_visible': True},
         'network_service_policy_id': {'allow_post': True, 'allow_put': True,
                                       'validate': {'type:uuid_or_none': None},
                                       'default': None, 'is_visible': True},
         attr.SHARED: {'allow_post': True, 'allow_put': True,
-                      'default': False, 'convert_to': attr.convert_to_boolean,
+                      'default': False, 'convert_to': conv.convert_to_boolean,
                       'is_visible': True, 'required_by_policy': True,
                       'enforce_policy': True},
         'service_management': {'allow_post': True, 'allow_put': True,
                                'default': False,
-                               'convert_to': attr.convert_to_boolean,
+                               'convert_to': conv.convert_to_boolean,
                                'is_visible': True, 'required_by_policy': True,
                                'enforce_policy': True},
     },
@@ -496,7 +499,7 @@ RESOURCE_ATTRIBUTE_MAP = {
                            'is_visible': True},
         'policy_target_groups': {'allow_post': False, 'allow_put': False,
                                  'validate': {'type:uuid_list': None},
-                                 'convert_to': attr.convert_none_to_empty_list,
+                                 'convert_to': conv.convert_none_to_empty_list,
                                  'default': None, 'is_visible': True},
         'l3_policy_id': {'allow_post': True, 'allow_put': True,
                          'validate': {'type:uuid_or_none': None},
@@ -504,16 +507,16 @@ RESOURCE_ATTRIBUTE_MAP = {
                          'required': True},
         'inject_default_route': {'allow_post': True, 'allow_put': True,
                                  'default': True, 'is_visible': True,
-                                 'convert_to': attr.convert_to_boolean,
+                                 'convert_to': conv.convert_to_boolean,
                                  'required': False},
         attr.SHARED: {'allow_post': True, 'allow_put': True,
-                      'default': False, 'convert_to': attr.convert_to_boolean,
+                      'default': False, 'convert_to': conv.convert_to_boolean,
                       'is_visible': True, 'required_by_policy': True,
                       'enforce_policy': True},
         # TODO(Sumit): uncomment when supported in data path
         # 'allow_broadcast': {'allow_post': True, 'allow_put': True,
         #                    'default': True, 'is_visible': True,
-        #                    'convert_to': attr.convert_to_boolean,
+        #                    'convert_to': conv.convert_to_boolean,
         #                    'required': False},
     },
     L3_POLICIES: {
@@ -534,29 +537,29 @@ RESOURCE_ATTRIBUTE_MAP = {
         'status_details': {'allow_post': False, 'allow_put': False,
                            'is_visible': True},
         'ip_version': {'allow_post': True, 'allow_put': False,
-                       'convert_to': attr.convert_to_int,
+                       'convert_to': conv.convert_to_int,
                        'validate': {'type:values': [4, 6]},
                        'default': 4, 'is_visible': True},
         'ip_pool': {'allow_post': True, 'allow_put': False,
                     'validate': {'type:subnet': None},
                     'default': '10.0.0.0/8', 'is_visible': True},
         'subnet_prefix_length': {'allow_post': True, 'allow_put': True,
-                                 'convert_to': attr.convert_to_int,
+                                 'convert_to': conv.convert_to_int,
                                  # for ipv4 legal values are 2 to 30
                                  # for ipv6 legal values are 2 to 127
                                  'default': 24, 'is_visible': True},
         'l2_policies': {'allow_post': False, 'allow_put': False,
                         'validate': {'type:uuid_list': None},
-                        'convert_to': attr.convert_none_to_empty_list,
+                        'convert_to': conv.convert_none_to_empty_list,
                         'default': None, 'is_visible': True},
         attr.SHARED: {'allow_post': True, 'allow_put': True,
-                      'default': False, 'convert_to': attr.convert_to_boolean,
+                      'default': False, 'convert_to': conv.convert_to_boolean,
                       'is_visible': True, 'required_by_policy': True,
                       'enforce_policy': True},
         'external_segments': {
             'allow_post': True, 'allow_put': True, 'default': None,
             'validate': {'type:external_dict': None},
-            'convert_to': attr.convert_none_to_empty_dict, 'is_visible': True},
+            'convert_to': conv.convert_none_to_empty_dict, 'is_visible': True},
     },
     POLICY_CLASSIFIERS: {
         'id': {'allow_post': False, 'allow_put': False,
@@ -588,7 +591,7 @@ RESOURCE_ATTRIBUTE_MAP = {
                       'default': gp_constants.GP_DIRECTION_BI,
                       'is_visible': True},
         attr.SHARED: {'allow_post': True, 'allow_put': True,
-                      'default': False, 'convert_to': attr.convert_to_boolean,
+                      'default': False, 'convert_to': conv.convert_to_boolean,
                       'is_visible': True, 'required_by_policy': True,
                       'enforce_policy': True},
     },
@@ -619,7 +622,7 @@ RESOURCE_ATTRIBUTE_MAP = {
                          'validate': {'type:uuid_or_none': None},
                          'default': None, 'is_visible': True},
         attr.SHARED: {'allow_post': True, 'allow_put': True,
-                      'default': False, 'convert_to': attr.convert_to_boolean,
+                      'default': False, 'convert_to': conv.convert_to_boolean,
                       'is_visible': True, 'required_by_policy': True,
                       'enforce_policy': True},
     },
@@ -641,7 +644,7 @@ RESOURCE_ATTRIBUTE_MAP = {
         'status_details': {'allow_post': False, 'allow_put': False,
                            'is_visible': True},
         'enabled': {'allow_post': True, 'allow_put': True,
-                    'default': True, 'convert_to': attr.convert_to_boolean,
+                    'default': True, 'convert_to': conv.convert_to_boolean,
                     'is_visible': True},
         'policy_classifier_id': {'allow_post': True, 'allow_put': True,
                                  'validate': {'type:uuid': None},
@@ -649,9 +652,9 @@ RESOURCE_ATTRIBUTE_MAP = {
         'policy_actions': {'allow_post': True, 'allow_put': True,
                            'default': None, 'is_visible': True,
                            'validate': {'type:uuid_list': None},
-                           'convert_to': attr.convert_none_to_empty_list},
+                           'convert_to': conv.convert_none_to_empty_list},
         attr.SHARED: {'allow_post': True, 'allow_put': True,
-                      'default': False, 'convert_to': attr.convert_to_boolean,
+                      'default': False, 'convert_to': conv.convert_to_boolean,
                       'is_visible': True, 'required_by_policy': True,
                       'enforce_policy': True},
     },
@@ -682,10 +685,10 @@ RESOURCE_ATTRIBUTE_MAP = {
                                    'default': None, 'is_visible': True,
                                    'validate': {'type:uuid_list': None},
                                    'convert_to':
-                                   attr.convert_none_to_empty_list},
+                                   conv.convert_none_to_empty_list},
         'policy_rules': {'allow_post': True, 'allow_put': True,
                          'default': None, 'validate': {'type:uuid_list': None},
-                         'convert_to': attr.convert_none_to_empty_list,
+                         'convert_to': conv.convert_none_to_empty_list,
                          'is_visible': True},
         'consuming_policy_target_groups': {
             'allow_post': False, 'allow_put': False, 'default': None,
@@ -694,7 +697,7 @@ RESOURCE_ATTRIBUTE_MAP = {
             'allow_post': False, 'allow_put': False, 'default': None,
             'is_visible': True},
         attr.SHARED: {'allow_post': True, 'allow_put': True,
-                      'default': False, 'convert_to': attr.convert_to_boolean,
+                      'default': False, 'convert_to': conv.convert_to_boolean,
                       'is_visible': True, 'required_by_policy': True,
                       'enforce_policy': True},
     },
@@ -717,14 +720,14 @@ RESOURCE_ATTRIBUTE_MAP = {
                            'is_visible': True},
         'policy_target_groups': {'allow_post': False, 'allow_put': False,
                                  'validate': {'type:uuid_list': None},
-                                 'convert_to': attr.convert_none_to_empty_list,
+                                 'convert_to': conv.convert_none_to_empty_list,
                                  'default': None, 'is_visible': True},
         'network_service_params': {'allow_post': True, 'allow_put': False,
                                    'validate':
                                    {'type:network_service_params': None},
                                    'default': None, 'is_visible': True},
         attr.SHARED: {'allow_post': True, 'allow_put': True,
-                      'default': False, 'convert_to': attr.convert_to_boolean,
+                      'default': False, 'convert_to': conv.convert_to_boolean,
                       'is_visible': True, 'required_by_policy': True,
                       'enforce_policy': True},
     },
@@ -748,19 +751,19 @@ RESOURCE_ATTRIBUTE_MAP = {
         'external_segments': {
             'allow_post': True, 'allow_put': True, 'default': None,
             'validate': {'type:uuid_list': None},
-            'convert_to': attr.convert_none_to_empty_list, 'is_visible': True},
+            'convert_to': conv.convert_none_to_empty_list, 'is_visible': True},
         'provided_policy_rule_sets': {'allow_post': True, 'allow_put': True,
                                       'validate': {'type:dict_or_none': None},
                                       'convert_to':
-                                      attr.convert_none_to_empty_dict,
+                                      conv.convert_none_to_empty_dict,
                                       'default': None, 'is_visible': True},
         'consumed_policy_rule_sets': {'allow_post': True, 'allow_put': True,
                                       'validate': {'type:dict_or_none': None},
                                       'convert_to':
-                                      attr.convert_none_to_empty_dict,
+                                      conv.convert_none_to_empty_dict,
                                       'default': None, 'is_visible': True},
         attr.SHARED: {'allow_post': True, 'allow_put': True,
-                      'default': False, 'convert_to': attr.convert_to_boolean,
+                      'default': False, 'convert_to': conv.convert_to_boolean,
                       'is_visible': True, 'required_by_policy': True,
                       'enforce_policy': True},
     },
@@ -782,7 +785,7 @@ RESOURCE_ATTRIBUTE_MAP = {
         'status_details': {'allow_post': False, 'allow_put': False,
                            'is_visible': True},
         'ip_version': {'allow_post': True, 'allow_put': False,
-                       'convert_to': attr.convert_to_int,
+                       'convert_to': conv.convert_to_int,
                        'validate': {'type:values': [4, 6]},
                        'default': 4, 'is_visible': True},
         'cidr': {'allow_post': True, 'allow_put': False,
@@ -791,19 +794,19 @@ RESOURCE_ATTRIBUTE_MAP = {
         'external_policies': {
             'allow_post': False, 'allow_put': False, 'default': None,
             'validate': {'type:uuid_list': None},
-            'convert_to': attr.convert_none_to_empty_list, 'is_visible': True},
+            'convert_to': conv.convert_none_to_empty_list, 'is_visible': True},
         'external_routes': {
             'allow_post': True, 'allow_put': True,
-            'default': attr.ATTR_NOT_SPECIFIED,
+            'default': nlib_const.ATTR_NOT_SPECIFIED,
             'validate': {'type:gbproutes': None},
             'is_visible': True},
         'l3_policies': {'allow_post': False, 'allow_put': False,
                         'validate': {'type:uuid_list': None},
-                        'convert_to': attr.convert_none_to_empty_list,
+                        'convert_to': conv.convert_none_to_empty_list,
                         'default': None, 'is_visible': True},
         'port_address_translation': {
             'allow_post': True, 'allow_put': True,
-            'default': False, 'convert_to': attr.convert_to_boolean,
+            'default': False, 'convert_to': conv.convert_to_boolean,
             'is_visible': True, 'required_by_policy': True,
             'enforce_policy': True},
         'nat_pools': {
@@ -812,7 +815,7 @@ RESOURCE_ATTRIBUTE_MAP = {
             'default': [],
             'is_visible': True},
         attr.SHARED: {'allow_post': True, 'allow_put': True,
-                      'default': False, 'convert_to': attr.convert_to_boolean,
+                      'default': False, 'convert_to': conv.convert_to_boolean,
                       'is_visible': True, 'required_by_policy': True,
                       'enforce_policy': True},
     },
@@ -834,7 +837,7 @@ RESOURCE_ATTRIBUTE_MAP = {
         'status_details': {'allow_post': False, 'allow_put': False,
                            'is_visible': True},
         'ip_version': {'allow_post': True, 'allow_put': False,
-                       'convert_to': attr.convert_to_int,
+                       'convert_to': conv.convert_to_int,
                        'validate': {'type:values': [4, 6]},
                        'default': 4, 'is_visible': True},
         'ip_pool': {'allow_post': True, 'allow_put': False,
@@ -844,7 +847,7 @@ RESOURCE_ATTRIBUTE_MAP = {
                                 'validate': {'type:uuid_or_none': None},
                                 'is_visible': True, 'required': True},
         attr.SHARED: {'allow_post': True, 'allow_put': True,
-                      'default': False, 'convert_to': attr.convert_to_boolean,
+                      'default': False, 'convert_to': conv.convert_to_boolean,
                       'is_visible': True, 'required_by_policy': True,
                       'enforce_policy': True},
     }

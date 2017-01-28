@@ -24,14 +24,14 @@ from apic_ml2.neutron.db import port_ha_ipaddress_binding as ha_ip_db
 from apic_ml2.neutron.tests.unit.ml2.drivers.cisco.apic import (
     test_cisco_apic_common as mocked)
 from apicapi import apic_mapper
-from neutron.agent import securitygroups_rpc as sg_cfg
+from neutron.conf.agent import securitygroups_rpc as sg_cfg
 from neutron.common import rpc as n_rpc
 from neutron import context
 from neutron.db import api as db_api
 from neutron.db import db_base_plugin_v2 as n_db
-from neutron.db import model_base
 from neutron.extensions import portbindings
 from neutron import manager
+from neutron_lib.db import model_base
 from opflexagent import constants as ocst
 from oslo_config import cfg
 from oslo_serialization import jsonutils
@@ -518,8 +518,11 @@ class TestPolicyTarget(ApicMappingTestCase):
             mapping['host_snat_ips'][0]['external_segment_name'])
         self.assertEqual("192.168.200.1",
             mapping['host_snat_ips'][0]['gateway_ip'])
-        self.assertEqual("192.168.200.2",
-            mapping['host_snat_ips'][0]['host_snat_ip'])
+        self.assertTrue(netaddr.IPAddress(
+            mapping['host_snat_ips'][0]['host_snat_ip']) in
+            netaddr.IPNetwork(
+                self.driver.apic_manager.ext_net_dict[
+                    'supported']['host_pool_cidr']))
         self.assertEqual(24, mapping['host_snat_ips'][0]['prefixlen'])
 
         # Verify Neutron details
@@ -540,8 +543,11 @@ class TestPolicyTarget(ApicMappingTestCase):
             mapping['host_snat_ips'][0]['external_segment_name'])
         self.assertEqual("192.168.200.1",
             mapping['host_snat_ips'][0]['gateway_ip'])
-        self.assertEqual("192.168.200.3",
-            mapping['host_snat_ips'][0]['host_snat_ip'])
+        self.assertTrue(netaddr.IPAddress(
+            mapping['host_snat_ips'][0]['host_snat_ip']) in
+            netaddr.IPNetwork(
+                self.driver.apic_manager.ext_net_dict[
+                    'supported']['host_pool_cidr']))
         self.assertEqual(24, mapping['host_snat_ips'][0]['prefixlen'])
         self.assertEqual(100, mapping['dhcp_lease_time'])
         self.assertEqual(1000, mapping['interface_mtu'])
@@ -2995,7 +3001,10 @@ class TestL3Policy(ApicMappingTestCase):
             external_segments={es['id']: []},
             expected_res_status=200)['l3_policy']
         self.assertEqual(1, len(l3p['external_segments'][es['id']]))
-        self.assertEqual('169.254.0.2', l3p['external_segments'][es['id']][0])
+        self.assertTrue(
+            netaddr.IPAddress(l3p['external_segments'][es['id']][0]) in
+            netaddr.IPNetwork(
+                self._show_subnet(es['subnet_id'])['subnet']['cidr']))
 
         owner = self._tenant(es['tenant_id'], shared_es)
         l3p_owner = self._tenant(l3p['tenant_id'], shared_l3p)
