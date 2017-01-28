@@ -16,6 +16,7 @@
 from neutron.api import extensions
 from neutron.api.v2 import attributes
 from neutron.extensions import address_scope
+from neutron_lib.api import converters as conv
 
 ALIAS = 'cisco-apic'
 
@@ -67,7 +68,7 @@ EXT_NET_ATTRIBUTES = {
         # Restrict external traffic to specified addresses
         'allow_put': True, 'allow_post': True,
         'is_visible': True, 'default': ['0.0.0.0/0'],
-        'convert_to': attributes.convert_none_to_empty_list,
+        'convert_to': conv.convert_none_to_empty_list,
         'validate': {'type:subnet_list': None},
     },
 }
@@ -78,7 +79,7 @@ EXT_SUBNET_ATTRIBUTES = {
         # for allocating host-based SNAT addresses
         'allow_post': True, 'allow_put': True,
         'is_visible': True, 'default': False,
-        'convert_to': attributes.convert_to_boolean,
+        'convert_to': conv.convert_to_boolean,
     }
 }
 

@@ -15,7 +15,7 @@ XTRACE=$(set +o | grep xtrace)
 
 function prepare_gbp_devstack {
     cd $TOP_DIR
-    sudo git checkout stable/mitaka
+    sudo git checkout stable/newton
     sudo cp $CONTRIB_DIR/devstack/local.conf $TOP_DIR/local.conf
     sudo cp $CONTRIB_DIR/devstack/exercises/*.sh $TOP_DIR/exercises/
     sudo cp $CONTRIB_DIR/devstack/lib/* $TOP_DIR/lib/
@@ -23,7 +23,6 @@ function prepare_gbp_devstack {
     sudo sed -i 's/DEST=\/opt\/stack/DEST=\/opt\/stack\/new/g' $TOP_DIR/stackrc
     sudo sed -i 's/source $TOP_DIR\/lib\/neutron-legacy/source $TOP_DIR\/lib\/neutron-legacy\nsource $TOP_DIR\/lib\/gbp/g' $TOP_DIR/stack.sh
     sudo sed -i 's/# Extras Configuration/install_gbpclient\ninstall_gbpservice\ninit_gbpservice\n# Extras Configuration/g' $TOP_DIR/stack.sh
-    sudo sed -i 's/echo_summary "Creating initial neutron network elements"//g' $TOP_DIR/stack.sh
     sudo sed -i 's/create_neutron_initial_network//g' $TOP_DIR/stack.sh
     source $TOP_DIR/functions
     source $TOP_DIR/functions-common
@@ -44,7 +43,7 @@ function prepare_nfp_devstack {
 
 function prepare_gbp_aim_devstack {
     cd $TOP_DIR
-    sudo git checkout stable/mitaka
+    sudo git checkout stable/newton
     sudo cp $CONTRIB_DIR/devstack/local-aim.conf $TOP_DIR/local.conf
     sudo cp $CONTRIB_DIR/devstack/exercises-aim/gbp_aim.sh $TOP_DIR/exercises/
     sudo sed -i 's/DEST=\/opt\/stack/DEST=\/opt\/stack\/new/g' $TOP_DIR/stackrc
