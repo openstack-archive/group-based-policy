@@ -12,7 +12,7 @@
 
 import mock
 import subprocess
-import unittest
+import unittest2
 
 from neutron.tests import base
 
@@ -130,7 +130,7 @@ class GenericConfigRpcManagerTestCase(base.BaseTestCase):
 
         self._test_event_creation(const.EVENT_CONFIGURE_HEALTHMONITOR)
 
-    @unittest.skip('not implemented yet')
+    @unittest2.skip('not implemented yet')
     def test_clear_hm_genericconfigrpcmanager(self):
         """ Implements test case for clear healthmonitor method
         of generic config agent RPCmanager.
