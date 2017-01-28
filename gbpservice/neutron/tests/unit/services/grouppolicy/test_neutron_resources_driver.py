@@ -14,10 +14,9 @@
 import mock
 from neutron import context as nctx
 from neutron.db import api as db_api
-from neutron.db import model_base
 from neutron import manager
 from neutron.plugins.common import constants as pconst
-from neutron.tests.unit.plugins.ml2 import test_plugin as n_test_plugin
+from neutron_lib.db import model_base
 import webob.exc
 
 from gbpservice.neutron.services.grouppolicy import config
@@ -27,15 +26,16 @@ from gbpservice.neutron.tests.unit.services.grouppolicy import (
     test_grouppolicy_plugin as test_plugin)
 
 
+ML2PLUS_PLUGIN = 'gbpservice.neutron.plugins.ml2plus.plugin.Ml2PlusPlugin'
 CORE_PLUGIN = ('gbpservice.neutron.tests.unit.services.grouppolicy.'
                'test_resource_mapping.NoL3NatSGTestPlugin')
 
 
 class CommonNeutronBaseTestCase(test_plugin.GroupPolicyPluginTestBase):
 
-    def setUp(self, policy_drivers=None,
-              core_plugin=n_test_plugin.PLUGIN_NAME, l3_plugin=None,
+    def setUp(self, policy_drivers=None, core_plugin=None, l3_plugin=None,
               ml2_options=None, sc_plugin=None):
+        core_plugin = core_plugin or ML2PLUS_PLUGIN
         policy_drivers = policy_drivers or ['neutron_resources']
         config.cfg.CONF.set_override('policy_drivers',
                                      policy_drivers,
@@ -100,8 +100,7 @@ class TestL2Policy(CommonNeutronBaseTestCase):
 class TestL2PolicyRollback(CommonNeutronBaseTestCase):
 
     def setUp(self, policy_drivers=None,
-              core_plugin=n_test_plugin.PLUGIN_NAME, ml2_options=None,
-              sc_plugin=None):
+              core_plugin=None, ml2_options=None, sc_plugin=None):
         policy_drivers = policy_drivers or ['neutron_resources',
                                             'dummy']
         super(TestL2PolicyRollback, self).setUp(policy_drivers=policy_drivers,

@@ -13,8 +13,8 @@
 import time
 
 from neutron._i18n import _LE
-from neutron.db import model_base
 from neutron.plugins.common import constants as pconst
+from neutron_lib.db import model_base
 from oslo_config import cfg
 from oslo_log import helpers as log
 from oslo_log import log as logging

@@ -11,7 +11,7 @@
 #    under the License.
 
 from neutron.common import exceptions as nexc
-from neutron.db import model_base
+from neutron_lib.db import model_base
 from oslo_log import helpers as log
 from oslo_utils import uuidutils
 import sqlalchemy as sa
