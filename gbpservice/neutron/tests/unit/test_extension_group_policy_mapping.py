@@ -57,7 +57,7 @@ class GroupPolicyMappingExtTestCase(tgp.GroupPolicyExtensionTestCase):
         gp.RESOURCE_ATTRIBUTE_MAP = self._saved_gp_attr_map
 
     def get_create_policy_target_default_attrs(self):
-        attrs = cm.get_create_policy_target_default_attrs()
+        attrs = cm.get_create_policy_target_default_attrs_and_prj_id()
         attrs.update({'port_id': None})
         return attrs
 
@@ -77,7 +77,7 @@ class GroupPolicyMappingExtTestCase(tgp.GroupPolicyExtensionTestCase):
         return attrs
 
     def get_create_policy_target_group_default_attrs(self):
-        attrs = cm.get_create_policy_target_group_default_attrs()
+        attrs = cm.get_create_policy_target_group_default_attrs_and_prj_id()
         attrs.update({'subnets': []})
         return attrs
 
@@ -92,7 +92,7 @@ class GroupPolicyMappingExtTestCase(tgp.GroupPolicyExtensionTestCase):
         return attrs
 
     def get_create_l2_policy_default_attrs(self):
-        attrs = cm.get_create_l2_policy_default_attrs()
+        attrs = cm.get_create_l2_policy_default_attrs_and_prj_id()
         attrs.update({'network_id': None})
         return attrs
 
@@ -102,7 +102,7 @@ class GroupPolicyMappingExtTestCase(tgp.GroupPolicyExtensionTestCase):
         return attrs
 
     def get_create_l3_policy_default_attrs(self):
-        attrs = cm.get_create_l3_policy_default_attrs()
+        attrs = cm.get_create_l3_policy_default_attrs_and_prj_id()
         attrs.update({'address_scope_v4_id': None})
         attrs.update({'address_scope_v6_id': None})
         attrs.update({'subnetpools_v4': []})
@@ -127,7 +127,7 @@ class GroupPolicyMappingExtTestCase(tgp.GroupPolicyExtensionTestCase):
         return attrs
 
     def get_create_external_segment_default_attrs(self):
-        attrs = cm.get_create_external_segment_default_attrs()
+        attrs = cm.get_create_external_segment_default_attrs_and_prj_id()
         attrs.update({'subnet_id': None})
         return attrs
 
@@ -140,7 +140,8 @@ class GroupPolicyMappingExtTestCase(tgp.GroupPolicyExtensionTestCase):
         policy_target_id = tgp._uuid()
         data = {'policy_target': {'policy_target_group_id': tgp._uuid(),
                                   'tenant_id': tgp._uuid()}}
-        default_attrs = self.get_create_policy_target_default_attrs()
+        default_attrs = (
+            self.get_create_policy_target_default_attrs_and_prj_id())
         default_data = copy.copy(data)
         default_data['policy_target'].update(default_attrs)
         expected_value = dict(default_data['policy_target'])
