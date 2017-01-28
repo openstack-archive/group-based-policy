@@ -21,10 +21,10 @@ from neutron.api.v2 import attributes
 from neutron.common import constants as const
 from neutron.common import exceptions as n_exc
 from neutron import context as n_context
-from neutron.db import model_base
 from neutron.db import models_v2
 from neutron.extensions import l3 as ext_l3
 from neutron.extensions import securitygroup as ext_sg
+from neutron_lib.db import model_base
 from oslo_config import cfg
 from oslo_log import helpers as log
 from oslo_log import log as logging
@@ -1312,9 +1312,9 @@ class ImplicitResourceOperations(local_api.LocalAPI,
 
     def _get_last_free_ip(self, context, subnets):
         # Hope lock_mode update is not needed
-        range_qry = context.session.query(
-            models_v2.IPAvailabilityRange).join(
-                models_v2.IPAllocationPool)
+        # REVISIT: Temp workaround, always assumes last IP in subnet is
+        # available
+        range_qry = context.session.query(models_v2.IPAllocationPool)
         for subnet_id in subnets:
             ip_range = range_qry.filter_by(subnet_id=subnet_id).first()
             if not ip_range:

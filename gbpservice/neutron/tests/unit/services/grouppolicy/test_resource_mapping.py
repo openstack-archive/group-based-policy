@@ -21,7 +21,6 @@ from neutron.api.rpc.agentnotifiers import dhcp_rpc_agent_api
 from neutron.common import constants as cst
 from neutron import context as nctx
 from neutron.db import api as db_api
-from neutron.db import model_base
 from neutron.extensions import external_net as external_net
 from neutron.extensions import securitygroup as ext_sg
 from neutron import manager
@@ -30,6 +29,7 @@ from neutron.plugins.common import constants as pconst
 from neutron.tests.unit.extensions import test_l3
 from neutron.tests.unit.extensions import test_securitygroup
 from neutron.tests.unit.plugins.ml2 import test_plugin as n_test_plugin
+from neutron_lib.db import model_base
 from oslo_utils import uuidutils
 import webob.exc
 
@@ -254,6 +254,7 @@ class ResourceMappingTestCase(test_plugin.GroupPolicyPluginTestCase):
 
     def _get_prs_enforced_rules(self, prs):
         # Filter with parent if needed
+        parent_rules = []
         if prs['parent_id']:
             parent = self.show_policy_rule_set(
                 prs['parent_id'])['policy_rule_set']
@@ -269,12 +270,15 @@ class ResourceMappingTestCase(test_plugin.GroupPolicyPluginTestCase):
             policy_rules = [x['id'] for x in subset_rules
                             if x['policy_classifier_id']
                             in set(parent_classifier_ids)]
-            return [self.show_policy_rule(
-                    policy_rule_id)['policy_rule'] for
-                    policy_rule_id in policy_rules]
-        else:
-            return [self.show_policy_rule(x)['policy_rule']
-                    for x in prs['policy_rules']]
+
+            parent_rules = [self.show_policy_rule(
+                policy_rule_id)['policy_rule']
+                for policy_rule_id in policy_rules]
+
+        child_rules = [self.show_policy_rule(x)['policy_rule']
+                       for x in prs['policy_rules']]
+
+        return parent_rules + child_rules
 
     def _generate_expected_sg_rules(self, prs):
         """Returns a list of expected provider sg rules given a PTG."""
@@ -386,13 +390,22 @@ class ResourceMappingTestCase(test_plugin.GroupPolicyPluginTestCase):
                                    mapping.consumed_sg_id])]
         existing_copy = copy.deepcopy(existing)
         expected = self._generate_expected_sg_rules(prs)
+        is_child = self._gbp_plugin.get_policy_rule_set(self._context,
+                                                        prs)['parent_id']
+        # In Newton, parent and child PRS result in separate SG rules,
+        # and since we are using the same PRS in the tests for both parent
+        # and child it will result in two SG rules in the case when
+        # there is a child
+        matches = 2 if is_child else 1
         for rule in expected:
             # Verify the rule exists
             r = self._get_sg_rule(**rule)
-            self.assertTrue(len(r) == 1,
+            self.assertTrue(len(r) == matches,
                             "Rule not found, expected:\n%s\n\nfound:%s\n"
                             "Missing:%s\n" % (expected, existing_copy, rule))
-            existing.remove(r[0])
+            for i in range(matches):
+                if r[i] in existing:
+                    existing.remove(r[i])
         self.assertTrue(len(existing) == 0,
                         "Unexpected additional rules are configured:\n%s"
                         % str(existing))
@@ -451,6 +464,9 @@ class ResourceMappingTestCase(test_plugin.GroupPolicyPluginTestCase):
         return self.create_policy_rule(
             policy_classifier_id=cls['id'], policy_actions=[action['id']],
             shared=shared)['policy_rule']
+
+    def _check_ip_in_cidr(self, ip_addr, cidr):
+        self.assertTrue(netaddr.IPAddress(ip_addr) in netaddr.IPNetwork(cidr))
 
 
 class TestClusterIdMixin(object):
@@ -3660,8 +3676,9 @@ class TestExternalSegment(ResourceMappingTestCase):
                     subnet_id=sub['subnet']['id'])['external_segment']
                 l3p = self.create_l3_policy()['l3_policy']
                 self.assertEqual(es['id'], l3p['external_segments'].keys()[0])
-                self.assertEqual('192.168.0.2',
-                                 l3p['external_segments'][es['id']][0])
+                self._check_ip_in_cidr(l3p['external_segments'][es['id']][0],
+                                       self._show_subnet(
+                                           es['subnet_id'])['subnet']['cidr'])
 
                 ep = self.create_external_policy()['external_policy']
                 self.assertEqual(es['id'], ep['external_segments'][0])
@@ -3680,8 +3697,9 @@ class TestExternalSegment(ResourceMappingTestCase):
                     subnet_id=sub['subnet']['id'])['external_segment']
                 l3p = self.create_l3_policy()['l3_policy']
                 self.assertEqual(es['id'], l3p['external_segments'].keys()[0])
-                self.assertEqual('192.168.0.2',
-                                 l3p['external_segments'][es['id']][0])
+                self._check_ip_in_cidr(l3p['external_segments'][es['id']][0],
+                                       self._show_subnet(
+                                           es['subnet_id'])['subnet']['cidr'])
 
                 ep = self.create_external_policy()['external_policy']
                 self.assertEqual(es['id'], ep['external_segments'][0])
@@ -4558,7 +4576,7 @@ class TestFloatingIpMonkeyPatch(ResourceMappingTestCase,
             with self.port() as private_port:
                 with self.router() as router:
                     data = {
-                        'tenant_id': 'test-tenant',
+                        'tenant_id': self._tenant_id,
                         'floating_network_id': sub['subnet']['network_id'],
                         'port_id': private_port['port']['id'],
                         'router_id': router['router']['id']}
