@@ -16,8 +16,8 @@
 from neutron.api import extensions
 from neutron.api.v2 import attributes
 from neutron.db import address_scope_db as as_db
-from neutron.db import model_base
 from neutron.db import models_v2
+from neutron_lib.db import model_base
 import oslo_db.sqlalchemy.session
 import sqlalchemy as sa
 from sqlalchemy import orm

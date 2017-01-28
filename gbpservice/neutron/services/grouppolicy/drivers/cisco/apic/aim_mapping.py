@@ -1206,7 +1206,7 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
         if not epg_fetched:
             LOG.debug("No EPG found in AIM DB")
         else:
-            LOG.debug("Got epg: %s", epg_fetched.__dict__)
+            LOG.debug("Got epg: %s", vars(epg_fetched))
         return epg_fetched
 
     def _aim_filter(self, session, pr, reverse_prefix=False):
@@ -1224,7 +1224,7 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
             filter_name = self.name_mapper.policy_rule(session, id)
         LOG.debug("Mapped policy_rule_id %(id)s with name %(name)s to",
                   "%(apic_name)s",
-                  {'id': id, 'name': name, 'apic_name': filter_name})
+                  {'id': id, 'name': name, 'apic_name': str(filter_name)})
         kwargs = {'tenant_name': str(tenant_name),
                   'name': str(filter_name),
                   'display_name': display_name}
@@ -1301,8 +1301,7 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
             if not aim_filter_fetched:
                 LOG.debug("No %s Filter found in AIM DB", k)
             else:
-                LOG.debug("Got %s Filter: %s",
-                          (aim_filter_fetched.__dict__, k))
+                LOG.debug("Got Filter: %s", vars(aim_filter_fetched))
             filters[k] = aim_filter_fetched
         return filters
 
@@ -1325,8 +1324,7 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
                 if not aim_filter_entries:
                     LOG.debug("No %s FilterEntry found in AIM DB", k)
                 else:
-                    LOG.debug("Got %s FilterEntry: %s",
-                              (aim_filter_entries, k))
+                    LOG.debug("Got FilterEntry: %s", str(aim_filter_entries))
                 filters_entries[k] = aim_filter_entries
         return filters_entries
 
@@ -1402,7 +1400,7 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
         if not contract_fetched:
             LOG.debug("No Contract found in AIM DB")
         else:
-            LOG.debug("Got Contract: %s", contract_fetched.__dict__)
+            LOG.debug("Got Contract: %s", vars(contract_fetched))
         return contract_fetched
 
     def _get_aim_contract_names(self, session, prs_id_list):
@@ -1422,7 +1420,7 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
             LOG.debug("No Contract found in AIM DB")
         else:
             LOG.debug("Got ContractSubject: %s",
-                      contract_subject_fetched.__dict__)
+                      vars(contract_subject_fetched))
         return contract_subject_fetched
 
     def _delete_aim_contract_subject(self, aim_context, aim_contract):
