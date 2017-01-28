@@ -20,7 +20,7 @@ from oslo_config import cfg as oslo_config
 from oslo_log import log as oslo_logging
 import random
 import time
-import unittest
+import unittest2
 LOG = oslo_logging.getLogger(__name__)
 
 NFP_MODULES_PATH = ['gbpservice.neutron.tests.unit.nfp.core']
@@ -118,7 +118,7 @@ class Object(object):
         pass
 
 
-class Test_Process_Model(unittest.TestCase):
+class Test_Process_Model(unittest2.TestCase):
 
     def _mocked_fork(self, args):
         proc = Object()
@@ -828,4 +828,4 @@ class Test_Process_Model(unittest.TestCase):
         self.assertTrue(called)
 
 if __name__ == '__main__':
-    unittest.main()
+    unittest2.main()
