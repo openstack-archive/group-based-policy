@@ -10,18 +10,22 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+import functools
 import netaddr
 from neutron.callbacks import events
 from neutron.callbacks import registry
 from neutron.callbacks import resources
-from neutron.common import constants as l3_constants
+from neutron.common import utils
 from neutron.db import api as db_api
 from neutron.db import l3_db
 from neutron.db import models_v2
 from neutron.db import securitygroups_db
 from neutron.plugins.ml2 import db as ml2_db
+from neutron.tests import tools
+from neutron_lib import constants
 from oslo_log import log
 from sqlalchemy import event
+import warnings
 
 LOG = log.getLogger(__name__)
 
@@ -31,7 +35,7 @@ LOG = log.getLogger(__name__)
 # API.
 def create_floatingip(
         self, context, floatingip,
-        initial_status=l3_db.l3_constants.FLOATINGIP_STATUS_ACTIVE):
+        initial_status=constants.FLOATINGIP_STATUS_ACTIVE):
     fip = floatingip['floatingip']
     tenant_id = self._get_tenant_id_for_create(context, fip)
     fip_id = l3_db.uuidutils.generate_uuid()
@@ -53,7 +57,7 @@ def create_floatingip(
                 'admin_state_up': True,
                 'device_id': fip_id,
                 'device_owner': l3_db.DEVICE_OWNER_FLOATINGIP,
-                'status': l3_db.l3_constants.PORT_STATUS_NOTAPPLICABLE,
+                'status': constants.PORT_STATUS_NOTAPPLICABLE,
                 'name': ''}
 
         if fip.get('floating_ip_address'):
@@ -122,7 +126,7 @@ def _update_fip_assoc(self, context, fip, floatingip_db, external_port):
         if gw_port:
             for fixed_ip in gw_port.fixed_ips:
                 addr = netaddr.IPAddress(fixed_ip.ip_address)
-                if addr.version == l3_constants.IP_VERSION_4:
+                if addr.version == constants.IP_VERSION_4:
                     next_hop = fixed_ip.ip_address
                     break
     args = {'fixed_ip_address': internal_ip_address,
@@ -202,10 +206,9 @@ def get_session(autocommit=True, expire_on_commit=False, use_slave=False):
     # The following two lines are copied from the original
     # implementation of db_api.get_session() and should be updated
     # if the original implementation changes.
-    facade = db_api._create_facade_lazily()
-    new_session = facade.get_session(autocommit=autocommit,
-                                     expire_on_commit=expire_on_commit,
-                                     use_slave=use_slave)
+    new_session = db_api.context_manager.get_legacy_facade().get_session(
+        autocommit=autocommit, expire_on_commit=expire_on_commit,
+        use_slave=use_slave)
 
     new_session.notification_queue = {}
 
@@ -231,3 +234,28 @@ def get_session(autocommit=True, expire_on_commit=False, use_slave=False):
 
 
 db_api.get_session = get_session
+
+
+def transaction_guard(f):
+    # We do not want to enforce transaction guard since
+    @functools.wraps(f)
+    def inner(self, context, *args, **kwargs):
+        return f(self, context, *args, **kwargs)
+    return inner
+
+
+utils.transaction_guard = transaction_guard
+
+
+# If the following commit is backported to Neutron stable/netwon
+# https://github.com/openstack/neutron/commit/
+# afab7c67011fad40fec87749679137d31aa20540
+# then this patch can be removed.
+def _setUpWarningsFixtureWarnOnce(self):
+    self.addCleanup(warnings.resetwarnings)
+    for wtype in self.warning_types:
+        warnings.filterwarnings("once", category=wtype,
+                                module='^neutron\\.')
+
+
+tools.WarningsFixture. _setUp = _setUpWarningsFixtureWarnOnce

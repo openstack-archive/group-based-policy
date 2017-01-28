@@ -153,14 +153,14 @@ class ApicAimTestCase(test_address_scope.AddressScopeTestCase,
             'L3_ROUTER_NAT':
             'gbpservice.neutron.services.apic_aim.l3_plugin.ApicL3Plugin'}
 
+        super(ApicAimTestCase, self).setUp(PLUGIN_NAME,
+                                           service_plugins=service_plugins)
+        import pdb; pdb.set_trace()
         engine = db_api.get_engine()
         aim_model_base.Base.metadata.create_all(engine)
         self.db_session = db_api.get_session()
-
         self.initialize_db_config(self.db_session)
 
-        super(ApicAimTestCase, self).setUp(PLUGIN_NAME,
-                                           service_plugins=service_plugins)
         ext_mgr = extensions.PluginAwareExtensionManager.get_instance()
         self.ext_api = test_extensions.setup_extensions_middleware(ext_mgr)
         self.port_create_status = 'DOWN'
