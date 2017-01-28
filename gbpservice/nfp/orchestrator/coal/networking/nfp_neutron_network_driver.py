@@ -80,9 +80,12 @@ class NFPNeutronNetworkDriver(ndb.NFPNetworkDriverBase):
             port_security = False
         else:
             port_security = True
-        self.neutron_client.update_port(token, port_id,
-                                        security_groups=[],
-                                        port_security_enabled=port_security)
+        try:
+            self.neutron_client.update_port(token, port_id,
+                    security_groups=[],
+                    port_security_enabled=port_security)
+        except Exception:
+            pass
 
     def get_service_profile(self, token, service_profile_id):
         return {}
