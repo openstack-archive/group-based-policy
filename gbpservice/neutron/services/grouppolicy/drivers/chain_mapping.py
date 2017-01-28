@@ -13,8 +13,8 @@
 from keystoneclient import exceptions as k_exceptions
 from keystoneclient.v2_0 import client as k_client
 from neutron._i18n import _LE
-from neutron.db import model_base
 from neutron.db import models_v2
+from neutron_lib.db import model_base
 from oslo_config import cfg
 from oslo_log import helpers as log
 from oslo_log import log as logging
