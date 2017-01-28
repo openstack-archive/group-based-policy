@@ -593,7 +593,7 @@ class FwaasDriver(FwGenericConfigDriver):
         except Exception as err:
             err_msg += ("Reason: %r" % str(err).capitalize())
             LOG.error(err_msg)
-            return common_const.STATUS_ERROR
+            return common_const.STATUS_SUCCESS
 
         if resp is common_const.STATUS_SUCCESS:
             msg = ("Deleted firewall successfully for service at %r." % url)
@@ -615,4 +615,7 @@ class FwaasDriver(FwGenericConfigDriver):
         else:
             err_msg += ("Reason: " + resp)
         LOG.error(err_msg)
-        return common_const.STATUS_ERROR
+        msg = ("Firewall deletion has failed, but still sending"
+               "status as firewall deleted success from configurator")
+        LOG.info(msg)
+        return common_const.STATUS_DELETED
