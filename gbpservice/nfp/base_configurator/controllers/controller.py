@@ -166,7 +166,7 @@ class Controller(base_controller.BaseController):
                 resource_id = (context['nfp_context']['nfp_context']['id']
                     if context.get('nfp_context') and
                         context['nfp_context'].get('nfp_context') else '')
-                if operation == 'delete' and resource_id == 'PERFORM_CLEAR_HM':
+                if operation == 'delete':
                     return
                 is_vm_reachable = self._verify_vm_reachability(ip,
                                                                self.vm_port)
