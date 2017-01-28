@@ -13,13 +13,14 @@
 from neutron.api import extensions
 from neutron.api.v2 import attributes
 from neutron.common import constants
+from neutron_lib.api import converters as conv
 
 
 EXTENDED_ATTRIBUTES_2_0 = {
     attributes.SUBNETPOOLS: {
         'is_implicit': {'allow_post': True, 'allow_put': True,
                         'default': False,
-                        'convert_to': attributes.convert_to_boolean,
+                        'convert_to': conv.convert_to_boolean,
                         'is_visible': True, 'required_by_policy': True,
                         'enforce_policy': True},
     },

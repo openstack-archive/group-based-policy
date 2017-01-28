@@ -13,7 +13,7 @@
 from gbpservice.nfp.proxy_agent.notifications import pull
 import mock
 from neutron import context as ctx
-import unittest
+import unittest2
 
 from neutron.common import rpc as n_rpc
 from oslo_config import cfg
@@ -33,7 +33,7 @@ class TestContext(object):
 """Common class for pull notification tests"""
 
 
-class PullNotificationTestCase(unittest.TestCase):
+class PullNotificationTestCase(unittest2.TestCase):
 
     def setUp(self):
         n_rpc.init(cfg.CONF)

@@ -13,11 +13,12 @@
 import ast
 
 from neutron._i18n import _LE
+from neutron.common import exceptions as n_exc
 from neutron.db import common_db_mixin
-from neutron.db import model_base
 from neutron.db import models_v2
 from neutron import manager
 from neutron.plugins.common import constants as pconst
+from neutron_lib.db import model_base
 from oslo_log import helpers as log
 from oslo_log import log as logging
 from oslo_serialization import jsonutils
@@ -157,6 +158,17 @@ class ServiceChainDbPlugin(schain.ServiceChainPluginBase,
             LOG.error(_LE("No Grouppolicy service plugin found."))
             raise s_exc.ServiceChainDeploymentError()
         return grouppolicy_plugin
+
+    def _get_tenant_id_for_create(self, context, resource):
+        if context.is_admin and 'tenant_id' in resource:
+            tenant_id = resource['tenant_id']
+        elif ('tenant_id' in resource and
+              resource['tenant_id'] != context.tenant_id):
+            reason = _('Cannot create resource for another tenant')
+            raise n_exc.AdminRequired(reason=reason)
+        else:
+            tenant_id = context.tenant_id
+            return tenant_id
 
     def _get_servicechain_node(self, context, node_id):
         try:
