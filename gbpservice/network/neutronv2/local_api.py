@@ -14,6 +14,7 @@
 from neutron._i18n import _LE
 from neutron._i18n import _LW
 from neutron.api.rpc.agentnotifiers import dhcp_rpc_agent_api
+from neutron.callbacks import registry
 from neutron.common import constants as const
 from neutron.common import exceptions as n_exc
 from neutron.extensions import address_scope
@@ -45,23 +46,62 @@ def get_outer_transaction(transaction):
 
 
 BATCH_NOTIFICATIONS = False
+NOVA_NOTIFIER_METHOD = 'send_network_change'
+DHCP_NOTIFIER_METHOD = 'notify'
 NOTIFIER_REF = 'notifier_object_reference'
 NOTIFIER_METHOD = 'notifier_method_name'
 NOTIFICATION_ARGS = 'notification_args'
+REGISTRY_RESOURCE = 'registry_resource'
+REGISTRY_EVENT = 'registry_event'
+REGISTRY_TRIGGER = 'registry_trigger'
 
 
-def _queue_notification(session, transaction_key, notifier_obj,
-                        notifier_method, args):
-    entry = {NOTIFIER_REF: notifier_obj, NOTIFIER_METHOD: notifier_method,
-             NOTIFICATION_ARGS: args}
+def _enqueue(session, transaction_key, entry):
     if transaction_key not in session.notification_queue:
         session.notification_queue[transaction_key] = [entry]
     else:
         session.notification_queue[transaction_key].append(entry)
 
 
+def _queue_notification(session, transaction_key, notifier_obj,
+                        notifier_method, args):
+    entry = {NOTIFIER_REF: notifier_obj, NOTIFIER_METHOD: notifier_method,
+             NOTIFICATION_ARGS: args}
+    _enqueue(session, transaction_key, entry)
+
+
+def _queue_registry_notification(session, transaction_key, resource,
+                                 event, trigger, **kwargs):
+    entry = {REGISTRY_RESOURCE: resource, REGISTRY_EVENT: event,
+             REGISTRY_TRIGGER: trigger, NOTIFICATION_ARGS: kwargs}
+    _enqueue(session, transaction_key, entry)
+
+
 def send_or_queue_notification(session, transaction_key, notifier_obj,
                                notifier_method, args):
+    rname = ''
+    if notifier_method == NOVA_NOTIFIER_METHOD:
+        # parse argument like "create_subnetpool"
+        rname = args[0].split('_', 1)[1]
+        event_name = 'after_' + args[0].split('_')[0]
+        registry_method = getattr(notifier_obj,
+                                  '_send_nova_notification')
+    elif notifier_method == DHCP_NOTIFIER_METHOD:
+        # parse argument like "subnetpool.create.end"
+        rname = args[2].split('.')[0]
+        event_name = 'after_' + args[2].split('.')[1]
+        registry_method = getattr(notifier_obj,
+                                  '_native_event_send_dhcp_notification')
+    if rname:
+        cbacks = registry._get_callback_manager()._callbacks.get(rname, None)
+        if cbacks and event_name in cbacks.keys():
+            for entry in cbacks.values():
+                method = entry.values()[0]
+                if registry_method == method:
+                    # This notification is already being sent by Neutron
+                    # soe we will avoid sending a duplicate notification
+                    return
+
     if not transaction_key or 'subnet.delete.end' in args:
         # We make an exception for the dhcp agent notification
         # for subnet delete since the implementation for sending
@@ -76,11 +116,34 @@ def send_or_queue_notification(session, transaction_key, notifier_obj,
                         notifier_method, args)
 
 
+def send_or_queue_registry_notification(
+    session, transaction_key, resource, event, trigger, **kwargs):
+    if not transaction_key or event == 'subnet.delete.end':
+        # We make an exception for the dhcp agent notification
+        # for subnet delete since the implementation for sending
+        # that notification checks for the existence of the
+        # subnet's network, which is not present in certain
+        # cases if the subnet delete notification is queued
+        # and sent after the network delete.
+        registry._get_callback_manager().notify(resource, event, trigger,
+                                                **kwargs)
+        return
+
+    _queue_registry_notification(session, transaction_key, resource,
+                                 event, trigger, **kwargs)
+
+
 def post_notifications_from_queue(session, transaction_key):
     queue = session.notification_queue[transaction_key]
     for entry in queue:
-        getattr(entry[NOTIFIER_REF],
-                entry[NOTIFIER_METHOD])(*entry[NOTIFICATION_ARGS])
+        if REGISTRY_RESOURCE in entry:
+            registry.notify(entry[REGISTRY_RESOURCE],
+                            entry[REGISTRY_EVENT],
+                            entry[REGISTRY_TRIGGER],
+                            **entry[NOTIFICATION_ARGS])
+        else:
+            getattr(entry[NOTIFIER_REF],
+                    entry[NOTIFIER_METHOD])(*entry[NOTIFICATION_ARGS])
     del session.notification_queue[transaction_key]
 
 
@@ -166,15 +229,15 @@ class LocalAPI(object):
         else:
             args = [action, {}, {resource: obj}]
         send_or_queue_notification(context._session,
-            outer_transaction, self._nova_notifier,
-            'send_network_change', args)
+                                   outer_transaction, self._nova_notifier,
+                                   NOVA_NOTIFIER_METHOD, args)
         # REVISIT(rkukura): Do create.end notification?
         if cfg.CONF.dhcp_agent_notification:
             action_state = ".%s.end" % action.split('_')[0]
             args = [context, {resource: obj}, resource + action_state]
-            send_or_queue_notification(context._session,
-                outer_transaction, self._dhcp_agent_notifier,
-                'notify', args)
+            send_or_queue_notification(
+                context._session, outer_transaction,
+                self._dhcp_agent_notifier, DHCP_NOTIFIER_METHOD, args)
 
     def _create_resource(self, plugin, context, resource, attrs,
                          do_notify=True, clean_session=True):
@@ -184,7 +247,7 @@ class LocalAPI(object):
             dummy_context_mgr()):
             reservation = None
             if plugin in [self._group_policy_plugin,
-                    self._servicechain_plugin]:
+                          self._servicechain_plugin]:
                 reservation = quota.QUOTAS.make_reservation(
                         context, context.tenant_id, {resource: 1}, plugin)
             action = 'create_' + resource

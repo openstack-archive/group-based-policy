@@ -13,7 +13,7 @@
 from gbpservice.nfp.proxy_agent.modules import proxy_agent
 import mock
 from neutron import context as ctx
-import unittest
+import unittest2
 
 rpc_manager = proxy_agent.RpcHandler
 
@@ -29,7 +29,7 @@ class TestContext(object):
 "Common class for proxy agent test cases"
 
 
-class ConfigAgentProxyTestCase(unittest.TestCase):
+class ConfigAgentProxyTestCase(unittest2.TestCase):
 
     def setUp(self):
         self.manager = rpc_manager('conf', 'sc')
@@ -80,4 +80,4 @@ class ConfigAgentProxyTestCase(unittest.TestCase):
                 self.context, _data)
 
 if __name__ == "__main__":
-    unittest.main()
+    unittest2.main()
