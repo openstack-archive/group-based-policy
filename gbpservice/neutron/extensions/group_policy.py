@@ -209,6 +209,8 @@ gp_supported_protocols = [None, n_constants.PROTO_NAME_TCP,
 gp_network_service_param_types = [
     gp_constants.GP_NETWORK_SVC_PARAM_TYPE_IP_SINGLE,
     gp_constants.GP_NETWORK_SVC_PARAM_TYPE_IP_POOL,
+    gp_constants.GP_NETWORK_SVC_PARAM_TYPE_QOS_MAX,    # expects integer value
+    gp_constants.GP_NETWORK_SVC_PARAM_TYPE_QOS_BURST,  # expects integer value
     gp_constants.GP_NETWORK_SVC_PARAM_TYPE_STRING]
 gp_network_service_param_keys = [
     gp_constants.GP_NETWORK_SVC_PARAM_TYPE,
@@ -319,7 +321,9 @@ def _validate_network_svc_params(data, key_specs=None):
                 d['type'])
             LOG.debug(msg)
             return msg
-        if d['type'] != gp_constants.GP_NETWORK_SVC_PARAM_TYPE_STRING:
+        if d['type'] not in (gp_constants.GP_NETWORK_SVC_PARAM_TYPE_STRING,
+                             gp_constants.GP_NETWORK_SVC_PARAM_TYPE_QOS_MAX,
+                             gp_constants.GP_NETWORK_SVC_PARAM_TYPE_QOS_BURST):
             if d['value'] not in gp_network_service_param_values:
                 msg = _("Network service param value '%s' is not "
                         "supported") % d['value']
