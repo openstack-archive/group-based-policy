@@ -13,7 +13,6 @@
 
 import copy
 import os
-import warnings
 import webob.exc
 
 from neutron.api import extensions
@@ -325,6 +324,8 @@ class GroupPolicyDbTestCase(GroupPolicyDBTestBase,
         if not service_plugins:
             service_plugins = {
                 'l3_plugin_name': 'router',
+                'flavors_plugin_name': 'neutron.services.flavors.'
+                                       'flavors_plugin.FlavorsPlugin',
                 'gp_plugin_name': gp_plugin,
                 'sc_plugin_name': sc_plugin}
 
@@ -334,7 +335,6 @@ class GroupPolicyDbTestCase(GroupPolicyDBTestBase,
             plugin=core_plugin, ext_mgr=ext_mgr,
             service_plugins=service_plugins
         )
-        warnings.resetwarnings()
         test_policy_file = ETCDIR + "/test-policy.json"
         policy.refresh(policy_file=test_policy_file)
         self.plugin = importutils.import_object(gp_plugin)

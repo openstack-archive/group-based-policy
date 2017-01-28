@@ -17,8 +17,8 @@ from neutron._i18n import _LE
 from neutron._i18n import _LI
 from neutron.api.v2 import attributes
 from neutron.db import db_base_plugin_v2
+from neutron.db.models import securitygroup as securitygroups_db
 from neutron.db import models_v2
-from neutron.db import securitygroups_db
 from neutron.extensions import address_scope as as_ext
 from neutron.plugins.ml2.common import exceptions as ml2_exc
 from neutron.plugins.ml2 import managers as ml2_managers

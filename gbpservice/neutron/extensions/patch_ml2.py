@@ -10,12 +10,12 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+from neutron import _i18n
 from neutron.api.v2 import attributes
 from neutron.common import exceptions as exc
 from neutron.common import ipv6_utils
 from neutron.db import db_base_plugin_v2
 from neutron.db import models_v2
-from neutron import i18n
 from neutron.plugins.ml2.common import exceptions as ml2_exc
 from neutron.plugins.ml2 import driver_context
 from neutron.plugins.ml2 import plugin
@@ -49,7 +49,7 @@ def delete_network(self, context, id):
     attempt = 0
     while True:
         attempt += 1
-        LOG.info(i18n._LI("Attempt %(attempt)s to delete network %(net)s"),
+        LOG.info(_i18n._LI("Attempt %(attempt)s to delete network %(net)s"),
                  {'attempt': attempt, 'net': id})
         if attempt > 100:
             raise InfiniteLoopError()
@@ -111,13 +111,14 @@ def delete_network(self, context, id):
             with excutils.save_and_reraise_exception() as ctxt:
                 if isinstance(e.inner_exception, sql_exc.IntegrityError):
                     ctxt.reraise = False
-                    LOG.warning(i18n._LW("A concurrent port creation has "
+                    LOG.warning(_i18n._LW("A concurrent port creation has "
                         "occurred"))
                     continue
-        LOG.info(i18n._LI("Auto-deleting ports %(ports)s for network %(net)s"),
-                 {'ports': ports, 'net': id})
+        LOG.info(_i18n._LI(
+            "Auto-deleting ports %(ports)s for network %(net)s"),
+            {'ports': ports, 'net': id})
         self._delete_ports(context, port_ids)
-        LOG.info(i18n._LI("Auto-deleting subnets %(subnets)s for network "
+        LOG.info(_i18n._LI("Auto-deleting subnets %(subnets)s for network "
                           "%(net)s"), {'subnets': subnets, 'net': id})
         self._delete_subnets(context, subnet_ids)
 
@@ -127,7 +128,7 @@ def delete_network(self, context, id):
         # TODO(apech) - One or more mechanism driver failed to
         # delete the network.  Ideally we'd notify the caller of
         # the fact that an error occurred.
-        LOG.error(i18n._LE("mechanism_manager.delete_network_postcommit"
+        LOG.error(_i18n._LE("mechanism_manager.delete_network_postcommit"
             " failed"))
     self.notifier.network_delete(context, id)
 
@@ -150,7 +151,7 @@ def delete_subnet(self, context, id):
     attempt = 0
     while True:
         attempt += 1
-        LOG.info(i18n._LI("Attempt %(attempt)s to delete subnet %(subnet)s"),
+        LOG.info(_i18n._LI("Attempt %(attempt)s to delete subnet %(subnet)s"),
                  {'attempt': attempt, 'subnet': id})
         if attempt > 100:
             raise InfiniteLoopError()
@@ -189,7 +190,7 @@ def delete_subnet(self, context, id):
                     user_alloc = self._subnet_get_user_allocation(
                         context, id)
                     if user_alloc:
-                        LOG.info(i18n._LI("Found port (%(port_id)s, %(ip)s) "
+                        LOG.info(_i18n._LI("Found port (%(port_id)s, %(ip)s) "
                             "having IP allocation on subnet "
                             "%(subnet)s, cannot delete"),
                             {'ip': user_alloc.ip_address,
@@ -240,7 +241,7 @@ def delete_subnet(self, context, id):
                     LOG.debug("Port %s deleted concurrently", a.port_id)
                 except Exception:
                     with excutils.save_and_reraise_exception():
-                        LOG.exception(i18n._LE("Exception deleting fixed_ip "
+                        LOG.exception(_i18n._LE("Exception deleting fixed_ip "
                             "from port %s"), a.port_id)
 
     try:
@@ -249,7 +250,7 @@ def delete_subnet(self, context, id):
         # TODO(apech) - One or more mechanism driver failed to
         # delete the subnet.  Ideally we'd notify the caller of
         # the fact that an error occurred.
-        LOG.error(i18n._LE(
+        LOG.error(_i18n._LE(
             "mechanism_manager.delete_subnet_postcommit failed"))
 
 plugin.Ml2Plugin.delete_subnet = delete_subnet
