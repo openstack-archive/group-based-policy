@@ -24,6 +24,7 @@ function gbp_configure_neutron {
     iniset $NEUTRON_CONF quotas quota_security_group_rule "-1"
     iniset $NEUTRON_CONF quotas quota_router "-1"
     iniset $NEUTRON_CONF quotas quota_floatingip "-1"
+    iniset $NEUTRON_CONF agent extensions "qos"
 }
 
 function nfp_configure_neutron {
