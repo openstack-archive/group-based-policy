@@ -22,6 +22,7 @@ from neutron.tests.unit.api import test_extensions
 from neutron.tests.unit.db import test_db_base_plugin_v2 as test_plugin
 from neutron.tests.unit.extensions import test_address_scope
 
+from gbpservice.neutron.db import implicitsubnetpool_db  # noqa
 import gbpservice.neutron.extensions
 from gbpservice.neutron.tests.unit.plugins.ml2plus.drivers import (
     mechanism_logger as mech_logger)
