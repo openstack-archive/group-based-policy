@@ -158,6 +158,8 @@ class Controller(base_controller.BaseController):
             resource = config_data['resource']
             operation = context['operation']
 
+            msg = ("Request recieved :: %s" % body)
+            LOG.info(msg)
             if 'device_ip' in context:
                 msg = ("POSTING DATA TO VM :: %s" % body)
                 LOG.info(msg)
@@ -174,6 +176,8 @@ class Controller(base_controller.BaseController):
                     requests.post(
                         'http://' + ip + ':' + self.vm_port + '/v1/nfp/' +
                         self.method_name, data=jsonutils.dumps(body))
+                    msg = ("requests successfull for data: %s" % body)
+                    LOG.info(msg)
                 else:
                     raise Exception('VM is not reachable')
                 cache_ips.add(device_ip)
