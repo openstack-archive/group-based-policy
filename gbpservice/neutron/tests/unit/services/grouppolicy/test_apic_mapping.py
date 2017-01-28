@@ -24,14 +24,14 @@ from apic_ml2.neutron.db import port_ha_ipaddress_binding as ha_ip_db
 from apic_ml2.neutron.tests.unit.ml2.drivers.cisco.apic import (
     test_cisco_apic_common as mocked)
 from apicapi import apic_mapper
-from neutron.agent import securitygroups_rpc as sg_cfg
 from neutron.common import rpc as n_rpc
+from neutron.conf.agent import securitygroups_rpc as sg_cfg
 from neutron import context
 from neutron.db import api as db_api
 from neutron.db import db_base_plugin_v2 as n_db
-from neutron.db import model_base
 from neutron.extensions import portbindings
 from neutron import manager
+from neutron_lib.db import model_base
 from opflexagent import constants as ocst
 from oslo_config import cfg
 from oslo_serialization import jsonutils
@@ -75,7 +75,7 @@ BOOKED_PORT_VALUE = 'myBookedPort'
 
 
 def echo(context, string, prefix=''):
-    return prefix + string
+    return prefix + (string or '')
 
 
 class MockCallRecorder(mock.Mock):
@@ -334,6 +334,9 @@ class ApicMappingTestCase(
         return super(ApicMappingTestCase, self)._bind_port_to_host(
             port_id, host, data=data)
 
+    def _check_ip_in_cidr(self, ip_addr, cidr):
+        self.assertTrue(netaddr.IPAddress(ip_addr) in netaddr.IPNetwork(cidr))
+
 
 class ApicMappingVlanTestCase(ApicMappingTestCase):
 
@@ -518,8 +521,11 @@ class TestPolicyTarget(ApicMappingTestCase):
             mapping['host_snat_ips'][0]['external_segment_name'])
         self.assertEqual("192.168.200.1",
             mapping['host_snat_ips'][0]['gateway_ip'])
-        self.assertEqual("192.168.200.2",
-            mapping['host_snat_ips'][0]['host_snat_ip'])
+        self.assertTrue(netaddr.IPAddress(
+            mapping['host_snat_ips'][0]['host_snat_ip']) in
+            netaddr.IPNetwork(
+                self.driver.apic_manager.ext_net_dict[
+                    'supported']['host_pool_cidr']))
         self.assertEqual(24, mapping['host_snat_ips'][0]['prefixlen'])
 
         # Verify Neutron details
@@ -540,8 +546,11 @@ class TestPolicyTarget(ApicMappingTestCase):
             mapping['host_snat_ips'][0]['external_segment_name'])
         self.assertEqual("192.168.200.1",
             mapping['host_snat_ips'][0]['gateway_ip'])
-        self.assertEqual("192.168.200.3",
-            mapping['host_snat_ips'][0]['host_snat_ip'])
+        self.assertTrue(netaddr.IPAddress(
+            mapping['host_snat_ips'][0]['host_snat_ip']) in
+            netaddr.IPNetwork(
+                self.driver.apic_manager.ext_net_dict[
+                    'supported']['host_pool_cidr']))
         self.assertEqual(24, mapping['host_snat_ips'][0]['prefixlen'])
         self.assertEqual(100, mapping['dhcp_lease_time'])
         self.assertEqual(1000, mapping['interface_mtu'])
@@ -710,8 +719,9 @@ class TestPolicyTarget(ApicMappingTestCase):
             mapping['host_snat_ips'][0]['external_segment_name'])
         self.assertEqual("192.168.200.1",
             mapping['host_snat_ips'][0]['gateway_ip'])
-        self.assertEqual("192.168.200.2",
-            mapping['host_snat_ips'][0]['host_snat_ip'])
+        self._check_ip_in_cidr(mapping['host_snat_ips'][0]['host_snat_ip'],
+                               self.driver.apic_manager.ext_net_dict[
+                                   'supported']['host_pool_cidr'])
         self.assertEqual(24, mapping['host_snat_ips'][0]['prefixlen'])
         self.update_l3_policy(l3p['id'], external_segments={},
                 expected_res_status=200)
@@ -2536,7 +2546,7 @@ class TestL2PolicyWithAutoPTG(TestL2PolicyBase):
         super(TestL2PolicyWithAutoPTG, self).setUp(**kwargs)
         self._neutron_context = context.Context(
             '', kwargs.get('tenant_id', self._tenant_id),
-            is_admin_context=False)
+            is_admin=False)
 
     def _test_auto_ptg_created(self, shared=False):
         ptg = self._gbp_plugin.get_policy_target_groups(
@@ -2780,7 +2790,9 @@ class TestL3Policy(ApicMappingTestCase):
             expected_res_status=201)['l3_policy']
 
         self.assertEqual(1, len(l3p['external_segments'][es['id']]))
-        self.assertEqual('169.254.0.2', l3p['external_segments'][es['id']][0])
+        self._check_ip_in_cidr(l3p['external_segments'][es['id']][0],
+                               self._show_subnet(
+                                   es['subnet_id'])['subnet']['cidr'])
 
         expected_epg_calls = []
         expected_contract_calls = []
@@ -2995,7 +3007,10 @@ class TestL3Policy(ApicMappingTestCase):
             external_segments={es['id']: []},
             expected_res_status=200)['l3_policy']
         self.assertEqual(1, len(l3p['external_segments'][es['id']]))
-        self.assertEqual('169.254.0.2', l3p['external_segments'][es['id']][0])
+        self.assertTrue(
+            netaddr.IPAddress(l3p['external_segments'][es['id']][0]) in
+            netaddr.IPNetwork(
+                self._show_subnet(es['subnet_id'])['subnet']['cidr']))
 
         owner = self._tenant(es['tenant_id'], shared_es)
         l3p_owner = self._tenant(l3p['tenant_id'], shared_l3p)
@@ -3688,13 +3703,19 @@ class TestL3Policy(ApicMappingTestCase):
             external_segments={es1['id']: []},
             expected_res_status=201)['l3_policy']
 
-        self.assertEqual(['169.254.0.2'], l3p['external_segments'][es1['id']])
+        self._check_ip_in_cidr(l3p['external_segments'][es1['id']][0],
+                               self._show_subnet(
+                                   es1['subnet_id'])['subnet']['cidr'])
 
         l3p = self.update_l3_policy(
             l3p['id'], expected_res_status=200,
             external_segments={es1['id']: [], es2['id']: []})['l3_policy']
-        self.assertEqual(['169.254.0.2'], l3p['external_segments'][es1['id']])
-        self.assertEqual(['169.254.0.2'], l3p['external_segments'][es2['id']])
+        self._check_ip_in_cidr(l3p['external_segments'][es1['id']][0],
+                               self._show_subnet(
+                                   es1['subnet_id'])['subnet']['cidr'])
+        self._check_ip_in_cidr(l3p['external_segments'][es2['id']][0],
+                               self._show_subnet(
+                                   es2['subnet_id'])['subnet']['cidr'])
 
         # Address IP changed
         l3p = self.update_l3_policy(
@@ -3702,7 +3723,9 @@ class TestL3Policy(ApicMappingTestCase):
             external_segments={es1['id']: ['169.254.0.3'],
                                es2['id']: []})['l3_policy']
         self.assertEqual(['169.254.0.3'], l3p['external_segments'][es1['id']])
-        self.assertEqual(['169.254.0.2'], l3p['external_segments'][es2['id']])
+        self._check_ip_in_cidr(l3p['external_segments'][es2['id']][0],
+                               self._show_subnet(
+                                   es2['subnet_id'])['subnet']['cidr'])
 
     def _test_multi_es_with_ptg(self, shared_es):
         self._mock_external_dict([('supported1', '192.168.0.2/24'),
@@ -4839,8 +4862,9 @@ class TestExternalSegment(ApicMappingTestCase):
         l3p = self.create_l3_policy()['l3_policy']
         self.assertEqual(es['id'],
                          l3p['external_segments'].keys()[0])
-        self.assertEqual('169.254.0.2',
-                         l3p['external_segments'][es['id']][0])
+        self._check_ip_in_cidr(l3p['external_segments'][es['id']][0],
+                               self._show_subnet(
+                                   es['subnet_id'])['subnet']['cidr'])
 
     def _do_test_plug_l3p_to_es_with_multi_ep(self):
         # this mode is not supported
@@ -6024,7 +6048,8 @@ class TestNatPool(ApicMappingTestCase):
         subnet = self._get_object('subnets', es['subnet_id'],
             self.api)['subnet']
 
-        fip_dict = {'floating_network_id': subnet['network_id']}
+        fip_dict = {'floating_network_id': subnet['network_id'],
+                    'tenant_id': es['tenant_id']}
         fip = self.l3plugin.create_floatingip(
             context.get_admin_context(),
             {'floatingip': fip_dict,
