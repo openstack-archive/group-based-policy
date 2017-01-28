@@ -152,7 +152,7 @@ class TestGroupPolicyPluginGroupResources(
         # Current node with profile
         plugin_context = n_ctx.get_admin_context()
         plugin_context.is_admin = plugin_context.is_advsvc = False
-        plugin_context.tenant_id = 'test-tenant'
+        plugin_context.tenant_id = self._tenant_id
 
         prof = self.create_service_profile(
             service_type='LOADBALANCER')['service_profile']

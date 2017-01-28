@@ -74,7 +74,8 @@ class ServiceChainExtensionTestCase(test_extensions_base.ExtensionTestCase):
                 'service_type': None,
             }
         }
-        default_attrs = cm.get_create_servicechain_node_default_attrs()
+        default_attrs = (
+            cm.get_create_servicechain_node_default_attrs_and_prj_id())
         default_data = copy.copy(data)
         default_data['servicechain_node'].update(default_attrs)
         expected_value = dict(default_data['servicechain_node'])
@@ -170,7 +171,8 @@ class ServiceChainExtensionTestCase(test_extensions_base.ExtensionTestCase):
                 'nodes': [_uuid(), _uuid()], 'tenant_id': _uuid()
             }
         }
-        default_attrs = cm.get_create_servicechain_spec_default_attrs()
+        default_attrs = (
+            cm.get_create_servicechain_spec_default_attrs_and_prj_id())
         default_data = copy.copy(data)
         default_data['servicechain_spec'].update(default_attrs)
         expected_value = dict(default_data['servicechain_spec'])
@@ -271,7 +273,8 @@ class ServiceChainExtensionTestCase(test_extensions_base.ExtensionTestCase):
                 'classifier_id': _uuid(),
             }
         }
-        default_attrs = cm.get_create_servicechain_instance_default_attrs()
+        default_attrs = (
+            cm.get_create_servicechain_instance_default_attrs_and_prj_id())
         default_data = copy.copy(data)
         default_data['servicechain_instance'].update(default_attrs)
         expected_value = dict(default_data['servicechain_instance'])

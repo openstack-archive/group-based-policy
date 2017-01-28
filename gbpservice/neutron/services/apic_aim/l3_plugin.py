@@ -18,6 +18,7 @@ from neutron._i18n import _LI
 from neutron.api import extensions
 from neutron.db import common_db_mixin
 from neutron.db import db_base_plugin_v2
+from neutron.db import dns_db
 from neutron.db import extraroute_db
 from neutron.db import l3_gwmode_db
 from neutron.extensions import l3
@@ -37,10 +38,11 @@ LOG = logging.getLogger(__name__)
 class ApicL3Plugin(common_db_mixin.CommonDbMixin,
                    extraroute_db.ExtraRoute_db_mixin,
                    l3_gwmode_db.L3_NAT_db_mixin,
-                   extn_db.ExtensionDbMixin):
+                   extn_db.ExtensionDbMixin,
+                   dns_db.DNSDbMixin):
 
     supported_extension_aliases = ["router", "ext-gw-mode", "extraroute",
-                                   "cisco-apic-l3"]
+                                   "cisco-apic-l3", "dns-integration"]
 
     @staticmethod
     def get_plugin_type():

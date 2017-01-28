@@ -18,9 +18,9 @@ from heatclient import exc as heat_exc
 from keystoneclient.v2_0 import client as keyclient
 from neutron._i18n import _LE
 from neutron._i18n import _LW
-from neutron.db import model_base
 from neutron import manager
 from neutron.plugins.common import constants as pconst
+from neutron_lib.db import model_base
 from oslo_config import cfg
 from oslo_log import helpers as log
 from oslo_log import log as logging
