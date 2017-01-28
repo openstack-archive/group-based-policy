@@ -17,3 +17,15 @@ import pbr.version
 
 __version__ = pbr.version.VersionInfo(
     'group-based-policy').version_string()
+
+
+from oslo_db.sqlalchemy import enginefacade
+
+
+@property
+def noop_writer(self):
+    """Override TransactionContextManager cloning"""
+    return self
+
+
+enginefacade._TransactionContextManager.writer = noop_writer

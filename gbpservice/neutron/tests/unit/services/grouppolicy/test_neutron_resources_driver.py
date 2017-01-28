@@ -14,10 +14,10 @@
 import mock
 from neutron import context as nctx
 from neutron.db import api as db_api
-from neutron.db import model_base
 from neutron import manager
 from neutron.plugins.common import constants as pconst
 from neutron.tests.unit.plugins.ml2 import test_plugin as n_test_plugin
+from neutron_lib.db import model_base
 import webob.exc
 
 from gbpservice.neutron.services.grouppolicy import config
