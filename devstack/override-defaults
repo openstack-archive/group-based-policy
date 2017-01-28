@@ -3,6 +3,7 @@ NEUTRON_CREATE_INITIAL_NETWORKS="False"
 ENABLE_APIC_AIM=${ENABLE_APIC_AIM:-False}
 ENABLE_APIC_AIM_GATE=${ENABLE_APIC_AIM_GATE:-False}
 
+Q_ML2_PLUGIN_EXT_DRIVERS=${Q_ML2_PLUGIN_EXT_DRIVERS-qos}
 if [[ $ENABLE_APIC_AIM = True || $ENABLE_APIC_AIM_GATE = True ]]; then
     echo_summary "Overriding defaults for apic_aim"
 
