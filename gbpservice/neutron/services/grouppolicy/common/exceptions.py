@@ -234,9 +234,13 @@ class MultipleRedirectActionsNotSupportedForPRS(GroupPolicyBadRequest):
 
 
 class InvalidNetworkServiceParameters(GroupPolicyBadRequest):
-    message = _("Resource Mapping Driver currently supports only one "
-                "parameter of type: ip_single and value: self_subnet and one "
-                "parameter of type ip_single or ip_pool and value nat_pool")
+    message = _("Resource Mapping Driver currently supports Network Service "
+                "Parameters with the following types and values: "
+                "type: 'ip_single' value: 'self_subnet'; "
+                "type: 'ip_pool' value: 'nat_pool'; "
+                "type: 'ip_single' value: 'nat_pool'; "
+                "type: 'qos_maxrate' value: numerical equal to desired Kbps; "
+                "type: 'qos_burstrate' value: numerical equal to desired Kb.")
 
 
 class ESSubnetRequiredForNatPool(GroupPolicyBadRequest):
