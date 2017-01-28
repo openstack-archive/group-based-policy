@@ -11,6 +11,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from gbpservice.neutron.plugins.ml2plus import patch_neutron  # noqa
+
 import copy
 import hashlib
 import mock
@@ -36,6 +38,7 @@ from oslo_utils import uuidutils
 import webob.exc
 
 from gbpservice.network.neutronv2 import local_api
+from gbpservice.neutron.db.grouppolicy import group_policy_mapping_db  # noqa
 from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import (
     mechanism_driver as md)
 from gbpservice.neutron.services.grouppolicy.common import (
@@ -114,16 +117,15 @@ class AIMBaseTestCase(test_nr_base.CommonNeutronBaseTestCase,
                                                          'port_security'],
                                    'type_drivers': ['opflex', 'local', 'vlan'],
                                    'tenant_network_types': ['opflex']}
-        engine = db_api.get_engine()
-        aim_model_base.Base.metadata.create_all(engine)
         amap.ApicMappingDriver.get_apic_manager = mock.Mock()
-        self.db_session = db_api.get_session()
-        self.initialize_db_config(self.db_session)
         self._default_es_name = 'default'
         super(AIMBaseTestCase, self).setUp(
             policy_drivers=policy_drivers, core_plugin=core_plugin,
             ml2_options=ml2_opts, l3_plugin=l3_plugin,
             sc_plugin=sc_plugin)
+        aim_model_base.Base.metadata.create_all(self.engine)
+        self.db_session = db_api.get_session()
+        self.initialize_db_config(self.db_session)
         self.l3_plugin = manager.NeutronManager.get_service_plugins()[
             service_constants.L3_ROUTER_NAT]
         config.cfg.CONF.set_override('network_vlan_ranges',
@@ -136,10 +138,11 @@ class AIMBaseTestCase(test_nr_base.CommonNeutronBaseTestCase,
         self.saved_keystone_client = ksc_client.Client
         ksc_client.Client = test_aim_md.FakeKeystoneClient
 
-        self._tenant_id = 'test_tenant'
+        self.first_tenant_id = '46f70361-ba71-4bd0-9769-3573fd227c4b'
+        self._tenant_id = self.first_tenant_id
         self._neutron_context = nctx.Context(
             '', kwargs.get('tenant_id', self._tenant_id),
-            is_admin_context=False)
+            is_admin=False)
         self._neutron_context._session = self.db_session
         self._neutron_admin_context = nctx.get_admin_context()
 
@@ -248,7 +251,7 @@ class AIMBaseTestCase(test_nr_base.CommonNeutronBaseTestCase,
         return self._name_mapper
 
     def _switch_to_tenant1(self):
-        self._tenant_id = 'test_tenant'
+        self._tenant_id = self.first_tenant_id
         self._neutron_context.tenant = self._tenant_id
 
     def _switch_to_tenant2(self):
@@ -718,6 +721,9 @@ class AIMBaseTestCase(test_nr_base.CommonNeutronBaseTestCase,
         aim_contracts = self.aim_mgr.find(
             self._aim_context, aim_resource.Contract, name=aim_contract_name)
         self.assertEqual(0, len(aim_contracts))
+
+    def _check_ip_in_cidr(self, ip_addr, cidr):
+        self.assertTrue(netaddr.IPAddress(ip_addr) in netaddr.IPNetwork(cidr))
 
 
 class TestGBPStatus(AIMBaseTestCase):
@@ -1318,7 +1324,8 @@ class TestL3PolicyRollback(AIMBaseTestCase):
             side_effect=Exception)
         self.create_l3_policy(name="l3p1", expected_res_status=500)
         self.assertEqual([], self._plugin.get_address_scopes(self._context))
-        self.assertEqual([], self._plugin.get_subnetpools(self._context))
+        self.assertEqual([], self._plugin.get_subnetpools(self._context,
+                                                          filters={}))
         self.assertEqual([], self._l3_plugin.get_routers(self._context))
         self.assertEqual([], self._gbp_plugin.get_l3_policies(self._context))
         # restore mock
@@ -1348,7 +1355,8 @@ class TestL3PolicyRollback(AIMBaseTestCase):
         self.show_l3_policy(l3p_id, expected_res_status=200)
         self.assertEqual(
             1, len(self._plugin.get_address_scopes(self._context)))
-        self.assertEqual(1, len(self._plugin.get_subnetpools(self._context)))
+        self.assertEqual(1, len(self._plugin.get_subnetpools(self._context,
+                                                             filters={})))
         self.assertEqual(1, len(self._l3_plugin.get_routers(self._context)))
         # restore mock
         self.dummy.delete_l3_policy_precommit = orig_func
@@ -1661,7 +1669,7 @@ class TestL2PolicyWithAutoPTG(TestL2PolicyBase):
 
     def _test_epg_policy_enforcement_attr(self, ptg):
         aim_epg_name = self.driver.apic_epg_name_for_policy_target_group(
-            self._neutron_context.session, ptg['id'])
+            db_api.get_session(), ptg['id'])
         aim_epg = self.aim_mgr.find(
             self._aim_context, aim_resource.EndpointGroup,
             name=aim_epg_name)[0]
@@ -1685,7 +1693,7 @@ class TestL2PolicyWithAutoPTG(TestL2PolicyBase):
                                   expected_res_status=200)['l3_policy']
         ascopes = self._plugin.get_address_scopes(self._context)
         self.assertEqual(l3p['address_scope_v4_id'], ascopes[0]['id'])
-        subpools = self._plugin.get_subnetpools(self._context)
+        subpools = self._plugin.get_subnetpools(self._context, filters={})
         self.assertEqual(l3p['subnetpools_v4'], [subpools[0]['id']])
         self.assertEqual(l3p['address_scope_v4_id'],
                          subpools[0]['address_scope_id'])
@@ -1721,7 +1729,8 @@ class TestL2PolicyWithAutoPTG(TestL2PolicyBase):
         self.assertEqual([], self._plugin.get_subnets(self._context))
         self.assertEqual([], self._plugin.get_networks(self._context))
         self.assertEqual([], self._plugin.get_address_scopes(self._context))
-        self.assertEqual([], self._plugin.get_subnetpools(self._context))
+        self.assertEqual([], self._plugin.get_subnetpools(self._context,
+                                                          filters={}))
         self.assertEqual([], self._l3_plugin.get_routers(self._context))
 
     def test_auto_ptg_rbac(self):
@@ -2367,8 +2376,9 @@ class TestPolicyTarget(AIMBaseTestCase):
     def _verify_host_snat_ip_details(self, mapping, ext_segment_name,
                                      snat_ip, subnet_cidr):
         gw, prefix = subnet_cidr.split('/')
+        self._check_ip_in_cidr(snat_ip, subnet_cidr)
+        mapping['host_snat_ips'][0].pop('host_snat_ip', None)
         self.assertEqual({'external_segment_name': ext_segment_name,
-                          'host_snat_ip': snat_ip,
                           'gateway_ip': gw,
                           'prefixlen': int(prefix)},
                          mapping['host_snat_ips'][0])

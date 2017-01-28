@@ -12,7 +12,7 @@
 # limitations under the License.
 
 from neutron.db import api as db_api
-from neutron.db import model_base
+from neutron_lib.db import model_base
 from oslo_config import cfg
 import webob.exc
 

@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 
-# **gbp.sh**
+# **flavor.sh**
 
-# Sanity check that gbp started if enabled
+# Sanity check that flavors plugin works with gbp
 
 echo "*********************************************************************"
 echo "Begin DevStack Exercise: $0"
