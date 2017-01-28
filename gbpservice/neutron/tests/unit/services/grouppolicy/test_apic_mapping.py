@@ -101,7 +101,7 @@ class ApicMappingTestCase(
 
     def setUp(self, sc_plugin=None, nat_enabled=True,
               pre_existing_l3out=False, default_agent_conf=True,
-              ml2_options=None, single_tenant_mode=False):
+              ml2_options=None, single_tenant_mode=False, qos_plugin=None):
         self.saved_apicapi = sys.modules["apicapi"]
         sys.modules["apicapi"] = mock.Mock()
         if default_agent_conf:
@@ -142,7 +142,7 @@ class ApicMappingTestCase(
         nova_client.return_value = vm
         super(ApicMappingTestCase, self).setUp(
             policy_drivers=['implicit_policy', 'apic', 'chain_mapping'],
-            ml2_options=ml2_opts, sc_plugin=sc_plugin)
+            ml2_options=ml2_opts, sc_plugin=sc_plugin, qos_plugin=qos_plugin)
         engine = db_api.get_engine()
         model_base.BASEV2.metadata.create_all(engine)
         plugin = manager.NeutronManager.get_plugin()
