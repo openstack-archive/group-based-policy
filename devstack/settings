@@ -11,7 +11,7 @@ ConfiguratorQcow2Image=${ConfiguratorQcow2Image:-build}
 
 # Enable necessary Neutron plugins, including group_policy and ncp (L3
 # is set via ML2_L3_PLUGIN, so isn't listed here).
-Q_SERVICE_PLUGIN_CLASSES=group_policy,ncp
+Q_SERVICE_PLUGIN_CLASSES=group_policy,ncp,neutron.services.qos.qos_plugin.QoSPlugin
 
 # Preferred git mirror
 GIT_BASE=${GIT_BASE:-https://git.openstack.org}
