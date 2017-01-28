@@ -13,8 +13,22 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-from neutron.api import extensions
+from oslo_db.sqlalchemy import enginefacade
 
+
+@property
+def noop_writer(self):
+    """Override TransactionContextManager cloning"""
+    return self
+
+
+enginefacade._TransactionContextManager.writer = noop_writer
+
+
+from neutron.api import extensions
+from neutron.callbacks import registry
+
+from gbpservice.network.neutronv2 import local_api
 from gbpservice.neutron.plugins.ml2plus import extension_overrides
 
 # Monkeypatch Neutron to allow overriding its own extension
@@ -29,4 +43,15 @@ def get_extensions_path(service_plugins=None):
     path = _real_get_extensions_path(service_plugins)
     return extension_overrides.__path__[0] + ':' + path
 
+
 extensions.get_extensions_path = get_extensions_path
+
+
+def notify(resource, event, trigger, **kwargs):
+    session = kwargs['context'].session
+    txn = local_api.get_outer_transaction(session.transaction)
+    local_api.send_or_queue_registry_notification(
+        session, txn, resource, event, trigger, **kwargs)
+
+
+registry.notify = notify

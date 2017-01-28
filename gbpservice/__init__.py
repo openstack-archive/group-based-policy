@@ -17,3 +17,6 @@ import pbr.version
 
 __version__ = pbr.version.VersionInfo(
     'group-based-policy').version_string()
+
+
+from gbpservice.neutron.plugins.ml2plus import patch_neutron  # noqa
