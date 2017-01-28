@@ -34,15 +34,15 @@ from neutron.common import exceptions as n_exceptions
 from neutron.common import rpc as n_rpc
 from neutron.common import topics as n_topics
 from neutron.db import address_scope_db
-from neutron.db import allowedaddresspairs_db as n_addr_pair_db
 from neutron.db import api as db_api
 from neutron.db import l3_db
+from neutron.db.models import allowed_address_pair as n_addr_pair_db
 from neutron.db import models_v2
 from neutron.db import rbac_db_models
+from neutron.db import segments_db
 from neutron.extensions import portbindings
 from neutron import manager
 from neutron.plugins.common import constants as pconst
-from neutron.plugins.ml2 import db
 from neutron.plugins.ml2 import driver_api as api
 from neutron.plugins.ml2 import models
 from opflexagent import constants as ofcst
@@ -157,7 +157,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
         self.notifier = ofrpc.AgentNotifierApi(n_topics.AGENT)
         self.sg_enabled = securitygroups_rpc.is_firewall_enabled()
         # setup APIC topology RPC handler
-        self.topology_conn = n_rpc.create_connection(new=True)
+        self.topology_conn = n_rpc.create_connection()
         self.topology_conn.create_consumer(apic_topo_rpc.TOPIC_APIC_SERVICE,
                                            [self.TopologyRpcEndpoint(self)],
                                            fanout=False)
@@ -2297,7 +2297,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
 
     def _get_non_opflex_segments_on_host(self, context, host):
         session = context.session
-        segments = (session.query(models.NetworkSegment)
+        segments = (session.query(segments_db.NetworkSegment)
                     .join(models.PortBindingLevel)
                     .filter_by(host=host)
                     .all())
@@ -2307,7 +2307,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
             if (self._is_supported_non_opflex_type(seg[api.NETWORK_TYPE]) and
                     seg.network_id not in net_ids):
                 net = self.plugin.get_network(context, seg.network_id)
-                result.append((net, db._make_segment_dict(seg)))
+                result.append((net, segments_db._make_segment_dict(seg)))
                 net_ids.add(seg.network_id)
         return result
 

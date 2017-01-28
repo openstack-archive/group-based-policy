@@ -19,8 +19,8 @@ from sqlalchemy import sql
 from neutron.api.v2 import attributes as attr
 from neutron.common import exceptions as n_exc
 from neutron.db import db_base_plugin_v2
-from neutron.db import model_base
 from neutron.db import models_v2
+from neutron_lib.db import model_base
 
 
 class ImplicitSubnetpool(model_base.BASEV2):
