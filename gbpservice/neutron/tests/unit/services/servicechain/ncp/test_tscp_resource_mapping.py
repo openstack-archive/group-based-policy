@@ -51,12 +51,15 @@ class ResourceMappingStitchingPlumberGBPTestCase(
             'extension_drivers', ['proxy_group'], group='group_policy')
         cfg.CONF.set_override('node_plumber', 'stitching_plumber',
                               group='node_composition_plugin')
-        ml2_opts = {'mechanism_drivers': ['stitching_gbp']}
+        ml2_opts = {'mechanism_drivers': ['stitching_gbp'],
+                    'extension_drivers': ['qos']}
         host_agents = mock.patch('neutron.plugins.ml2.driver_context.'
                                  'PortContext.host_agents').start()
         host_agents.return_value = [self.agent_conf]
+        qos_plugin = 'qos'
         super(ResourceMappingStitchingPlumberGBPTestCase, self).setUp(
-            sc_plugin=base.SC_PLUGIN_KLASS, ml2_options=ml2_opts)
+            sc_plugin=base.SC_PLUGIN_KLASS, ml2_options=ml2_opts,
+            qos_plugin=qos_plugin)
 
         def get_plumbing_info(context):
             return info_mapping.get(context.current_profile['service_type'])
