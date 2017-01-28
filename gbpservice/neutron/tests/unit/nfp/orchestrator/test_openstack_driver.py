@@ -12,7 +12,7 @@
 
 import mock
 from oslo_config import cfg
-import unittest
+import unittest2
 
 from gbpclient.v2_0 import client as gbp_client
 from gbpservice.nfp.orchestrator.openstack import openstack_driver
@@ -24,7 +24,7 @@ cfg.CONF.import_group('nfp_keystone_authtoken',
                       'gbpservice.nfp.orchestrator.modules.__init__')
 
 
-class SampleData(unittest.TestCase):
+class SampleData(unittest2.TestCase):
 
     def __init__(self, *args, **kwargs):
         super(SampleData, self).__init__(*args, **kwargs)
