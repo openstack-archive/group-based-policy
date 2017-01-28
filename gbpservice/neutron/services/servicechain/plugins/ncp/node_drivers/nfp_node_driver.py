@@ -21,8 +21,8 @@ from neutron._i18n import _LE
 from neutron._i18n import _LI
 from neutron.common import exceptions as n_exc
 from neutron.common import rpc as n_rpc
-from neutron.db import model_base
 from neutron.plugins.common import constants as pconst
+from neutron_lib.db import model_base
 from oslo_config import cfg
 from oslo_log import log as logging
 import oslo_messaging
