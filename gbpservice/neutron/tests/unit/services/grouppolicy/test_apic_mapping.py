@@ -140,9 +140,11 @@ class ApicMappingTestCase(
         vm = mock.Mock()
         vm.name = 'someid'
         nova_client.return_value = vm
+        service_plugins = {}
         super(ApicMappingTestCase, self).setUp(
             policy_drivers=['implicit_policy', 'apic', 'chain_mapping'],
-            ml2_options=ml2_opts, sc_plugin=sc_plugin)
+            ml2_options=ml2_opts, service_plugins=service_plugins,
+            sc_plugin=sc_plugin)
         engine = db_api.get_engine()
         model_base.BASEV2.metadata.create_all(engine)
         plugin = manager.NeutronManager.get_plugin()

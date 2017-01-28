@@ -955,17 +955,37 @@ class ImplicitResourceOperations(local_api.LocalAPI,
     def _validate_nsp_parameters(self, context):
         nsp = context.current
         nsp_params = nsp.get("network_service_params")
-        supported_nsp_pars = {"ip_single": ["self_subnet", "nat_pool"],
-                              "ip_pool": "nat_pool"}
-        if (nsp_params and len(nsp_params) > 2 or len(nsp_params) == 2 and
-            nsp_params[0] == nsp_params[1]):
+
+        supported_static_nsp_pars = {
+            gconst.GP_NETWORK_SVC_PARAM_TYPE_IP_SINGLE: [
+                gconst.GP_NETWORK_SVC_PARAM_VALUE_SELF_SUBNET,
+                gconst.GP_NETWORK_SVC_PARAM_VALUE_NAT_POOL],
+            gconst.GP_NETWORK_SVC_PARAM_TYPE_IP_POOL: [
+                gconst.GP_NETWORK_SVC_PARAM_VALUE_NAT_POOL]}
+
+        # for params without a static value - later evaluation needed:
+        supported_flexible_nsp_params = (
+            gconst.GP_NETWORK_SVC_PARAM_TYPE_QOS_BURST,
+            gconst.GP_NETWORK_SVC_PARAM_TYPE_QOS_MAX)
+
+        # validate unique param types:
+        types_inside = set((d['type'] for d in nsp_params))
+        if len(types_inside) != len(nsp_params):
             raise exc.InvalidNetworkServiceParameters()
+
         for params in nsp_params:
-            type = params.get("type")
-            value = params.get("value")
-            if (type not in supported_nsp_pars or
-                value not in supported_nsp_pars[type]):
-                raise exc.InvalidNetworkServiceParameters()
+            type_ = params.get("type")
+            value_ = params.get("value")
+            if (type_ not in supported_flexible_nsp_params):
+                if (type_ not in supported_static_nsp_pars or
+                    value_ not in supported_static_nsp_pars[type_]):
+                    raise exc.InvalidNetworkServiceParameters()
+            else:
+                try:
+                    if int(value_) < 0:
+                        raise exc.InvalidNetworkServiceParameters()
+                except ValueError:
+                    raise exc.InvalidNetworkServiceParameters()
 
     def _validate_in_use_by_nsp(self, context):
         # We do not allow ES update for L3p when it is used by NSP
@@ -1015,6 +1035,45 @@ class ImplicitResourceOperations(local_api.LocalAPI,
                     context.current['id'],
                     fip_ids)
                 return
+
+    def _associate_qosp_to_pt(self, context):
+        ptg_id = context.current['policy_target_group_id']
+        ptg = context._plugin.get_policy_target_group(
+            context._plugin_context, ptg_id)
+        network_service_policy_id = ptg.get(
+            "network_service_policy_id")
+        print("IGOR HERE")
+        if not network_service_policy_id:
+            return
+
+        nsp = context._plugin.get_network_service_policy(
+            context._plugin_context, network_service_policy_id)
+        nsp_params = nsp.get("network_service_params")
+        # Check if at least a QoS NSP p. is defined (a QoS policy was created)
+        for nsp_parameter in nsp_params:
+            if nsp_parameter["type"] in (
+                    gconst.GP_NETWORK_SVC_PARAM_TYPE_QOS_MAX,
+                    gconst.GP_NETWORK_SVC_PARAM_TYPE_QOS_BURST):
+
+                # get QoS Policy associated to NSP
+                mapping = self._get_nsp_qos_mapping(
+                    context._plugin_context.session,
+                    network_service_policy_id)
+
+                # apply QoS policy to PT's Neutron port
+                port_id = context.current['port_id']
+                port = {attributes.PORT:
+                        {'qos_policy_id': mapping['qos_policy_id']}}
+                self._core_plugin.update_port(context._plugin_context,
+                                              port_id, port)
+                break
+
+    def _disassociate_qosp_from_pt(self, context, pt_id):
+        policy_target = context._plugin.get_policy_target(
+            context._plugin_context, pt_id)
+        port_id = policy_target['port_id']
+        port = {attributes.PORT: {'qos_policy_id': None}}
+        self._core_plugin.update_port(context._plugin_context, port_id, port)
 
     def _retrieve_es_with_nat_pools(self, context, l2_policy_id):
         es_list_with_nat_pools = []
@@ -1147,6 +1206,7 @@ class ImplicitResourceOperations(local_api.LocalAPI,
                                  pt_fip_map.floatingip_id)
             self._delete_pt_floating_ip_mapping(
                 context._plugin_context.session, pt)
+            self._disassociate_qosp_from_pt(context, pt)
 
     def _handle_nsp_update_on_ptg(self, context):
         old_nsp = context.original.get("network_service_policy_id")
@@ -1274,6 +1334,25 @@ class ImplicitResourceOperations(local_api.LocalAPI,
                 if pt_fip_map:
                     self._set_pts_floating_ips_mapping(
                         context._plugin_context.session, pt_fip_map)
+            elif nsp_parameter["type"] in (
+                    gconst.GP_NETWORK_SVC_PARAM_TYPE_QOS_MAX,
+                    gconst.GP_NETWORK_SVC_PARAM_TYPE_QOS_BURST):
+
+                # get PTs/ports
+                policy_targets = context.current['policy_targets']
+                policy_targets = context._plugin.get_policy_targets(
+                    context._plugin_context, filters={'id': policy_targets})
+                # get QoS Policy associated to NSP
+                mapping = self._get_nsp_qos_mapping(
+                    context._plugin_context.session,
+                    nsp['id'])
+                # apply QoS policy to each PT's Neutron port
+                for pt in policy_targets:
+                    port_id = pt['port_id']
+                    port = {attributes.PORT:
+                            {'qos_policy_id': mapping['qos_policy_id']}}
+                    self._core_plugin.update_port(context._plugin_context,
+                                                  port_id, port)
 
     def _restore_ip_to_allocation_pool(self, context, subnet_id, ip_address):
         # TODO(Magesh):Pass subnets and loop on subnets. Better to add logic
@@ -1431,6 +1510,7 @@ class ResourceMappingDriver(api.PolicyDriver, ImplicitResourceOperations,
         self._assoc_ptg_sg_to_pt(context, context.current['id'],
                                  context.current['policy_target_group_id'])
         self._associate_fip_to_pt(context)
+        self._associate_qosp_to_pt(context)
         if context.current.get('proxy_gateway'):
             self._set_proxy_gateway_routes(context, context.current)
 
@@ -1916,6 +1996,47 @@ class ResourceMappingDriver(api.PolicyDriver, ImplicitResourceOperations,
         # Delete SGs
         for sg in sg_list:
             self._delete_sg(context._plugin_context, sg)
+
+    @log.log_method_call
+    def create_network_service_policy_precommit(self, context):
+        self._validate_nsp_parameters(context)
+
+    @log.log_method_call
+    def create_network_service_policy_postcommit(self, context):
+        p = context.current['network_service_params']
+        max = burst = 0
+        setting_qos = False
+        # assumes single value per parameter type, as the API currently states
+        params = {p[n]['type']: p[n]['value'] for n in xrange(len(p))}
+        # check for QoS param types..
+        if gconst.GP_NETWORK_SVC_PARAM_TYPE_QOS_MAX in params:
+            max = params[gconst.GP_NETWORK_SVC_PARAM_TYPE_QOS_MAX]
+            setting_qos = True
+        if gconst.GP_NETWORK_SVC_PARAM_TYPE_QOS_BURST in params:
+            burst = params[gconst.GP_NETWORK_SVC_PARAM_TYPE_QOS_BURST]
+            setting_qos = True
+        # ..and create needed Neutron resources
+        if setting_qos:
+            qos_policy_id = self._create_implicit_qos_policy(context)
+            nsp_id = context.current['id']
+            self._create_implicit_qos_rule(context, qos_policy_id, max, burst)
+            self._set_nsp_qos_mapping(context._plugin_context.session,
+                                      nsp_id,
+                                      qos_policy_id)
+
+    @log.log_method_call
+    def delete_network_service_policy_precommit(self, context):
+        nsp = context.current
+        mapping = self._get_nsp_qos_mapping(context._plugin_context.session,
+                                            nsp['id'])
+        if mapping:
+            qos_policy_id = mapping['qos_policy_id']
+            context.current['qos_policy_id'] = qos_policy_id
+
+    @log.log_method_call
+    def delete_network_service_policy_postcommit(self, context):
+        qos_policy_id = context.current['qos_policy_id']
+        self._delete_ptg_qos_policy(context, qos_policy_id)
 
     def create_external_segment_precommit(self, context):
         if context.current['subnet_id']:
@@ -2925,3 +3046,29 @@ class ResourceMappingDriver(api.PolicyDriver, ImplicitResourceOperations,
         master_mac = master_port['mac_address']
         master_ips = [x['ip_address'] for x in master_port['fixed_ips']]
         return master_mac, master_ips
+
+    def _create_implicit_qos_policy(self, context):
+        attrs = {
+            'name': 'gbp_' + context.current['name'],
+            'description': 'Group-Based Policy QoS policy',
+            'tenant_id': context.current['tenant_id']}
+        qos_policy = self._create_qos_policy(context._plugin_context, attrs)
+        qos_policy_id = qos_policy['id']
+        return qos_policy_id
+
+    def _delete_ptg_qos_policy(self, context, qos_policy_id):
+        qos_rules = self._get_qos_rules(context._plugin_context, qos_policy_id)
+        with context._plugin_context.session.begin(subtransactions=True):
+            for qos_rule in qos_rules:
+                self._delete_qos_rule(context._plugin_context,
+                                      qos_rule['id'], qos_policy_id)
+            self._delete_qos_policy(context._plugin_context, qos_policy_id)
+
+    def _create_implicit_qos_rule(self, context, qos_policy_id, max, burst):
+        attrs = {
+            'max_kbps': max,
+            'max_burst_kbps': burst}
+        qos_rule = self._create_qos_rule(context._plugin_context,
+                                         qos_policy_id, attrs)
+        qos_rule_id = qos_rule['id']
+        return qos_rule_id
