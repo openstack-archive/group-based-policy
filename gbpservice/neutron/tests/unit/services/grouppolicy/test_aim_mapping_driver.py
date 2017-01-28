@@ -120,10 +120,11 @@ class AIMBaseTestCase(test_nr_base.CommonNeutronBaseTestCase,
                                    'tenant_network_types': ['opflex']}
         amap.ApicMappingDriver.get_apic_manager = mock.Mock()
         self._default_es_name = 'default'
+        service_plugins = {}
         super(AIMBaseTestCase, self).setUp(
             policy_drivers=policy_drivers, core_plugin=core_plugin,
             ml2_options=ml2_opts, l3_plugin=l3_plugin,
-            sc_plugin=sc_plugin)
+            service_plugins=service_plugins, sc_plugin=sc_plugin)
         aim_model_base.Base.metadata.create_all(self.engine)
         self.db_session = db_api.get_session()
         self.initialize_db_config(self.db_session)
