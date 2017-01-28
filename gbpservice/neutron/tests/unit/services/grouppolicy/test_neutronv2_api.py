@@ -12,7 +12,7 @@
 # limitations under the License.
 
 import mock
-import unittest
+import unittest2
 
 from neutronclient.v2_0 import client as clientv20
 
@@ -28,7 +28,7 @@ INTERFACE = 'fake_interface'
 VALUE = 'fake_value'
 
 
-class NeutronV2ApiTestCase(unittest.TestCase):
+class NeutronV2ApiTestCase(unittest2.TestCase):
     """ Test case for Neutron V2 API testing.
 
     Provide a set of mocked methods for the neutron v2 API testing.
