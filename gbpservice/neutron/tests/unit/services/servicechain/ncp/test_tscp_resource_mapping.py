@@ -51,7 +51,8 @@ class ResourceMappingStitchingPlumberGBPTestCase(
             'extension_drivers', ['proxy_group'], group='group_policy')
         cfg.CONF.set_override('node_plumber', 'stitching_plumber',
                               group='node_composition_plugin')
-        ml2_opts = {'mechanism_drivers': ['stitching_gbp']}
+        ml2_opts = {'mechanism_drivers': ['stitching_gbp'],
+                    'extension_drivers': ['qos']}
         host_agents = mock.patch('neutron.plugins.ml2.driver_context.'
                                  'PortContext.host_agents').start()
         host_agents.return_value = [self.agent_conf]
