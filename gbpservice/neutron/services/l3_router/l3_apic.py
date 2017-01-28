@@ -17,6 +17,7 @@ from neutron._i18n import _LW
 from neutron.common import constants as q_const
 from neutron.common import exceptions as n_exc
 from neutron.db import common_db_mixin
+from neutron.db import dns_db
 from neutron.db import extraroute_db
 from neutron.db import l3_gwmode_db
 from neutron.plugins.common import constants
@@ -29,9 +30,11 @@ from gbpservice.neutron.services.l3_router import apic_driver
 
 class ApicGBPL3ServicePlugin(common_db_mixin.CommonDbMixin,
         extraroute_db.ExtraRoute_db_mixin,
-        l3_gwmode_db.L3_NAT_db_mixin):
+        l3_gwmode_db.L3_NAT_db_mixin,
+        dns_db.DNSDbMixin):
 
-    supported_extension_aliases = ["router", "ext-gw-mode", "extraroute"]
+    supported_extension_aliases = ["router", "ext-gw-mode", "extraroute",
+                                   "dns-integration"]
 
     def __init__(self):
         super(ApicGBPL3ServicePlugin, self).__init__()
