@@ -13,12 +13,22 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+# The following is imported at the beginning to ensure
+# that the patches are applied before any of the
+# modules save a reference to the functions being patched
+from gbpservice.neutron.plugins.ml2plus import patch_neutron  # noqa
+
+from gbpservice.neutron.extensions import patch  # noqa
+
+import functools
+
 from neutron._i18n import _LE
 from neutron._i18n import _LI
 from neutron.api.v2 import attributes
+from neutron.db import api as db_api
 from neutron.db import db_base_plugin_v2
+from neutron.db.models import securitygroup as securitygroups_db
 from neutron.db import models_v2
-from neutron.db import securitygroups_db
 from neutron.extensions import address_scope as as_ext
 from neutron.plugins.ml2.common import exceptions as ml2_exc
 from neutron.plugins.ml2 import managers as ml2_managers
@@ -27,12 +37,10 @@ from neutron.quota import resource_registry
 from oslo_config import cfg
 from oslo_log import log
 from oslo_utils import excutils
-from sqlalchemy import inspect
 
 from gbpservice.neutron.db import implicitsubnetpool_db
 from gbpservice.neutron.plugins.ml2plus import driver_context
 from gbpservice.neutron.plugins.ml2plus import managers
-from gbpservice.neutron.plugins.ml2plus import patch_neutron  # noqa
 
 LOG = log.getLogger(__name__)
 
@@ -91,6 +99,15 @@ opts = [
 ]
 
 cfg.CONF.register_opts(opts, "ml2plus")
+
+
+def disable_transaction_guard(f):
+    # We do not want to enforce transaction guard
+    @functools.wraps(f)
+    def inner(self, context, *args, **kwargs):
+        setattr(context, 'GUARD_TRANSACTION', False)
+        return f(self, context, *args, **kwargs)
+    return inner
 
 
 class Ml2PlusPlugin(ml2_plugin.Ml2Plugin,
@@ -153,7 +170,7 @@ class Ml2PlusPlugin(ml2_plugin.Ml2Plugin,
                as_ext.ADDRESS_SCOPES, ['_ml2_md_extend_address_scope_dict'])
 
     def _ml2_md_extend_network_dict(self, result, netdb):
-        session = inspect(netdb).session
+        session = patch_neutron.get_current_session()
         with session.begin(subtransactions=True):
             if self.refresh_network_db_obj:
                 # In deployment it has been observed that the subnet
@@ -165,14 +182,14 @@ class Ml2PlusPlugin(ml2_plugin.Ml2Plugin,
             self.extension_manager.extend_network_dict(session, netdb, result)
 
     def _ml2_md_extend_port_dict(self, result, portdb):
-        session = inspect(portdb).session
+        session = patch_neutron.get_current_session()
         with session.begin(subtransactions=True):
             if self.refresh_port_db_obj:
                 session.refresh(portdb)
             self.extension_manager.extend_port_dict(session, portdb, result)
 
     def _ml2_md_extend_subnet_dict(self, result, subnetdb):
-        session = inspect(subnetdb).session
+        session = patch_neutron.get_current_session()
         with session.begin(subtransactions=True):
             if self.refresh_subnet_db_obj:
                 session.refresh(subnetdb)
@@ -180,7 +197,7 @@ class Ml2PlusPlugin(ml2_plugin.Ml2Plugin,
                 session, subnetdb, result)
 
     def _ml2_md_extend_subnetpool_dict(self, result, subnetpooldb):
-        session = inspect(subnetpooldb).session
+        session = patch_neutron.get_current_session()
         with session.begin(subtransactions=True):
             if self.refresh_subnetpool_db_obj:
                 session.refresh(subnetpooldb)
@@ -188,7 +205,7 @@ class Ml2PlusPlugin(ml2_plugin.Ml2Plugin,
                 session, subnetpooldb, result)
 
     def _ml2_md_extend_address_scope_dict(self, result, address_scopedb):
-        session = inspect(address_scopedb).session
+        session = patch_neutron.get_current_session()
         with session.begin(subtransactions=True):
             if self.refresh_address_scope_db_obj:
                 session.refresh(address_scopedb)
@@ -206,36 +223,108 @@ class Ml2PlusPlugin(ml2_plugin.Ml2Plugin,
                                           address_scope)
         return self._fields(res, fields)
 
+    @disable_transaction_guard
+    @db_api.retry_if_session_inactive()
     def create_network(self, context, network):
         self._ensure_tenant(context, network[attributes.NETWORK])
         return super(Ml2PlusPlugin, self).create_network(context, network)
 
+    @disable_transaction_guard
+    @db_api.retry_if_session_inactive()
+    def update_network(self, context, id, network):
+        return super(Ml2PlusPlugin, self).update_network(context, id, network)
+
+    @disable_transaction_guard
+    @db_api.retry_if_session_inactive()
+    def delete_network(self, context, id):
+        return super(Ml2PlusPlugin, self).update_network(context, id)
+
+    @disable_transaction_guard
+    @db_api.retry_if_session_inactive()
     def create_network_bulk(self, context, networks):
         self._ensure_tenant_bulk(context, networks[attributes.NETWORKS],
                                  attributes.NETWORK)
         return super(Ml2PlusPlugin, self).create_network_bulk(context,
                                                               networks)
 
+    @disable_transaction_guard
+    @db_api.retry_if_session_inactive()
     def create_subnet(self, context, subnet):
         self._ensure_tenant(context, subnet[attributes.SUBNET])
         return super(Ml2PlusPlugin, self).create_subnet(context, subnet)
 
+    @disable_transaction_guard
+    @db_api.retry_if_session_inactive()
+    def update_subnet(self, context, id, subnet):
+        return super(Ml2PlusPlugin, self).update_subnet(context, id, subnet)
+
+    @disable_transaction_guard
+    @db_api.retry_if_session_inactive()
+    def delete_subnet(self, context, id):
+        return super(Ml2PlusPlugin, self).delete_subnet(context, id)
+
+    @disable_transaction_guard
+    @db_api.retry_if_session_inactive()
     def create_subnet_bulk(self, context, subnets):
         self._ensure_tenant_bulk(context, subnets[attributes.SUBNETS],
                                  attributes.SUBNET)
         return super(Ml2PlusPlugin, self).create_subnet_bulk(context,
                                                              subnets)
 
+    @disable_transaction_guard
+    @db_api.retry_if_session_inactive()
     def create_port(self, context, port):
         self._ensure_tenant(context, port[attributes.PORT])
         return super(Ml2PlusPlugin, self).create_port(context, port)
 
+    @disable_transaction_guard
+    @db_api.retry_if_session_inactive()
     def create_port_bulk(self, context, ports):
         self._ensure_tenant_bulk(context, ports[attributes.PORTS],
                                  attributes.PORT)
         return super(Ml2PlusPlugin, self).create_port_bulk(context,
                                                            ports)
 
+    @disable_transaction_guard
+    @db_api.retry_if_session_inactive()
+    def update_port(self, context, id, port):
+        return super(Ml2PlusPlugin, self).update_port(context, id, port)
+
+    @disable_transaction_guard
+    @db_api.retry_if_session_inactive()
+    def delete_port(self, context, id, l3_port_check=True):
+        return super(Ml2PlusPlugin, self).delete_port(
+            context, id, l3_port_check=l3_port_check)
+
+    @disable_transaction_guard
+    @db_api.retry_if_session_inactive(context_var_name='plugin_context')
+    def get_bound_port_context(self, plugin_context, port_id, host=None,
+                               cached_networks=None):
+        return super(Ml2PlusPlugin, self).get_bound_port_context(
+            plugin_context, port_id, host=host,
+            cached_networks=cached_networks)
+
+    @disable_transaction_guard
+    @db_api.retry_if_session_inactive()
+    def update_port_status(self, context, port_id, status, host=None,
+                           network=None):
+        return super(Ml2PlusPlugin, self).update_port_status(
+            context, port_id, status, host=host, network=network)
+
+    @disable_transaction_guard
+    @db_api.retry_if_session_inactive()
+    def port_bound_to_host(self, context, port_id, host):
+        return super(Ml2PlusPlugin, self).port_bound_to_host(
+            context, port_id, host)
+
+    @disable_transaction_guard
+    @db_api.retry_if_session_inactive()
+    def get_ports_from_devices(self, context, devices):
+        return super(Ml2PlusPlugin, self).get_ports_from_devices(
+            context, devices)
+
+    @disable_transaction_guard
+    @db_api.retry_if_session_inactive()
     def create_subnetpool(self, context, subnetpool):
         self._ensure_tenant(context, subnetpool[attributes.SUBNETPOOL])
         session = context.session
@@ -260,6 +349,8 @@ class Ml2PlusPlugin(ml2_plugin.Ml2Plugin,
 
     # REVISIT(rkukura): Is create_subnetpool_bulk() needed?
 
+    @disable_transaction_guard
+    @db_api.retry_if_session_inactive()
     def update_subnetpool(self, context, id, subnetpool):
         session = context.session
         with session.begin(subtransactions=True):
@@ -279,6 +370,7 @@ class Ml2PlusPlugin(ml2_plugin.Ml2Plugin,
         self.mechanism_manager.update_subnetpool_postcommit(mech_context)
         return updated_subnetpool
 
+    @disable_transaction_guard
     def delete_subnetpool(self, context, id):
         session = context.session
         with session.begin(subtransactions=True):
@@ -295,6 +387,7 @@ class Ml2PlusPlugin(ml2_plugin.Ml2Plugin,
             result['is_implicit'] = (
                 self.update_implicit_subnetpool(context, result))
 
+    @disable_transaction_guard
     def create_address_scope(self, context, address_scope):
         self._ensure_tenant(context, address_scope[as_ext.ADDRESS_SCOPE])
         session = context.session
@@ -321,6 +414,7 @@ class Ml2PlusPlugin(ml2_plugin.Ml2Plugin,
 
     # REVISIT(rkukura): Is create_address_scope_bulk() needed?
 
+    @disable_transaction_guard
     def update_address_scope(self, context, id, address_scope):
         session = context.session
         with session.begin(subtransactions=True):
@@ -339,6 +433,7 @@ class Ml2PlusPlugin(ml2_plugin.Ml2Plugin,
         self.mechanism_manager.update_address_scope_postcommit(mech_context)
         return updated_address_scope
 
+    @disable_transaction_guard
     def delete_address_scope(self, context, id):
         session = context.session
         with session.begin(subtransactions=True):
