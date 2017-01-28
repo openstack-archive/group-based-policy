@@ -47,9 +47,9 @@ class GroupPolicyMappingDbTestCase(tgpdb.GroupPolicyDbTestCase,
         if not gp_plugin:
             gp_plugin = DB_GP_PLUGIN_KLASS
         if not service_plugins:
-            service_plugins = {
-                'gp_plugin_name': gp_plugin,
-                'servicechain_plugin': sc_plugin or SC_PLUGIN_KLASS}
+            service_plugins = {}
+        service_plugins['gp_plugin_name'] = gp_plugin
+        service_plugins['servicechain_plugin'] = sc_plugin or SC_PLUGIN_KLASS
         service_plugins['l3_plugin_name'] = l3_plugin or "router"
         super(GroupPolicyMappingDbTestCase, self).setUp(
             core_plugin=core_plugin, gp_plugin=gp_plugin,

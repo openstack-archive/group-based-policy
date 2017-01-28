@@ -60,7 +60,7 @@ def get_status_for_test(self, context):
 class GroupPolicyPluginTestBase(tgpmdb.GroupPolicyMappingDbTestCase):
 
     def setUp(self, core_plugin=None, l3_plugin=None, gp_plugin=None,
-              ml2_options=None, sc_plugin=None):
+              ml2_options=None, service_plugins=None, sc_plugin=None):
         if not gp_plugin:
             gp_plugin = GP_PLUGIN_KLASS
         ml2_opts = ml2_options or {'mechanism_drivers': ['openvswitch'],
@@ -68,10 +68,12 @@ class GroupPolicyPluginTestBase(tgpmdb.GroupPolicyMappingDbTestCase):
         for opt, val in ml2_opts.items():
             cfg.CONF.set_override(opt, val, 'ml2')
         core_plugin = core_plugin or test_plugin.PLUGIN_NAME
-        super(GroupPolicyPluginTestBase, self).setUp(core_plugin=core_plugin,
-                                                     l3_plugin=l3_plugin,
-                                                     gp_plugin=gp_plugin,
-                                                     sc_plugin=sc_plugin)
+        super(GroupPolicyPluginTestBase, self).setUp(
+            core_plugin=core_plugin,
+            l3_plugin=l3_plugin,
+            gp_plugin=gp_plugin,
+            service_plugins=service_plugins,
+            sc_plugin=sc_plugin)
 
     def _create_l2_policy_on_shared(self, **kwargs):
         l3p = self.create_l3_policy(shared=True)['l3_policy']
