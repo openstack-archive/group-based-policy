@@ -18,6 +18,8 @@ from neutron.api.v2 import resource_helper
 from neutron.common import exceptions as nexc
 from neutron.plugins.common import constants
 from neutron.services import service_base
+from neutron_lib.api import converters as conv
+from neutron_lib.api import validators as valid
 from oslo_config import cfg
 from oslo_log import log as logging
 import six
@@ -85,7 +87,7 @@ def _validate_str_list(data, valid_values=None):
         return msg
 
     for item in data:
-        msg = attr._validate_string(item)
+        msg = valid.validate_string(item)
         if msg:
             LOG.debug(msg)
             return msg
@@ -96,7 +98,7 @@ def _validate_str_list(data, valid_values=None):
         return msg
 
 
-attr.validators['type:string_list'] = _validate_str_list
+valid.validators['type:string_list'] = _validate_str_list
 
 SERVICECHAIN_NODES = 'servicechain_nodes'
 SERVICECHAIN_SPECS = 'servicechain_specs'
@@ -131,7 +133,7 @@ RESOURCE_ATTRIBUTE_MAP = {
                    'validate': {'type:string': None},
                    'required': True, 'is_visible': True},
         attr.SHARED: {'allow_post': True, 'allow_put': True,
-                      'default': False, 'convert_to': attr.convert_to_boolean,
+                      'default': False, 'convert_to': conv.convert_to_boolean,
                       'is_visible': True, 'required_by_policy': True,
                       'enforce_policy': True},
     },
@@ -154,14 +156,14 @@ RESOURCE_ATTRIBUTE_MAP = {
                            'is_visible': True},
         'nodes': {'allow_post': True, 'allow_put': True,
                   'validate': {'type:uuid_list': None},
-                  'convert_to': attr.convert_none_to_empty_list,
+                  'convert_to': conv.convert_none_to_empty_list,
                   'default': None, 'is_visible': True,
                   'required': True},
         'config_param_names': {'allow_post': False, 'allow_put': False,
                                'validate': {'type:string_list': None},
                                'default': [], 'is_visible': True},
         attr.SHARED: {'allow_post': True, 'allow_put': True,
-                      'default': False, 'convert_to': attr.convert_to_boolean,
+                      'default': False, 'convert_to': conv.convert_to_boolean,
                       'is_visible': True, 'required_by_policy': True,
                       'enforce_policy': True},
     },
@@ -184,7 +186,7 @@ RESOURCE_ATTRIBUTE_MAP = {
                            'is_visible': True},
         'servicechain_specs': {'allow_post': True, 'allow_put': True,
                               'validate': {'type:uuid_list': None},
-                              'convert_to': attr.convert_none_to_empty_list,
+                              'convert_to': conv.convert_none_to_empty_list,
                               'default': None, 'is_visible': True,
                               'required': True},
         'provider_ptg_id': {'allow_post': True, 'allow_put': False,
@@ -225,7 +227,7 @@ RESOURCE_ATTRIBUTE_MAP = {
         'status_details': {'allow_post': False, 'allow_put': False,
                            'is_visible': True},
         attr.SHARED: {'allow_post': True, 'allow_put': True,
-                      'default': False, 'convert_to': attr.convert_to_boolean,
+                      'default': False, 'convert_to': conv.convert_to_boolean,
                       'is_visible': True, 'required_by_policy': True,
                       'enforce_policy': True},
         'vendor': {'allow_post': True, 'allow_put': True,

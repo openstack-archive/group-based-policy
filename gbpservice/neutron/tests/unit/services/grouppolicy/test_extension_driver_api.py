@@ -13,7 +13,7 @@
 import os
 
 from neutron.common import config as neutron_config  # noqa
-from neutron.db import model_base
+from neutron_lib.db import model_base
 import sqlalchemy as sa
 
 from gbpservice.neutron.services.grouppolicy import (
