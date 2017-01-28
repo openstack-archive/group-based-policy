@@ -14,24 +14,32 @@ import netaddr
 from neutron.callbacks import events
 from neutron.callbacks import registry
 from neutron.callbacks import resources
-from neutron.common import constants as l3_constants
+from neutron.common import exceptions as n_exc
 from neutron.db import api as db_api
+from neutron.db import common_db_mixin
 from neutron.db import l3_db
 from neutron.db import models_v2
 from neutron.db import securitygroups_db
 from neutron.plugins.ml2 import db as ml2_db
+from neutron.tests import tools
+from neutron_lib import constants
 from oslo_log import log
 from sqlalchemy import event
+import warnings
+
 
 LOG = log.getLogger(__name__)
 
 
+# Remove the following once confirmed that the UTs pass without monkey-patch,
+# and also remove the commented imports
 # Monkey patch create floatingip to allow subnet_id to be specified.
 # this will only be valid for internal calls, and can't be exploited from the
 # API.
+"""
 def create_floatingip(
         self, context, floatingip,
-        initial_status=l3_db.l3_constants.FLOATINGIP_STATUS_ACTIVE):
+        initial_status=constants.FLOATINGIP_STATUS_ACTIVE):
     fip = floatingip['floatingip']
     tenant_id = self._get_tenant_id_for_create(context, fip)
     fip_id = l3_db.uuidutils.generate_uuid()
@@ -53,7 +61,7 @@ def create_floatingip(
                 'admin_state_up': True,
                 'device_id': fip_id,
                 'device_owner': l3_db.DEVICE_OWNER_FLOATINGIP,
-                'status': l3_db.l3_constants.PORT_STATUS_NOTAPPLICABLE,
+                'status': constants.PORT_STATUS_NOTAPPLICABLE,
                 'name': ''}
 
         if fip.get('floating_ip_address'):
@@ -87,24 +95,28 @@ def create_floatingip(
     return self._make_floatingip_dict(floatingip_db)
 
 l3_db.L3_NAT_dbonly_mixin.create_floatingip = create_floatingip
+"""
 
 
 # REVISIT(ivar): Monkey patch to allow explicit router_id to be set in Neutron
 # for Floating Ip creation (for internal calls only). Once we split the server,
 # this could be part of a GBP Neutron L3 driver.
-def _get_assoc_data(self, context, fip, floating_network_id):
+def _get_assoc_data(self, context, fip, floatingip_db):
     (internal_port, internal_subnet_id,
-     internal_ip_address) = self._internal_fip_assoc_data(context, fip)
+     internal_ip_address) = self._internal_fip_assoc_data(
+         context, fip, floatingip_db['tenant_id'])
     if fip.get('router_id'):
         router_id = fip['router_id']
         del fip['router_id']
     else:
-        router_id = self._get_router_for_floatingip(context,
-                                                    internal_port,
-                                                    internal_subnet_id,
-                                                    floating_network_id)
+        router_id = self._get_router_for_floatingip(
+            context, internal_port, internal_subnet_id,
+            floatingip_db['floating_network_id'])
 
     return fip['port_id'], internal_ip_address, router_id
+
+
+l3_db.L3_NAT_dbonly_mixin._get_assoc_data = _get_assoc_data
 
 
 def _update_fip_assoc(self, context, fip, floatingip_db, external_port):
@@ -122,7 +134,7 @@ def _update_fip_assoc(self, context, fip, floatingip_db, external_port):
         if gw_port:
             for fixed_ip in gw_port.fixed_ips:
                 addr = netaddr.IPAddress(fixed_ip.ip_address)
-                if addr.version == l3_constants.IP_VERSION_4:
+                if addr.version == constants.IP_VERSION_4:
                     next_hop = fixed_ip.ip_address
                     break
     args = {'fixed_ip_address': internal_ip_address,
@@ -138,7 +150,6 @@ def _update_fip_assoc(self, context, fip, floatingip_db, external_port):
                     self._update_fip_assoc,
                     **args)
 
-l3_db.L3_NAT_dbonly_mixin._get_assoc_data = _get_assoc_data
 l3_db.L3_NAT_dbonly_mixin._update_fip_assoc = _update_fip_assoc
 
 
@@ -202,10 +213,9 @@ def get_session(autocommit=True, expire_on_commit=False, use_slave=False):
     # The following two lines are copied from the original
     # implementation of db_api.get_session() and should be updated
     # if the original implementation changes.
-    facade = db_api._create_facade_lazily()
-    new_session = facade.get_session(autocommit=autocommit,
-                                     expire_on_commit=expire_on_commit,
-                                     use_slave=use_slave)
+    new_session = db_api.context_manager.get_legacy_facade().get_session(
+        autocommit=autocommit, expire_on_commit=expire_on_commit,
+        use_slave=use_slave)
 
     new_session.notification_queue = {}
 
@@ -231,3 +241,34 @@ def get_session(autocommit=True, expire_on_commit=False, use_slave=False):
 
 
 db_api.get_session = get_session
+
+
+def _get_tenant_id_for_create(self, context, resource):
+    if context.is_admin and 'tenant_id' in resource:
+        tenant_id = resource['tenant_id']
+    elif ('tenant_id' in resource and
+          resource['tenant_id'] != context.project_id):
+        reason = _('Cannot create resource for another tenant')
+        raise n_exc.AdminRequired(reason=reason)
+    else:
+        tenant_id = context.project_id
+
+    return tenant_id
+
+
+common_db_mixin.CommonDbMixin._get_tenant_id_for_create = (
+    _get_tenant_id_for_create)
+
+
+# If the following commit is backported to Neutron stable/netwon
+# https://github.com/openstack/neutron/commit/
+# afab7c67011fad40fec87749679137d31aa20540
+# then this patch can be removed.
+def _setUpWarningsFixtureWarnOnce(self):
+    self.addCleanup(warnings.resetwarnings)
+    for wtype in self.warning_types:
+        warnings.filterwarnings("once", category=wtype,
+                                module='^neutron\\.')
+
+
+tools.WarningsFixture. _setUp = _setUpWarningsFixtureWarnOnce

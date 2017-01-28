@@ -21,10 +21,10 @@ from neutron.api.v2 import attributes
 from neutron.common import constants as const
 from neutron.common import exceptions as n_exc
 from neutron import context as n_context
-from neutron.db import model_base
 from neutron.db import models_v2
 from neutron.extensions import l3 as ext_l3
 from neutron.extensions import securitygroup as ext_sg
+from neutron_lib.db import model_base
 from oslo_config import cfg
 from oslo_log import helpers as log
 from oslo_log import log as logging
@@ -228,17 +228,26 @@ class ImplicitResourceOperations(local_api.LocalAPI,
                  'port_range_max': port_max,
                  'remote_ip_prefix': cidr,
                  'remote_group_id': None}
+        filters = {}
+        for key in attrs:
+            value = attrs[key]
+            if value:
+                filters[key] = [value]
+        rule = self._get_sg_rules(plugin_context, filters)
         if unset:
-            filters = {}
-            for key in attrs:
-                value = attrs[key]
-                if value:
-                    filters[key] = [value]
-            rule = self._get_sg_rules(plugin_context, filters)
             if rule:
                 self._delete_sg_rule(plugin_context, rule[0]['id'])
         else:
-            return self._create_sg_rule(plugin_context, attrs)
+            if not rule:
+                # There was a bug in Neutron until stable/mitaka
+                # which prevented duplicate SG rules being added.
+                # Since that is fixed in stable/newton overlapping
+                # SG rules can be added within the same tenant. We
+                # actually dont want to add overlapping rules,
+                # hence we check before adding.
+                return self._create_sg_rule(plugin_context, attrs)
+            else:
+                return rule[0]
 
     def _create_gbp_sg(self, plugin_context, tenant_id, name, **kwargs):
         # This method sets up the attributes of security group
@@ -1312,9 +1321,9 @@ class ImplicitResourceOperations(local_api.LocalAPI,
 
     def _get_last_free_ip(self, context, subnets):
         # Hope lock_mode update is not needed
-        range_qry = context.session.query(
-            models_v2.IPAvailabilityRange).join(
-                models_v2.IPAllocationPool)
+        # REVISIT: Temp workaround, always assumes last IP in subnet is
+        # available
+        range_qry = context.session.query(models_v2.IPAllocationPool)
         for subnet_id in subnets:
             ip_range = range_qry.filter_by(subnet_id=subnet_id).first()
             if not ip_range:
