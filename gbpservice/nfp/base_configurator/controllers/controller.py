@@ -81,7 +81,7 @@ class Controller(base_controller.BaseController):
                 reachable = True
                 break
             except Exception:
-                time.sleep(5)
+                time.sleep(2)
         return reachable
 
     @pecan.expose(method='GET', content_type='application/json')
