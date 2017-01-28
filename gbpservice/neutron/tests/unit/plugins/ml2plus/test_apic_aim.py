@@ -29,7 +29,7 @@ from aim import utils as aim_utils
 from keystoneclient.v3 import client as ksc_client
 from neutron.api import extensions
 from neutron.common import constants as n_constants
-from neutron import context
+from neutron import context as n_context
 from neutron.db import api as db_api
 from neutron import manager
 from neutron.plugins.common import constants as service_constants
@@ -130,7 +130,8 @@ class ApicAimTestMixin(object):
     def _register_agent(self, host, agent_conf):
         agent = {'host': host}
         agent.update(agent_conf)
-        self.plugin.create_or_update_agent(context.get_admin_context(), agent)
+        self.plugin.create_or_update_agent(
+            n_context.get_admin_context(), agent)
 
 
 class ApicAimTestCase(test_address_scope.AddressScopeTestCase,
@@ -157,14 +158,13 @@ class ApicAimTestCase(test_address_scope.AddressScopeTestCase,
             'L3_ROUTER_NAT':
             'gbpservice.neutron.services.apic_aim.l3_plugin.ApicL3Plugin'}
 
+        super(ApicAimTestCase, self).setUp(PLUGIN_NAME,
+                                           service_plugins=service_plugins)
         engine = db_api.get_engine()
         aim_model_base.Base.metadata.create_all(engine)
         self.db_session = db_api.get_session()
-
         self.initialize_db_config(self.db_session)
 
-        super(ApicAimTestCase, self).setUp(PLUGIN_NAME,
-                                           service_plugins=service_plugins)
         ext_mgr = extensions.PluginAwareExtensionManager.get_instance()
         self.ext_api = test_extensions.setup_extensions_middleware(ext_mgr)
         self.port_create_status = 'DOWN'
@@ -251,8 +251,8 @@ class ApicAimTestCase(test_address_scope.AddressScopeTestCase,
 
         req = self.new_create_request('address-scopes',
                                       {'address_scope': attrs}, self.fmt)
-        neutron_context = context.Context('', kwargs.get('tenant_id',
-                                                         self._tenant_id))
+        neutron_context = n_context.Context('', kwargs.get('tenant_id',
+                                                           self._tenant_id))
         req.environ['neutron.context'] = neutron_context
 
         res = req.get_response(self.ext_api)
@@ -757,7 +757,8 @@ class TestAimMapping(ApicAimTestCase):
         # Add subnet1 to router by subnet.
         mock_notif.reset_mock()
         info = self.l3_plugin.add_router_interface(
-            context.get_admin_context(), router_id, {'subnet_id': subnet1_id})
+            n_context.get_admin_context(), router_id,
+            {'subnet_id': subnet1_id})
         self.assertIn(subnet1_id, info['subnet_ids'])
 
         # Verify ports were notified.
@@ -796,7 +797,7 @@ class TestAimMapping(ApicAimTestCase):
         port2_id = port['id']
         mock_notif.reset_mock()
         info = self.l3_plugin.add_router_interface(
-            context.get_admin_context(), router_id, {'port_id': port2_id})
+            n_context.get_admin_context(), router_id, {'port_id': port2_id})
         self.assertIn(subnet2_id, info['subnet_ids'])
 
         # Verify ports were not notified.
@@ -821,7 +822,8 @@ class TestAimMapping(ApicAimTestCase):
         # Remove subnet1 from router by subnet.
         mock_notif.reset_mock()
         info = self.l3_plugin.remove_router_interface(
-            context.get_admin_context(), router_id, {'subnet_id': subnet1_id})
+            n_context.get_admin_context(), router_id,
+            {'subnet_id': subnet1_id})
         self.assertIn(subnet1_id, info['subnet_ids'])
 
         # Verify ports were not notified.
@@ -846,7 +848,7 @@ class TestAimMapping(ApicAimTestCase):
         # Remove subnet2 from router by port.
         mock_notif.reset_mock()
         info = self.l3_plugin.remove_router_interface(
-            context.get_admin_context(), router_id, {'port_id': port2_id})
+            n_context.get_admin_context(), router_id, {'port_id': port2_id})
         self.assertIn(subnet2_id, info['subnet_ids'])
 
         # Verify ports were notified.
@@ -936,7 +938,8 @@ class TestAimMapping(ApicAimTestCase):
         # Add subnet1 to router by subnet.
         mock_notif.reset_mock()
         info = self.l3_plugin.add_router_interface(
-            context.get_admin_context(), router_id, {'subnet_id': subnet1_id})
+            n_context.get_admin_context(), router_id,
+            {'subnet_id': subnet1_id})
         self.assertIn(subnet1_id, info['subnet_ids'])
 
         # Verify ports were notified.
@@ -975,7 +978,7 @@ class TestAimMapping(ApicAimTestCase):
         port2_id = port['id']
         mock_notif.reset_mock()
         info = self.l3_plugin.add_router_interface(
-            context.get_admin_context(), router_id, {'port_id': port2_id})
+            n_context.get_admin_context(), router_id, {'port_id': port2_id})
         self.assertIn(subnet2_id, info['subnet_ids'])
 
         # Verify ports were not notified.
@@ -1000,7 +1003,8 @@ class TestAimMapping(ApicAimTestCase):
         # Remove subnet1 from router by subnet.
         mock_notif.reset_mock()
         info = self.l3_plugin.remove_router_interface(
-            context.get_admin_context(), router_id, {'subnet_id': subnet1_id})
+            n_context.get_admin_context(), router_id,
+            {'subnet_id': subnet1_id})
         self.assertIn(subnet1_id, info['subnet_ids'])
 
         # Verify ports were not notified.
@@ -1025,7 +1029,7 @@ class TestAimMapping(ApicAimTestCase):
         # Remove subnet2 from router by port.
         mock_notif.reset_mock()
         info = self.l3_plugin.remove_router_interface(
-            context.get_admin_context(), router_id, {'port_id': port2_id})
+            n_context.get_admin_context(), router_id, {'port_id': port2_id})
         self.assertIn(subnet2_id, info['subnet_ids'])
 
         # Verify ports were notified.
@@ -1099,7 +1103,8 @@ class TestAimMapping(ApicAimTestCase):
 
         # Add subnet1 to router.
         info = self.l3_plugin.add_router_interface(
-            context.get_admin_context(), router_id, {'subnet_id': subnet1_id})
+            n_context.get_admin_context(), router_id,
+            {'subnet_id': subnet1_id})
         self.assertIn(subnet1_id, info['subnet_ids'])
 
         # Check router.
@@ -1124,7 +1129,8 @@ class TestAimMapping(ApicAimTestCase):
 
         # Add subnet2 to router.
         info = self.l3_plugin.add_router_interface(
-            context.get_admin_context(), router_id, {'subnet_id': subnet2_id})
+            n_context.get_admin_context(), router_id,
+            {'subnet_id': subnet2_id})
         self.assertIn(subnet2_id, info['subnet_ids'])
 
         # Check router.
@@ -1145,7 +1151,8 @@ class TestAimMapping(ApicAimTestCase):
 
         # Remove subnet1 from router.
         info = self.l3_plugin.remove_router_interface(
-            context.get_admin_context(), router_id, {'subnet_id': subnet1_id})
+            n_context.get_admin_context(), router_id,
+            {'subnet_id': subnet1_id})
         self.assertIn(subnet1_id, info['subnet_ids'])
 
         # Check router.
@@ -1166,7 +1173,8 @@ class TestAimMapping(ApicAimTestCase):
 
         # Remove subnet2 from router.
         info = self.l3_plugin.remove_router_interface(
-            context.get_admin_context(), router_id, {'subnet_id': subnet2_id})
+            n_context.get_admin_context(), router_id,
+            {'subnet_id': subnet2_id})
         self.assertIn(subnet2_id, info['subnet_ids'])
 
         # Check router.
@@ -1193,7 +1201,7 @@ class TestAimMapping(ApicAimTestCase):
         router = self._make_router(
             self.fmt, 'tenant_1', 'router')['router']
         router_id = router['id']
-        router_ctx = context.Context(None, 'tenant_1')
+        router_ctx = n_context.Context(None, 'tenant_1')
         self._check_router(router, [], [])
 
         # Create net1 as tenant_1.
@@ -1481,13 +1489,13 @@ class TestAimMapping(ApicAimTestCase):
             port = self._make_port(
                 self.fmt, net_id, fixed_ips=fixed_ips,
                 tenant_id=project)['port']
-            router_ctx = context.Context(None, project)
+            router_ctx = n_context.Context(None, project)
             info = self.l3_plugin.add_router_interface(
                 router_ctx, router['id'], {'port_id': port['id']})
             self.assertIn(subnet_id, info['subnet_ids'])
 
         def remove_interface(router, net_id, subnet_id, gw_ip, project):
-            router_ctx = context.Context(None, project)
+            router_ctx = n_context.Context(None, project)
             info = self.l3_plugin.remove_router_interface(
                 router_ctx, router['id'], {'subnet_id': subnet_id})
             self.assertIn(subnet_id, info['subnet_ids'])
@@ -1974,7 +1982,7 @@ class TestSyncState(ApicAimTestCase):
         router = self._make_router(self.fmt, 'test-tenant', 'router1')[
             'router']
         self.l3_plugin.add_router_interface(
-            context.get_admin_context(), router['id'],
+            n_context.get_admin_context(), router['id'],
             {'subnet_id': subnet['id']})
 
         router = self._show('routers', router['id'])['router']
@@ -2008,7 +2016,7 @@ class TestSyncState(ApicAimTestCase):
         router = self._make_router(self.fmt, 'test-tenant', 'router1')[
             'router']
         self.l3_plugin.add_router_interface(
-            context.get_admin_context(), router['id'],
+            n_context.get_admin_context(), router['id'],
             {'subnet_id': subnet['id']})
 
         router = self._show('routers', router['id'])['router']
@@ -2113,13 +2121,15 @@ class TestTopology(ApicAimTestCase):
         subnet1_id = self._make_subnet(
             self.fmt, net_resp, '10.0.1.1', '10.0.1.0/24')['subnet']['id']
         self.l3_plugin.add_router_interface(
-            context.get_admin_context(), router1_id, {'subnet_id': subnet1_id})
+            n_context.get_admin_context(), router1_id,
+            {'subnet_id': subnet1_id})
 
         # Create 2nd subnet and add to router.
         subnet2_id = self._make_subnet(
             self.fmt, net_resp, '10.0.2.1', '10.0.2.0/24')['subnet']['id']
         self.l3_plugin.add_router_interface(
-            context.get_admin_context(), router1_id, {'subnet_id': subnet2_id})
+            n_context.get_admin_context(), router1_id,
+            {'subnet_id': subnet2_id})
 
         # Create another router.
         router2_id = self._make_router(
@@ -2131,7 +2141,8 @@ class TestTopology(ApicAimTestCase):
         self.assertRaises(
             exceptions.UnsupportedRoutingTopology,
             self.l3_plugin.add_router_interface,
-            context.get_admin_context(), router2_id, {'subnet_id': subnet3_id})
+            n_context.get_admin_context(), router2_id,
+            {'subnet_id': subnet3_id})
 
         # Verify adding 1st subnet to 2nd router fails.
         fixed_ips = [{'subnet_id': subnet1_id, 'ip_address': '10.0.1.100'}]
@@ -2140,7 +2151,7 @@ class TestTopology(ApicAimTestCase):
         self.assertRaises(
             exceptions.UnsupportedRoutingTopology,
             self.l3_plugin.add_router_interface,
-            context.get_admin_context(), router2_id, {'port_id': port_id})
+            n_context.get_admin_context(), router2_id, {'port_id': port_id})
 
         # Verify adding 2nd subnet to 2nd router fails.
         fixed_ips = [{'subnet_id': subnet2_id, 'ip_address': '10.0.2.100'}]
@@ -2149,7 +2160,7 @@ class TestTopology(ApicAimTestCase):
         self.assertRaises(
             exceptions.UnsupportedRoutingTopology,
             self.l3_plugin.add_router_interface,
-            context.get_admin_context(), router2_id, {'port_id': port_id})
+            n_context.get_admin_context(), router2_id, {'port_id': port_id})
 
     def test_network_subnet_on_multple_routers(self):
         # Create network.
@@ -2164,7 +2175,8 @@ class TestTopology(ApicAimTestCase):
         subnet1_id = self._make_subnet(
             self.fmt, net_resp, '10.0.1.1', '10.0.1.0/24')['subnet']['id']
         self.l3_plugin.add_router_interface(
-            context.get_admin_context(), router1_id, {'subnet_id': subnet1_id})
+            n_context.get_admin_context(), router1_id,
+            {'subnet_id': subnet1_id})
 
         # Create 2nd router.
         router2_id = self._make_router(
@@ -2175,7 +2187,8 @@ class TestTopology(ApicAimTestCase):
         port_id = self._make_port(
             self.fmt, net_id, fixed_ips=fixed_ips)['port']['id']
         self.l3_plugin.add_router_interface(
-            context.get_admin_context(), router2_id, {'port_id': port_id})
+            n_context.get_admin_context(), router2_id,
+            {'port_id': port_id})
 
         # Create 2nd subnet and verify adding to either router fails.
         subnet2_id = self._make_subnet(
@@ -2183,11 +2196,13 @@ class TestTopology(ApicAimTestCase):
         self.assertRaises(
             exceptions.UnsupportedRoutingTopology,
             self.l3_plugin.add_router_interface,
-            context.get_admin_context(), router1_id, {'subnet_id': subnet2_id})
+            n_context.get_admin_context(), router1_id,
+            {'subnet_id': subnet2_id})
         self.assertRaises(
             exceptions.UnsupportedRoutingTopology,
             self.l3_plugin.add_router_interface,
-            context.get_admin_context(), router2_id, {'subnet_id': subnet2_id})
+            n_context.get_admin_context(), router2_id,
+            {'subnet_id': subnet2_id})
 
     def test_reject_ipv6_routing(self):
         # TODO(rkukura): Remove this test when IPv6 routing is supported.
@@ -2208,7 +2223,8 @@ class TestTopology(ApicAimTestCase):
         self.assertRaises(
             exceptions.IPv6RoutingNotSupported,
             self.l3_plugin.add_router_interface,
-            context.get_admin_context(), router1_id, {'subnet_id': subnet1_id})
+            n_context.get_admin_context(), router1_id,
+            {'subnet_id': subnet1_id})
 
     def test_reject_routing_multiple_address_scopes(self):
         # TODO(rkukura): Remove this test when multi-scope routing is
@@ -2256,39 +2272,45 @@ class TestTopology(ApicAimTestCase):
 
         # Add first scoped subnet to router.
         self.l3_plugin.add_router_interface(
-            context.get_admin_context(), router_id, {'subnet_id': subnet1_id})
+            n_context.get_admin_context(), router_id,
+            {'subnet_id': subnet1_id})
 
         # Verify adding second scoped subnet to router fails.
         self.assertRaises(
             exceptions.MultiScopeRoutingNotSupported,
             self.l3_plugin.add_router_interface,
-            context.get_admin_context(), router_id, {'subnet_id': subnet2_id})
+            n_context.get_admin_context(), router_id,
+            {'subnet_id': subnet2_id})
 
         # Verify adding unscoped subnet to router fails.
         self.assertRaises(
             exceptions.MultiScopeRoutingNotSupported,
             self.l3_plugin.add_router_interface,
-            context.get_admin_context(), router_id, {'subnet_id': subnet3_id})
+            n_context.get_admin_context(), router_id,
+            {'subnet_id': subnet3_id})
 
         # Remove first scoped subnet from router.
         self.l3_plugin.remove_router_interface(
-            context.get_admin_context(), router_id, {'subnet_id': subnet1_id})
+            n_context.get_admin_context(), router_id,
+            {'subnet_id': subnet1_id})
 
         # Add unscoped subnet to router.
         self.l3_plugin.add_router_interface(
-            context.get_admin_context(), router_id, {'subnet_id': subnet3_id})
+            n_context.get_admin_context(), router_id,
+            {'subnet_id': subnet3_id})
 
         # Verify adding scoped subnet to router fails.
         self.assertRaises(
             exceptions.MultiScopeRoutingNotSupported,
             self.l3_plugin.add_router_interface,
-            context.get_admin_context(), router_id, {'subnet_id': subnet1_id})
+            n_context.get_admin_context(), router_id,
+            {'subnet_id': subnet1_id})
 
     def test_reject_routing_shared_networks_from_different_projects(self):
         # Create router as tenant_1.
         router_id = self._make_router(
             self.fmt, 'tenant_1', 'router')['router']['id']
-        router_ctx = context.get_admin_context()
+        router_ctx = n_context.get_admin_context()
 
         # Create shared net1 and subnet1 as tenant_1.
         net1_resp = self._make_network(
@@ -2377,7 +2399,8 @@ class TestTopology(ApicAimTestCase):
         router_id = self._make_router(
             self.fmt, 'test-tenant', 'router1')['router']['id']
         self.l3_plugin.add_router_interface(
-            context.get_admin_context(), router_id, {'subnet_id': subnet1_id})
+            n_context.get_admin_context(), router_id,
+            {'subnet_id': subnet1_id})
 
         # Verify associating subnetpool with address_scope fails.
         data = {'subnetpool': {'address_scope_id': scope_id}}
@@ -3567,7 +3590,7 @@ class TestExternalNoNat(TestExternalConnectivityBase,
 class TestSnatIpAllocation(ApicAimTestCase):
 
     def test_get_alloc_ip(self):
-        admin_ctx = context.get_admin_context()
+        admin_ctx = n_context.get_admin_context()
         ext_net = self._make_ext_network('ext-net1',
                                          dn=self.dn_t1_l1_n1)
         sub1 = self._make_subnet(
@@ -3636,7 +3659,7 @@ class TestSnatIpAllocation(ApicAimTestCase):
                      {'subnet': {SNAT_POOL: True}})
 
         alloc = self.driver.get_or_allocate_snat_ip(
-            context.get_admin_context(), 'h0', ext_net)
+            n_context.get_admin_context(), 'h0', ext_net)
         self.assertIsNotNone(alloc)
         self._update('subnets', sub1['id'],
             {'subnet': {SNAT_POOL: False}}, expected_code=500)
@@ -3665,7 +3688,7 @@ class TestSnatIpAllocation(ApicAimTestCase):
         self._update('subnets', sub2['id'],
                      {'subnet': {SNAT_POOL: True}})
         alloc = self.driver.get_or_allocate_snat_ip(
-            context.get_admin_context(), 'h0', ext_net)
+            n_context.get_admin_context(), 'h0', ext_net)
         self.assertIsNotNone(alloc)
 
         return sub2, rtr, pvt_sub
@@ -3789,7 +3812,7 @@ class TestPortVlanNetwork(ApicAimTestCase):
 
     def _check_binding(self, port_id, expected_binding_info=None):
         port_context = self.plugin.get_bound_port_context(
-            context.get_admin_context(), port_id)
+            n_context.get_admin_context(), port_id)
         self.assertIsNotNone(port_context)
         binding_info = [(bl['bound_driver'],
                          bl['bound_segment']['network_type'])
@@ -3800,7 +3823,7 @@ class TestPortVlanNetwork(ApicAimTestCase):
 
     def _check_no_dynamic_segment(self, network_id):
         dyn_segments = ml2_db.get_network_segments(
-            context.get_admin_context().session, network_id,
+            n_context.get_admin_context().session, network_id,
             filter_dynamic=True)
         self.assertEqual(0, len(dyn_segments))
 
@@ -4004,7 +4027,7 @@ class TestPortVlanNetwork(ApicAimTestCase):
                 self.assertEqual([], epg1.static_paths)
 
     def test_topology_rpc_no_ports(self):
-        nctx = context.get_admin_context()
+        nctx = n_context.get_admin_context()
         aim_ctx = aim_context.AimContext(self.db_session)
 
         net1 = self._make_network(self.fmt, 'net1', True)['network']
@@ -4029,7 +4052,7 @@ class TestPortVlanNetwork(ApicAimTestCase):
         self.assertEqual([], epg1.static_paths)
 
     def test_topology_rpc(self):
-        nctx = context.get_admin_context()
+        nctx = n_context.get_admin_context()
         aim_ctx = aim_context.AimContext(self.db_session)
         epgs = []
         vlans = []

@@ -19,6 +19,9 @@ def gbp_attributes(func):
     def inner(**kwargs):
         attrs = func()
         attrs.update(kwargs)
+        project_id = _uuid()
+        if 'update' not in func.__name__:
+            attrs.update({'project_id': project_id, 'tenant_id': project_id})
         return attrs
     return inner
 
@@ -32,7 +35,7 @@ def get_create_policy_target_default_attrs():
 @gbp_attributes
 def get_create_policy_target_attrs():
     return {'name': 'ep1', 'policy_target_group_id': _uuid(),
-            'tenant_id': _uuid(), 'description': 'test policy_target',
+            'description': 'test policy_target',
             'cluster_id': 'some_cluster_id'}
 
 
@@ -52,7 +55,7 @@ def get_create_policy_target_group_default_attrs():
 
 @gbp_attributes
 def get_create_policy_target_group_attrs():
-    return {'name': 'ptg1', 'tenant_id': _uuid(),
+    return {'name': 'ptg1',
             'description': 'test policy_target group',
             'l2_policy_id': _uuid(),
             'provided_policy_rule_sets': {_uuid(): None},
@@ -74,7 +77,7 @@ def get_create_l2_policy_default_attrs():
 
 @gbp_attributes
 def get_create_l2_policy_attrs():
-    return {'name': 'l2p1', 'tenant_id': _uuid(),
+    return {'name': 'l2p1',
             'description': 'test L2 policy', 'l3_policy_id': _uuid(),
             'inject_default_route': True, 'shared': False}
 
@@ -93,7 +96,7 @@ def get_create_l3_policy_default_attrs():
 
 @gbp_attributes
 def get_create_l3_policy_attrs():
-    return {'name': 'l3p1', 'tenant_id': _uuid(),
+    return {'name': 'l3p1',
             'description': 'test L3 policy', 'ip_version': 6,
             'ip_pool': 'fd01:2345:6789::/48',
             'external_segments': {_uuid(): ['192.168.0.3']},
@@ -117,7 +120,6 @@ def get_create_policy_action_default_attrs():
 @gbp_attributes
 def get_create_policy_action_attrs():
     return {'name': 'pa1',
-            'tenant_id': _uuid(),
             'description': 'test policy action',
             'action_type': 'redirect',
             'action_value': _uuid(),
@@ -143,7 +145,6 @@ def get_create_policy_classifier_default_attrs():
 def get_create_policy_classifier_attrs():
     return {'name': 'pc1',
             'description': 'test policy classifier',
-            'tenant_id': _uuid(),
             'protocol': 'tcp',
             'port_range': '100:200',
             'direction': 'in',
@@ -168,7 +169,6 @@ def get_create_policy_rule_default_attrs():
 def get_create_policy_rule_attrs():
     return {'name': 'pr1',
             'description': 'test policy rule',
-            'tenant_id': _uuid(),
             'enabled': True,
             'policy_classifier_id': _uuid(),
             'policy_actions': [_uuid()],
@@ -193,7 +193,6 @@ def get_create_policy_rule_set_default_attrs():
 def get_create_policy_rule_set_attrs():
     return {'name': 'policy_rule_set1',
             'description': 'test policy_rule_set',
-            'tenant_id': _uuid(),
             'child_policy_rule_sets': [_uuid()],
             'policy_rules': [_uuid()],
             'shared': False}
@@ -212,7 +211,7 @@ def get_create_network_service_policy_default_attrs():
 
 @gbp_attributes
 def get_create_network_service_policy_attrs():
-    return {'name': 'nsp1', 'tenant_id': _uuid(),
+    return {'name': 'nsp1',
             'shared': False,
             'description': 'test Net Svc Policy',
             'network_service_params': [{'type': 'ip_single', 'name': 'vip',
@@ -235,7 +234,7 @@ def get_create_external_policy_default_attrs():
 
 @gbp_attributes
 def get_create_external_policy_attrs():
-    return {'name': 'ep1', 'tenant_id': _uuid(),
+    return {'name': 'ep1',
             'description': 'test ep',
             'external_segments': [_uuid()],
             'provided_policy_rule_sets': {_uuid(): None},
@@ -260,7 +259,7 @@ def get_create_external_segment_default_attrs():
 
 @gbp_attributes
 def get_create_external_segment_attrs():
-    return {'name': 'es1', 'tenant_id': _uuid(),
+    return {'name': 'es1',
             'description': 'test ep',
             'external_routes': [{'destination': '0.0.0.0/0',
                                  'nexthop': '192.168.0.1'}],
@@ -284,7 +283,7 @@ def get_create_nat_pool_default_attrs():
 
 @gbp_attributes
 def get_create_nat_pool_attrs():
-    return {'name': 'es1', 'tenant_id': _uuid(),
+    return {'name': 'es1',
             'description': 'test ep',
             'ip_version': 4,
             'ip_pool': '172.16.0.0/16',
@@ -335,7 +334,6 @@ def get_create_servicechain_node_attrs():
     return {
         'name': 'servicechain1',
         'service_profile_id': _uuid(),
-        'tenant_id': _uuid(),
         'description': 'test servicechain node',
         'config': '{}',
         'service_type': None,
@@ -366,7 +364,6 @@ def get_create_servicechain_spec_attrs():
     return {
         'name': 'servicechainspec1',
         'nodes': [_uuid(), _uuid()],
-        'tenant_id': _uuid(),
         'description': 'test servicechain spec',
         'shared': True,
     }
@@ -390,7 +387,6 @@ def get_create_servicechain_instance_attrs():
     return {
         'name': 'servicechaininstance1',
         'servicechain_specs': [_uuid()],
-        'tenant_id': _uuid(),
         'provider_ptg_id': _uuid(),
         'consumer_ptg_id': _uuid(),
         'management_ptg_id': _uuid(),

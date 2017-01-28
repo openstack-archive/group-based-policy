@@ -13,12 +13,17 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+import sys
+
 from neutron._i18n import _LE
 from neutron._i18n import _LI
 from neutron.api.v2 import attributes
+from neutron.common import exceptions as nexcp
+from neutron import context as n_context
+from neutron.db import api as db_api
 from neutron.db import db_base_plugin_v2
+from neutron.db.models import securitygroup as securitygroups_db
 from neutron.db import models_v2
-from neutron.db import securitygroups_db
 from neutron.extensions import address_scope as as_ext
 from neutron.plugins.ml2.common import exceptions as ml2_exc
 from neutron.plugins.ml2 import managers as ml2_managers
@@ -27,7 +32,6 @@ from neutron.quota import resource_registry
 from oslo_config import cfg
 from oslo_log import log
 from oslo_utils import excutils
-from sqlalchemy import inspect
 
 from gbpservice.neutron.db import implicitsubnetpool_db
 from gbpservice.neutron.plugins.ml2plus import driver_context
@@ -93,6 +97,10 @@ opts = [
 cfg.CONF.register_opts(opts, "ml2plus")
 
 
+class NoSession(nexcp.BadRequest):
+    message = _("No DB session in scope ")
+
+
 class Ml2PlusPlugin(ml2_plugin.Ml2Plugin,
                     implicitsubnetpool_db.ImplicitSubnetpoolMixin):
 
@@ -152,8 +160,23 @@ class Ml2PlusPlugin(ml2_plugin.Ml2Plugin,
     db_base_plugin_v2.NeutronDbPluginV2.register_dict_extend_funcs(
                as_ext.ADDRESS_SCOPES, ['_ml2_md_extend_address_scope_dict'])
 
+    def _get_current_session(self):
+        i = 1
+        not_found = True
+        try:
+            while not_found:
+                for val in sys._getframe(i).f_locals.itervalues():
+                    if isinstance(val, n_context.Context):
+                        ctx = val
+                        not_found = False
+                        break
+                i = i + 1
+            return ctx.session
+        except Exception:
+            raise NoSession()
+
     def _ml2_md_extend_network_dict(self, result, netdb):
-        session = inspect(netdb).session
+        session = self._get_current_session()
         with session.begin(subtransactions=True):
             if self.refresh_network_db_obj:
                 # In deployment it has been observed that the subnet
@@ -165,14 +188,14 @@ class Ml2PlusPlugin(ml2_plugin.Ml2Plugin,
             self.extension_manager.extend_network_dict(session, netdb, result)
 
     def _ml2_md_extend_port_dict(self, result, portdb):
-        session = inspect(portdb).session
+        session = self._get_current_session()
         with session.begin(subtransactions=True):
             if self.refresh_port_db_obj:
                 session.refresh(portdb)
             self.extension_manager.extend_port_dict(session, portdb, result)
 
     def _ml2_md_extend_subnet_dict(self, result, subnetdb):
-        session = inspect(subnetdb).session
+        session = self._get_current_session()
         with session.begin(subtransactions=True):
             if self.refresh_subnet_db_obj:
                 session.refresh(subnetdb)
@@ -180,7 +203,7 @@ class Ml2PlusPlugin(ml2_plugin.Ml2Plugin,
                 session, subnetdb, result)
 
     def _ml2_md_extend_subnetpool_dict(self, result, subnetpooldb):
-        session = inspect(subnetpooldb).session
+        session = self._get_current_session()
         with session.begin(subtransactions=True):
             if self.refresh_subnetpool_db_obj:
                 session.refresh(subnetpooldb)
@@ -188,7 +211,7 @@ class Ml2PlusPlugin(ml2_plugin.Ml2Plugin,
                 session, subnetpooldb, result)
 
     def _ml2_md_extend_address_scope_dict(self, result, address_scopedb):
-        session = inspect(address_scopedb).session
+        session = self._get_current_session()
         with session.begin(subtransactions=True):
             if self.refresh_address_scope_db_obj:
                 session.refresh(address_scopedb)
@@ -206,36 +229,43 @@ class Ml2PlusPlugin(ml2_plugin.Ml2Plugin,
                                           address_scope)
         return self._fields(res, fields)
 
+    @db_api.retry_if_session_inactive()
     def create_network(self, context, network):
         self._ensure_tenant(context, network[attributes.NETWORK])
         return super(Ml2PlusPlugin, self).create_network(context, network)
 
+    @db_api.retry_if_session_inactive()
     def create_network_bulk(self, context, networks):
         self._ensure_tenant_bulk(context, networks[attributes.NETWORKS],
                                  attributes.NETWORK)
         return super(Ml2PlusPlugin, self).create_network_bulk(context,
                                                               networks)
 
+    @db_api.retry_if_session_inactive()
     def create_subnet(self, context, subnet):
         self._ensure_tenant(context, subnet[attributes.SUBNET])
         return super(Ml2PlusPlugin, self).create_subnet(context, subnet)
 
+    @db_api.retry_if_session_inactive()
     def create_subnet_bulk(self, context, subnets):
         self._ensure_tenant_bulk(context, subnets[attributes.SUBNETS],
                                  attributes.SUBNET)
         return super(Ml2PlusPlugin, self).create_subnet_bulk(context,
                                                              subnets)
 
+    @db_api.retry_if_session_inactive()
     def create_port(self, context, port):
         self._ensure_tenant(context, port[attributes.PORT])
         return super(Ml2PlusPlugin, self).create_port(context, port)
 
+    @db_api.retry_if_session_inactive()
     def create_port_bulk(self, context, ports):
         self._ensure_tenant_bulk(context, ports[attributes.PORTS],
                                  attributes.PORT)
         return super(Ml2PlusPlugin, self).create_port_bulk(context,
                                                            ports)
 
+    @db_api.retry_if_session_inactive()
     def create_subnetpool(self, context, subnetpool):
         self._ensure_tenant(context, subnetpool[attributes.SUBNETPOOL])
         session = context.session
@@ -260,6 +290,7 @@ class Ml2PlusPlugin(ml2_plugin.Ml2Plugin,
 
     # REVISIT(rkukura): Is create_subnetpool_bulk() needed?
 
+    @db_api.retry_if_session_inactive()
     def update_subnetpool(self, context, id, subnetpool):
         session = context.session
         with session.begin(subtransactions=True):
