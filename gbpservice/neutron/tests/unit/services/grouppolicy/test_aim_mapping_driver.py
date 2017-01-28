@@ -117,10 +117,11 @@ class AIMBaseTestCase(test_nr_base.CommonNeutronBaseTestCase,
         self.db_session = db_api.get_session()
         self.initialize_db_config(self.db_session)
         self._default_es_name = 'default'
+        service_plugins = {}
         super(AIMBaseTestCase, self).setUp(
             policy_drivers=policy_drivers, core_plugin=core_plugin,
             ml2_options=ml2_opts, l3_plugin=l3_plugin,
-            sc_plugin=sc_plugin)
+            service_plugins=service_plugins, sc_plugin=sc_plugin)
         self.l3_plugin = manager.NeutronManager.get_service_plugins()[
             service_constants.L3_ROUTER_NAT]
         config.cfg.CONF.set_override('network_vlan_ranges',
