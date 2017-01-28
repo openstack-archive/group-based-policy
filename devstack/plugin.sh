@@ -123,7 +123,9 @@ if is_service_enabled group-policy; then
         [[ $ENABLE_NFP = True ]] && install_nfpgbpservice
         init_gbpservice
         [[ $ENABLE_NFP = True ]] && init_nfpgbpservice
+	# REVISIT: Enable after stable/newton is available
         install_gbpheat
+	# REVISIT: Enable after stable/newton is available
         install_gbpui
         [[ $ENABLE_APIC_AIM = True || $ENABLE_APIC_AIM_GATE = True ]] && configure_apic_aim
         stop_apache_server

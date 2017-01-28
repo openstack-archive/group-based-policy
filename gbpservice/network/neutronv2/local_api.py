@@ -13,8 +13,7 @@
 
 from neutron._i18n import _LE
 from neutron._i18n import _LW
-from neutron.api.rpc.agentnotifiers import dhcp_rpc_agent_api
-from neutron.common import constants as const
+from neutron.callbacks import registry
 from neutron.common import exceptions as n_exc
 from neutron.extensions import address_scope
 from neutron.extensions import l3
@@ -23,7 +22,6 @@ from neutron import manager
 from neutron.notifiers import nova
 from neutron.plugins.common import constants as pconst
 from neutron import quota
-from oslo_config import cfg
 from oslo_log import log as logging
 from oslo_utils import excutils
 
@@ -45,30 +43,70 @@ def get_outer_transaction(transaction):
 
 
 BATCH_NOTIFICATIONS = False
+NOVA_NOTIFIER_METHOD = 'send_network_change'
+DHCP_NOTIFIER_METHOD = 'notify'
 NOTIFIER_REF = 'notifier_object_reference'
 NOTIFIER_METHOD = 'notifier_method_name'
 NOTIFICATION_ARGS = 'notification_args'
+REGISTRY_RESOURCE = 'registry_resource'
+REGISTRY_EVENT = 'registry_event'
+REGISTRY_TRIGGER = 'registry_trigger'
 
 
-def _queue_notification(session, transaction_key, notifier_obj,
-                        notifier_method, args):
-    entry = {NOTIFIER_REF: notifier_obj, NOTIFIER_METHOD: notifier_method,
-             NOTIFICATION_ARGS: args}
+def _enqueue(session, transaction_key, entry):
     if transaction_key not in session.notification_queue:
         session.notification_queue[transaction_key] = [entry]
     else:
         session.notification_queue[transaction_key].append(entry)
 
 
+def _queue_notification(session, transaction_key, notifier_obj,
+                        notifier_method, args):
+    entry = {NOTIFIER_REF: notifier_obj, NOTIFIER_METHOD: notifier_method,
+             NOTIFICATION_ARGS: args}
+    _enqueue(session, transaction_key, entry)
+
+
+def _queue_registry_notification(session, transaction_key, resource,
+                                 event, trigger, **kwargs):
+    entry = {REGISTRY_RESOURCE: resource, REGISTRY_EVENT: event,
+             REGISTRY_TRIGGER: trigger, NOTIFICATION_ARGS: kwargs}
+    _enqueue(session, transaction_key, entry)
+
+
 def send_or_queue_notification(session, transaction_key, notifier_obj,
                                notifier_method, args):
-    if not transaction_key or 'subnet.delete.end' in args:
+    rname = ''
+    if notifier_method == NOVA_NOTIFIER_METHOD:
+        # parse argument like "create_subnetpool"
+        rname = args[0].split('_', 1)[1]
+        event_name = 'after_' + args[0].split('_')[0]
+        registry_method = getattr(notifier_obj,
+                                  '_send_nova_notification')
+    elif notifier_method == DHCP_NOTIFIER_METHOD:
+        # parse argument like "subnetpool.create.end"
+        rname = args[2].split('.')[0]
+        event_name = 'after_' + args[2].split('.')[1]
+        registry_method = getattr(notifier_obj,
+                                  '_native_event_send_dhcp_notification')
+    if rname:
+        cbacks = registry._get_callback_manager()._callbacks.get(rname, None)
+        if cbacks and event_name in cbacks.keys():
+            for entry in cbacks.values():
+                method = entry.values()[0]
+                if registry_method == method:
+                    # This notification is already being sent by Neutron
+                    # soe we will avoid sending a duplicate notification
+                    return
+
+    if not transaction_key or 'subnet.delete.end' in args or (
+        not BATCH_NOTIFICATIONS):
         # We make an exception for the dhcp agent notification
-        # for subnet delete since the implementation for sending
-        # that notification checks for the existence of the
-        # subnet's network, which is not present in certain
-        # cases if the subnet delete notification is queued
-        # and sent after the network delete.
+        # for port and subnet delete since the implementation
+        # for sending that notification checks for the existence
+        # of the associated network, which is not present in certain
+        # cases if the delete notification is queued and sent after
+        # the network delete.
         getattr(notifier_obj, notifier_method)(*args)
         return
 
@@ -76,11 +114,38 @@ def send_or_queue_notification(session, transaction_key, notifier_obj,
                         notifier_method, args)
 
 
+def send_or_queue_registry_notification(
+    session, transaction_key, resource, event, trigger, **kwargs):
+    send = False
+    if resource in ['port', 'router_interface', 'subnet'] and (
+        event in ['after_delete']):
+        send = True
+    if not session or not transaction_key or send or not BATCH_NOTIFICATIONS:
+        # We make an exception for the dhcp agent notification
+        # for subnet delete since the implementation for sending
+        # that notification checks for the existence of the
+        # subnet's network, which is not present in certain
+        # cases if the subnet delete notification is queued
+        # and sent after the network delete.
+        registry._get_callback_manager().notify(resource, event, trigger,
+                                                **kwargs)
+        return
+
+    _queue_registry_notification(session, transaction_key, resource,
+                                 event, trigger, **kwargs)
+
+
 def post_notifications_from_queue(session, transaction_key):
     queue = session.notification_queue[transaction_key]
     for entry in queue:
-        getattr(entry[NOTIFIER_REF],
-                entry[NOTIFIER_METHOD])(*entry[NOTIFICATION_ARGS])
+        if REGISTRY_RESOURCE in entry:
+            registry.notify(entry[REGISTRY_RESOURCE],
+                            entry[REGISTRY_EVENT],
+                            entry[REGISTRY_TRIGGER],
+                            **entry[NOTIFICATION_ARGS])
+        else:
+            getattr(entry[NOTIFIER_REF],
+                    entry[NOTIFIER_METHOD])(*entry[NOTIFICATION_ARGS])
     del session.notification_queue[transaction_key]
 
 
@@ -143,39 +208,6 @@ class LocalAPI(object):
             raise exc.GroupPolicyDeploymentError()
         return servicechain_plugin
 
-    @property
-    def _dhcp_agent_notifier(self):
-        # REVISIT(rkukura): Need initialization method after all
-        # plugins are loaded to grab and store notifier.
-        if not self._cached_agent_notifier:
-            agent_notifiers = getattr(self._core_plugin, 'agent_notifiers', {})
-            self._cached_agent_notifier = (
-                agent_notifiers.get(const.AGENT_TYPE_DHCP) or
-                dhcp_rpc_agent_api.DhcpAgentNotifyAPI())
-        return self._cached_agent_notifier
-
-    def _process_notifications(self, context, action, resource, obj,
-                               orig_obj=None):
-        if BATCH_NOTIFICATIONS:
-            outer_transaction = (get_outer_transaction(
-                context._session.transaction))
-        else:
-            outer_transaction = None
-        if orig_obj:
-            args = [action, orig_obj, {resource: obj}]
-        else:
-            args = [action, {}, {resource: obj}]
-        send_or_queue_notification(context._session,
-            outer_transaction, self._nova_notifier,
-            'send_network_change', args)
-        # REVISIT(rkukura): Do create.end notification?
-        if cfg.CONF.dhcp_agent_notification:
-            action_state = ".%s.end" % action.split('_')[0]
-            args = [context, {resource: obj}, resource + action_state]
-            send_or_queue_notification(context._session,
-                outer_transaction, self._dhcp_agent_notifier,
-                'notify', args)
-
     def _create_resource(self, plugin, context, resource, attrs,
                          do_notify=True, clean_session=True):
         # REVISIT(rkukura): Do create.start notification?
@@ -184,7 +216,7 @@ class LocalAPI(object):
             dummy_context_mgr()):
             reservation = None
             if plugin in [self._group_policy_plugin,
-                    self._servicechain_plugin]:
+                          self._servicechain_plugin]:
                 reservation = quota.QUOTAS.make_reservation(
                         context, context.tenant_id, {resource: 1}, plugin)
             action = 'create_' + resource
@@ -210,8 +242,6 @@ class LocalAPI(object):
                 # creation via this local_api is always in response to an
                 # explicit resource creation request, and hence the above
                 # method will be invoked in the API layer.
-            if do_notify:
-                self._process_notifications(context, action, resource, obj)
         return obj
 
     def _update_resource(self, plugin, context, resource, resource_id, attrs,
@@ -220,14 +250,9 @@ class LocalAPI(object):
         # REVISIT(rkukura): Check authorization?
         with utils.clean_session(context.session) if clean_session else (
             dummy_context_mgr()):
-            obj_getter = getattr(plugin, 'get_' + resource)
-            orig_obj = obj_getter(context, resource_id)
             action = 'update_' + resource
             obj_updater = getattr(plugin, action)
             obj = obj_updater(context, resource_id, {resource: attrs})
-            if do_notify:
-                self._process_notifications(context, action, resource, obj,
-                                            orig_obj)
         return obj
 
     def _delete_resource(self, plugin, context, resource, resource_id,
@@ -236,13 +261,9 @@ class LocalAPI(object):
         # REVISIT(rkukura): Check authorization?
         with utils.clean_session(context.session) if clean_session else (
             dummy_context_mgr()):
-            obj_getter = getattr(plugin, 'get_' + resource)
-            obj = obj_getter(context, resource_id)
             action = 'delete_' + resource
             obj_deleter = getattr(plugin, action)
             obj_deleter(context, resource_id)
-            if do_notify:
-                self._process_notifications(context, action, resource, obj)
 
     def _get_resource(self, plugin, context, resource, resource_id,
                       clean_session=True):
@@ -376,13 +397,6 @@ class LocalAPI(object):
     def _remove_router_interface(self, plugin_context, router_id,
                                  interface_info, clean_session=True):
         # To detach Router interface either port ID or Subnet ID is mandatory
-        key = 'port_id' if 'port_id' in interface_info else 'subnet_id'
-        fixed_ips_filter = {key: [interface_info.get(key)]}
-        filters = {'device_id': [router_id],
-                   'fixed_ips': fixed_ips_filter}
-        ports = self._get_ports(plugin_context, filters=filters,
-                                clean_session=clean_session)
-
         try:
             self._l3_plugin.remove_router_interface(plugin_context, router_id,
                                                     interface_info)
@@ -390,14 +404,6 @@ class LocalAPI(object):
             LOG.warning(_LW('Router interface already deleted for subnet %s'),
                         interface_info)
             return
-        else:
-            # The DHCP agent is not getting this event for the router
-            # interface port delete triggered by L3 Plugin. So we are
-            # sending the notification here
-            if cfg.CONF.dhcp_agent_notification and ports:
-                self._dhcp_agent_notifier.notify(plugin_context,
-                                                 {'port': ports[0]},
-                                                 'port' + '.delete.end')
 
     def _add_router_gw_interface(self, plugin_context, router_id, gw_info,
                                  clean_session=True):

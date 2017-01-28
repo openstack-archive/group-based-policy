@@ -11,6 +11,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from gbpservice.neutron.plugins.ml2plus import patch_neutron  # noqa
+
 import copy
 import hashlib
 import mock
@@ -36,6 +38,7 @@ from oslo_utils import uuidutils
 import webob.exc
 
 from gbpservice.network.neutronv2 import local_api
+from gbpservice.neutron.db.grouppolicy import group_policy_mapping_db  # noqa
 from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import (
     mechanism_driver as md)
 from gbpservice.neutron.services.grouppolicy.common import (
@@ -114,16 +117,15 @@ class AIMBaseTestCase(test_nr_base.CommonNeutronBaseTestCase,
                                                          'port_security'],
                                    'type_drivers': ['opflex', 'local', 'vlan'],
                                    'tenant_network_types': ['opflex']}
-        engine = db_api.get_engine()
-        aim_model_base.Base.metadata.create_all(engine)
         amap.ApicMappingDriver.get_apic_manager = mock.Mock()
-        self.db_session = db_api.get_session()
-        self.initialize_db_config(self.db_session)
         self._default_es_name = 'default'
         super(AIMBaseTestCase, self).setUp(
             policy_drivers=policy_drivers, core_plugin=core_plugin,
             ml2_options=ml2_opts, l3_plugin=l3_plugin,
             sc_plugin=sc_plugin)
+        aim_model_base.Base.metadata.create_all(self.engine)
+        self.db_session = db_api.get_session()
+        self.initialize_db_config(self.db_session)
         self.l3_plugin = manager.NeutronManager.get_service_plugins()[
             service_constants.L3_ROUTER_NAT]
         config.cfg.CONF.set_override('network_vlan_ranges',
@@ -136,10 +138,11 @@ class AIMBaseTestCase(test_nr_base.CommonNeutronBaseTestCase,
         self.saved_keystone_client = ksc_client.Client
         ksc_client.Client = test_aim_md.FakeKeystoneClient
 
-        self._tenant_id = 'test_tenant'
+        self.first_tenant_id = '46f70361-ba71-4bd0-9769-3573fd227c4b'
+        self._tenant_id = self.first_tenant_id
         self._neutron_context = nctx.Context(
             '', kwargs.get('tenant_id', self._tenant_id),
-            is_admin_context=False)
+            is_admin=False)
         self._neutron_context._session = self.db_session
         self._neutron_admin_context = nctx.get_admin_context()
 
@@ -248,7 +251,7 @@ class AIMBaseTestCase(test_nr_base.CommonNeutronBaseTestCase,
         return self._name_mapper
 
     def _switch_to_tenant1(self):
-        self._tenant_id = 'test_tenant'
+        self._tenant_id = self.first_tenant_id
         self._neutron_context.tenant = self._tenant_id
 
     def _switch_to_tenant2(self):
@@ -718,6 +721,9 @@ class AIMBaseTestCase(test_nr_base.CommonNeutronBaseTestCase,
         aim_contracts = self.aim_mgr.find(
             self._aim_context, aim_resource.Contract, name=aim_contract_name)
         self.assertEqual(0, len(aim_contracts))
+
+    def _check_ip_in_cidr(self, ip_addr, cidr):
+        self.assertTrue(netaddr.IPAddress(ip_addr) in netaddr.IPNetwork(cidr))
 
 
 class TestGBPStatus(AIMBaseTestCase):
@@ -1318,7 +1324,8 @@ class TestL3PolicyRollback(AIMBaseTestCase):
             side_effect=Exception)
         self.create_l3_policy(name="l3p1", expected_res_status=500)
         self.assertEqual([], self._plugin.get_address_scopes(self._context))
-        self.assertEqual([], self._plugin.get_subnetpools(self._context))
+        self.assertEqual([], self._plugin.get_subnetpools(self._context,
+                                                          filters={}))
         self.assertEqual([], self._l3_plugin.get_routers(self._context))
         self.assertEqual([], self._gbp_plugin.get_l3_policies(self._context))
         # restore mock
@@ -1348,7 +1355,8 @@ class TestL3PolicyRollback(AIMBaseTestCase):
         self.show_l3_policy(l3p_id, expected_res_status=200)
         self.assertEqual(
             1, len(self._plugin.get_address_scopes(self._context)))
-        self.assertEqual(1, len(self._plugin.get_subnetpools(self._context)))
+        self.assertEqual(1, len(self._plugin.get_subnetpools(self._context,
+                                                             filters={})))
         self.assertEqual(1, len(self._l3_plugin.get_routers(self._context)))
         # restore mock
         self.dummy.delete_l3_policy_precommit = orig_func
@@ -1661,7 +1669,7 @@ class TestL2PolicyWithAutoPTG(TestL2PolicyBase):
 
     def _test_epg_policy_enforcement_attr(self, ptg):
         aim_epg_name = self.driver.apic_epg_name_for_policy_target_group(
-            self._neutron_context.session, ptg['id'])
+            db_api.get_session(), ptg['id'])
         aim_epg = self.aim_mgr.find(
             self._aim_context, aim_resource.EndpointGroup,
             name=aim_epg_name)[0]
@@ -1685,7 +1693,7 @@ class TestL2PolicyWithAutoPTG(TestL2PolicyBase):
                                   expected_res_status=200)['l3_policy']
         ascopes = self._plugin.get_address_scopes(self._context)
         self.assertEqual(l3p['address_scope_v4_id'], ascopes[0]['id'])
-        subpools = self._plugin.get_subnetpools(self._context)
+        subpools = self._plugin.get_subnetpools(self._context, filters={})
         self.assertEqual(l3p['subnetpools_v4'], [subpools[0]['id']])
         self.assertEqual(l3p['address_scope_v4_id'],
                          subpools[0]['address_scope_id'])
@@ -1721,7 +1729,8 @@ class TestL2PolicyWithAutoPTG(TestL2PolicyBase):
         self.assertEqual([], self._plugin.get_subnets(self._context))
         self.assertEqual([], self._plugin.get_networks(self._context))
         self.assertEqual([], self._plugin.get_address_scopes(self._context))
-        self.assertEqual([], self._plugin.get_subnetpools(self._context))
+        self.assertEqual([], self._plugin.get_subnetpools(self._context,
+                                                          filters={}))
         self.assertEqual([], self._l3_plugin.get_routers(self._context))
 
     def test_auto_ptg_rbac(self):
@@ -2367,8 +2376,9 @@ class TestPolicyTarget(AIMBaseTestCase):
     def _verify_host_snat_ip_details(self, mapping, ext_segment_name,
                                      snat_ip, subnet_cidr):
         gw, prefix = subnet_cidr.split('/')
+        self._check_ip_in_cidr(snat_ip, subnet_cidr)
+        mapping['host_snat_ips'][0].pop('host_snat_ip', None)
         self.assertEqual({'external_segment_name': ext_segment_name,
-                          'host_snat_ip': snat_ip,
                           'gateway_ip': gw,
                           'prefixlen': int(prefix)},
                          mapping['host_snat_ips'][0])
@@ -3096,16 +3106,14 @@ class NotificationTest(AIMBaseTestCase):
         self.orig_generate_mac = self._plugin._generate_mac
         self._plugin._generate_mac = _generate_mac
 
-        self.orig_queue_notification = local_api._queue_notification
+        self.orig_enqueue = local_api._enqueue
 
         # The functions are patched below to instrument how
         # many times the functions are called and also to track
         # the queue length.
-        def _queue_notification(session,
-            transaction_key, notifier_obj, notifier_method, args):
+        def _enqueue(session, transaction_key, entry):
             self.queue_notification_call_count += 1
-            self.orig_queue_notification(session,
-                transaction_key, notifier_obj, notifier_method, args)
+            self.orig_enqueue(session, transaction_key, entry)
             if session.notification_queue:
                 key = session.notification_queue.keys()[0]
                 length = len(session.notification_queue[key])
@@ -3113,7 +3121,7 @@ class NotificationTest(AIMBaseTestCase):
                     self.max_notification_queue_length = length
             self.notification_queue = session.notification_queue
 
-        local_api._queue_notification = _queue_notification
+        local_api._enqueue = _enqueue
 
         self.orig_send_or_queue_notification = (
             local_api.send_or_queue_notification)
@@ -3125,6 +3133,18 @@ class NotificationTest(AIMBaseTestCase):
             self.notification_queue = session.notification_queue
 
         local_api.send_or_queue_notification = send_or_queue_notification
+
+        self.orig_send_or_queue_registry_notification = (
+            local_api.send_or_queue_registry_notification)
+
+        def send_or_queue_registry_notification(
+            session, transaction_key, resource, event, trigger, **kwargs):
+            self.orig_send_or_queue_registry_notification(session,
+                transaction_key, resource, event, trigger, **kwargs)
+            self.notification_queue = session.notification_queue
+
+        local_api.send_or_queue_registry_notification = (
+            send_or_queue_registry_notification)
 
         self.orig_post_notifications_from_queue = (
             local_api.post_notifications_from_queue)
@@ -3153,7 +3173,7 @@ class NotificationTest(AIMBaseTestCase):
         uuidutils.generate_uuid = self.orig_generate_uuid
         uuidutils.is_uuid_like = self.orig_is_uuid_like
         local_api.BATCH_NOTIFICATIONS = False
-        local_api._queue_notification = self.orig_queue_notification
+        local_api._enqueue = self.orig_enqueue
         local_api.send_or_queue_notification = (
             self.orig_send_or_queue_notification)
         local_api.post_notifications_from_queue = (
@@ -3170,91 +3190,13 @@ class NotificationTest(AIMBaseTestCase):
         # The 2nd argument is the resource object that is created,
         # and can be potentially verified for further detail
         calls = [
-            mock.call().notify(mock.ANY, mock.ANY,
-                               "address_scope.create.end"),
-            mock.call().notify(mock.ANY, mock.ANY,
-                               "subnetpool.create.end"),
-            mock.call().notify(mock.ANY, mock.ANY, "router.create.end"),
             mock.call().notify(mock.ANY, mock.ANY, "network.create.end"),
             mock.call().notify(mock.ANY, mock.ANY, "subnet.create.end"),
-            mock.call().notify(mock.ANY, mock.ANY,
-                               "policy_target_group.create.end"),
-            mock.call().notify(mock.ANY, mock.ANY,
-                               "security_group.create.end"),
-            mock.call().notify(mock.ANY, mock.ANY,
-                               "security_group_rule.delete.end"),
-            mock.call().notify(mock.ANY, mock.ANY,
-                               "security_group_rule.delete.end"),
-            mock.call().notify(mock.ANY, mock.ANY,
-                               "security_group_rule.create.end"),
-            mock.call().notify(mock.ANY, mock.ANY,
-                               "security_group_rule.create.end"),
-            mock.call().notify(mock.ANY, mock.ANY,
-                               "security_group_rule.create.end"),
-            mock.call().notify(mock.ANY, mock.ANY,
-                               "security_group_rule.create.end"),
             mock.call().notify(mock.ANY, mock.ANY, "port.create.end"),
-            mock.call().notify(mock.ANY, mock.ANY, "policy_target.create.end"),
+            # mock.call().notify(mock.ANY, mock.ANY, "port.update.end"),
+            mock.call().notify(mock.ANY, mock.ANY, "port.create.end"),
             mock.call().notify(mock.ANY, mock.ANY, "port.delete.end"),
-            mock.call().notify(mock.ANY, mock.ANY, "policy_target.delete.end"),
-            mock.call().notify(mock.ANY, mock.ANY, "port.delete.end"),
-            mock.call().notify(mock.ANY, mock.ANY, "subnet.delete.end"),
-            mock.call().notify(mock.ANY, mock.ANY, "network.delete.end"),
-            mock.call().notify(mock.ANY, mock.ANY,
-                               "subnetpool.delete.end"),
-            mock.call().notify(mock.ANY, mock.ANY,
-                               "address_scope.delete.end"),
-            mock.call().notify(mock.ANY, mock.ANY, "router.delete.end"),
-            mock.call().notify(mock.ANY, mock.ANY,
-                               "policy_target_group.delete.end"),
-            mock.call().notify(mock.ANY, mock.ANY,
-                               "security_group.delete.end"),
-            mock.call().notify(mock.ANY, mock.ANY,
-                               "security_group.delete.end")]
-        return calls
-
-    def _expected_nova_call_list(self):
-        # This testing strategy assumes the sequence of notifications
-        # that result from the sequence of operations currently
-        # performed. If the internal orchestration logic changes resulting
-        # in a change in the sequence of operations, the following
-        # list should be updated accordingly.
-        # The 2nd argument is the resource object that is created,
-        # and can be potentially verified for further detail
-        calls = [
-            mock.call().notify("create_address_scope", mock.ANY, mock.ANY),
-            mock.call().notify("create_subnetpool", mock.ANY, mock.ANY),
-            mock.call().notify("create_router", mock.ANY, mock.ANY),
-            mock.call().notify("create_network", mock.ANY, mock.ANY),
-            mock.call().notify("create_subnet", mock.ANY, mock.ANY),
-            mock.call().notify("create_policy_target_group",
-                               mock.ANY, mock.ANY),
-            mock.call().notify("create_security_group", mock.ANY, mock.ANY),
-            mock.call().notify("delete_security_group_rule", mock.ANY,
-                               mock.ANY),
-            mock.call().notify("delete_security_group_rule", mock.ANY,
-                               mock.ANY),
-            mock.call().notify("create_security_group_rule", mock.ANY,
-                               mock.ANY),
-            mock.call().notify("create_security_group_rule", mock.ANY,
-                               mock.ANY),
-            mock.call().notify("create_security_group_rule", mock.ANY,
-                               mock.ANY),
-            mock.call().notify("create_security_group_rule", mock.ANY,
-                               mock.ANY),
-            mock.call().notify("create_port", mock.ANY, mock.ANY),
-            mock.call().notify("create_policy_target", mock.ANY, mock.ANY),
-            mock.call().notify("delete_port", mock.ANY, mock.ANY),
-            mock.call().notify("delete_policy_target", mock.ANY, mock.ANY),
-            mock.call().notify("delete_subnet", mock.ANY, mock.ANY),
-            mock.call().notify("delete_network", mock.ANY, mock.ANY),
-            mock.call().notify("delete_subnetpool", mock.ANY, mock.ANY),
-            mock.call().notify("delete_address_scope", mock.ANY, mock.ANY),
-            mock.call().notify("delete_router", mock.ANY, mock.ANY),
-            mock.call().notify("delete_policy_target_group",
-                               mock.ANY, mock.ANY),
-            mock.call().notify("delete_security_group", mock.ANY, mock.ANY),
-            mock.call().notify("delete_security_group", mock.ANY, mock.ANY)]
+            mock.call().notify(mock.ANY, mock.ANY, "port.delete.end")]
         return calls
 
     def _test_notifier(self, notifier, expected_calls,
@@ -3279,29 +3221,13 @@ class NotificationTest(AIMBaseTestCase):
             # test that no notifications have been left out
             self.assertEqual({}, self.notification_queue)
 
-    def _disable_checks(self, no_batch_event, with_batch_event):
-        # this is a temporarty workaround to avoid having to repeatedly
-        # recheck gate job on account of the failing UTs that compare the
-        # attributes which are being disabled here. Once this issue can be
-        # reproduced locally, and diagnosed, this selective disabling can
-        # be removed
-        n1 = no_batch_event
-        n2 = with_batch_event
-        if type(n1[0][1]) is dict and 'network' in n1[0][1]:
-            n1[0][1]['network'].pop('ipv4_address_scope', None)
-            n2[0][1]['network'].pop('ipv4_address_scope', None)
-            n1[0][1]['network'].pop('subnets', None)
-            n2[0][1]['network'].pop('subnets', None)
-        if type(n1[0][2]) is dict and 'network' in n1[0][2]:
-            n1[0][2]['network'].pop('ipv4_address_scope', None)
-            n2[0][2]['network'].pop('ipv4_address_scope', None)
-            n1[0][2]['network'].pop('subnets', None)
-            n2[0][2]['network'].pop('subnets', None)
-
     def _test_notifications(self, no_batch, with_batch):
         for n1, n2 in zip(no_batch, with_batch):
             # temporary workaround
-            self._disable_checks(n1, n2)
+            if 'port' in n1[0][1]:
+                # ip address assignment is random, hence do not compare
+                n1[0][1]['port']['fixed_ips'][0]['ip_address'] = ''
+                n2[0][1]['port']['fixed_ips'][0]['ip_address'] = ''
             # test the resource objects are identical with and without batch
             self.assertEqual(n1[0][1], n2[0][1])
             # test that all the same events are pushed with and without batch
@@ -3325,39 +3251,14 @@ class NotificationTest(AIMBaseTestCase):
 
         self.assertLess(0, self.queue_notification_call_count)
         self.assertLess(0, self.max_notification_queue_length)
-        # Two resources (PTG and PT) are created and deleted in the
-        # _test_notifier function via the tenant API, hence 4 batches
-        # of notifications should be sent
-        self.assertEqual(4, self.post_notifications_from_queue_call_count)
+        # Two resources (PTG and PT) are created and deleted, and
+        # two security groups are deleted, in the _test_notifier
+        # function via the tenant API, hence 4 batches of notifications
+        # should be sent
+        self.assertEqual(6, self.post_notifications_from_queue_call_count)
 
         self._test_notifications(dhcp_notifier_no_batch.call_args_list,
                                  dhcp_notifier_with_batch.call_args_list)
-
-    def test_nova_notifier(self):
-        with mock.patch.object(nova.Notifier,
-                               'send_network_change') as nova_notifier_nobatch:
-            self._test_notifier(nova_notifier_nobatch,
-                                self._expected_nova_call_list, False)
-
-        self.assertEqual(0, self.queue_notification_call_count)
-        self.assertEqual(0, self.max_notification_queue_length)
-        self.assertEqual(0, self.post_notifications_from_queue_call_count)
-        self.fake_uuid = 0
-
-        with mock.patch.object(nova.Notifier,
-                               'send_network_change') as nova_notifier_batch:
-            self._test_notifier(nova_notifier_batch,
-                                self._expected_nova_call_list, True)
-
-        self.assertLess(0, self.queue_notification_call_count)
-        self.assertLess(0, self.max_notification_queue_length)
-        # Two resources (PTG and PT) are created and deleted in the
-        # _test_notifier function via the tenant API, hence 4 batches
-        # of notifications should be sent
-        self.assertEqual(4, self.post_notifications_from_queue_call_count)
-
-        self._test_notifications(nova_notifier_nobatch.call_args_list,
-                                 nova_notifier_batch.call_args_list)
 
     def test_notifiers_with_transaction_rollback(self):
         # No notifications should get pushed in this case

@@ -17,19 +17,17 @@ import itertools
 from keystonemiddleware import auth_token  # noqa
 import mock
 import netaddr
-from neutron.api.rpc.agentnotifiers import dhcp_rpc_agent_api
 from neutron.common import constants as cst
 from neutron import context as nctx
 from neutron.db import api as db_api
-from neutron.db import model_base
 from neutron.extensions import external_net as external_net
 from neutron.extensions import securitygroup as ext_sg
 from neutron import manager
-from neutron.notifiers import nova
 from neutron.plugins.common import constants as pconst
 from neutron.tests.unit.extensions import test_l3
 from neutron.tests.unit.extensions import test_securitygroup
 from neutron.tests.unit.plugins.ml2 import test_plugin as n_test_plugin
+from neutron_lib.db import model_base
 from oslo_utils import uuidutils
 import webob.exc
 
@@ -269,9 +267,10 @@ class ResourceMappingTestCase(test_plugin.GroupPolicyPluginTestCase):
             policy_rules = [x['id'] for x in subset_rules
                             if x['policy_classifier_id']
                             in set(parent_classifier_ids)]
+
             return [self.show_policy_rule(
-                    policy_rule_id)['policy_rule'] for
-                    policy_rule_id in policy_rules]
+                policy_rule_id)['policy_rule'] for
+                policy_rule_id in policy_rules]
         else:
             return [self.show_policy_rule(x)['policy_rule']
                     for x in prs['policy_rules']]
@@ -451,6 +450,9 @@ class ResourceMappingTestCase(test_plugin.GroupPolicyPluginTestCase):
         return self.create_policy_rule(
             policy_classifier_id=cls['id'], policy_actions=[action['id']],
             shared=shared)['policy_rule']
+
+    def _check_ip_in_cidr(self, ip_addr, cidr):
+        self.assertTrue(netaddr.IPAddress(ip_addr) in netaddr.IPNetwork(cidr))
 
 
 class TestClusterIdMixin(object):
@@ -1848,43 +1850,6 @@ class TestL3Policy(ResourceMappingTestCase):
                                         expected_res_status=400)
             self.assertEqual('InvalidRouterAccess',
                              res['NeutronError']['type'])
-
-
-class NotificationTest(ResourceMappingTestCase):
-
-    def test_dhcp_notifier(self):
-        with mock.patch.object(dhcp_rpc_agent_api.DhcpAgentNotifyAPI,
-                               'notify') as dhcp_notifier:
-            ptg = self.create_policy_target_group(name="ptg1")
-            ptg_id = ptg['policy_target_group']['id']
-            pt = self.create_policy_target(
-                name="pt1", policy_target_group_id=ptg_id)
-            self.assertEqual(
-                pt['policy_target']['policy_target_group_id'], ptg_id)
-            # REVISIT(rkukura): Check dictionaries for correct id, etc..
-            dhcp_notifier.assert_any_call(mock.ANY, mock.ANY,
-                                          "router.create.end")
-            dhcp_notifier.assert_any_call(mock.ANY, mock.ANY,
-                                          "network.create.end")
-            dhcp_notifier.assert_any_call(mock.ANY, mock.ANY,
-                                          "subnet.create.end")
-            dhcp_notifier.assert_any_call(mock.ANY, mock.ANY,
-                                          "port.create.end")
-
-    def test_nova_notifier(self):
-        with mock.patch.object(nova.Notifier,
-                               'send_network_change') as nova_notifier:
-            ptg = self.create_policy_target_group(name="ptg1")
-            ptg_id = ptg['policy_target_group']['id']
-            pt = self.create_policy_target(
-                name="pt1", policy_target_group_id=ptg_id)
-            self.assertEqual(
-                pt['policy_target']['policy_target_group_id'], ptg_id)
-            # REVISIT(rkukura): Check dictionaries for correct id, etc..
-            nova_notifier.assert_any_call("create_router", {}, mock.ANY)
-            nova_notifier.assert_any_call("create_network", {}, mock.ANY)
-            nova_notifier.assert_any_call("create_subnet", {}, mock.ANY)
-            nova_notifier.assert_any_call("create_port", {}, mock.ANY)
 
 
 # TODO(ivar): We need a UT that verifies that the PT's ports have the default
@@ -3660,8 +3625,9 @@ class TestExternalSegment(ResourceMappingTestCase):
                     subnet_id=sub['subnet']['id'])['external_segment']
                 l3p = self.create_l3_policy()['l3_policy']
                 self.assertEqual(es['id'], l3p['external_segments'].keys()[0])
-                self.assertEqual('192.168.0.2',
-                                 l3p['external_segments'][es['id']][0])
+                self._check_ip_in_cidr(l3p['external_segments'][es['id']][0],
+                                       self._show_subnet(
+                                           es['subnet_id'])['subnet']['cidr'])
 
                 ep = self.create_external_policy()['external_policy']
                 self.assertEqual(es['id'], ep['external_segments'][0])
@@ -3680,8 +3646,9 @@ class TestExternalSegment(ResourceMappingTestCase):
                     subnet_id=sub['subnet']['id'])['external_segment']
                 l3p = self.create_l3_policy()['l3_policy']
                 self.assertEqual(es['id'], l3p['external_segments'].keys()[0])
-                self.assertEqual('192.168.0.2',
-                                 l3p['external_segments'][es['id']][0])
+                self._check_ip_in_cidr(l3p['external_segments'][es['id']][0],
+                                       self._show_subnet(
+                                           es['subnet_id'])['subnet']['cidr'])
 
                 ep = self.create_external_policy()['external_policy']
                 self.assertEqual(es['id'], ep['external_segments'][0])
@@ -4558,7 +4525,7 @@ class TestFloatingIpMonkeyPatch(ResourceMappingTestCase,
             with self.port() as private_port:
                 with self.router() as router:
                     data = {
-                        'tenant_id': 'test-tenant',
+                        'tenant_id': self._tenant_id,
                         'floating_network_id': sub['subnet']['network_id'],
                         'port_id': private_port['port']['id'],
                         'router_id': router['router']['id']}
