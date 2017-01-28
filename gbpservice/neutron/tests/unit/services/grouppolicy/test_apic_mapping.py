@@ -24,14 +24,14 @@ from apic_ml2.neutron.db import port_ha_ipaddress_binding as ha_ip_db
 from apic_ml2.neutron.tests.unit.ml2.drivers.cisco.apic import (
     test_cisco_apic_common as mocked)
 from apicapi import apic_mapper
-from neutron.agent import securitygroups_rpc as sg_cfg
+from neutron.conf.agent import securitygroups_rpc as sg_cfg
 from neutron.common import rpc as n_rpc
 from neutron import context
 from neutron.db import api as db_api
 from neutron.db import db_base_plugin_v2 as n_db
-from neutron.db import model_base
 from neutron.extensions import portbindings
 from neutron import manager
+from neutron_lib.db import model_base
 from opflexagent import constants as ocst
 from oslo_config import cfg
 from oslo_serialization import jsonutils
