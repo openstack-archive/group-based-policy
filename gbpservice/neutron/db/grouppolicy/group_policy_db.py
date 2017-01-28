@@ -14,8 +14,8 @@ import netaddr
 from neutron.api.v2 import attributes as attr
 from neutron import context
 from neutron.db import common_db_mixin
-from neutron.db import model_base
 from neutron.db import models_v2
+from neutron_lib.db import model_base
 from oslo_log import helpers as log
 from oslo_utils import uuidutils
 import sqlalchemy as sa
