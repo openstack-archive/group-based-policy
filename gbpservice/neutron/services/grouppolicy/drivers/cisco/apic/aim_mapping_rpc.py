@@ -49,7 +49,7 @@ class AIMMappingRPCMixin(ha_ip_db.HAIPOwnerDbMixin):
         self.opflex_endpoints = [
             o_rpc.GBPServerRpcCallback(self, self.notifier)]
         self.opflex_topic = o_rpc.TOPIC_OPFLEX
-        self.opflex_conn = n_rpc.create_connection(new=True)
+        self.opflex_conn = n_rpc.create_connection()
         self.opflex_conn.create_consumer(
             self.opflex_topic, self.opflex_endpoints, fanout=False)
         self.opflex_conn.consume_in_threads()

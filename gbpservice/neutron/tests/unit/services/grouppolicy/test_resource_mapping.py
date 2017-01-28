@@ -21,7 +21,6 @@ from neutron.api.rpc.agentnotifiers import dhcp_rpc_agent_api
 from neutron.common import constants as cst
 from neutron import context as nctx
 from neutron.db import api as db_api
-from neutron.db import model_base
 from neutron.extensions import external_net as external_net
 from neutron.extensions import securitygroup as ext_sg
 from neutron import manager
@@ -30,6 +29,7 @@ from neutron.plugins.common import constants as pconst
 from neutron.tests.unit.extensions import test_l3
 from neutron.tests.unit.extensions import test_securitygroup
 from neutron.tests.unit.plugins.ml2 import test_plugin as n_test_plugin
+from neutron_lib.db import model_base
 from oslo_utils import uuidutils
 import webob.exc
 
