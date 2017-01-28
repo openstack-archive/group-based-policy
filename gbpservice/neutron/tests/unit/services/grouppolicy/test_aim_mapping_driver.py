@@ -97,7 +97,7 @@ class AIMBaseTestCase(test_nr_base.CommonNeutronBaseTestCase,
     _extension_path = None
 
     def setUp(self, policy_drivers=None, core_plugin=None, ml2_options=None,
-              l3_plugin=None, sc_plugin=None, **kwargs):
+              l3_plugin=None, sc_plugin=None, qos_plugin=None, **kwargs):
         core_plugin = core_plugin or ML2PLUS_PLUGIN
         if not l3_plugin:
             l3_plugin = "apic_aim_l3"
@@ -125,7 +125,7 @@ class AIMBaseTestCase(test_nr_base.CommonNeutronBaseTestCase,
         super(AIMBaseTestCase, self).setUp(
             policy_drivers=policy_drivers, core_plugin=core_plugin,
             ml2_options=ml2_opts, l3_plugin=l3_plugin,
-            sc_plugin=sc_plugin)
+            sc_plugin=sc_plugin, qos_plugin=qos_plugin)
         aim_model_base.Base.metadata.create_all(self.engine)
         self.db_session = db_api.get_session()
         self.initialize_db_config(self.db_session)
