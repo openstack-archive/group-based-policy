@@ -13,18 +13,18 @@
 
 import copy
 import os
-import warnings
 import webob.exc
 
+import mock
 from neutron.api import extensions
 from neutron import context
 from neutron.db import api as db_api
-from neutron.db import model_base
 from neutron import manager
 from neutron.plugins.common import constants
 from neutron import policy
 from neutron.tests.unit.api import test_extensions
 from neutron.tests.unit.db import test_db_base_plugin_v2
+from neutron_lib.db import model_base
 from oslo_utils import importutils
 from oslo_utils import uuidutils
 
@@ -293,6 +293,24 @@ class GroupPolicyDBTestBase(ApiManagerMixin):
         return self.create_servicechain_node(
             service_profile_id=prof['id'], **kwargs)
 
+    def _set_notification_mocks(self):
+        self.l3_notify_p = mock.patch(
+            'neutron.extensions.l3agentscheduler.notify').start()
+        self.l3_periodic_p = mock.patch(
+            'neutron.db.l3_agentschedulers_db.L3AgentSchedulerDbMixin.'
+            'add_periodic_l3_agent_status_check').start()
+        self.dhcp_notify_p = mock.patch(
+            'neutron.extensions.dhcpagentscheduler.notify').start()
+        self.dhcp_notifier_schedule = mock.patch(
+            'neutron.api.rpc.agentnotifiers.dhcp_rpc_agent_api.'
+            'DhcpAgentNotifyAPI._schedule_network').start()
+
+    def _unset_notification_mocks(self):
+        self.l3_notify_p.stop()
+        self.l3_periodic_p.stop()
+        self.dhcp_notify_p.stop()
+        self.dhcp_notifier_schedule.stop()
+
 
 class GroupPolicyDBTestPlugin(gpdb.GroupPolicyDbPlugin):
 
@@ -325,6 +343,8 @@ class GroupPolicyDbTestCase(GroupPolicyDBTestBase,
         if not service_plugins:
             service_plugins = {
                 'l3_plugin_name': 'router',
+                'flavors_plugin_name': 'neutron.services.flavors.'
+                                       'flavors_plugin.FlavorsPlugin',
                 'gp_plugin_name': gp_plugin,
                 'sc_plugin_name': sc_plugin}
 
@@ -334,7 +354,6 @@ class GroupPolicyDbTestCase(GroupPolicyDBTestBase,
             plugin=core_plugin, ext_mgr=ext_mgr,
             service_plugins=service_plugins
         )
-        warnings.resetwarnings()
         test_policy_file = ETCDIR + "/test-policy.json"
         policy.refresh(policy_file=test_policy_file)
         self.plugin = importutils.import_object(gp_plugin)
@@ -349,6 +368,11 @@ class GroupPolicyDbTestCase(GroupPolicyDBTestBase,
         self._gbp_plugin = plugins.get(constants.GROUP_POLICY)
         self._sc_plugin = plugins.get(constants.SERVICECHAIN)
         self._l3_plugin = plugins.get(constants.L3_ROUTER_NAT)
+        self._set_notification_mocks()
+
+    def tearDown(self):
+        self._unset_notification_mocks()
+        super(GroupPolicyDbTestCase, self).tearDown()
 
 
 class TestGroupResources(GroupPolicyDbTestCase):

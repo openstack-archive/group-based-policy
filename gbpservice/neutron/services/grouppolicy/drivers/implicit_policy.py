@@ -12,7 +12,7 @@
 
 from neutron._i18n import _LI
 from neutron._i18n import _LW
-from neutron.db import model_base
+from neutron_lib.db import model_base
 from oslo_config import cfg
 from oslo_log import helpers as log
 from oslo_log import log as logging

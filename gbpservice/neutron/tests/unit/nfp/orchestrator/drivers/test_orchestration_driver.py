@@ -12,7 +12,7 @@
 
 import mock
 from mock import patch
-import unittest
+import unittest2
 
 from oslo_config import cfg
 
@@ -44,7 +44,7 @@ NFP_NEUTRON_NETWORK_DRIVER_CLASS_PATH = ('gbpservice.nfp.orchestrator'
 @patch(NFP_NEUTRON_NETWORK_DRIVER_CLASS_PATH +
        '.NFPNeutronNetworkDriver.__init__',
        mock.MagicMock(return_value=None))
-class OrchestrationDriverTestCase(unittest.TestCase):
+class OrchestrationDriverTestCase(unittest2.TestCase):
 
     def test_create_network_function_device(self):
         driver = orchestration_driver.OrchestrationDriver(

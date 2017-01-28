@@ -16,7 +16,7 @@ from neutron.common import rpc as n_rpc
 from neutron import context as ctx
 from oslo_config import cfg
 from oslo_serialization import jsonutils
-import unittest
+import unittest2
 
 """
 Common class used to create configuration mapping
@@ -73,7 +73,7 @@ class TestContext(object):
         return variables
 
 
-class CommonLibraryTest(unittest.TestCase):
+class CommonLibraryTest(unittest2.TestCase):
 
     def setUp(self):
         n_rpc.init(cfg.CONF)
@@ -176,4 +176,4 @@ class CommonLibraryTest(unittest.TestCase):
             transport.get_response_from_configurator(conf)
 
 if __name__ == '__main__':
-    unittest.main()
+    unittest2.main()

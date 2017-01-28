@@ -13,8 +13,8 @@
 
 import mock
 from neutron.db import api as db_api
-from neutron.db import model_base
 from neutron.plugins.common import constants
+from neutron_lib.db import model_base
 from oslo_serialization import jsonutils
 import webob
 

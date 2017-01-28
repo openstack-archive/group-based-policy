@@ -11,8 +11,9 @@
 #    under the License.
 
 from neutron.api import extensions
-from neutron.api.v2 import attributes as attr
 from neutron.common import exceptions as nexc
+from neutron_lib.api import converters as conv
+from neutron_lib import constants as nlib_const
 from oslo_config import cfg
 
 from gbpservice.neutron.extensions import group_policy as gp
@@ -63,12 +64,12 @@ EXTENDED_ATTRIBUTES_2_0 = {
         'proxied_group_id': {
             'allow_post': True, 'allow_put': False,
             'validate': {'type:uuid_or_none': None}, 'is_visible': True,
-            'default': attr.ATTR_NOT_SPECIFIED,
+            'default': nlib_const.ATTR_NOT_SPECIFIED,
             'enforce_policy': True},
         'proxy_type': {
             'allow_post': True, 'allow_put': False,
             'validate': {'type:values': ['l2', 'l3', None]},
-            'is_visible': True, 'default': attr.ATTR_NOT_SPECIFIED,
+            'is_visible': True, 'default': nlib_const.ATTR_NOT_SPECIFIED,
             'enforce_policy': True},
         'proxy_group_id': {
             'allow_post': False, 'allow_put': False,
@@ -76,7 +77,7 @@ EXTENDED_ATTRIBUTES_2_0 = {
             'enforce_policy': True},
         'enforce_service_chains': {
             'allow_post': True, 'allow_put': False, 'default': True,
-            'convert_to': attr.convert_to_boolean,
+            'convert_to': conv.convert_to_boolean,
             'is_visible': True, 'required_by_policy': True,
             'enforce_policy': True},
         # TODO(ivar): The APIs should allow the creation of a group with a
@@ -90,8 +91,8 @@ EXTENDED_ATTRIBUTES_2_0 = {
                           'is_visible': True},
         'proxy_subnet_prefix_length': {
             'allow_post': True, 'allow_put': True,
-            'convert_to': attr.convert_to_int,
-            'default': attr.convert_to_int(
+            'convert_to': conv.convert_to_int,
+            'default': conv.convert_to_int(
                 PROXY_CONF.default_proxy_subnet_prefix_length),
             'is_visible': True},
         # Proxy IP version is the same as the standard L3 pool ip version
@@ -100,14 +101,14 @@ EXTENDED_ATTRIBUTES_2_0 = {
         # This policy target will be used to reach the -proxied- PTG
         'proxy_gateway': {
             'allow_post': True, 'allow_put': False, 'default': False,
-            'convert_to': attr.convert_to_boolean,
+            'convert_to': conv.convert_to_boolean,
             'is_visible': True, 'required_by_policy': True,
             'enforce_policy': True},
         # This policy target is the default gateway for the -current- PTG
         # Only for internal use.
         'group_default_gateway': {
             'allow_post': True, 'allow_put': False, 'default': False,
-            'convert_to': attr.convert_to_boolean,
+            'convert_to': conv.convert_to_boolean,
             'is_visible': True, 'required_by_policy': True,
             'enforce_policy': True},
     },

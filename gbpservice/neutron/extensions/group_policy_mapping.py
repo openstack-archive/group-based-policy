@@ -11,7 +11,8 @@
 #  under the License.
 
 from neutron.api import extensions
-from neutron.api.v2 import attributes as attr
+from neutron_lib.api import converters as conv
+from neutron_lib import constants as nlib_const
 
 from gbpservice.neutron.extensions import group_policy as gp
 
@@ -23,8 +24,8 @@ EXTENDED_ATTRIBUTES_2_0 = {
                     'validate': {'type:uuid_or_none': None},
                     'is_visible': True, 'default': None},
         'fixed_ips': {'allow_post': True, 'allow_put': True,
-                      'default': attr.ATTR_NOT_SPECIFIED,
-                      'convert_list_to': attr.convert_kvp_list_to_dict,
+                      'default': nlib_const.ATTR_NOT_SPECIFIED,
+                      'convert_list_to': conv.convert_kvp_list_to_dict,
                       'validate': {'type:fixed_ips': None},
                       'enforce_policy': True,
                       'is_visible': True},
@@ -32,7 +33,7 @@ EXTENDED_ATTRIBUTES_2_0 = {
     gp.POLICY_TARGET_GROUPS: {
         'subnets': {'allow_post': True, 'allow_put': True,
                     'validate': {'type:uuid_list': None},
-                    'convert_to': attr.convert_none_to_empty_list,
+                    'convert_to': conv.convert_none_to_empty_list,
                     'is_visible': True, 'default': None},
     },
     gp.L2_POLICIES: {
@@ -49,15 +50,15 @@ EXTENDED_ATTRIBUTES_2_0 = {
                                 'is_visible': True, 'default': None},
         'subnetpools_v4': {'allow_post': True, 'allow_put': True,
                            'validate': {'type:uuid_list': None},
-                           'convert_to': attr.convert_none_to_empty_list,
+                           'convert_to': conv.convert_none_to_empty_list,
                            'is_visible': True, 'default': None},
         'subnetpools_v6': {'allow_post': True, 'allow_put': True,
                            'validate': {'type:uuid_list': None},
-                           'convert_to': attr.convert_none_to_empty_list,
+                           'convert_to': conv.convert_none_to_empty_list,
                            'is_visible': True, 'default': None},
         'routers': {'allow_post': True, 'allow_put': True,
                     'validate': {'type:uuid_list': None},
-                    'convert_to': attr.convert_none_to_empty_list,
+                    'convert_to': conv.convert_none_to_empty_list,
                     'is_visible': True, 'default': None},
     },
     gp.EXTERNAL_SEGMENTS: {

@@ -12,7 +12,7 @@
 # limitations under the License.
 
 import requests
-import unittest
+import unittest2
 
 import mock
 from oslo_serialization import jsonutils
@@ -132,7 +132,7 @@ class DataMatcher(object):
         return (self._data == obj)
 
 
-class OdlManagerTestCase(unittest.TestCase):
+class OdlManagerTestCase(unittest2.TestCase):
     """ Test case for ODL manager testing
 
     Set up the testing environment
