@@ -157,7 +157,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
         self.notifier = ofrpc.AgentNotifierApi(n_topics.AGENT)
         self.sg_enabled = securitygroups_rpc.is_firewall_enabled()
         # setup APIC topology RPC handler
-        self.topology_conn = n_rpc.create_connection(new=True)
+        self.topology_conn = n_rpc.create_connection()
         self.topology_conn.create_consumer(apic_topo_rpc.TOPIC_APIC_SERVICE,
                                            [self.TopologyRpcEndpoint(self)],
                                            fanout=False)
