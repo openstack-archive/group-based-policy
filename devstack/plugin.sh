@@ -24,9 +24,11 @@ function gbp_configure_neutron {
     iniset $NEUTRON_CONF quotas quota_security_group_rule "-1"
     iniset $NEUTRON_CONF quotas quota_router "-1"
     iniset $NEUTRON_CONF quotas quota_floatingip "-1"
+    iniset $NEUTRON_CONF agent extensions "qos"
 }
 
 function nfp_configure_neutron {
+    NEUTRON_ML2_CONF="/etc/neutron/plugins/ml2/ml2_conf.ini"
     iniset $NEUTRON_CONF keystone_authtoken admin_tenant_name "service"
     iniset $NEUTRON_CONF keystone_authtoken admin_user "neutron"
     iniset $NEUTRON_CONF keystone_authtoken admin_password $ADMIN_PASSWORD
@@ -40,6 +42,8 @@ function nfp_configure_neutron {
     fi
     iniset $NEUTRON_CONF nfp_node_driver is_service_admin_owned "True"
     iniset $NEUTRON_CONF nfp_node_driver svc_management_ptg_name "svc_management_ptg"
+    extn_drivers=$(iniget $NEUTRON_ML2_CONF ml2 extension_drivers)
+    iniset $NEUTRON_ML2_CONF ml2 extension_drivers $extn_drivers,port_security
 }
 
 function configure_nfp_loadbalancer {
