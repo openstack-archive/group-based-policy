@@ -158,22 +158,26 @@ class Controller(base_controller.BaseController):
             resource = config_data['resource']
             operation = context['operation']
 
+            msg = ("Request recieved :: %s" % body)
+            LOG.info(msg)
             if 'device_ip' in context:
+                if operation == 'delete':
+                    return
                 msg = ("POSTING DATA TO VM :: %s" % body)
                 LOG.info(msg)
                 device_ip = context['device_ip']
                 ip = str(device_ip)
-                resource_id = (context['nfp_context']['nfp_context']['id']
-                    if context.get('nfp_context') and
-                        context['nfp_context'].get('nfp_context') else '')
-                if operation == 'delete' and resource_id == 'PERFORM_CLEAR_HM':
-                    return
+                #resource_id = (context['nfp_context']['nfp_context']['id']
+                #    if context.get('nfp_context') and
+                #        context['nfp_context'].get('nfp_context') else '')
                 is_vm_reachable = self._verify_vm_reachability(ip,
                                                                self.vm_port)
                 if is_vm_reachable:
                     requests.post(
                         'http://' + ip + ':' + self.vm_port + '/v1/nfp/' +
                         self.method_name, data=jsonutils.dumps(body))
+                    msg = ("requests successfull for data: %s" % body)
+                    LOG.info(msg)
                 else:
                     raise Exception('VM is not reachable')
                 cache_ips.add(device_ip)
