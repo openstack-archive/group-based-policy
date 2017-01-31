@@ -411,6 +411,7 @@ class OrchestrationDriver(object):
                         interfaces_to_attach, instance_name,
                         volume_support, volume_size,
                         files=device_data.get('files'),
+                        user_data=device_data.get('user_data'),
                         result_store=instance_id_result)
 
         create_instance_executor.add_job(

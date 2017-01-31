@@ -620,6 +620,8 @@ class DeviceOrchestrator(nfp_api.NfpEventHandler):
 
         if nfp_context.get('files'):
             device_data['files'] = nfp_context['files']
+        if nfp_context.get('user_data'):
+            device_data['user_data'] = nfp_context['user_data']
         return device_data
 
     def _create_nfd_entry(self, nfp_context, driver_device_info,
