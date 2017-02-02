@@ -186,6 +186,15 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
     def aim_display_name(self, name):
         return aim_utils.sanitize_display_name(name)
 
+    # RPC Method
+    def ip_address_owner_update(self, context, **kwargs):
+        if not kwargs.get('ip_owner_info'):
+            return
+        ports_to_update = self.update_ip_owner(kwargs['ip_owner_info'])
+        for p in ports_to_update:
+            LOG.debug("APIC ownership update for port %s", p)
+            self.aim_mech_driver._notify_port_update(context, p)
+
     @log.log_method_call
     def create_l3_policy_precommit(self, context):
         l3p = context.current
@@ -1793,17 +1802,15 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
         return subnets
 
     def _get_aap_details(self, plugin_context, port, details):
-        pt = self._port_id_to_pt(plugin_context, port['id'])
         aaps = port['allowed_address_pairs']
-        if pt:
-            # Set the correct address ownership for this port
-            owned_addresses = self._get_owned_addresses(
-                plugin_context, pt['port_id'])
-            for allowed in aaps:
-                if allowed['ip_address'] in owned_addresses:
-                    # Signal the agent that this particular address is active
-                    # on its port
-                    allowed['active'] = True
+        # Set the correct address ownership for this port
+        owned_addresses = self._get_owned_addresses(
+            plugin_context, port['id'])
+        for allowed in aaps:
+            if allowed['ip_address'] in owned_addresses:
+                # Signal the agent that this particular address is active
+                # on its port
+                allowed['active'] = True
         return aaps
 
     def _get_port_vrf(self, plugin_context, port, details):
@@ -1901,7 +1908,7 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
         fips_filter = [port['id']]
         active_addrs = [a['ip_address']
                         for a in details['allowed_address_pairs']
-                        if a['active']]
+                        if a.get('active')]
         if active_addrs:
             others = self._get_ports(
                 plugin_context,
