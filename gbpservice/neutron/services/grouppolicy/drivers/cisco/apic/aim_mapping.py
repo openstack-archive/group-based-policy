@@ -1792,18 +1792,19 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
             subnet['dhcp_server_ips'] = dhcp_ips
         return subnets
 
+    def _send_port_update_notification(self, plugin_context, port):
+        self.aim_mech_driver._notify_port_update(plugin_context, port)
+
     def _get_aap_details(self, plugin_context, port, details):
-        pt = self._port_id_to_pt(plugin_context, port['id'])
         aaps = port['allowed_address_pairs']
-        if pt:
-            # Set the correct address ownership for this port
-            owned_addresses = self._get_owned_addresses(
-                plugin_context, pt['port_id'])
-            for allowed in aaps:
-                if allowed['ip_address'] in owned_addresses:
-                    # Signal the agent that this particular address is active
-                    # on its port
-                    allowed['active'] = True
+        # Set the correct address ownership for this port
+        owned_addresses = self._get_owned_addresses(
+            plugin_context, port['id'])
+        for allowed in aaps:
+            if allowed['ip_address'] in owned_addresses:
+                # Signal the agent that this particular address is active
+                # on its port
+                allowed['active'] = True
         return aaps
 
     def _get_port_vrf(self, plugin_context, port, details):
@@ -1901,7 +1902,7 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
         fips_filter = [port['id']]
         active_addrs = [a['ip_address']
                         for a in details['allowed_address_pairs']
-                        if a['active']]
+                        if a.get('active')]
         if active_addrs:
             others = self._get_ports(
                 plugin_context,
