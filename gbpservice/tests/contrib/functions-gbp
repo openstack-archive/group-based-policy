@@ -56,7 +56,7 @@ function source_creds {
 
 function run_gbp_rally {
     cd $NEW_BASE
-    git clone http://github.com/group-policy/rally.git -b dev
+    git clone http://github.com/group-policy/rally.git -b sumit/dev
     cd rally
     sed -i 's/\"times\"\: 1/\"times\"\: 10/g' samples/tasks/scenarios/gbp/gbp.json
     sed -i 's/\"concurrency\"\: 1/\"concurrency\"\: 10,/g' samples/tasks/scenarios/gbp/gbp.json
