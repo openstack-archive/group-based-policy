@@ -177,6 +177,17 @@ class AIMBaseTestCase(test_nr_base.CommonNeutronBaseTestCase,
         ksc_client.Client = self.saved_keystone_client
         super(AIMBaseTestCase, self).tearDown()
 
+    def _check_call_list(self, expected, observed, check_all=True):
+        for call in expected:
+            self.assertTrue(call in observed,
+                            msg='Call not found, expected:\n%s\nobserved:'
+                                '\n%s' % (str(call), str(observed)))
+            observed.remove(call)
+        if check_all:
+            self.assertFalse(
+                len(observed),
+                msg='There are more calls than expected: %s' % str(observed))
+
     def _bind_port_to_host(self, port_id, host):
         data = {'port': {'binding:host_id': host,
                          'device_owner': 'compute:',
@@ -2591,6 +2602,48 @@ class TestPolicyTarget(AIMBaseTestCase):
 
     def test_get_gbp_details_no_pt_no_as_unrouted(self):
         self._do_test_gbp_details_no_pt(use_as=False, routed=False)
+
+    def test_ip_address_owner_update(self):
+        l3p = self.create_l3_policy(name='myl3')['l3_policy']
+        l2p = self.create_l2_policy(name='myl2',
+                                    l3_policy_id=l3p['id'])['l2_policy']
+        ptg = self.create_policy_target_group(
+            name="ptg1", l2_policy_id=l2p['id'])['policy_target_group']
+        net_id = l2p['network_id']
+
+        pt1 = self.create_policy_target(
+            name="pt1", policy_target_group_id=ptg['id'])['policy_target']
+        pt2 = self.create_policy_target(name="pt2",
+            policy_target_group_id=ptg['id'])['policy_target']
+        self._bind_port_to_host(pt1['port_id'], 'h1')
+        self._bind_port_to_host(pt2['port_id'], 'h2')
+
+        ip_owner_info = {'port': pt1['port_id'], 'ip_address_v4': '1.2.3.4'}
+        self.driver.aim_mech_driver._notify_port_update = mock.Mock()
+
+        # set new owner
+        self.driver.ip_address_owner_update(self._context,
+            ip_owner_info=ip_owner_info, host='h1')
+        obj = self.driver.ha_ip_handler.get_port_for_ha_ipaddress(
+            '1.2.3.4', net_id)
+
+        self.assertEqual(pt1['port_id'], obj['port_id'])
+        self.driver.aim_mech_driver._notify_port_update.assert_called_with(
+            mock.ANY, pt1['port_id'])
+
+        # update existing owner
+        self.driver.aim_mech_driver._notify_port_update.reset_mock()
+        ip_owner_info['port'] = pt2['port_id']
+        self.driver.ip_address_owner_update(self._context,
+            ip_owner_info=ip_owner_info, host='h2')
+        obj = self.driver.ha_ip_handler.get_port_for_ha_ipaddress(
+            '1.2.3.4', net_id)
+        self.assertEqual(pt2['port_id'], obj['port_id'])
+        exp_calls = [
+            mock.call(mock.ANY, pt1['port_id']),
+            mock.call(mock.ANY, pt2['port_id'])]
+        self._check_call_list(exp_calls,
+            self.driver.aim_mech_driver._notify_port_update.call_args_list)
 
 
 class TestPolicyTargetRollback(AIMBaseTestCase):
