@@ -353,6 +353,7 @@ class ApicMappingDriver(api.ResourceMappingDriver,
         self.tenants_with_name_alias_set = set()
         self.apic_optimized_dhcp_lease_time = (
             self.apic_manager.apic_optimized_dhcp_lease_time)
+        self.advertise_mtu = cfg.CONF.advertise_mtu
 
     def _setup_rpc_listeners(self):
         self.endpoints = [rpc.GBPServerRpcCallback(self, self.notifier)]
@@ -575,6 +576,11 @@ class ApicMappingDriver(api.ResourceMappingDriver,
             details['segmentation_labels'] = pt['segmentation_labels']
         if self.apic_optimized_dhcp_lease_time > 0:
             details['dhcp_lease_time'] = self.apic_optimized_dhcp_lease_time
+
+        if self.advertise_mtu:
+            network = self._get_network(context, port['network_id'])
+            if network.get('mtu'):
+                details['interface_mtu'] = network['mtu']
         return details
 
     def get_snat_ip_for_vrf(self, context, vrf_id, network, es_name=None):

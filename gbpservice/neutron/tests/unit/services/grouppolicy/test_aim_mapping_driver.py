@@ -2210,6 +2210,12 @@ class TestPolicyTargetGroupRollback(AIMBaseTestCase):
 
 class TestPolicyTarget(AIMBaseTestCase):
 
+    def setUp(self, *args, **kwargs):
+        super(TestPolicyTarget, self).setUp(*args, **kwargs)
+        cfg.CONF.set_override('path_mtu', 1000, group='ml2')
+        cfg.CONF.set_override('global_physnet_mtu', 1000, None)
+        cfg.CONF.set_override('advertise_mtu', True, None)
+
     def test_policy_target_lifecycle_implicit_port(self):
         ptg = self.create_policy_target_group(
             name="ptg1")['policy_target_group']
@@ -2457,6 +2463,7 @@ class TestPolicyTarget(AIMBaseTestCase):
             'uni:tn-t1:out-l2:instP-n2', 't1', 'EXT-l2')
         self._verify_host_snat_ip_details(mapping,
             'uni:tn-t1:out-l2:instP-n2', '200.200.0.3', '200.200.0.1/16')
+        self.assertEqual(1000, mapping['interface_mtu'])
 
     def _do_test_gbp_details_no_pt(self, use_as=True, routed=True,
                                    pre_vrf=None):
@@ -2559,6 +2566,7 @@ class TestPolicyTarget(AIMBaseTestCase):
                         self.assertFalse(mapping['floating_ip'])
                         self.assertFalse(mapping['ip_mapping'])
                         self.assertFalse(mapping['host_snat_ips'])
+                    self.assertEqual(1000, mapping['interface_mtu'])
 
     def test_get_gbp_details(self):
         self._do_test_get_gbp_details()

@@ -368,6 +368,12 @@ class ApicMappingVlanTestCase(ApicMappingTestCase):
 
 class TestPolicyTarget(ApicMappingTestCase):
 
+    def setUp(self, *args, **kwargs):
+        super(TestPolicyTarget, self).setUp(*args, **kwargs)
+        self.override_conf('path_mtu', 1000, group='ml2')
+        self.override_conf('global_physnet_mtu', 1000, None)
+        self.override_conf('advertise_mtu', True, None)
+
     def test_policy_target_port_deleted_on_apic(self):
         ptg = self.create_policy_target_group()['policy_target_group']
         subnet = self._get_object('subnets',
@@ -538,6 +544,7 @@ class TestPolicyTarget(ApicMappingTestCase):
             mapping['host_snat_ips'][0]['host_snat_ip'])
         self.assertEqual(24, mapping['host_snat_ips'][0]['prefixlen'])
         self.assertEqual(100, mapping['dhcp_lease_time'])
+        self.assertEqual(1000, mapping['interface_mtu'])
 
     def test_get_gbp_details(self):
         self._do_test_get_gbp_details()
