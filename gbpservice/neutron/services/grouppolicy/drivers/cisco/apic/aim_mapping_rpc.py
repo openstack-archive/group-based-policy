@@ -168,6 +168,9 @@ class AIMMappingRPCMixin(ha_ip_db.HAIPOwnerDbMixin):
                     'compute:') and port['device_id']:
                 vm = nclient.NovaClient().get_server(port['device_id'])
                 details['vm-name'] = vm.name if vm else port['device_id']
+            mtu = self._get_port_mtu(context, port)
+            if mtu:
+                details['interface_mtu'] = mtu
 
             # NOTE(ivar): having these methods cleanly separated actually makes
             # things less efficient by requiring lots of calls duplication.

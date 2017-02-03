@@ -151,6 +151,7 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
                          'this will result in automatic creation of a PTG '
                          'per L2 Policy'))
         self.setup_opflex_rpc_listeners()
+        self.advertise_mtu = cfg.CONF.advertise_mtu
 
     @property
     def aim_mech_driver(self):
@@ -2279,3 +2280,9 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
                             gpdb.PRSToPRAssociation.policy_rule_id ==
                             gpdb.PolicyRule.id).filter(
                                 gpdb.PolicyRule.id.in_(pr_ids)).all())]
+
+    def _get_port_mtu(self, context, port):
+        if self.advertise_mtu:
+            network = self._get_network(context, port['network_id'])
+            return network.get('mtu')
+        return None
