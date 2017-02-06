@@ -15,6 +15,7 @@
 
 import copy
 import netaddr
+import re
 import sqlalchemy as sa
 
 from aim.aim_lib import nat_strategy
@@ -61,6 +62,8 @@ from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import cache
 from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import config  # noqa
 from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import exceptions
 from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import extension_db
+from gbpservice.neutron.services.grouppolicy.drivers.cisco.apic import (
+    nova_client as nclient)
 
 LOG = log.getLogger(__name__)
 DEVICE_OWNER_SNAT_PORT = 'apic:snat-pool'
@@ -144,6 +147,9 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
         self.aim = aim_manager.AimManager()
         self._core_plugin = None
         self._l3_plugin = None
+        self._gbp_plugin = None
+        self._aim_mapping = None
+        self._apic_allowed_vm_name_driver = None
         # Get APIC configuration and subscribe for changes
         self.enable_metadata_opt = (
             cfg.CONF.ml2_apic_aim.enable_optimized_metadata)
@@ -1110,21 +1116,50 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
             self._notify_port_update_bulk(context, ports_to_notify)
 
     def bind_port(self, context):
-        current = context.current
+        port = context.current
         LOG.debug("Attempting to bind port %(port)s on network %(net)s",
-                  {'port': current['id'],
+                  {'port': port['id'],
                    'net': context.network.current['id']})
 
         # Check the VNIC type.
-        vnic_type = current.get(portbindings.VNIC_TYPE,
-                                portbindings.VNIC_NORMAL)
+        vnic_type = port.get(portbindings.VNIC_TYPE,
+                             portbindings.VNIC_NORMAL)
         if vnic_type not in [portbindings.VNIC_NORMAL]:
             LOG.debug("Refusing to bind due to unsupported vnic_type: %s",
                       vnic_type)
             return
 
-        # For compute ports, try to bind DVS agent first.
-        if current['device_owner'].startswith('compute:'):
+        if port['device_owner'].startswith('compute:'):
+            ptg = None
+            if self.aim_mapping:
+                ptg, pt = self.aim_mapping._port_id_to_ptg(
+                    context._plugin_context, port['id'])
+            # enforce the allowed_vm_names rules if possible
+            if (ptg and port['device_id'] and
+                    self.apic_allowed_vm_name_driver):
+                l2p = self.gbp_plugin._get_l2_policy(context._plugin_context,
+                                                     ptg['l2_policy_id'])
+                l3p = self.gbp_plugin.get_l3_policy(
+                    context._plugin_context, l2p['l3_policy_id'])
+
+                ok_to_bind = True
+                if l3p.get('allowed_vm_names'):
+                    ok_to_bind = False
+                    vm = nclient.NovaClient().get_server(port['device_id'])
+                    for allowed_vm_name in l3p['allowed_vm_names']:
+                        match = re.search(allowed_vm_name, vm.name)
+                        if match:
+                            ok_to_bind = True
+                            break
+                if not ok_to_bind:
+                    LOG.warning(_LW("Failed to bind the port due to "
+                                    "allowed_vm_names rules %(rules)s "
+                                    "for VM: %(vm)s"),
+                                {'rules': l3p['allowed_vm_names'],
+                                 'vm': vm.name})
+                    return
+
+            # For compute ports, try to bind DVS agent first.
             if self._agent_bind_port(context, AGENT_TYPE_DVS,
                                      self._dvs_bind_port):
                 return
@@ -1319,6 +1354,35 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
             plugins = manager.NeutronManager.get_service_plugins()
             self._l3_plugin = plugins[pconst.L3_ROUTER_NAT]
         return self._l3_plugin
+
+    @property
+    def gbp_plugin(self):
+        if not self._gbp_plugin:
+            self._gbp_plugin = (manager.NeutronManager.get_service_plugins()
+                                .get("GROUP_POLICY"))
+        return self._gbp_plugin
+
+    @property
+    def aim_mapping(self):
+        if not self._aim_mapping and self.gbp_plugin:
+            self._aim_mapping = (self.gbp_plugin.policy_driver_manager.
+                                 policy_drivers['aim_mapping'].obj)
+        return self._aim_mapping
+
+    @property
+    def apic_allowed_vm_name_driver(self):
+        if self._apic_allowed_vm_name_driver is False:
+            return False
+        if not self._apic_allowed_vm_name_driver:
+            ext_drivers = (self.gbp_plugin.extension_manager.
+                           ordered_ext_drivers)
+            for driver in ext_drivers:
+                if 'apic_allowed_vm_name' == driver.name:
+                    self._apic_allowed_vm_name_driver = driver.obj
+                    break
+        if not self._apic_allowed_vm_name_driver:
+            self._apic_allowed_vm_name_driver = False
+        return self._apic_allowed_vm_name_driver
 
     def _merge_status(self, aim_ctx, sync_state, resource):
         status = self.aim.get_status(aim_ctx, resource)
