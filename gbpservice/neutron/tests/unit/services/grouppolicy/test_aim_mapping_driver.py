@@ -85,7 +85,8 @@ class AIMBaseTestCase(test_nr_base.CommonNeutronBaseTestCase,
                       test_ext_base.ExtensionDriverTestBase,
                       test_aim_md.ApicAimTestMixin,
                       test_address_scope.AddressScopeTestCase):
-    _extension_drivers = ['aim_extension', 'apic_segmentation_label']
+    _extension_drivers = ['aim_extension', 'apic_segmentation_label',
+                          'apic_allowed_vm_name']
     _extension_path = None
 
     def setUp(self, policy_drivers=None, core_plugin=None, ml2_options=None,
@@ -2654,6 +2655,38 @@ class TestPolicyTarget(AIMBaseTestCase):
             mock.call(mock.ANY, pt2['port_id'])]
         self._check_call_list(exp_calls,
             self.driver.aim_mech_driver._notify_port_update.call_args_list)
+
+    def test_bind_port_with_allowed_vm_names(self):
+        allowed_vm_names = ['safe_vm*', '^secure_vm*']
+        l3p = self.create_l3_policy(name='myl3',
+            allowed_vm_names=allowed_vm_names)['l3_policy']
+        l2p = self.create_l2_policy(
+            name='myl2', l3_policy_id=l3p['id'])['l2_policy']
+        ptg = self.create_policy_target_group(
+            name="ptg1", l2_policy_id=l2p['id'])['policy_target_group']
+        pt = self.create_policy_target(
+            policy_target_group_id=ptg['id'])['policy_target']
+
+        nova_client = mock.patch(
+            'gbpservice.neutron.services.grouppolicy.drivers.cisco.'
+            'apic.nova_client.NovaClient.get_server').start()
+        vm = mock.Mock()
+        vm.name = 'secure_vm1'
+        nova_client.return_value = vm
+        newp1 = self._bind_port_to_host(pt['port_id'], 'h1')
+        self.assertEqual(newp1['port']['binding:vif_type'], 'ovs')
+
+        # bind again
+        vm.name = 'bad_vm1'
+        newp1 = self._bind_port_to_host(pt['port_id'], 'h2')
+        self.assertEqual(newp1['port']['binding:vif_type'], 'binding_failed')
+
+        # update l3p with empty allowed_vm_names
+        l3p = self.update_l3_policy(l3p['id'], tenant_id=l3p['tenant_id'],
+                                    allowed_vm_names=[],
+                                    expected_res_status=200)['l3_policy']
+        newp1 = self._bind_port_to_host(pt['port_id'], 'h3')
+        self.assertEqual(newp1['port']['binding:vif_type'], 'ovs')
 
 
 class TestPolicyTargetRollback(AIMBaseTestCase):
