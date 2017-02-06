@@ -11,12 +11,14 @@
 #    under the License.
 
 import hashlib
+import re
 
 from aim.api import resource as aim_resource
 from aim import context as aim_context
 from aim import utils as aim_utils
 from neutron._i18n import _LE
 from neutron._i18n import _LI
+from neutron._i18n import _LW
 from neutron.agent.linux import dhcp
 from neutron.api.v2 import attributes
 from neutron.common import constants as n_constants
@@ -49,8 +51,9 @@ from gbpservice.neutron.services.grouppolicy.drivers.cisco.apic import (
     aim_mapping_rpc as aim_rpc)
 from gbpservice.neutron.services.grouppolicy.drivers.cisco.apic import (
     apic_mapping_lib as alib)
+from gbpservice.neutron.services.grouppolicy.drivers.cisco.apic import (
+    nova_client as nclient)
 from gbpservice.neutron.services.grouppolicy import plugin as gbp_plugin
-
 
 LOG = logging.getLogger(__name__)
 FORWARD = 'Forward'
@@ -145,6 +148,7 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
         super(AIMMappingDriver, self).initialize()
         self._apic_aim_mech_driver = None
         self._apic_segmentation_label_driver = None
+        self._apic_allowed_vm_name_driver = None
         self.create_auto_ptg = cfg.CONF.aim_mapping.create_auto_ptg
         if self.create_auto_ptg:
             LOG.info(_LI('Auto PTG creation configuration set, '
@@ -179,6 +183,21 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
                         driver.obj)
                     break
         return self._apic_segmentation_label_driver
+
+    @property
+    def apic_allowed_vm_name_driver(self):
+        if self._apic_allowed_vm_name_driver is False:
+            return False
+        if not self._apic_allowed_vm_name_driver:
+            ext_drivers = (self.gbp_plugin.extension_manager.
+                           ordered_ext_drivers)
+            for driver in ext_drivers:
+                if 'apic_allowed_vm_name' == driver.name:
+                    self._apic_allowed_vm_name_driver = driver.obj
+                    break
+        if not self._apic_allowed_vm_name_driver:
+            self._apic_allowed_vm_name_driver = False
+        return self._apic_allowed_vm_name_driver
 
     @log.log_method_call
     def ensure_tenant(self, plugin_context, tenant_id):
@@ -1029,6 +1048,32 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
             context._plugin_context, context.current['id'])
         np_db.update({'subnet_id': None})
         self._delete_subnet_on_nat_pool_delete(context)
+
+    def check_allow_vm_names(self, context, port):
+        ok_to_bind = True
+        ptg, pt = self._port_id_to_ptg(context._plugin_context, port['id'])
+        # enforce the allowed_vm_names rules if possible
+        if (ptg and port['device_id'] and
+                self.apic_allowed_vm_name_driver):
+            l2p = self._get_l2_policy(context._plugin_context,
+                                      ptg['l2_policy_id'])
+            l3p = self.gbp_plugin.get_l3_policy(
+                context._plugin_context, l2p['l3_policy_id'])
+            if l3p.get('allowed_vm_names'):
+                ok_to_bind = False
+                vm = nclient.NovaClient().get_server(port['device_id'])
+                for allowed_vm_name in l3p['allowed_vm_names']:
+                    match = re.search(allowed_vm_name, vm.name)
+                    if match:
+                        ok_to_bind = True
+                        break
+        if not ok_to_bind:
+            LOG.warning(_LW("Failed to bind the port due to "
+                            "allowed_vm_names rules %(rules)s "
+                            "for VM: %(vm)s"),
+                        {'rules': l3p['allowed_vm_names'],
+                         'vm': vm.name})
+        return ok_to_bind
 
     def _reject_shared_update(self, context, type):
         if context.original.get('shared') != context.current.get('shared'):
