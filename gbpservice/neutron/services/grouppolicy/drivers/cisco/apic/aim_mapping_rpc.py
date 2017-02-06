@@ -110,6 +110,16 @@ class AIMMappingRPCMixin(ha_ip_db.HAIPOwnerDbMixin):
             LOG.exception(e)
             return None
 
+    # Child class needs to support:
+    # - self._send_port_update_notification(context, port)
+    def ip_address_owner_update(self, context, **kwargs):
+        if not kwargs.get('ip_owner_info'):
+            return
+        ports_to_update = self.update_ip_owner(kwargs['ip_owner_info'])
+        for p in ports_to_update:
+            LOG.debug("APIC ownership update for port %s", p)
+            self._send_port_update_notification(context, p)
+
     # Things you need in order to run this Mixin:
     # - self._core_plugin: attribute that points to the Neutron core plugin;
     # - self._is_port_promiscuous(context, port): define whether or not
