@@ -42,6 +42,23 @@ def get_update_policy_target_attrs():
 
 
 @gbp_attributes
+def get_create_application_policy_group_default_attrs():
+    return {'name': '', 'description': '', 'shared': False}
+
+
+@gbp_attributes
+def get_create_application_policy_group_attrs():
+    return {'name': 'apg1', 'tenant_id': _uuid(),
+            'description': 'test application_policy_group',
+            'shared': False}
+
+
+@gbp_attributes
+def get_update_application_policy_group_attrs():
+    return {'name': 'new_name'}
+
+
+@gbp_attributes
 def get_create_policy_target_group_default_attrs():
     return {'name': '', 'description': '', 'l2_policy_id': None,
             'provided_policy_rule_sets': {},

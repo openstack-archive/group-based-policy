@@ -55,6 +55,11 @@ class PolicyTargetGroupNotFound(nexc.NotFound):
                 "be found")
 
 
+class ApplicationPolicyGroupNotFound(nexc.NotFound):
+    message = _("Application Policy Group %(application_policy_group_id)s "
+                "could not be found")
+
+
 class ManagementPolicyTargetGroupExists(nexc.BadRequest):
     message = _("Service Management Policy Target Group already exists for "
                 "this tenant.")
@@ -404,6 +409,8 @@ NETWORK_SERVICE_POLICIES = 'network_service_policies'
 EXTERNAL_POLICIES = 'external_policies'
 EXTERNAL_SEGMENTS = 'external_segments'
 NAT_POOLS = 'nat_pools'
+APPLICATION_POLICY_GROUPS = 'application_policy_groups'
+
 
 RESOURCE_ATTRIBUTE_MAP = {
     POLICY_TARGETS: {
@@ -454,6 +461,10 @@ RESOURCE_ATTRIBUTE_MAP = {
         'l2_policy_id': {'allow_post': True, 'allow_put': True,
                          'validate': {'type:uuid_or_none': None},
                          'default': None, 'is_visible': True},
+        'application_policy_group_id': {'allow_post': True, 'allow_put': True,
+                                        'validate':
+                                        {'type:uuid_or_none': None},
+                                        'default': None, 'is_visible': True},
         'provided_policy_rule_sets': {'allow_post': True, 'allow_put': True,
                                       'validate': {'type:dict_or_none': None},
                                       'convert_to':
@@ -476,6 +487,32 @@ RESOURCE_ATTRIBUTE_MAP = {
                                'convert_to': attr.convert_to_boolean,
                                'is_visible': True, 'required_by_policy': True,
                                'enforce_policy': True},
+    },
+    APPLICATION_POLICY_GROUPS: {
+        'id': {'allow_post': False, 'allow_put': False,
+               'validate': {'type:uuid': None}, 'is_visible': True,
+               'primary_key': True},
+        'name': {'allow_post': True, 'allow_put': True,
+                 'validate': {'type:gbp_resource_name': None},
+                 'default': '', 'is_visible': True},
+        'description': {'allow_post': True, 'allow_put': True,
+                        'validate': {'type:string': None},
+                        'is_visible': True, 'default': ''},
+        'tenant_id': {'allow_post': True, 'allow_put': False,
+                      'validate': {'type:string': None},
+                      'required_by_policy': True, 'is_visible': True},
+        'status': {'allow_post': False, 'allow_put': False,
+                   'is_visible': True},
+        'status_details': {'allow_post': False, 'allow_put': False,
+                           'is_visible': True},
+        'policy_target_groups': {'allow_post': False, 'allow_put': False,
+                                 'validate': {'type:uuid_list': None},
+                                 'convert_to': attr.convert_none_to_empty_list,
+                                 'default': None, 'is_visible': True},
+        attr.SHARED: {'allow_post': True, 'allow_put': True,
+                      'default': False, 'convert_to': attr.convert_to_boolean,
+                      'is_visible': True, 'required_by_policy': True,
+                      'enforce_policy': True},
     },
     L2_POLICIES: {
         'id': {'allow_post': False, 'allow_put': False,
@@ -860,6 +897,10 @@ group_based_policy_quota_opts = [
                default=-1,
                help=_('Number of L2 Policies allowed per tenant. '
                       'A negative value means unlimited.')),
+    cfg.IntOpt('quota_application_policy_group',
+               default=-1,
+               help=_('Number of Application Policy Groups allowed per tenant.'
+                      ' A negative value means unlimited.')),
     cfg.IntOpt('quota_policy_target_group',
                default=-1,
                help=_('Number of Policy Target Groups allowed per tenant. '
@@ -1007,6 +1048,33 @@ class GroupPolicyPluginBase(service_base.ServicePluginBase):
 
     @abc.abstractmethod
     def delete_policy_target_group(self, context, policy_target_group_id):
+        pass
+
+    @abc.abstractmethod
+    def get_application_policy_groups(self, context, filters=None,
+                                      fields=None):
+        pass
+
+    @abc.abstractmethod
+    def get_application_policy_group(self, context,
+                                     application_policy_group_id,
+                                     fields=None):
+        pass
+
+    @abc.abstractmethod
+    def create_application_policy_group(self, context,
+                                        application_policy_group):
+        pass
+
+    @abc.abstractmethod
+    def update_application_policy_group(self, context,
+                                        application_policy_group_id,
+                                        application_policy_group):
+        pass
+
+    @abc.abstractmethod
+    def delete_application_policy_group(self, context,
+                                        application_policy_group_id):
         pass
 
     @abc.abstractmethod
