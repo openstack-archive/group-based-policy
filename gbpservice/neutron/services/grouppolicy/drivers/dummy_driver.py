@@ -71,6 +71,30 @@ class NoopDriver(api.PolicyDriver):
         pass
 
     @log.log_method_call
+    def create_application_policy_group_precommit(self, context):
+        pass
+
+    @log.log_method_call
+    def create_application_policy_group_postcommit(self, context):
+        pass
+
+    @log.log_method_call
+    def update_application_policy_group_precommit(self, context):
+        pass
+
+    @log.log_method_call
+    def update_application_policy_group_postcommit(self, context):
+        pass
+
+    @log.log_method_call
+    def delete_application_policy_group_precommit(self, context):
+        pass
+
+    @log.log_method_call
+    def delete_application_policy_group_postcommit(self, context):
+        pass
+
+    @log.log_method_call
     def create_l2_policy_precommit(self, context):
         pass
 
