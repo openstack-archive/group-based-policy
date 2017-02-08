@@ -1757,9 +1757,13 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
             master = self._get_policy_target(plugin_context, pt['cluster_id'])
             if master.get('group_default_gateway'):
                 return True
-        return (port['device_owner'] in PROMISCUOUS_TYPES or
-                port['name'].endswith(PROMISCUOUS_SUFFIX)) or (
-                    pt and pt.get('group_default_gateway'))
+        if (port['device_owner'] in PROMISCUOUS_TYPES or
+                port['name'].endswith(PROMISCUOUS_SUFFIX) or
+                (pt and pt.get('group_default_gateway'))):
+            return True
+        if not port.get('port_security_enabled', True):
+            return True
+        return False
 
     def _is_dhcp_optimized(self, plugin_context, port):
         return self.aim_mech_driver.enable_dhcp_opt
