@@ -138,7 +138,7 @@ class ApicAimTestCase(test_address_scope.AddressScopeTestCase,
         mech = mechanism_drivers or ['logger', 'apic_aim']
         config.cfg.CONF.set_override('mechanism_drivers', mech, 'ml2')
         config.cfg.CONF.set_override('extension_drivers',
-                                     ['apic_aim'],
+                                     ['apic_aim', 'port_security'],
                                      'ml2')
         config.cfg.CONF.set_override('type_drivers',
                                      ['opflex', 'local', 'vlan'],
@@ -148,10 +148,15 @@ class ApicAimTestCase(test_address_scope.AddressScopeTestCase,
         config.cfg.CONF.set_override('network_vlan_ranges',
                                      ['physnet1:1000:1099'],
                                      group='ml2_type_vlan')
-
+        config.cfg.CONF.set_override('policy_drivers',
+                                     ['aim_mapping'],
+                                     group='group_policy')
         service_plugins = {
             'L3_ROUTER_NAT':
-            'gbpservice.neutron.services.apic_aim.l3_plugin.ApicL3Plugin'}
+            'gbpservice.neutron.services.apic_aim.l3_plugin.ApicL3Plugin',
+            'GROUP_POLICY':
+            'gbpservice.neutron.services.grouppolicy.plugin.GroupPolicyPlugin'
+        }
 
         engine = db_api.get_engine()
         aim_model_base.Base.metadata.create_all(engine)
@@ -171,6 +176,11 @@ class ApicAimTestCase(test_address_scope.AddressScopeTestCase,
         self.plugin.start_rpc_listeners()
         self.driver = self.plugin.mechanism_manager.mech_drivers[
             'apic_aim'].obj
+        self.gbp_plugin = (manager.NeutronManager.get_service_plugins()
+                           .get("GROUP_POLICY"))
+        self.aim_mapping_driver = (
+            self.gbp_plugin.policy_driver_manager.policy_drivers[
+                'aim_mapping'].obj)
         self.l3_plugin = manager.NeutronManager.get_service_plugins()[
             service_constants.L3_ROUTER_NAT]
         self.aim_mgr = aim_manager.AimManager()
@@ -2429,7 +2439,66 @@ class TestPortBinding(ApicAimTestCase):
         self.assertEqual({'port_filter': True, 'ovs_hybrid_plug': True},
                          port['binding:vif_details'])
 
-    # TODO(rkukura): Add tests for promiscuous_mode cases.
+    def test_port_security_port(self):
+        self._register_agent('host1', AGENT_CONF_OPFLEX)
+        net = self._make_network(self.fmt, 'net1', True)
+        self._make_subnet(self.fmt, net, '10.0.1.1', '10.0.1.0/24')
+
+        # test compute port
+        p1 = self._create_port(self.fmt, net['network']['id'],
+                               device_owner='compute:')['port']
+        p1 = self._bind_port_to_host(p1['id'], 'host1')['port']
+        details = self.aim_mapping_driver.get_gbp_details(
+            context.get_admin_context(), device='tap%s' % p1['id'],
+            host='h1')
+        self.assertFalse(details['promiscuous_mode'])
+
+        p2 = self._create_port(self.fmt, net['network']['id'],
+                               arg_list=['port_security_enabled'],
+                               device_owner='compute:',
+                               port_security_enabled=True)['port']
+        p2 = self._bind_port_to_host(p2['id'], 'host1')['port']
+        details = self.aim_mapping_driver.get_gbp_details(
+            context.get_admin_context(), device='tap%s' % p2['id'],
+            host='h1')
+        self.assertFalse(details['promiscuous_mode'])
+
+        p3 = self._create_port(self.fmt, net['network']['id'],
+                               arg_list=['port_security_enabled'],
+                               device_owner='compute:',
+                               port_security_enabled=False)['port']
+        p3 = self._bind_port_to_host(p3['id'], 'host1')['port']
+        details = self.aim_mapping_driver.get_gbp_details(
+            context.get_admin_context(), device='tap%s' % p3['id'],
+            host='h1')
+        self.assertTrue(details['promiscuous_mode'])
+
+        # test DHCP port
+        p1_dhcp = self._create_port(self.fmt, net['network']['id'],
+            device_owner=n_constants.DEVICE_OWNER_DHCP)['port']
+        p1_dhcp = self._bind_port_to_host(p1_dhcp['id'], 'host1')['port']
+        details = self.aim_mapping_driver.get_gbp_details(
+            context.get_admin_context(), device='tap%s' % p1_dhcp['id'],
+            host='h1')
+        self.assertTrue(details['promiscuous_mode'])
+
+        p2_dhcp = self._create_port(self.fmt, net['network']['id'],
+            arg_list=['port_security_enabled'], port_security_enabled=True,
+            device_owner=n_constants.DEVICE_OWNER_DHCP)['port']
+        p2_dhcp = self._bind_port_to_host(p2_dhcp['id'], 'host1')['port']
+        details = self.aim_mapping_driver.get_gbp_details(
+            context.get_admin_context(), device='tap%s' % p2_dhcp['id'],
+            host='h1')
+        self.assertTrue(details['promiscuous_mode'])
+
+        p3_dhcp = self._create_port(self.fmt, net['network']['id'],
+            arg_list=['port_security_enabled'], port_security_enabled=False,
+            device_owner=n_constants.DEVICE_OWNER_DHCP)['port']
+        p3_dhcp = self._bind_port_to_host(p3_dhcp['id'], 'host1')['port']
+        details = self.aim_mapping_driver.get_gbp_details(
+            context.get_admin_context(), device='tap%s' % p3_dhcp['id'],
+            host='h1')
+        self.assertTrue(details['promiscuous_mode'])
 
     def test_bind_unsupported_vnic_type(self):
         net = self._make_network(self.fmt, 'net1', True)
