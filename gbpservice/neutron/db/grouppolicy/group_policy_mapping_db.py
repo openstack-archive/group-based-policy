@@ -454,6 +454,8 @@ class GroupPolicyMappingDbPlugin(gpdb.GroupPolicyDbPlugin):
                 id=uuid, tenant_id=tenant_id,
                 name=ptg['name'], description=ptg['description'],
                 l2_policy_id=ptg['l2_policy_id'],
+                application_policy_group_id=ptg.get(
+                    'application_policy_group_id', None),
                 network_service_policy_id=ptg['network_service_policy_id'],
                 shared=ptg.get('shared', False),
                 service_management=ptg.get('service_management', False))

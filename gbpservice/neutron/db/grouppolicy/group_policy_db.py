@@ -94,6 +94,9 @@ class PolicyTargetGroup(model_base.BASEV2, BaseSharedGbpResource):
     }
     policy_targets = orm.relationship(PolicyTarget,
                                       backref='policy_target_group')
+    application_policy_group_id = sa.Column(
+        sa.String(36), sa.ForeignKey('gp_application_policy_groups.id'),
+        nullable=True)
     l2_policy_id = sa.Column(sa.String(36),
                              sa.ForeignKey('gp_l2_policies.id'),
                              nullable=True)
@@ -107,6 +110,13 @@ class PolicyTargetGroup(model_base.BASEV2, BaseSharedGbpResource):
         PTGToPRSConsumingAssociation,
         backref='consuming_policy_target_group', cascade='all, delete-orphan')
     service_management = sa.Column(sa.Boolean)
+
+
+class ApplicationPolicyGroup(model_base.BASEV2, BaseSharedGbpResource):
+    """It is a collection of policy_targets."""
+    __tablename__ = 'gp_application_policy_groups'
+    policy_target_groups = orm.relationship(
+        PolicyTargetGroup, backref='application_policy_group')
 
 
 class L2Policy(model_base.BASEV2, BaseSharedGbpResource):
@@ -402,6 +412,15 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
             raise gpolicy.PolicyTargetGroupNotFound(
                 policy_target_group_id=policy_target_group_id)
 
+    def _get_application_policy_group(self, context,
+                                      application_policy_group_id):
+        try:
+            return self._get_by_id(
+                context, ApplicationPolicyGroup, application_policy_group_id)
+        except exc.NoResultFound:
+            raise gpolicy.ApplicationPolicyGroupNotFound(
+                application_policy_group_id=application_policy_group_id)
+
     def _get_l2_policy(self, context, l2_policy_id):
         try:
             return self._get_by_id(context, L2Policy, l2_policy_id)
@@ -676,6 +695,12 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
             ptg_db = self._get_policy_target_group(context, ptg_id)
             ptg_db.l2_policy_id = l2p_id
 
+    def _set_application_policy_group_for_policy_target_group(
+        self, context, ptg_id, apg_id):
+        with context.session.begin(subtransactions=True):
+            ptg_db = self._get_policy_target_group(context, ptg_id)
+            ptg_db.application_policy_group_id = apg_id
+
     def _set_network_service_policy_for_policy_target_group(
             self, context, ptg_id, nsp_id):
         with context.session.begin(subtransactions=True):
@@ -794,6 +819,8 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
     def _make_policy_target_group_dict(self, ptg, fields=None):
         res = self._populate_common_fields_in_dict(ptg)
         res['l2_policy_id'] = ptg['l2_policy_id']
+        res['application_policy_group_id'] = ptg.get(
+            'application_policy_group_id', None)
         res['network_service_policy_id'] = ptg['network_service_policy_id']
         res['service_management'] = ptg.get('service_management', False)
         res['policy_targets'] = [
@@ -804,6 +831,12 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
         res['consumed_policy_rule_sets'] = (
             [cprs['policy_rule_set_id'] for cprs in ptg[
                 'consumed_policy_rule_sets']])
+        return self._fields(res, fields)
+
+    def _make_application_policy_group_dict(self, apg, fields=None):
+        res = self._populate_common_fields_in_dict(apg)
+        res['policy_target_groups'] = [
+            ptg['id'] for ptg in apg['policy_target_groups']]
         return self._fields(res, fields)
 
     def _make_l2_policy_dict(self, l2p, fields=None):
@@ -1113,6 +1146,8 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
                 id=uuidutils.generate_uuid(), tenant_id=tenant_id,
                 name=ptg['name'], description=ptg['description'],
                 l2_policy_id=ptg['l2_policy_id'],
+                application_policy_group_id=ptg.get(
+                    'application_policy_group_id', None),
                 network_service_policy_id=ptg['network_service_policy_id'],
                 shared=ptg.get('shared', False),
                 service_management=ptg.get('service_management', False),
@@ -1173,6 +1208,65 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
     @log.log_method_call
     def get_policy_target_groups_count(self, context, filters=None):
         return self._get_collection_count(context, PolicyTargetGroup,
+                                          filters=filters)
+
+    @log.log_method_call
+    def create_application_policy_group(self, context,
+                                        application_policy_group):
+        apg = application_policy_group['application_policy_group']
+        tenant_id = self._get_tenant_id_for_create(context, apg)
+        with context.session.begin(subtransactions=True):
+            apg_db = ApplicationPolicyGroup(
+                id=uuidutils.generate_uuid(), tenant_id=tenant_id,
+                name=apg['name'], description=apg['description'],
+                shared=apg.get('shared', False),
+                status=apg.get('status'),
+                status_details=apg.get('status_details'))
+            context.session.add(apg_db)
+        return self._make_application_policy_group_dict(apg_db)
+
+    @log.log_method_call
+    def update_application_policy_group(self, context,
+                                        application_policy_group_id,
+                                        application_policy_group):
+        apg = application_policy_group['application_policy_group']
+        with context.session.begin(subtransactions=True):
+            apg_db = self._get_application_policy_group(
+                context, application_policy_group_id)
+            apg_db.update(apg)
+        return self._make_application_policy_group_dict(apg_db)
+
+    @log.log_method_call
+    def delete_application_policy_group(self, context,
+                                        application_policy_group_id):
+        with context.session.begin(subtransactions=True):
+            apg_db = self._get_application_policy_group(
+                context, application_policy_group_id)
+            context.session.delete(apg_db)
+
+    @log.log_method_call
+    def get_application_policy_group(self, context,
+                                     application_policy_group_id, fields=None):
+        apg = self._get_application_policy_group(context,
+                                                 application_policy_group_id)
+        return self._make_application_policy_group_dict(apg, fields)
+
+    @log.log_method_call
+    def get_application_policy_groups(self, context, filters=None,
+                                      fields=None, sorts=None, limit=None,
+                                      marker=None, page_reverse=False):
+        marker_obj = self._get_marker_obj(
+            context, 'application_policy_group', limit, marker)
+        return self._get_collection(context, ApplicationPolicyGroup,
+                                    self._make_application_policy_group_dict,
+                                    filters=filters, fields=fields,
+                                    sorts=sorts, limit=limit,
+                                    marker_obj=marker_obj,
+                                    page_reverse=page_reverse)
+
+    @log.log_method_call
+    def get_application_policy_groups_count(self, context, filters=None):
+        return self._get_collection_count(context, ApplicationPolicyGroup,
                                           filters=filters)
 
     @log.log_method_call

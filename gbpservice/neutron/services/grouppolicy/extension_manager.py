@@ -118,6 +118,21 @@ class ExtensionManager(stevedore.named.NamedExtensionManager):
         for driver in self.ordered_ext_drivers:
             driver.obj.extend_policy_target_group_dict(session, result)
 
+    def process_create_application_policy_group(self, session, data, result):
+        """Call all extension drivers during PTG creation."""
+        self._call_on_ext_drivers("process_create_application_policy_group",
+                                  session, data, result)
+
+    def process_update_application_policy_group(self, session, data, result):
+        """Call all extension drivers during PTG update."""
+        self._call_on_ext_drivers("process_update_application_policy_group",
+                                  session, data, result)
+
+    def extend_application_policy_group_dict(self, session, result):
+        """Call all extension drivers to extend PTG dictionary."""
+        for driver in self.ordered_ext_drivers:
+            driver.obj.extend_application_policy_group_dict(session, result)
+
     def process_create_l2_policy(self, session, data, result):
         """Call all extension drivers during L2P creation."""
         self._call_on_ext_drivers("process_create_l2_policy",

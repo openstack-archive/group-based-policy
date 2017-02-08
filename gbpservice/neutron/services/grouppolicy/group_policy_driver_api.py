@@ -101,6 +101,17 @@ class PolicyTargetGroupContext(object):
         pass
 
     @abc.abstractmethod
+    def set_application_policy_group_id(self, application_policy_group_id):
+        """Set the application_policy_group for the policy_target_group.
+
+        :param application_policy_group_id: application_policy_group for
+        the policy_target_group.
+
+        Set the application_policy_group for the policy_target_group.
+        """
+        pass
+
+    @abc.abstractmethod
     def set_network_service_policy_id(self, network_service_policy_id):
         """Set the network_service_policy for the policy_target_group.
 
@@ -118,6 +129,37 @@ class PolicyTargetGroupContext(object):
 
         Add a neutron subnet to the set of subnets to which the
         policy_target_group is mapped.
+        """
+        pass
+
+
+@six.add_metaclass(abc.ABCMeta)
+class ApplicationPolicyGroupContext(object):
+    """Context passed to policy engine for APG resource changes.
+
+    ApplicationPolicyGroupContext instance wraps a application_policy_group
+    resource. It provides helper methods for accessing other relevant
+    information. Results from expensive operations are cached for convenient
+    access.
+    """
+
+    @abc.abstractproperty
+    def current(self):
+        """Return the current state of the application_policy_group.
+
+        Return the current state of the application_policy_group, as defined by
+        GroupPolicyPlugin.create_application_policy_group.
+        """
+        pass
+
+    @abc.abstractproperty
+    def original(self):
+        """Return the original state of the application_policy_group.
+
+        Return the original state of the application_policy_group, prior to a
+        call to update_application_policy_group. Method is only valid within
+        calls to update_application_policy_group_precommit and
+        update_application_policy_group_postcommit.
         """
         pass
 
@@ -646,6 +688,69 @@ class PolicyDriver(object):
         :param context: PolicyTargetGroupContext instance describing the
         current state of the policy_target_group, prior to the call to this
         get.
+        Driver can update the status and status_details. This status change
+        will be reflected as the new status and status_details of the resource.
+        """
+        pass
+
+    def create_application_policy_group_precommit(self, context):
+        """Allocate resources for a new application_policy_group.
+
+        :param context: ApplicationPolicyGroupContext instance describing the
+        new application_policy_group.
+        """
+        pass
+
+    def create_application_policy_group_postcommit(self, context):
+        """Create a application_policy_group.
+
+        :param context: ApplicationPolicyGroupContext instance describing the
+        new application_policy_group.
+        """
+        pass
+
+    def update_application_policy_group_precommit(self, context):
+        """Update resources of a application_policy_group.
+
+        :param context: ApplicationPolicyGroupContext instance describing the
+        new state of the application_policy_group, as well as the original
+        state prior to the update_application_policy_group call.
+        """
+        pass
+
+    def update_application_policy_group_postcommit(self, context):
+        """Update a application_policy_group.
+
+        :param context: ApplicationPolicyGroupContext instance describing the
+        new state of the application_policy_group, as well as the original
+        state prior to the update_application_policy_group call.
+        """
+        pass
+
+    def delete_application_policy_group_precommit(self, context):
+        """Delete resources for a application_policy_group.
+
+        :param context: ApplicationPolicyGroupContext instance describing the
+        current state of the application_policy_group, prior to the call to
+        delete it.
+        """
+        pass
+
+    def delete_application_policy_group_postcommit(self, context):
+        """Delete a application_policy_group.
+
+        :param context: ApplicationPolicyGroupContext instance describing the
+        current state of the application_policy_group, prior to the call to
+        delete it.
+        """
+        pass
+
+    def get_application_policy_group_status(self, context):
+        """Get most recent status of a application_policy_group.
+
+        :param context: ApplicationPolicyGroupContext instance describing the
+        current state of the application_policy_group, prior to the call to
+        this get.
         Driver can update the status and status_details. This status change
         will be reflected as the new status and status_details of the resource.
         """
