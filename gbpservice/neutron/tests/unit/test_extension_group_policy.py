@@ -34,6 +34,8 @@ GP_PLUGIN_BASE_NAME = (
 GROUPPOLICY_URI = 'grouppolicy'
 POLICY_TARGETS_URI = GROUPPOLICY_URI + '/' + 'policy_targets'
 POLICY_TARGET_GROUPS_URI = GROUPPOLICY_URI + '/' + 'policy_target_groups'
+APPLICATION_POLICY_GROUPS_URI = (
+    GROUPPOLICY_URI + '/' + 'application_policy_groups')
 L2_POLICIES_URI = GROUPPOLICY_URI + '/' + 'l2_policies'
 L3_POLICIES_URI = GROUPPOLICY_URI + '/' + 'l3_policies'
 POLICY_RULES_URI = GROUPPOLICY_URI + '/' + 'policy_rules'
@@ -261,6 +263,110 @@ class GroupPolicyExtensionTestCase(test_extensions_base.ExtensionTestCase):
 
     def test_delete_policy_target_group(self):
         self._test_entity_delete('policy_target_group')
+
+    def _test_create_application_policy_group(self, data, expected_value,
+                                              default_data=None):
+        if not default_data:
+            default_data = data
+
+        self.instance.create_application_policy_group.return_value = (
+            expected_value)
+        res = self.api.post(_get_path(APPLICATION_POLICY_GROUPS_URI,
+                                      fmt=self.fmt),
+                            self.serialize(data),
+                            content_type='application/%s' % self.fmt)
+        self.instance.create_application_policy_group.assert_called_once_with(
+            mock.ANY, application_policy_group=default_data)
+        self.assertEqual(exc.HTTPCreated.code, res.status_int)
+        res = self.deserialize(res)
+        self.assertIn('application_policy_group', res)
+        self.assertEqual(expected_value, res['application_policy_group'])
+
+    def test_create_application_policy_group_with_defaults(self):
+        application_policy_group_id = _uuid()
+        data = {'application_policy_group': {'tenant_id': _uuid()}}
+        default_attrs = (
+            self.get_create_application_policy_group_default_attrs())
+        default_data = copy.copy(data)
+        default_data['application_policy_group'].update(default_attrs)
+        expected_value = copy.deepcopy(
+            default_data['application_policy_group'])
+        expected_value['id'] = application_policy_group_id
+
+        self._test_create_application_policy_group(data, expected_value,
+                                                   default_data)
+
+    def test_create_application_policy_group(self):
+        application_policy_group_id = _uuid()
+        data = {'application_policy_group':
+                self.get_create_application_policy_group_attrs()}
+        expected_value = copy.deepcopy(data['application_policy_group'])
+        expected_value['id'] = application_policy_group_id
+
+        self._test_create_application_policy_group(data, expected_value)
+
+    def test_list_application_policy_groups(self):
+        application_policy_group_id = _uuid()
+        expected_value = [{'tenant_id': _uuid(),
+                           'id': application_policy_group_id}]
+
+        self.instance.get_application_policy_groups.return_value = (
+            expected_value)
+
+        res = self.api.get(_get_path(APPLICATION_POLICY_GROUPS_URI,
+                                     fmt=self.fmt))
+
+        self.instance.get_application_policy_groups.assert_called_once_with(
+            mock.ANY, fields=mock.ANY, filters=mock.ANY)
+        self.assertEqual(exc.HTTPOk.code, res.status_int)
+        res = self.deserialize(res)
+        self.assertIn('application_policy_groups', res)
+        self.assertEqual(expected_value, res['application_policy_groups'])
+
+    def test_get_application_policy_group(self):
+        application_policy_group_id = _uuid()
+        expected_value = {'tenant_id': _uuid(),
+                          'id': application_policy_group_id}
+
+        self.instance.get_application_policy_group.return_value = (
+            expected_value)
+
+        res = self.api.get(_get_path(APPLICATION_POLICY_GROUPS_URI,
+                                     id=application_policy_group_id,
+                                     fmt=self.fmt))
+
+        self.instance.get_application_policy_group.assert_called_once_with(
+            mock.ANY, application_policy_group_id, fields=mock.ANY)
+        self.assertEqual(exc.HTTPOk.code, res.status_int)
+        res = self.deserialize(res)
+        self.assertIn('application_policy_group', res)
+        self.assertEqual(expected_value, res['application_policy_group'])
+
+    def test_update_application_policy_group(self):
+        application_policy_group_id = _uuid()
+        update_data = {'application_policy_group':
+                       self.get_update_application_policy_group_attrs()}
+        expected_value = {'tenant_id': _uuid(),
+                          'id': application_policy_group_id}
+
+        self.instance.update_application_policy_group.return_value = (
+            expected_value)
+
+        res = self.api.put(_get_path(APPLICATION_POLICY_GROUPS_URI,
+                                     id=application_policy_group_id,
+                                     fmt=self.fmt),
+                           self.serialize(update_data))
+
+        self.instance.update_application_policy_group.assert_called_once_with(
+            mock.ANY, application_policy_group_id,
+            application_policy_group=update_data)
+        self.assertEqual(exc.HTTPOk.code, res.status_int)
+        res = self.deserialize(res)
+        self.assertIn('application_policy_group', res)
+        self.assertEqual(expected_value, res['application_policy_group'])
+
+    def test_delete_application_policy_group(self):
+        self._test_entity_delete('application_policy_group')
 
     def _test_create_l2_policy(self, data, expected_value, default_data=None):
         if not default_data:

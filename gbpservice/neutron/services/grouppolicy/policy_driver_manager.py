@@ -194,6 +194,33 @@ class PolicyDriverManager(stevedore.named.NamedExtensionManager):
     def get_policy_target_group_status(self, context):
         self._call_on_drivers("get_policy_target_group_status", context)
 
+    def create_application_policy_group_precommit(self, context):
+        self._call_on_drivers("create_application_policy_group_precommit",
+                              context)
+
+    def create_application_policy_group_postcommit(self, context):
+        self._call_on_drivers("create_application_policy_group_postcommit",
+                              context)
+
+    def update_application_policy_group_precommit(self, context):
+        self._call_on_drivers("update_application_policy_group_precommit",
+                              context)
+
+    def update_application_policy_group_postcommit(self, context):
+        self._call_on_drivers("update_application_policy_group_postcommit",
+                              context)
+
+    def delete_application_policy_group_precommit(self, context):
+        self._call_on_drivers("delete_application_policy_group_precommit",
+                              context)
+
+    def delete_application_policy_group_postcommit(self, context):
+        self._call_on_drivers("delete_application_policy_group_postcommit",
+                              context, continue_on_failure=True)
+
+    def get_application_policy_group_status(self, context):
+        self._call_on_drivers("get_application_policy_group_status", context)
+
     def create_l2_policy_precommit(self, context):
         self._call_on_drivers("create_l2_policy_precommit", context)
 
