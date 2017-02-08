@@ -42,8 +42,26 @@ def get_update_policy_target_attrs():
 
 
 @gbp_attributes
+def get_create_application_policy_group_default_attrs():
+    return {'name': '', 'description': '', 'shared': False}
+
+
+@gbp_attributes
+def get_create_application_policy_group_attrs():
+    return {'name': 'apg1', 'tenant_id': _uuid(),
+            'description': 'test application_policy_group',
+            'shared': False}
+
+
+@gbp_attributes
+def get_update_application_policy_group_attrs():
+    return {'name': 'new_name'}
+
+
+@gbp_attributes
 def get_create_policy_target_group_default_attrs():
     return {'name': '', 'description': '', 'l2_policy_id': None,
+            'application_policy_group_id': None,
             'provided_policy_rule_sets': {},
             'consumed_policy_rule_sets': {},
             'network_service_policy_id': None, 'shared': False,
@@ -55,6 +73,7 @@ def get_create_policy_target_group_attrs():
     return {'name': 'ptg1', 'tenant_id': _uuid(),
             'description': 'test policy_target group',
             'l2_policy_id': _uuid(),
+            'application_policy_group_id': _uuid(),
             'provided_policy_rule_sets': {_uuid(): None},
             'consumed_policy_rule_sets': {_uuid(): None},
             'network_service_policy_id': _uuid(),
