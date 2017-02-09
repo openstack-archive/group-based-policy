@@ -24,7 +24,6 @@ from apic_ml2.neutron.db import port_ha_ipaddress_binding as ha_ip_db
 from apic_ml2.neutron.tests.unit.ml2.drivers.cisco.apic import (
     test_cisco_apic_common as mocked)
 from apicapi import apic_mapper
-from neutron.agent import securitygroups_rpc as sg_cfg
 from neutron.common import rpc as n_rpc
 from neutron import context
 from neutron.db import api as db_api
@@ -106,9 +105,6 @@ class ApicMappingTestCase(
         sys.modules["apicapi"] = mock.Mock()
         if default_agent_conf:
             self.agent_conf = AGENT_CONF
-        cfg.CONF.register_opts(sg_cfg.security_group_opts, 'SECURITYGROUP')
-        config.cfg.CONF.set_override('enable_security_group', False,
-                                     group='SECURITYGROUP')
         if not cfg.CONF.group_policy.extension_drivers:
             config.cfg.CONF.set_override('extension_drivers',
                                          self._extension_drivers,
