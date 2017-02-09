@@ -108,6 +108,7 @@ class RpcHandler(object):
         super(RpcHandler, self).__init__()
         self.conf = conf
         self._controller = controller
+        self.iteration = 0
         # REVISIT (mak): Can a ServiceOrchestrator object be
         # initialized here and used for each rpc ?
 
@@ -132,9 +133,14 @@ class RpcHandler(object):
         '''Invoked in an RPC Call. Return the Network function DB object'''
         LOG.debug("Received RPC call for GET NETWORK FUNCTION for NFI %s"
                   % network_function_id)
-        service_orchestrator = ServiceOrchestrator(self._controller, self.conf)
-        return service_orchestrator.get_network_function(
-            context, network_function_id)
+        if self.iteration >= 80:
+            service_orchestrator = ServiceOrchestrator(self._controller,
+                                                       self.conf)
+            return service_orchestrator.get_network_function(
+                context, network_function_id)
+        else:
+            self.iteration += 1
+            return {}
 
     @log_helpers.log_method_call
     def get_network_functions(self, context, filters=None):
@@ -905,6 +911,7 @@ class ServiceOrchestrator(nfp_api.NfpEventHandler):
                      "%(service_type)s with tenant:%(tenant_id)s"),
                  {'tenant_id': tenant_id,
                   'service_type': service_profile['service_type']})
+
         if base_mode_support:
             # Store the context in current thread
             nfp_core_context.store_nfp_context(nfp_context)
@@ -965,6 +972,16 @@ class ServiceOrchestrator(nfp_api.NfpEventHandler):
         nfi_id = nfi.get('id', '-') if nfi else '-'
         nfd_id = nfd.get('id', '-') if nfd else '-'
         nfp_logging.update_logging_context(nfi_id=nfi_id, nfd_id=nfd_id)
+
+        self.db_handler.delete_network_function_instance(
+            self.db_session, nfi_id)
+        self.db_handler.delete_network_function(
+            self.db_session, nfd_id)
+        LOG.info(_LI("[Event:ServiceDeleteCompleted]"))
+        LOG.event("Completed delete network function.",
+                  stats_type=nfp_constants.response_event)
+        return
+
         if (not base_mode_support and
                 not network_function_details[
                     'network_function']['network_function_instances']):
@@ -1085,7 +1102,7 @@ class ServiceOrchestrator(nfp_api.NfpEventHandler):
         create_nfi_request = {
             'name': name,
             'tenant_id': network_function['tenant_id'],
-            'status': nfp_constants.PENDING_CREATE,
+            'status': nfp_constants.ACTIVE,
             'network_function_id': network_function['id'],
             'service_type': service_details['service_type'],
             'service_vendor': service_details['service_vendor'],
@@ -1103,6 +1120,14 @@ class ServiceOrchestrator(nfp_api.NfpEventHandler):
         nfp_context['network_function_instance'] = nfi_db
 
         self._update_nfp_context(nfp_context)
+
+        network_function_info = {
+            'status': nfp_constants.ACTIVE,
+        }
+        self.db_handler.update_network_function(
+            self.db_session,
+            network_function['id'],
+            network_function_info)
 
         ev = self._controller.new_event(
             id='CREATE_NETWORK_FUNCTION_INSTANCE',
