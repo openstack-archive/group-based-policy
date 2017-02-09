@@ -106,9 +106,6 @@ class ApicMappingTestCase(
         sys.modules["apicapi"] = mock.Mock()
         if default_agent_conf:
             self.agent_conf = AGENT_CONF
-        cfg.CONF.register_opts(sg_cfg.security_group_opts, 'SECURITYGROUP')
-        config.cfg.CONF.set_override('enable_security_group', False,
-                                     group='SECURITYGROUP')
         if not cfg.CONF.group_policy.extension_drivers:
             config.cfg.CONF.set_override('extension_drivers',
                                          self._extension_drivers,
