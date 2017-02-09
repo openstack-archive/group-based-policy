@@ -14,6 +14,7 @@
 import eventlet
 from eventlet import greenpool
 import threading
+import time
 
 from keystoneclient import exceptions as k_exceptions
 from keystoneclient.v2_0 import client as keyclient
@@ -313,6 +314,7 @@ class NFPNodeDriver(driver_base.NodeDriverBase):
     def __init__(self):
         super(NFPNodeDriver, self).__init__()
         self._lbaas_plugin = None
+        self.start = int(time.time())
 
     @property
     def name(self):
@@ -693,10 +695,12 @@ class NFPNodeDriver(driver_base.NodeDriverBase):
             eventlet.sleep(5)
             time_waited = time_waited + 5
 
+        LOG.info(_LI("Deleting sci nf mapping"))
         self._delete_node_instance_network_function_map(
             context.plugin_session,
             context.current_node['id'],
             context.instance['id'])
+        LOG.info(_LI("sci nf mapping got deleted. NF got deldted."))
 
         if network_function:
             LOG.error(_LE("Delete network function %(network_function)s "
@@ -710,9 +714,20 @@ class NFPNodeDriver(driver_base.NodeDriverBase):
         time_waited = 0
         network_function = None
         timeout = cfg.CONF.nfp_node_driver.service_create_timeout
+        #curr_time = int(time.time())
+        #if curr_time - self.start >= 1500:
+        #    raise NodeInstanceCreateFailed()
+
         while time_waited < timeout:
             network_function = self.nfp_notifier.get_network_function(
                 context.plugin_context, network_function_id)
+            LOG.info(_LI("Got %(operation)s network function result for NF:"
+                "%(network_function_id)s with status:%(status)s,"
+                "time waited: %(time_waited)s"),
+                    {'network_function_id': network_function_id,
+                        'operation': operation,
+                        'time_waited': time_waited,
+                        'status': network_function['status']})
             if not network_function:
                 LOG.error(_LE("Failed to retrieve network function"))
                 eventlet.sleep(5)

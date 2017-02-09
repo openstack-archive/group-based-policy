@@ -283,14 +283,16 @@ def get_response_from_configurator(conf):
             message = ("get_notification ->"
                        "GET request failed. Reason : %s" % (rce))
             LOG.error(message)
-            return "get_notification -> GET request failed. Reason : %s" % (
-                rce)
+            #return "get_notification -> GET request failed. Reason : %s" % (
+            #    rce)
+            return {}
         except Exception as e:
             message = ("get_notification ->"
                        "GET request failed. Reason : %s" % (e))
             LOG.error(message)
-            return "get_notification -> GET request failed. Reason : %s" % (
-                e)
+            #return "get_notification -> GET request failed. Reason : %s" % (
+            #    e)
+            return {}
 
     elif conf.backend == UNIX_REST:
         try:
@@ -306,15 +308,17 @@ def get_response_from_configurator(conf):
                        "GET request failed. Reason : %s" % (
                            rce))
             LOG.error(message)
-            return "get_notification -> GET request failed. Reason : %s" % (
-                rce)
+            #return "get_notification -> GET request failed. Reason : %s" % (
+            #    rce)
+            return {}
         except Exception as e:
             message = ("get_notification ->"
                        "GET request failed. Reason : %s" % (
                            e))
             LOG.error(message)
-            return "get_notification -> GET request failed. Reason : %s" % (
-                e)
+            #return "get_notification -> GET request failed. Reason : %s" % (
+            #    e)
+            return {}
 
     else:
         rpc_cbs_data = []
