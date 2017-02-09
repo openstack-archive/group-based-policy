@@ -62,16 +62,6 @@ class NoL3NatSGTestPlugin(
 
     supported_extension_aliases = ["external-net", "security-group"] + (
         test_group_policy_db.UNSUPPORTED_REQUIRED_EXTS)
-    # Note that the following private attribute definition should not
-    # be required, however the following line of code in the resource
-    # mapping driver requires it:
-    # https://git.io/v2O8G
-    # hence we add it to this test plugin. In general, this is not a
-    # good thing since the Neutron plugin contract only requires definition
-    # of the "supported_extension_aliases" property. This currently works
-    # since the ML2 plugin also defines the private property
-    # "_supported_extensions_aliases".
-    _supported_extension_aliases = supported_extension_aliases
 
 
 CORE_PLUGIN = ('gbpservice.neutron.tests.unit.services.grouppolicy.'
