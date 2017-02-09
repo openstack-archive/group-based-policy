@@ -108,6 +108,7 @@ class RpcHandler(object):
         super(RpcHandler, self).__init__()
         self.conf = conf
         self._controller = controller
+        self.iteration = 0
         # REVISIT (mak): Can a ServiceOrchestrator object be
         # initialized here and used for each rpc ?
 
@@ -132,9 +133,14 @@ class RpcHandler(object):
         '''Invoked in an RPC Call. Return the Network function DB object'''
         LOG.debug("Received RPC call for GET NETWORK FUNCTION for NFI %s"
                   % network_function_id)
-        service_orchestrator = ServiceOrchestrator(self._controller, self.conf)
-        return service_orchestrator.get_network_function(
-            context, network_function_id)
+        if self.iteration >= 80:
+            service_orchestrator = ServiceOrchestrator(self._controller,
+                                                       self.conf)
+            return service_orchestrator.get_network_function(
+                context, network_function_id)
+        else:
+            self.iteration += 1
+            return {}
 
     @log_helpers.log_method_call
     def get_network_functions(self, context, filters=None):
