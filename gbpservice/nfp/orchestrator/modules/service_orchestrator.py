@@ -132,7 +132,8 @@ class RpcHandler(object):
         '''Invoked in an RPC Call. Return the Network function DB object'''
         LOG.debug("Received RPC call for GET NETWORK FUNCTION for NFI %s"
                   % network_function_id)
-        service_orchestrator = ServiceOrchestrator(self._controller, self.conf)
+        service_orchestrator = ServiceOrchestrator(self._controller,
+                                                   self.conf)
         return service_orchestrator.get_network_function(
             context, network_function_id)
 
@@ -350,55 +351,59 @@ class RpcHandlerConfigurator(object):
 
     @log_helpers.log_method_call
     def network_function_notification(self, context, notification_data):
-        info = notification_data.get('info')
-        responses = notification_data.get('notification')
-        request_info = info.get('context')
-        operation = request_info.get('operation')
-        logging_context = request_info.get('logging_context')
-        nfp_logging.store_logging_context(**logging_context)
-        serialize = False
+        try:
+            info = notification_data.get('info')
+            responses = notification_data.get('notification')
+            request_info = info.get('context')
+            operation = request_info.get('operation')
+            logging_context = request_info.get('logging_context')
+            nfp_logging.store_logging_context(**logging_context)
+            serialize = False
 
-        for response in responses:
-            resource = response.get('resource')
-            data = response.get('data')
-            result = data.get('status_code')
+            for response in responses:
+                resource = response.get('resource')
+                data = response.get('data')
+                result = data.get('status_code')
 
-            if result.lower() != 'success':
-                if operation == 'create':
-                    event_id = self.rpc_event_mapping[resource][0]
-                elif operation == 'delete':
-                    return
-                elif operation == 'update':
-                    serialize = True
-                    event_id = self.rpc_event_mapping[resource][2]
-                elif operation == 'pt_add':
-                    serialize = True
-                    event_id = self.rpc_event_mapping[resource][3]
-                elif operation == 'pt_remove':
-                    serialize = True
-                    event_id = self.rpc_event_mapping[resource][4]
-                elif operation == 'consumer_add':
-                    serialize = True
-                    event_id = self.rpc_event_mapping[resource][5]
+                if result.lower() != 'success':
+                    if operation == 'create':
+                        event_id = self.rpc_event_mapping[resource][0]
+                    elif operation == 'delete':
+                        return
+                    elif operation == 'update':
+                        serialize = True
+                        event_id = self.rpc_event_mapping[resource][2]
+                    elif operation == 'pt_add':
+                        serialize = True
+                        event_id = self.rpc_event_mapping[resource][3]
+                    elif operation == 'pt_remove':
+                        serialize = True
+                        event_id = self.rpc_event_mapping[resource][4]
+                    elif operation == 'consumer_add':
+                        serialize = True
+                        event_id = self.rpc_event_mapping[resource][5]
+                    else:
+                        serialize = True
+                        event_id = self.rpc_event_mapping[resource][6]
+                    break
                 else:
-                    serialize = True
-                    event_id = self.rpc_event_mapping[resource][6]
-                break
-            else:
-                if operation == 'delete':
-                    event_id = 'USER_CONFIG_DELETED'
-                else:
-                    event_id = 'CONFIG_APPLIED'
-        nf_id = request_info.pop('nf_id')
-        nfi_id = request_info.pop('nfi_id')
-        nfd_id = request_info.pop('nfd_id')
-        request_info['network_function_id'] = nf_id
-        request_info['network_function_instance_id'] = nfi_id
-        request_info['network_function_device_id'] = nfd_id
-        event_data = request_info
-        self._create_event(event_id=event_id,
-                           event_data=event_data, serialize=serialize)
-        nfp_logging.clear_logging_context()
+                    if operation == 'delete':
+                        event_id = 'USER_CONFIG_DELETED'
+                    else:
+                        event_id = 'CONFIG_APPLIED'
+            nf_id = request_info.pop('nf_id')
+            nfi_id = request_info.pop('nfi_id')
+            nfd_id = request_info.pop('nfd_id')
+            request_info['network_function_id'] = nf_id
+            request_info['network_function_instance_id'] = nfi_id
+            request_info['network_function_device_id'] = nfd_id
+            event_data = request_info
+            self._create_event(event_id=event_id,
+                               event_data=event_data, serialize=serialize)
+            nfp_logging.clear_logging_context()
+        except Exception as err:
+            LOG.error(_LE("Exception in NSO RPC Reciever: %(err)s"),
+                     {'err': err})
 
 
 class ServiceOrchestrator(nfp_api.NfpEventHandler):
