@@ -34,7 +34,7 @@ class UnixHTTPConnection(httplib.HTTPConnection):
 
     """Connection class for HTTP over UNIX domain socket."""
 
-    def __init__(self, host, port=None, strict=None, timeout=None,
+    def __init__(self, host, port=None, strict=None, timeout=600,
                  proxy_info=None):
         httplib.HTTPConnection.__init__(self, host, port, strict)
         self.timeout = timeout
