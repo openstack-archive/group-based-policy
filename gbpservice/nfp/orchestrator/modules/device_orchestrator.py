@@ -146,56 +146,59 @@ class RpcHandler(object):
 
     # RPC APIs status notification from Configurator
     def network_function_notification(self, context, notification_data):
-        info = notification_data.get('info')
-        responses = notification_data.get('notification')
-        request_info = info.get('context')
-        operation = request_info.get('operation')
-        logging_context = request_info.get('logging_context')
-        nfp_logging.store_logging_context(**logging_context)
+        try:
+            info = notification_data.get('info')
+            responses = notification_data.get('notification')
+            request_info = info.get('context')
+            operation = request_info.get('operation')
+            logging_context = request_info.get('logging_context')
+            nfp_logging.store_logging_context(**logging_context)
 
-        for response in responses:
-            resource = response.get('resource')
-            data = response.get('data')
-            result = data.get('status_code')
-            if resource not in [nfp_constants.HEALTHMONITOR_RESOURCE,
-                                nfp_constants.PERIODIC_HM]:
-                resource = nfp_constants.GENERIC_CONFIG
+            for response in responses:
+                resource = response.get('resource')
+                data = response.get('data')
+                result = data.get('status_code')
+                if resource not in [nfp_constants.HEALTHMONITOR_RESOURCE,
+                                    nfp_constants.PERIODIC_HM]:
+                    resource = nfp_constants.GENERIC_CONFIG
 
-            is_delete_request = True if operation == 'delete' else False
+                is_delete_request = True if operation == 'delete' else False
 
-            if resource == nfp_constants.PERIODIC_HM:
-                event_id = self.handle_periodic_hm_resource(result)
-                break
+                if resource == nfp_constants.PERIODIC_HM:
+                    event_id = self.handle_periodic_hm_resource(result)
+                    break
 
-            if is_delete_request:
-                event_id = self.rpc_event_mapping[resource][1]
-            else:
-                event_id = self.rpc_event_mapping[resource][0]
-
-            if result.lower() != 'success':
-                LOG.info(_LI("RPC Handler response data:%(data)s"),
-                         {'data': data})
                 if is_delete_request:
-                    # Ignore any deletion errors, generate SUCCESS event
                     event_id = self.rpc_event_mapping[resource][1]
                 else:
-                    event_id = self.rpc_event_mapping[resource][2]
-                break
+                    event_id = self.rpc_event_mapping[resource][0]
 
-        nf_id = request_info.pop('nf_id')
-        nfi_id = request_info.pop('nfi_id')
-        nfd_id = request_info.pop('nfd_id')
-        request_info['network_function_id'] = nf_id
-        request_info['network_function_instance_id'] = nfi_id
-        request_info['network_function_device_id'] = nfd_id
-        event_data = request_info
-        event_data['id'] = request_info['network_function_device_id']
+                if result.lower() != 'success':
+                    LOG.info(_LI("RPC Handler response data:%(data)s"),
+                             {'data': data})
+                    if is_delete_request:
+                        # Ignore any deletion errors, generate SUCCESS event
+                        event_id = self.rpc_event_mapping[resource][1]
+                    else:
+                        event_id = self.rpc_event_mapping[resource][2]
+                    break
 
-        key = nf_id
-        self._create_event(event_id=event_id,
-                           event_data=event_data,
-                           key=key)
-        nfp_logging.clear_logging_context()
+            nf_id = request_info.pop('nf_id')
+            nfi_id = request_info.pop('nfi_id')
+            nfd_id = request_info.pop('nfd_id')
+            request_info['network_function_id'] = nf_id
+            request_info['network_function_instance_id'] = nfi_id
+            request_info['network_function_device_id'] = nfd_id
+            event_data = request_info
+            event_data['id'] = request_info['network_function_device_id']
+
+            key = nf_id
+            self._create_event(event_id=event_id,
+                               event_data=event_data,
+                               key=key)
+            nfp_logging.clear_logging_context()
+        except Exception as err:
+            LOG.error(_LE("Exception: in RPC handler: %(err)s"), {'err': err})
 
 
 class DeviceOrchestrator(nfp_api.NfpEventHandler):
