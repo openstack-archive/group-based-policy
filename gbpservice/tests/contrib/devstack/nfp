@@ -150,7 +150,17 @@ function create_nfp_gbp_resources {
    gbp service-profile-create --servicetype LOADBALANCER --insertion-mode l3 --shared True --service-flavor service_vendor=haproxy,device_type=None --vendor NFP base_mode_lb
    gbp service-profile-create --servicetype FIREWALL --insertion-mode l3 --shared True --service-flavor service_vendor=vyos,device_type=None --vendor NFP base_mode_fw
    gbp service-profile-create --servicetype FIREWALL --insertion-mode l3 --shared True --service-flavor service_vendor=nfp,device_type=nova,image_name=$IMAGE_NAME_FLAT,flavor=$FLAVOR --vendor NFP base_mode_fw_vm
-   gbp group-create svc_management_ptg --service_management True
+   #gbp group-create svc_management_ptg --service_management True
+
+   gbp l3policy-create --ip-version 4 --ip-pool 172.16.0.0/16 --subnet-prefix-length 20 --proxy-ip-pool=172.17.0.0/16 service_management
+
+   gbp l2policy-create --l3-policy service_management svc_management_ptg
+
+   gbp group-create svc_management_ptg --service_management True --l2-policy svc_management_ptg
+
+   neutron router-gateway-clear l3p_service_management
+
+   gbp l3policy-update --external-segment "" service_management
 }
 
 function delete_nfp_gbp_resources {
