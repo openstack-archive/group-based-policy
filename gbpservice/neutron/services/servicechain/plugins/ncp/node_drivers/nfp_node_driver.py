@@ -14,6 +14,7 @@
 import eventlet
 from eventlet import greenpool
 import threading
+import time
 
 from keystoneclient import exceptions as k_exceptions
 from keystoneclient.v2_0 import client as keyclient
@@ -467,7 +468,8 @@ class NFPNodeDriver(driver_base.NodeDriverBase):
                                             network_function_id,
                                             operation):
         # Check for NF status in a separate thread
-        LOG.debug("Spawning thread for nf ACTIVE poll")
+        LOG.debug("Spawning thread for nf ACTIVE poll operation: %s" % (
+            operation))
         nfp_context = NFPContext.get_nfp_context(context.instance['id'])
         if operation == nfp_constants.DELETE:
             gth = nfp_context['thread_pool'].spawn(
@@ -685,18 +687,28 @@ class NFPNodeDriver(driver_base.NodeDriverBase):
                                                      network_function_id):
         time_waited = 0
         network_function = None
-        while time_waited < cfg.CONF.nfp_node_driver.service_delete_timeout:
+        curr_time = start_time = int(time.time())
+        timeout = cfg.CONF.nfp_node_driver.service_delete_timeout
+
+        while curr_time - start_time < timeout:
+            curr_time = int(time.time())
             network_function = self.nfp_notifier.get_network_function(
                 context.plugin_context, network_function_id)
+            if network_function:
+                LOG.debug("Got %s nf result for NF: %s with status:%s,"
+                          "time waited: %s" % (network_function_id, 'delete',
+                          time_waited, network_function['status']))
             if not network_function:
                 break
             eventlet.sleep(5)
             time_waited = time_waited + 5
 
+        LOG.debug("Deleting sci nf mapping")
         self._delete_node_instance_network_function_map(
             context.plugin_session,
             context.current_node['id'],
             context.instance['id'])
+        LOG.debug("sci nf mapping got deleted. NF got deldted.")
 
         if network_function:
             LOG.error(_LE("Delete network function %(network_function)s "
@@ -710,9 +722,15 @@ class NFPNodeDriver(driver_base.NodeDriverBase):
         time_waited = 0
         network_function = None
         timeout = cfg.CONF.nfp_node_driver.service_create_timeout
-        while time_waited < timeout:
+        curr_time = start_time = int(time.time())
+
+        while curr_time - start_time < timeout:
+            curr_time = int(time.time())
             network_function = self.nfp_notifier.get_network_function(
                 context.plugin_context, network_function_id)
+            LOG.debug("Got %s nf result for NF: %s with status:%s,"
+                      "time waited: %s" % (network_function_id, operation,
+                      time_waited, network_function['status']))
             if not network_function:
                 LOG.error(_LE("Failed to retrieve network function"))
                 eventlet.sleep(5)
