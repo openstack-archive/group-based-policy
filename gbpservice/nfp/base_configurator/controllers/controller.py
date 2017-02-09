@@ -16,6 +16,7 @@ from oslo_log import log as logging
 import pecan
 import requests
 import subprocess
+from subprocess import CalledProcessError
 import time
 
 from gbpservice.nfp.pecan import base_controller
@@ -50,7 +51,7 @@ class Controller(base_controller.BaseController):
                 str(err).capitalize())
             LOG.error(msg)
         self.vm_port = '8080'
-        self.max_retries = 60
+        self.max_retries = 120
 
     def _push_notification(self, context, result, config_data, service_type):
         global notifications
@@ -74,12 +75,31 @@ class Controller(base_controller.BaseController):
     def _verify_vm_reachability(self, vm_ip, vm_port):
         reachable = False
         command = 'nc ' + vm_ip + ' ' + vm_port + ' -z'
+        ping_command = 'ping -c1 ' + vm_ip
+        #ping_gw_command = 'ping -c1 10.0.0.1'
+        subprocess.check_output('sudo iptables -F',
+                                stderr=subprocess.STDOUT,
+                                shell=True)
+        ifconfig_result = subprocess.check_output('ifconfig -a',
+                                                  stderr=subprocess.STDOUT,
+                                                  shell=True)
+        msg = ("Ifconfig result: %s" % ifconfig_result)
+        LOG.info(msg)
         for _ in range(self.max_retries):
             try:
+                #subprocess.check_output(ping_gw_command,
+                #                        stderr=subprocess.STDOUT,
+                #                        shell=True)
+                subprocess.check_output(ping_command, stderr=subprocess.STDOUT,
+                                        shell=True)
                 subprocess.check_output(command, stderr=subprocess.STDOUT,
                                         shell=True)
                 reachable = True
                 break
+            except CalledProcessError as err:
+                msg = ("Exception: %s " % err)
+                LOG.error(msg)
+                time.sleep(5)
             except Exception:
                 time.sleep(5)
         return reachable
@@ -158,9 +178,18 @@ class Controller(base_controller.BaseController):
             resource = config_data['resource']
             operation = context['operation']
 
+            msg1 = ("Request recieved :: %s" % body)
+            LOG.info(msg1)
+            msg2 = ("cache_ips: %s" % cache_ips)
+            LOG.info(msg2)
             if 'device_ip' in context:
-                msg = ("POSTING DATA TO VM :: %s" % body)
-                LOG.info(msg)
+                #for config_data in config_datas:
+                #    self._push_notification(context,
+                #       'SUCCESS', config_data, service_type)
+                ########
+                #return
+                msg3 = ("POSTING DATA TO VM :: %s" % body)
+                LOG.info(msg3)
                 device_ip = context['device_ip']
                 ip = str(device_ip)
                 resource_id = (context['nfp_context']['nfp_context']['id']
@@ -168,12 +197,17 @@ class Controller(base_controller.BaseController):
                         context['nfp_context'].get('nfp_context') else '')
                 if operation == 'delete' and resource_id == 'PERFORM_CLEAR_HM':
                     return
+                msg5 = ("Verifying vm reachability on ip: %s, port: %s" % (
+                    ip, self.vm_port))
+                LOG.info(msg5)
                 is_vm_reachable = self._verify_vm_reachability(ip,
                                                                self.vm_port)
                 if is_vm_reachable:
                     requests.post(
                         'http://' + ip + ':' + self.vm_port + '/v1/nfp/' +
                         self.method_name, data=jsonutils.dumps(body))
+                    msg4 = ("requests successfull for data: %s" % body)
+                    LOG.info(msg4)
                 else:
                     raise Exception('VM is not reachable')
                 cache_ips.add(device_ip)
