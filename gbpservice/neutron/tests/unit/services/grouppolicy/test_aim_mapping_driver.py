@@ -23,6 +23,7 @@ from aim.db import model_base as aim_model_base
 from keystoneclient.v3 import client as ksc_client
 from netaddr import IPSet
 from neutron.api.rpc.agentnotifiers import dhcp_rpc_agent_api
+from neutron.common import constants as n_constants
 from neutron import context as nctx
 from neutron.db import api as db_api
 from neutron import manager
@@ -109,7 +110,8 @@ class AIMBaseTestCase(test_nr_base.CommonNeutronBaseTestCase,
                 'api_extensions_path', self._extension_path)
         self.agent_conf = AGENT_CONF
         ml2_opts = ml2_options or {'mechanism_drivers': ['logger', 'apic_aim'],
-                                   'extension_drivers': ['apic_aim'],
+                                   'extension_drivers': ['apic_aim',
+                                                         'port_security'],
                                    'type_drivers': ['opflex', 'local', 'vlan'],
                                    'tenant_network_types': ['opflex']}
         engine = db_api.get_engine()
@@ -4324,3 +4326,77 @@ class TestNetworkServicePolicy(AIMBaseTestCase):
         self.assertEqual(
                 netaddr.IPAddress(initial_allocation_pool[0].get('end')),
                 netaddr.IPAddress(allocation_pool_after_nsp[0].get('end')) + 1)
+
+
+class TestNeutronPortSecurityExtension(AIMBaseTestCase):
+
+    def setUp(self, **kwargs):
+        super(TestNeutronPortSecurityExtension, self).setUp(**kwargs)
+        # Doing the following assignment since the call to _register_agent
+        # needs self.plugin to point to the neutron core plugin.
+        # TODO: Ideally, the self.plugin of the GBP test cases should be
+        # consistent with the neutron test setup and point to the neutron
+        # core plugin. The self._gbp_plugin already points to the GBP service
+        # plugin and should be used instead.
+        self.plugin = self._plugin
+
+    def test_port_security_port(self):
+        self._register_agent('host1', test_aim_md.AGENT_CONF_OPFLEX)
+        net = self._make_network(self.fmt, 'net1', True)
+        self._make_subnet(self.fmt, net, '10.0.1.1', '10.0.1.0/24')
+
+        # test compute port
+        p1 = self._make_port(self.fmt, net['network']['id'],
+                             device_owner='compute:')['port']
+        p1 = self._bind_port_to_host(p1['id'], 'host1')['port']
+        details = self.driver.get_gbp_details(
+            self._neutron_admin_context, device='tap%s' % p1['id'],
+            host='h1')
+        self.assertFalse(details['promiscuous_mode'])
+
+        p2 = self._make_port(self.fmt, net['network']['id'],
+                             arg_list=('port_security_enabled',),
+                             device_owner='compute:',
+                             port_security_enabled=True)['port']
+        p2 = self._bind_port_to_host(p2['id'], 'host1')['port']
+        details = self.driver.get_gbp_details(
+            self._neutron_admin_context, device='tap%s' % p2['id'],
+            host='h1')
+        self.assertFalse(details['promiscuous_mode'])
+
+        p3 = self._make_port(self.fmt, net['network']['id'],
+                             arg_list=('port_security_enabled',),
+                             device_owner='compute:',
+                             port_security_enabled=False)['port']
+        p3 = self._bind_port_to_host(p3['id'], 'host1')['port']
+        details = self.driver.get_gbp_details(
+            self._neutron_admin_context, device='tap%s' % p3['id'],
+            host='h1')
+        self.assertTrue(details['promiscuous_mode'])
+
+        # test DHCP port
+        p1_dhcp = self._make_port(self.fmt, net['network']['id'],
+            device_owner=n_constants.DEVICE_OWNER_DHCP)['port']
+        p1_dhcp = self._bind_port_to_host(p1_dhcp['id'], 'host1')['port']
+        details = self.driver.get_gbp_details(
+            self._neutron_admin_context, device='tap%s' % p1_dhcp['id'],
+            host='h1')
+        self.assertTrue(details['promiscuous_mode'])
+
+        p2_dhcp = self._make_port(self.fmt, net['network']['id'],
+            arg_list=('port_security_enabled',), port_security_enabled=True,
+            device_owner=n_constants.DEVICE_OWNER_DHCP)['port']
+        p2_dhcp = self._bind_port_to_host(p2_dhcp['id'], 'host1')['port']
+        details = self.driver.get_gbp_details(
+            self._neutron_admin_context, device='tap%s' % p2_dhcp['id'],
+            host='h1')
+        self.assertTrue(details['promiscuous_mode'])
+
+        p3_dhcp = self._make_port(self.fmt, net['network']['id'],
+            arg_list=('port_security_enabled',), port_security_enabled=False,
+            device_owner=n_constants.DEVICE_OWNER_DHCP)['port']
+        p3_dhcp = self._bind_port_to_host(p3_dhcp['id'], 'host1')['port']
+        details = self.driver.get_gbp_details(
+            self._neutron_admin_context, device='tap%s' % p3_dhcp['id'],
+            host='h1')
+        self.assertTrue(details['promiscuous_mode'])
