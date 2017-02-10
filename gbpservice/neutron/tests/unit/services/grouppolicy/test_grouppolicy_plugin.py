@@ -156,6 +156,11 @@ class GroupPolicyPluginTestBase(tgpmdb.GroupPolicyMappingDbTestCase):
 
 
 class GroupPolicyPluginTestCase(GroupPolicyPluginTestBase):
+    # This is a place-holder for GBP plugin-specific common tests
+    pass
+
+
+class TestGroupPolicyPluginDrivers(GroupPolicyPluginTestBase):
 
     def test_reverse_on_delete(self):
         manager = self.plugin.policy_driver_manager
