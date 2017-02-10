@@ -424,6 +424,8 @@ function namespace_create {
     else
         echo "Fails reaching to $configurator_ip"
     fi
+    ifconfig_res=`ifconfig -a`
+    echo "ifconfig -a : $ifconfig_res "
 
     sudo ip netns exec nfp-proxy /usr/bin/nfp_proxy --config-file=/etc/nfp.ini
 }
