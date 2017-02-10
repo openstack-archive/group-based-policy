@@ -46,11 +46,26 @@ class Controller(rest.RestController):
         try:
             self.method_name = "network_function_device_notification"
             super(Controller, self).__init__()
+            initial_data = self._get_initial_data()
+            LOG.info(_LI("Dhclient on eth0, result: %(initial_data)s") %
+                     {'initial_data': initial_data})
         except Exception as err:
             msg = (
                 "Failed to initialize Controller class  %s." %
                 str(err).capitalize())
             LOG.error(msg)
+
+    def _get_initial_data(self):
+        ip_a = subprocess.Popen('sudo ifconfig -a', shell=True,
+                                stdout=subprocess.PIPE).stdout.read()
+        out1 = subprocess.Popen('sudo dhclient eth0', shell=True,
+                                stdout=subprocess.PIPE).stdout.read()
+        out2 = subprocess.Popen('sudo dhclient eth0', shell=True,
+                                stdout=subprocess.PIPE).stdout.read()
+        out3 = subprocess.Popen('cat /etc/network/interfaces', shell=True,
+                                stdout=subprocess.PIPE).stdout.read()
+        output = "%s\n%s\n%s\n%s" % (ip_a, out1, out2, out3)
+        return output
 
     def _push_notification(self, context,
                            notification_data, service_type):
@@ -120,9 +135,11 @@ class Controller(rest.RestController):
                                 {'resource': resource,
                                  'data': {'status_code': FAILED,
                                           'status_msg': status_msg}})
+                    initial_data = self._get_initial_data(self)
                     notification_data.append(
                                 {'resource': config_data['resource'],
-                                 'data': {'status_code': SUCCESS}})
+                                 'data': {'status_code': SUCCESS,
+                                          'initial_data': initial_data}})
                 except Exception as ex:
                     notification_data.append(
                                 {'resource': resource,
@@ -156,6 +173,15 @@ class Controller(rest.RestController):
                  {'healthmonitor_data': config_data})
 
     def _configure_interfaces(self, config_data):
+        out1 = subprocess.Popen('sudo dhclient eth1', shell=True,
+                                stdout=subprocess.PIPE).stdout.read()
+        out2 = subprocess.Popen('sudo dhclient eth2', shell=True,
+                                stdout=subprocess.PIPE).stdout.read()
+        out3 = subprocess.Popen('cat /etc/network/interfaces', shell=True,
+                                stdout=subprocess.PIPE).stdout.read()
+        output = "%s\n%s\n%s" % (out1, out2, out3)
+        LOG.info(_LI("Dhclient on eth0, result: %(initial_data)s") %
+                 {'initial_data': output})
         LOG.info(_LI("Configures interfaces with configuration "
                  "data : %(interface_data)s ") %
                  {'interface_data': config_data})

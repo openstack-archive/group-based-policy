@@ -258,6 +258,8 @@ function create_nfp_image {
         echo "Uploading Image: $RefConfiguratorQcow2ImageName"
         glance image-create --name $RefConfiguratorQcow2ImageName --disk-format qcow2 --container-format bare --visibility public --file $RefConfiguratorQcow2Image
         openstack --os-cloud=devstack-admin flavor create --ram 512 --disk 3 --vcpus 1 m1.nfp-tiny
+        RefConfiguratorImageId=`glance image-list | grep $RefConfiguratorQcow2ImageName | awk '{print $2}'`
+        glance image-update --property supports_hotplug=False $RefConfiguratorImageId
     else
         ConfiguratorQcow2ImageName=configurator
         ConfiguratorInstanceName="configuratorVM_instance"
@@ -424,6 +426,8 @@ function namespace_create {
     else
         echo "Fails reaching to $configurator_ip"
     fi
+    ifconfig_res=`ifconfig -a`
+    echo "ifconfig -a : $ifconfig_res "
 
     sudo ip netns exec nfp-proxy /usr/bin/nfp_proxy --config-file=/etc/nfp.ini
 }
