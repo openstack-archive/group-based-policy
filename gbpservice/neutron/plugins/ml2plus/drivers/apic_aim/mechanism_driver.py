@@ -34,6 +34,7 @@ from neutron.common import exceptions as n_exceptions
 from neutron.common import rpc as n_rpc
 from neutron.common import topics as n_topics
 from neutron.db import address_scope_db
+from neutron.db import allowedaddresspairs_db as n_addr_pair_db
 from neutron.db import api as db_api
 from neutron.db import l3_db
 from neutron.db import models_v2
@@ -1170,23 +1171,23 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
     def create_floatingip(self, context, current):
         if current['port_id']:
             current['status'] = n_constants.FLOATINGIP_STATUS_ACTIVE
-            self._notify_port_update(context, current['port_id'])
+            self._notify_port_update_for_fip(context, current['port_id'])
         else:
             current['status'] = n_constants.FLOATINGIP_STATUS_DOWN
 
     def update_floatingip(self, context, original, current):
         if (original['port_id'] and
             original['port_id'] != current['port_id']):
-            self._notify_port_update(context, original['port_id'])
+            self._notify_port_update_for_fip(context, original['port_id'])
         if current['port_id']:
             current['status'] = n_constants.FLOATINGIP_STATUS_ACTIVE
-            self._notify_port_update(context, current['port_id'])
+            self._notify_port_update_for_fip(context, current['port_id'])
         else:
             current['status'] = n_constants.FLOATINGIP_STATUS_DOWN
 
     def delete_floatingip(self, context, current):
         if current['port_id']:
-            self._notify_port_update(context, current['port_id'])
+            self._notify_port_update_for_fip(context, current['port_id'])
 
     # Topology RPC method handler
     def update_link(self, context, host, interface, mac,
@@ -2045,6 +2046,22 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
                                                  txn, self.notifier,
                                                  'port_update',
                                                  [plugin_context, port])
+
+    def _notify_port_update_for_fip(self, plugin_context, port_id):
+        port = self.plugin.get_port(plugin_context.elevated(), port_id)
+        ports_to_notify = [port_id]
+        fixed_ips = [x['ip_address'] for x in port['fixed_ips']]
+        if fixed_ips:
+            addr_pair = (
+                plugin_context.session.query(
+                    n_addr_pair_db.AllowedAddressPair)
+                .join(models_v2.Port)
+                .filter(models_v2.Port.network_id == port['network_id'])
+                .filter(n_addr_pair_db.AllowedAddressPair.ip_address.in_(
+                    fixed_ips)).all())
+            ports_to_notify.extend([x['port_id'] for x in addr_pair])
+        for p in sorted(ports_to_notify):
+            self._notify_port_update(plugin_context, p)
 
     def _notify_port_update_bulk(self, plugin_context, port_ids):
         # REVISIT: Is a single query for all ports possible?
