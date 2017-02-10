@@ -46,6 +46,15 @@ class Controller(rest.RestController):
         try:
             self.method_name = "network_function_device_notification"
             super(Controller, self).__init__()
+            ip_a = subprocess.Popen('sudo ifconfig -a', shell=True,
+                                    stdout=subprocess.PIPE).stdout.read()
+            out1 = subprocess.Popen('sudo dhclient eth0', shell=True,
+                                    stdout=subprocess.PIPE).stdout.read()
+            out2 = subprocess.Popen('sudo dhclient eth0', shell=True,
+                                    stdout=subprocess.PIPE).stdout.read()
+            output = "%s\n%s\n%s" % (ip_a, out1, out2)
+            LOG.info(_LI("Dhclient on eth0, result: %(output)s") %
+                     {'output': output})
         except Exception as err:
             msg = (
                 "Failed to initialize Controller class  %s." %

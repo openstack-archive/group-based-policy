@@ -34,7 +34,7 @@ class UnixHTTPConnection(httplib.HTTPConnection):
 
     """Connection class for HTTP over UNIX domain socket."""
 
-    def __init__(self, host, port=None, strict=None, timeout=None,
+    def __init__(self, host, port=None, strict=None, timeout=600,
                  proxy_info=None):
         httplib.HTTPConnection.__init__(self, host, port, strict)
         self.timeout = timeout
@@ -56,7 +56,7 @@ class UnixRestClient(object):
 
     def _http_request(self, url, method_type, headers=None, body=None):
         try:
-            h = httplib2.Http()
+            h = httplib2.Http(timeout=600)
             resp, content = h.request(
                 url,
                 method=method_type,
@@ -100,6 +100,7 @@ class UnixRestClient(object):
         except RestClientException as rce:
             message = "ERROR : %s" % (rce)
             LOG.error(message)
+            # Need to check with Ahmed
             raise rce
 
         success_code = [200, 201, 202, 204]
