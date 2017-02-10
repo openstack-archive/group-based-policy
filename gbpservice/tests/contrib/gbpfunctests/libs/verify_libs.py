@@ -277,12 +277,22 @@ class Gbp_Verify(object):
             for arg, val in kwargs.items():
                 if re.search("\\b%s\\b\s+\| \\b%s\\b.*" %
                              (arg, val), cmd_out, re.I) is None:
-                    _log.info(cmd_out)
-                    _log.info(
-                        "The Attribute== %s and its Value== %s DID NOT MATCH "
-                        "for the PolicyObject == %s" %
-                        (arg, val, verifyobj))
-                    return 0
+                    if arg == 'policy_target_groups' and (
+                        re.search("\\b.*\| \\b%s\\b.*" %
+                                  (val), cmd_out, re.I) is not None):
+                        # there might be more than one PTG associated
+                        # with the L2P if auto-ptg is enabled, so search
+                        # in the entire command output if the ptg_id
+                        # we are looking for is present, and if its
+                        # present do not fail
+                        pass
+                    else:
+                        _log.info(cmd_out)
+                        _log.info(
+                            "The Attribute== %s and its Value== %s DID NOT "
+                            "MATCH for the PolicyObject == %s" %
+                            (arg, val, verifyobj))
+                        return 0
             if verifyobj == "l2p":
                 match = re.search(
                     "\\bl3_policy_id\\b\s+\| (.*) \|", cmd_out, re.I)
