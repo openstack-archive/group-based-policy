@@ -127,6 +127,11 @@ class ApicAimTestMixin(object):
             aim_cfg.CONF.set_override(item, value)
         self.aim_cfg_manager.to_db(aim_cfg.CONF, host=host)
 
+    def _register_agent(self, host, agent_conf):
+        agent = {'host': host}
+        agent.update(agent_conf)
+        self.plugin.create_or_update_agent(context.get_admin_context(), agent)
+
 
 class ApicAimTestCase(test_address_scope.AddressScopeTestCase,
                       test_l3.L3NatTestCaseMixin, ApicAimTestMixin):
@@ -148,15 +153,9 @@ class ApicAimTestCase(test_address_scope.AddressScopeTestCase,
         config.cfg.CONF.set_override('network_vlan_ranges',
                                      ['physnet1:1000:1099'],
                                      group='ml2_type_vlan')
-        config.cfg.CONF.set_override('policy_drivers',
-                                     ['aim_mapping'],
-                                     group='group_policy')
         service_plugins = {
             'L3_ROUTER_NAT':
-            'gbpservice.neutron.services.apic_aim.l3_plugin.ApicL3Plugin',
-            'GROUP_POLICY':
-            'gbpservice.neutron.services.grouppolicy.plugin.GroupPolicyPlugin'
-        }
+            'gbpservice.neutron.services.apic_aim.l3_plugin.ApicL3Plugin'}
 
         engine = db_api.get_engine()
         aim_model_base.Base.metadata.create_all(engine)
@@ -176,11 +175,6 @@ class ApicAimTestCase(test_address_scope.AddressScopeTestCase,
         self.plugin.start_rpc_listeners()
         self.driver = self.plugin.mechanism_manager.mech_drivers[
             'apic_aim'].obj
-        self.gbp_plugin = (manager.NeutronManager.get_service_plugins()
-                           .get("GROUP_POLICY"))
-        self.aim_mapping_driver = (
-            self.gbp_plugin.policy_driver_manager.policy_drivers[
-                'aim_mapping'].obj)
         self.l3_plugin = manager.NeutronManager.get_service_plugins()[
             service_constants.L3_ROUTER_NAT]
         self.aim_mgr = aim_manager.AimManager()
@@ -222,11 +216,6 @@ class ApicAimTestCase(test_address_scope.AddressScopeTestCase,
         if dist_names is not None:
             self.assertIsInstance(dist_names, dict)
             self.assertNotIn(key, dist_names)
-
-    def _register_agent(self, host, agent_conf):
-        agent = {'host': host}
-        agent.update(agent_conf)
-        self.plugin.create_or_update_agent(context.get_admin_context(), agent)
 
     def _bind_port_to_host(self, port_id, host):
         data = {'port': {'binding:host_id': host,
