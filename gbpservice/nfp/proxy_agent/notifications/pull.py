@@ -58,6 +58,8 @@ class PullNotification(nfp_api.NfpEventHandler):
                                  'network_function_notification',
                                  notification_data=notification)
         except Exception as e:
+            msg = "Exception while calling notification: %s" % (e)
+            LOG.error(msg)
             raise Exception(e)
 
     @nfp_api.poll_event_desc(event='PULL_NOTIFICATIONS',

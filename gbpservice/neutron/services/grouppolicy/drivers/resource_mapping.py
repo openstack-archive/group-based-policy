@@ -1688,6 +1688,8 @@ class ResourceMappingDriver(api.PolicyDriver, ImplicitResourceOperations,
 
     @log.log_method_call
     def delete_policy_target_group_postcommit(self, context):
+        if context.current['proxied_group_id']:
+            return
         try:
             self._cleanup_network_service_policy(context,
                                                  context.current,
@@ -2053,8 +2055,9 @@ class ResourceMappingDriver(api.PolicyDriver, ImplicitResourceOperations,
 
     @log.log_method_call
     def delete_network_service_policy_postcommit(self, context):
-        qos_policy_id = context.current['qos_policy_id']
-        self._delete_ptg_qos_policy(context, qos_policy_id)
+        qos_policy_id = context.current.get('qos_policy_id')
+        if qos_policy_id:
+            self._delete_ptg_qos_policy(context, qos_policy_id)
 
     def create_external_segment_precommit(self, context):
         if context.current['subnet_id']:
