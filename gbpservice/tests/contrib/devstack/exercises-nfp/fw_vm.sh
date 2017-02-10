@@ -129,10 +129,10 @@ update_gbp_resources() {
     fi
 }
 
-create_gbp_resources
-validate_gbp_resources
-validate_firewall_resources
+#create_gbp_resources
+#validate_gbp_resources
+#validate_firewall_resources
 
-update_gbp_resources
+#update_gbp_resources
 
-delete_gbp_resources
+#delete_gbp_resources
