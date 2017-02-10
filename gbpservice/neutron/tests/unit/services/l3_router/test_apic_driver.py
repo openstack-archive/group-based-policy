@@ -70,11 +70,6 @@ class TestCiscoApicGBPL3Driver(test_apic_mapping.ApicMappingTestCase):
         self.plugin.update_floatingip_status = mock.Mock()
         self.plugin.get_floatingip = mock.Mock(return_value=self.floatingip)
 
-    # This is so we can inherit from the ApicMappingTestCase
-    # TODO(tbachman): fix hack used because of class hierarchy
-    def test_reverse_on_delete(self):
-        pass
-
     def _check_call_list(self, expected, observed):
         for call in expected:
             self.assertTrue(call in observed,
