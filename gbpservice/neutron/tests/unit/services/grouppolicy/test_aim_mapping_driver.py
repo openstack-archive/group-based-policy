@@ -2396,6 +2396,7 @@ class TestPolicyTarget(AIMBaseTestCase):
     # TODO(Kent): we should also add the ML2 related UTs for
     # get_gbp_details(). Its missing completely....
     def _do_test_get_gbp_details(self, pre_vrf=None):
+        self.driver.aim_mech_driver.apic_optimized_dhcp_lease_time = 100
         es1, es1_sub = self._setup_external_segment(
             'es1', dn='uni/tn-t1/out-l1/instP-n1')
         es2, es2_sub1 = self._setup_external_segment(
@@ -2480,6 +2481,7 @@ class TestPolicyTarget(AIMBaseTestCase):
         self._verify_host_snat_ip_details(mapping,
             'uni:tn-t1:out-l2:instP-n2', '200.200.0.3', '200.200.0.1/16')
         self.assertEqual(1000, mapping['interface_mtu'])
+        self.assertEqual(100, mapping['dhcp_lease_time'])
 
     def _do_test_gbp_details_no_pt(self, use_as=True, routed=True,
                                    pre_vrf=None):

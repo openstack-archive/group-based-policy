@@ -166,6 +166,8 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
         self.keystone_notification_topic = (cfg.CONF.ml2_apic_aim.
                                             keystone_notification_topic)
         self._setup_keystone_notification_listeners()
+        self.apic_optimized_dhcp_lease_time = (cfg.CONF.ml2_apic_aim.
+                                               apic_optimized_dhcp_lease_time)
 
     def _setup_keystone_notification_listeners(self):
         targets = [oslo_messaging.Target(
