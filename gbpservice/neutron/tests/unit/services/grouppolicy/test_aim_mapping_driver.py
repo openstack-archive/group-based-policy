@@ -191,6 +191,25 @@ class AIMBaseTestCase(test_nr_base.CommonNeutronBaseTestCase,
                 len(observed),
                 msg='There are more calls than expected: %s' % str(observed))
 
+    def _setup_external_network(self, name, dn=None, router_tenant=None):
+        DN = 'apic:distinguished_names'
+        kwargs = {'router:external': True}
+        if dn:
+            kwargs[DN] = {'ExternalNetwork': dn}
+        extn_attr = ('router:external', DN,
+                     'apic:nat_type', 'apic:snat_host_pool')
+
+        net = self._make_network(self.fmt, name, True,
+                                 arg_list=extn_attr,
+                                 **kwargs)['network']
+        self._make_subnet(
+            self.fmt, {'network': net}, '100.100.0.1',
+            '100.100.0.0/16')['subnet']
+        router = self._make_router(
+            self.fmt, router_tenant or net['tenant_id'], 'router1',
+            external_gateway_info={'network_id': net['id']})['router']
+        return net, router
+
     def _bind_port_to_host(self, port_id, host):
         data = {'port': {'binding:host_id': host,
                          'device_owner': 'compute:',
@@ -2313,25 +2332,6 @@ class TestPolicyTarget(AIMBaseTestCase):
         self.assertEqual(expected_l3p_id,
                          vrf_mapping['l3_policy_id'])
 
-    def _setup_external_network(self, name, dn=None, router_tenant=None):
-        DN = 'apic:distinguished_names'
-        kwargs = {'router:external': True}
-        if dn:
-            kwargs[DN] = {'ExternalNetwork': dn}
-        extn_attr = ('router:external', DN,
-                     'apic:nat_type', 'apic:snat_host_pool')
-
-        net = self._make_network(self.fmt, name, True,
-                                 arg_list=extn_attr,
-                                 **kwargs)['network']
-        self._make_subnet(
-            self.fmt, {'network': net}, '100.100.0.1',
-            '100.100.0.0/16')['subnet']
-        router = self._make_router(
-            self.fmt, router_tenant or net['tenant_id'], 'router1',
-            external_gateway_info={'network_id': net['id']})['router']
-        return net, router
-
     def _setup_external_segment(self, name, dn=None):
         DN = 'apic:distinguished_names'
         kwargs = {'router:external': True}
@@ -4330,10 +4330,10 @@ class TestNetworkServicePolicy(AIMBaseTestCase):
                 netaddr.IPAddress(allocation_pool_after_nsp[0].get('end')) + 1)
 
 
-class TestNeutronPortSecurityExtension(AIMBaseTestCase):
+class TestNeutronPortOperation(AIMBaseTestCase):
 
     def setUp(self, **kwargs):
-        super(TestNeutronPortSecurityExtension, self).setUp(**kwargs)
+        super(TestNeutronPortOperation, self).setUp(**kwargs)
         # Doing the following assignment since the call to _register_agent
         # needs self.plugin to point to the neutron core plugin.
         # TODO(Sumit): Ideally, the self.plugin of the GBP test cases should be
@@ -4402,3 +4402,103 @@ class TestNeutronPortSecurityExtension(AIMBaseTestCase):
             self._neutron_admin_context, device='tap%s' % p3_dhcp['id'],
             host='h1')
         self.assertTrue(details['promiscuous_mode'])
+
+    def test_gbp_details_for_allowed_address_pair(self):
+        self._register_agent('h1', test_aim_md.AGENT_CONF_OPFLEX)
+        self._register_agent('h2', test_aim_md.AGENT_CONF_OPFLEX)
+        net = self._make_network(self.fmt, 'net1', True)
+        sub1 = self._make_subnet(self.fmt, net, '10.0.0.1', '10.0.0.0/24')[
+            'subnet']
+        sub2 = self._make_subnet(self.fmt, net, '1.2.3.1', '1.2.3.0/24')[
+            'subnet']
+        allow_addr = [{'ip_address': '1.2.3.250',
+                       'mac_address': '00:00:00:AA:AA:AA'},
+                      {'ip_address': '1.2.3.251',
+                       'mac_address': '00:00:00:BB:BB:BB'}]
+
+        # create 2 ports with same allowed-addresses
+        p1 = self._make_port(self.fmt, net['network']['id'],
+                             arg_list=('allowed_address_pairs',),
+                             device_owner='compute:',
+                             fixed_ips=[{'subnet_id': sub1['id']}],
+                             allowed_address_pairs=allow_addr)['port']
+        p2 = self._make_port(self.fmt, net['network']['id'],
+                             arg_list=('allowed_address_pairs',),
+                             device_owner='compute:',
+                             fixed_ips=[{'subnet_id': sub1['id']}],
+                             allowed_address_pairs=allow_addr)['port']
+        self._bind_port_to_host(p1['id'], 'h1')
+        self._bind_port_to_host(p2['id'], 'h2')
+        self.driver.ha_ip_handler.set_port_id_for_ha_ipaddress(
+            p1['id'], '1.2.3.250')
+        self.driver.ha_ip_handler.set_port_id_for_ha_ipaddress(
+            p2['id'], '1.2.3.251')
+        allow_addr[0]['active'] = True
+        details = self.driver.get_gbp_details(
+            self._neutron_admin_context, device='tap%s' % p1['id'],
+            host='h1')
+        self.assertEqual(allow_addr, details['allowed_address_pairs'])
+        del allow_addr[0]['active']
+        allow_addr[1]['active'] = True
+        details = self.driver.get_gbp_details(
+            self._neutron_admin_context, device='tap%s' % p2['id'],
+            host='h2')
+        self.assertEqual(allow_addr, details['allowed_address_pairs'])
+
+        # set allowed-address as fixed-IP of ports p3 and p4, which also have
+        # floating-IPs. Verify that FIP is "stolen" by p1 and p2
+        net_ext, rtr = self._setup_external_network(
+            'l1', dn='uni/tn-t1/out-l1/instP-n1')
+        p3 = self._make_port(self.fmt, net['network']['id'],
+                             device_owner='compute:',
+                             fixed_ips=[{'subnet_id': sub2['id'],
+                                         'ip_address': '1.2.3.250'}])['port']
+        p4 = self._make_port(self.fmt, net['network']['id'],
+                             device_owner='compute:',
+                             fixed_ips=[{'subnet_id': sub2['id'],
+                                         'ip_address': '1.2.3.251'}])['port']
+        self.l3_plugin.add_router_interface(
+            self._neutron_admin_context, rtr['id'], {'subnet_id': sub1['id']})
+        self.l3_plugin.add_router_interface(
+            self._neutron_admin_context, rtr['id'], {'subnet_id': sub2['id']})
+        fip1 = self._make_floatingip(self.fmt, net_ext['id'],
+                                     port_id=p3['id'],
+                                     floating_ip='100.100.0.3')['floatingip']
+        fip2 = self._make_floatingip(self.fmt, net_ext['id'],
+                                     port_id=p4['id'],
+                                     floating_ip='100.100.0.4')['floatingip']
+        details = self.driver.get_gbp_details(
+            self._neutron_admin_context, device='tap%s' % p1['id'],
+            host='h1')
+        self.assertEqual(1, len(details['floating_ip']))
+        self.assertEqual(
+            fip1['floating_ip_address'],
+            details['floating_ip'][0]['floating_ip_address'])
+        details = self.driver.get_gbp_details(
+            self._neutron_admin_context, device='tap%s' % p2['id'],
+            host='h2')
+        self.assertEqual(1, len(details['floating_ip']))
+        self.assertEqual(
+            fip2['floating_ip_address'],
+            details['floating_ip'][0]['floating_ip_address'])
+
+        # verify FIP updates: update to p3, p4 should also update p1 and p2
+        self.driver.aim_mech_driver._notify_port_update = mock.Mock()
+        self.driver.aim_mech_driver._notify_port_update_for_fip(
+            self._neutron_admin_context, p3['id'])
+        expected_calls = [
+            mock.call(mock.ANY, p)
+            for p in sorted([p1['id'], p2['id'], p3['id']])]
+        self._check_call_list(
+            expected_calls,
+            self.driver.aim_mech_driver._notify_port_update.call_args_list)
+
+        self.driver.aim_mech_driver._notify_port_update.reset_mock()
+        self.driver.aim_mech_driver._notify_port_update_for_fip(
+            self._neutron_admin_context, p4['id'])
+        expected_calls = [
+            mock.call(mock.ANY, p)
+            for p in sorted([p1['id'], p2['id'], p4['id']])]
+        self._check_call_list(
+            expected_calls,
+            self.driver.aim_mech_driver._notify_port_update.call_args_list)
