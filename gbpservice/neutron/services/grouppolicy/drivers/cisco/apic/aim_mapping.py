@@ -1771,6 +1771,11 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
     def _is_metadata_optimized(self, plugin_context, port):
         return self.aim_mech_driver.enable_metadata_opt
 
+    def _set_dhcp_lease_time(self, details):
+        if self.aim_mech_driver.apic_optimized_dhcp_lease_time > 0:
+            details['dhcp_lease_time'] = (
+                self.aim_mech_driver.apic_optimized_dhcp_lease_time)
+
     def _get_port_epg(self, plugin_context, port):
         ptg, pt = self._port_id_to_ptg(plugin_context, port['id'])
         if ptg:

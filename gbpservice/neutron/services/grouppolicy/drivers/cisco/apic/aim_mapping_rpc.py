@@ -129,6 +129,7 @@ class AIMMappingRPCMixin(ha_ip_db.HAIPOwnerDbMixin):
     # for both Neutron and GBP.
     # - self._is_dhcp_optimized(context, port);
     # - self._is_metadata_optimized(context, port);
+    # - self._set_dhcp_lease_time(details)
     @db_exc_retry
     def _get_gbp_details(self, context, request, host):
         with context.session.begin(subtransactions=True):
@@ -196,6 +197,7 @@ class AIMMappingRPCMixin(ha_ip_db.HAIPOwnerDbMixin):
             self._add_nat_details(context, port, host, details)
             self._add_extra_details(context, port, details)
             self._add_segmentation_label_details(context, port, details)
+            self._set_dhcp_lease_time(details)
             details.pop('_cache', None)
 
         LOG.debug("Details for port %s : %s" % (port['id'], details))
