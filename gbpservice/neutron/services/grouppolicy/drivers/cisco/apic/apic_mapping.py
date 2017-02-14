@@ -377,6 +377,14 @@ class ApicMappingDriver(api.ResourceMappingDriver,
     def _setup_rpc(self):
         self.notifier = rpc.AgentNotifierApi(topics.AGENT)
 
+    def _check_allowed_address_pairs(self):
+        # This plugin requires security groups to be disabled, which causes
+        # allowed-address-pairs to be removed from supported_extension_aliases
+        # in ML2 plugin, even if supported. Hence the private member
+        # _supported_extension_aliases is examined here.
+        return ("allowed-address-pairs" in
+                self._core_plugin._supported_extension_aliases)
+
     @property
     def gbp_plugin(self):
         if not self._gbp_plugin:

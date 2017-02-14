@@ -2890,15 +2890,13 @@ class ResourceMappingDriver(api.PolicyDriver, ImplicitResourceOperations,
         if pts:
             raise exc.PolicyTargetInUse()
 
+    def _check_allowed_address_pairs(self):
+        return ("allowed-address-pairs" in
+                self._core_plugin.supported_extension_aliases)
+
     def _update_cluster_membership(self, context, new_cluster_id=None,
                                    old_cluster_id=None):
-        # REVISIT: The following private attribute definition should not
-        # be used since the Neutron plugin contract only requires definition
-        # of the "supported_extension_aliases" property. This currently works
-        # since the ML2 plugin also defines the private property
-        # "_supported_extensions_aliases".
-        if ("allowed-address-pairs" in
-                self._core_plugin._supported_extension_aliases):
+        if self._check_allowed_address_pairs():
             curr_port = self._get_port(
                     context._plugin_context, context.current['port_id'])
             curr_pairs = curr_port['allowed_address_pairs']
