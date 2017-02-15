@@ -1393,6 +1393,48 @@ class ExtensionDriver(object):
         """
         pass
 
+    def process_create_application_policy_group(self, session, data, result):
+        """Process extended attributes for application_policy_group creation.
+
+        :param session: database session
+        :param data: dictionary of incoming application_policy_group data
+        :param result: application_policy_group dictionary to extend
+
+        Called inside transaction context on session to validate and
+        persist any extended application_policy_group attributes defined by
+        this driver. Extended attribute values must also be added to
+        result.
+        """
+        pass
+
+    def process_update_application_policy_group(self, session, data, result):
+        """Process extended attributes for application_policy_group update.
+
+        :param session: database session
+        :param data: dictionary of incoming application_policy_group data
+        :param result: application_policy_group dictionary to extend
+
+        Called inside transaction context on session to validate and
+        update any extended application_policy_group attributes defined by
+        this driver. Extended attribute values, whether updated or
+        not, must also be added to result.
+        """
+        pass
+
+    def extend_application_policy_group_dict(self, session, result):
+        """Add extended attributes to application_policy_group dictionary.
+
+        :param session: database session
+        :param result: application_policy_group dictionary to extend
+
+        Called inside transaction context on session to add any
+        extended attributes defined by this driver to a
+        application_policy_group dictionary to be used for mechanism driver
+        calls and/or returned as the result of a application_policy_group
+        operation.
+        """
+        pass
+
     def process_create_l2_policy(self, session, data, result):
         """Process extended attributes for l2_policy creation.
 
