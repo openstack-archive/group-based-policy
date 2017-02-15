@@ -30,6 +30,7 @@ EPG = 'EndpointGroup'
 SUBNET = 'Subnet'
 VRF = 'VRF'
 EXTERNAL_NETWORK = 'ExternalNetwork'
+AP = 'ApplicationProfile'
 
 SYNC_SYNCED = 'synced'
 SYNC_BUILD = 'build'
