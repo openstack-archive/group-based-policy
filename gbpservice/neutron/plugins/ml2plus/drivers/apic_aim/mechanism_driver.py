@@ -1624,7 +1624,13 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
 
                 epg = self.aim.get(aim_ctx, epg)
                 self.aim.delete(aim_ctx, epg)
+                if self.aim_mapping:
+                    self.aim_mapping.delete_aim_ap_for_epg_conditionally(
+                        session, epg, old_tenant=epg.tenant_name)
                 epg.tenant_name = new_vrf.tenant_name
+                if self.aim_mapping:
+                    self.aim_mapping.create_aim_ap_for_epg_conditionally(
+                        session, epg, new_tenant=epg.tenant_name)
                 epg = self.aim.create(aim_ctx, epg)
             else:
                 # New VRF is in same Tenant, so just set BD's VRF.

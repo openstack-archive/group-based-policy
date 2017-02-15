@@ -1651,11 +1651,36 @@ class TestL2PolicyWithAutoPTG(TestL2PolicyBase):
             aim_resource.EndpointGroup.POLICY_ENFORCED):
             self.assertFalse(ptg['intra_ptg_allow'])
 
+    def _test_application_profile(self, apg, exists=True):
+        ap_name = self.driver.apic_ap_name_for_application_policy_group(
+            self._neutron_context.session, apg['id'])
+        aim_ap_list = self.aim_mgr.find(
+            self._aim_context, aim_resource.ApplicationProfile,
+            name=ap_name)
+        if exists:
+            self.assertEqual(1, len(aim_ap_list))
+            self.assertEqual(apg['id'], aim_ap_list[0].name)
+            apg = self.show_application_policy_group(
+                apg['id'], expected_res_status=200)['application_policy_group']
+            ap = self.aim_mgr.get(
+                self._aim_context, aim_resource.ApplicationProfile.from_dn(
+                    apg['apic:distinguished_names']['ApplicationProfile'][0]))
+            self.assertEqual(aim_ap_list[0].name, ap.name)
+        else:
+            self.assertEqual(0, len(aim_ap_list))
+
     def test_ptg_lifecycle(self):
         # Once the testing strategy evolves to always assuming auto_ptg
         # being present, this UT can be removed/merged with the UTs in the
         # TestPolicyTargetGroup class
-        ptg = self.create_policy_target_group()['policy_target_group']
+        apg = self.create_application_policy_group()[
+            'application_policy_group']
+        apg_id = apg['id']
+        self.show_application_policy_group(apg_id, expected_res_status=200)
+        ptg = self.create_policy_target_group(application_policy_group_id=
+                                              apg['id'])['policy_target_group']
+        self.assertEqual(apg_id, ptg['application_policy_group_id'])
+        self._test_application_profile(apg)
         self._test_epg_policy_enforcement_attr(ptg)
         ptg_id = ptg['id']
         l2p = self.show_l2_policy(ptg['l2_policy_id'],
@@ -1677,14 +1702,29 @@ class TestL2PolicyWithAutoPTG(TestL2PolicyBase):
         self.assertEqual(l3p['subnetpools_v4'][0],
                          subnet['subnetpool_id'])
 
+        new_apg = self.create_application_policy_group()[
+            'application_policy_group']
         prs_lists = self._get_provided_consumed_prs_lists()
-        self.update_policy_target_group(
+        ptg = self.update_policy_target_group(
             ptg_id, expected_res_status=200,
             provided_policy_rule_sets={prs_lists['provided']['id']:
                                        'scope'},
             consumed_policy_rule_sets={prs_lists['consumed']['id']:
-                                       'scope'})['policy_target_group']
+                                       'scope'},
+            application_policy_group_id=new_apg['id'])['policy_target_group']
+        self._test_application_profile(new_apg)
+        self._test_application_profile(apg, exists=False)
         self._test_epg_policy_enforcement_attr(ptg)
+
+        ptg = self.update_policy_target_group(
+            ptg_id, expected_res_status=200,
+            application_policy_group_id=None)['policy_target_group']
+        self._test_application_profile(new_apg, exists=False)
+
+        ptg = self.update_policy_target_group(
+            ptg_id, expected_res_status=200,
+            application_policy_group_id=new_apg['id'])['policy_target_group']
+        self._test_application_profile(new_apg)
 
         auto_ptg_id = self.driver._get_auto_ptg_id(ptg['l2_policy_id'])
         # the test policy.json restricts auto-ptg access to admin
@@ -1693,9 +1733,25 @@ class TestL2PolicyWithAutoPTG(TestL2PolicyBase):
             expected_res_status=200)['policy_target_group']
         self._test_epg_policy_enforcement_attr(auto_ptg)
 
+        res = self.update_policy_target_group(
+            auto_ptg_id, expected_res_status=webob.exc.HTTPBadRequest.code,
+            is_admin_context=True, application_policy_group_id=new_apg['id'])
+        self.assertEqual('ExplicitAPGAssociationNotSupportedForAutoPTG',
+                         res['NeutronError']['type'])
+
+        ptg2 = self.create_policy_target_group(
+            application_policy_group_id=new_apg['id'])['policy_target_group']
+
         self.delete_policy_target_group(ptg_id, expected_res_status=204)
+        self._test_application_profile(new_apg)
         self.show_policy_target_group(ptg_id, expected_res_status=404)
+        self.delete_policy_target_group(ptg2['id'], expected_res_status=204)
+        self._test_application_profile(new_apg, exists=False)
+        self.show_policy_target_group(ptg2['id'], expected_res_status=404)
+
         self.show_l2_policy(ptg['l2_policy_id'], expected_res_status=404)
+        self.delete_application_policy_group(apg_id, expected_res_status=204)
+        self.show_application_policy_group(apg_id, expected_res_status=404)
         self.assertEqual([], self._plugin.get_ports(self._context))
         self.assertEqual([], self._plugin.get_subnets(self._context))
         self.assertEqual([], self._plugin.get_networks(self._context))
@@ -1806,6 +1862,69 @@ class TestL2PolicyWithAutoPTG(TestL2PolicyBase):
         self._validate_l2_policy_deleted(l2p, implicit_l3p=False)
         self._switch_to_tenant1()
         self.delete_l3_policy(l3p['id'])
+
+    def test_ep_ap_move(self):
+        l3p = self.create_l3_policy(name="l3p1", shared=False)['l3_policy']
+
+        data = {'subnetpool': {'address_scope_id': None}}
+        req = self.new_update_request('subnetpools', data,
+                                      l3p['subnetpools_v4'][0],
+                                      self.fmt)
+        self.deserialize(self.fmt, req.get_response(self.api))
+        l2p = self.create_l2_policy(name="l2p1",
+                                    shared=False,
+                                    l3_policy_id=l3p['id'])['l2_policy']
+        self.assertEqual(gp_const.STATUS_BUILD, l2p['status'])
+        self._validate_implicit_contracts_exist(l2p)
+
+        # After creation of auto-ptg, BD is now in L3P's tenant
+        self._validate_bd_tenant(l2p, l3p['tenant_id'])
+        ptg = self._get_auto_ptg(l2p)
+        subnet_id = ptg['subnets'][0]
+        fixed_ips = [{'subnet_id': subnet_id, 'ip_address': '10.0.0.10'}]
+        port = self._make_port(self.fmt, l2p['network_id'],
+                               fixed_ips=fixed_ips,
+                               tenant_id=self._tenant_id)['port']
+
+        apg = self.create_application_policy_group()[
+            'application_policy_group']
+        apg_id = apg['id']
+        self.show_application_policy_group(apg_id, expected_res_status=200)
+        ptg = self.create_policy_target_group(application_policy_group_id=
+                                              apg['id'])['policy_target_group']
+        self.assertEqual(apg_id, ptg['application_policy_group_id'])
+        self._test_application_profile(apg)
+        ap_name = self.driver.apic_ap_name_for_application_policy_group(
+            self._neutron_context.session, apg_id)
+
+        req = self.new_show_request('subnets', subnet_id)
+        self.deserialize(self.fmt, req.get_response(self.api))
+
+        self._switch_to_tenant2()
+        nr = self._make_router(self.fmt, self._tenant_id, 'nr')['router']
+        sh_net = self._make_network(self.fmt, 'sh_net', True,
+                                    shared=True)['network']
+        sh_subnet = self._make_subnet(
+            self.fmt, {'network': sh_net}, '100.100.0.1',
+            '100.100.0.0/16')['subnet']
+
+        self.l3_plugin.add_router_interface(
+            self._context, nr['id'],
+            {'subnet_id': sh_subnet['id']})
+
+        self.l3_plugin.add_router_interface(
+            self._neutron_admin_context, nr['id'], {'port_id': port['id']})
+        aim_tenant_name = self.name_mapper.project(None, self._tenant_id)
+        aim_ap_list = self.aim_mgr.find(
+            self._aim_context, aim_resource.ApplicationProfile,
+            name=ap_name, tenant_name=aim_tenant_name)
+        self.assertEqual(0, len(aim_ap_list))
+        self._switch_to_tenant1()
+        aim_tenant_name = self.name_mapper.project(None, self._tenant_id)
+        aim_ap_list = self.aim_mgr.find(
+            self._aim_context, aim_resource.ApplicationProfile,
+            name=ap_name, tenant_name=aim_tenant_name)
+        self.assertEqual(1, len(aim_ap_list))
 
 
 class TestL2PolicyRollback(TestL2PolicyBase):
