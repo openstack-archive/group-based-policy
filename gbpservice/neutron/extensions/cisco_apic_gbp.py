@@ -43,6 +43,10 @@ EXTENDED_ATTRIBUTES_2_0 = {
         cisco_apic.DIST_NAMES: {
             'allow_post': False, 'allow_put': False, 'is_visible': True},
     },
+    gp.APPLICATION_POLICY_GROUPS: {
+        cisco_apic.DIST_NAMES: {
+            'allow_post': False, 'allow_put': False, 'is_visible': True},
+    },
 }
 
 

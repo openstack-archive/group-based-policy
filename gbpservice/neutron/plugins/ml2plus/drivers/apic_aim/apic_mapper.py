@@ -26,6 +26,7 @@ ADDRESS_SCOPE_TYPE_TAG = 'as'
 ROUTER_TYPE_TAG = 'rtr'
 POLICY_RULE_SET_TYPE_TAG = 'prs'
 POLICY_RULE_TYPE_TAG = 'pr'
+APPLICATION_POLICY_GROUP_TYPE_TAG = 'apg'
 
 
 class APICNameMapper(object):
@@ -80,6 +81,15 @@ class APICNameMapper(object):
     def reverse_policy_rule(self, session, name, prefix="", enforce=True):
         return self._unmap(
             session, name, POLICY_RULE_TYPE_TAG, prefix, enforce)
+
+    def application_policy_group(self, session, id, prefix=""):
+        return self._map(
+            session, id, APPLICATION_POLICY_GROUP_TYPE_TAG, prefix)
+
+    def reverse_application_policy_group(
+        self, session, name, prefix="", enforce=True):
+        return self._unmap(
+            session, name, APPLICATION_POLICY_GROUP_TYPE_TAG, prefix, enforce)
 
     def _map(self, session, id, type_tag, prefix):
         return ("%(prefix)s%(type_tag)s_%(id)s" %
