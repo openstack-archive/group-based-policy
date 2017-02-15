@@ -1651,11 +1651,30 @@ class TestL2PolicyWithAutoPTG(TestL2PolicyBase):
             aim_resource.EndpointGroup.POLICY_ENFORCED):
             self.assertFalse(ptg['intra_ptg_allow'])
 
+    def _test_application_profile(self, apg, exists=True):
+        ap_name = self.driver.apic_ap_name_for_application_policy_group(
+            self._neutron_context.session, apg['id'])
+        aim_ap_list = self.aim_mgr.find(
+            self._aim_context, aim_resource.ApplicationProfile,
+            name=ap_name)
+        if exists:
+            self.assertEqual(1, len(aim_ap_list))
+            self.assertEqual(apg['id'], aim_ap_list[0].name)
+        else:
+            self.assertEqual(0, len(aim_ap_list))
+
     def test_ptg_lifecycle(self):
         # Once the testing strategy evolves to always assuming auto_ptg
         # being present, this UT can be removed/merged with the UTs in the
         # TestPolicyTargetGroup class
-        ptg = self.create_policy_target_group()['policy_target_group']
+        apg = self.create_application_policy_group()[
+            'application_policy_group']
+        apg_id = apg['id']
+        self.show_application_policy_group(apg_id, expected_res_status=200)
+        ptg = self.create_policy_target_group(application_policy_group_id=
+                                              apg['id'])['policy_target_group']
+        self.assertEqual(apg_id, ptg['application_policy_group_id'])
+        self._test_application_profile(apg)
         self._test_epg_policy_enforcement_attr(ptg)
         ptg_id = ptg['id']
         l2p = self.show_l2_policy(ptg['l2_policy_id'],
@@ -1694,8 +1713,11 @@ class TestL2PolicyWithAutoPTG(TestL2PolicyBase):
         self._test_epg_policy_enforcement_attr(auto_ptg)
 
         self.delete_policy_target_group(ptg_id, expected_res_status=204)
+        self._test_application_profile(apg, exists=False)
         self.show_policy_target_group(ptg_id, expected_res_status=404)
         self.show_l2_policy(ptg['l2_policy_id'], expected_res_status=404)
+        self.delete_application_policy_group(apg_id, expected_res_status=204)
+        self.show_application_policy_group(apg_id, expected_res_status=404)
         self.assertEqual([], self._plugin.get_ports(self._context))
         self.assertEqual([], self._plugin.get_subnets(self._context))
         self.assertEqual([], self._plugin.get_networks(self._context))

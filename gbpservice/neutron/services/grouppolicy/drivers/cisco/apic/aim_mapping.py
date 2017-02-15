@@ -125,6 +125,12 @@ class AutoPTGDeleteNotSupported(exc.GroupPolicyBadRequest):
     message = _("Auto PTG %(id)s cannot be deleted.")
 
 
+class ExplicitAPGAssociationNotSupportedForAutoPTG(
+    exc.GroupPolicyBadRequest):
+    message = _("Explicit APG association not supported for Auto PTG, "
+                "with AIM GBP driver")
+
+
 class SharedAttributeUpdateNotSupported(exc.GroupPolicyBadRequest):
     message = _("Resource shared attribute update not supported with AIM "
                 "GBP driver for resource of type %(type)s")
@@ -543,6 +549,8 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
         session = context._plugin_context.session
 
         if self._is_auto_ptg(context.current):
+            if context.current['application_policy_group_id']:
+                raise ExplicitAPGAssociationNotSupportedForAutoPTG()
             self._use_implicit_subnet(context)
             self._handle_create_network_service_policy(context)
             return
@@ -583,6 +591,7 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
         consumed_contracts = self._get_aim_contract_names(
             session, context.current['consumed_policy_rule_sets'])
 
+        self._create_aim_ap_for_ptg_conditionally(context, context.current)
         aim_epg = self._aim_endpoint_group(
             session, context.current, bd_name, bd_tenant_name,
             provided_contracts=provided_contracts,
@@ -621,6 +630,14 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
             if not self._is_auto_ptg(context.current):
                 aim_epg.display_name = (
                     self.aim_display_name(context.current['name']))
+                if (context.current['application_policy_group_id'] !=
+                    context.original['application_policy_group_id']):
+                    self._create_aim_ap_for_ptg_conditionally(
+                        context, context.current)
+                    self._delete_aim_ap_for_ptg_conditionally(
+                        context, context.original)
+            elif context.current['application_policy_group_id']:
+                raise ExplicitAPGAssociationNotSupportedForAutoPTG()
             aim_epg.policy_enforcement_pref = (
                 self._get_policy_enforcement_pref(context.current))
             aim_epg.provided_contract_names = (
@@ -655,6 +672,8 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
         self._process_subnets_for_ptg_delete(
             context, ptg_db, context.current['l2_policy_id'])
 
+        self._delete_aim_ap_for_ptg_conditionally(context, ptg_db)
+
         if ptg_db['l2_policy_id']:
             l2p_id = ptg_db['l2_policy_id']
             ptg_db.update({'l2_policy_id': None})
@@ -686,6 +705,27 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
         session = context._plugin_context.session
         epg = self._aim_endpoint_group(session, context.current)
         context.current['status'] = self._map_aim_status(session, epg)
+
+    def _get_application_profiles_mapped_to_apg(self, session, apg):
+        aim_ctx = aim_context.AimContext(session)
+        ap_name = self.apic_ap_name_for_application_policy_group(
+            session, apg['id'])
+        return self.aim.find(
+            aim_ctx, aim_resource.ApplicationProfile, name=ap_name)
+
+    @log.log_method_call
+    def extend_application_policy_group_dict(self, session, result):
+        aim_aps = self._get_application_profiles_mapped_to_apg(session, result)
+        dn_list = [ap.dn for ap in aim_aps]
+        result[cisco_apic.DIST_NAMES] = {cisco_apic.AP: dn_list}
+
+    @log.log_method_call
+    def get_application_policy_group_status(self, context):
+        session = context._plugin_context.session
+        aim_aps = self._get_application_profiles_mapped_to_apg(
+            session, context.current)
+        context.current['status'] = self._merge_aim_status(
+            context._plugin_context.session, aim_aps)
 
     @log.log_method_call
     def create_policy_target_precommit(self, context):
@@ -1162,6 +1202,77 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
                   {'id': tenant_id, 'apic_name': tenant_name})
         return tenant_name
 
+    def _aim_application_profile_for_ptg(self, context, ptg):
+        # This returns a new AIM ApplicationProfile resource if apg_id
+        # is set, else returns None
+        apg_id = ptg['application_policy_group_id']
+        if apg_id:
+            apg = context._plugin._get_application_policy_group(
+                context._plugin_context, apg_id)
+            return self._aim_application_profile(
+                context._plugin_context.session, apg)
+
+    def _aim_application_profile(self, session, apg):
+        # This returns a new AIM ApplicationProfile resource
+        tenant_id = apg['tenant_id']
+        tenant_name = self._aim_tenant_name(
+            session, tenant_id,
+            aim_resource_class=aim_resource.ApplicationProfile, gbp_obj=apg)
+        display_name = self.aim_display_name(apg['name'])
+        ap_name = self.apic_ap_name_for_application_policy_group(
+            session, apg['id'])
+        ap = aim_resource.ApplicationProfile(tenant_name=tenant_name,
+                                             display_name=display_name,
+                                             name=ap_name)
+        LOG.debug("Mapped apg_id %(id)s with name %(name)s to %(apic_name)s",
+                  {'id': apg['id'], 'name': display_name,
+                   'apic_name': ap_name})
+        return ap
+
+    def _get_aim_application_profile_for_ptg(self, context, ptg):
+        # This gets an AP from the AIM DB
+        ap = self._aim_application_profile_for_ptg(context, ptg)
+        if ap:
+            return self._get_aim_application_profile_from_db(
+                context._plugin_context.session, ap)
+
+    def _get_aim_application_profile(self, session, apg):
+        # This gets an AP from the AIM DB
+        ap = self._aim_application_profile(session, apg)
+        return self._get_aim_application_profile_from_db(session, ap)
+
+    def _get_aim_application_profile_from_db(self, session, ap):
+        aim_ctx = aim_context.AimContext(session)
+        ap_fetched = self.aim.get(aim_ctx, ap)
+        if not ap_fetched:
+            LOG.debug("No ApplicationProfile found in AIM DB")
+        else:
+            LOG.debug("Got ApplicationProfile: %s", ap_fetched.__dict__)
+        return ap_fetched
+
+    def _create_aim_ap_for_ptg_conditionally(self, context, ptg):
+        if ptg['application_policy_group_id'] and not (
+            self._get_aim_application_profile_for_ptg(context, ptg)):
+            ap = self._aim_application_profile_for_ptg(context, ptg)
+            aim_ctx = aim_context.AimContext(context._plugin_context.session)
+            self.aim.create(aim_ctx, ap)
+
+    def _delete_aim_ap_for_ptg_conditionally(self, context, ptg):
+        if ptg['application_policy_group_id']:
+            ap = self._aim_application_profile_for_ptg(context,
+                                                       context.current)
+            apg_id = ptg['application_policy_group_id']
+            ptg.update({'application_policy_group_id': None})
+            apg_db = context._plugin._get_application_policy_group(
+                context._plugin_context, apg_id)
+            if not apg_db['policy_target_groups'] or (
+                len(apg_db['policy_target_groups']) == 0):
+                # We lazily create the ApplicationProfile, so we delete
+                # it when the last PTG associated with this APG is deleted
+                aim_ctx = aim_context.AimContext(
+                    context._plugin_context.session)
+                self.aim.delete(aim_ctx, ap)
+
     def _aim_endpoint_group(self, session, ptg, bd_name=None,
                             bd_tenant_name=None,
                             provided_contracts=None,
@@ -1174,15 +1285,23 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
             gbp_obj=ptg)
         id = ptg['id']
         name = ptg['name']
+        display_name = self.aim_display_name(ptg['name'])
+        if ptg['application_policy_group_id']:
+            ap_name = self.apic_ap_name_for_application_policy_group(
+                session, ptg['application_policy_group_id'])
+        else:
+            ap_name = self.aim_mech_driver.ap_name
         epg_name = self.apic_epg_name_for_policy_target_group(
             session, id, name)
-        display_name = self.aim_display_name(ptg['name'])
+        LOG.debug("Using application_profile %(ap_name)s "
+                  "for epg %(epg_name)s",
+                  {'ap_name': ap_name, 'epg_name': epg_name})
         LOG.debug("Mapped ptg_id %(id)s with name %(name)s to %(apic_name)s",
                   {'id': id, 'name': name, 'apic_name': epg_name})
         kwargs = {'tenant_name': str(tenant_name),
                   'name': str(epg_name),
                   'display_name': display_name,
-                  'app_profile_name': self.aim_mech_driver.ap_name,
+                  'app_profile_name': ap_name,
                   'policy_enforcement_pref': policy_enforcement_pref}
         if bd_name:
             kwargs['bd_name'] = bd_name
@@ -2270,6 +2389,10 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
             return default_epg_name
         else:
             return ptg_id
+
+    def apic_ap_name_for_application_policy_group(self, session, apg_id,
+                                                  name=None):
+        return apg_id
 
     def _get_default_security_group(self, plugin_context, ptg_id,
                                     tenant_id, clean_session=True):
