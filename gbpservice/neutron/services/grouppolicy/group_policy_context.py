@@ -69,6 +69,16 @@ class PolicyTargetGroupContext(GroupPolicyContext,
             l2_policy_id)
         self._policy_target_group['l2_policy_id'] = l2_policy_id
 
+    def set_application_policy_group_id(self, application_policy_group_id):
+        self._plugin._validate_shared_create(
+            self._plugin, self._plugin_context, self._policy_target_group,
+            'policy_target_group')
+        self._plugin._set_application_policy_group_for_policy_target_group(
+            self._plugin_context, self._policy_target_group['id'],
+            application_policy_group_id)
+        self._policy_target_group['application_policy_group_id'] = (
+            application_policy_group_id)
+
     def set_network_service_policy_id(self, network_service_policy_id):
         nsp_id = network_service_policy_id
         self._plugin._set_network_service_policy_for_policy_target_group(
@@ -83,6 +93,26 @@ class PolicyTargetGroupContext(GroupPolicyContext,
     def add_subnets(self, subnet_ids):
         for subnet_id in subnet_ids:
             self.add_subnet(subnet_id)
+
+
+class ApplicationPolicyGroupContext(GroupPolicyContext,
+                                    api.ApplicationPolicyGroupContext):
+
+    def __init__(self, plugin, plugin_context, application_policy_group,
+                 original_application_policy_group=None):
+        super(ApplicationPolicyGroupContext, self).__init__(
+            plugin, plugin_context)
+        self._application_policy_group = application_policy_group
+        self._original_application_policy_group = (
+            original_application_policy_group)
+
+    @property
+    def current(self):
+        return self._application_policy_group
+
+    @property
+    def original(self):
+        return self._original_application_policy_group
 
 
 class L2PolicyContext(GroupPolicyContext, api.L2PolicyContext):

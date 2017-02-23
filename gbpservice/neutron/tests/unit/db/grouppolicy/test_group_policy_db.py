@@ -506,6 +506,78 @@ class TestGroupResources(GroupPolicyDbTestCase):
         self.assertEqual(
             res['policy_target_group']['network_service_policy_id'], None)
 
+    def _test_create_and_show_application_policy_group(self):
+        name = "apg1"
+        attrs = cm.get_create_application_policy_group_default_attrs(
+            name=name)
+
+        apg = self.create_application_policy_group(
+            name=name)
+
+        for k, v in attrs.iteritems():
+            self.assertEqual(apg['application_policy_group'][k], v)
+
+        self._test_show_resource('application_policy_group',
+                                 apg['application_policy_group']['id'], attrs)
+        return apg
+
+    def test_create_associate_apg_with_ptgs(self):
+        apg = self._test_create_and_show_application_policy_group()
+        apg_id = apg['application_policy_group']['id']
+
+        # Create two PTGs that use this NSP
+        name = "ptg1"
+        attrs = cm.get_create_policy_target_group_default_attrs(
+            name=name, application_policy_group_id=apg_id)
+        attrs['provided_policy_rule_sets'] = []
+        attrs['consumed_policy_rule_sets'] = []
+
+        ptg1 = self.create_policy_target_group(
+            name=name,
+            application_policy_group_id=apg_id)['policy_target_group']
+        for k, v in attrs.iteritems():
+            self.assertEqual(v, ptg1[k])
+        self._test_show_resource(
+            'policy_target_group', ptg1['id'], attrs)
+
+        apg = self._show_resource(apg_id, 'application_policy_groups')[
+            'application_policy_group']
+        self.assertEqual([ptg1['id']], apg['policy_target_groups'])
+
+        ptg2 = self.create_policy_target_group(name=name)[
+            'policy_target_group']
+        del attrs['application_policy_group_id']
+        for k, v in attrs.iteritems():
+            self.assertEqual(v, ptg2[k])
+        self._test_show_resource('policy_target_group', ptg2['id'], attrs)
+
+        apg = self._show_resource(apg_id, 'application_policy_groups')[
+            'application_policy_group']
+        self.assertEqual([ptg1['id']], apg['policy_target_groups'])
+
+        # Update the PTG to set the APG
+        data = {'policy_target_group': {'application_policy_group_id': apg_id}}
+        req = self.new_update_request('policy_target_groups', data, ptg2['id'])
+        res = self.deserialize(self.fmt, req.get_response(self.ext_api))
+        self.assertEqual(
+            apg_id, res['policy_target_group']['application_policy_group_id'])
+
+        apg = self._show_resource(apg_id, 'application_policy_groups')[
+            'application_policy_group']
+        self.assertItemsEqual([ptg1['id'], ptg2['id']],
+                              apg['policy_target_groups'])
+
+        # Update the PTG to unset the APG
+        data = {'policy_target_group': {'application_policy_group_id': None}}
+        req = self.new_update_request('policy_target_groups', data, ptg2['id'])
+        res = self.deserialize(self.fmt, req.get_response(self.ext_api))
+        self.assertEqual(
+            None, res['policy_target_group']['application_policy_group_id'])
+
+        apg = self._show_resource(apg_id, 'application_policy_groups')[
+            'application_policy_group']
+        self.assertEqual([ptg1['id']], apg['policy_target_groups'])
+
     def test_list_policy_target_groups(self):
         ptgs = (
             [self.create_policy_target_group(name='ptg1', description='ptg'),
@@ -560,6 +632,51 @@ class TestGroupResources(GroupPolicyDbTestCase):
         self.assertEqual(webob.exc.HTTPNoContent.code, res.status_int)
         self.assertRaises(gpolicy.PolicyTargetGroupNotFound,
                           self.plugin.get_policy_target_group, ctx, ptg_id)
+
+    def test_create_and_show_application_policy_group(self):
+        self._test_create_and_show_application_policy_group()
+
+    def test_list_application_policy_groups(self):
+        apgs = (
+            [self.create_application_policy_group(name='apg1',
+                                                  description='apg'),
+             self.create_application_policy_group(name='apg2',
+                                                  description='apg'),
+             self.create_application_policy_group(name='apg3',
+                                                  description='apg')])
+        self._test_list_resources('application_policy_group', apgs,
+                                  query_params='description=apg')
+
+    def test_update_application_policy_group(self):
+        name = "new_application_policy_group1"
+        description = 'new desc'
+        attrs = cm.get_create_application_policy_group_default_attrs(
+            name=name, description=description)
+        apg = self.create_application_policy_group()
+        data = {'application_policy_group':
+                {'name': name, 'description': description}}
+        req = self.new_update_request('application_policy_groups', data,
+                                      apg['application_policy_group']['id'])
+        res = self.deserialize(self.fmt, req.get_response(self.ext_api))
+
+        for k, v in attrs.iteritems():
+            self.assertEqual(res['application_policy_group'][k], v)
+
+        self._test_show_resource('application_policy_group',
+                                 apg['application_policy_group']['id'], attrs)
+
+    def test_delete_application_policy_group(self):
+        ctx = context.get_admin_context()
+
+        apg = self.create_application_policy_group()
+        apg_id = apg['application_policy_group']['id']
+
+        req = self.new_delete_request('application_policy_groups', apg_id)
+        res = req.get_response(self.ext_api)
+        self.assertEqual(webob.exc.HTTPNoContent.code, res.status_int)
+        self.assertRaises(gpolicy.ApplicationPolicyGroupNotFound,
+                          self.plugin.get_application_policy_group, ctx,
+                          apg_id)
 
     def test_create_and_show_l2_policy(self):
         l3p_id = self.create_l3_policy()['l3_policy']['id']
