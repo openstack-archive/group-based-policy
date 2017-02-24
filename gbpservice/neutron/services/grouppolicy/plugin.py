@@ -112,7 +112,8 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
                    'nat_pool': {'external_segment_id':
                                 'external_segment'},
                    'policy_target': {'policy_target_group_id':
-                                     'policy_target_group'}
+                                     'policy_target_group'},
+                   'application_policy_group': {}
                    }
     _plurals = None
 
@@ -421,6 +422,7 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
         l2_policy=group_policy_mapping_db.L2PolicyMapping,
         policy_target=group_policy_mapping_db.PolicyTargetMapping,
         policy_target_group=group_policy_mapping_db.PolicyTargetGroupMapping,
+        application_policy_group=gpdb.ApplicationPolicyGroup,
         policy_classifier=gpdb.PolicyClassifier,
         policy_action=gpdb.PolicyAction,
         policy_rule=gpdb.PolicyRule,
@@ -682,6 +684,107 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
             context, 'policy_target_group', 'PolicyTargetGroupContext',
             filters=filters, fields=fields, sorts=sorts, limit=limit,
             marker=marker, page_reverse=page_reverse)
+
+    @log.log_method_call
+    def create_application_policy_group(self, context,
+                                        application_policy_group):
+        self._ensure_tenant(
+            context, application_policy_group['application_policy_group'])
+        session = context.session
+        pdm = self.policy_driver_manager
+        with session.begin(subtransactions=True):
+            result = super(GroupPolicyPlugin,
+                           self).create_application_policy_group(
+                               context, application_policy_group)
+            self.extension_manager.process_create_application_policy_group(
+                session, application_policy_group, result)
+            self._validate_shared_create(self, context, result,
+                                         'application_policy_group')
+            policy_context = p_context.ApplicationPolicyGroupContext(
+                self, context, result)
+            pdm.create_application_policy_group_precommit(policy_context)
+
+        try:
+            pdm.create_application_policy_group_postcommit(policy_context)
+        except Exception:
+            with excutils.save_and_reraise_exception():
+                LOG.exception(_LE("create_application_policy_group_postcommit "
+                                  "failed, deleting APG %s"),
+                              result['id'])
+                self.delete_application_policy_group(context, result['id'])
+
+        return self.get_application_policy_group(context, result['id'])
+
+    @log.log_method_call
+    def update_application_policy_group(self, context,
+                                        application_policy_group_id,
+                                        application_policy_group):
+        session = context.session
+        pdm = self.policy_driver_manager
+        with session.begin(subtransactions=True):
+            original_application_policy_group = (
+                self.get_application_policy_group(
+                    context, application_policy_group_id))
+            updated_application_policy_group = super(
+                GroupPolicyPlugin, self).update_application_policy_group(
+                    context, application_policy_group_id,
+                    application_policy_group)
+
+            self.extension_manager.process_update_application_policy_group(
+                session, application_policy_group,
+                updated_application_policy_group)
+            self._validate_shared_update(
+                self, context, original_application_policy_group,
+                updated_application_policy_group, 'application_policy_group')
+            policy_context = p_context.ApplicationPolicyGroupContext(
+                self, context, updated_application_policy_group,
+                original_application_policy_group=
+                original_application_policy_group)
+            pdm.update_application_policy_group_precommit(policy_context)
+
+        pdm.update_application_policy_group_postcommit(policy_context)
+
+        return self.get_application_policy_group(context,
+                                                 application_policy_group_id)
+
+    @log.log_method_call
+    def delete_application_policy_group(self, context,
+                                        application_policy_group_id):
+        session = context.session
+        pdm = self.policy_driver_manager
+        with session.begin(subtransactions=True):
+            application_policy_group = self.get_application_policy_group(
+                context, application_policy_group_id)
+            policy_context = p_context.ApplicationPolicyGroupContext(
+                self, context, application_policy_group)
+            pdm.delete_application_policy_group_precommit(policy_context)
+
+            super(GroupPolicyPlugin, self).delete_application_policy_group(
+                context, application_policy_group_id)
+
+        try:
+            pdm.delete_application_policy_group_postcommit(policy_context)
+        except Exception:
+            LOG.exception(_LE("delete_application_policy_group_postcommit "
+                              "failed for application_policy_group %s"),
+                          application_policy_group_id)
+
+    @log.log_method_call
+    def get_application_policy_group(self, context,
+                                     application_policy_group_id, fields=None):
+        return self._get_resource(context, 'application_policy_group',
+                                  application_policy_group_id,
+                                  'ApplicationPolicyGroupContext',
+                                  fields=fields)
+
+    @log.log_method_call
+    def get_application_policy_groups(self, context, filters=None, fields=None,
+                                      sorts=None, limit=None, marker=None,
+                                      page_reverse=False):
+        return self._get_resources(
+            context, 'application_policy_group',
+            'ApplicationPolicyGroupContext', filters=filters, fields=fields,
+            sorts=sorts, limit=limit, marker=marker, page_reverse=page_reverse)
 
     @log.log_method_call
     def create_l2_policy(self, context, l2_policy):
