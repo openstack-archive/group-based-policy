@@ -10,6 +10,7 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+from gbpservice.nfp.core import context as module_context
 from gbpservice.nfp.core import log as nfp_logging
 from gbpservice.nfp.core.rpc import RpcAgent
 from gbpservice.nfp.lib import transport as transport
@@ -52,6 +53,7 @@ class RpcHandler(object):
         """Method of rpc handler for create_network_function_config.
         Return: Http Response.
         """
+        module_context.init()
         transport.send_request_to_configurator(self._conf,
                                                context, body,
                                                "CREATE")
@@ -61,6 +63,7 @@ class RpcHandler(object):
         """Method of rpc handler for delete_network_function_config.
         Return: Http Response.
         """
+        module_context.init()
         transport.send_request_to_configurator(self._conf,
                                                context, body,
                                                "DELETE")
@@ -70,6 +73,7 @@ class RpcHandler(object):
         """Method of rpc handler for delete_network_function_config.
         Return: Http Response.
         """
+        module_context.init()
         transport.send_request_to_configurator(self._conf,
                                                context, body,
                                                "UPDATE")
@@ -79,6 +83,7 @@ class RpcHandler(object):
         """Method of rpc handler for create_network_function_device_config.
         Return: Http Response.
         """
+        module_context.init()
         transport.send_request_to_configurator(self._conf,
                                                context, body,
                                                "CREATE",
@@ -89,6 +94,7 @@ class RpcHandler(object):
         """Method of rpc handler for delete_network_function_device_config.
         Return: Http Response.
         """
+        module_context.init()
         transport.send_request_to_configurator(self._conf,
                                                context, body,
                                                "DELETE",
@@ -99,6 +105,7 @@ class RpcHandler(object):
         """Method of rpc handler for create_service.
         Return: Http Response.
         """
+        module_context.init()
         transport.send_request_to_configurator(self._conf,
                                                context, body,
                                                "CREATE",
