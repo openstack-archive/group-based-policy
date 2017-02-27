@@ -18,6 +18,8 @@ from neutron import context
 from neutron import manager
 from oslo_config import cfg
 
+from gbpservice.neutron.services.grouppolicy import (
+    policy_driver_manager as pdm)
 from gbpservice.neutron.services.servicechain.plugins.ncp import (
     plugin as ncp_plugin)
 from gbpservice.neutron.services.servicechain.plugins.ncp import model
@@ -57,6 +59,8 @@ class ApicMappingStitchingPlumberGBPTestCase(
 
         self.node_driver = self.sc_plugin.driver_manager.ordered_drivers[0].obj
         self.node_driver.get_plumbing_info = get_plumbing_info
+        pdm.PolicyDriverManager.get_policy_target_group_status = (
+                mock.MagicMock({}))
 
     @property
     def sc_plugin(self):

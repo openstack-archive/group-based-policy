@@ -197,6 +197,33 @@ class ChainMappingDriver(api.PolicyDriver, local_api.LocalAPI,
         self._handle_provider_updated(context)
 
     @log.log_method_call
+    def get_policy_target_group_status(self, context):
+        try:
+            if (context.current['provided_policy_rule_sets'] and not
+                context.current.get('proxied_group_id')):
+                ptg_status = []
+                for sci in self._get_chains_by_prs(
+                            context,
+                            context.current['provided_policy_rule_sets']):
+                    servicechain_instance = self._get_servicechain_instance(
+                                                    context._plugin_context,
+                                                    sci)
+                    if (servicechain_instance['provider_ptg_id'] ==
+                            context.current['id']):
+                        ptg_status.append(
+                                {'status': servicechain_instance['status'],
+                                 'status_details': servicechain_instance[
+                                    'status_details']})
+                # REVISIT: For now assuming there will be only
+                #          one sci associated with this ptg
+                if ptg_status:
+                    context.current['status'] = ptg_status[0]['status']
+                    context.current['status_details'] = ptg_status[0][
+                            'status_details']
+        except Exception:
+            LOG.error(_LE('Failed to update ptg status'))
+
+    @log.log_method_call
     def delete_policy_target_group_precommit(self, context):
         pass
 
