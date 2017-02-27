@@ -24,18 +24,22 @@ function create_nfp_image {
 
 function assign_user_role_credential {
     TOP_DIR=$1
-    source $TOP_DIR/openrc admin admin
+    set -x
+    #source $TOP_DIR/openrc admin admin
     #set -x
-    serviceTenantID=`keystone tenant-list | grep "service" | awk '{print $2}'`
-    serviceRoleID=`keystone role-list | grep "service" | awk '{print $2}'`
-    adminRoleID=`keystone role-list | grep "admin" | awk '{print $2}'`
-    keystone user-role-add --user nova --tenant $serviceTenantID --role $serviceRoleID
-    keystone user-role-add --user neutron --tenant $serviceTenantID --role $adminRoleID
+    ##serviceTenantID=`openstack --os-cloud=devstack-admin tenant-list | grep "service" | awk '{print $2}'`
+    ##serviceRoleID=`openstack --os-cloud=devstack-admin role-list | grep "service" | awk '{print $2}'`
+    ##adminRoleID=`openstack --os-cloud=devstack-admin role-list | grep "admin" | awk '{print $2}'`
+    openstack --os-cloud=devstack-admin role add --project service --user nova service
+    ##source $TOP_DIR/openrc admin admin
+    openstack --os-cloud=devstack-admin role add --project service --user neutron admin
 }
 
 function namespace_delete {
     TOP_DIR=$1
-    source $TOP_DIR/openrc neutron service
+    source $TOP_DIR/openrc
+    source $TOP_DIR/exerciserc
+    source $TOP_DIR/openrc demo demo
     #Deletion namespace
     NFP_P=`sudo ip netns | grep "nfp-proxy"`
     if [ ${#NFP_P} -ne 0 ]; then
@@ -140,7 +144,8 @@ function namespace_create {
 
 function create_nfp_gbp_resources {
    TOP_DIR=$1
-   source $TOP_DIR/openrc neutron service
+   source $TOP_DIR/openrc 
+   source $TOP_DIR/openrc demo demo
    IMAGE_PATH=$(cat $DISKIMAGE_CREATE_DIR/output/last_built_image_path)
    IMAGE_NAME=`basename "$IMAGE_PATH"`
    IMAGE_NAME_FLAT="${IMAGE_NAME%.*}"
@@ -161,7 +166,8 @@ function create_nfp_gbp_resources {
 
 function delete_nfp_gbp_resources {
    TOP_DIR=$1
-   source $TOP_DIR/openrc neutron service
+   source $TOP_DIR/openrc
+   source $TOP_DIR/openrc demo demo
 
    neutron port-delete nfp-proxy_port
 
@@ -178,7 +184,8 @@ function delete_nfp_gbp_resources {
 
 function get_router_namespace {
     TOP_DIR=$1
-    source $TOP_DIR/openrc neutron service
+    source $TOP_DIR/openrc
+    source $TOP_DIR/openrc demo demo
 
     GROUP="svc_management_ptg"
     echo "GroupName: $GROUP"
@@ -249,7 +256,7 @@ function copy_nfp_files_and_start_process {
 
     echo "Running gbp-db-manage"
 
-    source $TOP_DIR/openrc neutron service
+    source $TOP_DIR/openrc demo demo
 
     gbp-db-manage --config-file /etc/neutron/neutron.conf upgrade head
     sleep 2
