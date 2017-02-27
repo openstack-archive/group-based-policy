@@ -80,7 +80,7 @@ class NSIPortAssociation(BASE):
 
 
 class NetworkFunctionInstance(BASE, model_base.HasId, model_base.HasTenant,
-        HasStatusDescription):
+                              HasStatusDescription):
     """Represents the Network Function Instance"""
     __tablename__ = 'nfp_network_function_instances'
 
@@ -101,7 +101,7 @@ class NetworkFunctionInstance(BASE, model_base.HasId, model_base.HasTenant,
 
 
 class NetworkFunction(BASE, model_base.HasId, model_base.HasTenant,
-        HasStatusDescription):
+                      HasStatusDescription):
     """Represents the Network Function object"""
     __tablename__ = 'nfp_network_functions'
 
@@ -118,7 +118,7 @@ class NetworkFunction(BASE, model_base.HasId, model_base.HasTenant,
 
 
 class NetworkFunctionDevice(BASE, model_base.HasId, model_base.HasTenant,
-        HasStatusDescription):
+                            HasStatusDescription):
     """Represents the Network Function Device"""
     __tablename__ = 'nfp_network_function_devices'
 
@@ -127,15 +127,15 @@ class NetworkFunctionDevice(BASE, model_base.HasId, model_base.HasTenant,
     mgmt_ip_address = sa.Column(sa.String(36), nullable=True)
     mgmt_port_id = sa.Column(sa.String(36),
                              sa.ForeignKey('nfp_port_infos.id',
-                                           ondelete= 'SET NULL'),
+                                           ondelete='SET NULL'),
                              nullable=True)
     monitoring_port_id = sa.Column(sa.String(36),
                                    sa.ForeignKey('nfp_port_infos.id',
-                                                 ondelete= 'SET NULL'),
+                                                 ondelete='SET NULL'),
                                    nullable=True)
     monitoring_port_network = sa.Column(sa.String(36),
                                         sa.ForeignKey('nfp_network_infos.id',
-                                                      ondelete= 'SET NULL'),
+                                                      ondelete='SET NULL'),
                                         nullable=True)
     service_vendor = sa.Column(sa.String(36), nullable=False, index=True)
     max_interfaces = sa.Column(sa.Integer(), nullable=False)
@@ -143,24 +143,6 @@ class NetworkFunctionDevice(BASE, model_base.HasId, model_base.HasTenant,
     interfaces_in_use = sa.Column(sa.Integer(), nullable=False)
     provider_metadata = sa.Column(sa.String(1024), nullable=True)
     gateway_port = sa.Column(sa.String(36), nullable=True)
-
-
-class NetworkFunctionDeviceInterface(BASE, model_base.HasId,
-        model_base.HasTenant):
-    """Represents the Network Function Device"""
-    __tablename__ = 'nfp_network_function_device_interfaces'
-
-    plugged_in_port_id = sa.Column(sa.String(36),
-                                   sa.ForeignKey('nfp_port_infos.id',
-                                                 ondelete='SET NULL'),
-                                   nullable=True)
-    interface_position = sa.Column(sa.Integer(), nullable=True)
-    mapped_real_port_id = sa.Column(sa.String(36), nullable=True)
-    network_function_device_id = sa.Column(
-        sa.String(36),
-        sa.ForeignKey('nfp_network_function_devices.id',
-                      ondelete='SET NULL'),
-        nullable=True)
 
 
 class ClusterInfo(BASE, model_base.HasId, model_base.HasTenant):
@@ -179,8 +161,8 @@ class ClusterInfo(BASE, model_base.HasId, model_base.HasTenant):
 class ServiceGatewayDetails(BASE, model_base.HasId):
     __tablename__ = 'nfp_service_gateway_info'
     network_function_id = sa.Column(sa.String(36), sa.ForeignKey(
-            'nfp_network_functions.id', ondelete='CASCADE'), nullable=False,
-                            primary_key=True)
+        'nfp_network_functions.id', ondelete='CASCADE'), nullable=False,
+        primary_key=True)
     gateway_ptg = sa.Column(sa.String(36), nullable=False)
     primary_instance_gw_pt = sa.Column(sa.String(36), nullable=True)
     secondary_instance_gw_pt = sa.Column(sa.String(36), nullable=True)
