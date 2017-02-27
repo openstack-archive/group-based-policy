@@ -11,12 +11,14 @@
 #    under the License.
 
 import requests
+import time
+
 
 from oslo_serialization import jsonutils
 
 from gbpservice.contrib.nfp.configurator.drivers.base import base_driver
 from gbpservice.contrib.nfp.configurator.drivers.firewall.vyos import (
-                                                vyos_fw_constants as const)
+    vyos_fw_constants as const)
 from gbpservice.contrib.nfp.configurator.lib import constants as common_const
 from gbpservice.contrib.nfp.configurator.lib import data_parser
 from gbpservice.contrib.nfp.configurator.lib import fw_constants as fw_const
@@ -76,7 +78,7 @@ class RestApi(object):
                    "%r. %r" % (url, str(err).capitalize()))
             return msg
         if resp.status_code not in common_const.SUCCESS_CODES or (
-                                            result.get('status') is False):
+                result.get('status') is False):
             return result
         return common_const.STATUS_SUCCESS
 
@@ -105,12 +107,12 @@ class FwGenericConfigDriver(base_driver.BaseDriver):
         """
 
         static_ips_info = dict(
-                    provider_ip=resource_data.get('provider_ip'),
-                    provider_cidr=resource_data.get('provider_cidr'),
-                    provider_mac=resource_data.get('provider_mac'),
-                    stitching_ip=resource_data.get('stitching_ip'),
-                    stitching_cidr=resource_data.get('stitching_cidr'),
-                    stitching_mac=resource_data.get('stitching_mac'))
+            provider_ip=resource_data.get('provider_ip'),
+            provider_cidr=resource_data.get('provider_cidr'),
+            provider_mac=resource_data.get('provider_mac'),
+            stitching_ip=resource_data.get('stitching_ip'),
+            stitching_cidr=resource_data.get('stitching_cidr'),
+            stitching_mac=resource_data.get('stitching_mac'))
         mgmt_ip = resource_data['mgmt_ip']
 
         url = const.request_url % (mgmt_ip,
@@ -212,6 +214,10 @@ class FwGenericConfigDriver(base_driver.BaseDriver):
             msg = ("Persistent rule successfully added for "
                    "service at %r." % url)
             LOG.info(msg)
+
+            # wait for 10secs for the ip address to get configured. Sometimes
+            # observed that 'set_routes' fail with 'ip not configured' error.
+            time.sleep(10)
             return resp
 
         err_msg += (("Status code: %r" % resp['status'])
@@ -234,12 +240,12 @@ class FwGenericConfigDriver(base_driver.BaseDriver):
         """
 
         static_ips_info = dict(
-                    provider_ip=resource_data.get('provider_ip'),
-                    provider_cidr=resource_data.get('provider_cidr'),
-                    provider_mac=resource_data.get('provider_mac'),
-                    stitching_ip=resource_data.get('stitching_ip'),
-                    stitching_cidr=resource_data.get('stitching_cidr'),
-                    stitching_mac=resource_data.get('stitching_mac'))
+            provider_ip=resource_data.get('provider_ip'),
+            provider_cidr=resource_data.get('provider_cidr'),
+            provider_mac=resource_data.get('provider_mac'),
+            stitching_ip=resource_data.get('stitching_ip'),
+            stitching_cidr=resource_data.get('stitching_cidr'),
+            stitching_mac=resource_data.get('stitching_mac'))
         mgmt_ip = resource_data['mgmt_ip']
 
         url = const.request_url % (mgmt_ip,
@@ -602,7 +608,7 @@ class FwaasDriver(FwGenericConfigDriver):
 
         if type(resp) is dict:
             if not resp.get('delete_success') and (
-                            resp.get('message') == const.INTERFACE_NOT_FOUND):
+                    resp.get('message') == const.INTERFACE_NOT_FOUND):
                 err_msg += ("Firewall was not deleted as interface was not "
                             "available in the firewall. It might have got "
                             "detached. So marking this delete as SUCCESS. "

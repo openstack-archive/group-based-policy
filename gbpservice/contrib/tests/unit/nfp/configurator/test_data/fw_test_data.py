@@ -20,7 +20,7 @@ class FakeObjects(object):
     empty_dict = {}
     context = 'APIcontext'
     neutron_context = {'neutron context for *aaS': {}}
-    firewall = 'firewall'
+    firewall = {'id': 'firewall'}
     host = 'host'
     conf = 'conf'
     vmid = 'b238e3f12fb64ebcbda2b3330700bf00'
