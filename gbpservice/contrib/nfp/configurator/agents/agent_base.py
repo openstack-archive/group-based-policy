@@ -119,25 +119,25 @@ class AgentBaseRPCManager(object):
             # Adding agent_info which contains information required for
             # demux and response data in agent to neutron_context in *aaS
             if not sa_req_list[0]['is_generic_config'] and not (
-                        agent_info['resource'] in const.NFP_SERVICE_LIST):
+                    agent_info['resource'] in const.NFP_SERVICE_LIST):
                 # Here, the neutron context is overloaded with agent_info
                 # dict which contains the API context in addition to other
                 # fields like service type, service vendor, resource etc.
                 # The agent_info dict is constructed inside the demuxer library
                 sa_req_list[0]['resource_data']['neutron_context'].update(
-                                                    {'agent_info': agent_info})
+                    {'agent_info': agent_info})
                 # When calling the *aaS or NFPService agents, the
                 # "neutron context" passed inside the resource data is
                 # renamed to "context"
                 sa_req_list[0]['resource_data']['context'] = sa_req_list[0][
-                                        'resource_data'].pop('neutron_context')
+                    'resource_data'].pop('neutron_context')
                 getattr(self, sa_req_list[0]['method'])(
-                                            **sa_req_list[0]['resource_data'])
+                    **sa_req_list[0]['resource_data'])
             else:
                 sa_req_list[0]['agent_info'].update(
                     {'notification_data': notification_data})
                 getattr(self, sa_req_list[0]['method'])(
-                                agent_info, sa_req_list[0]['resource_data'])
+                    agent_info, sa_req_list[0]['resource_data'])
 
 
 class AgentBaseNotification(object):
@@ -221,7 +221,7 @@ class AgentBaseEventHandler(nfp_api.NfpEventHandler):
                 service_feature = agent_info['service_feature']
                 if not is_generic_config:
                     sa_req_list[0]['resource_data']['context'] = sa_req_list[
-                                    0]['resource_data'].pop('neutron_context')
+                        0]['resource_data'].pop('neutron_context')
 
                 # Get the service driver and invoke its method
                 driver = self._get_driver(service_type, service_vendor,
