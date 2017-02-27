@@ -10,6 +10,8 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+import eventlet
+import greenlet
 import os
 import sys
 import time
@@ -18,12 +20,17 @@ import traceback
 from oslo_service import service as oslo_service
 
 from gbpservice.nfp.core import common as nfp_common
+from gbpservice.nfp.core import context
 from gbpservice.nfp.core import event as nfp_event
 from gbpservice.nfp.core import log as nfp_logging
+from gbpservice.nfp.core import watchdog as nfp_watchdog
 
 LOG = nfp_logging.getLogger(__name__)
 Service = oslo_service.Service
 identify = nfp_common.identify
+WATCHDOG = nfp_watchdog.Watchdog
+
+DEFAULT_THREAD_TIMEOUT = (10 * 60)
 
 """Implements worker process.
 
@@ -43,7 +50,6 @@ class NfpWorker(Service):
         self.parent_pipe = None
         # Pipe to recv/send messages to distributor
         self.pipe = None
-        self.lock = None
         # Cache of event handlers
         self.controller = None
         self._conf = conf
@@ -60,16 +66,15 @@ class NfpWorker(Service):
         # Update the process type in controller.
         self.controller.PROCESS_TYPE = "worker"
         self.controller._pipe = self.pipe
-        self.controller._lock = self.lock
         self.event_handlers = self.controller.get_event_handlers()
+
+        eventlet.spawn_n(self.controller._resending_task)
+
         while True:
             try:
                 event = None
-                self.controller.pipe_lock(self.lock)
-                ret = self.pipe.poll(0.1)
-                self.controller.pipe_unlock(self.lock)
-                if ret:
-                    event = self.controller.pipe_recv(self.pipe, self.lock)
+                if self.pipe.poll(0.1):
+                    event = self.controller.pipe_recv(self.pipe)
                 if event:
                     message = "%s - received event" % (
                         self._log_meta(event))
@@ -97,7 +102,7 @@ class NfpWorker(Service):
         desc.uuid = event.desc.uuid
         desc.flag = nfp_event.EVENT_ACK
         setattr(ack_event, 'desc', desc)
-        self.controller.pipe_send(self.pipe, self.lock, ack_event)
+        self.controller.pipe_send(self.pipe, ack_event)
 
     def _process_event(self, event):
         """Process & dispatch the event.
@@ -108,38 +113,24 @@ class NfpWorker(Service):
             thread.
         """
         if event.desc.type == nfp_event.SCHEDULE_EVENT:
-            self._send_event_ack(event)
             eh, _ = (
                 self.event_handlers.get_event_handler(
                     event.id, module=event.desc.target))
-            self.dispatch(eh.handle_event, event)
+            self.dispatch(eh.handle_event, event, eh=eh)
         elif event.desc.type == nfp_event.POLL_EVENT:
             self.dispatch(self._handle_poll_event, event)
-        elif event.desc.type == nfp_event.EVENT_EXPIRED:
-            eh, _ = (
-                self.event_handlers.get_event_handler(
-                    event.id, module=event.desc.target))
-            self.dispatch(eh.event_cancelled, event, 'EXPIRED')
-
-    def _build_poll_status(self, ret, event):
-        status = {'poll': True, 'event': event}
-        if ret:
-            status['poll'] = ret.get('poll', status['poll'])
-            status['event'] = ret.get('event', status['event'])
-            status['event'].desc = event.desc
-
-        return status
 
     def _repoll(self, ret, event, eh):
-        status = self._build_poll_status(ret, event)
-        if status['poll']:
+        if ret.get('poll', False):
             message = ("(event - %s) - repolling event -"
                        "pending times - %d") % (
                 event.identify(), event.desc.poll_desc.max_times)
             LOG.debug(message)
             if event.desc.poll_desc.max_times:
-                self.controller.pipe_send(self.pipe, self.lock,
-                                          status['event'])
+                self.controller.poll_event(
+                    event,
+                    spacing=event.desc.poll_desc.spacing,
+                    max_times=event.desc.poll_desc.max_times)
             else:
                 message = ("(event - %s) - max timed out,"
                            "calling event_cancelled") % (event.identify())
@@ -147,7 +138,7 @@ class NfpWorker(Service):
                 eh.event_cancelled(event, 'MAX_TIMED_OUT')
 
     def _handle_poll_event(self, event):
-        ret = {}
+        ret = {'poll': False}
         event.desc.poll_desc.max_times -= 1
         module = event.desc.target
         poll_handler, _ = (
@@ -155,45 +146,77 @@ class NfpWorker(Service):
         event_handler, _ = (
             self.event_handlers.get_event_handler(event.id, module=module))
         try:
-            ret = poll_handler(event)
-        except TypeError:
-            ret = poll_handler(event_handler, event)
+            try:
+                ret = poll_handler(event)
+            except TypeError:
+                ret = poll_handler(event_handler, event)
+            if not ret:
+                ret = {'poll': True}
+        except greenlet.GreenletExit:
+            pass
         except Exception as exc:
-            message = "Exception from module's poll handler - %s" % exc
+            message = "Exception - %r" % (exc)
             LOG.error(message)
+            ret = self.dispatch_exception(event_handler, event, exc)
+            if not ret:
+                ret = {'poll': False}
+
         self._repoll(ret, event, event_handler)
 
-    def log_dispatch(self, handler, event, *args):
+    def _dispatch(self, handler, event, *args, **kwargs):
+        event.context['log_context']['namespace'] = event.desc.target
+        context.init(event.context)
         try:
-            event.context['namespace'] = event.desc.target
-            nfp_logging.store_logging_context(**(event.context))
+            handler(event, *args)
+        except greenlet.GreenletExit:
+            self.controller.event_complete(event, result='FAILED')
+        except Exception as exc:
+            # How to log traceback propery ??
+            message = "Exception - %r" % (exc)
+            LOG.error(message)
+            self.dispatch_exception(kwargs.get('eh'), event, exc)
+            self.controller.event_complete(event, result="FAILED")
         finally:
-            try:
-                handler(event, *args)
-                nfp_logging.clear_logging_context()
-            except Exception as exc:
-                exc_type, exc_value, exc_traceback = sys.exc_info()
-                message = "Exception from module's event handler - %s" % (exc)
-                LOG.error(message)
-                # REVISIT(ashu): Format this traceback log properly.
-                # Currently, it is a single string, but there are some
-                # newline characters, which can be use to print it properly.
-                message = ("Traceback: %s" % traceback.format_exception(
-                              exc_type, exc_value, exc_traceback))
-                LOG.error(message)
+            self._send_event_ack(event)
 
-    def dispatch(self, handler, event, *args):
+    def dispatch_exception(self, event_handler, event, exception):
+        ret = {}
+        try:
+            ret = event_handler.handle_exception(event, exception)
+        except Exception:
+            exc_type, exc_value, exc_traceback = sys.exc_info()
+            message = "Traceback: %s" % traceback.format_exception(
+                exc_type, exc_value, exc_traceback)
+            LOG.error(message)
+        finally:
+            return ret
+
+    def thread_done(self, th, watchdog=None):
+        if watchdog:
+            watchdog.cancel()
+
+    def thread_timedout(self, thread=None):
+        if thread:
+            eventlet.greenthread.kill(thread.thread)
+
+    def dispatch(self, handler, event, *args, **kwargs):
         if self._threads:
-            self.tg.add_thread(self.log_dispatch, handler, event, *args)
+            th = self.tg.add_thread(
+                self._dispatch, handler, event, *args, **kwargs)
             message = "%s - (handler - %s) - dispatched to thread " % (
                 self._log_meta(), identify(handler))
             LOG.debug(message)
+            wd = WATCHDOG(self.thread_timedout,
+                          seconds=DEFAULT_THREAD_TIMEOUT, thread=th)
+            th.link(self.thread_done, watchdog=wd)
         else:
             try:
                 handler(event, *args)
                 message = "%s - (handler - %s) - invoked" % (
                     self._log_meta(), identify(handler))
                 LOG.debug(message)
+                self._send_event_ack(event)
             except Exception as exc:
-                message = "Exception from module's event handler - %s" % exc
+                message = "Exception from module's event handler - %s" % (exc)
                 LOG.error(message)
+                self.dispatch_exception(kwargs.get('eh'), event, exc)

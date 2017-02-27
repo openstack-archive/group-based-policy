@@ -10,6 +10,7 @@
 #  License for the specific language governing permissions and limitations
 #  under the License.from gbpservice.neutron.nsf.core import main
 
+from gbpservice.nfp.core import context as nfp_context
 from gbpservice.nfp.core import event
 from gbpservice.nfp.core import module as nfp_api
 from oslo_log import log as logging
@@ -30,6 +31,9 @@ class EventsHandler(nfp_api.NfpEventHandler):
         self.controller = controller
 
     def handle_event(self, event):
+        event.context['log_context']['namespace'] = event.desc.target
+        nfp_context.init(event.context)
+
         if event.id == 'TEST_EVENT_ACK_FROM_WORKER':
             self.controller.event_ack_handler_cb_obj.set()
 
