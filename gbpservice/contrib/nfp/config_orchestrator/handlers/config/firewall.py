@@ -16,6 +16,7 @@ import copy
 from gbpservice.contrib.nfp.config_orchestrator.common import common
 from gbpservice.nfp.common import constants as const
 from gbpservice.nfp.common import data_formatter as df
+from gbpservice.nfp.core import context as module_context
 from gbpservice.nfp.core import log as nfp_logging
 from gbpservice.nfp.lib import transport
 
@@ -130,7 +131,8 @@ class FwAgent(firewall_db.Firewall_db_mixin):
                        'neutron_context': ctx_dict,
                        'fw_mac': fw_mac,
                        'requester': 'nas_service',
-                       'logging_context': nfp_logging.get_logging_context()}
+                       'logging_context':
+                       module_context.get()['log_context']}
         resource = resource_type = 'firewall'
         resource_data = {resource: firewall,
                          'host': host,
@@ -148,9 +150,10 @@ class FwAgent(firewall_db.Firewall_db_mixin):
 
     @log_helpers.log_method_call
     def create_firewall(self, context, firewall, host):
+        nfp_context = module_context.init()
         # Fetch nf_id from description of the resource
         nf_id = self._fetch_nf_from_resource_desc(firewall["description"])
-        nfp_logging.store_logging_context(meta_id=nf_id)
+        nfp_context['log_context']['meta_id'] = nf_id
         nf = common.get_network_function_details(context, nf_id)
         LOG.info(_LI("Received RPC CREATE FIREWALL for "
                      "Firewall: %(firewall)s"),
@@ -158,13 +161,13 @@ class FwAgent(firewall_db.Firewall_db_mixin):
         body = self._data_wrapper(context, firewall, host, nf, 'CREATE')
         transport.send_request_to_configurator(self._conf,
                                                context, body, "CREATE")
-        nfp_logging.clear_logging_context()
 
     @log_helpers.log_method_call
     def delete_firewall(self, context, firewall, host):
+        nfp_context = module_context.init()
         # Fetch nf_id from description of the resource
         nf_id = self._fetch_nf_from_resource_desc(firewall["description"])
-        nfp_logging.store_logging_context(meta_id=nf_id)
+        nfp_context['log_context']['meta_id'] = nf_id
         nf = common.get_network_function_details(context, nf_id)
         LOG.info(_LI("Received RPC DELETE FIREWALL for "
                      "Firewall: %(firewall)s"),
@@ -172,4 +175,3 @@ class FwAgent(firewall_db.Firewall_db_mixin):
         body = self._data_wrapper(context, firewall, host, nf, 'DELETE')
         transport.send_request_to_configurator(self._conf,
                                                context, body, "DELETE")
-        nfp_logging.clear_logging_context()
