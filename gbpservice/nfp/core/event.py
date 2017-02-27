@@ -26,13 +26,14 @@ identify = nfp_common.identify
 SCHEDULE_EVENT = 'schedule_event'
 POLL_EVENT = 'poll_event'
 STASH_EVENT = 'stash_event'
-EVENT_EXPIRED = 'event_expired'
 
 """Event Flag """
 EVENT_NEW = 'new_event'
 EVENT_COMPLETE = 'event_done'
 EVENT_ACK = 'event_ack'
 POLL_EVENT_STOP = 'poll_event_stop'
+
+EVENT_DEFAULT_LIFETIME = 600
 
 """Sequencer status. """
 SequencerEmpty = nfp_seq.SequencerEmpty
@@ -86,19 +87,29 @@ class EventDesc(object):
         self.target = None
         # ID of graph of which this event is part of
         self.graph = None
+        # Type of path to which this event belongs CREATE/UPDATE/DELETE
+        self.path_type = kwargs.get('path_type')
+        # Unique key for the path
+        self.path_key = kwargs.get('path_key')
+        # Marks whether an event was acked or not
+        self.acked = False
 
     def from_desc(self, desc):
         self.type = desc.type
         self.flag = desc.flag
         self.worker = desc.worker
         self.poll_desc = desc.poll_desc
+        self.path_type = desc.path_type
+        self.path_key = desc.path_key
 
     def to_dict(self):
         return {'uuid': self.uuid,
                 'type': self.type,
                 'flag': self.flag,
                 'worker': self.worker,
-                'poll_desc': self.poll_desc
+                'poll_desc': self.poll_desc,
+                'path_type': self.path_type,
+                'path_key': self.path_key
                 }
 
 """Defines the event structure.
@@ -126,7 +137,7 @@ class Event(object):
         # Handler of the event.
         self.handler = kwargs.get('handler')
         # Lifetime of the event in seconds.
-        self.lifetime = kwargs.get('lifetime', 0)
+        self.lifetime = kwargs.get('lifetime', -1)
         # Identifies whether event.data is zipped
         self.zipped = False
         # Log metadata context
@@ -247,13 +258,12 @@ class NfpEventHandlers(object):
 
     def get_poll_handler(self, event_id, module=None):
         """Get the poll handler for event_id. """
-        ph = None
-        spacing = 0
+        ph, spacing = None, None
         try:
             if module:
                 ph = self._event_desc_table[event_id]['modules'][module][0][1]
-                spacing = self._event_desc_table[event_id]['modules'][
-                        module][0][2]
+                spacing = self._event_desc_table[
+                    event_id]['modules'][module][0][2]
             else:
                 priorities = (
                     self._event_desc_table[event_id]['priority'].keys())
@@ -261,8 +271,8 @@ class NfpEventHandlers(object):
                 ph = (
                     self._event_desc_table[
                         event_id]['priority'][priority][0][1])
-                spacing = self._event_desc_table[event_id]['priority'][
-                        priority][0][2]
+                spacing = self._event_desc_table[
+                    event_id]['priority'][priority][0][2]
         finally:
             message = "%s - Returning poll handler" % (
                 self._log_meta(event_id, ph))
@@ -292,16 +302,13 @@ class NfpEventHandlers(object):
 
 class NfpEventManager(object):
 
-    def __init__(self, conf, controller, sequencer, pipe=None, pid=-1,
-                 lock=None):
+    def __init__(self, conf, controller, sequencer, pipe=None, pid=-1):
         self._conf = conf
         self._controller = controller
         # PID of process to which this event manager is associated
         self._pid = pid
         # Duplex pipe to read & write events
         self._pipe = pipe
-        # Lock over pipe access
-        self._lock = lock
         # Cache of UUIDs of events which are dispatched to
         # the worker which is handled by this em.
         self._cache = deque()
@@ -315,7 +322,7 @@ class NfpEventManager(object):
         else:
             return "(event_manager - %d" % (self._pid)
 
-    def _wait_for_events(self, pipe, lock, timeout=0.01):
+    def _wait_for_events(self, pipe, timeout=0.01):
         """Wait & pull event from the pipe.
 
             Wait till timeout for the first event and then
@@ -324,12 +331,11 @@ class NfpEventManager(object):
         """
         events = []
         try:
-            self._controller.pipe_lock(lock)
             ret = pipe.poll(timeout)
-            self._controller.pipe_unlock(lock)
             if ret:
-                event = self._controller.pipe_recv(pipe, lock)
-                events.append(event)
+                event = self._controller.pipe_recv(pipe)
+                if event:
+                    events.append(event)
         except multiprocessing.TimeoutError as err:
             message = "%s" % (err)
             LOG.exception(message)
@@ -373,7 +379,7 @@ class NfpEventManager(object):
             verr = verr
             message = "%s - event not in cache" % (
                 self._log_meta(event))
-            LOG.warn(message)
+            LOG.debug(message)
 
     def dispatch_event(self, event, event_type=None,
                        inc_load=True, cache=True):
@@ -392,7 +398,7 @@ class NfpEventManager(object):
         if event_type:
             event.desc.type = event_type
         # Send to the worker
-        self._controller.pipe_send(self._pipe, self._lock, event)
+        self._controller.pipe_send(self._pipe, event)
 
         self._load = (self._load + 1) if inc_load else self._load
         # Add to the cache
@@ -401,4 +407,4 @@ class NfpEventManager(object):
 
     def event_watcher(self, timeout=0.01):
         """Watch for events. """
-        return self._wait_for_events(self._pipe, self._lock, timeout=timeout)
+        return self._wait_for_events(self._pipe, timeout=timeout)

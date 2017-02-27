@@ -13,6 +13,7 @@
 
 from argparse import Namespace
 
+from gbpservice.nfp.core import context
 from gbpservice.nfp.core import log as nfp_logging
 from gbpservice.nfp.core import threadpool as core_tp
 
@@ -84,6 +85,10 @@ class TaskExecutor(object):
         self.pipe_line = []
         self.fired = False
 
+    def dispatch(self, job):
+        context.init()
+        return job['method'](*job['args'], **job['kwargs'])
+
     @check_in_use
     def fire(self):
         self.fired = True
@@ -92,8 +97,7 @@ class TaskExecutor(object):
                 "TaskExecutor - (job - %s) dispatched" %
                 (str(job)))
 
-            th = self.thread_pool.dispatch(
-                job['method'], *job['args'], **job['kwargs'])
+            th = self.thread_pool.dispatch(self.dispatch, job)
             job['thread'] = th
 
         for job in self.pipe_line:
@@ -214,7 +218,7 @@ class EventGraphExecutor(object):
         graph = self._graph(completed_node)
         if graph:
             if completed_node == graph['root']:
-                #Graph is complete here, remove from running_instances
+                # Graph is complete here, remove from running_instances
                 self.running.pop(graph['id'])
             else:
                 root = self._root(graph, completed_node)

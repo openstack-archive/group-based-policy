@@ -11,6 +11,7 @@
 #    under the License.
 
 import os
+import signal
 import time
 
 from oslo_service import service as oslo_service
@@ -33,12 +34,24 @@ ProcessLauncher = oslo_service.ProcessLauncher
 class NfpLauncher(ProcessLauncher):
 
     def __init__(self, conf):
+        # Add SIGALARM to ignore_signals, because core
+        # uses SIGALRM for watchdog, while oslo uses the
+        # same for exit.
+        # Signal handler is singleton class, changing here will
+        # have global effect.
+        self.signal_handler = oslo_service.SignalHandler()
+        self.signal_handler._ignore_signals += ('SIGALRM',)
+        self.signal_handler._signals_by_name = dict(
+            (name, getattr(signal, name))
+            for name in dir(signal)
+            if name.startswith("SIG") and
+            name not in self.signal_handler._ignore_signals)
+
         super(NfpLauncher, self).__init__(conf)
 
-    def child(self, service, ppipe, cpipe, lock, controller):
+    def child(self, service, ppipe, cpipe, controller):
         service.parent_pipe = ppipe
         service.pipe = cpipe
-        service.lock = lock
         service.controller = controller
         self.launcher = self._child_process(service)
         while True:
