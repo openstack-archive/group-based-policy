@@ -10,25 +10,23 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-import collections
 import os
 
 from gbpservice.nfp.core import event as nfp_event
 from gbpservice.nfp.core import executor as nfp_executor
 from gbpservice.nfp.core import log as nfp_logging
+from gbpservice.nfp.core import path as nfp_path
 from gbpservice.nfp.core import sequencer as nfp_sequencer
+from gbpservice.nfp.core import watchdog as nfp_watchdog
 
 LOG = nfp_logging.getLogger(__name__)
 NfpEventManager = nfp_event.NfpEventManager
 NfpGraphExecutor = nfp_executor.EventGraphExecutor
-
-deque = collections.deque
+WATCHDOG = nfp_watchdog.Watchdog
 
 
 def IS_SCHEDULED_EVENT_ACK(event):
-    return event.desc.type == nfp_event.SCHEDULE_EVENT and (
-        event.desc.flag == nfp_event.EVENT_ACK
-    )
+    return event.desc.flag == nfp_event.EVENT_ACK
 
 
 def IS_SCHEDULED_NEW_EVENT(event):
@@ -45,9 +43,9 @@ def IS_EVENT_GRAPH(event):
     return event.desc.graph
 
 
-def IS_POLL_EVENT_STOP(event):
-    return event.desc.type == nfp_event.POLL_EVENT and (
-        event.desc.flag == nfp_event.POLL_EVENT_STOP)
+def IS_PATH_COMPLETE_EVENT(event):
+    return event.id == 'PATH_COMPLETE'
+
 
 """Manages the forked childs.
 
@@ -63,7 +61,7 @@ class NfpProcessManager(object):
         self._controller = controller
         self._child_snapshot = []
 
-    def new_child(self, pid, pipe, lock):
+    def new_child(self, pid, pipe):
         # Pass, as we will learn from comparision as watcher
         pass
 
@@ -105,8 +103,8 @@ class NfpResourceManager(NfpProcessManager, NfpEventManager):
         self._resource_map = {}
         # Cache of event objects - {'uuid':<event>}
         self._event_cache = {}
-        # Not processed. Events Stored for future.
-        self._stash = deque()
+        # watchdog object mapping with event id - {'uuid':<watchdog>}
+        self._watchdog_map = {}
         # ID of the distributor process
         self._distributor_process_id = os.getpid()
         # Single sequencer to be used by all event managers
@@ -117,7 +115,7 @@ class NfpResourceManager(NfpProcessManager, NfpEventManager):
         NfpProcessManager.__init__(self, conf, controller)
         NfpEventManager.__init__(self, conf, controller, self._event_sequencer)
 
-    def new_child(self, pid, pipe, lock):
+    def new_child(self, pid, pipe):
         """Invoked when a new child is spawned.
 
             Associates an event manager with this child, maintains
@@ -130,9 +128,9 @@ class NfpResourceManager(NfpProcessManager, NfpEventManager):
         ev_manager = NfpEventManager(
             self._conf, self._controller,
             self._event_sequencer,
-            pipe=pipe, pid=pid, lock=lock)
+            pipe=pipe, pid=pid)
         self._resource_map.update(dict({pid: ev_manager}))
-        super(NfpResourceManager, self).new_child(pid, pipe, lock)
+        super(NfpResourceManager, self).new_child(pid, pipe)
 
     def manager_run(self):
         """Invoked periodically to check on resources.
@@ -149,12 +147,8 @@ class NfpResourceManager(NfpProcessManager, NfpEventManager):
 
     def _event_acked(self, event):
         """Post handling after event is dispatched to worker. """
-        if event.lifetime:
-            message = "(event - %s) - dispatched, polling for expiry" % (
-                event.identify())
-            LOG.debug(message)
-            self._controller.poll_add(
-                event, event.lifetime, self._event_life_timedout)
+        event.desc.acked = True
+        nfp_path.event_complete(event)
 
     def _dispatch_event(self, event):
         """Dispatch event to a worker. """
@@ -165,6 +159,7 @@ class NfpResourceManager(NfpProcessManager, NfpEventManager):
     def _graph_event(self, event):
         if isinstance(event.desc.graph, dict):
             graph = event.desc.graph
+            # root = graph['root']
 
             event.desc.graph = graph['id']
 
@@ -191,8 +186,17 @@ class NfpResourceManager(NfpProcessManager, NfpEventManager):
             # same event as non graph event
             event.desc.graph = None
 
-            # Dispatch to a worker
-            self._dispatch_event(event)
+            decision = nfp_path.schedule_event(event)
+            if decision == 'schedule':
+                # Dispatch to a worker
+                self._dispatch_event(event)
+                LOG.debug("Watchdog started for event - %s" %
+                          (event.identify()))
+                self._watchdog(event)
+            elif decision == 'discard':
+                message = "Discarding path event - %s" % (event.identify())
+                LOG.info(message)
+                self._controller.event_complete(event, result='FAILED')
         else:
             message = "(event - %s) - sequencing" % (
                 event.identify())
@@ -202,54 +206,62 @@ class NfpResourceManager(NfpProcessManager, NfpEventManager):
 
         return event.sequence
 
-    def _scheduled_event_ack(self, ack_event):
+    def _handle_path_complete(self, event):
         try:
-            event = self._event_cache[ack_event.desc.uuid]
-            evmanager = self._get_event_manager(event.desc.worker)
-            assert evmanager
-            # Pop from the pending list of evmanager
-            evmanager.pop_event(event)
-            # May be start polling for lifetime of event
-            self._event_acked(event)
-        except KeyError as kerr:
-            kerr = kerr
-            message = "(event - %s) - acked,"
-            "missing from cache" % (event.identify())
-            LOG.error(message)
-        except AssertionError as aerr:
-            aerr = aerr
-            message = "(event - %s) - acked,"
-            "process handling is dead, event will be"
-            "replayed in new process" % (event.identify())
+            path_type = event.desc.path_type
+            path_key = event.desc.path_key
+            nfp_path.path_complete(path_type, path_key)
+        except Exception as e:
+            message = "Exception - %r - while handling"\
+                "event - %s" % (e, event.identify())
             LOG.error(message)
 
-    def _scheduled_event_complete(self, event, expired=False):
+    def event_expired(self, event=None):
+        if event:
+            LOG.debug("Watchdog expired for event - %s" % (event.identify()))
+            self._watchdog_map.pop(event.desc.uuid, None)
+            self._controller.event_complete(event, result='FAILED')
+
+    def _scheduled_event_ack(self, ack_event):
+        self._event_acked(ack_event)
+
+    def _watchdog_cancel(self, event):
+        try:
+            LOG.debug("Watchdog cancelled for event - %s" % (event.identify()))
+            wd = self._watchdog_map.pop(event.desc.uuid)
+            wd.cancel()
+        except KeyError:
+            pass
+
+    def _watchdog(self, event, handler=None):
+        if not handler:
+            handler = self.event_expired
+        if event.lifetime != -1:
+            wd = WATCHDOG(handler,
+                          seconds=event.lifetime,
+                          event=event)
+            self._watchdog_map[event.desc.uuid] = wd
+
+    def _scheduled_event_complete(self, event):
         # Pop it from cache
         cached_event = None
         try:
             cached_event = self._event_cache.pop(event.desc.uuid)
             cached_event.result = event.result
+            # Mark the event as acked
+            self._watchdog_cancel(event)
             # Get the em managing the event
             evmanager = self._get_event_manager(event.desc.worker)
             assert evmanager
             evmanager.pop_event(event)
-            # If event expired, send a cancelled event back to worker
-            if expired:
-                event.desc.type = nfp_event.EVENT_EXPIRED
-                evmanager.dispatch_event(event, inc_load=False, cache=False)
         except KeyError as kerr:
             kerr = kerr
             message = "(event - %s) - completed, not in cache" % (
                 event.identify())
             LOG.debug(message)
         except AssertionError as aerr:
-            aerr = aerr
-            # No event manager for the event, worker could have got
-            # killed, ignore.
-            message = "(event - %s) - assertion error" % (
-                event.identify())
+            message = "%s" % (aerr.message)
             LOG.error(message)
-            pass
         finally:
             # Release the sequencer for this sequence,
             # so that next event can get scheduled.
@@ -258,36 +270,29 @@ class NfpResourceManager(NfpProcessManager, NfpEventManager):
 
     def _stop_poll_event(self, event):
         try:
-            poll_event = self._event_cache[event.data['key']]
-            poll_event.desc.poll_desc = None
-        except KeyError:
-            message = "(event - uuid=%s) - polling event not in cache" % (
-                event.data['key'])
-            LOG.debug(message)
+            to_stop = event.data['key']
+            event.desc.uuid = to_stop
+            self._watchdog_cancel(event)
+        except Exception as e:
+            message = "Exception - %r - while handling"\
+                "event - %s" % (e, event.identify())
+            LOG.error(message)
 
     def _non_schedule_event(self, event):
-        if IS_POLL_EVENT_STOP(event):
-            self._stop_poll_event(event)
-        elif event.desc.type == nfp_event.POLL_EVENT:
-            message = "(event - %s) - polling for event, spacing(%d)" % (
-                event.identify(), event.desc.poll_desc.spacing)
-            LOG.debug(message)
-            # If the poll event is new -> create one in cache,
-            # In most of the cases, polling is done for an existing
-            # event.
-            ref_uuid = event.desc.poll_desc.ref
-            if ref_uuid not in self._event_cache.keys():
-                # Assign random worker for this poll event
-                event.desc.worker = self._resource_map.keys()[0]
-                self._event_cache[ref_uuid] = event
-
-            cached_event = self._event_cache[ref_uuid]
-            cached_event.desc.poll_desc = event.desc.poll_desc
-
-            self._controller.poll_add(
-                event,
-                event.desc.poll_desc.spacing,
-                self._event_timedout)
+        if event.desc.type == nfp_event.POLL_EVENT:
+            if event.desc.flag == nfp_event.POLL_EVENT_STOP:
+                self._stop_poll_event(event)
+            else:
+                message = "(event - %s) - polling for event, spacing(%d)" % (
+                    event.identify(), event.desc.poll_desc.spacing)
+                LOG.debug(message)
+                # If the poll event is generated without any parent
+                # event, then worker would not be pre-assigned.
+                # In such case, assign a random worker
+                if not event.desc.worker:
+                    event.desc.worker = self._resource_map.keys()[0]
+                event.lifetime = event.desc.poll_desc.spacing
+                self._watchdog(event, handler=self._poll_timedout)
         else:
             message = "(event - %s) - Unknown non scheduled event" % (
                 event.identify())
@@ -316,8 +321,9 @@ class NfpResourceManager(NfpProcessManager, NfpEventManager):
         for event in events:
             message = "%s - processing event" % (event.identify())
             LOG.debug(message)
-
-            if IS_SCHEDULED_EVENT_ACK(event):
+            if IS_PATH_COMPLETE_EVENT(event):
+                self._handle_path_complete(event)
+            elif IS_SCHEDULED_EVENT_ACK(event):
                 self._scheduled_event_ack(event)
             elif IS_SCHEDULED_NEW_EVENT(event):
                 if IS_EVENT_GRAPH(event):
@@ -338,6 +344,7 @@ class NfpResourceManager(NfpProcessManager, NfpEventManager):
         events = []
         # Get events from sequencer
         events = self._event_sequencer.run()
+        events += nfp_path.run()
         for pid, event_manager in self._resource_map.iteritems():
             events += event_manager.event_watcher(timeout=0.01)
         # Process the type of events received, dispatch only the
@@ -353,8 +360,8 @@ class NfpResourceManager(NfpProcessManager, NfpEventManager):
     def _replace_child(self, killed, new):
         childrens = self._controller.get_childrens()
         wrap = childrens[new]
-        pipe, lock = wrap.child_pipe_map[new]
-        self.new_child(new, pipe, lock)
+        pipe = wrap.child_pipe_map[new]
+        self.new_child(new, pipe)
         new_em = self._resource_map[new]
         killed_em = self._resource_map[killed]
         new_em.init_from_event_manager(killed_em)
@@ -414,36 +421,22 @@ class NfpResourceManager(NfpProcessManager, NfpEventManager):
         else:
             return self._resource_map.get(pid)
 
-    def _event_life_timedout(self, event):
-        """Callback for poller when event expires. """
-        message = "(event - %s) - expired" % (event.identify())
-        LOG.debug(message)
-        self._scheduled_event_complete(event, expired=True)
-
-    def _event_timedout(self, event):
+    def _poll_timedout(self, event):
         """Callback for poller when event timesout. """
         message = "(event - %s) - timedout" % (event.identify())
         LOG.debug(message)
-        try:
-            assert event.desc.poll_desc
-            ref_event = self._event_cache[event.desc.poll_desc.ref]
-            assert ref_event.desc.poll_desc
-            evmanager = self._get_event_manager(ref_event.desc.worker)
-            assert evmanager
-            evmanager.dispatch_event(
-                event, event_type=nfp_event.POLL_EVENT,
-                inc_load=False, cache=False)
-        except KeyError as err:
-            err = err
-            message = "(event - %s) - timedout, not in cache" % (
-                event.identify())
-            LOG.error(message)
-        except AssertionError as aerr:
-            aerr = aerr
-            # Process associated with event could be killed.
-            # Ignore.
-            pass
 
-    def stash_event(self, event):
-        """Stash the given event. """
-        self._stash.put(event)
+        try:
+            evmanager = self._get_event_manager(event.desc.worker)
+            message = "(event-%s) event manager not found" % (event.identify())
+            assert evmanager, message
+            if nfp_path.schedule_event(event) == 'schedule':
+                evmanager.dispatch_event(event,
+                                         event_type=nfp_event.POLL_EVENT,
+                                         inc_load=False, cache=False)
+        except AssertionError as aerr:
+            LOG.error(aerr.message)
+        except Exception as e:
+            message = ("Unknown exception=%r - event=%s" % (
+                       e, event.identify()))
+            LOG.error(message)
