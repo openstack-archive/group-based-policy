@@ -212,7 +212,7 @@ class NodeCompositionPluginTestCase(
         self.assertIsNotNone(ctx.admin_context)
         self.assertIsNotNone(ctx.admin_session)
         del ctx.current_profile['nodes']
-        self.assertEqual(ctx.current_profile, profile)
+        self.assertEqual(ctx.current_profile['id'], profile['id'])
         self.assertEqual(instance['id'], ctx.instance['id'])
         self.assertEqual(provider['id'], ctx.provider['id'])
         self.assertIsNone(ctx.consumer)
