@@ -16,6 +16,8 @@ from neutron import context as n_context
 from neutron import manager
 from oslo_config import cfg
 
+from gbpservice.neutron.services.grouppolicy import (
+    policy_driver_manager as pdm)
 from gbpservice.neutron.services.servicechain.plugins.ncp import model
 from gbpservice.neutron.tests.unit.services.grouppolicy import (
     test_resource_mapping as test_gp_driver)
@@ -63,6 +65,15 @@ class ResourceMappingStitchingPlumberGBPTestCase(
 
         self.node_driver = self.sc_plugin.driver_manager.ordered_drivers[0].obj
         self.node_driver.get_plumbing_info = get_plumbing_info
+        self.saved_get_policy_target_group_status = (
+            pdm.PolicyDriverManager.get_policy_target_group_status)
+        pdm.PolicyDriverManager.get_policy_target_group_status = (
+                mock.MagicMock({}))
+
+    def tearDown(self):
+        pdm.PolicyDriverManager.get_policy_target_group_status = (
+                self.saved_get_policy_target_group_status)
+        super(ResourceMappingStitchingPlumberGBPTestCase, self).tearDown()
 
     @property
     def sc_plugin(self):
