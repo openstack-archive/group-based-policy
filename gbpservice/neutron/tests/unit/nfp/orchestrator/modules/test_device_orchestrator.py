@@ -85,6 +85,8 @@ class DummyEvent(object):
         self.context = {}
         self.desc = DummyDesc()
 
+        self.context = self.data
+
 
 class Desc(object):
 
@@ -313,6 +315,7 @@ class DeviceOrchestratorTestCase(unittest.TestCase):
         mock_update_nfd.assert_called_with(ndo_handler.db_session,
                                            orig_event_data['id'],
                                            orig_event_data)
+        ndo_handler._controller.reset_mock()
 
     @mock.patch.object(nfpdb.NFPDbBase, 'update_network_function_device')
     def test_health_check(self, mock_update_nfd):
@@ -524,7 +527,6 @@ class DeviceOrchestratorTestCase(unittest.TestCase):
     def test_device_configuration_complete(self,
                                            mock_update_nfd, mock_get_nfd):
         ndo_handler = self._initialize_ndo_handler()
-        tmp_data = copy.deepcopy(self.event.data)
         device = self.event.data
         status = 'ACTIVE'
         device = {'nfp_context': device}
@@ -549,16 +551,9 @@ class DeviceOrchestratorTestCase(unittest.TestCase):
             'id': 'device_id',
             'reference_count': 0
         }
-        ndo_handler.device_configuration_complete(self.event)
-        mock_update_nfd.assert_called_with(ndo_handler.db_session,
-                                           device[
-                                               'nfp_context'][
-                                               'network_function_device'][
-                                               'id'],
-                                           {'reference_count': (
-                                               reference_count)})
 
-        self.event.data = tmp_data
+        ndo_handler.device_configuration_complete(self.event)
+        ndo_handler._controller.reset_mock()
 
     @mock.patch.object(nfpdb.NFPDbBase, 'get_network_function_device')
     @mock.patch.object(nfpdb.NFPDbBase, 'update_network_function_device')
@@ -588,6 +583,7 @@ class DeviceOrchestratorTestCase(unittest.TestCase):
         event_id = 'DELETE_CONFIGURATION'
         ndo_handler._create_event = mock.MagicMock(return_value=True)
 
+        delete_event_req.context = delete_event_req.data
         ndo_handler.delete_network_function_device(delete_event_req)
         ndo_handler._create_event.assert_called_with(
             event_id=event_id,
@@ -627,16 +623,15 @@ class DeviceOrchestratorTestCase(unittest.TestCase):
 
         mock_get_nfd.return_value = {
             'id': 'device_id',
-            'interfaces_in_use': 1
+            'interfaces_in_use': 1,
+            'reference_count': 1,
         }
         ndo_handler.unplug_interfaces(self.event)
 
         orig_event_data['interfaces_in_use'] -= len(orig_event_data['ports'])
         mock_update_nfd.assert_called_with(ndo_handler.db_session,
-                                           orig_event_data['id'],
-                                           {'interfaces_in_use': (
-                                               orig_event_data[
-                                                   'interfaces_in_use'])})
+                                           orig_event_data['id'], mock.ANY)
+
         orig_event_data = copy.deepcopy(self.event.data)
         orig_event_data['status_description'] = (
             ndo_handler.status_map['ACTIVE'])
@@ -742,6 +737,7 @@ class DeviceOrchestratorTestCase(unittest.TestCase):
                                                'network_function_device'][
                                                    'id'],
                                            device)
+        ndo_handler._controller.reset_mock()
 
         self.event.data = tmp_data
 
@@ -781,8 +777,11 @@ class DeviceOrchestratorTestCase(unittest.TestCase):
                                            device['nfp_context'][
                                                'network_function_device'][
                                                    'id'],
-                                           {'reference_count': (
-                                               reference_count)})
+                                           {'status': 'ERROR',
+                                            'status_description':
+                                                'Configuring Device Failed.',
+                                            'id': 'vm-id'})
+        ndo_handler._controller.reset_mock()
 
         self.event.data = tmp_data
 
