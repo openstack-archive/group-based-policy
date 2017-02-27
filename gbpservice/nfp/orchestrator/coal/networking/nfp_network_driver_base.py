@@ -16,6 +16,7 @@ class NFPNetworkDriverBase(object):
 
     Handles ports, operations on them
     """
+
     def __init__(self):
         pass
 
