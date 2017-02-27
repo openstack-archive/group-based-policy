@@ -39,7 +39,7 @@ class OpenstackApi(object):
                                  config.bind_port))
         self.username = username or config.nfp_keystone_authtoken.admin_user
         self.password = password or (
-                            config.nfp_keystone_authtoken.admin_password)
+            config.nfp_keystone_authtoken.admin_password)
         self.tenant_name = (tenant_name or
                             config.nfp_keystone_authtoken.admin_tenant_name)
         self.token = None
@@ -600,13 +600,13 @@ class NeutronClient(OpenstackApi):
             # 'security_group_id': 'c90c7b29-f653-4c41-ae1a-0290dc64e020'}
             sg_rule_info = {"security_group_rule": attrs}
             return neutron.create_security_group_rule(
-                                body=sg_rule_info)['security_group_rule']
+                body=sg_rule_info)['security_group_rule']
         except Exception as ex:
             err = ("Failed to get security groups from"
                    " Openstack Neutron service's response"
                    " KeyError :: %s" % (ex))
             LOG.error(err)
-            #raise Exception(err)
+            # raise Exception(err)
 
     def get_ports(self, token, filters=None):
         """ List Ports
@@ -938,7 +938,7 @@ class NeutronClient(OpenstackApi):
             neutron = neutron_client.Client(token=token,
                                             endpoint_url=self.network_service)
             loadbalancers = neutron.list_loadbalancers(**filters).get(
-                    'loadbalancers', [])
+                'loadbalancers', [])
             return loadbalancers
         except Exception as ex:
             err = ("Failed to read pool list from"
@@ -1272,7 +1272,7 @@ class GBPClient(OpenstackApi):
             gbp = gbp_client.Client(token=token,
                                     endpoint_url=self.network_service)
             return gbp.create_network_service_policy(
-                    body=network_service_policy_info)['network_service_policy']
+                body=network_service_policy_info)['network_service_policy']
         except Exception as ex:
             err = ("Failed to create network service policy "
                    "Error :: %s" % (ex))
@@ -1294,7 +1294,7 @@ class GBPClient(OpenstackApi):
                                     endpoint_url=self.network_service)
             filters = filters if filters is not None else {}
             return gbp.list_network_service_policies(**filters)[
-                                                    'network_service_policies']
+                'network_service_policies']
         except Exception as ex:
             err = ("Failed to list network service policies. Reason %s" % ex)
             LOG.error(err)
