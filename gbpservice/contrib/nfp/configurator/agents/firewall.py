@@ -11,6 +11,7 @@
 #    under the License.
 
 import operator
+import os
 import oslo_messaging as messaging
 import requests
 
@@ -23,6 +24,8 @@ from gbpservice.contrib.nfp.configurator.lib import utils as load_driver
 from gbpservice.nfp.core import event as nfp_event
 from gbpservice.nfp.core import log as nfp_logging
 from gbpservice.nfp.core import module as nfp_api
+
+from oslo_serialization import jsonutils
 
 LOG = nfp_logging.getLogger(__name__)
 
@@ -52,13 +55,12 @@ class FwaasRpcSender(agent_base.AgentBaseEventHandler):
         msg = {'info': {'service_type': const.SERVICE_TYPE,
                         'context': agent_info['context']},
                'notification': [{
-                     'resource': agent_info['resource'],
-                     'data': {'firewall_id': firewall_id,
-                              'host': self.host,
-                              'status': status,
-                              'notification_type': (
-                                    'set_firewall_status'),
-                              'firewall': firewall}}]
+                   'resource': agent_info['resource'],
+                   'data': {'firewall_id': firewall_id,
+                            'host': self.host,
+                            'status': status,
+                            'notification_type': (
+                                'set_firewall_status')}}]
                }
         LOG.info(_LI("Sending Notification 'Set Firewall Status' to "
                      "Orchestrator for firewall: %(fw_id)s with status:"
@@ -78,12 +80,11 @@ class FwaasRpcSender(agent_base.AgentBaseEventHandler):
         msg = {'info': {'service_type': const.SERVICE_TYPE,
                         'context': agent_info['context']},
                'notification': [{
-                     'resource': agent_info['resource'],
-                     'data': {'firewall_id': firewall_id,
-                              'host': self.host,
-                              'notification_type': (
-                                    'firewall_deleted'),
-                              'firewall': firewall}}]
+                   'resource': agent_info['resource'],
+                   'data': {'firewall_id': firewall_id,
+                            'host': self.host,
+                            'notification_type': (
+                                'firewall_deleted')}}]
                }
         LOG.info(_LI("Sending Notification 'Firewall Deleted' to "
                      "Orchestrator for firewall: %(fw_id)s "),
@@ -125,12 +126,24 @@ class FWaasRpcManager(agent_base.AgentBaseRPCManager):
 
         """
 
+        # To solve the huge data issue with firewalls,
+        # especially with 250 firewall rule test which
+        # gets multipled with each consumer in the chain.
+        # Even the zipped data is huge and cannot be sent
+        # over pipe. Writing it to file here and event handler
+        # will read it from file and process further.
+
+        filename = "/tmp/" + firewall['id']
+        with open(filename, 'w') as f:
+            f.write(jsonutils.dumps(firewall))
+
         arg_dict = {'context': context,
-                    'firewall': firewall,
+                    'firewall': {'file_path': filename},
                     'host': host}
         # REVISIT(mak): How to send large data ?
         # New API required to send over unix sockert ?
         context['service_info'] = {}
+
         # ev = self.sc.new_event(id=method, data={}, key=None)
         ev = self.sc.new_event(id=method, data=arg_dict, key=None)
         self.sc.post_event(ev)
@@ -225,6 +238,20 @@ class FWaasEventHandler(nfp_api.NfpEventHandler):
             # the API context alongside other relevant information like
             # service vendor and type. Agent info is constructed inside
             # the demuxer library.
+
+            if ev.data['firewall'].get('file_path', None):
+                filename = ev.data['firewall']['file_path']
+                string = str()
+                with open(filename, 'r') as f:
+                    string = f.read()
+                ev.data['firewall'] = jsonutils.loads(string)
+                try:
+                    os.remove(filename)
+                except Exception as e:
+                    msg = ("Exception while removing the file %r, "
+                           "with error: %r" % (filename, e))
+                    LOG.error(msg)
+
             agent_info = ev.data['context']['agent_info']
             service_vendor = agent_info['service_vendor']
             service_feature = agent_info.get('service_feature', '')
@@ -252,7 +279,7 @@ class FWaasEventHandler(nfp_api.NfpEventHandler):
             filter_rules.append({k: rule[k] for k in filter_keys})
 
         unique_rules = [dict(tupleized) for tupleized in set(
-                            tuple(rule.items()) for rule in filter_rules)]
+            tuple(rule.items()) for rule in filter_rules)]
         result = []
         for d1 in unique_rules:
             for d2 in rules:
@@ -272,11 +299,11 @@ class FWaasEventHandler(nfp_api.NfpEventHandler):
         """
 
         context = ev.data['context']
-        agent_info = context.pop('agent_info')
+        agent_info = context.get('agent_info')
         firewall = ev.data.get('firewall')
         host = ev.data.get('host')
         firewall['firewall_rule_list'] = self._remove_duplicate_fw_rules(
-                                             firewall['firewall_rule_list'])
+            firewall['firewall_rule_list'])
 
         if ev.id == const.FIREWALL_CREATE_EVENT:
             if not self._is_firewall_rule_exists(firewall):
@@ -284,8 +311,8 @@ class FWaasEventHandler(nfp_api.NfpEventHandler):
                        "status to ACTIVE %s" % (firewall))
                 LOG.info(msg)
                 return self.plugin_rpc.set_firewall_status(
-                                agent_info, firewall['id'],
-                                common_const.STATUS_ACTIVE, firewall)
+                    agent_info, firewall['id'],
+                    common_const.STATUS_ACTIVE, firewall)
             # Added to handle in service vm agents. VM agent will add
             # default DROP rule.
             # if not self._is_firewall_rule_exists(firewall):
@@ -349,8 +376,8 @@ class FWaasEventHandler(nfp_api.NfpEventHandler):
         elif ev.id == const.FIREWALL_UPDATE_EVENT:
             if not self._is_firewall_rule_exists(firewall):
                 return self.plugin_rpc.set_firewall_status(
-                                agent_info,
-                                common_const.STATUS_ACTIVE, firewall)
+                    agent_info,
+                    common_const.STATUS_ACTIVE, firewall)
             try:
                 status = self.method(context, firewall, host)
             except Exception as err:

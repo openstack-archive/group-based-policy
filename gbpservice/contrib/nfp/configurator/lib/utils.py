@@ -69,7 +69,7 @@ class ConfiguratorUtils(object):
                 if inspect.isclass(class_obj):
                     key = ''
                     if hasattr(class_obj, 'service_type') and (
-                         not service_type or (service_type.lower() in (
+                        not service_type or (service_type.lower() in (
                             class_obj.service_type.lower()))):
                         key += class_obj.service_type
                     else:
@@ -112,7 +112,7 @@ class ConfiguratorUtils(object):
                     agent = __import__(pkg, globals(),
                                        locals(), [fname[:-3]], -1)
                     imported_service_agents += [
-                                    eval('agent.%s' % (fname[:-3]))]
+                        eval('agent.%s' % (fname[:-3]))]
                     # modules += [__import__(fname[:-3])]
             sys.path = syspath
         return imported_service_agents
