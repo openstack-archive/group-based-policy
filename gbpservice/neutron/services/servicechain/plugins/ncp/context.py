@@ -69,9 +69,18 @@ def _get_ptg_or_ep(context, group_id):
         return None, False
     group = None
     is_group_external = False
+    # skipping policy target group status call to avoid loop while
+    # getting servicechain instance status
+    fields = ['consumed_policy_rule_sets', 'description',
+              'enforce_service_chains', 'id', 'l2_policy_id', 'name',
+              'network_service_policy_id', 'policy_targets',
+              'provided_policy_rule_sets', 'proxied_group_id',
+              'proxy_group_id', 'proxy_type', 'service_management', 'shared',
+              'subnets', 'tenant_id']
     if group_id:
         groups = get_gbp_plugin().get_policy_target_groups(
-                                    context, filters = {'id': [group_id]})
+                                    context, filters = {'id': [group_id]},
+                                    fields = fields)
         if not groups:
             groups = get_gbp_plugin().get_external_policies(
                                     context, filters = {'id': [group_id]})
