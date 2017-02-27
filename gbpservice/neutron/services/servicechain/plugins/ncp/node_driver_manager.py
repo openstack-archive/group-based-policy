@@ -96,6 +96,15 @@ class NodeDriverManager(stevedore.named.NamedExtensionManager):
             driver.validate_update(context)
         return driver
 
+    def schedule_get(self, context):
+        """Schedule Node Driver to get Node details.
+
+        Given a NodeContext, this method returns the driver capable of
+        getting details the specific node.
+        """
+        driver = self.get_owning_driver(context)
+        return driver
+
     def clear_node_owner(self, context):
         """Remove Node Driver ownership set for a Node
 
