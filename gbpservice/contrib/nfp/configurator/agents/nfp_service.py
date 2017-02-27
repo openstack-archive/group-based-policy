@@ -15,7 +15,7 @@ import oslo_messaging as messaging
 
 from gbpservice.contrib.nfp.configurator.agents import agent_base
 from gbpservice.contrib.nfp.configurator.lib import (
-                                nfp_service_constants as const)
+    nfp_service_constants as const)
 from gbpservice.contrib.nfp.configurator.lib import utils as load_driver
 from gbpservice.nfp.core import event as nfp_event
 from gbpservice.nfp.core import log as nfp_logging

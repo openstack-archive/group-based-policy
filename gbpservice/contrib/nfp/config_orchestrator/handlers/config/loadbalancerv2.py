@@ -17,6 +17,7 @@ from gbpservice.contrib.nfp.config_orchestrator.common import common
 from gbpservice.contrib.nfp.config_orchestrator.common import lbv2_constants
 from gbpservice.nfp.common import constants as const
 from gbpservice.nfp.common import data_formatter as df
+from gbpservice.nfp.common import utils
 from gbpservice.nfp.core import context as module_context
 from gbpservice.nfp.core import log as nfp_logging
 from gbpservice.nfp.lib import transport
@@ -156,11 +157,13 @@ class Lbv2Agent(loadbalancer_dbv2.LoadBalancerPluginDbv2):
                 'context_resource_data': context_resource_data}
 
         ctx_dict, rsrc_ctx_dict = self._prepare_resource_context_dicts(**args)
-
+        service_vm_context = utils.get_service_vm_context(
+                                                description['service_vendor'])
         nfp_context.update({'neutron_context': ctx_dict,
                             'requester': 'nas_service',
                             'logging_context':
-                                module_context.get()['log_context']})
+                                module_context.get()['log_context'],
+                            'service_vm_context': service_vm_context})
         resource_type = 'loadbalancerv2'
         resource = name
         resource_data = {'neutron_context': rsrc_ctx_dict}

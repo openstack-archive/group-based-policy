@@ -134,3 +134,6 @@ SERVICE_DELETE_TIMEOUT = 600
 
 # heat stack creation timeout
 STACK_ACTION_WAIT_TIME = 300
+
+# default directory for config files
+CONFIG_DIR = '/etc/nfp/'

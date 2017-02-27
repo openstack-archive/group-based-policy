@@ -261,7 +261,7 @@ class NfpResourceManager(NfpProcessManager, NfpEventManager):
             LOG.debug(message)
         except AssertionError as aerr:
             message = "%s" % (aerr.message)
-            LOG.error(message)
+            LOG.debug(message)
         finally:
             # Release the sequencer for this sequence,
             # so that next event can get scheduled.
@@ -435,7 +435,7 @@ class NfpResourceManager(NfpProcessManager, NfpEventManager):
                                          event_type=nfp_event.POLL_EVENT,
                                          inc_load=False, cache=False)
         except AssertionError as aerr:
-            LOG.error(aerr.message)
+            LOG.debug(aerr.message)
         except Exception as e:
             message = ("Unknown exception=%r - event=%s" % (
                        e, event.identify()))

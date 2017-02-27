@@ -33,6 +33,7 @@ class LBaasRpcSender(data_filter.Filter):
     the LBaaS Neutron plugin.
 
     """
+
     def __init__(self, sc):
         self.notify = agent_base.AgentBaseNotification(sc)
 
@@ -101,7 +102,7 @@ class LBaasRpcSender(data_filter.Filter):
                                  'data': {'pool_id': pool_id,
                                           'stats': stats,
                                           'notification_type': (
-                                                        'update_pool_stats'),
+                                              'update_pool_stats'),
                                           'pool': pool_id}}]
                }
         LOG.info(_LI("Sending Notification 'Update Pool Stats' "
@@ -398,7 +399,7 @@ class LBaaSRpcManager(agent_base.AgentBaseRPCManager):
 
         """
         old_val, new_val = self.get_diff_of_dict(
-                               old_health_monitor, health_monitor)
+            old_health_monitor, health_monitor)
         arg_dict = {'context': context,
                     'old_health_monitor': old_health_monitor,
                     'health_monitor': health_monitor,
