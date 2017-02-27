@@ -29,7 +29,9 @@ function assign_user_role_credential {
 
 function namespace_delete {
     TOP_DIR=$1
-    source $TOP_DIR/openrc neutron service
+    source $TOP_DIR/openrc
+    source $TOP_DIR/exerciserc
+    source $TOP_DIR/openrc demo demo
     #Deletion namespace
     NFP_P=`sudo ip netns | grep "nfp-proxy"`
     if [ ${#NFP_P} -ne 0 ]; then
@@ -134,7 +136,8 @@ function namespace_create {
 
 function create_nfp_gbp_resources {
    TOP_DIR=$1
-   source $TOP_DIR/openrc neutron service
+   source $TOP_DIR/openrc 
+   source $TOP_DIR/openrc demo demo
    IMAGE_PATH=$(cat $DISKIMAGE_CREATE_DIR/output/last_built_image_path)
    IMAGE_NAME=`basename "$IMAGE_PATH"`
    IMAGE_NAME_FLAT="${IMAGE_NAME%.*}"
@@ -155,7 +158,8 @@ function create_nfp_gbp_resources {
 
 function delete_nfp_gbp_resources {
    TOP_DIR=$1
-   source $TOP_DIR/openrc neutron service
+   source $TOP_DIR/openrc
+   source $TOP_DIR/openrc demo demo
 
    neutron port-delete nfp-proxy_port
 
@@ -172,7 +176,8 @@ function delete_nfp_gbp_resources {
 
 function get_router_namespace {
     TOP_DIR=$1
-    source $TOP_DIR/openrc neutron service
+    source $TOP_DIR/openrc
+    source $TOP_DIR/openrc demo demo
 
     GROUP="svc_management_ptg"
     echo "GroupName: $GROUP"
@@ -244,7 +249,7 @@ function copy_nfp_files_and_start_process {
 
     echo "Running gbp-db-manage"
 
-    source $TOP_DIR/openrc neutron service
+    source $TOP_DIR/openrc demo demo
 
     gbp-db-manage --config-file /etc/neutron/neutron.conf upgrade head
     sleep 2
