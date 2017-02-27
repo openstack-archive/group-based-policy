@@ -13,10 +13,11 @@
 
 import copy
 import requests
+import time
 
 from gbpservice.contrib.nfp.configurator.drivers.base import base_driver
 from gbpservice.contrib.nfp.configurator.drivers.vpn.vyos import (
-                                                vyos_vpn_constants as const)
+    vyos_vpn_constants as const)
 from gbpservice.contrib.nfp.configurator.lib import constants as common_const
 from gbpservice.contrib.nfp.configurator.lib import data_parser
 from gbpservice.contrib.nfp.configurator.lib import vpn_constants as vpn_const
@@ -41,6 +42,7 @@ class RestApi(object):
     Provides different methods to make ReST calls to the service VM,
     to update the configurations
     """
+
     def __init__(self, vm_mgmt_ip):
         self.vm_mgmt_ip = vm_mgmt_ip
         self.timeout = const.REST_TIMEOUT
@@ -453,6 +455,9 @@ class VpnGenericConfigDriver(base_driver.BaseDriver):
 
         msg = ("Persistent rule successfully added.")
         LOG.info(msg)
+        # wait for 10secs for the ip address to get configured. Sometimes
+        # observed that 'set_routes' fail with 'ip not configured' error.
+        time.sleep(10)
         return common_const.STATUS_SUCCESS
 
     def _clear_static_ips(self, resource_data):
@@ -901,7 +906,7 @@ class VpnaasIpsecDriver(VpnGenericConfigDriver):
 
     def _get_ipsec_tunnel_local_cidr(self, svc_context):
         return self._get_ipsec_tunnel_local_cidr_from_vpnsvc(
-                                                        svc_context['service'])
+            svc_context['service'])
 
     def _ipsec_create_conn(self, context, mgmt_fip, resource_data):
         """
@@ -931,7 +936,7 @@ class VpnaasIpsecDriver(VpnGenericConfigDriver):
             self._get_ipsec_tunnel_local_cidr_from_vpnsvc(conn))
         if standby_fip:
             svc_context['siteconns'][0]['connection']['standby_fip'] = (
-                                                                standby_fip)
+                standby_fip)
         conn = svc_context['siteconns'][0]['connection']
         conn['description'] = description
         svc_context['siteconns'][0]['connection']['stitching_fixed_ip'] = (
