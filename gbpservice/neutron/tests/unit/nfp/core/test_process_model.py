@@ -10,9 +10,11 @@
 #  License for the specific language governing permissions and limitations
 #  under the License.
 
+from gbpservice.nfp.core import context as nfp_context
 from gbpservice.nfp.core import controller as nfp_controller
 from gbpservice.nfp.core import event as nfp_event
 from gbpservice.nfp.core import log as nfp_logging
+from gbpservice.nfp.core import manager as nfp_manager
 from gbpservice.nfp.core import worker as nfp_worker
 import mock
 import multiprocessing as multiprocessing
@@ -51,11 +53,10 @@ class MockedPipe(object):
 class MockedProcess(object):
 
     def __init__(self, parent_pipe=None, child_pipe=None,
-        lock=None, controller=None):
+                 controller=None):
 
         self.parent_pipe = parent_pipe
         self.child_pipe = child_pipe
-        self.lock = lock
         self.controller = controller
         self.daemon = True
         self.pid = random.randint(8888, 9999)
@@ -64,14 +65,12 @@ class MockedProcess(object):
         self.worker = nfp_worker.NfpWorker({}, threads=0)
         self.worker.parent_pipe = self.parent_pipe
         self.worker.pipe = self.child_pipe
-        self.worker.lock = self.lock
         self.worker.controller = nfp_controller.NfpController(
             self.controller._conf, singleton=False)
 
         # fork a new controller object
         self.worker.controller.PROCESS_TYPE = "worker"
         self.worker.controller._pipe = self.worker.pipe
-        self.worker.controller._lock = self.worker.lock
         self.worker.controller._event_handlers = (
             self.controller._event_handlers)
         self.worker.event_handlers = self.controller.get_event_handlers()
@@ -82,34 +81,31 @@ class MockedProcess(object):
             self.controller._process_event)
 
 
-class MockedLock(object):
-    def __init__(self):
-        pass
-
-    def acquire(self):
-        pass
-
-    def release(self):
-        pass
-
-
 def mocked_pipe(**kwargs):
     return MockedPipe(), MockedPipe()
 
 
 def mocked_process(target=None, args=None):
     return MockedProcess(parent_pipe=args[1],
-                         child_pipe=args[2], lock=args[3],
-                         controller=args[4])
-
-
-def mocked_lock():
-    return MockedLock()
+                         child_pipe=args[2],
+                         controller=args[3])
 
 
 nfp_controller.PIPE = mocked_pipe
 nfp_controller.PROCESS = mocked_process
-nfp_controller.LOCK = mocked_lock
+
+
+class MockedWatchdog(object):
+
+    def __init__(self, handler, seconds=1, event=None):
+        if event and event.desc.type == 'poll_event':
+            # time.sleep(seconds)
+            handler(event=event)
+
+    def cancel(self):
+        pass
+
+nfp_manager.WATCHDOG = MockedWatchdog
 
 
 class Object(object):
@@ -119,6 +115,9 @@ class Object(object):
 
 
 class Test_Process_Model(unittest.TestCase):
+
+    def setUp(self):
+        nfp_context.init()
 
     def _mocked_fork(self, args):
         proc = Object()
@@ -277,7 +276,10 @@ class Test_Process_Model(unittest.TestCase):
 
         self.assertTrue(False)
 
-    def mocked_pipe_send(self, pipe, lock, event):
+    def mocked_compress(self, event):
+        pass
+
+    def mocked_pipe_send(self, pipe, event):
         if event.id == 'EVENT_1':
             if hasattr(event, 'desc'):
                 if event.desc.worker:
@@ -328,10 +330,12 @@ class Test_Process_Model(unittest.TestCase):
         self.assertTrue(called)
 
     @mock.patch(
-        'gbpservice.nfp.core.controller.NfpController.pipe_send'
-    )
-    def test_load_distribution_to_workers(self, mock_pipe_send):
+        'gbpservice.nfp.core.controller.NfpController.pipe_send')
+    @mock.patch(
+        'gbpservice.nfp.core.controller.NfpController.compress')
+    def test_load_distribution_to_workers(self, mock_compress, mock_pipe_send):
         mock_pipe_send.side_effect = self.mocked_pipe_send
+        mock_compress.side_effect = self.mocked_compress
         conf = oslo_config.CONF
         conf.nfp_modules_path = NFP_MODULES_PATH
         controller = nfp_controller.NfpController(conf, singleton=False)
@@ -501,20 +505,22 @@ class Test_Process_Model(unittest.TestCase):
         controller.event_complete(event_1)
         controller.event_complete(event_2)
 
-    @mock.patch(
-        'gbpservice.nfp.core.controller.NfpController.pipe_send'
-    )
-    def test_poll_event(self, mock_pipe_send):
-        mock_pipe_send.side_effect = self.mocked_pipe_send
-        conf = oslo_config.CONF
-        conf.nfp_modules_path = NFP_MODULES_PATH
-        controller = nfp_controller.NfpController(conf, singleton=False)
-        self.controller = controller
-        nfp_controller.load_nfp_modules(conf, controller)
-        # Mock launching of a worker
-        controller.launch(1)
-        controller._update_manager()
-        self.controller = controller
+        @mock.patch(
+            'gbpservice.nfp.core.controller.NfpController.pipe_send')
+        @mock.patch(
+            'gbpservice.nfp.core.controller.NfpController.compress')
+        def test_poll_event(self, mock_compress, mock_pipe_send):
+            mock_pipe_send.side_effect = self.mocked_pipe_send
+            mock_compress.side_effect = self.mocked_compress
+            conf = oslo_config.CONF
+            conf.nfp_modules_path = NFP_MODULES_PATH
+            controller = nfp_controller.NfpController(conf, singleton=False)
+            self.controller = controller
+            nfp_controller.load_nfp_modules(conf, controller)
+            # Mock launching of a worker
+            controller.launch(1)
+            controller._update_manager()
+            self.controller = controller
 
         wait_obj = multiprocessing.Event()
         setattr(controller, 'poll_event_wait_obj', wait_obj)
@@ -526,6 +532,9 @@ class Test_Process_Model(unittest.TestCase):
         setattr(event, 'desc', desc)
         event.desc.worker = controller.get_childrens().keys()[0]
 
+        ctx = nfp_context.get()
+        ctx['log_context']['namespace'] = 'nfp_module'
+
         controller.poll_event(event, spacing=1)
         # controller._manager.manager_run()
 
@@ -533,7 +542,7 @@ class Test_Process_Model(unittest.TestCase):
         # relinquish for 1sec
         time.sleep(1)
 
-        controller.poll()
+        # controller.poll()
         controller.poll_event_wait_obj.wait(0.1)
         called = controller.poll_event_wait_obj.is_set()
         end_time = time.time()
@@ -541,9 +550,11 @@ class Test_Process_Model(unittest.TestCase):
         self.assertTrue(round(end_time - start_time) == 1.0)
 
     @mock.patch(
-        'gbpservice.nfp.core.controller.NfpController.pipe_send'
-    )
-    def test_poll_event_with_no_worker(self, mock_pipe_send):
+        'gbpservice.nfp.core.controller.NfpController.pipe_send')
+    @mock.patch(
+        'gbpservice.nfp.core.controller.NfpController.compress')
+    def test_poll_event_with_no_worker(self, mock_compress, mock_pipe_send):
+        mock_compress.side_effect = self.mocked_compress
         mock_pipe_send.side_effect = self.mocked_pipe_send
         conf = oslo_config.CONF
         conf.nfp_modules_path = NFP_MODULES_PATH
@@ -566,6 +577,9 @@ class Test_Process_Model(unittest.TestCase):
         # Explicitly make it none
         event.desc.worker = None
 
+        ctx = nfp_context.get()
+        ctx['log_context']['namespace'] = 'nfp_module'
+
         controller.poll_event(event, spacing=1)
         # controller._manager.manager_run()
 
@@ -573,7 +587,7 @@ class Test_Process_Model(unittest.TestCase):
         # relinquish for 1sec
         time.sleep(1)
 
-        controller.poll()
+        # controller.poll()
         controller.poll_event_wait_obj.wait(0.1)
         called = controller.poll_event_wait_obj.is_set()
         end_time = time.time()
@@ -581,10 +595,14 @@ class Test_Process_Model(unittest.TestCase):
         self.assertTrue(round(end_time - start_time) == 1.0)
 
     @mock.patch(
-        'gbpservice.nfp.core.controller.NfpController.pipe_send'
-    )
-    def test_poll_event_with_decorator_spacing(self, mock_pipe_send):
+        'gbpservice.nfp.core.controller.NfpController.pipe_send')
+    @mock.patch(
+        'gbpservice.nfp.core.controller.NfpController.compress')
+    def test_poll_event_with_decorator_spacing(self,
+                                               mock_compress, mock_pipe_send):
+
         mock_pipe_send.side_effect = self.mocked_pipe_send
+        mock_compress.side_effect = self.mocked_compress
         conf = oslo_config.CONF
         conf.nfp_modules_path = NFP_MODULES_PATH
         controller = nfp_controller.NfpController(conf, singleton=False)
@@ -606,6 +624,8 @@ class Test_Process_Model(unittest.TestCase):
         # Explicitly make it none
         event.desc.worker = None
 
+        ctx = nfp_context.get()
+        ctx['log_context']['namespace'] = 'nfp_module'
         controller.poll_event(event)
         # controller._manager.manager_run()
 
@@ -613,14 +633,17 @@ class Test_Process_Model(unittest.TestCase):
         # relinquish for 2secs
         time.sleep(2)
 
-        controller.poll()
+        # controller.poll()
         controller.poll_event_dec_wait_obj.wait(0.1)
         called = controller.poll_event_dec_wait_obj.is_set()
         end_time = time.time()
         self.assertTrue(called)
         self.assertTrue(round(end_time - start_time) == 2.0)
 
-    def test_poll_event_with_no_spacing(self):
+    @mock.patch(
+        'gbpservice.nfp.core.controller.NfpController.compress')
+    def test_poll_event_with_no_spacing(self, mock_compress):
+        mock_compress.side_effect = self.mocked_compress
         conf = oslo_config.CONF
         conf.nfp_modules_path = NFP_MODULES_PATH
         controller = nfp_controller.NfpController(conf, singleton=False)
@@ -643,7 +666,10 @@ class Test_Process_Model(unittest.TestCase):
         # self.assertTrue(False)
         self.assertTrue(True)
 
-    def test_poll_event_with_no_handler(self):
+    @mock.patch(
+        'gbpservice.nfp.core.controller.NfpController.compress')
+    def test_poll_event_with_no_handler(self, mock_compress):
+        mock_compress.side_effect = self.mocked_compress
         conf = oslo_config.CONF
         conf.nfp_modules_path = NFP_MODULES_PATH
         controller = nfp_controller.NfpController(conf, singleton=False)
@@ -666,10 +692,12 @@ class Test_Process_Model(unittest.TestCase):
         self.assertTrue(False)
 
     @mock.patch(
-        'gbpservice.nfp.core.manager.NfpResourceManager._event_acked'
-    )
-    def test_event_ack_from_worker(self, mock_event_acked):
+        'gbpservice.nfp.core.manager.NfpResourceManager._event_acked')
+    @mock.patch(
+        'gbpservice.nfp.core.controller.NfpController.compress')
+    def test_event_ack_from_worker(self, mock_event_acked, mock_compress):
         mock_event_acked.side_effect = self._mocked_event_ack
+        mock_compress.side_effect = self.mocked_compress
         conf = oslo_config.CONF
         conf.nfp_modules_path = NFP_MODULES_PATH
         controller = nfp_controller.NfpController(conf, singleton=False)
@@ -704,7 +732,11 @@ class Test_Process_Model(unittest.TestCase):
         called = controller.event_ack_handler_cb_obj.is_set()
         self.assertTrue(called)
 
-    def test_post_event_from_worker(self):
+    @mock.patch(
+        'gbpservice.nfp.core.controller.NfpController.compress'
+    )
+    def test_post_event_from_worker(self, mock_compress):
+        mock_compress.side_effect = self.mocked_compress
         conf = oslo_config.CONF
         conf.nfp_modules_path = NFP_MODULES_PATH
         controller = nfp_controller.NfpController(conf, singleton=False)
@@ -734,7 +766,11 @@ class Test_Process_Model(unittest.TestCase):
         called = controller.post_event_worker_wait_obj.is_set()
         self.assertTrue(called)
 
-    def test_poll_event_from_worker(self):
+    @mock.patch(
+        'gbpservice.nfp.core.controller.NfpController.compress'
+    )
+    def test_poll_event_from_worker(self, mock_compress):
+        mock_compress.side_effect = self.mocked_compress
         conf = oslo_config.CONF
         conf.nfp_modules_path = NFP_MODULES_PATH
         controller = nfp_controller.NfpController(conf, singleton=False)
@@ -768,13 +804,17 @@ class Test_Process_Model(unittest.TestCase):
         self.assertTrue(called)
 
         time.sleep(1)
-        controller.poll()
+        # controller.poll()
 
         controller.poll_event_poll_wait_obj.wait(1)
         called = controller.poll_event_poll_wait_obj.is_set()
         self.assertTrue(called)
 
-    def test_poll_event_cancelled_from_worker(self):
+    @mock.patch(
+        'gbpservice.nfp.core.controller.NfpController.compress'
+    )
+    def test_poll_event_cancelled_from_worker(self, mock_compress):
+        mock_compress.side_effect = self.mocked_compress
         conf = oslo_config.CONF
         conf.nfp_modules_path = NFP_MODULES_PATH
         controller = nfp_controller.NfpController(conf, singleton=False)
@@ -810,14 +850,14 @@ class Test_Process_Model(unittest.TestCase):
         self.assertTrue(called)
 
         time.sleep(1)
-        controller.poll()
+        # controller.poll()
 
         controller.poll_event_poll_wait_obj.wait(1)
         called = controller.poll_event_poll_wait_obj.is_set()
         self.assertTrue(called)
 
         time.sleep(1)
-        controller.poll()
+        # controller.poll()
 
         controller.poll_event_poll_wait_obj.wait(1)
         called = controller.poll_event_poll_wait_obj.is_set()
