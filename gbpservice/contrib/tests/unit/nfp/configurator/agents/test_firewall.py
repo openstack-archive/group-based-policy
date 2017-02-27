@@ -19,7 +19,7 @@ from gbpservice.contrib.nfp.configurator.agents import firewall as fw
 from gbpservice.contrib.nfp.configurator.lib import constants as const
 from gbpservice.contrib.nfp.configurator.lib import fw_constants as fw_const
 from gbpservice.contrib.tests.unit.nfp.configurator.test_data import (
-                                                        fw_test_data as fo)
+    fw_test_data as fo)
 
 
 class FWaasRpcManagerTestCase(base.BaseTestCase):
@@ -60,13 +60,16 @@ class FWaasRpcManagerTestCase(base.BaseTestCase):
                     'firewall': self.fo.firewall,
                     'host': self.fo.host}
         with mock.patch.object(sc, 'new_event', return_value='foo') as (
-                                                            mock_sc_event), (
-             mock.patch.object(sc, 'post_event')) as mock_sc_rpc_event:
+                mock_sc_event), (
+                mock.patch.object(sc, 'post_event')) as mock_sc_rpc_event:
             call_method = getattr(agent, method.lower())
             call_method(context, self.fo.firewall, self.fo.host)
 
+            result_dict = arg_dict
+            result_dict['firewall'] = {
+                'file_path': "/tmp/%s" % (self.fo.firewall['id'])}
             mock_sc_event.assert_called_with(id=method,
-                                             data=arg_dict, key=None)
+                                             data=result_dict, key=None)
             mock_sc_rpc_event.assert_called_with('foo')
 
     def test_create_firewall_fwaasrpcmanager(self):
@@ -111,13 +114,13 @@ class FwaasHandlerTestCase(base.BaseTestCase):
         self.fo = fo.FakeObjects()
         self.ev = fo.FakeEventFirewall()
         self.firewall_rule = {
-                'id': 'rule-id', 'action': 'allow',
-                'destination_ip_address': '',
-                'destination_port': '80',
-                'enabled': 'enabled', 'ip_version': 'v4',
-                'protocol': 'tcp', 'source_ip_address': '',
-                'source_port': '', 'shared': False,
-                'position': 1
+            'id': 'rule-id', 'action': 'allow',
+            'destination_ip_address': '',
+            'destination_port': '80',
+            'enabled': 'enabled', 'ip_version': 'v4',
+            'protocol': 'tcp', 'source_ip_address': '',
+            'source_port': '', 'shared': False,
+            'position': 1
         }
 
         self.ev.data['context']['agent_info']['resource'] = 'firewall'
@@ -156,19 +159,19 @@ class FwaasHandlerTestCase(base.BaseTestCase):
         driver = mock.Mock()
 
         with mock.patch.object(
-             agent.plugin_rpc, 'set_firewall_status') as (
-                                                    mock_set_fw_status), (
+            agent.plugin_rpc, 'set_firewall_status') as (
+            mock_set_fw_status), (
             mock.patch.object(
                 agent.plugin_rpc, 'firewall_deleted')) as (mock_fw_deleted), (
             mock.patch.object(
                 driver, fw_const.FIREWALL_CREATE_EVENT.lower())) as (
-                                                        mock_create_fw), (
+            mock_create_fw), (
             mock.patch.object(
                 driver, fw_const.FIREWALL_UPDATE_EVENT.lower())) as (
-                                                        mock_update_fw), (
+            mock_update_fw), (
             mock.patch.object(
                 driver, fw_const.FIREWALL_DELETE_EVENT.lower())) as (
-                                                        mock_delete_fw), (
+            mock_delete_fw), (
             mock.patch.object(
                 agent, '_get_driver', return_value=driver)):
 
@@ -179,7 +182,7 @@ class FwaasHandlerTestCase(base.BaseTestCase):
                 firewall_rule_list = [self.firewall_rule]
             firewall.update({'firewall_rule_list': firewall_rule_list})
             self.ev.data.get('firewall').update(
-                        {'firewall_rule_list': firewall_rule_list})
+                {'firewall_rule_list': firewall_rule_list})
 
             agent_info = self.ev.data['context']['agent_info']
             agent.handle_event(self.ev)
@@ -190,28 +193,28 @@ class FwaasHandlerTestCase(base.BaseTestCase):
             if not rule_list_info:
                 if self.ev.id == fw_const.FIREWALL_CREATE_EVENT:
                     mock_set_fw_status.assert_called_with(
-                            agent_info,
-                            firewall['id'], const.STATUS_ACTIVE, firewall)
+                        agent_info,
+                        firewall['id'], const.STATUS_ACTIVE, firewall)
                 elif self.ev.id == fw_const.FIREWALL_UPDATE_EVENT:
                     mock_set_fw_status.assert_called_with(
-                            agent_info,
-                            const.STATUS_ACTIVE, firewall)
+                        agent_info,
+                        const.STATUS_ACTIVE, firewall)
                 elif self.ev.id == fw_const.FIREWALL_DELETE_EVENT:
                     mock_fw_deleted.assert_called_with(
-                            agent_info, firewall['id'], firewall)
+                        agent_info, firewall['id'], firewall)
             else:
                 if self.ev.id == fw_const.FIREWALL_CREATE_EVENT:
                     mock_create_fw.assert_called_with(
-                            context,
-                            firewall, self.fo.host)
+                        context,
+                        firewall, self.fo.host)
                 elif self.ev.id == fw_const.FIREWALL_UPDATE_EVENT:
                     mock_update_fw.assert_called_with(
-                            context,
-                            firewall, self.fo.host)
+                        context,
+                        firewall, self.fo.host)
                 elif self.ev.id == fw_const.FIREWALL_DELETE_EVENT:
                     mock_delete_fw.assert_called_with(
-                            context,
-                            firewall, self.fo.host)
+                        context,
+                        firewall, self.fo.host)
 
     def test_create_firewall_with_rule_list_info_true(self):
         """ Implements test case for create firewall method
