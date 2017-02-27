@@ -12,6 +12,7 @@
 
 from neutron._i18n import _LE
 from neutron._i18n import _LI
+from neutron._i18n import _LW
 from neutron.plugins.common import constants as pconst
 from neutron.quota import resource_registry
 from oslo_config import cfg
@@ -33,6 +34,9 @@ from gbpservice.neutron.services.servicechain.plugins import sharing
 LOG = logging.getLogger(__name__)
 
 PLUMBER_NAMESPACE = 'gbpservice.neutron.servicechain.ncp_plumbers'
+STATUS = 'status'
+STATUS_DETAILS = 'status_details'
+STATUS_SET = set([STATUS, STATUS_DETAILS])
 
 
 class NodeCompositionPlugin(servicechain_db.ServiceChainDbPlugin,
@@ -89,6 +93,16 @@ class NodeCompositionPlugin(servicechain_db.ServiceChainDbPlugin,
                 self.delete_servicechain_instance(context, instance['id'])
 
         return instance
+
+    @log.log_method_call
+    def get_servicechain_instance(self, context,
+                                  servicechain_instance_id, fields=None):
+        """Instance retrieved.
+
+        While get Servicechain Instance details, get all nodes details.
+        """
+        return self._get_resource(context, 'servicechain_instance',
+                                  servicechain_instance_id, fields)
 
     @log.log_method_call
     def update_servicechain_instance(self, context, servicechain_instance_id,
@@ -205,6 +219,12 @@ class NodeCompositionPlugin(servicechain_db.ServiceChainDbPlugin,
         return updated_sc_node
 
     @log.log_method_call
+    def get_servicechain_node(self, context, servicechain_node_id,
+                              fields = None):
+        return self._get_resource(context, 'servicechain_node',
+                                  servicechain_node_id, fields)
+
+    @log.log_method_call
     def create_servicechain_spec(self, context, servicechain_spec):
         session = context.session
         with session.begin(subtransactions=True):
@@ -236,6 +256,12 @@ class NodeCompositionPlugin(servicechain_db.ServiceChainDbPlugin,
         return updated_sc_spec
 
     @log.log_method_call
+    def get_servicechain_spec(self, context,
+                              servicechain_spec_id, fields = None):
+        return self._get_resource(context, 'servicechain_spec',
+                                  servicechain_spec_id, fields)
+
+    @log.log_method_call
     def create_service_profile(self, context, service_profile):
         session = context.session
         with session.begin(subtransactions=True):
@@ -259,6 +285,11 @@ class NodeCompositionPlugin(servicechain_db.ServiceChainDbPlugin,
             self._validate_profile_update(context, original_profile,
                                           updated_profile)
         return updated_profile
+
+    @log.log_method_call
+    def get_service_profile(self, context, service_profile_id, fields = None):
+        return self._get_resource(context, 'service_profile',
+                                  service_profile_id, fields)
 
     def update_chains_pt_added(self, context, policy_target, instance_id):
         """ Auto scaling function.
@@ -410,6 +441,74 @@ class NodeCompositionPlugin(servicechain_db.ServiceChainDbPlugin,
             result[node['id']]['context'] = node_context
             result[node['id']]['plumbing_info'] = driver.get_plumbing_info(
                 node_context)
+        return result
+
+    def _get_resource(self, context, resource_name, resource_id, fields=None):
+        session = context.session
+        deployers = {}
+        with session.begin(subtransactions=True):
+            resource = getattr(super(NodeCompositionPlugin,
+                self), 'get_' + resource_name)(context, resource_id)
+            if resource_name == 'servicechain_instance':
+                if len(resource['servicechain_specs']) > 1:
+                    raise exc.OneSpecPerInstanceAllowed()
+                try:
+                    deployers = self._get_scheduled_drivers(context, resource,
+                                                        'get')
+                except Exception:
+                    LOG.warning(_LW("Failed to get node driver"))
+
+        # Invoke drivers only if status attributes are requested
+        if not fields or STATUS_SET.intersection(set(fields)):
+            _resource = self._get_resource_status(context, resource_name,
+                                                  deployers)
+            if _resource:
+                updated_status = _resource['status']
+                updated_status_details = _resource['status_details']
+                if resource['status'] != updated_status or (
+                    resource['status_details'] != updated_status_details):
+                    new_status = {resource_name:
+                              {'status': updated_status,
+                               'status_details': updated_status_details}}
+                    session = context.session
+                    with session.begin(subtransactions=True):
+                        getattr(super(NodeCompositionPlugin, self),
+                            'update_' + resource_name)(
+                             context, resource['id'], new_status)
+                    resource['status'] = updated_status
+                    resource['status_details'] = updated_status_details
+        return self._fields(resource, fields)
+
+    def _get_resource_status(self, context, resource_name, deployers=None):
+        """
+        Invoke node drivers only for servicechain_instance.
+        Node driver should implement get_status api to return status
+        and status_details of servicechain_instance
+        """
+        if resource_name == 'servicechain_instance':
+            nodes_status = []
+            result = {'status': 'BUILD',
+                      'status_details': 'node deployment in progress'}
+            if deployers:
+                try:
+                    for deploy in deployers.values():
+                        driver = deploy['driver']
+                        nodes_status.append(driver.get_status(
+                            deploy['context']))
+                    node_status = [node['status'] for node in nodes_status]
+                    if 'ERROR' in node_status:
+                        result['status'] = 'ERROR'
+                        result['status_details'] = 'node deployment failed'
+                    elif node_status.count('ACTIVE') == len(
+                            deployers.values()):
+                        result['status'] = 'ACTIVE'
+                        result['status_details'] = 'node deployment completed'
+                except Exception as exc:
+                    LOG.error(_LE("Failed to get servicechain instance status "
+                        "from node driver, Error: %(exc)s"), {'exc': exc})
+                    return
+                return result
+        result = {'status': 'ACTIVE', 'status_details': ''}
         return result
 
     def _deploy_servicechain_nodes(self, context, deployers):
