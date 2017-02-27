@@ -15,6 +15,7 @@ import copy
 
 from gbpservice.contrib.nfp.config_orchestrator.common import common
 from gbpservice.nfp.common import constants as const
+from gbpservice.nfp.common import utils
 from gbpservice.nfp.common import data_formatter as df
 from gbpservice.nfp.common import utils
 from gbpservice.nfp.core import context as module_context
@@ -126,7 +127,10 @@ class VpnAgent(vpn_db.VPNPluginDb, vpn_db.VPNPluginRpcDbMixin):
             _prepare_resource_context_dicts(context, tenant_id,
                                             resource, resource_data,
                                             context_resource_data)
+        service_vm_context = utils.get_service_vm_context(
+                                                description['service_vendor'])
         nfp_context.update({'neutron_context': ctx_dict,
+                            'service_vm_context': service_vm_context,
                             'requester': 'nas_service',
                             'logging_context':
                                 module_context.get()['log_context']})

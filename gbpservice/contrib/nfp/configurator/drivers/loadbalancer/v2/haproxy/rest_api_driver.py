@@ -59,6 +59,7 @@ class HaproxyAmphoraLoadBalancerDriver(
 
 class AmphoraAPIClient(rest_api_driver.AmphoraAPIClient):
     """Removed SSL verification from original api client"""
+
     def __init__(self):
         super(AmphoraAPIClient, self).__init__()
         self.session = requests.Session()

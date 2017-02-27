@@ -58,9 +58,9 @@ class DataParser(object):
         for nf_config in nf_config_list:
             self.resource_data = {}
             self.resource_data.update({
-                            'tenant_id': tenant_id,
-                            'role': nf_config['role'],
-                            'mgmt_ip': nf_config['svc_mgmt_fixed_ip']})
+                'tenant_id': tenant_id,
+                'role': nf_config['role'],
+                'mgmt_ip': nf_config['svc_mgmt_fixed_ip']})
 
             self._parse_config_data(nf_config, resource)
             config_data_list.append(copy.deepcopy(self.resource_data))
@@ -72,19 +72,19 @@ class DataParser(object):
     def _parse_config_data(self, nfd, resource):
         if resource.lower() == const.HEALTHMONITOR_RESOURCE:
             return self.resource_data.update(
-                                    {'periodicity': nfd['periodicity'],
-                                     'vmid': nfd['vmid']})
+                {'periodicity': nfd['periodicity'],
+                 'vmid': nfd['vmid']})
 
         networks = nfd['networks']
         for network in networks:
             prefix = network['type']
             port = network['ports'][0]
             self.resource_data.update({
-                            (prefix + '_cidr'): network['cidr'],
-                            (prefix + '_ip'): port['fixed_ip'],
-                            (prefix + '_floating_ip'): port['floating_ip'],
-                            (prefix + '_mac'): port['mac'],
-                            (prefix + '_gw_ip'): network['gw_ip']})
+                (prefix + '_cidr'): network['cidr'],
+                (prefix + '_ip'): port['fixed_ip'],
+                (prefix + '_floating_ip'): port['floating_ip'],
+                (prefix + '_mac'): port['mac'],
+                (prefix + '_gw_ip'): network['gw_ip']})
 
         vips = nfd.get('vips')
         if not vips:
@@ -92,5 +92,5 @@ class DataParser(object):
         for vip in vips:
             prefix = vip['type'] + '_vip'
             self.resource_data.update({
-                            (prefix + '_ip'): vip['ip'],
-                            (prefix + '_mac'): vip['mac']})
+                (prefix + '_ip'): vip['ip'],
+                (prefix + '_mac'): vip['mac']})
