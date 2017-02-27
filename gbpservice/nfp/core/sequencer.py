@@ -73,6 +73,12 @@ class EventSequencer(object):
         def release(self):
             self._scheduled = None
 
+        def pop(self):
+            self.release()
+            events = list(self._waitq)
+            self._waitq.clear()
+            return events
+
     def __init__(self):
         # Sequence of related events
         # {key: sequencer()}
@@ -107,6 +113,13 @@ class EventSequencer(object):
                 message = "Sequencer empty"
                 LOG.debug(message)
                 del self._sequencer[key]
+        return events
+
+    def pop(self):
+        events = []
+        sequencers = dict(self._sequencer)
+        for key, sequencer in sequencers.iteritems():
+            events += sequencer.pop()
         return events
 
     def release(self, key, event):
