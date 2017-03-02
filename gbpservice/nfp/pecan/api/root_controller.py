@@ -12,7 +12,8 @@
 
 import pecan
 
-from gbpservice.nfp.pecan import constants
+from gbpservice.nfp.pecan.constants import controller_mode_map
+from gbpservice.nfp.pecan.constants import controllers
 
 
 class RootController(object):
@@ -20,23 +21,10 @@ class RootController(object):
     file inside controller folder inside v1
 
     """
-    _controllers = {}
 
-    for name, controller in constants.controllers.items():
-        try:
-            _controllers.update({name: __import__(controller,
-                                                  globals(),
-                                                  locals(),
-                                                  ['controllers'], -1)})
-        except Exception:
-            pass
-
-    if pecan.mode == constants.base:
-        v1 = _controllers[constants.BASE_CONTROLLER].V1Controller()
-    elif pecan.mode == constants.base_with_vm:
-        v1 = _controllers[constants.REFERENCE_CONTROLLER].V1Controller()
-    elif pecan.mode == constants.advanced:
-        v1 = _controllers[constants.ADVANCED_CONTROLLER].V1Controller()
+    controller = __import__(controllers[controller_mode_map[pecan.mode]],
+                            globals(), locals(), ['controllers'], -1)
+    v1 = controller.V1Controller()
 
     @pecan.expose()
     def get(self):
