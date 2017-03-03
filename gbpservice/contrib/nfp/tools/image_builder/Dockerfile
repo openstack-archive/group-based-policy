@@ -12,6 +12,7 @@ RUN apt-get -y update --fix-missing && apt-get -y --force-yes install\
  python-dev
 
 # python dependencies
+RUN python -m pip install -U pip
 RUN pip install\
  python-keystoneclient\
  oslo.config==3.6.0\
