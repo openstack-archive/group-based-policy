@@ -159,8 +159,7 @@ class RpcHandler(object):
         # nfp_context = request_info.get('nfp_context')
         nfp_context['log_context'] = logging_context
         if 'nfp_context' in request_info:
-            nfp_context['event_desc'] = request_info[
-                'nfp_context'].get('event_desc', {})
+            nfp_context.update(request_info['nfp_context'])
 
         for response in responses:
             resource = response.get('resource')
@@ -1342,9 +1341,11 @@ class DeviceOrchestrator(nfp_api.NfpEventHandler):
         device = event.data
         orchestration_driver = self._get_orchestration_driver(
             device['service_details']['service_vendor'])
+        nfp_context = module_context.get()
         config_params = (
             orchestration_driver.get_network_function_device_config(
-                device, nfp_constants.GENERIC_CONFIG, is_delete=True))
+                device, nfp_constants.GENERIC_CONFIG, is_delete=True,
+                devices_data=nfp_context))
         if not config_params:
             self._create_event(event_id='DRIVER_ERROR',
                                event_data=device,
@@ -1365,6 +1366,13 @@ class DeviceOrchestrator(nfp_api.NfpEventHandler):
             # unplug_interfaces and device delete to delete vms.
             return None
 
+        nf_data = {
+            'service_chain_instance': nfp_context.get(
+                'service_chain_instance'),
+            'provider': nfp_context.get('provider'),
+            'consumer': nfp_context.get('consumer')
+        }
+        device.update(nf_data)
         # Sends RPC call to configurator to delete generic config API
         self.configurator_rpc.delete_network_function_device_config(
             device, config_params)

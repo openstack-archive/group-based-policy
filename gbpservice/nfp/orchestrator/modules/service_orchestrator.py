@@ -173,7 +173,8 @@ class RpcHandler(object):
             context, network_function_id, config)
 
     @log_helpers.log_method_call
-    def delete_network_function(self, context, network_function_id):
+    def delete_network_function(self, context, network_function_id,
+            network_function_data):
         '''Delete the network Function.
 
         Invoked in an RPC call. Return the updated Network function DB object.
@@ -186,7 +187,7 @@ class RpcHandler(object):
 
         service_orchestrator = ServiceOrchestrator(self._controller, self.conf)
         service_orchestrator.delete_network_function(
-            context, network_function_id)
+            context, network_function_id, network_function_data)
 
     @log_helpers.log_method_call
     def policy_target_added_notification(self, context, network_function_id,
@@ -377,8 +378,7 @@ class RpcHandlerConfigurator(object):
         logging_context = request_info.get('logging_context', {})
         nfp_context['log_context'] = logging_context
         if 'nfp_context' in request_info:
-            nfp_context['event_desc'] = request_info[
-                'nfp_context'].get('event_desc', {})
+            nfp_context.update(request_info['nfp_context'])
 
         serialize = False
 
@@ -943,6 +943,16 @@ class ServiceOrchestrator(nfp_api.NfpEventHandler):
                 self.db_session, network_function)
         network_function.pop('service_config')
 
+        # Update ncp_node_instance_nf_mapping with nf_id
+        network_function_map = {
+            'network_function_id': network_function['id'],
+            'status': nfp_constants.PENDING_CREATE,
+            'status_details': 'Processing create in orchestrator'
+        }
+        with nfp_ctx_mgr.DbContextManager:
+            self.db_handler.update_node_instance_network_function_map(
+                self.db_session, service_id, service_chain_id,
+                network_function_map)
         nfp_path.create_path(network_function['id'])
         nfp_context['event_desc']['path_type'] = 'create'
         nfp_context['event_desc']['path_key'] = network_function['id']
@@ -1006,7 +1016,8 @@ class ServiceOrchestrator(nfp_api.NfpEventHandler):
                                                  user_config,
                                                  operation='update')
 
-    def delete_network_function(self, context, network_function_id):
+    def delete_network_function(self, context, network_function_id,
+                                network_function_data):
         nfp_context = module_context.get()
         nfp_path.delete_path(network_function_id)
         nfp_context['event_desc']['path_type'] = 'delete'
@@ -1061,6 +1072,13 @@ class ServiceOrchestrator(nfp_api.NfpEventHandler):
         network_function = {
             'status': nfp_constants.PENDING_DELETE
         }
+        service_chain_instance_details = {
+                'service_chain_instance': network_function_data[
+                    'service_chain_instance'],
+                'provider': network_function_data['provider'],
+                'consumer': network_function_data['consumer']
+        }
+        network_function_details.update(service_chain_instance_details)
         with nfp_ctx_mgr.DbContextManager as dcm:
             network_function = dcm.lock(
                 self.db_session,
@@ -1090,6 +1108,7 @@ class ServiceOrchestrator(nfp_api.NfpEventHandler):
                                            binding_key=network_function_id))
             GRAPH[dnf_event].append(ducf_event)
         else:
+            service_config.update(service_chain_instance_details)
             self.delete_network_function_user_config(network_function_id,
                                                      service_config)
         if not base_mode_support:
