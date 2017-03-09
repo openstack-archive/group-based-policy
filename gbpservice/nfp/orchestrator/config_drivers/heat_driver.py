@@ -256,14 +256,13 @@ class HeatDriver(object):
         return
 
     def _get_provider_ptg_info(self, auth_token, sci_id):
-        with nfp_ctx_mgr.GBPContextManager as gcm:
-            servicechain_instance = gcm.retry(
-                self.gbp_client.get_servicechain_instance,
-                auth_token, sci_id)
+        nfp_context = module_context.get()
+        with nfp_ctx_mgr.GBPContextManager:
+            servicechain_instance = nfp_context.get('service_chain_instance')
             provider_ptg_id = servicechain_instance['provider_ptg_id']
-            provider_ptg = gcm.retry(self.gbp_client.get_policy_target_group,
-                                     auth_token, provider_ptg_id)
-            return provider_ptg
+            for ptg in nfp_context['provider']['ptg']:
+                if ptg['id'] == provider_ptg_id:
+                    return ptg
 
     def _pre_stack_cleanup(self, network_function):
         nfp_context = module_context.get()
@@ -340,7 +339,15 @@ class HeatDriver(object):
         return lb_vip, lb_vip_name
 
     def _get_lb_service_targets(self, auth_token, provider):
+        nfp_context = module_context.get()
         service_targets = []
+        if 'delete' in nfp_context['log_context']['path']:
+            for policy_target in nfp_context['provider']['pt']:
+                if ('endpoint' in policy_target['name'] and
+                        self._is_service_target(policy_target)):
+                    service_targets.append(policy_target)
+            return service_targets
+
         if provider.get("policy_targets"):
             filters = {'id': provider.get("policy_targets")}
         else:
@@ -366,14 +373,6 @@ class HeatDriver(object):
         service_targets = self._get_lb_service_targets(admin_token, provider)
         if not (lb_vip and service_targets):
             return None
-
-        for service_target in service_targets:
-            service_target_id = service_target['id']
-            policy_target_info = {'cluster_id': ''}
-            with nfp_ctx_mgr.GBPContextManager as gcm:
-                gcm.retry(self.gbp_client.update_policy_target,
-                          admin_token,
-                          service_target_id, policy_target_info)
 
     def _get_provider_pt(self, auth_token, provider):
         if provider.get("policy_targets"):
