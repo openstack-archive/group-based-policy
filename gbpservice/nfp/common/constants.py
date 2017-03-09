@@ -54,7 +54,9 @@ PENDING_CREATE = "PENDING_CREATE"
 PENDING_UPDATE = "PENDING_UPDATE"
 PENDING_DELETE = "PENDING_DELETE"
 ERROR = "ERROR"
+BUILD = "BUILD"
 
+NFP_STATUS = [ACTIVE, PENDING_CREATE, PENDING_UPDATE, PENDING_DELETE, ERROR]
 DEVICE_ORCHESTRATOR = "device_orch"
 SERVICE_ORCHESTRATOR = "service_orch"
 
@@ -137,3 +139,18 @@ STACK_ACTION_WAIT_TIME = 300
 
 # default directory for config files
 CONFIG_DIR = '/etc/nfp/'
+
+NFP_STATUS_MAP = {
+     ERROR: {'status': ERROR,
+             'status_details': 'Node deployment failed'},
+     ACTIVE: {'status': ACTIVE,
+              'status_details': 'Node deployment completed'},
+     BUILD: {'status': BUILD,
+            'status_details': 'Node deployment is in progress'},
+     PENDING_CREATE: {'status': BUILD,
+                      'status_details': 'Node deployment is in progress'},
+     PENDING_UPDATE: {'status': BUILD,
+                      'status_details': 'update of node is in progress'},
+     PENDING_DELETE: {'status': BUILD,
+                      'status_details': 'delete of node is in progress'}
+}
