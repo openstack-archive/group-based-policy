@@ -1523,6 +1523,9 @@ class ResourceMappingDriver(api.PolicyDriver, ImplicitResourceOperations,
             self._update_cluster_membership(
                 context, new_cluster_id=context.current['cluster_id'],
                 old_cluster_id=context.original['cluster_id'])
+        if not context.current.get('port_id') and context.current.get(
+                'proxy_gateway'):
+            self._unset_proxy_gateway_routes(context, context.original)
 
     @log.log_method_call
     def delete_policy_target_precommit(self, context):
