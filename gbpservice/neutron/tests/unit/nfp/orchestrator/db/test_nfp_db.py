@@ -13,6 +13,7 @@
 
 import copy
 import fixtures
+import mock
 from neutron import context
 from neutron.db import api as db_api
 from neutron.tests import base
@@ -167,6 +168,8 @@ class NFPDBTestCase(SqlTestCase):
         self.assertEqual([], network_functions)
 
     def test_update_network_function(self):
+        self.nfp_db.update_node_instance_network_function_map = mock.MagicMock(
+            return_value=None)
         network_function = self.create_network_function()
         self.assertIsNotNone(network_function['id'])
         updated_network_function = {'status': 'ERROR'}

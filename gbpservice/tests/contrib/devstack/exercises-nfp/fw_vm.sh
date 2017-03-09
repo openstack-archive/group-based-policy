@@ -20,6 +20,7 @@ EXERCISE_DIR=$(cd $(dirname "$0") && pwd)
 TOP_DIR=$(cd $EXERCISE_DIR/..; pwd)
 
 source $TOP_DIR/openrc neutron service
+source $TOP_DIR/exercises/nfp_lib.sh
 
 create_gbp_resources() {
     gbp servicechain-node-create --service-profile base_mode_fw_vm --config 'custom_json:{"mimetype": "config/custom+json","rules": [{"action": "log", "name": "tcp", "service": "tcp/80"}, {"action": "log", "name": "tcp", "service": "tcp/8080"}, {"action": "accept", "name": "tcp", "service": "tcp/22"}, {"action": "accept", "name": "icmp", "service": "icmp"}]}' FWNODE
@@ -36,6 +37,8 @@ create_gbp_resources() {
     gbp policy-rule-set-create --policy-rules "fw-web-redirect-rule fw-web-allow-rule-tcp fw-web-allow-rule-udp fw-web-allow-rule-icmp" fw-webredirect-ruleset
     gbp group-create fw-consumer --consumed-policy-rule-sets "fw-webredirect-ruleset=None"
     gbp group-create fw-provider --provided-policy-rule-sets "fw-webredirect-ruleset=None"
+    # Poll for group status till it becomes ACTIVE/ERROR. Polling timeout is 600 secs.
+    check_group_status fw-provider 600
 }
 
 delete_gbp_resources() {
@@ -53,6 +56,8 @@ delete_gbp_resources() {
     gbp policy-action-delete allow-to-fw
     gbp servicechain-spec-delete fw-chainspec
     gbp servicechain-node-delete FWNODE
+    # Added sleep of 300 secs to complete delete operation
+    sleep 300
 }
 
 validate_gbp_resources() {
@@ -102,6 +107,8 @@ update_gbp_resources() {
     #fi
 
     gbp group-delete fw-provider
+    # Added sleep of 300 secs to complete delete operation
+    sleep 300
     gbp group-delete fw-consumer
     ServiceChainInstanceCount=`gbp sci-list -f value | grep fw-provider | wc -l`
     if [ "$ServiceChainInstanceCount" -eq "0" ]; then
@@ -119,8 +126,10 @@ update_gbp_resources() {
     else
         echo "Chain not deleted"
     fi
-    
+
     gbp group-update fw-provider --provided-policy-rule-sets "fw-webredirect-ruleset=None"
+    # Poll for group status till it becomes ACTIVE/ERROR. Polling timeout is 600 secs.
+    check_group_status fw-provider 600
     ServiceChainInstanceCount=`gbp sci-list -f value | grep fw-provider | wc -l`
     if [ "$ServiceChainInstanceCount" -eq "1" ]; then
         echo "Chain created"
