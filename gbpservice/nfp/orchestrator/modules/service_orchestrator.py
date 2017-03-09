@@ -943,6 +943,16 @@ class ServiceOrchestrator(nfp_api.NfpEventHandler):
                 self.db_session, network_function)
         network_function.pop('service_config')
 
+        # Update ncp_node_instance_nf_mapping with nf_id
+        network_function_map = {
+            'network_function_id': network_function['id'],
+            'status': nfp_constants.PENDING_CREATE,
+            'status_details': 'Processing create in orchestrator'
+        }
+        with nfp_ctx_mgr.DbContextManager:
+            self.db_handler.update_node_instance_network_function_map(
+                self.db_session, service_id, service_chain_id,
+                network_function_map)
         nfp_path.create_path(network_function['id'])
         nfp_context['event_desc']['path_type'] = 'create'
         nfp_context['event_desc']['path_key'] = network_function['id']
