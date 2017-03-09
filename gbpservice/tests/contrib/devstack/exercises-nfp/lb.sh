@@ -21,6 +21,7 @@ EXERCISE_DIR=$(cd $(dirname "$0") && pwd)
 TOP_DIR=$(cd $EXERCISE_DIR/..; pwd)
 
 source $TOP_DIR/openrc neutron service
+source $TOP_DIR/exercises/nfp_lib.sh
 
 create_gbp_resources() {
     # E-W insertion
@@ -33,6 +34,8 @@ create_gbp_resources() {
     gbp network-service-policy-create --network-service-params type=ip_single,name=vip_ip,value=self_subnet lb_nsp
     gbp group-create lb-consumer --consumed-policy-rule-sets "lb-webredirect-ruleset=None"
     gbp group-create lb-provider --provided-policy-rule-sets "lb-webredirect-ruleset=None" --network-service-policy lb_nsp
+    # Poll for group status till it becomes ACTIVE/ERROR. Polling timeout is 600 secs.
+    check_group_status lb-provider 600
 }
 
 delete_gbp_resources() {
@@ -85,7 +88,8 @@ validate_loadbalancer_resources() {
     fi
 
     gbp policy-target-create --policy-target-group lb-provider provider_pt1
-    sleep 5
+    # Poll for group status till it becomes ACTIVE/ERROR. Polling timeout is 300 secs.
+    check_group_status lb-provider 300
     LBMemberCount=`neutron lb-member-list -f value | wc -l`
     if [ "$LBMemberCount" -eq "1" ]; then
         echo "LB Member resource created"
@@ -94,7 +98,8 @@ validate_loadbalancer_resources() {
     fi
 
     gbp policy-target-create --policy-target-group lb-provider provider_pt2
-    sleep 5
+    # Poll for group status till it becomes ACTIVE/ERROR. Polling timeout is 300 secs.
+    check_group_status lb-provider 300
     LBMemberCount=`neutron lb-member-list -f value | wc -l`
     if [ "$LBMemberCount" -eq "2" ]; then
         echo "LB Member resource created"
@@ -103,7 +108,8 @@ validate_loadbalancer_resources() {
     fi
 
     gbp policy-target-delete provider_pt1
-    sleep 5
+    # Poll for group status till it becomes ACTIVE/ERROR. Polling timeout is 300 secs.
+    check_group_status lb-provider 300
     LBMemberCount=`neutron lb-member-list -f value | wc -l`
     if [ "$LBMemberCount" -eq "1" ]; then
         echo "LB Member resource deleted"
@@ -112,7 +118,8 @@ validate_loadbalancer_resources() {
     fi
 
     gbp policy-target-delete provider_pt2
-    sleep 5
+    # Poll for group status till it becomes ACTIVE/ERROR. Polling timeout is 300 secs.
+    check_group_status lb-provider 300
     LBMemberCount=`neutron lb-member-list -f value | wc -l`
     if [ "$LBMemberCount" -eq "0" ]; then
         echo "LB Member resource deleted"
@@ -142,6 +149,8 @@ update_gbp_resources() {
     fi
     
     gbp group-update lb-provider --provided-policy-rule-sets "lb-webredirect-ruleset=None" --network-service-policy lb_nsp
+    # Poll for group status till it becomes ACTIVE/ERROR. Polling timeout is 600 secs.
+    check_group_status lb-provider 600
     ServiceChainInstanceCount=`gbp sci-list -f value | grep lb-provider | wc -l`
     if [ "$ServiceChainInstanceCount" -eq "1" ]; then
         echo "Chain created"
