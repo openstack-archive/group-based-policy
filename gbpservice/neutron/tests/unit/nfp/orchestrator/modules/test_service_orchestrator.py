@@ -119,9 +119,9 @@ class NSORpcHandlerTestCase(NSOModuleTestCase):
     def test_rpc_delete_network_function(self, mock_delete_network_function):
         with mock.patch.object(identity_client, "Client"):
             self.rpc_handler.delete_network_function(
-                "context", "network_function_id")
+                "context", "network_function_id", mock.ANY)
             mock_delete_network_function.assert_called_once_with(
-                "context", "network_function_id")
+                "context", "network_function_id", mock.ANY)
 
     @mock.patch.object(nso.ServiceOrchestrator,
                        "update_network_function")
@@ -204,6 +204,9 @@ class ServiceOrchestratorTestCase(NSOModuleTestCase):
                                      mock_get_service_profile,
                                      mock_get_admin_token,
                                      mock_get_admin_tenant_id):
+        (self.service_orchestrator.db_handler.
+            update_node_instance_network_function_map) = mock.MagicMock(
+                return_value=None)
         network_function_info = {
             'tenant_id': 'tenant_id',
             'service_chain_id': 'sc_instance_id',
@@ -302,8 +305,12 @@ class ServiceOrchestratorTestCase(NSOModuleTestCase):
         self.service_orchestrator._create_event = mock.MagicMock(
             return_value='')
 
+        delete_network_function_data = {
+            'service_chain_instance': {},
+            'provider': {},
+            'consumer': {}}
         self.service_orchestrator.delete_network_function(
-            self.context, network_function['id'])
+            self.context, network_function['id'], delete_network_function_data)
         self.assertRaises(nfp_exc.NetworkFunctionNotFound,
                           self.nfp_db.get_network_function,
                           self.session, network_function['id'])
@@ -325,6 +332,9 @@ class ServiceOrchestratorTestCase(NSOModuleTestCase):
                                               mock_get_admin_token,
                                               mock_create_event,
                                               mock_get_admin_tenant_id):
+        (self.service_orchestrator.db_handler.
+            update_node_instance_network_function_map) = mock.MagicMock(
+                return_value=None)
         network_function_instance = self.create_network_function_instance()
         network_function_id = network_function_instance['network_function_id']
         network_function = self.nfp_db.get_network_function(
@@ -336,8 +346,12 @@ class ServiceOrchestratorTestCase(NSOModuleTestCase):
         transport.parse_service_flavor_string = mock.MagicMock(
             return_value={'device_type': 'VM',
                           'service_vendor': 'vyos'})
+        delete_network_function_data = {
+            'service_chain_instance': {},
+            'provider': {},
+            'consumer': {}}
         self.service_orchestrator.delete_network_function(
-            self.context, network_function_id)
+            self.context, network_function_id, delete_network_function_data)
         network_function = self.nfp_db.get_network_function(
             self.session, network_function_id)
         self.assertEqual('PENDING_DELETE', network_function['status'])
@@ -418,6 +432,9 @@ class ServiceOrchestratorTestCase(NSOModuleTestCase):
         self.assertIsNotNone(db_nf['config_policy_id'])
 
     def test_event_handle_device_create_failed(self):
+        (self.service_orchestrator.db_handler.
+            update_node_instance_network_function_map) = mock.MagicMock(
+                return_value=None)
         nfd = self.create_network_function_device()
         nfi = self.create_network_function_instance(create_nfd=False)
         request_data = {
@@ -437,6 +454,9 @@ class ServiceOrchestratorTestCase(NSOModuleTestCase):
         self.assertEqual(nfp_constants.ERROR, db_nf['status'])
 
     def test_event_check_for_user_config_complete(self):
+        (self.service_orchestrator.db_handler.
+            update_node_instance_network_function_map) = mock.MagicMock(
+                return_value=None)
         network_function = self.create_network_function()
         network_function_details = (
             self.service_orchestrator.get_network_function_details(
@@ -518,6 +538,9 @@ class ServiceOrchestratorTestCase(NSOModuleTestCase):
             self.assertEqual(status, nso.STOP_POLLING)
 
     def test_event_handle_user_config_applied(self):
+        (self.service_orchestrator.db_handler.
+            update_node_instance_network_function_map) = mock.MagicMock(
+                return_value=None)
         network_function = self.create_network_function()
         request_data = {
             'config_policy_id': 'config_policy_id',
@@ -530,6 +553,9 @@ class ServiceOrchestratorTestCase(NSOModuleTestCase):
         self.assertEqual('ACTIVE', db_nf['status'])
 
     def test_event_handle_user_config_failed(self):
+        (self.service_orchestrator.db_handler.
+            update_node_instance_network_function_map) = mock.MagicMock(
+                return_value=None)
         network_function = self.create_network_function()
         request_data = {
             'config_policy_id': 'config_policy_id',
@@ -548,6 +574,9 @@ class ServiceOrchestratorTestCase(NSOModuleTestCase):
         nso.ServiceOrchestrator, "_create_event")
     def test_event_check_for_user_config_deleted(self, mock_create_event,
                                                  mock_service_type):
+        (self.service_orchestrator.db_handler.
+            update_node_instance_network_function_map) = mock.MagicMock(
+                return_value=None)
         network_function = self.create_network_function()
         with mock.patch.object(
                 self.service_orchestrator.config_driver,
@@ -619,6 +648,9 @@ class ServiceOrchestratorTestCase(NSOModuleTestCase):
             self.assertEqual(status, nso.STOP_POLLING)
 
     def test_event_handle_user_config_delete_failed(self):
+        (self.service_orchestrator.db_handler.
+            update_node_instance_network_function_map) = mock.MagicMock(
+                return_value=None)
         network_function = self.create_network_function()
         request_data = {
             'network_function_id': network_function['id']
@@ -654,8 +686,15 @@ class ServiceOrchestratorTestCase(NSOModuleTestCase):
         mock_get_admin_token.return_value = 'admin_token'
         mock_get_admin_tenant_id.return_value = 'admin_tenant_id'
         nfp_context.init()
+        (self.service_orchestrator.db_handler.
+            update_node_instance_network_function_map) = mock.MagicMock(
+                return_value=None)
+        delete_network_function_data = {
+            'service_chain_instance': {},
+            'provider': {},
+            'consumer': {}}
         self.service_orchestrator.delete_network_function(
-            self.context, network_function['id'])
+            self.context, network_function['id'], delete_network_function_data)
         db_nf = self.nfp_db.get_network_function(
             self.session, network_function['id'])
         self.assertEqual('PENDING_DELETE', db_nf['status'])
@@ -664,6 +703,9 @@ class ServiceOrchestratorTestCase(NSOModuleTestCase):
         nso.ServiceOrchestrator, "_create_event")
     def test_event_delete_network_function_instance(self, mock_create_event):
         nfi = self.create_network_function_instance()
+        (self.service_orchestrator.db_handler.
+            update_node_instance_network_function_map) = mock.MagicMock(
+                return_value=None)
         network_function = self.nfp_db.get_network_function(
             self.session, nfi['network_function_id'])
         self.assertEqual([nfi['id']],
@@ -706,6 +748,9 @@ class ServiceOrchestratorTestCase(NSOModuleTestCase):
                                         mock_get_service_profile,
                                         mock_get_admin_token,
                                         mock_create_event):
+        (self.service_orchestrator.db_handler.
+            update_node_instance_network_function_map) = mock.MagicMock(
+            return_value=None)
         nfi = self.create_network_function_instance()
         network_function_id = nfi['network_function_id']
         policy_target = mock.Mock()
@@ -735,6 +780,9 @@ class ServiceOrchestratorTestCase(NSOModuleTestCase):
                                           mock_get_service_profile,
                                           mock_get_admin_token,
                                           mock_create_event):
+        (self.service_orchestrator.db_handler.
+            update_node_instance_network_function_map) = mock.MagicMock(
+            return_value=None)
         nfi = self.create_network_function_instance()
         network_function_id = nfi['network_function_id']
         policy_target = mock.Mock()
@@ -763,6 +811,9 @@ class ServiceOrchestratorTestCase(NSOModuleTestCase):
                                        mock_get_service_profile,
                                        mock_get_admin_token,
                                        mock_create_event):
+        (self.service_orchestrator.db_handler.
+            update_node_instance_network_function_map) = mock.MagicMock(
+                return_value=None)
         nfi = self.create_network_function_instance()
         network_function_id = nfi['network_function_id']
         policy_target_group = mock.Mock()
@@ -809,6 +860,9 @@ class ServiceOrchestratorTestCase(NSOModuleTestCase):
                                          mock_get_service_profile,
                                          mock_get_admin_token,
                                          mock_create_event):
+        (self.service_orchestrator.db_handler.
+            update_node_instance_network_function_map) = mock.MagicMock(
+                return_value=None)
         nfi = self.create_network_function_instance()
         network_function_id = nfi['network_function_id']
         policy_target_group = mock.Mock()
