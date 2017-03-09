@@ -169,7 +169,7 @@ def get_network_function_details(context, network_function_id):
 
     except Exception as e:
         LOG.error(_LE("Failed to get network function details of "
-                  "network_function_id %(network_function_id)s : %(ex)s "),
+                      "network_function_id %(network_function_id)s : %(ex)s "),
                   {'ex': e, 'network_function_id': network_function_id})
 
 
@@ -194,6 +194,6 @@ def get_network_function_map(context, network_function_id):
         return request_data
     except Exception as e:
         LOG.error(_LE("Failed to get network function map of "
-                  "network_function_id %(network_function_id)s : %(ex)s "),
+                      "network_function_id %(network_function_id)s : %(ex)s "),
                   {'ex': e, 'network_function_id': network_function_id})
         return request_data

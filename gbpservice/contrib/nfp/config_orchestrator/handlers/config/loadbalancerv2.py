@@ -17,6 +17,7 @@ from gbpservice.contrib.nfp.config_orchestrator.common import common
 from gbpservice.contrib.nfp.config_orchestrator.common import lbv2_constants
 from gbpservice.nfp.common import constants as const
 from gbpservice.nfp.common import data_formatter as df
+from gbpservice.nfp.core import context as module_context
 from gbpservice.nfp.core import log as nfp_logging
 from gbpservice.nfp.lib import transport
 
@@ -79,15 +80,15 @@ class Lbv2Agent(loadbalancer_dbv2.LoadBalancerPluginDbv2):
         args = {'context': context, 'filters': filters}
         db_data = super(Lbv2Agent, self)
         return {'loadbalancers': self._to_api_dict(
-                    db_data.get_loadbalancers(**args)),
-                'listeners': self._to_api_dict(
-                    db_data.get_listeners(**args)),
-                'pools': self._to_api_dict(
-                    db_data.get_pools(**args)),
-                'pool_members': self._to_api_dict(
-                    db_data.get_pool_members(**args)),
-                'healthmonitors': self._to_api_dict(
-                    db_data.get_healthmonitors(**args))}
+            db_data.get_loadbalancers(**args)),
+            'listeners': self._to_api_dict(
+            db_data.get_listeners(**args)),
+            'pools': self._to_api_dict(
+            db_data.get_pools(**args)),
+            'pool_members': self._to_api_dict(
+            db_data.get_pool_members(**args)),
+            'healthmonitors': self._to_api_dict(
+            db_data.get_healthmonitors(**args))}
 
     def _context(self, **kwargs):
         context = kwargs.get('context')
@@ -120,7 +121,7 @@ class Lbv2Agent(loadbalancer_dbv2.LoadBalancerPluginDbv2):
         description = ast.literal_eval((nf['description'].split('\n'))[1])
         description.update({'tenant_id': tenant_id})
         context_resource_data = df.get_network_function_info(
-                                            description, const.LOADBALANCERV2)
+            description, const.LOADBALANCERV2)
         # REVISIT(dpak): We need to avoid resource description
         # dependency in OTC and instead use neutron context description.
         if name.lower() == 'loadbalancer':
@@ -159,7 +160,7 @@ class Lbv2Agent(loadbalancer_dbv2.LoadBalancerPluginDbv2):
         nfp_context.update({'neutron_context': ctx_dict,
                             'requester': 'nas_service',
                             'logging_context':
-                                nfp_logging.get_logging_context()})
+                                module_context.get()['log_context']})
         resource_type = 'loadbalancerv2'
         resource = name
         resource_data = {'neutron_context': rsrc_ctx_dict}
@@ -272,219 +273,219 @@ class Lbv2Agent(loadbalancer_dbv2.LoadBalancerPluginDbv2):
     @log_helpers.log_method_call
     def create_loadbalancer(self, context, loadbalancer, driver_name,
                             allocate_vip=True):
+        nfp_context = module_context.init()
         LOG.info(_LI("Received RPC CREATE LOADBALANCER for LB:%(lb)s"),
                  {'lb': loadbalancer})
         # Fetch nf_id from description of the resource
         nf_id = self._fetch_nf_from_resource_desc(loadbalancer["description"])
-        nfp_logging.store_logging_context(meta_id=nf_id)
+        nfp_context['log_context']['meta_id'] = nf_id
         nf = common.get_network_function_details(context, nf_id)
         self._update_tls_cert('loadbalancer', loadbalancer)
         self._post(
             context, loadbalancer['tenant_id'],
             'loadbalancer', nf,
             loadbalancer=loadbalancer, driver_name=driver_name)
-        nfp_logging.clear_logging_context()
 
     @log_helpers.log_method_call
     def update_loadbalancer(self, context, old_loadbalancer, loadbalancer):
+        nfp_context = module_context.init()
         # Fetch nf_id from description of the resource
         nf_id = self._fetch_nf_from_resource_desc(loadbalancer["description"])
-        nfp_logging.store_logging_context(meta_id=nf_id)
+        nfp_context['log_context']['meta_id'] = nf_id
         nf = common.get_network_function_details(context, nf_id)
         self._update_tls_cert('loadbalancer', loadbalancer)
         self._put(
             context, loadbalancer['tenant_id'],
             'loadbalancer', nf,
             old_loadbalancer=old_loadbalancer, loadbalancer=loadbalancer)
-        nfp_logging.clear_logging_context()
 
     @log_helpers.log_method_call
     def delete_loadbalancer(self, context, loadbalancer,
                             delete_vip_port=True):
+        nfp_context = module_context.init()
         LOG.info(_LI("Received RPC DELETE LOADBALANCER for LB:"
                      "%(lb)s"), {'lb': loadbalancer})
         # Fetch nf_id from description of the resource
         nf_id = self._fetch_nf_from_resource_desc(loadbalancer["description"])
-        nfp_logging.store_logging_context(meta_id=nf_id)
+        nfp_context['log_context']['meta_id'] = nf_id
         nf = common.get_network_function_details(context, nf_id)
         self._update_tls_cert('loadbalancer', loadbalancer)
         self._delete(
             context, loadbalancer['tenant_id'],
             'loadbalancer', nf, loadbalancer=loadbalancer)
-        nfp_logging.clear_logging_context()
 
     @log_helpers.log_method_call
     def create_listener(self, context, listener):
+        nfp_context = module_context.init()
         LOG.info(_LI("Received RPC CREATE LISTENER for Listener:%(listener)s"),
                  {'listener': listener})
         loadbalancer = listener['loadbalancer']
         # Fetch nf_id from description of the resource
         nf_id = self._fetch_nf_from_resource_desc(loadbalancer["description"])
-        nfp_logging.store_logging_context(meta_id=nf_id)
+        nfp_context['log_context']['meta_id'] = nf_id
         nf = common.get_network_function_details(context, nf_id)
         self._update_tls_cert('listener', listener)
         self._post(
             context, listener['tenant_id'],
             'listener', nf, listener=listener)
-        nfp_logging.clear_logging_context()
 
     @log_helpers.log_method_call
     def update_listener(self, context, old_listener, listener):
+        nfp_context = module_context.init()
         loadbalancer = listener['loadbalancer']
         # Fetch nf_id from description of the resource
         nf_id = self._fetch_nf_from_resource_desc(loadbalancer["description"])
-        nfp_logging.store_logging_context(meta_id=nf_id)
+        nfp_context['log_context']['meta_id'] = nf_id
         nf = common.get_network_function_details(context, nf_id)
         self._update_tls_cert('listener', listener)
         self._put(
             context, listener['tenant_id'],
             'listener', nf, old_listener=old_listener, listener=listener)
-        nfp_logging.clear_logging_context()
 
     @log_helpers.log_method_call
     def delete_listener(self, context, listener):
+        nfp_context = module_context.init()
         LOG.info(_LI("Received RPC DELETE LISTENER for Listener:%(listener)s"),
                  {'listener': listener})
         loadbalancer = listener['loadbalancer']
         # Fetch nf_id from description of the resource
         nf_id = self._fetch_nf_from_resource_desc(loadbalancer["description"])
-        nfp_logging.store_logging_context(meta_id=nf_id)
+        nfp_context['log_context']['meta_id'] = nf_id
         nf = common.get_network_function_details(context, nf_id)
         self._update_tls_cert('listener', listener)
         self._delete(
             context, listener['tenant_id'],
             'listener', nf, listener=listener)
-        nfp_logging.clear_logging_context()
 
     @log_helpers.log_method_call
     def create_pool(self, context, pool):
+        nfp_context = module_context.init()
         LOG.info(_LI("Received RPC CREATE POOL for Pool:%(pool)s"),
                  {'pool': pool})
         loadbalancer = pool['loadbalancer']
         # Fetch nf_id from description of the resource
         nf_id = self._fetch_nf_from_resource_desc(loadbalancer["description"])
-        nfp_logging.store_logging_context(meta_id=nf_id)
+        nfp_context['log_context']['meta_id'] = nf_id
         nf = common.get_network_function_details(context, nf_id)
         self._update_tls_cert('pool', pool)
         self._post(
             context, pool['tenant_id'],
             'pool', nf, pool=pool)
-        nfp_logging.clear_logging_context()
 
     @log_helpers.log_method_call
     def update_pool(self, context, old_pool, pool):
+        nfp_context = module_context.init()
         loadbalancer = pool['loadbalancer']
         # Fetch nf_id from description of the resource
         nf_id = self._fetch_nf_from_resource_desc(loadbalancer["description"])
-        nfp_logging.store_logging_context(meta_id=nf_id)
+        nfp_context['log_context']['meta_id'] = nf_id
         nf = common.get_network_function_details(context, nf_id)
         self._update_tls_cert('pool', pool)
         self._put(
             context, pool['tenant_id'],
             'pool', nf, old_pool=old_pool, pool=pool)
-        nfp_logging.clear_logging_context()
 
     @log_helpers.log_method_call
     def delete_pool(self, context, pool):
+        nfp_context = module_context.init()
         LOG.info(_LI("Received RPC DELETE POOL for Pool:%(pool)s"),
                  {'pool': pool})
         loadbalancer = pool['loadbalancer']
         # Fetch nf_id from description of the resource
         nf_id = self._fetch_nf_from_resource_desc(loadbalancer["description"])
-        nfp_logging.store_logging_context(meta_id=nf_id)
+        nfp_context['log_context']['meta_id'] = nf_id
         nf = common.get_network_function_details(context, nf_id)
         self._update_tls_cert('pool', pool)
         self._delete(
             context, pool['tenant_id'],
             'pool', nf, pool=pool)
-        nfp_logging.clear_logging_context()
 
     @log_helpers.log_method_call
     def create_member(self, context, member):
+        nfp_context = module_context.init()
         LOG.info(_LI("Received RPC CREATE MEMBER for Member:%(member)s"),
                  {'member': member})
         loadbalancer = member['pool']['loadbalancer']
         # Fetch nf_id from description of the resource
         nf_id = self._fetch_nf_from_resource_desc(loadbalancer["description"])
-        nfp_logging.store_logging_context(meta_id=nf_id)
+        nfp_context['log_context']['meta_id'] = nf_id
         nf = common.get_network_function_details(context, nf_id)
         self._update_tls_cert('member', member)
         self._post(
             context, member['tenant_id'],
             'member', nf, member=member)
-        nfp_logging.clear_logging_context()
 
     @log_helpers.log_method_call
     def update_member(self, context, old_member, member):
+        nfp_context = module_context.init()
         loadbalancer = member['pool']['loadbalancer']
         # Fetch nf_id from description of the resource
         nf_id = self._fetch_nf_from_resource_desc(loadbalancer["description"])
-        nfp_logging.store_logging_context(meta_id=nf_id)
+        nfp_context['log_context']['meta_id'] = nf_id
         nf = common.get_network_function_details(context, nf_id)
         self._update_tls_cert('member', member)
         self._put(
             context, member['tenant_id'],
             'member', nf, old_member=old_member, member=member)
-        nfp_logging.clear_logging_context()
 
     @log_helpers.log_method_call
     def delete_member(self, context, member):
+        nfp_context = module_context.init()
         LOG.info(_LI("Received RPC DELETE MEMBER for Member:%(member)s"),
                  {'member': member})
         loadbalancer = member['pool']['loadbalancer']
         # Fetch nf_id from description of the resource
         nf_id = self._fetch_nf_from_resource_desc(loadbalancer["description"])
-        nfp_logging.store_logging_context(meta_id=nf_id)
+        nfp_context['log_context']['meta_id'] = nf_id
         nf = common.get_network_function_details(context, nf_id)
         self._update_tls_cert('member', member)
         self._delete(
             context, member['tenant_id'],
             'member', nf, member=member)
-        nfp_logging.clear_logging_context()
 
     @log_helpers.log_method_call
     def create_healthmonitor(self, context, healthmonitor):
+        nfp_context = module_context.init()
         LOG.info(_LI("Received RPC CREATE HEALTH MONITOR for HM:%(hm)s"),
                  {'hm': healthmonitor})
         loadbalancer = healthmonitor['pool']['loadbalancer']
         # Fetch nf_id from description of the resource
         nf_id = self._fetch_nf_from_resource_desc(loadbalancer["description"])
-        nfp_logging.store_logging_context(meta_id=nf_id)
+        nfp_context['log_context']['meta_id'] = nf_id
         nf = common.get_network_function_details(context, nf_id)
         self._update_tls_cert('healthmonitor', healthmonitor)
         self._post(
             context, healthmonitor['tenant_id'],
             'healthmonitor', nf, healthmonitor=healthmonitor)
-        nfp_logging.clear_logging_context()
 
     @log_helpers.log_method_call
     def update_healthmonitor(self, context, old_healthmonitor, healthmonitor):
+        nfp_context = module_context.init()
         loadbalancer = healthmonitor['pool']['loadbalancer']
         # Fetch nf_id from description of the resource
         nf_id = self._fetch_nf_from_resource_desc(loadbalancer["description"])
-        nfp_logging.store_logging_context(meta_id=nf_id)
+        nfp_context['log_context']['meta_id'] = nf_id
         nf = common.get_network_function_details(context, nf_id)
         self._update_tls_cert('healthmonitor', healthmonitor)
         self._put(
             context, healthmonitor['tenant_id'],
             'healthmonitor', nf,
             old_healthmonitor=old_healthmonitor, healthmonitor=healthmonitor)
-        nfp_logging.clear_logging_context()
 
     @log_helpers.log_method_call
     def delete_healthmonitor(self, context, healthmonitor):
+        nfp_context = module_context.init()
         LOG.info(_LI("Received RPC DELETE HEALTH MONITOR for HM:%(hm)s"),
                  {'hm': healthmonitor})
         loadbalancer = healthmonitor['pool']['loadbalancer']
         # Fetch nf_id from description of the resource
         nf_id = self._fetch_nf_from_resource_desc(loadbalancer["description"])
-        nfp_logging.store_logging_context(meta_id=nf_id)
+        nfp_context['log_context']['meta_id'] = nf_id
         nf = common.get_network_function_details(context, nf_id)
         self._update_tls_cert('healthmonitor', healthmonitor)
         self._delete(
             context, healthmonitor['tenant_id'],
             'healthmonitor', nf, healthmonitor=healthmonitor)
-        nfp_logging.clear_logging_context()
 
     # REVISIT(jiahao): L7policy support not implemented
     # disable L7policy
