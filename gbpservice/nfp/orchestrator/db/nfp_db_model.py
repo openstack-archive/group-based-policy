@@ -168,3 +168,16 @@ class ServiceGatewayDetails(BASE, model_base.HasId):
     secondary_instance_gw_pt = sa.Column(sa.String(36), nullable=True)
     primary_gw_vip_pt = sa.Column(sa.String(36), nullable=True)
     secondary_gw_vip_pt = sa.Column(sa.String(36), nullable=True)
+
+
+class ServiceNodeInstanceNetworkFunctionMapping(BASE, model_base.BASEV2):
+    """ServiceChainInstance to NFP network function mapping."""
+
+    __tablename__ = 'ncp_node_instance_network_function_mappings'
+    sc_instance_id = sa.Column(sa.String(36),
+                               nullable=False, primary_key=True)
+    sc_node_id = sa.Column(sa.String(36),
+                           nullable=False, primary_key=True)
+    network_function_id = sa.Column(sa.String(36), nullable=True)
+    status = sa.Column(sa.String(20), nullable=True)
+    status_details = sa.Column(sa.String(4096), nullable=True)
