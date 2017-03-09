@@ -57,6 +57,7 @@ class Pt(object):
         if self.data:
             return {
                 'id': self.data.get('id'),
+                'name': self.data.get('name'),
                 'port_id': self.data.get('port_id'),
                 'policy_target_group_id': self.data.get(
                     'policy_target_group_id'),
@@ -312,7 +313,8 @@ class ServiceChainInstance(object):
             return {
                 'id': self.data.get('id'),
                 'config_param_values': self.data.get('config_param_values'),
-                'name': self.data.get('name')
+                'name': self.data.get('name'),
+                'provider_ptg_id': self.data.get('provider_ptg_id')
             }
         return self.data
 
