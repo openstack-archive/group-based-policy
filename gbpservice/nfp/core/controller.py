@@ -14,11 +14,11 @@ import ast
 import eventlet
 eventlet.monkey_patch()
 
+import collections
 import multiprocessing
 import operator
 import os
 import pickle
-import Queue
 import sys
 import time
 import zlib
@@ -28,11 +28,11 @@ from oslo_service import service as oslo_service
 
 from gbpservice.nfp.core import cfg as nfp_cfg
 from gbpservice.nfp.core import common as nfp_common
+from gbpservice.nfp.core import context
 from gbpservice.nfp.core import event as nfp_event
 from gbpservice.nfp.core import launcher as nfp_launcher
 from gbpservice.nfp.core import log as nfp_logging
 from gbpservice.nfp.core import manager as nfp_manager
-from gbpservice.nfp.core import poll as nfp_poll
 from gbpservice.nfp.core import rpc as nfp_rpc
 from gbpservice.nfp.core import worker as nfp_worker
 
@@ -42,9 +42,9 @@ from neutron.common import config
 
 LOG = nfp_logging.getLogger(__name__)
 PIPE = multiprocessing.Pipe
-LOCK = multiprocessing.Lock
 PROCESS = multiprocessing.Process
 identify = nfp_common.identify
+deque = collections.deque
 
 # REVISIT (mak): fix to pass compliance check
 config = config
@@ -76,8 +76,8 @@ class NfpService(object):
 
     def register_events(self, event_descs, priority=0):
         """Register event handlers with core. """
-        logging_context = nfp_logging.get_logging_context()
-        module = logging_context['namespace']
+        nfp_context = context.get()
+        module = nfp_context['log_context']['namespace']
         # REVISIT (mak): change name to register_event_handlers() ?
         for event_desc in event_descs:
             self._event_handlers.register(
@@ -104,22 +104,12 @@ class NfpService(object):
         event = None
         try:
             event = nfp_event.Event(**kwargs)
-            # Get the logging context stored in thread
-            logging_context = nfp_logging.get_logging_context()
-            # Log metadata for event handling code
-            event.context = logging_context
         except AssertionError as aerr:
             message = "%s" % (aerr)
             LOG.exception(message)
         return event
 
     def post_graph(self, graph_nodes, root_node):
-        """Post graph.
-
-            Since graph is also implemneted with events,
-            first post all the node events followed by
-            root node event.
-        """
         for node in graph_nodes:
             self.post_event(node)
 
@@ -138,6 +128,13 @@ class NfpService(object):
         event.desc.flag = nfp_event.EVENT_NEW
         event.desc.pid = os.getpid()
         event.desc.target = module
+        if event.lifetime == -1:
+            event.lifetime = nfp_event.EVENT_DEFAULT_LIFETIME
+        if not event.context:
+            # Log nfp_context for event handling code
+            event.context = context.purge()
+        event.desc.path_type = event.context['event_desc'].get('path_type')
+        event.desc.path_key = event.context['event_desc'].get('path_key')
         return event
 
     # REVISIT (mak): spacing=0, caller must explicitly specify
@@ -148,35 +145,46 @@ class NfpService(object):
             descriptor preparation.
             NfpController class implements the required functionality.
         """
-        logging_context = nfp_logging.get_logging_context()
-        module = logging_context['namespace']
+        nfp_context = context.get()
+        module = nfp_context['log_context']['namespace']
         handler, ev_spacing = (
             self._event_handlers.get_poll_handler(event.id, module=module))
         assert handler, "No poll handler found for event %s" % (event.id)
         assert spacing or ev_spacing, "No spacing specified for polling"
         if ev_spacing:
             spacing = ev_spacing
-        refuuid = event.desc.uuid
-        event = self._make_new_event(event)
-        event.lifetime = 0
+        if event.desc.type != nfp_event.POLL_EVENT:
+            event = self._make_new_event(event)
+            event.desc.uuid = event.desc.uuid + ":" + "POLL_EVENT"
         event.desc.type = nfp_event.POLL_EVENT
         event.desc.target = module
+        event.desc.flag = None
 
         kwargs = {'spacing': spacing,
-                  'max_times': max_times,
-                  'ref': refuuid}
+                  'max_times': max_times}
         poll_desc = nfp_event.PollDesc(**kwargs)
 
         setattr(event.desc, 'poll_desc', poll_desc)
+
+        if not event.context:
+            # Log nfp_context for event handling code
+            event.context = context.purge()
+        event.desc.path_type = event.context['event_desc'].get('path_type')
+        event.desc.path_key = event.context['event_desc'].get('path_key')
         return event
 
     def event_complete(self, event, result=None):
         """To declare and event complete. """
         try:
             pickle.dumps(result)
+            uuid = event.desc.uuid
+            event = self._make_new_event(event)
+            event.desc.uuid = uuid
             event.sequence = False
             event.desc.flag = nfp_event.EVENT_COMPLETE
             event.result = result
+            event.context = {}
+            event.data = {}
             return event
         except Exception as e:
             raise e
@@ -224,66 +232,112 @@ class NfpController(nfp_launcher.NfpLauncher, NfpService):
         self._conf = conf
         self._pipe = None
         # Queue to stash events.
-        self._stashq = multiprocessing.Queue()
+        self._stashq = deque()
 
         self._manager = nfp_manager.NfpResourceManager(conf, self)
         self._worker = nfp_worker.NfpWorker(conf)
-        self._poll_handler = nfp_poll.NfpPollHandler(conf)
 
         # ID of process handling this controller obj
         self.PROCESS_TYPE = "distributor"
 
     def compress(self, event):
         # REVISIT (mak) : zip only if length is > than threshold (1k maybe)
-        if event.data and not event.zipped:
+        if not event.zipped:
             event.zipped = True
-            event.data = zlib.compress(str({'cdata': event.data}))
+            data = {'context': event.context}
+            event.context = {}
+            if event.data:
+                data['data'] = event.data
+            event.data = zlib.compress(str(data))
 
     def decompress(self, event):
-        if event.data and event.zipped:
+        if event.zipped:
             try:
                 data = ast.literal_eval(
                     zlib.decompress(event.data))
-                event.data = data['cdata']
+                event.data = data.get('data')
+                event.context = data['context']
                 event.zipped = False
             except Exception as e:
-                message = "Failed to decompress event data, Reason: %s" % (
+                message = "Failed to decompress event data, Reason: %r" % (
                     e)
                 LOG.error(message)
                 raise e
 
-    def pipe_lock(self, lock):
-        if lock:
-            lock.acquire()
+    def is_picklable(self, event):
+        """To check event is picklable or not.
+           For sending event through pipe it must be picklable
+        """
+        try:
+            pickle.dumps(event)
+        except Exception as e:
+            message = "(event - %s) is not picklable, Reason: %s" % (
+                event.identify(), e)
+            assert False, message
 
-    def pipe_unlock(self, lock):
-        if lock:
-            lock.release()
-
-    def pipe_recv(self, pipe, lock):
-        self.pipe_lock(lock)
-        event = pipe.recv()
-        self.pipe_unlock(lock)
+    def pipe_recv(self, pipe):
+        event = None
+        try:
+            event = pipe.recv()
+        except Exception as exc:
+            LOG.debug("Failed to receive event from pipe "
+                      "with exception - %r - will retry.." % (exc))
+            eventlet.greenthread.sleep(1.0)
         if event:
             self.decompress(event)
         return event
 
-    def pipe_send(self, pipe, lock, event):
+    def pipe_send(self, pipe, event, resending=False):
+        self.is_picklable(event)
+
         try:
-            self.compress(event)
-            self.pipe_lock(lock)
-            pipe.send(event)
-            self.pipe_unlock(lock)
+            # If there is no reader yet
+            if not pipe.poll():
+                self.compress(event)
+                pipe.send(event)
+                return True
         except Exception as e:
-            message = "Failed to send data via pipe, Reason: %s" % (e)
-            LOG.error(message)
-            raise e
+            message = ("Failed to send event - %s via pipe"
+                       "- exception - %r - will resend" % (
+                            event.identify(), e))
+            LOG.debug(message)
+
+        # If the event is being sent by resending task
+        # then dont append here, task will put back the
+        # event at right location
+        if not resending:
+            # If couldnt send event.. stash it so that
+            # resender task will send event again
+            self._stashq.append(event)
+            return False
 
     def _fork(self, args):
         proc = PROCESS(target=self.child, args=args)
         proc.daemon = True
         proc.start()
         return proc
+
+    def _resending_task(self):
+        while(True):
+            try:
+                event = self._stashq.popleft()
+                if self.PROCESS_TYPE != "worker":
+                    evm = self._manager._get_event_manager(event.desc.worker)
+                    LOG.debug("Resending event - %s" % (event.identify()))
+                    sent = self.pipe_send(evm._pipe, event, resending=True)
+                else:
+                    sent = self.pipe_send(self._pipe, event, resending=True)
+                # Put back in front
+                if not sent:
+                    self._stashq.appendleft(event)
+            except IndexError:
+                pass
+            except Exception as e:
+                message = ("Unexpected exception - %r - while"
+                    "sending event - %s" % (e, event.identify()))
+                LOG.error(message)
+
+            eventlet.greenthread.sleep(0.1)
 
     def _manager_task(self):
         while True:
@@ -295,9 +349,9 @@ class NfpController(nfp_launcher.NfpLauncher, NfpService):
     def _update_manager(self):
         childs = self.get_childrens()
         for pid, wrapper in childs.iteritems():
-            pipe, lock = wrapper.child_pipe_map[pid]
+            pipe = wrapper.child_pipe_map[pid]
             # Inform 'Manager' class about the new_child.
-            self._manager.new_child(pid, pipe, lock)
+            self._manager.new_child(pid, pipe)
 
     def _process_event(self, event):
         self._manager.process_events([event])
@@ -318,29 +372,21 @@ class NfpController(nfp_launcher.NfpLauncher, NfpService):
 
         parent_pipe, child_pipe = PIPE(duplex=True)
 
-        # Sometimes Resource Temporarily Not Available (errno=11)
-        # is observed with python pipe. There could be many reasons,
-        # One theory is if read &
-        # write happens at the same instant, pipe does report this
-        # error. Using lock to avoid this.
-        lock = LOCK()
-
         # Registered event handlers of nfp module.
         # Workers need copy of this data to dispatch an
         # event to module.
-        proc = self._fork(args=(wrap.service, parent_pipe, child_pipe,
-                                lock, self))
+        proc = self._fork(args=(wrap.service, parent_pipe, child_pipe, self))
 
         message = ("Forked a new child: %d"
                    "Parent Pipe: % s, Child Pipe: % s") % (
-                    proc.pid, str(parent_pipe), str(child_pipe))
+            proc.pid, str(parent_pipe), str(child_pipe))
         LOG.info(message)
 
         try:
-            wrap.child_pipe_map[proc.pid] = (parent_pipe, lock)
+            wrap.child_pipe_map[proc.pid] = parent_pipe
         except AttributeError:
             setattr(wrap, 'child_pipe_map', {})
-            wrap.child_pipe_map[proc.pid] = (parent_pipe, lock)
+            wrap.child_pipe_map[proc.pid] = parent_pipe
 
         self._worker_process[proc.pid] = proc
         return proc.pid
@@ -388,19 +434,9 @@ class NfpController(nfp_launcher.NfpLauncher, NfpService):
 
         # One task to manage the resources - workers & events.
         eventlet.spawn_n(self._manager_task)
-        # Oslo periodic task to poll for timer events
-        nfp_poll.PollingTask(self._conf, self)
+        eventlet.spawn_n(self._resending_task)
         # Oslo periodic task for state reporting
         nfp_rpc.ReportStateTask(self._conf, self)
-
-    def poll_add(self, event, timeout, callback):
-        """Add an event to poller. """
-        self._poll_handler.poll_add(
-            event, timeout, callback)
-
-    def poll(self):
-        """Invoked in periodic task to poll for timedout events. """
-        self._poll_handler.run()
 
     def report_state(self):
         """Invoked by report_task to report states of all agents. """
@@ -472,7 +508,7 @@ class NfpController(nfp_launcher.NfpLauncher, NfpService):
 
             LOG.debug(message)
             # Send it to the distributor process
-            self.pipe_send(self._pipe, self._lock, event)
+            self.pipe_send(self._pipe, event)
         else:
             message = ("(event - %s) - new event in distributor"
                        "processing event") % (event.identify())
@@ -518,7 +554,7 @@ class NfpController(nfp_launcher.NfpLauncher, NfpService):
             event = super(NfpController, self).poll_event(
                 event, spacing=spacing, max_times=max_times)
             # Send to the distributor process.
-            self.pipe_send(self._pipe, self._lock, event)
+            self.pipe_send(self._pipe, event)
 
     def stop_poll_event(self, key, id):
         """To stop the running poll event
@@ -526,58 +562,26 @@ class NfpController(nfp_launcher.NfpLauncher, NfpService):
         :param key: key of polling event
         :param id: id of polling event
         """
-        key = key + ":" + id
+        key = key + ":" + id + ":" + "POLL_EVENT"
         event = self.new_event(id='STOP_POLL_EVENT', data={'key': key})
         event.desc.type = nfp_event.POLL_EVENT
         event.desc.flag = nfp_event.POLL_EVENT_STOP
         if self.PROCESS_TYPE == "worker":
-            self.pipe_send(self._pipe, self._lock, event)
+            self.pipe_send(self._pipe, event)
         else:
             self._manager.process_events([event])
 
-    def stash_event(self, event):
-        """To stash an event.
-
-            This will be invoked by worker process.
-            Put this event in queue, distributor will
-            pick it up.
-
-            Executor: worker-process
+    def path_complete_event(self):
+        """Create event for path completion
         """
-        if self.PROCESS_TYPE == "distributor":
-            message = "(event - %s) - distributor cannot stash" % (
-                event.identify())
-            LOG.debug(message)
+        nfp_context = context.get()
+        event = self.new_event(id='PATH_COMPLETE')
+        event.desc.path_type = nfp_context['event_desc'].get('path_type')
+        event.desc.path_key = nfp_context['event_desc'].get('path_key')
+        if self.PROCESS_TYPE == "worker":
+            self.pipe_send(self._pipe, event)
         else:
-            message = "(event - %s) - stashed" % (event.identify())
-            LOG.debug(message)
-            self._stashq.put(event)
-
-    def get_stashed_events(self):
-        """To get stashed events.
-
-            Returns available number of stashed events
-            as list. Will be invoked by distributor,
-            worker cannot pull.
-
-            Executor: distributor-process
-        """
-        events = []
-        # return at max 5 events
-        maxx = 1
-        # wait sometime for first event in the queue
-        timeout = 0.1
-        while maxx:
-            try:
-                event = self._stashq.get(timeout=timeout)
-                self.decompress(event)
-                events.append(event)
-                timeout = 0
-                maxx -= 1
-            except Queue.Empty:
-                maxx = 0
-                pass
-        return events
+            self._manager.process_events([event])
 
     def event_complete(self, event, result=None):
         """To mark an event complete.
@@ -600,7 +604,7 @@ class NfpController(nfp_launcher.NfpLauncher, NfpService):
             self._manager.process_events([event])
         else:
             # Send to the distributor process.
-            self.pipe_send(self._pipe, self._lock, event)
+            self.pipe_send(self._pipe, event)
 
 
 def load_nfp_modules(conf, controller):
@@ -615,6 +619,7 @@ def load_nfp_modules(conf, controller):
 def load_nfp_modules_from_path(conf, controller, path):
     """ Load all nfp modules from configured directory. """
     pymodules = []
+    nfp_context = context.get()
     try:
         base_module = __import__(path,
                                  globals(), locals(), ['modules'], -1)
@@ -629,7 +634,7 @@ def load_nfp_modules_from_path(conf, controller, path):
                     pymodule = eval('pymodule.%s' % (pyfile[:-3]))
                     try:
                         namespace = pyfile[:-3].split(".")[-1]
-                        nfp_logging.store_logging_context(namespace=namespace)
+                        nfp_context['log_context']['namespace'] = namespace
                         pymodule.nfp_module_init(controller, conf)
                         pymodules += [pymodule]
                         message = "(module - %s) - Initialized" % (
@@ -664,10 +669,11 @@ def controller_init(conf, nfp_controller):
 
 
 def nfp_modules_post_init(conf, nfp_modules, nfp_controller):
+    nfp_context = context.get()
     for module in nfp_modules:
         try:
             namespace = module.__name__.split(".")[-1]
-            nfp_logging.store_logging_context(namespace=namespace)
+            nfp_context['log_context']['namespace'] = namespace
             module.nfp_module_post_init(nfp_controller, conf)
         except AttributeError:
             message = ("(module - %s) - does not implement"
@@ -701,6 +707,7 @@ def load_module_opts(conf):
 
 
 def main():
+    context.init()
     args, module = extract_module(sys.argv[1:])
     conf = nfp_cfg.init(module, args)
     conf.module = module
