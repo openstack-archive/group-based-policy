@@ -60,6 +60,18 @@ class NFPDbBase(common_db_mixin.CommonDbMixin):
             network_function_db = self._get_network_function(
                 session, network_function_id)
             network_function_db.update(updated_network_function)
+            if 'status' in updated_network_function.keys():
+                updated_network_function_map = {
+                        'status': updated_network_function['status']
+                }
+                if updated_network_function.get('status_description'):
+                    updated_network_function_map.update(
+                        {'status_details': updated_network_function[
+                            'status_description']})
+                self.update_node_instance_network_function_map(session,
+                        network_function_db['service_id'],
+                        network_function_db['service_chain_id'],
+                        updated_network_function_map)
         return self._make_network_function_dict(network_function_db)
 
     def delete_network_function(self, session, network_function_id):
@@ -67,6 +79,9 @@ class NFPDbBase(common_db_mixin.CommonDbMixin):
             network_function_db = self._get_network_function(
                 session, network_function_id)
             session.delete(network_function_db)
+            # deleting sc-node-instance-nf entry
+            self.delete_node_instance_network_function_map(
+                 session, network_function_id)
 
     def get_network_function(self, session, network_function_id, fields=None):
         service = self._get_network_function(session, network_function_id)
@@ -695,3 +710,69 @@ class NFPDbBase(common_db_mixin.CommonDbMixin):
                 'secondary_instance_gw_pt': gw['secondary_instance_gw_pt'],
                 'primary_gw_vip_pt': gw['primary_gw_vip_pt'],
                 'secondary_gw_vip_pt': gw['secondary_gw_vip_pt']}
+
+    def create_node_instance_network_function_map(self, session,
+                                     sc_node_id, sc_instance_id,
+                                     network_function_id,
+                                     status, status_details):
+        with session.begin(subtransactions=True):
+            sc_node_instance_ns_map = (
+                nfp_db_model.ServiceNodeInstanceNetworkFunctionMapping(
+                    sc_node_id=sc_node_id,
+                    sc_instance_id=sc_instance_id,
+                    network_function_id=network_function_id,
+                    status=status,
+                    status_details=status_details))
+            session.add(sc_node_instance_ns_map)
+
+    def update_node_instance_network_function_map(
+                 self, session, sc_node_id, sc_instance_id,
+                 updated_node_instance_network_function_map):
+        with session.begin(subtransactions=True):
+            node_instance_network_function_map = (
+                    self.get_node_instance_network_function_map(session,
+                        sc_node_id, sc_instance_id))
+            node_instance_network_function_map.update(
+                updated_node_instance_network_function_map)
+        return node_instance_network_function_map
+
+    def get_node_instance_network_function_map(self, session, sc_node_id=None,
+                                               sc_instance_id=None):
+        try:
+            with session.begin(subtransactions=True):
+                query = session.query(
+                    nfp_db_model.ServiceNodeInstanceNetworkFunctionMapping)
+                if sc_node_id:
+                    query = query.filter_by(sc_node_id=sc_node_id)
+                if sc_instance_id:
+                    query = query.filter_by(sc_instance_id=sc_instance_id)
+                return query.first()
+        except exc.NoResultFound:
+            return None
+
+    def get_node_instance_network_function_maps(self, session, sc_instance_id):
+        try:
+            with session.begin(subtransactions=True):
+                query = session.query(
+                    nfp_db_model.ServiceNodeInstanceNetworkFunctionMapping)
+                query = query.filter_by(sc_instance_id=sc_instance_id)
+                from neutron.db import sqlalchemyutils
+                collection = sqlalchemyutils.paginate_query(
+                        query,
+                        nfp_db_model.ServiceNodeInstanceNetworkFunctionMapping,
+                        None, None)
+                return [item for item in collection]
+        except exc.NoResultFound:
+            return []
+
+    def delete_node_instance_network_function_map(self, session,
+                                                  network_function_id):
+        try:
+            with session.begin(subtransactions=True):
+                sc_node_instance_ns_maps = (session.query(
+                    nfp_db_model.ServiceNodeInstanceNetworkFunctionMapping).
+                    filter_by(network_function_id=network_function_id).all())
+                for sc_node_instance_ns_map in sc_node_instance_ns_maps:
+                    session.delete(sc_node_instance_ns_map)
+        except exc.NoResultFound:
+            return None
