@@ -16,6 +16,7 @@ import copy
 from gbpservice.contrib.nfp.config_orchestrator.common import common
 from gbpservice.nfp.common import constants as const
 from gbpservice.nfp.common import data_formatter as df
+from gbpservice.nfp.common import utils
 from gbpservice.nfp.core import context as module_context
 from gbpservice.nfp.core import log as nfp_logging
 from gbpservice.nfp.lib import transport
@@ -127,12 +128,14 @@ class FwAgent(firewall_db.Firewall_db_mixin):
 
         ctx_dict, rsrc_ctx_dict = self._prepare_resource_context_dicts(
             **kwargs)
+        service_vm_context = utils.get_service_vm_context(
+            description['service_vendor'])
         nfp_context = {'network_function_id': nf['id'],
                        'neutron_context': ctx_dict,
                        'fw_mac': fw_mac,
                        'requester': 'nas_service',
-                       'logging_context':
-                       module_context.get()['log_context']}
+                       'logging_context': module_context.get()['log_context'],
+                       'service_vm_context': service_vm_context}
         resource = resource_type = 'firewall'
         resource_data = {resource: firewall,
                          'host': host,

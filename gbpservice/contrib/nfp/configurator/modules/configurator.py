@@ -15,6 +15,7 @@ from oslo_log import helpers as log_helpers
 from gbpservice.contrib.nfp.configurator.lib import constants as const
 from gbpservice.contrib.nfp.configurator.lib import demuxer
 from gbpservice.contrib.nfp.configurator.lib import utils
+from gbpservice.nfp.core import context as module_context
 from gbpservice.nfp.core import log as nfp_logging
 from gbpservice.nfp.core import rpc
 
@@ -134,9 +135,10 @@ class ConfiguratorRpcManager(object):
         """
 
         try:
+            nfp_context = module_context.init()
             log_info = request_data.get('info')
-            logging_context = log_info['context']['logging_context']
-            nfp_logging.store_logging_context(**logging_context)
+            logging_context = log_info['context'].get('logging_context', {})
+            nfp_context['log_context'] = logging_context
             LOG.info(_LI("Received RPC CREATE NETWORK FUNCTION DEVICE CONFIG "
                          "for %(service_type)s, NFI: %(nfi)s, "
                          "NF_ID: %(nf_id)s"),
@@ -149,7 +151,6 @@ class ConfiguratorRpcManager(object):
             msg = ("Failed to create network device configuration. %s" %
                    str(err).capitalize())
             LOG.error(msg)
-        nfp_logging.clear_logging_context()
 
     @log_helpers.log_method_call
     def delete_network_function_device_config(self, context, request_data):
@@ -168,9 +169,10 @@ class ConfiguratorRpcManager(object):
         """
 
         try:
+            nfp_context = module_context.init()
             log_info = request_data.get('info')
-            logging_context = log_info['context']['logging_context']
-            nfp_logging.store_logging_context(**logging_context)
+            logging_context = log_info['context'].get('logging_context', {})
+            nfp_context['log_context'] = logging_context
             LOG.info(_LI("Received RPC DELETE NETWORK FUNCTION DEVICE CONFIG "
                          "for %(service_type)s, NFI: %(nfi)s, "
                          "NF_ID: %(nf_id)s"),
@@ -183,7 +185,6 @@ class ConfiguratorRpcManager(object):
             msg = ("Failed to delete network device configuration. %s" %
                    str(err).capitalize())
             LOG.error(msg)
-        nfp_logging.clear_logging_context()
 
     @log_helpers.log_method_call
     def update_network_function_device_config(self, context, request_data):
@@ -202,9 +203,10 @@ class ConfiguratorRpcManager(object):
         """
 
         try:
+            nfp_context = module_context.init()
             log_info = request_data.get('info')
-            logging_context = log_info['context']['logging_context']
-            nfp_logging.store_logging_context(**logging_context)
+            logging_context = log_info['context'].get('logging_context', {})
+            nfp_context['log_context'] = logging_context
             LOG.info(_LI("Received RPC UPDATE NETWORK FUNCTION DEVICE CONFIG "
                          "for %(service_type)s, NFI: %(nfi)s, "
                          "NF_ID: %(nf_id)s"),
@@ -217,7 +219,6 @@ class ConfiguratorRpcManager(object):
             msg = ("Failed to update network device configuration. %s" %
                    str(err).capitalize())
             LOG.error(msg)
-        nfp_logging.clear_logging_context()
 
     @log_helpers.log_method_call
     def create_network_function_config(self, context, request_data):
@@ -236,9 +237,10 @@ class ConfiguratorRpcManager(object):
         """
 
         try:
+            nfp_context = module_context.init()
             log_info = request_data.get('info')
-            logging_context = log_info['context']['logging_context']
-            nfp_logging.store_logging_context(**logging_context)
+            logging_context = log_info['context'].get('logging_context', {})
+            nfp_context['log_context'] = logging_context
             LOG.info(_LI("Received RPC CREATE NETWORK FUNCTION CONFIG "
                          "for %(service_type)s "),
                      {'service_type': request_data['info']['service_type']})
@@ -248,7 +250,6 @@ class ConfiguratorRpcManager(object):
             msg = ("Failed to create network service configuration. %s" %
                    str(err).capitalize())
             LOG.error(msg)
-        nfp_logging.clear_logging_context()
 
     @log_helpers.log_method_call
     def delete_network_function_config(self, context, request_data):
@@ -267,9 +268,10 @@ class ConfiguratorRpcManager(object):
         """
 
         try:
+            nfp_context = module_context.init()
             log_info = request_data.get('info')
-            logging_context = log_info['context']['logging_context']
-            nfp_logging.store_logging_context(**logging_context)
+            logging_context = log_info['context'].get('logging_context', {})
+            nfp_context['log_context'] = logging_context
             LOG.info(_LI("Received RPC DELETE NETWORK FUNCTION CONFIG "
                          "for %(service_type)s "),
                      {'service_type': request_data['info']['service_type']})
@@ -279,7 +281,6 @@ class ConfiguratorRpcManager(object):
             msg = ("Failed to delete network service configuration. %s" %
                    str(err).capitalize())
             LOG.error(msg)
-        nfp_logging.clear_logging_context()
 
     @log_helpers.log_method_call
     def update_network_function_config(self, context, request_data):
@@ -298,9 +299,10 @@ class ConfiguratorRpcManager(object):
         """
 
         try:
+            nfp_context = module_context.init()
             log_info = request_data.get('info')
-            logging_context = log_info['context']['logging_context']
-            nfp_logging.store_logging_context(**logging_context)
+            logging_context = log_info['context'].get('logging_context', {})
+            nfp_context['log_context'] = logging_context
             LOG.info(_LI("Received RPC UPDATE NETWORK FUNCTION CONFIG "
                          "for %(service_type)s "),
                      {'service_type': request_data['info']['service_type']})
@@ -310,7 +312,6 @@ class ConfiguratorRpcManager(object):
             msg = ("Failed to update network service configuration. %s" %
                    str(err).capitalize())
             LOG.error(msg)
-        nfp_logging.clear_logging_context()
 
     @log_helpers.log_method_call
     def get_notifications(self, context):
@@ -324,7 +325,7 @@ class ConfiguratorRpcManager(object):
         Returns: notification_data
 
         """
-
+        module_context.init()
         LOG.info(_LI("Received RPC GET NOTIFICATIONS "))
         events = self.sc.get_stashed_events()
         notifications = []

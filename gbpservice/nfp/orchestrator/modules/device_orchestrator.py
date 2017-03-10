@@ -847,6 +847,7 @@ class DeviceOrchestrator(nfp_api.NfpEventHandler):
     def _post_configure_device_graph(self, nfp_context, serialize=False):
         nf_id = nfp_context['network_function']['id']
         nfi_id = nfp_context['network_function_instance']['id']
+        sc_instance_id = nfp_context['service_chain_instance']['id']
         binding_key = nfp_context['service_details'][
             'service_vendor'].lower() + nf_id
         device_configure_event = self._controller.new_event(
@@ -864,7 +865,9 @@ class DeviceOrchestrator(nfp_api.NfpEventHandler):
             binding_key=binding_key)
         device_configured_event = self._controller.new_event(
             id='CONFIGURATION_COMPLETE',
-            key=nf_id)
+            key=nf_id,
+            serialize=serialize,
+            binding_key=sc_instance_id)
         device_periodic_hm_event = self._controller.new_event(
             id='PERFORM_PERIODIC_HEALTH_CHECK',
             key=nf_id + nfi_id)
@@ -1594,6 +1597,8 @@ class NDOConfiguratorRpcApi(object):
             # 'orig_nfp_context': device.get('orig_nfp_context'),
             'nfp_context': device.get('nfp_context', None),
             'service_profile': device.get('service_profile'),
+            'service_vm_context': nfp_utils.get_service_vm_context(
+                device['service_details']['service_vendor']),
         }
         nfd_ip = device.get('mgmt_ip_address')
         request_info.update({'device_ip': nfd_ip})

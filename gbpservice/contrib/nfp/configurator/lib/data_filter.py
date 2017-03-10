@@ -214,6 +214,9 @@ class Filter(object):
             ipsecpolicy = [ipsecpolicy for ipsecpolicy in
                            service_info['ipsecpolicies']
                            if ipsecpolicy['id'] == conn['ipsecpolicy_id']][0]
+            """
+            Get the local subnet cidr
+            """
 
             siteconn = {}
             siteconn['connection'] = conn

@@ -25,7 +25,6 @@ from gbpservice.nfp.core import module as nfp_api
 from neutron._i18n import _LI
 import oslo_messaging as messaging
 
-
 LOG = nfp_logging.getLogger(__name__)
 
 
@@ -106,10 +105,10 @@ class VpnaasRpcSender(data_filter.Filter):
         msg = {'info': {'service_type': const.SERVICE_TYPE,
                         'context': context['agent_info']['context']},
                'notification': [{
-                     'resource': context['agent_info']['resource'],
-                     'data': {'status': status,
-                              'notification_type': (
-                                    'update_status')}}]
+                   'resource': context['agent_info']['resource'],
+                   'data': {'status': status,
+                            'notification_type': (
+                                'update_status')}}]
                }
         LOG.info(_LI("Sending Notification 'Update Status' with "
                      "status:%(status)s "),
@@ -122,10 +121,10 @@ class VpnaasRpcSender(data_filter.Filter):
         msg = {'info': {'service_type': const.SERVICE_TYPE,
                         'context': context['agent_info']['context']},
                'notification': [{
-                     'resource': context['agent_info']['resource'],
-                     'data': {'resource_id': resource_id,
-                              'notification_type': (
-                                    'ipsec_site_conn_deleted')}}]
+                   'resource': context['agent_info']['resource'],
+                   'data': {'resource_id': resource_id,
+                            'notification_type': (
+                                'ipsec_site_conn_deleted')}}]
                }
         LOG.info(_LI("Sending Notification 'Ipsec Site Conn Deleted' "
                      "for resource:%(resource_id)s "),
@@ -171,12 +170,29 @@ class VPNaasRpcManager(agent_base.AgentBaseRPCManager):
 
         Returns: None
         """
+
         LOG.info(_LI("Received request 'VPN Service Updated'."
                      "for API '%(api)s'"),
                  {'api': resource_data.get('reason', '')})
         arg_dict = {'context': context,
                     'resource_data': resource_data}
-        ev = self.sc.new_event(id='VPNSERVICE_UPDATED', data=arg_dict)
+        # Serializing the event because simultaneous configure
+        # requests overrides the same crypto-map in the service VM
+        # which results in corrupting the crypto-map
+
+        resource_type = resource_data.get('rsrc_type')
+        if resource_type and resource_type.lower() == 'ipsec_site_connection':
+            ev = self.sc.new_event(id='VPNSERVICE_UPDATED',
+                                   key=resource_data['resource']['id'],
+                                   data=arg_dict,
+                                   serialize=True,
+                                   binding_key=resource_data[
+                                       'resource']['vpnservice_id'])
+            msg = "serializing event: %s" % ('VPNSERVICE_UPDATED')
+            LOG.debug(msg)
+        else:
+            ev = self.sc.new_event(id='VPNSERVICE_UPDATED', data=arg_dict)
+
         self.sc.post_event(ev)
 
 
@@ -235,6 +251,8 @@ class VPNaasEventHandler(nfp_api.NfpEventHandler):
                 msg = ("Failed to perform the operation: %s. %s"
                        % (ev.id, str(err).capitalize()))
                 LOG.error(msg)
+            finally:
+                self._sc.event_complete(ev)
 
     def _vpnservice_updated(self, ev, driver):
         """
@@ -256,7 +274,7 @@ class VPNaasEventHandler(nfp_api.NfpEventHandler):
             if 'ipsec_site_conns' in context['service_info']:
                 for item in context['service_info']['ipsec_site_conns']:
                     if item['id'] == resource_data['resource']['id'] and (
-                                       resource_data['reason'] == 'create'):
+                            resource_data['reason'] == 'create'):
                         item['status'] = 'INIT'
                         arg_dict = {'context': context,
                                     'resource_data': resource_data}
@@ -339,9 +357,9 @@ def events_init(sc, drivers):
     """
     evs = [
         nfp_event.Event(id='VPNSERVICE_UPDATED',
-                   handler=VPNaasEventHandler(sc, drivers)),
+                        handler=VPNaasEventHandler(sc, drivers)),
         nfp_event.Event(id='VPN_SYNC',
-                   handler=VPNaasEventHandler(sc, drivers))]
+                        handler=VPNaasEventHandler(sc, drivers))]
 
     sc.register_events(evs)
 
