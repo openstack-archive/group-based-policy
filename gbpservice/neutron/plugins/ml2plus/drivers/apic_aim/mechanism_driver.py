@@ -88,7 +88,7 @@ NO_ADDR_SCOPE = object()
 
 class KeystoneNotificationEndpoint(object):
     filter_rule = oslo_messaging.NotificationFilter(
-        event_type='identity.project.update')
+        event_type='^identity.project.[updated|deleted]')
 
     def __init__(self, mechanism_driver):
         self._driver = mechanism_driver
@@ -101,24 +101,44 @@ class KeystoneNotificationEndpoint(object):
         if not tenant_id:
             return None
 
-        new_project_name = (self._driver.project_name_cache.
-                            update_project_name(tenant_id))
-        if not new_project_name:
-            return None
+        if event_type == 'identity.project.updated':
+            new_project_name = (self._driver.project_name_cache.
+                                update_project_name(tenant_id))
+            if not new_project_name:
+                return None
 
-        # we only update tenants which have been created in APIC. For other
-        # cases, their nameAlias will be set when the first resource is being
-        # created under that tenant
-        session = db_api.get_session()
-        tenant_aname = self._driver.name_mapper.project(session, tenant_id)
-        aim_ctx = aim_context.AimContext(session)
-        tenant = aim_resource.Tenant(name=tenant_aname)
-        if not self._driver.aim.get(aim_ctx, tenant):
-            return None
+            # we only update tenants which have been created in APIC. For other
+            # cases, their nameAlias will be set when the first resource is
+            # being created under that tenant
+            session = db_api.get_session()
+            tenant_aname = self._driver.name_mapper.project(session, tenant_id)
+            aim_ctx = aim_context.AimContext(session)
+            tenant = aim_resource.Tenant(name=tenant_aname)
+            if not self._driver.aim.get(aim_ctx, tenant):
+                return None
 
-        self._driver.aim.update(aim_ctx, tenant,
-            display_name=aim_utils.sanitize_display_name(new_project_name))
-        return oslo_messaging.NotificationResult.HANDLED
+            self._driver.aim.update(aim_ctx, tenant,
+                display_name=aim_utils.sanitize_display_name(new_project_name))
+            return oslo_messaging.NotificationResult.HANDLED
+
+        if event_type == 'identity.project.deleted':
+            if not self._driver.enable_keystone_notification_purge:
+                return None
+
+            self.tenant = tenant_id
+            self._driver.project_name_cache.purge_gbp(self)
+
+            # delete the tenant and AP in AIM also
+            session = db_api.get_session()
+            tenant_aname = self._driver.name_mapper.project(session, tenant_id)
+            aim_ctx = aim_context.AimContext(session)
+            ap = aim_resource.ApplicationProfile(tenant_name=tenant_aname,
+                                                 name=self._driver.ap_name)
+            self._driver.aim.delete(aim_ctx, ap)
+            tenant = aim_resource.Tenant(name=tenant_aname)
+            self._driver.aim.delete(aim_ctx, tenant)
+
+            return oslo_messaging.NotificationResult.HANDLED
 
 
 class ApicMechanismDriver(api_plus.MechanismDriver):
@@ -169,6 +189,8 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
         self._setup_keystone_notification_listeners()
         self.apic_optimized_dhcp_lease_time = (cfg.CONF.ml2_apic_aim.
                                                apic_optimized_dhcp_lease_time)
+        self.enable_keystone_notification_purge = (cfg.CONF.ml2_apic_aim.
+                                            enable_keystone_notification_purge)
 
     def _setup_keystone_notification_listeners(self):
         targets = [oslo_messaging.Target(
