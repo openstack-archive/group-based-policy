@@ -36,6 +36,11 @@ apic_opts = [
                help=("Number of seconds for the optimized DHCP lease time. "
                      "Default is 0 which means using opflex agent's default "
                      "value.")),
+    cfg.BoolOpt('enable_keystone_notification_purge',
+                default=False,
+                help=("This will enable purging all the resources including "
+                      "the tenant once a keystone project.deleted "
+                      "notification is received.")),
 ]
 
 
