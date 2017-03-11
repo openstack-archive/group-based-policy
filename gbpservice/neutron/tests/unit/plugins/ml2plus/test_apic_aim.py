@@ -132,6 +132,17 @@ class ApicAimTestMixin(object):
         agent.update(agent_conf)
         self.plugin.create_or_update_agent(context.get_admin_context(), agent)
 
+    def _check_call_list(self, expected, observed, check_all=True):
+        for call in expected:
+            self.assertTrue(call in observed,
+                            msg='Call not found, expected:\n%s\nobserved:'
+                                '\n%s' % (str(call), str(observed)))
+            observed.remove(call)
+        if check_all:
+            self.assertFalse(
+                len(observed),
+                msg='There are more calls than expected: %s' % str(observed))
+
 
 class ApicAimTestCase(test_address_scope.AddressScopeTestCase,
                       test_l3.L3NatTestCaseMixin, ApicAimTestMixin):
@@ -1050,14 +1061,31 @@ class TestAimMapping(ApicAimTestCase):
     def test_keystone_notification_endpoint(self):
         self.driver.aim.get = mock.Mock(return_value=True)
         self.driver.aim.update = mock.Mock()
+        self.driver.aim.delete = mock.Mock()
+        self.driver.project_name_cache.purge_gbp = mock.Mock()
         payload = {}
         payload['resource_info'] = 'test-tenant'
         keystone_ep = md.KeystoneNotificationEndpoint(self.driver)
-        keystone_ep.info(None, None, None, payload, None)
-        tenant_aname = self.name_mapper.project(None, 'test-tenant')
-        tenant = aim_resource.Tenant(name=tenant_aname)
+
+        # first test with project.updated event
+        keystone_ep.info(None, None, 'identity.project.updated', payload, None)
+        tenant_name = self.name_mapper.project(None, 'test-tenant')
+        tenant = aim_resource.Tenant(name=tenant_name)
         self.driver.aim.update.assert_called_once_with(
             mock.ANY, tenant, display_name='new_name')
+
+        # test again with project.deleted event
+        keystone_ep.info(None, None, 'identity.project.deleted', payload, None)
+        self.assertEqual(keystone_ep.tenant, 'test-tenant')
+        self.driver.project_name_cache.purge_gbp.assert_called_once_with(
+                                                                keystone_ep)
+        ap = aim_resource.ApplicationProfile(tenant_name=tenant_name,
+                                             name=self.driver.ap_name)
+        tenant = aim_resource.Tenant(name=tenant_name)
+        exp_calls = [
+            mock.call(mock.ANY, ap),
+            mock.call(mock.ANY, tenant)]
+        self._check_call_list(exp_calls, self.driver.aim.delete.call_args_list)
 
     # TODO(rkukura): Test IPv6 and dual stack router interfaces.
 
