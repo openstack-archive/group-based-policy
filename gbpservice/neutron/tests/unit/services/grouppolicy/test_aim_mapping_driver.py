@@ -184,17 +184,6 @@ class AIMBaseTestCase(test_nr_base.CommonNeutronBaseTestCase,
         ksc_client.Client = self.saved_keystone_client
         super(AIMBaseTestCase, self).tearDown()
 
-    def _check_call_list(self, expected, observed, check_all=True):
-        for call in expected:
-            self.assertTrue(call in observed,
-                            msg='Call not found, expected:\n%s\nobserved:'
-                                '\n%s' % (str(call), str(observed)))
-            observed.remove(call)
-        if check_all:
-            self.assertFalse(
-                len(observed),
-                msg='There are more calls than expected: %s' % str(observed))
-
     def _setup_external_network(self, name, dn=None, router_tenant=None):
         DN = 'apic:distinguished_names'
         kwargs = {'router:external': True}
