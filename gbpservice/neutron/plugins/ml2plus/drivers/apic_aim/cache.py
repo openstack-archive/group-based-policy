@@ -13,6 +13,7 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+from gbpclient.v2_0 import client as gbp_client
 from keystoneclient import auth as ksc_auth
 from keystoneclient import session as ksc_session
 from keystoneclient.v3 import client as ksc_client
@@ -39,6 +40,7 @@ class ProjectNameCache(object):
     def __init__(self):
         self.project_names = {}
         self.keystone = None
+        self.gbp = None
 
     def _get_keystone_client(self):
         LOG.debug("Getting keystone client")
@@ -51,7 +53,9 @@ class ProjectNameCache(object):
             cfg.CONF, AUTH_GROUP, auth=auth)
         LOG.debug("Got session: %s", session)
         self.keystone = ksc_client.Client(session=session)
-        LOG.debug("Got client: %s", self.keystone)
+        LOG.debug("Got keystone client: %s", self.keystone)
+        self.gbp = gbp_client.Client(session=session)
+        LOG.debug("Got gbp client: %s", self.gbp)
 
     def ensure_project(self, project_id):
         """Ensure cache contains mapping for project.
@@ -103,3 +107,10 @@ class ProjectNameCache(object):
                 self.project_names[project.id] = project.name
                 return project.name
         return None
+
+    def purge_gbp(self, project_id):
+        if self.gbp is None:
+            self._get_keystone_client()
+        if self.gbp:
+            LOG.debug("Calling gbp purge() API")
+            self.gbp.purge(project_id)
