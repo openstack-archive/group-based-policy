@@ -110,7 +110,6 @@ class ResourceMappingTestCase(test_plugin.GroupPolicyPluginTestCase):
         self.saved_keystone_client = resource_mapping.k_client.Client
         resource_mapping.k_client.Client = mock.Mock()
         local_api.QUEUE_OUT_OF_PROCESS_NOTIFICATIONS = False
-
         try:
             config.cfg.CONF.keystone_authtoken.username
         except config.cfg.NoSuchOptError:
