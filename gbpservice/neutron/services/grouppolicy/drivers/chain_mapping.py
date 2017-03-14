@@ -54,6 +54,9 @@ chain_mapping_opts = [
 ]
 
 cfg.CONF.register_opts(chain_mapping_opts, "chain_mapping")
+cfg.CONF.import_opt('policy_drivers',
+                    'gbpservice.neutron.services.grouppolicy.config',
+                    group='group_policy')
 
 
 class PtgServiceChainInstanceMapping(model_base.BASEV2, models_v2.HasTenant):
@@ -70,6 +73,29 @@ class PtgServiceChainInstanceMapping(model_base.BASEV2, models_v2.HasTenant):
                                          sa.ForeignKey('sc_instances.id',
                                                        ondelete='CASCADE'),
                                          primary_key=True)
+
+
+def converge_plugin_support(f):
+
+    def wrapper(self, context):
+        if ('precommit' in f.__name__):
+            f(self, context)
+            if ('aim_mapping' in cfg.CONF.group_policy.policy_drivers):
+                try:
+                    g = getattr(self,
+                                f.__name__.replace('precommit', 'postcommit'))
+                except AttributeError:
+                    pass
+                else:
+                    g(self, context)
+        else:
+            if ('aim_mapping' in cfg.CONF.group_policy.policy_drivers):
+                return
+
+            f(self, context)
+
+    return wrapper
+
 
 
 class ChainMappingDriver(api.PolicyDriver, local_api.LocalAPI,
@@ -121,6 +147,7 @@ class ChainMappingDriver(api.PolicyDriver, local_api.LocalAPI,
                                    auth_url=auth_url)
 
     @log.log_method_call
+    @converge_plugin_support
     def create_policy_target_postcommit(self, context):
         if not context._plugin._is_service_target(context._plugin_context,
                                                   context.current['id']):
@@ -136,11 +163,13 @@ class ChainMappingDriver(api.PolicyDriver, local_api.LocalAPI,
                     mapping.servicechain_instance_id)
 
     @log.log_method_call
+    @converge_plugin_support
     def delete_policy_target_precommit(self, context):
         context._is_service_target = context._plugin._is_service_target(
             context._plugin_context, context.current['id'])
 
     @log.log_method_call
+    @converge_plugin_support
     def delete_policy_target_postcommit(self, context):
         if not context._is_service_target:
             mappings = self._get_ptg_servicechain_mapping(
@@ -155,10 +184,12 @@ class ChainMappingDriver(api.PolicyDriver, local_api.LocalAPI,
                     mapping.servicechain_instance_id)
 
     @log.log_method_call
+    @converge_plugin_support
     def create_policy_target_group_precommit(self, context):
         self._validate_ptg_prss(context, context.current)
 
     @log.log_method_call
+    @converge_plugin_support
     def create_policy_target_group_postcommit(self, context):
         if (context.current['provided_policy_rule_sets'] and
                 self._is_group_chainable(context, context.current)):
@@ -169,11 +200,13 @@ class ChainMappingDriver(api.PolicyDriver, local_api.LocalAPI,
         self._handle_provider_updated(context)
 
     @log.log_method_call
+    @converge_plugin_support
     def update_policy_target_group_precommit(self, context):
         self._validate_ptg_prss(context, context.current)
         self._stash_ptg_modified_chains(context)
 
     @log.log_method_call
+    @converge_plugin_support
     def update_policy_target_group_postcommit(self, context):
         #Update service chain instance when any ruleset is changed
         orig = context.original
@@ -224,18 +257,22 @@ class ChainMappingDriver(api.PolicyDriver, local_api.LocalAPI,
             LOG.error(_LE('Failed to update ptg status'))
 
     @log.log_method_call
+    @converge_plugin_support
     def delete_policy_target_group_precommit(self, context):
         pass
 
     @log.log_method_call
+    @converge_plugin_support
     def delete_policy_target_group_postcommit(self, context):
         self._handle_prs_removed(context)
 
     @log.log_method_call
+    @converge_plugin_support
     def update_policy_classifier_postcommit(self, context):
         self._handle_classifier_update_notification(context)
 
     @log.log_method_call
+    @converge_plugin_support
     def create_policy_action_precommit(self, context):
         spec_id = context.current['action_value']
         if spec_id:
@@ -246,14 +283,17 @@ class ChainMappingDriver(api.PolicyDriver, local_api.LocalAPI,
                     self._reject_shared(context.current, 'policy_action')
 
     @log.log_method_call
+    @converge_plugin_support
     def update_policy_action_postcommit(self, context):
         self._handle_redirect_spec_id_update(context)
 
     @log.log_method_call
+    @converge_plugin_support
     def create_policy_rule_precommit(self, context):
         self._reject_multiple_redirects_in_rule(context)
 
     @log.log_method_call
+    @converge_plugin_support
     def update_policy_rule_precommit(self, context):
         self._reject_multiple_redirects_in_rule(context)
         old_redirect = self._get_redirect_action(context, context.original)
@@ -268,6 +308,7 @@ class ChainMappingDriver(api.PolicyDriver, local_api.LocalAPI,
                 self._validate_new_prs_redirect(context, prs)
 
     @log.log_method_call
+    @converge_plugin_support
     def update_policy_rule_postcommit(self, context):
         old_classifier_id = context.original['policy_classifier_id']
         new_classifier_id = context.current['policy_classifier_id']
@@ -291,16 +332,19 @@ class ChainMappingDriver(api.PolicyDriver, local_api.LocalAPI,
                 self._handle_redirect_action(context, policy_rule_sets)
 
     @log.log_method_call
+    @converge_plugin_support
     def create_policy_rule_set_precommit(self, context):
         self._reject_multiple_redirects_in_prs(context)
 
     @log.log_method_call
+    @converge_plugin_support
     def create_policy_rule_set_postcommit(self, context):
         if context.current['child_policy_rule_sets']:
             self._handle_redirect_action(
                 context, context.current['child_policy_rule_sets'])
 
     @log.log_method_call
+    @converge_plugin_support
     def update_policy_rule_set_precommit(self, context):
         self._reject_multiple_redirects_in_prs(context)
         # If a redirect action is added (from 0 to one) we have to validate
@@ -314,6 +358,7 @@ class ChainMappingDriver(api.PolicyDriver, local_api.LocalAPI,
             self._validate_new_prs_redirect(context, context.current)
 
     @log.log_method_call
+    @converge_plugin_support
     def update_policy_rule_set_postcommit(self, context):
         if self._is_redirect_rule_updated(context):
             # Handle any Redirects from the current Policy Rule Set
@@ -330,20 +375,24 @@ class ChainMappingDriver(api.PolicyDriver, local_api.LocalAPI,
                     context, context.current['child_policy_rule_sets'])
 
     @log.log_method_call
+    @converge_plugin_support
     def delete_policy_rule_set_postcommit(self, context):
         if context.current['child_policy_rule_sets']:
             self._handle_redirect_action(
                 context, context.current['child_policy_rule_sets'])
 
     @log.log_method_call
+    @converge_plugin_support
     def create_external_policy_postcommit(self, context):
         self._handle_prs_added(context)
 
     @log.log_method_call
+    @converge_plugin_support
     def update_external_policy_postcommit(self, context):
         self._handle_prs_updated(context)
 
     @log.log_method_call
+    @converge_plugin_support
     def delete_external_policy_postcommit(self, context):
         self._handle_prs_removed(context)
 
