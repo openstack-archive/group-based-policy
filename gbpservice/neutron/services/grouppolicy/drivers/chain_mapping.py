@@ -53,6 +53,9 @@ chain_mapping_opts = [
 ]
 
 cfg.CONF.register_opts(chain_mapping_opts, "chain_mapping")
+cfg.CONF.import_opt('policy_drivers',
+                    'gbpservice.neutron.services.grouppolicy.config',
+                    group='group_policy')
 
 
 class PtgServiceChainInstanceMapping(model_base.BASEV2, model_base.HasProject):
@@ -123,7 +126,25 @@ class ChainMappingDriver(api.PolicyDriver, local_api.LocalAPI,
                                    auth_url=auth_url)
 
     @log.log_method_call
-    def create_policy_target_postcommit(self, context):
+    def precommit_wrapper_for_chain_mapping(self, caller_method, context):
+        # This wrapper is called from both precommit and postcommit for
+        # deciding ordering for execution of precommit and postcommit
+        if 'precommit' in caller_method:
+            # In case of aim_mapping driver, postcommit functionality will be
+            # executed as a part of precommit
+            if ('aim_mapping' in cfg.CONF.group_policy.policy_drivers):
+                method = getattr(self, '_' + caller_method.replace(
+                                     'precommit', 'postcommit'))
+                method(context)
+        else:
+            # If driver is not aim_mapping then postcommit functionality will
+            # be executed by the call from gbp plugin
+            if ('aim_mapping' not in cfg.CONF.group_policy.policy_drivers):
+                method = getattr(self, '_' + caller_method)
+                method(context)
+
+    @log.log_method_call
+    def _create_policy_target_postcommit(self, context):
         if not context._plugin._is_service_target(context._plugin_context,
                                                   context.current['id']):
             mappings = self._get_ptg_servicechain_mapping(
@@ -138,12 +159,17 @@ class ChainMappingDriver(api.PolicyDriver, local_api.LocalAPI,
                     mapping.servicechain_instance_id)
 
     @log.log_method_call
-    def delete_policy_target_precommit(self, context):
-        context._is_service_target = context._plugin._is_service_target(
-            context._plugin_context, context.current['id'])
+    def create_policy_target_precommit(self, context):
+        self.precommit_wrapper_for_chain_mapping(
+            'create_policy_target_precommit', context)
 
     @log.log_method_call
-    def delete_policy_target_postcommit(self, context):
+    def create_policy_target_postcommit(self, context):
+        self.precommit_wrapper_for_chain_mapping(
+            'create_policy_target_postcommit', context)
+
+    @log.log_method_call
+    def _delete_policy_target_postcommit(self, context):
         if not context._is_service_target:
             mappings = self._get_ptg_servicechain_mapping(
                 context._plugin_context.session,
@@ -157,11 +183,19 @@ class ChainMappingDriver(api.PolicyDriver, local_api.LocalAPI,
                     mapping.servicechain_instance_id)
 
     @log.log_method_call
-    def create_policy_target_group_precommit(self, context):
-        self._validate_ptg_prss(context, context.current)
+    def delete_policy_target_precommit(self, context):
+        context._is_service_target = context._plugin._is_service_target(
+            context._plugin_context, context.current['id'])
+        self.precommit_wrapper_for_chain_mapping(
+            'delete_policy_target_precommit', context)
 
     @log.log_method_call
-    def create_policy_target_group_postcommit(self, context):
+    def delete_policy_target_postcommit(self, context):
+        self.precommit_wrapper_for_chain_mapping(
+            'delete_policy_target_postcommit', context)
+
+    @log.log_method_call
+    def _create_policy_target_group_postcommit(self, context):
         if (context.current['provided_policy_rule_sets'] and
                 self._is_group_chainable(context, context.current)):
             self._handle_redirect_action(
@@ -171,13 +205,19 @@ class ChainMappingDriver(api.PolicyDriver, local_api.LocalAPI,
         self._handle_provider_updated(context)
 
     @log.log_method_call
-    def update_policy_target_group_precommit(self, context):
+    def create_policy_target_group_precommit(self, context):
         self._validate_ptg_prss(context, context.current)
-        self._stash_ptg_modified_chains(context)
+        self.precommit_wrapper_for_chain_mapping(
+            'create_policy_target_group_precommit', context)
 
     @log.log_method_call
-    def update_policy_target_group_postcommit(self, context):
-        #Update service chain instance when any ruleset is changed
+    def create_policy_target_group_postcommit(self, context):
+        self.precommit_wrapper_for_chain_mapping(
+            'create_policy_target_group_postcommit', context)
+
+    @log.log_method_call
+    def _update_policy_target_group_postcommit(self, context):
+        # Update service chain instance when any ruleset is changed
         orig = context.original
         curr = context.current
 
@@ -199,16 +239,71 @@ class ChainMappingDriver(api.PolicyDriver, local_api.LocalAPI,
         self._handle_provider_updated(context)
 
     @log.log_method_call
-    def delete_policy_target_group_precommit(self, context):
-        pass
+    def update_policy_target_group_precommit(self, context):
+        self._validate_ptg_prss(context, context.current)
+        self._stash_ptg_modified_chains(context)
+        self.precommit_wrapper_for_chain_mapping(
+            'update_policy_target_group_precommit', context)
 
     @log.log_method_call
-    def delete_policy_target_group_postcommit(self, context):
+    def update_policy_target_group_postcommit(self, context):
+        self.precommit_wrapper_for_chain_mapping(
+            'update_policy_target_group_postcommit', context)
+
+    @log.log_method_call
+    def get_policy_target_group_status(self, context):
+        try:
+            if (context.current['provided_policy_rule_sets'] and not
+                context.current.get('proxied_group_id')):
+                ptg_status = []
+                for sci in self._get_chains_by_prs(
+                            context,
+                            context.current['provided_policy_rule_sets']):
+                    servicechain_instance = self._get_servicechain_instance(
+                                                    context._plugin_context,
+                                                    sci)
+                    if (servicechain_instance['provider_ptg_id'] ==
+                            context.current['id']):
+                        ptg_status.append(
+                                {'status': servicechain_instance['status'],
+                                 'status_details': servicechain_instance[
+                                    'status_details']})
+                # REVISIT: For now assuming there will be only
+                #          one sci associated with this ptg
+                if ptg_status:
+                    context.current['status'] = ptg_status[0]['status']
+                    context.current['status_details'] = ptg_status[0][
+                            'status_details']
+        except Exception:
+            LOG.error(_LE('Failed to update ptg status'))
+
+    @log.log_method_call
+    def _delete_policy_target_group_postcommit(self, context):
         self._handle_prs_removed(context)
 
     @log.log_method_call
-    def update_policy_classifier_postcommit(self, context):
+    def delete_policy_target_group_precommit(self, context):
+        self.precommit_wrapper_for_chain_mapping(
+            'delete_policy_target_group_precommit', context)
+
+    @log.log_method_call
+    def delete_policy_target_group_postcommit(self, context):
+        self.precommit_wrapper_for_chain_mapping(
+            'delete_policy_target_group_postcommit', context)
+
+    @log.log_method_call
+    def _update_policy_classifier_postcommit(self, context):
         self._handle_classifier_update_notification(context)
+
+    @log.log_method_call
+    def update_policy_classifier_precommit(self, context):
+        self.precommit_wrapper_for_chain_mapping(
+            'update_policy_classifier_precommit', context)
+
+    @log.log_method_call
+    def update_policy_classifier_postcommit(self, context):
+        self.precommit_wrapper_for_chain_mapping(
+            'update_policy_classifier_postcommit', context)
 
     @log.log_method_call
     def create_policy_action_precommit(self, context):
@@ -221,29 +316,25 @@ class ChainMappingDriver(api.PolicyDriver, local_api.LocalAPI,
                     self._reject_shared(context.current, 'policy_action')
 
     @log.log_method_call
-    def update_policy_action_postcommit(self, context):
+    def _update_policy_action_postcommit(self, context):
         self._handle_redirect_spec_id_update(context)
+
+    @log.log_method_call
+    def update_policy_action_precommit(self, context):
+        self.precommit_wrapper_for_chain_mapping(
+            'update_policy_action_precommit', context)
+
+    @log.log_method_call
+    def update_policy_action_postcommit(self, context):
+        self.precommit_wrapper_for_chain_mapping(
+            'update_policy_action_postcommit', context)
 
     @log.log_method_call
     def create_policy_rule_precommit(self, context):
         self._reject_multiple_redirects_in_rule(context)
 
     @log.log_method_call
-    def update_policy_rule_precommit(self, context):
-        self._reject_multiple_redirects_in_rule(context)
-        old_redirect = self._get_redirect_action(context, context.original)
-        new_redirect = self._get_redirect_action(context, context.current)
-        if not old_redirect and new_redirect:
-            # If redirect action is added, check that there's no contract that
-            # already has a redirect action
-            for prs in context._plugin.get_policy_rule_sets(
-                    context._plugin_context,
-                    {'id': context.current['policy_rule_sets']}):
-                # Make sure the PRS can have a new redirect action
-                self._validate_new_prs_redirect(context, prs)
-
-    @log.log_method_call
-    def update_policy_rule_postcommit(self, context):
+    def _update_policy_rule_postcommit(self, context):
         old_classifier_id = context.original['policy_classifier_id']
         new_classifier_id = context.current['policy_classifier_id']
         old_action_set = set(context.current['policy_actions'])
@@ -266,30 +357,45 @@ class ChainMappingDriver(api.PolicyDriver, local_api.LocalAPI,
                 self._handle_redirect_action(context, policy_rule_sets)
 
     @log.log_method_call
-    def create_policy_rule_set_precommit(self, context):
-        self._reject_multiple_redirects_in_prs(context)
+    def update_policy_rule_precommit(self, context):
+        self._reject_multiple_redirects_in_rule(context)
+        old_redirect = self._get_redirect_action(context, context.original)
+        new_redirect = self._get_redirect_action(context, context.current)
+        if not old_redirect and new_redirect:
+            # If redirect action is added, check that there's no contract that
+            # already has a redirect action
+            for prs in context._plugin.get_policy_rule_sets(
+                    context._plugin_context,
+                    {'id': context.current['policy_rule_sets']}):
+                # Make sure the PRS can have a new redirect action
+                self._validate_new_prs_redirect(context, prs)
+        self.precommit_wrapper_for_chain_mapping(
+            'update_policy_rule_precommit', context)
 
     @log.log_method_call
-    def create_policy_rule_set_postcommit(self, context):
+    def update_policy_rule_postcommit(self, context):
+        self.precommit_wrapper_for_chain_mapping(
+            'update_policy_rule_postcommit', context)
+
+    @log.log_method_call
+    def _create_policy_rule_set_postcommit(self, context):
         if context.current['child_policy_rule_sets']:
             self._handle_redirect_action(
                 context, context.current['child_policy_rule_sets'])
 
     @log.log_method_call
-    def update_policy_rule_set_precommit(self, context):
+    def create_policy_rule_set_precommit(self, context):
         self._reject_multiple_redirects_in_prs(context)
-        # If a redirect action is added (from 0 to one) we have to validate
-        # the providing and consuming PTGs. Not needed at creation time since
-        # no PTG could be possibly providing or consuming it
-        old_red_count = self._multiple_pr_redirect_action_number(
-            context._plugin_context.session, context.original['policy_rules'])
-        new_red_count = self._multiple_pr_redirect_action_number(
-            context._plugin_context.session, context.current['policy_rules'])
-        if new_red_count > old_red_count:
-            self._validate_new_prs_redirect(context, context.current)
+        self.precommit_wrapper_for_chain_mapping(
+            'create_policy_rule_set_precommit', context)
 
     @log.log_method_call
-    def update_policy_rule_set_postcommit(self, context):
+    def create_policy_rule_set_postcommit(self, context):
+        self.precommit_wrapper_for_chain_mapping(
+            'create_policy_rule_set_postcommit', context)
+
+    @log.log_method_call
+    def _update_policy_rule_set_postcommit(self, context):
         if self._is_redirect_rule_updated(context):
             # Handle any Redirects from the current Policy Rule Set
             self._handle_redirect_action(context, [context.current['id']])
@@ -305,22 +411,82 @@ class ChainMappingDriver(api.PolicyDriver, local_api.LocalAPI,
                     context, context.current['child_policy_rule_sets'])
 
     @log.log_method_call
-    def delete_policy_rule_set_postcommit(self, context):
+    def update_policy_rule_set_precommit(self, context):
+        self._reject_multiple_redirects_in_prs(context)
+        # If a redirect action is added (from 0 to one) we have to validate
+        # the providing and consuming PTGs. Not needed at creation time since
+        # no PTG could be possibly providing or consuming it
+        old_red_count = self._multiple_pr_redirect_action_number(
+            context._plugin_context.session, context.original['policy_rules'])
+        new_red_count = self._multiple_pr_redirect_action_number(
+            context._plugin_context.session, context.current['policy_rules'])
+        if new_red_count > old_red_count:
+            self._validate_new_prs_redirect(context, context.current)
+        self.precommit_wrapper_for_chain_mapping(
+            'update_policy_rule_set_precommit', context)
+
+    @log.log_method_call
+    def update_policy_rule_set_postcommit(self, context):
+        self.precommit_wrapper_for_chain_mapping(
+            'update_policy_rule_set_postcommit', context)
+
+    @log.log_method_call
+    def _delete_policy_rule_set_postcommit(self, context):
         if context.current['child_policy_rule_sets']:
             self._handle_redirect_action(
                 context, context.current['child_policy_rule_sets'])
 
     @log.log_method_call
-    def create_external_policy_postcommit(self, context):
+    def delete_policy_rule_set_precommit(self, context):
+        self.precommit_wrapper_for_chain_mapping(
+            'delete_policy_rule_set_precommit', context)
+
+    @log.log_method_call
+    def delete_policy_rule_set_postcommit(self, context):
+        self.precommit_wrapper_for_chain_mapping(
+            'delete_policy_rule_set_postcommit', context)
+
+    @log.log_method_call
+    def _create_external_policy_postcommit(self, context):
         self._handle_prs_added(context)
 
     @log.log_method_call
-    def update_external_policy_postcommit(self, context):
+    def create_external_policy_precommit(self, context):
+        self.precommit_wrapper_for_chain_mapping(
+            'create_external_policy_precommit', context)
+
+    @log.log_method_call
+    def create_external_policy_postcommit(self, context):
+        self.precommit_wrapper_for_chain_mapping(
+            'create_external_policy_postcommit', context)
+
+    @log.log_method_call
+    def _update_external_policy_postcommit(self, context):
         self._handle_prs_updated(context)
 
     @log.log_method_call
-    def delete_external_policy_postcommit(self, context):
+    def update_external_policy_precommit(self, context):
+        self.precommit_wrapper_for_chain_mapping(
+            'update_external_policy_precommit', context)
+
+    @log.log_method_call
+    def update_external_policy_postcommit(self, context):
+        self.precommit_wrapper_for_chain_mapping(
+            'update_external_policy_postcommit', context)
+
+    @log.log_method_call
+    def _delete_external_policy_postcommit(self, context):
         self._handle_prs_removed(context)
+
+    @log.log_method_call
+    def delete_external_policy_precommit(self, context):
+        self.precommit_wrapper_for_chain_mapping(
+            'delete_external_policy_precommit', context)
+
+    @log.log_method_call
+    def delete_external_policy_postcommit(self, context):
+        self.precommit_wrapper_for_chain_mapping(
+            'delete_external_policy_postcommit', context)
 
     def _is_redirect_rule_updated(self, context):
         if (not context.original['child_policy_rule_sets']) and (
