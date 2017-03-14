@@ -76,3 +76,7 @@ class NoopNodeDriver(driver_base.NodeDriverBase):
     @property
     def name(self):
         return self._name
+
+    @log.log_method_call
+    def get_status(self, context):
+        return {'status': '', 'status_description': '', 'provider_ptg_id': ''}
