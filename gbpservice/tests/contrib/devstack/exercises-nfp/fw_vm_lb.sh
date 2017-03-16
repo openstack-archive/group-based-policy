@@ -24,7 +24,7 @@ source $TOP_DIR/openrc neutron service
 create_gbp_resources() {
     # E-W insertion
     gbp servicechain-node-create --service-profile base_mode_fw_vm --config 'custom_json:{"mimetype": "config/custom+json","rules": [{"action": "log", "name": "tcp", "service": "tcp/80"}, {"action": "log", "name": "tcp", "service": "tcp/8080"}, {"action": "accept", "name": "tcp", "service": "tcp/22"}, {"action": "accept", "name": "icmp", "service": "icmp"}]}' FW_LB-FWNODE
-    gbp servicechain-node-create --service-profile base_mode_lb --template-file $TOP_DIR/nfp-templates/haproxy.template FW_LB-LBNODE
+    gbp servicechain-node-create --service-profile base_mode_lb --template-file $TOP_DIR/nfp-templates/haproxy_lbaasv2.template FW_LB-LBNODE
     gbp servicechain-spec-create --nodes "FW_LB-FWNODE FW_LB-LBNODE" fw_lb_chainspec
     gbp policy-action-create --action-type REDIRECT --action-value fw_lb_chainspec redirect-to-fw_lb
     gbp policy-classifier-create --protocol tcp --direction bi fw_lb-webredirect
