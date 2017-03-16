@@ -141,7 +141,7 @@ function create_nfp_gbp_resources {
         FLAVOR=m1.nfp-tiny
 
         gbp service-profile-create\
- --servicetype LOADBALANCER\
+ --servicetype LOADBALANCERV2\
  --insertion-mode l3\
  --shared True\
  --service-flavor service_vendor=haproxy,device_type=None\
@@ -159,19 +159,10 @@ function create_nfp_gbp_resources {
     else
 
         gbp service-profile-create\
- --servicetype LOADBALANCER\
- --insertion-mode l3\
- --shared True\
- --service-flavor service_vendor=haproxy,device_type=nova\
- --vendor NFP\
- lb_profile
-
-        if [[ $ENABLE_LBAASV2 = True ]]; then
-            gbp service-profile-create\
  --servicetype LOADBALANCERV2\
  --insertion-mode l3\
  --shared True\
- --service-flavor service_vendor=haproxy_lbaasv2,device_type=nova,flavor=m1.small\
+ --service-flavor service_vendor=haproxy,device_type=nova,flavor=m1.small\
  --vendor NFP\
  lbv2_profile
         fi
@@ -295,7 +286,7 @@ function create_nfp_image {
         HaproxyQcow2ImageName=haproxy
         if ! [[ -z $HaproxyQcow2Image ]]; then
             echo "Uploading Image: $HaproxyQcow2ImageName"
-            glance image-create --name $HaproxyQcow2ImageName --disk-format qcow2 --container-format bare --visibility public --file $HaproxyQcow2Image
+            glance image-create --name $HaproxyQcow2ImageName --disk-format qcow2 --container-format bare --visibility public --file $HaproxyQcow2Image --property supports_hotplug=False
         fi
     fi
 }
