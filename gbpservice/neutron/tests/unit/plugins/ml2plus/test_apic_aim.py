@@ -15,6 +15,7 @@
 
 import mock
 import netaddr
+import six
 
 from aim.aim_lib import nat_strategy
 from aim import aim_manager
@@ -99,7 +100,7 @@ class FakeTenant(object):
 
 class FakeProjectManager(object):
     def list(self):
-        return [FakeTenant(k, v) for k, v in TEST_TENANT_NAMES.iteritems()]
+        return [FakeTenant(k, v) for k, v in six.iteritems(TEST_TENANT_NAMES)]
 
     def get(self, project_id):
         return FakeTenant('test-tenant', 'new_name')
@@ -209,7 +210,7 @@ class ApicAimTestCase(test_address_scope.AddressScopeTestCase,
         dist_names = resource.get('apic:distinguished_names')
         self.assertIsInstance(dist_names, dict)
         dn = dist_names.get(key)
-        self.assertIsInstance(dn, basestring)
+        self.assertIsInstance(dn, six.string_types)
         self.assertEqual(aim_resource.dn, dn)
 
     def _check_no_dn(self, resource, key):
@@ -2788,7 +2789,7 @@ class CallRecordWrapper(object):
         return recorder
 
     def tearDown(self):
-        for k, v in self.klass.__overridden.iteritems():
+        for k, v in six.iteritems(self.klass.__overridden):
             setattr(self.klass, k, v)
         del self.klass.__overridden
 
@@ -2996,7 +2997,7 @@ class TestExternalConnectivityBase(object):
 
         # Connect the router interfaces to the subnets
         vrf_objs = {}
-        for tenant, router_list in objs.iteritems():
+        for tenant, router_list in six.iteritems(objs):
             tenant_aname = self.name_mapper.project(None, tenant)
             a_vrf = aim_resource.VRF(tenant_name=tenant_aname,
                                      name='DefaultVRF')
@@ -3027,7 +3028,7 @@ class TestExternalConnectivityBase(object):
             vrf_objs[tenant] = a_ext_net
 
         # Remove the router interfaces
-        for tenant, router_list in objs.iteritems():
+        for tenant, router_list in six.iteritems(objs):
             tenant_aname = self.name_mapper.project(None, tenant)
             a_vrf = aim_resource.VRF(tenant_name=tenant_aname,
                                      name='DefaultVRF')

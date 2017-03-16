@@ -10,6 +10,7 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+import six
 
 from argparse import Namespace
 
@@ -183,7 +184,7 @@ class EventGraphExecutor(object):
 
     def _root(self, graph, of):
         tree = graph['data']
-        for root, nodes in tree.iteritems():
+        for root, nodes in six.iteritems(tree):
             if of in nodes:
                 return root
         return None

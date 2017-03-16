@@ -11,6 +11,7 @@
 #    under the License.
 
 import copy
+import six
 
 from neutron.common import constants as n_constants
 
@@ -168,7 +169,7 @@ def get_service_contract_filter_entries():
 
     # ARP
     arp_entries = get_arp_filter_entry()
-    for k, v in arp_entries.iteritems():
+    for k, v in six.iteritems(arp_entries):
         entries[k] = v
 
     return entries
@@ -183,7 +184,7 @@ def map_to_aim_filter_entry(entry):
                    'sFromPort': 'source_from_port',
                    'icmpv4T': 'icmpv4_type',
                    'tcpRules': 'tcp_flags'}
-    return dict((mapped_keys[k], v) for (k, v) in entry.iteritems())
+    return dict((mapped_keys[k], v) for (k, v) in six.iteritems(entry))
 
 
 def _get_filter_entry_name(entry_number):

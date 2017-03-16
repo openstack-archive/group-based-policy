@@ -11,6 +11,7 @@
 #  under the License.
 
 import copy
+import six
 
 from neutron.api.v2 import attributes as nattr
 from neutron.plugins.common import constants
@@ -24,7 +25,7 @@ from gbpservice.neutron.tests.unit import test_extension_group_policy as tgp
 class GroupPolicyMappingExtTestCase(tgp.GroupPolicyExtensionTestCase):
     def setUp(self):
         self._saved_gp_attr_map = {}
-        for k, v in gp.RESOURCE_ATTRIBUTE_MAP.iteritems():
+        for k, v in six.iteritems(gp.RESOURCE_ATTRIBUTE_MAP):
             self._saved_gp_attr_map[k] = v.copy()
         self.addCleanup(self._restore_gp_attr_map)
 

@@ -14,6 +14,7 @@ import commands
 import logging
 import os
 import re
+import six
 import string
 import sys
 
@@ -250,7 +251,7 @@ class Gbp_Config(object):
         # Build the command with mandatory params
         cmd = 'gbp %s-update ' % cfgobj_dict[cfgobj] + str(name_uuid)
         # Build the cmd string for optional/non-default args/values
-        for arg, value in attr.iteritems():
+        for arg, value in six.iteritems(attr):
             if '_' in arg:
                 arg = string.replace(arg, '_', '-')
             cmd = cmd + " --" + ("%s %s" % (arg, value))

@@ -13,6 +13,7 @@
 
 import copy
 import requests
+import six
 import time
 
 from gbpservice.contrib.nfp.configurator.drivers.base import base_driver
@@ -48,7 +49,8 @@ class RestApi(object):
         self.timeout = const.REST_TIMEOUT
 
     def _dict_to_query_str(self, args):
-        return '&'.join([str(k) + '=' + str(v) for k, v in args.iteritems()])
+        return '&'.join([str(k) + '=' + str(v)
+                         for k, v in six.iteritems(args)])
 
     def post(self, api, args):
         """

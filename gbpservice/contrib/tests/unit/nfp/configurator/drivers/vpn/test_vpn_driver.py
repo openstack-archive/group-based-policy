@@ -14,6 +14,7 @@ import requests
 
 import json
 import mock
+import six
 
 from gbpservice.contrib.nfp.configurator.agents import vpn
 from gbpservice.contrib.nfp.configurator.drivers.base import base_driver
@@ -95,7 +96,8 @@ class VpnaasIpsecDriverTestCase(base.BaseTestCase):
                 self.test_dict.ipsec_vpnsvc_status)
 
     def _dict_to_query_str(self, args):
-        return '&'.join([str(k) + '=' + str(v) for k, v in args.iteritems()])
+        return '&'.join([str(k) + '=' + str(v)
+                         for k, v in six.iteritems(args)])
 
     def test_delete_ipsec_site_conn(self):
         """

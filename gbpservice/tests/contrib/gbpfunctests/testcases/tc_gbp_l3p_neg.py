@@ -12,6 +12,7 @@
 
 import commands
 import logging
+import six
 import sys
 
 from libs import config_libs
@@ -170,7 +171,7 @@ class test_gbp_l3p_neg(object):
         # Testcase work-flow starts
         mix_attr = {'x.y.0.0/24': '30', '20.20.20.0/24': '32'}
         _pass = 0
-        for ip, pref in mix_attr.iteritems():
+        for ip, pref in six.iteritems(mix_attr):
             self._log.info(
                 "\n## Step 1A: Create L3Policy with IP-Pool = %s & "
                 "Subnet-Pref-Len = %s ##" %

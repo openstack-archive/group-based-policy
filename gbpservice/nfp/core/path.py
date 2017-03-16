@@ -14,6 +14,7 @@
 from gbpservice.nfp.core import log as nfp_logging
 
 import collections
+import six
 
 deque = collections.deque
 
@@ -62,7 +63,7 @@ paths = {}
 
 
 def run():
-    for key, path in paths.iteritems():
+    for key, path in six.iteritems(paths):
         if path['current'].count == 0:
             path['current'].done()
             if path['waiting'].name != 'INVALID':
@@ -72,7 +73,7 @@ def run():
 
     events = []
     # Get any queued events in the current path
-    for key, path in paths.iteritems():
+    for key, path in six.iteritems(paths):
         events += path['current'].pop()
     return events
 

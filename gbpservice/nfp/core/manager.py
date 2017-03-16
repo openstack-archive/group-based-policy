@@ -11,6 +11,7 @@
 #    under the License.
 
 import os
+import six
 
 from gbpservice.nfp.core import event as nfp_event
 from gbpservice.nfp.core import executor as nfp_executor
@@ -345,7 +346,7 @@ class NfpResourceManager(NfpProcessManager, NfpEventManager):
         # Get events from sequencer
         events = self._event_sequencer.run()
         events += nfp_path.run()
-        for pid, event_manager in self._resource_map.iteritems():
+        for pid, event_manager in six.iteritems(self._resource_map):
             events += event_manager.event_watcher(timeout=0.01)
         # Process the type of events received, dispatch only the
         # required ones.
@@ -401,7 +402,7 @@ class NfpResourceManager(NfpProcessManager, NfpEventManager):
     def _load_init(self):
         """Intializes load with current information. """
         load_info = []
-        for pid, event_manager in self._resource_map.iteritems():
+        for pid, event_manager in six.iteritems(self._resource_map):
             load = event_manager.get_load()
             load_info.append([event_manager, load, pid])
 
