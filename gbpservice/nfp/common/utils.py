@@ -11,6 +11,7 @@
 #    under the License.
 
 import os
+import six
 import yaml
 
 from gbpservice.nfp.common import constants as nfp_constants
@@ -30,7 +31,7 @@ def _parse_service_flavor_string(service_flavor_str):
         service_flavor_dict = dict(item.split('=') for item
                                    in service_flavor_str.split(','))
         service_details = {key.strip(): value.strip() for key, value
-                           in service_flavor_dict.iteritems()}
+                           in six.iteritems(service_flavor_dict)}
         return service_details
 
 

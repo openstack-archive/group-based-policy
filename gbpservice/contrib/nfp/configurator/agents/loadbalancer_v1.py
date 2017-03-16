@@ -10,6 +10,7 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+import six
 
 from gbpservice.contrib.nfp.configurator.agents import agent_base
 from gbpservice.contrib.nfp.configurator.lib import data_filter
@@ -795,7 +796,7 @@ def load_drivers(sc, conf):
 
     plugin_rpc = LBaasRpcSender(sc)
 
-    for service_type, dobj in drivers.iteritems():
+    for service_type, dobj in six.iteritems(drivers):
         '''LB Driver constructor needs plugin_rpc as a param'''
         instantiated_dobj = dobj(plugin_rpc=plugin_rpc, conf=conf)
         drivers[service_type] = instantiated_dobj

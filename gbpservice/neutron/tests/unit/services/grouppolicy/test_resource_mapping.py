@@ -13,6 +13,7 @@
 
 import copy
 import itertools
+import six
 
 from keystonemiddleware import auth_token  # noqa
 import mock
@@ -3501,7 +3502,7 @@ class TestExternalSegment(ResourceMappingTestCase):
                 changes = {'port_address_translation': True}
                 es = self.create_external_segment(
                     subnet_id=sub['subnet']['id'])['external_segment']
-                for k, v in changes.iteritems():
+                for k, v in six.iteritems(changes):
                     res = self.update_external_segment(
                         es['id'], expected_res_status=400, **{k: v})
                     self.assertEqual('InvalidAttributeUpdateForES',

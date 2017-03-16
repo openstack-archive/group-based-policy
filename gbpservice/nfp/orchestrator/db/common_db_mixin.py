@@ -14,6 +14,7 @@
 #    under the License.
 
 from neutron.db import sqlalchemyutils
+import six
 import weakref
 
 
@@ -71,16 +72,16 @@ class CommonDbMixin(object):
         # define basic filter condition for model query
         query_filter = None
         # Execute query hooks registered from mixins and plugins
-        for _name, hooks in self._model_query_hooks.get(model,
-                                                        {}).iteritems():
+        query_hooks = self._model_query_hooks.get(model, {})
+        for _name, hooks in six.iteritems(query_hooks):
             query_hook = hooks.get('query')
-            if isinstance(query_hook, basestring):
+            if isinstance(query_hook, six.string_types):
                 query_hook = getattr(self, query_hook, None)
             if query_hook:
                 query = query_hook(model, query)
 
             filter_hook = hooks.get('filter')
-            if isinstance(filter_hook, basestring):
+            if isinstance(filter_hook, six.string_types):
                 filter_hook = getattr(self, filter_hook, None)
             if filter_hook:
                 query_filter = filter_hook(model, query_filter)
@@ -104,14 +105,15 @@ class CommonDbMixin(object):
 
     def _apply_filters_to_query(self, query, model, filters):
         if filters:
-            for key, value in filters.iteritems():
+            for key, value in six.iteritems(filters):
                 column = getattr(model, key, None)
                 if column:
                     query = query.filter(column.in_(value))
-            for _name, hooks in self._model_query_hooks.get(model,
-                                                            {}).iteritems():
+
+            query_hooks = self._model_query_hooks.get(model, {})
+            for _name, hooks in six.iteritems(query_hooks):
                 result_filter = hooks.get('result_filters', None)
-                if isinstance(result_filter, basestring):
+                if isinstance(result_filter, six.string_types):
                     result_filter = getattr(self, result_filter, None)
 
                 if result_filter:
@@ -123,7 +125,7 @@ class CommonDbMixin(object):
         for func in self._dict_extend_functions.get(
                 resource_type, []):
             args = (response, db_object)
-            if isinstance(func, basestring):
+            if isinstance(func, six.string_types):
                 func = getattr(self, func, None)
             else:
                 # must call unbound method - use self as 1st argument
@@ -172,4 +174,4 @@ class CommonDbMixin(object):
         """
         columns = [c.name for c in model.__table__.columns]
         return dict((k, v) for (k, v) in
-                    data.iteritems() if k in columns)
+                    six.iteritems(data) if k in columns)

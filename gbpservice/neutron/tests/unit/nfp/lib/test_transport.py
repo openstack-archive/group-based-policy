@@ -16,6 +16,7 @@ from neutron.common import rpc as n_rpc
 from neutron import context as ctx
 from oslo_config import cfg
 from oslo_serialization import jsonutils
+import six
 import unittest2
 
 """
@@ -29,11 +30,11 @@ class Map(dict):
         super(Map, self).__init__(*args, **kwargs)
         for arg in args:
             if isinstance(arg, dict):
-                for k, v in arg.iteritems():
+                for k, v in six.iteritems(arg):
                     self[k] = v
 
         if kwargs:
-            for k, v in kwargs.iteritems():
+            for k, v in six.iteritems(kwargs):
                 self[k] = v
 
     def __getattr__(self, attr):

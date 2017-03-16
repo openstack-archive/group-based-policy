@@ -12,6 +12,7 @@
 
 import requests
 from requests import auth
+import six
 
 from neutron._i18n import _LI
 from oslo_config import cfg
@@ -123,7 +124,7 @@ class OdlManager(object):
     def _convert2ascii(self, obj):
         if isinstance(obj, dict):
             return {self._convert2ascii(key): self._convert2ascii(value) for
-                    key, value in obj.iteritems()}
+                    key, value in six.iteritems(obj)}
         elif isinstance(obj, list):
             return [self._convert2ascii(element) for element in obj]
         elif isinstance(obj, unicode):

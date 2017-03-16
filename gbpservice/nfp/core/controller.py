@@ -19,6 +19,7 @@ import multiprocessing
 import operator
 import os
 import pickle
+import six
 import sys
 import time
 import zlib
@@ -348,7 +349,7 @@ class NfpController(nfp_launcher.NfpLauncher, NfpService):
 
     def _update_manager(self):
         childs = self.get_childrens()
-        for pid, wrapper in childs.iteritems():
+        for pid, wrapper in six.iteritems(childs):
             pipe = wrapper.child_pipe_map[pid]
             # Inform 'Manager' class about the new_child.
             self._manager.new_child(pid, pipe)
@@ -414,7 +415,7 @@ class NfpController(nfp_launcher.NfpLauncher, NfpService):
         self._update_manager()
 
         # create and launch rpc service agent for each topic
-        for key, value in self._rpc_agents.iteritems():
+        for key, value in six.iteritems(self._rpc_agents):
             agents = value['agents']
             # Register NFP RPC managers in priority order,
             # so that on rpc, oslo invokes them in the given order,
@@ -454,7 +455,7 @@ class NfpController(nfp_launcher.NfpLauncher, NfpService):
         """
         graph_sig = {}
         graph_nodes = []
-        for parent, childs in graph.iteritems():
+        for parent, childs in six.iteritems(graph):
             puuid = parent.desc.uuid
             assert puuid not in graph_sig.keys(), (
                 "Event - %s is already root of subgraph - %s" % (

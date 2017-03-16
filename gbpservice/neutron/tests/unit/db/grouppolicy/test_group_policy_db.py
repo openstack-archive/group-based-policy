@@ -13,6 +13,7 @@
 
 import copy
 import os
+import six
 import webob.exc
 
 import mock
@@ -159,7 +160,7 @@ class ApiManagerMixin(object):
                        expected_res_status=None, tenant_id=None,
                        **kwargs):
         param_str = '&'.join(['%s=%s' % (k, v)
-                              for k, v in kwargs.iteritems()])
+                              for k, v in six.iteritems(kwargs)])
         req = self.new_list_request(plural, self.fmt,
                                     params=param_str or None)
         req.environ['neutron.context'] = context.Context(
@@ -384,7 +385,7 @@ class TestGroupResources(GroupPolicyDbTestCase):
         res = self.deserialize(self.fmt,
                                req.get_response(self.ext_api))
 
-        for k, v in attrs.iteritems():
+        for k, v in six.iteritems(attrs):
             self.assertEqual(res[resource][k], v)
 
     def test_create_and_show_policy_target(self):
@@ -394,7 +395,7 @@ class TestGroupResources(GroupPolicyDbTestCase):
 
         pt = self.create_policy_target(policy_target_group_id=ptg_id)
 
-        for k, v in attrs.iteritems():
+        for k, v in six.iteritems(attrs):
             self.assertEqual(pt['policy_target'][k], v)
 
         req = self.new_show_request(
@@ -427,7 +428,7 @@ class TestGroupResources(GroupPolicyDbTestCase):
             'policy_targets', data, pt['policy_target']['id'])
         res = self.deserialize(self.fmt, req.get_response(self.ext_api))
 
-        for k, v in attrs.iteritems():
+        for k, v in six.iteritems(attrs):
             self.assertEqual(res['policy_target'][k], v)
 
         self._test_show_resource(
@@ -468,7 +469,7 @@ class TestGroupResources(GroupPolicyDbTestCase):
             provided_policy_rule_sets={provided_prs_id: None},
             consumed_policy_rule_sets={consumed_prs_id: None})
 
-        for k, v in attrs.iteritems():
+        for k, v in six.iteritems(attrs):
             self.assertEqual(ptg['policy_target_group'][k], v)
 
         self._test_show_resource(
@@ -480,7 +481,7 @@ class TestGroupResources(GroupPolicyDbTestCase):
             network_service_params=params)
 
         nsp = self.create_network_service_policy(network_service_params=params)
-        for k, v in attrs.iteritems():
+        for k, v in six.iteritems(attrs):
             self.assertEqual(nsp['network_service_policy'][k], v)
 
         self._test_show_resource('network_service_policy',
@@ -503,7 +504,7 @@ class TestGroupResources(GroupPolicyDbTestCase):
             network_service_policy_id=nsp['network_service_policy']['id'],
             provided_policy_rule_sets={provided_prs_id: None},
             consumed_policy_rule_sets={consumed_prs_id: None})
-        for k, v in attrs.iteritems():
+        for k, v in six.iteritems(attrs):
             self.assertEqual(ptg1['policy_target_group'][k], v)
         self._test_show_resource(
             'policy_target_group', ptg1['policy_target_group']['id'], attrs)
@@ -515,7 +516,7 @@ class TestGroupResources(GroupPolicyDbTestCase):
             network_service_policy_id=nsp['network_service_policy']['id'],
             provided_policy_rule_sets={provided_prs_id: None},
             consumed_policy_rule_sets={consumed_prs_id: None})
-        for k, v in attrs.iteritems():
+        for k, v in six.iteritems(attrs):
             self.assertEqual(ptg2['policy_target_group'][k], v)
         self._test_show_resource(
             'policy_target_group', ptg2['policy_target_group']['id'], attrs)
@@ -538,7 +539,7 @@ class TestGroupResources(GroupPolicyDbTestCase):
         apg = self.create_application_policy_group(
             name=name)
 
-        for k, v in attrs.iteritems():
+        for k, v in six.iteritems(attrs):
             self.assertEqual(apg['application_policy_group'][k], v)
 
         self._test_show_resource('application_policy_group',
@@ -559,7 +560,7 @@ class TestGroupResources(GroupPolicyDbTestCase):
         ptg1 = self.create_policy_target_group(
             name=name,
             application_policy_group_id=apg_id)['policy_target_group']
-        for k, v in attrs.iteritems():
+        for k, v in six.iteritems(attrs):
             self.assertEqual(v, ptg1[k])
         self._test_show_resource(
             'policy_target_group', ptg1['id'], attrs)
@@ -571,7 +572,7 @@ class TestGroupResources(GroupPolicyDbTestCase):
         ptg2 = self.create_policy_target_group(name=name)[
             'policy_target_group']
         del attrs['application_policy_group_id']
-        for k, v in attrs.iteritems():
+        for k, v in six.iteritems(attrs):
             self.assertEqual(v, ptg2[k])
         self._test_show_resource('policy_target_group', ptg2['id'], attrs)
 
@@ -639,7 +640,7 @@ class TestGroupResources(GroupPolicyDbTestCase):
 
         attrs['provided_policy_rule_sets'] = [ct3_id]
         attrs['consumed_policy_rule_sets'] = [ct4_id]
-        for k, v in attrs.iteritems():
+        for k, v in six.iteritems(attrs):
             self.assertEqual(res['policy_target_group'][k], v)
 
         self._test_show_resource('policy_target_group',
@@ -683,7 +684,7 @@ class TestGroupResources(GroupPolicyDbTestCase):
                                       apg['application_policy_group']['id'])
         res = self.deserialize(self.fmt, req.get_response(self.ext_api))
 
-        for k, v in attrs.iteritems():
+        for k, v in six.iteritems(attrs):
             self.assertEqual(res['application_policy_group'][k], v)
 
         self._test_show_resource('application_policy_group',
@@ -707,7 +708,7 @@ class TestGroupResources(GroupPolicyDbTestCase):
         attrs = cm.get_create_l2_policy_default_attrs(l3_policy_id=l3p_id)
 
         l2p = self.create_l2_policy(l3_policy_id=l3p_id)
-        for k, v in attrs.iteritems():
+        for k, v in six.iteritems(attrs):
             self.assertEqual(l2p['l2_policy'][k], v)
 
         self._test_show_resource('l2_policy', l2p['l2_policy']['id'], attrs)
@@ -733,7 +734,7 @@ class TestGroupResources(GroupPolicyDbTestCase):
                                       l2p['l2_policy']['id'])
         res = self.deserialize(self.fmt, req.get_response(self.ext_api))
 
-        for k, v in attrs.iteritems():
+        for k, v in six.iteritems(attrs):
             self.assertEqual(res['l2_policy'][k], v)
 
         self._test_show_resource('l2_policy', l2p['l2_policy']['id'], attrs)
@@ -767,14 +768,14 @@ class TestGroupResources(GroupPolicyDbTestCase):
 
         l3p = self.create_l3_policy(external_segments=es_dict)
 
-        for k, v in attrs.iteritems():
+        for k, v in six.iteritems(attrs):
             self.assertEqual(v, l3p['l3_policy'][k])
 
         req = self.new_show_request('l3_policies', l3p['l3_policy']['id'],
                                     fmt=self.fmt)
         res = self.deserialize(self.fmt, req.get_response(self.ext_api))
 
-        for k, v in attrs.iteritems():
+        for k, v in six.iteritems(attrs):
             self.assertEqual(v, res['l3_policy'][k])
 
         self._test_show_resource('l3_policy', l3p['l3_policy']['id'], attrs)
@@ -841,7 +842,7 @@ class TestGroupResources(GroupPolicyDbTestCase):
                                       l3p['l3_policy']['id'])
         res = self.deserialize(self.fmt, req.get_response(self.ext_api))
 
-        for k, v in attrs.iteritems():
+        for k, v in six.iteritems(attrs):
             self.assertEqual(res['l3_policy'][k], v)
 
         self._test_show_resource('l3_policy', l3p['l3_policy']['id'], attrs)
@@ -901,7 +902,7 @@ class TestGroupResources(GroupPolicyDbTestCase):
             network_service_params=params)
 
         nsp = self.create_network_service_policy(network_service_params=params)
-        for k, v in attrs.iteritems():
+        for k, v in six.iteritems(attrs):
             self.assertEqual(nsp['network_service_policy'][k], v)
 
         self._test_show_resource('network_service_policy',
@@ -929,7 +930,7 @@ class TestGroupResources(GroupPolicyDbTestCase):
                                       nsp['network_service_policy']['id'])
         res = self.deserialize(self.fmt, req.get_response(self.ext_api))
 
-        for k, v in attrs.iteritems():
+        for k, v in six.iteritems(attrs):
             self.assertEqual(res['network_service_policy'][k], v)
 
         self._test_show_resource('network_service_policy',
@@ -991,7 +992,7 @@ class TestGroupResources(GroupPolicyDbTestCase):
 
         pc = self.create_policy_classifier(name=name)
 
-        for k, v in attrs.iteritems():
+        for k, v in six.iteritems(attrs):
             self.assertEqual(pc['policy_classifier'][k], v)
 
         req = self.new_show_request('policy_classifiers',
@@ -999,7 +1000,7 @@ class TestGroupResources(GroupPolicyDbTestCase):
                                     fmt=self.fmt)
         res = self.deserialize(self.fmt, req.get_response(self.ext_api))
 
-        for k, v in attrs.iteritems():
+        for k, v in six.iteritems(attrs):
             self.assertEqual(res['policy_classifier'][k], v)
 
         self._test_show_resource('policy_classifier',
@@ -1013,7 +1014,7 @@ class TestGroupResources(GroupPolicyDbTestCase):
             name=name, protocol=protocol)
         pc = self.create_policy_classifier(name=name, protocol=protocol)
 
-        for k, v in attrs.iteritems():
+        for k, v in six.iteritems(attrs):
             self.assertEqual(pc['policy_classifier'][k], v)
 
         req = self.new_show_request('policy_classifiers',
@@ -1021,7 +1022,7 @@ class TestGroupResources(GroupPolicyDbTestCase):
                                     fmt=self.fmt)
         res = self.deserialize(self.fmt, req.get_response(self.ext_api))
 
-        for k, v in attrs.iteritems():
+        for k, v in six.iteritems(attrs):
             self.assertEqual(res['policy_classifier'][k], v)
 
         self._test_show_resource('policy_classifier',
@@ -1054,7 +1055,7 @@ class TestGroupResources(GroupPolicyDbTestCase):
                                       pc['policy_classifier']['id'])
         res = self.deserialize(self.fmt, req.get_response(self.ext_api))
 
-        for k, v in attrs.iteritems():
+        for k, v in six.iteritems(attrs):
             self.assertEqual(res['policy_classifier'][k], v)
 
         self._test_show_resource('policy_classifier',
@@ -1079,7 +1080,7 @@ class TestGroupResources(GroupPolicyDbTestCase):
                                       pc['policy_classifier']['id'])
         res = self.deserialize(self.fmt, req.get_response(self.ext_api))
 
-        for k, v in attrs.iteritems():
+        for k, v in six.iteritems(attrs):
             self.assertEqual(res['policy_classifier'][k], v)
 
         self._test_show_resource('policy_classifier',
@@ -1113,7 +1114,7 @@ class TestGroupResources(GroupPolicyDbTestCase):
 
         pa = self.create_policy_action(name=name)
 
-        for k, v in attrs.iteritems():
+        for k, v in six.iteritems(attrs):
             self.assertEqual(pa['policy_action'][k], v)
 
         req = self.new_show_request('policy_actions',
@@ -1121,7 +1122,7 @@ class TestGroupResources(GroupPolicyDbTestCase):
                                     fmt=self.fmt)
         res = self.deserialize(self.fmt, req.get_response(self.ext_api))
 
-        for k, v in attrs.iteritems():
+        for k, v in six.iteritems(attrs):
             self.assertEqual(res['policy_action'][k], v)
 
         self._test_show_resource('policy_action',
@@ -1150,7 +1151,7 @@ class TestGroupResources(GroupPolicyDbTestCase):
                                       pa['policy_action']['id'])
         res = self.deserialize(self.fmt, req.get_response(self.ext_api))
 
-        for k, v in attrs.iteritems():
+        for k, v in six.iteritems(attrs):
             self.assertEqual(res['policy_action'][k], v)
 
         self._test_show_resource('policy_action',
@@ -1189,14 +1190,14 @@ class TestGroupResources(GroupPolicyDbTestCase):
         pr = self.create_policy_rule(
             name=name, policy_classifier_id=pc_id)
 
-        for k, v in attrs.iteritems():
+        for k, v in six.iteritems(attrs):
             self.assertEqual(pr['policy_rule'][k], v)
 
         req = self.new_show_request('policy_rules', pr['policy_rule']['id'],
                                     fmt=self.fmt)
         res = self.deserialize(self.fmt, req.get_response(self.ext_api))
 
-        for k, v in attrs.iteritems():
+        for k, v in six.iteritems(attrs):
             self.assertEqual(res['policy_rule'][k], v)
 
         self._test_show_resource('policy_rule',
@@ -1237,7 +1238,7 @@ class TestGroupResources(GroupPolicyDbTestCase):
                                       pr['policy_rule']['id'])
         res = self.deserialize(self.fmt, req.get_response(self.ext_api))
 
-        for k, v in attrs.iteritems():
+        for k, v in six.iteritems(attrs):
             self.assertEqual(res['policy_rule'][k], v)
 
         self._test_show_resource('policy_rule',
@@ -1265,7 +1266,7 @@ class TestGroupResources(GroupPolicyDbTestCase):
         self.assertItemsEqual(actions_list,
                               res['policy_rule']['policy_actions'])
         del attrs['policy_actions']
-        for k, v in attrs.iteritems():
+        for k, v in six.iteritems(attrs):
             self.assertEqual(v, res['policy_rule'][k])
 
     def test_delete_policy_rule(self):
@@ -1297,14 +1298,14 @@ class TestGroupResources(GroupPolicyDbTestCase):
 
         prs = self.create_policy_rule_set(name=name)
 
-        for k, v in attrs.iteritems():
+        for k, v in six.iteritems(attrs):
             self.assertEqual(prs['policy_rule_set'][k], v)
 
         req = self.new_show_request(
             'policy_rule_sets', prs['policy_rule_set']['id'], fmt=self.fmt)
         res = self.deserialize(self.fmt, req.get_response(self.ext_api))
 
-        for k, v in attrs.iteritems():
+        for k, v in six.iteritems(attrs):
             self.assertEqual(res['policy_rule_set'][k], v)
 
         self._test_show_resource('policy_rule_set',
@@ -1341,7 +1342,7 @@ class TestGroupResources(GroupPolicyDbTestCase):
             res['policy_rule_set']['policy_rules'])
         res['policy_rule_set']['child_policy_rule_sets'] = sorted(
             res['policy_rule_set']['child_policy_rule_sets'])
-        for k, v in attrs.iteritems():
+        for k, v in six.iteritems(attrs):
             self.assertEqual(res['policy_rule_set'][k], v)
 
         req = self.new_show_request('policy_rule_sets',
@@ -1395,7 +1396,7 @@ class TestGroupResources(GroupPolicyDbTestCase):
                                       prs['policy_rule_set']['id'])
         res = self.deserialize(self.fmt, req.get_response(self.ext_api))
 
-        for k, v in attrs.iteritems():
+        for k, v in six.iteritems(attrs):
             self.assertEqual(res['policy_rule_set'][k], v)
 
         self._test_show_resource('policy_rule_set',
@@ -1488,12 +1489,12 @@ class TestGroupResources(GroupPolicyDbTestCase):
         plural = cm.get_resource_plural(type)
         res = self._create_resource(type, None, False, **attrs)
         expected = expected or attrs
-        for k, v in expected.iteritems():
+        for k, v in six.iteritems(expected):
             self.assertEqual(v, res[type][k])
 
         req = self.new_show_request(plural, res[type]['id'], fmt=self.fmt)
         res = self.deserialize(self.fmt, req.get_response(self.ext_api))
-        for k, v in expected.iteritems():
+        for k, v in six.iteritems(expected):
             self.assertEqual(v, res[type][k])
         self._test_show_resource(type, res[type]['id'], expected)
 
@@ -1559,7 +1560,7 @@ class TestGroupResources(GroupPolicyDbTestCase):
                                       ep['id'])
         res = self.deserialize(self.fmt, req.get_response(self.ext_api))
         res = res['external_policy']
-        for k, v in data['external_policy'].iteritems():
+        for k, v in six.iteritems(data['external_policy']):
             self.assertEqual(v, res[k])
 
         self._test_show_resource('external_policy', ep['id'],
@@ -1580,7 +1581,7 @@ class TestGroupResources(GroupPolicyDbTestCase):
                                       es['id'])
         res = self.deserialize(self.fmt, req.get_response(self.ext_api))
         res = res['external_segment']
-        for k, v in attrs.iteritems():
+        for k, v in six.iteritems(attrs):
             self.assertEqual(res[k], v)
 
         self._test_show_resource('external_segment', es['id'], attrs)
@@ -1601,7 +1602,7 @@ class TestGroupResources(GroupPolicyDbTestCase):
                                       np['id'])
         res = self.deserialize(self.fmt, req.get_response(self.ext_api))
         res = res['nat_pool']
-        for k, v in attrs.iteritems():
+        for k, v in six.iteritems(attrs):
             self.assertEqual(v, res[k])
 
         self._test_show_resource('nat_pool', np['id'], attrs)
