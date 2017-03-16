@@ -10,6 +10,7 @@ trap prepare_logs ERR
 
 prepare_gbp_devstack
 prepare_nfp_devstack
+sudo rm -rf /usr/local/lib/python2.7/dist-packages/*
 FORCE=yes $TOP_DIR/stack.sh
 
 # Use devstack functions to install mysql and psql servers

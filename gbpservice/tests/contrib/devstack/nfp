@@ -23,14 +23,19 @@ function create_nfp_image {
 }
 
 function assign_user_role_credential {
-    TOP_DIR=$1
-    source $TOP_DIR/openrc admin admin
+    #TOP_DIR=$1
+    #source $TOP_DIR/openrc admin admin
+    #export OS_USERNAME=admin
+    #export OS_TENANT_NAME=admin
+    #export OS_PROJECT_NAME=admin
     #set -x
-    serviceTenantID=`keystone tenant-list | grep "service" | awk '{print $2}'`
-    serviceRoleID=`keystone role-list | grep "service" | awk '{print $2}'`
-    adminRoleID=`keystone role-list | grep "admin" | awk '{print $2}'`
-    keystone user-role-add --user nova --tenant $serviceTenantID --role $serviceRoleID
-    keystone user-role-add --user neutron --tenant $serviceTenantID --role $adminRoleID
+    #serviceTenantID=`keystone tenant-list | grep "service" | awk '{print $2}'`
+    #serviceRoleID=`keystone role-list | grep "service" | awk '{print $2}'`
+    #adminRoleID=`keystone role-list | grep "admin" | awk '{print $2}'`
+    #keystone user-role-add --user nova --tenant service --role service
+    #keystone user-role-add --user neutron --tenant service --role admin
+    openstack --os-cloud=devstack-admin role add --project service --user nova service
+    openstack --os-cloud=devstack-admin role add --project service --user neutron admin
 }
 
 function namespace_delete {
@@ -256,6 +261,7 @@ function copy_nfp_files_and_start_process {
     echo "Configuration success ... "
 }
 function nfp_setup {
+    set -x
     prepare_nfp_image_builder
     create_nfp_image $1
     assign_user_role_credential $1
