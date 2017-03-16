@@ -24,7 +24,7 @@ source $TOP_DIR/openrc neutron service
 
 create_gbp_resources() {
     # E-W insertion
-    gbp servicechain-node-create --service-profile base_mode_lb --template-file $TOP_DIR/nfp-templates/haproxy.template LB-NODE
+    gbp servicechain-node-create --service-profile base_mode_lb --template-file $TOP_DIR/nfp-templates/haproxy_lbaasv2.template LB-NODE
     gbp servicechain-spec-create --nodes "LB-NODE" lb_chainspec
     gbp policy-action-create --action-type REDIRECT --action-value lb_chainspec redirect-to-lb
     gbp policy-classifier-create --protocol tcp --direction bi lb-webredirect
@@ -57,27 +57,21 @@ validate_gbp_resources() {
 }
 
 validate_loadbalancer_resources() {
-    LBPoolCount=`neutron lb-pool-list -f value | wc -l`
+    LBPoolCount=`neutron lbaas-pool-list -f value | wc -l`
     if [ "$LBPoolCount" -eq "1" ]; then
-        echo "LB Pool resource created"
-        LBPoolUUID=`neutron lb-pool-list -f value | awk '{print $1}'`
-        LBPoolStatus=`neutron lb-pool-show $LBPoolUUID -f value -c status`
-        echo "LB Pool resource is in $LBPoolStatus state"
+        echo "LB Pool resources created"
+        LBPoolUUID=`neutron lbaas-pool-list -f value | awk '{print $1}'`
+        #PoolRsourcesList=$(neutron lbaas-pool-list -f value -c id)
+        #for pool in $(echo $PoolRsourcesList | tr " " "\n")
+        #do
+        #    LBPoolStatus=`neutron lbaas-pool-show $LBPoolUUID -f value -c status`
+        #    echo "LB Pool resource is in $LBPoolStatus state"
+        #done
     else
         echo "LB Pool resource not created"
     fi
 
-    LBVIPCount=`neutron lb-vip-list -f value | wc -l`
-    if [ "$LBVIPCount" -eq "1" ]; then
-        echo "LB VIP resource created"
-        LBVIPUUID=`neutron lb-vip-list -f value | awk '{print $1}'`
-        LBVIPStatus=`neutron lb-vip-show $LBVIPUUID -f value -c status`
-        echo "LB VIP resource is in $LBVIPStatus state"
-    else
-        echo "LB VIP resource not created"
-    fi
-
-    LBHMCount=`neutron lb-healthmonitor-list -f value | wc -l`
+    LBHMCount=`neutron lbaas-healthmonitor-list -f value | wc -l`
     if [ "$LBHMCount" -eq "1" ]; then
         echo "LB Healthmonitor resource created"
     else
@@ -86,7 +80,7 @@ validate_loadbalancer_resources() {
 
     gbp policy-target-create --policy-target-group lb-provider provider_pt1
     sleep 5
-    LBMemberCount=`neutron lb-member-list -f value | wc -l`
+    LBMemberCount=`neutron lbaas-member-list $LBPoolUUID -f value | wc -l`
     if [ "$LBMemberCount" -eq "1" ]; then
         echo "LB Member resource created"
     else
@@ -95,7 +89,7 @@ validate_loadbalancer_resources() {
 
     gbp policy-target-create --policy-target-group lb-provider provider_pt2
     sleep 5
-    LBMemberCount=`neutron lb-member-list -f value | wc -l`
+    LBMemberCount=`neutron lbaas-member-list $LBPoolUUID -f value | wc -l`
     if [ "$LBMemberCount" -eq "2" ]; then
         echo "LB Member resource created"
     else
@@ -104,7 +98,7 @@ validate_loadbalancer_resources() {
 
     gbp policy-target-delete provider_pt1
     sleep 5
-    LBMemberCount=`neutron lb-member-list -f value | wc -l`
+    LBMemberCount=`neutron lbaas-member-list $LBPoolUUID -f value | wc -l`
     if [ "$LBMemberCount" -eq "1" ]; then
         echo "LB Member resource deleted"
     else
@@ -113,12 +107,13 @@ validate_loadbalancer_resources() {
 
     gbp policy-target-delete provider_pt2
     sleep 5
-    LBMemberCount=`neutron lb-member-list -f value | wc -l`
+    LBMemberCount=`neutron lbaas-member-list $LBPoolUUID -f value | wc -l`
     if [ "$LBMemberCount" -eq "0" ]; then
         echo "LB Member resource deleted"
     else
         echo "LB Member resource not deleted"
     fi
+    
 }
 
 update_gbp_resources() {
