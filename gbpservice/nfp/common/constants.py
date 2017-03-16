@@ -129,7 +129,7 @@ PULL_NOTIFICATIONS_SPACING = 10
 
 #nfp_node_deriver_config
 # all units in sec.
-SERVICE_CREATE_TIMEOUT = 1500
+SERVICE_CREATE_TIMEOUT = 600
 SERVICE_DELETE_TIMEOUT = 600
 
 # heat stack creation timeout

@@ -41,20 +41,17 @@ function nfp_configure_neutron {
     fi
     iniset $NEUTRON_CONF nfp_node_driver is_service_admin_owned "True"
     iniset $NEUTRON_CONF nfp_node_driver svc_management_ptg_name "svc_management_ptg"
-    extn_drivers=$(iniget $NEUTRON_ML2_CONF ml2 extension_drivers)
-    if [[ -n $extn_drivers ]];then
-        iniset $NEUTRON_ML2_CONF ml2 extension_drivers $extn_drivers,port_security
-    else
-        iniset $NEUTRON_ML2_CONF ml2 extension_drivers port_security
-    fi
+    #extn_drivers=$(iniget $NEUTRON_ML2_CONF ml2 extension_drivers)
+    #if [[ -n $extn_drivers ]];then
+    #    iniset $NEUTRON_ML2_CONF ml2 extension_drivers $extn_drivers,port_security
+    #else
+    #    iniset $NEUTRON_ML2_CONF ml2 extension_drivers port_security
+    #fi
 }
 
 function configure_nfp_loadbalancer {
     echo "Configuring NFP Loadbalancer plugin driver"
-    LBAAS_SERVICE_PROVIDER=LOADBALANCER:loadbalancer:gbpservice.contrib.nfp.service_plugins.loadbalancer.drivers.nfp_lbaas_plugin_driver.HaproxyOnVMPluginDriver:default
-    if [[ $ENABLE_LBAASV2 = True ]]; then
-        LBAAS_SERVICE_PROVIDER=LOADBALANCERV2:loadbalancerv2:gbpservice.contrib.nfp.service_plugins.loadbalancer.drivers.nfp_lbaasv2_plugin_driver.HaproxyOnVMPluginDriver:default
-    fi
+    LBAAS_SERVICE_PROVIDER=LOADBALANCERV2:loadbalancerv2:gbpservice.contrib.nfp.service_plugins.loadbalancer.drivers.nfp_lbaasv2_plugin_driver.HaproxyOnVMPluginDriver:default
     sudo\
  sed\
  -i\
@@ -113,7 +110,7 @@ if is_service_enabled group-policy; then
             if [[ $NFP_DEVSTACK_MODE = advanced ]]; then
                 configure_nfp_loadbalancer
                 configure_nfp_firewall
-                configure_nfp_vpn
+                #configure_nfp_vpn
             fi
         fi
         # REVISIT move installs to install phase?
