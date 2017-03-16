@@ -141,7 +141,7 @@ function create_nfp_gbp_resources {
    FLAVOR=m1.nfp-tiny
 
    gbp network-service-policy-create --network-service-params type=ip_pool,name=vip_ip,value=nat_pool svc_mgmt_fip_policy
-   gbp service-profile-create --servicetype LOADBALANCER --insertion-mode l3 --shared True --service-flavor service_vendor=haproxy,device_type=None --vendor NFP base_mode_lb
+   gbp service-profile-create --servicetype LOADBALANCERV2 --insertion-mode l3 --shared True --service-flavor service_vendor=haproxy,device_type=None --vendor NFP base_mode_lb
    gbp service-profile-create --servicetype FIREWALL --insertion-mode l3 --shared True --service-flavor service_vendor=vyos,device_type=None --vendor NFP base_mode_fw
    gbp service-profile-create --servicetype FIREWALL --insertion-mode l3 --shared True --service-flavor service_vendor=nfp,device_type=nova,image_name=$IMAGE_NAME_FLAT,flavor=$FLAVOR --vendor NFP base_mode_fw_vm
 
@@ -250,11 +250,77 @@ function copy_nfp_files_and_start_process {
     sleep 2
     echo "Configuration success ... "
 }
+
+
+function restart_devstack_screen_processes {
+    SCREEN_NAME=stack
+    SERVICE_DIR=$DEST/status/$SCREEN_NAME
+    bin=/usr/local/bin
+    proc_screen_name=$1
+    sandbox=$2
+    proc_name=$3
+    param=$4
+    extra_param=$5
+
+    cmd=$bin/$proc_name\ $param\ $extra_param
+    cmd="$(echo -e "${cmd}" | sed -e 's/[[:space:]]*$//')"
+    
+    if [[ ! -z "${sandbox// }" ]]; then
+        cmd=$sandbox\ \'$cmd\'
+    fi
+
+    # stop the process
+    screen -S $SCREEN_NAME -p $proc_screen_name -X kill
+    sleep 4
+
+    # start the process
+    screen -S $SCREEN_NAME -X screen -t $proc_screen_name
+    screen -S $SCREEN_NAME -p $proc_screen_name -X stuff "$cmd \
+        & echo \$! >$SERVICE_DIR/${proc_screen_name}.pid; fg || \
+        echo \"$proc_screen_name failed to start\" \
+        | tee \"$SERVICE_DIR/${proc_screen_name}.failure\"\n"
+    sleep 5
+}
+
+function restart_neutron_server {
+    proc=q-svc
+    proc_name=neutron-server
+    sandbox=
+    param="--config-file /etc/neutron/neutron.conf --config-file /etc/neutron/plugins/ml2/ml2_conf.ini"
+    extra_param=
+    restart_devstack_screen_processes "$proc" "$sandbox" "$proc_name" "$param" "$extra_param"
+}
+
+function configure_lbaas {
+    echo "Configuring NFP Loadbalancer plugin driver"
+    LBAAS_SERVICE_PROVIDER=LOADBALANCERV2:Haproxy:neutron_lbaas.drivers.haproxy.plugin_driver.HaproxyOnHostPluginDriver:default
+    sudo\
+ sed\
+ -i\
+ '/^service_provider.*:default/'\
+'s'/\
+':default'/\
+'\n'\
+"service_provider = $LBAAS_SERVICE_PROVIDER"/\
+ /etc/neutron/neutron_lbaas.conf
+
+    echo "Configuring ineterface driver"
+    iniset -sudo /etc/neutron/neutron_lbaas.conf DEFAULT interface_driver openvswitch
+    echo "whereis neutron-lbaasv2-agent: " `whereis neutron-lbaasv2-agent`
+    TOP_DIR=$1
+    source $TOP_DIR/functions-common
+    echo "Starting Lbaasv2 Agent"
+    run_process q-lbaasv2-agent "sudo neutron-lbaasv2-agent --config-file /etc/neutron/neutron.conf --config-file /etc/neutron/neutron_lbaas.conf"
+
+    restart_neutron_server
+}
+
 function nfp_setup {
     prepare_nfp_image_builder
     create_nfp_image $1
     assign_user_role_credential $1
     create_nfp_gbp_resources $1
     get_router_namespace $1
+    configure_lbaas $1
     copy_nfp_files_and_start_process $1
 }
