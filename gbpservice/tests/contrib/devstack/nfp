@@ -25,6 +25,9 @@ function create_nfp_image {
 function assign_user_role_credential {
     TOP_DIR=$1
     source $TOP_DIR/openrc admin admin
+    export OS_USERNAME=admin
+    export OS_TENANT_NAME=admin
+    export OS_PASSWORD=mysecret
     #set -x
     serviceTenantID=`keystone tenant-list | grep "service" | awk '{print $2}'`
     serviceRoleID=`keystone role-list | grep "service" | awk '{print $2}'`
