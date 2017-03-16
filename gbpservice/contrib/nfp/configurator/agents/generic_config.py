@@ -12,6 +12,7 @@
 
 import copy
 import os
+import six
 
 from neutron._i18n import _LI
 
@@ -467,7 +468,7 @@ def load_drivers(conf):
     cutils = utils.ConfiguratorUtils(conf)
     drivers = cutils.load_drivers()
 
-    for service_type, driver_name in drivers.iteritems():
+    for service_type, driver_name in six.iteritems(drivers):
         driver_obj = driver_name(conf=conf)
         drivers[service_type] = driver_obj
     LOG.info(_LI("Generic config agent loaded drivers drivers:"

@@ -14,6 +14,7 @@ import copy
 import hashlib
 import netaddr
 import re
+import six
 
 from apic_ml2.neutron.db import l3out_vlan_allocation as l3out_vlan_alloc
 from apic_ml2.neutron.db import port_ha_ipaddress_binding as ha_ip_db
@@ -2824,7 +2825,7 @@ class ApicMappingDriver(api.ResourceMappingDriver,
 
             # Create ARP filter/subject
             entries = alib.get_arp_filter_entry()
-            for k, v in entries.iteritems():
+            for k, v in six.iteritems(entries):
                 self._associate_service_filter(tenant, contract, k,
                                                k, transaction=trs, **v)
 
@@ -3675,7 +3676,7 @@ class ApicMappingDriver(api.ResourceMappingDriver,
     def _create_tenant_filter(self, rule_name, tenant, entries=None,
                               transaction=None):
         with self.apic_manager.apic.transaction(transaction) as trs:
-            for k, v in entries.iteritems():
+            for k, v in six.iteritems(entries):
                 self.apic_manager.create_tenant_filter(
                     rule_name, owner=tenant, transaction=trs, entry=k, **v)
 

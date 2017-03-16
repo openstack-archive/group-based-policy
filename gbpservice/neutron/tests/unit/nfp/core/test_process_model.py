@@ -21,6 +21,7 @@ import multiprocessing as multiprocessing
 from oslo_config import cfg as oslo_config
 from oslo_log import log as oslo_logging
 import random
+import six
 import time
 import unittest2
 LOG = oslo_logging.getLogger(__name__)
@@ -356,7 +357,7 @@ class Test_Process_Model(unittest2.TestCase):
         init_load = [6, 4, 2]
         worker_pids = []
         resource_map = controller._manager._resource_map
-        for pid, em in resource_map.iteritems():
+        for pid, em in six.iteritems(resource_map):
             load = init_load.pop()
             em._load = load
             worker_pids.append(pid)

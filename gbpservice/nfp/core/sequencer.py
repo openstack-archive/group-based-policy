@@ -11,6 +11,7 @@
 #    under the License.
 
 import collections
+import six
 
 from gbpservice.nfp.core import log as nfp_logging
 
@@ -97,7 +98,7 @@ class EventSequencer(object):
         events = []
         # Loop over copy and delete from original
         sequencers = dict(self._sequencer)
-        for key, sequencer in sequencers.iteritems():
+        for key, sequencer in six.iteritems(sequencers):
             try:
                 event = sequencer.run()
                 if event:
@@ -118,7 +119,7 @@ class EventSequencer(object):
     def pop(self):
         events = []
         sequencers = dict(self._sequencer)
-        for key, sequencer in sequencers.iteritems():
+        for key, sequencer in six.iteritems(sequencers):
             events += sequencer.pop()
         return events
 

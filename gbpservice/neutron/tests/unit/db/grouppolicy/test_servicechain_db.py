@@ -11,6 +11,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import six
 import webob.exc
 
 from neutron import context
@@ -98,7 +99,7 @@ class TestServiceChainResources(ServiceChainDbTestCase):
         res = self.deserialize(self.fmt,
                                req.get_response(self.ext_api))
 
-        for k, v in attrs.iteritems():
+        for k, v in six.iteritems(attrs):
             self.assertEqual(v, res[resource][k])
 
     def test_create_servicechain_specs_same_node(self):
@@ -141,7 +142,7 @@ class TestServiceChainResources(ServiceChainDbTestCase):
             service_profile_id=profile['service_profile']['id'],
             config="config1")
 
-        for k, v in attrs.iteritems():
+        for k, v in six.iteritems(attrs):
             self.assertEqual(v, scn['servicechain_node'][k])
 
         self._test_show_resource('servicechain_node',
@@ -179,7 +180,7 @@ class TestServiceChainResources(ServiceChainDbTestCase):
                                       scn['servicechain_node']['id'])
         res = self.deserialize(self.fmt, req.get_response(self.ext_api))
 
-        for k, v in attrs.iteritems():
+        for k, v in six.iteritems(attrs):
             self.assertEqual(v, res['servicechain_node'][k])
 
         self._test_show_resource('servicechain_node',
@@ -221,7 +222,7 @@ class TestServiceChainResources(ServiceChainDbTestCase):
 
         scs = self.create_servicechain_spec(name=name, nodes=[scn_id])
 
-        for k, v in attrs.iteritems():
+        for k, v in six.iteritems(attrs):
             self.assertEqual(v, scs['servicechain_spec'][k])
 
         self._test_show_resource('servicechain_spec',
@@ -238,7 +239,7 @@ class TestServiceChainResources(ServiceChainDbTestCase):
             name=name, nodes=[scn1_id, scn2_id])
         scs = self.create_servicechain_spec(
             name=name, nodes=[scn1_id, scn2_id])
-        for k, v in attrs.iteritems():
+        for k, v in six.iteritems(attrs):
             self.assertEqual(v, scs['servicechain_spec'][k])
 
     def test_list_servicechain_specs(self):
@@ -290,7 +291,7 @@ class TestServiceChainResources(ServiceChainDbTestCase):
                                       scs['servicechain_spec']['id'])
         res = self.deserialize(self.fmt, req.get_response(self.ext_api))
 
-        for k, v in attrs.iteritems():
+        for k, v in six.iteritems(attrs):
             self.assertEqual(v, res['servicechain_spec'][k])
 
         self._test_show_resource('servicechain_spec',
@@ -368,7 +369,7 @@ class TestServiceChainResources(ServiceChainDbTestCase):
             management_ptg_id=policy_target_group_id,
             classifier_id=classifier_id,
             config_param_values=config_param_values)
-        for k, v in attrs.iteritems():
+        for k, v in six.iteritems(attrs):
             self.assertEqual(v, sci['servicechain_instance'][k])
 
         self._test_show_resource('servicechain_instance',
@@ -450,7 +451,7 @@ class TestServiceChainResources(ServiceChainDbTestCase):
         req = self.new_update_request('servicechain_instances', data,
                                       sci['servicechain_instance']['id'])
         res = self.deserialize(self.fmt, req.get_response(self.ext_api))
-        for k, v in attrs.iteritems():
+        for k, v in six.iteritems(attrs):
             self.assertEqual(v, res['servicechain_instance'][k])
 
         self._test_show_resource('servicechain_instance',
@@ -479,7 +480,7 @@ class TestServiceChainResources(ServiceChainDbTestCase):
         scn = self.create_service_profile(
             service_type=constants.FIREWALL, vendor="vendor1")
 
-        for k, v in attrs.iteritems():
+        for k, v in six.iteritems(attrs):
             self.assertEqual(scn['service_profile'][k], v)
 
         self._test_show_resource('service_profile',
@@ -510,7 +511,7 @@ class TestServiceChainResources(ServiceChainDbTestCase):
                                       scn['service_profile']['id'])
         res = self.deserialize(self.fmt, req.get_response(self.ext_api))
 
-        for k, v in attrs.iteritems():
+        for k, v in six.iteritems(attrs):
             self.assertEqual(res['service_profile'][k], v)
 
         self._test_show_resource('service_profile',

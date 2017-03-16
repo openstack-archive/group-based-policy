@@ -12,6 +12,7 @@
 
 import commands
 import logging
+import six
 import sys
 
 from libs import config_libs
@@ -123,7 +124,7 @@ class test_gbp_pr_pc_pa_shared_func(object):
         self._log.info(
             '## Step 2: Verify Policy Rule, Policy Classifier, Policy '
             'Action with shared=True')
-        for obj, uuid in obj_uuid.iteritems():
+        for obj, uuid in six.iteritems(obj_uuid):
             if self.gbpverify.gbp_policy_verify_all(
                     1, obj, uuid, shared=True) == 0:
                 self._log.info(
