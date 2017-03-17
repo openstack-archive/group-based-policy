@@ -10,10 +10,10 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-from neutron._i18n import _LI
 from neutron import manager as n_manager
 from oslo_log import log as logging
 
+from gbpservice._i18n import _LI
 from gbpservice.neutron.db.grouppolicy.extensions import (
     apic_auto_ptg_db as auto_ptg_db)
 from gbpservice.neutron.db.grouppolicy.extensions import (

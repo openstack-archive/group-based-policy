@@ -13,6 +13,7 @@
 import sys
 import traceback
 
+from gbpservice._i18n import _LI
 from gbpservice.contrib.nfp.config_orchestrator.common import (
     lbv2_constants as lbv2_const)
 from gbpservice.contrib.nfp.config_orchestrator.common import (
@@ -22,7 +23,6 @@ from gbpservice.nfp.core import context as module_context
 from gbpservice.nfp.core import log as nfp_logging
 from gbpservice.nfp.lib import transport
 
-from neutron._i18n import _LI
 import oslo_messaging as messaging
 
 
@@ -286,8 +286,8 @@ class NaasNotificationHandler(object):
 
     def handle_notification(self, context, notification_data):
         try:
-            LOG.debug("Handling Notification with Data:%s"
-                      % notification_data)
+            LOG.debug("Handling Notification with Data:%s",
+                      notification_data)
             resource_data = notification_data['notification'][0]['data']
             handler = ServicetypeToHandlerMap[notification_data[
                 'info']['service_type']](self.conf, self.sc)

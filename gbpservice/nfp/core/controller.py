@@ -282,7 +282,7 @@ class NfpController(nfp_launcher.NfpLauncher, NfpService):
             event = pipe.recv()
         except Exception as exc:
             LOG.debug("Failed to receive event from pipe "
-                      "with exception - %r - will retry.." % (exc))
+                      "with exception - %r - will retry..", (exc))
             eventlet.greenthread.sleep(1.0)
         if event:
             self.decompress(event)
@@ -324,7 +324,7 @@ class NfpController(nfp_launcher.NfpLauncher, NfpService):
                 event = self._stashq.popleft()
                 if self.PROCESS_TYPE != "worker":
                     evm = self._manager._get_event_manager(event.desc.worker)
-                    LOG.debug("Resending event - %s" % (event.identify()))
+                    LOG.debug("Resending event - %s", (event.identify()))
                     sent = self.pipe_send(evm._pipe, event, resending=True)
                 else:
                     sent = self.pipe_send(self._pipe, event, resending=True)

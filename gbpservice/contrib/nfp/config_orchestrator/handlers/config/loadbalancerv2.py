@@ -13,6 +13,7 @@
 import ast
 import copy
 
+from gbpservice._i18n import _LI
 from gbpservice.contrib.nfp.config_orchestrator.common import common
 from gbpservice.contrib.nfp.config_orchestrator.common import lbv2_constants
 from gbpservice.nfp.common import constants as const
@@ -22,7 +23,6 @@ from gbpservice.nfp.core import context as module_context
 from gbpservice.nfp.core import log as nfp_logging
 from gbpservice.nfp.lib import transport
 
-from neutron._i18n import _LI
 from neutron_lbaas.common import cert_manager
 from neutron_lbaas.common.tls_utils import cert_parser
 from neutron_lbaas.db.loadbalancer import loadbalancer_dbv2

@@ -60,7 +60,7 @@ class ConfigureIPtables(object):
         LOG.info(_LI("Updating chain with new rules ..."))
         count = 0
         for rule in self.rules_json.get('rules'):
-            LOG.info(_LI("adding rule %(count)d") % {'count': count})
+            LOG.info(_LI("adding rule %(count)d"), {'count': count})
             try:
                 action_values = ["LOG", "ACCEPT"]
                 action = rule['action'].upper()
@@ -82,15 +82,15 @@ class ConfigureIPtables(object):
                      "-j", action], stdout=PIPE)
             output = ps.communicate()[0]
             if output:
-                LOG.error(_LE("Unable to add rule to chain due to: %(output)s")
-                          % {'output': output})
+                LOG.error(_LE("Unable to add rule to chain due to: %(msg)s"),
+                          {'msg': output})
             count = count + 1
         ps = Popen(["iptables", "-A", "testchain", "-m", "state", "--state",
                     "ESTABLISHED,RELATED", "-j", "ACCEPT"], stdout=PIPE)
         output = ps.communicate()[0]
         if output:
-            LOG.error(_LE("Unable to add rule to chain due to: %(output)s")
-                      % {'output': output})
+            LOG.error(_LE("Unable to add rule to chain due to: %(output)s"),
+                      {'output': output})
 
 
 def main():

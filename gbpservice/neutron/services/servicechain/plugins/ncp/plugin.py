@@ -10,8 +10,6 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-from neutron._i18n import _LE
-from neutron._i18n import _LI
 from neutron.plugins.common import constants as pconst
 from neutron.quota import resource_registry
 from oslo_config import cfg
@@ -19,6 +17,8 @@ from oslo_log import helpers as log
 from oslo_log import log as logging
 from oslo_utils import excutils
 
+from gbpservice._i18n import _LE
+from gbpservice._i18n import _LI
 from gbpservice.common import utils
 from gbpservice.neutron.db import servicechain_db
 from gbpservice.neutron.services.grouppolicy.common import constants as gp_cts

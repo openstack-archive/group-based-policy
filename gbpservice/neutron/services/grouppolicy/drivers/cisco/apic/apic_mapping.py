@@ -25,9 +25,6 @@ from apicapi import apic_mapper
 from keystoneclient.auth.identity.generic import password as keypassword
 from keystoneclient import client as keyclient
 from keystoneclient import session as keysession
-from neutron._i18n import _LE
-from neutron._i18n import _LI
-from neutron._i18n import _LW
 from neutron.agent.linux import dhcp
 from neutron.api.v2 import attributes
 from neutron.common import constants as n_constants
@@ -53,6 +50,9 @@ import oslo_messaging
 from oslo_serialization import jsonutils
 import sqlalchemy as sa
 
+from gbpservice._i18n import _LE
+from gbpservice._i18n import _LI
+from gbpservice._i18n import _LW
 from gbpservice.neutron.db.grouppolicy.extensions import apic_reuse_bd_db
 from gbpservice.neutron.db.grouppolicy import group_policy_mapping_db as gpdb
 from gbpservice.neutron.extensions import group_policy as gpolicy
@@ -1196,7 +1196,7 @@ class ApicMappingDriver(api.ResourceMappingDriver,
                 self._notify_port_update(context._plugin_context,
                                          context.current['port_id'])
         except n_exc.PortNotFound:
-            LOG.warning(_LW("Port %s is missing") % context.current['port_id'])
+            LOG.warning(_LW("Port %s is missing"), context.current['port_id'])
             return
 
     def delete_policy_target_group_precommit(self, context):
@@ -1560,13 +1560,13 @@ class ApicMappingDriver(api.ResourceMappingDriver,
                                                     es=es['name'])
             self._check_edge_nat_setting(es)
         else:
-            LOG.warning(UNMANAGED_SEGMENT % context.current['id'])
+            LOG.warning(UNMANAGED_SEGMENT, context.current['id'])
 
     def create_external_segment_postcommit(self, context):
         es = context.current
         external_info = self.apic_manager.ext_net_dict.get(es['name'])
         if not external_info:
-            LOG.warning(UNMANAGED_SEGMENT % es['id'])
+            LOG.warning(UNMANAGED_SEGMENT, es['id'])
         else:
             if not es['subnet_id']:
                 subnet = self._use_implicit_external_subnet(context, es)
@@ -1584,7 +1584,7 @@ class ApicMappingDriver(api.ResourceMappingDriver,
         ext_info = self.apic_manager.ext_net_dict.get(
             context.current['name'])
         if not ext_info:
-            LOG.warning(UNMANAGED_SEGMENT % context.current['id'])
+            LOG.warning(UNMANAGED_SEGMENT, context.current['id'])
             return
         if (context.current['external_routes'] !=
                 context.original['external_routes']):
@@ -1870,7 +1870,7 @@ class ApicMappingDriver(api.ResourceMappingDriver,
         ext_info = self.apic_manager.ext_net_dict.get(es['name'])
         if not ext_info:
             LOG.warning(_LW("External Segment %s is not managed by APIC "
-                            "mapping driver.") % es['id'])
+                            "mapping driver."), es['id'])
             return
         pre_existing = (False if is_shadow else self._is_pre_existing(es))
         pfx = self._get_shadow_prefix(plugin_context, is_shadow, l3policy_obj,
@@ -1891,7 +1891,7 @@ class ApicMappingDriver(api.ResourceMappingDriver,
             l3out_info = self._query_l3out_info(mapped_es,
                 self.name_mapper.tenant(es))
             if not l3out_info:
-                LOG.warning(PRE_EXISTING_SEGMENT % es['name'])
+                LOG.warning(PRE_EXISTING_SEGMENT, es['name'])
                 return
             mapped_tenant = l3out_info['l3out_tenant']
             if ext_info.get('external_epg') == ep['name']:
@@ -2105,7 +2105,7 @@ class ApicMappingDriver(api.ResourceMappingDriver,
         external_segments = context.current['external_segments']
         ext_info = self.apic_manager.ext_net_dict.get(es['name'])
         if not ext_info:
-            LOG.warning(UNMANAGED_SEGMENT % es['id'])
+            LOG.warning(UNMANAGED_SEGMENT, es['id'])
             return
         exposed = ext_info.get('cidr_exposed')
 
@@ -2326,7 +2326,7 @@ class ApicMappingDriver(api.ResourceMappingDriver,
             for es in added_ess:
                 ext_info = self.apic_manager.ext_net_dict.get(es['name'])
                 if not ext_info:
-                    LOG.warning(UNMANAGED_SEGMENT % es['id'])
+                    LOG.warning(UNMANAGED_SEGMENT, es['id'])
                     continue
                 pfx = self._get_shadow_prefix(context, is_shadow, l3policy_obj,
                                               self._is_edge_nat(ext_info))
@@ -2350,7 +2350,7 @@ class ApicMappingDriver(api.ResourceMappingDriver,
                     l3out_info = self._query_l3out_info(es_name,
                         self.name_mapper.tenant(es))
                     if not l3out_info:
-                        LOG.warning(PRE_EXISTING_SEGMENT % es['name'])
+                        LOG.warning(PRE_EXISTING_SEGMENT, es['name'])
                         continue
                     es_tenant = l3out_info['l3out_tenant']
                     pre_existing_epg = (
@@ -2426,7 +2426,7 @@ class ApicMappingDriver(api.ResourceMappingDriver,
             for es in added_ess:
                 ext_info = self.apic_manager.ext_net_dict.get(es['name'])
                 if not ext_info:
-                    LOG.warning(UNMANAGED_SEGMENT % es['id'])
+                    LOG.warning(UNMANAGED_SEGMENT, es['id'])
                     continue
                 pfx = self._get_shadow_prefix(context, is_shadow, l3policy_obj,
                                               self._is_edge_nat(ext_info))
@@ -2461,7 +2461,7 @@ class ApicMappingDriver(api.ResourceMappingDriver,
                     l3out_info = self._query_l3out_info(es_name,
                         self.name_mapper.tenant(es))
                     if not l3out_info:
-                        LOG.warning(PRE_EXISTING_SEGMENT % es['name'])
+                        LOG.warning(PRE_EXISTING_SEGMENT, es['name'])
                         continue
                     es_tenant = l3out_info['l3out_tenant']
                     pre_existing_epg = (
@@ -2530,7 +2530,7 @@ class ApicMappingDriver(api.ResourceMappingDriver,
             l3out_info = self._query_l3out_info(es_name,
                 self.name_mapper.tenant(es))
             if not l3out_info:
-                LOG.warning(PRE_EXISTING_SEGMENT % es['name'])
+                LOG.warning(PRE_EXISTING_SEGMENT, es['name'])
                 return
             es_tenant = l3out_info['l3out_tenant']
 
@@ -3188,13 +3188,13 @@ class ApicMappingDriver(api.ResourceMappingDriver,
                     context, es['name']),
                 self.name_mapper.tenant(es))
             if not l3out_info:
-                LOG.warning(PRE_EXISTING_SEGMENT % es['name'])
+                LOG.warning(PRE_EXISTING_SEGMENT, es['name'])
                 return
             if not (l3out_info.get('vrf_name') and
                     l3out_info.get('vrf_tenant')):
                 LOG.warning(
                     _LW("External routed network %s doesn't have private "
-                        "network set") % es['name'])
+                        "network set"), es['name'])
                 return
             es_tenant = l3out_info['l3out_tenant']
             nat_vrf_name = self.name_mapper.name_mapper.pre_existing(
@@ -3290,13 +3290,13 @@ class ApicMappingDriver(api.ResourceMappingDriver,
                     context, es['name']),
                 self.name_mapper.tenant(es))
             if not l3out_info:
-                LOG.warning(PRE_EXISTING_SEGMENT % es['name'])
+                LOG.warning(PRE_EXISTING_SEGMENT, es['name'])
                 return
             if not (l3out_info.get('vrf_name') and
                     l3out_info.get('vrf_tenant')):
                 LOG.warning(
                        _LW("External routed network %s doesn't have private "
-                           "network set") % es['name'])
+                           "network set"), es['name'])
                 return
             es_tenant = l3out_info['l3out_tenant']
             nat_vrf_name = self.name_mapper.name_mapper.pre_existing(

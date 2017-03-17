@@ -16,6 +16,7 @@ import time
 
 from oslo_serialization import jsonutils
 
+from gbpservice._i18n import _LI
 from gbpservice.contrib.nfp.configurator.drivers.base import base_driver
 from gbpservice.contrib.nfp.configurator.drivers.firewall.vyos import (
     vyos_fw_constants as const)
@@ -23,7 +24,6 @@ from gbpservice.contrib.nfp.configurator.lib import constants as common_const
 from gbpservice.contrib.nfp.configurator.lib import data_parser
 from gbpservice.contrib.nfp.configurator.lib import fw_constants as fw_const
 from gbpservice.nfp.core import log as nfp_logging
-from neutron._i18n import _LI
 
 LOG = nfp_logging.getLogger(__name__)
 

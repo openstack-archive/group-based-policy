@@ -191,7 +191,7 @@ class NfpResourceManager(NfpProcessManager, NfpEventManager):
             if decision == 'schedule':
                 # Dispatch to a worker
                 self._dispatch_event(event)
-                LOG.debug("Watchdog started for event - %s" %
+                LOG.debug("Watchdog started for event - %s",
                           (event.identify()))
                 self._watchdog(event)
             elif decision == 'discard':
@@ -219,7 +219,7 @@ class NfpResourceManager(NfpProcessManager, NfpEventManager):
 
     def event_expired(self, event=None):
         if event:
-            LOG.debug("Watchdog expired for event - %s" % (event.identify()))
+            LOG.debug("Watchdog expired for event - %s", (event.identify()))
             self._watchdog_map.pop(event.desc.uuid, None)
             self._controller.event_complete(event, result='FAILED')
 
@@ -228,7 +228,7 @@ class NfpResourceManager(NfpProcessManager, NfpEventManager):
 
     def _watchdog_cancel(self, event):
         try:
-            LOG.debug("Watchdog cancelled for event - %s" % (event.identify()))
+            LOG.debug("Watchdog cancelled for event - %s", (event.identify()))
             wd = self._watchdog_map.pop(event.desc.uuid)
             wd.cancel()
         except KeyError:

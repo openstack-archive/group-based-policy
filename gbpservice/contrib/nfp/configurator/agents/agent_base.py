@@ -11,11 +11,11 @@
 #    under the License.
 
 
+from gbpservice._i18n import _LI
 from gbpservice.contrib.nfp.configurator.lib import constants as const
 from gbpservice.nfp.core import log as nfp_logging
 from gbpservice.nfp.core import module as nfp_api
 
-from neutron._i18n import _LI
 from neutron.common import rpc as n_rpc
 from oslo_config import cfg
 import oslo_messaging as messaging

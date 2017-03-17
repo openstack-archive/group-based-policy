@@ -10,12 +10,12 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-from neutron._i18n import _LE
-from neutron._i18n import _LI
 from oslo_config import cfg
 from oslo_log import log
 import stevedore
 
+from gbpservice._i18n import _LE
+from gbpservice._i18n import _LI
 from gbpservice.neutron.services.servicechain.common import (
     exceptions as sc_exc)
 
