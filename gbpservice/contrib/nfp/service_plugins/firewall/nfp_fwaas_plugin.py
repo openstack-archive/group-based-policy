@@ -13,12 +13,12 @@
 from keystoneclient import exceptions as k_exceptions
 from keystoneclient.v2_0 import client as keyclient
 
+from gbpservice._i18n import _LE
 from gbpservice.common import utils
 from gbpservice.contrib.nfp.config_orchestrator.common import topics
 from gbpservice.nfp.core import log as nfp_logging
 import netaddr
 
-from neutron._i18n import _LE
 from neutron.api.v2 import attributes as attr
 from neutron.common import constants as l3_constants
 from neutron.common import exceptions as n_exc

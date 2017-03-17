@@ -19,8 +19,6 @@ import threading
 
 from keystoneclient import exceptions as k_exceptions
 from keystoneclient.v2_0 import client as keyclient
-from neutron._i18n import _LE
-from neutron._i18n import _LI
 from neutron.common import exceptions as n_exc
 from neutron.common import rpc as n_rpc
 from neutron.plugins.common import constants as pconst
@@ -33,6 +31,8 @@ from oslo_utils import excutils
 import sqlalchemy as sa
 from sqlalchemy.orm.exc import NoResultFound
 
+from gbpservice._i18n import _LE
+from gbpservice._i18n import _LI
 from gbpservice.common import utils
 from gbpservice.neutron.services.grouppolicy.common import constants as gconst
 from gbpservice.neutron.services.servicechain.plugins.ncp import (
@@ -193,7 +193,7 @@ class NFPClientApi(object):
 
     def get_network_function(self, context, network_function_id):
         LOG.debug("Sending RPC GET NETWORK FUNCTION to Service "
-                  "Orchestrator for NF: %s" % network_function_id)
+                  "Orchestrator for NF: %s", network_function_id)
         cctxt = self.client.prepare(version=self.RPC_API_VERSION)
         return cctxt.call(
             context,
@@ -474,7 +474,7 @@ class NFPNodeDriver(driver_base.NodeDriverBase):
     def _wait_for_node_operation_completion(self, context, network_function_id,
                                             operation):
         # Check for NF status in a separate thread
-        LOG.debug("Spawning thread for nf ACTIVE poll operation: %s" % (
+        LOG.debug("Spawning thread for nf ACTIVE poll operation: %s", (
             operation))
         nfp_context = NFPContext.get_nfp_context(context.instance['id'])
         nfp_context['sc_node_count'] -= 1
@@ -729,7 +729,7 @@ class NFPNodeDriver(driver_base.NodeDriverBase):
             network_function = self.nfp_notifier.get_network_function(
                 context.plugin_context, network_function_id)
             LOG.debug("Got %s nf result for NF: %s with status:%s,"
-                      "time waited: %s" % (network_function_id, operation,
+                      "time waited: %s", (network_function_id, operation,
                       time_waited, network_function['status']))
             if not network_function:
                 LOG.error(_LE("Failed to retrieve network function"))
@@ -898,7 +898,7 @@ class NFPNodeDriver(driver_base.NodeDriverBase):
             elif service_target.relationship == nfp_constants.PROVIDER:
                 provider_service_targets.append(service_target)
 
-        LOG.debug("provider targets: %s consumer targets %s" % (
+        LOG.debug("provider targets: %s consumer targets %s", (
             provider_service_targets, consumer_service_targets))
         if (service_details['device_type'] != 'None' and (
             not provider_service_targets or (service_type in

@@ -14,6 +14,7 @@
 import os
 import six
 
+from gbpservice._i18n import _LI
 from gbpservice.contrib.nfp.configurator.agents import agent_base
 from gbpservice.contrib.nfp.configurator.drivers.base import base_driver
 from gbpservice.contrib.nfp.configurator.lib import data_filter
@@ -23,7 +24,6 @@ from gbpservice.nfp.core import event as nfp_event
 from gbpservice.nfp.core import log as nfp_logging
 from gbpservice.nfp.core import module as nfp_api
 
-from neutron._i18n import _LI
 import oslo_messaging as messaging
 
 LOG = nfp_logging.getLogger(__name__)

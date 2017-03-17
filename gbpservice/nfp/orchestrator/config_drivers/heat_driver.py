@@ -15,15 +15,15 @@ import copy
 import time
 
 from heatclient import exc as heat_exc
-from neutron._i18n import _LE
-from neutron._i18n import _LI
-from neutron._i18n import _LW
 from neutron.db import api as db_api
 from neutron.plugins.common import constants as pconst
 from oslo_config import cfg
 from oslo_serialization import jsonutils
 import yaml
 
+from gbpservice._i18n import _LE
+from gbpservice._i18n import _LI
+from gbpservice._i18n import _LW
 from gbpservice.neutron.services.grouppolicy.common import constants as gconst
 from gbpservice.neutron.services.servicechain.plugins.ncp import plumber_base
 from gbpservice.nfp.common import constants as nfp_constants
@@ -330,7 +330,7 @@ class HeatDriver(object):
                 break
         if not provider_subnet:
             LOG.error(_LE("Unable to get provider subnet for provider "
-                          "policy target group %(provider_ptg)s") %
+                          "policy target group %(provider_ptg)s"),
                       {"provider_ptg": provider})
             return lb_vip, lb_vip_name
         if service_type == pconst.LOADBALANCER:
@@ -802,7 +802,7 @@ class HeatDriver(object):
                 break
         if not provider_cidr:
             LOG.error(_LE("Unable to get provider cidr for provider "
-                          "policy target group %(provider_ptg)s") %
+                          "policy target group %(provider_ptg)s"),
                       {"provider_ptg": provider})
             return None
 
@@ -1047,7 +1047,7 @@ class HeatDriver(object):
         except Exception:
             LOG.error(_LE(
                 "Unable to load stack template for service chain "
-                "node:  %(node_id)s") % {'node_id': service_chain_node})
+                "node:  %(node_id)s"), {'node_id': service_chain_node})
             return None, None
         config_param_values = service_chain_instance.get(
             'config_param_values', '{}')
@@ -1171,7 +1171,7 @@ class HeatDriver(object):
                 stack_params[parameter] = config_param_values[parameter]
 
         LOG.info(_LI('Final stack_template : %(stack_data)s, '
-                     'stack_params : %(params)s') %
+                     'stack_params : %(params)s'),
                  {'stack_data': stack_template, 'params': stack_params})
         return (stack_template, stack_params)
 
@@ -1470,7 +1470,7 @@ class HeatDriver(object):
                 stack_params[parameter] = config_param_values[parameter]
 
         LOG.info(_LI('Final stack_template : %(stack_data)s, '
-                     'stack_params : %(params)s') %
+                     'stack_params : %(params)s'),
                  {'stack_data': stack_template, 'params': stack_params})
         return (stack_template, stack_params)
 
@@ -1684,7 +1684,7 @@ class HeatDriver(object):
                         LOG.error(_LE(
                             "Stack %(stack_name)s %(action)s not "
                             "completed within %(time)s seconds where "
-                            "stack owner is %(stack_owner)s") %
+                            "stack owner is %(stack_owner)s"),
                             {'stack_name': stack.stack_name,
                              'action': action,
                              'time': wait_timeout,
@@ -2050,7 +2050,7 @@ class HeatDriver(object):
                 return stack_id
             except Exception:
                 LOG.exception(_LE("Processing policy target %(operation)s "
-                                  " failed") % {'operation': operation})
+                                  " failed"), {'operation': operation})
                 return None
 
     def notify_chain_parameters_updated(self, network_function_details):
@@ -2087,5 +2087,5 @@ class HeatDriver(object):
             except Exception:
                 LOG.exception(_LE(
                     "Processing policy target group "
-                    "%(operation)s failed") % {'operation': operation})
+                    "%(operation)s failed"), {'operation': operation})
                 return None

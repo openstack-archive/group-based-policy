@@ -16,7 +16,6 @@
 import copy
 import re
 
-from neutron._i18n import _LW
 from neutron.common import constants as n_constants
 from neutron import context as nctx
 from neutron.extensions import portbindings
@@ -26,6 +25,7 @@ from opflexagent import constants as ofcst
 from oslo_log import log
 from oslo_utils import importutils
 
+from gbpservice._i18n import _LW
 from gbpservice.neutron.services.grouppolicy.drivers.cisco.apic import (
     apic_mapping as amap)
 from gbpservice.neutron.services.grouppolicy.drivers.cisco.apic import (

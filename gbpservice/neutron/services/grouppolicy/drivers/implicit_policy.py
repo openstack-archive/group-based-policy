@@ -10,8 +10,6 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-from neutron._i18n import _LI
-from neutron._i18n import _LW
 from neutron_lib.db import model_base
 from oslo_config import cfg
 from oslo_log import helpers as log
@@ -19,6 +17,8 @@ from oslo_log import log as logging
 from oslo_utils import excutils
 import sqlalchemy as sa
 
+from gbpservice._i18n import _LI
+from gbpservice._i18n import _LW
 from gbpservice.network.neutronv2 import local_api
 from gbpservice.neutron.extensions import driver_proxy_group as pg_ext
 from gbpservice.neutron.extensions import group_policy as gbp_ext

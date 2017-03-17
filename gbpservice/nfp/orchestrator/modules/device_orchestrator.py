@@ -13,6 +13,8 @@
 
 import oslo_messaging as messaging
 
+from gbpservice._i18n import _LE
+from gbpservice._i18n import _LI
 from gbpservice.nfp.common import constants as nfp_constants
 from gbpservice.nfp.common import topics as nsf_topics
 from gbpservice.nfp.common import utils as nfp_utils
@@ -25,8 +27,6 @@ from gbpservice.nfp.lib import transport
 from gbpservice.nfp.orchestrator.db import nfp_db as nfp_db
 from gbpservice.nfp.orchestrator.drivers import orchestration_driver
 from gbpservice.nfp.orchestrator.openstack import openstack_driver
-from neutron._i18n import _LE
-from neutron._i18n import _LI
 from neutron.common import rpc as n_rpc
 from neutron import context as n_context
 from neutron.db import api as db_api
@@ -129,7 +129,7 @@ class RpcHandler(object):
                 serialize=original_event.sequence,
                 binding_key=original_event.binding_key,
                 key=original_event.desc.uuid)
-            LOG.debug("poll event started for %s" % (ev.id))
+            LOG.debug("poll event started for %s", ev.id)
             self._controller.poll_event(ev, max_times=10)
         else:
             ev = self._controller.new_event(
@@ -375,7 +375,7 @@ class DeviceOrchestrator(nfp_api.NfpEventHandler):
                     serialize=original_event.sequence,
                     binding_key=original_event.binding_key,
                     key=original_event.desc.uuid)
-                LOG.debug("poll event started for %s" % (ev.id))
+                LOG.debug("poll event started for %s", ev.id)
                 self._controller.poll_event(ev, max_times=max_times)
             else:
                 ev = self._controller.new_event(
@@ -403,7 +403,7 @@ class DeviceOrchestrator(nfp_api.NfpEventHandler):
             ev.binding_key = device.get('binding_key')
             LOG.debug("Releasing tenant based lock for "
                       "CREATE_NETWORK_FUNCTION_DEVICE event with binding "
-                      "key: %s" % ev.binding_key)
+                      "key: %s", ev.binding_key)
         self._controller.event_complete(ev)
 
     def event_cancelled(self, ev, reason):
@@ -920,8 +920,8 @@ class DeviceOrchestrator(nfp_api.NfpEventHandler):
             "Configuration completed for device with NFD:%(device_id)s. "
             "Updated DB status to ACTIVE."),
             {'device_id': network_function_device['id']})
-        LOG.debug("Device detail:%s"
-                  % network_function_device)
+        LOG.debug("Device detail:%s",
+                  network_function_device)
         # Release CNFD Event lock
         self._release_cnfd_lock(device)
         self._post_configure_device_graph(nfp_context,
@@ -986,7 +986,7 @@ class DeviceOrchestrator(nfp_api.NfpEventHandler):
             device,
             clear_hm_req)
         LOG.debug("Clear HM RPC sent to configurator for device: "
-                  "%s with parameters: %s" % (
+                  "%s with parameters: %s", (
                       device['id'], clear_hm_req))
         self._controller.event_complete(event, result="SUCCESS")
 
@@ -1009,7 +1009,7 @@ class DeviceOrchestrator(nfp_api.NfpEventHandler):
         self.configurator_rpc.create_network_function_device_config(device,
                                                                     hm_req)
         LOG.debug("Health Check RPC sent to configurator for device: "
-                  "%s with health check parameters: %s" % (
+                  "%s with health check parameters: %s", (
                       device['id'], hm_req))
         self._controller.event_complete(event, result="SUCCESS")
 
@@ -1026,7 +1026,7 @@ class DeviceOrchestrator(nfp_api.NfpEventHandler):
         self.configurator_rpc.create_network_function_device_config(device,
                                                                     hm_req)
         LOG.debug("Health Check RPC sent to configurator for device: "
-                  "%s with health check parameters: %s" % (
+                  "%s with health check parameters: %s", (
                       device['id'], hm_req))
 
     def _get_service_type(self, service_profile_id):
@@ -1538,7 +1538,7 @@ class DeviceOrchestrator(nfp_api.NfpEventHandler):
         # self._create_event(event_id='DEVICE_CREATE_FAILED',
         #                    event_data=event.data)
         LOG.debug("Device create failed for device: %s, with "
-                  "data: %s" % (device['id'], device))
+                  "data: %s", (device['id'], device))
         self.device_configuration_complete(event, result='FAILED')
 
     def handle_interfaces_setup_failed(self, event):
@@ -1550,7 +1550,7 @@ class DeviceOrchestrator(nfp_api.NfpEventHandler):
         self._create_event(event_id='DEVICE_CREATE_FAILED',
                            event_data=device)
         LOG.debug("Interface Plugging failed for device: %s,"
-                  "with config: %s" % (device['id'], device))
+                  "with config: %s", (device['id'], device))
 
     def handle_driver_error(self, event):
         device = event.data
