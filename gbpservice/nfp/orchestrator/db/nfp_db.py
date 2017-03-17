@@ -15,12 +15,12 @@ from oslo_serialization import jsonutils
 from oslo_utils import uuidutils
 from sqlalchemy.orm import exc
 
+from gbpservice._i18n import _LW
 from gbpservice.nfp.common import exceptions as nfp_exc
 from gbpservice.nfp.orchestrator.db import common_db_mixin
 from gbpservice.nfp.orchestrator.db import nfp_db_model
 
 from gbpservice.nfp.core import log as nfp_logging
-from neutron._i18n import _LW
 
 LOG = nfp_logging.getLogger(__name__)
 

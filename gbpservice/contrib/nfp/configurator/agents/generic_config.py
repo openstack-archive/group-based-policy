@@ -13,8 +13,7 @@
 import copy
 import os
 
-from neutron._i18n import _LI
-
+from gbpservice._i18n import _LI
 from gbpservice.contrib.nfp.configurator.agents import agent_base
 from gbpservice.contrib.nfp.configurator.lib import (
     generic_config_constants as gen_cfg_const)

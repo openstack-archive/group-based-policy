@@ -16,9 +16,10 @@
 from keystoneclient import auth as ksc_auth
 from keystoneclient import session as ksc_session
 from keystoneclient.v3 import client as ksc_client
-from neutron._i18n import _LW
 from oslo_config import cfg
 from oslo_log import log as logging
+
+from gbpservice._i18n import _LW
 
 LOG = logging.getLogger(__name__)
 

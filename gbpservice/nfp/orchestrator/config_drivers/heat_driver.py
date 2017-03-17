@@ -15,15 +15,15 @@ import copy
 import time
 
 from heatclient import exc as heat_exc
-from neutron._i18n import _LE
-from neutron._i18n import _LI
-from neutron._i18n import _LW
 from neutron.db import api as db_api
 from neutron.plugins.common import constants as pconst
 from oslo_config import cfg
 from oslo_serialization import jsonutils
 import yaml
 
+from gbpservice._i18n import _LE
+from gbpservice._i18n import _LI
+from gbpservice._i18n import _LW
 from gbpservice.neutron.services.grouppolicy.common import constants as gconst
 from gbpservice.neutron.services.servicechain.plugins.ncp import plumber_base
 from gbpservice.nfp.common import constants as nfp_constants

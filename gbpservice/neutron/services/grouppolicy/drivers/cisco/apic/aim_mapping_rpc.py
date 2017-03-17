@@ -12,8 +12,6 @@
 
 from apic_ml2.neutron.db import port_ha_ipaddress_binding as ha_ip_db
 
-from neutron._i18n import _LE
-from neutron._i18n import _LW
 from neutron.common import rpc as n_rpc
 from neutron.common import topics
 from neutron.plugins.ml2 import rpc as ml2_rpc
@@ -21,6 +19,8 @@ from opflexagent import rpc as o_rpc
 from oslo_db import api as oslo_db_api
 from oslo_log import log
 
+from gbpservice._i18n import _LE
+from gbpservice._i18n import _LW
 from gbpservice.neutron.services.grouppolicy.drivers.cisco.apic import (
     nova_client as nclient)
 

@@ -12,13 +12,14 @@
 
 import contextlib
 
-from neutron._i18n import _
-from neutron._i18n import _LE
 from neutron import context as n_ctx
 from oslo_config import cfg
 from oslo_log import log as logging
 from oslo_utils import importutils
 from stevedore import driver
+
+from gbpservice._i18n import _
+from gbpservice._i18n import _LE
 
 LOG = logging.getLogger(__name__)
 cfg.CONF.import_group('keystone_authtoken', 'keystonemiddleware.auth_token')

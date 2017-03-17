@@ -13,6 +13,8 @@
 
 import oslo_messaging as messaging
 
+from gbpservice._i18n import _LE
+from gbpservice._i18n import _LI
 from gbpservice.nfp.common import constants as nfp_constants
 from gbpservice.nfp.common import topics as nsf_topics
 from gbpservice.nfp.common import utils as nfp_utils
@@ -25,8 +27,6 @@ from gbpservice.nfp.lib import transport
 from gbpservice.nfp.orchestrator.db import nfp_db as nfp_db
 from gbpservice.nfp.orchestrator.drivers import orchestration_driver
 from gbpservice.nfp.orchestrator.openstack import openstack_driver
-from neutron._i18n import _LE
-from neutron._i18n import _LI
 from neutron.common import rpc as n_rpc
 from neutron import context as n_context
 from neutron.db import api as db_api

@@ -12,6 +12,7 @@
 
 from oslo_log import helpers as log_helpers
 
+from gbpservice._i18n import _LI
 from gbpservice.contrib.nfp.configurator.lib import constants as const
 from gbpservice.contrib.nfp.configurator.lib import demuxer
 from gbpservice.contrib.nfp.configurator.lib import utils
@@ -19,7 +20,6 @@ from gbpservice.nfp.core import context as module_context
 from gbpservice.nfp.core import log as nfp_logging
 from gbpservice.nfp.core import rpc
 
-from neutron._i18n import _LI
 
 LOG = nfp_logging.getLogger(__name__)
 

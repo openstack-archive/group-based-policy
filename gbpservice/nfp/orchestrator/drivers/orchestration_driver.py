@@ -12,8 +12,8 @@
 
 import ast
 from collections import defaultdict
-from neutron._i18n import _LE
-from neutron._i18n import _LW
+from gbpservice._i18n import _LE
+from gbpservice._i18n import _LW
 
 from gbpservice.nfp.common import constants as nfp_constants
 from gbpservice.nfp.common import data_formatter as df

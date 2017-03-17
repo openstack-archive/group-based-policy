@@ -13,8 +13,6 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-from neutron._i18n import _LE
-from neutron._i18n import _LI
 from neutron.api import extensions
 from neutron.db import address_scope_db
 from neutron import manager as n_manager
@@ -25,6 +23,8 @@ from oslo_utils import excutils
 from aim.api import resource as aim_res
 from aim import exceptions as aim_exc
 
+from gbpservice._i18n import _LE
+from gbpservice._i18n import _LI
 from gbpservice.neutron import extensions as extensions_pkg
 from gbpservice.neutron.extensions import cisco_apic
 from gbpservice.neutron.plugins.ml2plus import driver_api as api_plus

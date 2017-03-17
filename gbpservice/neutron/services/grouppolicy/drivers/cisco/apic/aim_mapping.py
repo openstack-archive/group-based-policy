@@ -16,9 +16,6 @@ import re
 from aim.api import resource as aim_resource
 from aim import context as aim_context
 from aim import utils as aim_utils
-from neutron._i18n import _LE
-from neutron._i18n import _LI
-from neutron._i18n import _LW
 from neutron.agent.linux import dhcp
 from neutron.api.v2 import attributes
 from neutron.common import constants as n_constants
@@ -33,6 +30,9 @@ from oslo_log import helpers as log
 from oslo_log import log as logging
 from oslo_utils import excutils
 
+from gbpservice._i18n import _LE
+from gbpservice._i18n import _LI
+from gbpservice._i18n import _LW
 from gbpservice.neutron.db.grouppolicy import group_policy_db as gpdb
 from gbpservice.neutron.db.grouppolicy import group_policy_mapping_db as gpmdb
 from gbpservice.neutron.extensions import cisco_apic

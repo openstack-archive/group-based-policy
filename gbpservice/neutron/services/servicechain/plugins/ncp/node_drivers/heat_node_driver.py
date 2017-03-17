@@ -12,7 +12,6 @@
 
 import time
 
-from neutron._i18n import _LE
 from neutron.plugins.common import constants as pconst
 from neutron_lib.db import model_base
 from oslo_config import cfg
@@ -21,6 +20,7 @@ from oslo_log import log as logging
 from oslo_serialization import jsonutils
 import sqlalchemy as sa
 
+from gbpservice._i18n import _LE
 from gbpservice.neutron.services.servicechain.plugins.ncp import (
                                                     exceptions as exc)
 from gbpservice.neutron.services.servicechain.plugins.ncp import driver_base

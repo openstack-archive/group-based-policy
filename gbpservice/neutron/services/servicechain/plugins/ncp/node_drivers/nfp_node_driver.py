@@ -18,8 +18,6 @@ import threading
 
 from keystoneclient import exceptions as k_exceptions
 from keystoneclient.v2_0 import client as keyclient
-from neutron._i18n import _LE
-from neutron._i18n import _LI
 from neutron.common import exceptions as n_exc
 from neutron.common import rpc as n_rpc
 from neutron.plugins.common import constants as pconst
@@ -32,6 +30,8 @@ from oslo_utils import excutils
 import sqlalchemy as sa
 from sqlalchemy.orm.exc import NoResultFound
 
+from gbpservice._i18n import _LE
+from gbpservice._i18n import _LI
 from gbpservice.common import utils
 from gbpservice.neutron.services.grouppolicy.common import constants as gconst
 from gbpservice.neutron.services.servicechain.plugins.ncp import (

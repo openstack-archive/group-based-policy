@@ -15,8 +15,6 @@ import operator
 
 from keystoneclient import exceptions as k_exceptions
 from keystoneclient.v2_0 import client as k_client
-from neutron._i18n import _LE
-from neutron._i18n import _LW
 from neutron.api.v2 import attributes
 from neutron.common import constants as const
 from neutron.common import exceptions as n_exc
@@ -32,6 +30,8 @@ from oslo_utils import excutils
 import sqlalchemy as sa
 from sqlalchemy.orm import exc as sa_exc
 
+from gbpservice._i18n import _LE
+from gbpservice._i18n import _LW
 from gbpservice.common import utils
 from gbpservice.network.neutronv2 import local_api
 from gbpservice.neutron.db.grouppolicy import group_policy_db as gpdb
