@@ -10,15 +10,15 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-from neutron._i18n import _LE
-from neutron._i18n import _LI
-from neutron._i18n import _LW
 from neutron.common import rpc as n_rpc
 from neutron import context as n_context
 from neutron.db import api as db_api
 from oslo_log import helpers as log_helpers
 import oslo_messaging
 
+from gbpservice._i18n import _LE
+from gbpservice._i18n import _LI
+from gbpservice._i18n import _LW
 from gbpservice.nfp.common import constants as nfp_constants
 from gbpservice.nfp.common import exceptions as nfp_exc
 from gbpservice.nfp.common import topics as nfp_rpc_topics
@@ -136,8 +136,8 @@ class RpcHandler(object):
     def get_network_function(self, context, network_function_id):
         '''Invoked in an RPC Call. Return the Network function DB object'''
         module_context.init()
-        LOG.debug("Received RPC call for GET NETWORK FUNCTION for NFI %s"
-                  % network_function_id)
+        LOG.debug("Received RPC call for GET NETWORK FUNCTION for NFI %s",
+                  network_function_id)
 
         service_orchestrator = ServiceOrchestrator(self._controller, self.conf)
         return service_orchestrator.get_network_function(
@@ -261,8 +261,8 @@ class RpcHandler(object):
         '''
         module_context.init()
         LOG.debug("Received RPC call for GET NETWORK FUNCTION DETAILS in "
-                  "for NF:%s"
-                  % network_function_id)
+                  "for NF:%s",
+                  network_function_id)
         service_orchestrator = ServiceOrchestrator(self._controller, self.conf)
         return service_orchestrator.get_network_function_details(
             network_function_id)
@@ -272,8 +272,8 @@ class RpcHandler(object):
         '''Invoked in an RPC Call. Return the Port Info Details object'''
         module_context.init()
         LOG.debug("Received RPC call for GET PORT INFO in "
-                  "for PORT ID:%s"
-                  % port_id)
+                  "for PORT ID:%s",
+                  port_id)
         service_orchestrator = ServiceOrchestrator(self._controller, self.conf)
         return service_orchestrator.get_port_info(port_id)
 
@@ -284,8 +284,8 @@ class RpcHandler(object):
         '''
         module_context.init()
         LOG.debug("Received RPC call for GET NETWORK FUNCTION CONTEXT in "
-                  "for NF:%s"
-                  % network_function_id)
+                  "for NF:%s",
+                  network_function_id)
         service_orchestrator = ServiceOrchestrator(self._controller, self.conf)
         return service_orchestrator.get_network_function_context(
             network_function_id)
@@ -294,8 +294,8 @@ class RpcHandler(object):
     def get_plumbing_info(self, context, request_info):
         module_context.init()
         LOG.debug("Received RPC call for GET PLUMBING INFO "
-                  "for request info:%s"
-                  % request_info)
+                  "for request info:%s",
+                  request_info)
         service_orchestrator = ServiceOrchestrator(self._controller, self.conf)
         return service_orchestrator.get_pt_info_for_plumbing(request_info)
 
@@ -350,7 +350,7 @@ class RpcHandlerConfigurator(object):
                 serialize=original_event.sequence,
                 binding_key=original_event.binding_key,
                 key=original_event.key)
-            LOG.debug("poll event started for %s" % (ev.id))
+            LOG.debug("poll event started for %s", (ev.id))
             self._controller.poll_event(ev, max_times=10)
         else:
             if serialize:
@@ -723,7 +723,7 @@ class ServiceOrchestrator(nfp_api.NfpEventHandler):
                     serialize=original_event.sequence,
                     binding_key=original_event.binding_key,
                     key=original_event.desc.uuid)
-                LOG.debug("poll event started for %s" % (ev.id))
+                LOG.debug("poll event started for %s", (ev.id))
                 self._controller.poll_event(ev, max_times=max_times)
             else:
                 if original_event:
@@ -1226,13 +1226,13 @@ class ServiceOrchestrator(nfp_api.NfpEventHandler):
 
             LOG.debug("Acquiring tenant based lock for "
                       "CREATE_NETWORK_FUNCTION_DEVICE event with binding "
-                      "key: %s, sequence: %s" % (
+                      "key: %s, sequence: %s", (
                           ev.binding_key, ev.sequence))
         self._controller.post_event(ev)
         if event.binding_key and not nfp_context.get('is_nfi_in_graph'):
             LOG.debug("Releasing lock for CREATE_NETWORK_FUNCTION_INSTANCE"
                       " event for gateway services sharing with binding key:"
-                      " %s" % event.binding_key)
+                      " %s", event.binding_key)
             self._controller.event_complete(event)
 
     def handle_device_created(self, event):
@@ -1321,8 +1321,8 @@ class ServiceOrchestrator(nfp_api.NfpEventHandler):
             return
         request_data['tenant_id'] = network_function['tenant_id']
         request_data['network_function_details'] = network_function_details
-        LOG.debug("handle_device_active config_policy_id: %s"
-                  % (request_data['config_policy_id']))
+        LOG.debug("handle_device_active config_policy_id: %s",
+                  request_data['config_policy_id'])
         with nfp_ctx_mgr.DbContextManager as dcm:
             dcm.lock(self.db_session, self.db_handler.update_network_function,
                      network_function['id'],
@@ -1422,8 +1422,8 @@ class ServiceOrchestrator(nfp_api.NfpEventHandler):
             self._controller.event_complete(event, result='FAILED')
             return
 
-        LOG.debug("handle_device_active config_policy_id: %s"
-                  % (nfp_context['config_policy_id']))
+        LOG.debug("handle_device_active config_policy_id: %s",
+                  nfp_context['config_policy_id'])
         nfp_context['network_function'].update(
             {'config_policy_id': nfp_context['config_policy_id']})
         with nfp_ctx_mgr.DbContextManager as dcm:
@@ -2591,8 +2591,8 @@ class NSOConfiguratorRpcApi(object):
                             config_params, operation='create')
         LOG.info(_LI("Sending create heat config request to configurator "))
         LOG.debug("Sending create heat config request to configurator "
-                  "with config_params = %s"
-                  % config_params)
+                  "with config_params = %s",
+                  config_params)
 
         transport.send_request_to_configurator(self.conf,
                                                self.context,
@@ -2608,8 +2608,8 @@ class NSOConfiguratorRpcApi(object):
                             config_params, operation='delete')
         LOG.info(_LI("Sending delete heat config request to configurator "))
         LOG.debug("Sending delete heat config request to configurator "
-                  " with config_params = %s"
-                  % config_params)
+                  " with config_params = %s",
+                  config_params)
         transport.send_request_to_configurator(self.conf,
                                                self.context,
                                                config_params,

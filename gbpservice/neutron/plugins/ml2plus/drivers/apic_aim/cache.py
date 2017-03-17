@@ -16,9 +16,10 @@
 from keystoneclient import auth as ksc_auth
 from keystoneclient import session as ksc_session
 from keystoneclient.v3 import client as ksc_client
-from neutron._i18n import _LW
 from oslo_config import cfg
 from oslo_log import log as logging
+
+from gbpservice._i18n import _LW
 
 LOG = logging.getLogger(__name__)
 
@@ -42,15 +43,15 @@ class ProjectNameCache(object):
     def _get_keystone_client(self):
         LOG.debug("Getting keystone client")
         auth = ksc_auth.load_from_conf_options(cfg.CONF, AUTH_GROUP)
-        LOG.debug("Got auth: %s" % auth)
+        LOG.debug("Got auth: %s", auth)
         if not auth:
             LOG.warning(_LW('No auth_plugin configured in %s'),
                         AUTH_GROUP)
         session = ksc_session.Session.load_from_conf_options(
             cfg.CONF, AUTH_GROUP, auth=auth)
-        LOG.debug("Got session: %s" % session)
+        LOG.debug("Got session: %s", session)
         self.keystone = ksc_client.Client(session=session)
-        LOG.debug("Got client: %s" % self.keystone)
+        LOG.debug("Got client: %s", self.keystone)
 
     def ensure_project(self, project_id):
         """Ensure cache contains mapping for project.
@@ -76,7 +77,7 @@ class ProjectNameCache(object):
                 self._get_keystone_client()
             LOG.debug("Calling project API")
             projects = self.keystone.projects.list()
-            LOG.debug("Received projects: %s" % projects)
+            LOG.debug("Received projects: %s", projects)
             for project in projects:
                 self.project_names[project.id] = project.name
 

@@ -11,8 +11,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from neutron._i18n import _LE
-from neutron._i18n import _LW
 from neutron.callbacks import registry
 from neutron.common import exceptions as n_exc
 from neutron.extensions import address_scope
@@ -25,6 +23,8 @@ from neutron import quota
 from oslo_log import log as logging
 from oslo_utils import excutils
 
+from gbpservice._i18n import _LE
+from gbpservice._i18n import _LW
 from gbpservice.common import utils
 from gbpservice.neutron.extensions import group_policy as gp_ext
 from gbpservice.neutron.extensions import servicechain as sc_ext

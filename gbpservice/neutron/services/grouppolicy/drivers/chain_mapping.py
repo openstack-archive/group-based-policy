@@ -12,7 +12,6 @@
 
 from keystoneclient import exceptions as k_exceptions
 from keystoneclient.v2_0 import client as k_client
-from neutron._i18n import _LE
 from neutron.db import models_v2
 from neutron_lib.db import model_base
 from oslo_config import cfg
@@ -22,6 +21,7 @@ from oslo_serialization import jsonutils
 from oslo_utils import excutils
 import sqlalchemy as sa
 
+from gbpservice._i18n import _LE
 from gbpservice.common import utils
 from gbpservice.network.neutronv2 import local_api
 from gbpservice.neutron.db.grouppolicy import group_policy_mapping_db as gpdb

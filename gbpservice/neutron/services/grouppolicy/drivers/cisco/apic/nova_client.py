@@ -11,12 +11,14 @@
 #    under the License.
 
 from keystoneauth1 import loading as ks_loading
-from neutron._i18n import _LW
 from neutron.notifiers import nova as n_nova
 from novaclient import client as nclient
 from novaclient import exceptions as nova_exceptions
 from oslo_config import cfg
 from oslo_log import log as logging
+
+from gbpservice._i18n import _LW
+
 
 LOG = logging.getLogger(__name__)
 

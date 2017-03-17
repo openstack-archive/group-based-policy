@@ -10,9 +10,9 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-from neutron._i18n import _LI
 from oslo_log import log as logging
 
+from gbpservice._i18n import _LI
 from gbpservice.neutron.db.grouppolicy.extensions import (
     apic_reuse_bd_db as db)
 from gbpservice.neutron.db.grouppolicy import group_policy_db as gp_db

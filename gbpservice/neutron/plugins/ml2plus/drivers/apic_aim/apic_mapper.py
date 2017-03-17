@@ -13,9 +13,9 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-from neutron._i18n import _LE
 from oslo_log import log
 
+from gbpservice._i18n import _LE
 from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import exceptions
 
 LOG = log.getLogger(__name__)

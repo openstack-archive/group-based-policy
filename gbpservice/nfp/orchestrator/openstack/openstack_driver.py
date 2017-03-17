@@ -771,8 +771,8 @@ class NeutronClient(OpenstackApi):
                 "port_id": None}
         }
         self._update_floatingip(token, floatingip_id, info)
-        LOG.debug("Successfully disassociated floatingip %s"
-                  % floatingip_id)
+        LOG.debug("Successfully disassociated floatingip %s",
+                  floatingip_id)
 
     def associate_floating_ip(self, token, floatingip_id, port_id):
         """
@@ -788,8 +788,8 @@ class NeutronClient(OpenstackApi):
         }
 
         self._update_floatingip(token, floatingip_id, info)
-        LOG.debug("Successfully associated floatingip %s"
-                  % floatingip_id)
+        LOG.debug("Successfully associated floatingip %s",
+                  floatingip_id)
 
     def list_ports(self, token, port_ids=None, **kwargs):
         """

@@ -15,8 +15,6 @@ import operator
 
 from keystoneclient import exceptions as k_exceptions
 from keystoneclient.v2_0 import client as k_client
-from neutron._i18n import _LE
-from neutron._i18n import _LW
 from neutron.api.v2 import attributes
 from neutron.common import constants as const
 from neutron.common import exceptions as n_exc
@@ -32,6 +30,8 @@ from oslo_utils import excutils
 import sqlalchemy as sa
 from sqlalchemy.orm import exc as sa_exc
 
+from gbpservice._i18n import _LE
+from gbpservice._i18n import _LW
 from gbpservice.common import utils
 from gbpservice.network.neutronv2 import local_api
 from gbpservice.neutron.db.grouppolicy import group_policy_db as gpdb
@@ -705,7 +705,7 @@ class ImplicitResourceOperations(local_api.LocalAPI,
             try:
                 self._delete_port(plugin_context, port_id)
             except n_exc.PortNotFound:
-                LOG.warning(_LW("Port %s is missing") % port_id)
+                LOG.warning(_LW("Port %s is missing"), port_id)
 
     def _reject_invalid_router_access(self, context, clean_session=True):
         # Validate if the explicit router(s) belong to the tenant.
@@ -2299,14 +2299,14 @@ class ResourceMappingDriver(api.PolicyDriver, ImplicitResourceOperations,
             port = self._get_port(context._plugin_context, port_id)
             if ('port_security_enabled' in port and
                     not port['port_security_enabled']):
-                LOG.debug("Port security disabled for port %s " % port_id)
+                LOG.debug("Port security disabled for port %s ", port_id)
                 return
             cur_sg_list = port[ext_sg.SECURITYGROUPS]
             new_sg_list = cur_sg_list + sg_list
             port[ext_sg.SECURITYGROUPS] = new_sg_list
             self._update_port(context._plugin_context, port_id, port)
         except n_exc.PortNotFound:
-            LOG.warning(_LW("Port %s is missing") % port_id)
+            LOG.warning(_LW("Port %s is missing"), port_id)
 
     def _disassoc_sgs_from_pt(self, context, pt_id, sg_list):
         try:
@@ -2323,14 +2323,14 @@ class ResourceMappingDriver(api.PolicyDriver, ImplicitResourceOperations,
             port = self._get_port(plugin_context, port_id)
             if ('port_security_enabled' in port and
                     not port['port_security_enabled']):
-                LOG.debug("Port security disabled for port %s " % port_id)
+                LOG.debug("Port security disabled for port %s ", port_id)
                 return
             cur_sg_list = port[ext_sg.SECURITYGROUPS]
             new_sg_list = list(set(cur_sg_list) - set(sg_list))
             port[ext_sg.SECURITYGROUPS] = new_sg_list
             self._update_port(plugin_context, port_id, port)
         except n_exc.PortNotFound:
-            LOG.warning(_LW("Port %s is missing") % port_id)
+            LOG.warning(_LW("Port %s is missing"), port_id)
 
     def _generate_list_of_sg_from_ptg(self, context, ptg_id):
         ptg = context._plugin.get_policy_target_group(
