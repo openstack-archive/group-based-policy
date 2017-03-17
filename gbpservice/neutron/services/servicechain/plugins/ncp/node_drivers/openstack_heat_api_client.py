@@ -12,9 +12,9 @@
 
 from heatclient import client as heat_client
 from heatclient import exc as heat_exc
-from neutron._i18n import _LW
 from oslo_log import log as logging
 
+from gbpservice._i18n import _LW
 
 LOG = logging.getLogger(__name__)
 

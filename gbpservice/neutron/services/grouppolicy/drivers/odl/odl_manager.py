@@ -13,11 +13,11 @@
 import requests
 from requests import auth
 
-from neutron._i18n import _LI
 from oslo_config import cfg
 from oslo_log import log as logging
 from oslo_serialization import jsonutils
 
+from gbpservice._i18n import _LI
 
 LOG = logging.getLogger(__name__)
 

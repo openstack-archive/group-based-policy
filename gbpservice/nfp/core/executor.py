@@ -75,7 +75,7 @@ class TaskExecutor(object):
         if result_store is not None:
             job.update({'result_store': result_store})
 
-        LOG.debug("TaskExecutor - (job - %s) added to pipeline" %
+        LOG.debug("TaskExecutor - (job - %s) added to pipeline",
                   (str(job)))
 
         self.pipe_line.append(job)
@@ -94,7 +94,7 @@ class TaskExecutor(object):
         self.fired = True
         for job in self.pipe_line:
             LOG.debug(
-                "TaskExecutor - (job - %s) dispatched" %
+                "TaskExecutor - (job - %s) dispatched",
                 (str(job)))
 
             th = self.thread_pool.dispatch(self.dispatch, job)
@@ -103,7 +103,7 @@ class TaskExecutor(object):
         for job in self.pipe_line:
             result = job['thread'].wait()
             LOG.debug(
-                "TaskExecutor - (job - %s) complete" %
+                "TaskExecutor - (job - %s) complete",
                 (str(job)))
 
             job.pop('thread')

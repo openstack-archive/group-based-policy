@@ -12,8 +12,6 @@
 
 import netaddr
 
-from neutron._i18n import _LE
-from neutron._i18n import _LW
 from neutron.api.v2 import attributes as nattr
 from neutron import context as n_ctx
 from neutron.extensions import portbindings
@@ -24,6 +22,8 @@ from oslo_log import helpers as log
 from oslo_log import log as logging
 from oslo_utils import excutils
 
+from gbpservice._i18n import _LE
+from gbpservice._i18n import _LW
 from gbpservice.common import utils as gbp_utils
 from gbpservice.neutron.db.grouppolicy import group_policy_db as gpdb
 from gbpservice.neutron.db.grouppolicy import group_policy_mapping_db

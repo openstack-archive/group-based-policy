@@ -13,8 +13,7 @@
 import copy
 import os
 
-from neutron._i18n import _LI
-
+from gbpservice._i18n import _LI
 from gbpservice.contrib.nfp.configurator.agents import agent_base
 from gbpservice.contrib.nfp.configurator.lib import (
     generic_config_constants as gen_cfg_const)
@@ -300,7 +299,7 @@ class GenericConfigEventHandler(agent_base.AgentBaseEventHandler,
                     gen_cfg_const.DEVICE_TO_BECOME_DOWN)
 
     def _process_event(self, ev):
-        LOG.debug(" Handling event %s " % (ev.data))
+        LOG.debug(" Handling event %s ", (ev.data))
         # Process single request data blob
         resource_data = ev.data['resource_data']
         # The context inside ev.data is the agent info dictionary prepared

@@ -15,8 +15,7 @@ import os
 import oslo_messaging as messaging
 import requests
 
-from neutron._i18n import _LI
-
+from gbpservice._i18n import _LI
 from gbpservice.contrib.nfp.configurator.agents import agent_base
 from gbpservice.contrib.nfp.configurator.lib import constants as common_const
 from gbpservice.contrib.nfp.configurator.lib import fw_constants as const

@@ -10,14 +10,14 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-from neutron._i18n import _LE
-from neutron._i18n import _LI
-from neutron._i18n import _LW
 from neutron.api.v2 import attributes as attr
 from neutron import manager
 from oslo_config import cfg
 from oslo_log import log as logging
 
+from gbpservice._i18n import _LE
+from gbpservice._i18n import _LI
+from gbpservice._i18n import _LW
 from gbpservice.neutron.extensions import driver_proxy_group as pg_ext
 from gbpservice.neutron.extensions import group_policy
 from gbpservice.neutron.services.grouppolicy.common import exceptions as exc

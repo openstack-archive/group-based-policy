@@ -16,14 +16,13 @@
 # The following is imported at the beginning to ensure
 # that the patches are applied before any of the
 # modules save a reference to the functions being patched
-from gbpservice.neutron.plugins.ml2plus import patch_neutron  # noqa
-
+from gbpservice._i18n import _LE
+from gbpservice._i18n import _LI
 from gbpservice.neutron.extensions import patch  # noqa
+from gbpservice.neutron.plugins.ml2plus import patch_neutron  # noqa
 
 import functools
 
-from neutron._i18n import _LE
-from neutron._i18n import _LI
 from neutron.api.v2 import attributes
 from neutron.db import api as db_api
 from neutron.db import db_base_plugin_v2

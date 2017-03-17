@@ -13,11 +13,11 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-from neutron._i18n import _LI
 from neutron.tests.unit.plugins.ml2.drivers import (
     mechanism_logger as ml2_logger)
 from oslo_log import log
 
+from gbpservice._i18n import _LI
 from gbpservice.neutron.plugins.ml2plus import driver_api
 
 LOG = log.getLogger(__name__)
