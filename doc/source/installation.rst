@@ -14,15 +14,25 @@ Or, if you have virtualenvwrapper installed::
 Using DevStack
 --------------
 
-First, clone the latest ``stable/mitaka`` branch of DevStack::
+First, clone the latest ``stable/newton`` branch of DevStack::
 
-    $ git clone -b stable/mitaka https://git.openstack.org/openstack-dev/devstack
+    $ git clone -b stable/newton https://git.openstack.org/openstack-dev/devstack
     $ cd devstack
 
 Then, create a basic ``local.conf`` including at least the following lines::
 
     [[local|localrc]]
-    enable_plugin gbp https://git.openstack.org/openstack/group-based-policy master
+    enable_plugin group-based-policy https://git.openstack.org/openstack/group-based-policy master
+
+Or, if you need install from a patch under review::
+
+    [[local|localrc]]
+    enable_plugin group-based-policy https://git.openstack.org/openstack/group-based-policy <GITREF>
+
+where, GITREF is the patchset reference of the patchset under review. E.g.::
+
+    [[local|localrc]]
+    enable_plugin group-based-policy https://git.openstack.org/openstack/group-based-policy refs/changes/65/353265/2
 
 Finally, you are ready to run ``stack.sh``.
 
@@ -43,5 +53,4 @@ pointing to GitHub::
     GIT_BASE=https://github.com
     RECLONE=True
 
-    enable_plugin gbp https://github.com/openstack/group-based-policy.git master
-
+    enable_plugin group-based-policy https://github.com/openstack/group-based-policy.git master

@@ -6,6 +6,23 @@ set -x
 
 trap prepare_logs ERR
 
+sudo git --git-dir=/opt/stack/new/neutron/.git --work-tree=/opt/stack/new/neutron show --name-only
+sudo git --git-dir=/opt/stack/new/neutron/.git --work-tree=/opt/stack/new/neutron status
+sudo pip show neutron-lib
+sudo git --git-dir=/opt/stack/new/group-based-policy/.git --work-tree=/opt/stack/new/group-based-policy show --name-only
+sudo git --git-dir=/opt/stack/new/group-based-policy/.git --work-tree=/opt/stack/new/group-based-policy status
+
+### temporary, remove the following block after debugging is done ###
+# Run gbpfunc integration tests
+echo "Running gbpfunc test suite"
+export PYTHONPATH="$GBP_FUNC_DIR:${PYTHONPATH}"
+cd $GBP_FUNC_DIR/testcases
+# Run rest of the tests as non-admin cred
+source_creds $TOP_DIR/openrc demo demo
+python suite_non_admin_run.py upstream
+exit
+#####################################################################
+
 # Run exercise scripts
 $TOP_DIR/exercise.sh
 exercises_exit_code=$?
