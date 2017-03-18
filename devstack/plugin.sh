@@ -104,8 +104,8 @@ if is_service_enabled group-policy; then
         fi
     elif [[ "$1" == "stack" && "$2" == "post-config" ]]; then
         echo_summary "Configuring $GBP"
-        gbp_configure_nova
-        gbp_configure_heat
+        [[ $ENABLE_APIC_AIM_GATE = False ]] && gbp_configure_nova
+        [[ $ENABLE_APIC_AIM_GATE = False ]] && gbp_configure_heat
         gbp_configure_neutron
         if [[ $ENABLE_NFP = True ]]; then
             echo_summary "Configuring $NFP"
@@ -123,11 +123,11 @@ if is_service_enabled group-policy; then
         [[ $ENABLE_NFP = True ]] && install_nfpgbpservice
         init_gbpservice
         [[ $ENABLE_NFP = True ]] && init_nfpgbpservice
-        install_gbpheat
-        install_gbpui
+        [[ $ENABLE_APIC_AIM_GATE = False ]] && install_gbpheat
+        [[ $ENABLE_APIC_AIM_GATE = False ]] && install_gbpui
         [[ $ENABLE_APIC_AIM = True || $ENABLE_APIC_AIM_GATE = True ]] && configure_apic_aim
-        stop_apache_server
-        start_apache_server
+        [[ $ENABLE_APIC_AIM_GATE = False ]] && stop_apache_server
+        [[ $ENABLE_APIC_AIM_GATE = False ]] && start_apache_server
     elif [[ "$1" == "stack" && "$2" == "extra" ]]; then
         echo_summary "Initializing $GBP"
         if [[ $ENABLE_NFP = True ]]; then
