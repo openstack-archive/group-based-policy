@@ -15,3 +15,7 @@ if [[ $ENABLE_APIC_AIM = True || $ENABLE_APIC_AIM_GATE = True ]]; then
 
     Q_ML2_TENANT_NETWORK_TYPE=${Q_ML2_TENANT_NETWORK_TYPE:-opflex}
 fi
+
+if [[ $ENABLE_APIC_AIM_GATE = True ]]; then
+    GBPSERVICE_DIR=$DEST/group-based-policy
+fi
