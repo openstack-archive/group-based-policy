@@ -52,6 +52,11 @@ function prepare_gbp_aim_devstack {
     sudo mv $GBP_FUNC_DIR/testcases/tc_gbp_prs_func.py.aim $GBP_FUNC_DIR/testcases/tc_gbp_prs_func.py
     source $TOP_DIR/functions
     source $TOP_DIR/functions-common
+    # The following should updated when master moves to a new release
+    sudo cd /opt/stack/new/neutron
+    sudo git checkout stable/newton
+    sudo cd /opt/stack/new/nova
+    sudo git checkout stable/newton
 }
 
 function source_creds {
@@ -105,6 +110,7 @@ function check_residual_resources {
     gbp nat-pool-list
     gbp external-policy-list
     gbp external-segment-list
+    gbp apg-list
 
     neutron router-list
     neutron net-list
