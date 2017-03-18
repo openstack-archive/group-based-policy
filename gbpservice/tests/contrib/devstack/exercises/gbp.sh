@@ -68,10 +68,13 @@ gbp policy-rule-set-create icmp-policy-rule-set --policy-rules ping-policy-rule
 gbp policy-rule-set-create web-policy-rule-set --policy-rules web-policy-rule
 
 # ====== PROJECT OPERATION ======
+# APG creation
+gbp apg-create myapp
+
 # PTGs creation
-gbp group-create  web
-gbp group-create  client-1
-gbp group-create  client-2
+gbp group-create  --application-policy-group myapp web
+gbp group-create  --application-policy-group myapp client-1
+gbp group-create  --application-policy-group myapp client-2
 
 # PT creation
 WEB_PORT=$(gbp policy-target-create web-pt-1 --policy-target-group web | awk "/port_id/ {print \$4}")
@@ -126,6 +129,8 @@ gbp pt-delete pt-fixed-ip
 gbp group-delete  web
 gbp group-delete  client-1
 gbp group-delete  client-2
+
+gbp apg-delete myapp
 
 gbp policy-rule-set-delete icmp-policy-rule-set
 gbp policy-rule-set-delete web-policy-rule-set
