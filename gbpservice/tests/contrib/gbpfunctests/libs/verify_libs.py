@@ -23,6 +23,16 @@ _log = logging.getLogger()
 _log.setLevel(logging.INFO)
 
 
+def getoutput(cmd):
+    _log.info('Running cmd: %s\n' % (cmd))
+    cmd_out = commands.getoutput(cmd)
+    _log.info('Cmd output: %s\n' % (cmd_out))
+    return cmd_out
+
+
+commands.getoutput = getoutput
+
+
 class Gbp_Verify(object):
 
     def __init__(self):
