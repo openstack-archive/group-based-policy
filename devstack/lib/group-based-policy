@@ -1,4 +1,4 @@
-# lib/gbp
+# lib/group-based-policy
 # functions - functions specific to group-based-policy
 
 # Dependencies:
@@ -15,7 +15,7 @@
 # ``unstack.sh`` calls the entry points in this order:
 
 # Set up default directories
-GBPSERVICE_DIR=$DEST/gbp
+GBPSERVICE_DIR=$DEST/group-based-policy
 GBPCLIENT_DIR=$DEST/python-gbpclient
 GBPHEAT_DIR=$DEST/gbpautomation
 GBPUI_DIR=$DEST/gbpui

@@ -32,7 +32,7 @@ Steps to test Base Mode:
 ========================
 
 (1) Create a test chain with the service VM.
-    # cd /opt/stack/gbp/devstack/exercises/nfp_service
+    # cd /opt/stack/group-based-policy/devstack/exercises/nfp_service
     # bash lb_base.sh
 
 (2) Login to the UI, create one member in consumer group and two members
@@ -45,14 +45,14 @@ Steps to test Base Mode:
 (4) Delete members created in the consumer and provider groups in step 2.
 
 (5) Delete the test chain.
-    # cd /opt/stack/gbp/devstack/exercises/nfp_service
+    # cd /opt/stack/group-based-policy/devstack/exercises/nfp_service
     # bash lb_base_clean.sh
 
 
 Steps to test Base Mode with VM:
 ================================
 (1) Create a test chain with the service VM.
-    # cd /opt/stack/gbp/devstack/exercises/nfp_service
+    # cd /opt/stack/group-based-policy/devstack/exercises/nfp_service
     # bash fw_base_vm.sh
 
 (2) Login to the UI, create a member in the consumer and provider groups.
@@ -60,12 +60,12 @@ Steps to test Base Mode with VM:
 (3) Test firewall with traffic from consumer VM.
 
 (4) Log-in into service VM
-    # cd /opt/stack/gbp/gbpservice/contrib/nfp/tools/image_builder
+    # cd /opt/stack/group-based-policy/gbpservice/contrib/nfp/tools/image_builder
     # sudo ip netns exec nfp-proxy ssh -i nfp_reference_service ubuntu@<nfp_service mgmt-ip>
 
 (5) Delete members created in the consumer and provider groups in step 2.
 
 (6) Delete the test chain.
-    # cd /opt/stack/gbp/devstack/exercises/nfp_service
+    # cd /opt/stack/group-based-policy/devstack/exercises/nfp_service
     # bash fw_base_vm_clean.sh
 
