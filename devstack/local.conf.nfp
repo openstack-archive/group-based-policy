@@ -55,5 +55,5 @@ if [[ $ENABLE_NFP = True ]]; then
 
     fi
 fi
-enable_plugin gbp $GBPSERVICE_REPO $GBPSERVICE_BRANCH
+enable_plugin group-based-policy $GBPSERVICE_REPO $GBPSERVICE_BRANCH
 
