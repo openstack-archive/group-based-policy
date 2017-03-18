@@ -50,6 +50,20 @@ function prepare_gbp_aim_devstack {
     # Use the aim version of the shared PRS test
     sudo mv $GBP_FUNC_DIR/testcases/tc_gbp_prs_pr_shared_func.py.aim $GBP_FUNC_DIR/testcases/tc_gbp_prs_pr_shared_func.py 
     sudo mv $GBP_FUNC_DIR/testcases/tc_gbp_prs_func.py.aim $GBP_FUNC_DIR/testcases/tc_gbp_prs_func.py
+    # The following should updated when master moves to a new release
+    # We need to do the following since the infra job clones these repos and
+    # checks out the master branch (as this is the master branch) and later
+    # does not switch to the stable/newton branch when installing devstack
+    # since the repo is already present.
+    # This can be worked around by changing the job description in
+    # project-config to set BRANCH_OVERRIDE to use the stable/newton branch
+    sudo git --git-dir=/opt/stack/new/neutron/.git --work-tree=/opt/stack/new/neutron checkout stable/newton
+    sudo git --git-dir=/opt/stack/new/nova/.git --work-tree=/opt/stack/new/nova checkout stable/newton
+    sudo git --git-dir=/opt/stack/new/keystone/.git --work-tree=/opt/stack/new/keystone checkout stable/newton
+    sudo git --git-dir=/opt/stack/new/cinder/.git --work-tree=/opt/stack/new/cinder checkout stable/newton
+    sudo git --git-dir=/opt/stack/new/requirements/.git --work-tree=/opt/stack/new/requirements checkout stable/newton
+    export ENABLED_SERVICES="key,rabbit,mysql"
+
     source $TOP_DIR/functions
     source $TOP_DIR/functions-common
 }
@@ -105,6 +119,7 @@ function check_residual_resources {
     gbp nat-pool-list
     gbp external-policy-list
     gbp external-segment-list
+    gbp apg-list
 
     neutron router-list
     neutron net-list
