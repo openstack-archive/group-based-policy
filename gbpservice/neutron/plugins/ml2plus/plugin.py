@@ -25,10 +25,14 @@ import functools
 from neutron._i18n import _LE
 from neutron._i18n import _LI
 from neutron.api.v2 import attributes
+from neutron.callbacks import events
+from neutron.callbacks import registry
+from neutron.callbacks import resources
 from neutron.db import api as db_api
 from neutron.db import db_base_plugin_v2
 from neutron.db.models import securitygroup as securitygroups_db
 from neutron.db import models_v2
+from neutron.db import provisioning_blocks
 from neutron.extensions import address_scope as as_ext
 from neutron.plugins.ml2.common import exceptions as ml2_exc
 from neutron.plugins.ml2 import managers as ml2_managers
@@ -150,6 +154,16 @@ class Ml2PlusPlugin(ml2_plugin.Ml2Plugin,
         self.type_manager.initialize()
         self.extension_manager.initialize()
         self.mechanism_manager.initialize()
+        registry.subscribe(self._port_provisioned, resources.PORT,
+                           provisioning_blocks.PROVISIONING_COMPLETE)
+        registry.subscribe(self._handle_segment_change, resources.SEGMENT,
+                           events.PRECOMMIT_CREATE)
+        registry.subscribe(self._handle_segment_change, resources.SEGMENT,
+                           events.PRECOMMIT_DELETE)
+        registry.subscribe(self._handle_segment_change, resources.SEGMENT,
+                           events.AFTER_CREATE)
+        registry.subscribe(self._handle_segment_change, resources.SEGMENT,
+                           events.AFTER_DELETE)
         self._setup_dhcp()
         self._start_rpc_notifiers()
         self.add_agent_status_check(self.agent_health_check)
