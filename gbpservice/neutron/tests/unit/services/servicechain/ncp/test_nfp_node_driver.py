@@ -472,7 +472,7 @@ class TestServiceChainInstance(NFPNodeDriverTestCase):
                     'plumbing_type': 'endpoint'
                 }
                 node_id = self._nfp_create_profiled_servicechain_node(
-                    service_type=constants.LOADBALANCER)['servicechain_node'][
+                    service_type=constants.LOADBALANCERV2)['servicechain_node'][
                     'id']
                 spec = self.create_servicechain_spec(
                     nodes=[node_id],
@@ -730,7 +730,7 @@ class TestServiceChainInstance(NFPNodeDriverTestCase):
     @mock.patch.object(nfp_node_driver.NFPClientApi, 'get_plumbing_info')
     def test_policy_target_add_remove(self, plumbing_info):
         prof = self._create_service_profile(
-            service_type='LOADBALANCER',
+            service_type='LOADBALANCERV2',
             vendor=self.SERVICE_PROFILE_VENDOR,
             insertion_mode='l3', service_flavor='haproxy')['service_profile']
         node = self.create_servicechain_node(
