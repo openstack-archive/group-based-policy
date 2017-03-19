@@ -20,70 +20,80 @@ class DummyDictionaries(object):
     testing the heat_driver test cases.
     """
 
-    DEFAULT_LB_CONFIG = {
-        u'heat_template_version': u'2013-05-23',
-        u'description': u'Configuration for Haproxy Neutron LB service',
-        u'parameters': {
-            u'Subnet': {
-                u'type': u'string',
-                u'description': u'Pool Subnet-CIDR, on which VIP port created'
+    DEFAULT_LBV2_CONFIG = {
+        "heat_template_version": "2015-10-15",
+        "description": "Configuration for Haproxy Neutron LB V2 service",
+        "parameters": {
+            "lb_port": {
+                "type": "number",
+                "default": 80,
+                "description": "Port used by the load balancer"
             },
-            u'vip_ip': {
-                u'type': u'string',
-                u'description': u'VIP IP Address'
+            "app_port": {
+                "type": "number",
+                "default": 80,
+                "description": "Port used by the servers"
             },
-            u'service_chain_metadata': {
-                u'type': u'string',
-                u'description': u'sc metadata'
+            "Subnet": {
+                "type": "string",
+                "description": "Subnet on which the LB will be located"
+            },
+            "vip_ip": {
+                "type": "string",
+                "description": "VIP IP Address"
+            },
+            "service_chain_metadata": {
+                "type": "string",
+                "description": "sc metadata"
             }
         },
-        u'resources': {
-            u'LoadBalancerPool': {
-                u'type': u'OS::Neutron::Pool',
-                u'properties': {
-                    u'lb_method': u'ROUND_ROBIN',
-                    u'protocol': u'TCP',
-                    u'name': u'Haproxy pool-lb-chain',
-                    u'admin_state_up': True,
-                    u'subnet_id': {
-                        u'get_param': u'Subnet'
-                    },
-                    u'vip': {
-                        u'subnet': {
-                            u'get_param': u'Subnet'
-                        },
-                        u'description': {
-                            u'get_param': u'service_chain_metadata'
-                        },
-                        u'admin_state_up': True,
-                        u'connection_limit': -1,
-                        u'address': {
-                            u'get_param': u'vip_ip'
-                        },
-                        u'protocol_port': 3939,
-                        u'name': u'LoadBalancerPool vip-lb-chain'
-                    },
-                    u'provider': u'haproxy_on_vm',
-                    u'monitors': [{u'get_resource': u'HealthMonitor'}],
-                    u'description': u'Haproxy pool from template'
+        "resources": {
+            "monitor": {
+                "type": "OS::Neutron::LBaaS::HealthMonitor",
+                "properties": {
+                    "delay": 3,
+                    "type": "HTTP",
+                    "timeout": 3,
+                    "max_retries": 3,
+                    "pool": {
+                        "get_resource": "pool"
+                    }
                 }
             },
-            u'HealthMonitor': {
-                u'type': u'OS::Neutron::HealthMonitor',
-                u'properties': {
-                    u'delay': 20,
-                    u'max_retries': 5,
-                    u'type': u'PING',
-                    u'timeout': 10,
-                    u'admin_state_up': True
+            "pool": {
+                "type": "OS::Neutron::LBaaS::Pool",
+                "properties": {
+                    "lb_algorithm": "ROUND_ROBIN",
+                    "protocol": "HTTP",
+                    "listener": {
+                        "get_resource": "listener"
+                    }
                 }
             },
-            u'LoadBalancer': {
-                u'type': u'OS::Neutron::LoadBalancer',
-                u'properties': {
-                    u'protocol_port': 101,
-                    u'pool_id': {
-                        u'get_resource': u'LoadBalancerPool'
+            "listener": {
+                "type": "OS::Neutron::LBaaS::Listener",
+                "properties": {
+                    "loadbalancer": {
+                        "get_resource": "loadbalancer"
+                    },
+                    "protocol": "HTTP",
+                    "protocol_port": {
+                        "get_param": "lb_port"
+                    }
+                }
+            },
+            "loadbalancer": {
+                "type": "OS::Neutron::LBaaS::LoadBalancer",
+                "properties": {
+                    "vip_subnet": {
+                        "get_param": "Subnet"
+                    },
+                    "provider": "loadbalancerv2",
+                    "vip_address": {
+                        "get_param": "vip_ip"
+                    },
+                    "description": {
+                        "get_param": "service_chain_metadata"
                     }
                 }
             }
@@ -493,17 +503,6 @@ class DummyDictionaries(object):
         'fw_policy_key': u'sc_firewall_policy'
     }
 
-    pool_members = {
-        'type': 'OS::Neutron::PoolMember',
-        'properties': {
-            'protocol_port': 101,
-            'admin_state_up': True,
-            'pool_id': {'get_resource': u'LoadBalancerPool'},
-            'weight': 1,
-            'address': u'42.0.0.13'
-        }
-    }
-
     fw_scn_config = "{\"heat_template_version\": \"2013-05-23\",\
         \"description\": \"Template to deploy firewall\", \"resources\":\
         {\"sc_firewall_rule3\": {\"type\": \"OS::Neutron::FirewallRule\",\
@@ -531,28 +530,30 @@ class DummyDictionaries(object):
         \'vm_management_ip\': u'192.168.20.138', \'provider_ptg_info\':\
         [\'fa:16:3e:28:7d:b2\']}\", \"name\": \"serviceVM_infra_FW\"}}}}"
 
-    lb_scn_config = "{\"heat_template_version\": \"2013-05-23\",\
-        \"description\": \"Configuration for F5 Neutron Loadbalacer service\",\
+    lbv2_scn_config = "{\"heat_template_version\": \"2015-10-15\",\
+        \"description\": \"Configuration for Haproxy Neutron LB V2 service\",\
         \"parameters\": {\"Subnet\": {\"type\": \"string\", \"description\":\
-        \"Pool Subnet CIDR, on which VIP port should be created\"},\
+        \"Subnet on which the load balancer will be located\"}, \
         \"service_chain_metadata\": {\"type\": \"string\", \"description\":\
         \"sc metadata\"}, \"vip_ip\": {\"type\": \"string\", \"description\":\
-        \"VIP IP Address\"}}, \"resources\": {\"LoadBalancerPool\": {\"type\":\
-        \"OS::Neutron::Pool\", \"properties\": {\"lb_method\":\
-        \"ROUND_ROBIN\", \"protocol\": \"TCP\", \"name\": \"F5 LB pool\",\
-        \"admin_state_up\": true, \"subnet_id\": {\"get_param\": \"Subnet\"},\
-        \"vip\": {\"subnet\": {\"get_param\": \"Subnet\"}, \"description\":\
-        {\"get_param\": \"service_chain_metadata\"}, \"admin_state_up\": true,\
-        \"connection_limit\": -1, \"address\": {\"get_param\": \"vip_ip\"},\
-        \"protocol_port\": 80, \"name\": \"LoadBalancerPool vip\"},\
-        \"provider\": \"F5\", \"monitors\": [{\"get_resource\":\
-        \"HealthMonitor\"}], \"description\": \"F5 LB pool from template\"}},\
-        \"HealthMonitor\": {\"type\": \"OS::Neutron::HealthMonitor\",\
-        \"properties\": {\"delay\": 20, \"max_retries\": 5, \"type\":\
-        \"PING\", \"timeout\": 10, \"admin_state_up\": true}},\
-        \"LoadBalancer\": {\"type\": \"OS::Neutron::LoadBalancer\",\
-        \"properties\": {\"protocol_port\": 80, \"pool_id\": {\"get_resource\"\
-        :\"LoadBalancerPool\"}}}}}"
+        \"VIP IP Address\"}, \"app_port\": {\"default\": 80, \"type\":\
+        \"number\", \"description\": \"Port used by the servers\"}, \
+        \"lb_port\": {\"default\": 80, \"type\": \"number\", \"description\":\
+        \"Port used by the load balancer\"}}, \"resources\": {\"listener\":\
+        {\"type\": \"OS::Neutron::LBaaS::Listener\", \"properties\":\
+        {\"protocol_port\": {\"get_param\": \"lb_port\"}, \"protocol\":\
+        \"HTTP\", \"loadbalancer\": {\"get_resource\": \"loadbalancer\"}}},\
+        \"loadbalancer\": {\"type\": \"OS::Neutron::LBaaS::LoadBalancer\",\
+        \"properties\": {\"vip_subnet\": {\"get_param\": \"Subnet\"},\
+        \"vip_address\": {\"get_param\": \"vip_ip\"}, \"description\":\
+        {\"get_param\": \"service_chain_metadata\"}, \"provider\":\
+        \"loadbalancerv2\"}}, \"monitor\": {\"type\":\
+        \"OS::Neutron::LBaaS::HealthMonitor\", \"properties\": {\"delay\": 3,\
+        \"max_retries\": 3, \"type\": \"HTTP\", \"pool\": {\"get_resource\":\
+        \"pool\"}, \"timeout\": 3}}, \"pool\": {\"type\": \
+        \"OS::Neutron::LBaaS::Pool\", \"properties\":\
+        {\"lb_algorithm\": \"ROUND_ROBIN\", \"listener\": {\"get_resource\":\
+        \"listener\"}, \"protocol\": \"HTTP\"}}}}"
 
     vpn_scn_config = "{\"description\":\"Createsnewvpnservice-ike+ipsec+\
         vpnservice+site-siteconnection(s)\", \"heat_template_version\
@@ -594,9 +595,9 @@ class DummyDictionaries(object):
         u'service_type': u'VPN'
     }
 
-    lb_service_profile = {
+    lbv2_service_profile = {
         u'service_flavor': u'haproxy',
-        u'service_type': u'LOADBALANCER'
+        u'service_type': u'LOADBALANCERV2'
     }
 
     fw_service_chain_node = {
@@ -611,10 +612,10 @@ class DummyDictionaries(object):
         u'config': vpn_scn_config
     }
 
-    lb_service_chain_node = {
+    lbv2_service_chain_node = {
         u'id': u'012345678919',
         u'name': u'scn_lb',
-        u'config': lb_scn_config
+        u'config': lbv2_scn_config
     }
 
     service_chain_instance = {
