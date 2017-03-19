@@ -10,7 +10,7 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-supported_service_types = ['firewall', 'vpn', 'loadbalancer', 'loadbalancerv2']
+supported_service_types = ['firewall', 'vpn', 'loadbalancerv2']
 NFP_SERVICE_LIST = ['heat', 'ansible']
 invalid_service_type = 'invalid'
 NFP_SERVICE = 'nfp_service'
@@ -26,11 +26,9 @@ RABBITMQ_HOST = '127.0.0.1'  # send notifications to 'RABBITMQ_HOST'
 NOTIFICATION_QUEUE = 'configurator-notifications'
 FIREWALL = 'firewall'
 VPN = 'vpn'
-LOADBALANCER = 'loadbalancer'
 VYOS = 'vyos'
 LOADBALANCERV2 = 'loadbalancerv2'
-HAPROXY = 'haproxy'
-HAPROXY_LBAASV2 = 'haproxy_lbaasv2'
+HAPROXY_LBAASV2 = 'haproxy'
 CREATE = 'create'
 UPDATE = 'update'
 DELETE = 'delete'

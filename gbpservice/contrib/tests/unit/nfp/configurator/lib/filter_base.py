@@ -252,93 +252,10 @@ class BaseTestCase(base.BaseTestCase):
              "description": ";".join(self.desc1)
                                          }]
 
-        self.pools = [{
-                    "status": "ACTIVE",
-                    "lb_method": "ROUND_ROBIN",
-                    "protocol": "TCP",
-                    "description": "",
-                    "health_monitors": [],
-                    "members":
-                    ["4910851f-4af7-4592-ad04-08b508c6fa21",
-                     "76d2a5fc-b39f-4419-9f33-3b21cf16fe47"],
-                    "status_description": None,
-                    "id": "6350c0fd-07f8-46ff-797-62acd23760de",
-                    "vip_id": "7a755739-1bbb-4211-9130-b6c82d9169a5",
-                    "name": "lb-pool",
-                    "admin_state_up": True,
-                    "subnet_id": "b31cdafe-bdf3-4c19-b768-34d623d77d6c",
-                    "tenant_id": "f6b09b7a590642d8ac6de73df0ab0686",
-                    "health_monitors_status": [],
-                    "provider": "haproxy"
-                       }]
-
-        self.vips = [{
-                    "status": "ACTIVE",
-                    "protocol": "TCP",
-                    "description": "",
-                    "address": "42.0.0.14",
-                    "protocol_port": 22,
-                    "port_id": "cfd9fcc0-c27b-478b-985e-8dd73f2c16e8",
-                    "id": "7a755739-1bbb-4211-9130-b6c82d9169a5",
-                    "status_description": None,
-                    "name": "lb-vip",
-                    "admin_state_up": True,
-                    "subnet_id": "b31cdafe-bdf3-4c19-b768-34d623d77d6c",
-                    "tenant_id": "f6b09b7a590642d8ac6de73df0ab0686",
-                    "connection_limit": -1,
-                    "pool_id": "6350c0fd-07f8-46ff-b797-62acd23760de",
-                    "session_persistence": None
-                      }]
-
-        self.health_monitors = [{
-                            "admin_state_up": True,
-                            "tenant_id": "f6b09b7a590642d8ac6de73df0ab0686",
-                            "delay": 10,
-                            "max_retries": 3,
-                            "timeout": 10,
-                            "pools": [],
-                            "type": "PING",
-                            "id": "c30d8a88-c719-4b93-aa64-c58efb397d86"
-                                 }]
-        self.members = [{
-                    "admin_state_up": True,
-                    "status": "ACTIVE",
-                    "status_description": None,
-                    "weight": 1,
-                    "address": "42.0.0.11",
-                    "tenant_id": "f6b09b7a590642d8ac6de73df0ab0686",
-                    "protocol_port": 80,
-                    "id": "4910851f-4af7-4592-ad04-08b508c6fa21",
-                    "pool_id": "6350c0fd-07f8-46ff-b797-62acd23760de"
-                         },
-                        {
-                    "admin_state_up": True,
-                    "status": "ACTIVE",
-                    "status_description": None,
-                    "weight": 1,
-                    "address": "42.0.0.13",
-                    "tenant_id": "f6b09b7a590642d8ac6de73df0ab0686",
-                    "protocol_port": 22,
-                    "id": "76d2a5fc-b39f-4419-9f33-3b21cf16fe47",
-                    "pool_id": "6350c0fd-07f8-46ff-b797-62acd23760de"
-                         }]
         # update the below lists as per the future requirements
         self.firewalls = []
         self.firewall_policies = []
         self.firewall_rules = []
-
-    def _test_get_lb_info(self):
-        """Prepares LB service_info needed for LB context
-
-        Returns: LB service info
-        """
-        self.service_info['pools'] = self.pools
-        self.service_info['members'] = self.members
-        self.service_info['vips'] = self.vips
-        self.service_info['health_monitors'] = self.health_monitors
-        self.service_info['ports'] = self.ports
-        self.service_info['subnets'] = self.subnets
-        return self.service_info
 
     def _test_get_vpn_info(self):
         """Prepares VPN service_info needed for VPN context
