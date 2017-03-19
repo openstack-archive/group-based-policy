@@ -241,8 +241,7 @@ class HeatDriver(object):
         db_session = db_api.get_session()
         service_details = self.get_service_details(network_function_details)
         service_profile = service_details['service_profile']
-        if service_profile['service_type'] in [pconst.LOADBALANCER,
-                                               pconst.LOADBALANCERV2]:
+        if service_profile['service_type'] == pconst.LOADBALANCERV2:
             network_function_instance = network_function_details.get(
                 'network_function_instance')
             if network_function_instance:
@@ -254,16 +253,7 @@ class HeatDriver(object):
                         return
 
     def _post_stack_create(self, nfp_context):
-        service_details = self.get_service_details_from_nfp_context(
-            nfp_context)
-        service_type = service_details['service_details']['service_type']
-
-        if service_type in [pconst.LOADBALANCER]:
-            auth_token = nfp_context['log_context']['auth_token']
-            provider_tenant_id = nfp_context['tenant_id']
-            provider = service_details['provider_ptg']
-            self._create_policy_target_for_vip(
-                auth_token, provider_tenant_id, provider, service_type)
+        return
 
     def _get_provider_ptg_info(self, auth_token, sci_id):
         with nfp_ctx_mgr.GBPContextManager as gcm:
@@ -287,7 +277,7 @@ class HeatDriver(object):
             service_profile['service_flavor'])
         base_mode_support = (True if service_details['device_type'] == 'None'
                              else False)
-        if (service_type in [pconst.LOADBALANCER, pconst.LOADBALANCERV2]) and (
+        if (service_type == pconst.LOADBALANCERV2) and (
                 not base_mode_support):
             provider = self._get_provider_ptg_info(
                 auth_token,
@@ -333,19 +323,7 @@ class HeatDriver(object):
                           "policy target group %(provider_ptg)s") %
                       {"provider_ptg": provider})
             return lb_vip, lb_vip_name
-        if service_type == pconst.LOADBALANCER:
-            with nfp_ctx_mgr.NeutronContextManager as ncm:
-                lb_pool_ids = ncm.retry(
-                    self.neutron_client.get_pools,
-                    auth_token,
-                    filters={'subnet_id': [provider_subnet['id']]})
-                if lb_pool_ids and lb_pool_ids[0]['vip_id']:
-                    lb_vip = ncm.retry(
-                        self.neutron_client.get_vip,
-                        auth_token, lb_pool_ids[0]['vip_id'])['vip']
-                lb_vip_name = ("service_target_vip_pt" +
-                               lb_pool_ids[0]['vip_id'])
-        elif service_type == pconst.LOADBALANCERV2:
+        if service_type == pconst.LOADBALANCERV2:
             with nfp_ctx_mgr.NeutronContextManager as ncm:
                 loadbalancers = ncm.retry(
                     self.neutron_client.get_loadbalancers,
@@ -376,54 +354,6 @@ class HeatDriver(object):
                     self._is_service_target(policy_target)):
                 service_targets.append(policy_target)
         return service_targets
-
-    def _create_policy_target_for_vip(self, auth_token,
-                                      provider_tenant_id,
-                                      provider, service_type):
-
-        with nfp_ctx_mgr.KeystoneContextManager as kcm:
-            admin_token = kcm.retry(
-                self.keystoneclient.get_admin_token, tries=3)
-        lb_vip, vip_name = self._get_lb_vip(auth_token, provider, service_type)
-        service_targets = self._get_lb_service_targets(admin_token, provider)
-        if not (lb_vip and service_targets):
-            return None
-
-        with nfp_ctx_mgr.GBPContextManager as gcm:
-            vip_pt = gcm.retry(self.gbp_client.create_policy_target,
-                               auth_token, provider_tenant_id, provider['id'],
-                               vip_name, lb_vip['port_id'])
-
-        # Set cluster_id as vip_pt
-        for service_target in service_targets:
-            service_target_id = service_target['id']
-            service_target_port_id = service_target['port_id']
-
-            policy_target_info = {'cluster_id': vip_pt['id']}
-            with nfp_ctx_mgr.GBPContextManager as gcm:
-                gcm.retry(self.gbp_client.update_policy_target,
-                          admin_token,
-                          service_target_id, policy_target_info)
-
-            with nfp_ctx_mgr.NeutronContextManager as ncm:
-                service_target_port = ncm.retry(self.neutron_client.get_port,
-                                                admin_token,
-                                                service_target_port_id)['port']
-            vip_ip = service_target_port[
-                'allowed_address_pairs'][0]['ip_address']
-
-            # Update allowed address pairs entry came through cluster_id
-            # updation with provider_port mac address.
-            updated_port = {
-                'allowed_address_pairs': [
-                    {
-                        'ip_address': vip_ip,
-                        'mac_address': service_target_port['mac_address']}]
-            }
-            with nfp_ctx_mgr.NeutronContextManager as ncm:
-                ncm.retry(self.neutron_client.update_port,
-                          admin_token, service_target_port_id,
-                          **updated_port)
 
     def _update_policy_targets_for_vip(self, auth_token,
                                        provider_tenant_id,
@@ -489,53 +419,6 @@ class HeatDriver(object):
                     ip_address = port.get('fixed_ips')[0].get("ip_address")
                     member_addresses.append(ip_address)
         return member_addresses
-
-    def _generate_lb_member_template(self, is_template_aws_version,
-                                     pool_res_name, member_ip, stack_template):
-        type_key = 'Type' if is_template_aws_version else 'type'
-        properties_key = ('Properties' if is_template_aws_version
-                          else 'properties')
-        resources_key = 'Resources' if is_template_aws_version else 'resources'
-        res_key = 'Ref' if is_template_aws_version else 'get_resource'
-
-        lbaas_pool_key = self._get_heat_resource_key(
-            stack_template[resources_key],
-            is_template_aws_version,
-            "OS::Neutron::Pool")
-        lbaas_vip_key = self._get_heat_resource_key(
-            stack_template[resources_key],
-            is_template_aws_version,
-            "OS::Neutron::LoadBalancer")
-        vip_port = stack_template[resources_key][lbaas_pool_key][
-            properties_key]['vip']['protocol_port']
-        member_port = stack_template[resources_key][lbaas_vip_key][
-            properties_key].get('protocol_port')
-        protocol_port = member_port if member_port else vip_port
-
-        return {type_key: "OS::Neutron::PoolMember",
-                properties_key: {
-                    "address": member_ip,
-                    "admin_state_up": True,
-                    "pool_id": {res_key: pool_res_name},
-                    "protocol_port": protocol_port,
-                    "weight": 1}}
-
-    def _modify_lb_resources_name(self, stack_template, provider_ptg,
-                                  is_template_aws_version):
-        resources_key = 'Resources' if is_template_aws_version else 'resources'
-        type_key = 'Type' if is_template_aws_version else 'type'
-        properties_key = ('Properties' if is_template_aws_version
-                          else 'properties')
-
-        for resource in stack_template[resources_key]:
-            if stack_template[resources_key][resource][type_key] == (
-                    'OS::Neutron::Pool'):
-                # Include provider name in Pool, VIP name.
-                ptg_name = '-' + provider_ptg['name']
-                stack_template[resources_key][resource][
-                    properties_key]['name'] += ptg_name
-                stack_template[resources_key][resource][
-                    properties_key]['vip']['name'] += ptg_name
 
     def _generate_lbv2_member_template(self, is_template_aws_version,
                                        member_ip, stack_template,
@@ -614,26 +497,6 @@ class HeatDriver(object):
                     member_template.update({"depends_on": pools_and_hms})
                 stack_template[resources_key][member_name] = member_template
                 prev_member = member_name
-
-    def _generate_pool_members(self, auth_token, stack_template,
-                               config_param_values, provider_ptg,
-                               is_template_aws_version):
-        resources_key = 'Resources' if is_template_aws_version else 'resources'
-        self._modify_lb_resources_name(
-            stack_template, provider_ptg, is_template_aws_version)
-        member_ips = self._get_member_ips(auth_token, provider_ptg)
-        if not member_ips:
-            return
-        pool_res_name = self._get_heat_resource_key(
-            stack_template[resources_key],
-            is_template_aws_version,
-            "OS::Neutron::Pool")
-        for member_ip in member_ips:
-            member_name = 'mem-' + member_ip
-            stack_template[resources_key][member_name] = (
-                self._generate_lb_member_template(
-                    is_template_aws_version, pool_res_name,
-                    member_ip, stack_template))
 
     def _get_consumers_for_chain(self, auth_token, provider):
         filters = {'id': provider['provided_policy_rule_sets']}
@@ -932,13 +795,7 @@ class HeatDriver(object):
         else:
             return
 
-        if service_type == pconst.LOADBALANCER:
-            nf_desc = str((SC_METADATA % (service_chain_instance_id,
-                                          mgmt_ip,
-                                          provider_port_mac,
-                                          network_function_id,
-                                          service_vendor)))
-        elif service_type == pconst.LOADBALANCERV2:
+        if service_type == pconst.LOADBALANCERV2:
             nf_desc = str((SC_METADATA % (service_chain_instance_id,
                                           mgmt_ip,
                                           provider_port_mac,
@@ -1070,23 +927,7 @@ class HeatDriver(object):
         if not base_mode_support:
             provider_subnet = service_details['provider_subnet']
 
-        if service_type == pconst.LOADBALANCER:
-            self._generate_pool_members(
-                auth_token, stack_template, config_param_values,
-                provider, is_template_aws_version)
-            config_param_values['Subnet'] = provider_subnet['id']
-            config_param_values['service_chain_metadata'] = ""
-            if not base_mode_support:
-                config_param_values[
-                    'service_chain_metadata'] = str(common_desc)
-                lb_pool_key = self._get_heat_resource_key(
-                    stack_template[resources_key],
-                    is_template_aws_version,
-                    'OS::Neutron::Pool')
-                stack_template[resources_key][lb_pool_key][properties_key][
-                    'description'] = str(common_desc)
-
-        elif service_type == pconst.LOADBALANCERV2:
+        if service_type == pconst.LOADBALANCERV2:
             self._generate_lbaasv2_pool_members(
                 auth_token, stack_template, config_param_values,
                 provider, is_template_aws_version)
@@ -1266,29 +1107,7 @@ class HeatDriver(object):
             provider_cidr = ''
 
         service_vendor = service_details['service_vendor']
-        if service_type == pconst.LOADBALANCER:
-            self._generate_pool_members(
-                auth_token, stack_template, config_param_values,
-                provider, is_template_aws_version)
-            config_param_values['Subnet'] = provider_subnet['id']
-            config_param_values['service_chain_metadata'] = ""
-            if not base_mode_support:
-                config_param_values[
-                    'service_chain_metadata'] = str(common_desc)
-                nf_desc = str((SC_METADATA % (service_chain_instance['id'],
-                                              mgmt_ip,
-                                              provider_port_mac,
-                                              network_function['id'],
-                                              service_vendor)))
-
-                lb_pool_key = self._get_heat_resource_key(
-                    stack_template[resources_key],
-                    is_template_aws_version,
-                    'OS::Neutron::Pool')
-                stack_template[resources_key][lb_pool_key][properties_key][
-                    'description'] = str(common_desc)
-
-        elif service_type == pconst.LOADBALANCERV2:
+        if service_type == pconst.LOADBALANCERV2:
             self._generate_lbaasv2_pool_members(
                 auth_token, stack_template, config_param_values,
                 provider, is_template_aws_version)
@@ -2031,8 +1850,7 @@ class HeatDriver(object):
         mgmt_ip = service_details['mgmt_ip']
         stack_id = service_details['config_policy_id']
 
-        if service_profile['service_type'] in [pconst.LOADBALANCER,
-                                               pconst.LOADBALANCERV2]:
+        if service_profile['service_type'] == pconst.LOADBALANCERV2:
             if self._is_service_target(policy_target):
                 return
             auth_token, resource_owner_tenant_id = (
