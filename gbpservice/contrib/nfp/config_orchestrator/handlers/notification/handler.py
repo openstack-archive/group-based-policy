@@ -115,74 +115,6 @@ class FirewallNotifier(object):
                              firewall_id=firewall_id)
 
 
-class LoadbalancerNotifier(object):
-
-    def __init__(self, conf, sc):
-        self._sc = sc
-        self._conf = conf
-
-    def update_status(self, context, notification_data):
-        nfp_context = module_context.init()
-        notification = notification_data['notification'][0]
-
-        request_info = notification_data.get('info')
-        request_context = request_info.get('context')
-        logging_context = request_context.get('logging_context', {})
-        nfp_context['log_context'] = logging_context
-
-        resource_data = notification['data']
-        obj_type = resource_data['obj_type']
-        obj_id = resource_data['obj_id']
-        status = resource_data['status']
-
-        LOG.info(_LI("Received LB's update_status API. Making an "
-                     "update_status RPC call to plugin for %(obj_type)s:"
-                     "%(obj_id)s with status:%(status)s"),
-                 {'obj_type': obj_type,
-                  'obj_id': obj_id,
-                  'status': status})
-
-        # RPC call to plugin to update status of the resource
-        rpcClient = transport.RPCClient(a_topics.LB_NFP_PLUGIN_TOPIC)
-        rpcClient.cctxt = rpcClient.client.prepare(
-            version=const.LOADBALANCER_RPC_API_VERSION)
-        rpcClient.cctxt.cast(context, 'update_status',
-                             obj_type=obj_type,
-                             obj_id=obj_id,
-                             status=status)
-
-    def update_pool_stats(self, context, notification_data):
-        nfp_context = module_context.init()
-        notification = notification_data['notification'][0]
-
-        request_info = notification_data.get('info')
-        request_context = request_info.get('context')
-        logging_context = request_context.get('logging_context', {})
-        nfp_context['log_context'] = logging_context
-
-        resource_data = notification['data']
-        pool_id = resource_data['pool_id']
-        stats = resource_data['stats']
-        host = resource_data['host']
-
-        LOG.info(_LI("Received LB's update_pool_stats API, making an "
-                     "update_pool_stats RPC cast to plugin for updating "
-                     "pool stats for pool: %(pool)s"),
-                 {'pool': pool_id})
-
-        # RPC cast to plugin to update stats of pool
-        rpcClient = transport.RPCClient(a_topics.LB_NFP_PLUGIN_TOPIC)
-        rpcClient.cctxt = rpcClient.client.prepare(
-            version=const.LOADBALANCER_RPC_API_VERSION)
-        rpcClient.cctxt.cast(context, 'update_pool_stats',
-                             pool_id=pool_id,
-                             stats=stats,
-                             host=host)
-
-    def vip_deleted(self, context, notification_data):
-        pass
-
-
 class LoadbalancerV2Notifier(object):
 
     def __init__(self, conf, sc):
@@ -273,7 +205,6 @@ class VpnNotifier(object):
 
 
 ServicetypeToHandlerMap = {'firewall': FirewallNotifier,
-                           'loadbalancer': LoadbalancerNotifier,
                            'loadbalancerv2': LoadbalancerV2Notifier,
                            'vpn': VpnNotifier}
 
