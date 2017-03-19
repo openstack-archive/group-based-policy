@@ -48,7 +48,7 @@ oslo_config.CONF.register_opts(openstack_opts, "nfp_keystone_authtoken")
 nfp_orchestrator_opts = [
     oslo_config.ListOpt(
         'supported_vendors',
-        default=[nfp_constants.VYOS_VENDOR, nfp_constants.HAPROXY_VENDOR,
+        default=[nfp_constants.VYOS_VENDOR,
                  nfp_constants.HAPROXY_LBAASV2, nfp_constants.NFP_VENDOR],
         help="Supported service vendors for nfp"),
     oslo_config.StrOpt('monitoring_ptg_l3policy_id',
