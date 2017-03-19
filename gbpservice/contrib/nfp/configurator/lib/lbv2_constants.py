@@ -48,12 +48,15 @@ PENDING_UPDATE = "PENDING_UPDATE"
 PENDING_DELETE = "PENDING_DELETE"
 INACTIVE = "INACTIVE"
 ERROR = "ERROR"
+STATUS_SUCCESS = "SUCCESS"
 
 ACTIVE_PENDING_STATUSES = (
     ACTIVE,
     PENDING_CREATE,
     PENDING_UPDATE
 )
+
+REQUEST_URL = "http://%s:%s/%s"
 
 # Constants to extend status strings in neutron.plugins.common.constants
 ONLINE = 'ONLINE'

@@ -234,24 +234,6 @@ class TestHeatDriver(unittest2.TestCase):
             auth_token, self.mock_dict.provider_ptg)
         self.assertEqual(member_ips, expected_member_ips)
 
-    def test_generate_lb_member_template(self):
-        is_template_aws_version = False
-        member_ip = '11.0.0.4'
-        pool_res_name = 'HaproxyPool'
-        stack_template = self.mock_dict.DEFAULT_LB_CONFIG
-        expected_member_template = {
-            'type': 'OS::Neutron::PoolMember',
-            'properties': {
-                'protocol_port': 101, 'admin_state_up': True,
-                'pool_id': {'get_resource': 'HaproxyPool'},
-                'weight': 1, 'address': '11.0.0.4'
-            }
-        }
-        member_template = self.heat_driver_obj._generate_lb_member_template(
-            is_template_aws_version,
-            pool_res_name, member_ip, stack_template)
-        self.assertEqual(member_template, expected_member_template)
-
     def test_modify_fw_resources_name(self):
         is_template_aws_version = False
         stack_template = copy.deepcopy(self.mock_dict.DEFAULT_FW_CONFIG)
@@ -266,42 +248,23 @@ class TestHeatDriver(unittest2.TestCase):
 
     def test_get_heat_resource_key(self):
         is_template_aws_version = False
-        resource_name = 'OS::Neutron::Pool'
-        template_resource_dict = self.mock_dict.DEFAULT_LB_CONFIG['resources']
-        expected_heat_resource_key = 'LoadBalancerPool'
+        resource_name = 'OS::Neutron::Firewall'
+        template_resource_dict = self.mock_dict.DEFAULT_FW_CONFIG['resources']
+        expected_heat_resource_key = 'sc_firewall'
         heat_resource_key = self.heat_driver_obj._get_heat_resource_key(
             template_resource_dict, is_template_aws_version, resource_name)
         self.assertEqual(heat_resource_key, expected_heat_resource_key)
 
     def test_get_all_heat_resource_keys(self):
         is_template_aws_version = False
-        resource_name = 'OS::Neutron::Pool'
-        template_resource_dict = self.mock_dict.DEFAULT_LB_CONFIG['resources']
-        expected_heat_resource_keys = ['LoadBalancerPool']
+        resource_name = 'OS::Neutron::Firewall'
+        template_resource_dict = self.mock_dict.DEFAULT_FW_CONFIG['resources']
+        expected_heat_resource_keys = ['sc_firewall']
         all_heat_resource_keys = (
             self.heat_driver_obj._get_all_heat_resource_keys(
                 template_resource_dict, is_template_aws_version,
                 resource_name))
         self.assertEqual(all_heat_resource_keys, expected_heat_resource_keys)
-
-    @mock.patch.object(neutron_client.Client, "show_port")
-    @mock.patch.object(gbp_client.Client, "list_policy_targets")
-    def test_generate_pool_members(self, list_pt_mock_obj, show_port_mock_obj):
-        list_pt_mock_obj.return_value = self.mock_dict.policy_targets
-        show_port_mock_obj.return_value = self.mock_dict.port_info
-        is_template_aws_version = False
-        stack_template = self.mock_dict.DEFAULT_LB_CONFIG
-        auth_token = "81273djs138"
-        config_param_values = {}
-        expected_pool_members = self.mock_dict.pool_members
-        self.heat_driver_obj._generate_pool_members(
-            auth_token,
-            stack_template,
-            config_param_values,
-            self.mock_dict.provider_ptg,
-            is_template_aws_version)
-        generated_pool_members = stack_template['resources']['mem-42.0.0.13']
-        self.assertEqual(generated_pool_members, expected_pool_members)
 
     def test_append_firewall_rule(self):
         stack_template = copy.deepcopy(self.mock_dict.DEFAULT_FW_CONFIG)
@@ -428,44 +391,6 @@ class TestHeatDriver(unittest2.TestCase):
         self.assertEqual(
             stack_template['resources']['sc_firewall_policy'],
             copy.deepcopy(self.mock_dict.updated_template_sc_firewall_policy))
-
-    @mock.patch.object(gbp_client.Client, "create_policy_target")
-    @mock.patch.object(gbp_client.Client, "update_policy_target")
-    @mock.patch.object(neutron_client.Client, "list_subnets")
-    @mock.patch.object(neutron_client.Client, "list_pools")
-    @mock.patch.object(neutron_client.Client, "show_vip")
-    def test_create_policy_target_for_vip(self, vip, pools, subnets,
-            pt, pt_update):
-        pt.return_value = {
-            'policy_target': {
-                'name': 'service_target_provider_0132c_00b93'
-            }
-        }
-        subnets.return_value = self.mock_dict.subnets_info
-        pools.return_value = {
-            'pools': [{
-                'vip_id': '1234'
-            }]
-        }
-        vip.return_value = {
-            'vip': {
-                'port_id': '1234'
-            }
-        }
-        auth_token = 'adsdsdd'
-        provider_tenant_id = '8ae6701128994ab281dde6b92207bb19'
-        provider = self.mock_dict.provider_ptg
-        self.heat_driver_obj.gbp_client.get_policy_targets = (
-                mock.MagicMock(
-                    return_value=self.mock_dict.policy_targets[
-                        'policy_targets']))
-        self.heat_driver_obj.keystoneclient.get_admin_token = (
-                mock.MagicMock(return_value='token'))
-        self.heat_driver_obj._create_policy_target_for_vip(
-            auth_token, provider_tenant_id, provider,
-            'LOADBALANCER')
-        pools.assert_called_once_with(
-            subnet_id=[subnets.return_value['subnets'][0]['id']])
 
     @mock.patch.object(neutron_client.Client, "list_networks")
     def test_create_node_config_data_vpn(self, mock_list_networks):
@@ -621,9 +546,10 @@ class TestHeatDriver(unittest2.TestCase):
             return_value={'auth_token': '7fd6701128994ab281ccb6b92207bb15'})
 
         service_details = {}
-        service_details['service_profile'] = self.mock_dict.lb_service_profile
+        service_details['service_profile'] = (
+                                self.mock_dict.lbv2_service_profile)
         service_details['servicechain_node'] = (
-            self.mock_dict.lb_service_chain_node)
+            self.mock_dict.lbv2_service_chain_node)
         service_details['servicechain_instance'] = (
             self.mock_dict.service_chain_instance)
         service_details['policy_target_group'] = self.mock_dict.provider_ptg
