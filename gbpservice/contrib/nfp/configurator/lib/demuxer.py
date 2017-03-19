@@ -101,7 +101,6 @@ class ServiceAgentDemuxer(object):
 
         sa_info_list = []
         vendor_map = {const.FIREWALL: const.VYOS,
-                      const.LOADBALANCER: const.HAPROXY,
                       const.VPN: const.VYOS,
                       const.LOADBALANCERV2: const.HAPROXY_LBAASV2}
 
@@ -119,8 +118,6 @@ class ServiceAgentDemuxer(object):
             resource_type_to_method_map = {
                 const.FIREWALL: (operation + '_' + config_data['resource']),
                 const.VPN: ('vpnservice_updated'),
-                const.LOADBALANCER: (operation + '_' + config_data[
-                    'resource']),
                 const.LOADBALANCERV2: (operation + '_' + config_data[
                     'resource']),
                 const.NFP_SERVICE: ('run' + '_' + const.NFP_SERVICE),
