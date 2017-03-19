@@ -13,7 +13,6 @@
 
 import filter_base
 from gbpservice.contrib.nfp.configurator.lib import data_filter
-import mock
 
 
 class FilterTest(filter_base.BaseTestCase):
@@ -51,16 +50,6 @@ class FilterTest(filter_base.BaseTestCase):
         self.context['service_info'] = service_info
         return self.context
 
-    def _make_lb_service_context(self):
-        """Make the context for the lb service
-
-        Returns: lb service context
-
-        """
-        service_info = self._test_get_lb_info()
-        self.context['service_info'] = service_info
-        return self.context
-
     def _make_fw_service_context(self):
         """Make the context for the fw service
 
@@ -70,30 +59,6 @@ class FilterTest(filter_base.BaseTestCase):
         service_info = self._test_get_fw_info()
         self.context['service_info'] = service_info
         return self.context
-
-    def test_make_msg(self):
-        """Test make_msg() of data_filter.py
-        """
-        retval = self.filter_obj.make_msg('get_logical_device',
-                                          pool_id=self.pools[0]['id'])
-        self.assertEqual(retval, {'method': 'get_logical_device',
-                                  'args': {'pool_id': self.pools[0]['id']}})
-
-    def test_make_msg_empty(self):
-        """Test make_msg() of data_filter.py
-        """
-        retval = self.filter_obj.make_msg('get_logical_device')
-        self.assertEqual(retval, {'args': {}, 'method': 'get_logical_device'})
-
-    def test_call(self):
-        """Test call() of data_filter.py
-        """
-        with mock.patch.object(self.filter_obj, "call") as call_mock:
-            call_mock.return_value = True
-            retval = self._make_test(self._make_lb_service_context(),
-                                     'get_logical_device',
-                                     pool_id=[self.pools[0]['id']])
-            self.assertTrue(retval)
 
     def test_get_vpn_service_with_tenantid(self):
         """Test get_vpn_services() of data_filter.py by passing
@@ -125,22 +90,6 @@ class FilterTest(filter_base.BaseTestCase):
                 tenant_id=[self.ipsec_site_connections[0]['tenant_id']],
                 peer_address=[self.ipsec_site_connections[0]['peer_address']])
         self.assertEqual(retval, self.ipsec_site_connections)
-
-    def test_get_logical_device(self):
-        """Test get_logical_device() of data_filter.py
-        """
-        retval = self._make_test(self._make_lb_service_context(),
-                                 'get_logical_device',
-                                 pool_id=self.pools[0]['id'])
-
-        self.ports[0]['fixed_ips'] = self.subnets[1]
-        self.vips[0]['port'] = self.ports[0]
-        expected = {'pool': self.pools[0],
-                    'vip': self.vips[0],
-                    'members': self.members[0],
-                    'healthmonitors': {}
-                    }
-        self.assertNotEqual(retval, expected)
 
     def test_get_vpn_servicecontext_ipsec_service_type(self):
         """Test get_vpn_servicecontext() of data_filter.py
