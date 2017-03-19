@@ -74,7 +74,7 @@ def _fill_service_specific_info(nfd, device_data, **kwargs):
         management_network['type'] = const.MANAGEMENT
         management_network['gw_ip'] = device_data.get('mgmt_gw_ip')
         nfd['networks'].append(management_network)
-    elif resource_type in [const.LOADBALANCER, const.LOADBALANCERV2]:
+    elif resource_type == const.LOADBALANCERV2:
         nfd['svc_mgmt_fixed_ip'] = device_data.get('floating_ip')
         provider_port['mac'] = device_data.get('provider_interface_mac')
     return nfd
@@ -93,7 +93,7 @@ def get_network_function_info(device_data, resource_type):
     '''
 
     SERVICE_TYPES = [const.FIREWALL, const.VPN,
-                     const.LOADBALANCER, const.LOADBALANCERV2]
+                     const.LOADBALANCERV2]
     config = copy.deepcopy(NFP_DATA_FORMAT)
 
     mgmt_ip = device_data.get('mgmt_ip_address')
