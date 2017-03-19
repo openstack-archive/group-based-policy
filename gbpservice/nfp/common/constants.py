@@ -11,7 +11,6 @@
 #    under the License.
 
 FIREWALL = 'firewall'
-LOADBALANCER = 'loadbalancer'
 LOADBALANCERV2 = 'loadbalancerv2'
 VPN = 'vpn'
 GENERIC_CONFIG = 'generic_config'
@@ -86,7 +85,6 @@ METADATA_SUPPORTED_ATTRIBUTES = [MAXIMUM_INTERFACES,
                                  SUPPORTS_SHARING,
                                  SUPPORTS_HOTPLUG]
 
-LOADBALANCER_RPC_API_VERSION = "2.0"
 LOADBALANCERV2_RPC_API_VERSION = "1.0"
 
 HEALTHMONITOR_RESOURCE = 'healthmonitor'
@@ -95,8 +93,7 @@ ROUTES_RESOURCE = 'routes'
 MANAGEMENT_INTERFACE_NAME = 'mgmt_interface'
 
 VYOS_VENDOR = 'vyos'
-HAPROXY_VENDOR = 'haproxy'
-HAPROXY_LBAASV2 = 'haproxy_lbaasv2'
+HAPROXY_LBAASV2 = 'haproxy'
 NFP_VENDOR = 'nfp'
 L3_INSERTION_MODE = "l3"
 

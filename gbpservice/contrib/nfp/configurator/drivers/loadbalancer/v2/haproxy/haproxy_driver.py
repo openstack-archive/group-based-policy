@@ -28,7 +28,6 @@ from gbpservice.contrib.nfp.configurator.drivers.loadbalancer.\
     v2.haproxy.rest_api_driver import HaproxyAmphoraLoadBalancerDriver
 from gbpservice.contrib.nfp.configurator.lib import constants as common_const
 from gbpservice.contrib.nfp.configurator.lib import data_parser
-from gbpservice.contrib.nfp.configurator.lib import lb_constants
 from gbpservice.contrib.nfp.configurator.lib import lbv2_constants
 from gbpservice.nfp.common import exceptions
 from gbpservice.nfp.core import log as nfp_logging
@@ -68,7 +67,7 @@ class LbGenericConfigDriver(object):
 
         try:
             result_log_forward = self._configure_log_forwarding(
-                lb_constants.REQUEST_URL, mgmt_ip,
+                lbv2_constants.REQUEST_URL, mgmt_ip,
                 self.port)
         except Exception as err:
             msg = ("Failed to configure log forwarding for service at %s. "
@@ -78,7 +77,7 @@ class LbGenericConfigDriver(object):
         else:
             if result_log_forward == common_const.UNHANDLED:
                 pass
-            elif result_log_forward != lb_constants.STATUS_SUCCESS:
+            elif result_log_forward != lbv2_constants.STATUS_SUCCESS:
                 msg = ("Failed to configure log forwarding for service at %s. "
                        % mgmt_ip)
                 LOG.error(msg)
@@ -88,7 +87,7 @@ class LbGenericConfigDriver(object):
                        "Result: %s" % (mgmt_ip, result_log_forward))
                 LOG.info(msg)
 
-        return lb_constants.STATUS_SUCCESS
+        return lbv2_constants.STATUS_SUCCESS
 
 
 # As we use the rest client and amphora image from Octavia,
