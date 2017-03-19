@@ -249,7 +249,7 @@ class Gbp_Verify(object):
             cmd = 'gbp %s-show ' % verifyobj_dict[verifyobj] + str(name_uuid)
         # Execute the policy-object-verify-cmd
         cmd_out = commands.getoutput(cmd)
-        #_log.info(cmd_out)
+        # _log.info(cmd_out)
         # Catch for non-exception error strings
         for err in self.err_strings:
             if re.search('\\b%s\\b' % (err), cmd_out, re.I):
@@ -277,21 +277,18 @@ class Gbp_Verify(object):
             for arg, val in kwargs.items():
                 if re.search("\\b%s\\b\s+\| \\b%s\\b.*" %
                              (arg, val), cmd_out, re.I) is None:
-                    if arg == 'policy_target_groups' and (
-                        re.search("\\b.*\| \\b%s\\b.*" %
-                                  (val), cmd_out, re.I) is not None):
-                        # there might be more than one PTG associated
-                        # with the L2P if auto-ptg is enabled, so search
-                        # in the entire command output if the ptg_id
-                        # we are looking for is present, and if its
-                        # present do not fail
-                        pass
-                    else:
-                        _log.info(cmd_out)
+                    # incase of attribute has more than one value then
+                    # then below function will help us validating the values
+                    # or the only value among all for the given attr.
+                    # Example: L2P can have multiple PTGs, L3P can have multi
+                    # L2Ps
+                    if not self.gbp_obj_ver_attr_all_values(
+                            verifyobj, name_uuid, arg, [val]):
                         _log.info(
-                            "The Attribute== %s and its Value== %s DID NOT "
-                            "MATCH for the PolicyObject == %s" %
-                            (arg, val, verifyobj))
+                            "The Attribute== %s and its Value== %s "
+                            "DID NOT MATCH "
+                            "for the PolicyObject == %s" % (
+                                arg, val, verifyobj))
                         return 0
             if verifyobj == "l2p":
                 match = re.search(
