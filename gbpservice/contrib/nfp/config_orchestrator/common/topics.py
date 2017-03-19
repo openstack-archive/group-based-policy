@@ -11,13 +11,11 @@
 #    under the License.
 
 FW_NFP_CONFIGAGENT_TOPIC = 'nfp-firewall-agent'
-LB_NFP_CONFIGAGENT_TOPIC = 'nfp-lbaas-agent'
 LBV2_NFP_CONFIGAGENT_TOPIC = 'nfp-lbaasv2-agent'
 VPN_NFP_CONFIGAGENT_TOPIC = 'nfp-vpn_agent'
 NFP_NSO_TOPIC = "nfp-service-orchestrator"
 
 FW_NFP_PLUGIN_TOPIC = 'q-firewall-plugin'
-LB_NFP_PLUGIN_TOPIC = 'n-lbaas-plugin'
 LBV2_NFP_PLUGIN_TOPIC = 'n-lbaasv2-plugin'
 VPN_NFP_PLUGIN_TOPIC = 'vpn_plugin'
 DEVICE_ORCH_TOPIC = 'nfp-configurator-ndo'
