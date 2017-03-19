@@ -10,6 +10,6 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-SERVICE_VENDOR = 'haproxy_lbaasv2'
+SERVICE_VENDOR = 'haproxy'
 DRIVER_NAME = 'loadbalancerv2'
 CONFIGURATION_SERVER_PORT = '9443'
