@@ -12,9 +12,6 @@
 
 import copy
 
-from gbpservice.contrib.nfp.configurator.lib import (
-    filter_constants as constants)
-
 
 class Filter(object):
     """ Filter class which provides data asked in a specific format.
@@ -240,56 +237,3 @@ class Filter(object):
         """
 
         return vpnservices.values()
-
-    def _get_logical_device(self, context, filters):
-        """ Get logical device from context after applying filter.
-            Logical device here means pool and its related resources like vip,
-            member,hm etc
-
-        :param context
-        e.g context = {'service_info': { 'pools': [pools],
-                                         'members': [members],
-                                         'vips': [vips],
-                                         'health_monitors': [health_monitors],
-                                         'ports': [ports],
-                                         'subnets': [subnets],
-                                       }
-                      }
-        :param filters e.g {'pool_id': pool_id}
-
-        Returns: logical divice
-
-        """
-        service_info = context['service_info']
-        pool_id = filters.get('pool_id')
-        pool = self.get_record(service_info['pools'], 'id', pool_id)
-
-        retval = {}
-        retval['pool'] = pool  # self._make_pool_dict(pool)
-
-        if 'vip_id' in pool and pool['vip_id'] is not None:
-            vip = self.get_record(
-                service_info['vips'], 'id', pool['vip_id'])
-            retval['vip'] = vip  # self._make_vip_dict(vip)
-
-        pool_members = pool['members']
-        retval['members'] = []
-
-        for pm in pool_members:
-            member = self.get_record(service_info['members'], 'id', pm)
-            if (member['status'] in constants.ACTIVE_PENDING_STATUSES or
-                    member['status'] == constants.INACTIVE):
-                retval['members'].append(member)
-
-        pool_health_monitors = pool['health_monitors_status']
-        retval['healthmonitors'] = []
-
-        for phm in pool_health_monitors:
-            if phm['status'] in constants.ACTIVE_PENDING_STATUSES:
-                health_monitor = self.get_record(
-                    service_info['health_monitors'],
-                    'id', phm['monitor_id'])
-                retval['healthmonitors'].append(health_monitor)
-
-        retval['driver'] = pool['provider']
-        return retval
