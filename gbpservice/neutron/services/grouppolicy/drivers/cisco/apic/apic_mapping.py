@@ -736,8 +736,8 @@ class ApicMappingDriver(api.ResourceMappingDriver,
                 subnet = self._get_subnet(context._plugin_context,
                                           es['subnet_id'])
                 ext_net_id = subnet['network_id']
-                fips_in_es = filter(
-                    lambda x: x['floating_network_id'] == ext_net_id, fips)
+                fips_in_es = [fip for fip in fips
+                              if fip['floating_network_id'] == ext_net_id]
                 ext_network = self._get_network(context._plugin_context,
                         ext_net_id)
                 if host:
