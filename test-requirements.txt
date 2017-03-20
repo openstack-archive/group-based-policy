@@ -6,9 +6,10 @@ setuptools>=19.2
 -e git+https://git.openstack.org/openstack/neutron.git@stable/mitaka#egg=neutron
 # TODO(rkukura): Switch apicapi back to master branch eventually.
 -e git+https://github.com/noironetworks/apicapi.git@aci_integration_manager#egg=apicapi
--e git+https://github.com/noironetworks/python-opflex-agent.git@master#egg=python-opflexagent-agent
--e git+https://github.com/noironetworks/apic-ml2-driver.git@master#egg=apic_ml2
--e git+https://git.openstack.org/openstack/python-group-based-policy-client@master#egg=gbpclient
+-e git+https://github.com/noironetworks/python-opflex-agent.git@stable/mitaka#egg=python-opflexagent-agent
+-e git+https://github.com/noironetworks/apic-ml2-driver.git@mitaka#egg=apic_ml2
+-e git+https://github.com/noironetworks/aci-integration-module.git#egg=aci-integration-module
+-e git+https://git.openstack.org/openstack/python-group-based-policy-client@stable/mitaka#egg=gbpclient
 -e git+https://git.openstack.org/openstack/neutron-vpnaas@stable/mitaka#egg=neutron-vpnaas
 -e git+https://git.openstack.org/openstack/neutron-lbaas@stable/mitaka#egg=neutron-lbaas
 -e git+https://git.openstack.org/openstack/neutron-fwaas@stable/mitaka#egg=neutron-fwaas
@@ -40,5 +41,4 @@ pyOpenSSL>=0.13.0,<=0.15.1
 #  they cannot be refernced as GIT URLs
 python-heatclient
 python-keystoneclient
-
--e git+https://github.com/noironetworks/aci-integration-module.git#egg=aci-integration-module
+python-neutronclient<5.0.0,>=4.0.0,!=4.1.0
