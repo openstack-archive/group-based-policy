@@ -11,6 +11,7 @@
 #    under the License.
 
 import netaddr
+import six
 
 from neutron._i18n import _LE
 from neutron._i18n import _LW
@@ -130,7 +131,7 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
         for attr in links:
             ids = obj[attr]
             if ids:
-                if isinstance(ids, basestring):
+                if isinstance(ids, six.string_types):
                     ids = [ids]
                 ref_type = links[attr]
                 linked_objects = getattr(

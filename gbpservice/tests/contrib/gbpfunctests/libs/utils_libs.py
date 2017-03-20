@@ -14,6 +14,7 @@ import itertools
 import paramiko
 import prettytable
 import re
+import six
 import subprocess
 import sys
 
@@ -58,7 +59,7 @@ def report_table(suite_name):
     table = prettytable.PrettyTable(["TESTCASE_ID", "RESULTS",
                                      "TESTCASE_HEADER"])
     table.padding_width = 1
-    for key, val in tc_dict.iteritems():
+    for key, val in six.iteritems(tc_dict):
         table.add_row(["%s" % (key), "%s" % (val[0]), "%s" % (val[1])])
     return table
 

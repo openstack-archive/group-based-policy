@@ -12,6 +12,7 @@
 
 import os
 import oslo_messaging as messaging
+import six
 
 from gbpservice.contrib.nfp.configurator.agents import agent_base
 from gbpservice.contrib.nfp.configurator.lib import (
@@ -175,7 +176,7 @@ def load_drivers(conf):
     ld = load_driver.ConfiguratorUtils(conf)
     drivers = ld.load_drivers(const.SERVICE_TYPE)
 
-    for service_type, driver_name in drivers.iteritems():
+    for service_type, driver_name in six.iteritems(drivers):
         driver_obj = driver_name(conf=conf)
         drivers[service_type] = driver_obj
 

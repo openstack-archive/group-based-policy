@@ -12,6 +12,7 @@
 
 import hashlib
 import re
+import six
 
 from aim.api import resource as aim_resource
 from aim import context as aim_context
@@ -362,7 +363,7 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
         l3p_db = context._plugin._get_l3_policy(
             context._plugin_context, context.current['id'])
         v4v6subpools = {4: l3p_db.subnetpools_v4, 6: l3p_db.subnetpools_v6}
-        for k, v in v4v6subpools.iteritems():
+        for k, v in six.iteritems(v4v6subpools):
             subpools = [sp.subnetpool_id for sp in v]
             for sp_id in subpools:
                 self._db_plugin(
@@ -900,7 +901,7 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
     def extend_policy_rule_dict(self, session, result):
         result[cisco_apic.DIST_NAMES] = {}
         aim_filter_entries = self._get_aim_filter_entries(session, result)
-        for k, v in aim_filter_entries.iteritems():
+        for k, v in six.iteritems(aim_filter_entries):
             dn_list = []
             for entry in v:
                 dn_list.append(entry.dn)
@@ -1412,7 +1413,7 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
 
     def _create_aim_filter_entries(self, session, aim_ctx, aim_filter,
                                    filter_entries):
-        for k, v in filter_entries.iteritems():
+        for k, v in six.iteritems(filter_entries):
             self._create_aim_filter_entry(
                 session, aim_ctx, aim_filter, k, v)
 
@@ -1428,7 +1429,7 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
         # This gets the Forward and Reverse Filters from the AIM DB
         aim_ctx = aim_context.AimContext(session)
         filters = {}
-        for k, v in FILTER_DIRECTIONS.iteritems():
+        for k, v in six.iteritems(FILTER_DIRECTIONS):
             aim_filter = self._aim_filter(session, policy_rule, v)
             aim_filter_fetched = self.aim.get(aim_ctx, aim_filter)
             if not aim_filter_fetched:
@@ -1449,7 +1450,7 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
         aim_ctx = aim_context.AimContext(session)
         filters = self._get_aim_filters(session, policy_rule)
         filters_entries = {}
-        for k, v in filters.iteritems():
+        for k, v in six.iteritems(filters):
             if v:
                 aim_filter_entries = self.aim.find(
                     aim_ctx, aim_resource.FilterEntry,
@@ -1688,7 +1689,7 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
         contracts = {alib.SERVICE_PREFIX: infra_entries,
                      alib.IMPLICIT_PREFIX: arp_entries}
 
-        for contract_name_prefix, entries in contracts.iteritems():
+        for contract_name_prefix, entries in six.iteritems(contracts):
             contract_name = self.name_mapper.project(
                 session, l2p['tenant_id'], prefix=contract_name_prefix)
             # Create Contract (one per tenant)
@@ -1725,7 +1726,7 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
                             provided_contracts=[contract_name])
 
             filter_names = []
-            for k, v in entries.iteritems():
+            for k, v in six.iteritems(entries):
                 filter_name = self.name_mapper.project(
                     session, l2p['tenant_id'],
                     prefix=''.join([contract_name_prefix, k, '-']))

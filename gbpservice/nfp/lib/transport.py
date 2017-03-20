@@ -26,6 +26,7 @@ import oslo_messaging as messaging
 from oslo_serialization import jsonutils
 
 import requests
+import six
 
 LOG = nfp_logging.getLogger(__name__)
 Version = 'v1'  # v1/v2/v3#
@@ -344,5 +345,5 @@ def parse_service_flavor_string(service_flavor_str):
         service_flavor_dict = dict(item.split('=') for item
                                    in service_flavor_str.split(','))
         service_details = {key.strip(): value.strip() for key, value
-                           in service_flavor_dict.iteritems()}
+                           in six.iteritems(service_flavor_dict)}
     return service_details

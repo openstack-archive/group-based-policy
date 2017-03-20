@@ -13,6 +13,7 @@
 
 import eventlet
 from eventlet import greenpool
+import six
 import sys
 import threading
 
@@ -341,7 +342,7 @@ class NFPNodeDriver(driver_base.NodeDriverBase):
             service_flavor_dict = dict(item.split('=') for item
                                        in service_flavor_str.split(','))
             service_details = {key.strip(): value.strip() for key, value
-                               in service_flavor_dict.iteritems()}
+                               in six.iteritems(service_flavor_dict)}
         return service_details
 
     def get_plumbing_info(self, context):
