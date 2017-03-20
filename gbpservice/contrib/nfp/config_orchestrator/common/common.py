@@ -10,13 +10,13 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+from gbpservice._i18n import _LE
 from gbpservice.contrib.nfp.config_orchestrator.common import (
     topics as a_topics)
 from gbpservice.nfp.core import log as nfp_logging
 from gbpservice.nfp.lib import transport
 from gbpservice.nfp.orchestrator.openstack import openstack_driver
 
-from neutron._i18n import _LE
 from neutron.common import constants as n_constants
 from neutron.common import rpc as n_rpc
 from neutron.common import topics as n_topics

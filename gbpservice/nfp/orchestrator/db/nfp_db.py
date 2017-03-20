@@ -15,12 +15,12 @@ from oslo_serialization import jsonutils
 from oslo_utils import uuidutils
 from sqlalchemy.orm import exc
 
+from gbpservice._i18n import _LW
 from gbpservice.nfp.common import exceptions as nfp_exc
 from gbpservice.nfp.orchestrator.db import common_db_mixin
 from gbpservice.nfp.orchestrator.db import nfp_db_model
 
 from gbpservice.nfp.core import log as nfp_logging
-from neutron._i18n import _LW
 
 LOG = nfp_logging.getLogger(__name__)
 
@@ -671,7 +671,7 @@ class NFPDbBase(common_db_mixin.CommonDbMixin):
                     svc_gw.network_function_id == nf_id).one())
         except exc.NoResultFound:
             LOG.warning(_LW("Gateway detail doesn't exist for Network Function"
-                            " %s ") % nf_id)
+                            " %s "), nf_id)
             raise
 
     def _get_gw_info_dict(self, gw):

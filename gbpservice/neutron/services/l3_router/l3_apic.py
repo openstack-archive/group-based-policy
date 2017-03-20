@@ -13,7 +13,6 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-from neutron._i18n import _LW
 from neutron.common import constants as q_const
 from neutron.common import exceptions as n_exc
 from neutron.db import common_db_mixin
@@ -25,6 +24,7 @@ from oslo_log import log as logging
 
 LOG = logging.getLogger(__name__)
 
+from gbpservice._i18n import _LW
 from gbpservice.neutron.services.l3_router import apic_driver
 
 

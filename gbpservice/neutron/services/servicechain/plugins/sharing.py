@@ -10,12 +10,12 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-from neutron._i18n import _LE
 from neutron.api.v2 import attributes as nattr
 from neutron import manager as n_manager
 from neutron.plugins.common import constants as pconst
 from oslo_log import log as logging
 
+from gbpservice._i18n import _LE
 from gbpservice.neutron.services.grouppolicy.common import exceptions as gp_exc
 from gbpservice.neutron.services.grouppolicy import plugin as gbp_plugin
 

@@ -10,8 +10,6 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-from neutron._i18n import _LE
-from neutron._i18n import _LI
 from neutron.common import exceptions as n_exc
 from oslo_config import cfg
 from oslo_log import log
@@ -19,6 +17,8 @@ from oslo_policy import policy as oslo_policy
 from oslo_utils import excutils
 import stevedore
 
+from gbpservice._i18n import _LE
+from gbpservice._i18n import _LI
 from gbpservice.neutron.services.grouppolicy.common import exceptions as gp_exc
 from gbpservice.neutron.services.grouppolicy import group_policy_driver_api
 

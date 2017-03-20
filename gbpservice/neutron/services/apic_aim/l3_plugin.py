@@ -13,8 +13,6 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-from neutron._i18n import _LE
-from neutron._i18n import _LI
 from neutron.api import extensions
 from neutron.db import common_db_mixin
 from neutron.db import db_base_plugin_v2
@@ -28,6 +26,8 @@ from oslo_log import log as logging
 from oslo_utils import excutils
 from sqlalchemy import inspect
 
+from gbpservice._i18n import _LE
+from gbpservice._i18n import _LI
 from gbpservice.neutron import extensions as extensions_pkg
 from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import (
     extension_db as extn_db)

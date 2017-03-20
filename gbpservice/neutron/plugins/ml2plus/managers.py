@@ -13,10 +13,10 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+from gbpservice._i18n import _LE
+from gbpservice._i18n import _LI
 from gbpservice.neutron.plugins.ml2plus import driver_api
 
-from neutron._i18n import _LE
-from neutron._i18n import _LI
 from neutron.plugins.ml2.common import exceptions as ml2_exc
 from neutron.plugins.ml2 import managers
 from oslo_log import log

@@ -50,7 +50,7 @@ class RpcService(oslo_service.Service):
         self.endpoints = managers or []
 
     def start(self):
-        LOG.debug("RPCAgent listening on topic=%s" % self.topic)
+        LOG.debug("RPCAgent listening on topic=%s", self.topic)
         super(RpcService, self).start()
 
         self.conn = n_rpc.create_connection()
@@ -107,7 +107,7 @@ class RpcAgent(object):
 
     def report_state(self):
         if hasattr(self, '_report_state'):
-            LOG.debug("Agent (%s) reporting state" %
+            LOG.debug("Agent (%s) reporting state",
                       (self.identify()))
             self._report_state.report()
 
@@ -135,7 +135,7 @@ class ReportState(object):
 
     def report(self):
         try:
-            LOG.debug("Reporting state with data (%s)" %
+            LOG.debug("Reporting state with data (%s)",
                       (self._data))
             self._state_rpc.report_state(self._n_context, self._data)
             self._data.pop('start_flag', None)

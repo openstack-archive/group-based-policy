@@ -12,8 +12,8 @@
 
 import ast
 from collections import defaultdict
-from neutron._i18n import _LE
-from neutron._i18n import _LW
+from gbpservice._i18n import _LE
+from gbpservice._i18n import _LW
 
 from gbpservice.nfp.common import constants as nfp_constants
 from gbpservice.nfp.common import data_formatter as df
@@ -190,7 +190,7 @@ class OrchestrationDriver(object):
         else:
             LOG.debug("Provider metadata specified in image, doesn't contains "
                       "%s value, proceeding with default value "
-                      "%s" % (attr, attr_value))
+                      "%s", (attr, attr_value))
 
     def _update_provider_metadata(self, device_data, token=None):
         provider_metadata = {}
@@ -198,8 +198,8 @@ class OrchestrationDriver(object):
             image_name = self._get_image_name(device_data)
             provider_metadata = self._get_provider_metadata(device_data,
                                                             image_name)
-            LOG.debug("Provider metadata, specified in image: %s"
-                      % provider_metadata)
+            LOG.debug("Provider metadata, specified in image: %s",
+                      provider_metadata)
             if provider_metadata:
                 self._update_self_with_provider_metadata(
                     provider_metadata,
@@ -222,8 +222,8 @@ class OrchestrationDriver(object):
         try:
             provider_metadata = self._get_provider_metadata_fast(
                 token, admin_tenant_id, image_name, device_data)
-            LOG.debug("Provider metadata, specified in image: %s"
-                      % provider_metadata)
+            LOG.debug("Provider metadata, specified in image: %s",
+                      provider_metadata)
             if provider_metadata:
                 self._update_self_with_provider_metadata(
                     provider_metadata,
@@ -246,8 +246,8 @@ class OrchestrationDriver(object):
         else:
             LOG.debug("No image name provided in service profile's "
                       "service flavor field, image will be selected "
-                      "based on service vendor's name : %s"
-                      % (device_data['service_details']['service_vendor']))
+                      "based on service vendor's name : %s",
+                      (device_data['service_details']['service_vendor']))
             image_name = device_data['service_details']['service_vendor']
             image_name = '%s' % image_name.lower()
             device_data['service_details']['image_name'] = image_name

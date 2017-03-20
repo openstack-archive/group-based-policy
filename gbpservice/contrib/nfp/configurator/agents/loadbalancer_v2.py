@@ -13,8 +13,7 @@
 import os
 import six
 
-from neutron._i18n import _LI
-
+from gbpservice._i18n import _LI
 from gbpservice.contrib.nfp.configurator.agents import agent_base
 from gbpservice.contrib.nfp.configurator.lib import data_filter
 from gbpservice.contrib.nfp.configurator.lib import lbv2_constants as lb_const
