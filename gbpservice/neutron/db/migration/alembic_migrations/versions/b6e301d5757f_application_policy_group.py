@@ -25,7 +25,6 @@ down_revision = 'daaa11a358a2'
 
 from alembic import op
 import sqlalchemy as sa
-from sqlalchemy import sql
 
 
 def upgrade():
@@ -38,8 +37,6 @@ def upgrade():
         sa.Column('description', sa.String(length=255), nullable=True),
         sa.Column('status', sa.String(length=16), nullable=True),
         sa.Column('status_details', sa.String(length=4096), nullable=True),
-        sa.Column('shared', sa.Boolean, nullable=True,
-                  server_default=sql.false()),
         sa.PrimaryKeyConstraint('id'))
 
     op.add_column(
