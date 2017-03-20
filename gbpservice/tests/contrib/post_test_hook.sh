@@ -6,6 +6,12 @@ set -x
 
 trap prepare_logs ERR
 
+sudo git --git-dir=/opt/stack/new/neutron/.git --work-tree=/opt/stack/new/neutron show --name-only
+sudo git --git-dir=/opt/stack/new/neutron/.git --work-tree=/opt/stack/new/neutron status
+sudo pip show neutron-lib
+sudo git --git-dir=/opt/stack/new/group-based-policy/.git --work-tree=/opt/stack/new/group-based-policy show --name-only
+sudo git --git-dir=/opt/stack/new/group-based-policy/.git --work-tree=/opt/stack/new/group-based-policy status
+
 # Run exercise scripts
 $TOP_DIR/exercise.sh
 exercises_exit_code=$?
