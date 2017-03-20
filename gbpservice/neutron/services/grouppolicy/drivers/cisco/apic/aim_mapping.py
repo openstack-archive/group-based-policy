@@ -2103,8 +2103,8 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
             # TODO(amitbose) Handle per-tenant NAT EPG
             ext_net_epg = aim_resource.EndpointGroup.from_dn(ext_net_epg_dn)
 
-            fips_in_ext_net = filter(
-                lambda x: x['floating_network_id'] == ext_net['id'], fips)
+            fips_in_ext_net = [fip for fip in fips
+                               if fip['floating_network_id'] == ext_net['id']]
             if not fips_in_ext_net:
                 ext_segment_name = dn.replace('/', ':')
                 ipms.append({'external_segment_name': ext_segment_name,
