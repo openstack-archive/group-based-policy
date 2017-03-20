@@ -23,14 +23,8 @@ function create_nfp_image {
 }
 
 function assign_user_role_credential {
-    TOP_DIR=$1
-    source $TOP_DIR/openrc admin admin
-    #set -x
-    serviceTenantID=`keystone tenant-list | grep "service" | awk '{print $2}'`
-    serviceRoleID=`keystone role-list | grep "service" | awk '{print $2}'`
-    adminRoleID=`keystone role-list | grep "admin" | awk '{print $2}'`
-    keystone user-role-add --user nova --tenant $serviceTenantID --role $serviceRoleID
-    keystone user-role-add --user neutron --tenant $serviceTenantID --role $adminRoleID
+    openstack --os-cloud=devstack-admin role add --project service --user nova service
+    openstack --os-cloud=devstack-admin role add --project service --user neutron admin
 }
 
 function namespace_delete {
@@ -211,10 +205,11 @@ function copy_nfp_files_and_start_process {
     auth_uri=`iniget /etc/neutron/neutron.conf keystone_authtoken auth_uri`
     auth_protocol=$(echo $auth_uri | tr ':/' ' ' | awk '{print $1}')
     auth_host=$(echo $auth_uri | tr ':/' ' ' | awk '{print $2}')
-    auth_port=$(echo $auth_uri | tr ':/' ' ' | awk '{print $3}')
-    auth_version=$(echo $auth_uri | tr ':/' ' ' | awk '{print $4}')
-    auth_version=${auth_version:-v2.0}
-
+    #auth_port=$(echo $auth_uri | tr ':/' ' ' | awk '{print $3}')
+    #auth_version=$(echo $auth_uri | tr ':/' ' ' | awk '{print $4}')
+    #auth_version=${auth_version:-v2.0}
+    auth_port=5000
+    auth_version=v3
     iniset -sudo /etc/nfp.ini nfp_keystone_authtoken admin_user $admin_user
     iniset -sudo /etc/nfp.ini nfp_keystone_authtoken admin_password $admin_password
     iniset -sudo /etc/nfp.ini nfp_keystone_authtoken admin_tenant_name $admin_tenant_name
