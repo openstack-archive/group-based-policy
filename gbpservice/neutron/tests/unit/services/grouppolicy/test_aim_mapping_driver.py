@@ -4420,11 +4420,9 @@ class TestNeutronPortOperation(AIMBaseTestCase):
         self.l3_plugin.add_router_interface(
             self._neutron_admin_context, rtr['id'], {'subnet_id': sub2['id']})
         fip1 = self._make_floatingip(self.fmt, net_ext['id'],
-                                     port_id=p3['id'],
-                                     floating_ip='100.100.0.3')['floatingip']
+                                     port_id=p3['id'])['floatingip']
         fip2 = self._make_floatingip(self.fmt, net_ext['id'],
-                                     port_id=p4['id'],
-                                     floating_ip='100.100.0.4')['floatingip']
+                                     port_id=p4['id'])['floatingip']
         details = self.driver.get_gbp_details(
             self._neutron_admin_context, device='tap%s' % p1['id'],
             host='h1')
