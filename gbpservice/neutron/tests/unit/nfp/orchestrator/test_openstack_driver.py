@@ -16,6 +16,8 @@ import unittest2
 
 from gbpclient.v2_0 import client as gbp_client
 from gbpservice.nfp.orchestrator.openstack import openstack_driver
+from keystoneauth1.identity import v2
+from keystoneauth1 import session
 from keystoneclient.v2_0 import client as identity_client
 from neutronclient.v2_0 import client as neutron_client
 from novaclient import client as nova_client
@@ -63,39 +65,40 @@ class TestKeystoneClient(SampleData):
                               'None',
                               group='nfp_keystone_authtoken')
 
-    def test_get_admin_token(self, mock_obj):
-        instance = mock_obj.return_value
-        instance.auth_token = True
+    @mock.patch.object(v2, "Password")
+    @mock.patch.object(session.Session, "get_token")
+    def test_get_admin_token(self, mock_session, mock_v2, mock_obj):
+        mock_session.return_value = True
         retval = self.keystone_obj.get_admin_token()
         self.assertTrue(retval)
-        mock_obj.assert_called_once_with(auth_url=self.AUTH_URL,
-                                         password='neutron_pass',
-                                         tenant_id=None,
-                                         tenant_name='service',
-                                         username='neutron')
+        mock_v2.assert_called_once_with(auth_url=self.AUTH_URL,
+                                        password='neutron_pass',
+                                        tenant_name='service',
+                                        username='neutron')
 
-    def test_get_scoped_keystone_token(self, mock_obj):
-        instance = mock_obj.return_value
-        instance.auth_token = True
+    @mock.patch.object(v2, "Password")
+    @mock.patch.object(session.Session, "get_token")
+    def test_get_scoped_keystone_token(self, mock_session, mock_v2, mock_obj):
+        mock_session.return_value = True
         retval = self.keystone_obj.get_scoped_keystone_token(self.USERNAME,
                                                              self.PASSWORD,
                                                              self.TENANT_NAME,
                                                              self.TENANT_ID)
         self.assertTrue(retval)
-        mock_obj.assert_called_once_with(auth_url=self.AUTH_URL,
-                                         password=self.PASSWORD,
-                                         tenant_id=self.TENANT_ID,
-                                         tenant_name=self.TENANT_NAME,
-                                         username=self.USERNAME)
+        mock_v2.assert_called_once_with(auth_url=self.AUTH_URL,
+                                        password=self.PASSWORD,
+                                        tenant_name=self.TENANT_NAME,
+                                        username=self.USERNAME)
 
-    def test_get_tenant_id(self, mock_obj):
+    @mock.patch.object(v2, "Password")
+    @mock.patch.object(session.Session, "get_token")
+    def test_get_tenant_id(self, mock_session, mock_v2, mock_obj):
         instance = mock_obj.return_value
         instance.tenants.find().id = True
         retval = self.keystone_obj.get_tenant_id(self.AUTH_TOKEN,
                                                  "service")
         self.assertTrue(retval)
-        mock_obj.assert_called_once_with(auth_url=self.AUTH_URL,
-                                         token=self.AUTH_TOKEN)
+        mock_obj.assert_called_once_with(session=mock.ANY)
 
 
 @mock.patch.object(nova_client, "Client")
