@@ -36,7 +36,7 @@ class NFPDbBase(common_db_mixin.CommonDbMixin):
                 id=uuidutils.generate_uuid(),
                 name=network_function['name'],
                 description=network_function.get('description'),
-                tenant_id=network_function['tenant_id'],
+                project_id=network_function['tenant_id'],
                 service_id=network_function['service_id'],
                 service_chain_id=network_function.get('service_chain_id'),
                 service_profile_id=network_function['service_profile_id'],
@@ -115,7 +115,7 @@ class NFPDbBase(common_db_mixin.CommonDbMixin):
                 nfp_db_model.NetworkFunctionInstance(
                     id=uuidutils.generate_uuid(),
                     name=network_function_instance['name'],
-                    tenant_id=network_function_instance['tenant_id'],
+                    project_id=network_function_instance['tenant_id'],
                     description=network_function_instance.get('description'),
                     network_function_id=network_function_instance[
                         'network_function_id'],
@@ -293,7 +293,7 @@ class NFPDbBase(common_db_mixin.CommonDbMixin):
                     uuidutils.generate_uuid()),
                 name=network_function_device['name'],
                 description=network_function_device.get('description'),
-                tenant_id=network_function_device['tenant_id'],
+                project_id=network_function_device['tenant_id'],
                 mgmt_ip_address=network_function_device[
                     'mgmt_ip_address'],
                 service_vendor=network_function_device.get('service_vendor'),
@@ -495,7 +495,7 @@ class NFPDbBase(common_db_mixin.CommonDbMixin):
 
     def _make_network_function_dict(self, network_function, fields=None):
         res = {'id': network_function['id'],
-               'tenant_id': network_function['tenant_id'],
+               'tenant_id': network_function['project_id'],
                'name': network_function['name'],
                'description': network_function['description'],
                'service_id': network_function['service_id'],
@@ -512,7 +512,7 @@ class NFPDbBase(common_db_mixin.CommonDbMixin):
 
     def _make_network_function_instance_dict(self, nfi, fields=None):
         res = {'id': nfi['id'],
-               'tenant_id': nfi['tenant_id'],
+               'tenant_id': nfi['project_id'],
                'name': nfi['name'],
                'description': nfi['description'],
                'ha_state': nfi['ha_state'],
@@ -526,7 +526,7 @@ class NFPDbBase(common_db_mixin.CommonDbMixin):
 
     def _make_network_function_device_dict(self, nfd, fields=None):
         res = {'id': nfd['id'],
-               'tenant_id': nfd['tenant_id'],
+               'tenant_id': nfd['project_id'],
                'name': nfd['name'],
                'description': nfd['description'],
                'mgmt_ip_address': nfd['mgmt_ip_address'],
@@ -547,7 +547,7 @@ class NFPDbBase(common_db_mixin.CommonDbMixin):
     def add_cluster_info(self, session, cluster_info):
         with session.begin(subtransactions=True):
             cluster_info = nfp_db_model.ClusterInfo(
-                id=cluster_info['id'], tenant_id=cluster_info['tenant_id'],
+                id=cluster_info['id'], project_id=cluster_info['tenant_id'],
                 network_function_device_id=cluster_info[
                     'network_function_device_id'],
                 cluster_group=cluster_info[
@@ -556,6 +556,7 @@ class NFPDbBase(common_db_mixin.CommonDbMixin):
                 cluster_name=cluster_info.get('cluster_name', None)
             )
             session.add(cluster_info)
+            setattr(cluster_info, 'tenant_id', cluster_info['project_id'])
             return cluster_info
 
     def insert_cluster_records(self, session, cluster_infos):
@@ -563,7 +564,7 @@ class NFPDbBase(common_db_mixin.CommonDbMixin):
             for cluster_info in cluster_infos:
                 cluster_info = nfp_db_model.ClusterInfo(
                     id=cluster_info['id'],
-                    tenant_id=cluster_info['tenant_id'],
+                    project_id=cluster_info['tenant_id'],
                     network_function_device_id=cluster_info[
                         'network_function_device_id'],
                     cluster_group=cluster_info['cluster_group'],
@@ -606,7 +607,7 @@ class NFPDbBase(common_db_mixin.CommonDbMixin):
                                sorts=None, limit=None, marker=None,
                                page_reverse=False):
         return {
-            'id': cluster_info['id'], 'tenant_id': cluster_info['tenant_id'],
+            'id': cluster_info['id'], 'tenant_id': cluster_info['project_id'],
             'network_function_device_id': cluster_info[
                 'network_function_device_id'],
             'cluster_group': cluster_info['cluster_group'],
