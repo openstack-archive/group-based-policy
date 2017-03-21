@@ -11,6 +11,8 @@
 #    under the License.
 
 import copy
+from keystoneauth1.identity import v2
+from keystoneauth1 import session
 from keystoneclient.v2_0 import client as identity_client
 import mock
 from oslo_config import cfg
@@ -101,10 +103,10 @@ class TestHeatDriver(unittest2.TestCase):
         mock.patch(heat_client.__name__ + ".HeatClient",
                    new=MockHeatClient).start()
 
-    @mock.patch.object(identity_client, "Client")
-    def test_keystone(self, mock_obj):
-        keystone_client = mock_obj.return_value
-        keystone_client.auth_token = 'abcd123'
+    @mock.patch.object(v2, "Password")
+    @mock.patch.object(session.Session, "get_token")
+    def test_keystone(self, mock_session, mock_v2):
+        mock_session.return_value = 'abcd123'
         password = 'neutron_pass'
         tenant_name = 'services'
         username = 'neutron'
@@ -127,9 +129,11 @@ class TestHeatDriver(unittest2.TestCase):
         self.assertIsNotNone(heat_client_obj)
 
     @mock.patch.object(identity_client, "Client")
-    def test_resource_owner_tenant_id(self, mock_obj):
+    @mock.patch.object(v2, "Password")
+    @mock.patch.object(session.Session, "get_token")
+    def test_resource_owner_tenant_id(self, mock_session, mock_v2, mock_obj):
+        mock_session.return_value = True
         keystone_client = mock_obj.return_value
-        keystone_client.auth_token = True
         keystone_client.tenants.find().id = '8ae6701128994ab281dde6b92207bb19'
         expected_resource_owner_tenant_id = '8ae6701128994ab281dde6b92207bb19'
         resource_owner_tenant_id = (
@@ -200,10 +204,11 @@ class TestHeatDriver(unittest2.TestCase):
         self.assertEqual(resource_owner_context,
                          expected_resource_owner_context)
 
-    @mock.patch.object(identity_client, "Client")
-    def test_get_tenant_context(self, mock_obj):
-        keystone_client = mock_obj.return_value
-        keystone_client.auth_token = True
+    @mock.patch.object(v2, "Password")
+    @mock.patch.object(session.Session, "get_token")
+    def test_get_tenant_context(self, mock_session, mock_v2):
+        mock_session.return_value = True
+
         tenant_id = '8ae6701128994ab281dde6b92207bb19'
         expected_tenant_context = (True, tenant_id)
         tenant_context = self.heat_driver_obj._get_tenant_context(tenant_id)
@@ -321,7 +326,6 @@ class TestHeatDriver(unittest2.TestCase):
             return_value=None)
         nfp_logging.get_logging_context = mock.Mock(
             return_value={'auth_token': '7fd6701128994ab281ccb6b92207bb15'})
-
         instance = mock_obj.return_value
         instance.auth_token = True
         stack_id = '70754fdd-0325-4856-8a39-f171b65617d6'
@@ -330,7 +334,13 @@ class TestHeatDriver(unittest2.TestCase):
 
     @mock.patch.object(heat_client.HeatClient, 'get')
     @mock.patch.object(identity_client, "Client")
-    def test_is_config_complete(self, mock_obj, heat_get_mock_obj):
+    @mock.patch.object(v2, "Password")
+    @mock.patch.object(session.Session, "get_token")
+    def test_is_config_complete(self, mock_session, mock_v2, mock_obj,
+            heat_get_mock_obj):
+        mock_session.return_value = True
+        keystone_client = mock_obj.return_value
+        keystone_client.tenants.find().id = '8ae6701128994ab281dde6b92207bb19'
         stack_id = '70754fdd-0325-4856-8a39-f171b65617d6'
         tenant_id = '8ae6701128994ab281dde6b92207bb19'
         self.heat_driver_obj._assign_admin_user_to_project = mock.Mock(
@@ -341,8 +351,6 @@ class TestHeatDriver(unittest2.TestCase):
             return_value=None)
         heat_get_mock_obj.return_value = MockStackObject(
             'CREATE_COMPLETE')
-        instance = mock_obj.return_value
-        instance.auth_token = True
         expected_status = 'COMPLETED'
         status = self.heat_driver_obj.is_config_complete(
             stack_id, tenant_id, self.mock_dict.network_function_details)

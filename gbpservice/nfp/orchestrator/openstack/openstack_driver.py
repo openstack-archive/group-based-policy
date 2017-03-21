@@ -11,6 +11,9 @@
 #    under the License.
 
 from gbpclient.v2_0 import client as gbp_client
+from keystoneauth1.identity import v2
+from keystoneauth1.identity import v3
+from keystoneauth1 import session
 from keystoneclient.v2_0 import client as identity_client
 from keystoneclient.v3 import client as keyclientv3
 from neutronclient.v2_0 import client as neutron_client
@@ -78,17 +81,15 @@ class KeystoneClient(OpenstackApi):
             err = "Tenant Not specified for getting a scoped token"
             LOG.error(err)
             raise Exception(err)
-
-        keystone = identity_client.Client(
-            username=user,
-            password=password,
-            tenant_name=tenant_name,
-            tenant_id=tenant_id,
-            auth_url=self.identity_service)
         try:
-            scoped_token = keystone.auth_token
+            auth = v2.Password(username=user,
+                           password=password,
+                           tenant_name=tenant_name,
+                           auth_url=self.identity_service)
+            sess = session.Session(auth=auth)
+            scoped_token = sess.get_token(auth=auth)
         except Exception as err:
-            err = ("Failed to get scoped token from"
+            err = ("Failed to get token from"
                    " Openstack Keystone service"
                    " KeyError :: %s" % (err))
             self.config.nfp_keystone_authtoken.auth_port,
@@ -114,8 +115,7 @@ class KeystoneClient(OpenstackApi):
         :return: Tenant UUID
         """
         try:
-            keystone = identity_client.Client(token=token,
-                                              auth_url=self.identity_service)
+            keystone = self._get_v2_keystone_admin_client()
             tenant = keystone.tenants.find(name=tenant_name)
             return tenant.id
         except Exception as ex:
@@ -134,14 +134,12 @@ class KeystoneClient(OpenstackApi):
             keystone resources.
         """
         keystone_conf = self.config.nfp_keystone_authtoken
-
-        v2client = identity_client.Client(
-            username=keystone_conf.admin_user,
-            password=keystone_conf.admin_password,
-            tenant_name=keystone_conf.admin_tenant_name,
-            tenant_id=None,
-            auth_url=self.identity_service)
-
+        auth = v2.Password(username=keystone_conf.admin_user,
+                           password=keystone_conf.admin_password,
+                           tenant_name=keystone_conf.admin_tenant_name,
+                           auth_url=self.identity_service)
+        sess = session.Session(auth=auth)
+        v2client = identity_client.Client(session=sess)
         return v2client
 
     def _get_v3_keystone_admin_client(self):
@@ -153,11 +151,14 @@ class KeystoneClient(OpenstackApi):
         v3_auth_url = ('%s://%s:%s/%s/' % (
             keystone_conf.auth_protocol, keystone_conf.auth_host,
             keystone_conf.auth_port, self.config.heat_driver.keystone_version))
-        v3client = keyclientv3.Client(
-            username=keystone_conf.admin_user,
-            password=keystone_conf.admin_password,
-            domain_name="default",
-            auth_url=v3_auth_url)
+        auth = v3.Password(auth_url=v3_auth_url,
+                           user_domain_name='Default',
+                           username=keystone_conf.admin_user,
+                           password=keystone_conf.admin_password,
+                           project_domain_name="Default",
+                           project_name=keystone_conf.admin_tenant_name)
+        sess = session.Session(auth=auth)
+        v3client = keyclientv3.Client(session=sess)
         return v3client
 
 

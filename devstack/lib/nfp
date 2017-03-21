@@ -63,21 +63,8 @@ function init_nfpgbpservice {
 
 # assign_user_role_credential() - Assign Service role to the users
 function assign_user_role_credential {
-    source $DEVSTACK_DIR/openrc admin admin
-
-    serviceTenantID=`keystone tenant-list | grep -w '[^.]service[^.]' | awk '{print $2}'`
-    serviceRoleID=`keystone role-list | grep -w '[^.]service[^.]' | awk '{print $2}'`
-    adminRoleID=`keystone role-list | grep -w '[^.]admin[^.]' | awk '{print $2}'`
-
-    keystone user-role-add\
- --user nova\
- --tenant $serviceTenantID\
- --role $serviceRoleID
-
-    keystone user-role-add\
- --user neutron\
- --tenant $serviceTenantID\
- --role $adminRoleID
+    openstack --os-cloud=devstack-admin role add --project service --user nova service
+    openstack --os-cloud=devstack-admin role add --project service --user neutron admin
 }
 
 # create_ext_net() - Create an external network
@@ -456,9 +443,11 @@ function copy_nfp_files_and_start_process {
     auth_uri=`iniget $NEUTRON_CONF keystone_authtoken auth_uri`
     auth_protocol=$(echo $auth_uri | tr ':/' ' ' | awk '{print $1}')
     auth_host=$(echo $auth_uri | tr ':/' ' ' | awk '{print $2}')
-    auth_port=$(echo $auth_uri | tr ':/' ' ' | awk '{print $3}')
-    auth_version=$(echo $auth_uri | tr ':/' ' ' | awk '{print $4}')
-    auth_version=${auth_version:-v2.0}
+    #auth_port=$(echo $auth_uri | tr ':/' ' ' | awk '{print $3}')
+    #auth_version=$(echo $auth_uri | tr ':/' ' ' | awk '{print $4}')
+    #auth_version=${auth_version:-v2.0}
+    auth_port=5000
+    auth_version=v2.0
 
     iniset -sudo /etc/nfp.ini nfp_keystone_authtoken admin_user $admin_user
     iniset -sudo /etc/nfp.ini nfp_keystone_authtoken admin_password $admin_password
