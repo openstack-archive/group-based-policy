@@ -1873,6 +1873,42 @@ class TestL2PolicyWithAutoPTG(TestL2PolicyBase):
         self._switch_to_tenant1()
         self.delete_l3_policy(l3p['id'])
 
+    def test_ep_notification_on_apg_update(self):
+        # Once the testing strategy evolves to always assuming auto_ptg
+        # being present, this UT can be removed/merged with the UTs in the
+        # TestPolicyTargetGroup class
+        mock_notif = mock.Mock()
+        self.driver.aim_mech_driver.notifier.port_update = mock_notif
+        apg = self.create_application_policy_group()[
+            'application_policy_group']
+        apg_id = apg['id']
+        self.show_application_policy_group(apg_id, expected_res_status=200)
+        ptg = self.create_policy_target_group(application_policy_group_id=
+                                              apg_id)['policy_target_group']
+        self.assertEqual(apg_id, ptg['application_policy_group_id'])
+        pt = self.create_policy_target(
+            policy_target_group_id=ptg['id'])['policy_target']
+        self._bind_port_to_host(pt['port_id'], 'h1')
+        port = self._plugin.get_port(self._context, pt['port_id'])
+        mapping = self.driver.get_gbp_details(
+            self._neutron_admin_context, device='tap%s' % pt['port_id'],
+            host='h1')
+        ap_name = self.driver.apic_ap_name_for_application_policy_group(
+            self._neutron_context.session, apg_id)
+        self.assertEqual(ap_name, mapping['app_profile_name'])
+        new_apg = self.create_application_policy_group()[
+            'application_policy_group']
+        ptg = self.update_policy_target_group(
+            ptg['id'], expected_res_status=200,
+            application_policy_group_id=new_apg['id'])['policy_target_group']
+        mapping = self.driver.get_gbp_details(
+            self._neutron_admin_context, device='tap%s' % pt['port_id'],
+            host='h1')
+        ap_name = self.driver.apic_ap_name_for_application_policy_group(
+            self._neutron_context.session, new_apg['id'])
+        self.assertEqual(ap_name, mapping['app_profile_name'])
+        mock_notif.assert_called_once_with(mock.ANY, port)
+
 
 class TestL2PolicyRollback(TestL2PolicyBase):
 
