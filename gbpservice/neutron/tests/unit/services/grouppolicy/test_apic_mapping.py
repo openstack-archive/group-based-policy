@@ -4556,7 +4556,7 @@ class TestExternalSegment(ApicMappingTestCase):
                        else [es['tenant_id']])
 
         l3p_list = []
-        for x in xrange(len(tenants)):
+        for x in range(len(tenants)):
             l3p = self.create_l3_policy(
                 shared=False,
                 tenant_id=tenants[x],
@@ -4569,7 +4569,7 @@ class TestExternalSegment(ApicMappingTestCase):
         eps = [f(external_segments=[es['id']],
                  tenant_id=tenants[x],
                  expected_res_status=201)['external_policy']
-               for x in xrange(len(tenants))]
+               for x in range(len(tenants))]
         mgr = self.driver.apic_manager
         owner = self._tenant(es['tenant_id'], shared_es)
         mgr.ensure_external_epg_created.reset_mock()
@@ -4715,7 +4715,7 @@ class TestExternalSegment(ApicMappingTestCase):
 
         # create L3-policies
         l3p_list = []
-        for x in xrange(len(tenants)):
+        for x in range(len(tenants)):
             l3p = self.create_l3_policy(
                 shared=False,
                 tenant_id=tenants[x],
@@ -4728,7 +4728,7 @@ class TestExternalSegment(ApicMappingTestCase):
         eps = [f(external_segments=[es['id']],
                  tenant_id=tenants[x],
                  expected_res_status=201)['external_policy']
-               for x in xrange(len(tenants))]
+               for x in range(len(tenants))]
         mgr = self.driver.apic_manager
         mgr.ensure_static_route_created.reset_mock()
         mgr.ensure_external_epg_created.reset_mock()
@@ -5202,7 +5202,7 @@ class TestExternalPolicy(ApicMappingTestCase):
                     'nexthop': '192.168.0.254'}])['external_segment']
             for x in range(3)]
         l3p_list = []
-        for x in xrange(len(es_list)):
+        for x in range(len(es_list)):
             l3p = self.create_l3_policy(
                 shared=False,
                 tenant_id=shared_es and 'another' or es_list[x]['tenant_id'],
@@ -5293,7 +5293,7 @@ class TestExternalPolicy(ApicMappingTestCase):
                     'nexthop': '192.168.0.254'}])['external_segment']
             for x in range(3)]
         l3p_list = []
-        for x in xrange(len(es_list)):
+        for x in range(len(es_list)):
             l3p = self.create_l3_policy(
                 shared=False,
                 tenant_id=shared_es and 'another' or es_list[x]['tenant_id'],
@@ -5424,7 +5424,7 @@ class TestExternalPolicy(ApicMappingTestCase):
                     'nexthop': '192.168.0.254'}])['external_segment']
             for x in range(3)]
         l3p_list = []
-        for x in xrange(len(es_list)):
+        for x in range(len(es_list)):
             l3p = self.create_l3_policy(
                 shared=False,
                 tenant_id=shared_es and 'another' or es_list[x]['tenant_id'],
@@ -5530,7 +5530,7 @@ class TestExternalPolicy(ApicMappingTestCase):
                     'nexthop': '192.168.0.254'}])['external_segment']
             for x in range(3)]
         l3p_list = []
-        for x in xrange(len(es_list)):
+        for x in range(len(es_list)):
             l3p = self.create_l3_policy(
                 shared=False,
                 tenant_id=shared_es and 'another' or es_list[x]['tenant_id'],
@@ -5734,7 +5734,7 @@ class TestExternalPolicy(ApicMappingTestCase):
             for x in range(2)]
 
         l3p_list = []
-        for x in xrange(len(tenants)):
+        for x in range(len(tenants)):
             l3p = self.create_l3_policy(
                 shared=False,
                 tenant_id=tenants[x],

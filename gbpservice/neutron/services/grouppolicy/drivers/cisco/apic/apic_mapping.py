@@ -1845,7 +1845,7 @@ class ApicMappingDriver(api.ResourceMappingDriver,
         methods = [self.apic_manager.set_contract_for_epg,
                    self.apic_manager.unset_contract_for_epg]
 
-        for x in xrange(len(provided)):
+        for x in range(len(provided)):
             for c in self.gbp_plugin.get_policy_rule_sets(
                     plugin_context, filters={'id': provided[x]}):
                 c_owner = self._tenant_by_sharing_policy(c)
@@ -1853,7 +1853,7 @@ class ApicMappingDriver(api.ResourceMappingDriver,
                 for params in ptg_params:
                     methods[x](params[0], params[1], c, provider=True,
                                contract_owner=c_owner, transaction=None)
-        for x in xrange(len(consumed)):
+        for x in range(len(consumed)):
             for c in self.gbp_plugin.get_policy_rule_sets(
                     plugin_context, filters={'id': consumed[x]}):
                 c_owner = self._tenant_by_sharing_policy(c)
@@ -1903,14 +1903,14 @@ class ApicMappingDriver(api.ResourceMappingDriver,
         methods = [self.apic_manager.set_contract_for_external_epg,
                    self.apic_manager.unset_contract_for_external_epg]
         with self.apic_manager.apic.transaction(transaction) as trs:
-            for x in xrange(len(provided)):
+            for x in range(len(provided)):
                 for c in self._get_policy_rule_sets(plugin_context,
                                                     {'id': provided[x]}):
                     c = self.name_mapper.policy_rule_set(plugin_context, c)
                     methods[x](mapped_es, c, external_epg=mapped_ep,
                                owner=mapped_tenant, provided=True,
                                transaction=trs)
-            for x in xrange(len(consumed)):
+            for x in range(len(consumed)):
                 for c in self._get_policy_rule_sets(plugin_context,
                                                     {'id': consumed[x]}):
                     c = self.name_mapper.policy_rule_set(plugin_context, c)
@@ -1932,7 +1932,7 @@ class ApicMappingDriver(api.ResourceMappingDriver,
         methods = [self.apic_manager.ensure_subnet_created_on_apic,
                    self.apic_manager.ensure_subnet_deleted_on_apic]
         with self.apic_manager.apic.transaction(transaction) as trs:
-            for x in xrange(len(subnets)):
+            for x in range(len(subnets)):
                 for s in subnets[x]:
                     methods[x](mapped_tenant, mapped_l2p, self._gateway_ip(s),
                                transaction=trs)

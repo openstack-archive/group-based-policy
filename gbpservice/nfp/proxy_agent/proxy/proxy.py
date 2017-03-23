@@ -13,6 +13,7 @@
 import eventlet
 eventlet.monkey_patch()
 
+from gbpservice._i18n import _
 from gbpservice.nfp.core import log as nfp_logging
 import os
 from oslo_config import cfg as oslo_config
@@ -153,10 +154,14 @@ class Connection(object):
         if self._idle_count > self._idle_count_max:
             self._end_time = time.time()
             raise ConnectionIdleTimeOut(
-                "Connection (%d) - stime (%s) - etime (%s) - "
-                "idle_count (%d) idle_count_max(%d)" % (
-                    self.identify(), self._start_time,
-                    self._end_time, self._idle_count, self._idle_count_max))
+                _("Connection (%(conn)d) - "
+                "stime (%(start_time)s) - etime (%(end_time)s) - "
+                "idle_count (%(idle)d) idle_count_max(%(idle_max)d)") %
+                {'conn': self.identify(),
+                 'start_time': self._start_time,
+                 'end_time': self._end_time,
+                 'idle': self._idle_count,
+                 'idle_max': self._idle_count_max})
 
     def idle(self):
         self._tick()

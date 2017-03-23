@@ -3380,7 +3380,7 @@ class TestExternalConnectivityBase(object):
         sub = self._make_subnet(
             self.fmt, {'network': net}, '10.10.1.1', '10.10.1.0/24')['subnet']
         port_calls = []
-        for x in xrange(0, 2):
+        for x in range(0, 2):
             with self.port(subnet={'subnet': sub}) as p:
                 p = self._bind_port_to_host(p['port']['id'], 'host1')['port']
                 p['dns_name'] = ''
@@ -3421,7 +3421,7 @@ class TestExternalConnectivityBase(object):
                                  tenant_id=self.tenant_1)['network']
         port_calls = []
         subnets = []
-        for x in xrange(0, 2):
+        for x in range(0, 2):
             sub = self._make_subnet(
                 self.fmt, {'network': net}, '10.10.%d.1' % x,
                 '10.10.%d.0/24' % x)
@@ -4097,7 +4097,7 @@ class TestPortVlanNetwork(ApicAimTestCase):
         vlans = []
         self._register_agent('h10', AGENT_CONF_OVS)
 
-        for x in xrange(0, 2):
+        for x in range(0, 2):
             net = self._make_network(self.fmt, 'net%d' % x, True)['network']
             epgs.append(self._net_2_epg(net))
 

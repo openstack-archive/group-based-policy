@@ -651,7 +651,7 @@ class AIMBaseTestCase(test_nr_base.CommonNeutronBaseTestCase,
         expected_in_filters = []
         expected_out_filters = []
 
-        for idx in xrange(0, len(policy_rules)):
+        for idx in range(0, len(policy_rules)):
             pc = self.show_policy_classifier(
                 policy_rules[idx]['policy_classifier_id'])['policy_classifier']
             fwd_filter = self.name_mapper.policy_rule(None,
