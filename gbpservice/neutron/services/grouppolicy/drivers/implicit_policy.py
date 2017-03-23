@@ -96,12 +96,11 @@ class ImplicitPolicyBase(api.PolicyDriver, local_api.LocalAPI):
             gpproxy.default_proxy_subnet_prefix_length)
         self._default_es_name = gpip.default_external_segment_name
 
-    def _create_implicit_l3_policy(self, context, clean_session=True):
+    def _create_implicit_l3_policy(self, context):
         tenant_id = context.current['tenant_id']
         filter = {'tenant_id': [tenant_id],
                   'name': [self._default_l3p_name]}
-        l3ps = self._get_l3_policies(context._plugin_context, filter,
-                                     clean_session)
+        l3ps = self._get_l3_policies(context._plugin_context, filter)
         l3p = l3ps and l3ps[0]
         if not l3p:
             attrs = {'tenant_id': tenant_id,
@@ -118,8 +117,7 @@ class ImplicitPolicyBase(api.PolicyDriver, local_api.LocalAPI):
                 attrs['proxy_subnet_prefix_length'] = (
                     self._default_proxy_subnet_prefix_length)
             try:
-                l3p = self._create_l3_policy(context._plugin_context, attrs,
-                                             clean_session)
+                l3p = self._create_l3_policy(context._plugin_context, attrs)
                 self._mark_l3_policy_owned(context._plugin_context.session,
                                            l3p['id'])
             except exc.DefaultL3PolicyAlreadyExists:
@@ -128,7 +126,7 @@ class ImplicitPolicyBase(api.PolicyDriver, local_api.LocalAPI):
                     LOG.debug("Possible concurrent creation of default L3 "
                               "policy for tenant %s", tenant_id)
                     l3ps = self._get_l3_policies(context._plugin_context,
-                                                 filter, clean_session)
+                                                 filter)
                     l3p = l3ps and l3ps[0]
                     if not l3p:
                         LOG.warning(_LW(
@@ -148,7 +146,7 @@ class ImplicitPolicyBase(api.PolicyDriver, local_api.LocalAPI):
         self._create_implicit_l3_policy(context)
         context.set_l3_policy_id(context.current['l3_policy_id'])
 
-    def _create_implicit_l2_policy(self, context, clean_session=True):
+    def _create_implicit_l2_policy(self, context):
         attrs = {'tenant_id': context.current['tenant_id'],
                  'name': context.current['name'],
                  'description': _("Implicitly created L2 policy"),
@@ -163,8 +161,7 @@ class ImplicitPolicyBase(api.PolicyDriver, local_api.LocalAPI):
                 context._plugin_context, group['l2_policy_id'])
             attrs['l3_policy_id'] = l2p['l3_policy_id']
 
-        l2p = self._create_l2_policy(context._plugin_context, attrs,
-                                     clean_session)
+        l2p = self._create_l2_policy(context._plugin_context, attrs)
         context.current['l2_policy_id'] = l2p['id']
         self._mark_l2_policy_owned(context._plugin_context.session, l2p['id'])
 
@@ -194,18 +191,17 @@ class ImplicitPolicyBase(api.PolicyDriver, local_api.LocalAPI):
                     filter_by(l3_policy_id=l3p_id).
                     first() is not None)
 
-    def _cleanup_l3_policy(self, context, l3p_id, clean_session=True):
+    def _cleanup_l3_policy(self, context, l3p_id):
         if self._l3_policy_is_owned(context._plugin_context.session, l3p_id):
             # REVISIT(rkukura): Add check_unused parameter to
             # local_api._delete_l3_policy()?
             context._plugin.delete_l3_policy(context._plugin_context, l3p_id,
                                              check_unused=True)
 
-    def _cleanup_l2_policy(self, context, l2p_id, clean_session=True):
+    def _cleanup_l2_policy(self, context, l2p_id):
         if self._l2_policy_is_owned(context._plugin_context.session, l2p_id):
             try:
-                self._delete_l2_policy(context._plugin_context, l2p_id,
-                                       clean_session)
+                self._delete_l2_policy(context._plugin_context, l2p_id)
             except gbp_ext.L2PolicyInUse:
                 LOG.info(_LI(
                     "Cannot delete implicit L2 Policy %s because it's "

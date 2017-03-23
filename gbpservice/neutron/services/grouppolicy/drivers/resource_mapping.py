@@ -264,27 +264,25 @@ class ImplicitResourceOperations(local_api.LocalAPI,
             self._delete_sg_rule(plugin_context, rule['id'])
         return sg
 
-    def _create_implicit_address_scope(self, context, clean_session=True,
-                                       **kwargs):
+    def _create_implicit_address_scope(self, context, **kwargs):
         attrs = {'tenant_id': context.current['tenant_id'],
                  'name': context.current['name'], 'ip_version':
                  context.current['ip_version'],
                  'shared': context.current.get('shared', False)}
         attrs.update(**kwargs)
         address_scope = self._create_address_scope(
-            context._plugin_context, attrs, clean_session)
+            context._plugin_context, attrs)
         as_id = address_scope['id']
         self._mark_address_scope_owned(context._plugin_context.session, as_id)
         return address_scope
 
-    def _use_implicit_address_scope(self, context, clean_session=True):
+    def _use_implicit_address_scope(self, context):
         address_scope = self._create_implicit_address_scope(
-            context, clean_session, name='l3p_' + context.current['name'])
+            context, name='l3p_' + context.current['name'])
         context.set_address_scope_id(address_scope['id'],
                                      context.current['ip_version'])
 
-    def _cleanup_address_scope(self, plugin_context, address_scope_id,
-                               clean_session=True):
+    def _cleanup_address_scope(self, plugin_context, address_scope_id):
         if self._address_scope_is_owned(plugin_context.session,
                                         address_scope_id):
             subpools = self._get_subnetpools(plugin_context,
@@ -296,11 +294,9 @@ class ImplicitResourceOperations(local_api.LocalAPI,
                                 "associated subnetpools: %(pools)s"),
                             {'id': address_scope_id, 'pools': subpools})
             else:
-                self._delete_address_scope(plugin_context, address_scope_id,
-                                           clean_session)
+                self._delete_address_scope(plugin_context, address_scope_id)
 
-    def _create_implicit_subnetpool(self, context, clean_session=True,
-                                    **kwargs):
+    def _create_implicit_subnetpool(self, context, **kwargs):
         attrs = {'tenant_id': context.current['tenant_id'],
                  'name': context.current['name'], 'ip_version':
                  context.current['ip_version'],
@@ -312,21 +308,19 @@ class ImplicitResourceOperations(local_api.LocalAPI,
                  'is_default': False}
         attrs.update(**kwargs)
         subnetpool = self._create_subnetpool(
-            context._plugin_context, attrs, clean_session)
+            context._plugin_context, attrs)
         sp_id = subnetpool['id']
         self._mark_subnetpool_owned(context._plugin_context.session, sp_id)
         return subnetpool
 
-    def _use_implicit_subnetpool(self, context, address_scope_id, ip_version,
-                                 clean_session=True):
+    def _use_implicit_subnetpool(self, context, address_scope_id, ip_version):
         subnetpool = self._create_implicit_subnetpool(
-            context, clean_session, name='l3p_' + context.current['name'],
+            context, name='l3p_' + context.current['name'],
             address_scope_id=address_scope_id)
         context.add_subnetpool(subnetpool_id=subnetpool['id'],
                                ip_version=ip_version)
 
-    def _cleanup_subnetpool(self, plugin_context, subnetpool_id,
-                            clean_session=True):
+    def _cleanup_subnetpool(self, plugin_context, subnetpool_id):
         if self._subnetpool_is_owned(plugin_context.session,
                                      subnetpool_id):
             subnets = self._get_subnets(plugin_context,
@@ -338,34 +332,32 @@ class ImplicitResourceOperations(local_api.LocalAPI,
                                 "associated subnets: %(subnets)s"),
                             {'id': subnetpool_id, 'subnets': subnets})
             else:
-                self._delete_subnetpool(plugin_context, subnetpool_id,
-                                        clean_session)
+                self._delete_subnetpool(plugin_context, subnetpool_id)
 
-    def _create_implicit_network(self, context, clean_session=True, **kwargs):
+    def _create_implicit_network(self, context, **kwargs):
         attrs = {'tenant_id': context.current['tenant_id'],
                  'name': context.current['name'], 'admin_state_up': True,
                  'shared': context.current.get('shared', False)}
         attrs.update(**kwargs)
-        network = self._create_network(context._plugin_context, attrs,
-                                       clean_session)
+        network = self._create_network(context._plugin_context, attrs)
         network_id = network['id']
         self._mark_network_owned(context._plugin_context.session, network_id)
         return network
 
     def _use_implicit_network(self, context, address_scope_v4=None,
-                              address_scope_v6=None, clean_session=True):
+                              address_scope_v6=None):
         network = self._create_implicit_network(
-            context, clean_session, name='l2p_' + context.current['name'],
+            context, name='l2p_' + context.current['name'],
             ipv4_address_scope=address_scope_v4,
             ipv6_address_scope=address_scope_v6)
         context.set_network_id(network['id'])
 
-    def _cleanup_network(self, plugin_context, network_id, clean_session=True):
+    def _cleanup_network(self, plugin_context, network_id):
         if self._network_is_owned(plugin_context.session, network_id):
-            self._delete_network(plugin_context, network_id, clean_session)
+            self._delete_network(plugin_context, network_id)
 
     def _generate_subnets_from_cidrs(self, context, l2p, l3p, cidrs,
-                                     subnet_specifics, clean_session=True):
+                                     subnet_specifics):
         for usable_cidr in cidrs:
             try:
                 attrs = {'tenant_id': context.current['tenant_id'],
@@ -382,8 +374,7 @@ class ImplicitResourceOperations(local_api.LocalAPI,
                          'host_routes': attributes.ATTR_NOT_SPECIFIED}
                 attrs.update(subnet_specifics)
                 subnet = self._create_subnet(
-                    context._plugin_context, attrs,
-                    clean_session=clean_session)
+                    context._plugin_context, attrs)
                 yield subnet
             except n_exc.BadRequest:
                 # This is expected (CIDR overlap within network) until
@@ -391,8 +382,7 @@ class ImplicitResourceOperations(local_api.LocalAPI,
                 # ignore the exception and repeat with the next CIDR.
                 pass
 
-    def _get_ptg_cidrs(self, context, ptgs, ptg_dicts=None,
-                       clean_session=True):
+    def _get_ptg_cidrs(self, context, ptgs, ptg_dicts=None):
         cidrs = []
         if ptg_dicts:
             ptgs = ptg_dicts
@@ -405,8 +395,7 @@ class ImplicitResourceOperations(local_api.LocalAPI,
 
         if subnets:
             cidrs = [x['cidr'] for x in self._get_subnets(
-                context._plugin_context.elevated(), {'id': subnets},
-                clean_session=clean_session)]
+                context._plugin_context.elevated(), {'id': subnets})]
         return cidrs
 
     def _get_subnet(self, context, subnet_id):
@@ -414,50 +403,43 @@ class ImplicitResourceOperations(local_api.LocalAPI,
         return super(ImplicitResourceOperations, self)._get_subnet(
             context, subnet_id)
 
-    def _get_l3p_allocated_subnets(self, context, l3p_id, clean_session=True):
+    def _get_l3p_allocated_subnets(self, context, l3p_id):
         ptgs = context._plugin._get_l3p_ptgs(
             context._plugin_context.elevated(), l3p_id)
-        return self._get_ptg_cidrs(context, None, ptg_dicts=ptgs,
-                                   clean_session=clean_session)
+        return self._get_ptg_cidrs(context, None, ptg_dicts=ptgs)
 
-    def _validate_and_add_subnet(self, context, subnet, l3p_id,
-                                 clean_session=True):
+    def _validate_and_add_subnet(self, context, subnet, l3p_id):
         subnet_id = subnet['id']
         session = context._plugin_context.session
-        with utils.clean_session(session) if clean_session else (
-            local_api.dummy_context_mgr()):
-            with session.begin(subtransactions=True):
-                LOG.debug("starting validate_and_add_subnet transaction for "
-                          "subnet %s", subnet_id)
-                ptgs = context._plugin._get_l3p_ptgs(
-                    context._plugin_context.elevated(), l3p_id)
-                allocated = netaddr.IPSet(
-                    iterable=self._get_ptg_cidrs(context, None,
-                                                 ptg_dicts=ptgs,
-                                                 clean_session=clean_session))
-                cidr = subnet['cidr']
-                if cidr in allocated:
-                    LOG.debug("CIDR %s in-use for L3P %s, allocated: %s",
-                              cidr, l3p_id, allocated)
-                    raise CidrInUse(cidr=cidr, l3p_id=l3p_id)
-                context.add_subnet(subnet_id)
-                LOG.debug("ending validate_and_add_subnet transaction for "
-                          "subnet %s", subnet_id)
+        with session.begin(subtransactions=True):
+            LOG.debug("starting validate_and_add_subnet transaction for "
+                      "subnet %s", subnet_id)
+            ptgs = context._plugin._get_l3p_ptgs(
+                context._plugin_context.elevated(), l3p_id)
+            allocated = netaddr.IPSet(
+                iterable=self._get_ptg_cidrs(context, None,
+                                             ptg_dicts=ptgs))
+            cidr = subnet['cidr']
+            if cidr in allocated:
+                LOG.debug("CIDR %s in-use for L3P %s, allocated: %s",
+                          cidr, l3p_id, allocated)
+                raise CidrInUse(cidr=cidr, l3p_id=l3p_id)
+            context.add_subnet(subnet_id)
+            LOG.debug("ending validate_and_add_subnet transaction for "
+                      "subnet %s", subnet_id)
 
     def _use_l2_proxy_implicit_subnets(self, context,
-                                       subnet_specifics, l2p, l3p,
-                                       clean_session=True):
+                                       subnet_specifics, l2p, l3p):
         LOG.debug("allocate subnets for L2 Proxy %s",
                   context.current['id'])
         proxied = context._plugin.get_policy_target_group(
             context._plugin_context, context.current['proxied_group_id'])
         subnets = self._get_subnets(context._plugin_context,
-                                    {'id': proxied['subnets']},
-                                    clean_session=clean_session)
+                                    {'id': proxied['subnets']})
         # Use the same subnets as the Proxied PTG
         generator = self._generate_subnets_from_cidrs(
             context, l2p, l3p, [x['cidr'] for x in subnets],
-            subnet_specifics, clean_session=clean_session)
+            subnet_specifics)
         # Unroll the generator
         subnets = [x for x in generator]
         subnet_ids = [x['id'] for x in subnets]
@@ -468,8 +450,7 @@ class ImplicitResourceOperations(local_api.LocalAPI,
         return subnets
 
     def _use_normal_implicit_subnet(self, context, is_proxy, prefix_len,
-                                    subnet_specifics, l2p, l3p,
-                                    clean_session=True):
+                                    subnet_specifics, l2p, l3p):
         LOG.debug("allocate subnets for L3 Proxy or normal PTG %s",
                   context.current['id'])
 
@@ -486,7 +467,7 @@ class ImplicitResourceOperations(local_api.LocalAPI,
         l3p_id = l3p['id']
         allocated = netaddr.IPSet(
             iterable=self._get_l3p_allocated_subnets(
-                context, l3p_id, clean_session=clean_session))
+                context, l3p_id))
         available = pool - allocated
         available.compact()
 
@@ -499,7 +480,7 @@ class ImplicitResourceOperations(local_api.LocalAPI,
                 break
             generator = self._generate_subnets_from_cidrs(
                 context, l2p, l3p, cidr.subnet(prefixlen),
-                subnet_specifics, clean_session=clean_session)
+                subnet_specifics)
             for subnet in generator:
                 LOG.debug("Trying subnet %s for PTG %s", subnet,
                           context.current['id'])
@@ -507,8 +488,7 @@ class ImplicitResourceOperations(local_api.LocalAPI,
                 try:
                     self._mark_subnet_owned(context._plugin_context.session,
                                             subnet_id)
-                    self._validate_and_add_subnet(context, subnet, l3p_id,
-                                                  clean_session=clean_session)
+                    self._validate_and_add_subnet(context, subnet, l3p_id)
                     LOG.debug("Using subnet %s for PTG %s", subnet,
                               context.current['id'])
                     return [subnet]
@@ -519,20 +499,18 @@ class ImplicitResourceOperations(local_api.LocalAPI,
                     # available CIDR. We delete the subnet and try the
                     # next available CIDR.
                     self._delete_subnet(context._plugin_context,
-                                        subnet['id'],
-                                        clean_session=clean_session)
+                                        subnet['id'])
                 except n_exc.InvalidInput:
                     # This exception is not expected. We catch this
                     # here so that it isn't caught below and handled
                     # as if the CIDR is already in use.
                     self._delete_subnet(context._plugin_context,
-                                        subnet['id'],
-                                        clean_session=clean_session)
+                                        subnet['id'])
                     raise exc.GroupPolicyInternalError()
         raise exc.NoSubnetAvailable()
 
     def _use_implicit_subnet(self, context, is_proxy=False, prefix_len=None,
-                             subnet_specifics=None, clean_session=True):
+                             subnet_specifics=None):
         subnet_specifics = subnet_specifics or {}
         l2p_id = context.current['l2_policy_id']
         l2p = context._plugin.get_l2_policy(context._plugin_context, l2p_id)
@@ -542,16 +520,14 @@ class ImplicitResourceOperations(local_api.LocalAPI,
                 context.current['proxy_type'] == proxy_ext.PROXY_TYPE_L2):
             # In case of L2 proxy
             return self._use_l2_proxy_implicit_subnets(
-                context, subnet_specifics, l2p, l3p,
-                clean_session=clean_session)
+                context, subnet_specifics, l2p, l3p)
         else:
             # In case of non proxy PTG or L3 Proxy
             return self._use_normal_implicit_subnet(
-                context, is_proxy, prefix_len, subnet_specifics, l2p, l3p,
-                clean_session=clean_session)
+                context, is_proxy, prefix_len, subnet_specifics, l2p, l3p)
 
     def _use_implicit_subnet_from_subnetpool(
-        self, context, subnet_specifics=None, clean_session=True):
+        self, context, subnet_specifics=None):
         # If a subnet needs to be created with a prefix_length other than
         # the subnet_prefix_length set for the l3_policy, a 'prefixlen' can be
         # passed explicitly in the subnet_specifics dict.
@@ -612,8 +588,7 @@ class ImplicitResourceOperations(local_api.LocalAPI,
                         subnet_specifics['ipv6_address_mode'] = (
                             attributes.ATTR_NOT_SPECIFIED)
                 attrs.update(subnet_specifics)
-                subnet = self._create_subnet(context._plugin_context, attrs,
-                                             clean_session=clean_session)
+                subnet = self._create_subnet(context._plugin_context, attrs)
                 self._mark_subnet_owned(context._plugin_context.session,
                                         subnet['id'])
                 LOG.debug("Allocated subnet %(sub)s from subnetpool: %(sp)s.",
@@ -638,42 +613,36 @@ class ImplicitResourceOperations(local_api.LocalAPI,
             # a generic exception.
             raise last
 
-    def _cleanup_subnet(self, plugin_context, subnet_id, router_id=None,
-                        clean_session=True):
+    def _cleanup_subnet(self, plugin_context, subnet_id, router_id=None):
         interface_info = {'subnet_id': subnet_id}
         if router_id:
             try:
                 self._remove_router_interface(plugin_context, router_id,
-                                              interface_info,
-                                              clean_session=clean_session)
+                                              interface_info)
             except ext_l3.RouterInterfaceNotFoundForSubnet:
                 LOG.debug("Ignoring RouterInterfaceNotFoundForSubnet cleaning "
                           "up subnet: %s", subnet_id)
         if self._subnet_is_owned(plugin_context.session, subnet_id):
-            self._delete_subnet(plugin_context, subnet_id,
-                                clean_session=clean_session)
+            self._delete_subnet(plugin_context, subnet_id)
 
     def _get_default_security_group(self, plugin_context, ptg_id,
-                                    tenant_id, clean_session=True):
+                                    tenant_id):
         port_name = DEFAULT_SG_PREFIX % ptg_id
         filters = {'name': [port_name], 'tenant_id': [tenant_id]}
-        default_group = self._get_sgs(plugin_context, filters,
-                                      clean_session=clean_session)
+        default_group = self._get_sgs(plugin_context, filters)
         return default_group[0]['id'] if default_group else None
 
-    def _use_implicit_port(self, context, subnets=None, clean_session=True):
+    def _use_implicit_port(self, context, subnets=None):
         ptg_id = context.current['policy_target_group_id']
         ptg = context._plugin.get_policy_target_group(
             context._plugin_context, ptg_id)
         l2p_id = ptg['l2_policy_id']
         l2p = context._plugin.get_l2_policy(context._plugin_context, l2p_id)
         sg_id = self._get_default_security_group(
-            context._plugin_context, ptg_id, context.current['tenant_id'],
-            clean_session=clean_session)
+            context._plugin_context, ptg_id, context.current['tenant_id'])
         last = exc.NoSubnetAvailable()
         subnets = subnets or self._get_subnets(context._plugin_context,
-                                               {'id': ptg['subnets']},
-                                               clean_session=clean_session)
+                                               {'id': ptg['subnets']})
         for subnet in subnets:
             try:
                 attrs = {'tenant_id': context.current['tenant_id'],
@@ -688,8 +657,7 @@ class ImplicitResourceOperations(local_api.LocalAPI,
                 if context.current.get('group_default_gateway'):
                     attrs['fixed_ips'][0]['ip_address'] = subnet['gateway_ip']
                 attrs.update(context.current.get('port_attributes', {}))
-                port = self._create_port(context._plugin_context, attrs,
-                                         clean_session=clean_session)
+                port = self._create_port(context._plugin_context, attrs)
                 port_id = port['id']
                 self._mark_port_owned(context._plugin_context.session, port_id)
                 context.set_port_id(port_id)
@@ -707,15 +675,14 @@ class ImplicitResourceOperations(local_api.LocalAPI,
             except n_exc.PortNotFound:
                 LOG.warning(_LW("Port %s is missing"), port_id)
 
-    def _reject_invalid_router_access(self, context, clean_session=True):
+    def _reject_invalid_router_access(self, context):
         # Validate if the explicit router(s) belong to the tenant.
         # Are routers shared across tenants ??
         # How to check if admin and if admin can access all routers ??
         for router_id in context.current['routers']:
             router = None
             try:
-                router = self._get_router(context._plugin_context, router_id,
-                                          clean_session=clean_session)
+                router = self._get_router(context._plugin_context, router_id)
             except n_exc.NotFound:
                 raise exc.InvalidRouterAccess(
                     msg="Can't access other tenants router",
@@ -731,23 +698,20 @@ class ImplicitResourceOperations(local_api.LocalAPI,
                         router_id=router_id,
                         tenant_id=context.current['tenant_id'])
 
-    def _use_implicit_router(self, context, router_name=None,
-                             clean_session=True):
+    def _use_implicit_router(self, context, router_name=None):
         attrs = {'tenant_id': context.current['tenant_id'],
                  'name': router_name or ('l3p_' + context.current['name']),
                  'external_gateway_info': None,
                  'admin_state_up': True}
-        router = self._create_router(context._plugin_context, attrs,
-                                    clean_session=clean_session)
+        router = self._create_router(context._plugin_context, attrs)
         router_id = router['id']
         self._mark_router_owned(context._plugin_context.session, router_id)
         context.add_router(router_id)
         return router_id
 
-    def _cleanup_router(self, plugin_context, router_id, clean_session=True):
+    def _cleanup_router(self, plugin_context, router_id):
         if self._router_is_owned(plugin_context.session, router_id):
-            self._delete_router(plugin_context, router_id,
-                                clean_session=clean_session)
+            self._delete_router(plugin_context, router_id)
 
     def _plug_router_to_subnet(self, plugin_context, subnet_id, router_id):
         interface_info = {'subnet_id': subnet_id}
