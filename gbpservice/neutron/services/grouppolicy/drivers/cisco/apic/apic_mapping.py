@@ -359,7 +359,7 @@ class ApicMappingDriver(api.ResourceMappingDriver,
     def _setup_rpc_listeners(self):
         self.endpoints = [rpc.GBPServerRpcCallback(self, self.notifier)]
         self.topic = rpc.TOPIC_OPFLEX
-        self.conn = n_rpc.create_connection(new=True)
+        self.conn = n_rpc.create_connection()
         self.conn.create_consumer(self.topic, self.endpoints,
                                   fanout=False)
         return self.conn.consume_in_threads()
