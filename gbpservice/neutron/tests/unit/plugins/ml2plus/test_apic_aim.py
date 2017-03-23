@@ -2787,7 +2787,6 @@ class TestExtensionAttributes(ApicAimTestCase):
 
     def test_address_scope_lifecycle(self):
         session = db_api.get_session()
-        extn = extn_db.ExtensionDbMixin()
         aim_ctx = aim_context.AimContext(db_session=session)
 
         # Create VRF.
@@ -2797,10 +2796,8 @@ class TestExtensionAttributes(ApicAimTestCase):
                                monitored=True)
         self.aim_mgr.create(aim_ctx, vrf)
 
-        # Create v4 scope with APIC DN.
+        # Create v4 scope with pre-existing APIC DN.
         scope4 = self._make_address_scope_for_vrf(vrf.dn)['address_scope']
-        self.assertEqual({'VRF': vrf.dn},
-                         extn.get_address_scope_extn_db(session, scope4['id']))
         self._check_dn(scope4, vrf, 'VRF')
 
         scope = self._show('address-scopes', scope4['id'])['address_scope']
@@ -2809,8 +2806,6 @@ class TestExtensionAttributes(ApicAimTestCase):
         # Create (isomorphic) v6 scope with same APIC DN.
         scope6 = self._make_address_scope_for_vrf(
             vrf.dn, n_constants.IP_VERSION_6)['address_scope']
-        self.assertEqual({'VRF': vrf.dn},
-                         extn.get_address_scope_extn_db(session, scope6['id']))
         self._check_dn(scope6, vrf, 'VRF')
 
         scope = self._show('address-scopes', scope6['id'])['address_scope']
@@ -2818,11 +2813,7 @@ class TestExtensionAttributes(ApicAimTestCase):
 
         # Delete scopes.
         self._delete('address-scopes', scope4['id'])
-        self.assertFalse(extn.get_address_scope_extn_db(session, scope4['id']))
-
         self._delete('address-scopes', scope6['id'])
-        self.assertFalse(extn.get_address_scope_extn_db(session, scope6['id']))
-
         vrf = self.aim_mgr.get(aim_ctx, vrf)
         self.assertIsNotNone(vrf)
 
