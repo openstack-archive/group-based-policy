@@ -144,7 +144,7 @@ class VpnaasIpsecDriverTestCase(base.BaseTestCase):
             mock_get.return_value = self.resp
             mock_json.return_value = {'state': 'DOWN'}
             state = self.driver.check_status(self.context, svc_context)
-            self.assertEqual(state, None)
+            self.assertIsNone(state)
 
 
 class VpnGenericConfigDriverTestCase(base.BaseTestCase):

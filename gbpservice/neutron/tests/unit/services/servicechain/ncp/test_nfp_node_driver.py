@@ -233,7 +233,7 @@ class NFPNodeDriverTestCase(
             vendor=self.SERVICE_PROFILE_VENDOR,
             insertion_mode='l3', service_flavor='vyos')['service_profile']
         node_ids = []
-        for x in xrange(number_of_nodes):
+        for x in range(number_of_nodes):
             node_ids.append(self.create_servicechain_node(
                 service_profile_id=prof['id'],
                 config=self.DEFAULT_FW_CONFIG,
