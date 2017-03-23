@@ -3679,8 +3679,7 @@ class ApicMappingDriver(api.ResourceMappingDriver,
                 self.apic_manager.create_tenant_filter(
                     rule_name, owner=tenant, transaction=trs, entry=k, **v)
 
-    def _get_l3p_allocated_subnets(self, context, l3p_id,
-                                   clean_session=True):
+    def _get_l3p_allocated_subnets(self, context, l3p_id):
         l2ps = self._get_l2_policies(context._plugin_context,
                                      {'l3_policy_id': [l3p_id]})
         subnets = [x['cidr'] for x in
