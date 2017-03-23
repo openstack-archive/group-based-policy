@@ -2762,7 +2762,6 @@ class TestExtensionAttributes(ApicAimTestCase):
 
     def test_address_scope_lifecycle(self):
         session = db_api.get_session()
-        extn = extn_db.ExtensionDbMixin()
         aim_ctx = aim_context.AimContext(db_session=session)
 
         # create with APIC DN
@@ -2772,15 +2771,14 @@ class TestExtensionAttributes(ApicAimTestCase):
                                monitored=True)
         self.aim_mgr.create(aim_ctx, vrf)
         scope = self._make_address_scope_for_vrf(vrf.dn)['address_scope']
-        self.assertEqual({'VRF': vrf.dn},
-                         extn.get_address_scope_extn_db(session, scope['id']))
         self._check_dn(scope, vrf, 'VRF')
 
         scope = self._show('address-scopes', scope['id'])['address_scope']
         self._check_dn(scope, vrf, 'VRF')
 
         self._delete('address-scopes', scope['id'])
-        self.assertFalse(extn.get_address_scope_extn_db(session, scope['id']))
+        vrf = self.aim_mgr.get(aim_ctx, vrf)
+        self.assertIsNotNone(vrf)
 
     def test_address_scope_fail(self):
         # APIC DN not specified
