@@ -29,7 +29,7 @@ from neutron.common import rpc as n_rpc
 from neutron.common import topics as n_topics
 from neutron.db import api as db_api
 from neutron.db import l3_db
-from neutron.db.models import address_scope as address_scope_db
+from neutron.db.models import address_scope as as_db
 from neutron.db.models import allowed_address_pair as n_addr_pair_db
 from neutron.db import models_v2
 from neutron.db import rbac_db_models
@@ -59,6 +59,7 @@ from gbpservice.neutron.plugins.ml2plus import driver_api as api_plus
 from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import apic_mapper
 from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import cache
 from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import config  # noqa
+from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import db
 from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import exceptions
 from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import extension_db
 
@@ -139,7 +140,8 @@ class KeystoneNotificationEndpoint(object):
             return oslo_messaging.NotificationResult.HANDLED
 
 
-class ApicMechanismDriver(api_plus.MechanismDriver):
+class ApicMechanismDriver(api_plus.MechanismDriver,
+                          db.DbMixin):
 
     class TopologyRpcEndpoint(object):
         target = oslo_messaging.Target(version='1.2')
@@ -164,7 +166,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
         self._core_plugin = None
         self._l3_plugin = None
         self._gbp_plugin = None
-        self._aim_mapping = None
+        self._gbp_driver = None
         # Get APIC configuration and subscribe for changes
         self.enable_metadata_opt = (
             cfg.CONF.ml2_apic_aim.enable_optimized_metadata)
@@ -251,6 +253,14 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
             ns.create_external_network(aim_ctx, ext_net)
             ns.update_external_cidrs(aim_ctx, ext_net,
                                      current[cisco_apic.EXTERNAL_CIDRS])
+
+            for resource in ns.get_l3outside_resources(aim_ctx, l3out):
+                if isinstance(resource, aim_resource.BridgeDomain):
+                    bd = resource
+                elif isinstance(resource, aim_resource.EndpointGroup):
+                    epg = resource
+                elif isinstance(resource, aim_resource.VRF):
+                    vrf = resource
         else:
             bd, epg = self._map_network(session, current, None)
 
@@ -271,6 +281,8 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
             epg.bd_name = bd.name
             self.aim.create(aim_ctx, epg)
 
+        self._add_network_mapping(session, current['id'], bd, epg, vrf)
+
     def update_network_precommit(self, context):
         current = context.current
         original = context.original
@@ -281,19 +293,17 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
 
         session = context._plugin_context.session
         aim_ctx = aim_context.AimContext(session)
+        mapping = self._get_network_mapping(session, current['id'])
 
         is_ext = self._is_external(current)
+        # REVISIT: Remove is_ext from condition and add UT for
+        # updating external network name.
         if (not is_ext and
             current['name'] != original['name']):
-            network_db = self.plugin._get_network(
-                context._plugin_context, current['id'])
-
-            vrf = self._get_routed_vrf_for_network(session, network_db)
-            bd, epg = self._map_network(session, network_db, vrf)
-
             dname = aim_utils.sanitize_display_name(current['name'])
-
+            bd = self._get_network_bd(mapping)
             self.aim.update(aim_ctx, bd, display_name=dname)
+            epg = self._get_network_epg(mapping)
             self.aim.update(aim_ctx, epg, display_name=dname)
 
         if is_ext:
@@ -321,10 +331,11 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
             # network is using the L3out
             ns.delete_l3outside(aim_ctx, l3out)
         else:
-            bd, epg = self._map_network(session, current, None)
-
-            self.aim.delete(aim_ctx, epg)
+            mapping = self._get_network_mapping(session, current['id'])
+            bd = self._get_network_bd(mapping)
             self.aim.delete(aim_ctx, bd)
+            epg = self._get_network_epg(mapping)
+            self.aim.delete(aim_ctx, epg)
 
     def extend_network_dict(self, session, network_db, result):
         LOG.debug("APIC AIM MD extending dict for network: %s", result)
@@ -333,32 +344,26 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
         dist_names = {}
         aim_ctx = aim_context.AimContext(session)
 
-        if network_db.external is not None:
-            l3out, ext_net, ns = self._get_aim_nat_strategy_db(session,
-                                                               network_db)
-            if ext_net:
-                sync_state = self._merge_status(aim_ctx, sync_state, ext_net)
-                kls = {aim_resource.BridgeDomain: cisco_apic.BD,
-                       aim_resource.EndpointGroup: cisco_apic.EPG,
-                       aim_resource.VRF: cisco_apic.VRF}
-                for o in (ns.get_l3outside_resources(aim_ctx, l3out) or []):
-                    if type(o) in kls:
-                        dist_names[kls[type(o)]] = o.dn
-                        sync_state = self._merge_status(aim_ctx, sync_state,
-                                                        o)
-        else:
-            vrf = self._get_routed_vrf_for_network(session, network_db)
-            bd, epg = self._map_network(session, network_db, vrf)
-
+        mapping = network_db.aim_mapping
+        if mapping:
+            bd = self._get_network_bd(mapping)
             dist_names[cisco_apic.BD] = bd.dn
             sync_state = self._merge_status(aim_ctx, sync_state, bd)
 
+            epg = self._get_network_epg(mapping)
             dist_names[cisco_apic.EPG] = epg.dn
             sync_state = self._merge_status(aim_ctx, sync_state, epg)
 
-            vrf = vrf or self._map_unrouted_vrf()
+            vrf = self._get_network_vrf(mapping)
             dist_names[cisco_apic.VRF] = vrf.dn
             sync_state = self._merge_status(aim_ctx, sync_state, vrf)
+
+        # REVISIT: Should the external network be persisted in the
+        # mapping along with the other resources?
+        if network_db.external is not None:
+            _, ext_net, _ = self._get_aim_nat_strategy_db(session, network_db)
+            if ext_net:
+                sync_state = self._merge_status(aim_ctx, sync_state, ext_net)
 
         result[cisco_apic.DIST_NAMES] = dist_names
         result[cisco_apic.SYNC_STATE] = sync_state
@@ -408,8 +413,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
         if (not is_ext and
             current['name'] != original['name']):
 
-            vrf = self._get_routed_vrf_for_network(session, network_db)
-            bd = self._map_network(session, network_db, vrf, True)
+            bd = self._get_network_bd(network_db.aim_mapping)
 
             for gw_ip, router_id in self._subnet_router_ips(session,
                                                             current['id']):
@@ -474,8 +478,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
                     dist_names[cisco_apic.SUBNET] = sub.dn
                     sync_state = self._merge_status(aim_ctx, sync_state, sub)
         else:
-            vrf = self._get_routed_vrf_for_network(session, network_db)
-            bd = self._map_network(session, network_db, vrf, True)
+            bd = self._get_network_bd(network_db.aim_mapping)
 
             for gw_ip, router_id in self._subnet_router_ips(session,
                                                             subnet_db.id):
@@ -526,13 +529,18 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
 
         session = context._plugin_context.session
         aim_ctx = aim_context.AimContext(session)
+        id = current['id']
 
-        dname = aim_utils.sanitize_display_name(current['name'])
-
-        vrf = self._map_address_scope(session, current)
-        if not self.aim.get(aim_ctx, vrf):
+        # See if extension driver already created mapping.
+        mapping = self._get_address_scope_mapping(session, id)
+        if mapping:
+            vrf = self._get_address_scope_vrf(mapping)
+        else:
+            dname = aim_utils.sanitize_display_name(current['name'])
+            vrf = self._map_address_scope(session, current)
             vrf.display_name = dname
             self.aim.create(aim_ctx, vrf)
+            self._add_address_scope_mapping(session, id, vrf)
 
         # ML2Plus does not extend address scope dict after precommit.
         sync_state = cisco_apic.SYNC_SYNCED
@@ -547,14 +555,12 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
 
         session = context._plugin_context.session
         aim_ctx = aim_context.AimContext(session)
+        mapping = self._get_address_scope_mapping(session, current['id'])
 
-        if current['name'] != original['name']:
+        if current['name'] != original['name'] and mapping.vrf_owned:
             dname = aim_utils.sanitize_display_name(current['name'])
-
-            vrf = self.aim.get(aim_ctx,
-                               self._map_address_scope(session, current))
-            if vrf and not vrf.monitored:
-                self.aim.update(aim_ctx, vrf, display_name=dname)
+            vrf = self._get_address_scope_vrf(mapping)
+            self.aim.update(aim_ctx, vrf, display_name=dname)
 
     def delete_address_scope_precommit(self, context):
         current = context.current
@@ -562,32 +568,28 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
 
         session = context._plugin_context.session
         aim_ctx = aim_context.AimContext(session)
+        mapping = self._get_address_scope_mapping(session, current['id'])
 
-        vrf = self.aim.get(aim_ctx, self._map_address_scope(session, current))
-        if vrf and not vrf.monitored:
-            # Don't delete VRF if isomorphic scope uses this scope's
-            # VRF.
-            id = self.name_mapper.reverse_address_scope(
-                session, vrf.name, enforce=False)
-            if id != current['id'] and self._scope_by_id(session, id):
-                return
-            extn_db = extension_db.ExtensionDbMixin()
-            for scope in extn_db.get_address_scopes_by_vrf_dn(session, vrf.dn):
-                if scope.id != current['id']:
-                    return
-            self.aim.delete(aim_ctx, vrf)
+        if mapping.vrf_owned:
+            vrf = self._get_address_scope_vrf(mapping)
+            mappings = self._get_address_scope_mappings_for_vrf(session, vrf)
+            if len(mappings) == 1:
+                self.aim.delete(aim_ctx, vrf)
 
     def extend_address_scope_dict(self, session, scope_db, result):
         LOG.debug("APIC AIM MD extending dict for address scope: %s", result)
+
+        # REVISIT: Consider moving to ApicExtensionDriver.
 
         sync_state = cisco_apic.SYNC_SYNCED
         dist_names = {}
         aim_ctx = aim_context.AimContext(session)
 
-        vrf = self._map_address_scope(session, scope_db)
-
-        dist_names[cisco_apic.VRF] = vrf.dn
-        sync_state = self._merge_status(aim_ctx, sync_state, vrf)
+        mapping = scope_db.aim_mapping
+        if mapping:
+            vrf = self._get_address_scope_vrf(mapping)
+            dist_names[cisco_apic.VRF] = vrf.dn
+            sync_state = self._merge_status(aim_ctx, sync_state, vrf)
 
         result[cisco_apic.DIST_NAMES] = dist_names
         result[cisco_apic.SYNC_STATE] = sync_state
@@ -659,12 +661,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
                 dname = aim_utils.sanitize_display_name(
                     name + "-" + (subnet_db.name or subnet_db.cidr))
 
-                # REVISIT: This might be expensive, so consider
-                # caching the BDs for networks that have been
-                # processed.
-                vrf = self._get_routed_vrf_for_network(session, network_db)
-
-                bd = self._map_network(session, network_db, vrf, True)
+                bd = self._get_network_bd(network_db.aim_mapping)
                 sn = self._map_subnet(subnet_db, intf.ip_address, bd)
 
                 self.aim.update(aim_ctx, sn, display_name=dname)
@@ -764,10 +761,9 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
                             n_constants.DEVICE_OWNER_ROUTER_INTF)):
             ip_address, subnet_db, network_db = intf
 
-            vrf = self._get_routed_vrf_for_network(session, network_db)
-            bd = self._map_network(session, network_db, vrf, True)
-            sn = self._map_subnet(subnet_db, ip_address, bd)
-            dist_names[ip_address] = sn.dn
+            bd = self._get_network_bd(network_db.aim_mapping)
+            sn = self._map_subnet(subnet_db, intf.ip_address, bd)
+            dist_names[intf.ip_address] = sn.dn
             sync_state = self._merge_status(aim_ctx, sync_state, sn)
 
             scope_id = (subnet_db.subnetpool and
@@ -775,6 +771,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
             if scope_id:
                 scope_ids.add(scope_id)
             else:
+                vrf = self._get_routed_vrf_for_network(session, network_db)
                 if unscoped_vrf and unscoped_vrf.identity != vrf.identity:
                     # This should never happen. If it does, it
                     # indicates an inconsistency in the DB state
@@ -787,7 +784,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
 
         for scope_id in scope_ids:
             scope_db = self._scope_by_id(session, scope_id)
-            vrf = self._map_address_scope(session, scope_db)
+            vrf = self._get_address_scope_vrf(scope_db.aim_mapping)
             dist_names[a_l3.SCOPED_VRF % scope_id] = vrf.dn
             sync_state = self._merge_status(aim_ctx, sync_state, vrf)
 
@@ -872,11 +869,11 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
                 if (scope_id != NO_ADDR_SCOPE and
                     existing_scope_id != NO_ADDR_SCOPE):
                     scope_db = self._scope_by_id(session, scope_id)
-                    vrf = self._map_address_scope(session, scope_db)
+                    vrf = self._get_address_scope_vrf(scope_db.aim_mapping)
                     existing_scope_db = self._scope_by_id(
                         session, existing_scope_id)
-                    existing_vrf = self._map_address_scope(
-                        session, existing_scope_db)
+                    existing_vrf = self._get_address_scope_vrf(
+                        existing_scope_db.aim_mapping)
                     if vrf.identity != existing_vrf.identity:
                         raise (exceptions.
                                NonIsomorphicNetworkRoutingUnsupported())
@@ -893,8 +890,8 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
         # and consume the router's Contract. This is handled
         # differently for scoped and unscoped topologies.
         if scope_id != NO_ADDR_SCOPE:
-            scope = self._scope_by_id(session, scope_id)
-            vrf = self._map_address_scope(session, scope)
+            scope_db = self._scope_by_id(session, scope_id)
+            vrf = self._get_address_scope_vrf(scope_db.aim_mapping)
         else:
             intf_topology = self._network_topology(session, network_db)
             router_topology = self._router_topology(session, router['id'])
@@ -961,7 +958,8 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
             # to move the BD and EPG from already-routed v6 VRF to
             # newly-routed v4 VRF, and setup identity NAT for the v6
             # traffic.
-            bd, epg = self._map_network(session, network_db, vrf)
+            bd = self._get_network_bd(network_db.aim_mapping)
+            epg = self._get_network_epg(network_db.aim_mapping)
 
         # Create AIM Subnet(s) for each added Neutron subnet.
         for subnet in subnets:
@@ -1044,9 +1042,9 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
         # stack's scope separately, or at least raise an exception.
         scope_id = self._get_address_scope_id_for_subnets(context, subnets)
 
-        old_vrf = self._get_routed_vrf_for_network(session, network_db)
-
-        bd, epg = self._map_network(session, network_db, old_vrf)
+        bd = self._get_network_bd(network_db.aim_mapping)
+        epg = self._get_network_epg(network_db.aim_mapping)
+        old_vrf = self._get_network_vrf(network_db.aim_mapping)
 
         router_db = (session.query(l3_db.Router).
                      filter_by(id=router_id).
@@ -1181,8 +1179,8 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
 
         is_vm_port = port['device_owner'].startswith('compute:')
 
-        if (is_vm_port and self.aim_mapping and not
-                self.aim_mapping.check_allow_vm_names(context, port)):
+        if (is_vm_port and self.gbp_driver and not
+            self.gbp_driver.check_allow_vm_names(context, port)):
             return
 
         if vnic_type in [portbindings.VNIC_NORMAL]:
@@ -1404,11 +1402,11 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
         return self._gbp_plugin
 
     @property
-    def aim_mapping(self):
-        if not self._aim_mapping and self.gbp_plugin:
-            self._aim_mapping = (self.gbp_plugin.policy_driver_manager.
-                                 policy_drivers['aim_mapping'].obj)
-        return self._aim_mapping
+    def gbp_driver(self):
+        if not self._gbp_driver and self.gbp_plugin:
+            self._gbp_driver = (self.gbp_plugin.policy_driver_manager.
+                                policy_drivers['aim_mapping'].obj)
+        return self._gbp_driver
 
     def _merge_status(self, aim_ctx, sync_state, resource):
         status = self.aim.get_status(aim_ctx, resource)
@@ -1437,14 +1435,11 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
                 else sync_state)
 
     def _get_routed_vrf_for_network(self, session, network_db):
-        # REVISIT: This function leverages AIM's persistence of BDs,
-        # VRFs, and the BD->VRF relationship, for the purpose of
-        # determining what Tenant the network's BD and EPG are
-        # currently mapped under. Consider persisting this information
-        # directly in this mechanism driver instead. Alternatively,
-        # use AimManager.find to get the BDs and EPGs by name,
-        # avoiding the need to use this function to get the VRF and
-        # then call _map_network.
+        # REVISIT: This method is no longer used, but is kept for now
+        # in case we need to use it to implement a data migration that
+        # adds the peristent mapping state to deployments without
+        # it. Do not use this method for other purposes, and remove it
+        # when no longer needed.
         aim_ctx = aim_context.AimContext(session)
         bd_name = self.name_mapper.network(session, network_db.id)
         bds = self.aim.find(
@@ -1491,26 +1486,12 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
                              n_constants.DEVICE_OWNER_ROUTER_INTF).
                       first())
         if network_db:
-            return self._get_routed_vrf_for_network(session, network_db)
+            return self._get_network_vrf(network_db.aim_mapping)
 
     def _get_address_scope_ids_for_vrf(self, session, vrf):
-        # Returns the IDs of address-scopes that corresponds to a VRF,
-        # if any.
-
-        # Check if unrouted VRF
-        if self._map_unrouted_vrf().identity == vrf.identity:
-            return
-
-        # Check if pre-existing VRF for an address-scope
-        extn_db = extension_db.ExtensionDbMixin()
-        scope_ids = [scope.id for scope in
-                     extn_db.get_address_scopes_by_vrf_dn(session, vrf.dn)]
-
-        # Check if orchestrated VRF for an address-scope
-        if not scope_ids and vrf.name != DEFAULT_VRF_NAME:
-            scope_ids = [self.name_mapper.reverse_address_scope(session,
-                                                                vrf.name)]
-        return scope_ids
+        mappings = self._get_address_scope_mappings_for_vrf(session, vrf)
+        if mappings:
+            return [mapping.scope_id for mapping in mappings]
 
     def _get_routers_for_vrf(self, session, vrf):
         # REVISIT: Persist router/VRF relationship?
@@ -1568,19 +1549,15 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
         # NOTE: Must only be called for networks that are not yet
         # attached to any router.
 
-        session = aim_ctx.db_session
-
-        old_tenant_name = self.name_mapper.project(
-            session, network_db.tenant_id)
+        bd = self._get_network_bd(network_db.aim_mapping)
+        epg = self._get_network_epg(network_db.aim_mapping)
 
         if (new_vrf.tenant_name != COMMON_TENANT_NAME and
-            old_tenant_name != new_vrf.tenant_name):
+            bd.tenant_name != new_vrf.tenant_name):
             # Move BD and EPG to new VRF's Tenant, set VRF, and make
             # sure routing is enabled.
             LOG.debug("Moving network from tenant %(old)s to tenant %(new)s",
-                      {'old': old_tenant_name, 'new': new_vrf.tenant_name})
-
-            bd, epg = self._map_network(session, network_db, None)
+                      {'old': bd.tenant_name, 'new': new_vrf.tenant_name})
 
             bd = self.aim.get(aim_ctx, bd)
             self.aim.delete(aim_ctx, bd)
@@ -1588,6 +1565,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
             bd.enable_routing = True
             bd.vrf_name = new_vrf.name
             bd = self.aim.create(aim_ctx, bd)
+            self._set_network_bd(network_db.aim_mapping, bd)
 
             epg = self.aim.get(aim_ctx, epg)
             self.aim.delete(aim_ctx, epg)
@@ -1598,11 +1576,13 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
                 self.aim.create(aim_ctx, ap)
             epg.tenant_name = new_vrf.tenant_name
             epg = self.aim.create(aim_ctx, epg)
+            self._set_network_epg(network_db.aim_mapping, epg)
         else:
             # Just set VRF and enable routing.
-            bd, epg = self._map_network(session, network_db, new_vrf)
             bd = self.aim.update(aim_ctx, bd, enable_routing=True,
                                  vrf_name=new_vrf.name)
+
+        self._set_network_vrf(network_db.aim_mapping, new_vrf)
 
         # All non-router ports on this network need to be notified
         # since their BD's VRF and possibly their BD's and EPG's
@@ -1620,9 +1600,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
 
         session = aim_ctx.db_session
 
-        bd, epg = self._map_network(session, network_db, old_vrf)
         new_vrf = self._map_unrouted_vrf()
-
         new_tenant_name = self.name_mapper.project(
             session, network_db.tenant_id)
 
@@ -1634,21 +1612,28 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
             LOG.debug("Moving network from tenant %(old)s to tenant %(new)s",
                       {'old': old_vrf.tenant_name, 'new': new_tenant_name})
 
+            bd = self._get_network_bd(network_db.aim_mapping)
             bd = self.aim.get(aim_ctx, bd)
             self.aim.delete(aim_ctx, bd)
             bd.tenant_name = new_tenant_name
             bd.enable_routing = False
             bd.vrf_name = new_vrf.name
             bd = self.aim.create(aim_ctx, bd)
+            self._set_network_bd(network_db.aim_mapping, bd)
 
+            epg = self._get_network_epg(network_db.aim_mapping)
             epg = self.aim.get(aim_ctx, epg)
             self.aim.delete(aim_ctx, epg)
             epg.tenant_name = new_tenant_name
             epg = self.aim.create(aim_ctx, epg)
+            self._set_network_epg(network_db.aim_mapping, epg)
         else:
             # Just set unrouted VRF and disable routing.
+            bd = self._get_network_bd(network_db.aim_mapping)
             bd = self.aim.update(aim_ctx, bd, enable_routing=False,
                                  vrf_name=new_vrf.name)
+
+        self._set_network_vrf(network_db.aim_mapping, new_vrf)
 
         # All non-router ports on this network need to be notified
         # since their BD's VRF and possibly their BD's and EPG's
@@ -1666,8 +1651,6 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
         # TODO(rkukura): Validate that nothing in new_vrf overlaps
         # with topology.
 
-        session = aim_ctx.db_session
-
         for network_db in topology.itervalues():
             if old_vrf.tenant_name != new_vrf.tenant_name:
                 # New VRF is in different Tenant, so move BD, EPG, and
@@ -1678,13 +1661,13 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
                            'old': old_vrf.tenant_name,
                            'new': new_vrf.tenant_name})
 
-                bd, epg = self._map_network(session, network_db, old_vrf)
-
+                bd = self._get_network_bd(network_db.aim_mapping)
                 old_bd = self.aim.get(aim_ctx, bd)
                 new_bd = copy.copy(old_bd)
                 new_bd.tenant_name = new_vrf.tenant_name
                 new_bd.vrf_name = new_vrf.name
                 bd = self.aim.create(aim_ctx, new_bd)
+                self._set_network_bd(network_db.aim_mapping, bd)
                 for subnet in self.aim.find(
                         aim_ctx, aim_resource.Subnet,
                         tenant_name=old_bd.tenant_name, bd_name=old_bd.name):
@@ -1693,14 +1676,18 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
                     subnet = self.aim.create(aim_ctx, subnet)
                 self.aim.delete(aim_ctx, old_bd)
 
+                epg = self._get_network_epg(network_db.aim_mapping)
                 epg = self.aim.get(aim_ctx, epg)
                 self.aim.delete(aim_ctx, epg)
                 epg.tenant_name = new_vrf.tenant_name
                 epg = self.aim.create(aim_ctx, epg)
+                self._set_network_epg(network_db.aim_mapping, epg)
             else:
                 # New VRF is in same Tenant, so just set BD's VRF.
-                bd, _ = self._map_network(session, network_db, new_vrf)
+                bd = self._get_network_bd(network_db.aim_mapping)
                 bd = self.aim.update(aim_ctx, bd, vrf_name=new_vrf.name)
+
+            self._set_network_vrf(network_db.aim_mapping, new_vrf)
 
         # All non-router ports on all networks in topology need to be
         # notified since their BDs' VRFs and possibly their BDs' and
@@ -1803,11 +1790,16 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
                 ))
 
     def _scope_by_id(self, session, scope_id):
-        return (session.query(address_scope_db.AddressScope).
+        return (session.query(as_db.AddressScope).
                 filter_by(id=scope_id).
                 one_or_none())
 
-    def _map_network(self, session, network, vrf, bd_only=False):
+    def _map_network(self, session, network, vrf=None):
+        # REVISIT: The vrf parameter is no longer used, but is kept
+        # for now in case we need to use it to implement a data
+        # migration that adds the peristent mapping state to
+        # deployments without it. Remove it when no longer needed.
+
         tenant_aname = (vrf.tenant_name
                         if vrf and vrf.tenant_name != COMMON_TENANT_NAME
                         else self.name_mapper.project(
@@ -1817,8 +1809,6 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
 
         bd = aim_resource.BridgeDomain(tenant_name=tenant_aname,
                                        name=aname)
-        if bd_only:
-            return bd
         epg = aim_resource.EndpointGroup(tenant_name=tenant_aname,
                                          app_profile_name=self.ap_name,
                                          name=aname)
@@ -1843,15 +1833,10 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
 
     def _map_address_scope(self, session, scope):
         id = scope['id']
-        extn_db = extension_db.ExtensionDbMixin()
-        scope_extn = extn_db.get_address_scope_extn_db(session, id)
-        if scope_extn and scope_extn.get(cisco_apic.VRF):
-            vrf = aim_resource.VRF.from_dn(scope_extn[cisco_apic.VRF])
-        else:
-            tenant_aname = self.name_mapper.project(
-                session, scope['tenant_id'])
-            aname = self.name_mapper.address_scope(session, id)
-            vrf = aim_resource.VRF(tenant_name=tenant_aname, name=aname)
+        tenant_aname = self.name_mapper.project(session, scope['tenant_id'])
+        aname = self.name_mapper.address_scope(session, id)
+
+        vrf = aim_resource.VRF(tenant_name=tenant_aname, name=aname)
         return vrf
 
     def _map_router(self, session, router, contract_only=False):
@@ -1932,15 +1917,25 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
             vrf = self.aim.create(aim_ctx, attrs)
         return vrf
 
-    def _get_epg_for_network(self, session, network):
+    # Used by policy driver.
+    def get_bd_for_network(self, session, network):
+        # REVISIT: Handle external network separately?
+        mapping = self._get_network_mapping(session, network['id'])
+        return self._get_network_bd(mapping)
+
+    # Used by policy driver.
+    def get_epg_for_network(self, session, network):
         if self._is_external(network):
             return self._map_external_network(session, network)
         # REVISIT(rkukura): Can the network_db be passed in?
-        network_db = (session.query(models_v2.Network).
-                      filter_by(id=network['id']).
-                      one())
-        vrf = self._get_routed_vrf_for_network(session, network_db)
-        return self._map_network(session, network_db, vrf)[1]
+        mapping = self._get_network_mapping(session, network['id'])
+        return self._get_network_epg(mapping)
+
+    # Used by policy driver.
+    def get_vrf_for_network(self, session, network):
+        # REVISIT: Handle external network separately?
+        mapping = self._get_network_mapping(session, network['id'])
+        return self._get_network_vrf(mapping)
 
     # DB Configuration callbacks
     def _set_enable_metadata_opt(self, new_conf):
@@ -2288,7 +2283,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
         if new_path and not segment:
             return
 
-        epg = self._get_epg_for_network(session, network)
+        epg = self.get_epg_for_network(session, network)
         if not epg:
             LOG.info(_LI('Network %s does not map to any EPG'), network['id'])
             return
@@ -2367,7 +2362,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
                          {'s': btm, 'p': port_context.current['id']})
                 port_context.release_dynamic_segment(btm[api.ID])
 
-    # public interface for aim_mapping
+    # public interface for aim_mapping GBP policy driver
     def associate_domain(self, port_context):
         if self._is_port_bound(port_context.current):
             if self._use_static_path(port_context.bottom_bound_segment):
@@ -2382,17 +2377,15 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
         session = port_context._plugin_context.session
         aim_ctx = aim_context.AimContext(session)
         ptg = None
-        # TODO(kentwu): remove this coupling with aim_mapping if possible
-        if self.aim_mapping:
-            ptg, pt = self.aim_mapping._port_id_to_ptg(
-                        port_context._plugin_context, port['id'])
+        # TODO(kentwu): remove this coupling with policy driver if possible
+        if self.gbp_driver:
+            ptg, pt = self.gbp_driver._port_id_to_ptg(
+                port_context._plugin_context, port['id'])
         if ptg:
-            epg = self.aim_mapping._aim_endpoint_group(session, ptg)
+            epg = self.gbp_driver._aim_endpoint_group(session, ptg)
         else:
-            network = {}
-            network['id'] = port['network_id']
-            network['tenant_id'] = port_context.network.current['tenant_id']
-            bd, epg = self._map_network(session, network, None)
+            mapping = self._get_network_mapping(session, port['network_id'])
+            epg = self._get_network_epg(mapping)
         aim_epg = self.aim.get(aim_ctx, epg)
         host_id = port[portbindings.HOST_ID]
         hd_mapping = aim_infra.HostDomainMapping(host_name=host_id)
@@ -2423,7 +2416,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
                 self.aim.update(aim_ctx, epg,
                                 physical_domain_names=phys)
 
-    # public interface for aim_mapping also
+    # public interface for aim_mapping GBP policy driver also
     def disassociate_domain(self, port_context, use_original=False):
         btm = (port_context.original_bottom_bound_segment if use_original
                else port_context.bottom_bound_segment)
@@ -2456,9 +2449,9 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
                 return
             hosts = [x.host_name for x in hd_mappings]
             ptg = None
-            if self.aim_mapping:
-                ptg, pt = self.aim_mapping._port_id_to_ptg(
-                            port_context._plugin_context, port['id'])
+            if self.gbp_driver:
+                ptg, pt = self.gbp_driver._port_id_to_ptg(
+                    port_context._plugin_context, port['id'])
             if ptg:
                 # if there are no other ports under this PTG bound to those
                 # hosts under this vmm, release the domain
@@ -2470,12 +2463,12 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
                      .filter(models.PortBindingLevel.host.in_(hosts))
                      .filter(models.PortBindingLevel.port_id != port['id']))
                 bound_ports = [x['port_id'] for x in bound_ports]
-                ptg_ports = self.aim_mapping.get_ptg_port_ids(
-                                            port_context._plugin_context, ptg)
+                ptg_ports = self.gbp_driver.get_ptg_port_ids(
+                    port_context._plugin_context, ptg)
                 ports = set(bound_ports).intersection(ptg_ports)
                 if ports:
                     return
-                epg = self.aim_mapping._aim_endpoint_group(session, ptg)
+                epg = self.gbp_driver._aim_endpoint_group(session, ptg)
             else:
                 # if there are no other ports under this network bound to those
                 # hosts under this vmm, release the domain
@@ -2491,11 +2484,9 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
                          .first())
                 if ports:
                     return
-                network = {}
-                network['id'] = port['network_id']
-                network['tenant_id'] = port_context.network.current[
-                                                            'tenant_id']
-                bd, epg = self._map_network(session, network, None)
+                mapping = self._get_network_mapping(
+                    session, port['network_id'])
+                epg = self._get_network_epg(mapping)
             aim_epg = self.aim.get(aim_ctx, epg)
             if self._is_opflex_type(btm[api.NETWORK_TYPE]):
                 if domain in aim_epg.openstack_vmm_domain_names:
