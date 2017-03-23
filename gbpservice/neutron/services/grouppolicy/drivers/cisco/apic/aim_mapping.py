@@ -572,14 +572,7 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
 
         self._handle_create_network_service_policy(context)
 
-        # REVISIT: Consider instead calling
-        # _get_routed_vrf_for_network and _map_network on the MD, or
-        # adding a _get_bd_for_network function to the MD similar to
-        # _get_epg_for_network.
-        bd_name = str(self.name_mapper.network(session, net['id']))
-        bd_tenant_name = str(self._aim_tenant_name(
-            session, context.current['tenant_id'],
-            aim_resource_class=aim_resource.BridgeDomain, gbp_obj=l2p_db))
+        bd = self.aim_mech_driver.get_bd_for_network(session, net)
 
         provided_contracts = self._get_aim_contract_names(
             session, context.current['provided_policy_rule_sets'])
@@ -588,7 +581,7 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
 
         self._create_aim_ap_for_ptg_conditionally(context, context.current)
         aim_epg = self._aim_endpoint_group(
-            session, context.current, bd_name, bd_tenant_name,
+            session, context.current, bd.name, bd.tenant_name,
             provided_contracts=provided_contracts,
             consumed_contracts=consumed_contracts,
             policy_enforcement_pref=
@@ -1572,30 +1565,7 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
         self.aim.delete(aim_context, aim_contract_subject)
 
     def _get_aim_default_endpoint_group(self, session, network):
-        return self.aim_mech_driver._get_epg_for_network(session, network)
-
-    def _aim_bridge_domain(self, session, l2p, tenant_id, network_id,
-                           network_name):
-        # REVISIT: Consider instead calling
-        # _get_routed_vrf_for_network and _map_network on the MD, or
-        # adding a _get_bd_for_network function to the MD similar to
-        # _get_epg_for_network.
-
-        # This returns a new AIM BD resource
-        tenant_name = self._aim_tenant_name(
-            session, tenant_id, aim_resource_class=aim_resource.BridgeDomain,
-            gbp_obj=l2p)
-        bd_name = self.name_mapper.network(session, network_id)
-        display_name = self.aim_display_name(network_name)
-        LOG.info(_LI("Mapped network_id %(id)s with name %(name)s to "
-                     "%(apic_name)s"),
-                 {'id': network_id, 'name': network_name,
-                  'apic_name': bd_name})
-
-        bd = aim_resource.BridgeDomain(tenant_name=str(tenant_name),
-                                       name=str(bd_name),
-                                       display_name=display_name)
-        return bd
+        return self.aim_mech_driver.get_epg_for_network(session, network)
 
     def _get_l2p_subnets(self, context, l2p_id):
         plugin_context = context._plugin_context
@@ -1999,11 +1969,8 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
     def _get_port_vrf(self, plugin_context, port, details):
         net_db = self._core_plugin._get_network(plugin_context,
                                                 port['network_id'])
-        aim_ctx = aim_context.AimContext(db_session=plugin_context.session)
-        return (
-            self.aim_mech_driver._get_routed_vrf_for_network(
-                plugin_context.session, net_db) or
-            self.aim_mech_driver._ensure_unrouted_vrf(aim_ctx))
+        return self.aim_mech_driver.get_vrf_for_network(
+            plugin_context.session, net_db)
 
     def _get_vrf_subnets(self, plugin_context, vrf_tenant_name, vrf_name,
                          details):
