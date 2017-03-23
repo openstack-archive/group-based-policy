@@ -14,14 +14,14 @@
 """initial_qos_via_nsp
 
 Revision ID: da6a25bbcfa8
-Revises: c460c5682e74
+Revises: cc09261e0fb5
 Create Date: 2017-03-27 00:00:00.000000
 
 """
 
 # revision identifiers, used by Alembic.
 revision = 'da6a25bbcfa8'
-down_revision = 'c460c5682e74'
+down_revision = 'cc09261e0fb5'
 
 from alembic import op
 import sqlalchemy as sa
