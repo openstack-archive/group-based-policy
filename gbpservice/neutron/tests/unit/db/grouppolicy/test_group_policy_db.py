@@ -528,8 +528,8 @@ class TestGroupResources(GroupPolicyDbTestCase):
             'policy_target_groups', data, ptg1['policy_target_group']['id'])
         res = self.deserialize(self.fmt, req.get_response(self.ext_api))
 
-        self.assertEqual(
-            res['policy_target_group']['network_service_policy_id'], None)
+        self.assertIsNone(
+            res['policy_target_group']['network_service_policy_id'])
 
     def _test_create_and_show_application_policy_group(self):
         name = "apg1"
@@ -596,8 +596,8 @@ class TestGroupResources(GroupPolicyDbTestCase):
         data = {'policy_target_group': {'application_policy_group_id': None}}
         req = self.new_update_request('policy_target_groups', data, ptg2['id'])
         res = self.deserialize(self.fmt, req.get_response(self.ext_api))
-        self.assertEqual(
-            None, res['policy_target_group']['application_policy_group_id'])
+        self.assertIsNone(
+            res['policy_target_group']['application_policy_group_id'])
 
         apg = self._show_resource(apg_id, 'application_policy_groups')[
             'application_policy_group']

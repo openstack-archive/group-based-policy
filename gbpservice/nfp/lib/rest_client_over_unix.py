@@ -20,6 +20,7 @@ import socket
 
 from oslo_serialization import jsonutils
 
+from gbpservice._i18n import _
 from gbpservice.nfp.core import log as nfp_logging
 
 LOG = nfp_logging.getLogger(__name__)
@@ -49,7 +50,7 @@ class UnixHTTPConnection(httplib.HTTPConnection):
             self.sock.connect(self.socket_path)
         except socket.error as exc:
             raise RestClientException(
-                "Caught exception socket.error : %s" % exc)
+                _("Caught exception socket.error : %s") % exc)
 
 
 class UnixRestClient(object):
@@ -66,10 +67,10 @@ class UnixRestClient(object):
             return resp, content
 
         except httplib2.ServerNotFoundError:
-            raise RestClientException("Server Not Found")
+            raise RestClientException(_("Server Not Found"))
 
         except exceptions.Exception as e:
-            raise RestClientException("httplib response error %s" % (e))
+            raise RestClientException(_("httplib response error %s") % (e))
 
     def send_request(self, path, method_type, request_method='http',
                      server_addr='127.0.0.1',
@@ -109,33 +110,34 @@ class UnixRestClient(object):
         if success_code.__contains__(resp.status):
             return resp, content
         elif resp.status == 400:
-            raise RestClientException("HTTPBadRequest: %s" % resp.reason)
+            raise RestClientException(_("HTTPBadRequest: %s") % resp.reason)
         elif resp.status == 401:
-            raise RestClientException("HTTPUnauthorized: %s" % resp.reason)
+            raise RestClientException(_("HTTPUnauthorized: %s") % resp.reason)
         elif resp.status == 403:
-            raise RestClientException("HTTPForbidden: %s" % resp.reason)
+            raise RestClientException(_("HTTPForbidden: %s") % resp.reason)
         elif resp.status == 404:
-            raise RestClientException("HttpNotFound: %s" % resp.reason)
+            raise RestClientException(_("HttpNotFound: %s") % resp.reason)
         elif resp.status == 405:
             raise RestClientException(
-                "HTTPMethodNotAllowed: %s" % resp.reason)
+                _("HTTPMethodNotAllowed: %s") % resp.reason)
         elif resp.status == 406:
-            raise RestClientException("HTTPNotAcceptable: %s" % resp.reason)
+            raise RestClientException(_("HTTPNotAcceptable: %s") % resp.reason)
         elif resp.status == 408:
-            raise RestClientException("HTTPRequestTimeout: %s" % resp.reason)
+            raise RestClientException(
+                _("HTTPRequestTimeout: %s") % resp.reason)
         elif resp.status == 409:
-            raise RestClientException("HTTPConflict: %s" % resp.reason)
+            raise RestClientException(_("HTTPConflict: %s") % resp.reason)
         elif resp.status == 415:
             raise RestClientException(
-                "HTTPUnsupportedMediaType: %s" % resp.reason)
+                _("HTTPUnsupportedMediaType: %s") % resp.reason)
         elif resp.status == 417:
             raise RestClientException(
-                "HTTPExpectationFailed: %s" % resp.reason)
+                _("HTTPExpectationFailed: %s") % resp.reason)
         elif resp.status == 500:
-            raise RestClientException("HTTPServerError: %s" % resp.reason)
+            raise RestClientException(_("HTTPServerError: %s") % resp.reason)
         else:
-            raise Exception('Unhandled Exception code: %s %s' % (resp.status,
-                                                                 resp.reason))
+            raise Exception(_('Unhandled Exception code: %(st)s %(reason)s') %
+                            {'st': resp.status, 'reason': resp.reason})
 
 
 def get(path):

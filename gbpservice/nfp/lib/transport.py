@@ -13,6 +13,7 @@
 
 import exceptions
 
+from gbpservice._i18n import _
 from gbpservice.nfp.common import constants as nfp_constants
 from gbpservice.nfp.core import log as nfp_logging
 from gbpservice.nfp.lib import rest_client_over_unix as unix_rc
@@ -75,33 +76,36 @@ class RestApi(object):
         if success_code.__contains__(resp.status_code):
             return resp
         elif resp.status_code == 400:
-            raise RestClientException("HTTPBadRequest: %s" % resp.reason)
+            raise RestClientException(_("HTTPBadRequest: %s") % resp.reason)
         elif resp.status_code == 401:
-            raise RestClientException("HTTPUnauthorized: %s" % resp.reason)
+            raise RestClientException(_("HTTPUnauthorized: %s") % resp.reason)
         elif resp.status_code == 403:
-            raise RestClientException("HTTPForbidden: %s" % resp.reason)
+            raise RestClientException(_("HTTPForbidden: %s") % resp.reason)
         elif resp.status_code == 404:
-            raise RestClientException("HttpNotFound: %s" % resp.reason)
+            raise RestClientException(_("HttpNotFound: %s") % resp.reason)
         elif resp.status_code == 405:
             raise RestClientException(
-                "HTTPMethodNotAllowed: %s" % resp.reason)
+                _("HTTPMethodNotAllowed: %s") % resp.reason)
         elif resp.status_code == 406:
-            raise RestClientException("HTTPNotAcceptable: %s" % resp.reason)
+            raise RestClientException(_("HTTPNotAcceptable: %s") % resp.reason)
         elif resp.status_code == 408:
-            raise RestClientException("HTTPRequestTimeout: %s" % resp.reason)
+            raise RestClientException(
+                _("HTTPRequestTimeout: %s") % resp.reason)
         elif resp.status_code == 409:
-            raise RestClientException("HTTPConflict: %s" % resp.reason)
+            raise RestClientException(_("HTTPConflict: %s") % resp.reason)
         elif resp.status_code == 415:
             raise RestClientException(
-                "HTTPUnsupportedMediaType: %s" % resp.reason)
+                _("HTTPUnsupportedMediaType: %s") % resp.reason)
         elif resp.status_code == 417:
             raise RestClientException(
-                "HTTPExpectationFailed: %s" % resp.reason)
+                _("HTTPExpectationFailed: %s") % resp.reason)
         elif resp.status_code == 500:
-            raise RestClientException("HTTPServerError: %s" % resp.reason)
+            raise RestClientException(_("HTTPServerError: %s") % resp.reason)
         else:
-            raise RestClientException('Unhandled Exception code: %s %s' %
-                                      (resp.status_code, resp.reason))
+            raise RestClientException(_('Unhandled Exception code: '
+                                        '%(status)s %(reason)s') %
+                                      {'status': resp.status_code,
+                                       'reason': resp.reason})
         return resp
 
     def post(self, path, body, method_type):
