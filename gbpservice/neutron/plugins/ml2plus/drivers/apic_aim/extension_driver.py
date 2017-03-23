@@ -14,7 +14,6 @@
 #    under the License.
 
 from neutron.api import extensions
-from neutron.db import address_scope_db
 from neutron import manager as n_manager
 from neutron_lib import exceptions as n_exc
 from oslo_log import log
@@ -30,11 +29,13 @@ from gbpservice.neutron.extensions import cisco_apic
 from gbpservice.neutron.plugins.ml2plus import driver_api as api_plus
 from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import (
     extension_db as extn_db)
+from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import db
 
 LOG = log.getLogger(__name__)
 
 
 class ApicExtensionDriver(api_plus.ExtensionDriver,
+                          db.DbMixin,
                           extn_db.ExtensionDbMixin):
 
     def __init__(self):
@@ -134,10 +135,6 @@ class ApicExtensionDriver(api_plus.ExtensionDriver,
     def extend_address_scope_dict(self, session, base_model, result):
         try:
             self._md.extend_address_scope_dict(session, base_model, result)
-            res_dict = self.get_address_scope_extn_db(session, result['id'])
-            if cisco_apic.VRF in res_dict:
-                result.setdefault(cisco_apic.DIST_NAMES, {})[
-                    cisco_apic.VRF] = res_dict.pop(cisco_apic.VRF)
         except Exception:
             with excutils.save_and_reraise_exception():
                 LOG.exception(_LE("APIC AIM extend_address_scope_dict failed"))
@@ -151,32 +148,18 @@ class ApicExtensionDriver(api_plus.ExtensionDriver,
             except aim_exc.InvalidDNForAciResource:
                 raise n_exc.InvalidInput(
                     error_message=('%s is not valid VRF DN' % dn))
+
+            # Check if another address scope already maps to this VRF.
             session = plugin_context.session
-            # Check if there is another address scope of the same
-            # address family mapping to same VRF.
-            #
-            # Case 1: Another address-scope with pre-existing VRF
-            scopes = self.get_address_scopes_by_vrf_dn(session, dn)
-            for scope in scopes:
-                if scope.ip_version == data['ip_version']:
+            mappings = self._get_address_scope_mappings_for_vrf(session, vrf)
+            vrf_owned = False
+            for mapping in mappings:
+                if mapping.address_scope.ip_version == data['ip_version']:
                     raise n_exc.InvalidInput(
-                        error_message=('VRF %s is already in use by '
-                                       'address-scope %s' % (dn, scope)))
-            # Case 2: Another address-scope with orchestrated VRF
-            #
-            # REVISIT: We don't filter by the project ID because the
-            # mapping of these to AIM Tenant names is not necessarily
-            # reversible. Consider persisting the APIC VRF identities.
-            scope_id = self._md.name_mapper.reverse_address_scope(
-                session, vrf.name, enforce=False)
-            if scope_id:
-                scope = (session.query(address_scope_db.AddressScope)
-                         .filter_by(id=scope_id)
-                         .first())
-                if scope and scope.ip_version == data['ip_version']:
-                    raise n_exc.InvalidInput(
-                        error_message=('VRF %s is already in use by '
-                                       'address-scope %s' % (dn, scope)))
-            self.set_address_scope_extn_db(session, result['id'],
-                                           {cisco_apic.VRF: dn})
-            result.setdefault(cisco_apic.DIST_NAMES, {})[cisco_apic.VRF] = dn
+                        error_message=(
+                            'VRF %s is already in use by address-scope %s' %
+                            (dn, mapping.scope_id)))
+                vrf_owned = mapping.vrf_owned
+
+            self._add_address_scope_mapping(
+                session, result['id'], vrf, vrf_owned)
