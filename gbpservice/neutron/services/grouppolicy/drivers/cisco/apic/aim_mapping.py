@@ -648,6 +648,17 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
                 aim_context.AimContext(session), aim_epg)
 
     @log.log_method_call
+    def update_policy_target_group_postcommit(self, context):
+        if (context.current['application_policy_group_id'] !=
+            context.original['application_policy_group_id']):
+            ptargets = context._plugin.get_policy_targets(
+                context._plugin_context, {'policy_target_group_id':
+                                          [context.current['id']]})
+            for pt in ptargets:
+                self.aim_mech_driver._notify_port_update(
+                    context._plugin_context, pt['port_id'])
+
+    @log.log_method_call
     def delete_policy_target_group_precommit(self, context):
         plugin_context = context._plugin_context
         auto_ptg_id = self._get_auto_ptg_id(context.current['l2_policy_id'])
