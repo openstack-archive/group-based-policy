@@ -17,6 +17,7 @@ from neutronclient.v2_0 import client as neutron_client
 from novaclient import client as nova_client
 from novaclient import exceptions as nova_exc
 
+from gbpservice._i18n import _
 from gbpservice.nfp.core import log as nfp_logging
 LOG = nfp_logging.getLogger(__name__)
 
@@ -244,8 +245,9 @@ class NovaClient(OpenstackApi):
             instance = nova.servers.get(instance_id)
             if instance:
                 return instance.to_dict()
-            raise Exception("No instance with id %s found in db for tenant %s"
-                            % (instance_id, tenant_id))
+            raise Exception(_("No instance with id %(id)s "
+                              "found in db for tenant %(tenant)s")
+                            % {'id': instance_id, 'tenant': tenant_id})
         except Exception as ex:
             err = ("Failed to read instance information from"
                    " Openstack Nova service's response"
@@ -847,8 +849,11 @@ class NeutronClient(OpenstackApi):
                                             endpoint_url=self.network_service)
             return neutron.create_port(body=attr)['port']
         except Exception as ex:
-            raise Exception("Port creation failed in network: %r of tenant: %r"
-                            " Error: %s" % (net_id, tenant_id, ex))
+            raise Exception(_("Port creation failed in network: %(net)r "
+                              "of tenant: %(tenant)r Error: %(error)s") %
+                            {'net': net_id,
+                             'tenant': tenant_id,
+                             'error': ex})
 
     def delete_port(self, token, port_id):
         """

@@ -19,6 +19,7 @@ import subprocess
 from subprocess import CalledProcessError
 import time
 
+from gbpservice._i18n import _
 from gbpservice.nfp.pecan import base_controller
 
 LOG = logging.getLogger(__name__)
@@ -190,7 +191,7 @@ class Controller(base_controller.BaseController):
                     msg4 = ("requests successfull for data: %s" % body)
                     LOG.info(msg4)
                 else:
-                    raise Exception('VM is not reachable')
+                    raise Exception(_('VM is not reachable'))
                 cache_ips.add(device_ip)
             else:
                 if (resource in NFP_SERVICE_LIST):

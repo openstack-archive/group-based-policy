@@ -16,6 +16,7 @@ from neutron.db import api as db_api
 from oslo_log import helpers as log_helpers
 import oslo_messaging
 
+from gbpservice._i18n import _
 from gbpservice._i18n import _LE
 from gbpservice._i18n import _LI
 from gbpservice._i18n import _LW
@@ -572,7 +573,7 @@ class ServiceOrchestrator(nfp_api.NfpEventHandler):
             "DELETE_NETWORK_FUNCTION_DB": self.delete_network_function_db
         }
         if event_id not in event_handler_mapping:
-            raise Exception("Invalid Event ID")
+            raise Exception(_("Invalid Event ID"))
         else:
             return event_handler_mapping[event_id]
 
@@ -890,8 +891,8 @@ class ServiceOrchestrator(nfp_api.NfpEventHandler):
     def _validate_service_vendor(self, service_vendor):
         if (service_vendor not in self.conf.orchestrator.supported_vendors):
             raise Exception(
-                "The NFP Node driver does not support this service "
-                "profile with the service vendor %s." % service_vendor)
+                _("The NFP Node driver does not support this service "
+                "profile with the service vendor %s.") % service_vendor)
 
     def create_network_function(self, context, network_function_info):
         self._validate_create_service_input(context, network_function_info)
@@ -1631,9 +1632,9 @@ class ServiceOrchestrator(nfp_api.NfpEventHandler):
         service_vendor = service_details.get('service_vendor')
         if (not service_vendor or
                 not service_details.get('device_type')):
-            raise Exception("service_vendor or device_type not provided in "
+            raise Exception(_("service_vendor or device_type not provided in "
                             "service profile's service flavor field."
-                            "Provided service profile: %s" % service_profile)
+                            "Provided service profile: %s") % service_profile)
         self._validate_service_vendor(service_vendor.lower())
 
     @nfp_api.poll_event_desc(
@@ -2729,7 +2730,7 @@ class ExceptionHandler(object):
                 ExceptionHandler.handle_delete_network_function_db_exception),
         }
         if event_id not in event_handler_mapping:
-            raise Exception("Invalid Event ID")
+            raise Exception(_("Invalid Event ID"))
         else:
             return event_handler_mapping[event_id]
 

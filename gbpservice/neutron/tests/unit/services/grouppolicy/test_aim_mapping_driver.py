@@ -363,8 +363,8 @@ class AIMBaseTestCase(test_nr_base.CommonNeutronBaseTestCase,
             self.assertEqual(l3p['subnet_prefix_length'],
                              int(subpool['default_prefixlen']))
         else:
-            self.assertEqual(None, l3p['ip_pool'])
-            self.assertEqual(None, l3p['subnet_prefix_length'])
+            self.assertIsNone(l3p['ip_pool'])
+            self.assertIsNone(l3p['subnet_prefix_length'])
         self.assertEqual(l3p['ip_version'],
                          subpool['ip_version'])
         if compare_subnetpool_shared_attr:
@@ -651,7 +651,7 @@ class AIMBaseTestCase(test_nr_base.CommonNeutronBaseTestCase,
         expected_in_filters = []
         expected_out_filters = []
 
-        for idx in xrange(0, len(policy_rules)):
+        for idx in range(0, len(policy_rules)):
             pc = self.show_policy_classifier(
                 policy_rules[idx]['policy_classifier_id'])['policy_classifier']
             fwd_filter = self.name_mapper.policy_rule(None,
@@ -810,8 +810,8 @@ class TestL3Policy(AIMBaseTestCase):
         new_subnetpools = implicit_subpool + [sp2['id']]
         attrs = {'id': l3p['id'], subnetpools_version: new_subnetpools}
         l3p = self.update_l3_policy(**attrs)['l3_policy']
-        self.assertEqual(None, l3p['ip_pool'])
-        self.assertEqual(None, l3p['subnet_prefix_length'])
+        self.assertIsNone(l3p['ip_pool'])
+        self.assertIsNone(l3p['subnet_prefix_length'])
         self.assertItemsEqual(new_subnetpools, l3p[subnetpools_version])
         attrs = {'id': l3p['id'], subnetpools_version: implicit_subpool}
         l3p = self.update_l3_policy(**attrs)['l3_policy']

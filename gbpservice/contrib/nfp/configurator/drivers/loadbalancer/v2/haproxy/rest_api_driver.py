@@ -29,7 +29,6 @@ from octavia.i18n import _LE
 from octavia.i18n import _LW
 from oslo_config import cfg
 import requests
-import six
 
 from gbpservice.contrib.nfp.configurator.drivers.loadbalancer.v2.haproxy.\
     local_cert_manager import LocalCertManager
@@ -85,7 +84,7 @@ class AmphoraAPIClient(rest_api_driver.AmphoraAPIClient):
 
         headers['User-Agent'] = OCTAVIA_API_CLIENT
         # Keep retrying
-        for a in six.moves.xrange(CONF.haproxy_amphora.connection_max_retries):
+        for a in range(CONF.haproxy_amphora.connection_max_retries):
             try:
                 with warnings.catch_warnings():
                     warnings.filterwarnings(

@@ -31,6 +31,7 @@ from oslo_utils import excutils
 import sqlalchemy as sa
 from sqlalchemy.orm.exc import NoResultFound
 
+from gbpservice._i18n import _
 from gbpservice._i18n import _LE
 from gbpservice._i18n import _LI
 from gbpservice.common import utils
@@ -906,7 +907,8 @@ class NFPNodeDriver(driver_base.NodeDriverBase):
                 LOG.error(_LE("Service Targets are not created for the Node "
                               "of service_type %(service_type)s"),
                           {'service_type': service_type})
-                raise Exception("Service Targets are not created for the Node")
+                raise Exception(_("Service Targets are not created "
+                                  "for the Node"))
 
         if (not consumer_service_targets and
                 not provider_service_targets):
