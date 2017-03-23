@@ -25,7 +25,6 @@ from oslo_utils import excutils
 
 from gbpservice._i18n import _LE
 from gbpservice._i18n import _LW
-from gbpservice.common import utils
 from gbpservice.neutron.extensions import group_policy as gp_ext
 from gbpservice.neutron.extensions import servicechain as sc_ext
 from gbpservice.neutron.services.grouppolicy.common import exceptions as exc
@@ -153,15 +152,6 @@ def discard_notifications_after_rollback(session):
     session.notification_queue.pop(session.transaction, None)
 
 
-class dummy_context_mgr(object):
-
-    def __enter__(self):
-        return None
-
-    def __exit__(self, exc_type, exc_value, traceback):
-        return False
-
-
 class LocalAPI(object):
     """API for interacting with the neutron Plugins directly."""
 
@@ -212,71 +202,60 @@ class LocalAPI(object):
                          do_notify=True, clean_session=True):
         # REVISIT(rkukura): Do create.start notification?
         # REVISIT(rkukura): Check authorization?
-        with utils.clean_session(context.session) if clean_session else (
-            dummy_context_mgr()):
-            reservation = None
-            if plugin in [self._group_policy_plugin,
-                          self._servicechain_plugin]:
-                reservation = quota.QUOTAS.make_reservation(
-                        context, context.tenant_id, {resource: 1}, plugin)
-            action = 'create_' + resource
-            obj_creator = getattr(plugin, action)
-            try:
-                obj = obj_creator(context, {resource: attrs})
-            except Exception:
-                # In case of failure the plugin will always raise an
-                # exception. Cancel the reservation
-                with excutils.save_and_reraise_exception():
-                    if reservation:
-                        quota.QUOTAS.cancel_reservation(
-                                context, reservation.reservation_id)
-            if reservation:
-                quota.QUOTAS.commit_reservation(
+        reservation = None
+        if plugin in [self._group_policy_plugin, self._servicechain_plugin]:
+            reservation = quota.QUOTAS.make_reservation(
+                context, context.tenant_id, {resource: 1}, plugin)
+        action = 'create_' + resource
+        obj_creator = getattr(plugin, action)
+        try:
+            obj = obj_creator(context, {resource: attrs})
+        except Exception:
+            # In case of failure the plugin will always raise an
+            # exception. Cancel the reservation
+            with excutils.save_and_reraise_exception():
+                if reservation:
+                    quota.QUOTAS.cancel_reservation(
                         context, reservation.reservation_id)
-                # At this point the implicit resource creation is successfull,
-                # so we should be calling:
-                # resource_registry.set_resources_dirty(context)
-                # to appropriately notify the quota engine. However, the above
-                # call begins a new transaction and we want to avoid that.
-                # Moreover, it can be safely assumed that any implicit resource
-                # creation via this local_api is always in response to an
-                # explicit resource creation request, and hence the above
-                # method will be invoked in the API layer.
+        if reservation:
+            quota.QUOTAS.commit_reservation(
+                context, reservation.reservation_id)
+            # At this point the implicit resource creation is successfull,
+            # so we should be calling:
+            # resource_registry.set_resources_dirty(context)
+            # to appropriately notify the quota engine. However, the above
+            # call begins a new transaction and we want to avoid that.
+            # Moreover, it can be safely assumed that any implicit resource
+            # creation via this local_api is always in response to an
+            # explicit resource creation request, and hence the above
+            # method will be invoked in the API layer.
         return obj
 
     def _update_resource(self, plugin, context, resource, resource_id, attrs,
                          do_notify=True, clean_session=True):
         # REVISIT(rkukura): Check authorization?
-        with utils.clean_session(context.session) if clean_session else (
-            dummy_context_mgr()):
-            action = 'update_' + resource
-            obj_updater = getattr(plugin, action)
-            obj = obj_updater(context, resource_id, {resource: attrs})
+        action = 'update_' + resource
+        obj_updater = getattr(plugin, action)
+        obj = obj_updater(context, resource_id, {resource: attrs})
         return obj
 
     def _delete_resource(self, plugin, context, resource, resource_id,
                          do_notify=True, clean_session=True):
         # REVISIT(rkukura): Check authorization?
-        with utils.clean_session(context.session) if clean_session else (
-            dummy_context_mgr()):
-            action = 'delete_' + resource
-            obj_deleter = getattr(plugin, action)
-            obj_deleter(context, resource_id)
+        action = 'delete_' + resource
+        obj_deleter = getattr(plugin, action)
+        obj_deleter(context, resource_id)
 
     def _get_resource(self, plugin, context, resource, resource_id,
                       clean_session=True):
-        with utils.clean_session(context.session) if clean_session else (
-            dummy_context_mgr()):
-            obj_getter = getattr(plugin, 'get_' + resource)
-            obj = obj_getter(context, resource_id)
+        obj_getter = getattr(plugin, 'get_' + resource)
+        obj = obj_getter(context, resource_id)
         return obj
 
     def _get_resources(self, plugin, context, resource_plural, filters=None,
                        clean_session=True):
-        with utils.clean_session(context.session) if clean_session else (
-            dummy_context_mgr()):
-            obj_getter = getattr(plugin, 'get_' + resource_plural)
-            obj = obj_getter(context, filters)
+        obj_getter = getattr(plugin, 'get_' + resource_plural)
+        obj = obj_getter(context, filters)
         return obj
 
     # The following methods perform the necessary subset of

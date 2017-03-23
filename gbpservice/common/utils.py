@@ -10,8 +10,6 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-import contextlib
-
 from neutron import context as n_ctx
 from oslo_config import cfg
 from oslo_log import log as logging
@@ -23,17 +21,6 @@ from gbpservice._i18n import _LE
 
 LOG = logging.getLogger(__name__)
 cfg.CONF.import_group('keystone_authtoken', 'keystonemiddleware.auth_token')
-
-
-@contextlib.contextmanager
-def clean_session(session):
-    # TODO(tbachman): the expunge_all() calls before and after
-    # the yield have been removed in order to test that they are
-    # no longer needed. The yield was kept in place for now, which
-    # makes the clean_session a No-Op. Once testing has validated
-    # that these can be removed, then a subsequent patch is needed
-    # to remove this (now-unused) infrastructure.
-    yield
 
 
 def get_resource_plural(resource):
