@@ -60,6 +60,7 @@ from gbpservice.neutron.plugins.ml2plus import driver_api as api_plus
 from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import apic_mapper
 from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import cache
 from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import config  # noqa
+from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import db
 from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import exceptions
 from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import extension_db
 
@@ -141,7 +142,8 @@ class KeystoneNotificationEndpoint(object):
             return oslo_messaging.NotificationResult.HANDLED
 
 
-class ApicMechanismDriver(api_plus.MechanismDriver):
+class ApicMechanismDriver(api_plus.MechanismDriver,
+                          db.DbMixin):
 
     class TopologyRpcEndpoint(object):
         target = oslo_messaging.Target(version='1.2')
@@ -530,13 +532,18 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
 
         session = context._plugin_context.session
         aim_ctx = aim_context.AimContext(session)
+        id = current['id']
 
-        dname = aim_utils.sanitize_display_name(current['name'])
-
-        vrf = self._map_address_scope(session, current)
-        if not self.aim.get(aim_ctx, vrf):
+        # See if extension driver already created mapping.
+        mapping = self._get_address_scope_mapping(session, id)
+        if mapping:
+            vrf = self._address_scope_vrf(mapping)
+        else:
+            dname = aim_utils.sanitize_display_name(current['name'])
+            vrf = self._map_address_scope(session, current)
             vrf.display_name = dname
             self.aim.create(aim_ctx, vrf)
+            self._add_address_scope_mapping(session, id, vrf)
 
         # ML2Plus does not extend address scope dict after precommit.
         sync_state = cisco_apic.SYNC_SYNCED
@@ -551,14 +558,12 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
 
         session = context._plugin_context.session
         aim_ctx = aim_context.AimContext(session)
+        mapping = self._get_address_scope_mapping(session, current['id'])
 
-        if current['name'] != original['name']:
+        if current['name'] != original['name'] and mapping.vrf_owned:
             dname = aim_utils.sanitize_display_name(current['name'])
-
-            vrf = self.aim.get(aim_ctx,
-                               self._map_address_scope(session, current))
-            if vrf and not vrf.monitored:
-                self.aim.update(aim_ctx, vrf, display_name=dname)
+            vrf = self._address_scope_vrf(mapping)
+            self.aim.update(aim_ctx, vrf, display_name=dname)
 
     def delete_address_scope_precommit(self, context):
         current = context.current
@@ -566,22 +571,26 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
 
         session = context._plugin_context.session
         aim_ctx = aim_context.AimContext(session)
+        mapping = self._get_address_scope_mapping(session, current['id'])
 
-        vrf = self.aim.get(aim_ctx, self._map_address_scope(session, current))
-        if vrf and not vrf.monitored:
+        if mapping.vrf_owned:
+            vrf = self._address_scope_vrf(mapping)
             self.aim.delete(aim_ctx, vrf)
 
     def extend_address_scope_dict(self, session, scope_db, result):
         LOG.debug("APIC AIM MD extending dict for address scope: %s", result)
 
+        # REVISIT: Consider moving to ApicExtensionDriver.
+
         sync_state = cisco_apic.SYNC_SYNCED
         dist_names = {}
         aim_ctx = aim_context.AimContext(session)
 
-        vrf = self._map_address_scope(session, scope_db)
-
-        dist_names[cisco_apic.VRF] = vrf.dn
-        sync_state = self._merge_status(aim_ctx, sync_state, vrf)
+        mapping = scope_db.aim_mapping
+        if mapping:
+            vrf = self._address_scope_vrf(mapping)
+            dist_names[cisco_apic.VRF] = vrf.dn
+            sync_state = self._merge_status(aim_ctx, sync_state, vrf)
 
         result[cisco_apic.DIST_NAMES] = dist_names
         result[cisco_apic.SYNC_STATE] = sync_state
@@ -873,8 +882,8 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
             # subnets) from the v6 scope to the v4 scope. Multi-scope
             # routers will further complicate this with multiple v4
             # scopes to choose between for v6-only networks.
-            scope = self._scope_by_id(session, scope_id)
-            vrf = self._map_address_scope(session, scope)
+            scope_db = self._scope_by_id(session, scope_id)
+            vrf = self._address_scope_vrf(scope_db.aim_mapping)
         else:
             # TODO(rkukura): The unscoped case will need to handle
             # IPv6 and, and will have to coexist with address_scopes
@@ -1449,22 +1458,11 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
             return self._get_routed_vrf_for_network(session, network_db)
 
     def _get_address_scope_id_for_vrf(self, session, vrf):
-        # Returns the ID of an address-scope that corresponds to a VRF,
-        # if any.
-
-        # Check if unrouted VRF
-        if self._map_unrouted_vrf().identity == vrf.identity:
-            return
-
-        # Check if pre-existing VRF for an address-scope
-        extn_db = extension_db.ExtensionDbMixin()
-        scope_id = extn_db.get_address_scope_by_vrf_dn(session, vrf.dn)
-
-        # Check if orchestrated VRF for an address-scope
-        if not scope_id and vrf.name != DEFAULT_VRF_NAME:
-            scope_id = self.name_mapper.reverse_address_scope(session,
-                                                              vrf.name)
-        return scope_id
+        mappings = self._get_address_scope_mappings_for_vrf(session, vrf)
+        if mappings:
+            # REVISIT: Allow a single IPv4 and a single IPv6 address
+            # scope to map to the same VRF.
+            return mappings[0].id
 
     def _get_routers_for_vrf(self, session, vrf):
         # REVISIT: Persist router/VRF relationship?
@@ -1793,15 +1791,10 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
 
     def _map_address_scope(self, session, scope):
         id = scope['id']
-        extn_db = extension_db.ExtensionDbMixin()
-        scope_extn = extn_db.get_address_scope_extn_db(session, id)
-        if scope_extn and scope_extn.get(cisco_apic.VRF):
-            vrf = aim_resource.VRF.from_dn(scope_extn[cisco_apic.VRF])
-        else:
-            tenant_aname = self.name_mapper.project(
-                session, scope['tenant_id'])
-            aname = self.name_mapper.address_scope(session, id)
-            vrf = aim_resource.VRF(tenant_name=tenant_aname, name=aname)
+        tenant_aname = self.name_mapper.project(session, scope['tenant_id'])
+        aname = self.name_mapper.address_scope(session, id)
+
+        vrf = aim_resource.VRF(tenant_name=tenant_aname, name=aname)
         return vrf
 
     def _map_router(self, session, router, contract_only=False):
