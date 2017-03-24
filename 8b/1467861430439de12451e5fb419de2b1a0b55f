@@ -1,0 +1,10 @@
+Code-Review+2: Robert Kukura <kukura@noironetworks.com>
+Code-Review+2: Ivar Lazzaro <ivarlazzaro@gmail.com>
+Workflow+1: Ivar Lazzaro <ivarlazzaro@gmail.com>
+Workflow+1: Robert Kukura <kukura@noironetworks.com>
+Verified+2: Jenkins
+Submitted-by: Jenkins
+Submitted-at: Fri, 24 Mar 2017 00:02:21 +0000
+Reviewed-on: https://review.openstack.org/448989
+Project: openstack/group-based-policy
+Branch: refs/heads/stable/mitaka
