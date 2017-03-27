@@ -1145,25 +1145,29 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
         # Check the VNIC type.
         vnic_type = port.get(portbindings.VNIC_TYPE,
                              portbindings.VNIC_NORMAL)
-        if vnic_type not in [portbindings.VNIC_NORMAL]:
+        if vnic_type not in [portbindings.VNIC_NORMAL,
+                             portbindings.VNIC_DIRECT]:
             LOG.debug("Refusing to bind due to unsupported vnic_type: %s",
                       vnic_type)
             return
 
-        if port['device_owner'].startswith('compute:'):
-            if (self.aim_mapping and not
-                    self.aim_mapping.check_allow_vm_names(context, port)):
-                return
+        is_vm_port = port['device_owner'].startswith('compute:')
 
-            # For compute ports, try to bind DVS agent first.
-            if self._agent_bind_port(context, AGENT_TYPE_DVS,
-                                     self._dvs_bind_port):
-                return
-
-        # Try to bind OpFlex agent.
-        if self._agent_bind_port(context, ofcst.AGENT_TYPE_OPFLEX_OVS,
-                                 self._opflex_bind_port):
+        if (is_vm_port and self.aim_mapping and not
+                self.aim_mapping.check_allow_vm_names(context, port)):
             return
+
+        if vnic_type in [portbindings.VNIC_NORMAL]:
+            if is_vm_port:
+                # For compute ports, try to bind DVS agent first.
+                if self._agent_bind_port(context, AGENT_TYPE_DVS,
+                                         self._dvs_bind_port):
+                    return
+
+            # Try to bind OpFlex agent.
+            if self._agent_bind_port(context, ofcst.AGENT_TYPE_OPFLEX_OVS,
+                                     self._opflex_bind_port):
+                return
 
         # If we reached here, it means that either there is no active opflex
         # agent running on the host, or the agent on the host is not
