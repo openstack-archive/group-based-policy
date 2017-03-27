@@ -17,6 +17,7 @@ from gbpservice._i18n import _LE
 from gbpservice._i18n import _LI
 from gbpservice.neutron.plugins.ml2plus import driver_api
 
+from neutron.db import api as db_api
 from neutron.plugins.ml2.common import exceptions as ml2_exc
 from neutron.plugins.ml2 import managers
 from oslo_log import log
@@ -31,34 +32,47 @@ class MechanismManager(managers.MechanismManager):
         super(MechanismManager, self).__init__()
 
     def _call_on_extended_drivers(self, method_name, context,
-                                  continue_on_failure=False):
+                                  continue_on_failure=False,
+                                  raise_db_retriable=False):
         """Call a method on all extended mechanism drivers.
 
         :param method_name: name of the method to call
         :param context: context parameter to pass to each method call
         :param continue_on_failure: whether or not to continue to call
         all mechanism drivers once one has raised an exception
+        :param raise_db_retriable: whether or not to treat retriable db
+        exception by mechanism drivers to propagate up to upper layer so
+        that upper layer can handle it or error in ML2 player
         :raises: neutron.plugins.ml2.common.MechanismDriverError
-        if any mechanism driver call fails.
-
+        if any mechanism driver call fails. or DB retriable error when
+        raise_db_retriable=False. See neutron.db.api.is_retriable for
+        what db exception is retriable
         """
-        error = False
+        errors = []
         for driver in self.ordered_mech_drivers:
             if isinstance(driver.obj, driver_api.MechanismDriver):
                 try:
                     getattr(driver.obj, method_name)(context)
-                except Exception:
+                except Exception as e:
+                    if raise_db_retriable and db_api.is_retriable(e):
+                        with excutils.save_and_reraise_exception():
+                            LOG.debug("DB exception raised by Mechanism "
+                                      "driver '%(name)s' in %(method)s",
+                                      {'name': driver.name,
+                                       'method': method_name},
+                                      exc_info=e)
                     LOG.exception(
                         _LE("Mechanism driver '%(name)s' failed in "
                             "%(method)s"),
                         {'name': driver.name, 'method': method_name}
                     )
-                    error = True
+                    errors.append(e)
                     if not continue_on_failure:
                         break
-        if error:
+        if errors:
             raise ml2_exc.MechanismDriverError(
-                method=method_name
+                method=method_name,
+                errors=errors
             )
 
     def ensure_tenant(self, plugin_context, tenant_id):
@@ -73,7 +87,7 @@ class MechanismManager(managers.MechanismManager):
 
     def create_subnetpool_precommit(self, context):
         self._call_on_extended_drivers("create_subnetpool_precommit",
-                                       context)
+                                       context, raise_db_retriable=True)
 
     def create_subnetpool_postcommit(self, context):
         self._call_on_extended_drivers("create_subnetpool_postcommit",
@@ -81,23 +95,23 @@ class MechanismManager(managers.MechanismManager):
 
     def update_subnetpool_precommit(self, context):
         self._call_on_extended_drivers("update_subnetpool_precommit",
-                                       context)
+                                       context, raise_db_retriable=True)
 
     def update_subnetpool_postcommit(self, context):
         self._call_on_extended_drivers("update_subnetpool_postcommit",
-                                       context)
+                                       context, continue_on_failure=True)
 
     def delete_subnetpool_precommit(self, context):
         self._call_on_extended_drivers("delete_subnetpool_precommit",
-                                       context)
+                                       context, raise_db_retriable=True)
 
     def delete_subnetpool_postcommit(self, context):
         self._call_on_extended_drivers("delete_subnetpool_postcommit",
-                                       context)
+                                       context, continue_on_failure=True)
 
     def create_address_scope_precommit(self, context):
         self._call_on_extended_drivers("create_address_scope_precommit",
-                                       context)
+                                       context, raise_db_retriable=True)
 
     def create_address_scope_postcommit(self, context):
         self._call_on_extended_drivers("create_address_scope_postcommit",
@@ -105,19 +119,19 @@ class MechanismManager(managers.MechanismManager):
 
     def update_address_scope_precommit(self, context):
         self._call_on_extended_drivers("update_address_scope_precommit",
-                                       context)
+                                       context, raise_db_retriable=True)
 
     def update_address_scope_postcommit(self, context):
         self._call_on_extended_drivers("update_address_scope_postcommit",
-                                       context)
+                                       context, continue_on_failure=True)
 
     def delete_address_scope_precommit(self, context):
         self._call_on_extended_drivers("delete_address_scope_precommit",
-                                       context)
+                                       context, raise_db_retriable=True)
 
     def delete_address_scope_postcommit(self, context):
         self._call_on_extended_drivers("delete_address_scope_postcommit",
-                                       context)
+                                       context, continue_on_failure=True)
 
 
 class ExtensionManager(managers.ExtensionManager):
