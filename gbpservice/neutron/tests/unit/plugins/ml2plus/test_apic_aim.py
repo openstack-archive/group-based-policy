@@ -2493,6 +2493,35 @@ class TestPortBinding(ApicAimTestCase):
         port = self._bind_port_to_host(port['id'], 'host1')['port']
         self.assertEqual('binding_failed', port['binding:vif_type'])
 
+    def test_bind_vnic_direct_port(self):
+        net = self._make_network(self.fmt, 'net1', True)
+        self._make_subnet(self.fmt, net, '10.0.1.1', '10.0.1.0/24')
+
+        vnic_arg = {'binding:vnic_type': 'direct'}
+        p1 = self._make_port(self.fmt, net['network']['id'],
+                             arg_list=('binding:vnic_type',),
+                             **vnic_arg)['port']
+        p2 = self._make_port(self.fmt, net['network']['id'],
+                             arg_list=('binding:vnic_type',),
+                             **vnic_arg)['port']
+
+        # Bind to non-opflex host
+        p1 = self._bind_port_to_host(p1['id'], 'host1')['port']
+        self.assertNotEqual('binding_failed', p1['binding:vif_type'])
+        p1_ctx = self.plugin.get_bound_port_context(
+            n_context.get_admin_context(), p1['id'])
+        self.assertEqual('opflex', p1_ctx.top_bound_segment['network_type'])
+        self.assertEqual('vlan', p1_ctx.bottom_bound_segment['network_type'])
+
+        # Bind to opflex host
+        self._register_agent('host2', AGENT_CONF_OPFLEX)
+        p2 = self._bind_port_to_host(p2['id'], 'host2')['port']
+        self.assertNotEqual('binding_failed', p2['binding:vif_type'])
+        p2_ctx = self.plugin.get_bound_port_context(
+            n_context.get_admin_context(), p2['id'])
+        self.assertEqual('opflex', p2_ctx.top_bound_segment['network_type'])
+        self.assertEqual('vlan', p2_ctx.bottom_bound_segment['network_type'])
+
     # TODO(rkukura): Add tests for opflex, local and unsupported
     # network_type values.
 
