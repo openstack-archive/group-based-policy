@@ -413,7 +413,7 @@ resources:
     properties:
       name: LB
       service_profile_id: { get_resource: PROFILE-LB }
-      config: { get_file: lb.template }
+      config: { get_file: haproxy_lbaasv2_multiple_listeners.template }
       shared: true
 
   NODE-VPN:
@@ -450,7 +450,7 @@ resources:
     properties:
       name: LB
       vendor: NFP
-      service_type: LOADBALANCER
+      service_type: LOADBALANCERV2
       insertion_mode: l3
       service_flavor: service_vendor=haproxy,device_type=nova
       shared: true
