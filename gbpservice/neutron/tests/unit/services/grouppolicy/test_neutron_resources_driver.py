@@ -60,7 +60,6 @@ class CommonNeutronBaseTestCase(test_plugin.GroupPolicyPluginTestBase):
         self._gbp_plugin = plugins.get(pconst.GROUP_POLICY)
         self._l3_plugin = plugins.get(pconst.L3_ROUTER_NAT)
         config.cfg.CONF.set_override('debug', True)
-        config.cfg.CONF.set_override('verbose', True)
 
     def get_plugin_context(self):
         return self._plugin, self._context
