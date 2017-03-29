@@ -40,6 +40,7 @@ pyOpenSSL>=0.13.0,<=0.15.1
 # Since version numbers for these are specified in
 # https://git.openstack.org/cgit/openstack/requirements/plain/upper-constraints.txt,
 #  they cannot be refernced as GIT URLs
+oslo.db<4.13.6
 python-heatclient
 python-keystoneclient
 
