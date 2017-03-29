@@ -13,6 +13,7 @@
 
 import oslo_messaging as messaging
 
+from gbpservice._i18n import _
 from gbpservice._i18n import _LE
 from gbpservice._i18n import _LI
 from gbpservice.nfp.common import constants as nfp_constants
@@ -311,7 +312,7 @@ class DeviceOrchestrator(nfp_api.NfpEventHandler):
                 self.device_configuration_updated)
         }
         if event_id not in event_handler_mapping:
-            raise Exception("Invalid event ID")
+            raise Exception(_("Invalid event ID"))
         else:
             return event_handler_mapping[event_id]
 
@@ -1683,7 +1684,7 @@ class ExceptionHandler(object):
                 ExceptionHandler.perform_periodic_health_check),
         }
         if event_id not in event_handler_mapping:
-            raise Exception("Invalid event ID")
+            raise Exception(_("Invalid event ID"))
         else:
             return event_handler_mapping[event_id]
 
