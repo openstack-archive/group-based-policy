@@ -4,3 +4,7 @@
 from gbpservice.neutron.plugins.ml2plus import patch_neutron  # noqa
 
 from gbpservice.neutron.extensions import patch  # noqa
+
+from oslo_db.sqlalchemy import utils as sa_utils
+
+sa_utils._get_unique_keys = sa_utils.get_unique_keys
