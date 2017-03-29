@@ -13,7 +13,6 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-from neutron.plugins.ml2.common import exceptions as ml2_excp
 from neutron_lib import exceptions
 
 
@@ -41,7 +40,7 @@ class MultiScopeRoutingNotSupported(exceptions.BadRequest):
                 "same router is not currently supported.")
 
 
-class ScopeUpdateNotSupported(ml2_excp.MechanismDriverError):
+class ScopeUpdateNotSupported(exceptions.BadRequest):
     message = _("Updating the address_scope of a subnetpool that is "
                 "associated with routers is not currently supported.")
 

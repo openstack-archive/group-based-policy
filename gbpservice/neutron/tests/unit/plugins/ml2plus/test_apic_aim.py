@@ -2440,13 +2440,9 @@ class TestTopology(ApicAimTestCase):
 
         # Verify associating subnetpool with address_scope fails.
         data = {'subnetpool': {'address_scope_id': scope_id}}
-        # REVISIT(rkukura): ML2[Plus] currently replaces the
-        # exception. Should ideally return
-        # webob.exc.HTTPBadRequest.code with ScopeUpdateNotSupported
-        # type.
         result = self._update('subnetpools', pool_id, data,
-                              webob.exc.HTTPInternalServerError.code)
-        self.assertEqual('HTTPInternalServerError',
+                              webob.exc.HTTPBadRequest.code)
+        self.assertEqual('ScopeUpdateNotSupported',
                          result['NeutronError']['type'])
 
     def test_unscoped_subnetpool_subnets_with_router(self):
