@@ -88,7 +88,7 @@ function run_gbp_rally {
     . /home/jenkins/rally/bin/activate
     source_creds $TOP_DIR/openrc admin admin
     rally deployment create --fromenv --name=gbp
-    rally -v task start samples/tasks/scenarios/gbp/gbp.json
+    rally task start samples/tasks/scenarios/gbp/gbp.json
     rally task results > $LOGS_DIR/rally-task-results.log.20
     deactivate
 }
