@@ -12,9 +12,11 @@
 
 from neutron.common import exceptions as n_exc
 from oslo_config import cfg
+from oslo_db import exception as db_exc
 from oslo_log import log
 from oslo_policy import policy as oslo_policy
 from oslo_utils import excutils
+from sqlalchemy.orm import exc
 import stevedore
 
 from gbpservice._i18n import _LE
@@ -123,20 +125,29 @@ class PolicyDriverManager(stevedore.named.NamedExtensionManager):
             try:
                 getattr(driver.obj, method_name)(context)
             except (gp_exc.GroupPolicyException, n_exc.NeutronException,
-                    oslo_policy.PolicyNotAuthorized):
-                with excutils.save_and_reraise_exception():
-                    LOG.exception(
-                        _LE("Policy driver '%(name)s' failed in %(method)s"),
-                        {'name': driver.name, 'method': method_name}
-                    )
+                    oslo_policy.PolicyNotAuthorized,
+                    db_exc.DBDeadlock, exc.StaleDataError,
+                    db_exc.DBConnectionError, db_exc.DBDuplicateEntry,
+                    db_exc.RetryRequest) as e:
+                if getattr(e, '_RETRY_EXCEEDED', False):
+                    error = True
+                else:
+                    with excutils.save_and_reraise_exception():
+                        LOG.exception(
+                            _LE("Policy driver '%(name)s' failed in"
+                                " %(method)s"),
+                                {'name': driver.name, 'method': method_name}
+                        )
             except Exception:
                 # We are eating a non-GBP/non-Neutron exception here
-                LOG.exception(
-                    _LE("Policy driver '%(name)s' failed in %(method)s"),
-                    {'name': driver.name, 'method': method_name})
                 error = True
-                if not continue_on_failure:
-                    break
+            finally:
+                if error:
+                    LOG.exception(
+                        _LE("Policy driver '%(name)s' failed in %(method)s"),
+                        {'name': driver.name, 'method': method_name})
+                    if not continue_on_failure:
+                        break
         if error:
             raise gp_exc.GroupPolicyDriverError(method=method_name)
 
