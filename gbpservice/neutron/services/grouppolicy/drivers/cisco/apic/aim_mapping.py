@@ -62,7 +62,7 @@ FILTER_DIRECTIONS = {FORWARD: False, REVERSE: True}
 FORWARD_FILTER_ENTRIES = 'Forward-FilterEntries'
 REVERSE_FILTER_ENTRIES = 'Reverse-FilterEntries'
 ADDR_SCOPE_KEYS = ['address_scope_v4_id', 'address_scope_v6_id']
-AUTO_PTG_NAME_PREFIX = 'auto-ptg-%s'
+AUTO_PTG_NAME_PREFIX = 'ptg-for-l2p-%s'
 # Note that this prefix should not exceede 4 characters
 AUTO_PTG_PREFIX = 'auto'
 AUTO_PTG_ID_PREFIX = AUTO_PTG_PREFIX + '%s'
@@ -451,7 +451,7 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
                 context, l2p, default_epg_dn)
         if self.create_auto_ptg:
             default_epg = self._get_epg_by_dn(context, default_epg_dn)
-            desc = "System created auto PTG for L2P: %s" % l2p['id']
+            desc = "System created PTG for L2P (UUID: %s)" % l2p['id']
             data = {
                 "id": self._get_auto_ptg_id(l2p['id']),
                 "name": self._get_auto_ptg_name(l2p),
