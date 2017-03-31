@@ -1323,8 +1323,10 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
                 # TODO(amitbose) Consider providing configuration options
                 # for picking network-type and physical-network name
                 # for the dynamic segment
-                dyn_seg = context.allocate_dynamic_segment(
-                    {api.NETWORK_TYPE: pconst.TYPE_VLAN})
+                seg_args = {api.NETWORK_TYPE: pconst.TYPE_VLAN,
+                            api.PHYSICAL_NETWORK:
+                            segment[api.PHYSICAL_NETWORK]}
+                dyn_seg = context.allocate_dynamic_segment(seg_args)
                 LOG.info(_LI('Allocated dynamic-segment %(s)s for port %(p)s'),
                          {'s': dyn_seg, 'p': context.current['id']})
                 dyn_seg['aim_ml2_created'] = True
