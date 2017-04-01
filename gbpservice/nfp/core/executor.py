@@ -14,6 +14,7 @@ import six
 
 from argparse import Namespace
 
+from gbpservice._i18n import _
 from gbpservice.nfp.core import context
 from gbpservice.nfp.core import log as nfp_logging
 from gbpservice.nfp.core import threadpool as core_tp
@@ -37,7 +38,7 @@ def check_in_use(f):
 
     def wrapped(self, *args, **kwargs):
         if self.fired:
-            raise InUse("Executor in use")
+            raise InUse(_("Executor in use"))
         return f(self, *args, **kwargs)
     return wrapped
 

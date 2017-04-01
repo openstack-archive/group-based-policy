@@ -419,7 +419,7 @@ class NFPDBTestCase(SqlTestCase):
                               'monitoring_port_network']
         for arg in non_mandatory_args:
             self.assertIsNone(nf_device[arg])
-        self.assertEqual(None, nf_device['mgmt_port_id'])
+        self.assertIsNone(nf_device['mgmt_port_id'])
 
     def test_get_network_function_device(self):
         attrs = {
