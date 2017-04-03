@@ -2390,12 +2390,33 @@ class TestServiceChain(ResourceMappingTestCase):
             self.assertEqual(sc_instance['classifier_id'], classifier_id)
 
     def _override_keystone_creds(self, usr, pwd, tenant, uri):
-        config.cfg.CONF.set_override('admin_user', usr,
-                                     group='keystone_authtoken')
-        config.cfg.CONF.set_override('admin_password', pwd,
-                                     group='keystone_authtoken')
-        config.cfg.CONF.set_override('admin_tenant_name', tenant,
-                                     group='keystone_authtoken')
+        try:
+            config.cfg.CONF.keystone_authtoken.username
+        except config.cfg.NoSuchOptError:
+            config.cfg.CONF.register_opt(
+                config.cfg.StrOpt('username', default=usr),
+                'keystone_authtoken')
+        else:
+            config.cfg.CONF.set_override('username', usr,
+                                         group='keystone_authtoken')
+        try:
+            config.cfg.CONF.keystone_authtoken.password
+        except config.cfg.NoSuchOptError:
+            config.cfg.CONF.register_opt(
+                config.cfg.StrOpt('password', default=pwd),
+                'keystone_authtoken')
+        else:
+            config.cfg.CONF.set_override('password', pwd,
+                                         group='keystone_authtoken')
+        try:
+            config.cfg.CONF.keystone_authtoken.project_name
+        except config.cfg.NoSuchOptError:
+            config.cfg.CONF.register_opt(
+                config.cfg.StrOpt('project_name', default=tenant),
+                'keystone_authtoken')
+        else:
+            config.cfg.CONF.set_override('project_name', tenant,
+                                         group='keystone_authtoken')
         config.cfg.CONF.set_override('auth_uri', uri,
                                      group='keystone_authtoken')
 
