@@ -28,9 +28,9 @@ function gbp_configure_neutron {
 
 function nfp_configure_neutron {
     NEUTRON_ML2_CONF="/etc/neutron/plugins/ml2/ml2_conf.ini"
-    iniset $NEUTRON_CONF keystone_authtoken admin_tenant_name "service"
-    iniset $NEUTRON_CONF keystone_authtoken admin_user "neutron"
-    iniset $NEUTRON_CONF keystone_authtoken admin_password $ADMIN_PASSWORD
+    iniset $NEUTRON_CONF keystone_authtoken project_name "service"
+    iniset $NEUTRON_CONF keystone_authtoken username "neutron"
+    iniset $NEUTRON_CONF keystone_authtoken password $ADMIN_PASSWORD
     iniset $NEUTRON_CONF node_composition_plugin node_plumber "admin_owned_resources_apic_plumber"
     iniset $NEUTRON_CONF node_composition_plugin node_drivers "nfp_node_driver"
     iniset $NEUTRON_CONF admin_owned_resources_apic_tscp plumbing_resource_owner_user "neutron"
@@ -39,7 +39,7 @@ function nfp_configure_neutron {
     if [[ $EXT_NET_GATEWAY && $EXT_NET_ALLOCATION_POOL_START && $EXT_NET_ALLOCATION_POOL_END && $EXT_NET_CIDR ]]; then
         iniset $NEUTRON_CONF group_policy_implicit_policy default_external_segment_name "default"
     fi
-    iniset $NEUTRON_CONF nfp_node_driver is_service_admin_owned "True"
+    iniset $NEUTRON_CONF nfp_node_driver is_service_admin_owned "False"
     iniset $NEUTRON_CONF nfp_node_driver svc_management_ptg_name "svc_management_ptg"
     #extn_drivers=$(iniget $NEUTRON_ML2_CONF ml2 extension_drivers)
     #if [[ -n $extn_drivers ]];then
