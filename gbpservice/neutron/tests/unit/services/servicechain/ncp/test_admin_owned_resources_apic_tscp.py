@@ -27,12 +27,33 @@ class AdminOwnedResourcesTscpTestCase(
         password = 'password'
         tenant_name = 'tenant_name',
         uri = 'http://127.0.0.1:35357/v2.0/'
-        config.cfg.CONF.set_override('admin_user', user,
-                                     group='keystone_authtoken')
-        config.cfg.CONF.set_override('admin_password', password,
-                                     group='keystone_authtoken')
-        config.cfg.CONF.set_override('admin_tenant_name', tenant_name,
-                                     group='keystone_authtoken')
+        try:
+            config.cfg.CONF.keystone_authtoken.username
+        except config.cfg.NoSuchOptError:
+            config.cfg.CONF.register_opt(
+                config.cfg.StrOpt('username', default=user),
+                'keystone_authtoken')
+        else:
+            config.cfg.CONF.set_override('username', user,
+                                         group='keystone_authtoken')
+        try:
+            config.cfg.CONF.keystone_authtoken.password
+        except config.cfg.NoSuchOptError:
+            config.cfg.CONF.register_opt(
+                config.cfg.StrOpt('password', default=password),
+                'keystone_authtoken')
+        else:
+            config.cfg.CONF.set_override('password', password,
+                                         group='keystone_authtoken')
+        try:
+            config.cfg.CONF.keystone_authtoken.project_name
+        except config.cfg.NoSuchOptError:
+            config.cfg.CONF.register_opt(
+                config.cfg.StrOpt('project_name', default=tenant_name),
+                'keystone_authtoken')
+        else:
+            config.cfg.CONF.set_override('project_name', tenant_name,
+                                         group='keystone_authtoken')
         config.cfg.CONF.set_override('auth_uri', uri,
                                      group='keystone_authtoken')
         super(AdminOwnedResourcesTscpTestCase, self).setUp(
