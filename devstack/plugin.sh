@@ -28,9 +28,6 @@ function gbp_configure_neutron {
 
 function nfp_configure_neutron {
     NEUTRON_ML2_CONF="/etc/neutron/plugins/ml2/ml2_conf.ini"
-    iniset $NEUTRON_CONF keystone_authtoken admin_tenant_name "service"
-    iniset $NEUTRON_CONF keystone_authtoken admin_user "neutron"
-    iniset $NEUTRON_CONF keystone_authtoken admin_password $ADMIN_PASSWORD
     iniset $NEUTRON_CONF node_composition_plugin node_plumber "admin_owned_resources_apic_plumber"
     iniset $NEUTRON_CONF node_composition_plugin node_drivers "nfp_node_driver"
     iniset $NEUTRON_CONF admin_owned_resources_apic_tscp plumbing_resource_owner_user "neutron"
