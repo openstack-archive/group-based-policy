@@ -88,7 +88,10 @@ class ChainMappingDriver(api.PolicyDriver, local_api.LocalAPI,
 
     @staticmethod
     def chain_tenant_id(reraise=False):
-        keystone = ChainMappingDriver.chain_tenant_keystone_client()
+        try:
+            keystone = ChainMappingDriver.chain_tenant_keystone_client()
+        except cfg.NoSuchOptError:
+            return None
         if keystone:
             tenant = cfg.CONF.chain_mapping.chain_owner_tenant_name
             try:
@@ -655,6 +658,8 @@ class ChainMappingDriver(api.PolicyDriver, local_api.LocalAPI,
                 ctx.session, servicechain_instance_id=instance_id)
             if cmap:
                 ctx.tenant_id = cmap[0].tenant_id
+        if not self.chain_owner:
+            self.chain_owner = ChainMappingDriver.chain_tenant_id(reraise=True)
         if not ctx.tenant_id:
             ctx.tenant_id = tenant_id or self.chain_owner or provider_tenant_id
         if self.chain_owner == ctx.tenant_id:

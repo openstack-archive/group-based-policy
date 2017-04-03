@@ -64,9 +64,9 @@ class DictClass(dict):
 
 def get_keystone_creds():
     keystone_conf = cfg.CONF.keystone_authtoken
-    user = keystone_conf.admin_user
-    pw = keystone_conf.admin_password
-    tenant = keystone_conf.admin_tenant_name
+    user = keystone_conf.username
+    pw = keystone_conf.password
+    tenant = keystone_conf.project_name
     if keystone_conf.get('auth_uri'):
         auth_url = keystone_conf.auth_uri.rstrip('/')
         if not auth_url.endswith('/v2.0'):
