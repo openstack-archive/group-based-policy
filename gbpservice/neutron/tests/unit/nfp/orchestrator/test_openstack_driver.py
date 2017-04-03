@@ -52,13 +52,13 @@ class TestKeystoneClient(SampleData):
         self.keystone_obj = openstack_driver.KeystoneClient(cfg.CONF)
 
     def setUp(self):
-        cfg.CONF.set_override('admin_user',
+        cfg.CONF.set_override('username',
                               'neutron',
                               group='nfp_keystone_authtoken')
-        cfg.CONF.set_override('admin_password',
+        cfg.CONF.set_override('password',
                               'neutron_pass',
                               group='nfp_keystone_authtoken')
-        cfg.CONF.set_override('admin_tenant_name',
+        cfg.CONF.set_override('project_name',
                               'service',
                               group='nfp_keystone_authtoken')
         cfg.CONF.set_override('auth_version',
