@@ -2390,11 +2390,11 @@ class TestServiceChain(ResourceMappingTestCase):
             self.assertEqual(sc_instance['classifier_id'], classifier_id)
 
     def _override_keystone_creds(self, usr, pwd, tenant, uri):
-        config.cfg.CONF.set_override('admin_user', usr,
+        config.cfg.CONF.set_override('username', usr,
                                      group='keystone_authtoken')
-        config.cfg.CONF.set_override('admin_password', pwd,
+        config.cfg.CONF.set_override('password', pwd,
                                      group='keystone_authtoken')
-        config.cfg.CONF.set_override('admin_tenant_name', tenant,
+        config.cfg.CONF.set_override('project_name', tenant,
                                      group='keystone_authtoken')
         config.cfg.CONF.set_override('auth_uri', uri,
                                      group='keystone_authtoken')
