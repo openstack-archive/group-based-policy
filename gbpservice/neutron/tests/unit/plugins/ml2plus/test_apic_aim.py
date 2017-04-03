@@ -2244,28 +2244,6 @@ class TestTopology(ApicAimTestCase):
             n_context.get_admin_context(), router2_id,
             {'subnet_id': subnet2_id})
 
-    def test_reject_ipv6_routing(self):
-        # TODO(rkukura): Remove this test when IPv6 routing is supported.
-
-        # Create network.
-        net_resp = self._make_network(self.fmt, 'net1', True)
-
-        # Create router.
-        router1_id = self._make_router(
-            self.fmt, 'test-tenant', 'router1')['router']['id']
-
-        # Create IPv6 subnet.
-        subnet1_id = self._make_subnet(
-            self.fmt, net_resp, 'abcd::1', 'abcd::/64',
-            ip_version=6)['subnet']['id']
-
-        # Verify adding IPv6 subnet to router fails.
-        self.assertRaises(
-            exceptions.IPv6RoutingNotSupported,
-            self.l3_plugin.add_router_interface,
-            n_context.get_admin_context(), router1_id,
-            {'subnet_id': subnet1_id})
-
     def test_reject_routing_multiple_address_scopes(self):
         # TODO(rkukura): Remove this test when multi-scope routing is
         # supported.
