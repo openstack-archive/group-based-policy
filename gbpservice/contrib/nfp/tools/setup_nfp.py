@@ -78,9 +78,9 @@ def check_if_apic_sys():
 def set_keystone_authtoken_section():
     global NEUTRON_CONF
     nfp_conf = '/etc/nfp.ini'
-    admin_user = commands.getoutput("crudini --get " + NEUTRON_CONF + " keystone_authtoken admin_user")
-    admin_password = commands.getoutput("crudini --get " + NEUTRON_CONF + " keystone_authtoken admin_password")
-    admin_tenant_name = commands.getoutput("crudini --get " + NEUTRON_CONF + " keystone_authtoken admin_tenant_name")
+    admin_user = commands.getoutput("crudini --get " + NEUTRON_CONF + " keystone_authtoken username")
+    admin_password = commands.getoutput("crudini --get " + NEUTRON_CONF + " keystone_authtoken password")
+    admin_tenant_name = commands.getoutput("crudini --get " + NEUTRON_CONF + " keystone_authtoken project_name")
     auth_uri = commands.getoutput("crudini --get " + NEUTRON_CONF + " keystone_authtoken auth_uri")
     auth_protocol = commands.getoutput("echo " + auth_uri + " | cut -d':' -f1")
     auth_host = commands.getoutput("echo " + auth_uri + " | cut -d'/' -f3 | cut -d':' -f1")
@@ -167,14 +167,14 @@ def configure_nfp():
 
     # Configure service owner
     subprocess.call("crudini --set /etc/neutron/neutron.conf admin_owned_resources_apic_tscp plumbing_resource_owner_user neutron".split(' '))
-    admin_password = commands.getoutput("crudini --get /etc/neutron/neutron.conf keystone_authtoken admin_password")
+    admin_password = commands.getoutput("crudini --get /etc/neutron/neutron.conf keystone_authtoken password")
     subprocess.call("crudini --set /etc/neutron/neutron.conf admin_owned_resources_apic_tscp plumbing_resource_owner_password".split(' ') + [admin_password])
     subprocess.call("crudini --set /etc/neutron/neutron.conf admin_owned_resources_apic_tscp plumbing_resource_owner_tenant_name services".split(' '))
 
     # Configure NFP drivers
     subprocess.call("crudini --set /etc/neutron/neutron.conf node_composition_plugin node_plumber admin_owned_resources_apic_plumber".split(' '))
     subprocess.call("crudini --set /etc/neutron/neutron.conf node_composition_plugin node_drivers nfp_node_driver".split(' '))
-    subprocess.call("crudini --set /etc/neutron/neutron.conf nfp_node_driver is_service_admin_owned True".split(' '))
+    subprocess.call("crudini --set /etc/neutron/neutron.conf nfp_node_driver is_service_admin_owned False".split(' '))
     subprocess.call("crudini --set /etc/neutron/neutron.conf nfp_node_driver svc_management_ptg_name svc_management_ptg".split(' '))
 
     # Enable ML2 port security
@@ -637,9 +637,9 @@ def create_proxy_agent_ctl():
 def get_openstack_creds():
     CONFIG.read(NEUTRON_CONF)
     AUTH_URI = CONFIG.get('keystone_authtoken', 'auth_uri')
-    AUTH_USER = CONFIG.get('keystone_authtoken', 'admin_user')
-    AUTH_PASSWORD = CONFIG.get('keystone_authtoken', 'admin_password')
-    AUTH_TENANT_NAME = CONFIG.get('keystone_authtoken', 'admin_tenant_name')
+    AUTH_USER = CONFIG.get('keystone_authtoken', 'username')
+    AUTH_PASSWORD = CONFIG.get('keystone_authtoken', 'password')
+    AUTH_TENANT_NAME = CONFIG.get('keystone_authtoken', 'project_name')
     os.environ["OS_USERNAME"] = AUTH_USER
     os.environ["OS_TENANT_NAME"] = AUTH_TENANT_NAME
     os.environ["OS_PASSWORD"] = AUTH_PASSWORD
