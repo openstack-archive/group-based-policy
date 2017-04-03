@@ -797,14 +797,6 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
 
         # Find the address_scope(s) for the new interface.
         #
-        # TODO(rkukura): To support IPv6 and dual-stack routing, we
-        # will need both the v4 and v6 scopes. For now, we reject
-        # adding v6 subnets. Dual-stack topologies will use the v4
-        # scope, with OpFlex "identity NAT" moving v6 traffic to the
-        # v6 scope's VRF.
-        for subnet in subnets:
-            if subnet['ip_version'] != 4:
-                raise exceptions.IPv6RoutingNotSupported()
         scope_id = self._get_address_scope_id_for_subnets(context, subnets)
 
         # Find number of existing interface ports on the router,
