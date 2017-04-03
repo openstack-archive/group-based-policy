@@ -88,13 +88,13 @@ class TestHeatDriver(unittest2.TestCase):
         cfg.CONF.set_override('svc_management_ptg_name',
                               SVC_MGMT_PTG_NAME,
                               group='heat_driver')
-        cfg.CONF.set_override('admin_user',
+        cfg.CONF.set_override('username',
                               'neutron',
                               group='nfp_keystone_authtoken')
-        cfg.CONF.set_override('admin_password',
+        cfg.CONF.set_override('password',
                               'admin_pass',
                               group='nfp_keystone_authtoken')
-        cfg.CONF.set_override('admin_tenant_name',
+        cfg.CONF.set_override('project_name',
                               'admin',
                               group='nfp_keystone_authtoken')
         # cfg.CONF.set_override('resource_owner_tenant_id',
