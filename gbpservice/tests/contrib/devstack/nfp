@@ -199,9 +199,9 @@ function copy_nfp_files_and_start_process {
 
     source $TOP_DIR/inc/ini-config
 
-    admin_user=`iniget /etc/neutron/neutron.conf keystone_authtoken admin_user`
-    admin_password=`iniget /etc/neutron/neutron.conf keystone_authtoken admin_password`
-    admin_tenant_name=`iniget /etc/neutron/neutron.conf keystone_authtoken admin_tenant_name`
+    admin_user=`iniget /etc/neutron/neutron.conf keystone_authtoken username`
+    admin_password=`iniget /etc/neutron/neutron.conf keystone_authtoken password`
+    admin_tenant_name=`iniget /etc/neutron/neutron.conf keystone_authtoken project_name`
     auth_uri=`iniget /etc/neutron/neutron.conf keystone_authtoken auth_uri`
     auth_protocol=$(echo $auth_uri | tr ':/' ' ' | awk '{print $1}')
     auth_host=$(echo $auth_uri | tr ':/' ' ' | awk '{print $2}')
