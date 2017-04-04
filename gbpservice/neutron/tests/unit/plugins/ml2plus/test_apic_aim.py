@@ -65,7 +65,9 @@ AGENT_CONF_OVS = {'alive': True, 'binary': 'somebinary',
                   'topic': 'sometopic',
                   'agent_type': n_constants.AGENT_TYPE_OVS,
                   'configurations': {
-                      'bridge_mappings': {'physnet1': 'br-eth1'}}}
+                      'bridge_mappings': {'physnet1': 'br-eth1',
+                                          'physnet2': 'br-eth2',
+                                          'physnet3': 'br-eth3'}}}
 
 DN = 'apic:distinguished_names'
 CIDR = 'apic:external_cidrs'
@@ -162,7 +164,9 @@ class ApicAimTestCase(test_address_scope.AddressScopeTestCase,
         net_type = tenant_network_types or ['opflex']
         config.cfg.CONF.set_override('tenant_network_types', net_type, 'ml2')
         config.cfg.CONF.set_override('network_vlan_ranges',
-                                     ['physnet1:1000:1099'],
+                                     ['physnet1:1000:1099',
+                                      'physnet2:123:165',
+                                      'physnet3:347:513'],
                                      group='ml2_type_vlan')
         service_plugins = {
             'L3_ROUTER_NAT':
@@ -3854,6 +3858,8 @@ class TestPortVlanNetwork(ApicAimTestCase):
                         for bl in port_context.binding_levels]
         self.assertEqual(expected_binding_info or self.expected_binding_info,
                          binding_info)
+        self.assertEqual(port_context.top_bound_segment['physical_network'],
+                         port_context.bottom_bound_segment['physical_network'])
         return port_context.bottom_bound_segment['segmentation_id']
 
     def _check_no_dynamic_segment(self, network_id):
@@ -4171,7 +4177,11 @@ class TestPortOnPhysicalNode(TestPortVlanNetwork):
 
         self._register_agent('opflex-1', AGENT_CONF_OPFLEX)
 
-        net1 = self._make_network(self.fmt, 'net1', True)['network']
+        net1 = self._make_network(
+            self.fmt, 'net1', True,
+            arg_list=('provider:physical_network', 'provider:network_type'),
+            **{'provider:physical_network': 'physnet3',
+               'provider:network_type': 'opflex'})['network']
         epg1 = self._net_2_epg(net1)
 
         with self.subnet(network={'network': net1}) as sub1:
