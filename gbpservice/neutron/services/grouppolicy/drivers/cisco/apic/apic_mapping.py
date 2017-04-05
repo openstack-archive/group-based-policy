@@ -49,6 +49,7 @@ from oslo_log import log as logging
 import oslo_messaging
 from oslo_serialization import jsonutils
 import sqlalchemy as sa
+from sqlalchemy.orm import exc as orm_exc
 
 from gbpservice._i18n import _LE
 from gbpservice._i18n import _LI
@@ -2752,7 +2753,12 @@ class ApicMappingDriver(api.ResourceMappingDriver,
                     ApicMappingDriver, self)._use_implicit_subnet(
                         context, subnet_specifics={'name': name},
                         is_proxy=is_proxy)
-            context.add_subnets(subs - set(context.current['subnets']))
+            try:
+                context.add_subnets(subs - set(context.current['subnets']))
+            except orm_exc.FlushError:
+                for subnet in added:
+                    self._delete_subnet(context._plugin_context, subnet['id'])
+                return
             if added:
                 l3p_id = l2p['l3_policy_id']
                 l3p = context._plugin.get_l3_policy(context._plugin_context,
