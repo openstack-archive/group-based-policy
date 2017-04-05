@@ -9,6 +9,9 @@
 -e git+https://github.com/noironetworks/python-opflex-agent.git@sumit/stable/ocata#egg=python-opflexagent-agent
 -e git+https://github.com/noironetworks/apic-ml2-driver.git@sumit/ocata#egg=apic_ml2
 
+-e git+https://github.com/openstack/vmware-nsx.git@stable/newton#egg=vmware_nsx
+-e git+https://github.com/openstack/vmware-nsxlib.git@master#egg=vmware_nsxlib
+
 -e git+https://git.openstack.org/openstack/python-group-based-policy-client@master#egg=gbpclient
 -e git+https://git.openstack.org/openstack/neutron-vpnaas@stable/ocata#egg=neutron-vpnaas
 -e git+https://git.openstack.org/openstack/neutron-lbaas@stable/ocata#egg=neutron-lbaas
