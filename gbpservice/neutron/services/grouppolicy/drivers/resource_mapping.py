@@ -23,6 +23,7 @@ from neutron.extensions import securitygroup as ext_sg
 from neutron_lib import constants as n_const
 from neutron_lib.db import model_base
 from neutron_lib import exceptions as n_exc
+from neutron_lib.plugins import directory
 from oslo_config import cfg
 from oslo_db import exception as oslo_db_excp
 from oslo_log import helpers as log
@@ -1380,6 +1381,12 @@ class ResourceMappingDriver(api.PolicyDriver, ImplicitResourceOperations,
     def initialize(self):
         self._cached_agent_notifier = None
         self._resource_owner_tenant_id = None
+
+    @property
+    def gbp_plugin(self):
+        if not self._gbp_plugin:
+            self._gbp_plugin = directory.get_plugin("GROUP_POLICY")
+        return self._gbp_plugin
 
     def _reject_shared(self, object, type):
         if object.get('shared'):

@@ -89,6 +89,32 @@ function configure_nfp_vpn {
  /etc/neutron/neutron_vpnaas.conf
 }
 
+# TODO(annak): This is a temporary solution
+# nsxlib, which wraps policy API, is under development
+# since policy API is yet to be finalized
+# we prefer to run against master branch at this point
+function prepare_nsx_policy {
+    NSXLIB_NAME='vmware-nsxlib'
+    GITDIR[$NSXLIB_NAME]=/opt/stack/vmware-nsxlib
+    GITREPO[$NSXLIB_NAME]=${NSXLIB_REPO:-${GIT_BASE}/openstack/vmware-nsxlib.git}
+    GITBRANCH[$NSXLIB_NAME]=${NSXLIB_BRANCH:-master}
+
+    if use_library_from_git $NSXLIB_NAME; then
+        git_clone_by_name $NSXLIB_NAME
+        setup_dev_lib $NSXLIB_NAME
+    fi
+}
+
+function nsx_configure_neutron {
+    iniset $NEUTRON_CONF DEFAULT core_plugin "vmware_nsx.plugin.NsxV3Plugin"
+    iniset $NEUTRON_CONF group_policy policy_drivers "implicit_policy,nsx_policy"
+
+    iniset /$Q_PLUGIN_CONF_FILE NSX_POLICY nsx_policy_manager $NSX_POLICY_MANAGER
+    iniset /$Q_PLUGIN_CONF_FILE NSX_POLICY nsx_policy_username $NSX_POLICY_USERNAME
+    iniset /$Q_PLUGIN_CONF_FILE NSX_POLICY nsx_policy_password $NSX_POLICY_PASSWORD
+    iniset /$Q_PLUGIN_CONF_FILE NSX_POLICY nsx_manager_thumbprint $NSX_MANAGER_THUMBPRINT
+}
+
 # Process contract
 if is_service_enabled group-policy; then
     if [[ "$1" == "stack" && "$2" == "pre-install" ]]; then
@@ -100,11 +126,21 @@ if is_service_enabled group-policy; then
             echo_summary "Installing $NFP"
             prepare_nfp_image_builder
         fi
+        if [[ $ENABLE_NSX_POLICY = True ]]; then
+            echo_summary "Installing NSX Policy requirements"
+            prepare_nsx_policy
+        fi
+
     elif [[ "$1" == "stack" && "$2" == "post-config" ]]; then
         echo_summary "Configuring $GBP"
         [[ $ENABLE_APIC_AIM_GATE = False ]] && gbp_configure_nova
         [[ $ENABLE_APIC_AIM_GATE = False ]] && gbp_configure_heat
         gbp_configure_neutron
+
+        if [[ $ENABLE_NSX_POLICY = True ]]; then
+            echo_summary "Configuring NSX"
+            nsx_configure_neutron
+        fi
         if [[ $ENABLE_NFP = True ]]; then
             echo_summary "Configuring $NFP"
             nfp_configure_neutron
