@@ -16,6 +16,7 @@ import netaddr
 import re
 import six
 
+from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import cache
 from apic_ml2.neutron.db import l3out_vlan_allocation as l3out_vlan_alloc
 from apic_ml2.neutron.db import port_ha_ipaddress_binding as ha_ip_db
 from apic_ml2.neutron.plugins.ml2.drivers.cisco.apic import apic_model
@@ -305,6 +306,7 @@ class ApicMappingDriver(api.ResourceMappingDriver,
             keystone_authtoken = None
             session = None
             if client:
+                """
                 keystone_authtoken = cfg.CONF.keystone_authtoken
                 pass_params = (
                     apic_mapper.APICNameMapper.get_key_password_params(
@@ -315,12 +317,25 @@ class ApicMappingDriver(api.ResourceMappingDriver,
                     tenant_name=pass_params[3],
                     user_domain_id='Default', project_domain_id='Default')
                 session = keysession.Session(auth=admin_auth)
+                """
+	        ncache = cache.ProjectNameCache()
+                ncache._get_keystone_client()
+                keystoneclientv3 = ncache.keystone
+                
+            """
             ApicMappingDriver.manager = apic_manager.APICManager(
                 apic_model.ApicDbModel(), logging, network_config, apic_config,
                 keyclient_param, keystone_authtoken, apic_system_id,
                 default_apic_model=('apic_ml2.neutron.plugins.ml2.drivers.'
                                     'cisco.apic.apic_model'),
                 keysession=session)
+            """
+            ApicMappingDriver.manager = apic_manager.APICManager(
+                apic_model.ApicDbModel(), logging, network_config, apic_config,
+                apic_system_id,
+                default_apic_model=('apic_ml2.neutron.plugins.ml2.drivers.'
+                                    'cisco.apic.apic_model'),
+                keystoneclientv3=keystoneclientv3)
             ApicMappingDriver.manager.ensure_infra_created_on_apic()
             ApicMappingDriver.manager.ensure_bgp_pod_policy_created_on_apic()
         return ApicMappingDriver.manager
@@ -2769,7 +2784,7 @@ class ApicMappingDriver(api.ResourceMappingDriver,
                     for router_id in l3p['routers']:
                         for subnet in added:
                             self._plug_router_to_subnet(
-                                nctx.get_admin_context(),
+                                context._plugin_context.elevated(),
                                 subnet['id'], router_id)
 
     def _stitch_proxy_ptg_to_l3p(self, context, l3p):
