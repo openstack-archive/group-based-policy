@@ -5,6 +5,7 @@ ENABLE_APIC_AIM=${ENABLE_APIC_AIM:-False}
 ENABLE_APIC_AIM_GATE=${ENABLE_APIC_AIM_GATE:-False}
 [[ $ENABLE_APIC_AIM = True ]] && source $DEST/group-based-policy/devstack/lib/apic_aim
 [[ $ENABLE_APIC_AIM_GATE = True ]] && source $DEST/group-based-policy/devstack/lib/apic_aim
+[[ $ENABLE_NSX_POLICY = True ]] && source $DEST/group-based-policy/devstack/lib/nsx
 
 ENABLE_NFP=${ENABLE_NFP:-False}
 [[ $ENABLE_NFP = True ]] && NFP_DEVSTACK_MODE=${NFP_DEVSTACK_MODE:-base}
@@ -69,6 +70,12 @@ if [[ $ENABLE_NFP = True ]]; then
     enable_service nfp_proxy_agent
     [[ $NFP_DEVSTACK_MODE = base ]] && enable_service nfp_base_configurator
     [[ $NFP_DEVSTACK_MODE != base ]] && enable_service nfp_config_orchestrator
+fi
+if [[ $ENABLE_NSX_POLICY = True ]]; then
+    disable_service q-meta
+    disable_service q-dhcp
+    disable_service q-l3
+    disable_service q-agt
 fi
 
 OVS_PHYSICAL_BRIDGE=br-ex

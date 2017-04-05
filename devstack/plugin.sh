@@ -100,11 +100,21 @@ if is_service_enabled group-policy; then
             echo_summary "Installing $NFP"
             prepare_nfp_image_builder
         fi
+        if [[ $ENABLE_NSX_POLICY = True ]]; then
+            echo_summary "Installing NSX Policy requirements"
+            prepare_nsx_policy
+        fi
+
     elif [[ "$1" == "stack" && "$2" == "post-config" ]]; then
         echo_summary "Configuring $GBP"
         [[ $ENABLE_APIC_AIM_GATE = False ]] && gbp_configure_nova
         [[ $ENABLE_APIC_AIM_GATE = False ]] && gbp_configure_heat
         gbp_configure_neutron
+
+        if [[ $ENABLE_NSX_POLICY = True ]]; then
+            echo_summary "Configuring NSX"
+            nsx_configure_neutron
+        fi
         if [[ $ENABLE_NFP = True ]]; then
             echo_summary "Configuring $NFP"
             nfp_configure_neutron
