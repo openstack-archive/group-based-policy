@@ -156,10 +156,17 @@ class PolicyDriverManager(stevedore.named.NamedExtensionManager):
             if isinstance(driver.obj, group_policy_driver_api.PolicyDriver):
                 try:
                     driver.obj.ensure_tenant(plugin_context, tenant_id)
-                except Exception:
-                    LOG.exception(_LE("Policy driver '%s' failed in "
-                                      "ensure_tenant"), driver.name)
-                    raise gp_exc.GroupPolicyDriverError(method="ensure_tenant")
+                except Exception as e:
+                    if db_api.is_retriable(e):
+                        with excutils.save_and_reraise_exception():
+                            LOG.debug("Policy driver '%(driver)s' failed in "
+                                      "ensure_tenant, operation will "
+                                      "be retried", {'driver': driver.name})
+                    else:
+                        LOG.exception(_LE("Policy driver '%s' failed in "
+                                          "ensure_tenant"), driver.name)
+                        raise gp_exc.GroupPolicyDriverError(
+                                method="ensure_tenant")
 
     def create_policy_target_precommit(self, context):
         self._call_on_drivers("create_policy_target_precommit", context)
