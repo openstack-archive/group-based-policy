@@ -414,7 +414,12 @@ function copy_nfp_files_and_start_process {
     sudo rm -rf /etc/nfp*
     sudo cp -r bin/nfp.ini /etc/
     sudo cp -r bin/nfp_proxy /usr/bin/
-    [[ $NFP_DEVSTACK_MODE = advanced ]] && sudo bash -c 'cat '$NFPSERVICE_DIR'/gbpservice/contrib/nfp/bin/nfp.ini >> /etc/nfp.ini'
+    if [[ $NFP_DEVSTACK_MODE = advanced ]]; then
+        sudo bash -c 'cat '$NFPSERVICE_DIR'/gbpservice/contrib/nfp/bin/nfp.ini >> /etc/nfp.ini'
+        sudo mkdir -p /etc/nfp/vyos/
+        sudo cp -r $NFPSERVICE_DIR/gbpservice/contrib/nfp/bin/vyos.day0 /etc/nfp/vyos/
+        sudo sed -i 's/"password": ""/"password": "vyos"/' /etc/nfp/vyos/vyos.day0
+    fi
     if [[ $NFP_DEVSTACK_MODE = base ]]; then
         configurator_ip=127.0.0.1
         configurator_port=8080
