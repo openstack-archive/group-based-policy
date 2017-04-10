@@ -53,3 +53,63 @@ def is_vpn_in_service_chain(sc_specs):
             if service_type.lower() == nfp_constants.VPN:
                 return True
     return False
+
+
+def get_config_file(service_vendor):
+    file_name = service_vendor + '.day0'
+    return file_name
+
+
+def get_service_vm_context(service_vendor, tenant_name=None):
+        """ Load day0 config file
+            :param service_vendor: service vendor name
+            :param tenant_name
+
+            - Day0 file name must start with service vendor name followed by
+              string '.day0'
+              e.g Vyos day0 file name must be vyos.day0
+            - File format can be of any type like text file, json file etc
+
+            - service vendor specific default day0 config file
+                /etc/nfp/<service_vendor>/<day0_file>
+                e.g /etc/nfp/vyos/vyos.day0
+            - tenant specific vendor day0 config file
+                /etc/nfp/<service_vendor>/<tenant_name>/<day0_file>
+                e.g /etc/nfp/vyos/services/vyos.day0
+
+            Returns - day0 config file
+        """
+        try:
+            file_name = ''
+            default_config_dir = nfp_constants.CONFIG_DIR
+            vendor_day0_dir = default_config_dir + service_vendor + '/'
+            if tenant_name:
+                tenant_day0_dir = vendor_day0_dir + tenant_name + '/'
+                if os.path.isdir(tenant_day0_dir):
+                    file_name = get_config_file(service_vendor)
+            if file_name:
+                day0_config_file = tenant_day0_dir + file_name
+            else:
+                if os.path.isdir(vendor_day0_dir):
+                    file_name = get_config_file(service_vendor)
+                    day0_config_file = vendor_day0_dir + file_name
+                else:
+                    day0_config_file = '/fake_file_path'
+
+            with open(day0_config_file) as _file:
+                try:
+                    svm_context = yaml.load(_file)
+                except Exception as e:
+                    msg = ("Failed yaml load file %s. Reason: %s"
+                           % (day0_config_file, e))
+                    raise Exception(msg)
+
+            msg = ("Loaded day0 config file %s for service_vendor %s,"
+                   "tenant_name %s" % (day0_config_file, service_vendor,
+                                       tenant_name))
+            LOG.info(msg)
+            return svm_context
+        except Exception as ex:
+            msg = ("Failed to read day0 config file, ERROR: %s" % ex)
+            LOG.error(msg)
+            return None

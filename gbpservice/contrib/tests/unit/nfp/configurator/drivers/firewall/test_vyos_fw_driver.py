@@ -60,7 +60,8 @@ class FwGenericConfigDriverTestCase(base.BaseTestCase):
             data = jsonutils.dumps(self.fo.static_ip_data())
             mock_post.assert_called_with(
                 self.fo.get_url_for_api('add_static_ip'),
-                data=data, timeout=self.fo.timeout)
+                data=data, headers=self.fo.fake_header,
+                timeout=self.fo.timeout)
 
     def test_configure_interfaces(self):
         """ Implements test case for configure interfaces method
@@ -85,6 +86,7 @@ class FwGenericConfigDriverTestCase(base.BaseTestCase):
             data = jsonutils.dumps(self.fo.data_for_interface)
             mock_post.assert_called_with(self.fo.get_url_for_api('add_inte'),
                                          data=data,
+                                         headers=self.fo.fake_header,
                                          timeout=self.fo.timeout)
 
     def test_clear_interfaces(self):
@@ -105,7 +107,7 @@ class FwGenericConfigDriverTestCase(base.BaseTestCase):
             data = jsonutils.dumps(self.fo.data_for_interface)
             mock_delete.assert_called_with(
                                 self.fo.get_url_for_api('del_inte'),
-                                data=data,
+                                data=data, headers=self.fo.fake_header,
                                 timeout=self.fo.timeout)
 
     def test_configure_source_routes(self):
@@ -129,7 +131,8 @@ class FwGenericConfigDriverTestCase(base.BaseTestCase):
             data = jsonutils.dumps(data)
             mock_post.assert_called_with(
                 self.fo.get_url_for_api('add_src_route'),
-                data=data, timeout=self.fo.timeout)
+                data=data, headers=self.fo.fake_header,
+                timeout=self.fo.timeout)
 
     def test_delete_source_routes(self):
         """ Implements test case for clear routes method
@@ -152,7 +155,8 @@ class FwGenericConfigDriverTestCase(base.BaseTestCase):
             data = jsonutils.dumps(data)
             mock_delete.assert_called_with(
                 self.fo.get_url_for_api('del_src_route'),
-                data=data, timeout=self.fo.timeout)
+                data=data, headers=self.fo.fake_header,
+                timeout=self.fo.timeout)
 
 
 class FwaasDriverTestCase(base.BaseTestCase):
@@ -192,6 +196,7 @@ class FwaasDriverTestCase(base.BaseTestCase):
                                         self.fo.firewall, self.fo.host)
             mock_post.assert_called_with(self.fo.get_url_for_api('config_fw'),
                                          data=self.firewall,
+                                         headers=self.fo.fake_header,
                                          timeout=self.fo.timeout)
 
     def test_update_firewall_fwaasdriver(self):
@@ -210,6 +215,7 @@ class FwaasDriverTestCase(base.BaseTestCase):
                                         self.fo.firewall, self.fo.host)
             mock_put.assert_called_with(self.fo.get_url_for_api('update_fw'),
                                         data=self.firewall,
+                                        headers=self.fo.fake_header,
                                         timeout=self.fo.timeout)
 
     def test_delete_firewall_fwaasdriver(self):
@@ -228,4 +234,5 @@ class FwaasDriverTestCase(base.BaseTestCase):
                                         self.fo.firewall, self.fo.host)
             mock_delete.assert_called_with(
                 self.fo.get_url_for_api('delete_fw'),
-                data=self.firewall, timeout=self.fo.timeout)
+                data=self.firewall, headers=self.fo.fake_header,
+                timeout=self.fo.timeout)
