@@ -17,6 +17,8 @@ import time
 
 from neutron._i18n import _LI
 
+from neutron._i18n import _LI
+
 from gbpservice.contrib.nfp.configurator.drivers.base import base_driver
 from gbpservice.contrib.nfp.configurator.drivers.vpn.vyos import (
     vyos_vpn_constants as const)
