@@ -60,12 +60,8 @@ def is_vpn_in_service_chain(sc_specs):
     return False
 
 
-def get_config_file(dir_name, service_vendor):
-    file_name = ''
-    for _file in os.listdir(dir_name):
-        if _file.startswith(service_vendor):
-            file_name = _file
-            break
+def get_config_file(service_vendor):
+    file_name = service_vendor + '.day0'
     return file_name
 
 
@@ -75,16 +71,16 @@ def get_service_vm_context(service_vendor, tenant_name=None):
             :param tenant_name
 
             - Day0 file name must start with service vendor name followed by
-              string '_day0'
-              e.g Vyos day0 file name can be vyos_day0.json or vyos_day0
+              string '.day0'
+              e.g Vyos day0 file name must be vyos.day0
             - File format can be of any type like text file, json file etc
 
             - service vendor specific default day0 config file
                 /etc/nfp/<service_vendor>/<day0_file>
-                e.g /etc/nfp/vyos/vyos_day0.json
+                e.g /etc/nfp/vyos/vyos.day0
             - tenant specific vendor day0 config file
                 /etc/nfp/<service_vendor>/<tenant_name>/<day0_file>
-                e.g /etc/nfp/vyos/services/vyos_day0.json
+                e.g /etc/nfp/vyos/services/vyos.day0
 
             Returns - day0 config file
         """
@@ -95,14 +91,12 @@ def get_service_vm_context(service_vendor, tenant_name=None):
             if tenant_name:
                 tenant_day0_dir = vendor_day0_dir + tenant_name + '/'
                 if os.path.isdir(tenant_day0_dir):
-                    file_name = get_config_file(tenant_day0_dir,
-                                                service_vendor)
+                    file_name = get_config_file(service_vendor)
             if file_name:
                 day0_config_file = tenant_day0_dir + file_name
             else:
                 if os.path.isdir(vendor_day0_dir):
-                    file_name = get_config_file(vendor_day0_dir,
-                                                service_vendor)
+                    file_name = get_config_file(service_vendor)
                     day0_config_file = vendor_day0_dir + file_name
                 else:
                     day0_config_file = '/fake_file_path'
