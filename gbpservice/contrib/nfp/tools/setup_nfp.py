@@ -98,6 +98,9 @@ def set_keystone_authtoken_section():
 
 def configure_nfp():
     commands.getoutput("cat /usr/lib/python2.7/site-packages/gbpservice/contrib/nfp/bin/nfp.ini >> /etc/nfp.ini")
+    commands.getoutput("mkdir -p /etc/nfp/vyos/")
+    commands.getoutput("cp -r /usr/lib/python2.7/site-packages/gbpservice/contrib/nfp/bin/vyos.day0 /etc/nfp/vyos/")
+    commands.getoutput("sed -i 's/\"password\": \"\"/\"password\": \"vyos\"/' /etc/nfp/vyos/vyos.day0")
     set_keystone_authtoken_section()
     check_if_apic_sys()
     curr_service_plugins = commands.getoutput("crudini --get /etc/neutron/neutron.conf DEFAULT service_plugins")
