@@ -16,6 +16,7 @@ import hashlib
 import mock
 import netaddr
 
+from aim.api import infra as aim_infra
 from aim.api import resource as aim_resource
 from aim.api import status as aim_status
 from aim import context as aim_context
@@ -2026,9 +2027,9 @@ class TestPolicyTargetGroup(AIMBaseTestCase):
             self._aim_context, aim_resource.EndpointGroup(
                 tenant_name=aim_tenant_name,
                 app_profile_name=aim_app_profile_name, name=aim_epg_name))
-        self.assertEqual(set(['vm1', 'vm2']),
+        self.assertEqual(set([]),
                          set(aim_epg.openstack_vmm_domain_names))
-        self.assertEqual(set(['ph1', 'ph2']),
+        self.assertEqual(set([]),
                          set(aim_epg.physical_domain_names))
 
     def test_policy_target_group_lifecycle_implicit_l2p(self):
@@ -2396,6 +2397,191 @@ class TestPolicyTarget(AIMBaseTestCase):
             expected_res_status=200)['policy_target']
         self.assertItemsEqual(segmentation_labels, pt['segmentation_labels'])
         mock_notif.assert_not_called()
+
+    def test_policy_target_with_default_domains(self):
+        aim_ctx = aim_context.AimContext(self.db_session)
+        self.aim_mgr.create(aim_ctx,
+                            aim_resource.VMMDomain(type='OpenStack',
+                                                   name='vm1'),
+                            overwrite=True)
+        self.aim_mgr.create(aim_ctx,
+                            aim_resource.VMMDomain(type='OpenStack',
+                                                   name='vm2'),
+                            overwrite=True)
+        ptg = self.create_policy_target_group(
+            name="ptg1")['policy_target_group']
+        pt = self.create_policy_target(
+            policy_target_group_id=ptg['id'])['policy_target']
+        self._bind_port_to_host(pt['port_id'], 'h1')
+
+        aim_epg_name = self.driver.apic_epg_name_for_policy_target_group(
+            self._neutron_context.session, ptg['id'])
+        aim_tenant_name = self.name_mapper.project(None, self._tenant_id)
+        aim_app_profile_name = self.driver.aim_mech_driver.ap_name
+        aim_epg = self.aim_mgr.get(
+            self._aim_context, aim_resource.EndpointGroup(
+                tenant_name=aim_tenant_name,
+                app_profile_name=aim_app_profile_name, name=aim_epg_name))
+        self.assertEqual(set(['vm1', 'vm2']),
+                         set(aim_epg.openstack_vmm_domain_names))
+        # move port to another host
+        self._bind_port_to_host(pt['port_id'], 'h2')
+        aim_epg = self.aim_mgr.get(aim_ctx, aim_epg)
+        self.assertEqual(set(['vm1', 'vm2']),
+                         set(aim_epg.openstack_vmm_domain_names))
+        # delete port
+        self.delete_policy_target(pt['id'], expected_res_status=204)
+        aim_epg = self.aim_mgr.get(aim_ctx, aim_epg)
+        self.assertEqual(set(['vm1', 'vm2']),
+                         set(aim_epg.openstack_vmm_domain_names))
+
+    def test_policy_target_with_default_domains_explicit_port(self):
+        aim_ctx = aim_context.AimContext(self.db_session)
+        self.aim_mgr.create(aim_ctx,
+                            aim_resource.VMMDomain(type='OpenStack',
+                                                   name='vm1'),
+                            overwrite=True)
+        self.aim_mgr.create(aim_ctx,
+                            aim_resource.VMMDomain(type='OpenStack',
+                                                   name='vm2'),
+                            overwrite=True)
+        with self.port() as port:
+            port_id = port['port']['id']
+            self._bind_port_to_host(port_id, 'h1')
+            ptg = self.create_policy_target_group(
+                name="ptg1")['policy_target_group']
+            pt = self.create_policy_target(
+                policy_target_group_id=ptg['id'],
+                port_id=port_id)['policy_target']
+
+            aim_epg_name = self.driver.apic_epg_name_for_policy_target_group(
+                self._neutron_context.session, ptg['id'])
+            aim_tenant_name = self.name_mapper.project(None, self._tenant_id)
+            aim_app_profile_name = self.driver.aim_mech_driver.ap_name
+            aim_epg = self.aim_mgr.get(
+                self._aim_context, aim_resource.EndpointGroup(
+                    tenant_name=aim_tenant_name,
+                    app_profile_name=aim_app_profile_name, name=aim_epg_name))
+            self.assertEqual(set(['vm1', 'vm2']),
+                             set(aim_epg.openstack_vmm_domain_names))
+            # move port to another host
+            self._bind_port_to_host(pt['port_id'], 'h2')
+            aim_epg = self.aim_mgr.get(aim_ctx, aim_epg)
+            self.assertEqual(set(['vm1', 'vm2']),
+                             set(aim_epg.openstack_vmm_domain_names))
+            # delete port
+            self.delete_policy_target(pt['id'], expected_res_status=204)
+            aim_epg = self.aim_mgr.get(aim_ctx, aim_epg)
+            self.assertEqual(set(['vm1', 'vm2']),
+                             set(aim_epg.openstack_vmm_domain_names))
+
+    def test_policy_target_with_specific_domains(self):
+        aim_ctx = aim_context.AimContext(self.db_session)
+        hd_mapping = aim_infra.HostDomainMapping(host_name='opflex-1',
+                                                 vmm_domain_name='vm1')
+        self.aim_mgr.create(aim_ctx, hd_mapping)
+        hd_mapping = aim_infra.HostDomainMapping(host_name='opflex-2',
+                                                 vmm_domain_name='vm2')
+        self.aim_mgr.create(aim_ctx, hd_mapping)
+        hd_mapping = aim_infra.HostDomainMapping(host_name='opflex-2a',
+                                                 vmm_domain_name='vm2')
+        self.aim_mgr.create(aim_ctx, hd_mapping)
+
+        ptg = self.create_policy_target_group(
+            name="ptg1")['policy_target_group']
+        pt = self.create_policy_target(
+            policy_target_group_id=ptg['id'])['policy_target']
+        self._bind_port_to_host(pt['port_id'], 'opflex-1')
+
+        aim_epg_name = self.driver.apic_epg_name_for_policy_target_group(
+            self._neutron_context.session, ptg['id'])
+        aim_tenant_name = self.name_mapper.project(None, self._tenant_id)
+        aim_app_profile_name = self.driver.aim_mech_driver.ap_name
+        aim_epg = self.aim_mgr.get(
+            self._aim_context, aim_resource.EndpointGroup(
+                tenant_name=aim_tenant_name,
+                app_profile_name=aim_app_profile_name, name=aim_epg_name))
+        self.assertEqual(set(['vm1']),
+                         set(aim_epg.openstack_vmm_domain_names))
+        # move port to another host
+        self._bind_port_to_host(pt['port_id'], 'opflex-2')
+        aim_epg = self.aim_mgr.get(aim_ctx, aim_epg)
+        self.assertEqual(set(['vm2']),
+                         set(aim_epg.openstack_vmm_domain_names))
+        # create another port on a host that belongs to the same domain
+        pt1 = self.create_policy_target(
+            policy_target_group_id=ptg['id'])['policy_target']
+        self._bind_port_to_host(pt1['port_id'], 'opflex-2a')
+        aim_epg = self.aim_mgr.get(aim_ctx, aim_epg)
+        self.assertEqual(set(['vm2']),
+                         set(aim_epg.openstack_vmm_domain_names))
+        # delete 1st port
+        self.delete_policy_target(pt['id'], expected_res_status=204)
+        aim_epg = self.aim_mgr.get(aim_ctx, aim_epg)
+        self.assertEqual(set(['vm2']),
+                         set(aim_epg.openstack_vmm_domain_names))
+        # delete the last port
+        self.delete_policy_target(pt1['id'], expected_res_status=204)
+        aim_epg = self.aim_mgr.get(aim_ctx, aim_epg)
+        self.assertEqual(set([]),
+                         set(aim_epg.openstack_vmm_domain_names))
+
+    def test_policy_target_with_specific_domains_explicit_port(self):
+        aim_ctx = aim_context.AimContext(self.db_session)
+        hd_mapping = aim_infra.HostDomainMapping(host_name='opflex-1',
+                                                 vmm_domain_name='vm1')
+        self.aim_mgr.create(aim_ctx, hd_mapping)
+        hd_mapping = aim_infra.HostDomainMapping(host_name='opflex-2',
+                                                 vmm_domain_name='vm2')
+        self.aim_mgr.create(aim_ctx, hd_mapping)
+        hd_mapping = aim_infra.HostDomainMapping(host_name='opflex-2a',
+                                                 vmm_domain_name='vm2')
+        self.aim_mgr.create(aim_ctx, hd_mapping)
+        with self.port() as port:
+            port_id = port['port']['id']
+            self._bind_port_to_host(port_id, 'opflex-1')
+            ptg = self.create_policy_target_group(
+                name="ptg1")['policy_target_group']
+            pt = self.create_policy_target(
+                policy_target_group_id=ptg['id'],
+                port_id=port_id)['policy_target']
+
+            aim_epg_name = self.driver.apic_epg_name_for_policy_target_group(
+                self._neutron_context.session, ptg['id'])
+            aim_tenant_name = self.name_mapper.project(None, self._tenant_id)
+            aim_app_profile_name = self.driver.aim_mech_driver.ap_name
+            aim_epg = self.aim_mgr.get(
+                self._aim_context, aim_resource.EndpointGroup(
+                    tenant_name=aim_tenant_name,
+                    app_profile_name=aim_app_profile_name, name=aim_epg_name))
+            self.assertEqual(set(['vm1']),
+                             set(aim_epg.openstack_vmm_domain_names))
+            # move port to another host
+            self._bind_port_to_host(port_id, 'opflex-2')
+            aim_epg = self.aim_mgr.get(aim_ctx, aim_epg)
+            self.assertEqual(set(['vm2']),
+                             set(aim_epg.openstack_vmm_domain_names))
+        with self.port() as port1:
+            # create another port on a host that belongs to the same domain
+            port_id1 = port1['port']['id']
+            self._bind_port_to_host(port_id1, 'opflex-2a')
+            pt1 = self.create_policy_target(
+                policy_target_group_id=ptg['id'],
+                port_id=port_id1)['policy_target']
+
+            aim_epg = self.aim_mgr.get(aim_ctx, aim_epg)
+            self.assertEqual(set(['vm2']),
+                             set(aim_epg.openstack_vmm_domain_names))
+            # delete 1st pt
+            self.delete_policy_target(pt['id'], expected_res_status=204)
+            aim_epg = self.aim_mgr.get(aim_ctx, aim_epg)
+            self.assertEqual(set(['vm2']),
+                             set(aim_epg.openstack_vmm_domain_names))
+            # delete the last pt
+            self.delete_policy_target(pt1['id'], expected_res_status=204)
+            aim_epg = self.aim_mgr.get(aim_ctx, aim_epg)
+            self.assertEqual(set([]),
+                             set(aim_epg.openstack_vmm_domain_names))
 
     def _verify_gbp_details_assertions(self, mapping, req_mapping, port_id,
                                        expected_epg_name, expected_epg_tenant,
