@@ -2591,9 +2591,9 @@ class TestMl2NetworksV2(test_plugin.TestNetworksV2,
                             overwrite=True)
         with self.network(name='net'):
             epg = self.aim_mgr.find(aim_ctx, aim_resource.EndpointGroup)[0]
-            self.assertEqual(set(['vm1', 'vm2']),
+            self.assertEqual(set([]),
                              set(epg.openstack_vmm_domain_names))
-            self.assertEqual(set(['ph1', 'ph2']),
+            self.assertEqual(set([]),
                              set(epg.physical_domain_names))
 
 
@@ -4317,6 +4317,185 @@ class TestPortOnPhysicalNode(TestPortVlanNetwork):
                 self.assertEqual(
                     [{'path': self.hlink1.path, 'encap': 'vlan-%s' % vlan_p2}],
                     epg1.static_paths)
+
+    def test_mixed_ports_on_network_with_default_domains(self):
+        aim_ctx = aim_context.AimContext(self.db_session)
+        self.aim_mgr.create(aim_ctx,
+                            aim_resource.VMMDomain(type='OpenStack',
+                                                   name='vm1'),
+                            overwrite=True)
+        self.aim_mgr.create(aim_ctx,
+                            aim_resource.VMMDomain(type='OpenStack',
+                                                   name='vm2'),
+                            overwrite=True)
+        self.aim_mgr.create(aim_ctx,
+                            aim_resource.PhysicalDomain(name='ph1'),
+                            overwrite=True)
+        self.aim_mgr.create(aim_ctx,
+                            aim_resource.PhysicalDomain(name='ph2'),
+                            overwrite=True)
+        self._register_agent('opflex-1', AGENT_CONF_OPFLEX)
+        self._register_agent('opflex-2', AGENT_CONF_OPFLEX)
+        net1 = self._make_network(
+            self.fmt, 'net1', True,
+            arg_list=('provider:physical_network', 'provider:network_type'),
+            **{'provider:physical_network': 'physnet3',
+               'provider:network_type': 'opflex'})['network']
+        epg1 = self._net_2_epg(net1)
+
+        with self.subnet(network={'network': net1}) as sub1:
+            # "normal" port on opflex host
+            with self.port(subnet=sub1) as p1:
+                p1 = self._bind_port_to_host(p1['port']['id'], 'opflex-1')
+                epg1 = self.aim_mgr.get(aim_ctx, epg1)
+                self.assertEqual(set(['vm1', 'vm2']),
+                                 set(epg1.openstack_vmm_domain_names))
+                self.assertEqual(set([]),
+                                 set(epg1.physical_domain_names))
+                # move port to another host
+                p1 = self._bind_port_to_host(p1['port']['id'], 'opflex-2')
+                epg1 = self.aim_mgr.get(aim_ctx, epg1)
+                self.assertEqual(set(['vm1', 'vm2']),
+                                 set(epg1.openstack_vmm_domain_names))
+                self.assertEqual(set([]),
+                                 set(epg1.physical_domain_names))
+                # delete port
+                self._delete('ports', p1['port']['id'])
+                epg1 = self.aim_mgr.get(aim_ctx, epg1)
+                self.assertEqual(set(['vm1', 'vm2']),
+                                 set(epg1.openstack_vmm_domain_names))
+                self.assertEqual(set([]),
+                                 set(epg1.physical_domain_names))
+
+            # port on non-opflex host
+            with self.port(subnet=sub1) as p2:
+                p2 = self._bind_port_to_host(p2['port']['id'], 'h1')
+                epg1 = self.aim_mgr.get(aim_ctx, epg1)
+                self.assertEqual(set(['vm1', 'vm2']),
+                                 set(epg1.openstack_vmm_domain_names))
+                self.assertEqual(set(['ph1', 'ph2']),
+                                 set(epg1.physical_domain_names))
+                # move port to another host
+                p2 = self._bind_port_to_host(p2['port']['id'], 'h2')
+                epg1 = self.aim_mgr.get(aim_ctx, epg1)
+                self.assertEqual(set(['vm1', 'vm2']),
+                                 set(epg1.openstack_vmm_domain_names))
+                self.assertEqual(set(['ph1', 'ph2']),
+                                 set(epg1.physical_domain_names))
+                # delete port
+                self._delete('ports', p2['port']['id'])
+                epg1 = self.aim_mgr.get(aim_ctx, epg1)
+                self.assertEqual(set(['vm1', 'vm2']),
+                                 set(epg1.openstack_vmm_domain_names))
+                self.assertEqual(set(['ph1', 'ph2']),
+                                 set(epg1.physical_domain_names))
+
+    def test_mixed_ports_on_network_with_specific_domains(self):
+        aim_ctx = aim_context.AimContext(self.db_session)
+        hd_mapping = aim_infra.HostDomainMapping(host_name='opflex-1',
+                                                 vmm_domain_name='vm1')
+        self.aim_mgr.create(aim_ctx, hd_mapping)
+        hd_mapping = aim_infra.HostDomainMapping(host_name='opflex-2',
+                                                 vmm_domain_name='vm2')
+        self.aim_mgr.create(aim_ctx, hd_mapping)
+        hd_mapping = aim_infra.HostDomainMapping(host_name='opflex-2a',
+                                                 vmm_domain_name='vm2')
+        self.aim_mgr.create(aim_ctx, hd_mapping)
+        hd_mapping = aim_infra.HostDomainMapping(host_name='h1',
+                                                 physical_domain_name='ph1')
+        self.aim_mgr.create(aim_ctx, hd_mapping)
+        hd_mapping = aim_infra.HostDomainMapping(host_name='h2',
+                                                 physical_domain_name='ph2')
+        self.aim_mgr.create(aim_ctx, hd_mapping)
+        hd_mapping = aim_infra.HostDomainMapping(host_name='h2a',
+                                                 physical_domain_name='ph2')
+        self.aim_mgr.create(aim_ctx, hd_mapping)
+        self._register_agent('opflex-1', AGENT_CONF_OPFLEX)
+        self._register_agent('opflex-2', AGENT_CONF_OPFLEX)
+        self._register_agent('opflex-2a', AGENT_CONF_OPFLEX)
+        net1 = self._make_network(
+            self.fmt, 'net1', True,
+            arg_list=('provider:physical_network', 'provider:network_type'),
+            **{'provider:physical_network': 'physnet3',
+               'provider:network_type': 'opflex'})['network']
+        epg1 = self._net_2_epg(net1)
+
+        with self.subnet(network={'network': net1}) as sub1:
+            # "normal" port on opflex host
+            with self.port(subnet=sub1) as p1:
+                p1 = self._bind_port_to_host(p1['port']['id'], 'opflex-1')
+                epg1 = self.aim_mgr.get(aim_ctx, epg1)
+                self.assertEqual(set(['vm1']),
+                                 set(epg1.openstack_vmm_domain_names))
+                self.assertEqual(set([]),
+                                 set(epg1.physical_domain_names))
+                # move port to another host
+                p1 = self._bind_port_to_host(p1['port']['id'], 'opflex-2')
+                epg1 = self.aim_mgr.get(aim_ctx, epg1)
+                self.assertEqual(set(['vm2']),
+                                 set(epg1.openstack_vmm_domain_names))
+                self.assertEqual(set([]),
+                                 set(epg1.physical_domain_names))
+            # create another port on a host that belongs to the same domain
+            with self.port(subnet=sub1) as p1a:
+                p1a = self._bind_port_to_host(p1a['port']['id'], 'opflex-2a')
+                epg1 = self.aim_mgr.get(aim_ctx, epg1)
+                self.assertEqual(set(['vm2']),
+                                 set(epg1.openstack_vmm_domain_names))
+                self.assertEqual(set([]),
+                                 set(epg1.physical_domain_names))
+            # delete 1st port
+            self._delete('ports', p1['port']['id'])
+            epg1 = self.aim_mgr.get(aim_ctx, epg1)
+            self.assertEqual(set(['vm2']),
+                             set(epg1.openstack_vmm_domain_names))
+            self.assertEqual(set([]),
+                             set(epg1.physical_domain_names))
+            # delete the last port
+            self._delete('ports', p1a['port']['id'])
+            epg1 = self.aim_mgr.get(aim_ctx, epg1)
+            self.assertEqual(set([]),
+                             set(epg1.openstack_vmm_domain_names))
+            self.assertEqual(set([]),
+                             set(epg1.physical_domain_names))
+
+            # port on non-opflex host
+            with self.port(subnet=sub1) as p2:
+                p2 = self._bind_port_to_host(p2['port']['id'], 'h1')
+                epg1 = self.aim_mgr.get(aim_ctx, epg1)
+                self.assertEqual(set([]),
+                                 set(epg1.openstack_vmm_domain_names))
+                self.assertEqual(set(['ph1']),
+                                 set(epg1.physical_domain_names))
+                # move port to another host
+                p2 = self._bind_port_to_host(p2['port']['id'], 'h2')
+                epg1 = self.aim_mgr.get(aim_ctx, epg1)
+                self.assertEqual(set([]),
+                                 set(epg1.openstack_vmm_domain_names))
+                self.assertEqual(set(['ph2']),
+                                 set(epg1.physical_domain_names))
+            # create another port on a host that belongs to the same domain
+            with self.port(subnet=sub1) as p2a:
+                p2a = self._bind_port_to_host(p2a['port']['id'], 'h2a')
+                epg1 = self.aim_mgr.get(aim_ctx, epg1)
+                self.assertEqual(set([]),
+                                 set(epg1.openstack_vmm_domain_names))
+                self.assertEqual(set(['ph2']),
+                                 set(epg1.physical_domain_names))
+            # delete 1st port
+            self._delete('ports', p2['port']['id'])
+            epg1 = self.aim_mgr.get(aim_ctx, epg1)
+            self.assertEqual(set([]),
+                             set(epg1.openstack_vmm_domain_names))
+            self.assertEqual(set(['ph2']),
+                             set(epg1.physical_domain_names))
+            # delete the last port
+            self._delete('ports', p2a['port']['id'])
+            epg1 = self.aim_mgr.get(aim_ctx, epg1)
+            self.assertEqual(set([]),
+                             set(epg1.openstack_vmm_domain_names))
+            self.assertEqual(set([]),
+                             set(epg1.physical_domain_names))
 
 
 class TestPortOnPhysicalNodeSingleDriver(TestPortOnPhysicalNode):
