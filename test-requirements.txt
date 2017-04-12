@@ -4,8 +4,7 @@
 
 -e git+https://git.openstack.org/openstack/neutron.git@stable/newton#egg=neutron
 
-# TODO(rkukura): Switch apicapi back to master branch eventually.
--e git+https://github.com/noironetworks/apicapi.git@aci_integration_manager#egg=apicapi
+-e git+https://github.com/noironetworks/apicapi.git@master#egg=apicapi
 
 -e git+https://github.com/noironetworks/python-opflex-agent.git@master#egg=python-opflexagent-agent
 -e git+https://github.com/noironetworks/apic-ml2-driver.git@master#egg=apic_ml2
