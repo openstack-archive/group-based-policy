@@ -590,11 +590,6 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
             policy_enforcement_pref=
             self._get_policy_enforcement_pref(context.current))
 
-        session = context._plugin_context.session
-        aim_ctx = aim_context.AimContext(session)
-        vmms, phys = self.aim_mech_driver.get_aim_domains(aim_ctx)
-        aim_epg.openstack_vmm_domain_names = vmms
-        aim_epg.physical_domain_names = phys
         # AIM EPG will be persisted in the following call
         self._add_implicit_svc_contracts_to_epg(context, l2p_db, aim_epg)
 
@@ -744,6 +739,11 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
             subnets = self._get_subnets(
                 context._plugin_context, {'id': ptg['subnets']})
             self._use_implicit_port(context, subnets=subnets)
+        # explicit port case
+        else:
+            port_context = self._core_plugin.get_bound_port_context(
+                        context._plugin_context, context.current['port_id'])
+            self.aim_mech_driver.associate_domain(port_context)
         self._associate_fip_to_pt(context)
 
     @log.log_method_call
@@ -768,6 +768,11 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
         pt_db = context._plugin._get_policy_target(
             context._plugin_context, context.current['id'])
         if pt_db['port_id']:
+            if not self._port_is_owned(context._plugin_context.session,
+                                       pt_db['port_id']):
+                port_context = self._core_plugin.get_bound_port_context(
+                        context._plugin_context, context.current['port_id'])
+                self.aim_mech_driver.disassociate_domain(port_context)
             self._cleanup_port(context._plugin_context, pt_db['port_id'])
 
     @log.log_method_call
