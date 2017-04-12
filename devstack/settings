@@ -28,7 +28,7 @@ GBPHEAT_BRANCH=${GBPHEAT_BRANCH:-stable/mitaka}
 AIM_BRANCH=${AIM_BRANCH:-master}
 APICML2_BRANCH=${APICML2_BRANCH:-stable/mitaka}
 OPFLEX_BRANCH=${OPFLEX_BRANCH:-master}
-APICAPI_BRANCH=${APICAPI_BRANCH:-aci_integration_manager}
+APICAPI_BRANCH=${APICAPI_BRANCH:-master}
 
 # Enable necessary services, including group-policy (and disable others)
 disable_service n-net
