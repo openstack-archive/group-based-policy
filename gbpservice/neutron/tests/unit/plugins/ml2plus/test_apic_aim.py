@@ -2566,9 +2566,9 @@ class TestMl2NetworksV2(test_plugin.TestNetworksV2,
                             overwrite=True)
         with self.network(name='net'):
             epg = self.aim_mgr.find(aim_ctx, aim_resource.EndpointGroup)[0]
-            self.assertEqual(set(['vm1', 'vm2']),
+            self.assertEqual(set([]),
                              set(epg.openstack_vmm_domain_names))
-            self.assertEqual(set(['ph1', 'ph2']),
+            self.assertEqual(set([]),
                              set(epg.physical_domain_names))
 
 
