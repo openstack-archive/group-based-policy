@@ -257,7 +257,6 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
 
             dname = aim_utils.sanitize_display_name(current['name'])
             vrf = self._ensure_unrouted_vrf(aim_ctx)
-            vmms, phys = self.get_aim_domains(aim_ctx)
 
             bd.display_name = dname
             bd.vrf_name = vrf.name
@@ -271,8 +270,6 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
 
             epg.display_name = dname
             epg.bd_name = bd.name
-            epg.openstack_vmm_domain_names = vmms
-            epg.physical_domain_names = phys
             self.aim.create(aim_ctx, epg)
 
     def update_network_precommit(self, context):
@@ -1178,23 +1175,34 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
 
     def update_port_precommit(self, context):
         port = context.current
-        if (self._use_static_path(context.original_bottom_bound_segment) and
-            context.original_host != context.host):
-            # remove static binding for old host
-            self._update_static_path(context, host=context.original_host,
-                segment=context.original_bottom_bound_segment, remove=True)
-            self._release_dynamic_segment(context, use_original=True)
+        if context.original_host and context.original_host != context.host:
+            self._disassociate_domain(context, use_original=True)
+            if self._use_static_path(context.original_bottom_bound_segment):
+                # remove static binding for old host
+                self._update_static_path(context, host=context.original_host,
+                    segment=context.original_bottom_bound_segment, remove=True)
+                self._release_dynamic_segment(context, use_original=True)
 
-        if (self._is_port_bound(port) and
-                self._use_static_path(context.bottom_bound_segment)):
-            self._update_static_path(context)
+        if self._is_port_bound(port):
+            if self._use_static_path(context.bottom_bound_segment):
+                self._associate_domain(context, is_vmm=False)
+                self._update_static_path(context)
+            elif (context.bottom_bound_segment and
+                  self._is_opflex_type(
+                        context.bottom_bound_segment[api.NETWORK_TYPE])):
+                self._associate_domain(context, is_vmm=True)
 
     def delete_port_precommit(self, context):
         port = context.current
-        if (self._is_port_bound(port) and
-                self._use_static_path(context.bottom_bound_segment)):
-            self._update_static_path(context, remove=True)
-            self._release_dynamic_segment(context)
+        if self._is_port_bound(port):
+            if self._use_static_path(context.bottom_bound_segment):
+                self._update_static_path(context, remove=True)
+                self._disassociate_domain(context)
+                self._release_dynamic_segment(context)
+            elif (context.bottom_bound_segment and
+                  self._is_opflex_type(
+                      context.bottom_bound_segment[api.NETWORK_TYPE])):
+                self._disassociate_domain(context)
 
     def create_floatingip(self, context, current):
         if current['port_id']:
@@ -2322,6 +2330,125 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
                 LOG.info(_LI('Releasing dynamic-segment %(s)s for port %(p)s'),
                          {'s': btm, 'p': port_context.current['id']})
                 port_context.release_dynamic_segment(btm[api.ID])
+
+    def _associate_domain(self, port_context, is_vmm=True):
+        port = port_context.current
+        session = port_context._plugin_context.session
+        aim_ctx = aim_context.AimContext(session)
+        ptg = None
+        # TODO(kentwu): remove this coupling with aim_mapping if possible
+        if self.aim_mapping:
+            ptg, pt = self.aim_mapping._port_id_to_ptg(
+                        port_context._plugin_context, port['id'])
+        if ptg:
+            epg = self.aim_mapping._aim_endpoint_group(session, ptg)
+        else:
+            network = {}
+            network['id'] = port['network_id']
+            network['tenant_id'] = port_context.network.current['tenant_id']
+            bd, epg = self._map_network(session, network, None)
+        aim_epg = self.aim.get(aim_ctx, epg)
+        host_id = port[portbindings.HOST_ID]
+        hd_mapping = aim_infra.HostDomainMapping(host_name=host_id)
+        aim_hd_mapping = self.aim.get(aim_ctx, hd_mapping)
+        domain = None
+        if is_vmm:
+            if aim_hd_mapping:
+                domain = aim_hd_mapping.vmm_domain_name
+            if not domain:
+                vmms, phys = self.get_aim_domains(aim_ctx)
+                self.aim.update(aim_ctx, epg,
+                                openstack_vmm_domain_names=vmms)
+            elif domain not in aim_epg.openstack_vmm_domain_names:
+                aim_epg.openstack_vmm_domain_names.append(domain)
+                vmms = aim_epg.openstack_vmm_domain_names
+                self.aim.update(aim_ctx, epg,
+                                openstack_vmm_domain_names=vmms)
+        else:
+            if aim_hd_mapping:
+                domain = aim_hd_mapping.physical_domain_name
+            if not domain:
+                vmms, phys = self.get_aim_domains(aim_ctx)
+                self.aim.update(aim_ctx, epg,
+                                physical_domain_names=phys)
+            elif domain not in aim_epg.physical_domain_names:
+                aim_epg.physical_domain_names.append(domain)
+                phys = aim_epg.physical_domain_names
+                self.aim.update(aim_ctx, epg,
+                                physical_domain_names=phys)
+
+    def _disassociate_domain(self, port_context, use_original=False):
+        btm = (port_context.original_bottom_bound_segment if use_original
+               else port_context.bottom_bound_segment)
+        if not btm:
+            return
+        port = port_context.current
+        if (self._is_opflex_type(btm[api.NETWORK_TYPE]) or
+                self._is_supported_non_opflex_type(btm[api.NETWORK_TYPE])):
+            host_id = (port_context.original_host if use_original
+                       else port_context.host)
+            session = port_context._plugin_context.session
+            aim_ctx = aim_context.AimContext(session)
+            hd_mapping = aim_infra.HostDomainMapping(host_name=host_id)
+            aim_hd_mapping = self.aim.get(aim_ctx, hd_mapping)
+            if not aim_hd_mapping:
+                return
+            if self._is_opflex_type(btm[api.NETWORK_TYPE]):
+                domain = aim_hd_mapping.vmm_domain_name
+                if domain:
+                    hd_mappings = self.aim.find(aim_ctx,
+                                                aim_infra.HostDomainMapping,
+                                                vmm_domain_name=domain)
+            else:
+                domain = aim_hd_mapping.physical_domain_name
+                if domain:
+                    hd_mappings = self.aim.find(aim_ctx,
+                                                aim_infra.HostDomainMapping,
+                                                physical_domain_name=domain)
+            if not domain:
+                return
+            hosts = [x.host_name for x in hd_mappings]
+            # if there are no other ports bound to those hosts under this vmm,
+            # release the domain
+            ports = (session
+                     .query(models.PortBindingLevel)
+                     .join(models_v2.Port,
+                           models_v2.Port.id ==
+                           models.PortBindingLevel.port_id)
+                     .filter(models_v2.Port.network_id == port['network_id'])
+                     .filter(models.PortBindingLevel.host.in_(hosts))
+                     .filter(models.PortBindingLevel.port_id != port['id'])
+                     .first())
+            if not ports:
+                ptg = None
+                # TODO(kentwu): remove this coupling with aim_mapping
+                # if possible
+                if self.aim_mapping:
+                    ptg, pt = self.aim_mapping._port_id_to_ptg(
+                                port_context._plugin_context, port['id'])
+                if ptg:
+                    epg = self.aim_mapping._aim_endpoint_group(session, ptg)
+                else:
+                    network = {}
+                    network['id'] = port['network_id']
+                    network['tenant_id'] = port_context.network.current[
+                                                                'tenant_id']
+                    bd, epg = self._map_network(session, network, None)
+                aim_epg = self.aim.get(aim_ctx, epg)
+                if self._is_opflex_type(btm[api.NETWORK_TYPE]):
+                    if domain in aim_epg.openstack_vmm_domain_names:
+                        aim_epg.openstack_vmm_domain_names.remove(domain)
+                        vmms = aim_epg.openstack_vmm_domain_names
+                        self.aim.update(aim_ctx, epg,
+                                        openstack_vmm_domain_names=vmms)
+                else:
+                    if domain in aim_epg.physical_domain_names:
+                        aim_epg.physical_domain_names.remove(domain)
+                        phys = aim_epg.physical_domain_names
+                        self.aim.update(aim_ctx, epg,
+                                        physical_domain_names=phys)
+                LOG.info(_LI('Releasing domain %(d)s for port %(p)s'),
+                         {'d': domain, 'p': port['id']})
 
     def _get_non_opflex_segments_on_host(self, context, host):
         session = context.session
