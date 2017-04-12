@@ -2019,9 +2019,9 @@ class TestPolicyTargetGroup(AIMBaseTestCase):
             self._aim_context, aim_resource.EndpointGroup(
                 tenant_name=aim_tenant_name,
                 app_profile_name=aim_app_profile_name, name=aim_epg_name))
-        self.assertEqual(set(['vm1', 'vm2']),
+        self.assertEqual(set([]),
                          set(aim_epg.openstack_vmm_domain_names))
-        self.assertEqual(set(['ph1', 'ph2']),
+        self.assertEqual(set([]),
                          set(aim_epg.physical_domain_names))
 
     def test_policy_target_group_lifecycle_implicit_l2p(self):
