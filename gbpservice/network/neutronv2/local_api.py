@@ -117,7 +117,7 @@ def send_or_queue_registry_notification(
     session, transaction_key, resource, event, trigger, **kwargs):
     send = False
     if resource in ['port', 'router_interface', 'subnet'] and (
-        event in ['after_delete']):
+        event in ['after_delete', 'precommit_delete']):
         send = True
     if not session or not transaction_key or send or not BATCH_NOTIFICATIONS:
         # We make an exception for the dhcp agent notification
