@@ -163,6 +163,10 @@ class Ml2PlusPlugin(ml2_plugin.Ml2Plugin,
                            events.AFTER_CREATE)
         registry.subscribe(self._handle_segment_change, resources.SEGMENT,
                            events.AFTER_DELETE)
+        registry.subscribe(self._subnet_delete_precommit_handler,
+                           resources.SUBNET, events.PRECOMMIT_DELETE)
+        registry.subscribe(self._subnet_delete_after_delete_handler,
+                           resources.SUBNET, events.AFTER_DELETE)
         self._setup_dhcp()
         self._start_rpc_notifiers()
         self.add_agent_status_check(self.agent_health_check)
