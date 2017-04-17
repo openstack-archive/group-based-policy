@@ -10,6 +10,7 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+import copy
 import hashlib
 import re
 
@@ -100,6 +101,36 @@ opts = [
 cfg.CONF.register_opts(opts, "aim_mapping")
 
 
+ORIG_PUSH_NOTIFICATION = None
+DELETED_L2_POLICIES = {}
+AIM_DRIVER = None
+
+
+def after_commit_hook(session, transaction_key):
+    global AIM_DRIVER
+    ORIG_PUSH_NOTIFICATION(session, transaction_key)
+    if not AIM_DRIVER:
+        gbp_plugin = manager.NeutronManager.get_service_plugins()[
+            'GROUP_POLICY']
+        AIM_DRIVER = gbp_plugin.policy_driver_manager.policy_drivers[
+            'aim_mapping'].obj
+    context = DELETED_L2_POLICIES.pop(session, None)
+    if context:
+        tenant_id = context.current['tenant_id']
+        l2p_count = AIM_DRIVER._db_plugin(
+            context._plugin).get_l2_policies_count(
+                context._plugin_context, filters={'tenant_id': [tenant_id]})
+        if (l2p_count == 0):
+            LOG.debug("Last l2_policy deleted for tenant_id %(id)s, "
+                      "attempting to delete implicit contracts and "
+                      "default tenant epg", {'id': tenant_id})
+            with context._plugin_context.session.begin(subtransactions=True):
+                ad = AIM_DRIVER
+                ad._delete_implicit_contracts_and_unconfigure_default_epg(
+                    context, context.current,
+                    context.current['default_epg_dn'])
+
+
 class SimultaneousV4V6AddressScopesNotSupportedOnAimDriver(
     exc.GroupPolicyBadRequest):
     message = _("Both v4 and v6 address_scopes cannot be set "
@@ -162,6 +193,11 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
                          'per L2 Policy'))
         self.setup_opflex_rpc_listeners()
         self.advertise_mtu = cfg.CONF.advertise_mtu
+        from gbpservice.network.neutronv2 import local_api
+        global ORIG_PUSH_NOTIFICATION
+        if not ORIG_PUSH_NOTIFICATION:
+            ORIG_PUSH_NOTIFICATION = local_api.post_notifications_from_queue
+            local_api.post_notifications_from_queue = after_commit_hook
 
     @property
     def aim_mech_driver(self):
@@ -497,14 +533,10 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
                          "creation, you can safely ignore this, else this "
                          "could potentially be indication of an error."),
                      {'id': auto_ptg_id, 'l2p': l2p_id})
-        # get_l2_policies_count returns a count including shared resources,
-        # hence we need to filter on the tenant_id
-        l2p_count = self._db_plugin(context._plugin).get_l2_policies_count(
-            context._plugin_context,
-            filters={'tenant_id': [l2p_db['tenant_id']]})
-        if (l2p_count == 1):
-            self._delete_implicit_contracts_and_unconfigure_default_epg(
-                context, context.current, default_epg_dn)
+        session = context._plugin_context.session
+        context_copy = copy.copy(context)
+        context_copy.current['default_epg_dn'] = default_epg_dn
+        DELETED_L2_POLICIES[session] = context_copy
         super(AIMMappingDriver, self).delete_l2_policy_precommit(context)
 
     @log.log_method_call
