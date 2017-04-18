@@ -100,7 +100,7 @@ class BaseDriver(object):
             return const.FAILED
         return const.SUCCESS
 
-    def _configure_log_forwarding(self, url, mgmt_ip, port):
+    def _configure_log_forwarding(self, url, mgmt_ip, port, headers=None):
         """ Configures log forwarding IP address in Service VMs.
 
             :param url: url format that is used to invoke the Service VM API
@@ -131,7 +131,8 @@ class BaseDriver(object):
         LOG.info(msg)
 
         try:
-            resp = requests.post(url, data, timeout=self.timeout)
+            resp = requests.post(url, data=data,
+                                 timeout=self.timeout, headers=headers)
         except requests.exceptions.ConnectionError as err:
             msg = ("Failed to establish connection to service at: "
                    "%r for configuring log forwarding. ERROR: %r" %
