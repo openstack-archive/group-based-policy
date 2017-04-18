@@ -23,14 +23,17 @@ function create_nfp_image {
 }
 
 function assign_user_role_credential {
-    TOP_DIR=$1
-    source $TOP_DIR/openrc admin admin
-    #set -x
-    serviceTenantID=`keystone tenant-list | grep "service" | awk '{print $2}'`
-    serviceRoleID=`keystone role-list | grep "service" | awk '{print $2}'`
-    adminRoleID=`keystone role-list | grep "admin" | awk '{print $2}'`
-    keystone user-role-add --user nova --tenant $serviceTenantID --role $serviceRoleID
-    keystone user-role-add --user neutron --tenant $serviceTenantID --role $adminRoleID
+    #TOP_DIR=$1
+    #source $TOP_DIR/openrc admin admin
+    ##set -x
+    #serviceTenantID=`keystone tenant-list | grep "service" | awk '{print $2}'`
+    #serviceRoleID=`keystone role-list | grep "service" | awk '{print $2}'`
+    #adminRoleID=`keystone role-list | grep "admin" | awk '{print $2}'`
+    #keystone user-role-add --user nova --tenant $serviceTenantID --role $serviceRoleID
+    #keystone user-role-add --user neutron --tenant $serviceTenantID --role $adminRoleID
+    openstack --os-cloud=devstack-admin role add --project service --user nova service
+    openstack --os-cloud=devstack-admin role add --project service --user neutron admin
+
 }
 
 function namespace_delete {
@@ -145,6 +148,7 @@ function create_nfp_gbp_resources {
    IMAGE_NAME=`basename "$IMAGE_PATH"`
    IMAGE_NAME_FLAT="${IMAGE_NAME%.*}"
    FLAVOR=m1.nfp-tiny
+   set -x
 
    gbp network-service-policy-create --network-service-params type=ip_pool,name=vip_ip,value=nat_pool svc_mgmt_fip_policy
    gbp service-profile-create --servicetype LOADBALANCER --insertion-mode l3 --shared True --service-flavor service_vendor=haproxy,device_type=None --vendor NFP base_mode_lb
