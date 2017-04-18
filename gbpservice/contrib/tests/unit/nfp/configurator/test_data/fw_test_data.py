@@ -18,9 +18,18 @@ class FakeObjects(object):
 
     sc = 'sc'
     empty_dict = {}
-    context = 'APIcontext'
-    neutron_context = {'neutron context for *aaS': {}}
-    firewall = 'firewall'
+    context = {'service_vm_context': {'vyos': {
+                            'username': 'name',
+                            'password': 'password'}}}
+    neutron_context = {'agent_info': {'service_type': 'firewall',
+                                      'notification_data': {},
+                                      'service_vendor': 'vyos',
+                                      'resource': 'firewall',
+                                      'context': 'APIcontext'
+                                      },
+                       'neutron context for *aaS': {}
+                       }
+    firewall = {'id': 'firewall'}
     host = 'host'
     conf = 'conf'
     vmid = 'b238e3f12fb64ebcbda2b3330700bf00'
@@ -28,6 +37,9 @@ class FakeObjects(object):
     drivers = 'drivers'
     data_for_interface = dict(provider_mac="fa:16:3e:d9:4c:33",
                               stitching_mac="fa:16:3e:da:ca:4d")
+    fake_header = {'username': 'name',
+                   'password': 'password',
+                   'Content-Type': 'application/json'}
     data_for_add_src_route = [{'source_cidr': "11.0.1.0/24",
                               'gateway_ip': "192.168.0.1"},
                               {'source_cidr': "192.168.0.0/28",
@@ -69,7 +81,10 @@ class FakeObjects(object):
                 'resource': 'firewall',
                 'service_vendor': 'vyos',
                 'context': {'requester': 'device_orch',
-                            'logging_context': {}},
+                            'logging_context': {},
+                            'service_vm_context': {'vyos':
+                                                   {'username': 'name',
+                                                    'password': 'password'}}},
                 'resource_type': 'firewall'},
             'notification_data': {}, 'service_info': {},
             "resource_data": {
@@ -455,7 +470,9 @@ class FakeEventGenericConfig(object):
                             'notification_data': {},
                             'resource_type': 'firewall',
                             'service_vendor': 'vyos',
-                            'context': 'APIcontext'},
+                            'context': {'service_vm_context': {'vyos': {
+                                'username': 'name',
+                                'password': 'password'}}}},
                     'firewall': fo._fake_firewall_obj(),
                     'host': fo.host,
                     'resource_data': kwargs}

@@ -27,7 +27,10 @@ class VPNTestData(object):
     def __init__(self):
 
         self.context_device = {'notification_data': {},
-                               'resource': 'interfaces'}
+                               'resource': 'interfaces',
+                               'service_vm_context': {'vyos': {
+                                             'username': 'username',
+                                             'password': 'password'}}}
         self.sc = 'sc'
         self.conf = 'conf'
         self.msg = 'msg'
@@ -384,6 +387,12 @@ class VPNTestData(object):
                                  "floating_ip": ""}]}
                                         ]}]}}
 
+    def get_header(self):
+        header = {'username': 'username',
+                  'password': 'password',
+                  'Content-Type': 'application/json'}
+        return header
+
     def make_service_context(self, operation_type=None):
         '''
         Prepares a simple service_info dictionary and appends it to
@@ -391,6 +400,10 @@ class VPNTestData(object):
 
         '''
 
+        agent_info = {'context': {'service_vm_context': {
+                                'vyos': {
+                                    'username': 'username',
+                                    'password': 'password'}}}}
         self.service_info = {}
         self.service_info.update({'vpnservices': self.vpnservice})
         if operation_type is None:
@@ -401,6 +414,7 @@ class VPNTestData(object):
 
         self.service_info.update({'subnets': self.subnet})
         self.context.update({'service_info': self.service_info})
+        self.context.update({'agent_info': agent_info})
         return self.context
 
     def _create_vpnservice_obj(self):
