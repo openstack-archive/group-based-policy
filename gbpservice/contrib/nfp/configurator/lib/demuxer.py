@@ -120,15 +120,15 @@ class ServiceAgentDemuxer(object):
                 const.FIREWALL: (operation + '_' + config_data['resource']),
                 const.VPN: ('vpnservice_updated'),
                 const.LOADBALANCER: (operation + '_' + config_data[
-                                                            'resource']),
+                    'resource']),
                 const.LOADBALANCERV2: (operation + '_' + config_data[
-                                                            'resource']),
+                    'resource']),
                 const.NFP_SERVICE: ('run' + '_' + const.NFP_SERVICE),
                 const.GENERIC_CONFIG: {
-                           const.CREATE: ('configure_' + config_data[
-                                                                'resource']),
-                           const.UPDATE: ('update_' + config_data['resource']),
-                           const.DELETE: ('clear_' + config_data['resource'])}}
+                    const.CREATE: ('configure_' + config_data[
+                        'resource']),
+                    const.UPDATE: ('update_' + config_data['resource']),
+                    const.DELETE: ('clear_' + config_data['resource'])}}
 
             context = request_data['info']['context']
 
@@ -141,7 +141,7 @@ class ServiceAgentDemuxer(object):
 
             if is_generic_config:
                 method = resource_type_to_method_map[
-                                        const.GENERIC_CONFIG][operation]
+                    const.GENERIC_CONFIG][operation]
             else:
                 if is_nfp_svc:
                     resource_type = const.NFP_SERVICE
@@ -153,12 +153,12 @@ class ServiceAgentDemuxer(object):
             sa_info.update({'method': method,
                             'resource_data': data,
                             'agent_info': {
-                                   # This is the API context
-                                   'context': context,
-                                   'service_vendor': service_vendor.lower(),
-                                   'service_feature': service_feature,
-                                   'resource_type': resource_type.lower(),
-                                   'resource': resource.lower()},
+                                # This is the API context
+                                'context': context,
+                                'service_vendor': service_vendor.lower(),
+                                'service_feature': service_feature,
+                                'resource_type': resource_type.lower(),
+                                'resource': resource.lower()},
                             'is_generic_config': is_generic_config})
 
             sa_info_list.append(sa_info)

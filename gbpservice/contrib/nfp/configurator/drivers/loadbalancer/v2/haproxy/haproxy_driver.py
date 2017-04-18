@@ -482,10 +482,10 @@ class HaproxyLoadBalancerManager(HaproxyCommonManager):
         loadbalancer_o_obj = self.driver.o_models_builder.\
             get_loadbalancer_octavia_model(loadbalancer)
         amphorae_network_config = self._get_amphorae_network_config(
-                                     context, loadbalancer, loadbalancer_o_obj)
+            context, loadbalancer, loadbalancer_o_obj)
         for amp in loadbalancer_o_obj.amphorae:
             self.driver.amphora_driver.post_vip_plug(
-                    amp, loadbalancer_o_obj, amphorae_network_config)
+                amp, loadbalancer_o_obj, amphorae_network_config)
 
         msg = ("LB %s, created %s"
                % (self.__class__.__name__, loadbalancer['id']))
