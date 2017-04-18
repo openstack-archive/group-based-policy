@@ -15,7 +15,6 @@ import copy
 import time
 
 from heatclient import exc as heat_exc
-from keystoneclient import exceptions as k_exceptions
 from neutron._i18n import _LE
 from neutron._i18n import _LI
 from neutron._i18n import _LW
@@ -23,21 +22,22 @@ from neutron.db import api as db_api
 from neutron.plugins.common import constants as pconst
 from oslo_config import cfg
 from oslo_serialization import jsonutils
-from oslo_utils import excutils
 import yaml
 
 from gbpservice.neutron.services.grouppolicy.common import constants as gconst
 from gbpservice.neutron.services.servicechain.plugins.ncp import plumber_base
 from gbpservice.nfp.common import constants as nfp_constants
 from gbpservice.nfp.common import utils
+from gbpservice.nfp.core import context as module_context
 from gbpservice.nfp.core import log as nfp_logging
+from gbpservice.nfp.lib import nfp_context_manager as nfp_ctx_mgr
 from gbpservice.nfp.lib import transport
 from gbpservice.nfp.orchestrator.config_drivers.heat_client import HeatClient
 from gbpservice.nfp.orchestrator.db import nfp_db as nfp_db
 from gbpservice.nfp.orchestrator.openstack.openstack_driver import (
-        KeystoneClient)
+    KeystoneClient)
 from gbpservice.nfp.orchestrator.openstack.openstack_driver import (
-        NeutronClient)
+    NeutronClient)
 from gbpservice.nfp.orchestrator.openstack.openstack_driver import GBPClient
 
 
@@ -98,7 +98,9 @@ class HeatDriver(object):
 
         self.keystone_conf = config.nfp_keystone_authtoken
         keystone_version = self.keystone_conf.auth_version
-        self.v2client = self.keystoneclient._get_v2_keystone_admin_client()
+        with nfp_ctx_mgr.KeystoneContextManager as kcm:
+            self.v2client = kcm.retry(
+                self.keystoneclient._get_v2_keystone_admin_client, tries=3)
         self.admin_id = self.v2client.users.find(
             name=self.keystone_conf.admin_user).id
         self.admin_role = self._get_role_by_name(
@@ -107,32 +109,27 @@ class HeatDriver(object):
             self.v2client, "heat_stack_owner", keystone_version)
 
     def _resource_owner_tenant_id(self):
-        auth_token = self.keystoneclient.get_scoped_keystone_token(
-            self.keystone_conf.admin_user,
-            self.keystone_conf.admin_password,
-            self.keystone_conf.admin_tenant_name)
-        try:
-            tenant_id = self.keystoneclient.get_tenant_id(
-                auth_token, self.keystone_conf.admin_tenant_name)
+        with nfp_ctx_mgr.KeystoneContextManager as kcm:
+            auth_token = kcm.retry(
+                self.keystoneclient.get_scoped_keystone_token,
+                self.keystone_conf.admin_user,
+                self.keystone_conf.admin_password,
+                self.keystone_conf.admin_tenant_name, tries=3)
+            tenant_id = kcm.retry(
+                self.keystoneclient.get_tenant_id,
+                auth_token, self.keystone_conf.admin_tenant_name, tries=3)
             return tenant_id
-        except k_exceptions.NotFound:
-            with excutils.save_and_reraise_exception(reraise=True):
-                LOG.error(_LE('No tenant with name %(tenant)s exists.'),
-                          {'tenant': self.keystone_conf.admin_tenant_name})
-        except k_exceptions.NoUniqueMatch:
-            with excutils.save_and_reraise_exception(reraise=True):
-                LOG.error(
-                    _LE('Multiple tenants matches found for %(tenant)s'),
-                    {'tenant': self.keystone_conf.admin_tenant_name})
 
     def _get_resource_owner_context(self):
         if cfg.CONF.heat_driver.is_service_admin_owned:
             tenant_id = self._resource_owner_tenant_id()
-            auth_token = self.keystoneclient.get_scoped_keystone_token(
-                self.keystone_conf.admin_user,
-                self.keystone_conf.admin_password,
-                self.keystone_conf.admin_tenant_name,
-                tenant_id)
+            with nfp_ctx_mgr.KeystoneContextManager as kcm:
+                auth_token = kcm.retry(
+                    self.keystoneclient.get_scoped_keystone_token,
+                    self.keystone_conf.admin_user,
+                    self.keystone_conf.admin_password,
+                    self.keystone_conf.admin_tenant_name,
+                    tenant_id, tries=3)
         return auth_token, tenant_id
 
     def _get_role_by_name(self, keystone_client, name, keystone_version):
@@ -174,7 +171,9 @@ class HeatDriver(object):
         if keystone_version == 'v2.0':
             return self._assign_admin_user_to_project_v2_keystone(project_id)
         else:
-            v3client = self.keystoneclient._get_v3_keystone_admin_client()
+            with nfp_ctx_mgr.KeystoneContextManager as kcm:
+                v3client = kcm.retry(
+                    self.keystoneclient._get_v3_keystone_admin_client, tries=3)
             admin_id = v3client.users.find(
                 name=self.keystone_conf.admin_user).id
             admin_role = self._get_role_by_name(v3client, "admin",
@@ -190,11 +189,13 @@ class HeatDriver(object):
 
     def keystone(self, user, pwd, tenant_name, tenant_id=None):
         if tenant_id:
-            return self.keystoneclient.get_scoped_keystone_token(
-                user, pwd, tenant_name, tenant_id)
+            with nfp_ctx_mgr.KeystoneContextManager as kcm:
+                return kcm.retry(self.keystoneclient.get_scoped_keystone_token,
+                                 user, pwd, tenant_name, tenant_id, tries=3)
         else:
-            return self.keystoneclient.get_scoped_keystone_token(
-                user, pwd, tenant_name)
+            with nfp_ctx_mgr.KeystoneContextManager as kcm:
+                return kcm.retry(self.keystoneclient.get_scoped_keystone_token,
+                                 user, pwd, tenant_name, tries=3)
 
     def _get_heat_client(self, tenant_id, assign_admin=False):
         # REVISIT(Akash) Need to discuss use cases why it is needed,
@@ -207,8 +208,8 @@ class HeatDriver(object):
                 LOG.exception(_LE("Failed to assign admin user to project"))
                 return None
         '''
-        logging_context = nfp_logging.get_logging_context()
-        auth_token = logging_context['auth_token']
+        nfp_context = module_context.get()
+        auth_token = nfp_context['log_context']['auth_token']
 
         timeout_mins, timeout_seconds = divmod(STACK_ACTION_WAIT_TIME, 60)
         if timeout_seconds:
@@ -246,7 +247,9 @@ class HeatDriver(object):
                 'network_function_instance')
             if network_function_instance:
                 for port in network_function_instance.get('port_info'):
-                    port_info = db_handler.get_port_info(db_session, port)
+                    with nfp_ctx_mgr.DbContextManager:
+                        port_info = db_handler.get_port_info(db_session,
+                                                             port)
                     if port_info['port_model'] != nfp_constants.GBP_PORT:
                         return
 
@@ -255,42 +258,46 @@ class HeatDriver(object):
             nfp_context)
         service_type = service_details['service_details']['service_type']
 
-        if service_type in [pconst.LOADBALANCER, pconst.LOADBALANCERV2]:
-            logging_context = nfp_logging.get_logging_context()
-            auth_token = logging_context['auth_token']
+        if service_type in [pconst.LOADBALANCER]:
+            auth_token = nfp_context['log_context']['auth_token']
             provider_tenant_id = nfp_context['tenant_id']
             provider = service_details['provider_ptg']
             self._create_policy_target_for_vip(
                 auth_token, provider_tenant_id, provider, service_type)
 
     def _get_provider_ptg_info(self, auth_token, sci_id):
-        servicechain_instance = self.gbp_client.get_servicechain_instance(
-            auth_token, sci_id)
-        provider_ptg_id = servicechain_instance['provider_ptg_id']
-        provider_ptg = self.gbp_client.get_policy_target_group(
-            auth_token, provider_ptg_id)
-        return provider_ptg
+        with nfp_ctx_mgr.GBPContextManager as gcm:
+            servicechain_instance = gcm.retry(
+                self.gbp_client.get_servicechain_instance,
+                auth_token, sci_id)
+            provider_ptg_id = servicechain_instance['provider_ptg_id']
+            provider_ptg = gcm.retry(self.gbp_client.get_policy_target_group,
+                                     auth_token, provider_ptg_id)
+            return provider_ptg
 
     def _pre_stack_cleanup(self, network_function):
-        logging_context = nfp_logging.get_logging_context()
-        auth_token = logging_context['auth_token']
-        service_profile = self.gbp_client.get_service_profile(
-            auth_token, network_function['service_profile_id'])
+        nfp_context = module_context.get()
+        auth_token = nfp_context['log_context']['auth_token']
+        with nfp_ctx_mgr.GBPContextManager:
+            service_profile = self.gbp_client.get_service_profile(
+                auth_token, network_function['service_profile_id'])
+
         service_type = service_profile['service_type']
         service_details = transport.parse_service_flavor_string(
             service_profile['service_flavor'])
         base_mode_support = (True if service_details['device_type'] == 'None'
                              else False)
         if (service_type in [pconst.LOADBALANCER, pconst.LOADBALANCERV2]) and (
-            not base_mode_support):
-            provider = self._get_provider_ptg_info(auth_token,
-                    network_function['service_chain_id'])
+                not base_mode_support):
+            provider = self._get_provider_ptg_info(
+                auth_token,
+                network_function['service_chain_id'])
             provider_tenant_id = provider['tenant_id']
             self._update_policy_targets_for_vip(
                 auth_token, provider_tenant_id, provider, service_type)
 
     def _post_stack_cleanup(self, network_function):
-        #TODO(ashu): In post stack cleanup, need to delete vip pt, currently
+        # TODO(ashu): In post stack cleanup, need to delete vip pt, currently
         # we dont have any way to identify vip pt, so skipping this, but need
         # to fix it.
         return
@@ -298,9 +305,10 @@ class HeatDriver(object):
     def _get_vip_pt(self, auth_token, vip_port_id):
         vip_pt = None
         filters = {'port_id': vip_port_id}
-        policy_targets = self.gbp_client.get_policy_targets(
-            auth_token,
-            filters=filters)
+        with nfp_ctx_mgr.GBPContextManager as gcm:
+            policy_targets = gcm.retry(self.gbp_client.get_policy_targets,
+                                       auth_token,
+                                       filters=filters)
         if policy_targets:
             vip_pt = policy_targets[0]
 
@@ -311,9 +319,11 @@ class HeatDriver(object):
         lb_vip = None
         lb_vip_name = None
 
-        provider_l2p_subnets = self.neutron_client.get_subnets(
-            auth_token,
-            filters={'id': provider['subnets']})
+        with nfp_ctx_mgr.NeutronContextManager as ncm:
+            provider_l2p_subnets = ncm.retry(
+                self.neutron_client.get_subnets,
+                auth_token,
+                filters={'id': provider['subnets']})
         for subnet in provider_l2p_subnets:
             if not subnet['name'].startswith(APIC_OWNED_RES):
                 provider_subnet = subnet
@@ -324,18 +334,23 @@ class HeatDriver(object):
                       {"provider_ptg": provider})
             return lb_vip, lb_vip_name
         if service_type == pconst.LOADBALANCER:
-            lb_pool_ids = self.neutron_client.get_pools(
-                auth_token,
-                filters={'subnet_id': [provider_subnet['id']]})
-            if lb_pool_ids and lb_pool_ids[0]['vip_id']:
-                lb_vip = self.neutron_client.get_vip(
-                    auth_token, lb_pool_ids[0]['vip_id'])['vip']
+            with nfp_ctx_mgr.NeutronContextManager as ncm:
+                lb_pool_ids = ncm.retry(
+                    self.neutron_client.get_pools,
+                    auth_token,
+                    filters={'subnet_id': [provider_subnet['id']]})
+                if lb_pool_ids and lb_pool_ids[0]['vip_id']:
+                    lb_vip = ncm.retry(
+                        self.neutron_client.get_vip,
+                        auth_token, lb_pool_ids[0]['vip_id'])['vip']
                 lb_vip_name = ("service_target_vip_pt" +
-                        lb_pool_ids[0]['vip_id'])
+                               lb_pool_ids[0]['vip_id'])
         elif service_type == pconst.LOADBALANCERV2:
-            loadbalancers = self.neutron_client.get_loadbalancers(
-                auth_token,
-                filters={'vip_subnet_id': [provider_subnet['id']]})
+            with nfp_ctx_mgr.NeutronContextManager as ncm:
+                loadbalancers = ncm.retry(
+                    self.neutron_client.get_loadbalancers,
+                    auth_token,
+                    filters={'vip_subnet_id': [provider_subnet['id']]})
             if loadbalancers:
                 loadbalancer = loadbalancers[0]
                 lb_vip = {}
@@ -346,18 +361,38 @@ class HeatDriver(object):
                 lb_vip_name = 'vip-' + loadbalancer['id']
         return lb_vip, lb_vip_name
 
+    def _get_lb_service_targets(self, auth_token, provider):
+        service_targets = []
+        if provider.get("policy_targets"):
+            filters = {'id': provider.get("policy_targets")}
+        else:
+            filters = {'policy_target_group_id': provider['id']}
+        with nfp_ctx_mgr.GBPContextManager as gcm:
+            policy_targets = gcm.retry(self.gbp_client.get_policy_targets,
+                                       auth_token,
+                                       filters=filters)
+        for policy_target in policy_targets:
+            if ('endpoint' in policy_target['name'] and
+                    self._is_service_target(policy_target)):
+                service_targets.append(policy_target)
+        return service_targets
+
     def _create_policy_target_for_vip(self, auth_token,
                                       provider_tenant_id,
                                       provider, service_type):
-        admin_token = self.keystoneclient.get_admin_token()
+
+        with nfp_ctx_mgr.KeystoneContextManager as kcm:
+            admin_token = kcm.retry(
+                self.keystoneclient.get_admin_token, tries=3)
         lb_vip, vip_name = self._get_lb_vip(auth_token, provider, service_type)
         service_targets = self._get_lb_service_targets(admin_token, provider)
         if not (lb_vip and service_targets):
             return None
 
-        vip_pt = self.gbp_client.create_policy_target(
-            auth_token, provider_tenant_id, provider['id'],
-            vip_name, lb_vip['port_id'])
+        with nfp_ctx_mgr.GBPContextManager as gcm:
+            vip_pt = gcm.retry(self.gbp_client.create_policy_target,
+                               auth_token, provider_tenant_id, provider['id'],
+                               vip_name, lb_vip['port_id'])
 
         # Set cluster_id as vip_pt
         for service_target in service_targets:
@@ -365,27 +400,38 @@ class HeatDriver(object):
             service_target_port_id = service_target['port_id']
 
             policy_target_info = {'cluster_id': vip_pt['id']}
-            self.gbp_client.update_policy_target(admin_token,
-                    service_target_id, policy_target_info)
+            with nfp_ctx_mgr.GBPContextManager as gcm:
+                gcm.retry(self.gbp_client.update_policy_target,
+                          admin_token,
+                          service_target_id, policy_target_info)
 
-            service_target_port = self.neutron_client.get_port(
-                            admin_token, service_target_port_id)['port']
+            with nfp_ctx_mgr.NeutronContextManager as ncm:
+                service_target_port = ncm.retry(self.neutron_client.get_port,
+                                                admin_token,
+                                                service_target_port_id)['port']
             vip_ip = service_target_port[
-                            'allowed_address_pairs'][0]['ip_address']
+                'allowed_address_pairs'][0]['ip_address']
 
             # Update allowed address pairs entry came through cluster_id
             # updation with provider_port mac address.
             updated_port = {
-                    'allowed_address_pairs': [{'ip_address': vip_ip,
-                    'mac_address': service_target_port['mac_address']}]
-                           }
-            self.neutron_client.update_port(
-                    admin_token, service_target_port_id, **updated_port)
+                'allowed_address_pairs': [
+                    {
+                        'ip_address': vip_ip,
+                        'mac_address': service_target_port['mac_address']}]
+            }
+            with nfp_ctx_mgr.NeutronContextManager as ncm:
+                ncm.retry(self.neutron_client.update_port,
+                          admin_token, service_target_port_id,
+                          **updated_port)
 
     def _update_policy_targets_for_vip(self, auth_token,
-                                      provider_tenant_id,
-                                      provider, service_type):
-        admin_token = self.keystoneclient.get_admin_token()
+                                       provider_tenant_id,
+                                       provider, service_type):
+
+        with nfp_ctx_mgr.KeystoneContextManager as kcm:
+            admin_token = kcm.retry(
+                self.keystoneclient.get_admin_token, tries=3)
         lb_vip, vip_name = self._get_lb_vip(auth_token, provider, service_type)
         service_targets = self._get_lb_service_targets(admin_token, provider)
         if not (lb_vip and service_targets):
@@ -394,23 +440,25 @@ class HeatDriver(object):
         for service_target in service_targets:
             service_target_id = service_target['id']
             policy_target_info = {'cluster_id': ''}
-            self.gbp_client.update_policy_target(admin_token,
-                    service_target_id, policy_target_info)
+            with nfp_ctx_mgr.GBPContextManager as gcm:
+                gcm.retry(self.gbp_client.update_policy_target,
+                          admin_token,
+                          service_target_id, policy_target_info)
 
-    def _get_lb_service_targets(self, auth_token, provider):
-        service_targets = []
+    def _get_provider_pt(self, auth_token, provider):
         if provider.get("policy_targets"):
             filters = {'id': provider.get("policy_targets")}
         else:
-            filters = {'policy_target_group_id': provider['id']}
-        policy_targets = self.gbp_client.get_policy_targets(
-                auth_token,
-                filters=filters)
+            filters = {'policy_target_group': provider['id']}
+        with nfp_ctx_mgr.GBPContextManager as gcm:
+            policy_targets = gcm.retry(self.gbp_client.get_policy_targets,
+                                       auth_token,
+                                       filters=filters)
         for policy_target in policy_targets:
             if ('endpoint' in policy_target['name'] and
                     self._is_service_target(policy_target)):
-                service_targets.append(policy_target)
-        return service_targets
+                return policy_target
+        return None
 
     def _is_service_target(self, policy_target):
         if policy_target['name'] and (policy_target['name'].startswith(
@@ -424,17 +472,20 @@ class HeatDriver(object):
     def _get_member_ips(self, auth_token, ptg):
         member_addresses = []
         if ptg.get("policy_targets"):
-            policy_targets = self.gbp_client.get_policy_targets(
-                auth_token,
-                filters={'id': ptg.get("policy_targets")})
+            with nfp_ctx_mgr.GBPContextManager as gcm:
+                policy_targets = gcm.retry(
+                    self.gbp_client.get_policy_targets,
+                    auth_token,
+                    filters={'id': ptg.get("policy_targets")})
         else:
             return member_addresses
         for policy_target in policy_targets:
             if not self._is_service_target(policy_target):
                 port_id = policy_target.get("port_id")
                 if port_id:
-                    port = self.neutron_client.get_port(
-                        auth_token, port_id)['port']
+                    with nfp_ctx_mgr.NeutronContextManager as ncm:
+                        port = ncm.retry(self.neutron_client.get_port,
+                                         auth_token, port_id)['port']
                     ip_address = port.get('fixed_ips')[0].get("ip_address")
                     member_addresses.append(ip_address)
         return member_addresses
@@ -535,15 +586,34 @@ class HeatDriver(object):
             is_template_aws_version,
             "OS::Neutron::LBaaS::Pool"
         )
+
+        healthmonitors = self._get_all_heat_resource_keys(
+            stack_template[resources_key],
+            is_template_aws_version,
+            "OS::Neutron::LBaaS::HealthMonitor"
+        )
         if not pools:
             return
-        for member_ip in member_ips:
-            for pool in pools:
+        # Add "depends_on" to make sure resources get created sequentially.
+        # First member should be created after
+        # all pools and healthmonitors creation completed.
+        # Other members should be created one by one.
+        prev_member = None
+        pools_and_hms = [] + pools + healthmonitors
+        for pool in pools:
+            for member_ip in member_ips:
                 member_name = 'mem-' + member_ip + '-' + pool
-                stack_template[resources_key][member_name] = (
+                member_template = (
                     self._generate_lbv2_member_template(
                         is_template_aws_version,
                         member_ip, stack_template, pool_name=pool))
+                if prev_member:
+                    member_template.update({"depends_on": prev_member})
+                # No previous member means it's the first member
+                else:
+                    member_template.update({"depends_on": pools_and_hms})
+                stack_template[resources_key][member_name] = member_template
+                prev_member = member_name
 
     def _generate_pool_members(self, auth_token, stack_template,
                                config_param_values, provider_ptg,
@@ -567,18 +637,22 @@ class HeatDriver(object):
 
     def _get_consumers_for_chain(self, auth_token, provider):
         filters = {'id': provider['provided_policy_rule_sets']}
-        provided_prs = self.gbp_client.get_policy_rule_sets(
-            auth_token, filters=filters)
+        with nfp_ctx_mgr.GBPContextManager as gcm:
+            provided_prs = gcm.retry(self.gbp_client.get_policy_rule_sets,
+                                     auth_token, filters=filters)
         redirect_prs = None
         for prs in provided_prs:
             filters = {'id': prs['policy_rules']}
-            policy_rules = self.gbp_client.get_policy_rules(
-                auth_token, filters=filters)
+            with nfp_ctx_mgr.GBPContextManager as gcm:
+                policy_rules = gcm.retry(self.gbp_client.get_policy_rules,
+                                         auth_token, filters=filters)
             for policy_rule in policy_rules:
                 filters = {'id': policy_rule['policy_actions'],
                            'action_type': [gconst.GP_ACTION_REDIRECT]}
-                policy_actions = self.gbp_client.get_policy_actions(
-                    auth_token, filters=filters)
+                with nfp_ctx_mgr.GBPContextManager as gcm:
+                    policy_actions = gcm.retry(
+                        self.gbp_client.get_policy_actions,
+                        auth_token, filters=filters)
                 if policy_actions:
                     redirect_prs = prs
                     break
@@ -604,13 +678,13 @@ class HeatDriver(object):
             stack_template[resources_key][fw_rule_name] = (
                 copy.deepcopy(stack_template[resources_key][fw_rule_key]))
             if not stack_template[resources_key][fw_rule_name][
-                properties_key].get('destination_ip_address', None):
+                    properties_key].get('destination_ip_address', None):
                 stack_template[resources_key][fw_rule_name][
                     properties_key]['destination_ip_address'] = provider_cidr
             # Use user provided Source for N-S
             if consumer_cidr != "0.0.0.0/0":
                 if not stack_template[resources_key][fw_rule_name][
-                    properties_key].get('source_ip_address'):
+                        properties_key].get('source_ip_address'):
                     stack_template[resources_key][fw_rule_name][
                         properties_key]['source_ip_address'] = consumer_cidr
 
@@ -717,9 +791,11 @@ class HeatDriver(object):
             stack_template['resources'], is_template_aws_version,
             'OS::Neutron::FirewallPolicy')[0]
 
-        provider_l2p_subnets = self.neutron_client.get_subnets(
-            auth_token,
-            filters={'id': provider['subnets']})
+        with nfp_ctx_mgr.NeutronContextManager as ncm:
+            provider_l2p_subnets = ncm.retry(
+                self.neutron_client.get_subnets,
+                auth_token,
+                filters={'id': provider['subnets']})
         for subnet in provider_l2p_subnets:
             if not subnet['name'].startswith(APIC_OWNED_RES):
                 provider_cidr = subnet['cidr']
@@ -738,8 +814,10 @@ class HeatDriver(object):
 
         if consumer_ptgs:
             filters = {'id': consumer_ptgs}
-            consumer_ptgs_details = self.gbp_client.get_policy_target_groups(
-                auth_token, filters)
+            with nfp_ctx_mgr.GBPContextManager as gcm:
+                consumer_ptgs_details = gcm.retry(
+                    self.gbp_client.get_policy_target_groups,
+                    auth_token, filters)
 
             # Revisit(Magesh): What is the name updated below ?? FW or Rule?
             # This seems to have no effect in UTs
@@ -748,8 +826,9 @@ class HeatDriver(object):
                     continue
                 fw_template_properties.update({'name': consumer['id'][:3]})
                 for subnet_id in consumer['subnets']:
-                    subnet = self.neutron_client.get_subnet(
-                        auth_token, subnet_id)['subnet']
+                    with nfp_ctx_mgr.NeutronContextManager as ncm:
+                        subnet = ncm.retry(self.neutron_client.get_subnet,
+                                           auth_token, subnet_id)['subnet']
                     if subnet['name'].startswith(APIC_OWNED_RES):
                         continue
 
@@ -760,8 +839,10 @@ class HeatDriver(object):
 
         if consumer_eps:
             filters = {'id': consumer_eps}
-            consumer_eps_details = self.gbp_client.get_external_policies(
-                auth_token, filters)
+            with nfp_ctx_mgr.GBPContextManager as gcm:
+                consumer_eps_details = gcm.retry(
+                    self.gbp_client.get_external_policies,
+                    auth_token, filters)
             for consumer_ep in consumer_eps_details:
                 fw_template_properties.update({'name': consumer_ep['id'][:3]})
                 self._append_firewall_rule(stack_template, provider_cidr,
@@ -800,15 +881,17 @@ class HeatDriver(object):
 
     def _get_management_gw_ip(self, auth_token):
         filters = {'name': [SVC_MGMT_PTG_NAME]}
-        svc_mgmt_ptgs = self.gbp_client.get_policy_target_groups(
-            auth_token, filters)
+        with nfp_ctx_mgr.GBPContextManager as gcm:
+            svc_mgmt_ptgs = gcm.retry(self.gbp_client.get_policy_target_groups,
+                                      auth_token, filters)
         if not svc_mgmt_ptgs:
             LOG.error(_LE("Service Management Group is not created by Admin"))
             return None
         else:
             mgmt_subnet_id = svc_mgmt_ptgs[0]['subnets'][0]
-            mgmt_subnet = self.neutron_client.get_subnet(
-                auth_token, mgmt_subnet_id)['subnet']
+            with nfp_ctx_mgr.NeutronContextManager as ncm:
+                mgmt_subnet = ncm.retry(self.neutron_client.get_subnet,
+                                        auth_token, mgmt_subnet_id)['subnet']
             mgmt_gw_ip = mgmt_subnet['gateway_ip']
             return mgmt_gw_ip
 
@@ -829,8 +912,9 @@ class HeatDriver(object):
                              else False)
 
         network_function_id = nfp_context['network_function']['id']
-        service_chain_instance_id = service_details['servicechain_instance'][
-                                        'id']
+        # service_profile = service_details['service_profile']
+        service_chain_instance_id = service_details[
+            'servicechain_instance']['id']
         consumer_port = service_details['consumer_port']
         provider_port = service_details['provider_port']
         mgmt_ip = service_details['mgmt_ip']
@@ -873,9 +957,11 @@ class HeatDriver(object):
             if not mgmt_gw_ip:
                 return None
 
-            services_nsp = self.gbp_client.get_network_service_policies(
-                auth_token,
-                filters={'name': ['nfp_services_nsp']})
+            with nfp_ctx_mgr.GBPContextManager as gcm:
+                services_nsp = gcm.retry(
+                    self.gbp_client.get_network_service_policies,
+                    auth_token,
+                    filters={'name': ['nfp_services_nsp']})
             if not services_nsp:
                 fip_nsp = {
                     'network_service_policy': {
@@ -888,14 +974,18 @@ class HeatDriver(object):
                              "name": "vpn_svc_external_access"}]
                     }
                 }
-                nsp = self.gbp_client.create_network_service_policy(
-                    auth_token, fip_nsp)
+                with nfp_ctx_mgr.GBPContextManager as gcm:
+                    nsp = gcm.retry(
+                        self.gbp_client.create_network_service_policy,
+                        auth_token, fip_nsp)
             else:
                 nsp = services_nsp[0]
 
-            stitching_pts = self.gbp_client.get_policy_targets(
-                auth_token,
-                filters={'port_id': [consumer_port['id']]})
+            with nfp_ctx_mgr.GBPContextManager as gcm:
+                stitching_pts = gcm.retry(
+                    self.gbp_client.get_policy_targets,
+                    auth_token,
+                    filters={'port_id': [consumer_port['id']]})
             if not stitching_pts:
                 LOG.error(_LE("Policy target is not created for the "
                               "stitching port"))
@@ -903,18 +993,14 @@ class HeatDriver(object):
             stitching_ptg_id = (
                 stitching_pts[0]['policy_target_group_id'])
 
-            try:
-                self.gbp_client.update_policy_target_group(
-                    auth_token, stitching_ptg_id,
-                    {'policy_target_group': {
-                        'network_service_policy_id': nsp['id']}})
-            except Exception:
-                LOG.error(_LE("problem in accesing external segment or "
-                              "nat_pool, seems they have not created"))
-                return None
+            with nfp_ctx_mgr.GBPContextManager as gcm:
+                gcm.retry(self.gbp_client.update_policy_target_group,
+                          auth_token, stitching_ptg_id,
+                          {'policy_target_group': {
+                              'network_service_policy_id': nsp['id']}})
 
             stitching_port_fip = self._get_consumer_fip(auth_token,
-                                        consumer_port)
+                                                        consumer_port)
             if not stitching_port_fip:
                 return None
             desc = ('fip=' + mgmt_ip +
@@ -1037,20 +1123,28 @@ class HeatDriver(object):
             config_param_values['Subnet'] = (
                 provider_port['fixed_ips'][0]['subnet_id']
                 if consumer_port else None)
-            l2p = self.gbp_client.get_l2_policy(
-                auth_token, provider['l2_policy_id'])
-            l3p = self.gbp_client.get_l3_policy(
-                auth_token, l2p['l3_policy_id'])
+            with nfp_ctx_mgr.GBPContextManager as gcm:
+                l2p = gcm.retry(self.gbp_client.get_l2_policy,
+                                auth_token, provider['l2_policy_id'])
+                l3p = gcm.retry(self.gbp_client.get_l3_policy,
+                                auth_token, l2p['l3_policy_id'])
             config_param_values['RouterId'] = l3p['routers'][0]
             mgmt_gw_ip = self._get_management_gw_ip(auth_token)
             if not mgmt_gw_ip:
                 return None, None
 
+            with nfp_ctx_mgr.NeutronContextManager as ncm:
+                provider_cidr = ncm.retry(
+                    self.neutron_client.get_subnet,
+                    auth_token, provider_port['fixed_ips'][0][
+                        'subnet_id'])['subnet']['cidr']
+            provider_cidr = provider_cidr
             stitching_port_fip = self._get_consumer_fip(auth_token,
-                                        consumer_port)
+                                                        consumer_port)
             if not stitching_port_fip:
-                return None
+                return None, None
             if not base_mode_support:
+                # stack_params['ServiceDescription'] = nf_desc
                 siteconn_keys = self._get_site_conn_keys(
                     stack_template[resources_key],
                     is_template_aws_version,
@@ -1064,7 +1158,7 @@ class HeatDriver(object):
                     is_template_aws_version,
                     'OS::Neutron::VPNService')
                 vpn_description, _ = (
-                        utils.get_vpn_description_from_nf(network_function))
+                    utils.get_vpn_description_from_nf(network_function))
                 vpnsvc_desc = {'fip': vpn_description['user_access_ip'],
                                'ip': vpn_description['fixed_ip'],
                                'cidr': vpn_description['tunnel_local_cidr']}
@@ -1082,8 +1176,10 @@ class HeatDriver(object):
         return (stack_template, stack_params)
 
     def _get_consumer_fip(self, token, consumer_port):
-        ext_net = self.neutron_client.get_networks(
-            token, filters={'name': [INTERNET_OUT_EXT_NET_NAME]})
+        with nfp_ctx_mgr.NeutronContextManager as ncm:
+            ext_net = ncm.retry(
+                self.neutron_client.get_networks,
+                token, filters={'name': [INTERNET_OUT_EXT_NET_NAME]})
         if not ext_net:
             LOG.error(_LE("'internet_out_network_name' not configured"
                           " in [heat_driver] or Network %(network)s is"
@@ -1095,7 +1191,8 @@ class HeatDriver(object):
                    'floating_network_id': [ext_net[0]['id']]}
         try:
             # return floatingip of the stitching port -> consumer_port['id']
-            return self.neutron_client.get_floating_ips(token,
+            with nfp_ctx_mgr.NeutronContextManager as ncm:
+                return ncm.retry(self.neutron_client.get_floating_ips, token,
                                  **filters)[0]['floating_ip_address']
         except Exception:
             LOG.error(_LE("Floating IP for VPN Service has either exhausted"
@@ -1110,8 +1207,10 @@ class HeatDriver(object):
         nf_desc = None
         common_desc = {'network_function_id': str(network_function['id'])}
         provider_cidr = provider_subnet = None
-        provider_l2p_subnets = self.neutron_client.get_subnets(
-            auth_token, filters={'id': provider['subnets']})
+        with nfp_ctx_mgr.NeutronContextManager as ncm:
+            provider_l2p_subnets = ncm.retry(
+                self.neutron_client.get_subnets,
+                auth_token, filters={'id': provider['subnets']})
         for subnet in provider_l2p_subnets:
             if not subnet['name'].startswith(APIC_OWNED_RES):
                 provider_cidr = subnet['cidr']
@@ -1157,9 +1256,11 @@ class HeatDriver(object):
 
         if not base_mode_support:
             provider_port_mac = provider_port['mac_address']
-            provider_cidr = self.neutron_client.get_subnet(
-                auth_token, provider_port['fixed_ips'][0][
-                    'subnet_id'])['subnet']['cidr']
+            with nfp_ctx_mgr.NeutronContextManager as ncm:
+                provider_cidr = ncm.retry(
+                    self.neutron_client.get_subnet,
+                    auth_token, provider_port['fixed_ips'][0][
+                        'subnet_id'])['subnet']['cidr']
         else:
             provider_port_mac = ''
             provider_cidr = ''
@@ -1236,22 +1337,26 @@ class HeatDriver(object):
             config_param_values['Subnet'] = (
                 provider_port['fixed_ips'][0]['subnet_id']
                 if consumer_port else None)
-            l2p = self.gbp_client.get_l2_policy(
-                auth_token, provider['l2_policy_id'])
-            l3p = self.gbp_client.get_l3_policy(
-                auth_token, l2p['l3_policy_id'])
+            with nfp_ctx_mgr.GBPContextManager as gcm:
+                l2p = gcm.retry(self.gbp_client.get_l2_policy,
+                                auth_token, provider['l2_policy_id'])
+                l3p = gcm.retry(self.gbp_client.get_l3_policy,
+                                auth_token, l2p['l3_policy_id'])
             config_param_values['RouterId'] = l3p['routers'][0]
-            stitching_subnet = self.neutron_client.get_subnet(
-                auth_token,
-                consumer['subnets'][0])['subnet']
+            with nfp_ctx_mgr.NeutronContextManager as ncm:
+                stitching_subnet = ncm.retry(self.neutron_client.get_subnet,
+                                             auth_token,
+                                             consumer['subnets'][0])['subnet']
             stitching_cidr = stitching_subnet['cidr']
             mgmt_gw_ip = self._get_management_gw_ip(auth_token)
             if not mgmt_gw_ip:
                 return None, None
             if not update:
-                services_nsp = self.gbp_client.get_network_service_policies(
-                    auth_token,
-                    filters={'name': ['nfp_services_nsp']})
+                with nfp_ctx_mgr.GBPContextManager as gcm:
+                    services_nsp = gcm.retry(
+                        self.gbp_client.get_network_service_policies,
+                        auth_token,
+                        filters={'name': ['nfp_services_nsp']})
                 if not services_nsp:
                     fip_nsp = {
                         'network_service_policy': {
@@ -1264,14 +1369,18 @@ class HeatDriver(object):
                                  "name": "vpn_svc_external_access"}]
                         }
                     }
-                    nsp = self.gbp_client.create_network_service_policy(
-                        auth_token, fip_nsp)
+                    with nfp_ctx_mgr.GBPContextManager as gcm:
+                        nsp = gcm.retry(
+                            self.gbp_client.create_network_service_policy,
+                            auth_token, fip_nsp)
                 else:
                     nsp = services_nsp[0]
                 if not base_mode_support:
-                    stitching_pts = self.gbp_client.get_policy_targets(
-                        auth_token,
-                        filters={'port_id': [consumer_port['id']]})
+                    with nfp_ctx_mgr.GBPContextManager as gcm:
+                        stitching_pts = gcm.retry(
+                            self.gbp_client.get_policy_targets,
+                            auth_token,
+                            filters={'port_id': [consumer_port['id']]})
                     if not stitching_pts:
                         LOG.error(_LE("Policy target is not created for the "
                                       "stitching port"))
@@ -1280,13 +1389,17 @@ class HeatDriver(object):
                         stitching_pts[0]['policy_target_group_id'])
                 else:
                     stitching_ptg_id = consumer['id']
-                self.gbp_client.update_policy_target_group(
-                    auth_token, stitching_ptg_id,
-                    {'policy_target_group': {
-                        'network_service_policy_id': nsp['id']}})
+                with nfp_ctx_mgr.GBPContextManager as gcm:
+                    gcm.retry(self.gbp_client.update_policy_target_group,
+                              auth_token, stitching_ptg_id,
+                              {'policy_target_group': {
+                                  'network_service_policy_id': nsp['id']}})
             if not base_mode_support:
-                ext_net = self.neutron_client.get_networks(
-                    auth_token, filters={'name': [INTERNET_OUT_EXT_NET_NAME]})
+                with nfp_ctx_mgr.NeutronContextManager as ncm:
+                    ext_net = ncm.retry(
+                        self.neutron_client.get_networks,
+                        auth_token,
+                        filters={'name': [INTERNET_OUT_EXT_NET_NAME]})
                 if not ext_net:
                     LOG.error(_LE("'internet_out_network_name' not configured"
                                   " in [heat_driver] or Network %(network)s is"
@@ -1295,8 +1408,10 @@ class HeatDriver(object):
                     return None, None
                 filters = {'port_id': [consumer_port['id']],
                            'floating_network_id': [ext_net[0]['id']]}
-                floatingips = self.neutron_client.get_floating_ips(
-                    auth_token, filters=filters)
+                with nfp_ctx_mgr.NeutronContextManager as ncm:
+                    floatingips = ncm.retry(
+                        self.neutron_client.get_floating_ips,
+                        auth_token, filters=filters)
                 if not floatingips:
                     LOG.error(_LE("Floating IP for VPN Service has been "
                                   "disassociated Manually"))
@@ -1337,7 +1452,7 @@ class HeatDriver(object):
                     is_template_aws_version,
                     'OS::Neutron::VPNService')
                 vpn_description, _ = (
-                        utils.get_vpn_description_from_nf(network_function))
+                    utils.get_vpn_description_from_nf(network_function))
                 vpnsvc_desc = {'fip': vpn_description['user_access_ip'],
                                'ip': vpn_description['fixed_ip'],
                                'cidr': vpn_description['tunnel_local_cidr']}
@@ -1385,9 +1500,12 @@ class HeatDriver(object):
         network_function_instance = network_function_details.get(
             'network_function_instance')
         service_profile_id = network_function['service_profile_id']
-        admin_token = self.keystoneclient.get_admin_token()
-        service_profile = self.gbp_client.get_service_profile(
-            admin_token, service_profile_id)
+        with nfp_ctx_mgr.KeystoneContextManager as kcm:
+            admin_token = kcm.retry(
+                self.keystoneclient.get_admin_token, tries=3)
+        with nfp_ctx_mgr.GBPContextManager as gcm:
+            service_profile = gcm.retry(self.gbp_client.get_service_profile,
+                                        admin_token, service_profile_id)
 
         service_details = transport.parse_service_flavor_string(
             service_profile['service_flavor'])
@@ -1400,22 +1518,26 @@ class HeatDriver(object):
 
         config_policy_id = network_function['config_policy_id']
         service_id = network_function['service_id']
-        servicechain_node = self.gbp_client.get_servicechain_node(admin_token,
-                                                                  service_id)
-        service_chain_id = network_function['service_chain_id']
-        servicechain_instance = self.gbp_client.get_servicechain_instance(
-            admin_token,
-            service_chain_id)
-        provider_ptg_id = servicechain_instance['provider_ptg_id']
-        consumer_ptg_id = servicechain_instance['consumer_ptg_id']
-        provider_ptg = self.gbp_client.get_policy_target_group(
-            admin_token,
-            provider_ptg_id)
-        consumer_ptg = None
-        if consumer_ptg_id and consumer_ptg_id != 'N/A':
-            consumer_ptg = self.gbp_client.get_policy_target_group(
+        with nfp_ctx_mgr.GBPContextManager as gcm:
+            servicechain_node = gcm.retry(
+                self.gbp_client.get_servicechain_node,
+                admin_token, service_id)
+            service_chain_id = network_function['service_chain_id']
+            servicechain_instance = gcm.retry(
+                self.gbp_client.get_servicechain_instance,
                 admin_token,
-                consumer_ptg_id)
+                service_chain_id)
+            provider_ptg_id = servicechain_instance['provider_ptg_id']
+            consumer_ptg_id = servicechain_instance['consumer_ptg_id']
+            provider_ptg = gcm.retry(self.gbp_client.get_policy_target_group,
+                                     admin_token,
+                                     provider_ptg_id)
+            consumer_ptg = None
+            if consumer_ptg_id and consumer_ptg_id != 'N/A':
+                consumer_ptg = gcm.retry(
+                    self.gbp_client.get_policy_target_group,
+                    admin_token,
+                    consumer_ptg_id)
 
         consumer_port = None
         provider_port = None
@@ -1424,36 +1546,46 @@ class HeatDriver(object):
         policy_target = None
         if network_function_instance:
             for port in network_function_instance.get('port_info'):
-                port_info = db_handler.get_port_info(db_session, port)
+                with nfp_ctx_mgr.DbContextManager:
+                    port_info = db_handler.get_port_info(db_session, port)
                 port_classification = port_info['port_classification']
                 if port_info['port_model'] == nfp_constants.GBP_PORT:
                     policy_target_id = port_info['id']
-                    port_id = self.gbp_client.get_policy_targets(
-                        admin_token,
-                        filters={'id': policy_target_id})[0]['port_id']
-                    policy_target = self.gbp_client.get_policy_target(
-                        admin_token, policy_target_id)
+                    with nfp_ctx_mgr.GBPContextManager as gcm:
+                        port_id = gcm.retry(
+                            self.gbp_client.get_policy_targets,
+                            admin_token,
+                            filters={'id': policy_target_id})[0]['port_id']
+                        policy_target = gcm.retry(
+                            self.gbp_client.get_policy_target,
+                            admin_token, policy_target_id)
                 else:
                     port_id = port_info['id']
 
                 if port_classification == nfp_constants.CONSUMER:
-                    consumer_port = self.neutron_client.get_port(
-                        admin_token, port_id)['port']
+                    with nfp_ctx_mgr.NeutronContextManager as ncm:
+                        consumer_port = ncm.retry(self.neutron_client.get_port,
+                                                  admin_token, port_id)['port']
                     if policy_target:
-                        consumer_policy_target_group = (
-                            self.gbp_client.get_policy_target_group(
-                                admin_token,
-                                policy_target['policy_target_group_id']))
+                        with nfp_ctx_mgr.GBPContextManager as gcm:
+                            consumer_policy_target_group = (
+                                gcm.retry(
+                                    self.gbp_client.get_policy_target_group,
+                                    admin_token,
+                                    policy_target['policy_target_group_id']))
                 elif port_classification == nfp_constants.PROVIDER:
                     LOG.info(_LI("provider info: %(p_info)s"),
                              {'p_info': port_id})
-                    provider_port = self.neutron_client.get_port(
-                        admin_token, port_id)['port']
+                    with nfp_ctx_mgr.NeutronContextManager as ncm:
+                        provider_port = ncm.retry(self.neutron_client.get_port,
+                                                  admin_token, port_id)['port']
                     if policy_target:
-                        provider_policy_target_group = (
-                            self.gbp_client.get_policy_target_group(
-                                admin_token,
-                                policy_target['policy_target_group_id']))
+                        with nfp_ctx_mgr.GBPContextManager as gcm:
+                            provider_policy_target_group = (
+                                gcm.retry(
+                                    self.gbp_client.get_policy_target_group,
+                                    admin_token,
+                                    policy_target['policy_target_group_id']))
 
         service_details = {
             'service_profile': service_profile,
@@ -1569,8 +1701,8 @@ class HeatDriver(object):
         heatclient = self._get_heat_client(tenant_id)
         if not heatclient:
             return failure_status
-        try:
-            stack = heatclient.get(stack_id)
+        with nfp_ctx_mgr.HeatContextManager as hcm:
+            stack = hcm.retry(heatclient.get, stack_id)
             if stack.stack_status == 'DELETE_FAILED':
                 return failure_status
             elif stack.stack_status == 'CREATE_COMPLETE':
@@ -1590,10 +1722,6 @@ class HeatDriver(object):
                     'UPDATE_IN_PROGRESS', 'CREATE_IN_PROGRESS',
                     'DELETE_IN_PROGRESS']:
                 return intermediate_status
-        except Exception:
-            LOG.exception(_LE("Retrieving the stack %(stack)s failed."),
-                          {'stack': stack_id})
-            return failure_status
 
     def check_config_complete(self, nfp_context):
         success_status = "COMPLETED"
@@ -1606,42 +1734,38 @@ class HeatDriver(object):
         heatclient = self._get_heat_client(provider_tenant_id)
         if not heatclient:
             return failure_status
-        try:
-            stack = heatclient.get(stack_id)
-            if stack.stack_status == 'DELETE_FAILED':
-                return failure_status
-            elif stack.stack_status == 'CREATE_COMPLETE':
-                self._post_stack_create(nfp_context)
-                return success_status
-            elif stack.stack_status == 'UPDATE_COMPLETE':
-                return success_status
-            elif stack.stack_status == 'DELETE_COMPLETE':
-                LOG.info(_LI("Stack %(stack)s is deleted"),
-                         {'stack': stack_id})
-                return failure_status
-            elif stack.stack_status == 'CREATE_FAILED':
-                return failure_status
-            elif stack.stack_status == 'UPDATE_FAILED':
-                return failure_status
-            elif stack.stack_status not in [
-                    'UPDATE_IN_PROGRESS', 'CREATE_IN_PROGRESS',
-                    'DELETE_IN_PROGRESS']:
-                return intermediate_status
-        except Exception:
-            LOG.exception(_LE("Retrieving the stack %(stack)s failed."),
-                          {'stack': stack_id})
+        with nfp_ctx_mgr.HeatContextManager as hcm:
+            stack = hcm.retry(heatclient.get, stack_id)
+        if stack.stack_status == 'DELETE_FAILED':
             return failure_status
+        elif stack.stack_status == 'CREATE_COMPLETE':
+            self._post_stack_create(nfp_context)
+            return success_status
+        elif stack.stack_status == 'UPDATE_COMPLETE':
+            return success_status
+        elif stack.stack_status == 'DELETE_COMPLETE':
+            LOG.info(_LI("Stack %(stack)s is deleted"),
+                     {'stack': stack_id})
+            return failure_status
+        elif stack.stack_status == 'CREATE_FAILED':
+            return failure_status
+        elif stack.stack_status == 'UPDATE_FAILED':
+            return failure_status
+        elif stack.stack_status not in [
+                'UPDATE_IN_PROGRESS', 'CREATE_IN_PROGRESS',
+                'DELETE_IN_PROGRESS']:
+            return intermediate_status
 
     def is_config_delete_complete(self, stack_id, tenant_id,
-            network_function=None):
+                                  network_function=None):
         success_status = "COMPLETED"
         failure_status = "ERROR"
         intermediate_status = "IN_PROGRESS"
         heatclient = self._get_heat_client(tenant_id)
         if not heatclient:
             return failure_status
-        try:
-            stack = heatclient.get(stack_id)
+        with nfp_ctx_mgr.HeatContextManager as hcm:
+            stack = hcm.retry(heatclient.get, stack_id)
             if stack.stack_status == 'DELETE_FAILED':
                 return failure_status
             elif stack.stack_status == 'CREATE_COMPLETE':
@@ -1660,10 +1784,6 @@ class HeatDriver(object):
                     'UPDATE_IN_PROGRESS', 'CREATE_IN_PROGRESS',
                     'DELETE_IN_PROGRESS']:
                 return intermediate_status
-        except Exception:
-            LOG.exception(_LE("Retrieving the stack %(stack)s failed."),
-                          {'stack': stack_id})
-            return failure_status
 
     def get_service_details_from_nfp_context(self, nfp_context):
         network_function = nfp_context['network_function']
@@ -1741,16 +1861,9 @@ class HeatDriver(object):
         if not stack_template and not stack_params:
             return None
 
-        try:
-            stack = heatclient.create(stack_name, stack_template, stack_params)
-        except Exception as err:
-            LOG.error(_LE("Heat stack creation failed for template : "
-                          "%(template)s and stack parameters : %(params)s "
-                          "with Error: %(error)s") %
-                      {'template': stack_template, 'params': stack_params,
-                       'error': err})
-            return None
-
+        with nfp_ctx_mgr.HeatContextManager as hcm:
+            stack = hcm.retry(heatclient.create, stack_name,
+                              stack_template, stack_params)
         stack_id = stack['stack']['id']
         LOG.info(_LI("Created stack with ID %(stack_id)s and "
                      "name %(stack_name)s for provider PTG %(provider)s"),
@@ -1799,15 +1912,9 @@ class HeatDriver(object):
         # Heat does not accept space in stack name
         stack_name = stack_name.replace(" ", "")
 
-        try:
-            stack = heatclient.create(stack_name, stack_template, stack_params)
-        except Exception as err:
-            LOG.error(_LE("Heat stack creation failed for template : "
-                          "%(template)s and stack parameters : %(params)s "
-                          "with Error: %(error)s") %
-                      {'template': stack_template, 'params': stack_params,
-                       'error': err})
-            return None
+        with nfp_ctx_mgr.HeatContextManager as hcm:
+            stack = hcm.retry(heatclient.create, stack_name,
+                              stack_template, stack_params)
 
         stack_id = stack['stack']['id']
         LOG.info(_LI("Created stack with ID %(stack_id)s and "
@@ -1825,13 +1932,15 @@ class HeatDriver(object):
                 return None
             if network_function:
                 self._pre_stack_cleanup(network_function)
-            heatclient.delete(stack_id)
+            with nfp_ctx_mgr.HeatContextManager as hcm:
+                hcm.retry(heatclient.delete, stack_id)
         except Exception as err:
             # Log the error and continue with VM delete in case of *aas
             # cleanup failure
             LOG.exception(_LE("Cleaning up the service chain stack failed "
                               "with Error: %(error)s"), {'error': err})
             return None
+
         return stack_id
 
     def is_update_config_supported(self, service_type):
@@ -1869,40 +1978,19 @@ class HeatDriver(object):
             return None
 
         if stack_id:
-            try:
-                heatclient.update(stack_id, stack_template, stack_params)
-            except Exception as err:
-                msg = ('Node update failed. There can be a chance if the '
-                       'service is LOADBALANCER, the related '
-                       'configuration would have been lost. Please check '
-                       'with the ADMIN for issue of failure and '
-                       're-initiate the update node once again.')
-                LOG.exception(_LE('%(msg)s NODE-ID: %(node_id)s '
-                                  'INSTANCE-ID: %(instance_id)s '
-                                  'TenantID: %(tenant_id)s . '
-                                  'ERROR: %(err)s') %
-                              {'msg': msg,
-                               'node_id': service_chain_node['id'],
-                               'instance_id': service_chain_instance['id'],
-                               'tenant_id': provider_tenant_id,
-                               'err': str(err)})
-                return None
+            with nfp_ctx_mgr.HeatContextManager as hcm:
+                hcm.retry(heatclient.update, stack_id,
+                          stack_template, stack_params)
         if not stack_id:
             stack_name = ("stack_" + service_chain_instance['name'] +
                           service_chain_node['name'] +
                           service_chain_instance['id'][:8] +
                           service_chain_node['id'][:8] + '-' +
                           time.strftime("%Y%m%d%H%M%S"))
-            try:
-                stack = heatclient.create(stack_name, stack_template,
-                                          stack_params)
-            except Exception as err:
-                msg = ('Fatal error. Heat Stack creation failed while '
-                       'update of node. To recover,please delete the '
-                       'associated provider of Tenant ID -  %r . Details '
-                       '- %r' % (provider_tenant_id, str(err)))
-                LOG.exception(_LE('%(msg)s') % {'msg': msg})
-                return None
+            with nfp_ctx_mgr.HeatContextManager as hcm:
+                stack = hcm.retry(heatclient.create, stack_name,
+                                  stack_template, stack_params)
+
             stack_id = stack["stack"]["id"]
         return stack_id
 
