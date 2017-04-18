@@ -91,9 +91,9 @@ class HaproxyOnVmDriver(LbGenericConfigDriver):
 
     def _get_rest_client(self, ip_addr):
         client = haproxy_rest_client.HttpRequests(
-                            ip_addr, self.port,
-                            lb_constants.REQUEST_RETRIES,
-                            lb_constants.REQUEST_TIMEOUT)
+            ip_addr, self.port,
+            lb_constants.REQUEST_RETRIES,
+            lb_constants.REQUEST_TIMEOUT)
         return client
 
     def _get_device_for_pool(self, pool_id, context):
@@ -175,7 +175,7 @@ class HaproxyOnVmDriver(LbGenericConfigDriver):
         backend = {
             'mode': '%s' % lb_constants.PROTOCOL_MAP[protocol],
             'balance': '%s' % lb_constants.BALANCE_MAP.get(
-                                                    lb_method, 'roundrobin'),
+                lb_method, 'roundrobin'),
             'option': {},
             'timeout': {},
             'server': {}
@@ -221,15 +221,15 @@ class HaproxyOnVmDriver(LbGenericConfigDriver):
             for member in logical_device['members']:
                 backend['server'].update(
                     {"srvr:%s" % member['id']: [
-                            '%(address)s:%(protocol_port)s' % member,
-                            'weight %(weight)s' % member, server_addon]}
+                        '%(address)s:%(protocol_port)s' % member,
+                        'weight %(weight)s' % member, server_addon]}
                 )
                 if (vip.get('session_persistence') and
                         vip['session_persistence']['type'] == 'HTTP_COOKIE'):
-                            backend['server'][member['id']].append(
-                                'cookie %d'
-                                % logical_device['members'].index(
-                                                            member['id']))
+                    backend['server'][member['id']].append(
+                        'cookie %d'
+                        % logical_device['members'].index(
+                            member['id']))
 
             return backend
         except Exception as e:
@@ -362,8 +362,8 @@ class HaproxyOnVmDriver(LbGenericConfigDriver):
                     {'httpchk': ('%(http_method)s %(url_path)s'
                                  % health_monitor)})
                 backend.update({'http-check expect': 'rstatus %s' % '|'.join(
-                                    self._expand_expected_codes(
-                                        health_monitor['expected_codes']))})
+                    self._expand_expected_codes(
+                        health_monitor['expected_codes']))})
             if health_monitor['type'] == lb_constants.HEALTH_MONITOR_HTTPS:
                 backend['option'].update({'ssl-hello-chk': True})
         except Exception as e:
@@ -409,7 +409,7 @@ class HaproxyOnVmDriver(LbGenericConfigDriver):
             backend = client.get_resource("backend/bck:%s"
                                           % member['pool_id'])
             backend = self._prepare_haproxy_backend_with_member(
-                                                    member, backend, context)
+                member, backend, context)
             client.update_resource("backend/bck:%s" % member['pool_id'],
                                    backend)
         except Exception as e:
@@ -433,9 +433,9 @@ class HaproxyOnVmDriver(LbGenericConfigDriver):
             client = self._get_rest_client(device_addr)
             backend = client.get_resource("backend/bck:%s" % pool_id)
             backend = self._prepare_backend_adding_health_monitor_to_pool(
-                                                                    hm,
-                                                                    pool_id,
-                                                                    backend)
+                hm,
+                pool_id,
+                backend)
             client.update_resource("backend/bck:%s" % pool_id, backend)
         except Exception as e:
             raise e
@@ -446,10 +446,10 @@ class HaproxyOnVmDriver(LbGenericConfigDriver):
             client = self._get_rest_client(device_addr)
             backend = client.get_resource("backend/bck:%s" % pool_id)
             backend = self._prepare_backend_deleting_health_monitor_from_pool(
-                                                                    hm,
-                                                                    pool_id,
-                                                                    backend,
-                                                                    context)
+                hm,
+                pool_id,
+                backend,
+                context)
             client.update_resource("backend/bck:%s" % pool_id, backend)
         except Exception as e:
             raise e
@@ -519,7 +519,7 @@ class HaproxyOnVmDriver(LbGenericConfigDriver):
         resource_data = self.parse.parse_data(common_const.LOADBALANCER,
                                               context)
         msg = ("Handling 'Update VIP' for VIP:%s and Old_VIP:%s" % (
-                   vip['id'], old_vip['id']))
+            vip['id'], old_vip['id']))
         LOG.info(msg)
         try:
             device_addr = self._get_device_for_pool(old_vip['pool_id'],
@@ -541,8 +541,8 @@ class HaproxyOnVmDriver(LbGenericConfigDriver):
 
                 # Create the new VIP along with pool
                 logical_device = self.plugin_rpc.get_logical_device(
-                                                            vip['pool_id'],
-                                                            context)
+                    vip['pool_id'],
+                    context)
                 pool = logical_device['pool']
                 self._create_pool(pool, device_addr)
                 self._create_vip(vip, device_addr, resource_data)
@@ -720,9 +720,9 @@ class HaproxyOnVmDriver(LbGenericConfigDriver):
                 # server addon options
                 backend = (
                     self._prepare_backend_updating_health_monitor_for_pool(
-                                            health_monitor,
-                                            pool_id,
-                                            backend))
+                        health_monitor,
+                        pool_id,
+                        backend))
 
                 client.update_resource("backend/bck:%s" % pool_id, backend)
         except Exception as e:

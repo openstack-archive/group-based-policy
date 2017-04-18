@@ -371,7 +371,7 @@ class Pool(BaseDataModel):
         else:
             ret_dict['listener_id'] = None
         ret_dict['l7_policies'] = [{'id': l7_policy.id}
-            for l7_policy in self.l7_policies]
+                                   for l7_policy in self.l7_policies]
         return ret_dict
 
     @classmethod
@@ -624,7 +624,7 @@ class Listener(BaseDataModel):
                                           for container in self.sni_containers]
         ret_dict['default_tls_container_ref'] = self.default_tls_container_id
         ret_dict['l7_policies'] = [{'id': l7_policy.id}
-            for l7_policy in self.l7_policies]
+                                   for l7_policy in self.l7_policies]
         return ret_dict
 
     @classmethod
