@@ -121,7 +121,7 @@ class CommonDbMixin(object):
     def _apply_dict_extend_functions(self, resource_type,
                                      response, db_object):
         for func in self._dict_extend_functions.get(
-            resource_type, []):
+                resource_type, []):
             args = (response, db_object)
             if isinstance(func, basestring):
                 func = getattr(self, func, None)
@@ -138,8 +138,9 @@ class CommonDbMixin(object):
         collection = self._apply_filters_to_query(collection, model, filters)
         if limit and page_reverse and sorts:
             sorts = [(s[0], not s[1]) for s in sorts]
-        collection = sqlalchemyutils.paginate_query(collection, model, limit,
-                sorts, marker_obj=marker_obj)
+        collection = sqlalchemyutils.paginate_query(
+            collection, model, limit,
+            sorts, marker_obj=marker_obj)
         return collection
 
     def _get_collection(self, session, model, dict_func, filters=None,

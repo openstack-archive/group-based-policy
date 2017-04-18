@@ -12,6 +12,10 @@
 from oslo_config import cfg as oslo_config
 
 from gbpservice.nfp.common import constants as nfp_constants
+from gbpservice.nfp.core import context
+from gbpservice.nfp.orchestrator import context as module_context
+
+context.NfpContext = module_context.NfpContext
 
 openstack_opts = [
     oslo_config.StrOpt('auth_host',
