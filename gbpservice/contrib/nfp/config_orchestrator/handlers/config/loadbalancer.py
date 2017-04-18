@@ -16,6 +16,7 @@ import copy
 from gbpservice.contrib.nfp.config_orchestrator.common import common
 from gbpservice.nfp.common import constants as const
 from gbpservice.nfp.common import data_formatter as df
+from gbpservice.nfp.core import context as module_context
 from gbpservice.nfp.core import log as nfp_logging
 from gbpservice.nfp.lib import transport
 
@@ -155,7 +156,7 @@ class LbAgent(loadbalancer_db.LoadBalancerPluginDb):
         nfp_context.update({'neutron_context': ctx_dict,
                             'requester': 'nas_service',
                             'logging_context':
-                                nfp_logging.get_logging_context()})
+                                module_context.get()['log_context']})
         resource_type = 'loadbalancer'
         resource = name
         resource_data = {'neutron_context': rsrc_ctx_dict}
@@ -200,93 +201,94 @@ class LbAgent(loadbalancer_db.LoadBalancerPluginDb):
 
     @log_helpers.log_method_call
     def create_vip(self, context, vip):
+        nfp_context = module_context.init()
         LOG.info(_LI("Received RPC CREATE VIP for VIP:%(vip)s"),
                  {'vip': vip})
         # Fetch nf_id from description of the resource
         nf_id = self._fetch_nf_from_resource_desc(vip["description"])
-        nfp_logging.store_logging_context(meta_id=nf_id)
+        nfp_context['log_context']['meta_id'] = nf_id
         nf = common.get_network_function_details(context, nf_id)
         self._post(context, vip['tenant_id'], 'vip', nf, vip=vip)
-        nfp_logging.clear_logging_context()
 
     @log_helpers.log_method_call
     def update_vip(self, context, old_vip, vip):
+        nfp_context = module_context.init()
         LOG.info(_LI("Received RPC UPDATE VIP for VIP:%(vip)s "
                      "and OLD_VIP:%(old_vip)s"),
                  {'vip': vip,
                   'old_vip': old_vip})
         # Fetch nf_id from description of the resource
         nf_id = self._fetch_nf_from_resource_desc(vip["description"])
-        nfp_logging.store_logging_context(meta_id=nf_id)
+        nfp_context['log_context']['meta_id'] = nf_id
         nf = common.get_network_function_details(context, nf_id)
         self._put(context, vip['tenant_id'], 'vip', nf, old_vip=old_vip,
                   vip=vip)
-        nfp_logging.clear_logging_context()
 
     @log_helpers.log_method_call
     def delete_vip(self, context, vip):
+        nfp_context = module_context.init()
         LOG.info(_LI("Received RPC DELETE VIP for VIP:%(vip)s"),
                  {'vip': vip})
         # Fetch nf_id from description of the resource
         nf_id = self._fetch_nf_from_resource_desc(vip["description"])
-        nfp_logging.store_logging_context(meta_id=nf_id)
+        nfp_context['log_context']['meta_id'] = nf_id
         nf = common.get_network_function_details(context, nf_id)
         self._delete(context, vip['tenant_id'], 'vip', nf, vip=vip)
-        nfp_logging.clear_logging_context()
 
     @log_helpers.log_method_call
     def create_pool(self, context, pool, driver_name):
+        nfp_context = module_context.init()
         LOG.info(_LI("Received RPC CREATE POOL for Pool:%(pool)s"),
                  {'pool': pool})
         # Fetch nf_id from description of the resource
         nf_id = self._fetch_nf_from_resource_desc(pool["description"])
-        nfp_logging.store_logging_context(meta_id=nf_id)
+        nfp_context['log_context']['meta_id'] = nf_id
         nf = common.get_network_function_details(context, nf_id)
         self._post(
             context, pool['tenant_id'],
             'pool', nf, pool=pool, driver_name=driver_name)
-        nfp_logging.clear_logging_context()
 
     @log_helpers.log_method_call
     def update_pool(self, context, old_pool, pool):
+        nfp_context = module_context.init()
         LOG.info(_LI("Received RPC UPDATE POOL with Pool: %(pool)s "
                      "and Old_Pool:%(old_pool)s"),
                  {'pool': pool,
                   'old_pool': old_pool})
         # Fetch nf_id from description of the resource
         nf_id = self._fetch_nf_from_resource_desc(pool["description"])
-        nfp_logging.store_logging_context(meta_id=nf_id)
+        nfp_context['log_context']['meta_id'] = nf_id
         nf = common.get_network_function_details(context, nf_id)
         self._put(context, pool['tenant_id'], 'pool', nf, old_pool=old_pool,
                   pool=pool)
-        nfp_logging.clear_logging_context()
 
     @log_helpers.log_method_call
     def delete_pool(self, context, pool):
+        nfp_context = module_context.init()
         LOG.info(_LI("Received RPC DELETE POOL for Pool:%(pool)s"),
                  {'pool': pool})
         # Fetch nf_id from description of the resource
         nf_id = self._fetch_nf_from_resource_desc(pool["description"])
-        nfp_logging.store_logging_context(meta_id=nf_id)
+        nfp_context['log_context']['meta_id'] = nf_id
         nf = common.get_network_function_details(context, nf_id)
         self._delete(context, pool['tenant_id'], 'pool', nf, pool=pool)
-        nfp_logging.clear_logging_context()
 
     @log_helpers.log_method_call
     def create_member(self, context, member):
+        nfp_context = module_context.init()
         LOG.info(_LI("Received RPC CREATE MEMBER for Member:%(member)s"),
                  {'member': member})
         # Fetch pool from pool_id
         pool = self._get_pool(context, member['pool_id'])
         # Fetch nf_id from description of the resource
         nf_id = self._fetch_nf_from_resource_desc(pool["description"])
-        nfp_logging.store_logging_context(meta_id=nf_id)
+        nfp_context['log_context']['meta_id'] = nf_id
         nf = common.get_network_function_details(context, nf_id)
         self._post(context, member['tenant_id'], 'member', nf, member=member)
-        nfp_logging.clear_logging_context()
 
     @log_helpers.log_method_call
     def update_member(self, context, old_member, member):
+        nfp_context = module_context.init()
         LOG.info(_LI("Received RPC UPDATE MEMBER with Member:%(member)s "
                      "and Old_Member:%(old_member)s"),
                  {'member': member,
@@ -295,45 +297,45 @@ class LbAgent(loadbalancer_db.LoadBalancerPluginDb):
         pool = self._get_pool(context, member['pool_id'])
         # Fetch nf_id from description of the resource
         nf_id = self._fetch_nf_from_resource_desc(pool["description"])
-        nfp_logging.store_logging_context(meta_id=nf_id)
+        nfp_context['log_context']['meta_id'] = nf_id
         nf = common.get_network_function_details(context, nf_id)
         self._put(context, member['tenant_id'], 'member', nf,
                   old_member=old_member, member=member)
-        nfp_logging.clear_logging_context()
 
     @log_helpers.log_method_call
     def delete_member(self, context, member):
+        nfp_context = module_context.init()
         LOG.info(_LI("Received RPC DELETE MEMBER for Member:%(member)s"),
                  {'member': member})
         # Fetch pool from pool_id
         pool = self._get_pool(context, member['pool_id'])
         # Fetch nf_id from description of the resource
         nf_id = self._fetch_nf_from_resource_desc(pool["description"])
-        nfp_logging.store_logging_context(meta_id=nf_id)
+        nfp_context['log_context']['meta_id'] = nf_id
         nf = common.get_network_function_details(context, nf_id)
         self._delete(
             context, member['tenant_id'], 'member',
             nf, member=member)
-        nfp_logging.clear_logging_context()
 
     @log_helpers.log_method_call
     def create_pool_health_monitor(self, context, health_monitor, pool_id):
+        nfp_context = module_context.init()
         LOG.info(_LI("Received RPC CREATE POOL HEALTH MONITOR for HM:%(hm)s"),
                  {'hm': health_monitor})
         # Fetch pool from pool_id
         pool = self._get_pool(context, pool_id)
         # Fetch nf_id from description of the resource
         nf_id = self._fetch_nf_from_resource_desc(pool["description"])
-        nfp_logging.store_logging_context(meta_id=nf_id)
+        nfp_context['log_context']['meta_id'] = nf_id
         nf = common.get_network_function_details(context, nf_id)
         self._post(context, health_monitor[
             'tenant_id'], 'pool_health_monitor',
             nf, health_monitor=health_monitor, pool_id=pool_id)
-        nfp_logging.clear_logging_context()
 
     @log_helpers.log_method_call
     def update_pool_health_monitor(self, context, old_health_monitor,
                                    health_monitor, pool_id):
+        nfp_context = module_context.init()
         LOG.info(_LI("Received RPC UPDATE POOL HEALTH MONITOR with "
                      "HM:%(hm)s and Old_HM:%(old_hm)s"),
                  {'hm': health_monitor,
@@ -342,25 +344,24 @@ class LbAgent(loadbalancer_db.LoadBalancerPluginDb):
         pool = self._get_pool(context, pool_id)
         # Fetch nf_id from description of the resource
         nf_id = self._fetch_nf_from_resource_desc(pool["description"])
-        nfp_logging.store_logging_context(meta_id=nf_id)
+        nfp_context['log_context']['meta_id'] = nf_id
         nf = common.get_network_function_details(context, nf_id)
         self._put(context, health_monitor[
             'tenant_id'], 'pool_health_monitor',
             nf, old_health_monitor=old_health_monitor,
             health_monitor=health_monitor, pool_id=pool_id)
-        nfp_logging.clear_logging_context()
 
     @log_helpers.log_method_call
     def delete_pool_health_monitor(self, context, health_monitor, pool_id):
+        nfp_context = module_context.init()
         LOG.info(_LI("Received RPC DELETE POOL HEALTH MONITOR for HM:%(hm)s"),
                  {'hm': health_monitor})
         # Fetch pool from pool_id
         pool = self._get_pool(context, pool_id)
         # Fetch nf_id from description of the resource
         nf_id = self._fetch_nf_from_resource_desc(pool["description"])
-        nfp_logging.store_logging_context(meta_id=nf_id)
+        nfp_context['log_context']['meta_id'] = nf_id
         nf = common.get_network_function_details(context, nf_id)
         self._delete(
             context, health_monitor['tenant_id'], 'pool_health_monitor',
             nf, health_monitor=health_monitor, pool_id=pool_id)
-        nfp_logging.clear_logging_context()

@@ -17,6 +17,8 @@ from gbpservice.contrib.nfp.config_orchestrator.common import common
 from gbpservice.nfp.common import constants as const
 from gbpservice.nfp.common import data_formatter as df
 from gbpservice.nfp.common import utils
+from gbpservice.nfp.common import utils
+from gbpservice.nfp.core import context as module_context
 from gbpservice.nfp.core import log as nfp_logging
 from gbpservice.nfp.lib import transport
 
@@ -107,7 +109,7 @@ class VpnAgent(vpn_db.VPNPluginDb, vpn_db.VPNPluginRpcDbMixin):
     def _data_wrapper(self, context, tenant_id, nf, **kwargs):
         nfp_context = {}
         description, str_description = (
-                utils.get_vpn_description_from_nf(nf))
+            utils.get_vpn_description_from_nf(nf))
         description.update({'tenant_id': tenant_id})
         context_resource_data = self._get_resource_data(description,
                                                         const.VPN)
@@ -125,10 +127,13 @@ class VpnAgent(vpn_db.VPNPluginDb, vpn_db.VPNPluginRpcDbMixin):
             _prepare_resource_context_dicts(context, tenant_id,
                                             resource, resource_data,
                                             context_resource_data)
+        service_vm_context = utils.get_service_vm_context(
+                                                description['service_vendor'])
         nfp_context.update({'neutron_context': ctx_dict,
+                            'service_vm_context': service_vm_context,
                             'requester': 'nas_service',
                             'logging_context':
-                                nfp_logging.get_logging_context()})
+                                module_context.get()['log_context']})
         resource_type = 'vpn'
         kwargs.update({'neutron_context': rsrc_ctx_dict})
         body = common.prepare_request_data(nfp_context, resource,
@@ -144,12 +149,13 @@ class VpnAgent(vpn_db.VPNPluginDb, vpn_db.VPNPluginRpcDbMixin):
 
     @log_helpers.log_method_call
     def vpnservice_updated(self, context, **kwargs):
+        nfp_context = module_context.init()
         LOG.info(_LI("Received RPC VPN SERVICE UPDATED with data:%(data)s"),
                  {'data': kwargs})
         # Fetch nf_id from description of the resource
         nf_id = self._fetch_nf_from_resource_desc(kwargs[
             'resource']['description'])
-        nfp_logging.store_logging_context(meta_id=nf_id)
+        nfp_context['log_context']['meta_id'] = nf_id
         nf = common.get_network_function_details(context, nf_id)
         reason = kwargs['reason']
         body = self._data_wrapper(context, kwargs[
@@ -157,7 +163,6 @@ class VpnAgent(vpn_db.VPNPluginDb, vpn_db.VPNPluginRpcDbMixin):
         transport.send_request_to_configurator(self._conf,
                                                context, body,
                                                reason)
-        nfp_logging.clear_logging_context()
 
     def _proxy_subnet_cidr(self, description):
         tokens = description.split(';')
