@@ -55,3 +55,6 @@ DOWN = "Down"
 
 AGENTS_PKG = ['gbpservice.contrib.nfp.configurator.agents']
 CONFIGURATOR_RPC_TOPIC = 'configurator'
+
+LICENSE_DB_SERVER_HOST = "172.17.0.1"
+LICENSE_DB_SERVER_PORT = "8090"
