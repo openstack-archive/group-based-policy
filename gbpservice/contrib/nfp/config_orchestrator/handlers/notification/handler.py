@@ -18,6 +18,7 @@ from gbpservice.contrib.nfp.config_orchestrator.common import (
 from gbpservice.contrib.nfp.config_orchestrator.common import (
     topics as a_topics)
 from gbpservice.nfp.common import constants as const
+from gbpservice.nfp.core import context as module_context
 from gbpservice.nfp.core import log as nfp_logging
 from gbpservice.nfp.lib import transport
 
@@ -38,6 +39,7 @@ class RpcHandler(object):
         self.sc = sc
 
     def network_function_notification(self, context, notification_data):
+        module_context.init()
         try:
             LOG.info(_LI("Received NETWORK FUNCTION NOTIFICATION:"
                          "%(notification)s"),
@@ -64,12 +66,13 @@ class FirewallNotifier(object):
         self._conf = conf
 
     def set_firewall_status(self, context, notification_data):
+        nfp_context = module_context.init()
         notification = notification_data['notification'][0]
 
         request_info = notification_data.get('info')
         request_context = request_info.get('context')
-        logging_context = request_context.get('logging_context')
-        nfp_logging.store_logging_context(**logging_context)
+        logging_context = request_context.get('logging_context', {})
+        nfp_context['log_context'] = logging_context
 
         resource_data = notification['data']
         firewall_id = resource_data['firewall_id']
@@ -87,15 +90,15 @@ class FirewallNotifier(object):
                              host=resource_data['host'],
                              firewall_id=firewall_id,
                              status=status)
-        nfp_logging.clear_logging_context()
 
     def firewall_deleted(self, context, notification_data):
+        nfp_context = module_context.init()
         notification = notification_data['notification'][0]
 
         request_info = notification_data.get('info')
         request_context = request_info.get('context')
-        logging_context = request_context.get('logging_context')
-        nfp_logging.store_logging_context(**logging_context)
+        logging_context = request_context.get('logging_context', {})
+        nfp_context['log_context'] = logging_context
 
         resource_data = notification['data']
         firewall_id = resource_data['firewall_id']
@@ -110,7 +113,6 @@ class FirewallNotifier(object):
         rpcClient.cctxt.cast(context, 'firewall_deleted',
                              host=resource_data['host'],
                              firewall_id=firewall_id)
-        nfp_logging.clear_logging_context()
 
 
 class LoadbalancerNotifier(object):
@@ -120,12 +122,13 @@ class LoadbalancerNotifier(object):
         self._conf = conf
 
     def update_status(self, context, notification_data):
+        nfp_context = module_context.init()
         notification = notification_data['notification'][0]
 
         request_info = notification_data.get('info')
         request_context = request_info.get('context')
-        logging_context = request_context.get('logging_context')
-        nfp_logging.store_logging_context(**logging_context)
+        logging_context = request_context.get('logging_context', {})
+        nfp_context['log_context'] = logging_context
 
         resource_data = notification['data']
         obj_type = resource_data['obj_type']
@@ -138,7 +141,6 @@ class LoadbalancerNotifier(object):
                  {'obj_type': obj_type,
                   'obj_id': obj_id,
                   'status': status})
-        nfp_logging.clear_logging_context()
 
         # RPC call to plugin to update status of the resource
         rpcClient = transport.RPCClient(a_topics.LB_NFP_PLUGIN_TOPIC)
@@ -150,12 +152,13 @@ class LoadbalancerNotifier(object):
                              status=status)
 
     def update_pool_stats(self, context, notification_data):
+        nfp_context = module_context.init()
         notification = notification_data['notification'][0]
 
         request_info = notification_data.get('info')
         request_context = request_info.get('context')
-        logging_context = request_context.get('logging_context')
-        nfp_logging.store_logging_context(**logging_context)
+        logging_context = request_context.get('logging_context', {})
+        nfp_context['log_context'] = logging_context
 
         resource_data = notification['data']
         pool_id = resource_data['pool_id']
@@ -175,7 +178,6 @@ class LoadbalancerNotifier(object):
                              pool_id=pool_id,
                              stats=stats,
                              host=host)
-        nfp_logging.clear_logging_context()
 
     def vip_deleted(self, context, notification_data):
         pass
@@ -188,12 +190,13 @@ class LoadbalancerV2Notifier(object):
         self._conf = conf
 
     def update_status(self, context, notification_data):
+        nfp_context = module_context.init()
         notification = notification_data['notification'][0]
 
         request_info = notification_data.get('info')
         request_context = request_info.get('context')
-        logging_context = request_context.get('logging_context')
-        nfp_logging.store_logging_context(**logging_context)
+        logging_context = request_context.get('logging_context', {})
+        nfp_context['log_context'] = logging_context
 
         resource_data = notification['data']
         obj_type = resource_data['obj_type']
@@ -216,7 +219,7 @@ class LoadbalancerV2Notifier(object):
                   'status': obj_p_status})
 
         if obj_type == 'healthmonitor':
-                obj_o_status = None
+            obj_o_status = None
 
         if obj_type != 'loadbalancer':
             rpcClient.cctxt.cast(context, 'update_status',
@@ -235,7 +238,6 @@ class LoadbalancerV2Notifier(object):
                              obj_id=resource_data['root_lb_id'],
                              provisioning_status=lb_p_status,
                              operating_status=lb_o_status)
-        nfp_logging.clear_logging_context()
 
     # TODO(jiahao): implememnt later
     def update_loadbalancer_stats(self, context, loadbalancer_id, stats_data):
@@ -249,12 +251,13 @@ class VpnNotifier(object):
         self._conf = conf
 
     def update_status(self, context, notification_data):
+        nfp_context = module_context.init()
         resource_data = notification_data['notification'][0]['data']
 
         request_info = notification_data.get('info')
         request_context = request_info.get('context')
-        logging_context = request_context.get('logging_context')
-        nfp_logging.store_logging_context(**logging_context)
+        logging_context = request_context.get('logging_context', {})
+        nfp_context['log_context'] = logging_context
 
         status = resource_data['status']
         LOG.info(_LI("Received VPN's update_status API. "
@@ -264,7 +267,6 @@ class VpnNotifier(object):
         rpcClient = transport.RPCClient(a_topics.VPN_NFP_PLUGIN_TOPIC)
         rpcClient.cctxt.cast(context, 'update_status',
                              status=status)
-        nfp_logging.clear_logging_context()
 
     def ipsec_site_conn_deleted(self, context, notification_data):
         pass
