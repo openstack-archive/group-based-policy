@@ -37,7 +37,7 @@ class HeatClient(object):
         self.timeout_mins = timeout_mins
         # REVISIT(ashu): The base class is a old style class. We have to
         # change when it is updated
-        #gbp_heat_api_client.HeatClient.__init__(
+        # gbp_heat_api_client.HeatClient.__init__(
         #    self, context, heat_uri, password, auth_token)
 
     def create(self, name, data, parameters=None):
@@ -65,7 +65,7 @@ class HeatClient(object):
             self.stacks.delete(stack_id)
         except heat_exc.HTTPNotFound:
             LOG.warning(_LW("Stack %(stack)s created by service chain driver "
-                      "is not found at cleanup"), {'stack': stack_id})
+                            "is not found at cleanup"), {'stack': stack_id})
 
     def get(self, stack_id):
         return self.stacks.get(stack_id)
