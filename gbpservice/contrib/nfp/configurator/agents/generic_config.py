@@ -17,7 +17,7 @@ from neutron._i18n import _LI
 
 from gbpservice.contrib.nfp.configurator.agents import agent_base
 from gbpservice.contrib.nfp.configurator.lib import (
-                            generic_config_constants as gen_cfg_const)
+    generic_config_constants as gen_cfg_const)
 from gbpservice.contrib.nfp.configurator.lib import constants as common_const
 from gbpservice.contrib.nfp.configurator.lib import data_parser
 from gbpservice.contrib.nfp.configurator.lib import utils
@@ -180,7 +180,7 @@ class GenericConfigEventHandler(agent_base.AgentBaseEventHandler,
 
     def __init__(self, sc, drivers, rpcmgr):
         super(GenericConfigEventHandler, self).__init__(
-                                        sc, drivers, rpcmgr)
+            sc, drivers, rpcmgr)
         self.sc = sc
 
     def _get_driver(self, service_type, service_vendor, service_feature):
@@ -218,9 +218,9 @@ class GenericConfigEventHandler(agent_base.AgentBaseEventHandler,
             event_data = ev.data
             if ev.id == 'PROCESS_BATCH':
                 NFI = event_data['sa_req_list'][0][
-                          'agent_info']['context']['nfi_id']
+                    'agent_info']['context']['nfi_id']
                 NF = event_data['sa_req_list'][0][
-                          'agent_info']['context']['nf_id']
+                    'agent_info']['context']['nf_id']
             else:
                 NFI = event_data['context']['context']['nfi_id']
                 NF = event_data['context']['context']['nf_id']
@@ -247,7 +247,7 @@ class GenericConfigEventHandler(agent_base.AgentBaseEventHandler,
                 if periodicity == gen_cfg_const.INITIAL:
                     self.sc.poll_event(
                         ev,
-                        max_times= EV_CONF_HM_MAXRETRY)
+                        max_times=EV_CONF_HM_MAXRETRY)
 
                 elif periodicity == gen_cfg_const.FOREVER:
                     self.sc.poll_event(ev)
@@ -263,7 +263,7 @@ class GenericConfigEventHandler(agent_base.AgentBaseEventHandler,
         ev_copy = copy.deepcopy(ev)
         ev_copy.data["context"]["notification_data"] = {}
         ev_copy.data["context"]["context"]["nfp_context"]["id"] = (
-                                                            notification_id)
+            notification_id)
         ev_copy.data['context']['context']['nfd_id'] = nfd.get('vmid')
         notification_data = self._prepare_notification_data(ev_copy, result)
         self.notify._notification(notification_data)
@@ -332,9 +332,10 @@ class GenericConfigEventHandler(agent_base.AgentBaseEventHandler,
 
         if ev.id == gen_cfg_const.EVENT_CONFIGURE_HEALTHMONITOR:
             if (resource_data['nfds'][0][
-                                'periodicity'] == gen_cfg_const.INITIAL and
+                'periodicity'] == gen_cfg_const.INITIAL and
                     result == common_const.SUCCESS):
-                notification_data = self._prepare_notification_data(ev, result)
+                notification_data = self._prepare_notification_data(ev,
+                                                                    result)
                 self.notify._notification(notification_data)
                 msg = ("VM Health check successful")
                 LOG.info(msg)
@@ -407,8 +408,8 @@ class GenericConfigEventHandler(agent_base.AgentBaseEventHandler,
         self.notify._notification(notification_data)
 
     @nfp_api.poll_event_desc(
-            event=gen_cfg_const.EVENT_CONFIGURE_HEALTHMONITOR,
-            spacing=gen_cfg_const.EVENT_CONFIGURE_HEALTHMONITOR_SPACING)
+        event=gen_cfg_const.EVENT_CONFIGURE_HEALTHMONITOR,
+        spacing=gen_cfg_const.EVENT_CONFIGURE_HEALTHMONITOR_SPACING)
     def handle_configure_healthmonitor(self, ev):
         """Decorator method called for poll event CONFIGURE_HEALTHMONITOR
            Finally it Enqueues response into notification queue.
@@ -436,21 +437,21 @@ def events_init(sc, drivers, rpcmgr):
     """
 
     event_id_list = [
-                        gen_cfg_const.EVENT_CONFIGURE_INTERFACES,
-                        gen_cfg_const.EVENT_CLEAR_INTERFACES,
-                        gen_cfg_const.EVENT_CONFIGURE_ROUTES,
-                        gen_cfg_const.EVENT_CLEAR_ROUTES,
-                        gen_cfg_const.EVENT_CONFIGURE_HEALTHMONITOR,
-                        gen_cfg_const.EVENT_CLEAR_HEALTHMONITOR,
-                        common_const.EVENT_PROCESS_BATCH
-                    ]
+        gen_cfg_const.EVENT_CONFIGURE_INTERFACES,
+        gen_cfg_const.EVENT_CLEAR_INTERFACES,
+        gen_cfg_const.EVENT_CONFIGURE_ROUTES,
+        gen_cfg_const.EVENT_CLEAR_ROUTES,
+        gen_cfg_const.EVENT_CONFIGURE_HEALTHMONITOR,
+        gen_cfg_const.EVENT_CLEAR_HEALTHMONITOR,
+        common_const.EVENT_PROCESS_BATCH
+    ]
     events = []
 
     for event in event_id_list:
         events.append(
-                nfp_event.Event(
-                    id=event,
-                    handler=GenericConfigEventHandler(sc, drivers, rpcmgr)))
+            nfp_event.Event(
+                id=event,
+                handler=GenericConfigEventHandler(sc, drivers, rpcmgr)))
 
     sc.register_events(events)
 

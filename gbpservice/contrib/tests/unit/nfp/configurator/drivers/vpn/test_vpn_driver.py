@@ -44,6 +44,7 @@ class VpnaasIpsecDriverTestCase(base.BaseTestCase):
         self.conf = 'conf'
         self.test_dict = vpn_test_data.VPNTestData()
         self.context = self.test_dict.make_service_context()
+        self.headers = self.test_dict.get_header()
         self.plugin_rpc = vpn.VpnaasRpcSender(self.test_dict.sc)
         self.driver = vyos_vpn_driver.VpnaasIpsecDriver(self.conf)
         self.svc_validate = (
@@ -89,6 +90,7 @@ class VpnaasIpsecDriverTestCase(base.BaseTestCase):
             mock_post.assert_called_with(
                 self.test_dict.url_create_ipsec_conn,
                 data=jsonutils.dumps(self.test_dict.svc_context),
+                headers=self.headers,
                 timeout=self.test_dict.timeout)
             mock_update_status.assert_called_with(
                 context,
@@ -127,6 +129,7 @@ class VpnaasIpsecDriverTestCase(base.BaseTestCase):
             mock_delete.assert_called_with(
                 url.encode('ascii', 'ignore'),
                 timeout=self.test_dict.timeout,
+                headers=self.headers,
                 data=None)
 
     def test_check_status(self):
@@ -156,6 +159,7 @@ class VpnGenericConfigDriverTestCase(base.BaseTestCase):
         self.conf = 'conf'
         self.test_dict = vpn_test_data.VPNTestData()
         self.context = self.test_dict.make_service_context()
+        self.headers = self.test_dict.get_header()
         self.plugin_rpc = vpn.VpnaasRpcSender(self.test_dict.sc)
         self.rest_apt = vyos_vpn_driver.RestApi(self.test_dict.vm_mgmt_ip)
         self.driver = vyos_vpn_driver.VpnGenericConfigDriver()
@@ -192,6 +196,7 @@ class VpnGenericConfigDriverTestCase(base.BaseTestCase):
                 self.test_dict.url_for_add_inte,
                 jsonutils.dumps(
                     self.test_dict.data_for_interface),
+                headers=self.headers,
                 timeout=self.test_dict.timeout)
 
     def test_clear_interfaces(self):
@@ -215,6 +220,7 @@ class VpnGenericConfigDriverTestCase(base.BaseTestCase):
                 self.test_dict.url_for_del_inte,
                 data=jsonutils.dumps(
                     self.test_dict.data_for_interface),
+                headers=self.headers,
                 timeout=self.test_dict.timeout)
 
     def test_configure_source_routes(self):
@@ -237,6 +243,7 @@ class VpnGenericConfigDriverTestCase(base.BaseTestCase):
                 self.test_dict.url_for_add_src_route,
                 data=jsonutils.dumps(
                     self.test_dict.data_for_add_src_route),
+                headers=self.headers,
                 timeout=self.test_dict.timeout)
 
     def test_delete_source_routes(self):
@@ -258,6 +265,7 @@ class VpnGenericConfigDriverTestCase(base.BaseTestCase):
                 self.test_dict.url_for_del_src_route,
                 data=jsonutils.dumps(
                     self.test_dict.data_for_del_src_route),
+                headers=self.headers,
                 timeout=self.test_dict.timeout)
 
 
@@ -316,6 +324,7 @@ class RestApiTestCase(base.BaseTestCase):
         self.resp = mock.Mock()
         self.resp = mock.Mock(status_code=200)
         self.test_dict = vpn_test_data.VPNTestData()
+        self.headers = self.test_dict.get_header()
         self.args = {'peer_address': '1.103.2.2'}
         self.fake_resp_dict = {'status': None}
         self.timeout = self.rest_obj.timeout
@@ -334,10 +343,12 @@ class RestApiTestCase(base.BaseTestCase):
             mock_post), (
             mock.patch.object(jsonutils, 'loads',
                               return_value=self.fake_resp_dict)):
-            self.rest_obj.post('create-ipsec-site-conn', self.data)
+            self.rest_obj.post('create-ipsec-site-conn',
+                               self.data, self.headers)
             mock_post.assert_called_with(
                 self.test_dict.url_create_ipsec_conn,
                 data=self.j_data,
+                headers=self.headers,
                 timeout=self.timeout)
 
     def test_put_success(self):
@@ -349,10 +360,12 @@ class RestApiTestCase(base.BaseTestCase):
         self.resp = mock.Mock(status_code=200)
         with mock.patch.object(requests, 'put', return_value=self.resp) as (
                 mock_put):
-            self.rest_obj.put('create-ipsec-site-conn', self.data)
+            self.rest_obj.put('create-ipsec-site-conn',
+                              self.data, self.headers)
             mock_put.assert_called_with(
                 self.test_dict.url_create_ipsec_conn,
                 data=self.j_data,
+                headers=self.headers,
                 timeout=self.timeout)
 
     def test_put_fail(self):
@@ -365,10 +378,12 @@ class RestApiTestCase(base.BaseTestCase):
         with mock.patch.object(requests, 'put', return_value=self.resp) as (
                 mock_put):
 
-            self.rest_obj.put('create-ipsec-site-conn', self.data)
+            self.rest_obj.put('create-ipsec-site-conn',
+                              self.data, self.headers)
             mock_put.assert_called_with(
                 self.test_dict.url_create_ipsec_conn,
                 data=jsonutils.dumps(self.data),
+                headers=self.headers,
                 timeout=self.timeout)
 
     def test_delete_success(self):
@@ -384,11 +399,12 @@ class RestApiTestCase(base.BaseTestCase):
                               return_value=self.fake_resp_dict)):
             self.rest_obj.delete('delete-ipsec-site-conn',
                                  self.args,
-                                 self.data)
+                                 self.headers)
             mock_delete.assert_called_with(
                 self.test_dict.url_delete_ipsec_conn,
                 timeout=self.timeout,
-                data=self.j_data)
+                data=None,
+                headers=self.headers)
 
     def test_get_success(self):
         """
@@ -399,10 +415,12 @@ class RestApiTestCase(base.BaseTestCase):
         self.resp = mock.Mock(status_code=200)
         with mock.patch.object(requests, 'get', return_value=self.resp) as (
                 mock_get):
-            self.rest_obj.get('create-ipsec-site-tunnel', self.data)
+            self.rest_obj.get('create-ipsec-site-tunnel',
+                              self.data, self.headers)
             mock_get.assert_called_with(
                 self.test_dict.url_create_ipsec_tunnel,
                 params=self.data,
+                headers=self.headers,
                 timeout=self.timeout)
 
     def test_get_fail(self):
@@ -414,8 +432,10 @@ class RestApiTestCase(base.BaseTestCase):
         self.resp = mock.Mock(status_code=404)
         with mock.patch.object(requests, 'get', return_value=self.resp) as (
                 mock_get):
-            self.rest_obj.get('create-ipsec-site-tunnel', self.data)
+            self.rest_obj.get('create-ipsec-site-tunnel',
+                              self.data, self.headers)
             mock_get.assert_called_with(
                 self.test_dict.url_create_ipsec_tunnel,
                 params=self.data,
+                headers=self.headers,
                 timeout=self.timeout)
