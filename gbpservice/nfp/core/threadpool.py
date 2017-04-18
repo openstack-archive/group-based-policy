@@ -94,5 +94,5 @@ class ThreadPool(object):
             except eventlet.greenlet.GreenletExit:
                 pass
             except Exception as ex:
-                message = "Exception - %s" % (ex)
+                message = "Unexpected exception - %r" % (ex)
                 LOG.error(message)
