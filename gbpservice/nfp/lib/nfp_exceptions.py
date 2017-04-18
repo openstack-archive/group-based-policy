@@ -11,29 +11,31 @@
 #    under the License.
 
 
-class NFPNetworkDriverBase(object):
-    """ NFP Network Driver Base class
+class GenericException(Exception):
 
-    Handles ports, operations on them
-    """
+    def __init__(self, type, value, traceback):
+        super(GenericException, self).__init__(type, value)
 
-    def __init__(self):
-        pass
 
-    def setup_traffic_steering(self):
-        pass
+class DbException(GenericException):
+    pass
 
-    def create_port(self, token, admin_id, net_id, name=None):
-        pass
 
-    def delete_port(self, token, port_id):
-        pass
+class NeutronException(GenericException):
+    pass
 
-    def get_port_id(self, token, port_id):
-        pass
 
-    def get_port_details(self, token, port_id):
-        pass
+class NovaException(GenericException):
+    pass
 
-    def set_promiscuos_mode(self, token, port_id, enable_port_security):
-        pass
+
+class KeystoneException(GenericException):
+    pass
+
+
+class GBPException(GenericException):
+    pass
+
+
+class HeatException(GenericException):
+    pass
