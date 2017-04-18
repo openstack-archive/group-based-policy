@@ -13,12 +13,17 @@
 
 import copy
 import requests
+import time
+
+from neutron._i18n import _LI
 
 from gbpservice.contrib.nfp.configurator.drivers.base import base_driver
 from gbpservice.contrib.nfp.configurator.drivers.vpn.vyos import (
-                                                vyos_vpn_constants as const)
+    vyos_vpn_constants as const)
 from gbpservice.contrib.nfp.configurator.lib import constants as common_const
 from gbpservice.contrib.nfp.configurator.lib import data_parser
+from gbpservice.contrib.nfp.configurator.lib import (
+    generic_config_constants as gen_cfg_const)
 from gbpservice.contrib.nfp.configurator.lib import vpn_constants as vpn_const
 from gbpservice.nfp.core import log as nfp_logging
 
@@ -41,6 +46,7 @@ class RestApi(object):
     Provides different methods to make ReST calls to the service VM,
     to update the configurations
     """
+
     def __init__(self, vm_mgmt_ip):
         self.vm_mgmt_ip = vm_mgmt_ip
         self.timeout = const.REST_TIMEOUT
@@ -48,7 +54,7 @@ class RestApi(object):
     def _dict_to_query_str(self, args):
         return '&'.join([str(k) + '=' + str(v) for k, v in args.iteritems()])
 
-    def post(self, api, args):
+    def post(self, api, args, headers):
         """
         Makes ReST call to the service VM to post the configurations.
 
@@ -64,7 +70,8 @@ class RestApi(object):
         data = jsonutils.dumps(args)
 
         try:
-            resp = requests.post(url, data=data, timeout=self.timeout)
+            resp = requests.post(url, data=data, timeout=self.timeout,
+                                 headers=headers)
             message = jsonutils.loads(resp.text)
             msg = "POST url %s %d" % (url, resp.status_code)
             LOG.debug(msg)
@@ -83,7 +90,7 @@ class RestApi(object):
             LOG.error(msg)
             raise requests.exceptions.HTTPError(msg)
 
-    def put(self, api, args):
+    def put(self, api, args, headers):
         """
         Makes ReST call to the service VM to put the configurations.
 
@@ -99,7 +106,8 @@ class RestApi(object):
         data = jsonutils.dumps(args)
 
         try:
-            resp = requests.put(url, data=data, timeout=self.timeout)
+            resp = requests.put(url, data=data, timeout=self.timeout,
+                                headers=headers)
             msg = "PUT url %s %d" % (url, resp.status_code)
             LOG.debug(msg)
             if resp.status_code == 200:
@@ -114,7 +122,7 @@ class RestApi(object):
                    % (url, str(err).capitalize()))
             LOG.error(msg)
 
-    def delete(self, api, args, data=None):
+    def delete(self, api, args, headers, data=None):
         """
         Makes ReST call to the service VM to delete the configurations.
 
@@ -135,7 +143,8 @@ class RestApi(object):
         if data:
             data = jsonutils.dumps(data)
         try:
-            resp = requests.delete(url, timeout=self.timeout, data=data)
+            resp = requests.delete(url, timeout=self.timeout, data=data,
+                                   headers=headers)
             message = jsonutils.loads(resp.text)
             msg = "DELETE url %s %d" % (url, resp.status_code)
             LOG.debug(msg)
@@ -153,7 +162,7 @@ class RestApi(object):
             LOG.error(msg)
             raise requests.exceptions.HTTPError(msg)
 
-    def get(self, api, args):
+    def get(self, api, args, headers):
         """
         Makes ReST call to the service VM to put the configurations.
 
@@ -170,7 +179,8 @@ class RestApi(object):
             const.CONFIGURATION_SERVER_PORT, api)
 
         try:
-            resp = requests.get(url, params=args, timeout=self.timeout)
+            resp = requests.get(url, params=args, timeout=self.timeout,
+                                headers=headers)
             msg = "GET url %s %d" % (url, resp.status_code)
             LOG.debug(msg)
             if resp.status_code == 200:
@@ -301,7 +311,75 @@ class VpnGenericConfigDriver(base_driver.BaseDriver):
         self.timeout = const.REST_TIMEOUT
         self.parse = data_parser.DataParser()
 
-    def _configure_static_ips(self, resource_data):
+    def _parse_vm_context(self, context):
+        try:
+            username = str(context['service_vm_context'][
+                           'vyos']['username'])
+            password = str(context['service_vm_context'][
+                           'vyos']['password'])
+            headers = {'Content-Type': 'application/json',
+                       'username': username,
+                       'password': password}
+            return headers
+        except Exception as e:
+            msg = ("Failed to get header from context. ERROR: %s" % e)
+            LOG.error(msg)
+            raise Exception(msg)
+
+    def configure_healthmonitor(self, context, resource_data):
+        vm_status = super(VpnGenericConfigDriver,
+                          self).configure_healthmonitor(
+                              context, resource_data)
+        if resource_data['nfds'][0]['periodicity'] == gen_cfg_const.INITIAL:
+            if vm_status == common_const.SUCCESS:
+                try:
+                    resp = self.configure_user(context, resource_data)
+                    if resp not in common_const.SUCCESS_CODES:
+                        return common_const.FAILURE
+                except Exception as e:
+                    msg = ("Failed to configure user. ERROR: %s" % e)
+                    LOG.error(msg)
+                    return common_const.FAILURE
+            return vm_status
+
+    def configure_user(self, context, resource_data):
+        headers = self._parse_vm_context(context)
+        resource_data = self.parse.parse_data(common_const.HEALTHMONITOR,
+                                              resource_data)
+        mgmt_ip = resource_data['mgmt_ip']
+        url = const.request_url % (mgmt_ip,
+                                   self.port,
+                                   'change_auth')
+        data = {}
+
+        LOG.info(_LI("Initiating POST request to configure Authentication "
+                     "service at mgmt ip:%(mgmt_ip)s"),
+                 {'mgmt_ip': mgmt_ip})
+        err_msg = ("Change Auth POST request to the VyOS firewall "
+                   "service at %s failed. " % url)
+        try:
+            resp = requests.post(url, data=data, headers=headers)
+        except Exception as err:
+            err_msg += ("Reason: %r" % str(err).capitalize())
+            LOG.error(err_msg)
+            return err_msg
+
+        if (resp.status_code in common_const.SUCCESS_CODES) and (
+            resp.json().get('status') is True):
+            msg = ("Configured user authentication successfully"
+                   " for vyos service at %r." % mgmt_ip)
+            LOG.info(msg)
+            return resp.status_code
+
+        err_msg += (("Failed to change Authentication para Status code"
+                     ": %r, Reason: %r" %
+                     (resp.status_code, resp.json().get('reason')))
+                    if type(resp.json()) is dict
+                    else ("Reason: " + resp))
+        LOG.error(err_msg)
+        return err_msg
+
+    def _configure_static_ips(self, context, resource_data):
         """ Configure static IPs for provider and stitching interfaces
         of service VM.
 
@@ -313,7 +391,7 @@ class VpnGenericConfigDriver(base_driver.BaseDriver):
         Returns: SUCCESS/Failure message with reason.
 
         """
-
+        headers = self._parse_vm_context(context)
         static_ips_info = dict(
             provider_ip=resource_data.get('provider_ip'),
             provider_cidr=resource_data.get('provider_cidr'),
@@ -332,7 +410,8 @@ class VpnGenericConfigDriver(base_driver.BaseDriver):
                "service at: %r" % mgmt_ip)
         LOG.info(msg)
         try:
-            resp = requests.post(url, data, timeout=self.timeout)
+            resp = requests.post(url, data, timeout=self.timeout,
+                                 headers=headers)
         except requests.exceptions.ConnectionError as err:
             msg = ("Failed to establish connection to primary service at: "
                    "%r. ERROR: %r" %
@@ -378,14 +457,14 @@ class VpnGenericConfigDriver(base_driver.BaseDriver):
         Returns: SUCCESS/Failure message with reason.
 
         """
-
+        headers = self._parse_vm_context(context)
         resource_data = self.parse.parse_data(common_const.INTERFACES,
                                               resource_data)
         mgmt_ip = resource_data['mgmt_ip']
 
         try:
             result_log_forward = self._configure_log_forwarding(
-                const.request_url, mgmt_ip, self.port)
+                const.request_url, mgmt_ip, self.port, headers)
         except Exception as err:
             msg = ("Failed to configure log forwarding for service at %s. "
                    "Error: %s" % (mgmt_ip, err))
@@ -402,7 +481,8 @@ class VpnGenericConfigDriver(base_driver.BaseDriver):
                 LOG.error(msg)
 
         try:
-            result_static_ips = self._configure_static_ips(resource_data)
+            result_static_ips = self._configure_static_ips(context,
+                                                           resource_data)
         except Exception as err:
             msg = ("Failed to add static IPs. Error: %s" % err)
             LOG.error(msg)
@@ -425,7 +505,8 @@ class VpnGenericConfigDriver(base_driver.BaseDriver):
                "service at: %r" % mgmt_ip)
         LOG.info(msg)
         try:
-            resp = requests.post(url, data, timeout=self.timeout)
+            resp = requests.post(url, data, timeout=self.timeout,
+                                 headers=headers)
         except requests.exceptions.ConnectionError as err:
             msg = ("Failed to establish connection to primary service at: "
                    "%r. ERROR: %r" %
@@ -453,9 +534,12 @@ class VpnGenericConfigDriver(base_driver.BaseDriver):
 
         msg = ("Persistent rule successfully added.")
         LOG.info(msg)
+        # wait for 10secs for the ip address to get configured. Sometimes
+        # observed that 'set_routes' fail with 'ip not configured' error.
+        time.sleep(10)
         return common_const.STATUS_SUCCESS
 
-    def _clear_static_ips(self, resource_data):
+    def _clear_static_ips(self, context, resource_data):
         """ Clear static IPs for provider and stitching
         interfaces of the service VM.
 
@@ -467,7 +551,7 @@ class VpnGenericConfigDriver(base_driver.BaseDriver):
         Returns: SUCCESS/Failure message with reason.
 
         """
-
+        headers = self._parse_vm_context(context)
         static_ips_info = dict(
             provider_ip=resource_data.get('provider_ip'),
             provider_cidr=resource_data.get('provider_cidr'),
@@ -486,7 +570,8 @@ class VpnGenericConfigDriver(base_driver.BaseDriver):
                "service at: %r" % mgmt_ip)
         LOG.info(msg)
         try:
-            resp = requests.delete(url, data=data, timeout=self.timeout)
+            resp = requests.delete(url, data=data, timeout=self.timeout,
+                                   headers=headers)
         except requests.exceptions.ConnectionError as err:
             msg = ("Failed to establish connection to primary service at: "
                    "%r. ERROR: %r" %
@@ -531,11 +616,11 @@ class VpnGenericConfigDriver(base_driver.BaseDriver):
         Returns: SUCCESS/Failure message with reason.
 
         """
-
+        headers = self._parse_vm_context(context)
         resource_data = self.parse.parse_data(common_const.INTERFACES,
                                               resource_data)
         try:
-            result_static_ips = self._clear_static_ips(resource_data)
+            result_static_ips = self._clear_static_ips(context, resource_data)
         except Exception as err:
             msg = ("Failed to remove static IPs. Error: %s" % err)
             LOG.error(msg)
@@ -562,7 +647,8 @@ class VpnGenericConfigDriver(base_driver.BaseDriver):
 
         try:
             data = jsonutils.dumps(rule_info)
-            resp = requests.delete(url, data=data, timeout=self.timeout)
+            resp = requests.delete(url, data=data, timeout=self.timeout,
+                                   headers=headers)
         except requests.exceptions.ConnectionError as err:
             msg = ("Failed to establish connection to service at: %r. "
                    "ERROR: %r" %
@@ -603,6 +689,7 @@ class VpnGenericConfigDriver(base_driver.BaseDriver):
         Returns: SUCCESS/Failure message with reason.
 
         """
+        headers = self._parse_vm_context(context)
         forward_routes = resource_data.get('forward_route')
         resource_data = self.parse.parse_data(common_const.ROUTES,
                                               resource_data)
@@ -626,7 +713,8 @@ class VpnGenericConfigDriver(base_driver.BaseDriver):
 
         try:
             resp = requests.post(
-                stitching_url, data=st_data, timeout=self.timeout)
+                stitching_url, data=st_data, timeout=self.timeout,
+                headers=headers)
         except requests.exceptions.ConnectionError as err:
             msg = ("Failed to establish connection to service at: "
                    "%r. ERROR: %r" % (mgmt_ip,
@@ -652,7 +740,8 @@ class VpnGenericConfigDriver(base_driver.BaseDriver):
                "primary service at: %r" % mgmt_ip)
         LOG.info(msg)
         try:
-            resp = requests.post(url, data=data, timeout=self.timeout)
+            resp = requests.post(url, data=data, timeout=self.timeout,
+                                 headers=headers)
         except requests.exceptions.ConnectionError as err:
             msg = ("Failed to establish connection to service at: "
                    "%r. ERROR: %r" % (mgmt_ip, str(err).capitalize()))
@@ -701,6 +790,7 @@ class VpnGenericConfigDriver(base_driver.BaseDriver):
 
         """
         # clear the static stitching gateway route
+        headers = self._parse_vm_context(context)
         resource_data = self.parse.parse_data(common_const.ROUTES,
                                               resource_data)
         mgmt_ip = resource_data.get('mgmt_ip')
@@ -714,7 +804,8 @@ class VpnGenericConfigDriver(base_driver.BaseDriver):
             {'gateway_ip': resource_data.get('stitching_gw_ip')})
         try:
             resp = requests.post(
-                stitching_url, data=st_data, timeout=self.timeout)
+                stitching_url, data=st_data, timeout=self.timeout,
+                headers=headers)
         except requests.exceptions.ConnectionError as err:
             msg = ("Failed to establish connection to service at: "
                    "%r. ERROR: %r" % (mgmt_ip,
@@ -733,7 +824,8 @@ class VpnGenericConfigDriver(base_driver.BaseDriver):
                % mgmt_ip)
         LOG.info(msg)
         try:
-            resp = requests.delete(url, data=data, timeout=self.timeout)
+            resp = requests.delete(url, data=data, timeout=self.timeout,
+                                   headers=headers)
         except requests.exceptions.ConnectionError as err:
             msg = ("Failed to establish connection to primary service at: "
                    " %r. ERROR: %r" % (mgmt_ip, err))
@@ -901,7 +993,7 @@ class VpnaasIpsecDriver(VpnGenericConfigDriver):
 
     def _get_ipsec_tunnel_local_cidr(self, svc_context):
         return self._get_ipsec_tunnel_local_cidr_from_vpnsvc(
-                                                        svc_context['service'])
+            svc_context['service'])
 
     def _ipsec_create_conn(self, context, mgmt_fip, resource_data):
         """
@@ -913,7 +1005,7 @@ class VpnaasIpsecDriver(VpnGenericConfigDriver):
 
         Returns: None
         """
-
+        headers = self._parse_vm_context(context['agent_info']['context'])
         conn = resource_data.get('resource')
         description = conn['description']
         svc_context = self.agent.get_vpn_servicecontext(
@@ -931,7 +1023,7 @@ class VpnaasIpsecDriver(VpnGenericConfigDriver):
             self._get_ipsec_tunnel_local_cidr_from_vpnsvc(conn))
         if standby_fip:
             svc_context['siteconns'][0]['connection']['standby_fip'] = (
-                                                                standby_fip)
+                standby_fip)
         conn = svc_context['siteconns'][0]['connection']
         conn['description'] = description
         svc_context['siteconns'][0]['connection']['stitching_fixed_ip'] = (
@@ -945,13 +1037,15 @@ class VpnaasIpsecDriver(VpnGenericConfigDriver):
         peer_cidrs_from_2 = conn['peer_cidrs'][1:]
         conn['peer_cidrs'] = [conn['peer_cidrs'][0]]
         svc_context['service']['cidr'] = self._get_stitching_cidr(conn)
-        RestApi(mgmt_fip).post("create-ipsec-site-conn", svc_context)
+        RestApi(mgmt_fip).post(
+            "create-ipsec-site-conn", svc_context, headers)
         if peer_cidrs_from_2:
             tunnel = {}
             tunnel['peer_address'] = conn['peer_address']
             tunnel['local_cidr'] = tunnel_local_cidr
             tunnel['peer_cidrs'] = peer_cidrs_from_2
-            RestApi(mgmt_fip).post("create-ipsec-site-tunnel", tunnel)
+            RestApi(mgmt_fip).post(
+                "create-ipsec-site-tunnel", tunnel, headers)
         self._init_state(context, conn)
 
     def _ipsec_create_tunnel(self, context, mgmt_fip, conn):
@@ -964,6 +1058,7 @@ class VpnaasIpsecDriver(VpnGenericConfigDriver):
 
         Returns: None
         """
+        headers = self._parse_vm_context(context['agent_info']['context'])
         tunnel_local_cidr, _ = (
             self._get_ipsec_tunnel_local_cidr_from_vpnsvc(conn))
 
@@ -971,7 +1066,8 @@ class VpnaasIpsecDriver(VpnGenericConfigDriver):
         tunnel['peer_address'] = conn['peer_address']
         tunnel['local_cidr'] = tunnel_local_cidr
         tunnel['peer_cidrs'] = conn['peer_cidrs']
-        RestApi(mgmt_fip).post("create-ipsec-site-tunnel", tunnel)
+        RestApi(mgmt_fip).post(
+            "create-ipsec-site-tunnel", tunnel, headers)
         self._init_state(context, conn)
 
     def _ipsec_get_tenant_conns(self, context, mgmt_fip, conn,
@@ -1074,7 +1170,7 @@ class VpnaasIpsecDriver(VpnGenericConfigDriver):
 
         Returns: None
         """
-
+        headers = self._parse_vm_context(context['agent_info']['context'])
         conn = resource_data.get('resource')
         lcidr = resource_data['provider_cidr']
 
@@ -1084,7 +1180,7 @@ class VpnaasIpsecDriver(VpnGenericConfigDriver):
         tunnel['peer_cidrs'] = conn['peer_cidrs']
         try:
             RestApi(mgmt_fip).delete(
-                "delete-ipsec-site-tunnel", tunnel)
+                "delete-ipsec-site-tunnel", tunnel, headers)
             self.agent.ipsec_site_conn_deleted(context, conn['id'])
         except Exception as err:
             msg = ("IPSec: Failed to delete IPSEC tunnel. %s"
@@ -1105,17 +1201,17 @@ class VpnaasIpsecDriver(VpnGenericConfigDriver):
         """
 
         try:
-
+            headers = self._parse_vm_context(context['agent_info']['context'])
             RestApi(mgmt_fip).delete(
                 "delete-ipsec-site-conn",
-                {'peer_address': conn['peer_address']})
+                {'peer_address': conn['peer_address']}, headers)
             self.agent.ipsec_site_conn_deleted(context, conn['id'])
         except Exception as err:
             msg = ("IPSec: Failed to delete IPSEC conn. %s"
                    % str(err).capitalize())
             LOG.error(msg)
 
-    def _ipsec_is_state_changed(self, svc_context, conn, fip):
+    def _ipsec_is_state_changed(self, context, svc_context, conn, fip):
         """
         Make GET request to the service VM to get the status of the site conn.
 
@@ -1125,7 +1221,7 @@ class VpnaasIpsecDriver(VpnGenericConfigDriver):
 
         Returns: None
         """
-
+        headers = self._parse_vm_context(context['agent_info']['context'])
         c_state = None
         lcidr, _ = self._get_ipsec_tunnel_local_cidr_from_vpnsvc(conn)
         if conn['status'] == vpn_const.STATE_INIT:
@@ -1135,7 +1231,7 @@ class VpnaasIpsecDriver(VpnGenericConfigDriver):
                 'peer_cidr': conn['peer_cidrs'][0]}
             output = RestApi(fip).get(
                 "get-ipsec-site-tunnel-state",
-                tunnel)
+                tunnel, headers)
             state = output['state']
 
             if state.upper() == 'UP' and (
@@ -1165,7 +1261,6 @@ class VpnaasIpsecDriver(VpnGenericConfigDriver):
 
         Returns: None
         """
-
         conn = resource_data.get('resource')
         mgmt_fip = resource_data['mgmt_ip']
         msg = "IPsec: create site connection %s" % conn
@@ -1240,7 +1335,6 @@ class VpnaasIpsecDriver(VpnGenericConfigDriver):
 
         Returns: None
         """
-
         conn = resource_data.get('resource')
         msg = "IPsec: delete siteconnection %s" % conn
         LOG.info(msg)
@@ -1269,7 +1363,6 @@ class VpnaasIpsecDriver(VpnGenericConfigDriver):
 
         Returns: None
         """
-
         vpn_desc = self.parse.parse_data(common_const.VPN, context)
         # Other than non HA vpn_desc will be a list of parsed nfs
         if type(vpn_desc) == list:
@@ -1280,7 +1373,7 @@ class VpnaasIpsecDriver(VpnGenericConfigDriver):
         conn = svc_context['siteconns'][0]['connection']
 
         try:
-            state, changed = self._ipsec_is_state_changed(
+            state, changed = self._ipsec_is_state_changed(context,
                 svc_context, conn, fip)
         except Exception as err:
             msg = ("Failed to check if IPSEC state is changed. %s"
@@ -1303,7 +1396,6 @@ class VpnaasIpsecDriver(VpnGenericConfigDriver):
 
         Returns: None
         """
-
         vpn_desc = self.parse.parse_data(common_const.VPN, context)
         resource_data.update(vpn_desc)
 

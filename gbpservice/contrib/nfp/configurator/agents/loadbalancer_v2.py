@@ -87,7 +87,7 @@ class LBaaSV2RpcSender(data_filter.Filter):
                                  'data': {'pool_id': pool_id,
                                           'stats': stats,
                                           'notification_type': (
-                                                        'update_pool_stats'),
+                                              'update_pool_stats'),
                                           'pool': pool_id}}]
                }
         LOG.info(_LI("Sending Notification 'Update Pool Stats' "
@@ -109,6 +109,7 @@ the methods of this class to configure the device.
 
 
 class LBaaSv2RpcManager(agent_base.AgentBaseRPCManager):
+
     def __init__(self, sc, conf):
         """Instantiates child and parent class objects.
 
@@ -171,7 +172,7 @@ class LBaaSv2RpcManager(agent_base.AgentBaseRPCManager):
 
         """
         old_val, new_val = self.get_diff_of_dict(
-                               old_loadbalancer, loadbalancer)
+            old_loadbalancer, loadbalancer)
         arg_dict = {'context': context,
                     lb_const.OLD_LOADBALANCER: old_loadbalancer,
                     lb_const.LOADBALANCER: loadbalancer,
@@ -435,7 +436,7 @@ class LBaaSv2RpcManager(agent_base.AgentBaseRPCManager):
 
         """
         old_val, new_val = self.get_diff_of_dict(
-                               old_healthmonitor, healthmonitor)
+            old_healthmonitor, healthmonitor)
         LOG.info(_LI("Received request 'Update Pool Health Monitor' for "
                      "Health monitor:%(hm)s with new Param:%(new_val)s and "
                      "old Param:%(old_val)s"),
@@ -620,7 +621,7 @@ class LBaaSV2EventHandler(agent_base.AgentBaseEventHandler,
         loadbalancer = data[lb_const.LOADBALANCER]
         root_lb_id = self._root_loadbalancer_id(
             lb_const.LOADBALANCER, loadbalancer)
-        agent_info = ev.data['context'].pop('agent_info')
+        agent_info = ev.data['context'].get('agent_info')
         service_vendor = agent_info['service_vendor']
 
         try:
@@ -662,9 +663,9 @@ class LBaaSV2EventHandler(agent_base.AgentBaseEventHandler,
                     agent_info, None)
         else:
             self.plugin_rpc.update_status(
-                    lb_const.LOADBALANCER, loadbalancer['id'], root_lb_id,
-                    lb_const.ACTIVE, lb_const.ONLINE,
-                    agent_info, None)
+                lb_const.LOADBALANCER, loadbalancer['id'], root_lb_id,
+                lb_const.ACTIVE, lb_const.ONLINE,
+                agent_info, None)
 
     def _create_loadbalancer_v2(self, ev):
         self._handle_event_loadbalancer(ev, lb_const.CREATE)
@@ -680,7 +681,7 @@ class LBaaSV2EventHandler(agent_base.AgentBaseEventHandler,
         context = data['context']
         listener = data[lb_const.LISTENER]
         root_lb_id = self._root_loadbalancer_id(lb_const.LISTENER, listener)
-        agent_info = ev.data['context'].pop('agent_info')
+        agent_info = ev.data['context'].get('agent_info')
         service_vendor = agent_info['service_vendor']
         driver = self._get_driver(service_vendor)
 
@@ -704,9 +705,9 @@ class LBaaSV2EventHandler(agent_base.AgentBaseEventHandler,
                     agent_info, None)
         else:
             self.plugin_rpc.update_status(
-                    lb_const.LISTENER, listener['id'], root_lb_id,
-                    lb_const.ACTIVE, lb_const.ONLINE,
-                    agent_info, None)
+                lb_const.LISTENER, listener['id'], root_lb_id,
+                lb_const.ACTIVE, lb_const.ONLINE,
+                agent_info, None)
 
     def _create_listener_v2(self, ev):
         self._handle_event_listener(ev, lb_const.CREATE)
@@ -722,7 +723,7 @@ class LBaaSV2EventHandler(agent_base.AgentBaseEventHandler,
         context = data['context']
         pool = data[lb_const.POOL]
         root_lb_id = self._root_loadbalancer_id(lb_const.POOL, pool)
-        agent_info = ev.data['context'].pop('agent_info')
+        agent_info = ev.data['context'].get('agent_info')
         service_vendor = agent_info['service_vendor']
         driver = self._get_driver(service_vendor)
 
@@ -746,9 +747,9 @@ class LBaaSV2EventHandler(agent_base.AgentBaseEventHandler,
                     agent_info, None)
         else:
             self.plugin_rpc.update_status(
-                    lb_const.POOL, pool['id'], root_lb_id,
-                    lb_const.ACTIVE, lb_const.ONLINE,
-                    agent_info, None)
+                lb_const.POOL, pool['id'], root_lb_id,
+                lb_const.ACTIVE, lb_const.ONLINE,
+                agent_info, None)
 
     def _create_pool_v2(self, ev):
         self._handle_event_pool(ev, lb_const.CREATE)
@@ -764,7 +765,7 @@ class LBaaSV2EventHandler(agent_base.AgentBaseEventHandler,
         context = data['context']
         member = data[lb_const.MEMBER]
         root_lb_id = self._root_loadbalancer_id(lb_const.MEMBER, member)
-        agent_info = ev.data['context'].pop('agent_info')
+        agent_info = ev.data['context'].get('agent_info')
         service_vendor = agent_info['service_vendor']
         driver = self._get_driver(service_vendor)  # member['pool_id'])
         try:
@@ -787,9 +788,9 @@ class LBaaSV2EventHandler(agent_base.AgentBaseEventHandler,
                     agent_info, None)
         else:
             self.plugin_rpc.update_status(
-                    lb_const.MEMBER, member['id'], root_lb_id,
-                    lb_const.ACTIVE, lb_const.ONLINE,
-                    agent_info, None)
+                lb_const.MEMBER, member['id'], root_lb_id,
+                lb_const.ACTIVE, lb_const.ONLINE,
+                agent_info, None)
 
     def _create_member_v2(self, ev):
         self._handle_event_member(ev, lb_const.CREATE)
@@ -806,7 +807,7 @@ class LBaaSV2EventHandler(agent_base.AgentBaseEventHandler,
         healthmonitor = data[lb_const.HEALTHMONITOR]
         root_lb_id = self._root_loadbalancer_id(
             lb_const.HEALTHMONITOR, healthmonitor)
-        agent_info = context.pop('agent_info')
+        agent_info = context.get('agent_info')
         service_vendor = agent_info['service_vendor']
         driver = self._get_driver(service_vendor)  # (pool_id)
 
@@ -835,9 +836,9 @@ class LBaaSV2EventHandler(agent_base.AgentBaseEventHandler,
                     agent_info, None)
         else:
             self.plugin_rpc.update_status(
-                    lb_const.HEALTHMONITOR, healthmonitor['id'], root_lb_id,
-                    lb_const.ACTIVE, lb_const.ONLINE,
-                    agent_info, None)
+                lb_const.HEALTHMONITOR, healthmonitor['id'], root_lb_id,
+                lb_const.ACTIVE, lb_const.ONLINE,
+                agent_info, None)
 
     def _create_health_monitor_v2(self, ev):
         self._handle_event_health_monitor(ev, lb_const.CREATE)

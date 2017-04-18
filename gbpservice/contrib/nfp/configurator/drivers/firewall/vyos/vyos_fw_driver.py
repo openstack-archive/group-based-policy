@@ -11,15 +11,19 @@
 #    under the License.
 
 import requests
+import time
+
 
 from oslo_serialization import jsonutils
 
 from gbpservice.contrib.nfp.configurator.drivers.base import base_driver
 from gbpservice.contrib.nfp.configurator.drivers.firewall.vyos import (
-                                                vyos_fw_constants as const)
+    vyos_fw_constants as const)
 from gbpservice.contrib.nfp.configurator.lib import constants as common_const
 from gbpservice.contrib.nfp.configurator.lib import data_parser
 from gbpservice.contrib.nfp.configurator.lib import fw_constants as fw_const
+from gbpservice.contrib.nfp.configurator.lib import (
+    generic_config_constants as gen_cfg_const)
 from gbpservice.nfp.core import log as nfp_logging
 from neutron._i18n import _LI
 
@@ -37,11 +41,12 @@ class RestApi(object):
     def __init__(self, timeout):
         self.timeout = timeout
 
-    def request_type_to_api_map(self, url, data, request_type):
+    def request_type_to_api_map(self, url, data, request_type, headers):
         return getattr(requests, request_type)(url,
-                                               data=data, timeout=self.timeout)
+                                               data=data, timeout=self.timeout,
+                                               headers=headers)
 
-    def fire(self, url, data, request_type):
+    def fire(self, url, data, request_type, headers):
         """ Invokes REST POST call to the Service VM.
 
         :param url: URL to connect.
@@ -57,8 +62,8 @@ class RestApi(object):
                    "vm with data %s"
                    % (url, request_type, data))
             LOG.debug(msg)
-            resp = self.request_type_to_api_map(url,
-                                                data, request_type.lower())
+            resp = self.request_type_to_api_map(url, data,
+                                                request_type.lower(), headers)
         except requests.exceptions.ConnectionError as err:
             msg = ("Failed to establish connection to the service at URL: %r. "
                    "ERROR: %r" % (url, str(err).capitalize()))
@@ -76,7 +81,7 @@ class RestApi(object):
                    "%r. %r" % (url, str(err).capitalize()))
             return msg
         if resp.status_code not in common_const.SUCCESS_CODES or (
-                                            result.get('status') is False):
+                result.get('status') is False):
             return result
         return common_const.STATUS_SUCCESS
 
@@ -91,7 +96,72 @@ class FwGenericConfigDriver(base_driver.BaseDriver):
     def __init__(self):
         self.parse = data_parser.DataParser()
 
-    def _configure_static_ips(self, resource_data):
+    def _parse_vm_context(self, context):
+        try:
+            username = str(context['service_vm_context'][
+                           'vyos']['username'])
+            password = str(context['service_vm_context'][
+                           'vyos']['password'])
+            headers = {'Content-Type': 'application/json',
+                       'username': username,
+                       'password': password}
+            return headers
+        except Exception as e:
+            msg = ("Failed to get header from context. ERROR: %s" % e)
+            LOG.error(msg)
+            raise Exception(msg)
+
+    def configure_healthmonitor(self, context, resource_data):
+        vm_status = super(FwGenericConfigDriver, self).configure_healthmonitor(
+                              context, resource_data)
+        if resource_data['nfds'][0]['periodicity'] == gen_cfg_const.INITIAL:
+            if vm_status == common_const.SUCCESS:
+                try:
+                    resp = self.configure_user(context, resource_data)
+                    if resp != common_const.STATUS_SUCCESS:
+                        return common_const.FAILURE
+                except Exception as e:
+                    msg = ("Failed to configure user. ERROR: %s" % e)
+                    LOG.error(msg)
+                    return common_const.FAILURE
+            return vm_status
+
+    def configure_user(self, context, resource_data):
+        headers = self._parse_vm_context(context)
+        resource_data = self.parse.parse_data(common_const.HEALTHMONITOR,
+                                              resource_data)
+        mgmt_ip = resource_data['mgmt_ip']
+        url = const.request_url % (mgmt_ip,
+                                   self.port,
+                                   'change_auth')
+        data = {}
+        LOG.info(_LI("Initiating POST request to configure Authentication "
+                     "service at mgmt ip:%(mgmt_ip)s"),
+                 {'mgmt_ip': mgmt_ip})
+        err_msg = ("Change Auth POST request to the VyOS firewall "
+                   "service at %s failed. " % url)
+        try:
+            resp = self.rest_api.fire(url, data, common_const.POST, headers)
+        except Exception as err:
+            err_msg += ("Reason: %r" % str(err).capitalize())
+            LOG.error(err_msg)
+            return err_msg
+
+        if resp is common_const.STATUS_SUCCESS:
+            msg = ("Configured user authentication successfully"
+                   " for vyos service at %r." % mgmt_ip)
+            LOG.info(msg)
+            return resp
+
+        err_msg += (("Failed to change Authentication para Status code "
+                     "Status code: %r, Reason: %r" %
+                     (resp['status'], resp['reason']))
+                    if type(resp) is dict
+                    else ("Reason: " + resp))
+        LOG.error(err_msg)
+        return err_msg
+
+    def _configure_static_ips(self, context, resource_data):
         """ Configure static IPs for provider and stitching interfaces
         of service VM.
 
@@ -103,14 +173,14 @@ class FwGenericConfigDriver(base_driver.BaseDriver):
         Returns: SUCCESS/Failure message with reason.
 
         """
-
+        headers = self._parse_vm_context(context)
         static_ips_info = dict(
-                    provider_ip=resource_data.get('provider_ip'),
-                    provider_cidr=resource_data.get('provider_cidr'),
-                    provider_mac=resource_data.get('provider_mac'),
-                    stitching_ip=resource_data.get('stitching_ip'),
-                    stitching_cidr=resource_data.get('stitching_cidr'),
-                    stitching_mac=resource_data.get('stitching_mac'))
+            provider_ip=resource_data.get('provider_ip'),
+            provider_cidr=resource_data.get('provider_cidr'),
+            provider_mac=resource_data.get('provider_mac'),
+            stitching_ip=resource_data.get('stitching_ip'),
+            stitching_cidr=resource_data.get('stitching_cidr'),
+            stitching_mac=resource_data.get('stitching_mac'))
         mgmt_ip = resource_data['mgmt_ip']
 
         url = const.request_url % (mgmt_ip,
@@ -124,7 +194,7 @@ class FwGenericConfigDriver(base_driver.BaseDriver):
         err_msg = ("Static IP POST request to the VyOS firewall "
                    "service at %s failed. " % url)
         try:
-            resp = self.rest_api.fire(url, data, common_const.POST)
+            resp = self.rest_api.fire(url, data, common_const.POST, headers)
         except Exception as err:
             err_msg += ("Reason: %r" % str(err).capitalize())
             LOG.error(err_msg)
@@ -156,14 +226,14 @@ class FwGenericConfigDriver(base_driver.BaseDriver):
         Returns: SUCCESS/Failure message with reason.
 
         """
-
+        headers = self._parse_vm_context(context)
         resource_data = self.parse.parse_data(common_const.INTERFACES,
                                               resource_data)
         mgmt_ip = resource_data['mgmt_ip']
 
         try:
             result_log_forward = self._configure_log_forwarding(
-                const.request_url, mgmt_ip, self.port)
+                const.request_url, mgmt_ip, self.port, headers)
         except Exception as err:
             msg = ("Failed to configure log forwarding for service at %s. "
                    "Error: %s" % (mgmt_ip, err))
@@ -180,7 +250,8 @@ class FwGenericConfigDriver(base_driver.BaseDriver):
                 LOG.error(msg)
 
         try:
-            result_static_ips = self._configure_static_ips(resource_data)
+            result_static_ips = self._configure_static_ips(context,
+                                                           resource_data)
         except Exception as err:
             msg = ("Failed to add static IPs. Error: %s" % err)
             LOG.error(msg)
@@ -202,7 +273,7 @@ class FwGenericConfigDriver(base_driver.BaseDriver):
         err_msg = ("Add persistent rule POST request to the VyOS firewall "
                    "service at %s failed. " % url)
         try:
-            resp = self.rest_api.fire(url, data, common_const.POST)
+            resp = self.rest_api.fire(url, data, common_const.POST, headers)
         except Exception as err:
             err_msg += ("Reason: %r" % str(err).capitalize())
             LOG.error(err_msg)
@@ -212,6 +283,10 @@ class FwGenericConfigDriver(base_driver.BaseDriver):
             msg = ("Persistent rule successfully added for "
                    "service at %r." % url)
             LOG.info(msg)
+
+            # wait for 10secs for the ip address to get configured. Sometimes
+            # observed that 'set_routes' fail with 'ip not configured' error.
+            time.sleep(10)
             return resp
 
         err_msg += (("Status code: %r" % resp['status'])
@@ -220,7 +295,7 @@ class FwGenericConfigDriver(base_driver.BaseDriver):
         LOG.error(err_msg)
         return err_msg
 
-    def _clear_static_ips(self, resource_data):
+    def _clear_static_ips(self, context, resource_data):
         """ Clear static IPs for provider and stitching
         interfaces of the service VM.
 
@@ -232,14 +307,14 @@ class FwGenericConfigDriver(base_driver.BaseDriver):
         Returns: SUCCESS/Failure message with reason.
 
         """
-
+        headers = self._parse_vm_context(context)
         static_ips_info = dict(
-                    provider_ip=resource_data.get('provider_ip'),
-                    provider_cidr=resource_data.get('provider_cidr'),
-                    provider_mac=resource_data.get('provider_mac'),
-                    stitching_ip=resource_data.get('stitching_ip'),
-                    stitching_cidr=resource_data.get('stitching_cidr'),
-                    stitching_mac=resource_data.get('stitching_mac'))
+            provider_ip=resource_data.get('provider_ip'),
+            provider_cidr=resource_data.get('provider_cidr'),
+            provider_mac=resource_data.get('provider_mac'),
+            stitching_ip=resource_data.get('stitching_ip'),
+            stitching_cidr=resource_data.get('stitching_cidr'),
+            stitching_mac=resource_data.get('stitching_mac'))
         mgmt_ip = resource_data['mgmt_ip']
 
         url = const.request_url % (mgmt_ip,
@@ -254,7 +329,7 @@ class FwGenericConfigDriver(base_driver.BaseDriver):
         err_msg = ("Static IP DELETE request to the VyOS firewall "
                    "service at %s failed. " % url)
         try:
-            resp = self.rest_api.fire(url, data, common_const.DELETE)
+            resp = self.rest_api.fire(url, data, common_const.DELETE, headers)
         except Exception as err:
             err_msg += ("Reason: %r" % str(err).capitalize())
             LOG.error(err_msg)
@@ -286,11 +361,11 @@ class FwGenericConfigDriver(base_driver.BaseDriver):
         Returns: SUCCESS/Failure message with reason.
 
         """
-
+        headers = self._parse_vm_context(context)
         resource_data = self.parse.parse_data(common_const.INTERFACES,
                                               resource_data)
         try:
-            result_static_ips = self._clear_static_ips(resource_data)
+            result_static_ips = self._clear_static_ips(context, resource_data)
         except Exception as err:
             msg = ("Failed to remove static IPs. Error: %s" % err)
             LOG.error(msg)
@@ -318,7 +393,7 @@ class FwGenericConfigDriver(base_driver.BaseDriver):
         err_msg = ("Persistent rule DELETE request to the VyOS firewall "
                    "service at %s failed. " % url)
         try:
-            resp = self.rest_api.fire(url, data, common_const.DELETE)
+            resp = self.rest_api.fire(url, data, common_const.DELETE, headers)
         except Exception as err:
             err_msg += ("Reason: %r" % str(err).capitalize())
             LOG.error(err_msg)
@@ -348,7 +423,7 @@ class FwGenericConfigDriver(base_driver.BaseDriver):
         Returns: SUCCESS/Failure message with reason.
 
         """
-
+        headers = self._parse_vm_context(context)
         forward_routes = resource_data.get('forward_route')
         resource_data = self.parse.parse_data(common_const.ROUTES,
                                               resource_data)
@@ -379,7 +454,7 @@ class FwGenericConfigDriver(base_driver.BaseDriver):
         err_msg = ("Configure routes POST request to the VyOS firewall "
                    "service at %s failed. " % url)
         try:
-            resp = self.rest_api.fire(url, data, common_const.POST)
+            resp = self.rest_api.fire(url, data, common_const.POST, headers)
         except Exception as err:
             err_msg += ("Reason: %r" % str(err).capitalize())
             LOG.error(err_msg)
@@ -409,7 +484,7 @@ class FwGenericConfigDriver(base_driver.BaseDriver):
         Returns: SUCCESS/Failure message with reason.
 
         """
-
+        headers = self._parse_vm_context(context)
         resource_data = self.parse.parse_data(common_const.ROUTES,
                                               resource_data)
         mgmt_ip = resource_data.get('mgmt_ip')
@@ -429,7 +504,7 @@ class FwGenericConfigDriver(base_driver.BaseDriver):
         err_msg = ("Routes DELETE request to the VyOS firewall "
                    "service at %s failed. " % url)
         try:
-            resp = self.rest_api.fire(url, data, common_const.DELETE)
+            resp = self.rest_api.fire(url, data, common_const.DELETE, headers)
         except Exception as err:
             err_msg += ("Reason: %r" % str(err).capitalize())
             LOG.error(err_msg)
@@ -480,7 +555,7 @@ class FwaasDriver(FwGenericConfigDriver):
         Returns: SUCCESS/Failure message with reason.
 
         """
-
+        headers = self._parse_vm_context(context['agent_info']['context'])
         resource_data = self.parse.parse_data(common_const.FIREWALL, context)
 
         LOG.info(_LI("Processing request 'Create Firewall'  in FWaaS Driver "
@@ -498,7 +573,7 @@ class FwaasDriver(FwGenericConfigDriver):
         err_msg = ("Configure firewall POST request to the VyOS "
                    "service at %s failed. " % url)
         try:
-            resp = self.rest_api.fire(url, data, common_const.POST)
+            resp = self.rest_api.fire(url, data, common_const.POST, headers)
         except Exception as err:
             err_msg += ("Reason: %r" % str(err).capitalize())
             LOG.error(err_msg)
@@ -528,6 +603,7 @@ class FwaasDriver(FwGenericConfigDriver):
         Returns: SUCCESS/Failure message with reason.
 
         """
+        headers = self._parse_vm_context(context['agent_info']['context'])
         LOG.info(_LI("Processing request 'Update Firewall' in FWaaS Driver "
                      "for Firewall ID:%(f_id)s"),
                  {'f_id': firewall['id']})
@@ -543,7 +619,7 @@ class FwaasDriver(FwGenericConfigDriver):
         err_msg = ("Update firewall POST request to the VyOS "
                    "service at %s failed. " % url)
         try:
-            resp = self.rest_api.fire(url, data, common_const.PUT)
+            resp = self.rest_api.fire(url, data, common_const.PUT, headers)
         except Exception as err:
             err_msg += ("Reason: %r" % str(err).capitalize())
             LOG.error(err_msg)
@@ -573,7 +649,7 @@ class FwaasDriver(FwGenericConfigDriver):
         Returns: SUCCESS/Failure message with reason.
 
         """
-
+        headers = self._parse_vm_context(context['agent_info']['context'])
         LOG.info(_LI("Processing request 'Delete Firewall' in FWaaS Driver "
                      "for Firewall ID:%(f_id)s"),
                  {'f_id': firewall['id']})
@@ -589,7 +665,7 @@ class FwaasDriver(FwGenericConfigDriver):
         err_msg = ("Delete firewall POST request to the VyOS "
                    "service at %s failed. " % url)
         try:
-            resp = self.rest_api.fire(url, data, common_const.DELETE)
+            resp = self.rest_api.fire(url, data, common_const.DELETE, headers)
         except Exception as err:
             err_msg += ("Reason: %r" % str(err).capitalize())
             LOG.error(err_msg)
@@ -602,7 +678,7 @@ class FwaasDriver(FwGenericConfigDriver):
 
         if type(resp) is dict:
             if not resp.get('delete_success') and (
-                            resp.get('message') == const.INTERFACE_NOT_FOUND):
+                    resp.get('message') == const.INTERFACE_NOT_FOUND):
                 err_msg += ("Firewall was not deleted as interface was not "
                             "available in the firewall. It might have got "
                             "detached. So marking this delete as SUCCESS. "
