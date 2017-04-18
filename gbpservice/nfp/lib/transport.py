@@ -132,8 +132,8 @@ class RestApi(object):
         Return:Http response
         """
         url = self.url % (
-              self.rest_server_address,
-              self.rest_server_port, path)
+            self.rest_server_address,
+            self.rest_server_port, path)
         data = jsonutils.dumps(body)
         try:
             headers = {"content-type": "application/json"}
@@ -234,13 +234,13 @@ def send_request_to_configurator(conf, context, body,
                 resp, content = unix_rc.post(method_name,
                                              body=body)
                 message = ("%s -> POST response: (%s) body : %s " %
-                        (method_name, content, body))
+                           (method_name, content, body))
                 LOG.debug(message)
             elif method_type.lower() in [nfp_constants.UPDATE]:
                 resp, content = unix_rc.put(method_name,
                                             body=body)
                 message = ("%s -> PUT response: (%s) body : %s " %
-                        (method_name, content, body))
+                           (method_name, content, body))
                 LOG.debug(message)
             else:
                 message = ("%s api not supported" % (method_name))
@@ -283,12 +283,14 @@ def get_response_from_configurator(conf):
             message = ("get_notification ->"
                        "GET request failed. Reason : %s" % (rce))
             LOG.error(message)
-            return []
+            return "get_notification -> GET request failed. Reason : %s" % (
+                rce)
         except Exception as e:
             message = ("get_notification ->"
                        "GET request failed. Reason : %s" % (e))
             LOG.error(message)
-            return []
+            return "get_notification -> GET request failed. Reason : %s" % (
+                e)
 
     elif conf.backend == UNIX_REST:
         try:
@@ -304,13 +306,15 @@ def get_response_from_configurator(conf):
                        "GET request failed. Reason : %s" % (
                            rce))
             LOG.error(message)
-            return []
+            return "get_notification -> GET request failed. Reason : %s" % (
+                rce)
         except Exception as e:
             message = ("get_notification ->"
                        "GET request failed. Reason : %s" % (
                            e))
             LOG.error(message)
-            return []
+            return "get_notification -> GET request failed. Reason : %s" % (
+                e)
 
     else:
         rpc_cbs_data = []
