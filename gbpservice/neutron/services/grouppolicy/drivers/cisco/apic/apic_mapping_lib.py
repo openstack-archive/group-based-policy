@@ -13,7 +13,7 @@
 import copy
 import six
 
-from neutron.common import constants as n_constants
+from neutron_lib import constants as n_constants
 
 from gbpservice.neutron.db.grouppolicy import group_policy_mapping_db as gpdb
 from gbpservice.neutron.services.grouppolicy.common import constants as g_const

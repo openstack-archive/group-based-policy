@@ -12,7 +12,6 @@
 # limitations under the License.
 
 from neutron.callbacks import registry
-from neutron.common import exceptions as n_exc
 from neutron.extensions import address_scope
 from neutron.extensions import l3
 from neutron.extensions import securitygroup as ext_sg
@@ -20,6 +19,7 @@ from neutron import manager
 from neutron.notifiers import nova
 from neutron.plugins.common import constants as pconst
 from neutron import quota
+from neutron_lib import exceptions as n_exc
 from oslo_log import log as logging
 from oslo_utils import excutils
 

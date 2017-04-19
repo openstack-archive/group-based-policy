@@ -12,12 +12,12 @@
 
 import ast
 
-from neutron.common import exceptions as n_exc
 from neutron.db import common_db_mixin
 from neutron.db import models_v2
 from neutron import manager
 from neutron.plugins.common import constants as pconst
 from neutron_lib.db import model_base
+from neutron_lib import exceptions as n_exc
 from oslo_log import helpers as log
 from oslo_log import log as logging
 from oslo_serialization import jsonutils

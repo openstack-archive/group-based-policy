@@ -15,6 +15,7 @@ from neutron.api.v2 import attributes as attr
 from neutron import context
 from neutron.db import common_db_mixin
 from neutron.db import models_v2
+from neutron_lib.api import validators
 from neutron_lib.db import model_base
 from oslo_log import helpers as log
 from oslo_utils import uuidutils
@@ -1046,7 +1047,7 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
 
     @staticmethod
     def validate_ip_pool(ip_pool, ip_version):
-        attr._validate_subnet(ip_pool)
+        validators.validate_subnet(ip_pool)
         ip_net = netaddr.IPNetwork(ip_pool)
         if ip_net.version != ip_version:
             raise gpolicy.InvalidIpPoolVersion(ip_pool=ip_pool,

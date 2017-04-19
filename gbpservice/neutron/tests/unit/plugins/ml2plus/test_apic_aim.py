@@ -29,7 +29,6 @@ from aim import utils as aim_utils
 
 from keystoneclient.v3 import client as ksc_client
 from neutron.api import extensions
-from neutron.common import constants as n_constants
 from neutron import context as n_context
 from neutron.db import api as db_api
 from neutron import manager
@@ -40,6 +39,7 @@ from neutron.tests.unit.api import test_extensions
 from neutron.tests.unit.db import test_db_base_plugin_v2 as test_plugin
 from neutron.tests.unit.extensions import test_address_scope
 from neutron.tests.unit.extensions import test_l3
+from neutron_lib import constants as n_constants
 from opflexagent import constants as ofcst
 import webob.exc
 

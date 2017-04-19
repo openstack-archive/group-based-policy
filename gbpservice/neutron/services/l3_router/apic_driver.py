@@ -13,10 +13,10 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-from neutron.common import constants as q_const
 from neutron import context as n_ctx
 from neutron.extensions import l3
 from neutron import manager
+from neutron_lib import constants as q_const
 
 from apic_ml2.neutron.services.l3_router import apic_driver_api
 

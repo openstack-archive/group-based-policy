@@ -15,11 +15,11 @@ import abc
 from neutron.api import extensions
 from neutron.api.v2 import attributes as attr
 from neutron.api.v2 import resource_helper
-from neutron.common import exceptions as nexc
 from neutron.plugins.common import constants
 from neutron.services import service_base
 from neutron_lib.api import converters as conv
 from neutron_lib.api import validators as valid
+from neutron_lib import exceptions as nexc
 from oslo_config import cfg
 from oslo_log import log as logging
 import six
