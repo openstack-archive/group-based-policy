@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-
+exit 0
 # **fw_lb.sh**
 
 # Sanity check that firewall and loadbalancer service chain is created with NFP
