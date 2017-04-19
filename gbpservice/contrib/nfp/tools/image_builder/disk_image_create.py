@@ -81,7 +81,7 @@ def dib():
     # element for creating configurator image
     if 'nfp-reference-configurator' in dib['elements']:
         image_name = 'nfp_reference_service'
-        service_dir = "%s/../../../../tests/contrib/nfp_service/" % cur_dir
+        service_dir = "%s/../../../../contrib/nfp_service/" % cur_dir
         service_dir = os.path.realpath(service_dir)
         pecan_dir = "%s/../../../../nfp/" % cur_dir
         pecan_dir = os.path.realpath(pecan_dir)
