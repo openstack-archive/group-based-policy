@@ -163,7 +163,7 @@ def get_session(autocommit=True, expire_on_commit=False, use_slave=False):
         # We discard all queued notifiactions if the transaction fails.
         DISCARD_NOTIFICATIONS_METHOD(session)
 
-    if local_api.BATCH_NOTIFICATIONS:
+    if local_api.QUEUE_OUT_OF_PROCESS_NOTIFICATIONS:
         event.listen(new_session, "after_transaction_end",
                      gbp_after_transaction)
         event.listen(new_session, "after_rollback",

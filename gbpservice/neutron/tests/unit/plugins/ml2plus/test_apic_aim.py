@@ -29,6 +29,7 @@ from aim import utils as aim_utils
 
 from keystoneclient.v3 import client as ksc_client
 from neutron.api import extensions
+from neutron.callbacks import registry
 from neutron import context as n_context
 from neutron.db import api as db_api
 from neutron import manager
@@ -52,6 +53,7 @@ from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import (
     extension_db as extn_db)
 from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import (
     mechanism_driver as md)
+from gbpservice.neutron.plugins.ml2plus import patch_neutron
 
 PLUGIN_NAME = 'gbpservice.neutron.plugins.ml2plus.plugin.Ml2PlusPlugin'
 
@@ -214,6 +216,10 @@ class ApicAimTestCase(test_address_scope.AddressScopeTestCase,
                 aim_model_base.Base.metadata.sorted_tables):
                 conn.execute(table.delete())
         ksc_client.Client = self.saved_keystone_client
+        # We need to do the following to avoid non-aim tests
+        # picking up the patched version of the method in patch_neutron
+        registry._get_callback_manager()._notify_loop = (
+            patch_neutron.original_notify_loop)
         super(ApicAimTestCase, self).tearDown()
 
     def _find_by_dn(self, dn, cls):
