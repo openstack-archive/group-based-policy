@@ -351,6 +351,8 @@ class ApicMappingDriver(api.ResourceMappingDriver,
         self.apic_optimized_dhcp_lease_time = (
             self.apic_manager.apic_optimized_dhcp_lease_time)
         self.advertise_mtu = cfg.CONF.advertise_mtu
+        from gbpservice.network.neutronv2 import local_api
+        local_api.QUEUE_OUT_OF_PROCESS_NOTIFICATIONS = False
 
     def _setup_rpc_listeners(self):
         self.endpoints = [rpc.GBPServerRpcCallback(self, self.notifier)]

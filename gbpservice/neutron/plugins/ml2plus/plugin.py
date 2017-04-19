@@ -146,6 +146,8 @@ class Ml2PlusPlugin(ml2_plugin.Ml2Plugin,
         security_group_rule=securitygroups_db.SecurityGroupRule)
     def __init__(self):
         LOG.info(_LI("Ml2Plus initializing"))
+        registry._get_callback_manager()._notify_loop = (
+            patch_neutron._notify_loop)
         # First load drivers, then initialize DB, then initialize drivers
         self.type_manager = ml2_managers.TypeManager()
         self.extension_manager = managers.ExtensionManager()

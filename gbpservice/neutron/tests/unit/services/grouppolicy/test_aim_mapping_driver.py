@@ -25,6 +25,7 @@ from aim.db import model_base as aim_model_base
 from keystoneclient.v3 import client as ksc_client
 from netaddr import IPSet
 from neutron.api.rpc.agentnotifiers import dhcp_rpc_agent_api
+from neutron.callbacks import registry
 from neutron import context as nctx
 from neutron.db import api as db_api
 from neutron import manager
@@ -182,6 +183,10 @@ class AIMBaseTestCase(test_nr_base.CommonNeutronBaseTestCase,
                 aim_model_base.Base.metadata.sorted_tables):
                 conn.execute(table.delete())
         ksc_client.Client = self.saved_keystone_client
+        # We need to do the following to avoid non-aim tests
+        # picking up the patched version of the method in patch_neutron
+        registry._get_callback_manager()._notify_loop = (
+            patch_neutron.original_notify_loop)
         super(AIMBaseTestCase, self).tearDown()
 
     def _setup_external_network(self, name, dn=None, router_tenant=None):
@@ -3258,7 +3263,7 @@ class NotificationTest(AIMBaseTestCase):
         self._plugin._generate_mac = self.orig_generate_mac
         uuidutils.generate_uuid = self.orig_generate_uuid
         uuidutils.is_uuid_like = self.orig_is_uuid_like
-        local_api.BATCH_NOTIFICATIONS = False
+        local_api.QUEUE_OUT_OF_PROCESS_NOTIFICATIONS = False
         local_api._enqueue = self.orig_enqueue
         local_api.send_or_queue_notification = (
             self.orig_send_or_queue_notification)
@@ -3287,7 +3292,7 @@ class NotificationTest(AIMBaseTestCase):
 
     def _test_notifier(self, notifier, expected_calls,
                        batch_notifications=False):
-            local_api.BATCH_NOTIFICATIONS = batch_notifications
+            local_api.QUEUE_OUT_OF_PROCESS_NOTIFICATIONS = batch_notifications
             ptg = self.create_policy_target_group(name="ptg1")
             ptg_id = ptg['policy_target_group']['id']
             pt = self.create_policy_target(
@@ -3320,8 +3325,11 @@ class NotificationTest(AIMBaseTestCase):
             self.assertEqual(n1[0][2], n2[0][2])
 
     def test_dhcp_notifier(self):
+        patched_notify_loop = registry._get_callback_manager()._notify_loop
         with mock.patch.object(dhcp_rpc_agent_api.DhcpAgentNotifyAPI,
                                'notify') as dhcp_notifier_no_batch:
+            registry._get_callback_manager()._notify_loop = (
+                patch_neutron.original_notify_loop)
             self._test_notifier(dhcp_notifier_no_batch,
                                 self._expected_dhcp_agent_call_list, False)
 
@@ -3332,6 +3340,8 @@ class NotificationTest(AIMBaseTestCase):
 
         with mock.patch.object(dhcp_rpc_agent_api.DhcpAgentNotifyAPI,
                                'notify') as dhcp_notifier_with_batch:
+            registry._get_callback_manager()._notify_loop = (
+                patched_notify_loop)
             self._test_notifier(dhcp_notifier_with_batch,
                                 self._expected_dhcp_agent_call_list, True)
 
@@ -3351,7 +3361,7 @@ class NotificationTest(AIMBaseTestCase):
         orig_func = self.dummy.create_policy_target_group_precommit
         self.dummy.create_policy_target_group_precommit = mock.Mock(
             side_effect=Exception)
-        local_api.BATCH_NOTIFICATIONS = True
+        local_api.QUEUE_OUT_OF_PROCESS_NOTIFICATIONS = True
         with mock.patch.object(dhcp_rpc_agent_api.DhcpAgentNotifyAPI,
                                'notify') as dhcp_notifier:
             with mock.patch.object(nova.Notifier,
