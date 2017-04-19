@@ -29,7 +29,7 @@ FAILED = 'FAILED'
 
 notifications = []
 FW_SCRIPT_PATH = ("/usr/local/lib/python2.7/dist-packages/" +
-                  "gbpservice/tests/contrib/nfp_service/" +
+                  "gbpservice/contrib/nfp_service/" +
                   "reference_configurator/scripts/configure_fw_rules.py")
 
 
@@ -199,8 +199,8 @@ class Controller(rest.RestController):
             try:
                 source_interface = self._get_if_name_by_cidr(cidr)
             except Exception:
-                raise Exception("Some of the interfaces do not have "
-                                "IP Address")
+                raise Exception(_("Some of the interfaces do not have "
+                                  "IP Address"))
             try:
                 interface_number_string = source_interface.split("eth", 1)[1]
             except IndexError:
@@ -224,7 +224,7 @@ class Controller(rest.RestController):
                 LOG.info(_LI("Static route configuration result: %(output)s"),
                          {'output': output})
             except Exception as ex:
-                raise Exception("Failed to add static routes: %(ex)s" % {
+                raise Exception(_("Failed to add static routes: %(ex)s") % {
                                 'ex': str(ex)})
         for command in default_route_commands:
             try:
@@ -233,7 +233,7 @@ class Controller(rest.RestController):
                 LOG.info(_LI("Static route configuration result: %(output)s"),
                          {'output': out})
             except Exception as ex:
-                raise Exception("Failed to add static routes: %(ex)s" % {
+                raise Exception(_("Failed to add static routes: %(ex)s") % {
                                 'ex': str(ex)})
 
     def _get_if_name_by_cidr(self, cidr):
@@ -264,8 +264,8 @@ class Controller(rest.RestController):
                     retry_count = retry_count + 1
                     continue
                 else:
-                    raise Exception("Some of the interfaces do not have "
-                                    "IP Address")
+                    raise Exception(_("Some of the interfaces do not have "
+                                      "IP Address"))
 
     def _apply_user_config(self, config_data):
         LOG.info(_LI("Applying user config with configuration "
