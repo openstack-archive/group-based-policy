@@ -31,8 +31,9 @@ from gbpservice.nfp.pecan import constants
 setattr(pecan, 'mode', constants.advanced)
 
 from gbpservice.contrib.nfp.configurator.advanced_controller import controller
-from gbpservice.nfp.pecan.api import root_controller
-reload(root_controller)
+
+RMQ_CLASS = ('gbpservice.contrib.nfp.configurator.advanced_controller.'
+             'controller.RMQConsumer')
 
 
 class ControllerTestCase(base.BaseTestCase, rest.RestController):
@@ -47,10 +48,13 @@ class ControllerTestCase(base.BaseTestCase, rest.RestController):
 
     """
     @classmethod
+    @mock.patch(RMQ_CLASS + '.__init__', mock.MagicMock(return_value=None))
     def setUpClass(cls):
         """A class method called before tests in an individual class run
 
         """
+        from gbpservice.nfp.pecan.api import root_controller
+        reload(root_controller)
         rootController = root_controller.RootController()
         ControllerTestCase.app = webtest.TestApp(
                                             pecan.make_app(rootController))
