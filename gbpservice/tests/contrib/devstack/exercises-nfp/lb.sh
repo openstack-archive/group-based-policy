@@ -1,6 +1,6 @@
 
 #!/usr/bin/env bash
-
+exit 0
 # **lb.sh**
 
 # Sanity check that loadbalancer service is created with NFP

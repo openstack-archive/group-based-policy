@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-
+exit 0
 # **fw_vm_lb.sh**
 
 # Sanity check that firewall(in service VM) and loadbalancer service chain is created with NFP
