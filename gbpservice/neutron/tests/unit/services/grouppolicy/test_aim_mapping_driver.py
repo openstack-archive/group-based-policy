@@ -25,6 +25,7 @@ from aim.db import model_base as aim_model_base
 from keystoneclient.v3 import client as ksc_client
 from netaddr import IPSet
 from neutron.api.rpc.agentnotifiers import dhcp_rpc_agent_api
+from neutron.callbacks import registry
 from neutron.common import constants as n_constants
 from neutron import context as nctx
 from neutron.db import api as db_api
