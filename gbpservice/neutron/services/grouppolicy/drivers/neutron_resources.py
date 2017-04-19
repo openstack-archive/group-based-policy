@@ -13,7 +13,6 @@
 from neutron import manager
 from oslo_log import helpers as log
 
-from gbpservice.network.neutronv2 import local_api
 from gbpservice.neutron.services.grouppolicy.common import exceptions as exc
 from gbpservice.neutron.services.grouppolicy.drivers import (
     implicit_policy as ipd)
@@ -34,8 +33,9 @@ class CommonNeutronBase(ipd.ImplicitPolicyBase, rmd.OwnedResourcesOperations,
         # REVISIT: Check if this is still required
         self._cached_agent_notifier = None
         self._gbp_plugin = None
-        local_api.BATCH_NOTIFICATIONS = True
         super(CommonNeutronBase, self).initialize()
+        from gbpservice.network.neutronv2 import local_api
+        local_api.QUEUE_OUT_OF_PROCESS_NOTIFICATIONS = True
 
     @property
     def gbp_plugin(self):
