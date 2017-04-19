@@ -50,6 +50,7 @@ from sqlalchemy.orm import exc as orm_exc
 from gbpservice._i18n import _LE
 from gbpservice._i18n import _LI
 from gbpservice._i18n import _LW
+from gbpservice.network.neutronv2 import local_api
 from gbpservice.neutron.db.grouppolicy.extensions import apic_reuse_bd_db
 from gbpservice.neutron.db.grouppolicy import group_policy_mapping_db as gpdb
 from gbpservice.neutron.extensions import group_policy as gpolicy
@@ -351,6 +352,7 @@ class ApicMappingDriver(api.ResourceMappingDriver,
         self.apic_optimized_dhcp_lease_time = (
             self.apic_manager.apic_optimized_dhcp_lease_time)
         self.advertise_mtu = cfg.CONF.advertise_mtu
+        local_api.QUEUE_OUT_OF_PROCESS_NOTIFICATIONS = False
 
     def _setup_rpc_listeners(self):
         self.endpoints = [rpc.GBPServerRpcCallback(self, self.notifier)]

@@ -34,7 +34,7 @@ class CommonNeutronBase(ipd.ImplicitPolicyBase, rmd.OwnedResourcesOperations,
         # REVISIT: Check if this is still required
         self._cached_agent_notifier = None
         self._gbp_plugin = None
-        local_api.BATCH_NOTIFICATIONS = True
+        local_api.QUEUE_OUT_OF_PROCESS_NOTIFICATIONS = True
         super(CommonNeutronBase, self).initialize()
 
     @property

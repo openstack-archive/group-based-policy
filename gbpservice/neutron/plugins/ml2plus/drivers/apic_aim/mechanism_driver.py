@@ -65,7 +65,6 @@ from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import extension_db
 
 LOG = log.getLogger(__name__)
 DEVICE_OWNER_SNAT_PORT = 'apic:snat-pool'
-local_api.BATCH_NOTIFICATIONS = True
 
 # REVISIT(rkukura): Consider making these APIC name constants
 # configurable, although changing them would break an existing
@@ -160,6 +159,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
 
     def initialize(self):
         LOG.info(_LI("APIC AIM MD initializing"))
+        local_api.QUEUE_OUT_OF_PROCESS_NOTIFICATIONS = True
         self.project_name_cache = cache.ProjectNameCache()
         self.name_mapper = apic_mapper.APICNameMapper()
         self.aim = aim_manager.AimManager()
