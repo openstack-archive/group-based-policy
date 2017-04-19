@@ -25,6 +25,7 @@ from aim.db import model_base as aim_model_base
 from keystoneclient.v3 import client as ksc_client
 from netaddr import IPSet
 from neutron.api.rpc.agentnotifiers import dhcp_rpc_agent_api
+from neutron.callbacks import registry
 from neutron import context as nctx
 from neutron.db import api as db_api
 from neutron import manager
@@ -182,6 +183,10 @@ class AIMBaseTestCase(test_nr_base.CommonNeutronBaseTestCase,
                 aim_model_base.Base.metadata.sorted_tables):
                 conn.execute(table.delete())
         ksc_client.Client = self.saved_keystone_client
+        # We need to do the following to avoid non-aim tests
+        # picking up the patched version of the method in patch_neutron
+        registry._get_callback_manager()._notify_loop = (
+            patch_neutron.original_notify_loop)
         super(AIMBaseTestCase, self).tearDown()
 
     def _setup_external_network(self, name, dn=None, router_tenant=None):
