@@ -6,7 +6,7 @@ set -eu
 
 cd /usr/local/lib/python2.7/dist-packages/
 
-service_path='gbpservice/tests/contrib/nfp_service'
+service_path='gbpservice/contrib/nfp_service'
 pecan_path='gbpservice/nfp'
 mkdir -p $service_path
 mkdir -p $pecan_path
