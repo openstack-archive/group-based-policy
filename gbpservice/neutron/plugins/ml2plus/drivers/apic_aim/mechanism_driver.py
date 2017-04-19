@@ -65,7 +65,6 @@ from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import extension_db
 
 LOG = log.getLogger(__name__)
 DEVICE_OWNER_SNAT_PORT = 'apic:snat-pool'
-local_api.BATCH_NOTIFICATIONS = True
 
 # REVISIT(rkukura): Consider making these APIC name constants
 # configurable, although changing them would break an existing
@@ -191,6 +190,8 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
                                                apic_optimized_dhcp_lease_time)
         self.enable_keystone_notification_purge = (cfg.CONF.ml2_apic_aim.
                                             enable_keystone_notification_purge)
+        from gbpservice.network.neutronv2 import local_api
+        local_api.QUEUE_OUT_OF_PROCESS_NOTIFICATIONS = True
 
     def _setup_keystone_notification_listeners(self):
         targets = [oslo_messaging.Target(

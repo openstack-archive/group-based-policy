@@ -98,6 +98,8 @@ class ResourceMappingTestCase(test_plugin.GroupPolicyPluginTestCase):
         self._l3_plugin = plugins.get(pconst.L3_ROUTER_NAT)
         self.saved_keystone_client = resource_mapping.k_client.Client
         resource_mapping.k_client.Client = mock.Mock()
+        from gbpservice.network.neutronv2 import local_api
+        local_api.QUEUE_OUT_OF_PROCESS_NOTIFICATIONS = False
 
     def tearDown(self):
         resource_mapping.k_client.Client = self.saved_keystone_client

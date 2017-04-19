@@ -163,6 +163,8 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
                          'per L2 Policy'))
         self.setup_opflex_rpc_listeners()
         self.advertise_mtu = cfg.CONF.advertise_mtu
+        from gbpservice.network.neutronv2 import local_api
+        local_api.QUEUE_OUT_OF_PROCESS_NOTIFICATIONS = True
 
     @property
     def aim_mech_driver(self):
