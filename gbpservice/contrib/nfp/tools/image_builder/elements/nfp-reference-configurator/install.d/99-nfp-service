@@ -6,7 +6,7 @@ set -eu
 
 cd /usr/local/lib/python2.7/dist-packages/
 
-service_path='gbpservice/tests/contrib/nfp_service'
+service_path='gbpservice/contrib/nfp_service'
 pecan_path='gbpservice/nfp'
 mkdir -p $service_path
 mkdir -p $pecan_path
@@ -14,6 +14,7 @@ mkdir -p $pecan_path
 find gbpservice/ -type d -exec touch {}/__init__.py \;
 mv /root/reference_configurator $service_path/
 mv /root/pecan $pecan_path/
+mv /root/_i18n.py gbpservice/
 
 cd $service_path
 PWD=`pwd`

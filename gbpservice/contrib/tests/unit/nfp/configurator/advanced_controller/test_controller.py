@@ -15,6 +15,7 @@ import mock
 import os
 import oslo_serialization.jsonutils as jsonutils
 import pecan
+import pika
 PECAN_CONFIG_FILE = (os.getcwd() +
                      "/gbpservice/nfp/pecan/api/config.py")
 
@@ -33,6 +34,7 @@ setattr(pecan, 'mode', constants.advanced)
 from gbpservice.contrib.nfp.configurator.advanced_controller import controller
 from gbpservice.nfp.pecan.api import root_controller
 reload(root_controller)
+pika.BlockingConnection = mock.MagicMock(return_value=None)
 
 
 class ControllerTestCase(base.BaseTestCase, rest.RestController):
