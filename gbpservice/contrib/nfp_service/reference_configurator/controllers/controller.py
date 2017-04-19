@@ -29,7 +29,7 @@ FAILED = 'FAILED'
 
 notifications = []
 FW_SCRIPT_PATH = ("/usr/local/lib/python2.7/dist-packages/" +
-                  "gbpservice/tests/contrib/nfp_service/" +
+                  "gbpservice/contrib/nfp_service/" +
                   "reference_configurator/scripts/configure_fw_rules.py")
 
 
