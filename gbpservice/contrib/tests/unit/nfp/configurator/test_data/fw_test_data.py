@@ -462,7 +462,9 @@ class FakeEventGenericConfig(object):
                             'notification_data': {},
                             'resource_type': 'firewall',
                             'service_vendor': 'vyos',
-                            'context': 'APIcontext'},
+                            'context': {'service_vm_context': {'vyos': {
+                                'username': 'name',
+                                'password': 'password'}}}},
                     'firewall': fo._fake_firewall_obj(),
                     'host': fo.host,
                     'resource_data': kwargs}
