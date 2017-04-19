@@ -50,6 +50,14 @@ NOTIFICATION_ARGS = 'notification_args'
 REGISTRY_RESOURCE = 'registry_resource'
 REGISTRY_EVENT = 'registry_event'
 REGISTRY_TRIGGER = 'registry_trigger'
+# Add known agent RPC notifiers here. These notifiers will be invoked
+# in a delayed manner after the outermost transaction that initiated
+# the notification has completed.
+# These module names/prefixes are mutually exclusive from the
+# notifiers/notifications that are handled in process.
+DELAYED_NOTIFICATIONS = ['neutron.api.rpc.agentnotifiers',
+                         'neutron.notifiers.nova',
+                         'opflexagent.rpc']
 
 
 def _enqueue(session, transaction_key, entry):
@@ -116,7 +124,12 @@ def send_or_queue_notification(session, transaction_key, notifier_obj,
 def send_or_queue_registry_notification(
     session, transaction_key, resource, event, trigger, **kwargs):
     send = False
-    if resource in ['port', 'router_interface', 'subnet'] and (
+    trigger_module_name = type(trigger).__module__
+    for prefix in DELAYED_NOTIFICATIONS:
+        if trigger_module_name.startswith(prefix):
+            send = True
+            break
+    if not send and resource in ['port', 'router_interface', 'subnet'] and (
         event in ['after_delete', 'precommit_delete']):
         send = True
     if not session or not transaction_key or send or not BATCH_NOTIFICATIONS:
