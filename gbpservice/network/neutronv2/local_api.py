@@ -50,6 +50,14 @@ NOTIFICATION_ARGS = 'notification_args'
 REGISTRY_RESOURCE = 'registry_resource'
 REGISTRY_EVENT = 'registry_event'
 REGISTRY_TRIGGER = 'registry_trigger'
+# Add known agent RPC notifiers here. These notifiers will be invoked
+# in a delayed manner after the outermost transaction that initiated
+# the notification has completed.
+# These module names/prefixes are mutually exclusive from the
+# notifiers/notifications that are handled in process.
+DELAYED_NOTIFICATIONS = ['neutron.api.rpc.agentnotifiers',
+                         'neutron.notifiers.nova',
+                         'opflexagent.rpc']
 
 
 def _enqueue(session, transaction_key, entry):
@@ -113,35 +121,70 @@ def send_or_queue_notification(session, transaction_key, notifier_obj,
                         notifier_method, args)
 
 
+def _get_callbacks_for_resource_event(resource, event):
+    return list(registry._get_callback_manager()._callbacks[
+        resource].get(event, {}).items())
+
+
+def _get_in_process_callbacks(callbacks):
+    return [i for i in callbacks if not [
+        j for j in DELAYED_NOTIFICATIONS if i[0].startswith(j)]]
+
+
 def send_or_queue_registry_notification(
     session, transaction_key, resource, event, trigger, **kwargs):
-    send = False
+    # Both, in-process and agent, notifieres may be registered for the
+    # same event, so we might need to send and queue
+    send, queue = False, False
+    callbacks = _get_callbacks_for_resource_event(resource, event)
     if resource in ['port', 'router_interface', 'subnet'] and (
         event in ['after_delete', 'precommit_delete']):
-        send = True
-    if not session or not transaction_key or send or not BATCH_NOTIFICATIONS:
         # We make an exception for the dhcp agent notification
         # for port and subnet delete since the implementation for
         # sending that notification checks for the existence of the
         # associated network, which is not present in certain
         # cases if the subnet delete notification is queued
         # and sent after the network delete.
-        registry._get_callback_manager().notify(resource, event, trigger,
-                                                **kwargs)
-        return
+        # All notifiers (in-process as well as agent) will be
+        # invoked in this case, no queueing of the notification
+        # is required.
+        send = True
+    if not send:
+        # Build a list of all in-process registered callbacks
+        # for this resource
+        in_process_callbacks = _get_in_process_callbacks(callbacks)
+        send = True if in_process_callbacks else False
+        callbacks = in_process_callbacks if in_process_callbacks else None
+        # If there are notifiers registered which are not in-process,
+        # we need to queue up this notification
+        queue = True if in_process_callbacks != callbacks else False
 
-    _queue_registry_notification(session, transaction_key, resource,
-                                 event, trigger, **kwargs)
+    if not session or not transaction_key or send or not BATCH_NOTIFICATIONS:
+        if callbacks:
+            kwargs['callbacks'] = callbacks
+            registry._get_callback_manager().notify(resource, event, trigger,
+                                                    **kwargs)
+
+    if queue:
+        _queue_registry_notification(session, transaction_key, resource,
+                                     event, trigger, **kwargs)
 
 
 def post_notifications_from_queue(session, transaction_key):
     queue = session.notification_queue[transaction_key]
     for entry in queue:
         if REGISTRY_RESOURCE in entry:
-            registry.notify(entry[REGISTRY_RESOURCE],
-                            entry[REGISTRY_EVENT],
-                            entry[REGISTRY_TRIGGER],
-                            **entry[NOTIFICATION_ARGS])
+            callbacks = _get_callbacks_for_resource_event(
+                entry[REGISTRY_RESOURCE], entry[REGISTRY_EVENT])
+            in_process_callbacks = _get_in_process_callbacks(callbacks)
+            # Only process out-of-process notifications
+            callbacks = list(set(callbacks) - set(in_process_callbacks))
+            if callbacks:
+                entry[NOTIFICATION_ARGS]['callbacks'] = callbacks
+                registry.notify(entry[REGISTRY_RESOURCE],
+                                entry[REGISTRY_EVENT],
+                                entry[REGISTRY_TRIGGER],
+                                **entry[NOTIFICATION_ARGS])
         else:
             getattr(entry[NOTIFIER_REF],
                     entry[NOTIFIER_METHOD])(*entry[NOTIFICATION_ARGS])
