@@ -37,6 +37,7 @@ from neutron.plugins.ml2.common import exceptions as ml2_exc
 from neutron.plugins.ml2 import managers as ml2_managers
 from neutron.plugins.ml2 import plugin as ml2_plugin
 from neutron.quota import resource_registry
+from neutron_lib.api import validators
 from oslo_config import cfg
 from oslo_log import log
 from oslo_utils import excutils
@@ -399,7 +400,7 @@ class Ml2PlusPlugin(ml2_plugin.Ml2Plugin,
         self.mechanism_manager.delete_subnetpool_postcommit(mech_context)
 
     def _update_implicit_subnetpool(self, context, request, result):
-        if attributes.is_attr_set(request['subnetpool'].get('is_implicit')):
+        if validators.is_attr_set(request['subnetpool'].get('is_implicit')):
             result['is_implicit'] = request['subnetpool']['is_implicit']
             result['is_implicit'] = (
                 self.update_implicit_subnetpool(context, result))

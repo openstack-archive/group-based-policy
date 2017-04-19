@@ -19,10 +19,10 @@ import threading
 
 from keystoneclient import exceptions as k_exceptions
 from keystoneclient.v2_0 import client as keyclient
-from neutron.common import exceptions as n_exc
 from neutron.common import rpc as n_rpc
 from neutron.plugins.common import constants as pconst
 from neutron_lib.db import model_base
+from neutron_lib import exceptions as n_exc
 from oslo_config import cfg
 from oslo_log import log as logging
 import oslo_messaging

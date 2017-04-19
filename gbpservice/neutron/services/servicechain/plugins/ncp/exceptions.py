@@ -12,7 +12,7 @@
 
 """Exceptions used by NodeCompositionPlugin and drivers."""
 
-from neutron.common import exceptions
+from neutron_lib import exceptions
 
 
 class NodeDriverError(exceptions.NeutronException):

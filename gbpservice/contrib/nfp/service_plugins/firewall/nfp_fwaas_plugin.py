@@ -19,9 +19,6 @@ from gbpservice.contrib.nfp.config_orchestrator.common import topics
 from gbpservice.nfp.core import log as nfp_logging
 import netaddr
 
-from neutron.api.v2 import attributes as attr
-from neutron.common import constants as l3_constants
-from neutron.common import exceptions as n_exc
 from neutron.db import l3_db
 from neutron.db.l3_db import DEVICE_OWNER_ROUTER_INTF
 from neutron.db.l3_db import EXTERNAL_GW_INFO
@@ -29,6 +26,8 @@ from neutron.db.l3_db import RouterPort
 from neutron.db import models_v2
 from neutron.extensions import l3
 from neutron.plugins.common import constants as n_const
+from neutron_lib import constants as nlib_const
+from neutron_lib import exceptions as n_exc
 
 import neutron_fwaas.extensions
 from neutron_fwaas.services.firewall import fwaas_plugin as ref_fw_plugin
@@ -65,7 +64,7 @@ class NFPFirewallPlugin(ref_fw_plugin.FirewallPlugin):
         # pop router_id as this goes in the router association db
         # and not firewall db
         router_ids = firewall['firewall'].pop('router_ids', None)
-        if router_ids == attr.ATTR_NOT_SPECIFIED:
+        if router_ids == nlib_const.ATTR_NOT_SPECIFIED:
             return tenant_id
 
     def set_routers_for_firewall(self, context, fw):
@@ -143,7 +142,7 @@ def _is_net_reachable_from_net(self, context, tenant_id, from_net_id,
         Port = models_v2.Port
         devices_on_nets = context.session.query(Port.device_id).filter(
             Port.tenant_id == tenant_id,
-            Port.device_owner.notin_([l3_constants.DEVICE_OWNER_DHCP]),
+            Port.device_owner.notin_([nlib_const.DEVICE_OWNER_DHCP]),
             Port.network_id.in_(nets)).subquery()
         return context.session.query(Port.network_id).filter(
             Port.tenant_id == tenant_id,
@@ -290,7 +289,7 @@ def _get_router_for_floatingip(self, context, internal_port,
         RouterPort.router_id, models_v2.IPAllocation.ip_address).join(
         models_v2.Port, models_v2.IPAllocation).filter(
         models_v2.Port.network_id == internal_port['network_id'],
-        RouterPort.port_type.in_(l3_constants.ROUTER_INTERFACE_OWNERS),
+        RouterPort.port_type.in_(nlib_const.ROUTER_INTERFACE_OWNERS),
         models_v2.IPAllocation.subnet_id == internal_subnet_id
     ).join(gw_port, gw_port.device_id == RouterPort.router_id).filter(
         gw_port.network_id == external_network_id).distinct()

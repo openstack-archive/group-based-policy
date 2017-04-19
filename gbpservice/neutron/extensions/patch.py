@@ -14,7 +14,6 @@ import netaddr
 from neutron.callbacks import events
 from neutron.callbacks import registry
 from neutron.callbacks import resources
-from neutron.common import exceptions as n_exc
 from neutron.db import api as db_api
 from neutron.db import common_db_mixin
 from neutron.db import l3_db
@@ -22,6 +21,7 @@ from neutron.db import models_v2
 from neutron.db import securitygroups_db
 from neutron.plugins.ml2 import db as ml2_db
 from neutron_lib import constants
+from neutron_lib import exceptions as n_exc
 from oslo_log import log
 from sqlalchemy import event
 

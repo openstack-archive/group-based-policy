@@ -14,9 +14,9 @@
 #    under the License.
 
 import mock
-from neutron.common import constants as q_const
-from neutron.common import exceptions as n_exc
 from neutron import context
+from neutron_lib import constants as q_const
+from neutron_lib import exceptions as n_exc
 
 from gbpservice.neutron.services.l3_router import l3_apic
 from gbpservice.neutron.tests.unit.services.grouppolicy import (
