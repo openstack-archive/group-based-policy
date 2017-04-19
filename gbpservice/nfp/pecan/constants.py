@@ -28,7 +28,7 @@ controller_mode_map = {
 
 controllers = {
     controller_mode_map[base]: 'gbpservice.nfp.base_configurator.controllers',
-    controller_mode_map[base_with_vm]: ('gbpservice.tests.contrib'
+    controller_mode_map[base_with_vm]: ('gbpservice.contrib'
                            '.nfp_service.reference_configurator.controllers'),
     controller_mode_map[advanced]: ('gbpservice.contrib.nfp.configurator'
                           '.advanced_controller.controller_loader')

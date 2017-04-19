@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-
+exit 0
 # **fw.sh**
 
 # Sanity check that firewall service is created with NFP
