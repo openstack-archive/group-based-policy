@@ -16,13 +16,13 @@ import operator
 from keystoneclient import exceptions as k_exceptions
 from keystoneclient.v2_0 import client as k_client
 from neutron.api.v2 import attributes
-from neutron.common import constants as const
-from neutron.common import exceptions as n_exc
 from neutron import context as n_context
 from neutron.db import models_v2
 from neutron.extensions import l3 as ext_l3
 from neutron.extensions import securitygroup as ext_sg
+from neutron_lib import constants as n_const
 from neutron_lib.db import model_base
+from neutron_lib import exceptions as n_exc
 from oslo_config import cfg
 from oslo_log import helpers as log
 from oslo_log import log as logging
@@ -212,7 +212,7 @@ class ImplicitResourceOperations(local_api.LocalAPI,
 
     def _sg_rule(self, plugin_context, tenant_id, sg_id, direction,
                  protocol=None, port_range=None, cidr=None,
-                 ethertype=const.IPv4, unset=False):
+                 ethertype=n_const.IPv4, unset=False):
         if port_range:
             port_min, port_max = (gpdb.GroupPolicyDbPlugin.
                                   _get_min_max_ports_from_range(port_range))
@@ -2513,7 +2513,7 @@ class ResourceMappingDriver(api.PolicyDriver, ImplicitResourceOperations,
 
         sg_id = self._get_default_security_group(plugin_context, ptg_id,
                                                  tenant_id)
-        ip_v = {4: const.IPv4, 6: const.IPv6}
+        ip_v = {4: n_const.IPv4, 6: n_const.IPv6}
         if not sg_id:
             sg_name = DEFAULT_SG_PREFIX % ptg_id
             sg = self._create_gbp_sg(plugin_context, tenant_id, sg_name,
@@ -2541,7 +2541,7 @@ class ResourceMappingDriver(api.PolicyDriver, ImplicitResourceOperations,
         self._sg_rule(plugin_context, tenant_id, sg_id, 'egress',
                       cidr='169.254.0.0/16', ethertype=ip_v[4])
         for ether_type in ip_v:
-            for proto in [const.PROTO_NAME_TCP, const.PROTO_NAME_UDP]:
+            for proto in [n_const.PROTO_NAME_TCP, n_const.PROTO_NAME_UDP]:
                 self._sg_rule(plugin_context, tenant_id, sg_id, 'egress',
                               protocol=proto, port_range='53',
                               ethertype=ip_v[ether_type])

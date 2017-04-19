@@ -19,12 +19,12 @@ from aim import context as aim_context
 from aim import utils as aim_utils
 from neutron.agent.linux import dhcp
 from neutron.api.v2 import attributes
-from neutron.common import constants as n_constants
-from neutron.common import exceptions as n_exc
 from neutron import context as n_context
 from neutron.db import models_v2
 from neutron import manager
 from neutron import policy
+from neutron_lib import constants as n_constants
+from neutron_lib import exceptions as n_exc
 from oslo_concurrency import lockutils
 from oslo_config import cfg
 from oslo_log import helpers as log

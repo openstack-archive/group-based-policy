@@ -17,10 +17,11 @@ from sqlalchemy import orm
 from sqlalchemy import sql
 
 from neutron.api.v2 import attributes as attr
-from neutron.common import exceptions as n_exc
 from neutron.db import db_base_plugin_v2
 from neutron.db import models_v2
+from neutron_lib.api import validators
 from neutron_lib.db import model_base
+from neutron_lib import exceptions as n_exc
 
 
 class ImplicitSubnetpool(model_base.BASEV2):
@@ -102,7 +103,7 @@ class ImplicitSubnetpoolMixin(object):
 
     def update_implicit_subnetpool(self, context, subnetpool):
         is_implicit = False
-        if attr.is_attr_set(subnetpool.get('is_implicit')):
+        if validators.is_attr_set(subnetpool.get('is_implicit')):
             is_implicit = subnetpool['is_implicit']
         with context.session.begin(subtransactions=True):
             if is_implicit:

@@ -12,7 +12,7 @@
 
 import abc
 
-from neutron.api.v2 import attributes
+from neutron_lib.api import validators
 import six
 from sqlalchemy.orm import exc as orm_exc
 
@@ -1962,7 +1962,7 @@ class ExtensionDriver(object):
         tables if needed.
         """
         kwargs = dict((x, data[type][x] if
-                       attributes.is_attr_set(data[type][x]) else None)
+                       validators.is_attr_set(data[type][x]) else None)
                       for x in keys)
         kwargs[type + '_' + 'id'] = result['id']
         record = table(**kwargs)
@@ -1988,7 +1988,7 @@ class ExtensionDriver(object):
             return
         for key in keys:
             value = data[type].get(key)
-            if attributes.is_attr_set(value) and value != getattr(record, key):
+            if validators.is_attr_set(value) and value != getattr(record, key):
                 setattr(record, key, value)
             result[key] = getattr(record, key)
 

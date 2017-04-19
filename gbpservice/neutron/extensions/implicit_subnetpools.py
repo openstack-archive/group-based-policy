@@ -12,8 +12,8 @@
 
 from neutron.api import extensions
 from neutron.api.v2 import attributes
-from neutron.common import constants
 from neutron_lib.api import converters as conv
+from neutron_lib import constants
 
 
 EXTENDED_ATTRIBUTES_2_0 = {

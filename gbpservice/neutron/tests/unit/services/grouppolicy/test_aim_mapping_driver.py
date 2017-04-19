@@ -25,7 +25,6 @@ from aim.db import model_base as aim_model_base
 from keystoneclient.v3 import client as ksc_client
 from netaddr import IPSet
 from neutron.api.rpc.agentnotifiers import dhcp_rpc_agent_api
-from neutron.common import constants as n_constants
 from neutron import context as nctx
 from neutron.db import api as db_api
 from neutron import manager
@@ -33,6 +32,7 @@ from neutron.notifiers import nova
 from neutron.plugins.common import constants as service_constants
 from neutron.tests.unit.db import test_db_base_plugin_v2 as test_plugin
 from neutron.tests.unit.extensions import test_address_scope
+from neutron_lib import constants as n_constants
 from opflexagent import constants as ocst
 from oslo_config import cfg
 from oslo_utils import uuidutils

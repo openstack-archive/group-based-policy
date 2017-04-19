@@ -16,13 +16,12 @@ import re
 from neutron.api import extensions
 from neutron.api.v2 import attributes as attr
 from neutron.api.v2 import resource_helper
-from neutron.common import constants as n_constants
-from neutron.common import exceptions as nexc
 from neutron.plugins.common import constants
 from neutron.services import service_base
 from neutron_lib.api import converters as conv
 from neutron_lib.api import validators as valid
 from neutron_lib import constants as nlib_const
+from neutron_lib import exceptions as nexc
 from oslo_config import cfg
 from oslo_log import log as logging
 from oslo_utils import uuidutils
@@ -205,9 +204,9 @@ gp_supported_actions = [None, gp_constants.GP_ACTION_ALLOW,
 gp_supported_directions = [None, gp_constants.GP_DIRECTION_IN,
                            gp_constants.GP_DIRECTION_OUT,
                            gp_constants.GP_DIRECTION_BI]
-gp_supported_protocols = [None, n_constants.PROTO_NAME_TCP,
-                          n_constants.PROTO_NAME_UDP,
-                          n_constants.PROTO_NAME_ICMP]
+gp_supported_protocols = [None, nlib_const.PROTO_NAME_TCP,
+                          nlib_const.PROTO_NAME_UDP,
+                          nlib_const.PROTO_NAME_ICMP]
 gp_network_service_param_types = [
     gp_constants.GP_NETWORK_SVC_PARAM_TYPE_IP_SINGLE,
     gp_constants.GP_NETWORK_SVC_PARAM_TYPE_IP_POOL,
