@@ -75,6 +75,46 @@ def notify(resource, event, trigger, **kwargs):
 registry.notify = notify
 
 
+from neutron._i18n import _LE
+from neutron.callbacks import events
+from neutron.callbacks import exceptions
+from oslo_log import log as logging
+
+
+LOG = logging.getLogger(__name__)
+
+
+def _notify_loop(resource, event, trigger, **kwargs):
+    """The notification loop."""
+    errors = []
+    callbacks = kwargs.pop('callbacks', None)
+    if not callbacks:
+        callbacks = list(registry._get_callback_manager()._callbacks[
+            resource].get(event, {}).items())
+    LOG.debug("Notify callbacks %s for %s, %s", callbacks, resource, event)
+    for callback_id, callback in callbacks:
+        try:
+            callback(resource, event, trigger, **kwargs)
+        except Exception as e:
+            abortable_event = (
+                event.startswith(events.BEFORE) or
+                event.startswith(events.PRECOMMIT)
+            )
+            if not abortable_event:
+                LOG.exception(_LE("Error during notification for "
+                                  "%(callback)s %(resource)s, %(event)s"),
+                              {'callback': callback_id,
+                               'resource': resource, 'event': event})
+            else:
+                LOG.error(_LE("Callback %(callback)s raised %(error)s"),
+                          {'callback': callback_id, 'error': e})
+            errors.append(exceptions.NotificationError(callback_id, e))
+    return errors
+
+
+original_notify_loop = registry._get_callback_manager()._notify_loop
+
+
 from inspect import isclass
 from inspect import isfunction
 from inspect import ismethod

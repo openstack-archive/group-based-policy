@@ -33,6 +33,7 @@ from oslo_utils import uuidutils
 import webob.exc
 
 from gbpservice.common import utils
+from gbpservice.network.neutronv2 import local_api
 from gbpservice.neutron.db.grouppolicy import group_policy_db as gpdb
 from gbpservice.neutron.db import servicechain_db
 from gbpservice.neutron.services.grouppolicy.common import constants as gconst
@@ -98,6 +99,7 @@ class ResourceMappingTestCase(test_plugin.GroupPolicyPluginTestCase):
         self._l3_plugin = plugins.get(pconst.L3_ROUTER_NAT)
         self.saved_keystone_client = resource_mapping.k_client.Client
         resource_mapping.k_client.Client = mock.Mock()
+        local_api.QUEUE_OUT_OF_PROCESS_NOTIFICATIONS = False
 
         try:
             config.cfg.CONF.keystone_authtoken.username
