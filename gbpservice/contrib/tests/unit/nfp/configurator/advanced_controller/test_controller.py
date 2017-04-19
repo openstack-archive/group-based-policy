@@ -15,6 +15,7 @@ import mock
 import os
 import oslo_serialization.jsonutils as jsonutils
 import pecan
+import pika
 PECAN_CONFIG_FILE = (os.getcwd() +
                      "/gbpservice/nfp/pecan/api/config.py")
 
@@ -31,9 +32,10 @@ from gbpservice.nfp.pecan import constants
 setattr(pecan, 'mode', constants.advanced)
 
 from gbpservice.contrib.nfp.configurator.advanced_controller import controller
-from gbpservice.nfp.pecan.api import root_controller
-reload(root_controller)
 
+#RMQ_CLASS = ('gbpservice.contrib.nfp.configurator.advanced_controller.'
+#             'controller.RMQConsumer')
+pika.BlockingConnection = mock.MagicMock(return_value=None)
 
 class ControllerTestCase(base.BaseTestCase, rest.RestController):
     """
@@ -47,10 +49,13 @@ class ControllerTestCase(base.BaseTestCase, rest.RestController):
 
     """
     @classmethod
+    #@mock.patch(RMQ_CLASS + '.__init__', mock.MagicMock(return_value=None))
     def setUpClass(cls):
         """A class method called before tests in an individual class run
 
         """
+        from gbpservice.nfp.pecan.api import root_controller
+        reload(root_controller)
         rootController = root_controller.RootController()
         ControllerTestCase.app = webtest.TestApp(
                                             pecan.make_app(rootController))
