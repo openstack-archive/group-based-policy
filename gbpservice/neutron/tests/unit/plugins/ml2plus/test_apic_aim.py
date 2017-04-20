@@ -1850,21 +1850,24 @@ class TestSyncState(ApicAimTestCase):
     @staticmethod
     def _get_synced_status(self, context, resource):
         status = aim_status.AciStatus.SYNCED
-        return aim_status.AciStatus(sync_status=status)
+        return aim_status.AciStatus(resource_root=resource.root,
+                                    sync_status=status)
 
     @staticmethod
     def _get_pending_status_for_type(resource, type):
         status = (isinstance(resource, type) and
                   aim_status.AciStatus.SYNC_PENDING or
                   aim_status.AciStatus.SYNCED)
-        return aim_status.AciStatus(sync_status=status)
+        return aim_status.AciStatus(resource_root=resource.root,
+                                    sync_status=status)
 
     @staticmethod
     def _get_failed_status_for_type(resource, type):
         status = (isinstance(resource, type) and
                   aim_status.AciStatus.SYNC_FAILED or
                   aim_status.AciStatus.SYNC_PENDING)
-        return aim_status.AciStatus(sync_status=status)
+        return aim_status.AciStatus(resource_root=resource.root,
+                                    sync_status=status)
 
     def _test_network(self, expected_state):
         net = self._make_network(self.fmt, 'net1', True)['network']

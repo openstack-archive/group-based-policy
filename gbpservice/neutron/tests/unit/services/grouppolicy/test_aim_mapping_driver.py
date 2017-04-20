@@ -292,7 +292,7 @@ class AIMBaseTestCase(test_nr_base.CommonNeutronBaseTestCase,
         AIM_STATUS = aim_status.AciStatus.SYNC_PENDING
 
         def mock_get_aim_status(aim_context, aim_resource):
-            astatus = aim_status.AciStatus()
+            astatus = aim_status.AciStatus(resource_root=aim_resource.root)
             astatus.sync_status = AIM_STATUS
             return astatus
 
@@ -733,7 +733,7 @@ class TestAIMStatus(AIMBaseTestCase):
     def test_status_merging(self):
 
         def mock_get_aim_status(aim_context, aim_resource):
-            astatus = aim_status.AciStatus()
+            astatus = aim_status.AciStatus(resource_root=aim_resource.root)
             if aim_resource['status'] == '':
                 return
             elif aim_resource['status'] == 'build':
