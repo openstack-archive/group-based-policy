@@ -220,25 +220,21 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
 
         l3p_db = context._plugin._get_l3_policy(
             context._plugin_context, l3p['id'])
-        if l3p['address_scope_v4_id'] and l3p['address_scope_v6_id']:
-            raise SimultaneousV4V6AddressScopesNotSupportedOnAimDriver()
-        if l3p['subnetpools_v4'] and l3p['subnetpools_v6']:
-            raise SimultaneousV4V6SubnetpoolsNotSupportedOnAimDriver()
-        mix1 = l3p['address_scope_v4_id'] is not None and l3p['subnetpools_v6']
-        mix2 = l3p['address_scope_v6_id'] is not None and l3p['subnetpools_v4']
-        if mix1 or mix2:
-            raise InconsistentAddressScopeSubnetpool()
         ascp = None
-        if l3p['address_scope_v6_id'] or l3p['subnetpools_v6']:
-            l3p_db['ip_version'] = 6
-            context.current['ip_version'] = 6
-            ascp = 'address_scope_v6_id'
-        elif l3p['address_scope_v4_id'] or l3p['subnetpools_v4']:
-            # Since we are not supporting dual stack yet, if both v4 and
-            # v6 address_scopes are set, the v4 address_scope will be used
-            # to set the l3p ip_version
-            l3p_db['ip_version'] = 4
-            ascp = 'address_scope_v4_id'
+        # The ip_version tells us what should be supported
+        ip_version = l3p['ip_version']
+        # normalize the dual-stack option
+        if ip_version == 6 or ip_version == 46:
+            if l3p['address_scope_v6_id'] or l3p['subnetpools_v6']:
+                context.current['ip_version'] = 6
+                ascp = 'address_scope_v6_id'
+        if ip_version == 4 or ip_version == 46:
+            if l3p['address_scope_v4_id'] or l3p['subnetpools_v4']:
+                # Since we are not supporting dual stack yet, if both v4 and
+                # v6 address_scopes are set, the v4 address_scope will be used
+                # to set the l3p ip_version
+                l3p_db['ip_version'] = ip_version
+                ascp = 'address_scope_v4_id'
         if not ascp:
             # Explicit address_scope has not been set
             ascp = 'address_scope_v4_id' if l3p_db['ip_version'] == 4 else (

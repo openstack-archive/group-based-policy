@@ -573,7 +573,7 @@ RESOURCE_ATTRIBUTE_MAP = {
                            'is_visible': True},
         'ip_version': {'allow_post': True, 'allow_put': False,
                        'convert_to': conv.convert_to_int,
-                       'validate': {'type:values': [4, 6]},
+                       'validate': {'type:values': [4, 6, 46]},
                        'default': 4, 'is_visible': True},
         'ip_pool': {'allow_post': True, 'allow_put': False,
                     'validate': {'type:subnet': None},
