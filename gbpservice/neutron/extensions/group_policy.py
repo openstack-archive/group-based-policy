@@ -577,13 +577,14 @@ RESOURCE_ATTRIBUTE_MAP = {
                            'is_visible': True},
         'ip_version': {'allow_post': True, 'allow_put': False,
                        'convert_to': conv.convert_to_int,
-                       'validate': {'type:values': [4, 6]},
+                       'validate': {'type:values': [4, 6, 46]},
                        'default': 4, 'is_visible': True},
         'ip_pool': {'allow_post': True, 'allow_put': False,
-                    'validate': {'type:subnet': None},
+                    'convert_to': conv.convert_to_list,
+                    'validate': {'type:subnet_list': None},
                     'default': '10.0.0.0/8', 'is_visible': True},
         'subnet_prefix_length': {'allow_post': True, 'allow_put': True,
-                                 'convert_to': conv.convert_to_int,
+                                 'convert_to': conv.convert_to_int_if_not_none,
                                  # for ipv4 legal values are 2 to 30
                                  # for ipv6 legal values are 2 to 127
                                  'default': 24, 'is_visible': True},
