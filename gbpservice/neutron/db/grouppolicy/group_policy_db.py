@@ -11,6 +11,7 @@
 #    under the License.
 
 import netaddr
+
 from neutron import context
 from neutron.db import common_db_mixin
 from neutron_lib.api import validators
@@ -25,6 +26,7 @@ from sqlalchemy.orm import exc
 from gbpservice.neutron.extensions import group_policy as gpolicy
 from gbpservice.neutron.services.grouppolicy.common import (
     constants as gp_constants)
+from gbpservice.neutron.services.grouppolicy.common import utils
 
 
 MAX_IPV4_SUBNET_PREFIX_LENGTH = 31
@@ -155,7 +157,7 @@ class L3Policy(model_base.BASEV2, BaseSharedGbpResource):
         'polymorphic_identity': 'base'
     }
     ip_version = sa.Column(sa.Integer, nullable=False)
-    ip_pool = sa.Column(sa.String(64))
+    ip_pool = sa.Column(sa.String(256))
     subnet_prefix_length = sa.Column(sa.Integer)
     l2_policies = orm.relationship(L2Policy, backref='l3_policy')
     external_segments = orm.relationship(
@@ -845,7 +847,7 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
             ptg['id'] for ptg in l2p['policy_target_groups']]
         return self._fields(res, fields)
 
-    def _make_l3_policy_dict(self, l3p, fields=None):
+    def _make_l3_policy_dict(self, l3p, fields=None, **kwargs):
         res = self._populate_common_fields_in_dict(l3p)
         res['ip_version'] = l3p['ip_version']
         res['ip_pool'] = l3p['ip_pool']
@@ -1046,40 +1048,48 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
 
     @staticmethod
     def validate_ip_pool(ip_pool, ip_version):
-        validators.validate_subnet(ip_pool)
-        ip_net = netaddr.IPNetwork(ip_pool)
-        if ip_net.version != ip_version:
-            raise gpolicy.InvalidIpPoolVersion(ip_pool=ip_pool,
-                                               version=ip_version)
-        if (ip_net.size <= 3):
-            err_msg = "Too few available IPs in the pool."
+        if not ip_pool:
+            err_msg = "Invalid prefixes in the pool."
             raise gpolicy.InvalidIpPoolSize(ip_pool=ip_pool, err_msg=err_msg,
-                                            size=ip_net.size)
-
-        if (ip_net.prefixlen == 0):
-            err_msg = "Prefix length of 0 is invalid."
-            raise gpolicy.InvalidIpPoolPrefixLength(ip_pool=ip_pool,
-                                        err_msg=err_msg,
-                                        prefixlen=ip_net.prefixlen)
+                                            size=len(ip_pool))
+        if ip_version == 46:
+            valid_versions = [4, 6]
+        else:
+            valid_versions = [ip_version]
+        ip_pool_list = utils.convert_ip_pool_string_to_list(ip_pool)
+        for pool in ip_pool_list:
+            validators.validate_subnet(pool)
+            ip_net = netaddr.IPNetwork(pool)
+            if ip_net.version not in valid_versions:
+                raise gpolicy.InvalidIpPoolVersion(ip_pool=pool,
+                                                   version=ip_version)
+            if (ip_net.size <= 3):
+                err_msg = "Too few available IPs in the pool."
+                raise gpolicy.InvalidIpPoolSize(ip_pool=pool, err_msg=err_msg,
+                                                size=ip_net.size)
+            if (ip_net.prefixlen == 0):
+                err_msg = "Prefix length of 0 is invalid."
+                raise gpolicy.InvalidIpPoolPrefixLength(ip_pool=pool,
+                                            err_msg=err_msg,
+                                            prefixlen=ip_net.prefixlen)
 
     @staticmethod
     def validate_subnet_prefix_length(ip_version, new_prefix_length,
                                       ip_pool=None):
-        if (new_prefix_length < 2) or (
-            ip_version == 4 and (
-                new_prefix_length > MAX_IPV4_SUBNET_PREFIX_LENGTH)) or (
-                    ip_version == 6 and (
-                        new_prefix_length > MAX_IPV6_SUBNET_PREFIX_LENGTH)):
+        if ((new_prefix_length > MAX_IPV4_SUBNET_PREFIX_LENGTH) or
+                (new_prefix_length < 2)):
             raise gpolicy.InvalidDefaultSubnetPrefixLength(
                 length=new_prefix_length, protocol=ip_version)
 
-        if ip_pool is not None:
+        ip_pool_list = utils.convert_ip_pool_string_to_list(ip_pool)
+        for pool in ip_pool_list:
             # Check if subnet_prefix_length is smaller
             # than size of the ip_pool's subnet.
-            ip_pool_prefix_length = netaddr.IPNetwork(ip_pool).prefixlen
-            if(ip_pool_prefix_length > new_prefix_length):
-                raise gpolicy.SubnetPrefixLengthExceedsIpPool(
-                    ip_pool=ip_pool, subnet_size=new_prefix_length)
+            if netaddr.IPNetwork(pool).version == 4:
+                ip_pool_prefix_length = netaddr.IPNetwork(pool).prefixlen
+                if(ip_pool_prefix_length > new_prefix_length):
+                    raise gpolicy.SubnetPrefixLengthExceedsIpPool(
+                        ip_pool=pool, subnet_size=new_prefix_length)
 
     @log.log_method_call
     def create_policy_target(self, context, policy_target):

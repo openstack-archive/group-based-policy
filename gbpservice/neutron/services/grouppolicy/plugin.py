@@ -39,6 +39,7 @@ from gbpservice.neutron.services.grouppolicy import (
     policy_driver_manager as manager)
 from gbpservice.neutron.services.grouppolicy.common import constants as gp_cts
 from gbpservice.neutron.services.grouppolicy.common import exceptions as gp_exc
+from gbpservice.neutron.services.grouppolicy.common import utils
 from gbpservice.neutron.services.servicechain.plugins.ncp import (
     model as ncp_model)
 
@@ -249,7 +250,9 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
                 l3ps = self.get_l3_policies(
                     context, filters={'id': current['l3_policies']})
                 for l3p in l3ps:
-                    if netaddr.IPSet([l3p['ip_pool']]) & added_ipset:
+                    ip_pool = utils.convert_ip_pool_string_to_list(
+                        l3p['ip_pool'])
+                    if netaddr.IPSet(ip_pool) & added_ipset:
                         raise gp_exc.ExternalRouteOverlapsWithL3PIpPool(
                             destination=added_dest, l3p_id=l3p['id'],
                             es_id=current['id'])
@@ -275,7 +278,8 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
         if added:
             es_list = self.get_external_segments(context,
                                                  filters={'id': added})
-            l3p_ipset = netaddr.IPSet([current['ip_pool']])
+            ip_pool = utils.convert_ip_pool_string_to_list(current['ip_pool'])
+            l3p_ipset = netaddr.IPSet(ip_pool)
             for es in es_list:
                 # Verify no route overlap
                 dest_set = set(x['destination'] for x in
