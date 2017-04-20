@@ -276,11 +276,11 @@ class ImplicitResourceOperations(local_api.LocalAPI,
         self._mark_address_scope_owned(context._plugin_context.session, as_id)
         return address_scope
 
-    def _use_implicit_address_scope(self, context):
+    def _use_implicit_address_scope(self, context, ip_version=4):
         address_scope = self._create_implicit_address_scope(
-            context, name='l3p_' + context.current['name'])
-        context.set_address_scope_id(address_scope['id'],
-                                     context.current['ip_version'])
+            context, name='l3p_' + context.current['name'] +
+            '_' + str(ip_version), ip_version=ip_version)
+        context.set_address_scope_id(address_scope['id'], ip_version)
 
     def _cleanup_address_scope(self, plugin_context, address_scope_id):
         if self._address_scope_is_owned(plugin_context.session,
