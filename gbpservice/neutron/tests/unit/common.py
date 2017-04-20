@@ -110,7 +110,7 @@ def get_update_l2_policy_attrs():
 @gbp_attributes
 def get_create_l3_policy_default_attrs():
     return {'name': '', 'description': '', 'ip_version': 4,
-            'ip_pool': '10.0.0.0/8', 'subnet_prefix_length': 24,
+            'ip_pool': ['10.0.0.0/8'], 'subnet_prefix_length': 24,
             'external_segments': {}, 'shared': False}
 
 
@@ -118,7 +118,7 @@ def get_create_l3_policy_default_attrs():
 def get_create_l3_policy_attrs():
     return {'name': 'l3p1',
             'description': 'test L3 policy', 'ip_version': 6,
-            'ip_pool': 'fd01:2345:6789::/48',
+            'ip_pool': ['fd01:2345:6789::/48'],
             'external_segments': {_uuid(): ['192.168.0.3']},
             'subnet_prefix_length': 64, 'shared': False}
 
@@ -454,7 +454,7 @@ def get_create_l2_policy_default_attrs_and_prj_id():
 @gbp_attributes
 def get_create_l3_policy_default_attrs_and_prj_id():
     return {'name': '', 'description': '', 'ip_version': 4,
-            'ip_pool': '10.0.0.0/8', 'subnet_prefix_length': 24,
+            'ip_pool': ['10.0.0.0/8'], 'subnet_prefix_length': 24,
             'external_segments': {}, 'shared': False}
 
 
