@@ -292,7 +292,7 @@ class AIMBaseTestCase(test_nr_base.CommonNeutronBaseTestCase,
         AIM_STATUS = aim_status.AciStatus.SYNC_PENDING
 
         def mock_get_aim_status(aim_context, aim_resource):
-            astatus = aim_status.AciStatus()
+            astatus = aim_status.AciStatus(resource_root=aim_resource.root)
             astatus.sync_status = AIM_STATUS
             return astatus
 
@@ -733,12 +733,12 @@ class TestAIMStatus(AIMBaseTestCase):
     def test_status_merging(self):
 
         def mock_get_aim_status(aim_context, aim_resource):
-            astatus = aim_status.AciStatus()
-            if aim_resource['status'] == '':
+            astatus = aim_status.AciStatus(resource_root=aim_resource.root)
+            if aim_resource.status == '':
                 return
-            elif aim_resource['status'] == 'build':
+            elif aim_resource.status == 'build':
                 astatus.sync_status = aim_status.AciStatus.SYNC_PENDING
-            elif aim_resource['status'] == 'error':
+            elif aim_resource.status == 'error':
                 astatus.sync_status = aim_status.AciStatus.SYNC_FAILED
             else:
                 astatus.sync_status = aim_status.AciStatus.SYNCED
@@ -747,14 +747,17 @@ class TestAIMStatus(AIMBaseTestCase):
         orig_get_status = self.aim_mgr.get_status
         self.aim_mgr.get_status = mock_get_aim_status
 
-        aim_active = {'status': 'active'}
+        aim_active = aim_resource.Tenant(name='active')
+        aim_active.status = 'active'
         aim_objs_active = [aim_active, aim_active, aim_active]
         mstatus = self.driver._merge_aim_status(self._neutron_context.session,
                                                 aim_objs_active)
         self.assertEqual(gp_const.STATUS_ACTIVE, mstatus)
 
-        aim_build = {'status': 'build'}
-        aim_none = {'status': ''}
+        aim_build = aim_resource.Tenant(name='build')
+        aim_build.status = 'build'
+        aim_none = aim_resource.Tenant(name='none')
+        aim_none.status = ''
         aim_objs_build = [aim_active, aim_active, aim_build]
         mstatus = self.driver._merge_aim_status(self._neutron_context.session,
                                                 aim_objs_build)
@@ -764,7 +767,8 @@ class TestAIMStatus(AIMBaseTestCase):
                                                 aim_objs_build)
         self.assertEqual(gp_const.STATUS_BUILD, mstatus)
 
-        aim_error = {'status': 'error'}
+        aim_error = aim_resource.Tenant(name='error')
+        aim_error.status = 'error'
         aim_objs_error = [aim_active, aim_build, aim_error]
         mstatus = self.driver._merge_aim_status(self._neutron_context.session,
                                                 aim_objs_error)
