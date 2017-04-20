@@ -110,7 +110,7 @@ def get_update_l2_policy_attrs():
 @gbp_attributes
 def get_create_l3_policy_default_attrs():
     return {'name': '', 'description': '', 'ip_version': 4,
-            'ip_pool': '10.0.0.0/8', 'subnet_prefix_length': 24,
+            'ip_pool': ['10.0.0.0/8'], 'subnet_prefix_length': 24,
             'external_segments': {}, 'shared': False}
 
 
