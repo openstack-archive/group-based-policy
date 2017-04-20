@@ -438,7 +438,7 @@ class TestPolicyTarget(ApicMappingTestCase):
             context.get_admin_context(),
             vrf_id=l3p['id'], host='h1')
         self.assertEqual(l3p['id'], details['l3_policy_id'])
-        pool = set([l3p['ip_pool']])
+        pool = set(l3p['ip_pool'])
         if 'proxy_ip_pool' in l3p:
             pool.add(l3p['proxy_ip_pool'])
         self.assertEqual(pool, set(details['vrf_subnets']))

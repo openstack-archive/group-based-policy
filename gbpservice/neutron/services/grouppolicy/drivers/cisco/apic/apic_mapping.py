@@ -820,7 +820,7 @@ class ApicMappingDriver(api.ResourceMappingDriver,
             self._tenant_by_sharing_policy(l3p))
         details['vrf_name'] = self.apic_manager.apic.fvCtx.name(
             str(self.name_mapper.l3_policy(context, l3p)))
-        details['vrf_subnets'] = [l3p['ip_pool']]
+        details['vrf_subnets'] = l3p['ip_pool']
         if l3p.get('proxy_ip_pool'):
             details['vrf_subnets'].append(l3p['proxy_ip_pool'])
 
