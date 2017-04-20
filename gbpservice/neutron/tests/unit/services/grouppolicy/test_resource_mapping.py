@@ -265,8 +265,12 @@ class ResourceMappingTestCase(test_plugin.GroupPolicyPluginTestCase):
         external_ipset = netaddr.IPSet([x['destination']
                                         for x in es['external_routes']])
         if l3p_list:
-            result = external_ipset - netaddr.IPSet([x['ip_pool']
-                                                     for x in l3p_list])
+            prefixes = []
+            for l3p in l3p_list:
+                if l3p['ip_pool']:
+                    for prefix in l3p['ip_pool'].split(','):
+                        prefixes.append(prefix.strip())
+            result = external_ipset - netaddr.IPSet(prefixes)
         else:
             result = external_ipset
 

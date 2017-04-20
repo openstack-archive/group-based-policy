@@ -42,6 +42,7 @@ from gbpservice.neutron.services.grouppolicy import (
     group_policy_driver_api as api)
 from gbpservice.neutron.services.grouppolicy.common import constants as gconst
 from gbpservice.neutron.services.grouppolicy.common import exceptions as exc
+from gbpservice.neutron.services.grouppolicy.common import utils as gbp_utils
 from gbpservice.neutron.services.grouppolicy.drivers import nsp_manager
 
 
@@ -276,11 +277,12 @@ class ImplicitResourceOperations(local_api.LocalAPI,
         self._mark_address_scope_owned(context._plugin_context.session, as_id)
         return address_scope
 
-    def _use_implicit_address_scope(self, context):
+    def _use_implicit_address_scope(self, context, ip_version=4, **kwargs):
         address_scope = self._create_implicit_address_scope(
-            context, name='l3p_' + context.current['name'])
-        context.set_address_scope_id(address_scope['id'],
-                                     context.current['ip_version'])
+            context, name='l3p_' + context.current['name'] +
+            '_' + str(ip_version), ip_version=ip_version, **kwargs)
+        context.set_address_scope_id(address_scope['id'], ip_version)
+        return address_scope
 
     def _cleanup_address_scope(self, plugin_context, address_scope_id):
         if self._address_scope_is_owned(plugin_context.session,
@@ -301,7 +303,8 @@ class ImplicitResourceOperations(local_api.LocalAPI,
                  'name': context.current['name'], 'ip_version':
                  context.current['ip_version'],
                  'default_prefixlen': context.current['subnet_prefix_length'],
-                 'prefixes': [context.current['ip_pool']],
+                 'prefixes': gbp_utils.convert_ip_pool_string_to_list(
+                     context.current['ip_pool']),
                  'shared': context.current.get('shared', False),
                  # Per current understanding, is_default is used for
                  # auto_allocation and is a per-tenant setting.
@@ -313,10 +316,11 @@ class ImplicitResourceOperations(local_api.LocalAPI,
         self._mark_subnetpool_owned(context._plugin_context.session, sp_id)
         return subnetpool
 
-    def _use_implicit_subnetpool(self, context, address_scope_id, ip_version):
+    def _use_implicit_subnetpool(self, context, address_scope_id,
+                                 ip_version=4, **kwargs):
         subnetpool = self._create_implicit_subnetpool(
             context, name='l3p_' + context.current['name'],
-            address_scope_id=address_scope_id)
+            address_scope_id=address_scope_id, ip_version=ip_version, **kwargs)
         context.add_subnetpool(subnetpool_id=subnetpool['id'],
                                ip_version=ip_version)
 
@@ -457,10 +461,9 @@ class ImplicitResourceOperations(local_api.LocalAPI,
         # REVISIT(rkukura): The folowing is a temporary allocation
         # algorithm that should be replaced with use of a neutron
         # subnet pool.
-
-        pool = netaddr.IPSet(
-            iterable=[l3p['proxy_ip_pool'] if is_proxy else
-                      l3p['ip_pool']])
+        pool = netaddr.IPSet(gbp_utils.convert_ip_pool_string_to_list(
+            l3p['proxy_ip_pool']) if is_proxy else
+            gbp_utils.convert_ip_pool_string_to_list(l3p['ip_pool']))
         prefixlen = prefix_len or (
             l3p['proxy_subnet_prefix_length'] if is_proxy
             else l3p['subnet_prefix_length'])
@@ -542,69 +545,73 @@ class ImplicitResourceOperations(local_api.LocalAPI,
         l3p_id = l2p['l3_policy_id']
         l3p_db = context._plugin.get_l3_policy(context._plugin_context, l3p_id)
         # Only allocate from subnetpools that belong to this tenant
-        filters = {'tenant_id': [context.current['tenant_id']]}
-        # REVISIT: For dual stack
-        # Current assumption is that either v4 or v6 subnet needs to be
-        # allocated, but not both
+        ip_dict = {}
         if l3p_db['address_scope_v4_id']:
-            filters['id'] = l3p_db['subnetpools_v4']
-            ip_version = 4
-        else:
-            filters['id'] = l3p_db['subnetpools_v6']
-            ip_version = 6
-        # All relevant subnetpools owned by this tenant
-        candidate_subpools = self._get_subnetpools(
-            context._plugin_context, filters) or []
-        del filters['tenant_id']
-        filters['shared'] = [True]
-        # All relevant shared subnetpools
-        shared_subpools = self._get_subnetpools(
-            context._plugin_context, filters) or []
-        # Union of the above two lists of subnetpools
-        candidate_subpools = {x['id']: x for x in candidate_subpools +
-                              shared_subpools}.values()
-        subnet = None
-        for pool in candidate_subpools:
-            try:
-                attrs = {'tenant_id': context.current['tenant_id'],
-                         'name': 'ptg_' + context.current['name'],
-                         'network_id': l2p['network_id'],
-                         'ip_version': ip_version,
-                         'subnetpool_id': pool['id'],
-                         'cidr': n_const.ATTR_NOT_SPECIFIED,
-                         'prefixlen': n_const.ATTR_NOT_SPECIFIED,
-                         'enable_dhcp': True,
-                         'gateway_ip': n_const.ATTR_NOT_SPECIFIED,
-                         'allocation_pools': n_const.ATTR_NOT_SPECIFIED,
-                         'dns_nameservers': (
-                             cfg.CONF.resource_mapping.dns_nameservers or
-                             n_const.ATTR_NOT_SPECIFIED),
-                         'host_routes': n_const.ATTR_NOT_SPECIFIED}
-                if ip_version == 6:
-                    if 'ipv6_ra_mode' not in subnet_specifics:
-                        subnet_specifics['ipv6_ra_mode'] = (
-                            n_const.ATTR_NOT_SPECIFIED)
-                    if 'ipv6_address_mode' not in subnet_specifics:
-                        subnet_specifics['ipv6_address_mode'] = (
-                            n_const.ATTR_NOT_SPECIFIED)
-                attrs.update(subnet_specifics)
-                subnet = self._create_subnet(context._plugin_context, attrs)
-                self._mark_subnet_owned(context._plugin_context.session,
-                                        subnet['id'])
-                LOG.debug("Allocated subnet %(sub)s from subnetpool: %(sp)s.",
-                          {'sub': subnet['id'], 'sp': pool['id']})
-                break
-            except Exception as e:
-                LOG.exception(_LE("Allocating subnet from subnetpool %(sp)s "
-                                  "failed. Allocation will be attempted "
-                                  "from any other configured "
-                                  "subnetpool(s). Exception: %(excp)s"),
-                              {'sp': pool['id'], 'excp': e})
-                last = e
-                continue
+            ip_dict[4] = {'address_scope_key': 'address_scope_v4_id',
+                          'subnetpools_key': 'subnetpools_v4'}
+        if l3p_db['address_scope_v6_id']:
+            ip_dict[6] = {'address_scope_key': 'address_scope_v6_id',
+                          'subnetpools_key': 'subnetpools_v6'}
+        subnets = []
+        for ip_version in ip_dict.keys():
+            filters = {'tenant_id': [context.current['tenant_id']],
+                       'id': l3p_db[ip_dict[ip_version]['subnetpools_key']]}
+            # All relevant subnetpools owned by this tenant
+            candidate_subpools = self._get_subnetpools(
+                context._plugin_context, filters) or []
+            del filters['tenant_id']
+            filters['shared'] = [True]
+            # All relevant shared subnetpools
+            shared_subpools = self._get_subnetpools(
+                context._plugin_context, filters) or []
+            # Union of the above two lists of subnetpools
+            candidate_subpools = {x['id']: x for x in candidate_subpools +
+                                  shared_subpools}.values()
+            subnet = None
+            for pool in candidate_subpools:
+                try:
+                    attrs = {'tenant_id': context.current['tenant_id'],
+                             'name': 'ptg_' + context.current['name'],
+                             'network_id': l2p['network_id'],
+                             'ip_version': ip_version,
+                             'subnetpool_id': pool['id'],
+                             'cidr': n_const.ATTR_NOT_SPECIFIED,
+                             'prefixlen': n_const.ATTR_NOT_SPECIFIED,
+                             'enable_dhcp': True,
+                             'gateway_ip': n_const.ATTR_NOT_SPECIFIED,
+                             'allocation_pools': n_const.ATTR_NOT_SPECIFIED,
+                             'dns_nameservers': (
+                                 cfg.CONF.resource_mapping.dns_nameservers or
+                                 n_const.ATTR_NOT_SPECIFIED),
+                             'host_routes': n_const.ATTR_NOT_SPECIFIED}
+                    if ip_version == 6:
+                        if 'ipv6_ra_mode' not in subnet_specifics:
+                            subnet_specifics['ipv6_ra_mode'] = (
+                                n_const.ATTR_NOT_SPECIFIED)
+                        if 'ipv6_address_mode' not in subnet_specifics:
+                            subnet_specifics['ipv6_address_mode'] = (
+                                n_const.ATTR_NOT_SPECIFIED)
+                    attrs.update(subnet_specifics)
+                    subnet = self._create_subnet(context._plugin_context,
+                                                 attrs)
+                    self._mark_subnet_owned(context._plugin_context.session,
+                                            subnet['id'])
+                    LOG.debug("Allocated subnet %(sub)s from subnetpool: "
+                              "%(sp)s.", {'sub': subnet['id'],
+                                          'sp': pool['id']})
+                    subnets.append(subnet)
+                    break
+                except Exception as e:
+                    LOG.exception(_LE("Allocating subnet from subnetpool "
+                                      "%(sp)s failed. Allocation will be "
+                                      "attempted from any other configured "
+                                      "subnetpool(s). Exception: %(excp)s"),
+                                  {'sp': pool['id'], 'excp': e})
+                    last = e
+                    continue
 
-        if subnet:
-            return [subnet]
+        if subnets:
+            return subnets
         else:
             # In the case of multiple subnetpools configured, the failure
             # condition for subnet allocation on earlier subnetpools might
@@ -643,29 +650,51 @@ class ImplicitResourceOperations(local_api.LocalAPI,
         last = exc.NoSubnetAvailable()
         subnets = subnets or self._get_subnets(context._plugin_context,
                                                {'id': ptg['subnets']})
+        v4_subnets = [subnet for subnet in subnets if subnet['ip_version'] == 4]
+        v6_subnets = [subnet for subnet in subnets if subnet['ip_version'] == 6]
         for subnet in subnets:
-            try:
-                attrs = {'tenant_id': context.current['tenant_id'],
-                         'name': 'pt_' + context.current['name'],
-                         'network_id': l2p['network_id'],
-                         'mac_address': n_const.ATTR_NOT_SPECIFIED,
-                         'fixed_ips': [{'subnet_id': subnet['id']}],
-                         'device_id': '',
-                         'device_owner': '',
-                         'security_groups': [sg_id] if sg_id else None,
-                         'admin_state_up': True}
-                if context.current.get('group_default_gateway'):
-                    attrs['fixed_ips'][0]['ip_address'] = subnet['gateway_ip']
-                attrs.update(context.current.get('port_attributes', {}))
-                port = self._create_port(context._plugin_context, attrs)
-                port_id = port['id']
-                self._mark_port_owned(context._plugin_context.session, port_id)
-                context.set_port_id(port_id)
-                return
-            except n_exc.IpAddressGenerationFailure as ex:
-                LOG.warning(_LW("No more address available in subnet %s"),
-                            subnet['id'])
-                last = ex
+            def subnet_family_generator(family_subnets):
+                def inner():
+                    for subnet in family_subnets:
+                        yield subnet
+                return inner
+            # For dual-stack, try to create with this subnet and
+            # a subnet from the other address family. Try this for
+            # each address family
+            if not (v4_subnets and v6_subnets):
+                # for single stack, we need the empty list to
+                # guarantee a single iteration
+                subnet_generator = subnet_family_generator([''])
+            elif subnet['ip_version'] == 4:
+                subnet_generator = subnet_family_generator(v6_subnets)
+            else:
+                subnet_generator = subnet_family_generator(v4_subnets)
+            for alt_subnet in subnet_generator():
+                fixed_ips = [{'subnet_id': subnet['id']}]
+                if alt_subnet:
+                    fixed_ips.append({'subnet_id': alt_subnet['id']})
+                try:
+                    attrs = {'tenant_id': context.current['tenant_id'],
+                             'name': 'pt_' + context.current['name'],
+                             'network_id': l2p['network_id'],
+                             'mac_address': n_const.ATTR_NOT_SPECIFIED,
+                             'fixed_ips': fixed_ips,
+                             'device_id': '',
+                             'device_owner': '',
+                             'security_groups': [sg_id] if sg_id else None,
+                             'admin_state_up': True}
+                    if context.current.get('group_default_gateway'):
+                        attrs['fixed_ips'][0]['ip_address'] = subnet['gateway_ip']
+                    attrs.update(context.current.get('port_attributes', {}))
+                    port = self._create_port(context._plugin_context, attrs)
+                    port_id = port['id']
+                    self._mark_port_owned(context._plugin_context.session, port_id)
+                    context.set_port_id(port_id)
+                    return
+                except n_exc.IpAddressGenerationFailure as ex:
+                    LOG.warning(_LW("No more address available in subnet %s"),
+                                subnet['id'])
+                    last = ex
         raise last
 
     def _cleanup_port(self, plugin_context, port_id):
@@ -1748,12 +1777,17 @@ class ResourceMappingDriver(api.PolicyDriver, ImplicitResourceOperations,
         subnets = []
         for l3p in l3ps:
             if l3p['id'] != curr['id']:
-                subnets.append(l3p['ip_pool'])
+                for prefix in gbp_utils.convert_ip_pool_string_to_list(
+                        l3p['ip_pool']):
+                    if prefix:
+                        subnets.append(prefix)
                 if 'proxy_ip_pool' in l3p:
-                    subnets.append(l3p['proxy_ip_pool'])
-        l3p_subnets = [curr['ip_pool']]
+                    subnets.extend(gbp_utils.convert_ip_pool_string_to_list(
+                        l3p['proxy_ip_pool']))
+        l3p_subnets = gbp_utils.convert_ip_pool_string_to_list(curr['ip_pool'])
         if 'proxy_ip_pool' in curr:
-            l3p_subnets.append(curr['proxy_ip_pool'])
+            l3p_subnets.extend(gbp_utils.convert_ip_pool_string_to_list(
+                curr['proxy_ip_pool']))
 
         current_set = netaddr.IPSet(subnets)
         l3p_set = netaddr.IPSet(l3p_subnets)
@@ -2739,8 +2773,12 @@ class ResourceMappingDriver(api.PolicyDriver, ImplicitResourceOperations,
             admin_context,
             filters={'tenant_id': [tenant_id or context.current['tenant_id']]})
 
-        ip_pool_list = [x['ip_pool'] for x in l3ps if
-                        x['ip_pool'] not in exclude]
+        ip_pool_list = []
+        for l3p in l3ps:
+            for prefix in gbp_utils.convert_ip_pool_string_to_list(
+                    l3p['ip_pool']):
+                if prefix not in exclude:
+                    ip_pool_list.append(prefix)
         l3p_set = netaddr.IPSet(ip_pool_list)
         return [str(x) for x in (netaddr.IPSet(cidrs) - l3p_set).iter_cidrs()]
 
@@ -2786,12 +2824,13 @@ class ResourceMappingDriver(api.PolicyDriver, ImplicitResourceOperations,
             filters={'tenant_id': context.current['tenant_id']})
         for ep in ep_list:
             # Remove rules before the new ip_pool came
+            ip_pool_list = gbp_utils.convert_ip_pool_string_to_list(ip_pool)
             cidr_list = self._get_ep_cidr_list(context, ep)
             old_cidrs = self._process_external_cidrs(context, cidr_list,
-                                                     exclude=[ip_pool])
+                                                     exclude=ip_pool_list)
             new_cidrs = [str(x) for x in
                          (netaddr.IPSet(old_cidrs) -
-                          netaddr.IPSet([ip_pool])).iter_cidrs()]
+                          netaddr.IPSet(ip_pool_list)).iter_cidrs()]
             self._refresh_ep_cidrs_rules(context, ep, new_cidrs, old_cidrs)
 
     def _process_remove_l3p_ip_pool(self, context, ip_pool):
@@ -2801,13 +2840,14 @@ class ResourceMappingDriver(api.PolicyDriver, ImplicitResourceOperations,
             filters={'tenant_id': context.current['tenant_id']})
         for ep in ep_list:
             # Cidrs before the ip_pool removal
+            ip_pool_list = gbp_utils.convert_ip_pool_string_to_list(ip_pool)
             cidr_list = self._get_ep_cidr_list(context, ep)
             new_cidrs = self._process_external_cidrs(context, cidr_list,
-                                                     exclude=[ip_pool])
+                                                     exclude=ip_pool_list)
             # Cidrs after the ip_pool removal
             old_cidrs = [str(x) for x in
                          (netaddr.IPSet(new_cidrs) |
-                          netaddr.IPSet([ip_pool])).iter_cidrs()]
+                          netaddr.IPSet(ip_pool_list)).iter_cidrs()]
             self._refresh_ep_cidrs_rules(context, ep, new_cidrs, old_cidrs)
 
     def _set_l3p_external_routes(self, context, added=None, removed=None):
