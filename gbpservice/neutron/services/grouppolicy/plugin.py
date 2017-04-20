@@ -249,7 +249,7 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
                 l3ps = self.get_l3_policies(
                     context, filters={'id': current['l3_policies']})
                 for l3p in l3ps:
-                    if netaddr.IPSet([l3p['ip_pool']]) & added_ipset:
+                    if netaddr.IPSet(l3p['ip_pool']) & added_ipset:
                         raise gp_exc.ExternalRouteOverlapsWithL3PIpPool(
                             destination=added_dest, l3p_id=l3p['id'],
                             es_id=current['id'])
@@ -275,7 +275,7 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
         if added:
             es_list = self.get_external_segments(context,
                                                  filters={'id': added})
-            l3p_ipset = netaddr.IPSet([current['ip_pool']])
+            l3p_ipset = netaddr.IPSet(current['ip_pool'])
             for es in es_list:
                 # Verify no route overlap
                 dest_set = set(x['destination'] for x in
