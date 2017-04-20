@@ -9,9 +9,12 @@
 #    WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 #    License for the specific language governing permissions and limitations
 #    under the License.
+import sys
 
 from neutron.common import exceptions as nexc
+from neutron import context as n_context
 from neutron.db import model_base
+from neutron.db import models_v2
 from oslo_log import helpers as log
 from oslo_log import log as logging
 from oslo_utils import uuidutils
@@ -21,6 +24,23 @@ from sqlalchemy import orm
 from gbpservice.neutron.db.grouppolicy import group_policy_db as gpdb
 from gbpservice.neutron.extensions import group_policy as gpolicy
 from gbpservice.neutron.services.grouppolicy.common import exceptions
+from gbpservice.neutron.services.grouppolicy.common import utils
+
+
+def get_current_context():
+    i = 1
+    not_found = True
+    try:
+        while not_found:
+            for val in sys._getframe(i).f_locals.values():
+                if isinstance(val, n_context.Context):
+                    ctx = val
+                    not_found = False
+                    break
+            i = i + 1
+        return ctx
+    except Exception:
+        return
 
 
 LOG = logging.getLogger(__name__)
@@ -145,13 +165,20 @@ class GroupPolicyMappingDbPlugin(gpdb.GroupPolicyDbPlugin):
         res['subnets'] = [subnet.subnet_id for subnet in ptg.subnets]
         return self._fields(res, fields)
 
+    def _get_subnetpools(self, id_list):
+        context = get_current_context().elevated()
+        with context.session.begin(subtransactions=True):
+            filters = {'id': id_list}
+            return self._get_collection_query(
+                context, models_v2.SubnetPool, filters=filters).all()
+
     def _make_l2_policy_dict(self, l2p, fields=None):
         res = super(GroupPolicyMappingDbPlugin,
                     self)._make_l2_policy_dict(l2p)
         res['network_id'] = l2p.network_id
         return self._fields(res, fields)
 
-    def _make_l3_policy_dict(self, l3p, fields=None):
+    def _make_l3_policy_dict(self, l3p, fields=None, ip_pool=None):
         res = super(GroupPolicyMappingDbPlugin,
                     self)._make_l3_policy_dict(l3p)
         res['routers'] = [router.router_id for router in l3p.routers]
@@ -159,6 +186,15 @@ class GroupPolicyMappingDbPlugin(gpdb.GroupPolicyDbPlugin):
         res['address_scope_v6_id'] = l3p.address_scope_v6_id
         res['subnetpools_v4'] = [sp.subnetpool_id for sp in l3p.subnetpools_v4]
         res['subnetpools_v6'] = [sp.subnetpool_id for sp in l3p.subnetpools_v6]
+        if ip_pool:
+            res['ip_pool'] = ip_pool
+        subnetpools = self._get_subnetpools(res['subnetpools_v4'] +
+                                            res['subnetpools_v6'])
+        pool_list = [prefix['cidr'] for pool in subnetpools
+                     for prefix in pool['prefixes']]
+        if pool_list:
+            res['ip_pool'] = utils.convert_ip_pool_list_to_string(
+                pool_list)
         return self._fields(res, fields)
 
     def _make_external_segment_dict(self, es, fields=None):
@@ -603,7 +639,7 @@ class GroupPolicyMappingDbPlugin(gpdb.GroupPolicyDbPlugin):
                 self._set_ess_for_l3p(context, l3p_db,
                                       l3p['external_segments'])
             context.session.add(l3p_db)
-        return self._make_l3_policy_dict(l3p_db)
+        return self._make_l3_policy_dict(l3p_db, ip_pool=l3p['ip_pool'])
 
     @log.log_method_call
     def update_l3_policy(self, context, l3_policy_id, l3_policy):
