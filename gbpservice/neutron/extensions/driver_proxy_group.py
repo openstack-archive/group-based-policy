@@ -86,8 +86,8 @@ EXTENDED_ATTRIBUTES_2_0 = {
     },
     gp.L3_POLICIES: {
         'proxy_ip_pool': {'allow_post': True, 'allow_put': False,
-                          'validate': {'type:subnet': None},
-                          'default': PROXY_CONF.default_proxy_ip_pool,
+                          'validate': {'type:string_or_none': None},
+                          'default': '',
                           'is_visible': True},
         'proxy_subnet_prefix_length': {
             'allow_post': True, 'allow_put': True,
