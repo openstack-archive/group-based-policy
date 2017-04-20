@@ -11,6 +11,7 @@
 #    under the License.
 
 import netaddr
+
 from neutron import context
 from neutron.db import common_db_mixin
 from neutron_lib.api import validators
@@ -30,6 +31,26 @@ from gbpservice.neutron.services.grouppolicy.common import (
 MAX_IPV4_SUBNET_PREFIX_LENGTH = 31
 MAX_IPV6_SUBNET_PREFIX_LENGTH = 127
 ADDRESS_NOT_SPECIFIED = ''
+
+
+def convert_ip_pool_to_string(ip_pool):
+    if type(ip_pool) is not list:
+        msg = ("The type of %(ip_pool)s is not a list" % 
+               {'ip_pool': ip_pool})
+        raise ValueError(msg)
+    return ', '.join(ip_pool)
+
+
+def convert_string_to_ip_pool(ip_pool_string):
+    if ip_pool_string and (type(ip_pool_string) is not str and
+                           type(ip_pool_string) is not unicode):
+        msg = ("The type of %(ip_pool_string)s is not a string "
+               "or unicode" % {'ip_pool_string': ip_pool_string})
+        raise ValueError(msg)
+    if ip_pool_string:
+        return ip_pool_string.split(',')
+    else:
+        return []
 
 
 class BaseGbpResource(model_base.HasId, model_base.HasProject):
@@ -845,10 +866,13 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
             ptg['id'] for ptg in l2p['policy_target_groups']]
         return self._fields(res, fields)
 
-    def _make_l3_policy_dict(self, l3p, fields=None):
+    def _make_l3_policy_dict(self, l3p, fields=None, **kwargs):
         res = self._populate_common_fields_in_dict(l3p)
         res['ip_version'] = l3p['ip_version']
-        res['ip_pool'] = l3p['ip_pool']
+        if type(l3p.get('ip_pool')) is list:
+            res['ip_pool'] = l3p['ip_pool']
+        else:
+            res['ip_pool'] = convert_string_to_ip_pool(l3p.get('ip_pool'))
         res['subnet_prefix_length'] = l3p['subnet_prefix_length']
         res['l2_policies'] = [l2p['id']
                               for l2p in l3p['l2_policies']]
@@ -1046,40 +1070,55 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
 
     @staticmethod
     def validate_ip_pool(ip_pool, ip_version):
-        validators.validate_subnet(ip_pool)
-        ip_net = netaddr.IPNetwork(ip_pool)
-        if ip_net.version != ip_version:
-            raise gpolicy.InvalidIpPoolVersion(ip_pool=ip_pool,
-                                               version=ip_version)
-        if (ip_net.size <= 3):
-            err_msg = "Too few available IPs in the pool."
+        if type(ip_pool) is unicode or type(ip_pool) is str:
+            ip_pool = convert_string_to_ip_pool(ip_pool)
+        if type(ip_pool) is not list:
+            ip_pool = [ip_pool]
+        if not ip_pool:
+            err_msg = "Invalid prefixes in the pool."
             raise gpolicy.InvalidIpPoolSize(ip_pool=ip_pool, err_msg=err_msg,
-                                            size=ip_net.size)
-
-        if (ip_net.prefixlen == 0):
-            err_msg = "Prefix length of 0 is invalid."
-            raise gpolicy.InvalidIpPoolPrefixLength(ip_pool=ip_pool,
-                                        err_msg=err_msg,
-                                        prefixlen=ip_net.prefixlen)
+                                            size=len(ip_pool))
+        if ip_version == 46:
+            valid_versions = [4, 6]
+        else:
+            valid_versions = [ip_version]
+        for pool in ip_pool:
+            validators.validate_subnet(pool)
+            ip_net = netaddr.IPNetwork(pool)
+            if ip_net.version not in valid_versions:
+                raise gpolicy.InvalidIpPoolVersion(ip_pool=pool,
+                                                   version=ip_version)
+            if (ip_net.size <= 3):
+                err_msg = "Too few available IPs in the pool."
+                raise gpolicy.InvalidIpPoolSize(ip_pool=pool, err_msg=err_msg,
+                                                size=ip_net.size)
+            if (ip_net.prefixlen == 0):
+                err_msg = "Prefix length of 0 is invalid."
+                raise gpolicy.InvalidIpPoolPrefixLength(ip_pool=pool,
+                                            err_msg=err_msg,
+                                            prefixlen=ip_net.prefixlen)
+        return ip_pool
 
     @staticmethod
     def validate_subnet_prefix_length(ip_version, new_prefix_length,
                                       ip_pool=None):
-        if (new_prefix_length < 2) or (
-            ip_version == 4 and (
-                new_prefix_length > MAX_IPV4_SUBNET_PREFIX_LENGTH)) or (
-                    ip_version == 6 and (
-                        new_prefix_length > MAX_IPV6_SUBNET_PREFIX_LENGTH)):
+        if new_prefix_length is None:
+            return
+        if type(ip_pool) is not list:
+            ip_pool = [ip_pool]
+        if ((new_prefix_length > MAX_IPV4_SUBNET_PREFIX_LENGTH) or
+                (new_prefix_length < 2)):
             raise gpolicy.InvalidDefaultSubnetPrefixLength(
                 length=new_prefix_length, protocol=ip_version)
 
-        if ip_pool is not None:
+        for pool in ip_pool:
             # Check if subnet_prefix_length is smaller
             # than size of the ip_pool's subnet.
-            ip_pool_prefix_length = netaddr.IPNetwork(ip_pool).prefixlen
-            if(ip_pool_prefix_length > new_prefix_length):
-                raise gpolicy.SubnetPrefixLengthExceedsIpPool(
-                    ip_pool=ip_pool, subnet_size=new_prefix_length)
+            ip_pool_prefix_length = netaddr.IPNetwork(pool).prefixlen
+            if netaddr.IPNetwork(pool).version == 4:
+                if(ip_pool_prefix_length > new_prefix_length):
+                    raise gpolicy.SubnetPrefixLengthExceedsIpPool(
+                        ip_pool=pool, subnet_size=new_prefix_length)
 
     @log.log_method_call
     def create_policy_target(self, context, policy_target):
@@ -1333,17 +1372,17 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
     def create_l3_policy(self, context, l3_policy):
         l3p = l3_policy['l3_policy']
         tenant_id = self._get_tenant_id_for_create(context, l3p)
-        self.validate_ip_pool(l3p.get('ip_pool', None), l3p['ip_version'])
+        ip_pool = self.validate_ip_pool(l3p.get('ip_pool', []),
+                                        l3p['ip_version'])
         self.validate_subnet_prefix_length(
-            l3p['ip_version'], l3p['subnet_prefix_length'],
-            l3p.get('ip_pool', None))
+            l3p['ip_version'], l3p['subnet_prefix_length'], ip_pool)
         with context.session.begin(subtransactions=True):
             l3p_db = L3Policy(
                 id=uuidutils.generate_uuid(),
                 tenant_id=tenant_id, name=l3p['name'],
                 description=l3p['description'],
                 ip_version=l3p['ip_version'],
-                ip_pool=l3p['ip_pool'],
+                ip_pool=convert_ip_pool_to_string(ip_pool),
                 subnet_prefix_length=l3p['subnet_prefix_length'],
                 shared=l3p.get('shared', False),
                 status=l3p.get('status'),
@@ -1362,7 +1401,7 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
             if 'subnet_prefix_length' in l3p:
                 self.validate_subnet_prefix_length(
                     l3p_db.ip_version,
-                    l3p['subnet_prefix_length'], l3p_db.ip_pool)
+                    l3p['subnet_prefix_length'], [l3p_db.ip_pool])
             if 'external_segments' in l3p:
                 self._set_ess_for_l3p(context, l3p_db,
                                       l3p['external_segments'])
