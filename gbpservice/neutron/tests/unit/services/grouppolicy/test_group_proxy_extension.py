@@ -21,7 +21,8 @@ from gbpservice.neutron.tests.unit.services.grouppolicy import (
 class ExtensionDriverTestCaseMixin(object):
 
     def test_proxy_group_extension(self):
-        l3p = self.create_l3_policy()['l3_policy']
+        l3p = self.create_l3_policy(
+            proxy_ip_pool='192.168.0.0/16')['l3_policy']
         self.assertEqual('192.168.0.0/16', l3p['proxy_ip_pool'])
         self.assertEqual(28, l3p['proxy_subnet_prefix_length'])
 

@@ -194,7 +194,8 @@ class TestProxyGroupSubnetPrefixRMD(ResourceMappingProxyGroupGBPTestCase):
         super(TestProxyGroupSubnetPrefixRMD, self).setUp()
 
     def test_proxy_group_updated_prefix_length(self):
-        l3p = self.create_l3_policy(ip_pool='11.0.0.0/8')['l3_policy']
+        l3p = self.create_l3_policy(proxy_ip_pool='192.168.1.0/24',
+                                    ip_pool='11.0.0.0/8')['l3_policy']
         self.assertEqual('192.168.1.0/24', l3p['proxy_ip_pool'])
         self.assertEqual(26, l3p['proxy_subnet_prefix_length'])
 
@@ -217,7 +218,8 @@ class TestProxyGroupRMD(ResourceMappingProxyGroupGBPTestCase,
                         test_gp_ext.ExtensionDriverTestCaseMixin):
 
     def test_proxy_group_extension(self):
-        l3p = self.create_l3_policy(ip_pool='11.0.0.0/8')['l3_policy']
+        l3p = self.create_l3_policy(proxy_ip_pool='192.168.0.0/16',
+                                    ip_pool='11.0.0.0/8')['l3_policy']
         self.assertEqual('192.168.0.0/16', l3p['proxy_ip_pool'])
         self.assertEqual(28, l3p['proxy_subnet_prefix_length'])
 
@@ -438,7 +440,8 @@ class TestPolicyTargetGroup(ResourceMappingProxyGroupGBPTestCase,
         self.assertEqual('InvalidProxiedGroupL2P', res['NeutronError']['type'])
 
     def test_l3_proxy_creation_same_l2p(self):
-        l3p1 = self.create_l3_policy()['l3_policy']
+        l3p1 = self.create_l3_policy(
+            proxy_ip_pool='192.168.0.0/16')['l3_policy']
         l2p1 = self.create_l2_policy(l3_policy_id=l3p1['id'])['l2_policy']
         ptg = self.create_policy_target_group(
             l2_policy_id=l2p1['id'])['policy_target_group']
