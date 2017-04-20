@@ -58,6 +58,7 @@ from gbpservice.neutron.db.grouppolicy import group_policy_mapping_db as gpdb
 from gbpservice.neutron.extensions import group_policy as gpolicy
 from gbpservice.neutron.services.grouppolicy.common import constants as g_const
 from gbpservice.neutron.services.grouppolicy.common import exceptions as gpexc
+from gbpservice.neutron.services.grouppolicy.common import utils
 from gbpservice.neutron.services.grouppolicy.drivers import (
     resource_mapping as api)
 from gbpservice.neutron.services.grouppolicy.drivers.cisco.apic import (
@@ -823,7 +824,8 @@ class ApicMappingDriver(api.ResourceMappingDriver,
             self._tenant_by_sharing_policy(l3p))
         details['vrf_name'] = self.apic_manager.apic.fvCtx.name(
             str(self.name_mapper.l3_policy(context, l3p)))
-        details['vrf_subnets'] = [l3p['ip_pool']]
+        details['vrf_subnets'] = utils.convert_ip_pool_string_to_list(
+            l3p['ip_pool'])
         if l3p.get('proxy_ip_pool'):
             details['vrf_subnets'].append(l3p['proxy_ip_pool'])
 
