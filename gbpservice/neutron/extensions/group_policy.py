@@ -40,6 +40,17 @@ extensions.append_api_extensions_path(gbpservice.neutron.extensions.__path__)
 
 LOG = logging.getLogger(__name__)
 
+opts = [
+    cfg.StrOpt('default_ip_pool',
+               default='10.0.0.0/8',
+               help=_("IP pool for implicitly created default L3 policies, "
+                      "from which subnets are allocated for policy target "
+                      "groups.")),
+]
+
+cfg.CONF.register_opts(opts, "group_policy_group")
+GBP_CONF = cfg.CONF.group_policy_group
+
 
 # Group Policy Exceptions
 class GbpResourceNotFound(nexc.NotFound):
@@ -577,15 +588,17 @@ RESOURCE_ATTRIBUTE_MAP = {
                            'is_visible': True},
         'ip_version': {'allow_post': True, 'allow_put': False,
                        'convert_to': conv.convert_to_int,
-                       'validate': {'type:values': [4, 6]},
+                       'validate': {'type:values': [4, 6, 46]},
                        'default': 4, 'is_visible': True},
         'ip_pool': {'allow_post': True, 'allow_put': False,
-                    'validate': {'type:subnet': None},
-                    'default': '10.0.0.0/8', 'is_visible': True},
+                    'validate': {'type:string_or_none': None},
+                    'default': GBP_CONF.default_ip_pool, 'is_visible': True},
         'subnet_prefix_length': {'allow_post': True, 'allow_put': True,
                                  'convert_to': conv.convert_to_int,
-                                 # for ipv4 legal values are 2 to 30
-                                 # for ipv6 legal values are 2 to 127
+                                 # This parameter only applies to ipv4
+                                 # prefixes. For IPv4 legal values are
+                                 # 2 to 30. For ipv6, this parameter
+                                 # is ignored
                                  'default': 24, 'is_visible': True},
         'l2_policies': {'allow_post': False, 'allow_put': False,
                         'validate': {'type:uuid_list': None},
