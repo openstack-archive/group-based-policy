@@ -55,6 +55,21 @@ def get_current_session():
     except Exception:
         return
 
+def get_current_context():
+    i = 1
+    not_found = True
+    try:
+        while not_found:
+            for val in sys._getframe(i).f_locals.itervalues():
+                if isinstance(val, n_context.Context):
+                    ctx = val
+                    not_found = False
+                    break
+            i = i + 1
+        return ctx
+    except Exception:
+        return
+
 
 from neutron.callbacks import registry
 

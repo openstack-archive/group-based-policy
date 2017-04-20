@@ -276,11 +276,11 @@ class ImplicitResourceOperations(local_api.LocalAPI,
         self._mark_address_scope_owned(context._plugin_context.session, as_id)
         return address_scope
 
-    def _use_implicit_address_scope(self, context):
+    def _use_implicit_address_scope(self, context, ip_version=4):
         address_scope = self._create_implicit_address_scope(
-            context, name='l3p_' + context.current['name'])
-        context.set_address_scope_id(address_scope['id'],
-                                     context.current['ip_version'])
+            context, name='l3p_' + context.current['name'] +
+            '_' + str(ip_version), ip_version=ip_version)
+        context.set_address_scope_id(address_scope['id'], ip_version)
 
     def _cleanup_address_scope(self, plugin_context, address_scope_id):
         if self._address_scope_is_owned(plugin_context.session,
@@ -301,7 +301,7 @@ class ImplicitResourceOperations(local_api.LocalAPI,
                  'name': context.current['name'], 'ip_version':
                  context.current['ip_version'],
                  'default_prefixlen': context.current['subnet_prefix_length'],
-                 'prefixes': [context.current['ip_pool']],
+                 'prefixes': context.current['ip_pool'],
                  'shared': context.current.get('shared', False),
                  # Per current understanding, is_default is used for
                  # auto_allocation and is a per-tenant setting.
@@ -313,10 +313,11 @@ class ImplicitResourceOperations(local_api.LocalAPI,
         self._mark_subnetpool_owned(context._plugin_context.session, sp_id)
         return subnetpool
 
-    def _use_implicit_subnetpool(self, context, address_scope_id, ip_version):
+    def _use_implicit_subnetpool(self, context, address_scope_id,
+                                 ip_version=4, **kwargs):
         subnetpool = self._create_implicit_subnetpool(
             context, name='l3p_' + context.current['name'],
-            address_scope_id=address_scope_id)
+            address_scope_id=address_scope_id, ip_version=ip_version, **kwargs)
         context.add_subnetpool(subnetpool_id=subnetpool['id'],
                                ip_version=ip_version)
 
@@ -459,8 +460,8 @@ class ImplicitResourceOperations(local_api.LocalAPI,
         # subnet pool.
 
         pool = netaddr.IPSet(
-            iterable=[l3p['proxy_ip_pool'] if is_proxy else
-                      l3p['ip_pool']])
+            iterable=[l3p['proxy_ip_pool']] if is_proxy else
+                      l3p['ip_pool'])
         prefixlen = prefix_len or (
             l3p['proxy_subnet_prefix_length'] if is_proxy
             else l3p['subnet_prefix_length'])
@@ -1748,10 +1749,11 @@ class ResourceMappingDriver(api.PolicyDriver, ImplicitResourceOperations,
         subnets = []
         for l3p in l3ps:
             if l3p['id'] != curr['id']:
-                subnets.append(l3p['ip_pool'])
+                for pool in l3p['ip_pool']:
+                    subnets.append(pool)
                 if 'proxy_ip_pool' in l3p:
                     subnets.append(l3p['proxy_ip_pool'])
-        l3p_subnets = [curr['ip_pool']]
+        l3p_subnets = curr['ip_pool']
         if 'proxy_ip_pool' in curr:
             l3p_subnets.append(curr['proxy_ip_pool'])
 
@@ -2739,8 +2741,9 @@ class ResourceMappingDriver(api.PolicyDriver, ImplicitResourceOperations,
             admin_context,
             filters={'tenant_id': [tenant_id or context.current['tenant_id']]})
 
-        ip_pool_list = [x['ip_pool'] for x in l3ps if
-                        x['ip_pool'] not in exclude]
+        ip_pool_list = [prefix for x in l3ps if
+                        x['ip_pool'] not in exclude
+                        for prefix in x['ip_pool']]
         l3p_set = netaddr.IPSet(ip_pool_list)
         return [str(x) for x in (netaddr.IPSet(cidrs) - l3p_set).iter_cidrs()]
 
@@ -2788,10 +2791,10 @@ class ResourceMappingDriver(api.PolicyDriver, ImplicitResourceOperations,
             # Remove rules before the new ip_pool came
             cidr_list = self._get_ep_cidr_list(context, ep)
             old_cidrs = self._process_external_cidrs(context, cidr_list,
-                                                     exclude=[ip_pool])
+                                                     exclude=ip_pool)
             new_cidrs = [str(x) for x in
                          (netaddr.IPSet(old_cidrs) -
-                          netaddr.IPSet([ip_pool])).iter_cidrs()]
+                          netaddr.IPSet(ip_pool)).iter_cidrs()]
             self._refresh_ep_cidrs_rules(context, ep, new_cidrs, old_cidrs)
 
     def _process_remove_l3p_ip_pool(self, context, ip_pool):
@@ -2803,11 +2806,11 @@ class ResourceMappingDriver(api.PolicyDriver, ImplicitResourceOperations,
             # Cidrs before the ip_pool removal
             cidr_list = self._get_ep_cidr_list(context, ep)
             new_cidrs = self._process_external_cidrs(context, cidr_list,
-                                                     exclude=[ip_pool])
+                                                     exclude=ip_pool)
             # Cidrs after the ip_pool removal
             old_cidrs = [str(x) for x in
                          (netaddr.IPSet(new_cidrs) |
-                          netaddr.IPSet([ip_pool])).iter_cidrs()]
+                          netaddr.IPSet(ip_pool)).iter_cidrs()]
             self._refresh_ep_cidrs_rules(context, ep, new_cidrs, old_cidrs)
 
     def _set_l3p_external_routes(self, context, added=None, removed=None):
