@@ -476,8 +476,11 @@ class Ml2PlusPlugin(ml2_plugin.Ml2Plugin,
     def _get_subnetpool_id(self, context, subnet):
         # Check for regular subnetpool ID first, then Tenant's implicit,
         # then global implicit.
+        ip_version = subnet['ip_version']
         return (
             super(Ml2PlusPlugin, self)._get_subnetpool_id(context, subnet) or
             self.get_implicit_subnetpool_id(context,
-                                            tenant=subnet['tenant_id']) or
-            self.get_implicit_subnetpool_id(context, tenant=None))
+                                            tenant=subnet['tenant_id'],
+                                            ip_version=ip_version) or
+            self.get_implicit_subnetpool_id(context, tenant=None,
+                                            ip_version=ip_version))
