@@ -14,8 +14,8 @@
 #    under the License.
 
 import mock
-from neutron.common import constants as q_const
 from neutron import context
+from neutron_lib import constants as q_const
 
 import apicapi.apic_mapper  # noqa
 

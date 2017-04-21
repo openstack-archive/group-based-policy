@@ -12,7 +12,7 @@
 
 """Exceptions used by ServiceChain plugin and drivers."""
 
-from neutron.common import exceptions
+from neutron_lib import exceptions
 
 
 class ServiceChainDriverError(exceptions.NeutronException):

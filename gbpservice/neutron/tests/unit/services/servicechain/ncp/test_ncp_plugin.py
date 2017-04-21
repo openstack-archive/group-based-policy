@@ -15,12 +15,12 @@ import webob.exc
 
 import mock
 from neutron.common import config  # noqa
-from neutron.common import exceptions as n_exc
 from neutron import context as n_context
 from neutron.db import api as db_api
 from neutron import manager
 from neutron.plugins.common import constants as pconst
 from neutron_lib.db import model_base
+from neutron_lib import exceptions as n_exc
 from oslo_config import cfg
 from oslo_serialization import jsonutils
 

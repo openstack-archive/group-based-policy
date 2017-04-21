@@ -10,7 +10,7 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-from neutron.api.v2 import attributes
+from neutron_lib.api import validators
 
 from gbpservice.neutron.db.grouppolicy.extensions import group_proxy_db as db
 from gbpservice.neutron.db.grouppolicy import group_policy_db as gp_db
@@ -34,7 +34,7 @@ class ProxyGroupDriver(api.ExtensionDriver):
     def process_create_policy_target_group(self, session, data, result):
         data = data['policy_target_group']
         proxied = data.get('proxied_group_id')
-        if attributes.is_attr_set(proxied):
+        if validators.is_attr_set(proxied):
             # Set value for proxied group
             record = (session.query(db.GroupProxyMapping).filter_by(
                 policy_target_group_id=proxied).first())
@@ -50,7 +50,7 @@ class ProxyGroupDriver(api.ExtensionDriver):
                     proxy_group_id=result['id'],
                     proxied_group_id=None)
                 session.add(record)
-            if not attributes.is_attr_set(data.get('proxy_type')):
+            if not validators.is_attr_set(data.get('proxy_type')):
                 data['proxy_type'] = driver_proxy_group.DEFAULT_PROXY_TYPE
                 record = (session.query(db.GroupProxyMapping).filter_by(
                     policy_target_group_id=result['id']).one())
@@ -62,7 +62,7 @@ class ProxyGroupDriver(api.ExtensionDriver):
                 policy_target_group_id=result['id']).one())
             record.enforce_service_chains = data['enforce_service_chains']
             result['enforce_service_chains'] = data['enforce_service_chains']
-        elif attributes.is_attr_set(data.get('proxy_type')):
+        elif validators.is_attr_set(data.get('proxy_type')):
             raise driver_proxy_group.ProxyTypeSetWithoutProxiedPTG()
 
     @api.default_extension_behavior(db.GroupProxyMapping)

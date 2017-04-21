@@ -11,9 +11,9 @@
 #    under the License.
 
 from neutron.api import extensions
-from neutron.common import exceptions as nexc
 from neutron_lib.api import converters as conv
 from neutron_lib import constants as nlib_const
+from neutron_lib import exceptions as nexc
 from oslo_config import cfg
 
 from gbpservice.neutron.extensions import group_policy as gp

@@ -26,8 +26,6 @@ from aim import context as aim_context
 from aim import utils as aim_utils
 from neutron.agent import securitygroups_rpc
 from neutron.api.v2 import attributes
-from neutron.common import constants as n_constants
-from neutron.common import exceptions as n_exceptions
 from neutron.common import rpc as n_rpc
 from neutron.common import topics as n_topics
 from neutron.db import address_scope_db
@@ -42,6 +40,8 @@ from neutron import manager
 from neutron.plugins.common import constants as pconst
 from neutron.plugins.ml2 import driver_api as api
 from neutron.plugins.ml2 import models
+from neutron_lib import constants as n_constants
+from neutron_lib import exceptions as n_exceptions
 from opflexagent import constants as ofcst
 from opflexagent import rpc as ofrpc
 from oslo_config import cfg

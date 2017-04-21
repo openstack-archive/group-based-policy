@@ -23,8 +23,6 @@ from apic_ml2.neutron.plugins.ml2.drivers.cisco.apic import config  # noqa
 from apicapi import apic_manager
 from neutron.agent.linux import dhcp
 from neutron.api.v2 import attributes
-from neutron.common import constants as n_constants
-from neutron.common import exceptions as n_exc
 from neutron.common import rpc as n_rpc
 from neutron.common import topics
 from neutron import context as nctx
@@ -36,7 +34,9 @@ from neutron.plugins.common import constants as p_const
 from neutron.plugins.ml2 import driver_api as n_api
 from neutron.plugins.ml2 import models as ml2_models
 from neutron.plugins.ml2 import rpc as neu_rpc
+from neutron_lib import constants as n_constants
 from neutron_lib.db import model_base
+from neutron_lib import exceptions as n_exc
 from opflexagent import constants as ofcst
 from opflexagent import rpc
 from oslo_concurrency import lockutils

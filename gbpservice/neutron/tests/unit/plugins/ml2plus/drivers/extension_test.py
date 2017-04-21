@@ -14,9 +14,9 @@
 #    under the License.
 
 from neutron.api import extensions
-from neutron.api.v2 import attributes
 from neutron.db import address_scope_db as as_db
 from neutron.db import models_v2
+from neutron_lib.api import validators
 from neutron_lib.db import model_base
 import oslo_db.sqlalchemy.session
 import sqlalchemy as sa
@@ -127,7 +127,7 @@ class TestAddressScopeExtension(model_base.BASEV2):
 class TestDBExtensionDriver(TestExtensionDriverBase):
     def _get_value(self, data, key):
         value = data[key]
-        if not attributes.is_attr_set(value):
+        if not validators.is_attr_set(value):
             value = ''
         return value
 

@@ -16,11 +16,11 @@
 import copy
 import re
 
-from neutron.common import constants as n_constants
 from neutron import context as nctx
 from neutron.extensions import portbindings
 from neutron import manager
 from neutron.plugins.ml2 import driver_api as api
+from neutron_lib import constants as n_constants
 from opflexagent import constants as ofcst
 from oslo_log import log
 from oslo_utils import importutils

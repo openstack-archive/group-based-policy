@@ -26,7 +26,7 @@ down_revision = '1bf7555fa01a'
 
 
 from alembic import op
-from neutron.common import constants
+from neutron_lib import constants
 import sqlalchemy as sa
 
 from gbpservice.neutron.services.grouppolicy.common import (
