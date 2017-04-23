@@ -15,7 +15,6 @@ import operator
 
 from keystoneclient import exceptions as k_exceptions
 from keystoneclient.v2_0 import client as k_client
-from neutron.api.v2 import attributes
 from neutron import context as n_context
 from neutron.db import models_v2
 from neutron.extensions import l3 as ext_l3
@@ -366,12 +365,12 @@ class ImplicitResourceOperations(local_api.LocalAPI,
                          'ip_version': l3p['ip_version'],
                          'cidr': usable_cidr,
                          'enable_dhcp': True,
-                         'gateway_ip': attributes.ATTR_NOT_SPECIFIED,
-                         'allocation_pools': attributes.ATTR_NOT_SPECIFIED,
+                         'gateway_ip': n_const.ATTR_NOT_SPECIFIED,
+                         'allocation_pools': n_const.ATTR_NOT_SPECIFIED,
                          'dns_nameservers': (
                              cfg.CONF.resource_mapping.dns_nameservers or
-                             attributes.ATTR_NOT_SPECIFIED),
-                         'host_routes': attributes.ATTR_NOT_SPECIFIED}
+                             n_const.ATTR_NOT_SPECIFIED),
+                         'host_routes': n_const.ATTR_NOT_SPECIFIED}
                 attrs.update(subnet_specifics)
                 subnet = self._create_subnet(
                     context._plugin_context, attrs)
@@ -571,22 +570,22 @@ class ImplicitResourceOperations(local_api.LocalAPI,
                          'network_id': l2p['network_id'],
                          'ip_version': ip_version,
                          'subnetpool_id': pool['id'],
-                         'cidr': attributes.ATTR_NOT_SPECIFIED,
-                         'prefixlen': attributes.ATTR_NOT_SPECIFIED,
+                         'cidr': n_const.ATTR_NOT_SPECIFIED,
+                         'prefixlen': n_const.ATTR_NOT_SPECIFIED,
                          'enable_dhcp': True,
-                         'gateway_ip': attributes.ATTR_NOT_SPECIFIED,
-                         'allocation_pools': attributes.ATTR_NOT_SPECIFIED,
+                         'gateway_ip': n_const.ATTR_NOT_SPECIFIED,
+                         'allocation_pools': n_const.ATTR_NOT_SPECIFIED,
                          'dns_nameservers': (
                              cfg.CONF.resource_mapping.dns_nameservers or
-                             attributes.ATTR_NOT_SPECIFIED),
-                         'host_routes': attributes.ATTR_NOT_SPECIFIED}
+                             n_const.ATTR_NOT_SPECIFIED),
+                         'host_routes': n_const.ATTR_NOT_SPECIFIED}
                 if ip_version == 6:
                     if 'ipv6_ra_mode' not in subnet_specifics:
                         subnet_specifics['ipv6_ra_mode'] = (
-                            attributes.ATTR_NOT_SPECIFIED)
+                            n_const.ATTR_NOT_SPECIFIED)
                     if 'ipv6_address_mode' not in subnet_specifics:
                         subnet_specifics['ipv6_address_mode'] = (
-                            attributes.ATTR_NOT_SPECIFIED)
+                            n_const.ATTR_NOT_SPECIFIED)
                 attrs.update(subnet_specifics)
                 subnet = self._create_subnet(context._plugin_context, attrs)
                 self._mark_subnet_owned(context._plugin_context.session,
@@ -648,7 +647,7 @@ class ImplicitResourceOperations(local_api.LocalAPI,
                 attrs = {'tenant_id': context.current['tenant_id'],
                          'name': 'pt_' + context.current['name'],
                          'network_id': l2p['network_id'],
-                         'mac_address': attributes.ATTR_NOT_SPECIFIED,
+                         'mac_address': n_const.ATTR_NOT_SPECIFIED,
                          'fixed_ips': [{'subnet_id': subnet['id']}],
                          'device_id': '',
                          'device_owner': '',
@@ -831,10 +830,10 @@ class ImplicitResourceOperations(local_api.LocalAPI,
                  'ip_version': context.current['ip_version'],
                  'cidr': context.current['ip_pool'],
                  'enable_dhcp': False,
-                 'gateway_ip': attributes.ATTR_NOT_SPECIFIED,
-                 'allocation_pools': attributes.ATTR_NOT_SPECIFIED,
-                 'dns_nameservers': attributes.ATTR_NOT_SPECIFIED,
-                 'host_routes': attributes.ATTR_NOT_SPECIFIED}
+                 'gateway_ip': n_const.ATTR_NOT_SPECIFIED,
+                 'allocation_pools': n_const.ATTR_NOT_SPECIFIED,
+                 'dns_nameservers': n_const.ATTR_NOT_SPECIFIED,
+                 'host_routes': n_const.ATTR_NOT_SPECIFIED}
         subnet = self._create_subnet(context._plugin_context, attrs)
         context._plugin._set_db_np_subnet(
             context._plugin_context, context.current, subnet['id'])

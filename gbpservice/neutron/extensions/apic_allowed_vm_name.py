@@ -11,7 +11,7 @@
 #    under the License.
 
 from neutron.api import extensions
-from neutron.api.v2 import attributes as attr
+from neutron_lib.api import converters
 
 from gbpservice.neutron.extensions import group_policy as gp
 
@@ -23,7 +23,7 @@ EXTENDED_ATTRIBUTES_2_0 = {
         'allowed_vm_names': {
             'allow_post': True, 'allow_put': True, 'default': None,
             'validate': {'type:list_of_unique_strings': None},
-            'convert_to': attr.convert_none_to_empty_list,
+            'convert_to': converters.convert_none_to_empty_list,
             'is_visible': True},
     },
 }
