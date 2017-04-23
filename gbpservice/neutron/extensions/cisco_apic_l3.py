@@ -14,8 +14,8 @@
 #    under the License.
 
 from neutron.api import extensions
-from neutron.api.v2 import attributes
 from neutron.extensions import l3
+from neutron_lib.api import converters
 
 from gbpservice.neutron.extensions import cisco_apic
 
@@ -33,14 +33,14 @@ EXT_GW_ATTRIBUTES = {
         # Additional contracts provided by external network
         'allow_put': True, 'allow_post': True,
         'is_visible': True, 'default': None,
-        'convert_to': attributes.convert_none_to_empty_list,
+        'convert_to': converters.convert_none_to_empty_list,
         'validate': {'type:list_of_unique_strings': None},
     },
     EXTERNAL_CONSUMED_CONTRACTS: {
         # Additional contracts consumed by external network
         'allow_put': True, 'allow_post': True,
         'is_visible': True, 'default': None,
-        'convert_to': attributes.convert_none_to_empty_list,
+        'convert_to': converters.convert_none_to_empty_list,
         'validate': {'type:list_of_unique_strings': None},
     }
 }

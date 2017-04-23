@@ -20,6 +20,7 @@ from neutron.extensions import portbindings
 from neutron import manager as n_manager
 from neutron.plugins.common import constants as pconst
 from neutron.quota import resource_registry
+from neutron_lib import constants
 from oslo_log import helpers as log
 from oslo_log import log as logging
 from oslo_utils import excutils
@@ -453,7 +454,7 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
     def _add_fixed_ips_to_port_attributes(self, policy_target):
         if 'fixed_ips' in policy_target['policy_target'] and (
                 policy_target['policy_target']['fixed_ips'] is not (
-                    nattr.ATTR_NOT_SPECIFIED)):
+                    constants.ATTR_NOT_SPECIFIED)):
             port_attributes = {'fixed_ips': policy_target[
                 'policy_target']['fixed_ips']}
             policy_target['policy_target'].update(

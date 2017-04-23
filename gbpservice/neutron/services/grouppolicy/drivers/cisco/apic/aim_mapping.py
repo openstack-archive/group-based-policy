@@ -18,7 +18,6 @@ from aim.api import resource as aim_resource
 from aim import context as aim_context
 from aim import utils as aim_utils
 from neutron.agent.linux import dhcp
-from neutron.api.v2 import attributes
 from neutron import context as n_context
 from neutron.db import models_v2
 from neutron import manager
@@ -460,7 +459,7 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
                 "l2_policy_id": l2p['id'],
                 "proxied_group_id": None,
                 "proxy_type": None,
-                "proxy_group_id": attributes.ATTR_NOT_SPECIFIED,
+                "proxy_group_id": n_constants.ATTR_NOT_SPECIFIED,
                 "network_service_policy_id": None,
                 "service_management": False,
                 "shared": l2p['shared'],
@@ -2269,7 +2268,7 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
                          'fixed_ips': [{'subnet_id': subnet['id']}],
                          'device_id': '',
                          'device_owner': '',
-                         'mac_address': attributes.ATTR_NOT_SPECIFIED,
+                         'mac_address': n_constants.ATTR_NOT_SPECIFIED,
                          'name': '%s-%s' % (router_id, subnet['id']),
                          'admin_state_up': True}
                 try:

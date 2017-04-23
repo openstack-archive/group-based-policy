@@ -16,6 +16,7 @@
 from neutron.api import extensions
 from neutron.api.v2 import attributes as attr
 from neutron.extensions import address_scope as as_ext
+from neutron_lib import constants
 
 from gbpservice._i18n import _
 
@@ -24,14 +25,14 @@ EXTENDED_ATTRIBUTES_2_0 = {
     attr.SUBNETPOOLS: {
         'subnetpool_extension': {'allow_post': True,
                                  'allow_put': True,
-                                 'default': attr.ATTR_NOT_SPECIFIED,
+                                 'default': constants.ATTR_NOT_SPECIFIED,
                                  'is_visible': True,
                                  'enforce_policy': True},
     },
     as_ext.ADDRESS_SCOPES: {
         'address_scope_extension': {'allow_post': True,
                                     'allow_put': True,
-                                    'default': attr.ATTR_NOT_SPECIFIED,
+                                    'default': constants.ATTR_NOT_SPECIFIED,
                                     'is_visible': True,
                                     'enforce_policy': True},
     },
