@@ -14,7 +14,6 @@ import copy
 import re
 
 import mock
-from neutron.api.v2 import attributes as nattr
 from neutron.plugins.common import constants
 from neutron.tests import base
 from neutron.tests.unit.api.v2 import test_base
@@ -92,9 +91,9 @@ class GroupPolicyExtensionTestCase(test_extensions_base.ExtensionTestCase):
         self.assertIn('policy_target', res)
         if 'fixed_ips' in expected_value and (
                 str(res['policy_target']['fixed_ips']) ==
-                str(nattr.ATTR_NOT_SPECIFIED)):
+                str(n_consts.ATTR_NOT_SPECIFIED)):
             default_data['policy_target']['fixed_ips'] = (
-                    nattr.ATTR_NOT_SPECIFIED)
+                    n_consts.ATTR_NOT_SPECIFIED)
             expected_value['fixed_ips'] = res['policy_target']['fixed_ips']
 
         self.assertEqual(expected_value, res['policy_target'])

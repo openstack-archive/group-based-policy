@@ -22,7 +22,6 @@ from apic_ml2.neutron.plugins.ml2.drivers.cisco.apic import apic_model
 from apic_ml2.neutron.plugins.ml2.drivers.cisco.apic import config  # noqa
 from apicapi import apic_manager
 from neutron.agent.linux import dhcp
-from neutron.api.v2 import attributes
 from neutron.common import rpc as n_rpc
 from neutron.common import topics
 from neutron import context as nctx
@@ -658,7 +657,7 @@ class ApicMappingDriver(api.ResourceMappingDriver,
                          'tenant_id': network['tenant_id'],
                          'name': HOST_SNAT_POOL_PORT,
                          'network_id': network['id'],
-                         'mac_address': attributes.ATTR_NOT_SPECIFIED,
+                         'mac_address': n_constants.ATTR_NOT_SPECIFIED,
                          'fixed_ips': [{'subnet_id': snat_subnets[0]['id']}],
                          'admin_state_up': False}
                 port = self._create_port(context, attrs)
@@ -2902,7 +2901,7 @@ class ApicMappingDriver(api.ResourceMappingDriver,
                 "l2_policy_id": l2p['id'],
                 "proxied_group_id": None,
                 "proxy_type": None,
-                "proxy_group_id": attributes.ATTR_NOT_SPECIFIED,
+                "proxy_group_id": n_constants.ATTR_NOT_SPECIFIED,
                 "network_service_policy_id": None,
                 "service_management": False,
                 "shared": l2p['shared'],
@@ -3001,7 +3000,7 @@ class ApicMappingDriver(api.ResourceMappingDriver,
                      'name': ext_net_name,
                      'admin_state_up': True,
                      'router:external': True,
-                     'provider:network_type': attributes.ATTR_NOT_SPECIFIED,
+                     'provider:network_type': n_constants.ATTR_NOT_SPECIFIED,
                      'shared': es.get('shared', False)}
             extnet = self._create_network(context._plugin_context, attrs)
 
@@ -3020,10 +3019,10 @@ class ApicMappingDriver(api.ResourceMappingDriver,
                      'cidr': ('169.254.0.0/16' if es['ip_version'] == 4
                               else 'fe80::/64'),
                      'enable_dhcp': False,
-                     'gateway_ip': attributes.ATTR_NOT_SPECIFIED,
-                     'allocation_pools': attributes.ATTR_NOT_SPECIFIED,
-                     'dns_nameservers': attributes.ATTR_NOT_SPECIFIED,
-                     'host_routes': attributes.ATTR_NOT_SPECIFIED}
+                     'gateway_ip': n_constants.ATTR_NOT_SPECIFIED,
+                     'allocation_pools': n_constants.ATTR_NOT_SPECIFIED,
+                     'dns_nameservers': n_constants.ATTR_NOT_SPECIFIED,
+                     'host_routes': n_constants.ATTR_NOT_SPECIFIED}
             subnet = self._create_subnet(context._plugin_context, attrs)
         return subnet
 
@@ -3139,7 +3138,7 @@ class ApicMappingDriver(api.ResourceMappingDriver,
             subnet = self._get_subnet(plugin_context, subnet_id)
             attrs = {'tenant_id': subnet['tenant_id'],
                      'network_id': subnet['network_id'],
-                     'mac_address': attributes.ATTR_NOT_SPECIFIED,
+                     'mac_address': n_constants.ATTR_NOT_SPECIFIED,
                      'fixed_ips': [{'subnet_id': subnet_id}],
                      'device_id': '',
                      'device_owner': '',
@@ -3254,10 +3253,10 @@ class ApicMappingDriver(api.ResourceMappingDriver,
                              'enable_dhcp': False,
                              'gateway_ip': gw,
                              'allocation_pools':
-                             attributes.ATTR_NOT_SPECIFIED,
-                             'dns_nameservers': attributes.ATTR_NOT_SPECIFIED,
+                             n_constants.ATTR_NOT_SPECIFIED,
+                             'dns_nameservers': n_constants.ATTR_NOT_SPECIFIED,
                              'host_routes':
-                             attributes.ATTR_NOT_SPECIFIED,
+                             n_constants.ATTR_NOT_SPECIFIED,
                              'tenant_id': es['tenant_id']}
                     subnet = self._create_subnet(context._plugin_context,
                             attrs)

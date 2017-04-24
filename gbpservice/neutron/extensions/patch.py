@@ -20,6 +20,7 @@ from neutron.db import l3_db
 from neutron.db import models_v2
 from neutron.db import securitygroups_db
 from neutron.plugins.ml2 import db as ml2_db
+from neutron_lib.api import validators
 from neutron_lib import constants
 from neutron_lib import exceptions as n_exc
 from oslo_log import log
@@ -94,7 +95,7 @@ def _get_security_groups_on_port(self, context, port):
     :returns: all security groups IDs on port belonging to tenant.
     """
     p = port['port']
-    if not securitygroups_db.attributes.is_attr_set(
+    if not validators.is_attr_set(
             p.get(securitygroups_db.ext_sg.SECURITYGROUPS)):
         return
     if p.get('device_owner') and p['device_owner'].startswith('network:'):

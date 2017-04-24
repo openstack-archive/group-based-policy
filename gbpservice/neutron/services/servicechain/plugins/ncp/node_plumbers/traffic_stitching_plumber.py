@@ -10,8 +10,8 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-from neutron.api.v2 import attributes as attr
 from neutron import manager
+from neutron_lib import constants
 from oslo_config import cfg
 from oslo_log import log as logging
 
@@ -177,7 +177,7 @@ class TrafficStitchingPlumber(plumber_base.NodePlumberBase):
             "l2_policy_id": None,
             "proxied_group_id": proxied['id'],
             "proxy_type": type,
-            "proxy_group_id": attr.ATTR_NOT_SPECIFIED,
+            "proxy_group_id": constants.ATTR_NOT_SPECIFIED,
             "network_service_policy_id": None,
             "service_management": False
         }

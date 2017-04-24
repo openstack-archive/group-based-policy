@@ -25,7 +25,6 @@ from aim.common import utils
 from aim import context as aim_context
 from aim import utils as aim_utils
 from neutron.agent import securitygroups_rpc
-from neutron.api.v2 import attributes
 from neutron.common import rpc as n_rpc
 from neutron.common import topics as n_topics
 from neutron.db import address_scope_db
@@ -2132,7 +2131,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
                              'tenant_id': ext_network['tenant_id'],
                              'name': 'snat-pool-port:%s' % host_or_vrf,
                              'network_id': ext_network['id'],
-                             'mac_address': attributes.ATTR_NOT_SPECIFIED,
+                             'mac_address': n_constants.ATTR_NOT_SPECIFIED,
                              'fixed_ips': [{'subnet_id': snat_subnet.id}],
                              'admin_state_up': False}
                     port = self.plugin.create_port(plugin_context,

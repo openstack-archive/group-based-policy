@@ -13,8 +13,8 @@
 import copy
 import six
 
-from neutron.api.v2 import attributes as nattr
 from neutron.plugins.common import constants
+from neutron_lib import constants as n_constants
 
 from gbpservice.neutron.extensions import group_policy as gp
 from gbpservice.neutron.extensions import group_policy_mapping as gpm
@@ -176,6 +176,6 @@ class GroupPolicyMappingExtTestCase(tgp.GroupPolicyExtensionTestCase):
         default_data['policy_target'].update(default_attrs)
         expected_value = dict(default_data['policy_target'])
         expected_value['id'] = policy_target_id
-        expected_value['fixed_ips'] = nattr.ATTR_NOT_SPECIFIED
+        expected_value['fixed_ips'] = n_constants.ATTR_NOT_SPECIFIED
 
         self._test_create_policy_target(data, expected_value, default_data)
