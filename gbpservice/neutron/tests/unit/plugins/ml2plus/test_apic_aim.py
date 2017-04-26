@@ -1780,16 +1780,18 @@ class TestAimMapping(ApicAimTestCase):
     def test_network_in_address_scope_pre_existing_common_vrf(self):
         self.test_network_in_address_scope_pre_existing_vrf(common_vrf=True)
 
-    def test_default_subnetpool(self):
+    def _test_default_subnetpool(self, prefix, sn1, gw1, sn2, gw2, sn3, gw3):
         # Create a non-default non-shared SP
         subnetpool = self._make_subnetpool(
-            self.fmt, ['10.0.0.0/8'], name='spool1',
+            self.fmt, [prefix], name='spool1',
             tenant_id='t1')['subnetpool']
         net = self._make_network(self.fmt, 'pvt-net1', True,
                                  tenant_id='t1')['network']
         sub = self._make_subnet(
-            self.fmt, {'network': net}, '10.0.1.1', '10.0.1.0/24',
-            tenant_id='t1')['subnet']
+            self.fmt, {'network': net,
+                       }, gw1, sn1,
+            tenant_id='t1',
+            ip_version=subnetpool['ip_version'])['subnet']
         self.assertIsNone(sub['subnetpool_id'])
         # Make SP default
         data = {'subnetpool': {'is_implicit': True}}
@@ -1800,18 +1802,20 @@ class TestAimMapping(ApicAimTestCase):
                                  tenant_id='t1')['network']
         # Create another subnet
         sub = self._make_subnet(
-            self.fmt, {'network': net}, '10.0.2.1',
-            '10.0.2.0/24', tenant_id='t1')['subnet']
+            self.fmt, {'network': net}, gw2,
+            sn2, tenant_id='t1',
+            ip_version=subnetpool['ip_version'])['subnet']
         # This time, SP ID is set
         self.assertEqual(subnetpool['id'], sub['subnetpool_id'])
         # Create a shared SP in a different tenant
         subnetpool_shared = self._make_subnetpool(
-            self.fmt, ['10.0.0.0/8'], name='spool1', is_implicit=True,
+            self.fmt, [prefix], name='spool1', is_implicit=True,
             shared=True, tenant_id='t2', admin=True)['subnetpool']
         # A subnet created in T1 still gets the old pool ID
         sub = self._make_subnet(
-            self.fmt, {'network': net}, '10.0.3.1',
-            '10.0.3.0/24', tenant_id='t1')['subnet']
+            self.fmt, {'network': net}, gw3,
+            sn3, tenant_id='t1',
+            ip_version=subnetpool_shared['ip_version'])['subnet']
         # This time, SP ID is set
         self.assertEqual(subnetpool['id'], sub['subnetpool_id'])
         # Creating a subnet somewhere else, however, will get the SP ID from
@@ -1819,9 +1823,24 @@ class TestAimMapping(ApicAimTestCase):
         net = self._make_network(self.fmt, 'pvt-net3', True,
                                  tenant_id='t3')['network']
         sub = self._make_subnet(
-            self.fmt, {'network': net}, '10.0.1.1',
-            '10.0.1.0/24', tenant_id='t3')['subnet']
+            self.fmt, {'network': net}, gw1,
+            sn1, tenant_id='t3',
+            ip_version=subnetpool_shared['ip_version'])['subnet']
         self.assertEqual(subnetpool_shared['id'], sub['subnetpool_id'])
+
+    def test_default_subnetpool(self):
+        # First do a set with the v4 address family
+        self._test_default_subnetpool('10.0.0.0/8',
+                                      '10.0.1.0/24', '10.0.1.1',
+                                      '10.0.2.0/24', '10.0.2.1',
+                                      '10.0.3.0/24', '10.0.3.1')
+        # Do the same test with v6 (v4 still present), using the same tenants
+        # and shared properties. Since they are different address families,
+        # it should not conflict
+        self._test_default_subnetpool('2001:db8::1/56',
+                                      '2001:db8:0:1::0/64', '2001:db8:0:1::1',
+                                      '2001:db8:0:2::0/64', '2001:db8:0:2::1',
+                                      '2001:db8:0:3::0/64', '2001:db8:0:3::1')
 
     def test_implicit_subnetpool(self):
         # Create implicit SP (non-shared)
@@ -1839,10 +1858,16 @@ class TestAimMapping(ApicAimTestCase):
             'subnetpools', sp['id'],
             {'subnetpool': {'is_implicit': True}})['subnetpool']
         self.assertTrue(sp['is_implicit'])
-        # Create another implicit in the same tenant, it will fail
+        # Create another implicit in the same family, same tenant, it will fail
         self.assertRaises(webob.exc.HTTPClientError, self._make_subnetpool,
                           self.fmt, ['11.0.0.0/8'], name='spool1',
                           tenant_id='t1', is_implicit=True)
+        # Create another implicit in different family, same tenant, it succeeds
+        sp2 = self._make_subnetpool(
+            self.fmt, ['2001:db8:1::0/56'], name='spool1',
+            is_implicit=True, tenant_id='t1')['subnetpool']
+        self.assertTrue(sp2['is_implicit'])
+
         # Create a normal SP, will succeed
         sp2 = self._make_subnetpool(
             self.fmt, ['11.0.0.0/8'], name='spool2',
@@ -1859,6 +1884,19 @@ class TestAimMapping(ApicAimTestCase):
             is_implicit=True)['subnetpool']
         self.assertTrue(sp3['is_implicit'])
         # Update SP shared state is not supported by Neutron
+
+        # Create another shared implicit in the same family, it will fail
+        self.assertRaises(webob.exc.HTTPClientError, self._make_subnetpool,
+                          self.fmt, ['12.0.0.0/8'], name='spool3',
+                          tenant_id='t3', shared=True,
+                          admin=True, is_implicit=True)
+
+        # Create a shared implicit SP in a different address family
+        sp3 = self._make_subnetpool(
+            self.fmt, ['2001:db8:2::0/56'], name='spoolSharedv6',
+            tenant_id='t2', shared=True, admin=True,
+            is_implicit=True)['subnetpool']
+        self.assertTrue(sp3['is_implicit'])
 
 
 class TestSyncState(ApicAimTestCase):
