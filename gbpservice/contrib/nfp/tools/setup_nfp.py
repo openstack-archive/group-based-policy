@@ -127,12 +127,13 @@ def configure_nfp():
             curr_service_plugins_list.remove(word)
         curr_service_plugins_list.append("vpnaas")
 
+    # enable lbaasv2 by default
     if not len(lbaas_enabled):
-        curr_service_plugins_list.append("lbaas")
+        curr_service_plugins_list.append("lbaasv2")
     else:
         for word in lbaas_enabled:
             curr_service_plugins_list.remove(word)
-        curr_service_plugins_list.append("lbaas")
+        curr_service_plugins_list.append("lbaasv2")
 
     if not len(fwaas_enabled):
         curr_service_plugins_list.append("nfp_fwaas")
@@ -186,8 +187,8 @@ def configure_nfp():
     # Update neutron server to use GBP policy
     subprocess.call("crudini --set /etc/neutron/neutron.conf DEFAULT policy_file /etc/group-based-policy/policy.d/policy.json".split(' '))
 
-    # Update neutron LBaaS with NFP LBaaS service provider
-    subprocess.call("crudini --set /etc/neutron/neutron_lbaas.conf service_providers service_provider LOADBALANCER:loadbalancer:gbpservice.contrib.nfp.service_plugins.loadbalancer.drivers.nfp_lbaas_plugin_driver.HaproxyOnVMPluginDriver:default".split(' '))
+    # Update neutron LBaaS with NFP LBaaS v2 service provider
+    subprocess.call("crudini --set /etc/neutron/neutron_lbaas.conf service_providers service_provider LOADBALANCERV2:loadbalancerv2:gbpservice.contrib.nfp.service_plugins.loadbalancer.drivers.nfp_lbaasv2_plugin_driver.HaproxyOnVMPluginDriver:default".split(' '))
 
     # Update neutron VPNaaS with NFP VPNaaS service provider
     subprocess.call(["grep -q '^service_provider.*NFPIPsecVPNDriver:default' /etc/neutron/neutron_vpnaas.conf; if [[ $? = 1 ]]; then sed -i '/^service_provider.*IPsecVPNDriver/ s/:default/\\nservice_provider\ =\ VPN:vpn:gbpservice.contrib.nfp.service_plugins.vpn.drivers.nfp_vpnaas_driver.NFPIPsecVPNDriver:default/' /etc/neutron/neutron_vpnaas.conf; fi"], shell=True)
