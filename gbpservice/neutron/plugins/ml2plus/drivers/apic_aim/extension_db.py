@@ -13,6 +13,7 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+from neutron.db.models import address_scope as as_db
 from neutron_lib.db import model_base
 import sqlalchemy as sa
 
@@ -181,7 +182,8 @@ class ExtensionDbMixin(object):
                 db_obj.vrf_dn = res_dict[cisco_apic.VRF]
             session.add(db_obj)
 
-    def get_address_scope_by_vrf_dn(self, session, vrf_dn):
-        db_obj = (session.query(AddressScopeExtensionDb)
-                  .filter_by(vrf_dn=vrf_dn).first())
-        return db_obj.address_scope_id if db_obj else None
+    def get_address_scopes_by_vrf_dn(self, session, vrf_dn):
+        return (session.query(as_db.AddressScope).
+                join(AddressScopeExtensionDb).
+                filter(AddressScopeExtensionDb.vrf_dn == vrf_dn).
+                all())
