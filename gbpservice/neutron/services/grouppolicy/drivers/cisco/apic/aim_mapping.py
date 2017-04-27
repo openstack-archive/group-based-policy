@@ -2002,17 +2002,18 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
         # get all subnets of the specified VRF
         with session.begin(subtransactions=True):
             # Find VRF's address_scope first
-            address_scope_id = (
-                self.aim_mech_driver._get_address_scope_id_for_vrf(
+            address_scope_ids = (
+                self.aim_mech_driver._get_address_scope_ids_for_vrf(
                     session,
                     aim_resource.VRF(tenant_name=vrf_tenant_name,
                                      name=vrf_name)))
-            if address_scope_id:
-                subnetpools = self._get_subnetpools(
-                    plugin_context,
-                    filters={'address_scope_id': [address_scope_id]})
-                for pool in subnetpools:
-                    result.extend(pool['prefixes'])
+            if address_scope_ids:
+                for address_scope_id in address_scope_ids:
+                    subnetpools = self._get_subnetpools(
+                        plugin_context,
+                        filters={'address_scope_id': [address_scope_id]})
+                    for pool in subnetpools:
+                        result.extend(pool['prefixes'])
             else:
                 aim_ctx = aim_context.AimContext(db_session=session)
                 if vrf_tenant_name != md.COMMON_TENANT_NAME:
