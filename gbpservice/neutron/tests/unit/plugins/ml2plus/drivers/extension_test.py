@@ -14,7 +14,7 @@
 #    under the License.
 
 from neutron.api import extensions
-from neutron.db import address_scope_db as as_db
+from neutron.db.models import address_scope as as_db
 from neutron.db import models_v2
 from neutron_lib.api import validators
 from neutron_lib.db import model_base

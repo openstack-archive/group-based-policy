@@ -13,7 +13,6 @@
 import ast
 
 from neutron.db import common_db_mixin
-from neutron.db import models_v2
 from neutron import manager
 from neutron.plugins.common import constants as pconst
 from neutron_lib.db import model_base
@@ -37,7 +36,7 @@ MAX_IPV4_SUBNET_PREFIX_LENGTH = 31
 MAX_IPV6_SUBNET_PREFIX_LENGTH = 127
 
 
-class BaseSCResource(models_v2.HasId, models_v2.HasTenant):
+class BaseSCResource(model_base.HasId, model_base.HasProject):
     name = sa.Column(sa.String(255))
     description = sa.Column(sa.String(255))
     status = sa.Column(sa.String(length=16), nullable=True)

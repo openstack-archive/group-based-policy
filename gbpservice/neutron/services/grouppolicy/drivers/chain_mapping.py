@@ -12,7 +12,6 @@
 
 from keystoneclient import exceptions as k_exceptions
 from keystoneclient.v2_0 import client as k_client
-from neutron.db import models_v2
 from neutron_lib.db import model_base
 from oslo_config import cfg
 from oslo_log import helpers as log
@@ -56,7 +55,7 @@ chain_mapping_opts = [
 cfg.CONF.register_opts(chain_mapping_opts, "chain_mapping")
 
 
-class PtgServiceChainInstanceMapping(model_base.BASEV2, models_v2.HasTenant):
+class PtgServiceChainInstanceMapping(model_base.BASEV2, model_base.HasProject):
     """Policy Target Group to ServiceChainInstance mapping DB."""
 
     __tablename__ = 'gpm_ptgs_servicechain_mapping'
