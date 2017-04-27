@@ -154,11 +154,12 @@ class ApicExtensionDriver(api_plus.ExtensionDriver,
             session = plugin_context.session
             # check if there is another address-scope mapping to same VRF
             # Case 1: Another address-scope with pre-existing VRF
-            scope = self.get_address_scope_by_vrf_dn(session, dn)
-            if scope:
-                raise n_exc.InvalidInput(
-                     error_message=('VRF %s is already in use by '
-                                    'address-scope %s' % (dn, scope)))
+            scopes = self.get_address_scopes_by_vrf_dn(session, dn)
+            for scope in scopes:
+                if scope.ip_version == data['ip_version']:
+                    raise n_exc.InvalidInput(
+                        error_message=('VRF %s is already in use by '
+                                       'address-scope %s' % (dn, scope)))
             # Case 2: Another address-scope with orchestrated VRF
             #
             # REVISIT: We don't filter by the project ID because the
@@ -170,7 +171,7 @@ class ApicExtensionDriver(api_plus.ExtensionDriver,
                 scope = (session.query(address_scope_db.AddressScope)
                          .filter_by(id=scope_id)
                          .first())
-                if scope:
+                if scope and scope.ip_version == data['ip_version']:
                     raise n_exc.InvalidInput(
                         error_message=('VRF %s is already in use by '
                                        'address-scope %s' % (dn, scope)))

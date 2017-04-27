@@ -2790,22 +2790,84 @@ class TestExtensionAttributes(ApicAimTestCase):
         extn = extn_db.ExtensionDbMixin()
         aim_ctx = aim_context.AimContext(db_session=session)
 
-        # create with APIC DN
+        # Create VRF.
         self.aim_mgr.create(
             aim_ctx, aim_resource.Tenant(name=self.t1_aname, monitored=True))
         vrf = aim_resource.VRF(tenant_name=self.t1_aname, name='ctx1',
                                monitored=True)
         self.aim_mgr.create(aim_ctx, vrf)
-        scope = self._make_address_scope_for_vrf(vrf.dn)['address_scope']
+
+        # Create v4 scope with APIC DN.
+        scope4 = self._make_address_scope_for_vrf(vrf.dn)['address_scope']
         self.assertEqual({'VRF': vrf.dn},
-                         extn.get_address_scope_extn_db(session, scope['id']))
+                         extn.get_address_scope_extn_db(session, scope4['id']))
+        self._check_dn(scope4, vrf, 'VRF')
+
+        scope = self._show('address-scopes', scope4['id'])['address_scope']
         self._check_dn(scope, vrf, 'VRF')
 
-        scope = self._show('address-scopes', scope['id'])['address_scope']
-        self._check_dn(scope, vrf, 'VRF')
+        # Create (isomorphic) v6 scope with same APIC DN.
+        scope6 = self._make_address_scope_for_vrf(
+            vrf.dn, n_constants.IP_VERSION_6)['address_scope']
+        self.assertEqual({'VRF': vrf.dn},
+                         extn.get_address_scope_extn_db(session, scope6['id']))
+        self._check_dn(scope6, vrf, 'VRF')
 
-        self._delete('address-scopes', scope['id'])
-        self.assertFalse(extn.get_address_scope_extn_db(session, scope['id']))
+        scope = self._show('address-scopes', scope6['id'])['address_scope']
+        self._check_dn(scope6, vrf, 'VRF')
+
+        # Delete scopes.
+        self._delete('address-scopes', scope4['id'])
+        self.assertFalse(extn.get_address_scope_extn_db(session, scope4['id']))
+
+        self._delete('address-scopes', scope6['id'])
+        self.assertFalse(extn.get_address_scope_extn_db(session, scope6['id']))
+
+        vrf = self.aim_mgr.get(aim_ctx, vrf)
+        self.assertIsNotNone(vrf)
+
+    def test_isomorphic_address_scopes_lifecycle(self):
+        # Create initial v4 scope.
+        scope4 = self._make_address_scope(
+            self.fmt, 4, name='as')['address_scope']
+        dn = scope4['apic:distinguished_names']['VRF']
+
+        # Create isomorphic v6 scope, using v4 scope's pre-existing
+        # DN.
+        scope6 = self._make_address_scope_for_vrf(
+            dn, n_constants.IP_VERSION_6)['address_scope']
+        self.assertEqual(dn, scope6['apic:distinguished_names']['VRF'])
+
+        # Delete v4 scope.
+        self._delete('address-scopes', scope4['id'])
+        vrf = self._find_by_dn(dn, aim_resource.VRF)
+        self.assertIsNotNone(vrf)
+
+        # Delete v6 scope.
+        self._delete('address-scopes', scope6['id'])
+        vrf = self._find_by_dn(dn, aim_resource.VRF)
+        self.assertIsNone(vrf)
+
+        # Create another initial v4 scope.
+        scope4 = self._make_address_scope(
+            self.fmt, 4, name='as')['address_scope']
+        dn = scope4['apic:distinguished_names']['VRF']
+
+        # Create isomorphic v6 scope, using v4 scope's pre-existing
+        # DN.
+        scope6 = self._make_address_scope_for_vrf(
+            dn, n_constants.IP_VERSION_6)['address_scope']
+        self.assertEqual(dn, scope6['apic:distinguished_names']['VRF'])
+
+        # Delete v6 scope.
+        self._delete('address-scopes', scope6['id'])
+        vrf = self._find_by_dn(dn, aim_resource.VRF)
+        self.assertIsNotNone(vrf)
+
+        # Delete v4 scope.
+        self._delete('address-scopes', scope4['id'])
+        vrf = self._find_by_dn(dn, aim_resource.VRF)
+        self.assertIsNone(vrf)
 
     def test_address_scope_fail(self):
         # APIC DN not specified
