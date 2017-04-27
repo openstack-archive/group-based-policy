@@ -11,7 +11,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from neutron.db import models_v2
 from neutron_lib.db import model_base
 import sqlalchemy as sa
 from sqlalchemy.ext.declarative import declarative_base
@@ -38,7 +37,7 @@ class HasStatusDescription(HasStatus):
 BASE = declarative_base(cls=model_base.NeutronBaseV2)
 
 
-class PortInfo(BASE, models_v2.HasId, models_v2.HasTenant):
+class PortInfo(BASE, model_base.HasId, model_base.HasProject):
     """Represents the Port Information"""
     __tablename__ = 'nfp_port_infos'
 
@@ -57,7 +56,7 @@ class PortInfo(BASE, models_v2.HasId, models_v2.HasTenant):
                           nullable=True)
 
 
-class NetworkInfo(BASE, models_v2.HasId, models_v2.HasTenant):
+class NetworkInfo(BASE, model_base.HasId, model_base.HasProject):
     """Represents the Network Service Instance"""
     __tablename__ = 'nfp_network_infos'
 
@@ -80,7 +79,7 @@ class NSIPortAssociation(BASE):
                              primary_key=True)
 
 
-class NetworkFunctionInstance(BASE, models_v2.HasId, models_v2.HasTenant,
+class NetworkFunctionInstance(BASE, model_base.HasId, model_base.HasProject,
                               HasStatusDescription):
     """Represents the Network Function Instance"""
     __tablename__ = 'nfp_network_function_instances'
@@ -101,7 +100,7 @@ class NetworkFunctionInstance(BASE, models_v2.HasId, models_v2.HasTenant,
         cascade='all, delete-orphan')
 
 
-class NetworkFunction(BASE, models_v2.HasId, models_v2.HasTenant,
+class NetworkFunction(BASE, model_base.HasId, model_base.HasProject,
                       HasStatusDescription):
     """Represents the Network Function object"""
     __tablename__ = 'nfp_network_functions'
@@ -118,7 +117,7 @@ class NetworkFunction(BASE, models_v2.HasId, models_v2.HasTenant,
         backref='network_function')
 
 
-class NetworkFunctionDevice(BASE, models_v2.HasId, models_v2.HasTenant,
+class NetworkFunctionDevice(BASE, model_base.HasId, model_base.HasProject,
                             HasStatusDescription):
     """Represents the Network Function Device"""
     __tablename__ = 'nfp_network_function_devices'
@@ -146,7 +145,7 @@ class NetworkFunctionDevice(BASE, models_v2.HasId, models_v2.HasTenant,
     gateway_port = sa.Column(sa.String(36), nullable=True)
 
 
-class ClusterInfo(BASE, models_v2.HasId, models_v2.HasTenant):
+class ClusterInfo(BASE, model_base.HasId, model_base.HasProject):
     """
     This table contains info about the ports participating in
     cluster and optional.
@@ -159,7 +158,7 @@ class ClusterInfo(BASE, models_v2.HasId, models_v2.HasTenant):
     cluster_name = sa.Column(sa.String(36), nullable=True)
 
 
-class ServiceGatewayDetails(BASE, models_v2.HasId):
+class ServiceGatewayDetails(BASE, model_base.HasId):
     __tablename__ = 'nfp_service_gateway_info'
     network_function_id = sa.Column(sa.String(36), sa.ForeignKey(
         'nfp_network_functions.id', ondelete='CASCADE'), nullable=False,
