@@ -558,7 +558,7 @@ class TestAimMapping(ApicAimTestCase):
         self._vrf_should_not_exist(aname)
 
     def _check_router(self, router, expected_gw_ips, unexpected_gw_ips,
-                      scope=None, unscoped_project=None):
+                      scopes=None, unscoped_project=None):
         aname = self.name_mapper.router(None, router['id'])
 
         aim_contract = self._get_contract(aname, 'common')
@@ -581,36 +581,26 @@ class TestAimMapping(ApicAimTestCase):
 
         self._check_any_filter()
 
+        dist_names = router.get('apic:distinguished_names')
+        vrf_dns = {k: v for (k, v) in six.iteritems(dist_names)
+                   if k.endswith('-VRF')}
+
         if expected_gw_ips:
-            if scope:
-                vrf_aname = self.name_mapper.address_scope(
-                    None, scope['id'])
-                vrf_dname = scope['name']
-                vrf_project = scope['tenant_id']
-            else:
-                vrf_aname = 'DefaultVRF'
-                vrf_dname = 'DefaultRoutedVRF'
-                vrf_project = unscoped_project or router['tenant_id']
-            vrf_tenant_aname = self.name_mapper.project(None, vrf_project)
-            vrf_tenant_dname = TEST_TENANT_NAMES[vrf_project]
+            if unscoped_project:
+                self._check_router_vrf(
+                    'DefaultVRF', 'DefaultRoutedVRF', unscoped_project,
+                    vrf_dns, 'no_scope-VRF')
 
-            aim_tenant = self._get_tenant(vrf_tenant_aname)
-            self.assertEqual(vrf_tenant_aname, aim_tenant.name)
-            self.assertEqual(vrf_tenant_dname, aim_tenant.display_name)
+            for scope in scopes or []:
+                self._check_router_vrf(
+                    self.name_mapper.address_scope(None, scope['id']),
+                    scope['name'], scope['tenant_id'],
+                    vrf_dns, 'as_%s-VRF' % scope['id'])
 
-            aim_vrf = self._get_vrf(vrf_aname,
-                                    vrf_tenant_aname)
-            self.assertEqual(vrf_tenant_aname, aim_vrf.tenant_name)
-            self.assertEqual(vrf_aname, aim_vrf.name)
-            self.assertEqual(vrf_dname, aim_vrf.display_name)
-            self.assertEqual('enforced', aim_vrf.policy_enforcement_pref)
-            self._check_dn(router, aim_vrf, 'VRF')
-        else:
-            self._check_no_dn(router, 'VRF')
+        self.assertFalse(vrf_dns)
 
         # The AIM Subnets are validated in _check_subnet, so just
         # check that their DNs are present and valid.
-        dist_names = router.get('apic:distinguished_names')
         for gw_ip in expected_gw_ips:
             self.assertIn(gw_ip, dist_names)
             aim_subnet = self._find_by_dn(dist_names[gw_ip],
@@ -618,6 +608,23 @@ class TestAimMapping(ApicAimTestCase):
             self.assertIsNotNone(aim_subnet)
         for gw_ip in unexpected_gw_ips:
             self.assertNotIn(gw_ip, dist_names)
+
+    def _check_router_vrf(self, aname, dname, project_id, vrf_dns, key):
+        tenant_aname = self.name_mapper.project(None, project_id)
+        tenant_dname = TEST_TENANT_NAMES[project_id]
+
+        aim_tenant = self._get_tenant(tenant_aname)
+        self.assertEqual(tenant_aname, aim_tenant.name)
+        self.assertEqual(tenant_dname, aim_tenant.display_name)
+
+        aim_vrf = self._get_vrf(aname, tenant_aname)
+        self.assertEqual(tenant_aname, aim_vrf.tenant_name)
+        self.assertEqual(aname, aim_vrf.name)
+        self.assertEqual(dname, aim_vrf.display_name)
+        self.assertEqual('enforced', aim_vrf.policy_enforcement_pref)
+
+        dn = vrf_dns.pop(key, None)
+        self.assertEqual(aim_vrf.dn, dn)
 
     def _check_router_deleted(self, router):
         aname = self.name_mapper.router(None, router['id'])
@@ -792,7 +799,8 @@ class TestAimMapping(ApicAimTestCase):
 
         # Check router.
         router = self._show('routers', router_id)['router']
-        self._check_router(router, [gw1_ip], [])
+        self._check_router(router, [gw1_ip], [],
+                           unscoped_project=self._tenant_id)
 
         # Check network.
         net = self._show('networks', net_id)['network']
@@ -814,7 +822,8 @@ class TestAimMapping(ApicAimTestCase):
         # Test router update.
         data = {'router': {'name': 'newnameforrouter'}}
         router = self._update('routers', router_id, data)['router']
-        self._check_router(router, [gw1_ip], [])
+        self._check_router(router, [gw1_ip], [],
+                           unscoped_project=self._tenant_id)
         self._check_subnet(subnet, net, [(gw1_ip, router)], [])
 
         # Add subnet2 to router by port.
@@ -831,7 +840,8 @@ class TestAimMapping(ApicAimTestCase):
 
         # Check router.
         router = self._show('routers', router_id)['router']
-        self._check_router(router, [gw1_ip, gw2_ip], [])
+        self._check_router(router, [gw1_ip, gw2_ip], [],
+                           unscoped_project=self._tenant_id)
 
         # Check network.
         net = self._show('networks', net_id)['network']
@@ -857,7 +867,8 @@ class TestAimMapping(ApicAimTestCase):
 
         # Check router.
         router = self._show('routers', router_id)['router']
-        self._check_router(router, [gw2_ip], [gw1_ip])
+        self._check_router(router, [gw2_ip], [gw1_ip],
+                           unscoped_project=self._tenant_id)
 
         # Check network.
         net = self._show('networks', net_id)['network']
@@ -923,7 +934,7 @@ class TestAimMapping(ApicAimTestCase):
         router = self._make_router(
             self.fmt, 'test-tenant', 'router1')['router']
         router_id = router['id']
-        self._check_router(router, [], [], scope)
+        self._check_router(router, [], [], scopes=[scope])
 
         # Create network.
         net_resp = self._make_network(self.fmt, 'net1', True)
@@ -975,7 +986,7 @@ class TestAimMapping(ApicAimTestCase):
 
         # Check router.
         router = self._show('routers', router_id)['router']
-        self._check_router(router, [gw1_ip], [], scope)
+        self._check_router(router, [gw1_ip], [], scopes=[scope])
 
         # Check network.
         net = self._show('networks', net_id)['network']
@@ -997,7 +1008,7 @@ class TestAimMapping(ApicAimTestCase):
         # Test router update.
         data = {'router': {'name': 'newnameforrouter'}}
         router = self._update('routers', router_id, data)['router']
-        self._check_router(router, [gw1_ip], [], scope)
+        self._check_router(router, [gw1_ip], [], scopes=[scope])
         self._check_subnet(subnet, net, [(gw1_ip, router)], [], scope)
 
         # Add subnet2 to router by port.
@@ -1014,7 +1025,7 @@ class TestAimMapping(ApicAimTestCase):
 
         # Check router.
         router = self._show('routers', router_id)['router']
-        self._check_router(router, [gw1_ip, gw2_ip], [], scope)
+        self._check_router(router, [gw1_ip, gw2_ip], [], scopes=[scope])
 
         # Check network.
         net = self._show('networks', net_id)['network']
@@ -1040,7 +1051,7 @@ class TestAimMapping(ApicAimTestCase):
 
         # Check router.
         router = self._show('routers', router_id)['router']
-        self._check_router(router, [gw2_ip], [gw1_ip], scope)
+        self._check_router(router, [gw2_ip], [gw1_ip], scopes=[scope])
 
         # Check network.
         net = self._show('networks', net_id)['network']
@@ -1065,7 +1076,7 @@ class TestAimMapping(ApicAimTestCase):
 
         # Check router.
         router = self._show('routers', router_id)['router']
-        self._check_router(router, [], [gw1_ip, gw2_ip], scope)
+        self._check_router(router, [], [gw1_ip, gw2_ip], scopes=[scope])
 
         # Check network.
         net = self._show('networks', net_id)['network']
@@ -1109,7 +1120,317 @@ class TestAimMapping(ApicAimTestCase):
             mock.call(mock.ANY, tenant)]
         self._check_call_list(exp_calls, self.driver.aim.delete.call_args_list)
 
-    # TODO(rkukura): Test IPv6 and dual stack router interfaces.
+    def test_multi_scope_routing(self):
+        # REVISIT: Test with isomorphic scopes, or both isomorphic and
+        # non-isomorphic? Test with shared scopes?
+
+        # Create v4 scope and pool.
+        scope4a = self._make_address_scope(
+            self.fmt, 4, name='as4a')['address_scope']
+        scope4a_id = scope4a['id']
+        self._check_address_scope(scope4a)
+        pool4a = self._make_subnetpool(self.fmt, ['10.1.0.0/16'], name='sp4a',
+                                       tenant_id=self._tenant_id,
+                                       address_scope_id=scope4a_id,
+                                       default_prefixlen=24)['subnetpool']
+        pool4a_id = pool4a['id']
+
+        # Create another v4 scope and pool.
+        scope4b = self._make_address_scope(
+            self.fmt, 4, name='as4b')['address_scope']
+        scope4b_id = scope4b['id']
+        self._check_address_scope(scope4b)
+        pool4b = self._make_subnetpool(self.fmt, ['10.2.0.0/16'], name='sp4b',
+                                       tenant_id=self._tenant_id,
+                                       address_scope_id=scope4b_id,
+                                       default_prefixlen=24)['subnetpool']
+        pool4b_id = pool4b['id']
+
+        # Create a v6 scope and pool.
+        scope6 = self._make_address_scope(
+            self.fmt, 6, name='as6')['address_scope']
+        scope6_id = scope6['id']
+        self._check_address_scope(scope6)
+        pool6 = self._make_subnetpool(self.fmt, ['2001:db8:1::0/56'],
+                                      name='sp6', tenant_id=self._tenant_id,
+                                      address_scope_id=scope6_id)['subnetpool']
+        pool6_id = pool6['id']
+
+        # Create network with subnets using first v4 scope and v6 scope.
+        net_resp = self._make_network(self.fmt, 'net1', True)
+        net1 = net_resp['network']
+        net1_id = net1['id']
+        self._check_network(net1)
+        gw4a1_ip = '10.1.1.1'
+        subnet4a1 = self._make_subnet(
+            self.fmt, net_resp, gw4a1_ip, '10.1.1.0/24',
+            subnetpool_id=pool4a_id)['subnet']
+        subnet4a1_id = subnet4a1['id']
+        self._check_subnet(subnet4a1, net1, [], [gw4a1_ip])
+        gw61_ip = '2001:db8:1:1::1'
+        subnet61 = self._make_subnet(
+            self.fmt, net_resp, gw61_ip, '2001:db8:1:1::0/64',
+            ip_version=6, subnetpool_id=pool6_id)['subnet']
+        subnet61_id = subnet61['id']
+        self._check_subnet(subnet61, net1, [], [gw61_ip])
+
+        # Create network with subnets using second v4 scope and v6 scope.
+        net_resp = self._make_network(self.fmt, 'net2', True)
+        net2 = net_resp['network']
+        net2_id = net2['id']
+        self._check_network(net2)
+        gw4b2_ip = '10.2.1.1'
+        subnet4b2 = self._make_subnet(
+            self.fmt, net_resp, gw4b2_ip, '10.2.1.0/24',
+            subnetpool_id=pool4b_id)['subnet']
+        subnet4b2_id = subnet4b2['id']
+        self._check_subnet(subnet4b2, net2, [], [gw4b2_ip])
+        gw62_ip = '2001:db8:1:2::1'
+        subnet62 = self._make_subnet(
+            self.fmt, net_resp, gw62_ip, '2001:db8:1:2::0/64',
+            ip_version=6, subnetpool_id=pool6_id)['subnet']
+        subnet62_id = subnet62['id']
+        self._check_subnet(subnet62, net2, [], [gw62_ip])
+
+        # REVISIT: Create networks with unscoped subnets.
+
+        # Create router.
+        router = self._make_router(
+            self.fmt, self._tenant_id, 'router1')['router']
+        router_id = router['id']
+        self._check_router(router, [], [gw4a1_ip, gw4b2_ip, gw61_ip, gw62_ip])
+
+        # Check networks.
+        net = self._show('networks', net1_id)['network']
+        self._check_network(net, [], scope4a)
+        net = self._show('networks', net2_id)['network']
+        self._check_network(net, [], scope4b)
+
+        # Check subnets.
+        subnet = self._show('subnets', subnet4a1_id)['subnet']
+        self._check_subnet(subnet, net1, [], [gw4a1_ip])
+        subnet = self._show('subnets', subnet61_id)['subnet']
+        self._check_subnet(subnet, net1, [], [gw61_ip])
+        subnet = self._show('subnets', subnet4b2_id)['subnet']
+        self._check_subnet(subnet, net2, [], [gw4b2_ip])
+        subnet = self._show('subnets', subnet62_id)['subnet']
+        self._check_subnet(subnet, net2, [], [gw62_ip])
+
+        # Add first v4 subnet to router.
+        info = self.l3_plugin.add_router_interface(
+            n_context.get_admin_context(), router_id,
+            {'subnet_id': subnet4a1_id})
+        self.assertIn(subnet4a1_id, info['subnet_ids'])
+
+        # Check router.
+        router = self._show('routers', router_id)['router']
+        self._check_router(router, [gw4a1_ip], [gw4b2_ip, gw61_ip, gw62_ip],
+                           scopes=[scope4a])
+
+        # Check networks.
+        net = self._show('networks', net1_id)['network']
+        self._check_network(net, [router], scope4a)
+        net = self._show('networks', net2_id)['network']
+        self._check_network(net, [], scope4b)
+
+        # Check subnets.
+        subnet = self._show('subnets', subnet4a1_id)['subnet']
+        self._check_subnet(subnet, net1, [(gw4a1_ip, router)], [])
+        subnet = self._show('subnets', subnet61_id)['subnet']
+        self._check_subnet(subnet, net1, [], [gw61_ip])
+        subnet = self._show('subnets', subnet4b2_id)['subnet']
+        self._check_subnet(subnet, net2, [], [gw4b2_ip])
+        subnet = self._show('subnets', subnet62_id)['subnet']
+        self._check_subnet(subnet, net2, [], [gw62_ip])
+
+        # Add first v6 subnet to router.
+        info = self.l3_plugin.add_router_interface(
+            n_context.get_admin_context(), router_id,
+            {'subnet_id': subnet61_id})
+        self.assertIn(subnet61_id, info['subnet_ids'])
+
+        # Check router.
+        router = self._show('routers', router_id)['router']
+        self._check_router(router, [gw4a1_ip, gw61_ip], [gw4b2_ip, gw62_ip],
+                           scopes=[scope4a, scope6])
+
+        # Check networks.
+        net = self._show('networks', net1_id)['network']
+        self._check_network(net, [router], scope4a)
+        net = self._show('networks', net2_id)['network']
+        self._check_network(net, [], scope4b)
+
+        # Check subnets.
+        subnet = self._show('subnets', subnet4a1_id)['subnet']
+        self._check_subnet(subnet, net1, [(gw4a1_ip, router)], [])
+        subnet = self._show('subnets', subnet61_id)['subnet']
+        self._check_subnet(subnet, net1, [(gw61_ip, router)], [])
+        subnet = self._show('subnets', subnet4b2_id)['subnet']
+        self._check_subnet(subnet, net2, [], [gw4b2_ip])
+        subnet = self._show('subnets', subnet62_id)['subnet']
+        self._check_subnet(subnet, net2, [], [gw62_ip])
+
+        # Add second v6 subnet to router.
+        info = self.l3_plugin.add_router_interface(
+            n_context.get_admin_context(), router_id,
+            {'subnet_id': subnet62_id})
+        self.assertIn(subnet62_id, info['subnet_ids'])
+
+        # Check router.
+        router = self._show('routers', router_id)['router']
+        self._check_router(router, [gw4a1_ip, gw61_ip, gw62_ip], [gw4b2_ip],
+                           scopes=[scope4a, scope6])
+
+        # Check networks.
+        net = self._show('networks', net1_id)['network']
+        self._check_network(net, [router], scope4a)
+        net = self._show('networks', net2_id)['network']
+        self._check_network(net, [router], scope6)
+
+        # Check subnets.
+        subnet = self._show('subnets', subnet4a1_id)['subnet']
+        self._check_subnet(subnet, net1, [(gw4a1_ip, router)], [])
+        subnet = self._show('subnets', subnet61_id)['subnet']
+        self._check_subnet(subnet, net1, [(gw61_ip, router)], [])
+        subnet = self._show('subnets', subnet4b2_id)['subnet']
+        self._check_subnet(subnet, net2, [], [gw4b2_ip])
+        subnet = self._show('subnets', subnet62_id)['subnet']
+        self._check_subnet(subnet, net2, [(gw62_ip, router)], [])
+
+        # Add second v4 subnet to router.
+        info = self.l3_plugin.add_router_interface(
+            n_context.get_admin_context(), router_id,
+            {'subnet_id': subnet4b2_id})
+        self.assertIn(subnet4b2_id, info['subnet_ids'])
+
+        # Check router.
+        router = self._show('routers', router_id)['router']
+        self._check_router(router, [gw4a1_ip, gw4b2_ip, gw61_ip, gw62_ip], [],
+                           scopes=[scope4a, scope4b, scope6])
+
+        # Check networks.
+        net = self._show('networks', net1_id)['network']
+        self._check_network(net, [router], scope4a)
+        net = self._show('networks', net2_id)['network']
+        self._check_network(net, [router], scope6)
+
+        # Check subnets.
+        subnet = self._show('subnets', subnet4a1_id)['subnet']
+        self._check_subnet(subnet, net1, [(gw4a1_ip, router)], [])
+        subnet = self._show('subnets', subnet61_id)['subnet']
+        self._check_subnet(subnet, net1, [(gw61_ip, router)], [])
+        subnet = self._show('subnets', subnet4b2_id)['subnet']
+        self._check_subnet(subnet, net2, [(gw4b2_ip, router)], [])
+        subnet = self._show('subnets', subnet62_id)['subnet']
+        self._check_subnet(subnet, net2, [(gw62_ip, router)], [])
+
+        # Remove first v4 subnet from router.
+        info = self.l3_plugin.remove_router_interface(
+            n_context.get_admin_context(), router_id,
+            {'subnet_id': subnet4a1_id})
+        self.assertIn(subnet4a1_id, info['subnet_ids'])
+
+        # Check router.
+        router = self._show('routers', router_id)['router']
+        self._check_router(router, [gw4b2_ip, gw61_ip, gw62_ip], [gw4a1_ip],
+                           scopes=[scope4b, scope6])
+
+        # Check networks.
+        net = self._show('networks', net1_id)['network']
+        self._check_network(net, [router], scope4a)
+        net = self._show('networks', net2_id)['network']
+        self._check_network(net, [router], scope6)
+
+        # Check subnets.
+        subnet = self._show('subnets', subnet4a1_id)['subnet']
+        self._check_subnet(subnet, net1, [], [(gw4a1_ip)])
+        subnet = self._show('subnets', subnet61_id)['subnet']
+        self._check_subnet(subnet, net1, [(gw61_ip, router)], [])
+        subnet = self._show('subnets', subnet4b2_id)['subnet']
+        self._check_subnet(subnet, net2, [(gw4b2_ip, router)], [])
+        subnet = self._show('subnets', subnet62_id)['subnet']
+        self._check_subnet(subnet, net2, [(gw62_ip, router)], [])
+
+        # Remove first v6 subnet from router.
+        info = self.l3_plugin.remove_router_interface(
+            n_context.get_admin_context(), router_id,
+            {'subnet_id': subnet61_id})
+        self.assertIn(subnet61_id, info['subnet_ids'])
+
+        # Check router.
+        router = self._show('routers', router_id)['router']
+        self._check_router(router, [gw4b2_ip, gw62_ip], [gw4a1_ip, gw61_ip],
+                           scopes=[scope4b, scope6])
+
+        # Check networks.
+        net = self._show('networks', net1_id)['network']
+        self._check_network(net, [], scope4a)
+        net = self._show('networks', net2_id)['network']
+        self._check_network(net, [router], scope6)
+
+        # Check subnets.
+        subnet = self._show('subnets', subnet4a1_id)['subnet']
+        self._check_subnet(subnet, net1, [], [gw4a1_ip])
+        subnet = self._show('subnets', subnet61_id)['subnet']
+        self._check_subnet(subnet, net1, [], [gw61_ip])
+        subnet = self._show('subnets', subnet4b2_id)['subnet']
+        self._check_subnet(subnet, net2, [(gw4b2_ip, router)], [])
+        subnet = self._show('subnets', subnet62_id)['subnet']
+        self._check_subnet(subnet, net2, [(gw62_ip, router)], [])
+
+        # Remove second v4 subnet from router.
+        info = self.l3_plugin.remove_router_interface(
+            n_context.get_admin_context(), router_id,
+            {'subnet_id': subnet4b2_id})
+        self.assertIn(subnet4b2_id, info['subnet_ids'])
+
+        # Check router.
+        router = self._show('routers', router_id)['router']
+        self._check_router(router, [gw62_ip], [gw4a1_ip, gw4b2_ip, gw61_ip],
+                           scopes=[scope6])
+
+        # Check networks.
+        net = self._show('networks', net1_id)['network']
+        self._check_network(net, [], scope4a)
+        net = self._show('networks', net2_id)['network']
+        self._check_network(net, [router], scope6)
+
+        # Check subnets.
+        subnet = self._show('subnets', subnet4a1_id)['subnet']
+        self._check_subnet(subnet, net1, [], [gw4a1_ip])
+        subnet = self._show('subnets', subnet61_id)['subnet']
+        self._check_subnet(subnet, net1, [], [gw61_ip])
+        subnet = self._show('subnets', subnet4b2_id)['subnet']
+        self._check_subnet(subnet, net2, [], [gw4b2_ip])
+        subnet = self._show('subnets', subnet62_id)['subnet']
+        self._check_subnet(subnet, net2, [(gw62_ip, router)], [])
+
+        # Remove second v6 subnet from router.
+        info = self.l3_plugin.remove_router_interface(
+            n_context.get_admin_context(), router_id,
+            {'subnet_id': subnet62_id})
+        self.assertIn(subnet62_id, info['subnet_ids'])
+
+        # Check router.
+        router = self._show('routers', router_id)['router']
+        self._check_router(router, [], [gw4a1_ip, gw4b2_ip, gw61_ip, gw62_ip],
+                           scopes=[])
+
+        # Check networks.
+        net = self._show('networks', net1_id)['network']
+        self._check_network(net, [], scope4a)
+        net = self._show('networks', net2_id)['network']
+        self._check_network(net, [], scope4b)
+
+        # Check subnets.
+        subnet = self._show('subnets', subnet4a1_id)['subnet']
+        self._check_subnet(subnet, net1, [], [gw4a1_ip])
+        subnet = self._show('subnets', subnet61_id)['subnet']
+        self._check_subnet(subnet, net1, [], [gw61_ip])
+        subnet = self._show('subnets', subnet4b2_id)['subnet']
+        self._check_subnet(subnet, net2, [], [gw4b2_ip])
+        subnet = self._show('subnets', subnet62_id)['subnet']
+        self._check_subnet(subnet, net2, [], [gw62_ip])
 
     def test_shared_address_scope(self):
         # Create shared scope as tenant_1.
@@ -1130,7 +1451,7 @@ class TestAimMapping(ApicAimTestCase):
         router = self._make_router(
             self.fmt, 'tenant_2', 'router1')['router']
         router_id = router['id']
-        self._check_router(router, [], [], scope)
+        self._check_router(router, [], [], scopes=[scope])
 
         # Create network as tenant_2.
         net_resp = self._make_network(self.fmt, 'net1', True,
@@ -1155,7 +1476,7 @@ class TestAimMapping(ApicAimTestCase):
 
         # Check router.
         router = self._show('routers', router_id)['router']
-        self._check_router(router, [gw1_ip], [], scope)
+        self._check_router(router, [gw1_ip], [], scopes=[scope])
 
         # Check network.
         net = self._show('networks', net_id)['network']
@@ -1181,7 +1502,7 @@ class TestAimMapping(ApicAimTestCase):
 
         # Check router.
         router = self._show('routers', router_id)['router']
-        self._check_router(router, [gw1_ip, gw2_ip], [], scope)
+        self._check_router(router, [gw1_ip, gw2_ip], [], scopes=[scope])
 
         # Check network.
         net = self._show('networks', net_id)['network']
@@ -1203,7 +1524,7 @@ class TestAimMapping(ApicAimTestCase):
 
         # Check router.
         router = self._show('routers', router_id)['router']
-        self._check_router(router, [gw2_ip], [gw1_ip], scope)
+        self._check_router(router, [gw2_ip], [gw1_ip], scopes=[scope])
 
         # Check network.
         net = self._show('networks', net_id)['network']
@@ -2291,86 +2612,6 @@ class TestTopology(ApicAimTestCase):
             n_context.get_admin_context(), router2_id,
             {'subnet_id': subnet2_id})
 
-    def test_reject_routing_multiple_address_scopes(self):
-        # TODO(rkukura): Remove this test when multi-scope routing is
-        # supported.
-
-        # Create subnet1 with address_scope.
-        scope = self._make_address_scope(
-            self.fmt, 4, name='as1')['address_scope']
-        scope_id = scope['id']
-        pool = self._make_subnetpool(self.fmt, ['10.1.0.0/16'], name='sp1',
-                                     tenant_id=scope['tenant_id'],
-                                     address_scope_id=scope_id,
-                                     default_prefixlen=24)['subnetpool']
-        pool_id = pool['id']
-        net_resp = self._make_network(self.fmt, 'net1', True)
-        subnet = self._make_subnet(
-            self.fmt, net_resp, '10.1.0.1', '10.1.0.0/24',
-            subnetpool_id=pool_id)['subnet']
-        subnet1_id = subnet['id']
-
-        # Create non-overlapping subnet2 with different address_scope.
-        scope = self._make_address_scope(
-            self.fmt, 4, name='as2')['address_scope']
-        scope_id = scope['id']
-        pool = self._make_subnetpool(self.fmt, ['10.2.0.0/16'], name='sp2',
-                                     tenant_id=scope['tenant_id'],
-                                     address_scope_id=scope_id,
-                                     default_prefixlen=24)['subnetpool']
-        pool_id = pool['id']
-        net_resp = self._make_network(self.fmt, 'net2', True)
-        subnet = self._make_subnet(
-            self.fmt, net_resp, '10.2.0.1', '10.2.0.0/24',
-            subnetpool_id=pool_id)['subnet']
-        subnet2_id = subnet['id']
-
-        # Create non-overlapping subnet3 with no address_scope.
-        net_resp = self._make_network(self.fmt, 'net3', True)
-        subnet = self._make_subnet(
-            self.fmt, net_resp, '10.3.0.1', '10.3.0.0/24')['subnet']
-        subnet3_id = subnet['id']
-
-        # Create router.
-        router_id = self._make_router(
-            self.fmt, 'test-tenant', 'router1')['router']['id']
-
-        # Add first scoped subnet to router.
-        self.l3_plugin.add_router_interface(
-            n_context.get_admin_context(), router_id,
-            {'subnet_id': subnet1_id})
-
-        # Verify adding second scoped subnet to router fails.
-        self.assertRaises(
-            exceptions.MultiScopeRoutingNotSupported,
-            self.l3_plugin.add_router_interface,
-            n_context.get_admin_context(), router_id,
-            {'subnet_id': subnet2_id})
-
-        # Verify adding unscoped subnet to router fails.
-        self.assertRaises(
-            exceptions.MultiScopeRoutingNotSupported,
-            self.l3_plugin.add_router_interface,
-            n_context.get_admin_context(), router_id,
-            {'subnet_id': subnet3_id})
-
-        # Remove first scoped subnet from router.
-        self.l3_plugin.remove_router_interface(
-            n_context.get_admin_context(), router_id,
-            {'subnet_id': subnet1_id})
-
-        # Add unscoped subnet to router.
-        self.l3_plugin.add_router_interface(
-            n_context.get_admin_context(), router_id,
-            {'subnet_id': subnet3_id})
-
-        # Verify adding scoped subnet to router fails.
-        self.assertRaises(
-            exceptions.MultiScopeRoutingNotSupported,
-            self.l3_plugin.add_router_interface,
-            n_context.get_admin_context(), router_id,
-            {'subnet_id': subnet1_id})
-
     def test_reject_routing_shared_networks_from_different_projects(self):
         # Create router as tenant_1.
         router_id = self._make_router(
@@ -2473,6 +2714,8 @@ class TestTopology(ApicAimTestCase):
                               webob.exc.HTTPBadRequest.code)
         self.assertEqual('ScopeUpdateNotSupported',
                          result['NeutronError']['type'])
+
+    # REVISIT: Add test_reject_v4_scope_with_different_v6_scopes.
 
     def test_unscoped_subnetpool_subnets_with_router(self):
         # Test that subnets from a subnetpool that has no address-scope

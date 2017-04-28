@@ -27,9 +27,9 @@ from aim import utils as aim_utils
 from neutron.agent import securitygroups_rpc
 from neutron.common import rpc as n_rpc
 from neutron.common import topics as n_topics
-from neutron.db import address_scope_db
 from neutron.db import api as db_api
 from neutron.db import l3_db
+from neutron.db.models import address_scope as address_scope_db
 from neutron.db.models import allowed_address_pair as n_addr_pair_db
 from neutron.db import models_v2
 from neutron.db import rbac_db_models
@@ -744,48 +744,51 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
         dist_names[a_l3.CONTRACT_SUBJECT] = subject.dn
         sync_state = self._merge_status(aim_ctx, sync_state, subject)
 
-        # REVISIT(rkukura): Consider moving the SubnetPool query below
-        # into this loop, although that might be less efficient when
-        # many subnets are from the same pool.
-        active = False
-        for intf in (session.query(models_v2.IPAllocation).
+        # REVISIT: Do we really need to include Subnet DNs in
+        # apic:distinguished_names and apic:synchronization_state?
+        # Eliminating these would reduce or potentially eliminate (if
+        # we persist the router->VRF mapping) the querying needed
+        # here.
+        unscoped_vrf = None
+        scope_ids = set()
+        for intf in (session.query(models_v2.IPAllocation.ip_address,
+                                   models_v2.Subnet,
+                                   models_v2.Network).
+                     join(models_v2.Subnet, models_v2.Subnet.id ==
+                          models_v2.IPAllocation.subnet_id).
+                     join(models_v2.Network).
                      join(models_v2.Port).
                      join(l3_db.RouterPort).
                      filter(l3_db.RouterPort.router_id == router_db.id,
                             l3_db.RouterPort.port_type ==
                             n_constants.DEVICE_OWNER_ROUTER_INTF)):
+            ip_address, subnet_db, network_db = intf
 
-            active = True
-
-            # TODO(rkukura): Avoid separate queries for these.
-            subnet_db = (session.query(models_v2.Subnet).
-                         filter_by(id=intf.subnet_id).
-                         one())
-            network_db = (session.query(models_v2.Network).
-                          filter_by(id=subnet_db.network_id).
-                          one())
-
-            # TODO(rkukura): This can be very expensive, and there can
-            # be multiple subnets per network, so cache the BDs for
-            # networks that have been processed. Also, without
-            # multi-scope routing, there should be exactly one VRF per
-            # router. With multi-scope routing, we should be able to
-            # determine the set of VRFs and the subnets accociated
-            # with each.
             vrf = self._get_routed_vrf_for_network(session, network_db)
-
             bd = self._map_network(session, network_db, vrf, True)
-            sn = self._map_subnet(subnet_db, intf.ip_address, bd)
-
-            dist_names[intf.ip_address] = sn.dn
+            sn = self._map_subnet(subnet_db, ip_address, bd)
+            dist_names[ip_address] = sn.dn
             sync_state = self._merge_status(aim_ctx, sync_state, sn)
 
-        if active:
-            # TODO(rkukura): With multi-scope routing, there will be
-            # multiple VRF DNs, so include the scope_id or 'no-scope'
-            # in the key.
-            dist_names[a_l3.VRF] = vrf.dn
+            scope_id = (subnet_db.subnetpool and
+                        subnet_db.subnetpool.address_scope_id)
+            if scope_id:
+                scope_ids.add(scope_id)
+            else:
+                if unscoped_vrf and unscoped_vrf.identity != vrf.identity:
+                    LOG.error("Inconsistent unscoped VRFs %s and %s for "
+                              "router %s.", vrf, unscoped_vrf, router_db)
+                unscoped_vrf = vrf
+
+        for scope_id in scope_ids:
+            scope_db = self._scope_by_id(session, scope_id)
+            vrf = self._map_address_scope(session, scope_db)
+            dist_names[a_l3.SCOPED_VRF % scope_id] = vrf.dn
             sync_state = self._merge_status(aim_ctx, sync_state, vrf)
+
+        if unscoped_vrf:
+            dist_names[a_l3.UNSCOPED_VRF] = unscoped_vrf.dn
+            sync_state = self._merge_status(aim_ctx, sync_state, unscoped_vrf)
 
         result[cisco_apic.DIST_NAMES] = dist_names
         result[cisco_apic.SYNC_STATE] = sync_state
@@ -803,19 +806,15 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
 
         # Find the address_scope(s) for the new interface.
         #
+        # REVISIT: If dual-stack interfaces allowed, process each
+        # stack's scope separately, or at least raise an exception.
         scope_id = self._get_address_scope_id_for_subnets(context, subnets)
 
         # Find number of existing interface ports on the router,
         # excluding the one we are adding.
+        #
+        # REVISIT: Just for this scope?
         router_intf_count = self._get_router_intf_count(session, router)
-
-        # TODO(rkukura): Support multi-scope routing. For now, we
-        # reject adding an interface that does not match the scope of
-        # any existing interfaces.
-        if (router_intf_count and
-            (scope_id !=
-             self._get_address_scope_id_for_router(session, router))):
-            raise exceptions.MultiScopeRoutingNotSupported()
 
         # Find up to two existing router interfaces for this
         # network. The interface currently being added is not
@@ -1771,7 +1770,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
     def _scope_by_id(self, session, scope_id):
         return (session.query(address_scope_db.AddressScope).
                 filter_by(id=scope_id).
-                first())
+                one_or_none())
 
     def _map_network(self, session, network, vrf, bd_only=False):
         tenant_aname = (vrf.tenant_name
