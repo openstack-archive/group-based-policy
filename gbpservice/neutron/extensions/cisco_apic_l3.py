@@ -26,7 +26,8 @@ EXTERNAL_CONSUMED_CONTRACTS = 'apic:external_consumed_contracts'
 
 CONTRACT = 'Contract'
 CONTRACT_SUBJECT = 'ContractSubject'
-VRF = 'VRF'
+UNSCOPED_VRF = 'no_scope-VRF'
+SCOPED_VRF = 'as_%s-VRF'
 
 EXT_GW_ATTRIBUTES = {
     EXTERNAL_PROVIDED_CONTRACTS: {
@@ -49,6 +50,17 @@ EXTENDED_ATTRIBUTES_2_0 = {
     l3.ROUTERS: dict(cisco_apic.APIC_ATTRIBUTES.items() +
                      EXT_GW_ATTRIBUTES.items())
 }
+
+# Pass this key with the value True in the interface_info parameter to
+# add_router_interface to override validation that normally disallows
+# topologies where the same network has multiple subnets connected to
+# multiple routers, which would result in unintended routing. This is
+# intended only for use in the aim_mapping GBP policy driver to get
+# from one valid topology to another within a transaction, and is not
+# supported for any other use. It may be removed in a future release
+# without any deprecation notice.
+OVERRIDE_NETWORK_ROUTING_TOPOLOGY_VALIDATION = (
+    'apic_aim_override_network_routing_topology_validation')
 
 
 class Cisco_apic_l3(extensions.ExtensionDescriptor):

@@ -29,6 +29,7 @@ from sqlalchemy import inspect
 from gbpservice._i18n import _LE
 from gbpservice._i18n import _LI
 from gbpservice.neutron import extensions as extensions_pkg
+from gbpservice.neutron.extensions import cisco_apic_l3 as l3_ext
 from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import (
     extension_db as extn_db)
 
@@ -149,8 +150,15 @@ class ApicL3Plugin(common_db_mixin.CommonDbMixin,
             # generally not concerned with mechanism driver postcommit
             # processing. Consider reimplementing the base
             # funtionality to be completely transaction safe.
+            #
+            # REVISIT: Remove override flag when no longer needed for
+            # GBP.
+            context.override_network_routing_topology_validation = (
+                interface_info.get(
+                    l3_ext.OVERRIDE_NETWORK_ROUTING_TOPOLOGY_VALIDATION))
             info = super(ApicL3Plugin, self).add_router_interface(
                 context, router_id, interface_info)
+            del context.override_network_routing_topology_validation
             return info
 
     def _add_interface_by_subnet(self, context, router, subnet_id, owner):

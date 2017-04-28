@@ -14,7 +14,7 @@
 #    under the License.
 
 from neutron.api import extensions
-from neutron.db import address_scope_db
+from neutron.db.models import address_scope as as_db
 from neutron import manager as n_manager
 from neutron_lib import exceptions as n_exc
 from oslo_log import log
@@ -170,7 +170,7 @@ class ApicExtensionDriver(api_plus.ExtensionDriver,
             scope_id = self._md.name_mapper.reverse_address_scope(
                 session, vrf.name, enforce=False)
             if scope_id:
-                scope = (session.query(address_scope_db.AddressScope)
+                scope = (session.query(as_db.AddressScope)
                          .filter_by(id=scope_id)
                          .first())
                 if scope and scope.ip_version == data['ip_version']:
