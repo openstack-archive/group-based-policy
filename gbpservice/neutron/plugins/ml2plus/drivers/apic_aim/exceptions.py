@@ -31,13 +31,9 @@ class UnscopedSharedNetworkProjectConflict(exceptions.BadRequest):
                 "in the same topology.")
 
 
-class IPv6RoutingNotSupported(exceptions.BadRequest):
-    message = _("IPv6 routing is not currently supported.")
-
-
-class MultiScopeRoutingNotSupported(exceptions.BadRequest):
-    message = _("Attaching interfaces from multiple address_scopes to the "
-                "same router is not currently supported.")
+class NonIsomorphicNetworkRoutingUnsupported(exceptions.BadRequest):
+    message = _("All router interfaces for a network must utilize the same "
+                "VRF.")
 
 
 class ScopeUpdateNotSupported(exceptions.BadRequest):

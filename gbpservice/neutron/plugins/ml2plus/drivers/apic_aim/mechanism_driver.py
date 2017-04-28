@@ -746,48 +746,56 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
         dist_names[a_l3.CONTRACT_SUBJECT] = subject.dn
         sync_state = self._merge_status(aim_ctx, sync_state, subject)
 
-        # REVISIT(rkukura): Consider moving the SubnetPool query below
-        # into this loop, although that might be less efficient when
-        # many subnets are from the same pool.
-        active = False
-        for intf in (session.query(models_v2.IPAllocation).
+        # REVISIT: Do we really need to include Subnet DNs in
+        # apic:distinguished_names and apic:synchronization_state?
+        # Eliminating these would reduce or potentially eliminate (if
+        # we persist the router->VRF mapping) the querying needed
+        # here.
+        unscoped_vrf = None
+        scope_ids = set()
+        for intf in (session.query(models_v2.IPAllocation.ip_address,
+                                   models_v2.Subnet,
+                                   models_v2.Network).
+                     join(models_v2.Subnet, models_v2.Subnet.id ==
+                          models_v2.IPAllocation.subnet_id).
+                     join(models_v2.Network).
                      join(models_v2.Port).
                      join(l3_db.RouterPort).
                      filter(l3_db.RouterPort.router_id == router_db.id,
                             l3_db.RouterPort.port_type ==
                             n_constants.DEVICE_OWNER_ROUTER_INTF)):
+            ip_address, subnet_db, network_db = intf
 
-            active = True
-
-            # TODO(rkukura): Avoid separate queries for these.
-            subnet_db = (session.query(models_v2.Subnet).
-                         filter_by(id=intf.subnet_id).
-                         one())
-            network_db = (session.query(models_v2.Network).
-                          filter_by(id=subnet_db.network_id).
-                          one())
-
-            # TODO(rkukura): This can be very expensive, and there can
-            # be multiple subnets per network, so cache the BDs for
-            # networks that have been processed. Also, without
-            # multi-scope routing, there should be exactly one VRF per
-            # router. With multi-scope routing, we should be able to
-            # determine the set of VRFs and the subnets accociated
-            # with each.
             vrf = self._get_routed_vrf_for_network(session, network_db)
-
             bd = self._map_network(session, network_db, vrf, True)
-            sn = self._map_subnet(subnet_db, intf.ip_address, bd)
-
-            dist_names[intf.ip_address] = sn.dn
+            sn = self._map_subnet(subnet_db, ip_address, bd)
+            dist_names[ip_address] = sn.dn
             sync_state = self._merge_status(aim_ctx, sync_state, sn)
 
-        if active:
-            # TODO(rkukura): With multi-scope routing, there will be
-            # multiple VRF DNs, so include the scope_id or 'no-scope'
-            # in the key.
-            dist_names[a_l3.VRF] = vrf.dn
+            scope_id = (subnet_db.subnetpool and
+                        subnet_db.subnetpool.address_scope_id)
+            if scope_id:
+                scope_ids.add(scope_id)
+            else:
+                if unscoped_vrf and unscoped_vrf.identity != vrf.identity:
+                    # This should never happen. If it does, it
+                    # indicates an inconsistency in the DB state
+                    # rather than any sort of user error. We log an
+                    # error to aid debugging in case such an
+                    # inconsistency somehow does occur.
+                    LOG.error("Inconsistent unscoped VRFs %s and %s for "
+                              "router %s.", vrf, unscoped_vrf, router_db)
+                unscoped_vrf = vrf
+
+        for scope_id in scope_ids:
+            scope_db = self._scope_by_id(session, scope_id)
+            vrf = self._map_address_scope(session, scope_db)
+            dist_names[a_l3.SCOPED_VRF % scope_id] = vrf.dn
             sync_state = self._merge_status(aim_ctx, sync_state, vrf)
+
+        if unscoped_vrf:
+            dist_names[a_l3.UNSCOPED_VRF] = unscoped_vrf.dn
+            sync_state = self._merge_status(aim_ctx, sync_state, unscoped_vrf)
 
         result[cisco_apic.DIST_NAMES] = dist_names
         result[cisco_apic.SYNC_STATE] = sync_state
@@ -805,28 +813,26 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
 
         # Find the address_scope(s) for the new interface.
         #
+        # REVISIT: If dual-stack interfaces allowed, process each
+        # stack's scope separately, or at least raise an exception.
         scope_id = self._get_address_scope_id_for_subnets(context, subnets)
 
         # Find number of existing interface ports on the router,
         # excluding the one we are adding.
+        #
+        # REVISIT: Just for this scope?
         router_intf_count = self._get_router_intf_count(session, router)
-
-        # TODO(rkukura): Support multi-scope routing. For now, we
-        # reject adding an interface that does not match the scope of
-        # any existing interfaces.
-        if (router_intf_count and
-            (scope_id !=
-             self._get_address_scope_id_for_router(session, router))):
-            raise exceptions.MultiScopeRoutingNotSupported()
 
         # Find up to two existing router interfaces for this
         # network. The interface currently being added is not
         # included, because the RouterPort has not yet been added to
         # the DB session.
         net_intfs = (session.query(l3_db.RouterPort.router_id,
-                                   models_v2.IPAllocation.subnet_id).
+                                   models_v2.Subnet).
                      join(models_v2.Port).
                      join(models_v2.IPAllocation).
+                     join(models_v2.Subnet, models_v2.Subnet.id ==
+                          models_v2.IPAllocation.subnet_id).
                      filter(models_v2.Port.network_id == network_id,
                             l3_db.RouterPort.port_type ==
                             n_constants.DEVICE_OWNER_ROUTER_INTF).
@@ -840,19 +846,44 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
             # Neutron, would result in unintended routing. We
             # therefore require that all router interfaces for a
             # network share either the same router or the same subnet.
+            #
+            # REVISIT: Remove override flag when no longer needed for
+            # GBP.
+            if not context.override_network_routing_topology_validation:
+                different_router = False
+                different_subnet = False
+                router_id = router['id']
+                subnet_ids = [subnet['id'] for subnet in subnets]
+                for existing_router_id, existing_subnet in net_intfs:
+                    if router_id != existing_router_id:
+                        different_router = True
+                    for subnet_id in subnet_ids:
+                        if subnet_id != existing_subnet.id:
+                            different_subnet = True
+                if different_router and different_subnet:
+                    raise exceptions.UnsupportedRoutingTopology()
 
-            different_router = False
-            different_subnet = False
-            router_id = router['id']
-            subnet_ids = [subnet['id'] for subnet in subnets]
-            for existing_router_id, existing_subnet_id in net_intfs:
-                if router_id != existing_router_id:
-                    different_router = True
-                for subnet_id in subnet_ids:
-                    if subnet_id != existing_subnet_id:
-                        different_subnet = True
-            if different_router and different_subnet:
-                raise exceptions.UnsupportedRoutingTopology()
+            # REVISIT: Remove this check for isomorphism once identity
+            # NAT can be used to move IPv6 traffic from an IPv4 VRF to
+            # the intended IPv6 VRF.
+            _, subnet = net_intfs[0]
+            existing_scope_id = (NO_ADDR_SCOPE if not subnet.subnetpool or
+                                 not subnet.subnetpool.address_scope_id else
+                                 subnet.subnetpool.address_scope_id)
+            if scope_id != existing_scope_id:
+                if (scope_id != NO_ADDR_SCOPE and
+                    existing_scope_id != NO_ADDR_SCOPE):
+                    scope_db = self._scope_by_id(session, scope_id)
+                    vrf = self._map_address_scope(session, scope_db)
+                    existing_scope_db = self._scope_by_id(
+                        session, existing_scope_id)
+                    existing_vrf = self._map_address_scope(
+                        session, existing_scope_db)
+                    if vrf.identity != existing_vrf.identity:
+                        raise (exceptions.
+                               NonIsomorphicNetworkRoutingUnsupported())
+                else:
+                    raise exceptions.NonIsomorphicNetworkRoutingUnsupported()
 
         nets_to_notify = set()
         ports_to_notify = set()
@@ -864,21 +895,9 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
         # and consume the router's Contract. This is handled
         # differently for scoped and unscoped topologies.
         if scope_id != NO_ADDR_SCOPE:
-            # TODO(rkukura): Scoped topologies are simple, until we
-            # support IPv6 routing. Then, we will need to figure out
-            # if a v6-only network should use its own v6 scope, or a
-            # v4 scope that's already part of the router
-            # topology. Adding a v4 interface to a previously v6-only
-            # network may require moving the existing network (and its
-            # subnets) from the v6 scope to the v4 scope. Multi-scope
-            # routers will further complicate this with multiple v4
-            # scopes to choose between for v6-only networks.
             scope = self._scope_by_id(session, scope_id)
             vrf = self._map_address_scope(session, scope)
         else:
-            # TODO(rkukura): The unscoped case will need to handle
-            # IPv6 and, and will have to coexist with address_scopes
-            # for multi-scope routing.
             intf_topology = self._network_topology(session, network_db)
             router_topology = self._router_topology(session, router['id'])
 
@@ -939,6 +958,11 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
                 aim_ctx, network_db, vrf, nets_to_notify)
         else:
             # Network is already routed.
+            #
+            # REVISIT: For non-isomorphic dual-stack network, may need
+            # to move the BD and EPG from already-routed v6 VRF to
+            # newly-routed v4 VRF, and setup identity NAT for the v6
+            # traffic.
             bd, epg = self._map_network(session, network_db, vrf)
 
         # Create AIM Subnet(s) for each added Neutron subnet.
@@ -1018,7 +1042,8 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
 
         # Find the address_scope(s) for the old interface.
         #
-        # TODO(rkukura): Handle IPv6 and dual-stack routing.
+        # REVISIT: If dual-stack interfaces allowed, process each
+        # stack's scope separately, or at least raise an exception.
         scope_id = self._get_address_scope_id_for_subnets(context, subnets)
 
         old_vrf = self._get_routed_vrf_for_network(session, network_db)
@@ -1065,6 +1090,11 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
         router_topo_moved = False
 
         # If unscoped topologies have split, move VRFs as needed.
+        #
+        # REVISIT: For non-isomorphic dual-stack network, may need to
+        # move the BD and EPG from the previously-routed v4 VRF to the
+        # still-routed v6 VRF, and disable identity NAT for the v6
+        # traffic.
         if scope_id == NO_ADDR_SCOPE:
             # If the interface's network has not become unrouted, see
             # if its topology must be moved.
@@ -1705,8 +1735,10 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
             visited_router_ids |= added_ids
             LOG.debug("Querying for networks interfaced to routers %s",
                       added_ids)
-            query = (session.query(models_v2.Network).
+            query = (session.query(models_v2.Network, models_v2.Subnet).
                      join(models_v2.Port).
+                     join(models_v2.IPAllocation).
+                     join(models_v2.Subnet).
                      join(l3_db.RouterPort).
                      filter(l3_db.RouterPort.router_id.in_(added_ids)))
             if visited_networks:
@@ -1717,7 +1749,9 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
                        distinct().
                        all())
             self._expand_topology_for_networks(
-                session, visited_networks, visited_router_ids, results)
+                session, visited_networks, visited_router_ids,
+                [network for network, subnet in results if not
+                 (subnet.subnetpool and subnet.subnetpool.address_scope_id)])
 
     def _expand_topology_for_networks(self, session, visited_networks,
                                       visited_router_ids, new_networks):
@@ -1773,7 +1807,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver):
     def _scope_by_id(self, session, scope_id):
         return (session.query(address_scope_db.AddressScope).
                 filter_by(id=scope_id).
-                first())
+                one_or_none())
 
     def _map_network(self, session, network, vrf, bd_only=False):
         tenant_aname = (vrf.tenant_name
