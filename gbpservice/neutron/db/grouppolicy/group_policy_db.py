@@ -13,7 +13,6 @@
 import netaddr
 from neutron import context
 from neutron.db import common_db_mixin
-from neutron.db import models_v2
 from neutron_lib.api import validators
 from neutron_lib import constants
 from neutron_lib.db import model_base
@@ -33,7 +32,7 @@ MAX_IPV6_SUBNET_PREFIX_LENGTH = 127
 ADDRESS_NOT_SPECIFIED = ''
 
 
-class BaseGbpResource(models_v2.HasId, models_v2.HasTenant):
+class BaseGbpResource(model_base.HasId, model_base.HasProject):
     name = sa.Column(sa.String(255))
     description = sa.Column(sa.String(255))
     status = sa.Column(sa.String(length=16), nullable=True)
@@ -164,7 +163,7 @@ class L3Policy(model_base.BASEV2, BaseSharedGbpResource):
         cascade='all, delete-orphan')
 
 
-class NetworkServiceParam(model_base.BASEV2, models_v2.HasId):
+class NetworkServiceParam(model_base.BASEV2, model_base.HasId):
     """Represents a network service param used in a NetworkServicePolicy."""
     __tablename__ = 'gp_network_service_params'
     param_type = sa.Column(sa.String(50), nullable=False)
@@ -274,7 +273,7 @@ class EPToPRSConsumingAssociation(model_base.BASEV2):
         primary_key=True)
 
 
-class PolicyRuleSet(model_base.BASEV2, models_v2.HasTenant):
+class PolicyRuleSet(model_base.BASEV2, model_base.HasProject):
     """It is a collection of Policy rules."""
     __tablename__ = 'gp_policy_rule_sets'
     id = sa.Column(sa.String(36), primary_key=True,
