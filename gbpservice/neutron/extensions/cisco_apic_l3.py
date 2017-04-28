@@ -26,7 +26,8 @@ EXTERNAL_CONSUMED_CONTRACTS = 'apic:external_consumed_contracts'
 
 CONTRACT = 'Contract'
 CONTRACT_SUBJECT = 'ContractSubject'
-VRF = 'VRF'
+UNSCOPED_VRF = 'no_scope-VRF'
+SCOPED_VRF = 'as_%s-VRF'
 
 EXT_GW_ATTRIBUTES = {
     EXTERNAL_PROVIDED_CONTRACTS: {
