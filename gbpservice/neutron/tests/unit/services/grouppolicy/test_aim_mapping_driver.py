@@ -1373,14 +1373,14 @@ class TestL2PolicyBase(test_nr_base.TestL2Policy, AIMBaseTestCase):
         default_epg_provided_contract_names = (
             default_epg.provided_contract_names[:])
         for acontract in default_epg_provided_contract_names:
-            if not acontract.endswith(l2p['tenant_id']):
+            if not acontract.endswith(l2p['l3_policy_id']):
                 default_epg_provided_contract_names.remove(acontract)
         self.assertEqual(2, len(default_epg_provided_contract_names))
 
         default_epg_consumed_contract_names = (
             default_epg.consumed_contract_names[:])
         for acontract in default_epg_consumed_contract_names:
-            if not acontract.endswith(l2p['tenant_id']):
+            if not acontract.endswith(l2p['l3_policy_id']):
                 default_epg_consumed_contract_names.remove(acontract)
         self.assertEqual(1, len(default_epg_consumed_contract_names))
 
@@ -1389,13 +1389,13 @@ class TestL2PolicyBase(test_nr_base.TestL2Policy, AIMBaseTestCase):
         for contract_name_prefix in contracts:
             contract_name = str(self.name_mapper.project(
                 self._neutron_context.session,
-                l2p['tenant_id'],
+                l2p['l3_policy_id'],
                 prefix=contract_name_prefix))
             aim_contracts = self.aim_mgr.find(
                 self._aim_context, aim_resource.Contract, name=contract_name)
             for acontract in aim_contracts[:]:
                 # Remove contracts created by MD or created for other tenants
-                if not acontract.name.endswith(l2p['tenant_id']):
+                if not acontract.name.endswith(l2p['l3_policy_id']):
                     aim_contracts.remove(acontract)
             self.assertEqual(1, len(aim_contracts))
             self.assertTrue(contract_name in
@@ -1406,7 +1406,7 @@ class TestL2PolicyBase(test_nr_base.TestL2Policy, AIMBaseTestCase):
             for acontractsub in aim_contract_subjects[:]:
                 # Remove contract_subjects created by MD or created
                 # for other tenants
-                if not acontractsub.name.endswith(l2p['tenant_id']):
+                if not acontractsub.name.endswith(l2p['l3_policy_id']):
                     aim_contract_subjects.remove(acontractsub)
             self.assertEqual(1, len(aim_contract_subjects))
             self.assertEqual(0, len(aim_contract_subjects[0].in_filters))
@@ -1423,7 +1423,7 @@ class TestL2PolicyBase(test_nr_base.TestL2Policy, AIMBaseTestCase):
             tenant_name=aim_tenant_name)
         for afilter in aim_filters[:]:
             # Remove filters created by MD or created for other tenants
-            if not afilter.name.endswith(l2p['tenant_id']):
+            if not afilter.name.endswith(l2p['l3_policy_id']):
                 aim_filters.remove(afilter)
 
         self.assertEqual(9, len(aim_filters))
@@ -1433,7 +1433,7 @@ class TestL2PolicyBase(test_nr_base.TestL2Policy, AIMBaseTestCase):
             tenant_name=aim_tenant_name)
         for afilterentry in aim_filter_entries[:]:
             # Remove filter_entries created by MD or created for other tenants
-            if not afilterentry.filter_name.endswith(l2p['tenant_id']):
+            if not afilterentry.filter_name.endswith(l2p['l3_policy_id']):
                 aim_filter_entries.remove(afilterentry)
 
         self.assertEqual(9, len(aim_filter_entries))
