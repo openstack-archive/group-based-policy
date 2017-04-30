@@ -314,6 +314,148 @@ class AIMBaseTestCase(test_nr_base.CommonNeutronBaseTestCase,
         # Restore aim_mgr.get_status
         self.aim_mgr.get_status = orig_get_status
 
+    def _validate_implicit_contracts_created(self, l3p_id, l2p=None):
+        aim_tenant_name = md.COMMON_TENANT_NAME
+        if l2p:
+            net = self._plugin.get_network(self._context, l2p['network_id'])
+            default_epg_dn = net['apic:distinguished_names']['EndpointGroup']
+            default_epg = self.aim_mgr.get(self._aim_context,
+                                           aim_resource.EndpointGroup.from_dn(
+                                               default_epg_dn))
+            default_epg_provided_contract_names = (
+                default_epg.provided_contract_names[:])
+            for acontract in default_epg_provided_contract_names:
+                if not acontract.endswith(l3p_id):
+                    default_epg_provided_contract_names.remove(acontract)
+            self.assertEqual(2, len(default_epg_provided_contract_names))
+
+            default_epg_consumed_contract_names = (
+                default_epg.consumed_contract_names[:])
+            for acontract in default_epg_consumed_contract_names:
+                if not acontract.endswith(l3p_id):
+                    default_epg_consumed_contract_names.remove(acontract)
+            self.assertEqual(1, len(default_epg_consumed_contract_names))
+
+        contracts = [alib.SERVICE_PREFIX, alib.IMPLICIT_PREFIX]
+
+        for contract_name_prefix in contracts:
+            contract_name = str(self.name_mapper.l3_policy(
+                self._neutron_context.session, l3p_id,
+                prefix=contract_name_prefix))
+            aim_contracts = self.aim_mgr.find(
+                self._aim_context, aim_resource.Contract, name=contract_name)
+            for acontract in aim_contracts[:]:
+                # Remove contracts created by MD or created for other tenants
+                if not acontract.name.endswith(l3p_id):
+                    aim_contracts.remove(acontract)
+            self.assertEqual(1, len(aim_contracts))
+            if l2p:
+                self.assertTrue(contract_name in
+                                default_epg.provided_contract_names)
+
+            aim_contract_subjects = self.aim_mgr.find(
+                self._aim_context, aim_resource.ContractSubject,
+                name=contract_name)
+            for acontractsub in aim_contract_subjects[:]:
+                # Remove contract_subjects created by MD or created
+                # for other tenants
+                if not acontractsub.name.endswith(l3p_id):
+                    aim_contract_subjects.remove(acontractsub)
+            self.assertEqual(1, len(aim_contract_subjects))
+            self.assertEqual(0, len(aim_contract_subjects[0].in_filters))
+            self.assertEqual(0, len(aim_contract_subjects[0].out_filters))
+            if contract_name_prefix == alib.SERVICE_PREFIX:
+                self.assertEqual(8, len(aim_contract_subjects[0].bi_filters))
+            else:
+                self.assertEqual(1, len(aim_contract_subjects[0].bi_filters))
+                if l2p:
+                    self.assertTrue(contract_name in
+                                    default_epg.consumed_contract_names)
+
+        aim_filters = self.aim_mgr.find(
+            self._aim_context, aim_resource.Filter,
+            tenant_name=aim_tenant_name)
+        for afilter in aim_filters[:]:
+            # Remove filters created by MD or created for other tenants
+            if not afilter.name.endswith(l3p_id):
+                aim_filters.remove(afilter)
+
+        self.assertEqual(9, len(aim_filters))
+
+        aim_filter_entries = self.aim_mgr.find(
+            self._aim_context, aim_resource.FilterEntry,
+            tenant_name=aim_tenant_name)
+        for afilterentry in aim_filter_entries[:]:
+            # Remove filter_entries created by MD or created for other tenants
+            if not afilterentry.filter_name.endswith(l3p_id):
+                aim_filter_entries.remove(afilterentry)
+
+        self.assertEqual(9, len(aim_filter_entries))
+
+        entries_attrs = alib.get_service_contract_filter_entries().values()
+        entries_attrs.extend(alib.get_arp_filter_entry().values())
+        expected_entries_attrs = []
+        for entry in entries_attrs:
+            new_entry = copy.deepcopy(DEFAULT_FILTER_ENTRY)
+            new_entry.update(alib.map_to_aim_filter_entry(entry))
+            expected_entries_attrs.append(
+                {k: unicode(new_entry[k]) for k in new_entry})
+        entries_attrs = [x.__dict__ for x in aim_filter_entries]
+        observed_entries_attrs = []
+        for entry in entries_attrs:
+            observed_entries_attrs.append(
+                {k: unicode(entry[k]) for k in entry if k not in [
+                    'name', 'display_name', 'filter_name', 'tenant_name',
+                    'monitored']})
+        self.assertItemsEqual(expected_entries_attrs, observed_entries_attrs)
+
+    def _validate_implicit_contracts_exist(self, l3p_id):
+        self._validate_implicit_contracts_created(l3p_id)
+
+    def _validate_implicit_contracts_deleted(self, l3p_id):
+        aim_tenant_name = md.COMMON_TENANT_NAME
+        contracts = [alib.SERVICE_PREFIX, alib.IMPLICIT_PREFIX]
+
+        for contract_name_prefix in contracts:
+            contract_name = str(self.name_mapper.l3_policy(
+                self._neutron_context.session, l3p_id,
+                prefix=contract_name_prefix))
+            aim_contracts = self.aim_mgr.find(
+                self._aim_context, aim_resource.Contract, name=contract_name)
+            for acontract in aim_contracts[:]:
+                # Remove contracts created by MD or created for other tenants
+                if not acontract.name.endswith(l3p_id):
+                    aim_contracts.remove(acontract)
+            self.assertEqual(0, len(aim_contracts))
+            aim_contract_subjects = self.aim_mgr.find(
+                self._aim_context, aim_resource.ContractSubject,
+                name=contract_name)
+            for acontractsub in aim_contract_subjects[:]:
+                # Remove contract_subjects created by MD or created
+                # for other tenants
+                if not acontractsub.name.endswith(l3p_id):
+                    aim_contract_subjects.remove(acontractsub)
+            self.assertEqual(0, len(aim_contract_subjects))
+
+        aim_filter_entries = self.aim_mgr.find(
+            self._aim_context, aim_resource.FilterEntry,
+            tenant_name=aim_tenant_name)
+        for afilterentry in aim_filter_entries[:]:
+            # Remove filter_entries created by MD or created for other tenants
+            if not afilterentry.filter_name.endswith(l3p_id):
+                aim_filter_entries.remove(afilterentry)
+        self.assertEqual(0, len(aim_filter_entries))
+
+        aim_filters = self.aim_mgr.find(
+            self._aim_context, aim_resource.Filter,
+            tenant_name=aim_tenant_name)
+        for afilter in aim_filters[:]:
+            # Remove filters created by MD or created for other tenants
+            if not afilter.name.endswith(l3p_id):
+                aim_filters.remove(afilter)
+
+        self.assertEqual(0, len(aim_filters))
+
     def _validate_create_l3_policy(self, l3p, subnetpool_prefixes=None,
                                    compare_subnetpool_shared_attr=True):
         # subnetpool_prefixes should be set only when the l3p has only
@@ -367,6 +509,7 @@ class AIMBaseTestCase(test_nr_base.CommonNeutronBaseTestCase,
             self.assertEqual(l3p['shared'], subpool['shared'])
         router = self._get_object('routers', router_id, self.ext_api)['router']
         self.assertEqual('l3p_l3p1', router['name'])
+        self._validate_implicit_contracts_created(l3p['id'])
         # L3P's shared flag update is not supported for aim_mapping
         res = self.update_l3_policy(
             l3p['id'], shared=(not l3p['shared']),
@@ -403,6 +546,7 @@ class AIMBaseTestCase(test_nr_base.CommonNeutronBaseTestCase,
         req = self.new_show_request('routers', router_id, fmt=self.fmt)
         res = req.get_response(self.ext_api)
         self.assertEqual(webob.exc.HTTPNotFound.code, res.status_int)
+        self._validate_implicit_contracts_deleted(l3p['id'])
         # TODO(Sumit): Add test for implicit address_scope not deleted
         # when it has associated subnetpools
 
@@ -462,13 +606,14 @@ class AIMBaseTestCase(test_nr_base.CommonNeutronBaseTestCase,
                 self.delete_policy_rule(rule, expected_res_status=204)
 
     def _validate_contracts(self, ptg, aim_epg, prs_lists, l2p):
-        implicit_contract_name = str(self.name_mapper.project(
-            self._neutron_context.session, l2p['tenant_id'],
+        l3p_id = l2p['l3_policy_id']
+        implicit_contract_name = str(self.name_mapper.l3_policy(
+            self._neutron_context.session, l3p_id,
             prefix=alib.IMPLICIT_PREFIX))
-        service_contract_name = str(self.name_mapper.project(
-            self._neutron_context.session, l2p['tenant_id'],
+        service_contract_name = str(self.name_mapper.l3_policy(
+            self._neutron_context.session, l3p_id,
             prefix=alib.SERVICE_PREFIX))
-        l3p = self.show_l3_policy(l2p['l3_policy_id'], expected_res_status=200)
+        l3p = self.show_l3_policy(l3p_id, expected_res_status=200)
         router_id = l3p['l3_policy']['routers'][0]
         router_contract_name = self.name_mapper.router(
             self._neutron_context.session, router_id)
@@ -566,51 +711,6 @@ class AIMBaseTestCase(test_nr_base.CommonNeutronBaseTestCase,
                          ptg_show['apic:distinguished_names']['EndpointGroup'])
         self._test_aim_resource_status(aim_epgs[0], ptg_show)
 
-    def _validate_implicit_contracts_deleted(self, l2p):
-        aim_tenant_name = md.COMMON_TENANT_NAME
-        contracts = [alib.SERVICE_PREFIX, alib.IMPLICIT_PREFIX]
-
-        for contract_name_prefix in contracts:
-            contract_name = str(self.name_mapper.project(
-                self._neutron_context.session,
-                l2p['tenant_id'],
-                prefix=contract_name_prefix))
-            aim_contracts = self.aim_mgr.find(
-                self._aim_context, aim_resource.Contract, name=contract_name)
-            for acontract in aim_contracts[:]:
-                # Remove contracts created by MD or created for other tenants
-                if not acontract.name.endswith(l2p['tenant_id']):
-                    aim_contracts.remove(acontract)
-            self.assertEqual(0, len(aim_contracts))
-            aim_contract_subjects = self.aim_mgr.find(
-                self._aim_context, aim_resource.ContractSubject,
-                name=contract_name)
-            for acontractsub in aim_contract_subjects[:]:
-                # Remove contract_subjects created by MD or created
-                # for other tenants
-                if not acontractsub.name.endswith(l2p['tenant_id']):
-                    aim_contract_subjects.remove(acontractsub)
-            self.assertEqual(0, len(aim_contract_subjects))
-
-        aim_filter_entries = self.aim_mgr.find(
-            self._aim_context, aim_resource.FilterEntry,
-            tenant_name=aim_tenant_name)
-        for afilterentry in aim_filter_entries[:]:
-            # Remove filter_entries created by MD or created for other tenants
-            if not afilterentry.filter_name.endswith(l2p['tenant_id']):
-                aim_filter_entries.remove(afilterentry)
-        self.assertEqual(0, len(aim_filter_entries))
-
-        aim_filters = self.aim_mgr.find(
-            self._aim_context, aim_resource.Filter,
-            tenant_name=aim_tenant_name)
-        for afilter in aim_filters[:]:
-            # Remove filters created by MD or created for other tenants
-            if not afilter.name.endswith(l2p['tenant_id']):
-                aim_filters.remove(afilter)
-
-        self.assertEqual(0, len(aim_filters))
-
     def _validate_l2_policy_deleted(self, l2p, implicit_l3p=True):
         l2p_id = l2p['id']
         l3p_id = l2p['l3_policy_id']
@@ -623,7 +723,6 @@ class AIMBaseTestCase(test_nr_base.CommonNeutronBaseTestCase,
         l2ps = self._gbp_plugin.get_l2_policies(
             self._neutron_context)
         if len(l2ps) == 0:
-            self._validate_implicit_contracts_deleted(l2p)
             apic_tenant_name = self.name_mapper.project(None, self._tenant_id)
             epgs = self.aim_mgr.find(
                 self._aim_context, aim_resource.EndpointGroup,
@@ -631,6 +730,8 @@ class AIMBaseTestCase(test_nr_base.CommonNeutronBaseTestCase,
             self.assertEqual(0, len(epgs))
             if implicit_l3p:
                 self.show_l3_policy(l3p_id, expected_res_status=404)
+            else:
+                self._validate_implicit_contracts_exist(l3p_id)
 
     def _get_nsp_ptg_fip_mapping(self, ptg_id):
         ctx = nctx.get_admin_context()
@@ -1349,97 +1450,9 @@ class TestL3PolicyRollback(AIMBaseTestCase):
 
 class TestL2PolicyBase(test_nr_base.TestL2Policy, AIMBaseTestCase):
 
-    def _validate_implicit_contracts_exist(self, l2p):
-        aim_tenant_name = md.COMMON_TENANT_NAME
-        net = self._plugin.get_network(self._context, l2p['network_id'])
-        default_epg_dn = net['apic:distinguished_names']['EndpointGroup']
-        default_epg = self.aim_mgr.get(self._aim_context,
-                                       aim_resource.EndpointGroup.from_dn(
-                                           default_epg_dn))
-        default_epg_provided_contract_names = (
-            default_epg.provided_contract_names[:])
-        for acontract in default_epg_provided_contract_names:
-            if not acontract.endswith(l2p['tenant_id']):
-                default_epg_provided_contract_names.remove(acontract)
-        self.assertEqual(2, len(default_epg_provided_contract_names))
-
-        default_epg_consumed_contract_names = (
-            default_epg.consumed_contract_names[:])
-        for acontract in default_epg_consumed_contract_names:
-            if not acontract.endswith(l2p['tenant_id']):
-                default_epg_consumed_contract_names.remove(acontract)
-        self.assertEqual(1, len(default_epg_consumed_contract_names))
-
-        contracts = [alib.SERVICE_PREFIX, alib.IMPLICIT_PREFIX]
-
-        for contract_name_prefix in contracts:
-            contract_name = str(self.name_mapper.project(
-                self._neutron_context.session,
-                l2p['tenant_id'],
-                prefix=contract_name_prefix))
-            aim_contracts = self.aim_mgr.find(
-                self._aim_context, aim_resource.Contract, name=contract_name)
-            for acontract in aim_contracts[:]:
-                # Remove contracts created by MD or created for other tenants
-                if not acontract.name.endswith(l2p['tenant_id']):
-                    aim_contracts.remove(acontract)
-            self.assertEqual(1, len(aim_contracts))
-            self.assertTrue(contract_name in
-                            default_epg.provided_contract_names)
-            aim_contract_subjects = self.aim_mgr.find(
-                self._aim_context, aim_resource.ContractSubject,
-                name=contract_name)
-            for acontractsub in aim_contract_subjects[:]:
-                # Remove contract_subjects created by MD or created
-                # for other tenants
-                if not acontractsub.name.endswith(l2p['tenant_id']):
-                    aim_contract_subjects.remove(acontractsub)
-            self.assertEqual(1, len(aim_contract_subjects))
-            self.assertEqual(0, len(aim_contract_subjects[0].in_filters))
-            self.assertEqual(0, len(aim_contract_subjects[0].out_filters))
-            if contract_name_prefix == alib.SERVICE_PREFIX:
-                self.assertEqual(8, len(aim_contract_subjects[0].bi_filters))
-            else:
-                self.assertEqual(1, len(aim_contract_subjects[0].bi_filters))
-                self.assertTrue(contract_name in
-                                default_epg.consumed_contract_names)
-
-        aim_filters = self.aim_mgr.find(
-            self._aim_context, aim_resource.Filter,
-            tenant_name=aim_tenant_name)
-        for afilter in aim_filters[:]:
-            # Remove filters created by MD or created for other tenants
-            if not afilter.name.endswith(l2p['tenant_id']):
-                aim_filters.remove(afilter)
-
-        self.assertEqual(9, len(aim_filters))
-
-        aim_filter_entries = self.aim_mgr.find(
-            self._aim_context, aim_resource.FilterEntry,
-            tenant_name=aim_tenant_name)
-        for afilterentry in aim_filter_entries[:]:
-            # Remove filter_entries created by MD or created for other tenants
-            if not afilterentry.filter_name.endswith(l2p['tenant_id']):
-                aim_filter_entries.remove(afilterentry)
-
-        self.assertEqual(9, len(aim_filter_entries))
-
-        entries_attrs = alib.get_service_contract_filter_entries().values()
-        entries_attrs.extend(alib.get_arp_filter_entry().values())
-        expected_entries_attrs = []
-        for entry in entries_attrs:
-            new_entry = copy.deepcopy(DEFAULT_FILTER_ENTRY)
-            new_entry.update(alib.map_to_aim_filter_entry(entry))
-            expected_entries_attrs.append(
-                {k: unicode(new_entry[k]) for k in new_entry})
-        entries_attrs = [x.__dict__ for x in aim_filter_entries]
-        observed_entries_attrs = []
-        for entry in entries_attrs:
-            observed_entries_attrs.append(
-                {k: unicode(entry[k]) for k in entry if k not in [
-                    'name', 'display_name', 'filter_name', 'tenant_name',
-                    'monitored']})
-        self.assertItemsEqual(expected_entries_attrs, observed_entries_attrs)
+    def _validate_default_epg_implicit_contracts(self, l2p):
+        self._validate_implicit_contracts_created(
+            l2p['l3_policy_id'], l2p=l2p)
 
     def _validate_bd_tenant(self, l2p, expected_tenant):
         network_id = l2p['network_id']
@@ -1474,13 +1487,13 @@ class TestL2Policy(TestL2PolicyBase):
                                      shared=shared)['l2_policy']
         # This validates that the infra and implicit Contracts, etc.
         # are created after the first L2P creation
-        self._validate_implicit_contracts_exist(l2p0)
+        self._validate_default_epg_implicit_contracts(l2p0)
         l2p = self.create_l2_policy(name="l2p1",
                                     shared=shared)['l2_policy']
         self.assertEqual(gp_const.STATUS_BUILD, l2p['status'])
         # This validates that the infra and implicit Contracts, etc.
         # are not created after the second L2P creation
-        self._validate_implicit_contracts_exist(l2p)
+        self._validate_default_epg_implicit_contracts(l2p)
         l2p_id = l2p['id']
         network_id = l2p['network_id']
         l3p_id = l2p['l3_policy_id']
@@ -1503,13 +1516,13 @@ class TestL2Policy(TestL2PolicyBase):
         # created for that tenant
         l2p_tenant2 = self.create_l2_policy(
             name='l2p-alternate-tenant', shared=shared)['l2_policy']
-        self._validate_implicit_contracts_exist(l2p_tenant2)
+        self._validate_default_epg_implicit_contracts(l2p_tenant2)
         self._switch_to_tenant1()
         self._validate_l2_policy_deleted(l2p)
         self._validate_l2_policy_deleted(l2p0)
         # Validate that the Contracts still exist in the other tenant
         self._switch_to_tenant2()
-        self._validate_implicit_contracts_exist(l2p_tenant2)
+        self._validate_default_epg_implicit_contracts(l2p_tenant2)
         self._validate_l2_policy_deleted(l2p_tenant2)
         self._switch_to_tenant1()
 
@@ -1526,7 +1539,7 @@ class TestL2Policy(TestL2PolicyBase):
                                     shared=shared,
                                     l3_policy_id=l3p['id'])['l2_policy']
         self.assertEqual(gp_const.STATUS_BUILD, l2p['status'])
-        self._validate_implicit_contracts_exist(l2p)
+        self._validate_default_epg_implicit_contracts(l2p)
         self.assertEqual(l2p['shared'], l3p['shared'])
         network_id = l2p['network_id']
         l3p_id = l2p['l3_policy_id']
@@ -1553,7 +1566,7 @@ class TestL2Policy(TestL2PolicyBase):
                                     shared=False,
                                     l3_policy_id=l3p['id'])['l2_policy']
         self.assertEqual(gp_const.STATUS_BUILD, l2p['status'])
-        self._validate_implicit_contracts_exist(l2p)
+        self._validate_default_epg_implicit_contracts(l2p)
         l3p_id = l2p['l3_policy_id']
         self.assertIsNotNone(l3p_id)
         self.assertEqual(l2p['shared'], not l3p['shared'])
@@ -1821,7 +1834,7 @@ class TestL2PolicyWithAutoPTG(TestL2PolicyBase):
                                     l3_policy_id=l3p['id'])['l2_policy']
         self.assertEqual(gp_const.STATUS_BUILD, l2p['status'])
         self.assertEqual(l2p['shared'], not l3p['shared'])
-        self._validate_implicit_contracts_exist(l2p)
+        self._validate_default_epg_implicit_contracts(l2p)
 
         # After creation of auto-ptg, BD is now in L3P's tenant
         self._validate_bd_tenant(l2p, l3p['tenant_id'])
@@ -1843,7 +1856,7 @@ class TestL2PolicyWithAutoPTG(TestL2PolicyBase):
                                     l3_policy_id=l3p['id'])['l2_policy']
         self.assertEqual(gp_const.STATUS_BUILD, l2p['status'])
         self.assertEqual(l2p['shared'], not l3p['shared'])
-        self._validate_implicit_contracts_exist(l2p)
+        self._validate_default_epg_implicit_contracts(l2p)
 
         # After creation of auto-ptg, BD is now in L3P's tenant
         self._validate_bd_tenant(l2p, l3p['tenant_id'])
@@ -1958,7 +1971,7 @@ class TestL2PolicyRollback(TestL2PolicyBase):
         new_l2p = self.show_l2_policy(l2p_id, expected_res_status=200)
         self.assertEqual(l2p['name'],
                          new_l2p['l2_policy']['name'])
-        self._validate_implicit_contracts_exist(l2p)
+        self._validate_default_epg_implicit_contracts(l2p)
         # restore mock
         self.dummy.update_l2_policy_precommit = orig_func
 
@@ -1976,7 +1989,7 @@ class TestL2PolicyRollback(TestL2PolicyBase):
         self.assertIsNotNone(res['network']['id'])
         self.show_l3_policy(l3p_id, expected_res_status=200)
         self.show_l2_policy(l2p_id, expected_res_status=200)
-        self._validate_implicit_contracts_exist(l2p)
+        self._validate_default_epg_implicit_contracts(l2p)
         # restore mock
         self.dummy.delete_l2_policy_precommit = orig_func
 

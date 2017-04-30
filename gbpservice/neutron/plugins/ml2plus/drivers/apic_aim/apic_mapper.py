@@ -24,6 +24,7 @@ PROJECT_TYPE_TAG = 'prj'
 NETWORK_TYPE_TAG = 'net'
 ADDRESS_SCOPE_TYPE_TAG = 'as'
 ROUTER_TYPE_TAG = 'rtr'
+L3_POLICY_TYPE_TAG = 'l3p'
 POLICY_RULE_SET_TYPE_TAG = 'prs'
 POLICY_RULE_TYPE_TAG = 'pr'
 APPLICATION_POLICY_GROUP_TYPE_TAG = 'apg'
@@ -67,6 +68,13 @@ class APICNameMapper(object):
 
     def reverse_router(self, session, name, prefix="", enforce=True):
         return self._unmap(session, name, ROUTER_TYPE_TAG, prefix, enforce)
+
+    def l3_policy(self, session, id, prefix=""):
+        return self._map(session, id, L3_POLICY_TYPE_TAG, prefix)
+
+    def reverse_l3_policy(self, session, name, prefix="", enforce=True):
+        return self._unmap(
+            session, name, L3_POLICY_TYPE_TAG, prefix, enforce)
 
     def policy_rule_set(self, session, id, prefix=""):
         return self._map(session, id, POLICY_RULE_SET_TYPE_TAG, prefix)
