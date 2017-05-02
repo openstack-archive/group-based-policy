@@ -297,6 +297,7 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
         if external_segments:
             self._plug_l3p_routers_to_ext_segment(context, l3p,
                                                   external_segments)
+        self._create_implicit_contracts(context, l3p)
 
     @log.log_method_call
     def update_l3_policy_precommit(self, context):
@@ -380,6 +381,7 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
             self._db_plugin(context._plugin)._remove_router_from_l3_policy(
                 context._plugin_context, l3p_db['id'], router_id)
             self._cleanup_router(context._plugin_context, router_id)
+        self._delete_implicit_contracts(context, context.current)
 
     @log.log_method_call
     def get_l3_policy_status(self, context):
@@ -437,20 +439,8 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
         net = self._get_network(context._plugin_context,
                                 l2p['network_id'])
         default_epg_dn = net['apic:distinguished_names']['EndpointGroup']
-        # get_l2_policies_count returns a count including shared resources,
-        # hence we need to filter on the tenant_id
-        l2p_count = self._db_plugin(context._plugin).get_l2_policies_count(
-            context._plugin_context, filters={'tenant_id': [l2p['tenant_id']]})
-        if (l2p_count == 1):
-            # This is the first l2p for this tenant hence create the Infra
-            # Services and Implicit Contracts and setup the default EPG
-            self._create_implicit_contracts_and_configure_default_epg(
-                context, l2p, default_epg_dn)
-        else:
-            # Services and Implicit Contracts already exist for this tenant,
-            # only setup the default EPG
-            self._configure_contracts_for_default_epg(
-                context, l2p, default_epg_dn)
+        self._configure_contracts_for_default_epg(
+            context, l3p_db, default_epg_dn)
         if self.create_auto_ptg:
             default_epg = self._get_epg_by_dn(context, default_epg_dn)
             desc = "System created PTG for L2P (UUID: %s)" % l2p['id']
@@ -468,17 +458,11 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
                 "intra_ptg_allow":
                 self._map_policy_enforcement_pref(default_epg),
             }
-            self._create_policy_target_group(
-                context._plugin_context, data)
+            self._create_policy_target_group(context._plugin_context, data)
 
     @log.log_method_call
     def delete_l2_policy_precommit(self, context):
         l2p_id = context.current['id']
-        l2p_db = context._plugin._get_l2_policy(
-            context._plugin_context, l2p_id)
-        net = self._get_network(context._plugin_context,
-                                l2p_db['network_id'])
-        default_epg_dn = net['apic:distinguished_names']['EndpointGroup']
         auto_ptg_id = self._get_auto_ptg_id(l2p_id)
         try:
             auto_ptg = context._plugin._get_policy_target_group(
@@ -499,14 +483,6 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
                          "creation, you can safely ignore this, else this "
                          "could potentially be indication of an error."),
                      {'id': auto_ptg_id, 'l2p': l2p_id})
-        # get_l2_policies_count returns a count including shared resources,
-        # hence we need to filter on the tenant_id
-        l2p_count = self._db_plugin(context._plugin).get_l2_policies_count(
-            context._plugin_context,
-            filters={'tenant_id': [l2p_db['tenant_id']]})
-        if (l2p_count == 1):
-            self._delete_implicit_contracts_and_unconfigure_default_epg(
-                context, context.current, default_epg_dn)
         super(AIMMappingDriver, self).delete_l2_policy_precommit(context)
 
     @log.log_method_call
@@ -519,8 +495,10 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
         if net:
             context.current['status'] = net['status']
             default_epg_dn = net['apic:distinguished_names']['EndpointGroup']
+            l3p_db = context._plugin._get_l3_policy(
+                context._plugin_context, l2p_db['l3_policy_id'])
             aim_resources = self._get_implicit_contracts_for_default_epg(
-                context, l2p_db, default_epg_dn)
+                context, l3p_db, default_epg_dn)
             aim_resources_list = []
             for k in aim_resources.keys():
                 if not aim_resources[k] or not all(
@@ -1635,26 +1613,24 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
                     self._attach_router_to_subnets(context._plugin_context,
                                                    r, added)
 
-    def _create_implicit_contracts_and_configure_default_epg(
-        self, context, l2p, epg_dn):
-        self._process_contracts_for_default_epg(context, l2p, epg_dn)
+    def _create_implicit_contracts(self, context, l3p):
+        self._process_contracts_for_default_epg(context, l3p)
 
-    def _configure_contracts_for_default_epg(self, context, l2p, epg_dn):
+    def _configure_contracts_for_default_epg(self, context, l3p, epg_dn):
         self._process_contracts_for_default_epg(
-            context, l2p, epg_dn, create=False, delete=False)
+            context, l3p, epg_dn, create=False, delete=False)
 
-    def _delete_implicit_contracts_and_unconfigure_default_epg(
-        self, context, l2p, epg_dn):
+    def _delete_implicit_contracts(self, context, l3p):
         self._process_contracts_for_default_epg(
-            context, l2p, epg_dn, create=False, delete=True)
+            context, l3p, epg_dn=None, create=False, delete=True)
 
     def _get_implicit_contracts_for_default_epg(
-        self, context, l2p, epg_dn):
+        self, context, l3p, epg_dn):
         return self._process_contracts_for_default_epg(
-            context, l2p, epg_dn, get=True)
+            context, l3p, epg_dn, get=True)
 
     def _process_contracts_for_default_epg(
-        self, context, l2p, epg_dn, create=True, delete=False, get=False):
+        self, context, l3p, epg_dn=None, create=True, delete=False, get=False):
         # get=True overrides the create and delete cases, and returns a dict
         # with the Contracts, ContractSubjects, Filters, and FilterEntries
         # for the default EPG
@@ -1672,8 +1648,6 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
             raise
         session = context._plugin_context.session
         aim_ctx = aim_context.AimContext(session)
-        aim_epg = self.aim.get(aim_ctx,
-                               aim_resource.EndpointGroup.from_dn(epg_dn))
 
         # Infra Services' FilterEntries and attributes
         infra_entries = alib.get_service_contract_filter_entries()
@@ -1683,13 +1657,12 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
                      alib.IMPLICIT_PREFIX: arp_entries}
 
         for contract_name_prefix, entries in six.iteritems(contracts):
-            contract_name = self.name_mapper.project(
-                session, l2p['tenant_id'], prefix=contract_name_prefix)
-            # Create Contract (one per tenant)
-            # REVIST(Sumit): Naming convention used for this Filter
+            contract_name = self.name_mapper.l3_policy(
+                session, l3p['id'], prefix=contract_name_prefix)
+            # Create Contract (one per l3_policy)
             aim_contract = aim_resource.Contract(
                 tenant_name=self._aim_tenant_name(
-                    session, l2p['tenant_id'], aim_resource.Contract),
+                    session, l3p['tenant_id'], aim_resource.Contract),
                 name=contract_name,
                 display_name=contract_name)
 
@@ -1704,7 +1677,9 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
                 if create:
                     self.aim.create(aim_ctx, aim_contract, overwrite=True)
 
-                if not delete:
+                if not delete and epg_dn:
+                    aim_epg = self.aim.get(
+                        aim_ctx, aim_resource.EndpointGroup.from_dn(epg_dn))
                     # Add Contracts to the default EPG
                     if contract_name_prefix == alib.IMPLICIT_PREFIX:
                         # Default EPG provides and consumes ARP Contract
@@ -1717,17 +1692,17 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
                         self._add_contracts_for_epg(
                             aim_ctx, aim_epg,
                             provided_contracts=[contract_name])
+                    continue
 
             filter_names = []
             for k, v in six.iteritems(entries):
-                filter_name = self.name_mapper.project(
-                    session, l2p['tenant_id'],
+                filter_name = self.name_mapper.l3_policy(
+                    session, l3p['id'],
                     prefix=''.join([contract_name_prefix, k, '-']))
-                # Create Filter (one per tenant)
-                # REVISIT(Sumit): Naming convention used for this Filter
+                # Create Filter (one per l3_policy)
                 aim_filter = aim_resource.Filter(
                     tenant_name=self._aim_tenant_name(
-                        session, l2p['tenant_id'], aim_resource.Filter),
+                        session, l3p['tenant_id'], aim_resource.Filter),
                     name=filter_name,
                     display_name=filter_name)
                 if get:
@@ -1741,8 +1716,8 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
                 else:
                     if create:
                         self.aim.create(aim_ctx, aim_filter, overwrite=True)
-                        # Create FilterEntries (one per tenant) and associate
-                        #  with Filter
+                        # Create FilterEntries (one per l3_policy) and
+                        # associate with Filter
                         self._create_aim_filter_entry(
                             session, aim_ctx, aim_filter, k, v, overwrite=True)
                         filter_names.append(aim_filter.name)
@@ -1756,7 +1731,7 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
                 return aim_resources
             else:
                 if create:
-                    # Create ContractSubject (one per tenant) with relevant
+                    # Create ContractSubject (one per l3_policy) with relevant
                     # Filters, and associate with Contract
                     self._populate_aim_contract_subject_by_filters(
                         context, aim_contract, bi_filters=filter_names)
@@ -1767,10 +1742,10 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
     def _add_implicit_svc_contracts_to_epg(self, context, l2p, aim_epg):
         session = context._plugin_context.session
         aim_ctx = aim_context.AimContext(session)
-        implicit_contract_name = self.name_mapper.project(
-            session, l2p['tenant_id'], prefix=alib.IMPLICIT_PREFIX)
-        service_contract_name = self.name_mapper.project(
-            session, l2p['tenant_id'], prefix=alib.SERVICE_PREFIX)
+        implicit_contract_name = self.name_mapper.l3_policy(
+            session, l2p['l3_policy_id'], prefix=alib.IMPLICIT_PREFIX)
+        service_contract_name = self.name_mapper.l3_policy(
+            session, l2p['l3_policy_id'], prefix=alib.SERVICE_PREFIX)
         self._add_contracts_for_epg(aim_ctx, aim_epg,
             provided_contracts=[implicit_contract_name],
             consumed_contracts=[implicit_contract_name, service_contract_name])
