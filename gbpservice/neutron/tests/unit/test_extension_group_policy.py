@@ -727,7 +727,7 @@ class GroupPolicyExtensionTestCase(test_extensions_base.ExtensionTestCase):
         self.assertEqual(expected_value, res['policy_classifier'])
 
     def test_delete_policy_classifier(self):
-        self._test_entity_delete('policy_action')
+        self._test_entity_delete('policy_classifier')
 
     def _test_create_policy_rule(self, data, expected_value,
                                  default_data=None):
@@ -823,7 +823,7 @@ class GroupPolicyExtensionTestCase(test_extensions_base.ExtensionTestCase):
         self.assertEqual(expected_value, res['policy_rule'])
 
     def test_delete_policy_rule(self):
-        self._test_entity_delete('policy_action')
+        self._test_entity_delete('policy_rule')
 
     def _test_create_policy_rule_set(self, data, expected_value,
                                      default_data=None):
