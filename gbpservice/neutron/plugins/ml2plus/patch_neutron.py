@@ -183,3 +183,28 @@ def commit_reservation(context, reservation_id):
 
 
 quota.QUOTAS.get_driver().commit_reservation = commit_reservation
+
+
+from oslo_db import oslodb_exception
+from oslo_db.sqlalchemy import exc_filters
+from sqlalchemy import exc as sqla_exc
+
+
+@exc_filters.filters("*", sqla_exc.DBAPIError, r".*")
+def _raise_for_remaining_DBAPIError(error, match, engine_name, is_disconnect):
+    """Filter for remaining DBAPIErrors.
+
+    Filter for remaining DBAPIErrors and wrap if they represent
+    a disconnect error.
+    """
+    if is_disconnect:
+        raise oslodb_exception.DBConnectionError(error)
+    else:
+        # The following log statement is being patched here to log
+        # at the debug level as opposed to at error level in the original
+        # code.
+        LOG.debug(('DBAPIError exception wrapped from %s') % error)
+        raise oslodb_exception.DBError(error)
+
+
+exc_filters._raise_for_remaining_DBAPIError = _raise_for_remaining_DBAPIError
