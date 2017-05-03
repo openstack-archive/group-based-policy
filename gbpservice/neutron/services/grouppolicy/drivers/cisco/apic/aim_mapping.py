@@ -96,6 +96,16 @@ opts = [
                 help=_("Automatically create a PTG when a L2 Policy "
                        "gets created. This is currently an aim_mapping "
                        "policy driver specific feature.")),
+    cfg.BoolOpt('create_implicit_contracts_per_l3p',
+                default=False,
+                help=_("This configuration should be enabled for migrating "
+                       "a deployment that has AIM implicit contracts per "
+                       "tenant. Enabling this will allow creation of "
+                       "required AIM implicit contracts per L3P. Once "
+                       "new implicit contracts have been created (this will"
+                       "happen after Neutron server restart), the config "
+                       "option can be disabled such that subsequent server "
+                       "restarts will not perform this operation.")),
 ]
 
 cfg.CONF.register_opts(opts, "aim_mapping")
@@ -164,6 +174,8 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
         self.setup_opflex_rpc_listeners()
         self.advertise_mtu = cfg.CONF.advertise_mtu
         local_api.QUEUE_OUT_OF_PROCESS_NOTIFICATIONS = True
+        if cfg.CONF.aim_mapping.create_implicit_contracts_per_l3p:
+            self._create_implicit_contracts_for_l3ps()
 
     @property
     def aim_mech_driver(self):
@@ -206,6 +218,10 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
         if not self._apic_allowed_vm_name_driver:
             self._apic_allowed_vm_name_driver = False
         return self._apic_allowed_vm_name_driver
+
+    @log.log_method_call
+    def _create_implicit_contracts_per_l3p(self):
+        pass
 
     @log.log_method_call
     def ensure_tenant(self, plugin_context, tenant_id):
