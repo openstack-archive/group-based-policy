@@ -39,6 +39,9 @@ create_gbp_resources() {
 }
 
 delete_gbp_resources() {
+    gbp group-update lb-provider --provided-policy-rule-sets ""
+    # Added sleep 60 sec to complete delete operation
+    sleep 60
     gbp group-delete lb-consumer
     gbp group-delete lb-provider
     gbp network-service-policy-delete lb_nsp
@@ -48,8 +51,6 @@ delete_gbp_resources() {
     gbp policy-action-delete redirect-to-lb
     gbp servicechain-spec-delete lb_chainspec
     gbp servicechain-node-delete LB-NODE
-    # Added sleep 60 sec to complete delete operation
-    sleep 60
 }
 
 validate_gbp_resources() {
@@ -126,9 +127,10 @@ validate_loadbalancer_resources() {
 }
 
 update_gbp_resources() {
-    gbp group-delete lb-provider
+    gbp group-update lb-provider --provided-policy-rule-sets ""
     # Added sleep 60 sec to complete delete operation
     sleep 60
+    gbp group-delete lb-provider
     gbp group-delete lb-consumer
     ServiceChainInstanceCount=`gbp sci-list -f value | grep lb-provider | wc -l`
     if [ "$ServiceChainInstanceCount" -eq "0" ]; then

@@ -174,7 +174,10 @@ class Controller(base_controller.BaseController):
                 LOG.info(msg3)
                 device_ip = context['device_ip']
                 ip = str(device_ip)
-                if operation == 'delete':
+                resource_id = (context['nfp_context']['nfp_context']['id']
+                    if context.get('nfp_context') and
+                        context['nfp_context'].get('nfp_context') else '')
+                if operation == 'delete' and resource_id == 'PERFORM_CLEAR_HM':    
                     return
                 msg5 = ("Verifying vm reachability on ip: %s, port: %s" % (
                     ip, self.vm_port))
