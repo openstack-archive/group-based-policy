@@ -329,3 +329,9 @@ class IdenticalExternalRoute(GroupPolicyBadRequest):
     message = _("External segments %(es1)s and %(es2)s cannot have "
                 "identical external route CIDR %(cidr)s if associated "
                 "with a common L3 policy.")
+
+
+class DeleteOfPTGProvidingPRSNotSupported(GroupPolicyBadRequest):
+    message = _("Deletion of Policy target group which is providing"
+                "PRS not supported. First detach the PRS by"
+                "updating PTG")
