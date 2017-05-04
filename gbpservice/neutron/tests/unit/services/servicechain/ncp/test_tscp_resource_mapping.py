@@ -18,6 +18,7 @@ from oslo_config import cfg
 
 from gbpservice.neutron.services.grouppolicy import (
     policy_driver_manager as pdm)
+from gbpservice.neutron.services.grouppolicy import plugin
 from gbpservice.neutron.services.servicechain.plugins.ncp import model
 from gbpservice.neutron.tests.unit.services.grouppolicy import (
     test_resource_mapping as test_gp_driver)
@@ -70,6 +71,8 @@ class ResourceMappingStitchingPlumberGBPTestCase(
         self.node_driver.get_plumbing_info = get_plumbing_info
         pdm.PolicyDriverManager.get_policy_target_group_status = (
                 mock.MagicMock({}))
+        plugin.GroupPolicyPlugin._validate_redirect_prs = (
+                mock.MagicMock(return_value=False))
 
     @property
     def sc_plugin(self):

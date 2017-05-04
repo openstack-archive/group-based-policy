@@ -712,34 +712,61 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
             plugin_context, context.current['id'])
         session = context._plugin_context.session
 
-        aim_ctx = self._get_aim_context(context)
-        epg = self._aim_endpoint_group(session, context.current)
-        self.aim.delete(aim_ctx, epg)
-        self._process_subnets_for_ptg_delete(
-            context, ptg_db, context.current['l2_policy_id'])
+        try:
+            aim_ctx = self._get_aim_context(context)
+            epg = self._aim_endpoint_group(session, context.current)
+            self.aim.delete(aim_ctx, epg)
+            self._process_subnets_for_ptg_delete(
+                context, ptg_db, context.current['l2_policy_id'])
 
-        self._delete_aim_ap_for_ptg_conditionally(context, ptg_db)
-        ptg_db.update({'application_policy_group_id': None})
+            self._delete_aim_ap_for_ptg_conditionally(context, ptg_db)
+            ptg_db.update({'application_policy_group_id': None})
 
-        if ptg_db['l2_policy_id']:
-            l2p_id = ptg_db['l2_policy_id']
-            ptg_db.update({'l2_policy_id': None})
-            l2p_db = context._plugin._get_l2_policy(
-                plugin_context, l2p_id)
-            if not l2p_db['policy_target_groups'] or (
-                (len(l2p_db['policy_target_groups']) == 1) and (
-                    self._is_auto_ptg(l2p_db['policy_target_groups'][0]))):
-                self._cleanup_l2_policy(context, l2p_id)
+            if ptg_db['l2_policy_id']:
+                l2p_id = ptg_db['l2_policy_id']
+                ptg_db.update({'l2_policy_id': None})
+                l2p_db = context._plugin._get_l2_policy(
+                    plugin_context, l2p_id)
+                if not l2p_db['policy_target_groups'] or (
+                    (len(l2p_db['policy_target_groups']) == 1) and (
+                        self._is_auto_ptg(l2p_db['policy_target_groups'][0]))):
+                    self._cleanup_l2_policy(context, l2p_id)
 
-        if ptg_db['network_service_policy_id']:
-            ptg_db.update({'network_service_policy_id': None})
-            # REVISIT: Note that the RMD puts the following call in
-            # try/except block since in deployment it was observed
-            # that there are certain situations when the
-            # sa_exc.ObjectDeletedError is thrown.
-            self._cleanup_network_service_policy(
-                context, ptg_db, context.nsp_cleanup_ipaddress,
-                context.nsp_cleanup_fips)
+            if ptg_db['network_service_policy_id']:
+                ptg_db.update({'network_service_policy_id': None})
+                # REVISIT: Note that the RMD puts the following call in
+                # try/except block since in deployment it was observed
+                # that there are certain situations when the
+                # sa_exc.ObjectDeletedError is thrown.
+                self._cleanup_network_service_policy(
+                    context, ptg_db, context.nsp_cleanup_ipaddress,
+                    context.nsp_cleanup_fips)
+        except Exception as exc:
+            if self._is_redirect_in_policy_rule_sets(context,
+                    context.current['provided_policy_rule_sets']):
+                msg = "PTG Deletion failed, as chain deletion is going on in "
+                "backend. Try again in sometime."
+                LOG.error(msg + 'for ptg: %(ptg)s',
+                        {'ptg': context.current['id']})
+                context.current['status'] = gp_const.STATUS_ERROR
+                context.current['status_description'] = msg
+            raise Exception(exc)
+
+    def _is_redirect_in_policy_rule_sets(self, context, prs):
+        policy_rule_ids = []
+        for prs in context._plugin.get_policy_rule_sets(
+                context._plugin_context, filters={'id':
+                    prs}):
+            policy_rule_ids.extend(prs['policy_rules'])
+        for rule in context._plugin.get_policy_rules(
+                context._plugin_context, filters={'id':
+                    policy_rule_ids}):
+            redirect_actions = context._plugin.get_policy_actions(
+                context._plugin_context, filters={'id': rule["policy_actions"],
+                    'action_type': [g_const.gp_action_redirect]})
+            if redirect_actions:
+                return True
+        return False
 
     @log.log_method_call
     def extend_policy_target_group_dict(self, session, result):
