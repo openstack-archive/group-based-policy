@@ -1596,7 +1596,8 @@ class ResourceMappingDriver(api.PolicyDriver, ImplicitResourceOperations,
         for fip in context.fips:
             self._delete_fip(context._plugin_context,
                              fip.floatingip_id)
-        if context.current.get('proxy_gateway'):
+        if not context.current.get('port_id') and context.current.get(
+                'proxy_gateway'):    
             self._unset_proxy_gateway_routes(context, context.current)
         self._cleanup_port(context._plugin_context, port_id)
 
