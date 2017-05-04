@@ -42,6 +42,9 @@ create_gbp_resources() {
 }
 
 delete_gbp_resources() {
+    gbp group-update fw-provider --provided-policy-rule-sets ""
+    # Added sleep of 300 secs to complete delete operation
+    sleep 300
     gbp group-delete fw-provider
     gbp group-delete fw-consumer
     gbp policy-rule-set-delete fw-webredirect-ruleset
@@ -56,25 +59,29 @@ delete_gbp_resources() {
     gbp policy-action-delete allow-to-fw
     gbp servicechain-spec-delete fw-chainspec
     gbp servicechain-node-delete FWNODE
-    # Added sleep of 300 secs to complete delete operation
-    sleep 300
 }
 
 validate_gbp_resources() {
     ServiceChainInstanceCount=`gbp sci-list -f value | grep fw-provider | wc -l`
+    ServiceChainlist=`gbp sci-list`
     if [ "$ServiceChainInstanceCount" -eq "1" ]; then
         echo "Chain creation Succeded"
+        echo $ServiceChainlist
     else
         echo "Chain creation failed"
+        echo $ServiceChainlist
     fi
 }
 
 validate_firewall_resources() {
     FirewallRuleCount=`neutron firewall-rule-list -f value | grep Rule | wc -l`
+    FirewallRule=`neutron firewall-rule-list`
     if [ "$FirewallRuleCount" -eq "4" ]; then
         echo "Firewall Rule resource created"
+        echo $FirewallRule
     else
         echo "Firewall Rule resource not created"
+        echo $FirewallRule
     fi
 
     FirewallPolicyCount=`neutron firewall-policy-list -f value | grep fw | wc -l`
@@ -105,36 +112,45 @@ update_gbp_resources() {
     #else
     #    echo "Chain not created"
     #fi
-
-    gbp group-delete fw-provider
+    gbp group-update fw-provider --provided-policy-rule-sets ""
     # Added sleep of 300 secs to complete delete operation
     sleep 300
+    gbp group-delete fw-provider
     gbp group-delete fw-consumer
     ServiceChainInstanceCount=`gbp sci-list -f value | grep fw-provider | wc -l`
+    ServiceChain=`gbp sci-list`
     if [ "$ServiceChainInstanceCount" -eq "0" ]; then
         echo "Chain deleted"
+        echo $ServiceChain
     else
         echo "Chain not deleted"
+        echo $ServiceChain
     fi
 
     # Service chain creation/deletion through PRS update
     gbp group-create fw-consumer --consumed-policy-rule-sets "fw-webredirect-ruleset=None"
     gbp group-create fw-provider
+    ServiceChain=`gbp sci-list`
     ServiceChainInstanceCount=`gbp sci-list -f value | grep fw-provider | wc -l`
     if [ "$ServiceChainInstanceCount" -eq "0" ]; then
         echo "Chain not created"
+        echo $ServiceChain
     else
         echo "Chain not deleted"
+        echo $ServiceChain
     fi
 
     gbp group-update fw-provider --provided-policy-rule-sets "fw-webredirect-ruleset=None"
     # Poll for group status till it becomes ACTIVE/ERROR. Polling timeout is 600 secs.
     check_group_status fw-provider 600
     ServiceChainInstanceCount=`gbp sci-list -f value | grep fw-provider | wc -l`
+    ServiceChain=`gbp sci-list`
     if [ "$ServiceChainInstanceCount" -eq "1" ]; then
         echo "Chain created"
+        echo $ServiceChain
     else
         echo "Chain not created"
+        echo $ServiceChain
     fi
 }
 
