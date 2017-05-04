@@ -46,6 +46,7 @@ from gbpservice.neutron.services.grouppolicy import config
 from gbpservice.neutron.services.grouppolicy.drivers import chain_mapping
 from gbpservice.neutron.services.grouppolicy.drivers import nsp_manager
 from gbpservice.neutron.services.grouppolicy.drivers import resource_mapping
+from gbpservice.neutron.services.grouppolicy import plugin
 from gbpservice.neutron.services.servicechain.plugins.ncp import (
     config as sc_cfg)
 from gbpservice.neutron.tests.unit.db.grouppolicy import test_group_policy_db
@@ -114,6 +115,8 @@ class ResourceMappingTestCase(test_plugin.GroupPolicyPluginTestCase):
         local_api.QUEUE_OUT_OF_PROCESS_NOTIFICATIONS = False
         pdm.PolicyDriverManager.get_policy_target_group_status = (
             mock.MagicMock({}))
+        plugin.GroupPolicyPlugin._check_ptg_provided_prs_has_redirect = (
+            mock.MagicMock(return_value=False))
         try:
             config.cfg.CONF.keystone_authtoken.username
         except config.cfg.NoSuchOptError:
