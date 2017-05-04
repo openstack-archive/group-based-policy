@@ -460,6 +460,23 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
             policy_target['policy_target'].update(
                 {'port_attributes': port_attributes})
 
+    def _validate_redirect_prs(context, policy_target_group_id):
+        policy_rule_ids = []
+        policy_target_group = self.get_policy_target(context,
+                policy_target_group_id)
+        for prs in self.get_policy_rule_sets(
+                context, filters={'id':
+                    policy_target_group['provided_policy_rule_sets']}):
+            policy_rule_ids.extend(prs['policy_rules'])
+        for rule in self.get_policy_rules(
+                context, filters={'id': policy_rule_ids}):
+            redirect_actions = self.get_policy_actions(
+                context, filters={'id': rule["policy_actions"],
+                    'action_type': [gp_cts.gp_action_redirect]})
+            if redirect_actions:
+                return True
+        return False
+
     @log.log_method_call
     @db_api.retry_if_session_inactive()
     def create_policy_target(self, context, policy_target):
@@ -628,9 +645,14 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
     @db_api.retry_if_session_inactive()
     def delete_policy_target_group(self, context, policy_target_group_id):
         session = context.session
+
         with session.begin(subtransactions=True):
             policy_target_group = self.get_policy_target_group(
                 context, policy_target_group_id)
+            if self._validate_redirect_prs(context, policy_target_group_id):
+                raise gp_exc.DeleteOfPTGProvidingPRSNotSupported(
+                    ptg_id=context.current['id'],
+                    prs_id=context.current['provided_policy_rule_sets'])
             pt_ids = policy_target_group['policy_targets']
             for pt in self.get_policy_targets(context.elevated(),
                                               {'id': pt_ids}):
