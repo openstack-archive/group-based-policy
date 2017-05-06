@@ -1,0 +1,9 @@
+Code-Review+2: Amit Bose <amitbose@gmail.com>
+Code-Review+2: Ivar Lazzaro <ivarlazzaro@gmail.com>
+Workflow+1: Ivar Lazzaro <ivarlazzaro@gmail.com>
+Verified+2: Jenkins
+Submitted-by: Jenkins
+Submitted-at: Sat, 06 May 2017 01:10:40 +0000
+Reviewed-on: https://review.openstack.org/463066
+Project: openstack/group-based-policy
+Branch: refs/heads/stable/newton
