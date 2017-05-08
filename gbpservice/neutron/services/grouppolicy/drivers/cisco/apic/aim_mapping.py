@@ -14,6 +14,7 @@ import hashlib
 import re
 import six
 
+from aim import aim_manager
 from aim.api import resource as aim_resource
 from aim import context as aim_context
 from aim import utils as aim_utils
@@ -42,6 +43,7 @@ from gbpservice.neutron.extensions import cisco_apic_l3
 from gbpservice.neutron.extensions import group_policy as gpolicy
 from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import (
     mechanism_driver as md)
+from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import apic_mapper
 from gbpservice.neutron.services.grouppolicy.common import (
     constants as gp_const)
 from gbpservice.neutron.services.grouppolicy.common import constants as g_const
@@ -96,6 +98,19 @@ opts = [
                 help=_("Automatically create a PTG when a L2 Policy "
                        "gets created. This is currently an aim_mapping "
                        "policy driver specific feature.")),
+    cfg.BoolOpt('create_per_l3p_implicit_contracts',
+                default=True,
+                help=_("This configuration is set to True to migrate a "
+                       "deployment that has l3_policies without implicit "
+                       "AIM contracts (these are deployments which have "
+                       "AIM implicit contracts per tenant). A Neutron server "
+                       "restart is required for this configuration to take "
+                       "effect. The creation of the implicit contracts "
+                       "happens at the time of the AIM policy driver "
+                       "initialization. The configuration can be set to "
+                       "False to avoid recreating the implicit contracts "
+                       "on subsequent Neutron server restarts. This "
+                       "option will be removed in the O release")),
 ]
 
 cfg.CONF.register_opts(opts, "aim_mapping")
@@ -156,14 +171,22 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
         self._apic_aim_mech_driver = None
         self._apic_segmentation_label_driver = None
         self._apic_allowed_vm_name_driver = None
+        self._aim = None
+        self._name_mapper = None
         self.create_auto_ptg = cfg.CONF.aim_mapping.create_auto_ptg
         if self.create_auto_ptg:
             LOG.info(_LI('Auto PTG creation configuration set, '
                          'this will result in automatic creation of a PTG '
                          'per L2 Policy'))
+        self.create_per_l3p_implicit_contracts = (
+                cfg.CONF.aim_mapping.create_per_l3p_implicit_contracts)
         self.setup_opflex_rpc_listeners()
         self.advertise_mtu = cfg.CONF.advertise_mtu
         local_api.QUEUE_OUT_OF_PROCESS_NOTIFICATIONS = True
+        if self.create_per_l3p_implicit_contracts:
+            LOG.info(_LI('Implicit AIM contracts will be created '
+                         'for l3_policies which do not have them.'))
+            self._create_per_l3p_implicit_contracts()
 
     @property
     def aim_mech_driver(self):
@@ -175,11 +198,15 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
 
     @property
     def aim(self):
-        return self.aim_mech_driver.aim
+        if not self._aim:
+            self._aim = self.aim_mech_driver.aim
+        return self._aim
 
     @property
     def name_mapper(self):
-        return self.aim_mech_driver.name_mapper
+        if not self._name_mapper:
+            self._name_mapper = self.aim_mech_driver.name_mapper
+        return self._name_mapper
 
     @property
     def apic_segmentation_label_driver(self):
@@ -1618,7 +1645,7 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
 
     def _configure_contracts_for_default_epg(self, context, l3p, epg_dn):
         self._process_contracts_for_default_epg(
-            context, l3p, epg_dn, create=False, delete=False)
+            context, l3p, epg_dn=epg_dn, create=False, delete=False)
 
     def _delete_implicit_contracts(self, context, l3p):
         self._process_contracts_for_default_epg(
@@ -1627,7 +1654,7 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
     def _get_implicit_contracts_for_default_epg(
         self, context, l3p, epg_dn):
         return self._process_contracts_for_default_epg(
-            context, l3p, epg_dn, get=True)
+            context, l3p, epg_dn=epg_dn, get=True)
 
     def _process_contracts_for_default_epg(
         self, context, l3p, epg_dn=None, create=True, delete=False, get=False):
@@ -1661,10 +1688,9 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
                 session, l3p['id'], prefix=contract_name_prefix)
             # Create Contract (one per l3_policy)
             aim_contract = aim_resource.Contract(
-                tenant_name=self._aim_tenant_name(
-                    session, l3p['tenant_id'], aim_resource.Contract),
-                name=contract_name,
-                display_name=contract_name)
+                    tenant_name=self._aim_tenant_name(
+                        session, l3p['tenant_id'], aim_resource.Contract),
+                    name=contract_name, display_name=contract_name)
 
             if get:
                 aim_resources = {}
@@ -1701,10 +1727,9 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
                     prefix=''.join([contract_name_prefix, k, '-']))
                 # Create Filter (one per l3_policy)
                 aim_filter = aim_resource.Filter(
-                    tenant_name=self._aim_tenant_name(
-                        session, l3p['tenant_id'], aim_resource.Filter),
-                    name=filter_name,
-                    display_name=filter_name)
+                        tenant_name=self._aim_tenant_name(
+                            session, l3p['tenant_id'], aim_resource.Filter),
+                        name=filter_name, display_name=filter_name)
                 if get:
                     filter_fetched = self.aim.get(aim_ctx, aim_filter)
                     aim_resources[FILTERS].append(filter_fetched)
@@ -2444,3 +2469,42 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
         admin_context = n_context.get_admin_context()
         admin_context._session = session
         return admin_context
+
+    def _create_per_l3p_implicit_contracts(self):
+        admin_context = n_context.get_admin_context()
+        context = type('', (object,), {})()
+        context._plugin_context = admin_context
+        session = admin_context.session
+        aim_ctx = aim_context.AimContext(session)
+        contract_name_prefix = alib.get_service_contract_filter_entries(
+                ).keys()[0]
+        l3ps = session.query(gpmdb.L3PolicyMapping).all()
+        name_mapper = apic_mapper.APICNameMapper()
+        aim_mgr = aim_manager.AimManager()
+        self._aim = aim_mgr
+        self._name_mapper = name_mapper
+        orig_aim_tenant_name = self._aim_tenant_name
+
+        def _aim_tenant_name(self, session, tenant_id, aim_resource_class=None,
+                gbp_resource=None, gbp_obj=None):
+            attrs = aim_resource.Tenant(name=md.COMMON_TENANT_NAME,
+                    display_name=aim_utils.sanitize_display_name(
+                        'CommonTenant'))
+            tenant = aim_mgr.get(aim_ctx, attrs)
+            if not tenant:
+                tenant = aim_mgr.create(aim_ctx, attrs)
+            return md.COMMON_TENANT_NAME
+
+        self._aim_tenant_name = _aim_tenant_name
+
+        for l3p in l3ps:
+            implicit_contract_name = name_mapper.l3_policy(
+                session, l3p['id'], prefix=contract_name_prefix)
+            if not aim_mgr.find(
+                    aim_ctx, aim_resource.Contract,
+                    name=implicit_contract_name):
+                self._create_implicit_contracts(context, l3p)
+
+        self._aim = None
+        self._name_mapper = None
+        self._aim_tenant_name = orig_aim_tenant_name

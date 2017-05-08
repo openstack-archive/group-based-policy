@@ -1416,6 +1416,44 @@ class TestL3Policy(AIMBaseTestCase):
                              res['NeutronError']['type'])
 
 
+class TestLegacyL3Policy(TestL3Policy):
+
+    def setUp(self, **kwargs):
+        orig_create_per_l3p_implicit_contracts = (
+                aimd.AIMMappingDriver._create_per_l3p_implicit_contracts)
+
+        def _create_per_l3p_implicit_contracts(self):
+            session = nctx.get_admin_context().session
+            with session.begin(subtransactions=True):
+                l3p_db = group_policy_mapping_db.L3PolicyMapping(
+                        id='1234', tenant_id='some_tenant',
+                        name='test-l3p', description='test-desc',
+                        ip_version=4, ip_pool='10.0.0.0/8',
+                        subnet_prefix_length=24, shared=False)
+                session.add(l3p_db)
+                session.flush()
+            aim_model_base.Base.metadata.create_all(
+                    session.__dict__['bind'])
+            orig_create_per_l3p_implicit_contracts(self)
+            aimd.AIMMappingDriver._create_per_l3p_implicit_contracts = (
+                    orig_create_per_l3p_implicit_contracts)
+
+        aimd.AIMMappingDriver._create_per_l3p_implicit_contracts = (
+                _create_per_l3p_implicit_contracts)
+
+        super(TestLegacyL3Policy, self).setUp(**kwargs)
+
+    def test_create_implicit_contracts(self):
+        self._validate_implicit_contracts_created('1234')
+        l3p = self.create_l3_policy()['l3_policy']
+        context = type('', (object,), {})()
+        context._plugin_context = self._context
+        self.driver._delete_implicit_contracts(context, l3p)
+        self._validate_implicit_contracts_deleted(l3p['id'])
+        self.driver._create_per_l3p_implicit_contracts()
+        self._validate_implicit_contracts_created(l3p['id'])
+
+
 class TestL3PolicyRollback(AIMBaseTestCase):
 
     def test_l3_policy_create_fail(self):
@@ -1607,6 +1645,10 @@ class TestL2PolicyWithAutoPTG(TestL2PolicyBase):
     def setUp(self, **kwargs):
         super(TestL2PolicyWithAutoPTG, self).setUp(**kwargs)
         self.driver.create_auto_ptg = True
+
+    def tearDown(self):
+        super(TestL2PolicyWithAutoPTG, self).tearDown()
+        self.driver.create_auto_ptg = False
 
     def _get_auto_ptg(self, l2p):
         ptg = self._gbp_plugin.get_policy_target_groups(
@@ -4506,3 +4548,23 @@ class TestNeutronPortOperation(AIMBaseTestCase):
         self._check_call_list(
             expected_calls,
             self.driver.aim_mech_driver._notify_port_update.call_args_list)
+
+
+class TestPerL3PImplicitContractsConfig(TestL2PolicyWithAutoPTG):
+
+    def setUp(self, **kwargs):
+        aimd.cfg.CONF.set_override('create_per_l3p_implicit_contracts',
+                False, "aim_mapping")
+        self.mock_create = mock.Mock()
+        aimd.AIMMappingDriver._create_per_l3p_implicit_contracts = (
+                self.mock_create)
+        super(TestPerL3PImplicitContractsConfig, self).setUp(**kwargs)
+
+    def tearDown(self):
+        super(TestPerL3PImplicitContractsConfig, self).tearDown()
+        aimd.cfg.CONF.set_override('create_per_l3p_implicit_contracts',
+                True, group='aim_mapping')
+        self.driver.create_per_l3p_implicit_contracts = True
+
+    def test_create_not_called(self):
+        self.mock_create.assert_not_called()
