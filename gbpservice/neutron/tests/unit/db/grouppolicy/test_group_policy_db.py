@@ -349,6 +349,8 @@ class GroupPolicyDbTestCase(GroupPolicyDBTestBase,
         self._gbp_plugin = plugins.get(constants.GROUP_POLICY)
         self._sc_plugin = plugins.get(constants.SERVICECHAIN)
         self._l3_plugin = plugins.get(constants.L3_ROUTER_NAT)
+        plugins.get('CORE').__dict__['_aliases'].remove('agent')
+        plugins.get('CORE').__dict__['_aliases'].remove('dhcp_agent_scheduler')
 
 
 class TestGroupResources(GroupPolicyDbTestCase):
