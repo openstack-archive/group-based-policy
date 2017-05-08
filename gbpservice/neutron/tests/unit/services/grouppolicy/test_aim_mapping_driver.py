@@ -1415,6 +1415,15 @@ class TestL3Policy(AIMBaseTestCase):
             self.assertEqual('L3PolicyMultipleRoutersNotSupported',
                              res['NeutronError']['type'])
 
+    def test_legacy_l3_policy_create_implicit_contracts(self):
+        l3p = self.create_l3_policy()['l3_policy']
+        context = type('', (object,), {})()
+        context._plugin_context = self._context
+        self.driver._delete_implicit_contracts(context, l3p)
+        self._validate_implicit_contracts_deleted(l3p['id'])
+        self.driver._create_per_l3p_implicit_contracts()
+        self._validate_implicit_contracts_created(l3p['id'])
+
 
 class TestL3PolicyRollback(AIMBaseTestCase):
 
@@ -1607,6 +1616,10 @@ class TestL2PolicyWithAutoPTG(TestL2PolicyBase):
     def setUp(self, **kwargs):
         super(TestL2PolicyWithAutoPTG, self).setUp(**kwargs)
         self.driver.create_auto_ptg = True
+
+    def tearDown(self):
+        super(TestL2PolicyWithAutoPTG, self).tearDown()
+        self.driver.create_auto_ptg = False
 
     def _get_auto_ptg(self, l2p):
         ptg = self._gbp_plugin.get_policy_target_groups(
@@ -4506,3 +4519,23 @@ class TestNeutronPortOperation(AIMBaseTestCase):
         self._check_call_list(
             expected_calls,
             self.driver.aim_mech_driver._notify_port_update.call_args_list)
+
+
+class TestPerL3PImplicitContractsConfig(TestL2PolicyWithAutoPTG):
+
+    def setUp(self, **kwargs):
+        aimd.cfg.CONF.set_override('create_per_l3p_implicit_contracts',
+                True, "aim_mapping")
+        self.mock_create = mock.Mock()
+        aimd.AIMMappingDriver._create_per_l3p_implicit_contracts = (
+                self.mock_create)
+        super(TestPerL3PImplicitContractsConfig, self).setUp(**kwargs)
+
+    def tearDown(self):
+        super(TestPerL3PImplicitContractsConfig, self).tearDown()
+        aimd.cfg.CONF.set_override('create_per_l3p_implicit_contracts',
+                False, group='aim_mapping')
+        self.driver.create_per_l3p_implicit_contracts = False
+
+    def test_create_called(self):
+        self.mock_create.assert_called_with()

@@ -96,6 +96,19 @@ opts = [
                 help=_("Automatically create a PTG when a L2 Policy "
                        "gets created. This is currently an aim_mapping "
                        "policy driver specific feature.")),
+    cfg.BoolOpt('create_per_l3p_implicit_contracts',
+                default=False,
+                help=_("This configuration is set to True to migrate a "
+                       "deployment that has l3_policies without implicit "
+                       "AIM contracts (these are deployments which have "
+                       "AIM implicit contracts per tenant). A Neutron server "
+                       "restart is required for this configuration to take "
+                       "effect. The creation of the implicit contracts "
+                       "happens at the time of the AIM policy driver "
+                       "initialization. The configuration should be set to "
+                       "False to avoid recreating the implicit contracts "
+                       "on subsequent Neutron server restarts. This "
+                       "option will be removed in the O release")),
 ]
 
 cfg.CONF.register_opts(opts, "aim_mapping")
@@ -161,6 +174,12 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
             LOG.info(_LI('Auto PTG creation configuration set, '
                          'this will result in automatic creation of a PTG '
                          'per L2 Policy'))
+        self.create_per_l3p_implicit_contracts = (
+                cfg.CONF.aim_mapping.create_per_l3p_implicit_contracts)
+        if self.create_per_l3p_implicit_contracts:
+            LOG.info(_LI('Implicit AIM contracts will be created '
+                         'for l3_policies which do not have them.'))
+            self._create_per_l3p_implicit_contracts()
         self.setup_opflex_rpc_listeners()
         self.advertise_mtu = cfg.CONF.advertise_mtu
         local_api.QUEUE_OUT_OF_PROCESS_NOTIFICATIONS = True
@@ -2444,3 +2463,20 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
         admin_context = n_context.get_admin_context()
         admin_context._session = session
         return admin_context
+
+    def _create_per_l3p_implicit_contracts(self):
+        admin_context = n_context.get_admin_context()
+        context = type('', (object,), {})()
+        context._plugin_context = admin_context
+        session = admin_context.session
+        aim_ctx = aim_context.AimContext(session)
+        contract_name_prefix = alib.get_service_contract_filter_entries(
+                ).keys()[0]
+        l3ps = self._get_l3_policies(admin_context)
+        for l3p in l3ps:
+            implicit_contract_name = self.name_mapper.l3_policy(
+                session, l3p['id'], prefix=contract_name_prefix)
+            if not self.aim.find(
+                    aim_ctx, aim_resource.Contract,
+                    name=implicit_contract_name):
+                self._create_implicit_contracts(context, l3p)
