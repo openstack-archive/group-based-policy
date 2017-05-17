@@ -20,10 +20,10 @@ from aim import utils as aim_utils
 from neutron.agent.linux import dhcp
 from neutron import context as n_context
 from neutron.db import models_v2
-from neutron import manager
 from neutron import policy
 from neutron_lib import constants as n_constants
 from neutron_lib import exceptions as n_exc
+from neutron_lib.plugins import directory
 from oslo_concurrency import lockutils
 from oslo_config import cfg
 from oslo_log import helpers as log
@@ -168,7 +168,7 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
     @property
     def aim_mech_driver(self):
         if not self._apic_aim_mech_driver:
-            ml2plus_plugin = manager.NeutronManager.get_plugin()
+            ml2plus_plugin = directory.get_plugin()
             self._apic_aim_mech_driver = (
                 ml2plus_plugin.mechanism_manager.mech_drivers['apic_aim'].obj)
         return self._apic_aim_mech_driver

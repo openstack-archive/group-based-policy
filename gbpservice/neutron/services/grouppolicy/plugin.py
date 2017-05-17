@@ -16,10 +16,10 @@ import six
 from neutron import context as n_ctx
 from neutron.db import api as db_api
 from neutron.extensions import portbindings
-from neutron import manager as n_manager
 from neutron.plugins.common import constants as pconst
 from neutron.quota import resource_registry
 from neutron_lib import constants
+from neutron_lib.plugins import directory
 from oslo_log import helpers as log
 from oslo_log import log as logging
 from oslo_utils import excutils
@@ -72,8 +72,7 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
     def servicechain_plugin(self):
         # REVISIT(rkukura): Need initialization method after all
         # plugins are loaded to grab and store plugin.
-        plugins = n_manager.NeutronManager.get_service_plugins()
-        servicechain_plugin = plugins.get(pconst.SERVICECHAIN)
+        servicechain_plugin = directory.get_plugin(pconst.SERVICECHAIN)
         if not servicechain_plugin:
             LOG.error(_LE("No Servicechain service plugin found."))
             raise gp_exc.GroupPolicyDeploymentError()
@@ -282,7 +281,7 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
                 # Verify segment CIDR doesn't overlap with L3P's
                 cidr = es['cidr']
                 if es['subnet_id']:
-                    core_plugin = n_manager.NeutronManager.get_plugin()
+                    core_plugin = directory.get_plugin()
                     cidr = core_plugin.get_subnet(context,
                         es['subnet_id'])['cidr']
                 if l3p_ipset & netaddr.IPSet([cidr]):
@@ -1745,7 +1744,7 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
         not_bound = [portbindings.VIF_TYPE_UNBOUND,
                      portbindings.VIF_TYPE_BINDING_FAILED]
         context = n_ctx.get_admin_context()
-        port = n_manager.NeutronManager.get_plugin().get_port(context, port_id)
+        port = directory.get_plugin().get_port(context, port_id)
         return (port.get('binding:vif_type') not in not_bound) and port.get(
             'binding:host_id') and (port['device_owner'] or port['device_id'])
 

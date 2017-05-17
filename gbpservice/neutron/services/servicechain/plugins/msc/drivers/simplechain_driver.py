@@ -16,9 +16,9 @@ import time
 from heatclient import client as heat_client
 from heatclient import exc as heat_exc
 from keystoneclient.v2_0 import client as keyclient
-from neutron import manager
 from neutron.plugins.common import constants as pconst
 from neutron_lib.db import model_base
+from neutron_lib.plugins import directory
 from oslo_config import cfg
 from oslo_log import helpers as log
 from oslo_log import log as logging
@@ -405,14 +405,13 @@ class SimpleChainDriver(object):
     def _core_plugin(self):
         # REVISIT(Magesh): Need initialization method after all
         # plugins are loaded to grab and store plugin.
-        return manager.NeutronManager.get_plugin()
+        return directory.get_plugin()
 
     @property
     def _grouppolicy_plugin(self):
         # REVISIT(Magesh): Need initialization method after all
         # plugins are loaded to grab and store plugin.
-        plugins = manager.NeutronManager.get_service_plugins()
-        grouppolicy_plugin = plugins.get(pconst.GROUP_POLICY)
+        grouppolicy_plugin = directory.get_plugin(pconst.GROUP_POLICY)
         if not grouppolicy_plugin:
             LOG.error(_LE("No Grouppolicy service plugin found."))
             raise exc.ServiceChainDeploymentError()
