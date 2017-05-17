@@ -33,7 +33,7 @@ class SqlFixture(fixtures.Fixture):
 
     def _setUp(self):
         # Register all data models
-        engine = db_api.get_engine()
+        engine = db_api.context_manager.writer.get_engine()
         if not SqlFixture._TABLES_ESTABLISHED:
             nfp_db_model.BASE.metadata.create_all(engine)
             SqlFixture._TABLES_ESTABLISHED = True

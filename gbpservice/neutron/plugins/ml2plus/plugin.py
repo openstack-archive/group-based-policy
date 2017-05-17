@@ -177,7 +177,7 @@ class Ml2PlusPlugin(ml2_plugin.Ml2Plugin,
                          "subnet_after_delete events"))
         self._setup_dhcp()
         self._start_rpc_notifiers()
-        self.add_agent_status_check(self.agent_health_check)
+        self.add_agent_status_check_worker(self.agent_health_check)
         self._verify_service_plugins_requirements()
         self.refresh_network_db_obj = cfg.CONF.ml2plus.refresh_network_db_obj
         self.refresh_port_db_obj = cfg.CONF.ml2plus.refresh_port_db_obj
@@ -229,13 +229,13 @@ class Ml2PlusPlugin(ml2_plugin.Ml2Plugin,
             self.extension_manager.extend_subnetpool_dict(
                 session, subnetpooldb, result)
 
-    def _ml2_md_extend_address_scope_dict(self, result, address_scopedb):
+    def _ml2_md_extend_address_scope_dict(self, result, address_scope):
         session = patch_neutron.get_current_session()
         with session.begin(subtransactions=True):
             if self.refresh_address_scope_db_obj:
-                session.refresh(address_scopedb)
+                session.refresh(address_scope)
             self.extension_manager.extend_address_scope_dict(
-                session, address_scopedb, result)
+                session, address_scope, result)
 
     # Base version does not call _apply_dict_extend_functions()
     def _make_address_scope_dict(self, address_scope, fields=None):
