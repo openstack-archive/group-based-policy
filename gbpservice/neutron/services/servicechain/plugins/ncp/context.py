@@ -10,8 +10,8 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-from neutron import manager
-from neutron.plugins.common import constants as pconst
+from neutron_lib import constants
+from neutron_lib.plugins import directory
 
 from gbpservice.common import utils
 from gbpservice.neutron.services.grouppolicy.drivers import resource_mapping
@@ -19,7 +19,7 @@ from gbpservice.neutron.services.servicechain.plugins.ncp import model
 
 
 def get_gbp_plugin():
-    return manager.NeutronManager.get_service_plugins().get("GROUP_POLICY")
+    return directory.get_plugin("GROUP_POLICY")
 
 
 def get_node_driver_context(sc_plugin, context, sc_instance,
@@ -127,9 +127,8 @@ class NodeDriverContext(object):
         self._classifier = classifier
         self._is_consumer_external = is_consumer_external
         self._relevant_specs = None
-        self._core_plugin = manager.NeutronManager.get_plugin()
-        self._l3_plugin = manager.NeutronManager.get_service_plugins().get(
-            pconst.L3_ROUTER_NAT)
+        self._core_plugin = directory.get_plugin()
+        self._l3_plugin = directory.get_plugin(constants.L3)
         self._position = position
 
     @property

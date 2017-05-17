@@ -201,15 +201,15 @@ from sqlalchemy.orm import exc
 
 # REVISIT: This method gets decorated in Pike for removal in Queens. So this
 # patching might need to be changed in Pike and removed in Queens.
-def patched_get_locked_port_and_binding(session, port_id):
+def patched_get_locked_port_and_binding(context, port_id):
     """Get port and port binding records for update within transaction."""
     LOG.debug("Using patched_get_locked_port_and_binding")
     try:
-        port = (session.query(models_v2.Port).
+        port = (context.session.query(models_v2.Port).
                 enable_eagerloads(False).
                 filter_by(id=port_id).
                 one())
-        binding = (session.query(models.PortBinding).
+        binding = (context.session.query(models.PortBinding).
                    enable_eagerloads(False).
                    filter_by(port_id=port_id).
                    one())
