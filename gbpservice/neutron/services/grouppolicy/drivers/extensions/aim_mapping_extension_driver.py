@@ -10,7 +10,7 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-from neutron import manager as n_manager
+from neutron_lib.plugins import directory
 from oslo_log import log as logging
 
 from gbpservice._i18n import _LI
@@ -40,8 +40,7 @@ class AIMExtensionDriver(api.ExtensionDriver,
     @property
     def _pd(self):
         if not self._policy_driver:
-            gbp_plugin = (n_manager.NeutronManager.get_service_plugins()
-                          .get("GROUP_POLICY"))
+            gbp_plugin = directory.get_plugin("GROUP_POLICY")
             policy_mgr = gbp_plugin.policy_driver_manager
             self._policy_driver = policy_mgr.policy_drivers['aim_mapping'].obj
         return self._policy_driver

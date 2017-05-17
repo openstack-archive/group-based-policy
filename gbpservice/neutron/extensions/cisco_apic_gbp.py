@@ -10,8 +10,8 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-from neutron.api import extensions
 from neutron_lib.api import converters as conv
+from neutron_lib.api import extensions
 
 from gbpservice.neutron.extensions import cisco_apic
 from gbpservice.neutron.extensions import group_policy as gp
