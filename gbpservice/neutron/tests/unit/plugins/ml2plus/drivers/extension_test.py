@@ -16,6 +16,7 @@
 from neutron.api import extensions
 from neutron.db.models import address_scope as as_db
 from neutron.db import models_v2
+from neutron.objects import address_scope as as_object
 from neutron_lib.api import validators
 from neutron_lib.db import model_base
 import oslo_db.sqlalchemy.session
@@ -95,9 +96,9 @@ class TestExtensionDriver(TestExtensionDriverBase):
         result['address_scope_extension'] = (self.address_scope_extension +
                                              '_update')
 
-    def extend_address_scope_dict(self, session, address_scope_db, result):
-        self._check_extend(session, result, address_scope_db,
-                           as_db.AddressScope)
+    def extend_address_scope_dict(self, session, address_scope, result):
+        self._check_extend(session, result, address_scope,
+                           as_object.AddressScope)
         result['address_scope_extension'] = (self.address_scope_extension +
                                              '_extend')
 
@@ -149,9 +150,9 @@ class TestDBExtensionDriver(TestExtensionDriverBase):
         result['subnetpool_extension'] = record.value
 
     def extend_subnetpool_dict(self, session, subnetpool_db, result):
-        value = (subnetpool_db.extension.value
-                 if subnetpool_db.extension else '')
-        result['subnetpool_extension'] = value
+        record = (session.query(TestSubnetPoolExtension).
+                 filter_by(subnetpool_id=result['id']).one_or_none())
+        result['subnetpool_extension'] = record.value if record else ''
 
     def process_create_address_scope(self, plugin_context, data, result):
         session = plugin_context.session
@@ -170,7 +171,7 @@ class TestDBExtensionDriver(TestExtensionDriverBase):
             record.value = value
         result['address_scope_extension'] = record.value
 
-    def extend_address_scope_dict(self, session, address_scope_db, result):
-        value = (address_scope_db.extension.value
-                 if address_scope_db.extension else '')
-        result['address_scope_extension'] = value
+    def extend_address_scope_dict(self, session, address_scope, result):
+        record = (session.query(TestAddressScopeExtension).
+                 filter_by(address_scope_id=result['id']).one_or_none())
+        result['address_scope_extension'] = record.value if record else ''

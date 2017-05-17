@@ -193,7 +193,7 @@ class NFPNodeDriverTestCase(
             core_plugin=CORE_PLUGIN,
             gp_plugin=GP_PLUGIN_KLASS,
             sc_plugin=SC_PLUGIN_KLASS)
-        engine = db_api.get_engine()
+        engine = db_api.context_manager.writer.get_engine()
         model_base.BASEV2.metadata.create_all(engine)
 
     def test_manager_initialized(self):
