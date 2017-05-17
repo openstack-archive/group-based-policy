@@ -10,10 +10,6 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-import netaddr
-from neutron.callbacks import events
-from neutron.callbacks import registry
-from neutron.callbacks import resources
 from neutron.db import api as db_api
 from neutron.db import common_db_mixin
 from neutron.db import l3_db
@@ -21,7 +17,6 @@ from neutron.db import models_v2
 from neutron.db import securitygroups_db
 from neutron.plugins.ml2 import db as ml2_db
 from neutron_lib.api import validators
-from neutron_lib import constants
 from neutron_lib import exceptions as n_exc
 from oslo_log import log
 from sqlalchemy import event
@@ -49,40 +44,6 @@ def _get_assoc_data(self, context, fip, floatingip_db):
 
 
 l3_db.L3_NAT_dbonly_mixin._get_assoc_data = _get_assoc_data
-
-
-def _update_fip_assoc(self, context, fip, floatingip_db, external_port):
-    previous_router_id = floatingip_db.router_id
-    port_id, internal_ip_address, router_id = (
-        self._check_and_get_fip_assoc(context, fip, floatingip_db))
-    floatingip_db.update({'fixed_ip_address': internal_ip_address,
-                          'fixed_port_id': port_id,
-                          'router_id': router_id,
-                          'last_known_router_id': previous_router_id})
-    next_hop = None
-    if router_id:
-        router = self._get_router(context.elevated(), router_id)
-        gw_port = router.gw_port
-        if gw_port:
-            for fixed_ip in gw_port.fixed_ips:
-                addr = netaddr.IPAddress(fixed_ip.ip_address)
-                if addr.version == constants.IP_VERSION_4:
-                    next_hop = fixed_ip.ip_address
-                    break
-    args = {'fixed_ip_address': internal_ip_address,
-            'fixed_port_id': port_id,
-            'router_id': router_id,
-            'last_known_router_id': previous_router_id,
-            'floating_ip_address': floatingip_db.floating_ip_address,
-            'floating_network_id': floatingip_db.floating_network_id,
-            'next_hop': next_hop,
-            'context': context}
-    registry.notify(resources.FLOATING_IP,
-                    events.AFTER_UPDATE,
-                    self._update_fip_assoc,
-                    **args)
-
-l3_db.L3_NAT_dbonly_mixin._update_fip_assoc = _update_fip_assoc
 
 
 # REVISIT(ivar): Neutron adds a tenant filter on SG lookup for a given port,
@@ -131,37 +92,36 @@ PUSH_NOTIFICATIONS_METHOD = None
 DISCARD_NOTIFICATIONS_METHOD = None
 
 
-def get_session(autocommit=True, expire_on_commit=False, use_slave=False):
+def gbp_after_transaction(session, transaction):
+    if transaction and not transaction._parent and (
+        not transaction.is_active and not transaction.nested):
+        if transaction in session.notification_queue:
+            # push the queued notifications only when the
+            # outermost transaction completes
+            PUSH_NOTIFICATIONS_METHOD(session, transaction)
+
+
+def gbp_after_rollback(session):
+    # We discard all queued notifiactions if the transaction fails.
+    DISCARD_NOTIFICATIONS_METHOD(session)
+
+
+def pre_session():
+    from gbpservice.network.neutronv2 import local_api
+
     # The folowing are declared as global so that they can
     # used in the inner functions that follow.
     global PUSH_NOTIFICATIONS_METHOD
     global DISCARD_NOTIFICATIONS_METHOD
-    from gbpservice.network.neutronv2 import local_api
     PUSH_NOTIFICATIONS_METHOD = (
         local_api.post_notifications_from_queue)
     DISCARD_NOTIFICATIONS_METHOD = (
         local_api.discard_notifications_after_rollback)
 
-    # The following two lines are copied from the original
-    # implementation of db_api.get_session() and should be updated
-    # if the original implementation changes.
-    new_session = db_api.context_manager.get_legacy_facade().get_session(
-        autocommit=autocommit, expire_on_commit=expire_on_commit,
-        use_slave=use_slave)
 
+def post_session(new_session):
+    from gbpservice.network.neutronv2 import local_api
     new_session.notification_queue = {}
-
-    def gbp_after_transaction(session, transaction):
-        if transaction and not transaction._parent and (
-            not transaction.is_active and not transaction.nested):
-            if transaction in session.notification_queue:
-                # push the queued notifications only when the
-                # outermost transaction completes
-                PUSH_NOTIFICATIONS_METHOD(session, transaction)
-
-    def gbp_after_rollback(session):
-        # We discard all queued notifiactions if the transaction fails.
-        DISCARD_NOTIFICATIONS_METHOD(session)
 
     if local_api.QUEUE_OUT_OF_PROCESS_NOTIFICATIONS:
         event.listen(new_session, "after_transaction_end",
@@ -169,10 +129,38 @@ def get_session(autocommit=True, expire_on_commit=False, use_slave=False):
         event.listen(new_session, "after_rollback",
                      gbp_after_rollback)
 
+
+def get_session(autocommit=True, expire_on_commit=False, use_slave=False):
+
+    pre_session()
+    # The following two lines are copied from the original
+    # implementation of db_api.get_session() and should be updated
+    # if the original implementation changes.
+    new_session = db_api.context_manager.get_legacy_facade().get_session(
+        autocommit=autocommit, expire_on_commit=expire_on_commit,
+        use_slave=use_slave)
+
+    post_session(new_session)
+    return new_session
+
+#TODO(annak): check if reader notification is needed
+def get_reader_session():
+    pre_session()
+    new_session = db_api.context_manager.reader.get_sessionmaker()()
+    post_session(new_session)
+    return new_session
+
+def get_writer_session():
+    pre_session()
+
+    new_session = db_api.context_manager.writer.get_sessionmaker()()
+    post_session(new_session)
     return new_session
 
 
 db_api.get_session = get_session
+db_api.get_reader_session = get_reader_session
+db_api.get_writer_session = get_writer_session
 
 
 # REVISIT: This is temporary, the correct fix is to use
