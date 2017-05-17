@@ -13,7 +13,8 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-from neutron.db import sqlalchemyutils
+from neutron_lib.db import utils as db_utils
+from oslo_db.sqlalchemy import utils as sa_utils
 import six
 import weakref
 
@@ -138,11 +139,14 @@ class CommonDbMixin(object):
                               page_reverse=False):
         collection = self._model_query(session, model)
         collection = self._apply_filters_to_query(collection, model, filters)
-        if limit and page_reverse and sorts:
-            sorts = [(s[0], not s[1]) for s in sorts]
-        collection = sqlalchemyutils.paginate_query(
+        if sorts:
+            sort_keys = db_utils.get_and_validate_sort_keys(sorts, model)
+            sort_dirs = db_utils.get_sort_dirs(sorts, page_reverse)
+        collection = sa_utils.paginate_query(
             collection, model, limit,
-            sorts, marker_obj=marker_obj)
+            marker_obj=marker_obj,
+            sort_keys=sort_keys,
+            sort_dirs=sort_dirs)
         return collection
 
     def _get_collection(self, session, model, dict_func, filters=None,
