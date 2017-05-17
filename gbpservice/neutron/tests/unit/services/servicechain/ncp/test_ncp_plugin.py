@@ -17,10 +17,10 @@ import mock
 from neutron.common import config  # noqa
 from neutron import context as n_context
 from neutron.db import api as db_api
-from neutron import manager
 from neutron.plugins.common import constants as pconst
 from neutron_lib.db import model_base
 from neutron_lib import exceptions as n_exc
+from neutron_lib.plugins import directory
 from oslo_config import cfg
 from oslo_serialization import jsonutils
 
@@ -65,9 +65,7 @@ class NodeCompositionPluginTestMixin(object):
 
     @property
     def sc_plugin(self):
-        plugins = manager.NeutronManager.get_service_plugins()
-        servicechain_plugin = plugins.get(pconst.SERVICECHAIN)
-        return servicechain_plugin
+        return directory.get_plugin(pconst.SERVICECHAIN)
 
     def _create_service_profile(self, **kwargs):
         """Create service profile wrapper that can be used by drivers."""
@@ -809,9 +807,7 @@ class TestQuotasForServiceChain(test_base.ServiceChainPluginTestCase):
 
     @property
     def sc_plugin(self):
-        plugins = manager.NeutronManager.get_service_plugins()
-        servicechain_plugin = plugins.get(pconst.SERVICECHAIN)
-        return servicechain_plugin
+        return directory.get_plugin(pconst.SERVICECHAIN)
 
     def setUp(self, core_plugin=None, gp_plugin=None, node_drivers=None,
               node_plumber=None):

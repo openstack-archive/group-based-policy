@@ -182,7 +182,8 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
         self.create_per_l3p_implicit_contracts = (
                 cfg.CONF.aim_mapping.create_per_l3p_implicit_contracts)
         self.setup_opflex_rpc_listeners()
-        self.advertise_mtu = cfg.CONF.advertise_mtu
+        # TODO(annak): expose advertise_mtu via aim config
+        self.advertise_mtu = False
         local_api.QUEUE_OUT_OF_PROCESS_NOTIFICATIONS = True
         if self.create_per_l3p_implicit_contracts:
             LOG.info(_LI('Implicit AIM contracts will be created '

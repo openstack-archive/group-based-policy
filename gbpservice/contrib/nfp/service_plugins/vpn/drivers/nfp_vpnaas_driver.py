@@ -18,8 +18,8 @@ from gbpservice.nfp.core import log as nfp_logging
 from neutron.common import rpc as n_rpc
 from neutron.db import agents_db
 from neutron.db import agentschedulers_db
-from neutron import manager
 from neutron_lib import exceptions
+from neutron_lib.plugins import directory
 from neutron_vpnaas.db.vpn import vpn_validator
 from neutron_vpnaas.services.vpn.plugin import VPNDriverPlugin
 from neutron_vpnaas.services.vpn.plugin import VPNPlugin
@@ -93,7 +93,7 @@ class NFPIPsecVpnAgentApi(base_ipsec.IPsecVpnAgentApi):
 
     def _get_agent_hosting_vpnservice(self, admin_context, vpnservice_id):
         filters = {'agent_type': [AGENT_TYPE_VPN]}
-        agents = manager.NeutronManager.get_plugin().get_agents(
+        agents = directory.get_plugin().get_agents(
             admin_context, filters=filters)
 
         try:

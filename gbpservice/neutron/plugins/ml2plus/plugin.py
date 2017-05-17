@@ -177,7 +177,7 @@ class Ml2PlusPlugin(ml2_plugin.Ml2Plugin,
                          "subnet_after_delete events"))
         self._setup_dhcp()
         self._start_rpc_notifiers()
-        self.add_agent_status_check(self.agent_health_check)
+        self.add_agent_status_check_worker(self.agent_health_check)
         self._verify_service_plugins_requirements()
         self.refresh_network_db_obj = cfg.CONF.ml2plus.refresh_network_db_obj
         self.refresh_port_db_obj = cfg.CONF.ml2plus.refresh_port_db_obj

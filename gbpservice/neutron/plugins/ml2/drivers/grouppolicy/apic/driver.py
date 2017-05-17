@@ -18,9 +18,9 @@ import re
 
 from neutron import context as nctx
 from neutron.extensions import portbindings
-from neutron import manager
 from neutron.plugins.ml2 import driver_api as api
 from neutron_lib import constants as n_constants
+from neutron_lib.plugins import directory
 from opflexagent import constants as ofcst
 from oslo_log import log
 from oslo_utils import importutils
@@ -224,8 +224,8 @@ class APICMechanismGBPDriver(api.MechanismDriver):
     @property
     def apic_gbp(self):
         if not self._apic_gbp:
-            self._apic_gbp = manager.NeutronManager.get_service_plugins()[
-                'GROUP_POLICY'].policy_driver_manager.policy_drivers[
+            self._apic_gbp = directory.get_plugin(
+                'GROUP_POLICY').policy_driver_manager.policy_drivers[
                 'apic'].obj
         return self._apic_gbp
 
