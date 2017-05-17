@@ -17,8 +17,8 @@ from aim.api import resource as aim_res
 from aim import exceptions as aim_exc
 from neutron.api import extensions
 from neutron.db import api as db_api
-from neutron import manager as n_manager
 from neutron_lib import exceptions as n_exc
+from neutron_lib.plugins import directory
 from oslo_log import log
 from oslo_utils import excutils
 
@@ -51,7 +51,7 @@ class ApicExtensionDriver(api_plus.ExtensionDriver,
             # REVISIT(rkukura): It might be safer to search the MDs by
             # class rather than index by name, or to use a class
             # variable to find the instance.
-            plugin = n_manager.NeutronManager.get_plugin()
+            plugin = directory.get_plugin()
             mech_mgr = plugin.mechanism_manager
             self._mechanism_driver = mech_mgr.mech_drivers['apic_aim'].obj
         return self._mechanism_driver
