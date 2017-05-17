@@ -32,8 +32,6 @@ from neutron.api import extensions
 from neutron.callbacks import registry
 from neutron import context as n_context
 from neutron.db import api as db_api
-from neutron import manager
-from neutron.plugins.common import constants as service_constants
 from neutron.plugins.ml2 import config
 from neutron.plugins.ml2 import db as ml2_db
 from neutron.tests.unit.api import test_extensions
@@ -41,6 +39,7 @@ from neutron.tests.unit.db import test_db_base_plugin_v2 as test_plugin
 from neutron.tests.unit.extensions import test_address_scope
 from neutron.tests.unit.extensions import test_l3
 from neutron_lib import constants as n_constants
+from neutron_lib.plugins import directory
 from opflexagent import constants as ofcst
 import webob.exc
 
@@ -181,7 +180,7 @@ class ApicAimTestCase(test_address_scope.AddressScopeTestCase,
 
         super(ApicAimTestCase, self).setUp(PLUGIN_NAME,
                                            service_plugins=service_plugins)
-        engine = db_api.get_engine()
+        engine = db_api.get_writer_engine()
         aim_model_base.Base.metadata.create_all(engine)
         self.db_session = db_api.get_session()
         self.initialize_db_config(self.db_session)
@@ -192,12 +191,11 @@ class ApicAimTestCase(test_address_scope.AddressScopeTestCase,
 
         self.saved_keystone_client = ksc_client.Client
         ksc_client.Client = FakeKeystoneClient
-        self.plugin = manager.NeutronManager.get_plugin()
+        self.plugin = directory.get_plugin()
         self.plugin.start_rpc_listeners()
         self.driver = self.plugin.mechanism_manager.mech_drivers[
             'apic_aim'].obj
-        self.l3_plugin = manager.NeutronManager.get_service_plugins()[
-            service_constants.L3_ROUTER_NAT]
+        self.l3_plugin = directory.get_plugin(n_constants.L3)
         self.aim_mgr = aim_manager.AimManager()
         self._app_profile_name = self.driver.ap_name
         self.extension_attributes = ('router:external', DN,
@@ -212,7 +210,7 @@ class ApicAimTestCase(test_address_scope.AddressScopeTestCase,
                             self.t1_aname)
 
     def tearDown(self):
-        engine = db_api.get_engine()
+        engine = db_api.context_manager.writer.get_engine()
         with engine.begin() as conn:
             for table in reversed(
                 aim_model_base.Base.metadata.sorted_tables):

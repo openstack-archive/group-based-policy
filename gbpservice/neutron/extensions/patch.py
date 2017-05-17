@@ -10,10 +10,6 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-import netaddr
-from neutron.callbacks import events
-from neutron.callbacks import registry
-from neutron.callbacks import resources
 from neutron.db import api as db_api
 from neutron.db import common_db_mixin
 from neutron.db import l3_db
@@ -21,7 +17,6 @@ from neutron.db import models_v2
 from neutron.db import securitygroups_db
 from neutron.plugins.ml2 import db as ml2_db
 from neutron_lib.api import validators
-from neutron_lib import constants
 from neutron_lib import exceptions as n_exc
 from oslo_log import log
 from sqlalchemy import event
@@ -49,40 +44,6 @@ def _get_assoc_data(self, context, fip, floatingip_db):
 
 
 l3_db.L3_NAT_dbonly_mixin._get_assoc_data = _get_assoc_data
-
-
-def _update_fip_assoc(self, context, fip, floatingip_db, external_port):
-    previous_router_id = floatingip_db.router_id
-    port_id, internal_ip_address, router_id = (
-        self._check_and_get_fip_assoc(context, fip, floatingip_db))
-    floatingip_db.update({'fixed_ip_address': internal_ip_address,
-                          'fixed_port_id': port_id,
-                          'router_id': router_id,
-                          'last_known_router_id': previous_router_id})
-    next_hop = None
-    if router_id:
-        router = self._get_router(context.elevated(), router_id)
-        gw_port = router.gw_port
-        if gw_port:
-            for fixed_ip in gw_port.fixed_ips:
-                addr = netaddr.IPAddress(fixed_ip.ip_address)
-                if addr.version == constants.IP_VERSION_4:
-                    next_hop = fixed_ip.ip_address
-                    break
-    args = {'fixed_ip_address': internal_ip_address,
-            'fixed_port_id': port_id,
-            'router_id': router_id,
-            'last_known_router_id': previous_router_id,
-            'floating_ip_address': floatingip_db.floating_ip_address,
-            'floating_network_id': floatingip_db.floating_network_id,
-            'next_hop': next_hop,
-            'context': context}
-    registry.notify(resources.FLOATING_IP,
-                    events.AFTER_UPDATE,
-                    self._update_fip_assoc,
-                    **args)
-
-l3_db.L3_NAT_dbonly_mixin._update_fip_assoc = _update_fip_assoc
 
 
 # REVISIT(ivar): Neutron adds a tenant filter on SG lookup for a given port,

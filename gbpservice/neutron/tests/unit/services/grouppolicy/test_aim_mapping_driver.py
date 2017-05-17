@@ -29,12 +29,11 @@ from neutron.api.rpc.agentnotifiers import dhcp_rpc_agent_api
 from neutron.callbacks import registry
 from neutron import context as nctx
 from neutron.db import api as db_api
-from neutron import manager
 from neutron.notifiers import nova
-from neutron.plugins.common import constants as service_constants
 from neutron.tests.unit.db import test_db_base_plugin_v2 as test_plugin
 from neutron.tests.unit.extensions import test_address_scope
 from neutron_lib import constants as n_constants
+from neutron_lib.plugins import directory
 from opflexagent import constants as ocst
 from oslo_config import cfg
 from oslo_utils import uuidutils
@@ -137,8 +136,7 @@ class AIMBaseTestCase(test_nr_base.CommonNeutronBaseTestCase,
         aim_model_base.Base.metadata.create_all(self.engine)
         self.db_session = db_api.get_session()
         self.initialize_db_config(self.db_session)
-        self.l3_plugin = manager.NeutronManager.get_service_plugins()[
-            service_constants.L3_ROUTER_NAT]
+        self.l3_plugin = directory.get_plugin(n_constants.L3)
         config.cfg.CONF.set_override('network_vlan_ranges',
                                      ['physnet1:1000:1099'],
                                      group='ml2_type_vlan')
@@ -186,7 +184,7 @@ class AIMBaseTestCase(test_nr_base.CommonNeutronBaseTestCase,
         self._dn_t1_l1_n1 = ('uni/tn-%s/out-l1/instP-n1' % self._t1_aname)
 
     def tearDown(self):
-        engine = db_api.get_engine()
+        engine = db_api.context_manager.writer.get_engine()
         with engine.begin() as conn:
             for table in reversed(
                 aim_model_base.Base.metadata.sorted_tables):
