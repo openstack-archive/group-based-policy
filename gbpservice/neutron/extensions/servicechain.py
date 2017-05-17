@@ -24,7 +24,7 @@ from oslo_config import cfg
 from oslo_log import log as logging
 import six
 
-import gbpservice.neutron.extensions
+from gbpservice.neutron import extensions as gbp_extensions
 import gbpservice.neutron.extensions.group_policy  # noqa
 from gbpservice.neutron.services.servicechain.common import constants as scc
 
@@ -32,7 +32,7 @@ from gbpservice.neutron.services.servicechain.common import constants as scc
 # The code below is a monkey patch of key Neutron's modules. This is needed for
 # the GBP service to be loaded correctly. GBP extensions' path is added
 # to Neutron's so that it's found at extension scanning time.
-extensions.append_api_extensions_path(gbpservice.neutron.extensions.__path__)
+extensions.append_api_extensions_path(gbp_extensions.__path__)
 LOG = logging.getLogger(__name__)
 
 
@@ -294,7 +294,7 @@ class Servicechain(extensions.ExtensionDescriptor):
     def get_resources(cls):
         plural_mappings = resource_helper.build_plural_mappings(
             {}, RESOURCE_ATTRIBUTE_MAP)
-        attr.PLURALS.update(plural_mappings)
+        gbp_extensions.register_plurals(plural_mappings)
         return resource_helper.build_resource_info(plural_mappings,
                                                    RESOURCE_ATTRIBUTE_MAP,
                                                    constants.SERVICECHAIN,

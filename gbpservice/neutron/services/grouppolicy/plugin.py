@@ -13,7 +13,6 @@
 import netaddr
 import six
 
-from neutron.api.v2 import attributes as nattr
 from neutron import context as n_ctx
 from neutron.db import api as db_api
 from neutron.extensions import portbindings
@@ -30,6 +29,7 @@ from gbpservice._i18n import _LW
 from gbpservice.common import utils as gbp_utils
 from gbpservice.neutron.db.grouppolicy import group_policy_db as gpdb
 from gbpservice.neutron.db.grouppolicy import group_policy_mapping_db
+from gbpservice.neutron import extensions as gbp_extensions
 from gbpservice.neutron.extensions import group_policy as gpex
 from gbpservice.neutron.services.grouppolicy import (
     extension_manager as ext_manager)
@@ -118,13 +118,6 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
                                      'policy_target_group'},
                    'application_policy_group': {}
                    }
-    _plurals = None
-
-    @property
-    def plurals(self):
-        if not self._plurals:
-            self._plurals = dict((nattr.PLURALS[k], k) for k in nattr.PLURALS)
-        return self._plurals
 
     @staticmethod
     def _validate_shared_create(self, context, obj, identity):
@@ -137,7 +130,7 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
                     ids = [ids]
                 ref_type = links[attr]
                 linked_objects = getattr(
-                    self, 'get_%s' % self.plurals[ref_type])(
+                    self, 'get_%s' % gbp_extensions.get_plural(ref_type))(
                         context, filters={'id': ids})
                 link_ids = set()
                 for linked in linked_objects:
