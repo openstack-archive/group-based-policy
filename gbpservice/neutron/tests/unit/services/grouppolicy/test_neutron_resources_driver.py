@@ -14,9 +14,10 @@
 import mock
 from neutron import context as nctx
 from neutron.db import api as db_api
-from neutron import manager
 from neutron.plugins.common import constants as pconst
+from neutron_lib import constants
 from neutron_lib.db import model_base
+from neutron_lib.plugins import directory
 import webob.exc
 
 from gbpservice.neutron.services.grouppolicy import config
@@ -51,18 +52,17 @@ class CommonNeutronBaseTestCase(test_plugin.GroupPolicyPluginTestBase):
                                                      ml2_options=ml2_options,
                                                      sc_plugin=sc_plugin,
                                                      qos_plugin=qos_plugin)
-        engine = db_api.get_engine()
+        engine = db_api.context_manager.writer.get_engine()
         model_base.BASEV2.metadata.create_all(engine)
         res = mock.patch('neutron.db.l3_db.L3_NAT_dbonly_mixin.'
                          '_check_router_needs_rescheduling').start()
         res.return_value = None
-        self._plugin = manager.NeutronManager.get_plugin()
+        self._plugin = directory.get_plugin()
         self._plugin.remove_networks_from_down_agents = mock.Mock()
         self._plugin.is_agent_down = mock.Mock(return_value=False)
         self._context = nctx.get_admin_context()
-        plugins = manager.NeutronManager.get_service_plugins()
-        self._gbp_plugin = plugins.get(pconst.GROUP_POLICY)
-        self._l3_plugin = plugins.get(pconst.L3_ROUTER_NAT)
+        self._gbp_plugin = directory.get_plugin(pconst.GROUP_POLICY)
+        self._l3_plugin = directory.get_plugin(constants.L3)
         config.cfg.CONF.set_override('debug', True)
 
     def get_plugin_context(self):
@@ -110,8 +110,8 @@ class TestL2PolicyRollback(CommonNeutronBaseTestCase):
                                                 core_plugin=core_plugin,
                                                 ml2_options=ml2_options,
                                                 sc_plugin=sc_plugin)
-        self.dummy_driver = manager.NeutronManager.get_service_plugins()[
-            'GROUP_POLICY'].policy_driver_manager.policy_drivers['dummy'].obj
+        self.dummy_driver = directory.get_plugin(
+            'GROUP_POLICY').policy_driver_manager.policy_drivers['dummy'].obj
 
     def test_l2_policy_create_fail(self):
         orig_func = self.dummy_driver.create_l2_policy_precommit
