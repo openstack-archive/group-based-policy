@@ -10,7 +10,7 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-from neutron import manager
+from neutron_lib.plugins import directory
 from oslo_log import helpers as log
 
 from gbpservice.network.neutronv2 import local_api
@@ -40,8 +40,7 @@ class CommonNeutronBase(ipd.ImplicitPolicyBase, rmd.OwnedResourcesOperations,
     @property
     def gbp_plugin(self):
         if not self._gbp_plugin:
-            self._gbp_plugin = (manager.NeutronManager.get_service_plugins()
-                                .get("GROUP_POLICY"))
+            self._gbp_plugin = directory.get_plugin("GROUP_POLICY")
         return self._gbp_plugin
 
     @log.log_method_call
