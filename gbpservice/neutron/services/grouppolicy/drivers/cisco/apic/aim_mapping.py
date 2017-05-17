@@ -114,6 +114,11 @@ opts = [
                        "False to avoid recreating the implicit contracts "
                        "on subsequent Neutron server restarts. This "
                        "option will be removed in the O release")),
+    cfg.BoolOpt('advertise_mtu',
+                default=True,
+                help=_('If True, advertise network MTU values if core plugin '
+                       'calculates them. MTU is advertised to running '
+                       'instances via DHCP and RA MTU options.')),
 ]
 
 cfg.CONF.register_opts(opts, "aim_mapping")
@@ -182,7 +187,7 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
         self.create_per_l3p_implicit_contracts = (
                 cfg.CONF.aim_mapping.create_per_l3p_implicit_contracts)
         self.setup_opflex_rpc_listeners()
-        self.advertise_mtu = cfg.CONF.advertise_mtu
+        self.advertise_mtu = cfg.CONF.aim_mapping.advertise_mtu
         local_api.QUEUE_OUT_OF_PROCESS_NOTIFICATIONS = True
         if self.create_per_l3p_implicit_contracts:
             LOG.info(_LI('Implicit AIM contracts will be created '

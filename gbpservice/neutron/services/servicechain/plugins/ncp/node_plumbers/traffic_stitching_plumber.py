@@ -10,8 +10,8 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-from neutron import manager
 from neutron_lib import constants
+from neutron_lib.plugins import directory
 from oslo_config import cfg
 from oslo_log import log as logging
 
@@ -54,15 +54,13 @@ class TrafficStitchingPlumber(plumber_base.NodePlumberBase):
     @property
     def gbp_plugin(self):
         if not self._gbp_plugin:
-            self._gbp_plugin = (manager.NeutronManager.get_service_plugins()
-                                .get("GROUP_POLICY"))
+            self._gbp_plugin = directory.get_plugin("GROUP_POLICY")
         return self._gbp_plugin
 
     @property
     def sc_plugin(self):
         if not self._sc_plugin:
-            self._sc_plugin = (manager.NeutronManager.get_service_plugins()
-                               .get("SERVICECHAIN"))
+            self._sc_plugin = directory.get_plugin("SERVICECHAIN")
         return self._sc_plugin
 
     def plug_services(self, context, deployment):

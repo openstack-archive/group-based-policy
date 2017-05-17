@@ -15,8 +15,8 @@
 
 from neutron import context as n_ctx
 from neutron.extensions import l3
-from neutron import manager
 from neutron_lib import constants as q_const
+from neutron_lib.plugins import directory
 
 from apic_ml2.neutron.services.l3_router import apic_driver_api
 
@@ -31,8 +31,8 @@ class ApicGBPL3Driver(apic_driver_api.ApicL3DriverBase):
     @property
     def apic_gbp(self):
         if not self._apic_gbp:
-            self._apic_gbp = manager.NeutronManager.get_service_plugins()[
-                'GROUP_POLICY'].policy_driver_manager.policy_drivers[
+            self._apic_gbp = directory.get_plugin(
+                'GROUP_POLICY').policy_driver_manager.policy_drivers[
                 'apic'].obj
         return self._apic_gbp
 

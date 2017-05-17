@@ -29,15 +29,13 @@ from neutron.api.rpc.agentnotifiers import dhcp_rpc_agent_api
 from neutron.callbacks import registry
 from neutron import context as nctx
 from neutron.db import api as db_api
-from neutron import manager
 from neutron.notifiers import nova
-from neutron.plugins.common import constants as service_constants
 from neutron.tests.unit.db import test_db_base_plugin_v2 as test_plugin
 from neutron.tests.unit.extensions import test_address_scope
 from neutron_lib import constants as n_constants
+from neutron_lib.plugins import directory
 from opflexagent import constants as ocst
 from oslo_config import cfg
-from oslo_utils import uuidutils
 import webob.exc
 
 from gbpservice.network.neutronv2 import local_api
@@ -137,8 +135,7 @@ class AIMBaseTestCase(test_nr_base.CommonNeutronBaseTestCase,
         aim_model_base.Base.metadata.create_all(self.engine)
         self.db_session = db_api.get_session()
         self.initialize_db_config(self.db_session)
-        self.l3_plugin = manager.NeutronManager.get_service_plugins()[
-            service_constants.L3_ROUTER_NAT]
+        self.l3_plugin = directory.get_plugin(n_constants.L3)
         config.cfg.CONF.set_override('network_vlan_ranges',
                                      ['physnet1:1000:1099'],
                                      group='ml2_type_vlan')
@@ -186,7 +183,7 @@ class AIMBaseTestCase(test_nr_base.CommonNeutronBaseTestCase,
         self._dn_t1_l1_n1 = ('uni/tn-%s/out-l1/instP-n1' % self._t1_aname)
 
     def tearDown(self):
-        engine = db_api.get_engine()
+        engine = db_api.context_manager.writer.get_engine()
         with engine.begin() as conn:
             for table in reversed(
                 aim_model_base.Base.metadata.sorted_tables):
@@ -1546,7 +1543,8 @@ class TestL3PolicyRollback(AIMBaseTestCase):
         self.dummy.create_l3_policy_precommit = mock.Mock(
             side_effect=Exception)
         self.create_l3_policy(name="l3p1", expected_res_status=500)
-        self.assertEqual([], self._plugin.get_address_scopes(self._context))
+        self.assertEqual([], self._plugin.get_address_scopes(self._context,
+                                                             filters={}))
         self.assertEqual([], self._plugin.get_subnetpools(self._context,
                                                           filters={}))
         self.assertEqual([], self._l3_plugin.get_routers(self._context))
@@ -1577,7 +1575,8 @@ class TestL3PolicyRollback(AIMBaseTestCase):
         self.delete_l3_policy(l3p_id, expected_res_status=500)
         self.show_l3_policy(l3p_id, expected_res_status=200)
         self.assertEqual(
-            1, len(self._plugin.get_address_scopes(self._context)))
+            1, len(self._plugin.get_address_scopes(self._context,
+                                                   filters={})))
         self.assertEqual(1, len(self._plugin.get_subnetpools(self._context,
                                                              filters={})))
         self.assertEqual(1, len(self._l3_plugin.get_routers(self._context)))
@@ -1855,7 +1854,8 @@ class TestL2PolicyWithAutoPTG(TestL2PolicyBase):
                                   expected_res_status=200)['l2_policy']
         l3p = self.show_l3_policy(l2p['l3_policy_id'],
                                   expected_res_status=200)['l3_policy']
-        ascopes = self._plugin.get_address_scopes(self._context)
+        ascopes = self._plugin.get_address_scopes(self._context,
+                                                  filters={})
         self.assertEqual(l3p['address_scope_v4_id'], ascopes[0]['id'])
         subpools = self._plugin.get_subnetpools(self._context, filters={})
         self.assertEqual(l3p['subnetpools_v4'], [subpools[0]['id']])
@@ -1923,7 +1923,8 @@ class TestL2PolicyWithAutoPTG(TestL2PolicyBase):
         self.assertEqual([], self._plugin.get_ports(self._context))
         self.assertEqual([], self._plugin.get_subnets(self._context))
         self.assertEqual([], self._plugin.get_networks(self._context))
-        self.assertEqual([], self._plugin.get_address_scopes(self._context))
+        self.assertEqual([], self._plugin.get_address_scopes(self._context,
+                                                             filters={}))
         self.assertEqual([], self._plugin.get_subnetpools(self._context,
                                                           filters={}))
         self.assertEqual([], self._l3_plugin.get_routers(self._context))
@@ -2585,7 +2586,7 @@ class TestPolicyTarget(AIMBaseTestCase):
         super(TestPolicyTarget, self).setUp(*args, **kwargs)
         cfg.CONF.set_override('path_mtu', 1000, group='ml2')
         cfg.CONF.set_override('global_physnet_mtu', 1000, None)
-        cfg.CONF.set_override('advertise_mtu', True, None)
+        cfg.CONF.set_override('advertise_mtu', True, group='apic_mapping')
 
     def test_policy_target_lifecycle_implicit_port(self):
         ptg = self.create_policy_target_group(
@@ -3563,41 +3564,15 @@ class NotificationTest(AIMBaseTestCase):
 
     def setUp(self, policy_drivers=None, core_plugin=None, ml2_options=None,
               l3_plugin=None, sc_plugin=None, **kwargs):
-        self.fake_uuid = 0
-        self.mac_prefix = '12:34:56:78:5d:'
         self.queue_notification_call_count = 0
         self.max_notification_queue_length = 0
         self.notification_queue = None
         self.post_notifications_from_queue_call_count = 0
-        self.orig_generate_uuid = uuidutils.generate_uuid
-        self.orig_is_uuid_like = uuidutils.is_uuid_like
-
-        # The following three functions are patched so that
-        # the same worflow can be run more than once in a single
-        # test and will result in objects created that are
-        # identical in all their attribute values.
-        # The workflow is exercised once with batching turned
-        # OFF, and once with batching turned ON.
-        def generate_uuid():
-            self.fake_uuid += 1
-            return str(self.fake_uuid)
-
-        def is_uuid_like(val):
-            return True
-
-        def _generate_mac():
-            lsb = 10 + self.fake_uuid
-            return self.mac_prefix + str(lsb)
-
-        uuidutils.generate_uuid = generate_uuid
-        uuidutils.is_uuid_like = is_uuid_like
 
         super(NotificationTest, self).setUp(
             policy_drivers=policy_drivers, core_plugin=core_plugin,
             ml2_options=ml2_options, l3_plugin=l3_plugin,
             sc_plugin=sc_plugin, **kwargs)
-        self.orig_generate_mac = self._plugin._generate_mac
-        self._plugin._generate_mac = _generate_mac
 
         self.orig_enqueue = local_api._enqueue
 
@@ -3634,7 +3609,8 @@ class NotificationTest(AIMBaseTestCase):
             session, transaction_key, resource, event, trigger, **kwargs):
             self.orig_send_or_queue_registry_notification(session,
                 transaction_key, resource, event, trigger, **kwargs)
-            self.notification_queue = session.notification_queue
+            if session:
+                self.notification_queue = session.notification_queue
 
         local_api.send_or_queue_registry_notification = (
             send_or_queue_registry_notification)
@@ -3662,9 +3638,6 @@ class NotificationTest(AIMBaseTestCase):
 
     def tearDown(self):
         super(NotificationTest, self).tearDown()
-        self._plugin._generate_mac = self.orig_generate_mac
-        uuidutils.generate_uuid = self.orig_generate_uuid
-        uuidutils.is_uuid_like = self.orig_is_uuid_like
         local_api.QUEUE_OUT_OF_PROCESS_NOTIFICATIONS = False
         local_api._enqueue = self.orig_enqueue
         local_api.send_or_queue_notification = (
@@ -3715,13 +3688,41 @@ class NotificationTest(AIMBaseTestCase):
             # test that no notifications have been left out
             self.assertEqual({}, self.notification_queue)
 
+    def _deep_replace_in_value(self, d, str1, str2):
+        for k, v in d.items():
+            if isinstance(v, str) and str1 in v:
+                d[k] = v.replace(str1, str2)
+            if isinstance(v, dict):
+                self._deep_replace_in_value(v, str1, str2)
+
+    def _deep_replace_by_key(self, d, key, str2):
+        if not isinstance(d, dict):
+            return
+
+        if key in d:
+            d[key] = str2
+
+        for k, v in d.items():
+            if isinstance(v, dict):
+                self._deep_replace_by_key(v, key, str2)
+            if isinstance(v, list):
+                for i in v:
+                    self._deep_replace_by_key(i, key, str2)
+
     def _test_notifications(self, no_batch, with_batch):
         for n1, n2 in zip(no_batch, with_batch):
-            # temporary workaround
-            if 'port' in n1[0][1]:
-                # ip address assignment is random, hence do not compare
-                n1[0][1]['port']['fixed_ips'][0]['ip_address'] = ''
-                n2[0][1]['port']['fixed_ips'][0]['ip_address'] = ''
+            # replace ids from resource dicts since its random
+            # id can appear in inner dictionaries: we use deep replace
+            for n in [n1, n2]:
+                for resource, dct in n[0][1].items():
+                    if 'id' in dct:
+                        self._deep_replace_in_value(dct, dct['id'], 'XXX')
+                    for random_key in ('subnetpool_id', 'network_id',
+                                       'mac_address', 'subnet_id',
+                                       'ip_address', 'device_id',
+                                       'security_groups', 'id'):
+                        self._deep_replace_by_key(dct, random_key, 'XXX')
+
             # test the resource objects are identical with and without batch
             self.assertEqual(n1[0][1], n2[0][1])
             # test that all the same events are pushed with and without batch
@@ -3745,10 +3746,6 @@ class NotificationTest(AIMBaseTestCase):
 
         self.assertLess(0, self.queue_notification_call_count)
         self.assertLess(0, self.max_notification_queue_length)
-        # There are 4 transactions - one for create PTG,
-        # one for create PT, one for delete PT, and one for
-        # delete PTG. Delete PT notification is sent without queueing,
-        # which leaves us with 3 sets of queued notifications.
         self.assertEqual(3, self.post_notifications_from_queue_call_count)
 
         self._test_notifications(dhcp_notifier_no_batch.call_args_list,

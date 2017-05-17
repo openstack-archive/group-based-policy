@@ -30,7 +30,7 @@ class ImplicitPolicyTestCase(
         cfg.CONF.set_override('policy_drivers', ['implicit_policy'],
                               group='group_policy')
         super(ImplicitPolicyTestCase, self).setUp()
-        engine = db_api.get_engine()
+        engine = db_api.context_manager.writer.get_engine()
         model_base.BASEV2.metadata.create_all(engine)
 
 
