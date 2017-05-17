@@ -59,7 +59,7 @@ class GroupPolicyMappingDbTestCase(tgpdb.GroupPolicyDbTestCase,
             core_plugin=core_plugin, gp_plugin=gp_plugin,
             service_plugins=service_plugins
         )
-        engine = db_api.get_engine()
+        engine = db_api.context_manager.get_legacy_facade().get_engine()
         model_base.BASEV2.metadata.create_all(engine)
 
 
