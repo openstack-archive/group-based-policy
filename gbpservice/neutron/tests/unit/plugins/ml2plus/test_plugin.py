@@ -16,11 +16,11 @@
 import mock
 
 from neutron.api import extensions
-from neutron import manager
 from neutron.plugins.ml2 import config
 from neutron.tests.unit.api import test_extensions
 from neutron.tests.unit.db import test_db_base_plugin_v2 as test_plugin
 from neutron.tests.unit.extensions import test_address_scope
+from neutron_lib.plugins import directory
 
 from gbpservice.neutron.db import implicitsubnetpool_db  # noqa
 import gbpservice.neutron.extensions
@@ -52,7 +52,7 @@ class Ml2PlusPluginV2TestCase(test_address_scope.AddressScopeTestCase):
         ext_mgr = extensions.PluginAwareExtensionManager.get_instance()
         self.ext_api = test_extensions.setup_extensions_middleware(ext_mgr)
         self.port_create_status = 'DOWN'
-        self.plugin = manager.NeutronManager.get_plugin()
+        self.plugin = directory.get_plugin()
         self.plugin.start_rpc_listeners()
 
     def exist_checker(self, getter):
