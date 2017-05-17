@@ -1,0 +1,10 @@
+Code-Review+2: Robert Kukura <kukura@noironetworks.com>
+Code-Review+1: Adit Sarfaty <asarfaty@vmware.com>
+Code-Review+2: Sumit Naiksatam <sumitnaiksatam@gmail.com>
+Workflow+1: Sumit Naiksatam <sumitnaiksatam@gmail.com>
+Verified+2: Jenkins
+Submitted-by: Jenkins
+Submitted-at: Wed, 17 May 2017 17:08:26 +0000
+Reviewed-on: https://review.openstack.org/461882
+Project: openstack/group-based-policy
+Branch: refs/heads/stable/newton
