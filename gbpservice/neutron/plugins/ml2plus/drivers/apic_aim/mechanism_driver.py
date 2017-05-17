@@ -35,12 +35,12 @@ from neutron.db import models_v2
 from neutron.db import rbac_db_models
 from neutron.db import segments_db
 from neutron.extensions import portbindings
-from neutron import manager
 from neutron.plugins.common import constants as pconst
 from neutron.plugins.ml2 import driver_api as api
 from neutron.plugins.ml2 import models
 from neutron_lib import constants as n_constants
 from neutron_lib import exceptions as n_exceptions
+from neutron_lib.plugins import directory
 from opflexagent import constants as ofcst
 from opflexagent import rpc as ofrpc
 from oslo_config import cfg
@@ -1393,21 +1393,19 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
     @property
     def plugin(self):
         if not self._core_plugin:
-            self._core_plugin = manager.NeutronManager.get_plugin()
+            self._core_plugin = directory.get_plugin()
         return self._core_plugin
 
     @property
     def l3_plugin(self):
         if not self._l3_plugin:
-            plugins = manager.NeutronManager.get_service_plugins()
-            self._l3_plugin = plugins[pconst.L3_ROUTER_NAT]
+            self._l3_plugin = directory.get_plugin(n_constants.L3)
         return self._l3_plugin
 
     @property
     def gbp_plugin(self):
         if not self._gbp_plugin:
-            self._gbp_plugin = (manager.NeutronManager.get_service_plugins()
-                                .get("GROUP_POLICY"))
+            self._gbp_plugin = directory.get_plugin("GROUP_POLICY")
         return self._gbp_plugin
 
     @property
