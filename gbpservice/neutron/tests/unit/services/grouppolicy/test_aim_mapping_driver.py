@@ -29,15 +29,13 @@ from neutron.api.rpc.agentnotifiers import dhcp_rpc_agent_api
 from neutron.callbacks import registry
 from neutron import context as nctx
 from neutron.db import api as db_api
-from neutron import manager
 from neutron.notifiers import nova
-from neutron.plugins.common import constants as service_constants
 from neutron.tests.unit.db import test_db_base_plugin_v2 as test_plugin
 from neutron.tests.unit.extensions import test_address_scope
 from neutron_lib import constants as n_constants
+from neutron_lib.plugins import directory
 from opflexagent import constants as ocst
 from oslo_config import cfg
-from oslo_utils import uuidutils
 import webob.exc
 
 from gbpservice.network.neutronv2 import local_api
@@ -137,8 +135,7 @@ class AIMBaseTestCase(test_nr_base.CommonNeutronBaseTestCase,
         aim_model_base.Base.metadata.create_all(self.engine)
         self.db_session = db_api.get_session()
         self.initialize_db_config(self.db_session)
-        self.l3_plugin = manager.NeutronManager.get_service_plugins()[
-            service_constants.L3_ROUTER_NAT]
+        self.l3_plugin = directory.get_plugin(n_constants.L3)
         config.cfg.CONF.set_override('network_vlan_ranges',
                                      ['physnet1:1000:1099'],
                                      group='ml2_type_vlan')
@@ -186,7 +183,7 @@ class AIMBaseTestCase(test_nr_base.CommonNeutronBaseTestCase,
         self._dn_t1_l1_n1 = ('uni/tn-%s/out-l1/instP-n1' % self._t1_aname)
 
     def tearDown(self):
-        engine = db_api.get_engine()
+        engine = db_api.context_manager.writer.get_engine()
         with engine.begin() as conn:
             for table in reversed(
                 aim_model_base.Base.metadata.sorted_tables):
@@ -1546,7 +1543,8 @@ class TestL3PolicyRollback(AIMBaseTestCase):
         self.dummy.create_l3_policy_precommit = mock.Mock(
             side_effect=Exception)
         self.create_l3_policy(name="l3p1", expected_res_status=500)
-        self.assertEqual([], self._plugin.get_address_scopes(self._context))
+        self.assertEqual([], self._plugin.get_address_scopes(self._context,
+                                                             filters={}))
         self.assertEqual([], self._plugin.get_subnetpools(self._context,
                                                           filters={}))
         self.assertEqual([], self._l3_plugin.get_routers(self._context))
@@ -1577,7 +1575,8 @@ class TestL3PolicyRollback(AIMBaseTestCase):
         self.delete_l3_policy(l3p_id, expected_res_status=500)
         self.show_l3_policy(l3p_id, expected_res_status=200)
         self.assertEqual(
-            1, len(self._plugin.get_address_scopes(self._context)))
+            1, len(self._plugin.get_address_scopes(self._context,
+                                                   filters={})))
         self.assertEqual(1, len(self._plugin.get_subnetpools(self._context,
                                                              filters={})))
         self.assertEqual(1, len(self._l3_plugin.get_routers(self._context)))
@@ -1855,7 +1854,8 @@ class TestL2PolicyWithAutoPTG(TestL2PolicyBase):
                                   expected_res_status=200)['l2_policy']
         l3p = self.show_l3_policy(l2p['l3_policy_id'],
                                   expected_res_status=200)['l3_policy']
-        ascopes = self._plugin.get_address_scopes(self._context)
+        ascopes = self._plugin.get_address_scopes(self._context,
+                                                  filters={})
         self.assertEqual(l3p['address_scope_v4_id'], ascopes[0]['id'])
         subpools = self._plugin.get_subnetpools(self._context, filters={})
         self.assertEqual(l3p['subnetpools_v4'], [subpools[0]['id']])
@@ -1923,7 +1923,8 @@ class TestL2PolicyWithAutoPTG(TestL2PolicyBase):
         self.assertEqual([], self._plugin.get_ports(self._context))
         self.assertEqual([], self._plugin.get_subnets(self._context))
         self.assertEqual([], self._plugin.get_networks(self._context))
-        self.assertEqual([], self._plugin.get_address_scopes(self._context))
+        self.assertEqual([], self._plugin.get_address_scopes(self._context,
+                                                             filters={}))
         self.assertEqual([], self._plugin.get_subnetpools(self._context,
                                                           filters={}))
         self.assertEqual([], self._l3_plugin.get_routers(self._context))
@@ -3563,41 +3564,15 @@ class NotificationTest(AIMBaseTestCase):
 
     def setUp(self, policy_drivers=None, core_plugin=None, ml2_options=None,
               l3_plugin=None, sc_plugin=None, **kwargs):
-        self.fake_uuid = 0
-        self.mac_prefix = '12:34:56:78:5d:'
         self.queue_notification_call_count = 0
         self.max_notification_queue_length = 0
         self.notification_queue = None
         self.post_notifications_from_queue_call_count = 0
-        self.orig_generate_uuid = uuidutils.generate_uuid
-        self.orig_is_uuid_like = uuidutils.is_uuid_like
-
-        # The following three functions are patched so that
-        # the same worflow can be run more than once in a single
-        # test and will result in objects created that are
-        # identical in all their attribute values.
-        # The workflow is exercised once with batching turned
-        # OFF, and once with batching turned ON.
-        def generate_uuid():
-            self.fake_uuid += 1
-            return str(self.fake_uuid)
-
-        def is_uuid_like(val):
-            return True
-
-        def _generate_mac():
-            lsb = 10 + self.fake_uuid
-            return self.mac_prefix + str(lsb)
-
-        uuidutils.generate_uuid = generate_uuid
-        uuidutils.is_uuid_like = is_uuid_like
 
         super(NotificationTest, self).setUp(
             policy_drivers=policy_drivers, core_plugin=core_plugin,
             ml2_options=ml2_options, l3_plugin=l3_plugin,
             sc_plugin=sc_plugin, **kwargs)
-        self.orig_generate_mac = self._plugin._generate_mac
-        self._plugin._generate_mac = _generate_mac
 
         self.orig_enqueue = local_api._enqueue
 
@@ -3662,9 +3637,6 @@ class NotificationTest(AIMBaseTestCase):
 
     def tearDown(self):
         super(NotificationTest, self).tearDown()
-        self._plugin._generate_mac = self.orig_generate_mac
-        uuidutils.generate_uuid = self.orig_generate_uuid
-        uuidutils.is_uuid_like = self.orig_is_uuid_like
         local_api.QUEUE_OUT_OF_PROCESS_NOTIFICATIONS = False
         local_api._enqueue = self.orig_enqueue
         local_api.send_or_queue_notification = (

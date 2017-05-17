@@ -3109,7 +3109,7 @@ class ResourceMappingDriver(api.PolicyDriver, ImplicitResourceOperations,
         attrs = {
             'name': 'gbp_' + context.current['name'],
             'description': 'Group-Based Policy QoS policy',
-            'tenant_id': context.current['tenant_id']}
+            'project_id': context.current['tenant_id']}
         qos_policy = self._create_qos_policy(context._plugin_context, attrs)
         qos_policy_id = qos_policy['id']
         return qos_policy_id
