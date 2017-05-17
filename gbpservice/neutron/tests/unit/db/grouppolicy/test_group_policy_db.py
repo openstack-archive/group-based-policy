@@ -21,12 +21,13 @@ from neutron.api import extensions
 from neutron.api.rpc.callbacks.producer import registry
 from neutron import context
 from neutron.db import api as db_api
-from neutron import manager
 from neutron.plugins.common import constants
 from neutron import policy
 from neutron.tests.unit.api import test_extensions
 from neutron.tests.unit.db import test_db_base_plugin_v2
+from neutron_lib import constants as nl_constants
 from neutron_lib.db import model_base
+from neutron_lib.plugins import directory
 from oslo_utils import importutils
 from oslo_utils import uuidutils
 
@@ -175,7 +176,7 @@ class ApiManagerMixin(object):
         return self.deserialize(self.fmt, res)
 
     def _bind_port_to_host(self, port_id, host, data=None):
-        plugin = manager.NeutronManager.get_plugin()
+        plugin = directory.get_plugin()
         ctx = context.get_admin_context()
         agent = {'host': host}
         agent.update(self.agent_conf)
@@ -365,13 +366,13 @@ class GroupPolicyDbTestCase(GroupPolicyDBTestBase,
         if not ext_mgr:
             ext_mgr = extensions.PluginAwareExtensionManager.get_instance()
             self.ext_api = test_extensions.setup_extensions_middleware(ext_mgr)
-        engine = db_api.get_engine()
+        engine = db_api.context_manager.get_legacy_facade().get_engine()
         model_base.BASEV2.metadata.create_all(engine)
 
-        plugins = manager.NeutronManager.get_service_plugins()
+        plugins = directory.get_plugins()
         self._gbp_plugin = plugins.get(constants.GROUP_POLICY)
         self._sc_plugin = plugins.get(constants.SERVICECHAIN)
-        self._l3_plugin = plugins.get(constants.L3_ROUTER_NAT)
+        self._l3_plugin = plugins.get(nl_constants.L3)
         self._set_notification_mocks()
 
     def tearDown(self):

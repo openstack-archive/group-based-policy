@@ -14,12 +14,11 @@
 #    under the License.
 
 import mock
-import unittest2
 import uuid
 
 from neutron import context
-from neutron import manager
 from neutron.plugins.ml2 import config
+from neutron_lib.plugins import directory
 
 from gbpservice.neutron.tests.unit.plugins.ml2plus.drivers import (
     extension_test as ext_test)
@@ -35,7 +34,7 @@ class ExtensionDriverTestCase(test_plugin.Ml2PlusPluginV2TestCase):
                                      self._extension_drivers,
                                      group='ml2')
         super(ExtensionDriverTestCase, self).setUp()
-        self._plugin = manager.NeutronManager.get_plugin()
+        self._plugin = directory.get_plugin()
         self._ctxt = context.get_admin_context()
 
     def _verify_subnetpool_create(self, code, exc_reason):
@@ -92,12 +91,6 @@ class ExtensionDriverTestCase(test_plugin.Ml2PlusPluginV2TestCase):
             self._verify_subnetpool_update(subnetpool, 400,
                                            'ExtensionDriverError')
 
-    # REVISIT: Neutron detaches objects from the session, hence the following
-    # test does not work. This has to be fixed as is done in the following
-    # commit:
-    # https://github.com/openstack/neutron/commit/
-    # 7e822960425326f26806bbfb650b8a844f38557d
-    @unittest2.skip('skipping')
     def test_subnetpool_attr(self):
         with self.subnetpool(['10.0.0.0/8'], name='sp1',
                              tenant_id='t1') as subnetpool:
@@ -168,7 +161,7 @@ class ExtensionDriverTestCase(test_plugin.Ml2PlusPluginV2TestCase):
             address_scope, tenant_id = self._verify_address_scope_create(
                 500, 'HTTPInternalServerError')
             # Verify the operation is rolled back
-            query_params = "tenant_id=%s" % tenant_id
+            query_params = "project_id=%s" % tenant_id
             address_scopes = self._list('address-scopes',
                                         query_params=query_params)
             self.assertFalse(address_scopes['address_scopes'])
@@ -233,15 +226,9 @@ class DBExtensionDriverTestCase(test_plugin.Ml2PlusPluginV2TestCase):
                                      self._extension_drivers,
                                      group='ml2')
         super(DBExtensionDriverTestCase, self).setUp()
-        self._plugin = manager.NeutronManager.get_plugin()
+        self._plugin = directory.get_plugin()
         self._ctxt = context.get_admin_context()
 
-    # REVISIT: Neutron detaches objects from the session, hence the following
-    # test does not work. This has to be fixed as is done in the following
-    # commit:
-    # https://github.com/openstack/neutron/commit/
-    # 7e822960425326f26806bbfb650b8a844f38557d
-    @unittest2.skip('skipping')
     def test_subnetpool_attr(self):
         with self.subnetpool(['10.0.0.0/8'], name='sp1',
                              tenant_id='t1') as subnetpool:

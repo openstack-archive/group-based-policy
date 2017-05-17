@@ -15,7 +15,7 @@ import mock
 import netaddr
 from neutron.common import config  # noqa
 from neutron import context
-from neutron import manager
+from neutron_lib.plugins import directory
 from oslo_config import cfg
 import unittest2
 
@@ -61,9 +61,7 @@ class ApicMappingStitchingPlumberGBPTestCase(
 
     @property
     def sc_plugin(self):
-        plugins = manager.NeutronManager.get_service_plugins()
-        servicechain_plugin = plugins.get('SERVICECHAIN')
-        return servicechain_plugin
+        return directory.get_plugin('SERVICECHAIN')
 
 
 class TestPolicyRuleSet(ApicMappingStitchingPlumberGBPTestCase,
