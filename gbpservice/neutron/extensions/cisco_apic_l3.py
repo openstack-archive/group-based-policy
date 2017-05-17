@@ -13,9 +13,9 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-from neutron.api import extensions
 from neutron.extensions import l3
 from neutron_lib.api import converters
+from neutron_lib.api import extensions
 
 from gbpservice.neutron.extensions import cisco_apic
 
