@@ -30,8 +30,8 @@ from neutron import context
 from neutron.db import api as db_api
 from neutron.db import db_base_plugin_v2 as n_db
 from neutron.extensions import portbindings
-from neutron import manager
 from neutron_lib.db import model_base
+from neutron_lib.plugins import directory
 from opflexagent import constants as ocst
 from oslo_config import cfg
 from oslo_serialization import jsonutils
@@ -143,13 +143,13 @@ class ApicMappingTestCase(
         super(ApicMappingTestCase, self).setUp(
             policy_drivers=['implicit_policy', 'apic', 'chain_mapping'],
             ml2_options=ml2_opts, sc_plugin=sc_plugin, qos_plugin=qos_plugin)
-        engine = db_api.get_engine()
+        engine = db_api.context_manager.writer.get_engine()
         model_base.BASEV2.metadata.create_all(engine)
-        plugin = manager.NeutronManager.get_plugin()
+        plugin = directory.get_plugin()
         plugin.remove_networks_from_down_agents = mock.Mock()
         plugin.is_agent_down = mock.Mock(return_value=False)
-        self.driver = manager.NeutronManager.get_service_plugins()[
-            'GROUP_POLICY'].policy_driver_manager.policy_drivers['apic'].obj
+        self.driver = directory.get_plugin(
+            'GROUP_POLICY').policy_driver_manager.policy_drivers['apic'].obj
         self.l3plugin = l3_apic.ApicGBPL3ServicePlugin()
         amap.ApicMappingDriver.get_base_synchronizer = mock.Mock()
         self.driver.name_mapper.name_mapper = mock.Mock()
@@ -375,7 +375,7 @@ class TestPolicyTarget(ApicMappingTestCase):
         super(TestPolicyTarget, self).setUp(*args, **kwargs)
         self.override_conf('path_mtu', 1000, group='ml2')
         self.override_conf('global_physnet_mtu', 1000, None)
-        self.override_conf('advertise_mtu', True, None)
+        self.override_conf('advertise_mtu', True, group='apic_mapping')
 
     def test_policy_target_port_deleted_on_apic(self):
         ptg = self.create_policy_target_group()['policy_target_group']
@@ -1691,7 +1691,7 @@ class TestPolicyTargetDvs(ApicMappingTestCase):
     def setUp(self):
         super(TestPolicyTargetDvs, self).setUp()
         self.driver.apic_manager.app_profile_name = mocked.APIC_AP
-        plugin = manager.NeutronManager.get_plugin()
+        plugin = directory.get_plugin()
         self.ml2 = plugin.mechanism_manager.mech_drivers['apic_gbp'].obj
         self.ml2._dvs_notifier = mock.MagicMock()
         self.ml2.dvs_notifier.bind_port_call = mock.Mock(
