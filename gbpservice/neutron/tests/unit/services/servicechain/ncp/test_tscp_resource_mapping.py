@@ -13,7 +13,7 @@
 import mock
 from neutron.common import config  # noqa
 from neutron import context as n_context
-from neutron import manager
+from neutron_lib.plugins import directory
 from oslo_config import cfg
 
 from gbpservice.neutron.services.servicechain.plugins.ncp import model
@@ -69,9 +69,7 @@ class ResourceMappingStitchingPlumberGBPTestCase(
 
     @property
     def sc_plugin(self):
-        plugins = manager.NeutronManager.get_service_plugins()
-        servicechain_plugin = plugins.get('SERVICECHAIN')
-        return servicechain_plugin
+        return directory.get_plugin('SERVICECHAIN')
 
 
 class TestPolicyRuleSet(ResourceMappingStitchingPlumberGBPTestCase,

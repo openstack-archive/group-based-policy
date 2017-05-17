@@ -13,12 +13,13 @@
 import abc
 import re
 
-from neutron.api import extensions
+from neutron.api import extensions as neutron_extensions
 from neutron.api.v2 import attributes as attr
 from neutron.api.v2 import resource_helper
 from neutron.plugins.common import constants
 from neutron.services import service_base
 from neutron_lib.api import converters as conv
+from neutron_lib.api import extensions
 from neutron_lib.api import validators as valid
 from neutron_lib import constants as nlib_const
 from neutron_lib import exceptions as nexc
@@ -27,7 +28,7 @@ from oslo_log import log as logging
 from oslo_utils import uuidutils
 import six
 
-import gbpservice.neutron.extensions
+from gbpservice.neutron import extensions as gbp_extensions
 from gbpservice.neutron.extensions import patch  # noqa
 from gbpservice.neutron.services.grouppolicy.common import (
     constants as gp_constants)
@@ -36,7 +37,7 @@ from gbpservice.neutron.services.grouppolicy.common import (
 # The code below is a monkey patch of key Neutron's modules. This is needed for
 # the GBP service to be loaded correctly. GBP extensions' path is added
 # to Neutron's so that it's found at extension scanning time.
-extensions.append_api_extensions_path(gbpservice.neutron.extensions.__path__)
+neutron_extensions.append_api_extensions_path(gbp_extensions.__path__)
 
 LOG = logging.getLogger(__name__)
 

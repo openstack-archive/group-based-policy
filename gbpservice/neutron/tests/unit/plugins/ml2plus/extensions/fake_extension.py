@@ -13,9 +13,9 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-from neutron.api import extensions
 from neutron.api.v2 import attributes as attr
 from neutron.extensions import address_scope as as_ext
+from neutron_lib.api import extensions
 from neutron_lib import constants
 
 from gbpservice._i18n import _
