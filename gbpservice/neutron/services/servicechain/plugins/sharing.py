@@ -10,8 +10,8 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-from neutron import manager as n_manager
 from neutron.plugins.common import constants as pconst
+from neutron_lib.plugins import directory
 from oslo_log import log as logging
 
 from gbpservice._i18n import _LE
@@ -40,8 +40,7 @@ class SharingMixin(object):
     def gbp_plugin(self):
         # REVISIT(rkukura): Need initialization method after all
         # plugins are loaded to grab and store plugin.
-        plugins = n_manager.NeutronManager.get_service_plugins()
-        gbp_plugin = plugins.get(pconst.GROUP_POLICY)
+        gbp_plugin = directory.get_plugins(pconst.GROUP_POLICY)
         if not gbp_plugin:
             LOG.error(_LE("No group policy service plugin found."))
             raise gp_exc.GroupPolicyDeploymentError()

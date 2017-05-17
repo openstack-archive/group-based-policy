@@ -28,7 +28,6 @@ from neutron import context as nctx
 from neutron.db import db_base_plugin_v2 as n_db
 from neutron.extensions import portbindings
 from neutron.extensions import providernet
-from neutron import manager
 from neutron.plugins.common import constants as p_const
 from neutron.plugins.ml2 import driver_api as n_api
 from neutron.plugins.ml2 import models as ml2_models
@@ -36,6 +35,7 @@ from neutron.plugins.ml2 import rpc as neu_rpc
 from neutron_lib import constants as n_constants
 from neutron_lib.db import model_base
 from neutron_lib import exceptions as n_exc
+from neutron_lib.plugins import directory
 from opflexagent import constants as ofcst
 from opflexagent import rpc
 from oslo_concurrency import lockutils
@@ -386,8 +386,7 @@ class ApicMappingDriver(api.ResourceMappingDriver,
     @property
     def gbp_plugin(self):
         if not self._gbp_plugin:
-            self._gbp_plugin = (manager.NeutronManager.get_service_plugins()
-                                .get("GROUP_POLICY"))
+            self._gbp_plugin = directory.get_plugin("GROUP_POLICY")
         return self._gbp_plugin
 
     @property

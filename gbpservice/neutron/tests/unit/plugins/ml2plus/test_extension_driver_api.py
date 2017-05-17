@@ -18,8 +18,8 @@ import unittest2
 import uuid
 
 from neutron import context
-from neutron import manager
 from neutron.plugins.ml2 import config
+from neutron_lib.plugins import directory
 
 from gbpservice.neutron.tests.unit.plugins.ml2plus.drivers import (
     extension_test as ext_test)
@@ -35,7 +35,7 @@ class ExtensionDriverTestCase(test_plugin.Ml2PlusPluginV2TestCase):
                                      self._extension_drivers,
                                      group='ml2')
         super(ExtensionDriverTestCase, self).setUp()
-        self._plugin = manager.NeutronManager.get_plugin()
+        self._plugin = directory.get_plugin()
         self._ctxt = context.get_admin_context()
 
     def _verify_subnetpool_create(self, code, exc_reason):
@@ -233,7 +233,7 @@ class DBExtensionDriverTestCase(test_plugin.Ml2PlusPluginV2TestCase):
                                      self._extension_drivers,
                                      group='ml2')
         super(DBExtensionDriverTestCase, self).setUp()
-        self._plugin = manager.NeutronManager.get_plugin()
+        self._plugin = directory.get_plugin()
         self._ctxt = context.get_admin_context()
 
     # REVISIT: Neutron detaches objects from the session, hence the following
