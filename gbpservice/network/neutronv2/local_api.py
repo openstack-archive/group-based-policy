@@ -15,11 +15,12 @@ from neutron.callbacks import registry
 from neutron.extensions import address_scope
 from neutron.extensions import l3
 from neutron.extensions import securitygroup as ext_sg
-from neutron import manager
 from neutron.notifiers import nova
 from neutron.plugins.common import constants as pconst
 from neutron import quota
+from neutron_lib import constants as nl_const
 from neutron_lib import exceptions as n_exc
+from neutron_lib.plugins import directory
 from oslo_log import log as logging
 from oslo_utils import excutils
 
@@ -223,14 +224,13 @@ class LocalAPI(object):
     def _core_plugin(self):
         # REVISIT(rkukura): Need initialization method after all
         # plugins are loaded to grab and store plugin.
-        return manager.NeutronManager.get_plugin()
+        return directory.get_plugin()
 
     @property
     def _l3_plugin(self):
         # REVISIT(rkukura): Need initialization method after all
         # plugins are loaded to grab and store plugin.
-        plugins = manager.NeutronManager.get_service_plugins()
-        l3_plugin = plugins.get(pconst.L3_ROUTER_NAT)
+        l3_plugin = directory.get_plugin(nl_const.L3)
         if not l3_plugin:
             LOG.error(_LE("No L3 router service plugin found."))
             raise exc.GroupPolicyDeploymentError()
@@ -241,8 +241,7 @@ class LocalAPI(object):
         # Probably as well:
         # REVISIT(rkukura): Need initialization method after all
         # plugins are loaded to grab and store plugin.
-        plugins = manager.NeutronManager.get_service_plugins()
-        qos_plugin = plugins.get(pconst.QOS)
+        qos_plugin = directory.get_plugin(pconst.QOS)
         if not qos_plugin:
             LOG.error(_LE("No QoS service plugin found."))
             raise exc.GroupPolicyDeploymentError()
@@ -252,8 +251,7 @@ class LocalAPI(object):
     def _group_policy_plugin(self):
         # REVISIT(rkukura): Need initialization method after all
         # plugins are loaded to grab and store plugin.
-        plugins = manager.NeutronManager.get_service_plugins()
-        group_policy_plugin = plugins.get(pconst.GROUP_POLICY)
+        group_policy_plugin = directory.get_plugin(pconst.GROUP_POLICY)
         if not group_policy_plugin:
             LOG.error(_LE("No GroupPolicy service plugin found."))
             raise exc.GroupPolicyDeploymentError()
@@ -263,8 +261,7 @@ class LocalAPI(object):
     def _servicechain_plugin(self):
         # REVISIT(rkukura): Need initialization method after all
         # plugins are loaded to grab and store plugin.
-        plugins = manager.NeutronManager.get_service_plugins()
-        servicechain_plugin = plugins.get(pconst.SERVICECHAIN)
+        servicechain_plugin = directory.get_plugin(pconst.SERVICECHAIN)
         if not servicechain_plugin:
             LOG.error(_LE("No Servicechain service plugin found."))
             raise exc.GroupPolicyDeploymentError()
