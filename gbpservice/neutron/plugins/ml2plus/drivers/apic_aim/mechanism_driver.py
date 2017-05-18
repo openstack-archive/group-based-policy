@@ -44,6 +44,7 @@ from neutron_lib import exceptions as n_exceptions
 from opflexagent import constants as ofcst
 from opflexagent import rpc as ofrpc
 from oslo_config import cfg
+from oslo_db import exception as db_exc
 from oslo_log import log
 import oslo_messaging
 
@@ -2398,30 +2399,33 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         hd_mapping = aim_infra.HostDomainMapping(host_name=host_id)
         aim_hd_mapping = self.aim.get(aim_ctx, hd_mapping)
         domain = None
-        if is_vmm:
-            if aim_hd_mapping:
-                domain = aim_hd_mapping.vmm_domain_name
-            if not domain:
-                vmms, phys = self.get_aim_domains(aim_ctx)
-                self.aim.update(aim_ctx, epg,
-                                openstack_vmm_domain_names=vmms)
-            elif domain not in aim_epg.openstack_vmm_domain_names:
-                aim_epg.openstack_vmm_domain_names.append(domain)
-                vmms = aim_epg.openstack_vmm_domain_names
-                self.aim.update(aim_ctx, epg,
-                                openstack_vmm_domain_names=vmms)
-        else:
-            if aim_hd_mapping:
-                domain = aim_hd_mapping.physical_domain_name
-            if not domain:
-                vmms, phys = self.get_aim_domains(aim_ctx)
-                self.aim.update(aim_ctx, epg,
-                                physical_domain_names=phys)
-            elif domain not in aim_epg.physical_domain_names:
-                aim_epg.physical_domain_names.append(domain)
-                phys = aim_epg.physical_domain_names
-                self.aim.update(aim_ctx, epg,
-                                physical_domain_names=phys)
+        try:
+            if is_vmm:
+                if aim_hd_mapping:
+                    domain = aim_hd_mapping.vmm_domain_name
+                if not domain:
+                    vmms, phys = self.get_aim_domains(aim_ctx)
+                    self.aim.update(aim_ctx, epg,
+                                    openstack_vmm_domain_names=vmms)
+                elif domain not in aim_epg.openstack_vmm_domain_names:
+                    aim_epg.openstack_vmm_domain_names.append(domain)
+                    vmms = aim_epg.openstack_vmm_domain_names
+                    self.aim.update(aim_ctx, epg,
+                                    openstack_vmm_domain_names=vmms)
+            else:
+                if aim_hd_mapping:
+                    domain = aim_hd_mapping.physical_domain_name
+                if not domain:
+                    vmms, phys = self.get_aim_domains(aim_ctx)
+                    self.aim.update(aim_ctx, epg,
+                                    physical_domain_names=phys)
+                elif domain not in aim_epg.physical_domain_names:
+                    aim_epg.physical_domain_names.append(domain)
+                    phys = aim_epg.physical_domain_names
+                    self.aim.update(aim_ctx, epg,
+                                    physical_domain_names=phys)
+        except db_exc.DBDuplicateEntry as e:
+            LOG.debug(e)
 
     # public interface for aim_mapping GBP policy driver also
     def disassociate_domain(self, port_context, use_original=False):
@@ -2495,18 +2499,21 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                     session, port['network_id'])
                 epg = self._get_network_epg(mapping)
             aim_epg = self.aim.get(aim_ctx, epg)
-            if self._is_opflex_type(btm[api.NETWORK_TYPE]):
-                if domain in aim_epg.openstack_vmm_domain_names:
-                    aim_epg.openstack_vmm_domain_names.remove(domain)
-                    vmms = aim_epg.openstack_vmm_domain_names
-                    self.aim.update(aim_ctx, epg,
-                                    openstack_vmm_domain_names=vmms)
-            else:
-                if domain in aim_epg.physical_domain_names:
-                    aim_epg.physical_domain_names.remove(domain)
-                    phys = aim_epg.physical_domain_names
-                    self.aim.update(aim_ctx, epg,
-                                    physical_domain_names=phys)
+            try:
+                if self._is_opflex_type(btm[api.NETWORK_TYPE]):
+                    if domain in aim_epg.openstack_vmm_domain_names:
+                        aim_epg.openstack_vmm_domain_names.remove(domain)
+                        vmms = aim_epg.openstack_vmm_domain_names
+                        self.aim.update(aim_ctx, epg,
+                                        openstack_vmm_domain_names=vmms)
+                else:
+                    if domain in aim_epg.physical_domain_names:
+                        aim_epg.physical_domain_names.remove(domain)
+                        phys = aim_epg.physical_domain_names
+                        self.aim.update(aim_ctx, epg,
+                                        physical_domain_names=phys)
+            except db_exc.DBDuplicateEntry as e:
+                LOG.debug(e)
             LOG.info(_LI('Releasing domain %(d)s for port %(p)s'),
                      {'d': domain, 'p': port['id']})
 
