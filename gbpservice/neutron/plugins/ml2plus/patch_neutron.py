@@ -183,3 +183,11 @@ def commit_reservation(context, reservation_id):
 
 
 quota.QUOTAS.get_driver().commit_reservation = commit_reservation
+
+
+from neutron._i18n import _LI
+from oslo_db.sqlalchemy import exc_filters
+
+
+exc_filters._LE = _LI
+exc_filters.LOG.exception = exc_filters.LOG.debug
