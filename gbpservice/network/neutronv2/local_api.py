@@ -152,13 +152,13 @@ def send_or_queue_registry_notification(
     send, queue = False, False
     callbacks = _get_callbacks_for_resource_event(resource, event)
     if resource in ['port', 'router_interface', 'subnet'] and (
-        event in ['after_delete', 'precommit_delete']):
+        event in ['after_update', 'after_delete', 'precommit_delete']):
         # We make an exception for the dhcp agent notification
-        # for port and subnet delete since the implementation for
+        # for port and subnet since the implementation for
         # sending that notification checks for the existence of the
         # associated network, which is not present in certain
-        # cases if the subnet delete notification is queued
-        # and sent after the network delete.
+        # cases if the notification is queued and sent after the network
+        # delete.
         # All notifiers (in-process as well as agent) will be
         # invoked in this case, no queueing of the notification
         # is required.
