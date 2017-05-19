@@ -30,6 +30,7 @@ import sqlalchemy as sa
 from sqlalchemy.orm import exc as sa_exc
 
 from gbpservice._i18n import _LE
+from gbpservice._i18n import _LI
 from gbpservice._i18n import _LW
 from gbpservice.common import utils
 from gbpservice.network.neutronv2 import local_api
@@ -594,11 +595,11 @@ class ImplicitResourceOperations(local_api.LocalAPI,
                           {'sub': subnet['id'], 'sp': pool['id']})
                 break
             except Exception as e:
-                LOG.exception(_LE("Allocating subnet from subnetpool %(sp)s "
-                                  "failed. Allocation will be attempted "
-                                  "from any other configured "
-                                  "subnetpool(s). Exception: %(excp)s"),
-                              {'sp': pool['id'], 'excp': e})
+                LOG.info(_LI("Allocating subnet from subnetpool %(sp)s "
+                             "failed. Allocation will be attempted "
+                             "from any other configured "
+                             "subnetpool(s). Exception: %(excp)s"),
+                         {'sp': pool['id'], 'excp': e})
                 last = e
                 continue
 
