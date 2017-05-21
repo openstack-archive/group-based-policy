@@ -18,6 +18,7 @@ ADVANCED_CONTROLLER = 'advanced_controller'
 base_with_vm = 'base_with_vm'
 base = 'base'
 advanced = 'advanced'
+"""
 modes = [base, base_with_vm, advanced]
 
 controller_mode_map = {
@@ -32,4 +33,14 @@ controllers = {
                            '.nfp_service.reference_configurator.controllers'),
     controller_mode_map[advanced]: ('gbpservice.contrib.nfp.configurator'
                           '.advanced_controller.controller_loader')
+}
+"""
+modes = [base]
+
+controller_mode_map = {
+        base: BASE_CONTROLLER,
+}
+
+controllers = {
+    controller_mode_map[base]: 'gbpservice.nfp.base_configurator.controllers',
 }

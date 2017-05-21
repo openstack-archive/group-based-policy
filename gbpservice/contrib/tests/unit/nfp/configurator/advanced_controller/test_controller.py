@@ -28,7 +28,8 @@ from pecan import rest
 
 from gbpservice.nfp.pecan import constants
 
-setattr(pecan, 'mode', constants.advanced)
+#setattr(pecan, 'mode', constants.advanced)
+setattr(pecan, 'mode', constants.base)
 
 from gbpservice.contrib.nfp.configurator.advanced_controller import controller
 from gbpservice.nfp.pecan.api import root_controller
