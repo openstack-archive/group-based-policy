@@ -297,8 +297,15 @@ class ApicAimTestCase(test_address_scope.AddressScopeTestCase,
 
 class TestAimMapping(ApicAimTestCase):
     def setUp(self):
+        self.call_wrapper = CallRecordWrapper()
+        self.mock_ns = self.call_wrapper.setUp(
+            nat_strategy.DistributedNatStrategy)
         self._actual_scopes = {}
         super(TestAimMapping, self).setUp()
+
+    def tearDown(self):
+        self.call_wrapper.tearDown()
+        super(TestAimMapping, self).tearDown()
 
     def _get_tenant(self, tenant_name):
         session = db_api.get_session()
@@ -1124,16 +1131,32 @@ class TestAimMapping(ApicAimTestCase):
             mock.call(mock.ANY, tenant)]
         self._check_call_list(exp_calls, self.driver.aim.delete.call_args_list)
 
-    def test_multi_scope_routing(self):
-        # REVISIT: Re-enable testing with non-isomorphic scopes once
-        # they are supported. Also, test with shared scopes?
+    def test_multi_scope_routing_with_unscoped_pools(self):
+        self._test_multi_scope_routing(True)
+
+    def test_multi_scope_routing_without_unscoped_pools(self):
+        self._test_multi_scope_routing(False)
+
+    def _test_multi_scope_routing(self, use_unscoped_pools):
+        # REVISIT: Re-enable testing with non-isomorphic scopes on the
+        # same network once they are supported. Also, test with shared
+        # scopes?
+
+        # Get default unscoped routed VRF DNs for main and sharing
+        # projects.
+        tenant_aname = self.name_mapper.project(None, self._tenant_id)
+        main_vrf = aim_resource.VRF(
+            tenant_name=tenant_aname, name='DefaultVRF').dn
+        tenant_aname = self.name_mapper.project(None, 'tenant_2')
+        shared_vrf = aim_resource.VRF(
+            tenant_name=tenant_aname, name='DefaultVRF').dn
 
         # Create a v6 scope and pool.
         scope6 = self._make_address_scope(
             self.fmt, 6, name='as6')['address_scope']
         scope6_id = scope6['id']
         self._check_address_scope(scope6)
-        scope6_vrf = scope6['apic:distinguished_names']['VRF']
+        scope46i_vrf = scope6['apic:distinguished_names']['VRF']
         pool6 = self._make_subnetpool(
             self.fmt, ['2001:db8:1::0/56'], name='sp6',
             tenant_id=self._tenant_id,
@@ -1142,7 +1165,7 @@ class TestAimMapping(ApicAimTestCase):
 
         # Create isomorphic v4 scope and pool.
         scope4i = self._make_address_scope_for_vrf(
-            scope6_vrf, 4, name='as4i')['address_scope']
+            scope46i_vrf, 4, name='as4i')['address_scope']
         scope4i_id = scope4i['id']
         self._actual_scopes[scope4i_id] = scope6
         self._check_address_scope(scope4i)
@@ -1156,10 +1179,25 @@ class TestAimMapping(ApicAimTestCase):
             self.fmt, 4, name='as4n')['address_scope']
         scope4n_id = scope4n['id']
         self._check_address_scope(scope4n)
+        scope4n_vrf = scope4n['apic:distinguished_names']['VRF']
         pool4n = self._make_subnetpool(
             self.fmt, ['10.2.0.0/16'], name='sp4n', tenant_id=self._tenant_id,
             address_scope_id=scope4n_id, default_prefixlen=24)['subnetpool']
         pool4n_id = pool4n['id']
+
+        # Create unscoped pools if required.
+        if use_unscoped_pools:
+            pool4u = self._make_subnetpool(
+                self.fmt, ['10.3.0.0/16', '10.4.0.0/16'], name='sp4u',
+                tenant_id=self._tenant_id, default_prefixlen=24)['subnetpool']
+            pool4u_id = pool4u['id']
+            pool6u = self._make_subnetpool(
+                self.fmt, ['2001:db8:1::0/56'], name='sp6u',
+                tenant_id=self._tenant_id)['subnetpool']
+            pool6u_id = pool6u['id']
+        else:
+            pool4u_id = None
+            pool6u_id = None
 
         # Create network with subnets using first v4 scope and v6 scope.
         net_resp = self._make_network(self.fmt, 'net1', True)
@@ -1197,12 +1235,13 @@ class TestAimMapping(ApicAimTestCase):
         self._check_network(net3)
         gw43_ip = '10.3.1.1'
         subnet43 = self._make_subnet(
-            self.fmt, net_resp, gw43_ip, '10.3.1.0/24')['subnet']
+            self.fmt, net_resp, gw43_ip, '10.3.1.0/24',
+            subnetpool_id=pool4u_id)['subnet']
         self._check_subnet(subnet43, net3, [], [gw43_ip])
         gw63_ip = '2001:db8:1:3::1'
         subnet63 = self._make_subnet(
             self.fmt, net_resp, gw63_ip, '2001:db8:1:3::0/64',
-            ip_version=6)['subnet']
+            ip_version=6, subnetpool_id=pool6u_id)['subnet']
         self._check_subnet(subnet63, net3, [], [gw63_ip])
 
         # Create shared network with unscoped subnets.
@@ -1212,13 +1251,26 @@ class TestAimMapping(ApicAimTestCase):
         self._check_network(net4)
         gw44_ip = '10.4.1.1'
         subnet44 = self._make_subnet(
-            self.fmt, net_resp, gw44_ip, '10.4.1.0/24')['subnet']
+            self.fmt, net_resp, gw44_ip, '10.4.1.0/24',
+            subnetpool_id=pool4u_id)['subnet']
         self._check_subnet(subnet44, net4, [], [gw44_ip])
         gw64_ip = '2001:db8:1:4::1'
         subnet64 = self._make_subnet(
             self.fmt, net_resp, gw64_ip, '2001:db8:1:4::0/64',
-            ip_version=6)['subnet']
+            ip_version=6, subnetpool_id=pool6u_id)['subnet']
         self._check_subnet(subnet64, net4, [], [gw64_ip])
+
+        # Create two external networks with subnets.
+        ext_net1 = self._make_ext_network(
+            'ext-net1', dn=self.dn_t1_l1_n1)
+        self._make_subnet(
+            self.fmt, {'network': ext_net1}, '100.100.100.1',
+            '100.100.100.0/24')
+        ext_net2 = self._make_ext_network(
+            'ext-net2', dn=self.dn_t1_l2_n2)
+        self._make_subnet(
+            self.fmt, {'network': ext_net2}, '200.200.200.1',
+            '200.200.200.0/24')
 
         def add(subnet):
             # REVISIT: Adding by port would work, but adding shared
@@ -1265,154 +1317,218 @@ class TestAimMapping(ApicAimTestCase):
                 router, expected_gw_ips, unexpected_gw_ips, scopes,
                 unscoped_project)
 
+        def check_ns(disconnect_vrf_dns, from_net_dn,
+                     connect_vrf_dns, to_net_dn):
+            def check_calls(mock, expected_vrf_dns, expected_net_dn):
+                # REVISIT: We should be able to use assert_has_calls()
+                # since assert_called_once_with() works in
+                # TestExternalConnectivityBase, but args don't seem to
+                # match when they should.
+                vrf_dns = []
+                for args, _ in mock.call_args_list:
+                    _, net, vrf = args
+                    self.assertEqual(expected_net_dn, net.dn)
+                    vrf_dns.append(vrf.dn)
+                self.assertEqual(sorted(expected_vrf_dns), sorted(vrf_dns))
+
+            check_calls(
+                self.mock_ns.disconnect_vrf, disconnect_vrf_dns, from_net_dn)
+            check_calls(
+                self.mock_ns.connect_vrf, connect_vrf_dns, to_net_dn)
+            self.mock_ns.reset_mock()
+
         # Create router.
         router = self._make_router(
-            self.fmt, self._tenant_id, 'router1')['router']
+            self.fmt, self._tenant_id, 'router1',
+            external_gateway_info={'network_id': ext_net1['id']})['router']
         router_id = router['id']
         check([(net1, [], [subnet4i1, subnet61], None, None),
                (net2, [], [subnet4n2, subnet62], None, None),
                (net3, [], [subnet43, subnet63], None, None),
                (net4, [], [subnet44, subnet64], None, None)],
               [], None)
+        check_ns([], None, [], None)
 
-        # Add first scoped v4 subnet to router.
+        # Add first scoped v4 subnet to router, which should connect
+        # the isomorphic VRF to ext_net1.
         add(subnet4i1)
         check([(net1, [subnet4i1], [subnet61], scope4i, None),
                (net2, [], [subnet4n2, subnet62], None, None),
                (net3, [], [subnet43, subnet63], None, None),
                (net4, [], [subnet44, subnet64], None, None)],
               [scope4i], None)
+        check_ns([], None, [scope46i_vrf], self.dn_t1_l1_n1)
 
-        # Add first scoped v6 subnet to router.
+        # Add first scoped v6 subnet to router, which should not
+        # effect external connectivity.
         add(subnet61)
         check([(net1, [subnet4i1, subnet61], [], scope4i, None),
                (net2, [], [subnet4n2, subnet62], None, None),
                (net3, [], [subnet43, subnet63], None, None),
                (net4, [], [subnet44, subnet64], None, None)],
               [scope4i, scope6], None)
+        check_ns([], None, [], None)
 
-        # Add first unscoped v6 subnet to router.
+        # Add first unscoped v6 subnet to router, which should connect
+        # the default VRF to ext_net1.
         add(subnet63)
         check([(net1, [subnet4i1, subnet61], [], scope4i, None),
                (net2, [], [subnet4n2, subnet62], None, None),
                (net3, [subnet63], [subnet43], None, None),
                (net4, [], [subnet44, subnet64], None, None)],
               [scope4i, scope6], self._tenant_id)
-
-        # Add second scoped v6 subnet to router.
-        add(subnet62)
-        check([(net1, [subnet4i1, subnet61], [], scope4i, None),
-               (net2, [subnet62], [subnet4n2], scope6, None),
-               (net3, [subnet63], [subnet43], None, None),
-               (net4, [], [subnet44, subnet64], None, None)],
-              [scope4i, scope6], self._tenant_id)
+        check_ns([], None, [main_vrf], self.dn_t1_l1_n1)
 
         # REVISIT: Enable when non-isomorphic network routing is
         # supported.
         #
-        # Add second scoped v4 subnet to router.
-        # add(subnet4n2)
+        # Add second scoped v6 subnet to router, which should connect
+        # its VRF to ext_net1.
+        # add(subnet62)
         # check([(net1, [subnet4i1, subnet61], [], scope4i, None),
-        #        (net2, [subnet4n2, subnet62], [], scope6, None),
+        #        (net2, [subnet62], [subnet4n2], scope6, None),
         #        (net3, [subnet63], [subnet43], None, None),
         #        (net4, [], [subnet44, subnet64], None, None)],
-        #       [scope4i, scope4n, scope6], self._tenant_id)
+        #       [scope4i, scope6], self._tenant_id)
 
-        # Add first unscoped v4 subnet to router.
+        # Add second scoped v4 subnet to router, which should connect
+        # its VRF to ext_net1.
+        add(subnet4n2)
+        check([(net1, [subnet4i1, subnet61], [], scope4i, None),
+               (net2, [subnet4n2], [subnet62], scope4n, None),
+               (net3, [subnet63], [subnet43], None, None),
+               (net4, [], [subnet44, subnet64], None, None)],
+              [scope4i, scope4n, scope6], self._tenant_id)
+        check_ns([], None, [scope4n_vrf], self.dn_t1_l1_n1)
+
+        # Add first unscoped v4 subnet to router, which should not
+        # effect external connectivity.
         add(subnet43)
         check([(net1, [subnet4i1, subnet61], [], scope4i, None),
-               (net2, [subnet62], [subnet4n2], scope6, None),
+               (net2, [subnet4n2], [subnet62], scope4n, None),
                (net3, [subnet43, subnet63], [], None, None),
                (net4, [], [subnet44, subnet64], None, None)],
-              [scope4i, scope6], self._tenant_id)
+              [scope4i, scope4n, scope6], self._tenant_id)
+        check_ns([], None, [], None)
 
         # Add shared unscoped v4 subnet to router, which should move
-        # unscoped topology but not scoped topologies.
+        # unscoped topology but not scoped topologies, and should
+        # disconnect tenant's own VRF from ext_net1 and connect
+        # sharing tenant's VRF to ext_net1.
         add(subnet44)
-        # REVISIT: net2 should be scope4n.
         check([(net1, [subnet4i1, subnet61], [], scope4i, None),
-               (net2, [subnet62], [subnet4n2], scope6, None),
+               (net2, [subnet4n2], [subnet62], scope4n, None),
                (net3, [subnet43, subnet63], [], None, 'tenant_2'),
                (net4, [subnet44], [subnet64], None, 'tenant_2')],
-              [scope4i, scope6], 'tenant_2')
+              [scope4i, scope4n, scope6], 'tenant_2')
+        check_ns([main_vrf], self.dn_t1_l1_n1, [shared_vrf], self.dn_t1_l1_n1)
 
-        # Add shared unscoped v6 subnet to router.
+        # Add shared unscoped v6 subnet to router, which should not
+        # effect external connectivity.
         add(subnet64)
-        # REVISIT: net2 should be scope4n.
         check([(net1, [subnet4i1, subnet61], [], scope4i, None),
-               (net2, [subnet62], [subnet4n2], scope6, None),
+               (net2, [subnet4n2], [subnet62], scope4n, None),
                (net3, [subnet43, subnet63], [], None, 'tenant_2'),
                (net4, [subnet44, subnet64], [], None, 'tenant_2')],
-              [scope4i, scope6], 'tenant_2')
+              [scope4i, scope4n, scope6], 'tenant_2')
+        check_ns([], None, [], None)
 
-        # Remove first scoped v4 subnet from router.
+        # Update router with new gateway, which should disconnect all
+        # VRFs from ext_net1 and connect them to ext_net2.
+        self._update('routers', router_id,
+                     {'router': {'external_gateway_info':
+                                 {'network_id': ext_net2['id']}}})
+        check([(net1, [subnet4i1, subnet61], [], scope4i, None),
+               (net2, [subnet4n2], [subnet62], scope4n, None),
+               (net3, [subnet43, subnet63], [], None, 'tenant_2'),
+               (net4, [subnet44, subnet64], [], None, 'tenant_2')],
+              [scope4i, scope4n, scope6], 'tenant_2')
+        check_ns([scope46i_vrf, scope4n_vrf, shared_vrf], self.dn_t1_l1_n1,
+                 [scope46i_vrf, scope4n_vrf, shared_vrf], self.dn_t1_l2_n2)
+
+        # Remove first scoped v4 subnet from router, which should not
+        # effect external connectivity.
         remove(subnet4i1)
-        # REVISIT: net1 should be scope6, net2 should be scope4n.
-        check([(net1, [subnet61], [subnet4i1], scope4i, None),
-               (net2, [subnet62], [subnet4n2], scope6, None),
+        check([(net1, [subnet61], [subnet4i1], scope6, None),
+               (net2, [subnet4n2], [subnet62], scope4n, None),
                (net3, [subnet43, subnet63], [], None, 'tenant_2'),
                (net4, [subnet44, subnet64], [], None, 'tenant_2')],
-              [scope6], 'tenant_2')
+              [scope4n, scope6], 'tenant_2')
+        check_ns([], None, [], None)
 
-        # Remove first scoped v6 subnet from router.
+        # Remove first scoped v6 subnet from router, which should
+        # disconnect isomorphic VRF from ext_net2.
         remove(subnet61)
         check([(net1, [], [subnet4i1, subnet61], None, None),
-               (net2, [subnet62], [subnet4n2], scope6, None),
+               (net2, [subnet4n2], [subnet62], scope4n, None),
                (net3, [subnet43, subnet63], [], None, 'tenant_2'),
                (net4, [subnet44, subnet64], [], None, 'tenant_2')],
-              [scope6], 'tenant_2')
+              [scope4n], 'tenant_2')
+        check_ns([scope46i_vrf], self.dn_t1_l2_n2, [], None)
 
-        # Remove shared unscoped v4 subnet from router.
+        # Remove shared unscoped v4 subnet from router, which should
+        # not effect external connecivity.
         remove(subnet44)
         check([(net1, [], [subnet4i1, subnet61], None, None),
-               (net2, [subnet62], [subnet4n2], scope6, None),
+               (net2, [subnet4n2], [subnet62], scope4n, None),
                (net3, [subnet43, subnet63], [], None, 'tenant_2'),
                (net4, [subnet64], [subnet44], None, 'tenant_2')],
-              [scope6], 'tenant_2')
+              [scope4n], 'tenant_2')
+        check_ns([], None, [], None)
 
         # Remove shared unscoped v6 subnet from router, which should
-        # move remaining unscoped topology back to original tenant.
+        # move remaining unscoped topology back to original tenant,
+        # and should disconnect sharing tenant's VRF from ext_net2 and
+        # connect tenant's own VRF to ext_net1.
         remove(subnet64)
         check([(net1, [], [subnet4i1, subnet61], None, None),
-               (net2, [subnet62], [subnet4n2], scope6, None),
+               (net2, [subnet4n2], [subnet62], scope4n, None),
                (net3, [subnet43, subnet63], [], None, None),
                (net4, [], [subnet44, subnet64], None, None)],
-              [scope6], self._tenant_id)
+              [scope4n], self._tenant_id)
+        check_ns([shared_vrf], self.dn_t1_l2_n2, [main_vrf], self.dn_t1_l2_n2)
 
-        # Remove first unscoped v6 subnet from router.
+        # Remove first unscoped v6 subnet from router, which should
+        # not effect external connectivity.
         remove(subnet63)
         check([(net1, [], [subnet4i1, subnet61], None, None),
-               (net2, [subnet62], [subnet4n2], scope6, None),
+               (net2, [subnet4n2], [subnet62], scope4n, None),
                (net3, [subnet43], [subnet63], None, None),
                (net4, [], [subnet44, subnet64], None, None)],
-              [scope6], self._tenant_id)
+              [scope4n], self._tenant_id)
+        check_ns([], None, [], None)
 
-        # REVISIT: Enable when non-isomorphic network routing is
-        # supported.
-        #
-        # Remove second scoped v4 subnet from router.
-        # remove(subnet4n2)
-        # check([(net1, [], [subnet4i1, subnet61], None, None),
-        #        (net2, [subnet62], [subnet4n2], scope6, None),
-        #        (net3, [subnet43], [subnet63], None, None),
-        #        (net4, [], [subnet44, subnet64], None, None)],
-        #       [scope6], self._tenant_id)
-
-        # Remove second unscoped v4 subnet from router.
-        remove(subnet43)
+        # Remove second scoped v4 subnet from router, which should
+        # disconnect its VRF from ext_net2.
+        remove(subnet4n2)
         check([(net1, [], [subnet4i1, subnet61], None, None),
-               (net2, [subnet62], [subnet4n2], scope6, None),
-               (net3, [], [subnet43, subnet63], None, None),
+               (net2, [], [subnet4n2, subnet62], None, None),
+               (net3, [subnet43], [subnet63], None, None),
                (net4, [], [subnet44, subnet64], None, None)],
-              [scope6], None)
+              [], self._tenant_id)
+        check_ns([scope4n_vrf], self.dn_t1_l2_n2, [], None)
 
-        # Remove second scoped v6 subnet from router.
-        remove(subnet62)
+        # Remove second unscoped v4 subnet from router, which should
+        # disconnect the default VRF from ext_net2.
+        remove(subnet43)
         check([(net1, [], [subnet4i1, subnet61], None, None),
                (net2, [], [subnet4n2, subnet62], None, None),
                (net3, [], [subnet43, subnet63], None, None),
                (net4, [], [subnet44, subnet64], None, None)],
               [], None)
+        check_ns([main_vrf], self.dn_t1_l2_n2, [], None)
+
+        # REVISIT: Enable when non-isomorphic network routing is
+        # supported.
+        #
+        # Remove second scoped v6 subnet from router.
+        # remove(subnet62)
+        # check([(net1, [], [subnet4i1, subnet61], None, None),
+        #        (net2, [], [subnet4n2, subnet62], None, None),
+        #        (net3, [], [subnet43, subnet63], None, None),
+        #        (net4, [], [subnet44, subnet64], None, None)],
+        #       [], None)
+        # check_ns(...)
 
     def test_shared_address_scope(self):
         # Create shared scope as tenant_1.
