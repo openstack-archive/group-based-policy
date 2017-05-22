@@ -106,6 +106,12 @@ class DbMixin(object):
                 filter_by(network_id=network_id).
                 one_or_none())
 
+    def _get_network_mappings_for_vrf(self, session, vrf):
+        return (session.query(NetworkMapping).
+                filter_by(vrf_tenant_name=vrf.tenant_name,
+                          vrf_name=vrf.name).
+                all())
+
     def _get_network_bd(self, mapping):
         return aim_resource.BridgeDomain(
             tenant_name=mapping.bd_tenant_name,

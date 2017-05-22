@@ -705,8 +705,10 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                                               old_net) if old_net else None
             new_net = self.plugin.get_network(context,
                                               new_net) if new_net else None
-            self._manage_external_connectivity(context,
-                                               current, old_net, new_net)
+            vrfs = self._get_vrfs_for_router(session, current['id'])
+            for vrf in vrfs:
+                self._manage_external_connectivity(
+                    context, current, old_net, new_net, vrf)
 
             # Send a port update so that SNAT info may be recalculated for
             # affected ports in the interfaced subnets.
@@ -820,11 +822,10 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         # stack's scope separately, or at least raise an exception.
         scope_id = self._get_address_scope_id_for_subnets(context, subnets)
 
-        # Find number of existing interface ports on the router,
-        # excluding the one we are adding.
-        #
-        # REVISIT: Just for this scope?
-        router_intf_count = self._get_router_intf_count(session, router)
+        # Find number of existing interface ports on the router for
+        # this scope, excluding the one we are adding.
+        router_intf_count = self._get_router_intf_count(
+            session, router, scope_id)
 
         # Find up to two existing router interfaces for this
         # network. The interface currently being added is not
@@ -1135,10 +1136,10 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         if router_db.gw_port_id:
             net = self.plugin.get_network(context,
                                           router_db.gw_port.network_id)
-            # If this was the last interface-port, then we no longer know
-            # the VRF for this router. So update external-conectivity to
-            # exclude this router.
-            if not self._get_router_intf_count(session, router_db):
+            # If this was the last interface for this VRF for this
+            # router, update external-conectivity to exclude this
+            # router.
+            if not self._get_router_intf_count(session, router_db, scope_id):
                 self._manage_external_connectivity(
                     context, router_db, net, None, old_vrf)
 
@@ -1483,28 +1484,58 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                        'vrf': vrf})
             return vrf
 
-    def _get_vrf_for_router(self, session, router):
-        # REVISIT: Return list of VRFs for when multi-scope routing is
-        # supported?
+    def _get_vrfs_for_router(self, session, router_id):
+        # REVISIT: Persist router/VRF relationship?
+
+        # Find the unique VRFs for the scoped interfaces, accounting
+        # for isomorphic scopes.
+        vrfs = {}
+        scope_dbs = (session.query(as_db.AddressScope).
+                     join(models_v2.SubnetPool,
+                          models_v2.SubnetPool.address_scope_id ==
+                          as_db.AddressScope.id).
+                     join(models_v2.Subnet,
+                          models_v2.Subnet.subnetpool_id ==
+                          models_v2.SubnetPool.id).
+                     join(models_v2.IPAllocation).
+                     join(models_v2.Port).
+                     join(l3_db.RouterPort).
+                     filter(l3_db.RouterPort.router_id == router_id).
+                     filter(l3_db.RouterPort.port_type ==
+                            n_constants.DEVICE_OWNER_ROUTER_INTF).
+                     distinct())
+        for scope_db in scope_dbs:
+            vrf = self._get_address_scope_vrf(scope_db.aim_mapping)
+            vrfs[tuple(vrf.identity)] = vrf
+
+        # Find VRF for first unscoped interface.
         network_db = (session.query(models_v2.Network).
                       join(models_v2.Port).
+                      join(models_v2.IPAllocation).
+                      join(models_v2.Subnet).
+                      outerjoin(models_v2.SubnetPool,
+                                models_v2.SubnetPool.id ==
+                                models_v2.Subnet.subnetpool_id).
                       join(l3_db.RouterPort).
-                      filter(l3_db.RouterPort.router_id == router['id'],
+                      filter(l3_db.RouterPort.router_id == router_id,
                              l3_db.RouterPort.port_type ==
                              n_constants.DEVICE_OWNER_ROUTER_INTF).
+                      filter(sa.or_(models_v2.Subnet.subnetpool_id.is_(None),
+                                    models_v2.SubnetPool.address_scope_id.is_(
+                                        None))).
+                      limit(1).
                       first())
         if network_db:
-            return self._get_network_vrf(network_db.aim_mapping)
+            vrf = self._get_network_vrf(network_db.aim_mapping)
+            vrfs[tuple(vrf.identity)] = vrf
 
-    def _get_address_scope_ids_for_vrf(self, session, vrf):
-        mappings = self._get_address_scope_mappings_for_vrf(session, vrf)
-        if mappings:
-            return [mapping.scope_id for mapping in mappings]
+        return vrfs.values()
 
     def _get_routers_for_vrf(self, session, vrf):
         # REVISIT: Persist router/VRF relationship?
 
-        scope_ids = self._get_address_scope_ids_for_vrf(session, vrf)
+        scope_ids = [mapping.scope_id for mapping in
+                     self._get_address_scope_mappings_for_vrf(session, vrf)]
         if scope_ids:
             rtr_dbs = (session.query(l3_db.Router)
                        .join(l3_db.RouterPort)
@@ -1520,24 +1551,8 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                            scope_ids))
                        .distinct())
         else:
-            # For an unscoped VRF, first find all the routed BDs
-            # referencing the VRF.
-            aim_ctx = aim_context.AimContext(session)
-            bds = self.aim.find(
-                aim_ctx, aim_resource.BridgeDomain,
-                tenant_name=vrf.tenant_name,
-                vrf_name=DEFAULT_VRF_NAME,
-                enable_routing=True)
-
-            # Then find network IDs for those BDs mapped from networks.
-            net_ids = []
-            for bd in bds:
-                id = self.name_mapper.reverse_network(
-                    session, bd.name, enforce=False)
-                if id:
-                    net_ids.append(id)
-
-            # Then find routers interfaced to those networks.
+            net_ids = [mapping.network_id for mapping in
+                       self._get_network_mappings_for_vrf(session, vrf)]
             rtr_dbs = (session.query(l3_db.Router).
                        join(l3_db.RouterPort).
                        join(models_v2.Port).
@@ -2007,12 +2022,48 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         return aim_resource.Subnet.to_gw_ip_mask(
             subnet['gateway_ip'], int(subnet['cidr'].split('/')[1]))
 
-    def _get_router_intf_count(self, session, router):
-        return (session.query(l3_db.RouterPort)
-                .filter(l3_db.RouterPort.router_id == router['id'])
-                .filter(l3_db.RouterPort.port_type ==
-                        n_constants.DEVICE_OWNER_ROUTER_INTF)
-                .count())
+    def _get_router_intf_count(self, session, router, scope_id=None):
+        if not scope_id:
+            result = (session.query(l3_db.RouterPort).
+                      filter(l3_db.RouterPort.router_id == router['id']).
+                      filter(l3_db.RouterPort.port_type ==
+                             n_constants.DEVICE_OWNER_ROUTER_INTF).
+                      count())
+        elif scope_id == NO_ADDR_SCOPE:
+            result = (session.query(l3_db.RouterPort).
+                      join(models_v2.Port).
+                      join(models_v2.IPAllocation).
+                      join(models_v2.Subnet).
+                      outerjoin(models_v2.SubnetPool,
+                           models_v2.Subnet.subnetpool_id ==
+                           models_v2.SubnetPool.id).
+                      filter(l3_db.RouterPort.router_id == router['id']).
+                      filter(l3_db.RouterPort.port_type ==
+                             n_constants.DEVICE_OWNER_ROUTER_INTF).
+                      filter(sa.or_(models_v2.Subnet.subnetpool_id.is_(None),
+                                    models_v2.SubnetPool.address_scope_id.is_(
+                                        None))).
+                      count())
+        else:
+            # Include interfaces for isomorphic scope.
+            mapping = self._get_address_scope_mapping(session, scope_id)
+            vrf = self._get_address_scope_vrf(mapping)
+            mappings = self._get_address_scope_mappings_for_vrf(session, vrf)
+            scope_ids = [mapping.scope_id for mapping in mappings]
+            result = (session.query(l3_db.RouterPort).
+                      join(models_v2.Port).
+                      join(models_v2.IPAllocation).
+                      join(models_v2.Subnet).
+                      join(models_v2.SubnetPool,
+                           models_v2.Subnet.subnetpool_id ==
+                           models_v2.SubnetPool.id).
+                      filter(l3_db.RouterPort.router_id == router['id']).
+                      filter(l3_db.RouterPort.port_type ==
+                             n_constants.DEVICE_OWNER_ROUTER_INTF).
+                      filter(models_v2.SubnetPool.address_scope_id.in_(
+                          scope_ids)).
+                      count())
+        return result
 
     def _get_address_scope_id_for_subnets(self, context, subnets):
         # Assuming that all the subnets provided are consistent w.r.t.
@@ -2029,34 +2080,11 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             scope_id = (subnetpool_db.address_scope_id or NO_ADDR_SCOPE)
         return scope_id
 
-    def _get_address_scope_id_for_router(self, session, router):
-        scope_id = NO_ADDR_SCOPE
-        for pool_db in (session.query(models_v2.SubnetPool)
-                        .join(models_v2.Subnet,
-                              models_v2.Subnet.subnetpool_id ==
-                              models_v2.SubnetPool.id)
-                        .join(models_v2.IPAllocation)
-                        .join(models_v2.Port)
-                        .join(l3_db.RouterPort)
-                        .filter(l3_db.RouterPort.router_id == router['id'],
-                                l3_db.RouterPort.port_type ==
-                                n_constants.DEVICE_OWNER_ROUTER_INTF)
-                        .filter(models_v2.SubnetPool
-                                .address_scope_id.isnot(None))
-                        .distinct()):
-            if pool_db.ip_version == 4:
-                scope_id = pool_db.address_scope_id
-                break
-            elif pool_db.ip_version == 6:
-                scope_id = pool_db.address_scope_id
-        return scope_id
-
     def _manage_external_connectivity(self, context, router, old_network,
-                                      new_network, vrf=None):
+                                      new_network, vrf):
         session = context.session
         aim_ctx = aim_context.AimContext(db_session=session)
 
-        vrf = vrf or self._get_vrf_for_router(session, router)
         # Keep only the identity attributes of the VRF so that calls to
         # nat-library have consistent resource values. This
         # is mainly required to ease unit-test verification.
