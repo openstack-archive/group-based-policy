@@ -17,6 +17,7 @@ from neutron.tests.unit.plugins.ml2 import test_plugin
 from oslo_config import cfg
 import webob.exc
 
+from gbpservice._i18n import _LW
 from gbpservice.neutron.db.grouppolicy import group_policy_mapping_db as gpmdb
 from gbpservice.neutron.extensions import group_policy as gpolicy
 from gbpservice.neutron.services.grouppolicy import config
@@ -160,6 +161,9 @@ class GroupPolicyPluginTestBase(tgpmdb.GroupPolicyMappingDbTestCase):
 class GroupPolicyPluginTestCase(GroupPolicyPluginTestBase):
 
     def tearDown(self):
+        policy_drivers = cfg.CONF.group_policy.policy_drivers
+        LOG.warning(_LW("PDs used in this test: %s"),
+                    policy_drivers)
         # Always reset configuration to dummy driver. Any
         # test which requires to configure a different
         # policy driver would have done so in it's setup
