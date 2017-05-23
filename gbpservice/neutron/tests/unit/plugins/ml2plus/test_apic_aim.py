@@ -208,6 +208,15 @@ class ApicAimTestCase(test_address_scope.AddressScopeTestCase,
                             self.t1_aname)
         self.dn_t1_l2_n2 = ('uni/tn-%s/out-l2/instP-n2' %
                             self.t1_aname)
+        # The following is done to stop the neutron code from checking
+        # for dhcp agents
+        if '_aliases' in self.plugin.__dict__:
+            if 'agent' in self.plugin.__dict__['_aliases']:
+                self.plugin.__dict__['_aliases'].remove('agent')
+            if 'dhcp_agent_scheduler' in self.plugin.__dict__[
+                    '_aliases']:
+                self.plugin.__dict__['_aliases'].remove(
+                        'dhcp_agent_scheduler')
 
     def tearDown(self):
         engine = db_api.context_manager.writer.get_engine()
