@@ -678,7 +678,7 @@ class TestServiceChainInstance(NFPNodeDriverTestCase):
                     ptg_added.assert_called_once_with(mock.ANY,
                         mock.ANY, mock.ANY)
 
-    def _test_update_node_consumer_ptg_removed(self):
+    def test_update_node_consumer_ptg_removed(self):
         with mock.patch.object(nfp_node_driver.NFPClientApi,
                                "create_network_function") as create_nf:
             with mock.patch.object(nfp_node_driver.NFPClientApi,
