@@ -14,6 +14,7 @@
 import webob.exc
 
 from neutron import context
+from neutron import manager
 from neutron.plugins.common import constants
 from oslo_config import cfg
 from oslo_utils import uuidutils
@@ -87,6 +88,14 @@ class ServiceChainDbTestCase(test_group_policy_db.GroupPolicyDbTestCase):
             sc_plugin=sc_plugin, service_plugins=service_plugins,
             ext_mgr=ext_mgr)
         self.plugin = self._sc_plugin
+        plugins = manager.NeutronManager.get_service_plugins()
+        # The following is done to stop the neutron code from checking
+        # for dhcp agents
+        if 'agent' in plugins.get('CORE').__dict__['_aliases']:
+            plugins.get('CORE').__dict__['_aliases'].remove('agent')
+        if 'dhcp_agent_scheduler' in plugins.get('CORE').__dict__['_aliases']:
+            plugins.get('CORE').__dict__['_aliases'].remove(
+                    'dhcp_agent_scheduler')
 
 
 class TestServiceChainResources(ServiceChainDbTestCase):
