@@ -799,7 +799,7 @@ class TestServiceChainInstance(NFPNodeDriverTestCase):
                                                    mock.ANY)
 
     @mock.patch.object(nfp_node_driver.NFPClientApi, 'get_plumbing_info')
-    def test_policy_target_group_updated(self, plumbing_info):
+    def _test_policy_target_group_updated(self, plumbing_info):
         prof = self._create_service_profile(
                 service_type='FIREWALL',
                 vendor=self.SERVICE_PROFILE_VENDOR,
