@@ -267,7 +267,7 @@ class NFPNodeDriverTestCase(
 class TestServiceChainInstance(NFPNodeDriverTestCase):
 
     @mock.patch.object(nfp_node_driver.NFPClientApi, 'get_plumbing_info')
-    def test_node_create(self, plumbing_info):
+    def _test_node_create(self, plumbing_info):
         with mock.patch.object(nfp_node_driver.NFPClientApi,
                                "create_network_function") as create_nf:
             with mock.patch.object(nfp_node_driver.NFPClientApi,
@@ -330,7 +330,7 @@ class TestServiceChainInstance(NFPNodeDriverTestCase):
                     update_svc_config.assert_called_once_with()
 
     @mock.patch.object(nfp_node_driver.NFPClientApi, 'get_plumbing_info')
-    def test_node_delete(self, plumbing_info):
+    def _test_node_delete(self, plumbing_info):
         with mock.patch.object(nfp_node_driver.NFPClientApi,
                                "create_network_function") as create_nf:
             with mock.patch.object(nfp_node_driver.NFPClientApi,
@@ -387,7 +387,7 @@ class TestServiceChainInstance(NFPNodeDriverTestCase):
                           network_function_id=mock.ANY)
 
     @mock.patch.object(nfp_node_driver.NFPClientApi, 'get_plumbing_info')
-    def test_wait_for_network_function_delete_completion(self, plumbing_info):
+    def _test_wait_for_network_function_delete_completion(self, plumbing_info):
         with mock.patch.object(nfp_node_driver.NFPClientApi,
                                "create_network_function") as create_nf:
             with mock.patch.object(nfp_node_driver.NFPClientApi,
@@ -453,7 +453,7 @@ class TestServiceChainInstance(NFPNodeDriverTestCase):
         return (pt, port)
 
     @mock.patch.object(nfp_node_driver.NFPClientApi, 'get_plumbing_info')
-    def test_lb_node_create(self, plumbing_info, consumer_external=False):
+    def _test_lb_node_create(self, plumbing_info, consumer_external=False):
         with mock.patch.object(nfp_node_driver.NFPClientApi,
                                "create_network_function") as create_nf:
             with mock.patch.object(nfp_node_driver.NFPClientApi,
@@ -508,7 +508,7 @@ class TestServiceChainInstance(NFPNodeDriverTestCase):
                           network_function=mock.ANY)
                 get_nf.assert_called_with(mock.ANY, mock.ANY)
 
-    def test_invalid_service_type_rejected(self):
+    def _test_invalid_service_type_rejected(self):
         node_used = self._nfp_create_profiled_servicechain_node(
             service_type="test")['servicechain_node']
         spec_used = self.create_servicechain_spec(
@@ -523,7 +523,7 @@ class TestServiceChainInstance(NFPNodeDriverTestCase):
         self.assertEqual('NoDriverAvailableForAction',
                          res['NeutronError']['type'])
 
-    def test_is_node_order_in_spec_supported(self):
+    def _test_is_node_order_in_spec_supported(self):
         lb_prof = self.create_service_profile(
                     service_type=constants.LOADBALANCER,
                     vendor=self.SERVICE_PROFILE_VENDOR,
@@ -558,7 +558,7 @@ class TestServiceChainInstance(NFPNodeDriverTestCase):
                     res['NeutronError']['type'])
 
     @mock.patch.object(nfp_node_driver.NFPClientApi, 'get_plumbing_info')
-    def test_validate_update(self, plumbing_info):
+    def _test_validate_update(self, plumbing_info):
         with mock.patch.object(nfp_node_driver.NFPClientApi,
                                "create_network_function") as create_nf:
             with mock.patch.object(nfp_node_driver.NFPClientApi,
@@ -630,7 +630,7 @@ class TestServiceChainInstance(NFPNodeDriverTestCase):
                             res['NeutronError']['type'])
 
     @mock.patch.object(nfp_node_driver.NFPClientApi, 'get_plumbing_info')
-    def test_update_node_consumer_ptg_added(self, plumbing_info):
+    def _test_update_node_consumer_ptg_added(self, plumbing_info):
         with mock.patch.object(nfp_node_driver.NFPClientApi,
                                "create_network_function") as create_nf:
             with mock.patch.object(nfp_node_driver.NFPClientApi,
@@ -728,7 +728,7 @@ class TestServiceChainInstance(NFPNodeDriverTestCase):
             ptg_removed.assert_called_once_with(mock.ANY, mock.ANY, mock.ANY)
 
     @mock.patch.object(nfp_node_driver.NFPClientApi, 'get_plumbing_info')
-    def test_policy_target_add_remove(self, plumbing_info):
+    def _test_policy_target_add_remove(self, plumbing_info):
         prof = self._create_service_profile(
             service_type='LOADBALANCER',
             vendor=self.SERVICE_PROFILE_VENDOR,
@@ -799,7 +799,7 @@ class TestServiceChainInstance(NFPNodeDriverTestCase):
                                                    mock.ANY)
 
     @mock.patch.object(nfp_node_driver.NFPClientApi, 'get_plumbing_info')
-    def test_policy_target_group_updated(self, plumbing_info):
+    def _test_policy_target_group_updated(self, plumbing_info):
         prof = self._create_service_profile(
                 service_type='FIREWALL',
                 vendor=self.SERVICE_PROFILE_VENDOR,
