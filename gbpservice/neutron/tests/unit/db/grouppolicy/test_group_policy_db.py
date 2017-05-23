@@ -349,6 +349,15 @@ class GroupPolicyDbTestCase(GroupPolicyDBTestBase,
         self._gbp_plugin = plugins.get(constants.GROUP_POLICY)
         self._sc_plugin = plugins.get(constants.SERVICECHAIN)
         self._l3_plugin = plugins.get(constants.L3_ROUTER_NAT)
+        # The following is done to stop the neutron code from checking
+        # for dhcp agents
+        if '_aliases' in plugins.get('CORE').__dict__:
+            if 'agent' in plugins.get('CORE').__dict__['_aliases']:
+                plugins.get('CORE').__dict__['_aliases'].remove('agent')
+            if 'dhcp_agent_scheduler' in plugins.get('CORE').__dict__[
+                    '_aliases']:
+                plugins.get('CORE').__dict__['_aliases'].remove(
+                        'dhcp_agent_scheduler')
 
 
 class TestGroupResources(GroupPolicyDbTestCase):
