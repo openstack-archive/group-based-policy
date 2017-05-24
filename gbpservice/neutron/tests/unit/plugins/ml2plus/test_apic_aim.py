@@ -45,15 +45,16 @@ from opflexagent import constants as ofcst
 import webob.exc
 
 from gbpservice.neutron.db import implicitsubnetpool_db  # noqa
-from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import apic_mapper
-from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import config  # noqa
-from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import exceptions
-
 from gbpservice.neutron.extensions import cisco_apic_l3 as l3_ext
 from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import (
     extension_db as extn_db)
 from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import (
     mechanism_driver as md)
+from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import apic_mapper
+from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import config  # noqa
+from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import data_migrations
+from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import db
+from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import exceptions
 from gbpservice.neutron.plugins.ml2plus import patch_neutron
 
 PLUGIN_NAME = 'gbpservice.neutron.plugins.ml2plus.plugin.Ml2PlusPlugin'
@@ -2998,6 +2999,148 @@ class TestTopology(ApicAimTestCase):
         self._router_interface_action('add', rtr['id'], sub1['id'], None)
         self._router_interface_action('add', rtr['id'], sub2['id'], None)
         self._router_interface_action('add', rtr['id'], sub3['id'], None)
+
+
+class TestMigrations(ApicAimTestCase, db.DbMixin):
+    def test_apic_aim_persist(self):
+        aim_ctx = aim_context.AimContext(self.db_session)
+
+        # Create a normal address scope and delete its mapping.
+        scope = self._make_address_scope(
+            self.fmt, 4, name='as1')['address_scope']
+        scope1_id = scope['id']
+        scope1_vrf = scope[DN]['VRF']
+        mapping = self._get_address_scope_mapping(self.db_session, scope1_id)
+        self.db_session.delete(mapping)
+
+        # Create an address scope with pre-existing VRF, delete its
+        # mapping, and create record in old DB table.
+        tenant = aim_resource.Tenant(name=self.t1_aname, monitored=True)
+        self.aim_mgr.create(aim_ctx, tenant)
+        vrf = aim_resource.VRF(
+            tenant_name=self.t1_aname, name='pre_existing', monitored=True)
+        self.aim_mgr.create(aim_ctx, vrf)
+        scope = self._make_address_scope_for_vrf(vrf.dn)['address_scope']
+        scope2_id = scope['id']
+        scope2_vrf = scope[DN]['VRF']
+        self.assertEqual(vrf.dn, scope2_vrf)
+        mapping = self._get_address_scope_mapping(self.db_session, scope2_id)
+        self.db_session.delete(mapping)
+        old_db = data_migrations.DefunctAddressScopeExtensionDb(
+            address_scope_id=scope2_id, vrf_dn=scope2_vrf)
+        self.db_session.add(old_db)
+
+        # Create a normal network and delete its mapping.
+        net = self._make_network(self.fmt, 'net1', True)['network']
+        net1_id = net['id']
+        net1_bd = net[DN]['BridgeDomain']
+        net1_epg = net[DN]['EndpointGroup']
+        net1_vrf = net[DN]['VRF']
+        mapping = self._get_network_mapping(self.db_session, net1_id)
+        self.db_session.delete(mapping)
+
+        # Create an external network and delete its mapping.
+        net = self._make_ext_network('net2', dn=self.dn_t1_l1_n1)
+        net2_id = net['id']
+        net2_bd = net[DN]['BridgeDomain']
+        net2_epg = net[DN]['EndpointGroup']
+        net2_vrf = net[DN]['VRF']
+        mapping = self._get_network_mapping(self.db_session, net2_id)
+        self.db_session.delete(mapping)
+
+        # Create an unmanaged external network and verify it has no
+        # mapping.
+        net = self._make_ext_network('net3')
+        net3_id = net['id']
+        mapping = self._get_network_mapping(self.db_session, net3_id)
+        self.assertIsNone(mapping)
+
+        # Flush session to ensure sqlalchemy relationships are all up
+        # to date.
+        self.db_session.flush()
+
+        # Verify normal address scope is missing DN.
+        scope = self._show('address-scopes', scope1_id)['address_scope']
+        self.assertNotIn('VRF', scope[DN])
+
+        # Verify address scope with pre-existing VRF is missing DN.
+        scope = self._show('address-scopes', scope2_id)['address_scope']
+        self.assertNotIn('VRF', scope[DN])
+
+        # Verify normal network is missing DNs.
+        net = self._show('networks', net1_id)['network']
+        self.assertNotIn('BridgeDomain', net[DN])
+        self.assertNotIn('EndpointGroup', net[DN])
+        self.assertNotIn('VRF', net[DN])
+
+        # Verify external network is missing DNs.
+        net = self._show('networks', net2_id)['network']
+        self.assertNotIn('BridgeDomain', net[DN])
+        self.assertNotIn('EndpointGroup', net[DN])
+        self.assertNotIn('VRF', net[DN])
+
+        # Verify unmanaged external network has no DNs.
+        net = self._show('networks', net3_id)['network']
+        self.assertNotIn('BridgeDomain', net[DN])
+        self.assertNotIn('EndpointGroup', net[DN])
+        self.assertNotIn('VRF', net[DN])
+
+        # Perform the data migration.
+        data_migrations.do_apic_aim_persist_migration(self.db_session)
+
+        # Verify normal address scope is successfully migrated.
+        scope = self._show('address-scopes', scope1_id)['address_scope']
+        self.assertEqual(scope1_vrf, scope[DN]['VRF'])
+
+        # Verify address scope with pre-existing VRF is successfully
+        # migrated.
+        scope = self._show('address-scopes', scope2_id)['address_scope']
+        self.assertEqual(scope2_vrf, scope[DN]['VRF'])
+
+        # Verify normal network is successfully migrated.
+        net = self._show('networks', net1_id)['network']
+        self.assertEqual(net1_bd, net[DN]['BridgeDomain'])
+        self.assertEqual(net1_epg, net[DN]['EndpointGroup'])
+        self.assertEqual(net1_vrf, net[DN]['VRF'])
+
+        # Verify external network is successfully migrated.
+        net = self._show('networks', net2_id)['network']
+        self.assertEqual(net2_bd, net[DN]['BridgeDomain'])
+        self.assertEqual(net2_epg, net[DN]['EndpointGroup'])
+        self.assertEqual(net2_vrf, net[DN]['VRF'])
+
+        # Verify unmanaged external network has no mapping or DNs.
+        mapping = self._get_network_mapping(self.db_session, net3_id)
+        self.assertIsNone(mapping)
+        net = self._show('networks', net3_id)['network']
+        self.assertNotIn('BridgeDomain', net[DN])
+        self.assertNotIn('EndpointGroup', net[DN])
+        self.assertNotIn('VRF', net[DN])
+
+        # Verify deleting normal address scope deletes VRF.
+        self._delete('address-scopes', scope1_id)
+        vrf = self._find_by_dn(scope1_vrf, aim_resource.VRF)
+        self.assertIsNone(vrf)
+
+        # Verify deleting address scope with pre-existing VRF does not
+        # delete VRF.
+        self._delete('address-scopes', scope2_id)
+        vrf = self._find_by_dn(scope2_vrf, aim_resource.VRF)
+        self.assertIsNotNone(vrf)
+
+        # Verify deleting normal network deletes BD and EPG.
+        self._delete('networks', net1_id)
+        bd = self._find_by_dn(net1_bd, aim_resource.BridgeDomain)
+        self.assertIsNone(bd)
+        epg = self._find_by_dn(net1_epg, aim_resource.EndpointGroup)
+        self.assertIsNone(epg)
+
+        # Verify deleting external network deletes BD and EPG.
+        self._delete('networks', net2_id)
+        bd = self._find_by_dn(net1_bd, aim_resource.BridgeDomain)
+        self.assertIsNone(bd)
+        epg = self._find_by_dn(net1_epg, aim_resource.EndpointGroup)
+        self.assertIsNone(epg)
 
 
 class TestPortBinding(ApicAimTestCase):
