@@ -24,6 +24,7 @@ revision = 'cc09261e0fb5'
 down_revision = 'c460c5682e74'
 
 from alembic import op
+from alembic import util
 import sqlalchemy as sa
 
 
@@ -57,7 +58,24 @@ def upgrade():
             ondelete='CASCADE'),
         sa.PrimaryKeyConstraint('network_id'))
 
-    # REVISIT: Migrate data?
+    # See if AIM is being used, and if so, migrate data.
+    bind = op.get_bind()
+    insp = sa.engine.reflection.Inspector.from_engine(bind)
+    if 'aim_tenants' in insp.get_table_names():
+        try:
+            # Note - this cannot be imported unless we know the
+            # apic_aim mechanism driver is deployed, since the AIM
+            # library may not be installed.
+            from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import (
+                data_migrations)
+
+            session = sa.orm.Session(bind=bind)
+            data_migrations.do_apic_aim_persist_migration(session)
+        except ImportError:
+            util.err("AIM schema present, but failed to import AIM libraries"
+                     " - data not migrated.")
+        except Exception as e:
+            util.err("Caught exception migrating AIM data: %s" % e)
 
     op.drop_table('apic_aim_addr_scope_extensions')
 
