@@ -45,15 +45,16 @@ from opflexagent import constants as ofcst
 import webob.exc
 
 from gbpservice.neutron.db import implicitsubnetpool_db  # noqa
-from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import apic_mapper
-from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import config  # noqa
-from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import exceptions
-
 from gbpservice.neutron.extensions import cisco_apic_l3 as l3_ext
 from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import (
     extension_db as extn_db)
 from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import (
     mechanism_driver as md)
+from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import apic_mapper
+from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import config  # noqa
+from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import data_migrations
+from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import db
+from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import exceptions
 from gbpservice.neutron.plugins.ml2plus import patch_neutron
 
 PLUGIN_NAME = 'gbpservice.neutron.plugins.ml2plus.plugin.Ml2PlusPlugin'
@@ -2882,6 +2883,32 @@ class TestTopology(ApicAimTestCase):
         self._router_interface_action('add', rtr['id'], sub1['id'], None)
         self._router_interface_action('add', rtr['id'], sub2['id'], None)
         self._router_interface_action('add', rtr['id'], sub3['id'], None)
+
+
+class TestMigrations(ApicAimTestCase, db.DbMixin):
+    def test_apic_aim_persist(self):
+        # Create a normal address scope and delete its mapping.
+        scope = self._make_address_scope(
+            self.fmt, 4, name='as1')['address_scope']
+        scope1_id = scope['id']
+        scope1_vrf = scope[DN]['VRF']
+        mapping = self._get_address_scope_mapping(self.db_session, scope1_id)
+        self.db_session.delete(mapping)
+
+        # Flush session to ensure sqlalchemy relationships are all to
+        # date.
+        self.db_session.flush()
+
+        # Verify normal address scope is missing data.
+        scope = self._show('address-scopes', scope1_id)['address_scope']
+        self.assertNotIn('VRF', scope[DN])
+
+        # Perform the data migration.
+        data_migrations.apic_aim_persist(self.db_session)
+
+        # Verify normal address scope is usable.
+        scope = self._show('address-scopes', scope1_id)['address_scope']
+        self.assertEqual(scope1_vrf, scope[DN]['VRF'])
 
 
 class TestPortBinding(ApicAimTestCase):

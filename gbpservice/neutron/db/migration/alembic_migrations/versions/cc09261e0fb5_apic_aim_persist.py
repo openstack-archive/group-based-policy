@@ -26,6 +26,8 @@ down_revision = 'c460c5682e74'
 from alembic import op
 import sqlalchemy as sa
 
+from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import data_migrations
+
 
 def upgrade():
 
@@ -57,7 +59,8 @@ def upgrade():
             ondelete='CASCADE'),
         sa.PrimaryKeyConstraint('network_id'))
 
-    # REVISIT: Migrate data?
+    session = sa.orm.Session(bind=op.get_bind())
+    data_migrations.apic_aim_persist(session)
 
     op.drop_table('apic_aim_addr_scope_extensions')
 
