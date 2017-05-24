@@ -24,7 +24,11 @@ revision = 'cc09261e0fb5'
 down_revision = 'c460c5682e74'
 
 from alembic import op
+from neutron.plugins.ml2 import config  # noqa
+from oslo_config import cfg
 import sqlalchemy as sa
+
+from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import data_migrations
 
 
 def upgrade():
@@ -57,7 +61,11 @@ def upgrade():
             ondelete='CASCADE'),
         sa.PrimaryKeyConstraint('network_id'))
 
-    # REVISIT: Migrate data?
+    mech_drivers = cfg.CONF.ml2.mechanism_drivers
+    print("mech_drivers: %s" % mech_drivers)  # TEMP
+    if 'apic_aim' in mech_drivers:
+        session = sa.orm.Session(bind=op.get_bind())
+        data_migrations.do_apic_aim_persist_migration(session)
 
     op.drop_table('apic_aim_addr_scope_extensions')
 

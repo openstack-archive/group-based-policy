@@ -45,15 +45,16 @@ from opflexagent import constants as ofcst
 import webob.exc
 
 from gbpservice.neutron.db import implicitsubnetpool_db  # noqa
-from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import apic_mapper
-from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import config  # noqa
-from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import exceptions
-
 from gbpservice.neutron.extensions import cisco_apic_l3 as l3_ext
 from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import (
     extension_db as extn_db)
 from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import (
     mechanism_driver as md)
+from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import apic_mapper
+from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import config  # noqa
+from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import data_migrations
+from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import db
+from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import exceptions
 from gbpservice.neutron.plugins.ml2plus import patch_neutron
 
 PLUGIN_NAME = 'gbpservice.neutron.plugins.ml2plus.plugin.Ml2PlusPlugin'
@@ -2998,6 +2999,62 @@ class TestTopology(ApicAimTestCase):
         self._router_interface_action('add', rtr['id'], sub1['id'], None)
         self._router_interface_action('add', rtr['id'], sub2['id'], None)
         self._router_interface_action('add', rtr['id'], sub3['id'], None)
+
+
+class TestMigrations(ApicAimTestCase, db.DbMixin):
+    def test_apic_aim_persist(self):
+        aim_ctx = aim_context.AimContext(self.db_session)
+
+        # Create a normal address scope and delete its mapping.
+        scope = self._make_address_scope(
+            self.fmt, 4, name='as1')['address_scope']
+        scope1_id = scope['id']
+        scope1_vrf = scope[DN]['VRF']
+        mapping = self._get_address_scope_mapping(self.db_session, scope1_id)
+        self.db_session.delete(mapping)
+
+        # Create address scope with pre-existing VRF, delete its
+        # mapping, and create record in old DB table.
+        tenant = aim_resource.Tenant(name=self.t1_aname, monitored=True)
+        self.aim_mgr.create(aim_ctx, tenant)
+        vrf = aim_resource.VRF(
+            tenant_name=self.t1_aname, name='pre_existing', monitored=True)
+        self.aim_mgr.create(aim_ctx, vrf)
+        scope = self._make_address_scope_for_vrf(vrf.dn)['address_scope']
+        scope2_id = scope['id']
+        scope2_vrf = scope[DN]['VRF']
+        self.assertEqual(vrf.dn, scope2_vrf)
+        mapping = self._get_address_scope_mapping(self.db_session, scope2_id)
+        self.db_session.delete(mapping)
+        old_db = data_migrations.DefunctAddressScopeExtensionDb(
+            address_scope_id=scope2_id, vrf_dn=scope2_vrf)
+        self.db_session.add(old_db)
+
+        # Flush session to ensure sqlalchemy relationships are all up
+        # to date.
+        self.db_session.flush()
+
+        # Verify normal address scope is missing data.
+        scope = self._show('address-scopes', scope1_id)['address_scope']
+        self.assertNotIn('VRF', scope[DN])
+
+        # Verify address scope with pre-existing VRF is missing data.
+        scope = self._show('address-scopes', scope2_id)['address_scope']
+        self.assertNotIn('VRF', scope[DN])
+
+        # Perform the data migration.
+        data_migrations.do_apic_aim_persist_migration(self.db_session)
+
+        # Verify normal address scope is usable.
+        scope = self._show('address-scopes', scope1_id)['address_scope']
+        self.assertEqual(scope1_vrf, scope[DN]['VRF'])
+
+        # Verify address scope with pre-existing VRF is usable.
+        scope = self._show('address-scopes', scope2_id)['address_scope']
+        self.assertEqual(scope2_vrf, scope[DN]['VRF'])
+
+        # REVISIT: Verify deleting Neutron resource deletes AIM
+        # resources when and only when they are owned by Neutron.
 
 
 class TestPortBinding(ApicAimTestCase):
