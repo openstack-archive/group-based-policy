@@ -264,7 +264,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                 elif isinstance(resource, aim_resource.VRF):
                     vrf = resource
         else:
-            bd, epg = self._map_network(session, current, None)
+            bd, epg = self._map_network(session, current)
 
             dname = aim_utils.sanitize_display_name(current['name'])
             vrf = self._ensure_unrouted_vrf(aim_ctx)
@@ -1444,47 +1444,6 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                 if sync_state is cisco_apic.SYNC_NOT_APPLICABLE
                 else sync_state)
 
-    def _get_routed_vrf_for_network(self, session, network_db):
-        # REVISIT: This method is no longer used, but is kept for now
-        # in case we need to use it to implement a data migration that
-        # adds the peristent mapping state to deployments without
-        # it. Do not use this method for other purposes, and remove it
-        # when no longer needed.
-        aim_ctx = aim_context.AimContext(session)
-        bd_name = self.name_mapper.network(session, network_db.id)
-        bds = self.aim.find(
-            aim_ctx, aim_resource.BridgeDomain, name=bd_name)
-        if len(bds) != 1:
-            LOG.error(_LE("Failed to determine VRF for network %(net)s "
-                          "due to missing or extra BDs: %(bds)s"),
-                      {'net': network_db, 'bds': bds})
-            return
-        bd = bds[0]
-        if bd.enable_routing:
-            vrfs = (
-                self.aim.find(
-                    aim_ctx, aim_resource.VRF, tenant_name=bd.tenant_name,
-                    name=bd.vrf_name) or
-                self.aim.find(
-                    aim_ctx, aim_resource.VRF, tenant_name=COMMON_TENANT_NAME,
-                    name=bd.vrf_name))
-            if len(vrfs) != 1:
-                LOG.error(_LE("Failed to determine VRF for network %(net)s "
-                              "due to missing or extra VRFs for BD %(bd)s: "
-                              "%(vrfs)s"),
-                          {'net': network_db, 'bd': bd, 'vrfs': vrfs})
-            # Return only the identity since that is what would be
-            # returned if we persisted the identity. Also, certain UTs
-            # will break if we include other state, like
-            # display_names.
-            vrf = aim_resource.VRF(
-                tenant_name=vrfs[0].tenant_name, name=vrfs[0].name)
-            LOG.debug("Routed VRF for network %(net)s in project %(proj)s "
-                      "is %(vrf)s",
-                      {'net': network_db.id, 'proj': network_db.tenant_id,
-                       'vrf': vrf})
-            return vrf
-
     def _get_vrfs_for_router(self, session, router_id):
         # REVISIT: Persist router/VRF relationship?
 
@@ -1825,16 +1784,8 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                 filter_by(id=scope_id).
                 one_or_none())
 
-    def _map_network(self, session, network, vrf=None):
-        # REVISIT: The vrf parameter is no longer used, but is kept
-        # for now in case we need to use it to implement a data
-        # migration that adds the peristent mapping state to
-        # deployments without it. Remove it when no longer needed.
-
-        tenant_aname = (vrf.tenant_name
-                        if vrf and vrf.tenant_name != COMMON_TENANT_NAME
-                        else self.name_mapper.project(
-                                session, network['tenant_id']))
+    def _map_network(self, session, network):
+        tenant_aname = self.name_mapper.project(session, network['tenant_id'])
         id = network['id']
         aname = self.name_mapper.network(session, id)
 
@@ -1844,14 +1795,6 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                                          app_profile_name=self.ap_name,
                                          name=aname)
         return bd, epg
-
-    def _map_external_network(self, session, network):
-        l3out, ext_net, ns = self._get_aim_nat_strategy(network)
-        if ext_net:
-            aim_ctx = aim_context.AimContext(db_session=session)
-            for o in (ns.get_l3outside_resources(aim_ctx, l3out) or []):
-                if isinstance(o, aim_resource.EndpointGroup):
-                    return o
 
     def _map_subnet(self, subnet, gw_ip, bd):
         prefix_len = subnet['cidr'].split('/')[1]
@@ -1950,23 +1893,18 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
 
     # Used by policy driver.
     def get_bd_for_network(self, session, network):
-        # REVISIT: Handle external network separately?
         mapping = self._get_network_mapping(session, network['id'])
-        return self._get_network_bd(mapping)
+        return mapping and self._get_network_bd(mapping)
 
     # Used by policy driver.
     def get_epg_for_network(self, session, network):
-        if self._is_external(network):
-            return self._map_external_network(session, network)
-        # REVISIT(rkukura): Can the network_db be passed in?
         mapping = self._get_network_mapping(session, network['id'])
-        return self._get_network_epg(mapping)
+        return mapping and self._get_network_epg(mapping)
 
     # Used by policy driver.
     def get_vrf_for_network(self, session, network):
-        # REVISIT: Handle external network separately?
         mapping = self._get_network_mapping(session, network['id'])
-        return self._get_network_vrf(mapping)
+        return mapping and self._get_network_vrf(mapping)
 
     # DB Configuration callbacks
     def _set_enable_metadata_opt(self, new_conf):
