@@ -153,17 +153,28 @@ class ExtensionManager(managers.ExtensionManager):
                                      "%(method)s"),
                                  {'name': driver.name, 'method': method_name})
 
-    def _call_on_dict_extended_drivers(self, method_name, session, base_model,
-                                       result):
+    # Overrides ML2 implementation to avoid eating retriable
+    # exceptions, as well as to support calling only on extension
+    # drivers extended for ML2Plus.
+    def _call_on_dict_driver(self, method_name, session, base_model, result,
+                             extended_only=False):
         for driver in self.ordered_ext_drivers:
-            if isinstance(driver.obj, driver_api.ExtensionDriver):
+            if not extended_only or isinstance(
+                    driver.obj, driver_api.ExtensionDriver):
                 try:
                     getattr(driver.obj, method_name)(session, base_model,
                                                      result)
-                except Exception:
-                    LOG.error(_LE("Extension driver '%(name)s' failed in "
-                                  "%(method)s"),
-                              {'name': driver.name, 'method': method_name})
+                except Exception as e:
+                    if db_api.is_retriable(e):
+                        with excutils.save_and_reraise_exception():
+                            LOG.debug(
+                                "DB exception raised by extension driver "
+                                "'%(name)s' in %(method)s",
+                                {'name': driver.name, 'method': method_name},
+                                exc_info=e)
+                    LOG.exception(
+                        "Extension driver '%(name)s' failed in %(method)s",
+                        {'name': driver.name, 'method': method_name})
                     raise ml2_exc.ExtensionDriverError(driver=driver.name)
 
     def process_create_subnetpool(self, plugin_context, data, result):
@@ -175,8 +186,8 @@ class ExtensionManager(managers.ExtensionManager):
                                        plugin_context, data, result)
 
     def extend_subnetpool_dict(self, session, base_model, result):
-        self._call_on_dict_extended_drivers("extend_subnetpool_dict",
-                                            session, base_model, result)
+        self._call_on_dict_driver("extend_subnetpool_dict",
+                                  session, base_model, result, True)
 
     def process_create_address_scope(self, plugin_context, data, result):
         self._call_on_extended_drivers("process_create_address_scope",
@@ -187,5 +198,5 @@ class ExtensionManager(managers.ExtensionManager):
                                        plugin_context, data, result)
 
     def extend_address_scope_dict(self, session, base_model, result):
-        self._call_on_dict_extended_drivers("extend_address_scope_dict",
-                                            session, base_model, result)
+        self._call_on_dict_driver("extend_address_scope_dict",
+                                  session, base_model, result, True)
