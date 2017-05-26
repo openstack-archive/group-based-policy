@@ -28,6 +28,7 @@ from gbpservice.neutron.services.grouppolicy.common import exceptions as exc
 
 
 LOG = logging.getLogger(__name__)
+GBP_CONF = cfg.CONF.group_policy_group
 
 opts = [
     cfg.StrOpt('default_l3_policy_name',
@@ -35,10 +36,10 @@ opts = [
                help=_("Name of each tenant's default L3 policy.")),
     cfg.IntOpt('default_ip_version',
                default=4,
-               help=_("IP version (4 or 6) for implicitly created default L3 "
-                      "policies.")),
+               help=_("IP version (4, 6 or 46) for implicitly created default "
+                      "L3 policies.")),
     cfg.StrOpt('default_ip_pool',
-               default='10.0.0.0/8',
+               default=GBP_CONF.default_ip_pool,
                help=_("IP pool for implicitly created default L3 policies, "
                       "from which subnets are allocated for policy target "
                       "groups.")),
