@@ -30,3 +30,35 @@ def get_extensions_path(service_plugins=None):
     return extension_overrides.__path__[0] + ':' + path
 
 extensions.get_extensions_path = get_extensions_path
+
+
+from neutron.db import models_v2
+from neutron.plugins.ml2 import db as ml2_db
+from neutron.plugins.ml2 import models
+from oslo_log import log as logging
+from sqlalchemy.orm import exc
+
+
+LOG = logging.getLogger(__name__)
+
+
+# REVISIT: This method gets decorated in Pike for removal in Queens. So this
+# patching might need to be changed in Pike and removed in Queens.
+def patched_get_locked_port_and_binding(session, port_id):
+    """Get port and port binding records for update within transaction."""
+    LOG.debug("Using patched_get_locked_port_and_binding")
+    try:
+        port = (session.query(models_v2.Port).
+                enable_eagerloads(False).
+                filter_by(id=port_id).
+                one())
+        binding = (session.query(models.PortBinding).
+                   enable_eagerloads(False).
+                   filter_by(port_id=port_id).
+                   one())
+        return port, binding
+    except exc.NoResultFound:
+        return None, None
+
+
+ml2_db.get_locked_port_and_binding = patched_get_locked_port_and_binding
