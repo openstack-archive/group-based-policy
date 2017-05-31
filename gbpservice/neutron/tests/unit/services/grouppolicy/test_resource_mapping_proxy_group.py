@@ -490,6 +490,24 @@ class TestL3Policy(ResourceMappingProxyGroupGBPTestCase,
         self.assertEqual(default_proxy_subnet_prefix_length,
                          l3p['proxy_subnet_prefix_length'])
 
+    def test_shared_l3_policy_lifecycle_explicit_address_scope_v6(self):
+        self.skipTest("Subnetpools support not yet finalized for proxy group")
+
+    def test_shared_create_l3_policy_explicit_subnetpool_v6(self):
+        self.skipTest("Subnetpools support not yet finalized for proxy group")
+
+    def test_shared_l3_policy_v6_lifecycle_implicit_address_scope(self):
+        self.skipTest("Subnetpools support not yet finalized for proxy group")
+
+    def test_unshared_l3_policy_lifecycle_explicit_address_scope_v6(self):
+        self.skipTest("Subnetpools support not yet finalized for proxy group")
+
+    def test_unshared_create_l3_policy_explicit_subnetpool_v6(self):
+        self.skipTest("Subnetpools support not yet finalized for proxy group")
+
+    def test_unshared_l3_policy_v6_lifecycle_implicit_address_scope(self):
+        self.skipTest("Subnetpools support not yet finalized for proxy group")
+
 
 class TestPolicyRuleSet(ResourceMappingProxyGroupGBPTestCase,
                         test_resource_mapping.TestPolicyRuleSet):
