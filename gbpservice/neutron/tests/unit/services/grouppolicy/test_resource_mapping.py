@@ -25,6 +25,7 @@ from neutron.extensions import external_net as external_net
 from neutron.extensions import securitygroup as ext_sg
 from neutron import manager
 from neutron.plugins.common import constants as pconst
+from neutron.tests.unit.extensions import test_address_scope
 from neutron.tests.unit.extensions import test_l3
 from neutron.tests.unit.extensions import test_securitygroup
 from neutron.tests.unit.plugins.ml2 import test_plugin as n_test_plugin
@@ -59,9 +60,12 @@ CHAIN_TENANT_ID = 'chain_owner'
 
 class NoL3NatSGTestPlugin(
         test_l3.TestNoL3NatPlugin,
-        test_securitygroup.SecurityGroupTestPlugin):
+        test_securitygroup.SecurityGroupTestPlugin,
+        test_address_scope.AddressScopeTestPlugin):
 
-    supported_extension_aliases = ["external-net", "security-group"] + (
+    supported_extension_aliases = ["external-net",
+                                   "security-group",
+                                   "address-scope"] + (
         test_group_policy_db.UNSUPPORTED_REQUIRED_EXTS)
 
 

@@ -66,6 +66,10 @@ opts = [
                help=_("default IPv6 address assignment mode for subnets "
                       "created implicitly for L3 policies. Valid values are "
                       "'slaac', 'dhcpv6-stateful', and 'dhcpv6-stateless'")),
+    cfg.BoolOpt('use_subnetpools',
+               default=True,
+               help=_("make use of neutron subnet pools and address scopes "
+                      "as L3 policy resource")),
 ]
 
 cfg.CONF.register_opts(opts, "resource_mapping")
@@ -224,6 +228,11 @@ class OwnedResourcesOperations(object):
 
 class ImplicitResourceOperations(local_api.LocalAPI,
                                  nsp_manager.NetworkServicePolicyMappingMixin):
+
+    L3P_ADDRESS_SCOPE_KEYS = {4: 'address_scope_v4_id',
+                             6: 'address_scope_v6_id'}
+    L3P_SUBNETPOOLS_KEYS = {4: 'subnetpools_v4',
+                            6: 'subnetpools_v6'}
 
     def _sg_rule(self, plugin_context, tenant_id, sg_id, direction,
                  protocol=None, port_range=None, cidr=None,
@@ -559,17 +568,14 @@ class ImplicitResourceOperations(local_api.LocalAPI,
         l3p_id = l2p['l3_policy_id']
         l3p_db = context._plugin.get_l3_policy(context._plugin_context, l3p_id)
         # Only allocate from subnetpools that belong to this tenant
-        ip_dict = {}
-        if l3p_db['address_scope_v4_id']:
-            ip_dict[4] = {'address_scope_key': 'address_scope_v4_id',
-                          'subnetpools_key': 'subnetpools_v4'}
-        if l3p_db['address_scope_v6_id']:
-            ip_dict[6] = {'address_scope_key': 'address_scope_v6_id',
-                          'subnetpools_key': 'subnetpools_v6'}
         subnets = []
-        for ip_version in ip_dict.keys():
+        for ip_version in (4, 6):
+            # continue if no address scope defined for this ip version
+            if not l3p_db[self.L3P_ADDRESS_SCOPE_KEYS[ip_version]]:
+                continue
+
             filters = {'tenant_id': [context.current['tenant_id']],
-                       'id': l3p_db[ip_dict[ip_version]['subnetpools_key']]}
+                       'id': l3p_db[self.L3P_SUBNETPOOLS_KEYS[ip_version]]}
             # All relevant subnetpools owned by this tenant
             candidate_subpools = self._get_subnetpools(
                 context._plugin_context, filters) or []
@@ -1364,6 +1370,158 @@ class ImplicitResourceOperations(local_api.LocalAPI,
             ip_address = ip_range['last_ip']
             return ip_address
 
+    def _check_subnetpools_for_same_scope(self, context, subnetpools,
+                                          ascp, prefixes=None):
+        sp_ascp = None
+        for sp_id in subnetpools:
+            sp = self._get_subnetpool(
+                # admin context to retrieve subnetpools from
+                # other tenants
+                context._plugin_context.elevated(), sp_id)
+            if not sp['address_scope_id']:
+                raise exc.NoAddressScopeForSubnetpool()
+            if not sp_ascp:
+                if ascp:
+                    # This is the case where the address_scope
+                    # was explicitly set for the l3p  and we need to
+                    # check if it conflicts with the address_scope of
+                    # the first subnetpool
+                    if sp['address_scope_id'] != ascp:
+                        raise exc.InconsistentAddressScopeSubnetpool()
+                else:
+                    # No address_scope was explicitly set for the l3p,
+                    # so set it to that of the first subnetpool
+                    ascp = sp['address_scope_id']
+                sp_ascp = sp['address_scope_id']
+            elif sp_ascp != sp['address_scope_id']:
+                # all subnetpools do not have the same address_scope
+                raise exc.InconsistentAddressScopeSubnetpool()
+            # aggregate subnetpool prefixes
+            sp_prefixlist = [prefix for prefix in sp['prefixes']]
+            if prefixes:
+                stripped = [prefix.strip() for prefix in prefixes.split(',')]
+                prefixes = ', '.join(stripped + sp_prefixlist)
+            else:
+                prefixes = ', '.join(sp_prefixlist)
+        return ascp, prefixes
+
+    def _configure_l3p_for_multiple_subnetpools(self, context,
+                                                l3p_db, ip_version=4,
+                                                address_scope_id=None):
+        l3p_req = context.current
+        ascp_id_key = 'address_scope_v4_id' if ip_version == 4 else (
+            'address_scope_v6_id')
+        subpool_ids_key = 'subnetpools_v4' if ip_version == 4 else (
+            'subnetpools_v6')
+        # admin context to retrieve subnetpools from a different tenant
+        address_scope_id, prefixes = self._check_subnetpools_for_same_scope(
+            context, l3p_req[subpool_ids_key], address_scope_id,
+            prefixes=l3p_db['ip_pool'])
+        l3p_db[ascp_id_key] = address_scope_id
+        l3p_db['ip_pool'] = prefixes
+        if l3p_req['subnet_prefix_length']:
+            l3p_db['subnet_prefix_length'] = l3p_req['subnet_prefix_length']
+
+    def _create_l3p_subnetpools(self, context):
+        l3p_req = context.current
+        l3p_db = context._plugin._get_l3_policy(
+            context._plugin_context, l3p_req['id'])
+        # The ip_version tells us what should be supported
+        ip_version = l3p_req['ip_version']
+        l3p_db['ip_version'] = ip_version
+        # First determine the address scope for the address
+        # families specified in ip_version. We look first at
+        # explicitly passed address scopes, then the address
+        # scopes of the subnetpools, then the address scopes
+        # of default defined subnetpool (via that extension),
+        # or just create one if none are present
+        ip_dict = {}
+        ascp = None
+        # for pools that need to be created, we
+        # want to use subnet_prefix_length as the
+        # default for v4 subnets, and /64 for v6
+        # subnets. If a subnet_prefix_length wasn't
+        # provided, we use the implict default
+        if ip_version == 4 or ip_version == 46:
+            ip_dict[4] = {'default_prefixlen':
+                          l3p_req['subnet_prefix_length'] or 24}
+        if ip_version == 6 or ip_version == 46:
+            ip_dict[6] = {'default_prefixlen': 64}
+
+        for family in ip_dict.keys():
+            explicit_scope = l3p_req[self.L3P_ADDRESS_SCOPE_KEYS[family]]
+            explicit_pools = l3p_req[self.L3P_SUBNETPOOLS_KEYS[family]]
+            default_pool = self._core_plugin.get_default_subnetpool(
+                context._plugin_context.elevated(), ip_version=family)
+            ip_pool = gbp_utils.convert_ip_pool_string_to_list(
+                l3p_req['ip_pool'])
+            family_prefixes = [prefix for prefix in ip_pool
+                               if netaddr.IPNetwork(prefix).version == family]
+            if explicit_scope:
+                ascp = explicit_scope
+            elif explicit_pools:
+                ascp, _ = self._check_subnetpools_for_same_scope(context,
+                    explicit_pools, None)
+                l3p_db[self.L3P_ADDRESS_SCOPE_KEYS[family]] = ascp
+            elif family_prefixes:
+                ascp = self._use_implicit_address_scope(
+                    context, ip_version=family)['id']
+
+            elif default_pool and default_pool.get('address_scope_id'):
+                ascp = default_pool['address_scope_id']
+            else:
+                raise exc.NoValidAddressScope()
+
+            if explicit_scope or explicit_pools:
+                # In the case of explicitly provided address_scope or
+                # subnetpools, set shared flag of L3P to the address_scope
+                ascp_db = self._get_address_scope(
+                    context._plugin_context, ascp)
+                l3p_db['shared'] = ascp_db['shared']
+                context.current['shared'] = l3p_db['shared']
+
+            if not explicit_pools and family_prefixes:
+                self._use_implicit_subnetpool(context,
+                    address_scope_id=ascp,
+                    ip_version=family, prefixes=family_prefixes,
+                    default_prefixlen=ip_dict[family]['default_prefixlen'])
+            elif not explicit_pools and default_pool:
+                l3p_req[self.L3P_SUBNETPOOLS_KEYS[family]] = [
+                    default_pool['id']]
+                context._plugin._add_subnetpools_to_l3_policy(
+                    context._plugin_context, l3p_db, [default_pool['id']],
+                    ip_version=family)
+
+            # TODO(Sumit): check that l3p['ip_pool'] does not overlap with an
+            # existing subnetpool associated with the explicit address_scope
+            self._configure_l3p_for_multiple_subnetpools(context,
+                l3p_db, ip_version=family,
+                address_scope_id=ascp)
+
+    def _update_l3p_subnetpools(self, context):
+
+        l3p_orig = context.original
+        l3p_curr = context.current
+        for family in (4, 6):
+            subnetpools_key = self.L3P_SUBNETPOOLS_KEYS[family]
+            address_scope_key = self.L3P_ADDRESS_SCOPE_KEYS[family]
+            if (l3p_curr[subnetpools_key] and (
+                l3p_curr[subnetpools_key] != l3p_orig[subnetpools_key])):
+                l3p_db = context._plugin._get_l3_policy(
+                    context._plugin_context, l3p_curr['id'])
+                self._configure_l3p_for_multiple_subnetpools(context,
+                    l3p_db, ip_version=family,
+                    address_scope_id=l3p_db[address_scope_key])
+                removed = list(set(l3p_orig[subnetpools_key]) -
+                               set(l3p_curr[subnetpools_key]))
+                for sp_id in removed:
+                    if sp_id in self._get_in_use_subnetpools_for_l3p(context):
+                        raise exc.IncorrectSubnetpoolUpdate(
+                            subnetpool_id=sp_id, l3p_id=l3p_curr['id'])
+                    # If an implicitly created subnetpool is being
+                    # disassocaited we try to delete it
+                    self._cleanup_subnetpool(context._plugin_context, sp_id)
+
 
 class ResourceMappingDriver(api.PolicyDriver, ImplicitResourceOperations,
                             OwnedResourcesOperations):
@@ -1823,9 +1981,13 @@ class ResourceMappingDriver(api.PolicyDriver, ImplicitResourceOperations,
 
     @log.log_method_call
     def create_l3_policy_postcommit(self, context):
-        if not context.current['routers']:
-            self._use_implicit_router(context)
+
+        if MAPPING_CFG.use_subnetpools:
+            self._create_l3p_subnetpools(context)
+
         l3p = context.current
+        if not l3p['routers']:
+            self._use_implicit_router(context)
         if l3p['external_segments']:
             self._plug_router_to_external_segment(
                 context, l3p['external_segments'])
@@ -1838,6 +2000,9 @@ class ResourceMappingDriver(api.PolicyDriver, ImplicitResourceOperations,
             raise exc.L3PolicyRoutersUpdateNotSupported()
         if len(context.current['external_segments']) > 1:
             raise exc.MultipleESPerL3PolicyNotSupported()
+
+        self._update_l3p_subnetpools(context)
+
         # Currently there is no support for router update in l3p update.
         # Added this check just in case it is supported in future.
         self._reject_invalid_router_access(context)
