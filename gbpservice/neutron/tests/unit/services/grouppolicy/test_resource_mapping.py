@@ -25,6 +25,7 @@ from neutron.extensions import external_net as external_net
 from neutron.extensions import securitygroup as ext_sg
 from neutron import manager
 from neutron.plugins.common import constants as pconst
+from neutron.tests.unit.extensions import test_address_scope
 from neutron.tests.unit.extensions import test_l3
 from neutron.tests.unit.extensions import test_securitygroup
 from neutron.tests.unit.plugins.ml2 import test_plugin as n_test_plugin
@@ -59,9 +60,12 @@ CHAIN_TENANT_ID = 'chain_owner'
 
 class NoL3NatSGTestPlugin(
         test_l3.TestNoL3NatPlugin,
-        test_securitygroup.SecurityGroupTestPlugin):
+        test_securitygroup.SecurityGroupTestPlugin,
+        test_address_scope.AddressScopeTestPlugin):
 
-    supported_extension_aliases = ["external-net", "security-group"] + (
+    supported_extension_aliases = ["external-net",
+                                   "security-group",
+                                   "address-scope"] + (
         test_group_policy_db.UNSUPPORTED_REQUIRED_EXTS)
 
 
@@ -999,7 +1003,12 @@ class TestPolicyTargetGroupWithoutDNSConfiguration(ResourceMappingTestCase):
 
 class TestPolicyTargetGroup(ResourceMappingTestCase):
 
-    def _test_implicit_subnet_lifecycle(self, shared=False):
+    def _test_implicit_subnet_lifecycle(self, shared=False,
+                                        disable_subnetpools=False):
+        config.cfg.CONF.set_override('use_subnetpools',
+                                     not disable_subnetpools,
+                                     group='resource_mapping')
+
         # Use explicit L2 policy so network and subnet not deleted
         # with policy_target group.
         l2p = self.create_l2_policy(shared=shared)
@@ -1292,7 +1301,15 @@ class TestPolicyTargetGroup(ResourceMappingTestCase):
 
     def test_default_security_group_allows_intra_ptg_update(self):
         # Create ptg and retrieve subnet and network
-        ptg = self.create_policy_target_group()['policy_target_group']
+        l3p = self.create_l3_policy(name="l3p1",
+                                    ip_pool='10.0.0.0/24, 10.1.0.0/24')
+        l3p_id = l3p['l3_policy']['id']
+
+        # Create L2 policy.
+        l2p = self.create_l2_policy(name="l2p1", l3_policy_id=l3p_id)
+        l2p_id = l2p['l2_policy']['id']
+        ptg = self.create_policy_target_group(
+            l2_policy_id=l2p_id)['policy_target_group']
         subnets = ptg['subnets']
         req = self.new_show_request('subnets', subnets[0], fmt=self.fmt)
         subnet1 = self.deserialize(self.fmt,
@@ -1301,7 +1318,9 @@ class TestPolicyTargetGroup(ResourceMappingTestCase):
                                     fmt=self.fmt)
         network = self.deserialize(self.fmt,
                                    req.get_response(self.api))
-        with self.subnet(network=network, cidr='192.168.0.0/24') as subnet2:
+        with self.subnet(network=network,
+                         cidr='10.1.0.0/24',
+                         subnetpool_id=subnet1['subnetpool_id']) as subnet2:
             # Add subnet
             subnet2 = subnet2['subnet']
             subnets = [subnet1['id'], subnet2['id']]
