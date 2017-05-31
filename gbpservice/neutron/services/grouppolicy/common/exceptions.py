@@ -329,3 +329,17 @@ class IdenticalExternalRoute(GroupPolicyBadRequest):
     message = _("External segments %(es1)s and %(es2)s cannot have "
                 "identical external route CIDR %(cidr)s if associated "
                 "with a common L3 policy.")
+
+
+class NoValidAddressScope(GroupPolicyBadRequest):
+    message = _("No address scope was either provided, could be "
+                "determined, or could be created for a l3_policy.")
+
+
+class NoAddressScopeForSubnetpool(GroupPolicyBadRequest):
+    message = _("Subnetpool does not have an associated address scope.")
+
+
+class InconsistentAddressScopeSubnetpool(GroupPolicyBadRequest):
+    message = _("Subnetpool is not associated with the address "
+                "scope for a l3_policy.")
