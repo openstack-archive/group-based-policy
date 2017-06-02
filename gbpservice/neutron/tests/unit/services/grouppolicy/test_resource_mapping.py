@@ -30,6 +30,7 @@ from neutron.tests.unit.plugins.ml2 import test_plugin as n_test_plugin
 from neutron_lib import constants as cst
 from neutron_lib.db import model_base
 from oslo_utils import uuidutils
+import unittest2
 import webob.exc
 
 from gbpservice.common import utils
@@ -42,7 +43,7 @@ from gbpservice.neutron.services.grouppolicy import config
 from gbpservice.neutron.services.grouppolicy.drivers import chain_mapping
 from gbpservice.neutron.services.grouppolicy.drivers import nsp_manager
 from gbpservice.neutron.services.grouppolicy.drivers import resource_mapping
-from gbpservice.neutron.services.servicechain.plugins.msc import (
+from gbpservice.neutron.services.servicechain.plugins.ncp import (
     config as sc_cfg)
 from gbpservice.neutron.tests.unit.db.grouppolicy import test_group_policy_db
 from gbpservice.neutron.tests.unit.services.grouppolicy import (
@@ -79,8 +80,8 @@ class ResourceMappingTestCase(test_plugin.GroupPolicyPluginTestCase):
         config.cfg.CONF.set_override('policy_drivers',
                                      policy_drivers,
                                      group='group_policy')
-        sc_cfg.cfg.CONF.set_override('servicechain_drivers',
-                                     ['dummy'], group='servicechain')
+        sc_cfg.cfg.CONF.set_override('node_drivers', ['node_dummy'],
+                                     group='node_composition_plugin')
         config.cfg.CONF.set_override('allow_overlapping_ips', True)
         super(ResourceMappingTestCase, self).setUp(core_plugin=core_plugin,
                                                    ml2_options=ml2_options,
@@ -2776,6 +2777,9 @@ class TestServiceChain(ResourceMappingTestCase):
                              sc_instances_provider_ptg_ids)
             self.assertEqual([], sc_instance_update.call_args_list)
 
+    # This test is being skipped because the NCP plugin does not support
+    # multiple servicechain_specs per servicechain_instance
+    @unittest2.skip('skipping')
     def test_action_spec_value_update(self):
         scs1_id = self._create_servicechain_spec()
         action_id, classifier_id, policy_rule_id = (
@@ -3000,6 +3004,9 @@ class TestServiceChain(ResourceMappingTestCase):
                 self.assertEqual(
                     0, len(sc_instances['servicechain_instances']))
 
+    # This test is being skipped because the NCP plugin does not support
+    # multiple servicechain_specs per servicechain_instance
+    @unittest2.skip('skipping')
     def test_parent_ruleset_update_for_redirect(self):
         scs_id = self._create_servicechain_spec()
         _, classifier_id, policy_rule_id = self._create_tcp_redirect_rule(
@@ -3050,6 +3057,9 @@ class TestServiceChain(ResourceMappingTestCase):
 
         self._verify_ptg_delete_cleanup_chain(provider_ptg_id)
 
+    # This test is being skipped because the NCP plugin does not support
+    # multiple servicechain_specs per servicechain_instance
+    @unittest2.skip('skipping')
     def test_enforce_parent_redirect_after_ptg_create(self):
         scs_id = self._create_servicechain_spec()
         _, classifier_id, policy_rule_id = self._create_tcp_redirect_rule(
@@ -3110,6 +3120,9 @@ class TestServiceChain(ResourceMappingTestCase):
 
         self._verify_ptg_delete_cleanup_chain(provider_ptg_id)
 
+    # This test is being skipped because the NCP plugin does not support
+    # multiple servicechain_specs per servicechain_instance
+    @unittest2.skip('skipping')
     def test_hierarchical_redirect(self):
         scs_id = self._create_servicechain_spec()
         action_id, classifier_id, policy_rule_id = (
@@ -3194,6 +3207,9 @@ class TestServiceChain(ResourceMappingTestCase):
 
         self._verify_ptg_delete_cleanup_chain(provider_ptg2_id)
 
+    # This test is being skipped because the NCP plugin does not support
+    # multiple servicechain_specs per servicechain_instance
+    @unittest2.skip('skipping')
     def test_rule_update_hierarchial_prs(self):
         scs_id = self._create_servicechain_spec()
         action_id, classifier_id, policy_rule_id = (
@@ -3294,6 +3310,9 @@ class TestServiceChain(ResourceMappingTestCase):
             [parent_scs_id, scs2_id], classifier_id=classifier_id)
         self._verify_ptg_delete_cleanup_chain(provider_ptg_id)
 
+    # This test is being skipped because the NCP plugin does not support
+    # multiple servicechain_specs per servicechain_instance
+    @unittest2.skip('skipping')
     def test_redirect_multiple_ptgs_single_prs(self):
         scs_id = self._create_servicechain_spec()
         _, _, policy_rule_id = self._create_tcp_redirect_rule(
