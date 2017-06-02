@@ -18,28 +18,28 @@ from neutron import context as n_ctx
 from oslo_config import cfg
 from oslo_serialization import jsonutils
 
-from gbpservice.neutron.services.servicechain.plugins.msc import (
-    plugin as msc_plugin)
-from gbpservice.neutron.services.servicechain.plugins.msc import context
+from gbpservice.neutron.services.servicechain.plugins.ncp import (
+    plugin as ncp_plugin)
+from gbpservice.neutron.services.servicechain.plugins.ncp import context
 from gbpservice.neutron.tests.unit.db.grouppolicy import (
     test_servicechain_db as test_servicechain_db)
 from gbpservice.neutron.tests.unit.db.grouppolicy import test_group_policy_db
 
 cfg.CONF.import_opt(
-    'servicechain_drivers',
-    'gbpservice.neutron.services.servicechain.plugins.msc.config',
-    group='servicechain')
+    'node_drivers',
+    'gbpservice.neutron.services.servicechain.plugins.ncp.config',
+    group='node_composition_plugin')
 
 
-class ServiceChainMSCTestPlugin(msc_plugin.ServiceChainPlugin):
+class ServiceChainNCPTestPlugin(ncp_plugin.NodeCompositionPlugin):
 
     supported_extension_aliases = ['servicechain'] + (
         test_group_policy_db.UNSUPPORTED_REQUIRED_EXTS)
     path_prefix = "/servicechain"
 
 
-SC_PLUGIN_KLASS = (ServiceChainMSCTestPlugin.__module__ + '.' +
-                   ServiceChainMSCTestPlugin.__name__)
+SC_PLUGIN_KLASS = (ServiceChainNCPTestPlugin.__module__ + '.' +
+                   ServiceChainNCPTestPlugin.__name__)
 
 
 class ServiceChainPluginTestCase(test_servicechain_db.ServiceChainDbTestCase):
@@ -51,7 +51,7 @@ class ServiceChainPluginTestCase(test_servicechain_db.ServiceChainDbTestCase):
                                                       gp_plugin=gp_plugin)
 
 
-class TestGroupPolicyPluginGroupResources(
+class BaseTestGroupPolicyPluginGroupResources(
         ServiceChainPluginTestCase,
         test_servicechain_db.TestServiceChainResources):
 
@@ -159,13 +159,14 @@ class TestGroupPolicyPluginGroupResources(
         current = self.create_servicechain_node(
             service_profile_id=prof['id'],
             expected_res_status=201)['servicechain_node']
-        ctx = context.ServiceChainNodeContext(self.plugin, plugin_context,
-                                              current)
+        ctx = context.NodeDriverContext(self.plugin, plugin_context,
+                                        None, None, current, 0,
+                                        prof, None)
 
-        self.assertIsNone(ctx.original)
+        self.assertIsNone(ctx.original_node)
         self.assertIsNone(ctx.original_profile)
-        self.assertEqual(ctx.current['id'], current['id'])
-        self.assertEqual(ctx.current_profile['id'], prof['id'])
+        self.assertEqual(ctx.current_node, current)
+        self.assertEqual(ctx.current_profile, prof)
 
         # Original node with profile
 
@@ -174,13 +175,15 @@ class TestGroupPolicyPluginGroupResources(
         original = self.create_servicechain_node(
             service_profile_id=prof2['id'],
             expected_res_status=201)['servicechain_node']
-        ctx = context.ServiceChainNodeContext(self.plugin, plugin_context,
-                                              current, original)
+        ctx = context.NodeDriverContext(
+                self.plugin, plugin_context, None, None, current, 0,
+                prof, None, original_service_chain_node=original,
+                original_service_profile=prof2)
 
-        self.assertEqual(ctx.original['id'], original['id'])
-        self.assertEqual(ctx.original_profile['id'], prof2['id'])
-        self.assertEqual(ctx.current['id'], current['id'])
-        self.assertEqual(ctx.current_profile['id'], prof['id'])
+        self.assertEqual(ctx.original_node, original)
+        self.assertEqual(ctx.original_profile, prof2)
+        self.assertEqual(ctx.current_node, current)
+        self.assertEqual(ctx.current_profile, prof)
 
     def test_node_context_no_profile(self):
 
@@ -191,23 +194,25 @@ class TestGroupPolicyPluginGroupResources(
         current = self.create_servicechain_node(
             service_type='TEST',
             expected_res_status=201)['servicechain_node']
-        ctx = context.ServiceChainNodeContext(self.plugin, plugin_context,
-                                              current)
+        ctx = context.NodeDriverContext(self.plugin, plugin_context,
+                                        None, None, current, 0,
+                                        None, None)
 
-        self.assertIsNone(ctx.original)
+        self.assertIsNone(ctx.original_node)
         self.assertIsNone(ctx.original_profile)
-        self.assertEqual(ctx.current['id'], current['id'])
+        self.assertEqual(ctx.current_node, current)
         self.assertIsNone(ctx.current_profile)
 
         original = self.create_servicechain_node(
             service_type='TEST',
             expected_res_status=201)['servicechain_node']
-        ctx = context.ServiceChainNodeContext(self.plugin, plugin_context,
-                                              current, original)
+        ctx = context.NodeDriverContext(
+                self.plugin, plugin_context, None, None, current, 0,
+                None, None, original_service_chain_node=original)
 
-        self.assertEqual(ctx.original['id'], original['id'])
+        self.assertEqual(ctx.original_node, original)
         self.assertIsNone(ctx.original_profile)
-        self.assertEqual(ctx.current['id'], current['id'])
+        self.assertEqual(ctx.current_node, current)
         self.assertIsNone(ctx.current_profile)
 
     def test_spec_parameters(self):
