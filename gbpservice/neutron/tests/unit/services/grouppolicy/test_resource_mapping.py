@@ -43,7 +43,7 @@ from gbpservice.neutron.services.grouppolicy import config
 from gbpservice.neutron.services.grouppolicy.drivers import chain_mapping
 from gbpservice.neutron.services.grouppolicy.drivers import nsp_manager
 from gbpservice.neutron.services.grouppolicy.drivers import resource_mapping
-from gbpservice.neutron.services.servicechain.plugins.msc import (
+from gbpservice.neutron.services.servicechain.plugins.ncp import (
     config as sc_cfg)
 from gbpservice.neutron.tests.unit.db.grouppolicy import test_group_policy_db
 from gbpservice.neutron.tests.unit.services.grouppolicy import (
@@ -81,8 +81,8 @@ class ResourceMappingTestCase(test_plugin.GroupPolicyPluginTestCase):
         config.cfg.CONF.set_override('policy_drivers',
                                      policy_drivers,
                                      group='group_policy')
-        sc_cfg.cfg.CONF.set_override('servicechain_drivers',
-                                     ['dummy'], group='servicechain')
+        sc_cfg.cfg.CONF.set_override('node_drivers', ['node_dummy'],
+                                     group='node_composition_plugin')
         config.cfg.CONF.set_override('allow_overlapping_ips', True)
 
         ml2_opts = ml2_options or {

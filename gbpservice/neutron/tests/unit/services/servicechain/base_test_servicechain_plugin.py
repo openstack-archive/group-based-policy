@@ -18,28 +18,28 @@ from neutron import context as n_ctx
 from oslo_config import cfg
 from oslo_serialization import jsonutils
 
-from gbpservice.neutron.services.servicechain.plugins.msc import (
-    plugin as msc_plugin)
-from gbpservice.neutron.services.servicechain.plugins.msc import context
+from gbpservice.neutron.services.servicechain.plugins.ncp import (
+    plugin as ncp_plugin)
+from gbpservice.neutron.services.servicechain.plugins.ncp import context
 from gbpservice.neutron.tests.unit.db.grouppolicy import (
     test_servicechain_db as test_servicechain_db)
 from gbpservice.neutron.tests.unit.db.grouppolicy import test_group_policy_db
 
 cfg.CONF.import_opt(
-    'servicechain_drivers',
-    'gbpservice.neutron.services.servicechain.plugins.msc.config',
-    group='servicechain')
+    'node_drivers',
+    'gbpservice.neutron.services.servicechain.plugins.ncp.config',
+    group='node_composition_plugin')
 
 
-class ServiceChainMSCTestPlugin(msc_plugin.ServiceChainPlugin):
+class ServiceChainNCPTestPlugin(ncp_plugin.NodeCompositionPlugin):
 
     supported_extension_aliases = ['servicechain'] + (
         test_group_policy_db.UNSUPPORTED_REQUIRED_EXTS)
     path_prefix = "/servicechain"
 
 
-SC_PLUGIN_KLASS = (ServiceChainMSCTestPlugin.__module__ + '.' +
-                   ServiceChainMSCTestPlugin.__name__)
+SC_PLUGIN_KLASS = (ServiceChainNCPTestPlugin.__module__ + '.' +
+                   ServiceChainNCPTestPlugin.__name__)
 
 
 class ServiceChainPluginTestCase(test_servicechain_db.ServiceChainDbTestCase):
@@ -51,7 +51,7 @@ class ServiceChainPluginTestCase(test_servicechain_db.ServiceChainDbTestCase):
                                                       gp_plugin=gp_plugin)
 
 
-class TestGroupPolicyPluginGroupResources(
+class BaseTestGroupPolicyPluginGroupResources(
         ServiceChainPluginTestCase,
         test_servicechain_db.TestServiceChainResources):
 
