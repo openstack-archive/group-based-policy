@@ -39,7 +39,7 @@ from gbpservice.neutron.tests.unit.db.grouppolicy import test_group_policy_db
 from gbpservice.neutron.tests.unit.services.grouppolicy import (
     test_resource_mapping as test_gp_driver)
 from gbpservice.neutron.tests.unit.services.servicechain import (
-    test_servicechain_plugin as test_base)
+    base_test_servicechain_plugin as test_base)
 
 
 class ServiceChainNCPTestPlugin(ncp_plugin.NodeCompositionPlugin):
@@ -125,7 +125,7 @@ class NodeCompositionPluginTestMixin(object):
 
 
 class NodeCompositionPluginTestCase(
-        test_base.TestGroupPolicyPluginGroupResources,
+        test_base.BaseTestGroupPolicyPluginGroupResources,
         NodeCompositionPluginTestMixin):
 
     def setUp(self, core_plugin=None, gp_plugin=None, node_drivers=None,
