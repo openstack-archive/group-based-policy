@@ -28,7 +28,7 @@ from gbpservice.neutron.tests.unit.db.grouppolicy import test_group_policy_db
 from gbpservice.neutron.tests.unit.services.grouppolicy import (
     test_resource_mapping as test_gp_driver)
 from gbpservice.neutron.tests.unit.services.servicechain import (
-    test_servicechain_plugin as test_base)
+    base_test_servicechain_plugin as test_base)
 from gbpservice.neutron.tests.unit.services.servicechain.ncp import (
     test_ncp_plugin as test_ncp_plugin)
 
@@ -52,7 +52,7 @@ GP_PLUGIN_KLASS = (
 
 
 class NFPNodeDriverTestCase(
-        test_base.TestGroupPolicyPluginGroupResources,
+        test_base.BaseTestGroupPolicyPluginGroupResources,
         test_ncp_plugin.NodeCompositionPluginTestMixin):
 
     DEFAULT_VPN_CONFIG_DICT = {

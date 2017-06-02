@@ -35,8 +35,8 @@ DB_GP_PLUGIN_KLASS = (GroupPolicyMappingDBTestPlugin.__module__ + '.' +
                       GroupPolicyMappingDBTestPlugin.__name__)
 
 SC_PLUGIN_KLASS = (
-    "gbpservice.neutron.services.servicechain.plugins.msc.plugin."
-    "ServiceChainPlugin")
+    "gbpservice.neutron.services.servicechain.plugins.ncp.plugin."
+    "NodeCompositionPlugin")
 
 
 class GroupPolicyMappingDbTestCase(tgpdb.GroupPolicyDbTestCase,
