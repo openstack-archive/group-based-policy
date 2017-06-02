@@ -20,7 +20,7 @@ from neutron_lib.db import model_base
 import webob.exc
 
 from gbpservice.neutron.services.grouppolicy import config
-from gbpservice.neutron.services.servicechain.plugins.msc import (
+from gbpservice.neutron.services.servicechain.plugins.ncp import (
     config as sc_cfg)
 from gbpservice.neutron.tests.unit.services.grouppolicy import (
     test_grouppolicy_plugin as test_plugin)
@@ -40,8 +40,10 @@ class CommonNeutronBaseTestCase(test_plugin.GroupPolicyPluginTestBase):
         config.cfg.CONF.set_override('policy_drivers',
                                      policy_drivers,
                                      group='group_policy')
-        sc_cfg.cfg.CONF.set_override('servicechain_drivers',
-                                     ['dummy'], group='servicechain')
+        sc_cfg.cfg.CONF.set_override('node_drivers',
+                                     ['dummy_driver'], group='node_composition_plugin')
+        sc_cfg.cfg.CONF.set_override('node_plumber', 'dummy_plumber',
+                                     group='node_composition_plugin')
         config.cfg.CONF.set_override('allow_overlapping_ips', True)
         super(CommonNeutronBaseTestCase, self).setUp(core_plugin=core_plugin,
                                                      l3_plugin=l3_plugin,
