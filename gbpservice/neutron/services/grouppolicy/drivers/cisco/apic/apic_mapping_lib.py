@@ -151,6 +151,10 @@ def get_service_contract_filter_entries():
                   'prot': 'icmp'}
     entries['icmp'] = icmp_attrs
 
+    icmpv6_attrs = {'etherT': 'ip',
+                    'prot': 58}
+    entries['icmpv6'] = icmpv6_attrs
+
     # DHCP
     dhcp_attrs = {'etherT': 'ip',
                   'prot': 'udp',
@@ -166,6 +170,21 @@ def get_service_contract_filter_entries():
                     'sToPort': 68,
                     'sFromPort': 68}
     entries['r-dhcp'] = r_dhcp_attrs
+
+    dhcpv6_attrs = {'etherT': 'ip',
+                    'prot': 'udp',
+                    'dToPort': 546,
+                    'dFromPort': 546,
+                    'sToPort': 547,
+                    'sFromPort': 547}
+    entries['dhcpv6'] = dhcpv6_attrs
+    r_dhcpv6_attrs = {'etherT': 'ip',
+                      'prot': 'udp',
+                      'dToPort': 547,
+                      'dFromPort': 547,
+                      'sToPort': 546,
+                      'sFromPort': 546}
+    entries['r-dhcpv6'] = r_dhcpv6_attrs
 
     # ARP
     arp_entries = get_arp_filter_entry()
