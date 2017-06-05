@@ -403,7 +403,7 @@ class AIMBaseTestCase(test_nr_base.CommonNeutronBaseTestCase,
             self.assertEqual(0, len(aim_contract_subjects[0].in_filters))
             self.assertEqual(0, len(aim_contract_subjects[0].out_filters))
             if contract_name_prefix == alib.SERVICE_PREFIX:
-                self.assertEqual(8, len(aim_contract_subjects[0].bi_filters))
+                self.assertEqual(11, len(aim_contract_subjects[0].bi_filters))
             else:
                 self.assertEqual(1, len(aim_contract_subjects[0].bi_filters))
                 if l2p:
@@ -418,7 +418,7 @@ class AIMBaseTestCase(test_nr_base.CommonNeutronBaseTestCase,
             if not afilter.name.endswith(l3p_id):
                 aim_filters.remove(afilter)
 
-        self.assertEqual(9, len(aim_filters))
+        self.assertEqual(12, len(aim_filters))
 
         aim_filter_entries = self.aim_mgr.find(
             self._aim_context, aim_resource.FilterEntry,
@@ -428,7 +428,7 @@ class AIMBaseTestCase(test_nr_base.CommonNeutronBaseTestCase,
             if not afilterentry.filter_name.endswith(l3p_id):
                 aim_filter_entries.remove(afilterentry)
 
-        self.assertEqual(9, len(aim_filter_entries))
+        self.assertEqual(12, len(aim_filter_entries))
 
         entries_attrs = alib.get_service_contract_filter_entries().values()
         entries_attrs.extend(alib.get_arp_filter_entry().values())
