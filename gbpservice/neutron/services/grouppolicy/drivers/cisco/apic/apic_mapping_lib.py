@@ -135,6 +135,17 @@ def get_service_contract_filter_entries():
                    'sFromPort': 'dns'}
     entries['r-dns'] = r_dns_attrs
 
+    dnsv6_attrs = {'etherT': 'ipv6',
+                   'prot': 'udp',
+                   'dToPort': 'dns',
+                   'dFromPort': 'dns'}
+    entries['dnsv6'] = dnsv6_attrs
+    r_dnsv6_attrs = {'etherT': 'ipv6',
+                     'prot': 'udp',
+                     'sToPort': 'dns',
+                     'sFromPort': 'dns'}
+    entries['r-dnsv6'] = r_dnsv6_attrs
+
     # HTTP
     http_attrs = {'etherT': 'ip',
                   'prot': 'tcp',
@@ -147,9 +158,24 @@ def get_service_contract_filter_entries():
                     'sFromPort': 80}
     entries['r-http'] = r_http_attrs
 
+    httpv6_attrs = {'etherT': 'ipv6',
+                    'prot': 'tcp',
+                    'dToPort': 80,
+                    'dFromPort': 80}
+    entries['httpv6'] = httpv6_attrs
+    r_httpv6_attrs = {'etherT': 'ipv6',
+                      'prot': 'tcp',
+                      'sToPort': 80,
+                      'sFromPort': 80}
+    entries['r-httpv6'] = r_httpv6_attrs
+
     icmp_attrs = {'etherT': 'ip',
                   'prot': 'icmp'}
     entries['icmp'] = icmp_attrs
+
+    icmpv6_attrs = {'etherT': 'ip',
+                    'prot': 58}
+    entries['icmpv6'] = icmpv6_attrs
 
     # DHCP
     dhcp_attrs = {'etherT': 'ip',
@@ -166,6 +192,21 @@ def get_service_contract_filter_entries():
                     'sToPort': 68,
                     'sFromPort': 68}
     entries['r-dhcp'] = r_dhcp_attrs
+
+    dhcpv6_attrs = {'etherT': 'ipv6',
+                    'prot': 'udp',
+                    'dToPort': 546,
+                    'dFromPort': 546,
+                    'sToPort': 547,
+                    'sFromPort': 547}
+    entries['dhcpv6'] = dhcpv6_attrs
+    r_dhcpv6_attrs = {'etherT': 'ipv6',
+                      'prot': 'udp',
+                      'dToPort': 547,
+                      'dFromPort': 547,
+                      'sToPort': 546,
+                      'sFromPort': 546}
+    entries['r-dhcpv6'] = r_dhcpv6_attrs
 
     # ARP
     arp_entries = get_arp_filter_entry()

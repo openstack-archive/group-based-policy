@@ -403,7 +403,7 @@ class AIMBaseTestCase(test_nr_base.CommonNeutronBaseTestCase,
             self.assertEqual(0, len(aim_contract_subjects[0].in_filters))
             self.assertEqual(0, len(aim_contract_subjects[0].out_filters))
             if contract_name_prefix == alib.SERVICE_PREFIX:
-                self.assertEqual(8, len(aim_contract_subjects[0].bi_filters))
+                self.assertEqual(15, len(aim_contract_subjects[0].bi_filters))
             else:
                 self.assertEqual(1, len(aim_contract_subjects[0].bi_filters))
                 if l2p:
