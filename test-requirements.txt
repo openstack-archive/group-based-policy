@@ -7,13 +7,6 @@ setuptools>=19.2
 -e git+https://github.com/noironetworks/apicapi.git@master#egg=apicapi
 -e git+https://github.com/noironetworks/python-opflex-agent.git@stable/mitaka#egg=python-opflexagent-agent
 -e git+https://github.com/noironetworks/apic-ml2-driver.git@mitaka#egg=apic_ml2
-
-# REVISIT: The following is being pinned to latest known working version to
-# avoid the GBP branches from breaking on accont of the churn in that repository. This
-# is a short term solution and should be reverted to the relevant branch name
-# once co-gating is enabled for the aci-integration-module repo.
--e git+https://github.com/noironetworks/aci-integration-module.git@f3002603a1e772a5e31331d847b33d74a9a69a75#egg=aci-integration-module
-
 -e git+https://git.openstack.org/openstack/python-group-based-policy-client@stable/mitaka#egg=gbpclient
 -e git+https://git.openstack.org/openstack/neutron-vpnaas@stable/mitaka#egg=neutron-vpnaas
 -e git+https://git.openstack.org/openstack/neutron-lbaas@stable/mitaka#egg=neutron-lbaas
@@ -47,3 +40,8 @@ pyOpenSSL>=0.13.0,<=0.15.1
 python-heatclient
 python-keystoneclient
 python-neutronclient<5.0.0,>=4.0.0,!=4.1.0
+
+# REVISIT: Until co-gating and/or stable branches are implemented for the
+# aci-integration-module repo, it may be necessary to pin to a working
+# commit.
+-e git+https://github.com/noironetworks/aci-integration-module.git@master#egg=aci-integration-module

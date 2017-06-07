@@ -321,7 +321,8 @@ class AIMBaseTestCase(test_nr_base.CommonNeutronBaseTestCase,
         # different status states are correctly reflected in the L2P.
         AIM_STATUS = aim_status.AciStatus.SYNC_PENDING
 
-        def mock_get_aim_status(aim_context, aim_resource):
+        def mock_get_aim_status(aim_context, aim_resource,
+                                create_if_absent=True):
             astatus = aim_status.AciStatus(resource_root=aim_resource.root)
             astatus.sync_status = AIM_STATUS
             return astatus
@@ -885,7 +886,8 @@ class TestAIMStatus(AIMBaseTestCase):
 
     def test_status_merging(self):
 
-        def mock_get_aim_status(aim_context, aim_resource):
+        def mock_get_aim_status(aim_context, aim_resource,
+                                create_if_absent=True):
             astatus = aim_status.AciStatus(resource_root=aim_resource.root)
             if aim_resource.status == '':
                 return
