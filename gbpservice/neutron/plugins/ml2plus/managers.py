@@ -43,21 +43,28 @@ class MechanismManager(managers.MechanismManager):
         if any mechanism driver call fails.
 
         """
-        error = False
+        errors = []
         for driver in self.ordered_mech_drivers:
             if isinstance(driver.obj, driver_api.MechanismDriver):
                 try:
                     getattr(driver.obj, method_name)(context)
-                except Exception:
+                except Exception as e:
+                    if db_api.is_retriable(e):
+                        with excutils.save_and_reraise_exception():
+                            LOG.debug("DB exception raised by Mechanism "
+                                      "driver '%(name)s' in %(method)s",
+                                      {'name': driver.name,
+                                       'method': method_name},
+                                      exc_info=e)
                     LOG.exception(
                         _LE("Mechanism driver '%(name)s' failed in "
                             "%(method)s"),
                         {'name': driver.name, 'method': method_name}
                     )
-                    error = True
+                    errors.append(e)
                     if not continue_on_failure:
                         break
-        if error:
+        if errors:
             raise ml2_exc.MechanismDriverError(
                 method=method_name
             )
