@@ -1418,7 +1418,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         return self._gbp_driver
 
     def _merge_status(self, aim_ctx, sync_state, resource):
-        status = self.aim.get_status(aim_ctx, resource)
+        status = self.aim.get_status(aim_ctx, resource, create_if_absent=False)
         if not status:
             # REVISIT(rkukura): This should only occur if the AIM
             # resource has not yet been created when

@@ -13,16 +13,15 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+from aim.api import resource as aim_res
+from aim import exceptions as aim_exc
 from neutron.api import extensions
+from neutron.db import api as db_api
 from neutron import manager as n_manager
 from neutron_lib import exceptions as n_exc
 from oslo_log import log
 from oslo_utils import excutils
 
-from aim.api import resource as aim_res
-from aim import exceptions as aim_exc
-
-from gbpservice._i18n import _LE
 from gbpservice._i18n import _LI
 from gbpservice.neutron import extensions as extensions_pkg
 from gbpservice.neutron.extensions import cisco_apic
@@ -70,9 +69,13 @@ class ApicExtensionDriver(api_plus.ExtensionDriver,
                     cisco_apic.EXTERNAL_NETWORK] = res_dict.pop(
                         cisco_apic.EXTERNAL_NETWORK)
             result.update(res_dict)
-        except Exception:
+        except Exception as e:
             with excutils.save_and_reraise_exception():
-                LOG.exception(_LE("APIC AIM extend_network_dict failed"))
+                if db_api.is_retriable(e):
+                    LOG.debug("APIC AIM extend_network_dict got retriable "
+                              "exception: %s", type(e))
+                else:
+                    LOG.exception("APIC AIM extend_network_dict failed")
 
     def process_create_network(self, plugin_context, data, result):
         if (data.get(cisco_apic.DIST_NAMES) and
@@ -113,9 +116,13 @@ class ApicExtensionDriver(api_plus.ExtensionDriver,
             res_dict = self.get_subnet_extn_db(session, result['id'])
             result[cisco_apic.SNAT_HOST_POOL] = (
                 res_dict.get(cisco_apic.SNAT_HOST_POOL, False))
-        except Exception:
+        except Exception as e:
             with excutils.save_and_reraise_exception():
-                LOG.exception(_LE("APIC AIM extend_subnet_dict failed"))
+                if db_api.is_retriable(e):
+                    LOG.debug("APIC AIM extend_subnet_dict got retriable "
+                              "exception: %s", type(e))
+                else:
+                    LOG.exception("APIC AIM extend_subnet_dict failed")
 
     def process_create_subnet(self, plugin_context, data, result):
         res_dict = {cisco_apic.SNAT_HOST_POOL:
@@ -135,9 +142,13 @@ class ApicExtensionDriver(api_plus.ExtensionDriver,
     def extend_address_scope_dict(self, session, base_model, result):
         try:
             self._md.extend_address_scope_dict(session, base_model, result)
-        except Exception:
+        except Exception as e:
             with excutils.save_and_reraise_exception():
-                LOG.exception(_LE("APIC AIM extend_address_scope_dict failed"))
+                if db_api.is_retriable(e):
+                    LOG.debug("APIC AIM extend_address_scope_dict got "
+                              "retriable exception: %s", type(e))
+                else:
+                    LOG.exception("APIC AIM extend_address_scope_dict failed")
 
     def process_create_address_scope(self, plugin_context, data, result):
         if (data.get(cisco_apic.DIST_NAMES) and
