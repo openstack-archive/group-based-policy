@@ -1866,7 +1866,8 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
         # is the only policy driver configured, and no merging
         # with any previous status is required.
         aim_ctx = aim_context.AimContext(session)
-        aim_status = self.aim.get_status(aim_ctx, aim_resource_obj)
+        aim_status = self.aim.get_status(
+            aim_ctx, aim_resource_obj, create_if_absent=False)
         if not aim_status:
             # REVIST(Sumit)
             return gp_const.STATUS_BUILD

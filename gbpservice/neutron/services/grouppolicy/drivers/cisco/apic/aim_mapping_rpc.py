@@ -14,9 +14,9 @@ from apic_ml2.neutron.db import port_ha_ipaddress_binding as ha_ip_db
 
 from neutron.common import rpc as n_rpc
 from neutron.common import topics
+from neutron.db import api as db_api
 from neutron.plugins.ml2 import rpc as ml2_rpc
 from opflexagent import rpc as o_rpc
-from oslo_db import api as oslo_db_api
 from oslo_log import log
 
 from gbpservice._i18n import _LE
@@ -25,11 +25,6 @@ from gbpservice.neutron.services.grouppolicy.drivers.cisco.apic import (
     nova_client as nclient)
 
 LOG = log.getLogger(__name__)
-MAX_RETRIES = 5
-
-db_exc_retry = oslo_db_api.wrap_db_retry(max_retries=MAX_RETRIES,
-                                         retry_on_request=True,
-                                         retry_on_deadlock=True)
 
 
 class AIMMappingRPCMixin(ha_ip_db.HAIPOwnerDbMixin):
@@ -54,7 +49,7 @@ class AIMMappingRPCMixin(ha_ip_db.HAIPOwnerDbMixin):
             self.opflex_topic, self.opflex_endpoints, fanout=False)
         self.opflex_conn.consume_in_threads()
 
-    @db_exc_retry
+    @db_api.retry_db_errors
     def _retrieve_vrf_details(self, context, **kwargs):
         with context.session.begin(subtransactions=True):
             details = {'l3_policy_id': kwargs['vrf_id']}
@@ -81,7 +76,7 @@ class AIMMappingRPCMixin(ha_ip_db.HAIPOwnerDbMixin):
         return self._get_vrf_details(context, **kwargs)
 
     def get_gbp_details(self, context, **kwargs):
-        LOG.debug("APIC AIM MD handling get_gbp_details for: %s", kwargs)
+        LOG.debug("APIC AIM handling get_gbp_details for: %s", kwargs)
         try:
             return self._get_gbp_details(context, kwargs, kwargs.get('host'))
         except Exception as e:
@@ -130,7 +125,7 @@ class AIMMappingRPCMixin(ha_ip_db.HAIPOwnerDbMixin):
     # - self._is_dhcp_optimized(context, port);
     # - self._is_metadata_optimized(context, port);
     # - self._set_dhcp_lease_time(details)
-    @db_exc_retry
+    @db_api.retry_db_errors
     def _get_gbp_details(self, context, request, host):
         with context.session.begin(subtransactions=True):
             device = request.get('device')
@@ -200,7 +195,7 @@ class AIMMappingRPCMixin(ha_ip_db.HAIPOwnerDbMixin):
             self._set_dhcp_lease_time(details)
             details.pop('_cache', None)
 
-        LOG.debug("Details for port %s : %s", (port['id'], details))
+        LOG.debug("Details for port %s : %s", port['id'], details)
         return details
 
     def _get_owned_addresses(self, plugin_context, port_id):
