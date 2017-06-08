@@ -199,9 +199,6 @@ from neutron.plugins.ml2 import models
 from sqlalchemy.orm import exc
 
 
-LOCK_NAME = 'ml2_db'
-
-
 # REVISIT: This method gets decorated in Pike for removal in Queens. So this
 # patching might need to be changed in Pike and removed in Queens.
 def patched_get_locked_port_and_binding(session, port_id):

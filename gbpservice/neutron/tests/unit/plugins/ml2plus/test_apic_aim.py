@@ -2334,13 +2334,13 @@ class TestAimMapping(ApicAimTestCase):
 
 class TestSyncState(ApicAimTestCase):
     @staticmethod
-    def _get_synced_status(self, context, resource):
+    def _get_synced_status(self, context, resource, create_if_absent=True):
         status = aim_status.AciStatus.SYNCED
         return aim_status.AciStatus(resource_root=resource.root,
                                     sync_status=status)
 
     @staticmethod
-    def _get_pending_status_for_type(resource, type):
+    def _get_pending_status_for_type(resource, type, create_if_absent=True):
         status = (isinstance(resource, type) and
                   aim_status.AciStatus.SYNC_PENDING or
                   aim_status.AciStatus.SYNCED)
@@ -2348,7 +2348,7 @@ class TestSyncState(ApicAimTestCase):
                                     sync_status=status)
 
     @staticmethod
-    def _get_failed_status_for_type(resource, type):
+    def _get_failed_status_for_type(resource, type, create_if_absent=True):
         status = (isinstance(resource, type) and
                   aim_status.AciStatus.SYNC_FAILED or
                   aim_status.AciStatus.SYNC_PENDING)
@@ -2368,7 +2368,7 @@ class TestSyncState(ApicAimTestCase):
             self._test_network('synced')
 
     def test_network_bd_build(self):
-        def get_status(self, context, resource):
+        def get_status(self, context, resource, create_if_absent=True):
             return TestSyncState._get_pending_status_for_type(
                 resource, aim_resource.BridgeDomain)
 
@@ -2376,7 +2376,7 @@ class TestSyncState(ApicAimTestCase):
             self._test_network('build')
 
     def test_network_bd_error(self):
-        def get_status(self, context, resource):
+        def get_status(self, context, resource, create_if_absent=True):
             return TestSyncState._get_failed_status_for_type(
                 resource, aim_resource.BridgeDomain)
 
@@ -2384,7 +2384,7 @@ class TestSyncState(ApicAimTestCase):
             self._test_network('error')
 
     def test_network_epg_build(self):
-        def get_status(self, context, resource):
+        def get_status(self, context, resource, create_if_absent=True):
             return TestSyncState._get_pending_status_for_type(
                 resource, aim_resource.EndpointGroup)
 
@@ -2392,7 +2392,7 @@ class TestSyncState(ApicAimTestCase):
             self._test_network('build')
 
     def test_network_epg_error(self):
-        def get_status(self, context, resource):
+        def get_status(self, context, resource, create_if_absent=True):
             return TestSyncState._get_failed_status_for_type(
                 resource, aim_resource.EndpointGroup)
 
@@ -2400,7 +2400,7 @@ class TestSyncState(ApicAimTestCase):
             self._test_network('error')
 
     def test_network_vrf_build(self):
-        def get_status(self, context, resource):
+        def get_status(self, context, resource, create_if_absent=True):
             return TestSyncState._get_pending_status_for_type(
                 resource, aim_resource.VRF)
 
@@ -2408,7 +2408,7 @@ class TestSyncState(ApicAimTestCase):
             self._test_network('build')
 
     def test_network_vrf_error(self):
-        def get_status(self, context, resource):
+        def get_status(self, context, resource, create_if_absent=True):
             return TestSyncState._get_failed_status_for_type(
                 resource, aim_resource.VRF)
 
@@ -2429,7 +2429,7 @@ class TestSyncState(ApicAimTestCase):
             self._test_address_scope('synced')
 
     def test_address_scope_vrf_build(self):
-        def get_status(self, context, resource):
+        def get_status(self, context, resource, create_if_absent=True):
             return TestSyncState._get_pending_status_for_type(
                 resource, aim_resource.VRF)
 
@@ -2437,7 +2437,7 @@ class TestSyncState(ApicAimTestCase):
             self._test_address_scope('build')
 
     def test_address_scope_vrf_error(self):
-        def get_status(self, context, resource):
+        def get_status(self, context, resource, create_if_absent=True):
             return TestSyncState._get_failed_status_for_type(
                 resource, aim_resource.VRF)
 
@@ -2458,7 +2458,7 @@ class TestSyncState(ApicAimTestCase):
             self._test_router('synced')
 
     def test_router_contract_build(self):
-        def get_status(self, context, resource):
+        def get_status(self, context, resource, create_if_absent=True):
             return TestSyncState._get_pending_status_for_type(
                 resource, aim_resource.Contract)
 
@@ -2466,7 +2466,7 @@ class TestSyncState(ApicAimTestCase):
             self._test_router('build')
 
     def test_router_contract_error(self):
-        def get_status(self, context, resource):
+        def get_status(self, context, resource, create_if_absent=True):
             return TestSyncState._get_failed_status_for_type(
                 resource, aim_resource.Contract)
 
@@ -2474,7 +2474,7 @@ class TestSyncState(ApicAimTestCase):
             self._test_router('error')
 
     def test_router_subject_build(self):
-        def get_status(self, context, resource):
+        def get_status(self, context, resource, create_if_absent=True):
             return TestSyncState._get_pending_status_for_type(
                 resource, aim_resource.ContractSubject)
 
@@ -2482,7 +2482,7 @@ class TestSyncState(ApicAimTestCase):
             self._test_router('build')
 
     def test_router_subject_error(self):
-        def get_status(self, context, resource):
+        def get_status(self, context, resource, create_if_absent=True):
             return TestSyncState._get_failed_status_for_type(
                 resource, aim_resource.ContractSubject)
 
@@ -2508,7 +2508,7 @@ class TestSyncState(ApicAimTestCase):
             self._test_router_interface_vrf('synced')
 
     def test_router_interface_vrf_build(self):
-        def get_status(self, context, resource):
+        def get_status(self, context, resource, create_if_absent=True):
             return TestSyncState._get_pending_status_for_type(
                 resource, aim_resource.VRF)
 
@@ -2516,7 +2516,7 @@ class TestSyncState(ApicAimTestCase):
             self._test_router_interface_vrf('build')
 
     def test_router_interface_vrf_error(self):
-        def get_status(self, context, resource):
+        def get_status(self, context, resource, create_if_absent=True):
             return TestSyncState._get_failed_status_for_type(
                 resource, aim_resource.VRF)
 
@@ -2546,7 +2546,7 @@ class TestSyncState(ApicAimTestCase):
             self._test_router_interface_subnet('synced')
 
     def test_router_interface_subnet_build(self):
-        def get_status(self, context, resource):
+        def get_status(self, context, resource, create_if_absent=True):
             return TestSyncState._get_pending_status_for_type(
                 resource, aim_resource.Subnet)
 
@@ -2554,7 +2554,7 @@ class TestSyncState(ApicAimTestCase):
             self._test_router_interface_subnet('build')
 
     def test_router_interface_subnet_error(self):
-        def get_status(self, context, resource):
+        def get_status(self, context, resource, create_if_absent=True):
             return TestSyncState._get_failed_status_for_type(
                 resource, aim_resource.Subnet)
 
@@ -2582,7 +2582,7 @@ class TestSyncState(ApicAimTestCase):
                           aim_resource.EndpointGroup,
                           aim_resource.BridgeDomain,
                           aim_resource.VRF]:
-                def get_status(self, context, resource):
+                def get_status(self, context, resource, create_if_absent=True):
                     return status_func(resource, a_res)
                 with mock.patch('aim.aim_manager.AimManager.get_status',
                                 get_status):
@@ -2610,7 +2610,7 @@ class TestSyncState(ApicAimTestCase):
         for expected_status, status_func in [
                 ('build', TestSyncState._get_pending_status_for_type),
                 ('error', TestSyncState._get_failed_status_for_type)]:
-            def get_status(self, context, resource):
+            def get_status(self, context, resource, create_if_absent=True):
                 return status_func(resource, aim_resource.Subnet)
             with mock.patch('aim.aim_manager.AimManager.get_status',
                             get_status):
