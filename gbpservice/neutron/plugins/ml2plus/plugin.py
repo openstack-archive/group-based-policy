@@ -16,6 +16,7 @@
 from neutron._i18n import _LE
 from neutron._i18n import _LI
 from neutron.api.v2 import attributes
+from neutron.db import api as db_api
 from neutron.db import db_base_plugin_v2
 from neutron.db import models_v2
 from neutron.db import securitygroups_db
@@ -27,6 +28,8 @@ from neutron.quota import resource_registry
 from oslo_config import cfg
 from oslo_log import log
 from oslo_utils import excutils
+from pecan import util as p_util
+import six
 from sqlalchemy import inspect
 
 from gbpservice.neutron.db import implicitsubnetpool_db
@@ -91,6 +94,43 @@ opts = [
 ]
 
 cfg.CONF.register_opts(opts, "ml2plus")
+
+
+# Copied from newton version of neutron/db/api.py.
+def retry_if_session_inactive(context_var_name='context'):
+    """Retries only if the session in the context is inactive.
+
+    Calls a retry_db_errors wrapped version of the function if the context's
+    session passed in is inactive, otherwise it just calls the function
+    directly. This is useful to avoid retrying things inside of a transaction
+    which is ineffective for DB races/errors.
+
+    This should be used in all cases where retries are desired and the method
+    accepts a context.
+    """
+    def decorator(f):
+        try:
+            # NOTE(kevinbenton): we use pecan's util function here because it
+            # deals with the horrors of finding args of already decorated
+            # functions
+            ctx_arg_index = p_util.getargspec(f).args.index(context_var_name)
+        except ValueError:
+            raise RuntimeError(_LE("Could not find position of var %s")
+                               % context_var_name)
+        f_with_retry = db_api.retry_db_errors(f)
+
+        @six.wraps(f)
+        def wrapped(*args, **kwargs):
+            # only use retry wrapper if we aren't nested in an active
+            # transaction
+            if context_var_name in kwargs:
+                context = kwargs[context_var_name]
+            else:
+                context = args[ctx_arg_index]
+            method = f if context.session.is_active else f_with_retry
+            return method(*args, **kwargs)
+        return wrapped
+    return decorator
 
 
 class Ml2PlusPlugin(ml2_plugin.Ml2Plugin,
@@ -206,36 +246,110 @@ class Ml2PlusPlugin(ml2_plugin.Ml2Plugin,
                                           address_scope)
         return self._fields(res, fields)
 
+    @retry_if_session_inactive()
     def create_network(self, context, network):
         self._ensure_tenant(context, network[attributes.NETWORK])
         return super(Ml2PlusPlugin, self).create_network(context, network)
 
+    @retry_if_session_inactive()
+    def update_network(self, context, id, network):
+        return super(Ml2PlusPlugin, self).update_network(context, id, network)
+
+    @retry_if_session_inactive()
+    def get_network(self, context, id, fields=None):
+        return super(Ml2PlusPlugin, self).get_network(context, id, fields)
+
+    @retry_if_session_inactive()
+    def get_networks(self, context, filters=None, fields=None,
+                     sorts=None, limit=None, marker=None, page_reverse=False):
+        return super(Ml2PlusPlugin, self).get_networks(
+            context, filters, fields, sorts, limit, marker, page_reverse)
+
+    @retry_if_session_inactive()
+    def delete_network(self, context, id):
+        return super(Ml2PlusPlugin, self).delete_network(context, id)
+
+    @retry_if_session_inactive()
     def create_network_bulk(self, context, networks):
         self._ensure_tenant_bulk(context, networks[attributes.NETWORKS],
                                  attributes.NETWORK)
         return super(Ml2PlusPlugin, self).create_network_bulk(context,
                                                               networks)
 
+    @retry_if_session_inactive()
     def create_subnet(self, context, subnet):
         self._ensure_tenant(context, subnet[attributes.SUBNET])
         return super(Ml2PlusPlugin, self).create_subnet(context, subnet)
 
+    @retry_if_session_inactive()
+    def update_subnet(self, context, id, subnet):
+        return super(Ml2PlusPlugin, self).update_subnet(context, id, subnet)
+
+    @retry_if_session_inactive()
+    def get_subnet(self, context, id, fields=None):
+        return super(Ml2PlusPlugin, self).get_subnet(context, id, fields)
+
+    @retry_if_session_inactive()
+    def get_subnets(self, context, filters=None, fields=None,
+                    sorts=None, limit=None, marker=None, page_reverse=False):
+        return super(Ml2PlusPlugin, self).get_subnets(
+            context, filters, fields, sorts, limit, marker, page_reverse)
+
+    @retry_if_session_inactive()
+    def delete_subnet(self, context, id):
+        return super(Ml2PlusPlugin, self).delete_subnet(context, id)
+
+    @retry_if_session_inactive()
     def create_subnet_bulk(self, context, subnets):
         self._ensure_tenant_bulk(context, subnets[attributes.SUBNETS],
                                  attributes.SUBNET)
         return super(Ml2PlusPlugin, self).create_subnet_bulk(context,
                                                              subnets)
 
+    @retry_if_session_inactive()
     def create_port(self, context, port):
         self._ensure_tenant(context, port[attributes.PORT])
         return super(Ml2PlusPlugin, self).create_port(context, port)
 
+    @retry_if_session_inactive()
     def create_port_bulk(self, context, ports):
         self._ensure_tenant_bulk(context, ports[attributes.PORTS],
                                  attributes.PORT)
         return super(Ml2PlusPlugin, self).create_port_bulk(context,
                                                            ports)
 
+    @retry_if_session_inactive()
+    def update_port(self, context, id, port):
+        return super(Ml2PlusPlugin, self).update_port(context, id, port)
+
+    @retry_if_session_inactive()
+    def delete_port(self, context, id, l3_port_check=True):
+        return super(Ml2PlusPlugin, self).delete_port(
+            context, id, l3_port_check=l3_port_check)
+
+    @retry_if_session_inactive(context_var_name='plugin_context')
+    def get_bound_port_context(self, plugin_context, port_id, host=None,
+                               cached_networks=None):
+        return super(Ml2PlusPlugin, self).get_bound_port_context(
+            plugin_context, port_id, host, cached_networks)
+
+    @retry_if_session_inactive()
+    def update_port_status(self, context, port_id, status, host=None,
+                           network=None):
+        return super(Ml2PlusPlugin, self).update_port_status(
+            context, port_id, status, host, network)
+
+    @retry_if_session_inactive()
+    def port_bound_to_host(self, context, port_id, host):
+        return super(Ml2PlusPlugin, self).port_bound_to_host(
+            context, port_id, host)
+
+    @retry_if_session_inactive()
+    def get_ports_from_devices(self, context, devices):
+        return super(Ml2PlusPlugin, self).get_ports_from_devices(
+            context, devices)
+
+    @retry_if_session_inactive()
     def create_subnetpool(self, context, subnetpool):
         self._ensure_tenant(context, subnetpool[attributes.SUBNETPOOL])
         session = context.session
@@ -260,6 +374,7 @@ class Ml2PlusPlugin(ml2_plugin.Ml2Plugin,
 
     # REVISIT(rkukura): Is create_subnetpool_bulk() needed?
 
+    @retry_if_session_inactive()
     def update_subnetpool(self, context, id, subnetpool):
         session = context.session
         with session.begin(subtransactions=True):
@@ -279,6 +394,18 @@ class Ml2PlusPlugin(ml2_plugin.Ml2Plugin,
         self.mechanism_manager.update_subnetpool_postcommit(mech_context)
         return updated_subnetpool
 
+    @retry_if_session_inactive()
+    def get_subnetpool(self, context, id, fields=None):
+        return super(Ml2PlusPlugin, self).get_subnetpool(context, id, fields)
+
+    @retry_if_session_inactive()
+    def get_subnetpools(self, context, filters=None, fields=None,
+                        sorts=None, limit=None, marker=None,
+                        page_reverse=False):
+        return super(Ml2PlusPlugin, self).get_subnetpools(
+            context, filters, fields, sorts, limit, marker, page_reverse)
+
+    @retry_if_session_inactive()
     def delete_subnetpool(self, context, id):
         session = context.session
         with session.begin(subtransactions=True):
@@ -295,6 +422,7 @@ class Ml2PlusPlugin(ml2_plugin.Ml2Plugin,
             result['is_implicit'] = (
                 self.update_implicit_subnetpool(context, result))
 
+    @retry_if_session_inactive()
     def create_address_scope(self, context, address_scope):
         self._ensure_tenant(context, address_scope[as_ext.ADDRESS_SCOPE])
         session = context.session
@@ -321,6 +449,7 @@ class Ml2PlusPlugin(ml2_plugin.Ml2Plugin,
 
     # REVISIT(rkukura): Is create_address_scope_bulk() needed?
 
+    @retry_if_session_inactive()
     def update_address_scope(self, context, id, address_scope):
         session = context.session
         with session.begin(subtransactions=True):
@@ -339,6 +468,19 @@ class Ml2PlusPlugin(ml2_plugin.Ml2Plugin,
         self.mechanism_manager.update_address_scope_postcommit(mech_context)
         return updated_address_scope
 
+    @retry_if_session_inactive()
+    def get_address_scope(self, context, id, fields=None):
+        return super(Ml2PlusPlugin, self).get_address_scope(
+            context, id, fields)
+
+    @retry_if_session_inactive()
+    def get_address_scopes(self, context, filters=None, fields=None,
+                           sorts=None, limit=None, marker=None,
+                           page_reverse=False):
+        return super(Ml2PlusPlugin, self).get_address_scopes(
+            context, filters, fields, sorts, limit, marker, page_reverse)
+
+    @retry_if_session_inactive()
     def delete_address_scope(self, context, id):
         session = context.session
         with session.begin(subtransactions=True):
