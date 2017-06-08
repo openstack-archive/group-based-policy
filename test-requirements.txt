@@ -42,8 +42,7 @@ pyOpenSSL>=0.13.0,<=0.15.1
 python-heatclient
 python-keystoneclient
 
-# REVISIT: The following is being pinned to latest known working version to avoid the
-# GBP branches from breaking on accont of the churn in that repository. This is
-# a short term solution and should be reverted to the relevant branch name once
-# co-gating is enabled for the aci-integration-module repo.
--e git+https://github.com/noironetworks/aci-integration-module.git@f3002603a1e772a5e31331d847b33d74a9a69a75#egg=aci-integration-module
+# REVISIT: Until co-gating and/or stable branches are implemented for the
+# aci-integration-module repo, it may be necessary to pin to a working
+# commit.
+-e git+https://github.com/noironetworks/aci-integration-module.git@master#egg=aci-integration-module
