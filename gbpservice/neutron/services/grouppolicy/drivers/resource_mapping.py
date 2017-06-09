@@ -27,6 +27,7 @@ from neutron.db import models_v2
 from neutron.extensions import l3 as ext_l3
 from neutron.extensions import securitygroup as ext_sg
 from oslo_config import cfg
+from oslo_db import exception as oslo_db_excp
 from oslo_log import helpers as log
 from oslo_log import log as logging
 from oslo_utils import excutils
@@ -609,11 +610,13 @@ class ImplicitResourceOperations(local_api.LocalAPI,
                     subnets.append(subnet)
                     break
                 except Exception as e:
+                    if isinstance(e, oslo_db_excp.RetryRequest):
+                        raise e
                     LOG.info(_LI("Allocating subnet from subnetpool %(sp)s "
                                  "failed. Allocation will be attempted "
                                  "from any other configured "
                                  "subnetpool(s). Exception: %(excp)s"),
-                             {'sp': pool['id'], 'excp': e})
+                             {'sp': pool['id'], 'excp': type(e)})
                     last = e
                     continue
 
