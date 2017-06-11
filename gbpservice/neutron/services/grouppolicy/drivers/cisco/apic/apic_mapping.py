@@ -217,14 +217,13 @@ class L3PolicyMustBeSame(gpexc.GroupPolicyBadRequest):
                 "L2 policy when BridgeDomain is being reused.")
 
 
-class TenantSpecificNatEpg(model_base.BASEV2):
+class TenantSpecificNatEpg(model_base.BASEV2, model_base.HasProjectPrimaryKey):
     """Tenants that use a specific NAT EPG for an external segment."""
     __tablename__ = 'gp_apic_tenant_specific_nat_epg'
     external_segment_id = sa.Column(
         sa.String(36), sa.ForeignKey('gp_external_segments.id',
                                      ondelete='CASCADE'),
         primary_key=True)
-    tenant_id = sa.Column(sa.String(36), primary_key=True)
 
 
 SHADOW_PREFIX = 'Shd-'
