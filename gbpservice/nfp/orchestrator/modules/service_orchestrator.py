@@ -431,7 +431,7 @@ class NFPDbPatch(nfp_db.NFPDbBase):
 
     """Patch for Db class.
 
-    This class is used by service orchestrator to complete the path.
+    This class is used by service orchestrator module to complete the path.
     In the CREATE/UPDATE operations, at last service orchestrator
     invokes update_network_function to update status to be ACTIVE/ERROR,
     and there are many error paths. Instead of doing 'path_complete'

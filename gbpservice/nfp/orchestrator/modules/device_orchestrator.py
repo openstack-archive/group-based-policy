@@ -1026,9 +1026,9 @@ class DeviceOrchestrator(nfp_api.NfpEventHandler):
             return None
         self.configurator_rpc.create_network_function_device_config(device,
                                                                     hm_req)
-        LOG.debug("Health Check RPC sent to configurator for device: "
-                  "%s with health check parameters: %s", (
-                      device['id'], hm_req))
+        #LOG.debug("Health Check RPC sent to configurator for device: "
+        #          "%s with health check parameters: %s", (
+        #              device['id'], hm_req))
 
     def _get_service_type(self, service_profile_id):
         with nfp_ctx_mgr.KeystoneContextManager as kcm:
