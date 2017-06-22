@@ -12,6 +12,7 @@
 
 from oslo_log import helpers as log
 
+from gbpservice.network.neutronv2 import local_api
 from gbpservice.neutron.services.grouppolicy import (
     group_policy_driver_api as api)
 
@@ -20,7 +21,7 @@ class NoopDriver(api.PolicyDriver):
 
     @log.log_method_call
     def initialize(self):
-        pass
+        local_api.QUEUE_OUT_OF_PROCESS_NOTIFICATIONS = False
 
     @log.log_method_call
     def create_policy_target_precommit(self, context):
