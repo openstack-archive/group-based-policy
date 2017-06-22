@@ -52,8 +52,6 @@ from gbpservice.neutron.services.grouppolicy import config
 from gbpservice.neutron.services.grouppolicy.drivers.cisco.apic import (
     aim_mapping as aimd)
 from gbpservice.neutron.services.grouppolicy.drivers.cisco.apic import (
-    apic_mapping as amap)
-from gbpservice.neutron.services.grouppolicy.drivers.cisco.apic import (
     apic_mapping_lib as alib)
 from gbpservice.neutron.services.grouppolicy.drivers import nsp_manager
 from gbpservice.neutron.tests.unit.plugins.ml2plus import (
@@ -128,7 +126,6 @@ class AIMBaseTestCase(test_nr_base.CommonNeutronBaseTestCase,
                                                          'port_security'],
                                    'type_drivers': ['opflex', 'local', 'vlan'],
                                    'tenant_network_types': ['opflex']}
-        amap.ApicMappingDriver.get_apic_manager = mock.Mock()
         self._default_es_name = 'default'
         super(AIMBaseTestCase, self).setUp(
             policy_drivers=policy_drivers, core_plugin=core_plugin,
@@ -1739,7 +1736,7 @@ class TestL2PolicyWithAutoPTG(TestL2PolicyBase):
         ptg = self._gbp_plugin.get_policy_target_groups(
             self._neutron_context)[0]
         l2p_id = ptg['l2_policy_id']
-        auto_ptg_id = amap.AUTO_PTG_ID_PREFIX % hashlib.md5(l2p_id).hexdigest()
+        auto_ptg_id = alib.AUTO_PTG_ID_PREFIX % hashlib.md5(l2p_id).hexdigest()
         self.assertEqual(auto_ptg_id, ptg['id'])
         self.assertEqual(aimd.AUTO_PTG_NAME_PREFIX % l2p_id, str(ptg['name']))
         return ptg
