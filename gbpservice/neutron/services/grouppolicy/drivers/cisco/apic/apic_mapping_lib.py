@@ -21,6 +21,7 @@ from gbpservice.neutron.services.grouppolicy.common import exceptions as gpexc
 
 
 ALLOWING_ACTIONS = [g_const.GP_ACTION_ALLOW, g_const.GP_ACTION_REDIRECT]
+AUTO_PTG_ID_PREFIX = 'auto%s'
 REVERSE_PREFIX = 'reverse-'
 SERVICE_PREFIX = 'Svc-'
 IMPLICIT_PREFIX = 'implicit-'
