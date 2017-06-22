@@ -157,8 +157,16 @@ class GroupPolicyPluginTestBase(tgpmdb.GroupPolicyMappingDbTestCase):
 
 
 class GroupPolicyPluginTestCase(GroupPolicyPluginTestBase):
-    # This is a place-holder for GBP plugin-specific common tests
-    pass
+
+    def tearDown(self):
+        # Always reset configuration to dummy driver. Any
+        # test which requires to configure a different
+        # policy driver would have done so in it's setup
+        # (and should have ideally reset it too).
+        config.cfg.CONF.set_override('policy_drivers',
+                                     ['dummy'],
+                                     group='group_policy')
+        super(GroupPolicyPluginTestCase, self).tearDown()
 
 
 class TestGroupPolicyPluginDrivers(GroupPolicyPluginTestBase):
