@@ -468,6 +468,7 @@ class Ml2PlusPlugin(ml2_plugin.Ml2Plugin,
                 self, context, address_scope)
             self.mechanism_manager.delete_address_scope_precommit(mech_context)
             super(Ml2PlusPlugin, self).delete_address_scope(context, id)
+
         self.mechanism_manager.delete_address_scope_postcommit(mech_context)
 
     def _ensure_tenant(self, context, resource):
