@@ -15,7 +15,7 @@ XTRACE=$(set +o | grep xtrace)
 
 function prepare_gbp_devstack {
     cd $TOP_DIR
-    sudo git checkout stable/newton
+    sudo git checkout stable/ocata
     sudo cp $CONTRIB_DIR/devstack/local.conf $TOP_DIR/local.conf
     sudo cp $CONTRIB_DIR/functions-gbp $TOP_DIR/exercises/
     sudo cp $CONTRIB_DIR/devstack/exercises/*.sh $TOP_DIR/exercises/
@@ -45,7 +45,7 @@ function prepare_nfp_devstack {
 
 function prepare_gbp_aim_devstack {
     cd $TOP_DIR
-    sudo git checkout stable/newton
+    sudo git checkout stable/ocata
     sudo cp $CONTRIB_DIR/devstack/local-aim.conf $TOP_DIR/local.conf
     sudo cp $CONTRIB_DIR/devstack/exercises-aim/gbp_aim.sh $TOP_DIR/exercises/
     sudo sed -i 's/DEST=\/opt\/stack/DEST=\/opt\/stack\/new/g' $TOP_DIR/stackrc
@@ -55,15 +55,15 @@ function prepare_gbp_aim_devstack {
     # The following should updated when master moves to a new release
     # We need to do the following since the infra job clones these repos and
     # checks out the master branch (as this is the master branch) and later
-    # does not switch to the stable/newton branch when installing devstack
+    # does not switch to the stable/ocata branch when installing devstack
     # since the repo is already present.
     # This can be worked around by changing the job description in
-    # project-config to set BRANCH_OVERRIDE to use the stable/newton branch
-    sudo git --git-dir=/opt/stack/new/neutron/.git --work-tree=/opt/stack/new/neutron checkout stable/newton
-    sudo git --git-dir=/opt/stack/new/nova/.git --work-tree=/opt/stack/new/nova checkout stable/newton
-    sudo git --git-dir=/opt/stack/new/keystone/.git --work-tree=/opt/stack/new/keystone checkout stable/newton
-    sudo git --git-dir=/opt/stack/new/cinder/.git --work-tree=/opt/stack/new/cinder checkout stable/newton
-    sudo git --git-dir=/opt/stack/new/requirements/.git --work-tree=/opt/stack/new/requirements checkout stable/newton
+    # project-config to set BRANCH_OVERRIDE to use the stable/ocata branch
+    sudo git --git-dir=/opt/stack/new/neutron/.git --work-tree=/opt/stack/new/neutron checkout stable/ocata
+    sudo git --git-dir=/opt/stack/new/nova/.git --work-tree=/opt/stack/new/nova checkout stable/ocata
+    sudo git --git-dir=/opt/stack/new/keystone/.git --work-tree=/opt/stack/new/keystone checkout stable/ocata
+    sudo git --git-dir=/opt/stack/new/cinder/.git --work-tree=/opt/stack/new/cinder checkout stable/ocata
+    sudo git --git-dir=/opt/stack/new/requirements/.git --work-tree=/opt/stack/new/requirements checkout stable/ocata
     export ENABLED_SERVICES="key,rabbit,mysql"
 
     source $TOP_DIR/functions
