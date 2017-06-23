@@ -203,7 +203,8 @@ class Gbp_Verify(object):
                     (cmd_out))
                 return 0
         if cmd_val == 0:
-            if cmd_out == '':  # The case when grep returns null
+            _log.info("GREP RESULT: %s" % cmd_out)
+            if not cmd_out:  # The case when grep returns null
                 return 0
             else:
                 for arg in args:
