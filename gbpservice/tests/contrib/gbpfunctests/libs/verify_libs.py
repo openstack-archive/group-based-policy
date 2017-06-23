@@ -203,7 +203,7 @@ class Gbp_Verify(object):
                     (cmd_out))
                 return 0
         if cmd_val == 0:
-            if cmd_out == '':  # The case when grep returns null
+            if name_uuid not in cmd_out:  # uuid not found
                 return 0
             else:
                 for arg in args:
@@ -272,7 +272,7 @@ class Gbp_Verify(object):
                     (cmd_out))
                 return 0
         if cmd_val == 0:
-            if cmd_out == '':  # The case when grep returns null
+            if name_uuid not in cmd_val:  # uuid not found
                 return 0
             else:
                 for arg in args:
