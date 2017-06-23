@@ -33,6 +33,7 @@ from neutron.db.models import securitygroup as securitygroups_db
 from neutron.db import models_v2
 from neutron.db import provisioning_blocks
 from neutron.extensions import address_scope as as_ext
+from neutron.objects import subnetpool as subnetpool_obj
 from neutron.plugins.ml2.common import exceptions as ml2_exc
 from neutron.plugins.ml2 import managers as ml2_managers
 from neutron.plugins.ml2 import plugin as ml2_plugin
@@ -467,7 +468,21 @@ class Ml2PlusPlugin(ml2_plugin.Ml2Plugin,
             mech_context = driver_context.AddressScopeContext(
                 self, context, address_scope)
             self.mechanism_manager.delete_address_scope_precommit(mech_context)
-            super(Ml2PlusPlugin, self).delete_address_scope(context, id)
+            # REVISIT: In ocata, the switch to new engine facade in neutron is
+            # partial. This can result in different facades being mixed up
+            # within same transaction, and cause inconsistent behavior.
+            # Specifically, when L3 policy is deleted, subnetpool is deleted
+            # (old facade), and address scope (new facade) fails to be deleted
+            # since the dependent subnetpool deletion is in different session
+            # that is not yet commited. The workaround is to use old facade in
+            # address scope deletion. This workaround(next block) should be
+            # removed in Pike.
+            if subnetpool_obj.SubnetPool.get_objects(context,
+                                                     address_scope_id=id):
+                raise as_ext.AddressScopeInUse(address_scope_id=id)
+            address_scope = self._get_address_scope(context, id)
+            address_scope.delete()
+
         self.mechanism_manager.delete_address_scope_postcommit(mech_context)
 
     def _ensure_tenant(self, context, resource):
