@@ -203,7 +203,7 @@ class Gbp_Verify(object):
                     (cmd_out))
                 return 0
         if cmd_val == 0:
-            if cmd_out == '':  # The case when grep returns null
+            if name_uuid not in cmd_out:  # uuid not found
                 return 0
             else:
                 for arg in args:
@@ -272,7 +272,7 @@ class Gbp_Verify(object):
                     (cmd_out))
                 return 0
         if cmd_val == 0:
-            if cmd_out == '':  # The case when grep returns null
+            if name_uuid not in cmd_val:  # uuid not found
                 return 0
             else:
                 for arg in args:
@@ -347,6 +347,11 @@ class Gbp_Verify(object):
             _log.info('''Function Usage: neut_ver_all('net','name')\n
                       -- name_uuid == UUID or name_string\n''')
             return 0
+        cmd = 'neutron %s-list ' % verifyobj
+        _log.info('--DEBUG-- Neutron Cmd == %s\n' % (cmd))
+        cmd_out = commands.getoutput(cmd)
+        _log.info(cmd_out)
+
         # Build the command with mandatory params
         cmd = 'neutron %s-show ' % verifyobj + str(name_uuid)
         _log.info('Neutron Cmd == %s\n' % (cmd))
