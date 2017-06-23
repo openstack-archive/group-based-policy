@@ -64,14 +64,18 @@ gbp group-create web1
 # PT creation
 gbp policy-target-create web-pt-1 --policy-target-group web
 
+set +o xtrace
 # create external network with admin priviledge
 source $TOP_DIR/openrc admin admin
+set -o xtrace
 EXT_NET_ID=$(neutron net-create mgmt_out --router:external=True --shared | grep ' id ' | awk '{print $4}')
 EXT_SUBNET_ID=$(neutron subnet-create --ip_version 4 --gateway 172.16.73.1 --name public-subnet $EXT_NET_ID 172.16.73.0/24 | grep ' id ' | awk '{print $4}')
 openstack project list
-DEMO_PROJECT_ID=$(openstack project show demo | grep id | awk '{print $4}')
+DEMO_PROJECT_ID=$(openstack project show demo | grep "[^a-zA-Z_\d]id[^a-zA-Z_\d]" | awk '{print $4}')
 
+set +o xtrace
 source $TOP_DIR/openrc demo demo
+set -o xtrace
 
 # ES creation
 gbp external-segment-create --ip-version 4 --external-route destination=0.0.0.0/0,nexthop=172.16.73.1 --subnet_id=$EXT_SUBNET_ID  --cidr 50.50.50.0/24 mgmt_out
@@ -91,7 +95,9 @@ PURGE_OUTPUT=$(gbp purge $DEMO_PROJECT_ID | grep 'Tenant has no supported resour
 die_if_not_set $LINENO PURGE_OUTPUT "Failure purging GBP resources"
 
 # delete the neutron resources too
+set +o xtrace
 source $TOP_DIR/openrc admin admin
+set -o xtrace
 neutron subnet-delete public-subnet
 neutron net-delete mgmt_out
 
