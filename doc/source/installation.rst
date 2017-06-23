@@ -14,9 +14,9 @@ Or, if you have virtualenvwrapper installed::
 Using DevStack
 --------------
 
-First, clone the latest ``stable/newton`` branch of DevStack::
+First, clone the latest ``stable/ocata`` branch of DevStack::
 
-    $ git clone -b stable/newton https://git.openstack.org/openstack-dev/devstack
+    $ git clone -b stable/ocata https://git.openstack.org/openstack-dev/devstack
     $ cd devstack
 
 Then, create a basic ``local.conf`` including at least the following lines::
