@@ -10,11 +10,14 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+from neutron.db import address_scope_db
 from neutron.db import api as db_api
 from neutron.db import common_db_mixin
 from neutron.db import l3_db
 from neutron.db import models_v2
 from neutron.db import securitygroups_db
+from neutron.extensions import address_scope as ext_address_scope
+from neutron.objects import subnetpool as subnetpool_obj
 from neutron.plugins.ml2 import db as ml2_db
 from neutron_lib.api import validators
 from neutron_lib import exceptions as n_exc
@@ -174,3 +177,22 @@ def _get_tenant_id_for_create(self, context, resource):
 
 common_db_mixin.CommonDbMixin._get_tenant_id_for_create = (
     _get_tenant_id_for_create)
+
+
+# REVISIT: In ocata, the switch to new engine facade in neutron is partial.
+# This can result in different facades being mixed up within same transaction,
+# and inconsistent behavior. Specifically, when L3 policy is deleted,
+# subnetpool is deleted (old facade), and address scope (new facade) fails to
+# be deleted since the dependent subnetpool deletion is in different session
+# that is not yet commited. The workaround is to switch address scope to old
+# engine facade. This workaround should be removed in Pike.
+def _delete_address_scope(self, context, id):
+    with context.session.begin(subtransactions=True):
+        if subnetpool_obj.SubnetPool.get_objects(context,
+                                                 address_scope_id=id):
+            raise ext_address_scope.AddressScopeInUse(address_scope_id=id)
+        address_scope = self._get_address_scope(context, id)
+        address_scope.delete()
+
+address_scope_db.AddressScopeDbMixin.delete_address_scope = (
+    _delete_address_scope)
