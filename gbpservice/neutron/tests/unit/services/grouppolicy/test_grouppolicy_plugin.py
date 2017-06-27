@@ -19,6 +19,7 @@ import webob.exc
 
 from gbpservice.neutron.db.grouppolicy import group_policy_mapping_db as gpmdb
 from gbpservice.neutron.extensions import group_policy as gpolicy
+from gbpservice.neutron.services.grouppolicy import config
 from gbpservice.neutron.services.grouppolicy.drivers import dummy_driver
 from gbpservice.neutron.services.grouppolicy import plugin as gplugin
 from gbpservice.neutron.tests.unit.db.grouppolicy import (
@@ -156,8 +157,16 @@ class GroupPolicyPluginTestBase(tgpmdb.GroupPolicyMappingDbTestCase):
 
 
 class GroupPolicyPluginTestCase(GroupPolicyPluginTestBase):
-    # This is a place-holder for GBP plugin-specific common tests
-    pass
+
+    def tearDown(self):
+        # Always reset configuration to dummy driver. Any
+        # test which requires to configure a different
+        # policy driver would have done so in it's setup
+        # (and should have ideally reset it too).
+        config.cfg.CONF.set_override('policy_drivers',
+                                     ['dummy'],
+                                     group='group_policy')
+        super(GroupPolicyPluginTestCase, self).tearDown()
 
 
 class TestGroupPolicyPluginDrivers(GroupPolicyPluginTestBase):
