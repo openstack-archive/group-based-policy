@@ -39,6 +39,9 @@ create_gbp_resources() {
 }
 
 delete_gbp_resources() {
+    gbp group-update fw_lb-provider --provided-policy-rule-sets ""
+    # Added sleep 60 sec to complete delete operation 
+    sleep 60 
     gbp group-delete fw_lb-provider
     gbp group-delete fw_lb-consumer
     gbp network-service-policy-delete fw_lb_nsp
@@ -49,8 +52,6 @@ delete_gbp_resources() {
     gbp servicechain-spec-delete fw_lb_chainspec
     gbp servicechain-node-delete FW_LB-LBNODE
     gbp servicechain-node-delete FW_LB-FWNODE
-    # Added sleep 60 sec to complete delete operation
-    sleep 60
 }
 
 validate_gbp_resources() {
@@ -164,10 +165,10 @@ update_gbp_resources() {
     #else
     #    echo "Chain not created"
     #fi
-
+    gbp group-update fw_lb-provider --provided-policy-rule-sets ""
+    sleep 60
     gbp group-delete fw_lb-provider
     # Added sleep 60 sec to complete delete operation
-    sleep 60
     gbp group-delete fw_lb-consumer
     ServiceChainInstanceCount=`gbp sci-list -f value | grep fw_lb-provider | wc -l`
     if [ "$ServiceChainInstanceCount" -eq "0" ]; then

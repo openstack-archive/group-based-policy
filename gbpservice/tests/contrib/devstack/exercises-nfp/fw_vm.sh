@@ -42,6 +42,9 @@ create_gbp_resources() {
 }
 
 delete_gbp_resources() {
+    gbp group-update fw-provider --provided-policy-rule-sets ""
+    # Added sleep of 300 secs to complete delete operation
+    sleep 300
     gbp group-delete fw-provider
     gbp group-delete fw-consumer
     gbp policy-rule-set-delete fw-webredirect-ruleset
@@ -56,8 +59,6 @@ delete_gbp_resources() {
     gbp policy-action-delete allow-to-fw
     gbp servicechain-spec-delete fw-chainspec
     gbp servicechain-node-delete FWNODE
-    # Added sleep of 300 secs to complete delete operation
-    sleep 300
 }
 
 validate_gbp_resources() {
@@ -105,10 +106,10 @@ update_gbp_resources() {
     #else
     #    echo "Chain not created"
     #fi
-
+    gbp group-update fw-provider --provided-policy-rule-sets ""
+    sleep 300
     gbp group-delete fw-provider
     # Added sleep of 300 secs to complete delete operation
-    sleep 300
     gbp group-delete fw-consumer
     ServiceChainInstanceCount=`gbp sci-list -f value | grep fw-provider | wc -l`
     if [ "$ServiceChainInstanceCount" -eq "0" ]; then
