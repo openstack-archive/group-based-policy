@@ -163,27 +163,31 @@ def send_or_queue_registry_notification(
         # invoked in this case, no queueing of the notification
         # is required.
         send = True
+    if not session or not transaction_key:
+        # We can't queue notifications without session or transaction key
+        send = True
     if not send:
         # Build a list of all in-process registered callbacks
         # for this resource
         in_process_callbacks = _get_in_process_callbacks(callbacks)
-        send = True if in_process_callbacks else False
-        callbacks = in_process_callbacks if send else callbacks
         # If there are notifiers registered which are not in-process,
         # we need to queue up this notification
         queue = (in_process_callbacks != callbacks)
+        if in_process_callbacks:
+            send = True
+            # send only in-process callbacks
+            callbacks = in_process_callbacks
 
-    if not session or not transaction_key or send:
-        if callbacks:
-            # Note: For the following to work, the _notify_loop()
-            # function implemented in neutron.callbacks.manager
-            # needs to be patched to handle the callbacks argument
-            # like its being done in:
-            # gbpservice/neutron/plugins/ml2plus/patch_neutron.py
-            kwargs['callbacks'] = callbacks
-            _registry_notify(resource, event, trigger, **kwargs)
+    if send and callbacks:
+        # Note: For the following to work, the _notify_loop()
+        # function implemented in neutron.callbacks.manager
+        # needs to be patched to handle the callbacks argument
+        # like its being done in:
+        # gbpservice/neutron/plugins/ml2plus/patch_neutron.py
+        kwargs['callbacks'] = callbacks
+        _registry_notify(resource, event, trigger, **kwargs)
 
-    if queue and session:
+    if queue and session and transaction_key:
         _queue_registry_notification(session, transaction_key, resource,
                                      event, trigger, **kwargs)
 
