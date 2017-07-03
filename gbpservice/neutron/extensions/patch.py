@@ -111,10 +111,13 @@ def _update_fip_assoc(self, context, fip, floatingip_db, external_port):
     previous_router_id = floatingip_db.router_id
     port_id, internal_ip_address, router_id = (
         self._check_and_get_fip_assoc(context, fip, floatingip_db))
-    floatingip_db.update({'fixed_ip_address': internal_ip_address,
-                          'fixed_port_id': port_id,
-                          'router_id': router_id,
-                          'last_known_router_id': previous_router_id})
+    update = {'fixed_ip_address': internal_ip_address,
+              'fixed_port_id': port_id,
+              'router_id': router_id,
+              'last_known_router_id': previous_router_id}
+    if 'description' in fip:
+        update['description'] = fip['description']
+    floatingip_db.update(update)
     next_hop = None
     if router_id:
         router = self._get_router(context.elevated(), router_id)
