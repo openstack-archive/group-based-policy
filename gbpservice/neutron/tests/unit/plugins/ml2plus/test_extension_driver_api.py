@@ -15,7 +15,6 @@
 
 import mock
 import unittest2
-import uuid
 
 from neutron import context
 from neutron import manager
@@ -24,6 +23,7 @@ from neutron.plugins.ml2 import config
 from gbpservice.neutron.tests.unit.plugins.ml2plus.drivers import (
     extension_test as ext_test)
 from gbpservice.neutron.tests.unit.plugins.ml2plus import test_plugin
+from oslo_utils import uuidutils
 
 
 class ExtensionDriverTestCase(test_plugin.Ml2PlusPluginV2TestCase):
@@ -39,7 +39,7 @@ class ExtensionDriverTestCase(test_plugin.Ml2PlusPluginV2TestCase):
         self._ctxt = context.get_admin_context()
 
     def _verify_subnetpool_create(self, code, exc_reason):
-        tenant_id = str(uuid.uuid4())
+        tenant_id = uuidutils.generate_uuid()
         data = {'subnetpool': {'prefixes': ['10.0.0.0/8'],
                                'name': 'sp1',
                                'tenant_id': tenant_id}}
@@ -135,7 +135,7 @@ class ExtensionDriverTestCase(test_plugin.Ml2PlusPluginV2TestCase):
             self.assertTrue(esd.called)
 
     def _verify_address_scope_create(self, code, exc_reason):
-        tenant_id = str(uuid.uuid4())
+        tenant_id = uuidutils.generate_uuid()
         data = {'address_scope': {'ip_version': 4,
                                   'name': 'as1',
                                   'tenant_id': tenant_id}}

@@ -11,7 +11,6 @@
 #    under the License.
 
 import mock
-import uuid
 
 from gbpservice.contrib.nfp.config_orchestrator.common import common
 from gbpservice.contrib.nfp.config_orchestrator.handlers.config import (
@@ -23,6 +22,7 @@ from gbpservice.nfp.lib import transport
 
 from neutron import context as ctx
 from neutron.tests import base
+from oslo_utils import uuidutils
 
 
 class TestContext(object):
@@ -58,7 +58,7 @@ class RpcMethods(object):
 
 def call_network_function_info():
     data = {'network_function': {
-        'id': str(uuid.uuid4()),
+        'id': uuidutils.generate_uuid(),
         'description': {}
     }}
     return data
@@ -174,9 +174,10 @@ class FirewallTestCase(base.BaseTestCase):
         self._call = 'oslo_messaging.rpc.client._CallContext.call'
 
     def _firewall_data(self):
-        return {'tenant_id': str(uuid.uuid4()),
-                'description': str({'network_function_id': str(uuid.uuid4())}),
-                'firewall_policy_id': str(uuid.uuid4())
+        return {'tenant_id': uuidutils.generate_uuid(),
+                'description': str({'network_function_id':
+                uuidutils.generate_uuid()}), 'firewall_policy_id':
+                uuidutils.generate_uuid()
                 }
 
     def _cast_firewall(self, conf, context, body,
@@ -188,7 +189,7 @@ class FirewallTestCase(base.BaseTestCase):
     def _call_to_get_network_function_desc(self):
         data = call_network_function_info()
         data['network_function']['description'] = "\n" + str(
-            {'provider_ptg_info': [str(uuid.uuid4())],
+            {'provider_ptg_info': [uuidutils.generate_uuid()],
              'service_vendor': 'xyz'})
         return data['network_function']
 
@@ -260,35 +261,36 @@ class VPNTestCase(base.BaseTestCase):
             data = call_network_function_info()
             data['network_function']['description'] = ("\n" + (
                 "ipsec_site_connection_id=%s;service_vendor=xyz" % (
-                    str(uuid.uuid4()))))
+                    uuidutils.generate_uuid())))
             return data['network_function']
 
         return []
 
     def _prepare_request_data(self, reason, rsrc_type):
-        resource = {'tenant_id': str(uuid.uuid4()),
-                    'id': str(uuid.uuid4()),
+        resource = {'tenant_id': uuidutils.generate_uuid(),
+                    'id': uuidutils.generate_uuid(),
                     'description': (
-                        "{'network_function_id':'%s'}" % (str(uuid.uuid4())))
+                        "{'network_function_id':'%s'}" %
+                        (uuidutils.generate_uuid()))
                     }
         if rsrc_type.lower() == 'ipsec_site_connection':
-            resource.update({'vpnservice_id': str(uuid.uuid4()),
-                             'ikepolicy_id': str(uuid.uuid4()),
-                             'ipsecpolicy_id': str(uuid.uuid4())})
+            resource.update({'vpnservice_id': uuidutils.generate_uuid(),
+                             'ikepolicy_id': uuidutils.generate_uuid(),
+                             'ipsecpolicy_id': uuidutils.generate_uuid()})
         elif rsrc_type.lower() == 'vpn_service':
-            resource.update({'subnet_id': str(uuid.uuid4()),
-                             'router_id': str(uuid.uuid4())})
+            resource.update({'subnet_id': uuidutils.generate_uuid(),
+                             'router_id': uuidutils.generate_uuid()})
         return {'resource': resource,
                 'rsrc_type': rsrc_type,
                 'reason': reason,
-                'rsrc_id': str(uuid.uuid4())
+                'rsrc_id': uuidutils.generate_uuid()
                 }
 
     def _call_to_get_network_function_desc(self):
         data = call_network_function_info()
         data['network_function']['description'] = ("\n" + (
             "ipsec_site_connection_id=%s;service_vendor=xyz" % (
-                str(uuid.uuid4()))))
+                uuidutils.generate_uuid())))
         return data['network_function']
 
     def _get_networks(self):
