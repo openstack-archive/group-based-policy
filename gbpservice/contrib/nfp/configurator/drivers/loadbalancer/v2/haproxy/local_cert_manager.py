@@ -14,7 +14,6 @@
 #    under the License.
 
 import os
-import uuid
 
 from octavia.certificates.common import local as local_common
 from octavia.certificates.manager import cert_mgr
@@ -22,6 +21,7 @@ from octavia.common import exceptions
 from octavia.i18n import _LE
 from octavia.i18n import _LI
 from oslo_config import cfg
+from oslo_utils import uuidutils
 
 from gbpservice.nfp.core import log as nfp_logging
 
@@ -52,7 +52,7 @@ class LocalCertManager(cert_mgr.CertManager):
         :returns: the UUID of the stored cert
         :raises CertificateStorageException: if certificate storage fails
         """
-        cert_ref = str(uuid.uuid4())
+        cert_ref = uuidutils.generate_uuid()
         filename_base = os.path.join(CONF.certificates.storage_path, cert_ref)
 
         LOG.info(_LI(
