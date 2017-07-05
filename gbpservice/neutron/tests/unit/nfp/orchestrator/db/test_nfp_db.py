@@ -23,7 +23,7 @@ from gbpservice.nfp.common import exceptions as nfp_exc
 from gbpservice.nfp.orchestrator.db import nfp_db
 from gbpservice.nfp.orchestrator.db import nfp_db_model
 from sqlalchemy.orm import exc
-import uuid
+from oslo_utils import uuidutils
 
 
 class SqlFixture(fixtures.Fixture):
@@ -570,12 +570,12 @@ class NFPDBTestCase(SqlTestCase):
 
     def _get_gateway_details(self):
         return dict(
-                id=str(uuid.uuid4()),
+                id=uuidutils.generate_uuid(),
                 network_function_id=self.create_network_function()['id'],
-                gw_ptg=str(uuid.uuid4()),
-                primary_instance_gw_pt=str(uuid.uuid4()),
-                secondary_instance_gw_pt=str(uuid.uuid4()),
-                gateway_vips=[dict(id=str(uuid.uuid4()))]
+                gw_ptg=uuidutils.generate_uuid(),
+                primary_instance_gw_pt=uuidutils.generate_uuid(),
+                secondary_instance_gw_pt=uuidutils.generate_uuid(),
+                gateway_vips=[dict(id=uuidutils.generate_uuid())]
         )
 
     def test_add_service_gateway_details(self):
@@ -587,8 +587,8 @@ class NFPDBTestCase(SqlTestCase):
                 self.session, gateway_details['network_function_id'])
         gateway_details.update(
                 network_function_id=self.create_network_function()['id'],
-                gateway_vips=dict(primary_gw_vip_pt=str(uuid.uuid4()),
-                                  secondary_gw_vip_pt=str(uuid.uuid4())))
+                gateway_vips=dict(primary_gw_vip_pt=uuidutils.generate_uuid(),
+                                  secondary_gw_vip_pt=uuidutils.generate_uuid()))
         gateway = self.nfp_db.add_service_gateway_details(
                 self.session, gateway_details)
         self.assertIsNotNone(gateway['id'])
