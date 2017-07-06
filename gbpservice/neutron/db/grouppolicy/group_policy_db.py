@@ -157,7 +157,7 @@ class L3Policy(model_base.BASEV2, BaseSharedGbpResource):
         'polymorphic_identity': 'base'
     }
     ip_version = sa.Column(sa.Integer, nullable=False)
-    ip_pool = sa.Column(sa.String(64))
+    ip_pool = sa.Column(sa.String(255))
     subnet_prefix_length = sa.Column(sa.Integer)
     l2_policies = orm.relationship(L2Policy, backref='l3_policy')
     external_segments = orm.relationship(
