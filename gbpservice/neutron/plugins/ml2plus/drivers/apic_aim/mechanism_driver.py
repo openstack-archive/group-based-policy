@@ -317,10 +317,14 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             if project_name is None:
                 project_name = ''
             aim_ctx = aim_context.AimContext(session)
-            tenant = aim_resource.Tenant(name=tenant_aname,
+            tenant = aim_resource.Tenant(
+                name=tenant_aname, descr=self.apic_system_id,
                 display_name=aim_utils.sanitize_display_name(project_name))
-            if not self.aim.get(aim_ctx, tenant):
-                self.aim.create(aim_ctx, tenant)
+            # NOTE(ivar): by overwriting the existing tenant, we make sure
+            # existing deployments will update their description value. This
+            # however negates any change to the Tenant object done by direct
+            # use of aimctl.
+            self.aim.create(aim_ctx, tenant, overwrite=True)
             ap = aim_resource.ApplicationProfile(tenant_name=tenant_aname,
                                                  name=self.ap_name)
             if not self.aim.get(aim_ctx, ap):
