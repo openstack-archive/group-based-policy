@@ -14,9 +14,9 @@ Or, if you have virtualenvwrapper installed::
 Using DevStack
 --------------
 
-First, clone the latest ``stable/mitaka`` branch of DevStack::
+First, clone the latest ``mitaka-eol`` branch of DevStack::
 
-    $ git clone -b stable/mitaka https://git.openstack.org/openstack-dev/devstack
+    $ git clone -b mitaka-eol https://git.openstack.org/openstack-dev/devstack
     $ cd devstack
 
 Then, create a basic ``local.conf`` including at least the following lines::

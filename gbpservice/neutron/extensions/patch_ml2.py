@@ -38,7 +38,7 @@ class InfiniteLoopError(exc.NeutronException):
 # REVISIT(rkukura): Partially address bug 1510327 (GBP: Deleting
 # groups leads to subnet-delete in infinite loop) by limiting the
 # retry loop and doing additional info-level logging. This is based on
-# the stable/mitaka version of neutron.plugins.ml2.plugin.Ml2Plugin.
+# the mitaka-eol version of neutron.plugins.ml2.plugin.Ml2Plugin.
 def delete_network(self, context, id):
     # REVISIT(rkukura) The super(Ml2Plugin, self).delete_network()
     # function is not used because it auto-deletes ports and
@@ -138,7 +138,7 @@ plugin.Ml2Plugin.delete_network = delete_network
 
 
 # REVISIT(rkukura): Related to bug 1510327, also limit the retry loop
-# here. This is based on the stable/mitaka version of
+# here. This is based on the mitaka-eol version of
 # neutron.plugins.ml2.plugin.Ml2Plugin.
 def delete_subnet(self, context, id):
     # REVISIT(rkukura) The super(Ml2Plugin, self).delete_subnet()
