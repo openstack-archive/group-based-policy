@@ -274,4 +274,5 @@ def delete_subnet(self, context, id):
         # the fact that an error occurred.
         LOG.error(_LE("mechanism_manager.delete_subnet_postcommit failed"))
 
-plugin.Ml2Plugin.delete_subnet = delete_subnet
+if getattr(plugin.Ml2Plugin, '_subnet_check_ip_allocations'):
+    plugin.Ml2Plugin.delete_subnet = delete_subnet
