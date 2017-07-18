@@ -17,6 +17,7 @@ from neutron._i18n import _LW
 from neutron.api.v2 import attributes
 from neutron.common import exceptions as exc
 from neutron.common import ipv6_utils
+from neutron.common import utils
 from neutron.db import db_base_plugin_v2
 from neutron.db import models_v2
 from neutron.plugins.ml2.common import exceptions as ml2_exc
@@ -274,4 +275,25 @@ def delete_subnet(self, context, id):
         # the fact that an error occurred.
         LOG.error(_LE("mechanism_manager.delete_subnet_postcommit failed"))
 
-plugin.Ml2Plugin.delete_subnet = delete_subnet
+
+# For Red Hat OSP9 distributions, we need to override the patched
+# upstream code to include the same protection against infinite loops
+# used above
+@utils.transaction_guard
+def delete_subnet_rh_osp9(self, context, id):
+    attempt = 0
+    while True:
+        attempt += 1
+        LOG.info(_LI("Attempt %(attempt)s to delete subnet %(subnet)s"),
+                 {'attempt': attempt, 'subnet': id})
+        if attempt > 100:
+            raise InfiniteLoopError()
+
+        # the only purpose of this override is to protect this from being
+        # called inside of a transaction.
+        return super(plugin.Ml2Plugin, self).delete_subnet(context, id)
+
+if hasattr(plugin.Ml2Plugin, '_subnet_check_ip_allocations'):
+    plugin.Ml2Plugin.delete_subnet = delete_subnet
+else:
+    plugin.Ml2Plugin.delete_subnet = delete_subnet_rh_osp9
