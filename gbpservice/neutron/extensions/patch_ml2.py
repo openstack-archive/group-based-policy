@@ -274,4 +274,9 @@ def delete_subnet(self, context, id):
         # the fact that an error occurred.
         LOG.error(_LE("mechanism_manager.delete_subnet_postcommit failed"))
 
-plugin.Ml2Plugin.delete_subnet = delete_subnet
+
+# Red Hat OSP9 uses basically the stable/newton version of
+# neutron.plugins.ml2.plugin.ML2Plugin.delete_subnet, which does
+# not have a retry loop, and therefore does not need monkey-patching
+if hasattr(plugin.Ml2Plugin, '_subnet_check_ip_allocations'):
+    plugin.Ml2Plugin.delete_subnet = delete_subnet
