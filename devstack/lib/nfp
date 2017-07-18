@@ -25,7 +25,7 @@ NEUTRON_CONF_DIR=/etc/neutron
 NEUTRON_CONF=$NEUTRON_CONF_DIR/neutron.conf
 NFP_CONF_DIR=/etc/nfp
 DISKIMAGE_CREATE_DIR=$NFPSERVICE_DIR/gbpservice/contrib/nfp/tools/image_builder
-NEUTRON_SRC_BRANCH_FOR_NFP_CONTROLLER=stable/mitaka
+NEUTRON_SRC_BRANCH_FOR_NFP_CONTROLLER=mitaka-eol
 
 # Save trace setting
 XTRACE=$(set +o | grep xtrace)

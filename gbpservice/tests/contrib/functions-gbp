@@ -10,7 +10,7 @@ XTRACE=$(set +o | grep xtrace)
 
 function prepare_gbp_devstack {
     cd $TOP_DIR
-    sudo git checkout stable/mitaka
+    sudo git checkout mitaka-eol
     sudo cp $CONTRIB_DIR/devstack/local.conf $TOP_DIR/local.conf
     sudo cp $CONTRIB_DIR/functions-gbp $TOP_DIR/exercises/
     sudo cp $CONTRIB_DIR/devstack/exercises/*.sh $TOP_DIR/exercises/
@@ -40,7 +40,7 @@ function prepare_nfp_devstack {
 
 function prepare_gbp_aim_devstack {
     cd $TOP_DIR
-    sudo git checkout stable/mitaka
+    sudo git checkout mitaka-eol
     sudo cp $CONTRIB_DIR/devstack/local-aim.conf $TOP_DIR/local.conf
     sudo cp $CONTRIB_DIR/devstack/exercises/gbp.sh $TOP_DIR/exercises/
     source $TOP_DIR/functions
