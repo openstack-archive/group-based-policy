@@ -129,11 +129,11 @@ class NsxPolicyMappingDriver(api.ResourceMappingDriver):
         nsx_manager_thumbprint = cfg.CONF.NSX_POLICY.nsx_manager_thumbprint
         epoints = self.nsx_policy.enforcement_point.list()
         for ep in epoints:
-            for conn in ep['connection_info']:
-                if conn['enforcement_point_address'] == nsx_manager_ip:
-                    LOG.debug('Enforcement point for %s already exists (%s)',
-                              nsx_manager_ip, ep['id'])
-                    return
+            conn = ep['connection_info']
+            if conn and conn['enforcement_point_address'] == nsx_manager_ip:
+                LOG.debug('Enforcement point for %s already exists (%s)',
+                          nsx_manager_ip, ep['id'])
+                return
 
         LOG.info('Creating enforcement point for %s', nsx_manager_ip)
         self.nsx_policy.enforcement_point.create_or_overwrite(

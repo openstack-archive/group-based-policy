@@ -1,12 +1,11 @@
 # TODO(annak): This is a temporary solution
 # nsxlib, which wraps policy API, is under development
 # since policy API is yet to be finalized
-# we prefer to run against master branch at this point
 function prepare_nsx_policy {
     NSXLIB_NAME='vmware-nsxlib'
     GITDIR[$NSXLIB_NAME]=/opt/stack/vmware-nsxlib
     GITREPO[$NSXLIB_NAME]=${NSXLIB_REPO:-${GIT_BASE}/openstack/vmware-nsxlib.git}
-    GITBRANCH[$NSXLIB_NAME]=${NSXLIB_BRANCH:-master}
+    GITBRANCH[$NSXLIB_NAME]=${NSXLIB_BRANCH:-stable/ocata}
 
     if use_library_from_git $NSXLIB_NAME; then
         git_clone_by_name $NSXLIB_NAME
