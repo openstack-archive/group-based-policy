@@ -275,8 +275,66 @@ def delete_subnet(self, context, id):
         LOG.error(_LE("mechanism_manager.delete_subnet_postcommit failed"))
 
 
+from inspect import isclass
+from inspect import isfunction
+from inspect import ismethod
+
+
+# The undecorated() and looks_like_a_decorator() functions have been
+# borrowed from the undecorated python library since RPM or Debian
+# packages are not readily available.
+def looks_like_a_decorator(a):
+    return (
+        isfunction(a) or ismethod(a) or isclass(a)
+    )
+
+
+def undecorated(o):
+    """Remove all decorators from a function, method or class"""
+    # class decorator
+    if type(o) is type:
+        return o
+
+    try:
+        # python2
+        closure = o.func_closure
+    except AttributeError:
+        pass
+
+    try:
+        # python3
+        closure = o.__closure__
+    except AttributeError:
+        return
+
+    if closure:
+        for cell in closure:
+            # avoid infinite recursion
+            if cell.cell_contents is o:
+                continue
+
+            # check if the contents looks like a decorator; in that case
+            # we need to go one level down into the dream, otherwise it
+            # might just be a different closed-over variable, which we
+            # can ignore.
+
+            # Note: this favors supporting decorators defined without
+            # @wraps to the detriment of function/method/class closures
+            if looks_like_a_decorator(cell.cell_contents):
+                undecd = undecorated(cell.cell_contents)
+                if undecd:
+                    return undecd
+        else:
+            return o
+    else:
+        return o
+
+
 # Red Hat OSP9 uses basically the stable/newton version of
 # neutron.plugins.ml2.plugin.ML2Plugin.delete_subnet, which does
 # not have a retry loop, and therefore does not need monkey-patching
 if hasattr(plugin.Ml2Plugin, '_subnet_check_ip_allocations'):
     plugin.Ml2Plugin.delete_subnet = delete_subnet
+else:
+    f = plugin.Ml2Plugin.delete_subnet
+    plugin.Ml2Plugin.delete_subnet = undecorated(f)
