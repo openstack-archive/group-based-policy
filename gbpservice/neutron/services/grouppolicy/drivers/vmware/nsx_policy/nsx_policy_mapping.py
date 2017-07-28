@@ -61,6 +61,16 @@ class ProxyGroupsNotSupported(gpexc.GroupPolicyBadRequest):
     message = ("Proxy groups are not supported with %s." % DRIVER_NAME)
 
 
+#TODO(annak): remove when ipv6 is supported + add support for ICMPv6 service
+class Ipv6NotSupported(gpexc.GroupPolicyBadRequest):
+    message = ("Ipv6 not supported with %s" % DRIVER_NAME)
+
+
+class UpdateClassifierProtocolNotSupported(gpexc.GroupPolicyBadRequest):
+    message = ("Update operation on classifier protocol is not supported "
+               "with %s" % DRIVER_NAME)
+
+
 def in_name(name):
     return name + '_I'
 
@@ -361,6 +371,13 @@ class NsxPolicyMappingDriver(api.ResourceMappingDriver):
     def create_policy_classifier_postcommit(self, context):
         classifier = context.current
 
+        if classifier['protocol'] == 'icmp':
+            self.nsx_policy.icmp_service.create_or_overwrite(
+                name=classifier['name'],
+                service_id=classifier['id'],
+                description=classifier['description'])
+            return
+
         port_range = classifier['port_range'].split(':', 1)
         lower = int(port_range[0])
         upper = int(port_range[-1]) + 1
@@ -471,7 +488,10 @@ class NsxPolicyMappingDriver(api.ResourceMappingDriver):
 
     def delete_policy_classifier_postcommit(self, context):
         classifier_id = context.current['id']
-        self.nsx_policy.service.delete(classifier_id)
+        if context.current['protocol'] == 'icmp':
+            self.nsx_policy.icmp_service.delete(classifier_id)
+        else:
+            self.nsx_policy.service.delete(classifier_id)
 
     def delete_policy_rule_set_precommit(self, context):
         pass
@@ -525,7 +545,15 @@ class NsxPolicyMappingDriver(api.ResourceMappingDriver):
         raise UpdateOperationNotSupported()
 
     def update_policy_classifier_precommit(self, context):
-        pass
+        if context.current['protocol'] != context.original['protocol']:
+            raise UpdateClassifierProtocolNotSupported()
 
     def update_policy_classifier_postcommit(self, context):
         self.create_policy_classifier_postcommit(context)
+
+    def create_l3_policy_precommit(self, context):
+        if context.current['ip_version'] != 4:
+            raise Ipv6NotSupported()
+
+        super(NsxPolicyMappingDriver,
+              self).create_l3_policy_precommit(context)
