@@ -32,11 +32,11 @@ from neutron.db import db_base_plugin_v2
 from neutron.db.models import securitygroup as securitygroups_db
 from neutron.db import models_v2
 from neutron.db import provisioning_blocks
-from neutron.extensions import address_scope as as_ext
 from neutron.plugins.ml2.common import exceptions as ml2_exc
 from neutron.plugins.ml2 import managers as ml2_managers
 from neutron.plugins.ml2 import plugin as ml2_plugin
 from neutron.quota import resource_registry
+from neutron_lib.api.definitions import address_scope as as_ext
 from neutron_lib.api import validators
 from oslo_config import cfg
 from oslo_log import log
@@ -192,7 +192,7 @@ class Ml2PlusPlugin(ml2_plugin.Ml2Plugin,
                attributes.SUBNETPOOLS, ['_ml2_md_extend_subnetpool_dict'])
 
     db_base_plugin_v2.NeutronDbPluginV2.register_dict_extend_funcs(
-               as_ext.ADDRESS_SCOPES, ['_ml2_md_extend_address_scope_dict'])
+               as_ext.COLLECTION_NAME, ['_ml2_md_extend_address_scope_dict'])
 
     def _ml2_md_extend_network_dict(self, result, netdb):
         session = patch_neutron.get_current_session()
@@ -244,8 +244,8 @@ class Ml2PlusPlugin(ml2_plugin.Ml2Plugin,
                'tenant_id': address_scope['tenant_id'],
                'shared': address_scope['shared'],
                'ip_version': address_scope['ip_version']}
-        self._apply_dict_extend_functions(as_ext.ADDRESS_SCOPES, res,
-                                          address_scope)
+        self._apply_dict_extend_functions(as_ext.COLLECTION_NAME,
+                                          res, address_scope)
         return self._fields(res, fields)
 
     @disable_transaction_guard

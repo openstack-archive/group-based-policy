@@ -14,7 +14,7 @@
 #    under the License.
 
 from neutron.api.v2 import attributes as attr
-from neutron.extensions import address_scope as as_ext
+from neutron_lib.api.definitions import address_scope as as_ext
 from neutron_lib.api import extensions
 from neutron_lib import constants
 
@@ -29,7 +29,7 @@ EXTENDED_ATTRIBUTES_2_0 = {
                                  'is_visible': True,
                                  'enforce_policy': True},
     },
-    as_ext.ADDRESS_SCOPES: {
+    as_ext.COLLECTION_NAME: {
         'address_scope_extension': {'allow_post': True,
                                     'allow_put': True,
                                     'default': constants.ATTR_NOT_SPECIFIED,
