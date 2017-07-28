@@ -14,8 +14,8 @@
 #    under the License.
 
 from neutron.api.v2 import attributes
-from neutron.extensions import address_scope
 from neutron_lib.api import converters as conv
+from neutron_lib.api.definitions import address_scope
 from neutron_lib.api import extensions
 
 ALIAS = 'cisco-apic'
@@ -107,7 +107,7 @@ EXTENDED_ATTRIBUTES_2_0 = {
         APIC_ATTRIBUTES.items() + EXT_NET_ATTRIBUTES.items()),
     attributes.SUBNETS: dict(
         APIC_ATTRIBUTES.items() + EXT_SUBNET_ATTRIBUTES.items()),
-    address_scope.ADDRESS_SCOPES: dict(
+    address_scope.COLLECTION_NAME: dict(
         APIC_ATTRIBUTES.items() + ADDRESS_SCOPE_ATTRIBUTES.items())
 }
 
