@@ -312,7 +312,7 @@ class ApicMappingDriver(api.ResourceMappingDriver,
 
             ApicMappingDriver.manager = apic_manager.APICManager(
                 apic_model.ApicDbModel(), logging, network_config, apic_config,
-                apic_system_id,
+                apic_system_id=apic_system_id,
                 default_apic_model=('apic_ml2.neutron.plugins.ml2.drivers.'
                                     'cisco.apic.apic_model'),
                 keystoneclientv3=keystoneclientv3)
