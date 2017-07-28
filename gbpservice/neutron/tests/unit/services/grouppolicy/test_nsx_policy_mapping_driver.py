@@ -76,8 +76,15 @@ class NsxPolicyMappingTestCase(test_rmd.ResourceMappingTestCase):
         return mock.patch.object(self.nsx_policy.service,
                                  'create_or_overwrite')
 
+    def _mock_icmp_service_create(self):
+        return mock.patch.object(self.nsx_policy.icmp_service,
+                                 'create_or_overwrite')
+
     def _mock_service_delete(self):
         return mock.patch.object(self.nsx_policy.service, 'delete')
+
+    def _mock_icmp_service_delete(self):
+        return mock.patch.object(self.nsx_policy.icmp_service, 'delete')
 
     def _mock_profile_create(self):
         return mock.patch.object(self.nsx_policy.comm_profile,
@@ -156,15 +163,14 @@ class NsxPolicyMappingTestCase(test_rmd.ResourceMappingTestCase):
 
 class TestPolicyClassifier(NsxPolicyMappingTestCase):
 
-    def test_create(self):
-        # Create non-first classifier within tenant
-        # Should not trigger domain generation on backend
-        with self._mock_service_create() as service_create_call:
+    def test_l4_lifecycle(self):
+        with self._mock_service_create() as service_create_call, \
+            self._mock_service_create() as service_delete_call:
 
-            self.create_policy_classifier(name='test',
-                                          protocol='TCP',
-                                          port_range='80',
-                                          direction='bi')
+            cl = self.create_policy_classifier(name='test',
+                                               protocol='TCP',
+                                               port_range='80',
+                                               direction='bi')
 
             # verify API call to create the service
             service_create_call.assert_called_with(
@@ -173,6 +179,10 @@ class TestPolicyClassifier(NsxPolicyMappingTestCase):
                 protocol='tcp',
                 dest_ports=['80'],
                 service_id=mock.ANY)
+
+            self.delete_policy_classifier(cl['id'])
+
+            service_delete_call.assert_called_with(cl['id'])
 
     def test_create_port_range(self):
         with self._mock_service_create() as service_create_call:
@@ -190,18 +200,22 @@ class TestPolicyClassifier(NsxPolicyMappingTestCase):
                 dest_ports=port_list,
                 service_id=mock.ANY)
 
-    def test_delete(self):
-        with self._mock_service_create(),\
-            self._mock_service_delete() as service_delete_call:
+    def test_icmp_lifecycle(self):
+        with self._mock_icmp_service_create() as service_create_call, \
+            self._mock_icmp_service_create() as service_delete_call:
 
-            classifier = self.create_policy_classifier(
+            cl = self.create_policy_classifier(name='test',
+                                               direction='bi')
+
+            # verify API call to create the service
+            service_create_call.assert_called_with(
                 name='test',
-                protocol='TCP',
-                port_range='80',
-                direction='bi')['policy_classifier']
-            self.delete_policy_classifier(classifier['id'])
+                description=mock.ANY,
+                service_id=mock.ANY)
 
-            service_delete_call.assert_called_with(classifier['id'])
+            self.delete_policy_classifier(cl['id'])
+
+            service_delete_call.assert_called_with(cl['id'])
 
 
 class TestPolicyTargetGroup(NsxPolicyMappingTestCase):
@@ -858,3 +872,12 @@ class TestPolicyTargetTag(NsxPolicyMappingTestCase):
 
         # policy target deletion should not affect backend policy-wise
         self.delete_policy_target(target['id'])
+
+
+class TestL3Policy(NsxPolicyMappingTestCase):
+
+    def test_ipv6_supported(self):
+        self.assertRaises(webob.exc.HTTPClientError,
+                          self.create_l3_policy,
+                          ip_version=6,
+                          ip_pool='1001::0/64')
