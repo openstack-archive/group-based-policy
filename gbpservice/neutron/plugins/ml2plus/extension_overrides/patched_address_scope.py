@@ -13,7 +13,7 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-from neutron.extensions import address_scope
+from neutron_lib.api.definitions import address_scope
 
 
 class Patched_address_scope(address_scope.Address_scope):
