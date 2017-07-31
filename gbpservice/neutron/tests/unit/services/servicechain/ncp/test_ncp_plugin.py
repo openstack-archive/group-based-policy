@@ -87,7 +87,7 @@ class NodeCompositionPluginTestMixin(object):
         return prs
 
     def _create_simple_service_chain(self, number_of_nodes=1,
-                                     service_type='LOADBALANCER'):
+                                     service_type='LOADBALANCERV2'):
         prof = self.create_service_profile(
             service_type=service_type,
             vendor=self.SERVICE_PROFILE_VENDOR)['service_profile']
