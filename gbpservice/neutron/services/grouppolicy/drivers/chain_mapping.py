@@ -29,6 +29,7 @@ from gbpservice.neutron.services.grouppolicy import (
     group_policy_driver_api as api)
 from gbpservice.neutron.services.grouppolicy.common import constants as gconst
 from gbpservice.neutron.services.grouppolicy.common import exceptions as exc
+from gbpservice.neutron.services.grouppolicy.common import utils as gutils
 from gbpservice.neutron.services.grouppolicy.drivers import nsp_manager
 from gbpservice.neutron.services.grouppolicy import sc_notifications
 
@@ -130,18 +131,39 @@ class ChainMappingDriver(api.PolicyDriver, local_api.LocalAPI,
         # This wrapper is called from both precommit and postcommit for
         # deciding ordering for execution of precommit and postcommit
         if 'precommit' in caller_method:
-            # In case of aim_mapping driver, postcommit functionality will be
-            # executed as a part of precommit
-            if ('aim_mapping' in cfg.CONF.group_policy.policy_drivers):
-                method = getattr(self, '_' + caller_method.replace(
-                                     'precommit', 'postcommit'))
-                method(context)
+            context._plugin_context.commit_phase = gconst.PRE_COMMIT
+            # In case of aim_mapping driver (or a similar precommit driver),
+            # postcommit functionality will be executed as a part of precommit
+            if gutils.is_precommit_policy_driver_configured():
+                if 'delete_policy_target_group' in caller_method:
+                    context.ptg_chain_map = self._get_ptg_servicechain_mapping(
+                        context._plugin_context.session,
+                        context.current['id'])
+                    self._cleanup_redirect_action(context)
+                else:
+                    method = getattr(self, '_' + caller_method.replace(
+                                         'precommit', 'postcommit'))
+                    method(context)
         else:
-            # If driver is not aim_mapping then postcommit functionality will
-            # be executed by the call from gbp plugin
-            if ('aim_mapping' not in cfg.CONF.group_policy.policy_drivers):
-                method = getattr(self, '_' + caller_method)
-                method(context)
+            context._plugin_context.commit_phase = gconst.POST_COMMIT
+            # If driver is not aim_mapping (or a similar precommit driver),
+            # then postcommit functionality will  be executed by the call
+            # from gbp plugin
+            if not gutils.is_precommit_policy_driver_configured():
+                    method = getattr(self, '_' + caller_method)
+                    method(context)
+            elif 'create_policy_target_group' in caller_method or (
+                'create_external_policy' in caller_method):
+                if hasattr(context, 'provider_context') and (
+                    hasattr(context, 'servicechain_attrs')):
+                    context.provider_context.commit_phase = (
+                        context._plugin_context.commit_phase)
+                    context.provider_context.servicechain_instance = (
+                        context._plugin_context.servicechain_instance)
+                    super(ChainMappingDriver,
+                        self)._create_servicechain_instance(
+                            context.provider_context,
+                            context.servicechain_attrs)
 
     @log.log_method_call
     def _create_policy_target_postcommit(self, context):
@@ -169,7 +191,12 @@ class ChainMappingDriver(api.PolicyDriver, local_api.LocalAPI,
             'create_policy_target_postcommit', context)
 
     @log.log_method_call
-    def _delete_policy_target_postcommit(self, context):
+    def delete_policy_target_precommit(self, context):
+        context._is_service_target = context._plugin._is_service_target(
+            context._plugin_context, context.current['id'])
+
+    @log.log_method_call
+    def delete_policy_target_postcommit(self, context):
         if not context._is_service_target:
             mappings = self._get_ptg_servicechain_mapping(
                 context._plugin_context.session,
@@ -181,18 +208,6 @@ class ChainMappingDriver(api.PolicyDriver, local_api.LocalAPI,
                 self._notify_sc_plugin_pt_removed(
                     chain_context, context.current,
                     mapping.servicechain_instance_id)
-
-    @log.log_method_call
-    def delete_policy_target_precommit(self, context):
-        context._is_service_target = context._plugin._is_service_target(
-            context._plugin_context, context.current['id'])
-        self.precommit_wrapper_for_chain_mapping(
-            'delete_policy_target_precommit', context)
-
-    @log.log_method_call
-    def delete_policy_target_postcommit(self, context):
-        self.precommit_wrapper_for_chain_mapping(
-            'delete_policy_target_postcommit', context)
 
     @log.log_method_call
     def _create_policy_target_group_postcommit(self, context):
@@ -761,9 +776,12 @@ class ChainMappingDriver(api.PolicyDriver, local_api.LocalAPI,
                  'management_ptg_id': None,
                  'classifier_id': classifier_id,
                  'config_param_values': jsonutils.dumps(config_param_values)}
+        context.provider_context = p_ctx
+        context.servicechain_attrs = attrs
         sc_instance = super(
             ChainMappingDriver, self)._create_servicechain_instance(
                 p_ctx, attrs)
+        context._plugin_context.servicechain_instance = sc_instance
         self._set_ptg_servicechain_instance_mapping(
             session, provider_ptg_id, SCI_CONSUMER_NOT_AVAILABLE,
             sc_instance['id'], p_ctx.tenant)

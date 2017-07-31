@@ -58,7 +58,7 @@ class ServiceChainDBTestBase(test_group_policy_db.GroupPolicyDBTestBase):
                          sorted([i[resource]['id'] for i in items]))
 
     def _create_profiled_servicechain_node(
-            self, service_type=constants.LOADBALANCER, shared_profile=False,
+            self, service_type=constants.LOADBALANCERV2, shared_profile=False,
             profile_tenant_id=None, **kwargs):
         prof = self.create_service_profile(
             service_type=service_type,
@@ -488,11 +488,11 @@ class TestServiceChainResources(ServiceChainDbTestCase):
 
     def test_list_service_profile(self):
         scns = [self.create_service_profile(name='sp1', description='sp',
-                                            service_type='LOADBALANCER'),
+                                            service_type='LOADBALANCERV2'),
                 self.create_service_profile(name='sp2', description='sp',
-                                            service_type='LOADBALANCER'),
+                                            service_type='LOADBALANCERV2'),
                 self.create_service_profile(name='sp3', description='sp',
-                                            service_type='LOADBALANCER')]
+                                            service_type='LOADBALANCERV2')]
         self._test_list_resources('service_profile', scns,
                                   query_params='description=sp')
 
@@ -520,7 +520,7 @@ class TestServiceChainResources(ServiceChainDbTestCase):
     def test_delete_service_profile(self):
         ctx = context.get_admin_context()
 
-        sp = self.create_service_profile(service_type='LOADBALANCER')
+        sp = self.create_service_profile(service_type='LOADBALANCERV2')
         sp_id = sp['service_profile']['id']
 
         scn = self.create_servicechain_node(service_profile_id=sp_id)
