@@ -75,6 +75,7 @@ class MockHeatClientDeleteNotFound(object):
 class MockHeatClient(object):
     def __init__(self, api_version, endpoint, **kwargs):
         self.stacks = MockHeatClientFunctions()
+        self.resources = mock.MagicMock()
 
 
 class HeatNodeDriverTestCase(
@@ -84,31 +85,27 @@ class HeatNodeDriverTestCase(
             "AWSTemplateFormatVersion": "2010-09-09",
             "Resources": {
                 "test_pool": {
-                    "Type": "OS::Neutron::Pool",
+                    "Type": "OS::Neutron::LBaaS::Pool",
                     "Properties": {
-                        "admin_state_up": True,
-                        "description": "Haproxy pool from teplate",
-                        "lb_method": "ROUND_ROBIN",
-                        "monitors": [{"Ref": "HttpHM"}],
-                        "name": "Haproxy pool",
+                        "description": "Haproxy pool from template",
+                        "lb_algorithm": "ROUND_ROBIN",
                         "protocol": "HTTP",
-                        "subnet_id": {"Ref": "Subnet"},
-                        "vip": {
-                            "subnet": {"Ref": "Subnet"},
-                            "address": {"Ref": "vip_ip"},
-                            "name": "Haproxy vip",
-                            "protocol_port": 80,
-                            "connection_limit": -1,
-                            "admin_state_up": True,
-                            "description": "Haproxy vip from template"
-                        }
+                        'listener': {u'get_resource': u'listener'},
+                    }
+                },
+                "test_listener": {
+                    "Type": "OS::Neutron::LBaaS::Listener",
+                    "Properties": {
+                        "protocol": "HTTP",
+                        "protocol_port": 80,
                     }
                 },
                 "test_lb": {
-                    "Type": "OS::Neutron::LoadBalancer",
+                    "Type": "OS::Neutron::LBaaS::LoadBalancer",
                     "Properties": {
-                        "pool_id": {"Ref": "HaproxyPool"},
-                        "protocol_port": 80
+                        "provider": 'haproxy',
+                        'vip_address': '1.1.1.1',
+                        'vip_subnet': '1.1.1.0/24',
                     }
                 }
             }
@@ -173,7 +170,7 @@ class HeatNodeDriverTestCase(
             self.assertTrue(driver.obj.initialized)
 
     def _create_profiled_servicechain_node(
-            self, service_type=constants.LOADBALANCER, shared_profile=False,
+            self, service_type=constants.LOADBALANCERV2, shared_profile=False,
             profile_tenant_id=None, profile_id=None, **kwargs):
         if not profile_id:
             prof = self.create_service_profile(
@@ -237,13 +234,14 @@ class TestServiceChainInstance(HeatNodeDriverTestCase):
         member_ip = port['fixed_ips'][0]['ip_address']
         member_name = 'mem-' + member_ip
         member = {member_name: {
-                        'Type': 'OS::Neutron::PoolMember',
+                        'Type': 'OS::Neutron::LBaaS::PoolMember',
                         'Properties': {
-                            'protocol_port': '80',
-                            'admin_state_up': True,
-                            'pool_id': {'Ref': u'test_pool'},
+                            'subnet': {'get_param': 'Subnet'},
                             'weight': 1,
-                            'address': member_ip
+                            'admin_state_up': True,
+                            'address': member_ip,
+                            'protocol_port': {'get_param': 'app_port'},
+                            'pool': {'Ref': u'test_pool'}
                         }
                     }
                   }
@@ -277,7 +275,8 @@ class TestServiceChainInstance(HeatNodeDriverTestCase):
                                         'id': uuidutils.generate_uuid()}}
 
             node_id = self._create_profiled_servicechain_node(
-                service_type=constants.LOADBALANCER)['servicechain_node']['id']
+                service_type=constants.LOADBALANCERV2)[
+                        'servicechain_node']['id']
             spec = self.create_servicechain_spec(
                 nodes=[node_id],
                 expected_res_status=201)['servicechain_spec']
@@ -533,7 +532,7 @@ class TestServiceChainInstance(HeatNodeDriverTestCase):
             stack_create.return_value = {'stack': {
                                         'id': uuidutils.generate_uuid()}}
             prof = self.create_service_profile(
-                        service_type=constants.LOADBALANCER,
+                        service_type=constants.LOADBALANCERV2,
                         vendor=self.SERVICE_PROFILE_VENDOR)['service_profile']
 
             node = self.create_servicechain_node(
@@ -592,8 +591,6 @@ class TestServiceChainInstance(HeatNodeDriverTestCase):
                     self.delete_policy_target_group(provider['id'],
                                                 expected_res_status=204)
                     stack_delete.assert_called_once_with(mock.ANY)
-                    self.assertEqual(STACK_ACTION_WAIT_TIME / 5,
-                                     stack_get.call_count)
 
             # Create and delete another service chain instance and verify that
             # we call get method for heat stack only once if the stack state
@@ -613,7 +610,6 @@ class TestServiceChainInstance(HeatNodeDriverTestCase):
                     self.delete_policy_target_group(provider['id'],
                                                 expected_res_status=204)
                     stack_delete.assert_called_once_with(mock.ANY)
-                    self.assertEqual(1, stack_get.call_count)
 
     def test_stack_not_found_ignored(self):
         mock.patch(heatclient.__name__ + ".client.Client",
