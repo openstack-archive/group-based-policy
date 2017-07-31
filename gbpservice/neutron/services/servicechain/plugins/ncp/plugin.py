@@ -10,6 +10,7 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+from neutron.db import api as db_api
 from neutron.plugins.common import constants as pconst
 from neutron.quota import resource_registry
 from oslo_config import cfg
@@ -34,6 +35,9 @@ from gbpservice.neutron.services.servicechain.plugins import sharing
 LOG = logging.getLogger(__name__)
 
 PLUMBER_NAMESPACE = 'gbpservice.neutron.servicechain.ncp_plumbers'
+cfg.CONF.import_opt('policy_drivers',
+                    'gbpservice.neutron.services.grouppolicy.config',
+                    group='group_policy')
 STATUS = 'status'
 STATUS_DETAILS = 'status_details'
 STATUS_SET = set([STATUS, STATUS_DETAILS])
@@ -70,6 +74,10 @@ class NodeCompositionPlugin(servicechain_db.ServiceChainDbPlugin,
         When a Servicechain Instance is created, all its nodes need to be
         instantiated.
         """
+        instance = self._process_commit_phase(context)
+        if instance:
+            return instance
+
         session = context.session
         deployers = {}
         with session.begin(subtransactions=True):
@@ -80,19 +88,51 @@ class NodeCompositionPlugin(servicechain_db.ServiceChainDbPlugin,
                 raise exc.OneSpecPerInstanceAllowed()
             deployers = self._get_scheduled_drivers(context, instance,
                                                     'deploy')
+        if not self._is_precommit_policy_driver():
+            # Actual node deploy
+            try:
+                self._deploy_servicechain_nodes(context, deployers)
+            except Exception:
+                # Some node could not be deployed
+                with excutils.save_and_reraise_exception():
+                    LOG.error(_LE("Node deployment failed, "
+                                  "deleting servicechain_instance %s"),
+                              instance['id'])
+                    self.delete_servicechain_instance(context, instance['id'])
 
+        return instance
+
+    def _process_commit_phase(self, context):
+        if hasattr(context, 'commit_phase'):
+            if not self._is_precommit_policy_driver() and (
+                context.commit_phase == gp_cts.PRE_COMMIT):
+                return True
+            if self._is_precommit_policy_driver() and (
+                context.commit_phase == gp_cts.POST_COMMIT):
+                instance = self.get_servicechain_instance(
+                    context, context.servicechain_instance['id'])
+                self._call_deploy_sc_node(context, instance)
+                return instance
+
+    def _is_precommit_policy_driver(self):
+        # REVISIT: This check should actually accommodate checking for
+        # multiple policy drivers
+        if ('aim_mapping' in cfg.CONF.group_policy.policy_drivers):
+            return True
+        return False
+
+    def _call_deploy_sc_node(self, context, instance):
         # Actual node deploy
         try:
+            deployers = self._get_scheduled_drivers(
+                context, instance, 'deploy')
             self._deploy_servicechain_nodes(context, deployers)
         except Exception:
             # Some node could not be deployed
             with excutils.save_and_reraise_exception():
                 LOG.error(_LE("Node deployment failed, "
-                              "deleting servicechain_instance %s"),
+                              "servicechain_instance %s is in ERROR state"),
                           instance['id'])
-                self.delete_servicechain_instance(context, instance['id'])
-
-        return instance
 
     @log.log_method_call
     def get_servicechain_instance(self, context,
@@ -113,6 +153,10 @@ class NodeCompositionPlugin(servicechain_db.ServiceChainDbPlugin,
         nodes of the previous spec should be destroyed and the newer ones
         created.
         """
+        instance = self._process_commit_phase(context)
+        if instance:
+            return instance
+
         session = context.session
         deployers = {}
         updaters = {}
@@ -139,7 +183,10 @@ class NodeCompositionPlugin(servicechain_db.ServiceChainDbPlugin,
             self._destroy_servicechain_nodes(context, destroyers)
             deployers = self._get_scheduled_drivers(
                         context, updated_instance, 'deploy')
-            self._deploy_servicechain_nodes(context, deployers)
+            context.deployers = deployers
+            context.servicechain_instance = updated_instance
+            if not self._is_precommit_policy_driver():
+                self._deploy_servicechain_nodes(context, deployers)
         else:
             self._update_servicechain_nodes(context, updaters)
         return updated_instance
@@ -533,6 +580,13 @@ class NodeCompositionPlugin(servicechain_db.ServiceChainDbPlugin,
                     LOG.error(_LE("Node destroy failed, for node %s "),
                               driver['context'].current_node['id'])
                 except Exception as e:
+                    if db_api.is_retriable(e):
+                        with excutils.save_and_reraise_exception():
+                            LOG.debug(
+                                "Node driver '%(name)s' failed in"
+                                " %(method)s, operation will be retried",
+                                {'name': driver._name, 'method': 'delete'}
+                            )
                     LOG.exception(e)
                 finally:
                     self.driver_manager.clear_node_owner(destroy['context'])
