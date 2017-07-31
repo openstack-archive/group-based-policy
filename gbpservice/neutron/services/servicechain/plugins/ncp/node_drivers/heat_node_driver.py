@@ -107,15 +107,15 @@ class ServiceTypeUpdateNotSupported(exc.NodeCompositionPluginBadRequest):
 
 class HeatNodeDriver(driver_base.NodeDriverBase):
 
-    sc_supported_type = [pconst.LOADBALANCER, pconst.FIREWALL]
     vendor_name = 'heat_based_node_driver'
     initialized = False
-    required_heat_resources = {pconst.LOADBALANCER: [
-                                            'OS::Neutron::LoadBalancer',
-                                            'OS::Neutron::Pool'],
-                               pconst.FIREWALL: [
-                                            'OS::Neutron::Firewall',
-                                            'OS::Neutron::FirewallPolicy']}
+    sc_supported_type = [pconst.LOADBALANCERV2]
+    required_heat_resources = {
+        pconst.LOADBALANCERV2: ['OS::Neutron::LBaaS::LoadBalancer',
+                                'OS::Neutron::LBaaS::Listener',
+                                'OS::Neutron::LBaaS::PoolMember',
+                                'OS::Neutron::LBaaS::Pool'],
+    }
 
     @log.log_method_call
     def initialize(self, name):
@@ -130,7 +130,8 @@ class HeatNodeDriver(driver_base.NodeDriverBase):
     def validate_create(self, context):
         if context.current_profile is None:
             raise ServiceProfileRequired()
-        if context.current_profile['vendor'] != self.vendor_name:
+        if context.current_profile['vendor'].lower() != (
+            self.vendor_name.lower()):
             raise NodeVendorMismatch(vendor=self.vendor_name)
         service_type = context.current_profile['service_type']
         if service_type not in self.sc_supported_type:
@@ -230,12 +231,12 @@ class HeatNodeDriver(driver_base.NodeDriverBase):
 
     @log.log_method_call
     def update_policy_target_added(self, context, policy_target):
-        if context.current_profile['service_type'] == pconst.LOADBALANCER:
+        if context.current_profile['service_type'] == pconst.LOADBALANCERV2:
             self.update(context)
 
     @log.log_method_call
     def update_policy_target_removed(self, context, policy_target):
-        if context.current_profile['service_type'] == pconst.LOADBALANCER:
+        if context.current_profile['service_type'] == pconst.LOADBALANCERV2:
             self.update(context)
 
     @log.log_method_call
@@ -283,33 +284,11 @@ class HeatNodeDriver(driver_base.NodeDriverBase):
         is_template_aws_version = stack_template.get(
                                         'AWSTemplateFormatVersion', False)
 
-        if service_type == pconst.LOADBALANCER:
+        if service_type == pconst.LOADBALANCERV2:
             self._generate_pool_members(context, stack_template,
                                         config_param_values,
                                         provider_ptg,
                                         is_template_aws_version)
-        else:
-            provider_subnet = context.core_plugin.get_subnet(
-                                context.plugin_context, provider_ptg_subnet_id)
-            consumer_cidrs = []
-            if consumer:
-                if context.is_consumer_external:
-                    # REVISIT(Magesh): Allowing the first destination which is
-                    # 0/0 Validate and skip adding FW rule in case routes is
-                    # not set
-                    es = context.gbp_plugin.get_external_segment(
-                        context.plugin_context,
-                        consumer['external_segments'][0])
-                    consumer_cidrs = [x['destination']
-                                      for x in es['external_routes']]
-                else:
-                    consumer_subnet = context.core_plugin.get_subnet(
-                        context._plugin_context, consumer['subnets'][0])
-                    consumer_cidrs = [consumer_subnet['cidr']]
-            provider_cidr = provider_subnet['cidr']
-            self._update_template_with_firewall_rules(
-                    context, provider_ptg, provider_cidr, consumer_cidrs,
-                    stack_template, is_template_aws_version)
 
         node_params = (stack_template.get('Parameters')
                        or stack_template.get('parameters')
@@ -317,6 +296,8 @@ class HeatNodeDriver(driver_base.NodeDriverBase):
         for parameter in node_params:
             if parameter == "Subnet":
                 stack_params[parameter] = provider_ptg_subnet_id
+            elif parameter == "service_chain_metadata":
+                stack_params[parameter] = "1"
             elif parameter in config_param_values:
                 stack_params[parameter] = config_param_values[parameter]
         return (stack_template, stack_params)
@@ -375,54 +356,6 @@ class HeatNodeDriver(driver_base.NodeDriverBase):
                 query = query.filter_by(sc_instance_id=sc_instance_id)
             return query.all()
 
-    def _update_template_with_firewall_rules(self, context, provider_ptg,
-                                             provider_cidr, consumer_cidrs,
-                                             stack_template,
-                                             is_template_aws_version):
-        resources_key = ('Resources' if is_template_aws_version
-                         else 'resources')
-        properties_key = ('Properties' if is_template_aws_version
-                          else 'properties')
-        ref_key = 'Ref' if is_template_aws_version else 'get_resource'
-
-        rule_num = 1
-        rule_list = []
-        for consumer_cidr in consumer_cidrs:
-            rule_name = "Rule_" + str(rule_num)
-            rule_num = rule_num + 1
-            stack_template[resources_key][rule_name] = (
-                self._generate_firewall_rule(
-                    is_template_aws_version, context.classifier["protocol"],
-                    context.classifier["port_range"],
-                    provider_cidr, consumer_cidr))
-            rule_list.append({ref_key: rule_name})
-
-        resource_name = 'OS::Neutron::FirewallPolicy'
-        fw_policy_key = self._get_heat_resource_key(
-                            stack_template[resources_key],
-                            is_template_aws_version,
-                            resource_name)
-
-        stack_template[resources_key][fw_policy_key][properties_key][
-            'firewall_rules'] = rule_list
-
-    def _generate_firewall_rule(self, is_template_aws_version, protocol,
-                                destination_port, destination_cidr,
-                                source_cidr):
-        type_key = 'Type' if is_template_aws_version else 'type'
-        properties_key = ('Properties' if is_template_aws_version
-                          else 'properties')
-        return {type_key: "OS::Neutron::FirewallRule",
-                properties_key: {
-                    "protocol": protocol,
-                    "enabled": True,
-                    "destination_port": destination_port,
-                    "action": "allow",
-                    "destination_ip_address": destination_cidr,
-                    "source_ip_address": source_cidr
-                }
-                }
-
     def _generate_pool_members(self, context, stack_template,
                                config_param_values, provider_ptg,
                                is_template_aws_version):
@@ -435,7 +368,7 @@ class HeatNodeDriver(driver_base.NodeDriverBase):
         pool_res_name = None
         for resource in stack_template[resources_key]:
             if stack_template[resources_key][resource][type_key] == (
-                                                    'OS::Neutron::Pool'):
+                                                    'OS::Neutron::LBaaS::Pool'):
                 pool_res_name = resource
                 break
 
@@ -453,13 +386,13 @@ class HeatNodeDriver(driver_base.NodeDriverBase):
         properties_key = ('Properties' if is_template_aws_version
                           else 'properties')
         res_key = 'Ref' if is_template_aws_version else 'get_resource'
-        return {type_key: "OS::Neutron::PoolMember",
+        return {type_key: "OS::Neutron::LBaaS::PoolMember",
                 properties_key: {
                     "address": member_ip,
                     "admin_state_up": True,
-                    "pool_id": {res_key: pool_res_name},
-                    # FIXME(Magesh): Need to handle port range
-                    "protocol_port": context.classifier["port_range"],
+                    "pool": {res_key: pool_res_name},
+                    "protocol_port": {'get_param': 'app_port'},
+                    "subnet": {'get_param': 'Subnet'},
                     "weight": 1}}
 
     def _get_member_ips(self, context, ptg):
