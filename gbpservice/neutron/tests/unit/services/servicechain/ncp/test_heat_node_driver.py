@@ -84,31 +84,27 @@ class HeatNodeDriverTestCase(
             "AWSTemplateFormatVersion": "2010-09-09",
             "Resources": {
                 "test_pool": {
-                    "Type": "OS::Neutron::Pool",
+                    "Type": "OS::Neutron::LBaaS::Pool",
                     "Properties": {
-                        "admin_state_up": True,
-                        "description": "Haproxy pool from teplate",
-                        "lb_method": "ROUND_ROBIN",
-                        "monitors": [{"Ref": "HttpHM"}],
-                        "name": "Haproxy pool",
+                        "description": "Haproxy pool from template",
+                        "lb_algorithm": "ROUND_ROBIN",
                         "protocol": "HTTP",
-                        "subnet_id": {"Ref": "Subnet"},
-                        "vip": {
-                            "subnet": {"Ref": "Subnet"},
-                            "address": {"Ref": "vip_ip"},
-                            "name": "Haproxy vip",
-                            "protocol_port": 80,
-                            "connection_limit": -1,
-                            "admin_state_up": True,
-                            "description": "Haproxy vip from template"
-                        }
+                        'listener': {u'get_resource': u'listener'},
+                    }
+                },
+                "test_listener": {
+                    "Type": "OS::Neutron::LBaaS::Listener",
+                    "Properties": {
+                        "protocol": "HTTP",
+                        "protocol_port": 80,
                     }
                 },
                 "test_lb": {
-                    "Type": "OS::Neutron::LoadBalancer",
+                    "Type": "OS::Neutron::LBaaS::LoadBalancer",
                     "Properties": {
-                        "pool_id": {"Ref": "HaproxyPool"},
-                        "protocol_port": 80
+                        "provider": 'haproxy',
+                        'vip_address': '1.1.1.1',
+                        'vip_subnet': '1.1.1.0/24',
                     }
                 }
             }
@@ -237,7 +233,7 @@ class TestServiceChainInstance(HeatNodeDriverTestCase):
         member_ip = port['fixed_ips'][0]['ip_address']
         member_name = 'mem-' + member_ip
         member = {member_name: {
-                        'Type': 'OS::Neutron::PoolMember',
+                        'Type': 'OS::Neutron::LBaaS::PoolMember',
                         'Properties': {
                             'protocol_port': '80',
                             'admin_state_up': True,
