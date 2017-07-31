@@ -467,7 +467,8 @@ class ResourceMappingTestCase(test_plugin.GroupPolicyPluginTestCase):
                     filter_by(policy_target_group_id=ptg_id).
                     all())
 
-    def _create_service_profile(self, node_type='LOADBALANCER', shared=False):
+    def _create_service_profile(self, node_type='LOADBALANCERV2',
+            shared=False):
         data = {'service_type': node_type, 'shared': shared}
         profile = self.create_service_profile(expected_res_status=201,
                                               is_admin_context=shared,
@@ -475,7 +476,7 @@ class ResourceMappingTestCase(test_plugin.GroupPolicyPluginTestCase):
         scp_id = profile['service_profile']['id']
         return scp_id
 
-    def _create_servicechain_node(self, node_type="LOADBALANCER",
+    def _create_servicechain_node(self, node_type="LOADBALANCERV2",
                                   shared=False):
         profile_id = self._create_service_profile(node_type, shared=shared)
         data = {'service_profile_id': profile_id,
@@ -487,7 +488,7 @@ class ResourceMappingTestCase(test_plugin.GroupPolicyPluginTestCase):
         return scn_id
 
     def _create_servicechain_spec(self, node_types=None, shared=False):
-        node_types = node_types or ['LOADBALANCER']
+        node_types = node_types or ['LOADBALANCERV2']
         node_ids = []
         for node_type in node_types:
             node_ids.append(self._create_servicechain_node(
