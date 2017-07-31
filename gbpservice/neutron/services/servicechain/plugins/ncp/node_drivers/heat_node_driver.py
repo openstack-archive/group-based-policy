@@ -107,15 +107,17 @@ class ServiceTypeUpdateNotSupported(exc.NodeCompositionPluginBadRequest):
 
 class HeatNodeDriver(driver_base.NodeDriverBase):
 
-    sc_supported_type = [pconst.LOADBALANCER, pconst.FIREWALL]
     vendor_name = 'heat_based_node_driver'
     initialized = False
-    required_heat_resources = {pconst.LOADBALANCER: [
-                                            'OS::Neutron::LoadBalancer',
-                                            'OS::Neutron::Pool'],
-                               pconst.FIREWALL: [
-                                            'OS::Neutron::Firewall',
-                                            'OS::Neutron::FirewallPolicy']}
+    sc_supported_type = [pconst.LOADBALANCER, pconst.FIREWALL]
+    required_heat_resources = {
+        pconst.LOADBALANCERV2: ['OS::Neutron::LBaaS::LoadBalancer',
+                                'OS::Neutron::LBaaS::Listener',
+                                'OS::Neutron::LBaaS::PoolMember',
+                                'OS::Neutron::LBaaS::Pool'],
+        pconst.FIREWALL: ['OS::Neutron::Firewall',
+                          'OS::Neutron::FirewallPolicy'],
+    }
 
     @log.log_method_call
     def initialize(self, name):
@@ -130,7 +132,8 @@ class HeatNodeDriver(driver_base.NodeDriverBase):
     def validate_create(self, context):
         if context.current_profile is None:
             raise ServiceProfileRequired()
-        if context.current_profile['vendor'] != self.vendor_name:
+        if context.current_profile['vendor'].lower() != (
+            self.vendor_name.lower()):
             raise NodeVendorMismatch(vendor=self.vendor_name)
         service_type = context.current_profile['service_type']
         if service_type not in self.sc_supported_type:
@@ -230,12 +233,12 @@ class HeatNodeDriver(driver_base.NodeDriverBase):
 
     @log.log_method_call
     def update_policy_target_added(self, context, policy_target):
-        if context.current_profile['service_type'] == pconst.LOADBALANCER:
+        if context.current_profile['service_type'] == pconst.LOADBALANCERV2:
             self.update(context)
 
     @log.log_method_call
     def update_policy_target_removed(self, context, policy_target):
-        if context.current_profile['service_type'] == pconst.LOADBALANCER:
+        if context.current_profile['service_type'] == pconst.LOADBALANCERV2:
             self.update(context)
 
     @log.log_method_call
@@ -283,12 +286,12 @@ class HeatNodeDriver(driver_base.NodeDriverBase):
         is_template_aws_version = stack_template.get(
                                         'AWSTemplateFormatVersion', False)
 
-        if service_type == pconst.LOADBALANCER:
+        if service_type == pconst.LOADBALANCERV2:
             self._generate_pool_members(context, stack_template,
                                         config_param_values,
                                         provider_ptg,
                                         is_template_aws_version)
-        else:
+        elif service_type == pconst.FIREWALL:
             provider_subnet = context.core_plugin.get_subnet(
                                 context.plugin_context, provider_ptg_subnet_id)
             consumer_cidrs = []
@@ -317,6 +320,8 @@ class HeatNodeDriver(driver_base.NodeDriverBase):
         for parameter in node_params:
             if parameter == "Subnet":
                 stack_params[parameter] = provider_ptg_subnet_id
+            elif parameter == "service_chain_metadata":
+                stack_params[parameter] = "1"
             elif parameter in config_param_values:
                 stack_params[parameter] = config_param_values[parameter]
         return (stack_template, stack_params)
@@ -419,9 +424,8 @@ class HeatNodeDriver(driver_base.NodeDriverBase):
                     "destination_port": destination_port,
                     "action": "allow",
                     "destination_ip_address": destination_cidr,
-                    "source_ip_address": source_cidr
-                }
-                }
+                    "source_ip_address": source_cidr}
+               }
 
     def _generate_pool_members(self, context, stack_template,
                                config_param_values, provider_ptg,
@@ -435,7 +439,7 @@ class HeatNodeDriver(driver_base.NodeDriverBase):
         pool_res_name = None
         for resource in stack_template[resources_key]:
             if stack_template[resources_key][resource][type_key] == (
-                                                    'OS::Neutron::Pool'):
+                    'OS::Neutron::LBaaS::Pool'):
                 pool_res_name = resource
                 break
 
@@ -453,13 +457,13 @@ class HeatNodeDriver(driver_base.NodeDriverBase):
         properties_key = ('Properties' if is_template_aws_version
                           else 'properties')
         res_key = 'Ref' if is_template_aws_version else 'get_resource'
-        return {type_key: "OS::Neutron::PoolMember",
+        return {type_key: "OS::Neutron::LBaaS::PoolMember",
                 properties_key: {
                     "address": member_ip,
                     "admin_state_up": True,
-                    "pool_id": {res_key: pool_res_name},
-                    # FIXME(Magesh): Need to handle port range
-                    "protocol_port": context.classifier["port_range"],
+                    "pool": {res_key: pool_res_name},
+                    "protocol_port": {'get_param': 'app_port'},
+                    "subnet": {'get_param': 'Subnet'},
                     "weight": 1}}
 
     def _get_member_ips(self, context, ptg):
