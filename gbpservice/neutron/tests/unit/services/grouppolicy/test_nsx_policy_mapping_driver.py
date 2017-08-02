@@ -168,7 +168,7 @@ class TestPolicyClassifier(NsxPolicyMappingTestCase):
 
             # verify API call to create the service
             service_create_call.assert_called_with(
-                name='test',
+                name=mock.ANY,
                 description=mock.ANY,
                 protocol='tcp',
                 dest_ports=['80'],
@@ -184,7 +184,7 @@ class TestPolicyClassifier(NsxPolicyMappingTestCase):
 
             port_list = [str(p) for p in range(777, 889)]
             service_create_call.assert_called_with(
-                name='test',
+                name=mock.ANY,
                 description=mock.ANY,
                 protocol='udp',
                 dest_ports=port_list,
@@ -195,7 +195,7 @@ class TestPolicyClassifier(NsxPolicyMappingTestCase):
             self._mock_service_delete() as service_delete_call:
 
             classifier = self.create_policy_classifier(
-                name='test',
+                name=mock.ANY,
                 protocol='TCP',
                 port_range='80',
                 direction='bi')['policy_classifier']
@@ -229,25 +229,25 @@ class TestPolicyTargetGroup(NsxPolicyMappingTestCase):
 
     def group_call(self, name, group_id):
         return call(domain_id=TEST_PROJECT,
-                    name=name,
+                    name=driver.generate_nsx_name(group_id, name),
                     description=mock.ANY,
                     cond_val=group_id,
                     group_id=group_id)
 
     def ingress_map_call(self, prs_id, provider_ids, consumer_ids):
         return call(domain_id=TEST_PROJECT,
-                    profile_id=driver.in_name(prs_id),
+                    profile_id=driver.append_in_dir(prs_id),
                     map_id=mock.ANY,
-                    name=driver.in_name(prs_id),
+                    name=driver.append_in_dir(prs_id),
                     description=mock.ANY,
                     source_groups=consumer_ids,
                     dest_groups=provider_ids)
 
     def egress_map_call(self, prs_id, provider_ids, consumer_ids):
         return call(domain_id=TEST_PROJECT,
-                    profile_id=driver.out_name(prs_id),
+                    profile_id=driver.append_out_dir(prs_id),
                     map_id=mock.ANY,
-                    name=driver.out_name(prs_id),
+                    name=driver.append_out_dir(prs_id),
                     description=mock.ANY,
                     source_groups=provider_ids,
                     dest_groups=consumer_ids)
@@ -263,7 +263,7 @@ class TestPolicyTargetGroup(NsxPolicyMappingTestCase):
                 name='test')['policy_target_group']
 
             domain_create.assert_called_with(domain_id=TEST_PROJECT,
-                                             name=TEST_PROJECT,
+                                             name=mock.ANY,
                                              description=mock.ANY)
             group_create.assert_has_calls([self.group_call('test', ptg['id'])])
             map_create.assert_not_called()
@@ -278,8 +278,8 @@ class TestPolicyTargetGroup(NsxPolicyMappingTestCase):
         '''
 
         policy_rule_set = self._prepare_rule_set()
-        profile_in = driver.in_name(policy_rule_set['id'])
-        profile_out = driver.out_name(policy_rule_set['id'])
+        profile_in = driver.append_in_dir(policy_rule_set['id'])
+        profile_out = driver.append_out_dir(policy_rule_set['id'])
         profile_ids = []
         if direction_in:
             profile_ids.append(profile_in)
@@ -326,11 +326,13 @@ class TestPolicyTargetGroup(NsxPolicyMappingTestCase):
             # verify communication map delete on backend
             calls = []
             if direction_in:
-                calls.append(call(TEST_PROJECT,
-                                  driver.in_name(policy_rule_set['id'])))
+                calls.append(call(
+                    TEST_PROJECT,
+                    driver.append_in_dir(policy_rule_set['id'])))
             if direction_out:
-                calls.append(call(TEST_PROJECT,
-                                  driver.out_name(policy_rule_set['id'])))
+                calls.append(call(
+                    TEST_PROJECT,
+                    driver.append_out_dir(policy_rule_set['id'])))
 
             map_delete.assert_has_calls(calls)
 
@@ -402,8 +404,8 @@ class TestPolicyTargetGroup(NsxPolicyMappingTestCase):
         '''
 
         policy_rule_set = self._prepare_rule_set()
-        profile_ids = [driver.in_name(policy_rule_set['id']),
-                       driver.out_name(policy_rule_set['id'])]
+        profile_ids = [driver.append_in_dir(policy_rule_set['id']),
+                       driver.append_out_dir(policy_rule_set['id'])]
 
         with self._mock_group_create(),\
             self._mock_profile_list(profile_ids),\
@@ -431,9 +433,9 @@ class TestPolicyTargetGroup(NsxPolicyMappingTestCase):
         prs1 = self._prepare_rule_set()['id']
         prs2 = self._prepare_rule_set()['id']
         prs3 = self._prepare_rule_set()['id']
-        profile_ids = [driver.in_name(prs1), driver.out_name(prs1),
-                       driver.in_name(prs2), driver.out_name(prs2),
-                       driver.in_name(prs3), driver.out_name(prs3)]
+        profile_ids = [driver.append_in_dir(prs1), driver.append_out_dir(prs1),
+                       driver.append_in_dir(prs2), driver.append_out_dir(prs2),
+                       driver.append_in_dir(prs3), driver.append_out_dir(prs3)]
 
         # Create a and c
         with self._mock_group_create(),\
@@ -471,11 +473,12 @@ class TestPolicyTargetGroup(NsxPolicyMappingTestCase):
 
             map_create.assert_has_calls(map_create_calls, any_order=True)
 
-            map_delete_calls = [call(TEST_PROJECT, driver.in_name(prs1)),
-                                call(TEST_PROJECT, driver.out_name(prs1)),
-                                call(TEST_PROJECT, driver.in_name(prs2)),
-                                call(TEST_PROJECT, driver.out_name(prs2)),
-                                call(TEST_PROJECT, driver.in_name(prs3))]
+            map_delete_calls = [
+                call(TEST_PROJECT, driver.append_in_dir(prs1)),
+                call(TEST_PROJECT, driver.append_out_dir(prs1)),
+                call(TEST_PROJECT, driver.append_in_dir(prs2)),
+                call(TEST_PROJECT, driver.append_out_dir(prs2)),
+                call(TEST_PROJECT, driver.append_in_dir(prs3))]
 
             map_delete.assert_has_calls(map_delete_calls, any_order=True)
 
@@ -493,10 +496,10 @@ class TestPolicyTargetGroup(NsxPolicyMappingTestCase):
         prs2 = self._prepare_rule_set()['id']
         prs3 = self._prepare_rule_set()['id']
 
-        profile_ids = [driver.in_name(prs1),
-                       driver.out_name(prs2),
-                       driver.in_name(prs3),
-                       driver.out_name(prs3)]
+        profile_ids = [driver.append_in_dir(prs1),
+                       driver.append_out_dir(prs2),
+                       driver.append_in_dir(prs3),
+                       driver.append_out_dir(prs3)]
 
         with self._mock_domain_create(),\
             self._mock_group_create() as group_create,\
@@ -529,7 +532,7 @@ class TestPolicyTargetGroup(NsxPolicyMappingTestCase):
         for i in range(0, ring_size):
             prs_ids.append(self._prepare_rule_set()['id'])
 
-        profile_ids = [driver.in_name(prs_id) for prs_id in prs_ids]
+        profile_ids = [driver.append_in_dir(prs_id) for prs_id in prs_ids]
 
         # Create ring topology
         with self._mock_domain_create(),\
@@ -578,8 +581,8 @@ class TestPolicyTargetGroup(NsxPolicyMappingTestCase):
             ptg_id = ptg_ids[2]
             self.delete_policy_target_group(ptg_id)
 
-            map_calls = [call(TEST_PROJECT, driver.in_name(prs_ids[2])),
-                         call(TEST_PROJECT, driver.in_name(prs_ids[3]))]
+            map_calls = [call(TEST_PROJECT, driver.append_in_dir(prs_ids[2])),
+                         call(TEST_PROJECT, driver.append_in_dir(prs_ids[3]))]
 
             map_delete.assert_has_calls(map_calls)
             map_create.assert_not_called()
@@ -595,7 +598,7 @@ class TestPolicyTargetGroup(NsxPolicyMappingTestCase):
             self.update_policy_target_group(
                 ptg_id, provided_policy_rule_sets={})
 
-            map_calls = [call(TEST_PROJECT, driver.in_name(prs_ids[5]))]
+            map_calls = [call(TEST_PROJECT, driver.append_in_dir(prs_ids[5]))]
             map_delete.assert_has_calls(map_calls)
             map_create.assert_not_called()
             group_delete.assert_not_called()
@@ -606,7 +609,7 @@ class TestPolicyTargetGroup(NsxPolicyMappingTestCase):
         star_size = 10
         policy_rule_set = self._prepare_rule_set()
         prs_id = policy_rule_set['id']
-        profile_ids = [driver.in_name(prs_id)]
+        profile_ids = [driver.append_in_dir(prs_id)]
 
         # Create topology
         with self._mock_domain_create(),\
@@ -676,7 +679,8 @@ class TestPolicyTargetGroup(NsxPolicyMappingTestCase):
             self.delete_policy_target_group(provider_id)
 
             map_create.assert_not_called()
-            map_delete.assert_called_with(TEST_PROJECT, driver.in_name(prs_id))
+            map_delete.assert_called_with(TEST_PROJECT,
+                                          driver.append_in_dir(prs_id))
 
             star_size -= 1
             group_delete.assert_called_with(TEST_PROJECT, provider_id)
@@ -694,21 +698,21 @@ class TestPolicyRuleSet(NsxPolicyMappingTestCase):
             rule_set = self.create_policy_rule_set(
                 name='test', policy_rules=[rule['id']])['policy_rule_set']
 
-            calls = [call(name=driver.in_name('test'),
+            calls = [call(name=mock.ANY,
                           description=mock.ANY,
-                          profile_id=driver.in_name(rule_set['id']),
+                          profile_id=driver.append_in_dir(rule_set['id']),
                           services=[rule['policy_classifier_id']]),
-                     call(name=driver.out_name('test'),
+                     call(name=mock.ANY,
                           description=mock.ANY,
-                          profile_id=driver.out_name(rule_set['id']),
+                          profile_id=driver.append_out_dir(rule_set['id']),
                           services=[rule['policy_classifier_id']])]
 
             profile_create.assert_has_calls(calls)
 
             self.delete_policy_rule_set(rule_set['id'])
 
-            calls = [call(driver.in_name(rule_set['id'])),
-                     call(driver.out_name(rule_set['id']))]
+            calls = [call(driver.append_in_dir(rule_set['id'])),
+                     call(driver.append_out_dir(rule_set['id']))]
             profile_delete.assert_has_calls(calls)
 
     def test_empty(self):
@@ -732,11 +736,11 @@ class TestPolicyRuleSet(NsxPolicyMappingTestCase):
                               policy_rules=[rule['id']])
 
             # Two create calls expected
-            calls = [call(name=driver.in_name('test'),
+            calls = [call(name=mock.ANY,
                           description=mock.ANY,
                           profile_id=mock.ANY,
                           services=[rule['policy_classifier_id']]),
-                     call(name=driver.out_name('test'),
+                     call(name=mock.ANY,
                           description=mock.ANY,
                           profile_id=mock.ANY,
                           services=[rule['policy_classifier_id']])]
@@ -777,12 +781,12 @@ class TestPolicyRuleSet(NsxPolicyMappingTestCase):
 
             self.assertEqual(2, profile_create.call_count)
             profile_create._assert_profile_call(
-                driver.in_name('test'),
-                driver.in_name(rule_set['id']),
+                driver.append_in_dir('test'),
+                driver.append_in_dir(rule_set['id']),
                 [rule1['policy_classifier_id'], rule3['policy_classifier_id']])
             profile_create._assert_profile_call(
-                driver.out_name('test'),
-                driver.out_name(rule_set['id']),
+                driver.append_out_dir('test'),
+                driver.append_out_dir(rule_set['id']),
                 [rule2['policy_classifier_id'], rule3['policy_classifier_id']])
 
         # Replace rule3 with rule4
@@ -797,12 +801,12 @@ class TestPolicyRuleSet(NsxPolicyMappingTestCase):
             self.assertEqual(rule_set['id'], rule_set1['id'])
             self.assertEqual(2, profile_create.call_count)
             profile_update._assert_profile_call(
-                driver.in_name('test'),
-                driver.in_name(rule_set['id']),
+                driver.append_in_dir('test'),
+                driver.append_in_dir(rule_set['id']),
                 [rule1['policy_classifier_id']])
             profile_update._assert_profile_call(
-                driver.out_name('test'),
-                driver.out_name(rule_set['id']),
+                driver.append_out_dir('test'),
+                driver.append_out_dir(rule_set['id']),
                 [rule2['policy_classifier_id'], rule4['policy_classifier_id']])
 
         # Delete rule1 from the rule set and verify ingress profile is
@@ -813,14 +817,14 @@ class TestPolicyRuleSet(NsxPolicyMappingTestCase):
                                                       rule4['id']])
 
             profile_delete.assert_called_once_with(
-                driver.in_name(rule_set['id']))
+                driver.append_in_dir(rule_set['id']))
 
         # Delete the rule set and verify egress profile is deleted
         with self._mock_profile_delete() as profile_delete:
             self.delete_policy_rule_set(rule_set['id'])
 
             profile_delete.assert_called_once_with(
-                driver.out_name(rule_set['id']))
+                driver.append_out_dir(rule_set['id']))
 
 
 class TestPolicyTargetTag(NsxPolicyMappingTestCase):
