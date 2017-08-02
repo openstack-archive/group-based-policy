@@ -76,12 +76,24 @@ class ProtocolNotSupported(gpexc.GroupPolicyBadRequest):
                "supported with %s" % DRIVER_NAME)
 
 
-def in_name(name):
+def append_in_dir(name):
     return name + '_I'
 
 
-def out_name(name):
+def append_out_dir(name):
     return name + '_O'
+
+
+def generate_nsx_name(uuid, name, tag=None, maxlen=80):
+    short_uuid = '_' + uuid[:5] + '...' + uuid[-5:]
+    maxlen = maxlen - len(short_uuid)
+    if not name:
+        name = ''
+    if tag:
+        maxlen = maxlen - len(tag) - 1
+        return name[:maxlen] + '_' + tag + short_uuid
+    else:
+        return name[:maxlen] + short_uuid
 
 
 class NsxPolicyMappingDriver(api.ResourceMappingDriver):
@@ -159,15 +171,10 @@ class NsxPolicyMappingDriver(api.ResourceMappingDriver):
             password=nsx_manager_password,
             thumbprint=nsx_manager_thumbprint)
 
-    def _generate_nsx_name(self, object_id, object_name):
-        if object_name:
-            return object_name + '_' + object_id
-        return object_id
-
     def _create_domain(self, context):
         project_id = context.current['project_id']
         tenant_name = context._plugin_context.tenant_name
-        domain_name = self._generate_nsx_name(project_id, tenant_name)
+        domain_name = generate_nsx_name(project_id, tenant_name)
 
         LOG.info('Creating domain %(domain)s for project %(project)s',
                  {'domain': domain_name,
@@ -205,7 +212,7 @@ class NsxPolicyMappingDriver(api.ResourceMappingDriver):
                     for rule in rules]
 
         self.nsx_policy.comm_profile.create_or_overwrite(
-                name=name,
+                name=generate_nsx_name(profile_id, name),
                 profile_id=profile_id,
                 description=description,
                 services=services)
@@ -249,21 +256,25 @@ class NsxPolicyMappingDriver(api.ResourceMappingDriver):
 
         if in_rules:
             self._create_or_update_communication_profile(
-                in_name(rule_set_id),
-                in_name(context.current['name']),
+                append_in_dir(rule_set_id),
+                generate_nsx_name(rule_set_id,
+                                  context.current['name'],
+                                  '_IN'),
                 context.current['description'] + '(ingress)',
                 in_rules)
         elif update_flow:
-            self._delete_comm_profile(in_name(rule_set_id))
+            self._delete_comm_profile(append_in_dir(rule_set_id))
 
         if out_rules:
             self._create_or_update_communication_profile(
-                out_name(rule_set_id),
-                out_name(context.current['name']),
+                append_out_dir(rule_set_id),
+                generate_nsx_name(rule_set_id,
+                                  context.current['name'],
+                                  '_OUT'),
                 context.current['description'] + '(egress)',
                 out_rules)
         elif update_flow:
-            self._delete_comm_profile(out_name(rule_set_id))
+            self._delete_comm_profile(append_out_dir(rule_set_id))
 
     def _filter_ptgs_by_ruleset(self, ptgs, ruleset_id):
         providing_ptgs = [ptg['id'] for ptg in ptgs
@@ -278,8 +289,8 @@ class NsxPolicyMappingDriver(api.ResourceMappingDriver):
         providing_ptgs, consuming_ptgs = self._filter_ptgs_by_ruleset(
             ptgs, ruleset_id)
 
-        ruleset_in = in_name(ruleset_id)
-        ruleset_out = out_name(ruleset_id)
+        ruleset_in = append_in_dir(ruleset_id)
+        ruleset_out = append_out_dir(ruleset_id)
         if not consuming_ptgs or not providing_ptgs:
             if not delete_flow:
                 return
@@ -297,7 +308,7 @@ class NsxPolicyMappingDriver(api.ResourceMappingDriver):
 
         if ruleset_in in profiles:
             self.nsx_policy.comm_map.create_or_overwrite(
-                    name = ruleset_in,
+                    name=ruleset_in,
                     domain_id=project_id,
                     map_id=ruleset_in,
                     description="GBP ruleset ingress",
@@ -392,7 +403,7 @@ class NsxPolicyMappingDriver(api.ResourceMappingDriver):
         # service entry in nsx policy has single direction
         # directions will be enforced on communication profile level
         self.nsx_policy.service.create_or_overwrite(
-            name=classifier['name'],
+            name=generate_nsx_name(classifier['id'], classifier['name']),
             service_id=classifier['id'],
             description=classifier['description'],
             protocol=classifier['protocol'],
@@ -461,7 +472,7 @@ class NsxPolicyMappingDriver(api.ResourceMappingDriver):
             self._create_domain(context)
 
         self.nsx_policy.group.create_or_overwrite(
-            name=context.current['name'],
+            name=generate_nsx_name(group_id, context.current['name']),
             domain_id=project_id,
             group_id=group_id,
             description=context.current['description'],
@@ -510,10 +521,10 @@ class NsxPolicyMappingDriver(api.ResourceMappingDriver):
 
         in_rules, out_rules = self._split_rules_by_direction(context, rules)
         if in_rules:
-            self._delete_comm_profile(in_name(ruleset_id))
+            self._delete_comm_profile(append_in_dir(ruleset_id))
 
         if out_rules:
-            self._delete_comm_profile(out_name(ruleset_id))
+            self._delete_comm_profile(append_out_dir(ruleset_id))
 
     def delete_policy_target_postcommit(self, context):
         # This is inherited behavior without:
