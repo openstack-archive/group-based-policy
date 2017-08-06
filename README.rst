@@ -1,6 +1,8 @@
 Group Based Policy (GBP) provides declarative abstractions for achieving
 scalable intent-based infrastructure automation.
 
+DNM gate testy
+
 GBP complements the OpenStack networking model with the notion of policies
 that can be applied between groups of network endpoints. As users look beyond
 basic connectivity, richer network services with diverse implementations and
