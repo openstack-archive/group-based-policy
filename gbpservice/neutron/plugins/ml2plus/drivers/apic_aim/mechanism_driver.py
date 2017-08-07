@@ -82,6 +82,8 @@ AGENT_TYPE_DVS = 'DVS agent'
 VIF_TYPE_DVS = 'dvs'
 PROMISCUOUS_TYPES = [n_constants.DEVICE_OWNER_DHCP,
                      n_constants.DEVICE_OWNER_LOADBALANCER]
+VIF_TYPE_FABRIC = 'fabric'
+FABRIC_HOST_ID = 'fabric'
 
 NO_ADDR_SCOPE = object()
 
@@ -1189,6 +1191,14 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             LOG.debug("Refusing to bind due to unsupported vnic_type: %s",
                       vnic_type)
             return
+
+        if port['binding:host_id'].startswith(FABRIC_HOST_ID):
+            for segment in context.segments_to_bind:
+                context.set_binding(segment[api.ID],
+                                    VIF_TYPE_FABRIC,
+                                    {portbindings.CAP_PORT_FILTER: False},
+                                    status=n_constants.PORT_STATUS_ACTIVE)
+                return
 
         is_vm_port = port['device_owner'].startswith('compute:')
 
