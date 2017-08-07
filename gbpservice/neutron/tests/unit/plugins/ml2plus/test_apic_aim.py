@@ -3201,6 +3201,17 @@ class TestPortBinding(ApicAimTestCase):
         self.assertEqual('opflex', p2_ctx.top_bound_segment['network_type'])
         self.assertEqual('vlan', p2_ctx.bottom_bound_segment['network_type'])
 
+    def test_bind_fabric_router_port(self):
+        net = self._make_network(self.fmt, 'net1', True)
+        self._make_subnet(self.fmt, net, '10.0.1.1', '10.0.1.0/24')
+        port = self._make_port(self.fmt, net['network']['id'])['port']
+        port_id = port['id']
+        port = self._bind_port_to_host(port_id, 'fabric')['port']
+        self.assertEqual('fabric', port['binding:vif_type'])
+        self.assertEqual({'port_filter': False},
+                         port['binding:vif_details'])
+        self.assertEqual(n_constants.PORT_STATUS_ACTIVE, port['status'])
+
     # TODO(rkukura): Add tests for opflex, local and unsupported
     # network_type values.
 
