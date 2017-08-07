@@ -20,6 +20,7 @@ from neutron.db import dns_db
 from neutron.db import extraroute_db
 from neutron.db import l3_gwmode_db
 from neutron.extensions import l3
+from neutron.extensions import portbindings
 from neutron_lib import constants
 from neutron_lib import exceptions
 from oslo_log import log as logging
@@ -32,6 +33,8 @@ from gbpservice.neutron import extensions as extensions_pkg
 from gbpservice.neutron.extensions import cisco_apic_l3 as l3_ext
 from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import (
     extension_db as extn_db)
+from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import (
+    mechanism_driver as md)
 
 LOG = logging.getLogger(__name__)
 
@@ -159,6 +162,9 @@ class ApicL3Plugin(common_db_mixin.CommonDbMixin,
             info = super(ApicL3Plugin, self).add_router_interface(
                 context, router_id, interface_info)
             del context.override_network_routing_topology_validation
+            self._core_plugin.update_port(context, info['port_id'],
+                                          {'port': {portbindings.HOST_ID:
+                                                    md.FABRIC_HOST_ID}})
             return info
 
     def _add_interface_by_subnet(self, context, router, subnet_id, owner):
