@@ -171,6 +171,7 @@ def undecorated(o):
 
 
 from neutron.db.quota import api as quota_api
+from neutron.db.quota import driver  # noqa
 from neutron import quota
 
 
