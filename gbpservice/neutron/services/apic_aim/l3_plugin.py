@@ -18,10 +18,12 @@ from neutron.db import common_db_mixin
 from neutron.db import db_base_plugin_v2
 from neutron.db import dns_db
 from neutron.db import extraroute_db
+from neutron.db import l3_db
 from neutron.db import l3_gwmode_db
 from neutron.extensions import l3
 from neutron.extensions import portbindings
 from neutron.plugins.common import constants
+from neutron.quota import resource_registry
 from neutron_lib import exceptions
 from oslo_log import log as logging
 from oslo_utils import excutils
@@ -56,6 +58,8 @@ class ApicL3Plugin(common_db_mixin.CommonDbMixin,
     def get_plugin_description():
         return _("L3 Router Service Plugin using the APIC via AIM")
 
+    @resource_registry.tracked_resources(router=l3_db.Router,
+                                         floatingip=l3_db.FloatingIP)
     def __init__(self):
         LOG.info(_LI("APIC AIM L3 Plugin __init__"))
         extensions.append_api_extensions_path(extensions_pkg.__path__)
