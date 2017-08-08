@@ -33,6 +33,7 @@ extensions.get_extensions_path = get_extensions_path
 
 
 from neutron.db import models_v2
+from neutron.db.quota import driver  # noqa
 from neutron.plugins.ml2 import db as ml2_db
 from neutron.plugins.ml2 import models
 from oslo_log import log as logging
