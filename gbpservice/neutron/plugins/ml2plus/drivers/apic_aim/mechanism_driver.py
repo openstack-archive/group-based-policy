@@ -2192,7 +2192,8 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                     'prefixlen': int(snat_subnet['cidr'].split('/')[1])}
 
     def _has_snat_ip_ports(self, plugin_context, subnet_id):
-        session = plugin_context.session
+        e_context = plugin_context.elevated()
+        session = e_context.session
         return (session.query(models_v2.Port)
                 .join(models_v2.IPAllocation)
                 .filter(models_v2.IPAllocation.subnet_id == subnet_id)
@@ -2201,7 +2202,8 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
 
     def _delete_snat_ip_ports_if_reqd(self, plugin_context,
                                       ext_network_id, exclude_router_id):
-        session = plugin_context.session
+        e_context = plugin_context.elevated()
+        session = e_context.session
         # if there are no routers uplinked to the external network,
         # then delete any ports allocated for SNAT IP
         gw_qry = (session.query(models_v2.Port)
@@ -2217,7 +2219,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                           .all())
             for p in snat_ports:
                 try:
-                    self.plugin.delete_port(plugin_context, p[0])
+                    self.plugin.delete_port(e_context, p[0])
                 except n_exceptions.NeutronException as ne:
                     LOG.warning(_LW('Failed to delete SNAT port %(port)s: '
                                     '%(ex)s'),
