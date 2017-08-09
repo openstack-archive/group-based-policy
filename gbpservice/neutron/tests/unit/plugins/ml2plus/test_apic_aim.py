@@ -81,6 +81,7 @@ SNAT_POOL = 'apic:snat_host_pool'
 
 aim_resource.ResourceBase.__repr__ = lambda x: x.__dict__.__repr__()
 
+NON_ADMIN_TENANT = '45360a5b-502b-40a0-948b-344b7f952d14'
 TEST_TENANT_NAMES = {
     'another_tenant': 'AnotherTenantName',
     'bad_tenant_id': 'BadTenantIdName',
@@ -4461,28 +4462,39 @@ class TestSnatIpAllocation(ApicAimTestCase):
             {'subnet': {SNAT_POOL: False}}, expected_code=409)
         self._delete('subnets', sub1['id'], expected_code=409)
 
-    def _setup_router_with_ext_net(self):
+    def _setup_router_with_ext_net(self, tenant_id=None):
+        # Ext net and FIP subnet are created in admin
         ext_net = self._make_ext_network('ext-net1',
                                          dn=self.dn_t1_l1_n1)
         self._make_subnet(
             self.fmt, {'network': ext_net}, '100.100.100.1',
             '100.100.100.0/24')
 
-        net = self._make_network(self.fmt, 'pvt-net1', True)['network']
+        # private net and subnet use passed tenant_id
+        kwargs = {}
+        if tenant_id:
+            kwargs.update({'tenant_id': tenant_id})
+        net = self._make_network(self.fmt,
+                                 'pvt-net1',
+                                 True, **kwargs)['network']
         pvt_sub = self._make_subnet(
             self.fmt, {'network': net}, '10.10.1.1',
-            '10.10.1.0/24')['subnet']
+            '10.10.1.0/24', tenant_id=tenant_id)['subnet']
 
+        # router uses passed tenant_id
         rtr = self._make_router(
             self.fmt, net['tenant_id'], 'router1',
             external_gateway_info={'network_id': ext_net['id']})['router']
-        self._router_interface_action('add', rtr['id'], pvt_sub['id'], None)
+        self._router_interface_action('add', rtr['id'],
+                                      pvt_sub['id'], None,
+                                      tenant_id=tenant_id)
 
+        # SNAT subnet is created in admin
         sub2 = self._make_subnet(
             self.fmt, {'network': ext_net}, '200.100.100.1',
             '200.100.100.0/29')['subnet']
-        self._update('subnets', sub2['id'],
-                     {'subnet': {SNAT_POOL: True}})
+        sub2 = self._update('subnets', sub2['id'],
+                            {'subnet': {SNAT_POOL: True}})['subnet']
         alloc = self.driver.get_or_allocate_snat_ip(
             n_context.get_admin_context(), 'h0', ext_net)
         self.assertIsNotNone(alloc)
@@ -4506,12 +4518,33 @@ class TestSnatIpAllocation(ApicAimTestCase):
         self._update('subnets', snat_sub['id'],
                      {'subnet': {SNAT_POOL: False}})
 
+    def test_snat_port_delete_on_router_gw_clear_non_admin(self):
+        snat_sub, rtr, _ = self._setup_router_with_ext_net(NON_ADMIN_TENANT)
+        self.assertTrue(self._get_snat_ports(snat_sub))
+
+        self._update('routers', rtr['id'],
+                     {'router': {'external_gateway_info': None}})
+        self.assertFalse(self._get_snat_ports(snat_sub))
+        self._update('subnets', snat_sub['id'],
+                     {'subnet': {SNAT_POOL: False}})
+
     def test_snat_port_delete_on_router_intf_remove(self):
         snat_sub, rtr, pvt_sub = self._setup_router_with_ext_net()
         self.assertTrue(self._get_snat_ports(snat_sub))
 
         self._router_interface_action('remove', rtr['id'], pvt_sub['id'],
                                       None)
+        self.assertFalse(self._get_snat_ports(snat_sub))
+        self._update('subnets', snat_sub['id'],
+                     {'subnet': {SNAT_POOL: False}})
+
+    def test_snat_port_delete_on_router_intf_remove_non_admin(self):
+        snat_sub, rtr, pvt_sub = self._setup_router_with_ext_net(
+            NON_ADMIN_TENANT)
+        self.assertTrue(self._get_snat_ports(snat_sub))
+
+        self._router_interface_action('remove', rtr['id'], pvt_sub['id'],
+                                      None, tenant_id=NON_ADMIN_TENANT)
         self.assertFalse(self._get_snat_ports(snat_sub))
         self._update('subnets', snat_sub['id'],
                      {'subnet': {SNAT_POOL: False}})
