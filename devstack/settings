@@ -56,12 +56,15 @@ enable_service q-lbaasv2
 enable_service q-meta
 enable_service neutron
 enable_service group-policy
-if [[ $ENABLE_APIC_AIM_GATE = False ]]; then
-    ENABLED_SERVICES+=,heat,h-api,h-api-cfn,h-api-cw,h-eng
-    disable_service tempest
-else
-    # this may not be required
-    DISABLED_SERVICES+=,n-api,n-cpu,n-cond,n-sch,n-novnc,n-cauth,g-api,g-reg,c-sch,c-api,c-vol,horizon,heat,h-api,h-api-cfn,h-api-cw,h-eng,dstat,tempest
+
+if [[ $ENABLE_NSX_POLICY = False ]]; then
+    if [[ $ENABLE_APIC_AIM_GATE = False ]]; then
+        ENABLED_SERVICES+=,heat,h-api,h-api-cfn,h-api-cw,h-eng
+        disable_service tempest
+    else
+        # this may not be required
+        DISABLED_SERVICES+=,n-api,n-cpu,n-cond,n-sch,n-novnc,n-cauth,g-api,g-reg,c-sch,c-api,c-vol,horizon,heat,h-api,h-api-cfn,h-api-cw,h-eng,dstat,tempest
+    fi
 fi
 if [[ $ENABLE_NFP = True ]]; then
     # NFP services
