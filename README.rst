@@ -15,13 +15,13 @@ GBP model also supports a redirect operation that makes it easy to abstract
 and consume complex network service chains and graphs.
 
 Checkout the GBP wiki page for more detailed information:
-<http://wiki.openstack.org/GroupBasedPolicy>
+<https://wiki.openstack.org/wiki/GroupBasedPolicy>
 
 The latest code is available at:
 <http://git.openstack.org/cgit/openstack/group-based-policy>.
 
 GBP project management (blueprints, bugs) is done via Launchpad:
-<http://launchpad.net/group-based-policy>
+<https://launchpad.net/group-based-policy>
 
 For help using or hacking on GBP, you can send mail to
 <mailto:openstack-dev@lists.openstack.org>.
