@@ -193,7 +193,8 @@ class NsxPolicyMappingDriver(api.ResourceMappingDriver):
 
     def _delete_domain(self, project_id):
         try:
-            self.nsx_policy.deployment_map.delete(project_id)
+            self.nsx_policy.deployment_map.delete(project_id,
+                                                  domain_id=project_id)
         except nsxlib_exc.ResourceNotFound:
             LOG.warning('Domain %s is not deployed on backend',
                         project_id)
