@@ -48,8 +48,6 @@ from oslo_db import exception as db_exc
 from oslo_log import log
 import oslo_messaging
 
-from apic_ml2.neutron.plugins.ml2.drivers.cisco.apic import (rpc as
-    apic_topo_rpc)
 from gbpservice._i18n import _LE
 from gbpservice._i18n import _LI
 from gbpservice._i18n import _LW
@@ -84,6 +82,8 @@ PROMISCUOUS_TYPES = [n_constants.DEVICE_OWNER_DHCP,
                      n_constants.DEVICE_OWNER_LOADBALANCER]
 
 NO_ADDR_SCOPE = object()
+
+TOPIC_APIC_SERVICE = 'apic-service'
 
 
 class KeystoneNotificationEndpoint(object):
@@ -179,7 +179,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         self.sg_enabled = securitygroups_rpc.is_firewall_enabled()
         # setup APIC topology RPC handler
         self.topology_conn = n_rpc.create_connection()
-        self.topology_conn.create_consumer(apic_topo_rpc.TOPIC_APIC_SERVICE,
+        self.topology_conn.create_consumer(TOPIC_APIC_SERVICE,
                                            [self.TopologyRpcEndpoint(self)],
                                            fanout=False)
         self.topology_conn.consume_in_threads()
