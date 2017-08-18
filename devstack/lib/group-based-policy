@@ -25,7 +25,6 @@ GBP_CONF_DIR=/etc/gbp
 AIM_REPO=http://github.com/noironetworks/aci-integration-module.git
 AIM_DIR=$DEST/aim
 APICML2_REPO=http://github.com/noironetworks/apic-ml2-driver.git
-APICML2_DIR=$DEST/apic_ml2
 OPFLEX_REPO=http://github.com/noironetworks/python-opflex-agent.git
 OPFLEX_DIR=$DEST/opflexagent
 APICAPI_REPO=http://github.com/noironetworks/apicapi.git
@@ -85,13 +84,6 @@ function install_gbpui {
     cd $GBPUI_DIR
     python $HORIZON_DIR/manage.py collectstatic --noinput
     mv $GBPUI_DIR/_test-requirements.txt $GBPUI_DIR/test-requirements.txt
-}
-
-function install_apic_ml2 {
-    git_clone $APICML2_REPO $APICML2_DIR $APICML2_BRANCH
-    mv $APICML2_DIR/test-requirements.txt $APICML2_DIR/_test-requirements.txt
-    setup_develop $APICML2_DIR
-    mv $APICML2_DIR/_test-requirements.txt $APICML2_DIR/test-requirements.txt
 }
 
 function install_apicapi {

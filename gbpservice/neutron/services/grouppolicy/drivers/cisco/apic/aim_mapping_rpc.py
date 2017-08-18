@@ -10,8 +10,6 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-from apic_ml2.neutron.db import port_ha_ipaddress_binding as ha_ip_db
-
 from neutron.common import rpc as n_rpc
 from neutron.common import topics
 from neutron.db import api as db_api
@@ -23,6 +21,9 @@ from gbpservice._i18n import _LE
 from gbpservice._i18n import _LW
 from gbpservice.neutron.services.grouppolicy.drivers.cisco.apic import (
     nova_client as nclient)
+from gbpservice.neutron.services.grouppolicy.drivers.cisco.apic import (
+    port_ha_ipaddress_binding as ha_ip_db)
+
 
 LOG = log.getLogger(__name__)
 
