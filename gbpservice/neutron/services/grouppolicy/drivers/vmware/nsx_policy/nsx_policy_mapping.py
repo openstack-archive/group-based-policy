@@ -165,7 +165,7 @@ class NsxPolicyMappingDriver(api.ResourceMappingDriver):
         LOG.info('Creating enforcement point for %s', nsx_manager_ip)
         self.nsx_policy.enforcement_point.create_or_overwrite(
             name=nsx_manager_ip,
-            ep_id=SINGLE_ENTRY_ID,
+            ep_junk=SINGLE_ENTRY_ID,
             ip_address=nsx_manager_ip,
             username=nsx_manager_username,
             password=nsx_manager_password,
