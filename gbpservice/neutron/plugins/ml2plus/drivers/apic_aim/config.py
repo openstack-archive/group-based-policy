@@ -15,11 +15,6 @@
 
 from oslo_config import cfg
 
-# Register apic_system_id
-# REVISIT(ivar): would be nice to remove dependency from apic_ml2 in GBP, and
-# register option directly here.
-from apic_ml2.neutron.plugins.ml2.drivers.cisco.apic import config  # noqa
-
 
 apic_opts = [
     cfg.BoolOpt('enable_optimized_dhcp', default=True),
@@ -45,3 +40,15 @@ apic_opts = [
 
 
 cfg.CONF.register_opts(apic_opts, "ml2_apic_aim")
+
+
+# oslo_config limits ${var} expansion to global variables
+# That is why apic_system_id as a global variable
+global_opts = [
+    cfg.StrOpt('apic_system_id',
+               default='openstack',
+               help=_("Prefix for APIC domain/names/profiles created")),
+]
+
+
+cfg.CONF.register_opts(global_opts)

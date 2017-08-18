@@ -48,12 +48,11 @@ from oslo_db import exception as db_exc
 from oslo_log import log
 import oslo_messaging
 
-from apic_ml2.neutron.plugins.ml2.drivers.cisco.apic import (rpc as
-    apic_topo_rpc)
 from gbpservice._i18n import _LE
 from gbpservice._i18n import _LI
 from gbpservice._i18n import _LW
 from gbpservice.network.neutronv2 import local_api
+from gbpservice.neutron.agent.topology import rpc as arpc
 from gbpservice.neutron.extensions import cisco_apic
 from gbpservice.neutron.extensions import cisco_apic_l3 as a_l3
 from gbpservice.neutron.plugins.ml2plus import driver_api as api_plus
@@ -181,7 +180,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         self.sg_enabled = securitygroups_rpc.is_firewall_enabled()
         # setup APIC topology RPC handler
         self.topology_conn = n_rpc.create_connection()
-        self.topology_conn.create_consumer(apic_topo_rpc.TOPIC_APIC_SERVICE,
+        self.topology_conn.create_consumer(arpc.TOPIC_APIC_SERVICE,
                                            [self.TopologyRpcEndpoint(self)],
                                            fanout=False)
         self.topology_conn.consume_in_threads()
