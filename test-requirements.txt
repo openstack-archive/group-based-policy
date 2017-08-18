@@ -4,7 +4,7 @@
 
 setuptools>=19.2
 -e git+https://git.openstack.org/openstack/neutron.git@mitaka-eol#egg=neutron
--e git+https://github.com/noironetworks/apicapi.git@master#egg=apicapi
+-e git+https://github.com/noironetworks/apicapi.git@add-ocata#egg=apicapi
 -e git+https://github.com/noironetworks/python-opflex-agent.git@stable/mitaka#egg=python-opflexagent-agent
 -e git+https://github.com/noironetworks/apic-ml2-driver.git@mitaka#egg=apic_ml2
 -e git+https://git.openstack.org/openstack/python-group-based-policy-client@stable/mitaka#egg=gbpclient
