@@ -7,7 +7,6 @@
 -e git+https://github.com/noironetworks/apicapi.git@master#egg=apicapi
 
 -e git+https://github.com/noironetworks/python-opflex-agent.git@master#egg=python-opflexagent-agent
--e git+https://github.com/noironetworks/apic-ml2-driver.git@sumit/ocata#egg=apic_ml2
 
 -e git+https://github.com/openstack/vmware-nsx.git@stable/ocata#egg=vmware_nsx
 -e git+https://github.com/openstack/vmware-nsxlib.git@stable/ocata#egg=vmware_nsxlib
