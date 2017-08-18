@@ -285,7 +285,7 @@ class Servicechain(extensions.ExtensionDescriptor):
 
     @classmethod
     def get_namespace(cls):
-        return "http://wiki.openstack.org/neutron/sc/v2.0/"
+        return "https://wiki.openstack.org/wiki/Neutron/sc/v2.0/"
 
     @classmethod
     def get_updated(cls):
