@@ -1,7 +1,6 @@
 function install_apic_aim {
     echo_summary "Installing apic_aim"
 
-    install_apic_ml2
     install_aim
     install_opflex
     install_apicapi
