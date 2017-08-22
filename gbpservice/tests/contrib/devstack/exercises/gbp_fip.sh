@@ -43,7 +43,7 @@ function confirm_server_active {
 }
 
 
-EXT_NET_ID=$(neutron net-list --router:external -c id | grep -v id | awk '{print $2}' )
+EXT_NET_ID=$(neutron net-list --router:external=True -c id | grep -v id | awk '{print $2}' )
 EXT_NET_TO_BE_CLEANED_UP=false
 
 if [ -z "$EXT_NET_ID" ] ; then
