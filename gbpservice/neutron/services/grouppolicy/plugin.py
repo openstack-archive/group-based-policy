@@ -69,6 +69,9 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
             self._aliases = aliases
         return self._aliases
 
+    def start_rpc_listeners(self):
+        return self.policy_driver_manager.start_rpc_listeners()
+
     @property
     def servicechain_plugin(self):
         # REVISIT(rkukura): Need initialization method after all
