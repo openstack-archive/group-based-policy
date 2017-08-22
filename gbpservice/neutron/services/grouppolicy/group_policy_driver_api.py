@@ -1379,6 +1379,13 @@ class PolicyDriver(object):
         """
         pass
 
+    def start_rpc_listeners(self):
+        """Start the RPC listeners for the policy drivers.
+
+        When implemented it should return the RPC server object.
+        """
+        pass
+
 
 @six.add_metaclass(abc.ABCMeta)
 class ExtensionDriver(object):
