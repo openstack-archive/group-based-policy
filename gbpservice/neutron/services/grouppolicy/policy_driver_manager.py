@@ -105,7 +105,7 @@ class PolicyDriverManager(stevedore.named.NamedExtensionManager):
             self.native_bulk_support &= getattr(driver.obj,
                                                 'native_bulk_support', True)
 
-    def _call_on_drivers(self, method_name, context,
+    def _call_on_drivers(self, method_name, context=None,
                          continue_on_failure=False):
         """Helper method for calling a method across all policy drivers.
 
@@ -120,9 +120,16 @@ class PolicyDriverManager(stevedore.named.NamedExtensionManager):
         drivers = (self.ordered_policy_drivers if not
                    method_name.startswith('delete') else
                    self.reverse_ordered_policy_drivers)
+        if method_name == 'start_rpc_listeners':
+            servers = []
         for driver in drivers:
             try:
-                getattr(driver.obj, method_name)(context)
+                if method_name == 'start_rpc_listeners':
+                    server = getattr(driver.obj, method_name)()
+                    if server:
+                        servers.extend(server)
+                else:
+                    getattr(driver.obj, method_name)(context)
             except Exception as e:
                 if db_api.is_retriable(e):
                     with excutils.save_and_reraise_exception():
@@ -150,6 +157,9 @@ class PolicyDriverManager(stevedore.named.NamedExtensionManager):
                         break
         if error:
             raise gp_exc.GroupPolicyDriverError(method=method_name)
+
+	if method_name == 'start_rpc_listeners':
+            return servers
 
     def ensure_tenant(self, plugin_context, tenant_id):
         for driver in self.ordered_policy_drivers:
@@ -474,3 +484,6 @@ class PolicyDriverManager(stevedore.named.NamedExtensionManager):
 
     def get_nat_pool_status(self, context):
         self._call_on_drivers("get_nat_pool_status", context)
+
+    def start_rpc_listeners(self):
+        return self._call_on_drivers("start_rpc_listeners")
