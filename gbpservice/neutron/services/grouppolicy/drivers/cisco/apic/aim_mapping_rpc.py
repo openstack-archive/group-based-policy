@@ -48,7 +48,7 @@ class AIMMappingRPCMixin(ha_ip_db.HAIPOwnerDbMixin):
         self.opflex_conn = n_rpc.create_connection()
         self.opflex_conn.create_consumer(
             self.opflex_topic, self.opflex_endpoints, fanout=False)
-        self.opflex_conn.consume_in_threads()
+        return self.opflex_conn.consume_in_threads()
 
     @db_api.retry_db_errors
     def _retrieve_vrf_details(self, context, **kwargs):
