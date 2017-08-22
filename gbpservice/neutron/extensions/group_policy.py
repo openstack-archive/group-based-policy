@@ -1306,3 +1306,7 @@ class GroupPolicyPluginBase(service_base.ServicePluginBase):
     @abc.abstractmethod
     def delete_nat_pool(self, context, nat_pool_id):
         pass
+
+    @abc.abstractmethod
+    def start_rpc_listeners(self):
+        pass
