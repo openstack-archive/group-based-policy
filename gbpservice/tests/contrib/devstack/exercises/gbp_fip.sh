@@ -43,7 +43,7 @@ function confirm_server_active {
 }
 
 
-EXT_NET_ID=$(neutron net-list --router:external -c id | grep -v id | awk '{print $2}' )
+EXT_NET_ID=$(neutron net-list --router:external=True -c id | grep -v id | awk '{print $2}' )
 EXT_NET_TO_BE_CLEANED_UP=false
 
 if [ -z "$EXT_NET_ID" ] ; then
@@ -51,7 +51,6 @@ if [ -z "$EXT_NET_ID" ] ; then
     EXT_SUBNET_ID=$(neutron subnet-create --ip_version 4 --gateway 172.16.73.1 --name public-subnet $EXT_NET_ID 172.16.73.0/24 | grep ' id ' | get_field 2)
     EXT_NET_TO_BE_CLEANED_UP=true
 else
-    EXT_NET_ID=$(neutron net-list --router:external -c id | grep -v id | awk '{print $2}' )
     EXT_SUBNET_ID=$(neutron net-show $EXT_NET_ID | grep subnets | awk '{print $4}' )
 fi
 
