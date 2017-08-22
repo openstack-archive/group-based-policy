@@ -1091,6 +1091,9 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
                     raise gpolicy.SubnetPrefixLengthExceedsIpPool(
                         ip_pool=pool, subnet_size=new_prefix_length)
 
+    def start_rpc_listeners(self):
+        pass
+
     @log.log_method_call
     def create_policy_target(self, context, policy_target):
         pt = policy_target['policy_target']
