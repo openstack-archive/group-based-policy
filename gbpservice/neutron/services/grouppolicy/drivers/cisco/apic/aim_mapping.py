@@ -186,13 +186,16 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
                          'per L2 Policy'))
         self.create_per_l3p_implicit_contracts = (
                 cfg.CONF.aim_mapping.create_per_l3p_implicit_contracts)
-        self.setup_opflex_rpc_listeners()
         self.advertise_mtu = cfg.CONF.aim_mapping.advertise_mtu
         local_api.QUEUE_OUT_OF_PROCESS_NOTIFICATIONS = True
         if self.create_per_l3p_implicit_contracts:
             LOG.info(_LI('Implicit AIM contracts will be created '
                          'for l3_policies which do not have them.'))
             self._create_per_l3p_implicit_contracts()
+
+    @log.log_method_call
+    def start_rpc_listeners(self):
+        return self.setup_opflex_rpc_listeners()
 
     @property
     def aim_mech_driver(self):
@@ -2384,7 +2387,8 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
         return AUTO_PTG_NAME_PREFIX % l2p['id']
 
     def _get_auto_ptg_id(self, l2p_id):
-        return AUTO_PTG_ID_PREFIX % hashlib.md5(l2p_id).hexdigest()
+        if l2p_id:
+            return AUTO_PTG_ID_PREFIX % hashlib.md5(l2p_id).hexdigest()
 
     def _is_auto_ptg(self, ptg):
         return ptg['id'].startswith(AUTO_PTG_PREFIX)
