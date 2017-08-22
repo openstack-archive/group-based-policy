@@ -65,7 +65,7 @@ gbp group-create web1
 gbp policy-target-create web-pt-1 --policy-target-group web
 
 set +o xtrace
-# create external network with admin priviledge
+# create external network with admin privilege
 source $TOP_DIR/openrc admin admin
 set -o xtrace
 EXT_NET_ID=$(neutron net-create mgmt_out --router:external=True --shared | grep ' id ' | awk '{print $4}')
