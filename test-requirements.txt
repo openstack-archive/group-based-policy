@@ -48,4 +48,4 @@ python-keystoneclient
 # REVISIT: Until co-gating and/or stable branches are implemented for the
 # aci-integration-module repo, it may be necessary to pin to a working
 # commit.
--e git+https://github.com/noironetworks/aci-integration-module.git@sumit/ocata#egg=aci-integration-module
+-e git+https://github.com/noironetworks/aci-integration-module.git@master#egg=aci-integration-module
