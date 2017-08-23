@@ -195,13 +195,13 @@ class NsxPolicyMappingDriver(api.ResourceMappingDriver):
         try:
             self.nsx_policy.deployment_map.delete(project_id,
                                                   domain_id=project_id)
-        except nsxlib_exc.ResourceNotFound:
+        except nsxlib_exc.ManagerError:
             LOG.warning('Domain %s is not deployed on backend',
                         project_id)
 
         try:
             self.nsx_policy.domain.delete(project_id)
-        except nsxlib_exc.ResourceNotFound:
+        except nsxlib_exc.ManagerError:
             LOG.warning('Domain %s was not found on backend',
                         project_id)
 
@@ -241,7 +241,7 @@ class NsxPolicyMappingDriver(api.ResourceMappingDriver):
     def _delete_comm_profile(self, comm_profile_id):
         try:
             self.nsx_policy.comm_profile.delete(comm_profile_id)
-        except nsxlib_exc.ResourceNotFound:
+        except nsxlib_exc.ManagerError:
             LOG.error('Communication profile %s not found on backend',
                       comm_profile_id)
 
@@ -303,7 +303,7 @@ class NsxPolicyMappingDriver(api.ResourceMappingDriver):
                 if ruleset in profiles:
                     try:
                         self.nsx_policy.comm_map.delete(project_id, ruleset)
-                    except nsxlib_exc.ResourceNotFound:
+                    except nsxlib_exc.ManagerError:
                         pass
             return
 
