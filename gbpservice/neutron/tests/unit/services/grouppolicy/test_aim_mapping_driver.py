@@ -3681,9 +3681,17 @@ class NotificationTest(AIMBaseTestCase):
             for sg_id in sg_ids:
                 self.new_delete_request(
                     'security-groups', sg_id).get_response(self.ext_api)
-            notifier.assert_has_calls(expected_calls(), any_order=False)
+            # Remove any port update calls for port-binding
+            new_mock = mock.MagicMock()
+            call_list = []
+            for call in notifier.mock_calls:
+                if call[1][-1] != 'port.update.end':
+                    call_list.append(call)
+            new_mock.mock_calls = call_list
+            new_mock.assert_has_calls(expected_calls(), any_order=False)
             # test that no notifications have been left out
             self.assertEqual({}, self.notification_queue)
+            return new_mock
 
     def _deep_replace_in_value(self, d, str1, str2):
         for k, v in d.items():
@@ -3728,8 +3736,8 @@ class NotificationTest(AIMBaseTestCase):
     def test_dhcp_notifier(self):
         with mock.patch.object(dhcp_rpc_agent_api.DhcpAgentNotifyAPI,
                                'notify') as dhcp_notifier_no_batch:
-            self._test_notifier(dhcp_notifier_no_batch,
-                                self._expected_dhcp_agent_call_list, False)
+            no_batch = self._test_notifier(dhcp_notifier_no_batch,
+                self._expected_dhcp_agent_call_list, False)
 
         self.assertEqual(0, self.queue_notification_call_count)
         self.assertEqual(0, self.max_notification_queue_length)
@@ -3738,8 +3746,8 @@ class NotificationTest(AIMBaseTestCase):
 
         with mock.patch.object(dhcp_rpc_agent_api.DhcpAgentNotifyAPI,
                                'notify') as dhcp_notifier_with_batch:
-            self._test_notifier(dhcp_notifier_with_batch,
-                                self._expected_dhcp_agent_call_list, True)
+            batch = self._test_notifier(dhcp_notifier_with_batch,
+                self._expected_dhcp_agent_call_list, True)
 
         self.assertLess(0, self.queue_notification_call_count)
         self.assertLess(0, self.max_notification_queue_length)
@@ -3750,8 +3758,7 @@ class NotificationTest(AIMBaseTestCase):
         # which leaves us with 3 sets of queued notifications.
         self.assertEqual(3, self.post_notifications_from_queue_call_count)
 
-        self._test_notifications(dhcp_notifier_no_batch.call_args_list,
-                                 dhcp_notifier_with_batch.call_args_list)
+        self._test_notifications(no_batch.call_args_list, batch.call_args_list)
 
     def test_notifiers_with_transaction_rollback(self):
         # No notifications should get pushed in this case
@@ -3765,8 +3772,15 @@ class NotificationTest(AIMBaseTestCase):
                                    'send_network_change') as nova_notifier:
                 self.create_policy_target_group(name="ptg1",
                                                 expected_res_status=500)
+                # Remove any port updates, as those don't count
+                args_list = []
+                new_dhcp = mock.MagicMock()
+                for call_args in dhcp_notifier.call_args_list:
+                    if call_args[0][-1] != 'port.update.end':
+                        args_list.append(call_args)
+                new_dhcp.call_args_list = args_list
                 # test that notifier was not called
-                self.assertEqual([], dhcp_notifier.call_args_list)
+                self.assertEqual([], new_dhcp.call_args_list)
                 self.assertEqual([], nova_notifier.call_args_list)
                 # test that notification queue has been flushed
                 self.assertEqual({}, self.notification_queue)
