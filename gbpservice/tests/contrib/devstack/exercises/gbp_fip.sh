@@ -34,15 +34,6 @@ source $TOP_DIR/openrc admin admin
 # an error.  It is also useful for following allowing as the install occurs.
 set -o xtrace
 
-function confirm_server_active {
-    local VM_UUID=$1
-    if ! timeout $ACTIVE_TIMEOUT sh -c "while ! nova show $VM_UUID | grep status | grep -q ACTIVE; do sleep 1; done"; then
-        echo "server '$VM_UUID' did not become active!"
-        false
-    fi
-}
-
-
 EXT_NET_ID=$(neutron net-list --router:external=True -c id | grep -v id | awk '{print $2}' )
 EXT_NET_TO_BE_CLEANED_UP=false
 
@@ -61,7 +52,11 @@ EXT_SUBNET_CIDR=$(neutron subnet-show $EXT_SUBNET_ID | grep cidr | awk '{print $
 
 EXT_SUBNET_GW=$(neutron subnet-show $EXT_SUBNET_ID | grep gateway_ip | awk '{print $4}' )
 
-EXT_SEGMENT_ID=$(gbp external-segment-create --ip-version 4 --external-route destination=0.0.0.0/0,nexthop=$EXT_SUBNET_GW --shared True --subnet_id=$EXT_SUBNET_ID  --cidr $EXT_SUBNET_CIDR default | grep ' id ' | awk '{print $4}' )
+EXT_ROUTE_DEF="--external-route destination=0.0.0.0/0,nexthop=$EXT_SUBNET_GW"
+if [[ $GBP_FIP_SKIP_EXT_ROUTE ]]; then
+    EXT_ROUTE_DEF=""
+fi
+EXT_SEGMENT_ID=$(gbp external-segment-create --ip-version 4 --shared True --subnet_id=$EXT_SUBNET_ID $EXT_ROUTE_DEF --cidr $EXT_SUBNET_CIDR default | grep ' id ' | awk '{print $4}' )
 
 die_if_not_set $LINENO EXT_SEGMENT_ID "Failure creating external segment"
 
