@@ -11,6 +11,7 @@
 #    under the License.
 
 from neutron import context as n_ctx
+from oslo_config import cfg
 from sqlalchemy.orm import exc as orm_exc
 
 from gbpservice.neutron.db.grouppolicy.extensions import group_proxy_db
@@ -182,8 +183,13 @@ class ExtensionDriverTestCaseMixin(object):
         self.assertEqual('InvalidDefaultSubnetPrefixLength',
                          res['NeutronError']['type'])
 
-    def test_proxy_pool_invalid_version(self):
-        # proxy_ip_pool is of a different version
+    def test_proxy_pool_legacy_invalid_version(self):
+        cfg.CONF.set_override('use_subnetpools',
+                              False,
+                              group='resource_mapping')
+
+        # without subnetpools, proxy_ip_pool of a different version
+        # should fail
         res = self.create_l3_policy(ip_version=6, ip_pool='1::1/16',
                                     proxy_ip_pool='192.168.0.0/16',
                                     expected_res_status=400)

@@ -12,11 +12,18 @@
 
 from neutron_lib.api import validators
 
+from oslo_config import cfg
+from oslo_log import log as logging
+
+from gbpservice._i18n import _LW
 from gbpservice.neutron.db.grouppolicy.extensions import group_proxy_db as db
 from gbpservice.neutron.db.grouppolicy import group_policy_db as gp_db
 from gbpservice.neutron.extensions import driver_proxy_group
 from gbpservice.neutron.services.grouppolicy import (
     group_policy_driver_api as api)
+
+
+LOG = logging.getLogger(__name__)
 
 
 class ProxyGroupDriver(api.ExtensionDriver):
@@ -99,11 +106,26 @@ class ProxyGroupDriver(api.ExtensionDriver):
     @api.default_extension_behavior(db.ProxyIPPoolMapping)
     def process_create_l3_policy(self, session, data, result):
         data = data['l3_policy']
-        gp_db.GroupPolicyDbPlugin.validate_ip_pool(
-            data['proxy_ip_pool'], data['ip_version'])
-        gp_db.GroupPolicyDbPlugin.validate_subnet_prefix_length(
-            data['ip_version'], data['proxy_subnet_prefix_length'],
-            data['proxy_ip_pool'])
+        if cfg.CONF.resource_mapping.use_subnetpools:
+            # With subnetpools, proxy ips are allocated from regular ip_pool
+            # (since neutron does not allow mixed subnetpools on same
+            # network). But proxy_subnet_prefix_length is still used to
+            # determine size of proxy ip pool.
+            gp_db.GroupPolicyDbPlugin.validate_subnet_prefix_length(
+                data['ip_version'], data['proxy_subnet_prefix_length'],
+                data['ip_pool'])
+            if data['proxy_ip_pool']:
+                LOG.warning(_LW("Since use_subnetpools setting is turned on, "
+                                "proxy_ip_pool %s will be ignored. "
+                                "Proxy subnets will be allocated from same "
+                                "subnetpool as group subnets"),
+                            data['proxy_ip_pool'])
+        else:
+            gp_db.GroupPolicyDbPlugin.validate_ip_pool(
+                data['proxy_ip_pool'], data['ip_version'])
+            gp_db.GroupPolicyDbPlugin.validate_subnet_prefix_length(
+                data['ip_version'], data['proxy_subnet_prefix_length'],
+                data['proxy_ip_pool'])
 
     @api.default_extension_behavior(db.ProxyIPPoolMapping)
     def process_update_l3_policy(self, session, data, result):
