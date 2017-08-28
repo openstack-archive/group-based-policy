@@ -69,7 +69,7 @@ set +o xtrace
 source $TOP_DIR/openrc admin admin
 set -o xtrace
 EXT_NET_ID=$(neutron net-create mgmt_out --router:external=True --shared | grep ' id ' | awk '{print $4}')
-EXT_SUBNET_ID=$(neutron subnet-create --ip_version 4 --gateway 172.16.73.1 --name public-subnet $EXT_NET_ID 172.16.73.0/24 | grep ' id ' | awk '{print $4}')
+EXT_SUBNET_ID=$(neutron subnet-create --ip_version 4 --gateway 172.16.73.1 --disable-dhcp --name public-subnet $EXT_NET_ID 172.16.73.0/24 | grep ' id ' | awk '{print $4}')
 openstack project list
 DEMO_PROJECT_ID=$(openstack project show demo | grep "[^a-zA-Z_\d]id[^a-zA-Z_\d]" | awk '{print $4}')
 
