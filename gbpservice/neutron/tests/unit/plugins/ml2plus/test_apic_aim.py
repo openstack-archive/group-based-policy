@@ -72,6 +72,11 @@ AGENT_CONF_OVS = {'alive': True, 'binary': 'somebinary',
                       'bridge_mappings': {'physnet1': 'br-eth1',
                                           'physnet2': 'br-eth2',
                                           'physnet3': 'br-eth3'}}}
+AGENT_TYPE_DVS = md.AGENT_TYPE_DVS
+AGENT_CONF_DVS = {'alive': True, 'binary': 'anotherbinary',
+                  'topic': 'anothertopic', 'agent_type': AGENT_TYPE_DVS,
+                  'configurations': {'opflex_networks': None}}
+BOOKED_PORT_VALUE = 'myBookedPort'
 
 DN = 'apic:distinguished_names'
 CIDR = 'apic:external_cidrs'
@@ -256,6 +261,15 @@ class ApicAimTestCase(test_address_scope.AddressScopeTestCase,
         data = {'port': {'binding:host_id': host,
                          'device_owner': 'compute:',
                          'device_id': 'someid'}}
+        req = self.new_update_request('ports', data, port_id,
+                                      self.fmt)
+        return self.deserialize(self.fmt, req.get_response(self.api))
+
+    def _bind_dhcp_port_to_host(self, port_id, host):
+        data = {'port': {'binding:host_id': host,
+                         'device_owner': 'network:dhcp',
+                         'device_id': 'someid'}}
+        # Create EP with bound port
         req = self.new_update_request('ports', data, port_id,
                                       self.fmt)
         return self.deserialize(self.fmt, req.get_response(self.api))
@@ -3214,6 +3228,148 @@ class TestPortBinding(ApicAimTestCase):
 
     # TODO(rkukura): Add tests for opflex, local and unsupported
     # network_type values.
+
+
+class TestPortBindingDvs(ApicAimTestCase):
+
+    def setUp(self):
+        super(TestPortBindingDvs, self).setUp()
+        self.driver._dvs_notifier = mock.MagicMock()
+        self.driver.dvs_notifier.bind_port_call = mock.Mock(
+            return_value=BOOKED_PORT_VALUE)
+
+    def _get_expected_pg(self, net):
+        return ('prj_' + net['tenant_id'] + '|' +
+                self.driver.ap_name + '|' + 'net_' + net['id'])
+
+    def _verify_dvs_notifier(self, notifier, port, host):
+        # can't use getattr() with mock, so use eval instead
+        try:
+            dvs_mock = eval('self.driver.dvs_notifier.' + notifier)
+        except Exception:
+            self.assertTrue(False,
+                            "The method " + notifier + " was not called")
+            return
+
+        self.assertTrue(dvs_mock.called)
+        a1, a2, a3, a4 = dvs_mock.call_args[0]
+        self.assertEqual(a1['id'], port['id'])
+        if a2:
+            self.assertEqual(a2['id'], port['id'])
+        self.assertEqual(a4, host)
+
+    def test_bind_port_dvs(self):
+        # Register a DVS agent
+        self._register_agent('host1', AGENT_CONF_DVS)
+        net = self._make_network(self.fmt, 'net1', True)
+        self._make_subnet(self.fmt, net, '10.0.1.1', '10.0.1.0/24')
+        port = self._make_port(self.fmt, net['network']['id'])['port']
+        port_id = port['id']
+        self.assertEqual(net['network']['id'], port['network_id'])
+        new_port = self._bind_port_to_host(port_id, 'host1')
+        # Called on the network's tenant
+        expected_pg = self._get_expected_pg(net['network'])
+        pg = new_port['port']['binding:vif_details']['dvs_port_group_name']
+        self.assertEqual(expected_pg, pg)
+        port_key = new_port['port']['binding:vif_details'].get('dvs_port_key')
+        self.assertIsNotNone(port_key)
+        self.assertEqual(BOOKED_PORT_VALUE, port_key)
+        self._verify_dvs_notifier('update_postcommit_port_call', port, 'host1')
+        self._delete('ports', port_id)
+        self._verify_dvs_notifier('delete_port_call', port, 'host1')
+
+    def test_bind_port_dvs_with_opflex_diff_hosts(self):
+        # Register an OpFlex agent and DVS agent
+        self._register_agent('h1', AGENT_CONF_OPFLEX)
+        self._register_agent('h2', AGENT_CONF_DVS)
+        net = self._make_network(self.fmt, 'net1', True)
+        self._make_subnet(self.fmt, net, '10.0.1.1', '10.0.1.0/24')
+        p1 = self._make_port(self.fmt, net['network']['id'])['port']
+        port_id = p1['id']
+        # Bind a VLAN port after registering a DVS agent
+        self.assertEqual(net['network']['id'], p1['network_id'])
+        newp1 = self._bind_port_to_host(p1['id'], 'h2')
+        expected_pg = self._get_expected_pg(net['network'])
+        vif_det = newp1['port']['binding:vif_details']
+        self.assertIsNotNone(vif_det.get('dvs_port_group_name', None))
+        self.assertEqual(expected_pg, vif_det.get('dvs_port_group_name'))
+        port_key = newp1['port']['binding:vif_details'].get('dvs_port_key')
+        self.assertIsNotNone(port_key)
+        self.assertEqual(port_key, BOOKED_PORT_VALUE)
+        self._verify_dvs_notifier('update_postcommit_port_call', p1, 'h2')
+        self._delete('ports', port_id)
+        self._verify_dvs_notifier('delete_port_call', p1, 'h2')
+
+    def test_bind_ports_opflex_same_host(self):
+        # Register an OpFlex agent and DVS agent
+        self._register_agent('h1', AGENT_CONF_OPFLEX)
+        net = self._make_network(self.fmt, 'net1', True)
+        self._make_subnet(self.fmt, net, '10.0.1.1', '10.0.1.0/24')
+        p1 = self._make_port(self.fmt, net['network']['id'])['port']
+        port_id = p1['id']
+        # Bind a VLAN port after registering a DVS agent
+        self.assertEqual(net['network']['id'], p1['network_id'])
+        newp1 = self._bind_port_to_host(p1['id'], 'h1')
+        # Called on the network's tenant
+        vif_det = newp1['port']['binding:vif_details']
+        self.assertIsNone(vif_det.get('dvs_port_group_name', None))
+        port_key = newp1['port']['binding:vif_details'].get('dvs_port_key')
+        self.assertIsNone(port_key)
+        dvs_mock = self.driver.dvs_notifier.update_postcommit_port_call
+        dvs_mock.assert_not_called()
+        dvs_mock = self.driver.dvs_notifier.delete_port_call
+        self._delete('ports', port_id)
+        dvs_mock.assert_not_called()
+        self.driver.dvs_notifier.reset_mock()
+        p2 = self._make_port(self.fmt, net['network']['id'])['port']
+        self.assertEqual(net['network']['id'], p2['network_id'])
+        newp2 = self._bind_dhcp_port_to_host(p2['id'], 'h1')
+        # Called on the network's tenant
+        vif_det = newp2['port']['binding:vif_details']
+        self.assertIsNone(vif_det.get('dvs_port_group_name', None))
+        port_key = newp2['port']['binding:vif_details'].get('dvs_port_key')
+        self.assertIsNone(port_key)
+        dvs_mock.assert_not_called()
+        self._delete('ports', newp2['port']['id'])
+        dvs_mock = self.driver.dvs_notifier.delete_port_call
+        dvs_mock.assert_not_called()
+
+    def test_bind_ports_dvs_with_opflex_same_host(self):
+        # Register an OpFlex agent and DVS agent
+        self._register_agent('h1', AGENT_CONF_DVS)
+        net = self._make_network(self.fmt, 'net1', True)
+        self._make_subnet(self.fmt, net, '10.0.1.1', '10.0.1.0/24')
+        p1 = self._make_port(self.fmt, net['network']['id'])['port']
+        # Bind a VLAN port after registering a DVS agent
+        self.assertEqual(net['network']['id'], p1['network_id'])
+        # Bind port to trigger path binding
+        newp1 = self._bind_port_to_host(p1['id'], 'h1')
+        # Called on the network's tenant
+        expected_pg = self._get_expected_pg(net['network'])
+        vif_det = newp1['port']['binding:vif_details']
+        self.assertIsNotNone(vif_det.get('dvs_port_group_name', None))
+        self.assertEqual(expected_pg, vif_det.get('dvs_port_group_name'))
+        port_key = newp1['port']['binding:vif_details'].get('dvs_port_key')
+        self.assertIsNotNone(port_key)
+        self.assertEqual(port_key, BOOKED_PORT_VALUE)
+        self._verify_dvs_notifier('update_postcommit_port_call', p1, 'h1')
+        self._delete('ports', newp1['port']['id'])
+        self._verify_dvs_notifier('delete_port_call', p1, 'h1')
+        self.driver.dvs_notifier.reset_mock()
+        p2 = self._make_port(self.fmt, net['network']['id'])['port']
+        self.assertEqual(net['network']['id'], p2['network_id'])
+        # Bind port to trigger path binding
+        newp2 = self._bind_dhcp_port_to_host(p2['id'], 'h1')
+        # Called on the network's tenant
+        vif_det = newp2['port']['binding:vif_details']
+        self.assertIsNone(vif_det.get('dvs_port_group_name', None))
+        port_key = newp2['port']['binding:vif_details'].get('dvs_port_key')
+        self.assertIsNone(port_key)
+        dvs_mock = self.driver.dvs_notifier.update_postcommit_port_call
+        dvs_mock.assert_not_called()
+        self._delete('ports', newp2['port']['id'])
+        dvs_mock = self.driver.dvs_notifier.delete_port_call
+        dvs_mock.assert_not_called()
 
 
 class TestMl2BasicGet(test_plugin.TestBasicGet,
