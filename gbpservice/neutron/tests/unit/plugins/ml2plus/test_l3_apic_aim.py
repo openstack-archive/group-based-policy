@@ -35,8 +35,31 @@ class TestCiscoApicAimL3Plugin(test_aim_mapping_driver.AIMBaseTestCase):
        class so that it can inherit test infrastructure from those classes.
     '''
 
+    def _verify_event_handler_calls(self, data, expected_call_count=1):
+        if not hasattr(data, '__iter__') or isinstance(data, dict):
+            data = [data]
+        self.assertEqual(expected_call_count, self.handler_mock.call_count)
+        call_idx = -1
+        for item in data:
+            if item:
+                model = self.handler_mock.call_args_list[call_idx][0][-1]
+                self.assertEqual(model['id'], item['id'])
+                self.assertEqual(model['tenant_id'], item['tenant_id'])
+            call_idx = call_idx - 1
+
     def setUp(self):
+        handler_patch = mock.patch(
+            'neutron.quota.resource.TrackedResource._db_event_handler')
+        self.handler_mock = handler_patch.start()
+        def_sec_group_patch = mock.patch(
+            'neutron.db.securitygroups_db.SecurityGroupDbMixin.'
+            '_ensure_default_security_group')
+        def_sec_group_patch.start()
         super(TestCiscoApicAimL3Plugin, self).setUp()
+        get_sec_group_port_patch = mock.patch(
+            'neutron.db.securitygroups_db.SecurityGroupDbMixin.'
+            '_get_security_groups_on_port')
+        get_sec_group_port_patch.start()
 
         # Set up L2 objects for L3 test
         attr = {'tenant_id': TENANT}
@@ -93,3 +116,28 @@ class TestCiscoApicAimL3Plugin(test_aim_mapping_driver.AIMBaseTestCase):
 
     def test_remove_router_interface_port(self):
         self._test_remove_router_interface(self.interface_info['port'])
+
+    def test_create_delete_floating_ip_triggers_event(self):
+        net = self._make_network('json', 'meh', True)
+        subnet = self._make_subnet('json', net, '14.0.0.1',
+                                   '14.0.0.0/24')['subnet']
+        self._set_net_external(subnet['network_id'])
+        kwargs = {'floatingip': {'tenant_id': TENANT,
+                                 'subnet_id': subnet['id'],
+                                 'floating_network_id': subnet['network_id']}}
+        self.handler_mock.reset_mock()
+        floatingip = self.plugin.create_floatingip(self.context, kwargs)
+        internal_ports = self._show('ports',
+                                    floatingip['port_id'])['ports']
+        for port in internal_ports:
+            if port['device_owner'] == 'network:floatingip' and (
+                    port['device_id'] == floatingip['id']):
+                internal_port = port
+        # When a floatingip is created it also creates port, therefore
+        # there will be four calls in total to the event handler
+        self._verify_event_handler_calls(floatingip,
+                                         expected_call_count=2)
+        self._delete('floatingips', floatingip['id'])
+        # Expecting 2 more calls - 1 for the port, 1 for the floatingip
+        self._verify_event_handler_calls(
+            [internal_port, floatingip], expected_call_count=4)
