@@ -125,7 +125,6 @@ if is_service_enabled group-policy; then
             fi
         fi
         # REVISIT move installs to install phase?
-        # install_apic_ml2
         install_gbpclient
         install_gbpservice
         [[ $ENABLE_NFP = True ]] && install_nfpgbpservice
