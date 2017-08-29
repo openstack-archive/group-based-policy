@@ -39,6 +39,7 @@ from neutron.plugins.common import constants as pconst
 from neutron.plugins.ml2 import driver_api as api
 from neutron.plugins.ml2 import models
 from neutron_lib import constants as n_constants
+from neutron_lib import context as nctx
 from neutron_lib import exceptions as n_exceptions
 from neutron_lib.plugins import directory
 from opflexagent import constants as ofcst
@@ -48,6 +49,7 @@ from oslo_config import cfg
 from oslo_db import exception as db_exc
 from oslo_log import log
 import oslo_messaging
+from oslo_utils import importutils
 
 from gbpservice._i18n import _LE
 from gbpservice._i18n import _LI
@@ -86,6 +88,8 @@ FABRIC_HOST_ID = 'fabric'
 
 NO_ADDR_SCOPE = object()
 
+DVS_AGENT_KLASS = 'networking_vsphere.common.dvs_agent_rpc_api.DVSClientAPI'
+
 
 class KeystoneNotificationEndpoint(object):
     filter_rule = oslo_messaging.NotificationFilter(
@@ -93,6 +97,7 @@ class KeystoneNotificationEndpoint(object):
 
     def __init__(self, mechanism_driver):
         self._driver = mechanism_driver
+        self._dvs_notifier = None
 
     def info(self, ctxt, publisher_id, event_type, payload, metadata):
         LOG.debug("Keystone notification getting called!")
@@ -1244,6 +1249,18 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                         context.bottom_bound_segment[api.NETWORK_TYPE])):
                 self._associate_domain(context, is_vmm=True)
 
+    def update_port_postcommit(self, context):
+        port = context.current
+        if (port.get('binding:vif_details') and
+                port['binding:vif_details'].get('dvs_port_group_name')) and (
+                self.dvs_notifier):
+            self.dvs_notifier.update_postcommit_port_call(
+                context.current,
+                context.original,
+                context.bottom_bound_segment,
+                context.host
+            )
+
     def delete_port_precommit(self, context):
         port = context.current
         if self._is_port_bound(port):
@@ -1255,6 +1272,18 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                   self._is_opflex_type(
                       context.bottom_bound_segment[api.NETWORK_TYPE])):
                 self.disassociate_domain(context)
+
+    def delete_port_postcommit(self, context):
+        port = context.current
+        if (port.get('binding:vif_details') and
+                port['binding:vif_details'].get('dvs_port_group_name')) and (
+                self.dvs_notifier):
+            self.dvs_notifier.delete_port_call(
+                context.current,
+                context.original,
+                context.bottom_bound_segment,
+                context.host
+            )
 
     def create_floatingip(self, context, current):
         if current['port_id']:
@@ -1370,8 +1399,50 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         return True
 
     def _dvs_bind_port(self, context, segment, agent):
-        # TODO(rkukura): Implement DVS port binding
-        return False
+        """Populate VIF type and details for DVS VIFs.
+
+           For DVS VIFs, provide the portgroup along
+           with the security groups setting. Note that
+           DVS port binding always returns true. This
+           is because it should only be called when the
+           host ID matches the agent's host ID, where
+           host ID is not an actual host, but a psuedo-
+           host that only exists to match the host ID
+           for the related DVS agent (i.e. for port-
+           binding).
+        """
+        # Use default security groups from MD
+        aim_ctx = aim_context.AimContext(
+            db_session=context._plugin_context.session)
+        session = aim_ctx.db_session
+        port = context.current
+        if self.gbp_driver:
+            epg = self.gbp_driver._get_port_epg(context._plugin_context, port)
+        else:
+            mapping = self._get_network_mapping(session, port['network_id'])
+            epg = self._get_network_epg(mapping)
+        vif_details = {'dvs_port_group_name': ('%s|%s|%s' %
+                                               (epg.tenant_name,
+                                                epg.app_profile_name,
+                                                epg.name)),
+                       portbindings.CAP_PORT_FILTER: self.sg_enabled}
+        currentcopy = copy.copy(context.current)
+        currentcopy['portgroup_name'] = (
+            vif_details['dvs_port_group_name'])
+        booked_port_info = None
+        if self.dvs_notifier:
+            booked_port_info = self.dvs_notifier.bind_port_call(
+                currentcopy,
+                [context.bottom_bound_segment],
+                context.network.current,
+                context.host
+            )
+        if booked_port_info:
+            vif_details['dvs_port_key'] = booked_port_info['key']
+
+        context.set_binding(segment[api.ID],
+                            VIF_TYPE_DVS, vif_details)
+        return True
 
     def _bind_physical_node(self, context):
         # Bind physical nodes hierarchically by creating a dynamic segment.
@@ -1415,6 +1486,15 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         if not self._l3_plugin:
             self._l3_plugin = directory.get_plugin(n_constants.L3)
         return self._l3_plugin
+
+    @property
+    def dvs_notifier(self):
+        if not self._dvs_notifier:
+            self._dvs_notifier = importutils.import_object(
+                DVS_AGENT_KLASS,
+                nctx.get_admin_context_without_session()
+            )
+        return self._dvs_notifier
 
     @property
     def gbp_plugin(self):
