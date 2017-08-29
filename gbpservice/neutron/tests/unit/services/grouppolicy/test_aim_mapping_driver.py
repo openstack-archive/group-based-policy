@@ -82,6 +82,12 @@ AGENT_CONF = {'alive': True, 'binary': 'somebinary',
               'topic': 'sometopic', 'agent_type': AGENT_TYPE,
               'configurations': {'opflex_networks': None,
                                  'bridge_mappings': {'physnet1': 'br-eth1'}}}
+AGENT_TYPE_DVS = md.AGENT_TYPE_DVS
+AGENT_CONF_DVS = {'alive': True, 'binary': 'somebinary',
+                  'topic': 'sometopic', 'agent_type': AGENT_TYPE_DVS,
+                  'configurations': {'opflex_networks': None}}
+
+BOOKED_PORT_VALUE = 'myBookedPort'
 
 
 AP = cisco_apic.AP
@@ -220,6 +226,13 @@ class AIMBaseTestCase(test_nr_base.CommonNeutronBaseTestCase,
     def _bind_port_to_host(self, port_id, host):
         data = {'port': {'binding:host_id': host,
                          'device_owner': 'compute:',
+                         'device_id': 'someid'}}
+        return super(AIMBaseTestCase, self)._bind_port_to_host(
+            port_id, host, data=data)
+
+    def _bind_dhcp_port_to_host(self, port_id, host):
+        data = {'port': {'binding:host_id': host,
+                         'device_owner': 'network:dhcp',
                          'device_id': 'someid'}}
         return super(AIMBaseTestCase, self)._bind_port_to_host(
             port_id, host, data=data)
@@ -3195,6 +3208,173 @@ class TestPolicyTarget(AIMBaseTestCase):
                                     expected_res_status=200)['l3_policy']
         newp1 = self._bind_port_to_host(pt['port_id'], 'h3')
         self.assertEqual(newp1['port']['binding:vif_type'], 'ovs')
+
+
+class TestPolicyTargetDvs(AIMBaseTestCase):
+
+    def setUp(self):
+        super(TestPolicyTargetDvs, self).setUp()
+        self.driver.aim_mech_driver._dvs_notifier = mock.MagicMock()
+        self.driver.aim_mech_driver.dvs_notifier.bind_port_call = mock.Mock(
+            return_value={'key': BOOKED_PORT_VALUE})
+
+    def _verify_dvs_notifier(self, notifier, port, host):
+            # can't use getattr() with mock, so use eval instead
+            try:
+                dvs_mock = eval('self.driver.aim_mech_driver.dvs_notifier.' +
+                                notifier)
+            except Exception:
+                self.assertTrue(False,
+                                "The method " + notifier + " was not called")
+                return
+
+            self.assertTrue(dvs_mock.called)
+            a1, a2, a3, a4 = dvs_mock.call_args[0]
+            self.assertEqual(a1['id'], port['id'])
+            if notifier != 'delete_port_call':
+                self.assertEqual(a2['id'], port['id'])
+            self.assertEqual(a4, host)
+
+    def _pg_name(self, project, profile, network):
+        return ('prj_' + str(project) + '|' + str(profile) + '|' + network)
+
+    def test_bind_port_dvs(self):
+        self.agent_conf = AGENT_CONF_DVS
+        l3p = self.create_l3_policy(name='myl3')['l3_policy']
+        l2p = self.create_l2_policy(
+            name='myl2', l3_policy_id=l3p['id'])['l2_policy']
+        ptg = self.create_policy_target_group(
+            name="ptg1", l2_policy_id=l2p['id'])['policy_target_group']
+        pt = self.create_policy_target(
+            policy_target_group_id=ptg['id'])['policy_target']
+        newp1 = self._bind_port_to_host(pt['port_id'], 'h1')
+        vif_details = newp1['port']['binding:vif_details']
+        self.assertIsNotNone(vif_details.get('dvs_port_group_name'))
+        pg = self._pg_name(ptg['tenant_id'],
+                           self.driver.aim_mech_driver.ap_name, ptg['id'])
+        self.assertEqual(pg, vif_details.get('dvs_port_group_name'))
+        port_key = newp1['port']['binding:vif_details'].get('dvs_port_key')
+        self.assertIsNotNone(port_key)
+        self.assertEqual(port_key, BOOKED_PORT_VALUE)
+        self._verify_dvs_notifier('update_postcommit_port_call',
+                                  newp1['port'], 'h1')
+        self.delete_policy_target(pt['id'], expected_res_status=204)
+        self._verify_dvs_notifier('delete_port_call', newp1['port'], 'h1')
+
+    def test_bind_port_dvs_with_opflex_different_hosts(self):
+        l3p = self.create_l3_policy(name='myl3')['l3_policy']
+        l2p = self.create_l2_policy(
+            name='myl2', l3_policy_id=l3p['id'])['l2_policy']
+        ptg = self.create_policy_target_group(
+            name="ptg1", l2_policy_id=l2p['id'])['policy_target_group']
+        self.agent_conf = AGENT_CONF
+        pt2 = self.create_policy_target(
+            policy_target_group_id=ptg['id'])['policy_target']
+        newp2 = self._bind_port_to_host(pt2['port_id'], 'h2')
+        vif_details = newp2['port']['binding:vif_details']
+        self.assertIsNone(vif_details.get('dvs_port_group_name'))
+        pt1 = self.create_policy_target(
+            policy_target_group_id=ptg['id'])['policy_target']
+        self.agent_conf = AGENT_CONF_DVS
+        self.driver.aim_mech_driver.dvs_notifier.reset_mock()
+        newp1 = self._bind_port_to_host(pt1['port_id'], 'h2')
+        port_key = newp1['port']['binding:vif_details'].get('dvs_port_key')
+        self.assertIsNotNone(port_key)
+        self.assertEqual(port_key, BOOKED_PORT_VALUE)
+        vif_details = newp1['port']['binding:vif_details']
+        self.assertIsNotNone(vif_details.get('dvs_port_group_name'))
+        pg = self._pg_name(ptg['tenant_id'],
+                           self.driver.aim_mech_driver.ap_name, ptg['id'])
+        self.assertEqual(pg, vif_details.get('dvs_port_group_name'))
+        self._verify_dvs_notifier('update_postcommit_port_call',
+                                  newp1['port'], 'h2')
+        self.delete_policy_target(pt1['id'], expected_res_status=204)
+        self._verify_dvs_notifier('delete_port_call', newp1['port'], 'h2')
+
+    def test_bind_ports_opflex_same_host(self):
+        l3p = self.create_l3_policy(name='myl3')['l3_policy']
+        l2p = self.create_l2_policy(
+            name='myl2', l3_policy_id=l3p['id'])['l2_policy']
+        ptg = self.create_policy_target_group(
+            name="ptg1", l2_policy_id=l2p['id'])['policy_target_group']
+
+        pt1 = self.create_policy_target(
+            policy_target_group_id=ptg['id'])['policy_target']
+        newp1 = self._bind_port_to_host(pt1['port_id'], 'h1')
+        vif_details = newp1['port']['binding:vif_details']
+        self.assertIsNone(vif_details.get('dvs_port_group_name'))
+        port_key = newp1['port']['binding:vif_details'].get('dvs_port_key')
+        self.assertIsNone(port_key)
+        dvs_mock = self.driver.aim_mech_driver.dvs_notifier
+        dvs_mock.update_postcommit_port_call.assert_not_called()
+        self.delete_policy_target(pt1['id'], expected_res_status=204)
+        dvs_mock.delete_port_call.assert_not_called()
+        self.driver.aim_mech_driver.dvs_notifier.reset_mock()
+
+        pt2 = self.create_policy_target(
+            policy_target_group_id=ptg['id'])['policy_target']
+        newp2 = self._bind_port_to_host(pt2['port_id'], 'h1')
+        vif_details = newp2['port']['binding:vif_details']
+        self.assertIsNone(vif_details.get('dvs_port_group_name'))
+        port_key = newp2['port']['binding:vif_details'].get('dvs_port_key')
+        self.assertIsNone(port_key)
+        dvs_mock.assert_not_called()
+        self.delete_policy_target(pt2['id'], expected_res_status=204)
+        dvs_mock.assert_not_called()
+
+    def test_bind_ports_dvs_with_opflex_same_host(self):
+        self.agent_conf = AGENT_CONF_DVS
+        l3p = self.create_l3_policy(name='myl3')['l3_policy']
+        l2p = self.create_l2_policy(
+            name='myl2', l3_policy_id=l3p['id'])['l2_policy']
+        ptg = self.create_policy_target_group(
+            name="ptg1", l2_policy_id=l2p['id'])['policy_target_group']
+        pt1 = self.create_policy_target(
+            policy_target_group_id=ptg['id'])['policy_target']
+        newp1 = self._bind_port_to_host(pt1['port_id'], 'h1')
+        vif_details = newp1['port']['binding:vif_details']
+        self.assertIsNotNone(vif_details.get('dvs_port_group_name'))
+        port_key = newp1['port']['binding:vif_details'].get('dvs_port_key')
+        self.assertIsNotNone(port_key)
+        self.assertEqual(port_key, BOOKED_PORT_VALUE)
+        self._verify_dvs_notifier('update_postcommit_port_call',
+                                  newp1['port'], 'h1')
+        self.delete_policy_target(pt1['id'], expected_res_status=204)
+        self._verify_dvs_notifier('delete_port_call', newp1['port'], 'h1')
+        self.driver.aim_mech_driver.dvs_notifier.reset_mock()
+
+        self.agent_conf = AGENT_CONF
+        pt2 = self.create_policy_target(
+            policy_target_group_id=ptg['id'])['policy_target']
+        newp2 = self._bind_dhcp_port_to_host(pt2['port_id'], 'h1')
+        vif_details = newp2['port']['binding:vif_details']
+        self.assertIsNone(vif_details.get('dvs_port_group_name'))
+        port_key = newp2['port']['binding:vif_details'].get('dvs_port_key')
+        self.assertIsNone(port_key)
+        dvs_mock = self.driver.aim_mech_driver.dvs_notifier
+        dvs_mock.update_postcommit_port_call.assert_not_called()
+        self.delete_policy_target(pt2['id'], expected_res_status=204)
+        dvs_mock.delete_port_call.assert_not_called()
+
+    def test_bind_port_dvs_shared(self):
+        self.agent_conf = AGENT_CONF_DVS
+        ptg = self.create_policy_target_group(shared=True,
+            name="ptg1")['policy_target_group']
+        pt = self.create_policy_target(
+            policy_target_group_id=ptg['id'])['policy_target']
+        newp1 = self._bind_port_to_host(pt['port_id'], 'h1')
+        vif_details = newp1['port']['binding:vif_details']
+        self.assertIsNotNone(vif_details.get('dvs_port_group_name'))
+        pg = self._pg_name(ptg['tenant_id'],
+                           self.driver.aim_mech_driver.ap_name, ptg['id'])
+        self.assertEqual(pg, vif_details.get('dvs_port_group_name'))
+        port_key = newp1['port']['binding:vif_details'].get('dvs_port_key')
+        self.assertIsNotNone(port_key)
+        self.assertEqual(port_key, BOOKED_PORT_VALUE)
+        self._verify_dvs_notifier('update_postcommit_port_call',
+                                  newp1['port'], 'h1')
+        self.delete_policy_target(pt['id'], expected_res_status=204)
+        self._verify_dvs_notifier('delete_port_call', newp1['port'], 'h1')
 
 
 class TestPolicyTargetRollback(AIMBaseTestCase):
