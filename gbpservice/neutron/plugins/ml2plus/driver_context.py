@@ -52,3 +52,21 @@ class AddressScopeContext(ml2_context.MechanismDriverContext,
     @property
     def original(self):
         return self._original_address_scope
+
+
+class SecurityGroupContext(ml2_context.MechanismDriverContext,
+                           api.SecurityGroupContext):
+
+    def __init__(self, plugin, plugin_context, security_group,
+                 original_security_group=None):
+        super(SecurityGroupContext, self).__init__(plugin, plugin_context)
+        self._security_group = security_group
+        self._original_security_group = original_security_group
+
+    @property
+    def current(self):
+        return self._security_group
+
+    @property
+    def original(self):
+        return self._original_security_group
