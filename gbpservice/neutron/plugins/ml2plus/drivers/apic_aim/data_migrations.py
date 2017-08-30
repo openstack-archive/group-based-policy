@@ -27,6 +27,8 @@ from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import apic_mapper
 from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import db
 from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import extension_db
 
+GBP_DEFAULT = 'gbp_default'
+
 
 class DefunctAddressScopeExtensionDb(model_base.BASEV2):
     # REVISIT: This DB model class is used only for the
@@ -149,3 +151,40 @@ def do_apic_aim_persist_migration(session):
 
     alembic_util.msg(
         "Finished data migration for apic_aim mechanism driver persistence.")
+
+
+def setup_default_arp_security_group_rules(session):
+    alembic_util.msg("Started setting up default arp SG rules.")
+
+    aim = aim_manager.AimManager()
+    aim_ctx = aim_context.AimContext(session)
+
+    sg = aim_resource.SecurityGroup(
+        tenant_name='common', name=GBP_DEFAULT)
+    aim.create(aim_ctx, sg)
+
+    sg_subject = aim_resource.SecurityGroupSubject(
+        tenant_name='common',
+        security_group_name=GBP_DEFAULT, name='default')
+    aim.create(aim_ctx, sg_subject)
+
+    arp_egress_rule = aim_resource.SecurityGroupRule(
+        tenant_name='common',
+        security_group_name=GBP_DEFAULT,
+        security_group_subject_name='default',
+        name='arp_egress',
+        direction='egress',
+        ethertype='arp',
+        conn_track='normal')
+    arp_ingress_rule = aim_resource.SecurityGroupRule(
+        tenant_name='common',
+        security_group_name=GBP_DEFAULT,
+        security_group_subject_name='default',
+        name='arp_ingress',
+        direction='ingress',
+        ethertype='arp',
+        conn_track='normal')
+    aim.create(aim_ctx, arp_egress_rule)
+    aim.create(aim_ctx, arp_ingress_rule)
+
+    alembic_util.msg("Done setting up default arp SG rules.")
