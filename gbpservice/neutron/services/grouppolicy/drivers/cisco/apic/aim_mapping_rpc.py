@@ -178,6 +178,9 @@ class AIMMappingRPCMixin(ha_ip_db.HAIPOwnerDbMixin):
             if mtu:
                 details['interface_mtu'] = mtu
 
+            if port.get('security_groups'):
+                self._add_security_group_details(context, port, details)
+
             # NOTE(ivar): having these methods cleanly separated actually makes
             # things less efficient by requiring lots of calls duplication.
             # we could alleviate this by passing down a cache that stores
@@ -200,6 +203,16 @@ class AIMMappingRPCMixin(ha_ip_db.HAIPOwnerDbMixin):
 
     def _get_owned_addresses(self, plugin_context, port_id):
         return set(self.ha_ip_handler.get_ha_ipaddresses_for_port(port_id))
+
+    def _add_security_group_details(self, context, port, details):
+        details['security_group'] = []
+        for sg_id in port['security_groups']:
+            details['security_group'].append(
+                {'policy-space': details['ptg_tenant'],
+                 'name': sg_id})
+        # always include this SG which has the default arp & dhcp rules
+        details['security_group'].append({'policy-space': 'common',
+                                          'name': 'aim_default'})
 
     # Child class needs to support:
     # - self._get_subnet_details(context, port, details)
