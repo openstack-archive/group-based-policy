@@ -166,6 +166,23 @@ class Ml2PlusPlugin(ml2_plugin.Ml2Plugin,
                            events.AFTER_CREATE)
         registry.subscribe(self._handle_segment_change, resources.SEGMENT,
                            events.AFTER_DELETE)
+
+        # REVISIT(kent): All the postcommit calls for SG and SG rules are not
+        # currently implemented as they are not needed at this moment.
+        registry.subscribe(self._handle_security_group_change,
+                           resources.SECURITY_GROUP, events.PRECOMMIT_CREATE)
+        registry.subscribe(self._handle_security_group_change,
+                           resources.SECURITY_GROUP, events.PRECOMMIT_DELETE)
+        registry.subscribe(self._handle_security_group_change,
+                           resources.SECURITY_GROUP, events.PRECOMMIT_UPDATE)
+
+        # There is no update event to the security_group_rule
+        registry.subscribe(self._handle_security_group_rule_change,
+                           resources.SECURITY_GROUP_RULE,
+                           events.PRECOMMIT_CREATE)
+        registry.subscribe(self._handle_security_group_rule_change,
+                           resources.SECURITY_GROUP_RULE,
+                           events.PRECOMMIT_DELETE)
         try:
             registry.subscribe(self._subnet_delete_precommit_handler,
                     resources.SUBNET, events.PRECOMMIT_DELETE)
@@ -193,6 +210,45 @@ class Ml2PlusPlugin(ml2_plugin.Ml2Plugin,
 
     db_base_plugin_v2.NeutronDbPluginV2.register_dict_extend_funcs(
                as_ext.ADDRESS_SCOPES, ['_ml2_md_extend_address_scope_dict'])
+
+    def _handle_security_group_change(self, resource, event, trigger,
+                                      **kwargs):
+        context = kwargs.get('context')
+        security_group = kwargs.get('security_group')
+        original_security_group = kwargs.get('original_security_group')
+        mech_context = driver_context.SecurityGroupContext(
+            self, context, security_group, original_security_group)
+        if event == events.PRECOMMIT_CREATE:
+            self._ensure_tenant(context, security_group)
+            self.mechanism_manager.create_security_group_precommit(
+                mech_context)
+            return
+        if event == events.PRECOMMIT_DELETE:
+            self.mechanism_manager.delete_security_group_precommit(
+                mech_context)
+            return
+        if event == events.PRECOMMIT_UPDATE:
+            self.mechanism_manager.update_security_group_precommit(
+                mech_context)
+
+    def _handle_security_group_rule_change(self, resource, event, trigger,
+                                           **kwargs):
+        context = kwargs.get('context')
+        if event == events.PRECOMMIT_CREATE:
+            sg_rule = kwargs.get('security_group_rule')
+            mech_context = driver_context.SecurityGroupRuleContext(
+                self, context, sg_rule)
+            self.mechanism_manager.create_security_group_rule_precommit(
+                mech_context)
+            return
+        if event == events.PRECOMMIT_DELETE:
+            sg_rule = {'id': kwargs.get('security_group_rule_id'),
+                       'security_group_id': kwargs.get('security_group_id'),
+                       'tenant_id': context.tenant}
+            mech_context = driver_context.SecurityGroupRuleContext(
+                self, context, sg_rule)
+            self.mechanism_manager.delete_security_group_rule_precommit(
+                mech_context)
 
     def _ml2_md_extend_network_dict(self, result, netdb):
         session = patch_neutron.get_current_session()
