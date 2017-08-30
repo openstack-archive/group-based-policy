@@ -16,14 +16,14 @@
 """l3p ip pool size
 
 Revision ID: 27b724002081
-Revises: cb5b16acbeb0
+Revises: cc09261e0fb5
 Create Date: 2017-07-06 17:34:18.856803
 
 """
 
 # revision identifiers, used by Alembic.
 revision = '27b724002081'
-down_revision = 'cb5b16acbeb0'
+down_revision = 'cc09261e0fb5'
 
 from alembic import op
 import sqlalchemy as sa

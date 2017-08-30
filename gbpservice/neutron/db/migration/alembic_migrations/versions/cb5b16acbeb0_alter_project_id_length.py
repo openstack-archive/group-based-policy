@@ -14,14 +14,14 @@
 """alter project_id column length in gp_apic_tenant_specific_nat_epg
 
 Revision ID: cb5b16acbeb0
-Revises: cc09261e0fb5
+Revises: 27b724002081
 Create Date: 2017-06-10 00:00:00.000000
 
 """
 
 # revision identifiers, used by Alembic.
 revision = 'cb5b16acbeb0'
-down_revision = 'cc09261e0fb5'
+down_revision = '27b724002081'
 
 from alembic import op
 import sqlalchemy as sa
