@@ -38,6 +38,7 @@ from neutron.tests.unit.api import test_extensions
 from neutron.tests.unit.db import test_db_base_plugin_v2 as test_plugin
 from neutron.tests.unit.extensions import test_address_scope
 from neutron.tests.unit.extensions import test_l3
+from neutron.tests.unit.extensions import test_securitygroup
 from neutron_lib import constants as n_constants
 from neutron_lib.plugins import directory
 from opflexagent import constants as ofcst
@@ -153,7 +154,8 @@ class ApicAimTestMixin(object):
 
 
 class ApicAimTestCase(test_address_scope.AddressScopeTestCase,
-                      test_l3.L3NatTestCaseMixin, ApicAimTestMixin):
+                      test_l3.L3NatTestCaseMixin, ApicAimTestMixin,
+                      test_securitygroup.SecurityGroupsTestCase):
 
     def setUp(self, mechanism_drivers=None, tenant_network_types=None):
         # Enable the test mechanism driver to ensure that
@@ -195,6 +197,9 @@ class ApicAimTestCase(test_address_scope.AddressScopeTestCase,
         self.plugin.start_rpc_listeners()
         self.driver = self.plugin.mechanism_manager.mech_drivers[
             'apic_aim'].obj
+        # TBD
+        #self.driver._setup_default_arp_dhcp_security_group_rules(
+        #    self.db_session)
         self.l3_plugin = directory.get_plugin(n_constants.L3)
         self.aim_mgr = aim_manager.AimManager()
         self._app_profile_name = self.driver.ap_name
@@ -296,6 +301,39 @@ class ApicAimTestCase(test_address_scope.AddressScopeTestCase,
         elif res.status_int >= webob.exc.HTTPClientError.code:
             raise webob.exc.HTTPClientError(code=res.status_int)
         return self.deserialize(self.fmt, res)
+
+    def _get_sg(self, sg_id, tenant_name):
+        session = db_api.get_session()
+        aim_ctx = aim_context.AimContext(session)
+        sg = aim_resource.SecurityGroup(tenant_name=tenant_name,
+                                        name=sg_id)
+        sg = self.aim_mgr.get(aim_ctx, sg)
+        self.assertIsNotNone(sg)
+        return sg
+
+    def _sg_should_not_exist(self, sg_id):
+        session = db_api.get_session()
+        aim_ctx = aim_context.AimContext(session)
+        sgs = self.aim_mgr.find(
+            aim_ctx, aim_resource.SecurityGroup, name=sg_id)
+        self.assertEqual([], sgs)
+
+    def _get_sg_rule(self, sg_id, sg_rule_id, tenant_name):
+        session = db_api.get_session()
+        aim_ctx = aim_context.AimContext(session)
+        sg_rule = aim_resource.SecurityGroupRule(
+            tenant_name=tenant_name, security_group_name=sg_id,
+            security_group_subject_name='default', name=sg_rule_id)
+        sg_rule = self.aim_mgr.get(aim_ctx, sg_rule)
+        self.assertIsNotNone(sg_rule)
+        return sg_rule
+
+    def _sg_rule_should_not_exist(self, sg_rule_id):
+        session = db_api.get_session()
+        aim_ctx = aim_context.AimContext(session)
+        sg_rules = self.aim_mgr.find(
+            aim_ctx, aim_resource.SecurityGroupRule, name=sg_rule_id)
+        self.assertEqual([], sg_rules)
 
     def port_notif_verifier(self):
         def verify(plugin_context, port):
@@ -582,6 +620,46 @@ class TestAimMapping(ApicAimTestCase):
         aname = self.name_mapper.address_scope(None, scope['id'])
         self._vrf_should_not_exist(aname)
 
+    def _check_sg(self, sg):
+        tenant_aname = self.name_mapper.project(None, sg['tenant_id'])
+        self._get_tenant(tenant_aname)
+
+        aim_sg = self._get_sg(sg['id'], tenant_aname)
+        self.assertEqual(tenant_aname, aim_sg.tenant_name)
+        self.assertEqual(sg['id'], aim_sg.name)
+        self.assertEqual(sg['name'], aim_sg.display_name)
+
+        # check those SG rules including the default ones
+        for sg_rule in sg.get('security_group_rules', []):
+            self._check_sg_rule(sg['id'], sg_rule)
+
+    def _check_sg_rule(self, sg_id, sg_rule):
+        tenant_aname = self.name_mapper.project(None, sg_rule['tenant_id'])
+        self._get_tenant(tenant_aname)
+
+        aim_sg_rule = self._get_sg_rule(sg_id, sg_rule['id'], tenant_aname)
+        self.assertEqual(tenant_aname, aim_sg_rule.tenant_name)
+        self.assertEqual(sg_id, aim_sg_rule.security_group_name)
+        self.assertEqual('default',
+                         aim_sg_rule.security_group_subject_name)
+        self.assertEqual(sg_rule['id'], aim_sg_rule.name)
+        self.assertEqual(sg_rule['direction'], aim_sg_rule.direction)
+        self.assertEqual(sg_rule['ethertype'].lower(),
+                         aim_sg_rule.ethertype)
+        self.assertEqual('reflexive', aim_sg_rule.conn_track)
+        self.assertEqual(([sg_rule['remote_ip_prefix']] if
+                          sg_rule['remote_ip_prefix'] else []),
+                         aim_sg_rule.remote_ips)
+        self.assertEqual((sg_rule['protocol'] if
+                          sg_rule['protocol'] else 'unspecified'),
+                         aim_sg_rule.ip_protocol)
+        self.assertEqual((str(sg_rule['port_range_min']) if
+                          sg_rule['port_range_min'] else 'unspecified'),
+                         aim_sg_rule.from_port)
+        self.assertEqual((str(sg_rule['port_range_max']) if
+                          sg_rule['port_range_max'] else 'unspecified'),
+                         aim_sg_rule.to_port)
+
     def _check_router(self, router, expected_gw_ips, unexpected_gw_ips,
                       scopes=None, unscoped_project=None):
         aname = self.name_mapper.router(None, router['id'])
@@ -701,6 +779,49 @@ class TestAimMapping(ApicAimTestCase):
         # Test delete.
         self._delete('networks', net_id)
         self._check_network_deleted(net)
+
+    def test_security_group_lifecycle(self):
+        # Test create
+        sg = self._make_security_group(self.fmt,
+                                       'sg1', 'test')['security_group']
+        sg_id = sg['id']
+        self._check_sg(sg)
+
+        # Test show.
+        sg = self._show('security-groups', sg_id)['security_group']
+        self._check_sg(sg)
+
+        # Test update.
+        data = {'security_group': {'name': 'new_sg_name'}}
+        sg = self._update('security-groups', sg_id, data)['security_group']
+        self._check_sg(sg)
+
+        # Test adding rules
+        rule1 = self._build_security_group_rule(
+            sg_id, 'ingress', n_constants.PROTO_NAME_TCP, '22', '23',
+            remote_ip_prefix='1.1.1.1/0', remote_group_id=None,
+            ethertype=n_constants.IPv4)
+        rules = {'security_group_rules': [rule1['security_group_rule']]}
+        sg_rule = self._make_security_group_rule(
+            self.fmt, rules)['security_group_rules'][0]
+        self._check_sg_rule(sg_id, sg_rule)
+        sg = self._show('security-groups', sg_id)['security_group']
+        self._check_sg(sg)
+
+        # Test show rule
+        sg_rule = self._show('security-group-rules',
+                             sg_rule['id'])['security_group_rule']
+        self._check_sg_rule(sg_id, sg_rule)
+
+        # TBD
+        # Test deleting rules
+        # self._delete('security-group-rules', sg_rule['id'])
+        # self._sg_rule_should_not_exist(sg_rule['id'])
+
+        # Test delete which will delete all the rules too
+        self._delete('security-groups', sg_id)
+        self._sg_should_not_exist(sg_id)
+        self._sg_rule_should_not_exist(sg_rule['id'])
 
     def test_subnet_lifecycle(self):
         # Create network.
@@ -5041,6 +5162,56 @@ class TestPortOnPhysicalNode(TestPortVlanNetwork):
                                  set(epg1.openstack_vmm_domain_names))
                 self.assertEqual(set(['ph1', 'ph2']),
                                  set(epg1.physical_domain_names))
+
+    # TBD
+    def test_update_sg_rule_with_remote_group_set(self):
+        # Create network.
+        net_resp = self._make_network(self.fmt, 'net1', True)
+        net = net_resp['network']
+
+        # Create subnet
+        subnet = self._make_subnet(self.fmt, net_resp, '10.0.1.1',
+                                   '10.0.1.0/24')['subnet']
+        subnet_id = subnet['id']
+
+        # Create port on subnet
+        fixed_ips = [{'subnet_id': subnet_id, 'ip_address': '10.0.1.100'}]
+        port = self._make_port(self.fmt, net['id'],
+                               fixed_ips=fixed_ips)['port']
+        default_sg_id = port['security_groups'][0]
+        default_sg = self._show('security-groups',
+                                default_sg_id)['security_group']
+        for sg_rule in default_sg['security_group_rules']:
+            if sg_rule['remote_group_id'] and sg_rule['ethertype'] == 'IPv4':
+                break
+        tenant_aname = self.name_mapper.project(None, default_sg['tenant_id'])
+        aim_sg_rule = self._get_sg_rule(default_sg_id, sg_rule['id'],
+                                        tenant_aname)
+        self.assertEqual(aim_sg_rule.remote_ips, [])
+
+        port = self._bind_port_to_host(port['id'], 'host1')['port']
+        aim_sg_rule = self._get_sg_rule(default_sg_id, sg_rule['id'],
+                                        tenant_aname)
+        self.assertEqual(aim_sg_rule.remote_ips, ['10.0.1.100'])
+
+        # add another rule with remote_group_id set
+        rule1 = self._build_security_group_rule(
+            default_sg_id, 'ingress', n_constants.PROTO_NAME_TCP, '22', '23',
+            remote_group_id=default_sg_id, ethertype=n_constants.IPv4)
+        rules = {'security_group_rules': [rule1['security_group_rule']]}
+        sg_rule1 = self._make_security_group_rule(
+            self.fmt, rules)['security_group_rules'][0]
+        aim_sg_rule = self._get_sg_rule(default_sg_id, sg_rule1['id'],
+                                        tenant_aname)
+        self.assertEqual(aim_sg_rule.remote_ips, ['10.0.1.100'])
+
+        self._delete('ports', port['id'])
+        aim_sg_rule = self._get_sg_rule(default_sg_id, sg_rule['id'],
+                                        tenant_aname)
+        self.assertEqual(aim_sg_rule.remote_ips, [])
+        aim_sg_rule = self._get_sg_rule(default_sg_id, sg_rule1['id'],
+                                        tenant_aname)
+        self.assertEqual(aim_sg_rule.remote_ips, [])
 
     def test_mixed_ports_on_network_with_specific_domains(self):
         aim_ctx = aim_context.AimContext(self.db_session)
