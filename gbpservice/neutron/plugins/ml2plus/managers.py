@@ -133,6 +133,54 @@ class MechanismManager(managers.MechanismManager):
         self._call_on_extended_drivers("delete_address_scope_postcommit",
                                        context, continue_on_failure=True)
 
+    def create_security_group_precommit(self, context):
+        self._call_on_extended_drivers("create_security_group_precommit",
+                                       context, raise_db_retriable=True)
+
+    def create_security_group_postcommit(self, context):
+        self._call_on_extended_drivers("create_security_group_postcommit",
+                                       context)
+
+    def update_security_group_precommit(self, context):
+        self._call_on_extended_drivers("update_security_group_precommit",
+                                       context, raise_db_retriable=True)
+
+    def update_security_group_postcommit(self, context):
+        self._call_on_extended_drivers("update_security_group_postcommit",
+                                       context, continue_on_failure=True)
+
+    def delete_security_group_precommit(self, context):
+        self._call_on_extended_drivers("delete_security_group_precommit",
+                                       context, raise_db_retriable=True)
+
+    def delete_security_group_postcommit(self, context):
+        self._call_on_extended_drivers("delete_security_group_postcommit",
+                                       context, continue_on_failure=True)
+
+    def create_security_group_rule_precommit(self, context):
+        self._call_on_extended_drivers("create_security_group_rule_precommit",
+                                       context, raise_db_retriable=True)
+
+    def create_security_group_rule_postcommit(self, context):
+        self._call_on_extended_drivers("create_security_group_rule_postcommit",
+                                       context)
+
+    def update_security_group_rule_precommit(self, context):
+        self._call_on_extended_drivers("update_security_group_rule_precommit",
+                                       context, raise_db_retriable=True)
+
+    def update_security_group_rule_postcommit(self, context):
+        self._call_on_extended_drivers("update_security_group_rule_postcommit",
+                                       context, continue_on_failure=True)
+
+    def delete_security_group_rule_precommit(self, context):
+        self._call_on_extended_drivers("delete_security_group_rule_precommit",
+                                       context, raise_db_retriable=True)
+
+    def delete_security_group_rule_postcommit(self, context):
+        self._call_on_extended_drivers("delete_security_group_rule_postcommit",
+                                       context, continue_on_failure=True)
+
 
 class ExtensionManager(managers.ExtensionManager):
 

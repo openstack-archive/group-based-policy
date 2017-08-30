@@ -31,6 +31,7 @@ from neutron.db import api as db_api
 from neutron.db import l3_db
 from neutron.db.models import address_scope as as_db
 from neutron.db.models import allowed_address_pair as n_addr_pair_db
+from neutron.db.models import securitygroup as sg_models
 from neutron.db import models_v2
 from neutron.db import rbac_db_models
 from neutron.db import segments_db
@@ -89,6 +90,7 @@ FABRIC_HOST_ID = 'fabric'
 NO_ADDR_SCOPE = object()
 
 DVS_AGENT_KLASS = 'networking_vsphere.common.dvs_agent_rpc_api.DVSClientAPI'
+GBP_DEFAULT = 'gbp_default'
 
 
 class KeystoneNotificationEndpoint(object):
@@ -199,6 +201,44 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         self.enable_keystone_notification_purge = (cfg.CONF.ml2_apic_aim.
                                             enable_keystone_notification_purge)
         local_api.QUEUE_OUT_OF_PROCESS_NOTIFICATIONS = True
+        self._setup_default_arp_security_group_rules()
+
+    def _setup_default_arp_security_group_rules(self):
+        session = db_api.get_session()
+        aim_ctx = aim_context.AimContext(session)
+        sg = aim_resource.SecurityGroup(
+            tenant_name=COMMON_TENANT_NAME, name=GBP_DEFAULT)
+        try:
+            self.aim.create(aim_ctx, sg, overwrite=True)
+        except db_exc.DBNonExistentTable as e:
+            # this is expected in the UT env. but will never
+            # happen in the real fab
+            LOG.error(e)
+            return
+
+        sg_subject = aim_resource.SecurityGroupSubject(
+            tenant_name=COMMON_TENANT_NAME,
+            security_group_name=GBP_DEFAULT, name='default')
+        self.aim.create(aim_ctx, sg_subject, overwrite=True)
+
+        arp_egress_rule = aim_resource.SecurityGroupRule(
+            tenant_name=COMMON_TENANT_NAME,
+            security_group_name=GBP_DEFAULT,
+            security_group_subject_name='default',
+            name='arp_egress',
+            direction='egress',
+            ethertype='arp',
+            conn_track='normal')
+        arp_ingress_rule = aim_resource.SecurityGroupRule(
+            tenant_name=COMMON_TENANT_NAME,
+            security_group_name=GBP_DEFAULT,
+            security_group_subject_name='default',
+            name='arp_ingress',
+            direction='ingress',
+            ethertype='arp',
+            conn_track='normal')
+        self.aim.create(aim_ctx, arp_egress_rule, overwrite=True)
+        self.aim.create(aim_ctx, arp_ingress_rule, overwrite=True)
 
     def _setup_keystone_notification_listeners(self):
         targets = [oslo_messaging.Target(
@@ -1235,6 +1275,61 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         # hierarchically if the network-type is OpFlex.
         self._bind_physical_node(context)
 
+    def _update_sg_rule_with_remote_group_set(self, context, port):
+        security_groups = port['security_groups']
+        original_port = context.original
+        if original_port:
+            removed_sgs = (set(original_port['security_groups']) -
+                           set(security_groups))
+            added_sgs = (set(security_groups) -
+                         set(original_port['security_groups']))
+            self._really_update_sg_rule_with_remote_group_set(
+                                context, port, removed_sgs, is_delete=True)
+            self._really_update_sg_rule_with_remote_group_set(
+                                context, port, added_sgs, is_delete=False)
+
+    def _really_update_sg_rule_with_remote_group_set(
+                    self, context, port, security_groups, is_delete):
+        if not security_groups:
+            return
+        session = context._plugin_context.session
+        aim_ctx = aim_context.AimContext(session)
+        sg_rules = (session.query(sg_models.SecurityGroupRule).
+                    filter(sg_models.SecurityGroupRule.remote_group_id.
+                           in_(security_groups)).
+                    all())
+        fixed_ips = [x['ip_address'] for x in port['fixed_ips']]
+        for sg_rule in sg_rules:
+            tenant_aname = self.name_mapper.project(session,
+                                                    sg_rule['tenant_id'])
+            sg_rule_aim = aim_resource.SecurityGroupRule(
+                tenant_name=tenant_aname,
+                security_group_name=sg_rule['security_group_id'],
+                security_group_subject_name='default',
+                name=sg_rule['id'])
+            aim_sg_rule = self.aim.get(aim_ctx, sg_rule_aim)
+            if not aim_sg_rule:
+                continue
+            ip_version = 0
+            if sg_rule['ethertype'] == 'IPv4':
+                ip_version = 4
+            elif sg_rule['ethertype'] == 'IPv6':
+                ip_version = 6
+            for fixed_ip in fixed_ips:
+                if is_delete:
+                    if fixed_ip in aim_sg_rule.remote_ips:
+                        aim_sg_rule.remote_ips.remove(fixed_ip)
+                elif ip_version == netaddr.IPAddress(fixed_ip).version:
+                    if fixed_ip not in aim_sg_rule.remote_ips:
+                        aim_sg_rule.remote_ips.append(fixed_ip)
+            self.aim.update(aim_ctx, sg_rule_aim,
+                            remote_ips=aim_sg_rule.remote_ips)
+
+    def create_port_precommit(self, context):
+        port = context.current
+        self._really_update_sg_rule_with_remote_group_set(
+            context, port, port['security_groups'], is_delete=False)
+
     def update_port_precommit(self, context):
         port = context.current
         if context.original_host and context.original_host != context.host:
@@ -1244,7 +1339,6 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                 self._update_static_path(context, host=context.original_host,
                     segment=context.original_bottom_bound_segment, remove=True)
                 self._release_dynamic_segment(context, use_original=True)
-
         if self._is_port_bound(port):
             if self._use_static_path(context.bottom_bound_segment):
                 self._associate_domain(context, is_vmm=False)
@@ -1253,6 +1347,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                   self._is_opflex_type(
                         context.bottom_bound_segment[api.NETWORK_TYPE])):
                 self._associate_domain(context, is_vmm=True)
+        self._update_sg_rule_with_remote_group_set(context, port)
 
     def update_port_postcommit(self, context):
         port = context.current
@@ -1277,6 +1372,128 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                   self._is_opflex_type(
                       context.bottom_bound_segment[api.NETWORK_TYPE])):
                 self.disassociate_domain(context)
+        self._really_update_sg_rule_with_remote_group_set(
+            context, port, port['security_groups'], is_delete=True)
+
+    def create_security_group_precommit(self, context):
+        session = context._plugin_context.session
+        aim_ctx = aim_context.AimContext(session)
+
+        sg = context.current
+        tenant_aname = self.name_mapper.project(session, sg['tenant_id'])
+        sg_aim = aim_resource.SecurityGroup(
+            tenant_name=tenant_aname, name=sg['id'],
+            display_name=aim_utils.sanitize_display_name(sg['name']))
+        self.aim.create(aim_ctx, sg_aim)
+        # always create this default subject
+        sg_subject = aim_resource.SecurityGroupSubject(
+            tenant_name=tenant_aname,
+            security_group_name=sg['id'], name='default')
+        self.aim.create(aim_ctx, sg_subject)
+
+        # create those implicit rules
+        for sg_rule in sg.get('security_group_rules', []):
+            sg_rule_aim = aim_resource.SecurityGroupRule(
+                tenant_name=tenant_aname,
+                security_group_name=sg['id'],
+                security_group_subject_name='default',
+                name=sg_rule['id'],
+                direction=sg_rule['direction'],
+                ethertype=sg_rule['ethertype'].lower(),
+                ip_protocol=(sg_rule['protocol'] if sg_rule['protocol']
+                             else 'unspecified'),
+                remote_ips=(sg_rule['remote_ip_prefix']
+                            if sg_rule['remote_ip_prefix'] else ''),
+                from_port=(sg_rule['port_range_min']
+                           if sg_rule['port_range_min'] else 'unspecified'),
+                to_port=(sg_rule['port_range_max']
+                         if sg_rule['port_range_max'] else 'unspecified'))
+            self.aim.create(aim_ctx, sg_rule_aim)
+
+    def update_security_group_precommit(self, context):
+        # only display_name change makes sense here
+        sg = context.current
+        original_sg = context.original
+        if sg.get('name') == original_sg.get('name'):
+            return
+        session = context._plugin_context.session
+        aim_ctx = aim_context.AimContext(session)
+        tenant_aname = self.name_mapper.project(session, sg['tenant_id'])
+        sg_aim = aim_resource.SecurityGroup(
+            tenant_name=tenant_aname, name=sg['id'])
+        self.aim.update(aim_ctx, sg_aim,
+                        display_name=aim_utils.sanitize_display_name(
+                            sg['name']))
+
+    def delete_security_group_precommit(self, context):
+        session = context._plugin_context.session
+        aim_ctx = aim_context.AimContext(session)
+        sg = context.current
+        tenant_aname = self.name_mapper.project(session, sg['tenant_id'])
+        for sg_rule in sg.get('security_group_rules'):
+            sg_rule_aim = aim_resource.SecurityGroupRule(
+                tenant_name=tenant_aname,
+                security_group_name=sg['id'],
+                security_group_subject_name='default',
+                name=sg_rule['id'])
+            self.aim.delete(aim_ctx, sg_rule_aim)
+        sg_subject = aim_resource.SecurityGroupSubject(
+            tenant_name=tenant_aname,
+            security_group_name=sg['id'], name='default')
+        self.aim.delete(aim_ctx, sg_subject)
+        sg_aim = aim_resource.SecurityGroup(tenant_name=tenant_aname,
+                                            name=sg['id'])
+        self.aim.delete(aim_ctx, sg_aim)
+
+    def create_security_group_rule_precommit(self, context):
+        session = context._plugin_context.session
+        aim_ctx = aim_context.AimContext(session)
+        sg_rule = context.current
+        tenant_aname = self.name_mapper.project(session, sg_rule['tenant_id'])
+        if sg_rule.get('remote_group_id'):
+            remote_ips = []
+            sg_ports = (session.query(models_v2.Port).
+                        join(sg_models.SecurityGroupPortBinding,
+                             sg_models.SecurityGroupPortBinding.port_id ==
+                             models_v2.Port.id).
+                        filter(sg_models.SecurityGroupPortBinding.
+                               security_group_id ==
+                               sg_rule['remote_group_id']).
+                        all())
+            for sg_port in sg_ports:
+                for fixed_ip in sg_port['fixed_ips']:
+                    remote_ips.append(fixed_ip['ip_address'])
+        else:
+            remote_ips = ([sg_rule['remote_ip_prefix']]
+                          if sg_rule['remote_ip_prefix'] else '')
+
+        sg_rule_aim = aim_resource.SecurityGroupRule(
+            tenant_name=tenant_aname,
+            security_group_name=sg_rule['security_group_id'],
+            security_group_subject_name='default',
+            name=sg_rule['id'],
+            direction=sg_rule['direction'],
+            ethertype=sg_rule['ethertype'].lower(),
+            ip_protocol=(sg_rule['protocol'] if sg_rule['protocol']
+                         else 'unspecified'),
+            remote_ips=remote_ips,
+            from_port=(sg_rule['port_range_min']
+                       if sg_rule['port_range_min'] else 'unspecified'),
+            to_port=(sg_rule['port_range_max']
+                     if sg_rule['port_range_max'] else 'unspecified'))
+        self.aim.create(aim_ctx, sg_rule_aim)
+
+    def delete_security_group_rule_precommit(self, context):
+        session = context._plugin_context.session
+        aim_ctx = aim_context.AimContext(session)
+        sg_rule = context.current
+        tenant_aname = self.name_mapper.project(session, sg_rule['tenant_id'])
+        sg_rule_aim = aim_resource.SecurityGroupRule(
+            tenant_name=tenant_aname,
+            security_group_name=sg_rule['security_group_id'],
+            security_group_subject_name='default',
+            name=sg_rule['id'])
+        self.aim.delete(aim_ctx, sg_rule_aim)
 
     def delete_port_postcommit(self, context):
         port = context.current
@@ -1477,8 +1694,8 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
     def _complete_binding(self, context, segment):
         context.set_binding(
             segment[api.ID], portbindings.VIF_TYPE_OVS,
-            {portbindings.CAP_PORT_FILTER: self.sg_enabled,
-             portbindings.OVS_HYBRID_PLUG: self.sg_enabled})
+            {portbindings.CAP_PORT_FILTER: False,
+             portbindings.OVS_HYBRID_PLUG: False})
 
     @property
     def plugin(self):
