@@ -3000,6 +3000,16 @@ class TestPolicyTarget(AIMBaseTestCase):
         self.assertEqual(1000, mapping['interface_mtu'])
         self.assertEqual(100, mapping['dhcp_lease_time'])
 
+        port = self._plugin.get_port(self._context, pt2['port_id'])
+        sg_list = []
+        for sg_id in port['security_groups']:
+            sg_list.append(
+                {'policy-space': mapping['ptg_tenant'],
+                 'name': sg_id})
+        sg_list.append({'policy-space': 'common',
+                        'name': 'gbp_default'})
+        self.assertEqual(sg_list, mapping['security_group'])
+
     def _do_test_gbp_details_no_pt(self, use_as=True, routed=True,
                                    pre_vrf=None):
         # Create port and bind it
