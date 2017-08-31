@@ -10,7 +10,7 @@
 -e git+https://github.com/noironetworks/apic-ml2-driver.git@sumit/ocata#egg=apic_ml2
 
 -e git+https://github.com/openstack/vmware-nsx.git@stable/ocata#egg=vmware_nsx
--e git+https://github.com/openstack/vmware-nsxlib.git@master#egg=vmware_nsxlib
+-e git+https://github.com/openstack/vmware-nsxlib.git@stable/ocata#egg=vmware_nsxlib
 
 -e git+https://git.openstack.org/openstack/python-group-based-policy-client@master#egg=gbpclient
 -e git+https://git.openstack.org/openstack/neutron-vpnaas@stable/ocata#egg=neutron-vpnaas
