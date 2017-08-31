@@ -41,6 +41,7 @@ from neutron.tests.unit.extensions import test_l3
 from neutron_lib import constants as n_constants
 from neutron_lib.plugins import directory
 from opflexagent import constants as ofcst
+from oslo_log import log
 import webob.exc
 
 from gbpservice.neutron.db import implicitsubnetpool_db  # noqa
@@ -55,6 +56,8 @@ from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import data_migrations
 from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import db
 from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import exceptions
 from gbpservice.neutron.plugins.ml2plus import patch_neutron
+
+LOG = log.getLogger(__name__)
 
 PLUGIN_NAME = 'gbpservice.neutron.plugins.ml2plus.plugin.Ml2PlusPlugin'
 
@@ -1312,7 +1315,9 @@ class TestAimMapping(ApicAimTestCase):
             router = self._show('routers', router_id)['router']
             expected_gw_ips = []
             unexpected_gw_ips = []
+            LOG.warn("checking networks....")
             for net, routed_subnets, unrouted_subnets, scope, project in nets:
+                LOG.warn("Showing network %s", net['id'])
                 net = self._show('networks', net['id'])['network']
                 self._check_network(
                     net, [router] if routed_subnets else [], scope, project)
