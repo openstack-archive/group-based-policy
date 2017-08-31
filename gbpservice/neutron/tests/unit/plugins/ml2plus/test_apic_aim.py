@@ -16,6 +16,7 @@
 import mock
 import netaddr
 import six
+import unittest2
 
 from aim.aim_lib import nat_strategy
 from aim import aim_manager
@@ -1146,9 +1147,13 @@ class TestAimMapping(ApicAimTestCase):
             mock.call(mock.ANY, tenant)]
         self._check_call_list(exp_calls, self.driver.aim.delete.call_args_list)
 
+    # TODO(tbachman): re-enable when fixed
+    @unittest2.skip('Intermittent failures')
     def test_multi_scope_routing_with_unscoped_pools(self):
         self._test_multi_scope_routing(True)
 
+    # TODO(tbachman): re-enable when fixed
+    @unittest2.skip('Intermittent failures')
     def test_multi_scope_routing_without_unscoped_pools(self):
         self._test_multi_scope_routing(False)
 
