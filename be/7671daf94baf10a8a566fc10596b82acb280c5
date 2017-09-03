@@ -1,0 +1,10 @@
+Code-Review+2: Anna Khmelnitsky <akhmelnitsky@vmware.com>
+Code-Review+2: Sumit Naiksatam <sumitnaiksatam@gmail.com>
+Workflow+1: Sumit Naiksatam <sumitnaiksatam@gmail.com>
+Code-Review+2: Thomas Bachman <bachman@noironetworks.com>
+Verified+2: Jenkins
+Submitted-by: Jenkins
+Submitted-at: Sun, 03 Sep 2017 03:39:54 +0000
+Reviewed-on: https://review.openstack.org/499837
+Project: openstack/group-based-policy
+Branch: refs/heads/stable/ocata
