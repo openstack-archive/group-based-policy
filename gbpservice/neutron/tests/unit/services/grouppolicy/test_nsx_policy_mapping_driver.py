@@ -65,6 +65,8 @@ class NsxPolicyMappingTestCase(test_rmd.ResourceMappingTestCase):
         mock.patch("vmware_nsxlib.v3.client.NSX3Client").start()
         mock.patch("vmware_nsxlib.v3.policy_resources"
                    ".NsxPolicyEnforcementPointApi").start()
+        mock.patch("vmware_nsxlib.v3.cluster.ClusteredAPI"
+                   "._init_endpoints").start()
 
     def _mock_domain_create(self):
         return mock.patch.object(self.nsx_policy.domain, 'create_or_overwrite')
