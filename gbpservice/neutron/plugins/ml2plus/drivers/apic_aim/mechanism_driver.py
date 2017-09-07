@@ -42,6 +42,7 @@ from neutron_lib import constants as n_constants
 from neutron_lib import exceptions as n_exceptions
 from neutron_lib.plugins import directory
 from opflexagent import constants as ofcst
+from opflexagent import host_agent_rpc as arpc
 from opflexagent import rpc as ofrpc
 from oslo_config import cfg
 from oslo_db import exception as db_exc
@@ -52,7 +53,6 @@ from gbpservice._i18n import _LE
 from gbpservice._i18n import _LI
 from gbpservice._i18n import _LW
 from gbpservice.network.neutronv2 import local_api
-from gbpservice.neutron.agent.topology import rpc as arpc
 from gbpservice.neutron.extensions import cisco_apic
 from gbpservice.neutron.extensions import cisco_apic_l3 as a_l3
 from gbpservice.neutron.plugins.ml2plus import driver_api as api_plus
