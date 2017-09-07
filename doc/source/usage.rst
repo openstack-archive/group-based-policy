@@ -83,7 +83,7 @@ Network service chaining is a key capability of GBP.  The goal is to describe th
    Resource                       Description
 ========================= ===================================================
 Service Chain Nodes       Logical devices providing network services of a particular type (LB, firewall, etc.)
-Service Chain Spec        Ordered grouping of service chain nodes.  Specs may be used in the defintion of a "redirect" action.
+Service Chain Spec        Ordered grouping of service chain nodes.  Specs may be used in the definition of a "redirect" action.
 Service Chain Instance    Specific instantiation of service chain spec between Policy Groups.  Instances are created automatically when a service chain is activated as part of a Rule Set.
 ========================= ===================================================
 
