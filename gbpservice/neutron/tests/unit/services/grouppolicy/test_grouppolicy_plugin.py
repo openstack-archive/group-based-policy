@@ -115,7 +115,7 @@ class GroupPolicyPluginTestBase(tgpmdb.GroupPolicyMappingDbTestCase):
     def _create_servicechain_spec(self, node_types=None, shared=False):
         node_types = node_types or []
         if not node_types:
-            node_types = ['LOADBALANCER']
+            node_types = ['LOADBALANCERV2']
         node_ids = []
         for node_type in node_types:
             node_ids.append(self._create_servicechain_node(node_type,
@@ -131,7 +131,7 @@ class GroupPolicyPluginTestBase(tgpmdb.GroupPolicyMappingDbTestCase):
         scs_id = spec['servicechain_spec']['id']
         return scs_id
 
-    def _create_servicechain_node(self, node_type="LOADBALANCER",
+    def _create_servicechain_node(self, node_type="LOADBALANCERV2",
                                   shared=False):
         config = "{}"
         data = {'servicechain_node': {'service_type': node_type,

@@ -285,7 +285,7 @@ class GroupPolicyDBTestBase(ApiManagerMixin):
                          sorted([i[resource]['id'] for i in items]))
 
     def _create_profiled_servicechain_node(
-            self, service_type=constants.LOADBALANCER, shared_profile=False,
+            self, service_type=constants.LOADBALANCERV2, shared_profile=False,
             profile_tenant_id=None, **kwargs):
         prof = self.create_service_profile(
             service_type=service_type,
