@@ -645,11 +645,13 @@ class DummyDictionaries(object):
             'service_id': '1200332d-b432-403b-8350-89b782256be5',
             'service_profile_id': 'ab3b704b-a7d9-4c55-ab43-57ed5e29867d',
             'id': '5ad7439b-7259-47cd-be88-36f641e0b5c8',
-            'name': 'LOADBALANCER.haproxy.507988d2-4b46-4df4-99d2-746676500872'
+            'name':
+            'LOADBALANCERV2.haproxy.507988d2-4b46-4df4-99d2-746676500872'
         },
         'network_function_instance': {
             'status': 'ACTIVE',
-            'name': 'LOADBALANCER.haproxy.507988d2-4b46-4df4-99d2-7466765002',
+            'name':
+            'LOADBALANCERV2.haproxy.507988d2-4b46-4df4-99d2-7466765002',
             'network_function_device_id': '3c3e502a-256e-4597-91a9-71902380c0',
             'tenant_id': 'ee27b1d0d7f04ac390ee7ec4b2fd5b13',
             'ha_state': None,
@@ -671,7 +673,7 @@ class DummyDictionaries(object):
             'reference_count': 1,
             'interfaces_in_use': 2,
             'id': '3c3e502a-256e-4597-91a9-719023808ec0',
-            'name': 'LOADBALANCER.haproxy.507988d2-4b46-4df4-99d2-7466765008'
+            'name': 'LOADBALANCERV2.haproxy.507988d2-4b46-4df4-99d2-7466765008'
         }
     }
 
