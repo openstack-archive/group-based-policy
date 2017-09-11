@@ -12,6 +12,10 @@
 
 import six
 
+from oslo_config import cfg
+
+from gbpservice.neutron.services.grouppolicy.common import constants as const
+
 
 def convert_ip_pool_list_to_string(ip_pool):
     if type(ip_pool) is not list:
@@ -30,3 +34,14 @@ def convert_ip_pool_string_to_list(ip_pool_string):
         return [prefix.strip() for prefix in ip_pool_string.split(',')]
     else:
         return []
+
+
+def is_precommit_policy_driver_configured():
+    # This method checks if exactly one of the policy drivers designated
+    # as a "pre-commit" driver, and defined in:
+    # const.PRECOMMIT_POLICY_DRIVERS
+    # is present in the list of configured policy drivers.
+    a = set(cfg.CONF.group_policy.policy_drivers)
+    if len(set(a) & set(const.PRECOMMIT_POLICY_DRIVERS)) == 1:
+        return True
+    return False
