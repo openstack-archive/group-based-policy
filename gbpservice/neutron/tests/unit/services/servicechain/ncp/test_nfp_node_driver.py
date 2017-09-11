@@ -167,7 +167,7 @@ class NFPNodeDriverTestCase(
         if not kwargs.get('insertion_mode'):
             kwargs['insertion_mode'] = 'l3'
         if not kwargs.get('service_flavor'):
-            if kwargs['service_type'] == 'LOADBALANCER':
+            if kwargs['service_type'] == 'LOADBALANCERV2':
                 kwargs['service_flavor'] = 'haproxy'
             else:
                 kwargs['service_flavor'] = 'vyos'
@@ -204,7 +204,7 @@ class NFPNodeDriverTestCase(
             self.assertTrue(driver.obj.initialized)
 
     def _nfp_create_profiled_servicechain_node(
-            self, service_type=constants.LOADBALANCER, shared_profile=False,
+            self, service_type=constants.LOADBALANCERV2, shared_profile=False,
             profile_tenant_id=None, profile_id=None,
             service_flavor=None, **kwargs):
         if not profile_id:
@@ -525,7 +525,7 @@ class TestServiceChainInstance(NFPNodeDriverTestCase):
 
     def test_is_node_order_in_spec_supported(self):
         lb_prof = self.create_service_profile(
-                    service_type=constants.LOADBALANCER,
+                    service_type=constants.LOADBALANCERV2,
                     vendor=self.SERVICE_PROFILE_VENDOR,
                     insertion_mode='l3',
                     service_flavor='haproxy')['service_profile']
