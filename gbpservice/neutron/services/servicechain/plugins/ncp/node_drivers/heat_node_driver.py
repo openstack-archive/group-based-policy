@@ -12,9 +12,14 @@
 
 import time
 
+from heatclient import exc as heat_exc
+from neutron.db import api as db_api
+from neutron.db import models_v2 as ndb
 from neutron.plugins.common import constants as pconst
 from neutron_lib.db import model_base
+from neutron_lib import exceptions as nexc
 from oslo_config import cfg
+from oslo_db import exception as db_exc
 from oslo_log import helpers as log
 from oslo_log import log as logging
 from oslo_serialization import jsonutils
@@ -34,6 +39,9 @@ service_chain_opts = [
                default=15,
                help=_("Seconds to wait for pending stack operation "
                       "to complete")),
+    cfg.IntOpt('delete_vip_port_retries',
+               default=10,
+               help=_("Retries to check if LB VIP port is deleted")),
     cfg.StrOpt('heat_uri',
                default='http://localhost:8004/v1',
                help=_("Heat API server address to instantiate services "
@@ -48,6 +56,7 @@ cfg.CONF.register_opts(service_chain_opts, "heat_node_driver")
 EXCLUDE_POOL_MEMBER_TAG = cfg.CONF.heat_node_driver.exclude_pool_member_tag
 STACK_ACTION_WAIT_TIME = cfg.CONF.heat_node_driver.stack_action_wait_time
 STACK_ACTION_RETRY_WAIT = 5  # Retry after every 5 seconds
+DELETE_VIP_PORT_RETRIES = cfg.CONF.heat_node_driver.delete_vip_port_retries
 
 
 class ServiceNodeInstanceStack(model_base.BASEV2):
@@ -107,15 +116,16 @@ class ServiceTypeUpdateNotSupported(exc.NodeCompositionPluginBadRequest):
 
 class HeatNodeDriver(driver_base.NodeDriverBase):
 
-    sc_supported_type = [pconst.LOADBALANCER, pconst.FIREWALL]
     vendor_name = 'heat_based_node_driver'
     initialized = False
-    required_heat_resources = {pconst.LOADBALANCER: [
-                                            'OS::Neutron::LoadBalancer',
-                                            'OS::Neutron::Pool'],
-                               pconst.FIREWALL: [
-                                            'OS::Neutron::Firewall',
-                                            'OS::Neutron::FirewallPolicy']}
+    sc_supported_type = [pconst.LOADBALANCERV2, pconst.FIREWALL]
+    required_heat_resources = {
+        pconst.LOADBALANCERV2: ['OS::Neutron::LBaaS::LoadBalancer',
+                                'OS::Neutron::LBaaS::Listener',
+                                'OS::Neutron::LBaaS::Pool'],
+        pconst.FIREWALL: ['OS::Neutron::Firewall',
+                          'OS::Neutron::FirewallPolicy'],
+    }
 
     @log.log_method_call
     def initialize(self, name):
@@ -130,7 +140,8 @@ class HeatNodeDriver(driver_base.NodeDriverBase):
     def validate_create(self, context):
         if context.current_profile is None:
             raise ServiceProfileRequired()
-        if context.current_profile['vendor'] != self.vendor_name:
+        if context.current_profile['vendor'].lower() != (
+            self.vendor_name.lower()):
             raise NodeVendorMismatch(vendor=self.vendor_name)
         service_type = context.current_profile['service_type']
         if service_type not in self.sc_supported_type:
@@ -206,10 +217,36 @@ class HeatNodeDriver(driver_base.NodeDriverBase):
         heatclient = self._get_heat_client(context.plugin_context)
 
         for stack in stack_ids:
+            vip_port_id = None
+            try:
+                rstr = heatclient.client.resources.get(stack_ids[0].stack_id,
+                    'loadbalancer')
+                vip_port_id = rstr.attributes['vip_port_id']
+            except heat_exc.HTTPNotFound:
+                # stack not found, so no need to process any further
+                pass
             heatclient.delete(stack.stack_id)
-        for stack in stack_ids:
-            self._wait_for_stack_operation_complete(
-                                heatclient, stack.stack_id, 'delete')
+            if vip_port_id:
+                for x in range(0, DELETE_VIP_PORT_RETRIES):
+                    # We intentionally get a new session so as to be
+                    # able to read the updated DB
+                    session = db_api.get_session()
+                    vip_port = session.query(ndb.Port).filter_by(
+                        id=vip_port_id).all()
+                    if vip_port:
+                        # heat stack delete is not finished yet, so try again
+                        LOG.debug(("VIP port %s is not yet deleted"), vip_port)
+                        LOG.debug(("Retry attempt; %s"), x + 1)
+                        # Stack delete will at least take some minimal amount
+                        # of time, hence we wait a little bit.
+                        time.sleep(STACK_ACTION_WAIT_TIME)
+                    else:
+                        # we force a retry so that a new session can be
+                        # used that will correctly reflect the VIP port as
+                        # deleted and hence allow the subsequent policy driver
+                        # to delete the VIP subnet
+                        raise db_exc.RetryRequest(Exception)
+
         self._delete_node_instance_stack_in_db(context.plugin_session,
                                                context.current_node['id'],
                                                context.instance['id'])
@@ -230,12 +267,12 @@ class HeatNodeDriver(driver_base.NodeDriverBase):
 
     @log.log_method_call
     def update_policy_target_added(self, context, policy_target):
-        if context.current_profile['service_type'] == pconst.LOADBALANCER:
+        if context.current_profile['service_type'] == pconst.LOADBALANCERV2:
             self.update(context)
 
     @log.log_method_call
     def update_policy_target_removed(self, context, policy_target):
-        if context.current_profile['service_type'] == pconst.LOADBALANCER:
+        if context.current_profile['service_type'] == pconst.LOADBALANCERV2:
             self.update(context)
 
     @log.log_method_call
@@ -254,6 +291,10 @@ class HeatNodeDriver(driver_base.NodeDriverBase):
     def policy_target_group_updated(self, context, old_policy_target_group,
                                     current_policy_target_group):
         pass
+
+    def get_status(self, context):
+        # TODO(Sumit): Needs to be implemented
+        return {'status': '', 'status_details': ''}
 
     @property
     def name(self):
@@ -283,12 +324,12 @@ class HeatNodeDriver(driver_base.NodeDriverBase):
         is_template_aws_version = stack_template.get(
                                         'AWSTemplateFormatVersion', False)
 
-        if service_type == pconst.LOADBALANCER:
+        if service_type == pconst.LOADBALANCERV2:
             self._generate_pool_members(context, stack_template,
                                         config_param_values,
                                         provider_ptg,
                                         is_template_aws_version)
-        else:
+        elif service_type == pconst.FIREWALL:
             provider_subnet = context.core_plugin.get_subnet(
                                 context.plugin_context, provider_ptg_subnet_id)
             consumer_cidrs = []
@@ -317,6 +358,8 @@ class HeatNodeDriver(driver_base.NodeDriverBase):
         for parameter in node_params:
             if parameter == "Subnet":
                 stack_params[parameter] = provider_ptg_subnet_id
+            elif parameter == "service_chain_metadata":
+                stack_params[parameter] = sc_instance['id']
             elif parameter in config_param_values:
                 stack_params[parameter] = config_param_values[parameter]
         return (stack_template, stack_params)
@@ -419,9 +462,7 @@ class HeatNodeDriver(driver_base.NodeDriverBase):
                     "destination_port": destination_port,
                     "action": "allow",
                     "destination_ip_address": destination_cidr,
-                    "source_ip_address": source_cidr
-                }
-                }
+                    "source_ip_address": source_cidr}}
 
     def _generate_pool_members(self, context, stack_template,
                                config_param_values, provider_ptg,
@@ -435,7 +476,7 @@ class HeatNodeDriver(driver_base.NodeDriverBase):
         pool_res_name = None
         for resource in stack_template[resources_key]:
             if stack_template[resources_key][resource][type_key] == (
-                                                    'OS::Neutron::Pool'):
+                    'OS::Neutron::LBaaS::Pool'):
                 pool_res_name = resource
                 break
 
@@ -453,13 +494,13 @@ class HeatNodeDriver(driver_base.NodeDriverBase):
         properties_key = ('Properties' if is_template_aws_version
                           else 'properties')
         res_key = 'Ref' if is_template_aws_version else 'get_resource'
-        return {type_key: "OS::Neutron::PoolMember",
+        return {type_key: "OS::Neutron::LBaaS::PoolMember",
                 properties_key: {
                     "address": member_ip,
                     "admin_state_up": True,
-                    "pool_id": {res_key: pool_res_name},
-                    # FIXME(Magesh): Need to handle port range
-                    "protocol_port": context.classifier["port_range"],
+                    "pool": {res_key: pool_res_name},
+                    "protocol_port": {'get_param': 'app_port'},
+                    "subnet": {'get_param': 'Subnet'},
                     "weight": 1}}
 
     def _get_member_ips(self, context, ptg):
