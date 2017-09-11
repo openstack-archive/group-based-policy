@@ -58,7 +58,7 @@ class BaseTestGroupPolicyPluginGroupResources(
     def test_spec_shared(self):
         # Shared spec can only point shared nodes
         node = self._create_profiled_servicechain_node(
-            'LOADBALANCER', shared=True, shared_profile=True,
+            'LOADBALANCERV2', shared=True, shared_profile=True,
             profile_tenant_id='admin', tenant_id='admin')['servicechain_node']
         self.create_servicechain_spec(nodes=[node['id']], shared=True,
                                       expected_res_status=201)
@@ -67,7 +67,7 @@ class BaseTestGroupPolicyPluginGroupResources(
                                       expected_res_status=201)
 
         node = self._create_profiled_servicechain_node(
-            'LOADBALANCER', shared=False, profile_tenant_id='nonadmin',
+            'LOADBALANCERV2', shared=False, profile_tenant_id='nonadmin',
             tenant_id='nonadmin')['servicechain_node']
         self.create_servicechain_spec(nodes=[node['id']], shared=True,
                                       expected_res_status=404)
@@ -81,7 +81,7 @@ class BaseTestGroupPolicyPluginGroupResources(
     def test_node_shared(self):
         # Shared node can only point shared profile
         prof = self.create_service_profile(
-            service_type='LOADBALANCER', shared=True,
+            service_type='LOADBALANCERV2', shared=True,
             tenant_id='admin')['service_profile']
         to_update = self.create_servicechain_node(
             service_profile_id=prof['id'], shared=True,
@@ -91,7 +91,7 @@ class BaseTestGroupPolicyPluginGroupResources(
             expected_res_status=201)
 
         prof = self.create_service_profile(
-            service_type='LOADBALANCER', shared=False,
+            service_type='LOADBALANCERV2', shared=False,
             tenant_id='admin')['service_profile']
         self.create_servicechain_node(
             service_profile_id=prof['id'], shared=True,
@@ -118,7 +118,7 @@ class BaseTestGroupPolicyPluginGroupResources(
 
     def test_profile_shared(self):
         prof = self.create_service_profile(
-            service_type='LOADBALANCER', shared=True,
+            service_type='LOADBALANCERV2', shared=True,
             tenant_id='admin')['service_profile']
         self.create_servicechain_node(
             service_profile_id=prof['id'], shared=True,
@@ -134,7 +134,7 @@ class BaseTestGroupPolicyPluginGroupResources(
                          res['NeutronError']['type'])
 
         prof = self.create_service_profile(
-            service_type='LOADBALANCER', shared=False)['service_profile']
+            service_type='LOADBALANCERV2', shared=False)['service_profile']
         self.create_servicechain_node(
             service_profile_id=prof['id'], shared=False,
             expected_res_status=201)
@@ -155,7 +155,7 @@ class BaseTestGroupPolicyPluginGroupResources(
         plugin_context.tenant_id = self._tenant_id
 
         prof = self.create_service_profile(
-            service_type='LOADBALANCER')['service_profile']
+            service_type='LOADBALANCERV2')['service_profile']
         current = self.create_servicechain_node(
             service_profile_id=prof['id'],
             expected_res_status=201)['servicechain_node']
@@ -171,7 +171,7 @@ class BaseTestGroupPolicyPluginGroupResources(
         # Original node with profile
 
         prof2 = self.create_service_profile(
-            service_type='LOADBALANCER')['service_profile']
+            service_type='LOADBALANCERV2')['service_profile']
         original = self.create_servicechain_node(
             service_profile_id=prof2['id'],
             expected_res_status=201)['servicechain_node']
@@ -225,7 +225,7 @@ class BaseTestGroupPolicyPluginGroupResources(
                                     dict((x, {}) for x in params)})
 
         prof = self.create_service_profile(
-            service_type='LOADBALANCER', shared=True,
+            service_type='LOADBALANCERV2', shared=True,
             tenant_id='admin')['service_profile']
 
         # Create 2 nodes with different parameters

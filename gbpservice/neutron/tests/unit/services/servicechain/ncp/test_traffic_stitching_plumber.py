@@ -143,7 +143,7 @@ class TrafficStitchingPlumberTestCase(base.NodeCompositionPluginTestCase):
         context = n_context.get_admin_context()
         self.driver.get_plumbing_info = self.get_plumbing_info_base
         lb_prof = self._create_service_profile(
-            service_type='LOADBALANCER',
+            service_type='LOADBALANCERV2',
             vendor=self.SERVICE_PROFILE_VENDOR)['service_profile']
         lb_node = self.create_servicechain_node(
             service_profile_id=lb_prof['id'],

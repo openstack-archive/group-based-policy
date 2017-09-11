@@ -69,7 +69,8 @@ class NodeDriverManager(stevedore.named.NamedExtensionManager):
         for driver in self.ordered_drivers:
             try:
                 driver.obj.validate_create(context)
-                model.set_node_owner(context, driver.obj.name)
+                if not model.get_node_owner(context):
+                    model.set_node_owner(context, driver.obj.name)
                 return driver.obj
             except n_exc.NeutronException as e:
                 LOG.warning(e.message)

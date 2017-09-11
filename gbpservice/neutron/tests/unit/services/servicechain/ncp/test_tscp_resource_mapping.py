@@ -42,7 +42,7 @@ info_mapping = {
 info_mapping['FIREWALL'] = info_mapping[GATEWAY]
 info_mapping['FIREWALL_HA'] = info_mapping[GATEWAY_HA]
 info_mapping['TRANSPARENT_FIREWALL'] = info_mapping[TRANSPARENT]
-info_mapping['LOADBALANCER'] = info_mapping[ENDPOINT]
+info_mapping['LOADBALANCERV2'] = info_mapping[ENDPOINT]
 
 
 class ResourceMappingStitchingPlumberGBPTestCase(
@@ -188,7 +188,7 @@ class TestImplicitServiceChains(ResourceMappingStitchingPlumberGBPTestCase,
 
     def test_endpoint_target_vif_details(self):
         context = n_context.get_admin_context()
-        self._create_simple_service_chain(service_type='LOADBALANCER')
+        self._create_simple_service_chain(service_type='LOADBALANCERV2')
         targets = model.get_service_targets(context.session)
         self.assertTrue(len(targets) > 0)
         for target in targets:
