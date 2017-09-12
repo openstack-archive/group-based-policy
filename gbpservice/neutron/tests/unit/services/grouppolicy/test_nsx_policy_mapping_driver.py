@@ -220,6 +220,20 @@ class TestPolicyClassifier(NsxPolicyMappingTestCase):
                 dest_ports=port_list,
                 service_id=mock.ANY)
 
+    def test_create_without_ports(self):
+        with self._mock_service_create() as service_create_call:
+
+            self.create_policy_classifier(name='test',
+                                          protocol='TCP',
+                                          direction='in')
+
+            service_create_call.assert_called_with(
+                name=mock.ANY,
+                description=mock.ANY,
+                protocol='tcp',
+                dest_ports=[],
+                service_id=mock.ANY)
+
     def test_icmp_lifecycle(self):
         with self._mock_icmp_service_create() as service_create_call, \
             self._mock_icmp_service_delete() as service_delete_call:
