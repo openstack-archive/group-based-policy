@@ -3043,6 +3043,14 @@ class ResourceMappingDriver(api.PolicyDriver, ImplicitResourceOperations,
                                          old_cidrs):
         # the EPs could belong to different tenants, need admin context
         admin_context = n_context.get_admin_context()
+        added = set(new_cidrs) - set(old_cidrs)
+        removed = set(old_cidrs) - set(new_cidrs)
+        new_cidrs = []
+        old_cidrs = []
+        if added:
+            new_cidrs = list(added)
+        if removed:
+            old_cidrs = list(removed)
         ep_list = context._plugin.get_external_policies(admin_context,
                                                         filters={'id': ep_ids})
         for ep in ep_list:
