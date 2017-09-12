@@ -114,7 +114,7 @@ class ApiManagerMixin(object):
         req.environ['neutron.context'] = context.Context(
             '', tenant_id if not is_admin_context else self._tenant_id,
             is_admin_context)
-        res = req.get_response(api or self.ext_api)
+        res = req.get_response(api if api else self.ext_api)
 
         if expected_res_status:
             self.assertEqual(expected_res_status, res.status_int)
