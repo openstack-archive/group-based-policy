@@ -396,10 +396,12 @@ class NsxPolicyMappingDriver(api.ResourceMappingDriver):
                 description=classifier['description'])
             return
 
-        port_range = classifier['port_range'].split(':', 1)
-        lower = int(port_range[0])
-        upper = int(port_range[-1]) + 1
-        ports = [str(p) for p in range(lower, upper)]
+        ports = []
+        if classifier['port_range']:
+            port_range = classifier['port_range'].split(':', 1)
+            lower = int(port_range[0])
+            upper = int(port_range[-1]) + 1
+            ports = [str(p) for p in range(lower, upper)]
 
         # service entry in nsx policy has single direction
         # directions will be enforced on communication profile level
