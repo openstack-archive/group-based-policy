@@ -1950,7 +1950,7 @@ class TestL2PolicyWithAutoPTG(TestL2PolicyBase):
         # non-admin cannot retrieve or update auto-ptg
         self.show_policy_target_group(auto_ptg_id, expected_res_status=404)
         self.update_policy_target_group(
-            auto_ptg_id, expected_res_status=403, name='new_name')
+            auto_ptg_id, expected_res_status=404, name='new_name')
         # admin can retrieve and update auto-ptg
         self.show_policy_target_group(auto_ptg_id, is_admin_context=True,
                                       expected_res_status=200)
