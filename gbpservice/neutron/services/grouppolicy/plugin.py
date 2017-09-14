@@ -661,16 +661,16 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
                 LOG.warning(_LW('PTG %s already deleted'),
                             policy_target_group['proxy_group_id'])
 
-        with session.begin(subtransactions=True):
-            for pt in self.get_policy_targets(context, {'id': pt_ids}):
-                # We will allow PTG deletion if all PTs are unused.
-                # We could have cleaned these opportunistically in
-                # the previous loop, but we will keep it simple,
-                # such that either all unused PTs are deleted
-                # or nothing is.
-                self.delete_policy_target(context, pt['id'])
-            super(GroupPolicyPlugin, self).delete_policy_target_group(
-                context, policy_target_group_id)
+        #with session.begin(subtransactions=True):
+        for pt in self.get_policy_targets(context, {'id': pt_ids}):
+            # We will allow PTG deletion if all PTs are unused.
+            # We could have cleaned these opportunistically in
+            # the previous loop, but we will keep it simple,
+            # such that either all unused PTs are deleted
+            # or nothing is.
+            self.delete_policy_target(context, pt['id'])
+        super(GroupPolicyPlugin, self).delete_policy_target_group(
+            context, policy_target_group_id)
 
         try:
             self.policy_driver_manager.delete_policy_target_group_postcommit(
