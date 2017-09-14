@@ -37,7 +37,7 @@ LOG = log.getLogger(__name__)
 # TODO(tbachman) Find a good home for these
 AGENT_TYPE_DVS = 'DVS agent'
 VIF_TYPE_DVS = 'dvs'
-DVS_AGENT_KLASS = 'vmware_dvs.api.dvs_agent_rpc_api.DVSClientAPI'
+DVS_AGENT_KLASS = 'networking_vsphere.common.dvs_agent_rpc_api.DVSClientAPI'
 
 
 class APICMechanismGBPDriver(api.MechanismDriver):
