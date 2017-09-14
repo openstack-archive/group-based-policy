@@ -37,7 +37,7 @@ LOG = log.getLogger(__name__)
 # TODO(tbachman) Find a good home for these
 AGENT_TYPE_DVS = 'DVS agent'
 VIF_TYPE_DVS = 'dvs'
-DVS_AGENT_KLASS = 'vmware_dvs.api.dvs_agent_rpc_api.DVSClientAPI'
+DVS_AGENT_KLASS = 'networking_vsphere.common.dvs_agent_rpc_api.DVSClientAPI'
 
 
 class APICMechanismGBPDriver(api.MechanismDriver):
@@ -163,16 +163,16 @@ class APICMechanismGBPDriver(api.MechanismDriver):
             currentcopy = copy.copy(context.current)
             currentcopy['portgroup_name'] = (
                 vif_details['dvs_port_group_name'])
-            booked_port_key = None
+            booked_port_info = None
             if self.dvs_notifier:
-                booked_port_key = self.dvs_notifier.bind_port_call(
+                booked_port_info = self.dvs_notifier.bind_port_call(
                     currentcopy,
                     context.network.network_segments,
                     context.network.current,
                     context.host
                 )
-            if booked_port_key:
-                vif_details['dvs_port_key'] = booked_port_key
+            if booked_port_info:
+                vif_details['dvs_port_key'] = booked_port_info['key']
             context.set_binding(segment[api.ID],
                                 VIF_TYPE_DVS, vif_details,
                                 n_constants.PORT_STATUS_ACTIVE)

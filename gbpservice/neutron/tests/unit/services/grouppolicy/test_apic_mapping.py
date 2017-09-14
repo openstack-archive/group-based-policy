@@ -1695,7 +1695,7 @@ class TestPolicyTargetDvs(ApicMappingTestCase):
         self.ml2 = plugin.mechanism_manager.mech_drivers['apic_gbp'].obj
         self.ml2._dvs_notifier = mock.MagicMock()
         self.ml2.dvs_notifier.bind_port_call = mock.Mock(
-            return_value=BOOKED_PORT_VALUE)
+            return_value={'key': BOOKED_PORT_VALUE})
         mapper = self.driver.name_mapper
         mapper.name_mapper.policy_taget_group.return_value = 'ptg1'
 
