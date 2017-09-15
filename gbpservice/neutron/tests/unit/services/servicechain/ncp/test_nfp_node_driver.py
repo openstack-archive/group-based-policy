@@ -266,6 +266,7 @@ class NFPNodeDriverTestCase(
 
 class DummyMap(object):
     network_function_id = '12'
+    status = 'UP'
 
 
 class TestServiceChainInstance(NFPNodeDriverTestCase):
