@@ -13,6 +13,7 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+import copy
 import mock
 import netaddr
 import six
@@ -241,6 +242,17 @@ class ApicAimTestCase(test_address_scope.AddressScopeTestCase,
         resource = cls.from_dn(dn)
         return self.aim_mgr.get(aim_ctx, resource)
 
+    def _check_dn_is_resource(self, dns, key, resource):
+        dn = dns.pop(key, None)
+        self.assertIsInstance(dn, six.string_types)
+        self.assertEqual(resource.dn, dn)
+
+    def _check_dn_has_resource(self, dns, key, cls):
+        dn = dns.pop(key, None)
+        self.assertIsInstance(dn, six.string_types)
+        resource = self._find_by_dn(dn, cls)
+        self.assertIsNotNone(resource)
+
     def _check_dn(self, resource, aim_resource, key):
         dist_names = resource.get('apic:distinguished_names')
         self.assertIsInstance(dist_names, dict)
@@ -459,6 +471,8 @@ class TestAimMapping(ApicAimTestCase):
 
     def _check_network(self, net, routers=None, scope=None, project=None,
                        vrf=None):
+        dns = copy.copy(net.get(DN))
+
         project = project or net['tenant_id']
         tenant_aname = self.name_mapper.project(None, project)
         self._get_tenant(tenant_aname)
@@ -509,7 +523,7 @@ class TestAimMapping(ApicAimTestCase):
         self.assertTrue(aim_bd.limit_ip_learn_to_subnets)
         self.assertEqual('proxy', aim_bd.l2_unknown_unicast_mode)
         self.assertEqual('garp', aim_bd.ep_move_detect_mode)
-        self._check_dn(net, aim_bd, 'BridgeDomain')
+        self._check_dn_is_resource(dns, 'BridgeDomain', aim_bd)
 
         aim_epg = self._get_epg(aname, tenant_aname, self._app_profile_name)
         self.assertEqual(tenant_aname, aim_epg.tenant_name)
@@ -521,7 +535,7 @@ class TestAimMapping(ApicAimTestCase):
         self.assertItemsEqual(router_anames, aim_epg.consumed_contract_names)
         # REVISIT(rkukura): Check openstack_vmm_domain_names and
         # physical_domain_names?
-        self._check_dn(net, aim_epg, 'EndpointGroup')
+        self._check_dn_is_resource(dns, 'EndpointGroup', aim_epg)
 
         aim_tenant = self._get_tenant(vrf_tenant_aname)
         self.assertEqual(vrf_tenant_aname, aim_tenant.name)
@@ -533,7 +547,9 @@ class TestAimMapping(ApicAimTestCase):
         self.assertEqual(vrf_aname, aim_vrf.name)
         self.assertEqual(vrf_dname, aim_vrf.display_name)
         self.assertEqual('enforced', aim_vrf.policy_enforcement_pref)
-        self._check_dn(net, aim_vrf, 'VRF')
+        self._check_dn_is_resource(dns, 'VRF', aim_vrf)
+
+        self.assertFalse(dns)
 
     def _check_network_deleted(self, net):
         aname = self.name_mapper.network(None, net['id'])
@@ -542,6 +558,7 @@ class TestAimMapping(ApicAimTestCase):
 
     def _check_subnet(self, subnet, net, expected_gws, unexpected_gw_ips,
                       scope=None, project=None):
+        dns = copy.copy(subnet.get(DN))
         prefix_len = subnet['cidr'].split('/')[1]
 
         scope = scope and self._actual_scopes.get(scope['id'], scope)
@@ -563,12 +580,14 @@ class TestAimMapping(ApicAimTestCase):
                              (subnet['name'] or subnet['cidr'])))
             display_name = aim_utils.sanitize_display_name(display_name)
             self.assertEqual(display_name, aim_subnet.display_name)
-            self._check_dn(subnet, aim_subnet, gw_ip)
+            self._check_dn_is_resource(dns, gw_ip, aim_subnet)
 
         for gw_ip in unexpected_gw_ips:
             gw_ip_mask = gw_ip + '/' + prefix_len
             self._subnet_should_not_exist(gw_ip_mask, net_aname)
             self._check_no_dn(subnet, gw_ip)
+
+        self.assertFalse(dns)
 
     def _check_subnet_deleted(self, subnet):
         # REVISIT(rkukura): Anything to check? We could find all the
@@ -577,6 +596,8 @@ class TestAimMapping(ApicAimTestCase):
         pass
 
     def _check_address_scope(self, scope):
+        dns = copy.copy(scope.get(DN))
+
         actual_scope = self._actual_scopes.get(scope['id'], scope)
 
         tenant_aname = self.name_mapper.project(
@@ -590,14 +611,18 @@ class TestAimMapping(ApicAimTestCase):
         self.assertEqual(aname, aim_vrf.name)
         self.assertEqual(actual_scope['name'], aim_vrf.display_name)
         self.assertEqual('enforced', aim_vrf.policy_enforcement_pref)
-        self._check_dn(scope, aim_vrf, 'VRF')
+        self._check_dn_is_resource(dns, 'VRF', aim_vrf)
+
+        self.assertFalse(dns)
 
     def _check_address_scope_deleted(self, scope):
         aname = self.name_mapper.address_scope(None, scope['id'])
         self._vrf_should_not_exist(aname)
 
+    # REVISIT: Remove unexpected_gw_ips arg?
     def _check_router(self, router, expected_gw_ips, unexpected_gw_ips,
                       scopes=None, unscoped_project=None):
+        dns = copy.copy(router.get(DN))
         aname = self.name_mapper.router(None, router['id'])
 
         aim_contract = self._get_contract(aname, 'common')
@@ -605,7 +630,7 @@ class TestAimMapping(ApicAimTestCase):
         self.assertEqual(aname, aim_contract.name)
         self.assertEqual(router['name'], aim_contract.display_name)
         self.assertEqual('context', aim_contract.scope)  # REVISIT(rkukura)
-        self._check_dn(router, aim_contract, 'Contract')
+        self._check_dn_is_resource(dns, 'Contract', aim_contract)
 
         aim_subject = self._get_subject('route', aname, 'common')
         self.assertEqual('common', aim_subject.tenant_name)
@@ -616,40 +641,31 @@ class TestAimMapping(ApicAimTestCase):
         self.assertEqual([], aim_subject.out_filters)
         self.assertEqual([self.driver.apic_system_id + '_AnyFilter'],
                          aim_subject.bi_filters)
-        self._check_dn(router, aim_subject, 'ContractSubject')
+        self._check_dn_is_resource(dns, 'ContractSubject', aim_subject)
 
         self._check_any_filter()
-
-        dist_names = router.get('apic:distinguished_names')
-        vrf_dns = {k: v for (k, v) in six.iteritems(dist_names)
-                   if k.endswith('-VRF')}
 
         if expected_gw_ips:
             if unscoped_project:
                 self._check_router_vrf(
                     'DefaultVRF', 'DefaultRoutedVRF', unscoped_project,
-                    vrf_dns, 'no_scope-VRF')
+                    dns, 'no_scope-VRF')
 
             for scope in scopes or []:
                 actual_scope = self._actual_scopes.get(scope['id'], scope)
                 self._check_router_vrf(
                     self.name_mapper.address_scope(None, actual_scope['id']),
                     actual_scope['name'], actual_scope['tenant_id'],
-                    vrf_dns, 'as_%s-VRF' % scope['id'])
-
-        self.assertFalse(vrf_dns)
+                    dns, 'as_%s-VRF' % scope['id'])
 
         # The AIM Subnets are validated in _check_subnet, so just
         # check that their DNs are present and valid.
         for gw_ip in expected_gw_ips:
-            self.assertIn(gw_ip, dist_names)
-            aim_subnet = self._find_by_dn(dist_names[gw_ip],
-                                          aim_resource.Subnet)
-            self.assertIsNotNone(aim_subnet)
-        for gw_ip in unexpected_gw_ips:
-            self.assertNotIn(gw_ip, dist_names)
+            self._check_dn_has_resource(dns, gw_ip, aim_resource.Subnet)
 
-    def _check_router_vrf(self, aname, dname, project_id, vrf_dns, key):
+        self.assertFalse(dns)
+
+    def _check_router_vrf(self, aname, dname, project_id, dns, key):
         tenant_aname = self.name_mapper.project(None, project_id)
         tenant_dname = TEST_TENANT_NAMES[project_id]
 
@@ -663,8 +679,7 @@ class TestAimMapping(ApicAimTestCase):
         self.assertEqual(dname, aim_vrf.display_name)
         self.assertEqual('enforced', aim_vrf.policy_enforcement_pref)
 
-        dn = vrf_dns.pop(key, None)
-        self.assertEqual(aim_vrf.dn, dn)
+        self._check_dn_is_resource(dns, key, aim_vrf)
 
     def _check_router_deleted(self, router):
         aname = self.name_mapper.router(None, router['id'])

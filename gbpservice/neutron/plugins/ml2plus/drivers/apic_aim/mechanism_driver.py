@@ -779,7 +779,8 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                      join(models_v2.Subnet, models_v2.Subnet.id ==
                           models_v2.IPAllocation.subnet_id).
                      join(models_v2.Network).
-                     join(models_v2.Port).
+                     join(models_v2.Port, models_v2.Port.id ==
+                          models_v2.IPAllocation.port_id).
                      join(l3_db.RouterPort).
                      filter(l3_db.RouterPort.router_id == router_db.id,
                             l3_db.RouterPort.port_type ==
@@ -1868,6 +1869,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         return (session.query(models_v2.IPAllocation.ip_address,
                               l3_db.RouterPort.router_id).
                 join(models_v2.Port).
+                join(l3_db.RouterPort).
                 filter(
                     models_v2.IPAllocation.subnet_id == subnet_id,
                     l3_db.RouterPort.port_type ==
