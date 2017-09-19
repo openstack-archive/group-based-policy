@@ -8,6 +8,9 @@ set -x
 
 trap prepare_logs ERR
 
+# temporary fix for bug 1693689
+export IPV4_ADDRS_SAFE_TO_USE=${DEVSTACK_GATE_IPV4_ADDRS_SAFE_TO_USE:-${DEVSTACK_GATE_FIXED_RANGE:-10.1.0.0/20}}
+
 prepare_gbp_devstack
 FORCE=yes $TOP_DIR/stack.sh
 
