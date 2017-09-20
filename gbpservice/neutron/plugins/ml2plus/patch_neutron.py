@@ -56,6 +56,17 @@ def get_current_session():
         return
 
 
+from neutron.plugins.ml2 import ovo_rpc
+
+
+# The following reduces the ERROR log level for a message
+# which is seen when a port_update even is sent. The
+# port_update is intentionally sent in the pre_commit
+# phase by the apic_aim mechanism driver, but is not
+# what neutron expects and hence it flags it.
+ovo_rpc.LOG.error = ovo_rpc.LOG.debug
+
+
 from neutron.callbacks import registry
 
 
