@@ -14,6 +14,7 @@ from oslo_config import cfg
 from oslo_log import log as logging
 
 from vmware_nsx.db import db as nsx_db
+from vmware_nsx.plugins.nsx_v3 import utils as nsx_utils
 
 from vmware_nsxlib import v3
 from vmware_nsxlib.v3 import config
@@ -127,12 +128,9 @@ class NsxPolicyMappingDriver(api.ResourceMappingDriver):
 
     def get_nsxmanager_client(self):
         """Prepare agent for NSX Manager API calls"""
-        nsxlib_config = config.NsxLibConfig(
-                nsx_api_managers=cfg.CONF.nsx_v3.nsx_api_managers,
-                username=cfg.CONF.nsx_v3.nsx_api_user,
-                password=cfg.CONF.nsx_v3.nsx_api_password)
+        nsxlib = nsx_utils.get_nsxlib_wrapper()
 
-        return v3.NsxLib(nsxlib_config).client
+        return nsxlib.client
 
     def initialize(self):
         super(NsxPolicyMappingDriver, self).initialize()
