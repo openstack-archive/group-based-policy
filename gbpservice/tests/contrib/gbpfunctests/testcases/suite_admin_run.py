@@ -20,7 +20,7 @@ def main():
     Main: Wrapper for shared_func tests
     """
     # Usage: python suite_admin_run.py
-    print ("Functional Test Script to execute Shared Resource Testcases")
+    print("Functional Test Script to execute Shared Resource Testcases")
     cmd_list = ["sudo sh -c 'cat /dev/null > test_results_admin.txt'",
                 "sudo chmod 777 test_results_admin.txt "]
     for cmd in cmd_list:
@@ -29,16 +29,16 @@ def main():
                  'tc_gbp_prs_pr_shared_func.py']
     for test in test_list:
         cmd = 'python %s' % (test)
-        print (cmd)
+        print(cmd)
         subprocess.call(cmd, shell=True)
     results_file = open("test_results_admin.txt")
     contents = results_file.read()
     results_file.close()
-    print (contents)
-    print ("\n\nTotal Number of Shared Resource TestCases Executed= %s" % (
+    print(contents)
+    print("\n\nTotal Number of Shared Resource TestCases Executed= %s" % (
         contents.count("_SHARED_")))
-    print ("\n\nNumber of TestCases Passed= %s" % (contents.count("PASSED")))
-    print ("\n\nNumber of TestCases Failed= %s" % (contents.count("FAILED")))
+    print("\n\nNumber of TestCases Passed= %s" % (contents.count("PASSED")))
+    print("\n\nNumber of TestCases Failed= %s" % (contents.count("FAILED")))
     if contents.count("FAILED") > 0:
         sys.exit(1)
     else:

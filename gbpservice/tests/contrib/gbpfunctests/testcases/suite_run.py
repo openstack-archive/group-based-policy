@@ -54,7 +54,7 @@ def main():
     f = open("test_results.txt")
     contents = f.read()
     f.close()
-    print (contents)
+    print(contents)
     print("\n\nTotal Number of TestCases Executed= %s" % (
         contents.count("TESTCASE_GBP_")))
     print("\n\nNumber of TestCases Passed= %s" % (contents.count("PASSED")))
