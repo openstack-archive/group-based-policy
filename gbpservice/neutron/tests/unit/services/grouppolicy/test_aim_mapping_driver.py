@@ -27,8 +27,10 @@ from keystoneclient.v3 import client as ksc_client
 from netaddr import IPSet
 from neutron.api.rpc.agentnotifiers import dhcp_rpc_agent_api
 from neutron.callbacks import registry
+from neutron.common import utils as n_utils
 from neutron import context as nctx
 from neutron.db import api as db_api
+from neutron.extensions import dns
 from neutron import manager
 from neutron.notifiers import nova
 from neutron.plugins.common import constants as service_constants
@@ -131,7 +133,8 @@ class AIMBaseTestCase(test_nr_base.CommonNeutronBaseTestCase,
         self.agent_conf = AGENT_CONF
         ml2_opts = ml2_options or {'mechanism_drivers': ['logger', 'apic_aim'],
                                    'extension_drivers': ['apic_aim',
-                                                         'port_security'],
+                                                         'port_security',
+                                                         'dns'],
                                    'type_drivers': ['opflex', 'local', 'vlan'],
                                    'tenant_network_types': ['opflex']}
         amap.ApicMappingDriver.get_apic_manager = mock.Mock()
@@ -3026,82 +3029,87 @@ class TestPolicyTarget(AIMBaseTestCase):
             '200.200.0.0/16')['subnet']
         self._update('subnets', ext_net2_sub2['id'],
                      {'subnet': {SNAT_HOST_POOL: True}})
-
-        with self.network() as network:
-            with self.subnet(network=network, cidr='1.1.2.0/24',
-                             subnetpool_id=subnetpool['id']) as subnet:
+        self.assertTrue(
+            n_utils.is_extension_supported(self._l3_plugin,
+                                           dns.Dns.get_alias()))
+        network = self._make_network(self.fmt, 'net1', True,
+                                     arg_list=('dns_domain',),
+                                     dns_domain='mydomain.')
+        with self.subnet(network=network, cidr='1.1.2.0/24',
+                         subnetpool_id=subnetpool['id']) as subnet:
+            if routed:
+                self.l3_plugin.add_router_interface(
+                    nctx.get_admin_context(), router1['id'],
+                    {'subnet_id': subnet['subnet']['id']})
+            with self.port(subnet=subnet) as intf_port:
                 if routed:
                     self.l3_plugin.add_router_interface(
-                        nctx.get_admin_context(), router1['id'],
-                        {'subnet_id': subnet['subnet']['id']})
-                with self.port(subnet=subnet) as intf_port:
-                    if routed:
-                        self.l3_plugin.add_router_interface(
-                            nctx.get_admin_context(), router2['id'],
-                            {'port_id': intf_port['port']['id']})
-                with self.port(subnet=subnet) as port:
-                    port_id = port['port']['id']
-                    network = network['network']
-                    if routed:
-                        fip = self.l3_plugin.create_floatingip(
-                            nctx.get_admin_context(),
-                            {'floatingip': {'floating_network_id':
-                                            ext_net1['id'],
-                                            'tenant_id': network['tenant_id'],
-                                            'port_id': port_id}})
-
-                    self._bind_port_to_host(port_id, 'h1')
-                    mapping = self.driver.get_gbp_details(
-                        self._neutron_admin_context, device='tap%s' % port_id,
-                        host='h1')
-                    req_mapping = self.driver.request_endpoint_details(
+                        nctx.get_admin_context(), router2['id'],
+                        {'port_id': intf_port['port']['id']})
+            with self.port(subnet=subnet) as port:
+                port_id = port['port']['id']
+                network = network['network']
+                if routed:
+                    fip = self.l3_plugin.create_floatingip(
                         nctx.get_admin_context(),
-                        request={'device': 'tap%s' % port_id,
-                                 'timestamp': 0, 'request_id': 'request_id'},
-                        host='h1')
-                    if not routed:
-                        vrf_name = ('%s_UnroutedVRF' %
-                                    self.driver.aim_mech_driver.apic_system_id)
-                        vrf_tenant = 'common'
-                    elif use_as and pre_vrf:
-                        vrf_name = pre_vrf.name
-                        vrf_tenant = pre_vrf.tenant_name
-                    else:
-                        vrf_name = (self.name_mapper.address_scope(
-                                        None, address_scope['id'])
-                                    if use_as else 'DefaultVRF')
-                        vrf_tenant = self.name_mapper.project(None,
-                                                              self._tenant_id)
-                    vrf_id = '%s %s' % (vrf_tenant, vrf_name)
-                    vrf_mapping = self.driver.get_vrf_details(
-                        self._neutron_admin_context, vrf_id=vrf_id)
+                        {'floatingip': {'floating_network_id':
+                                        ext_net1['id'],
+                                        'tenant_id': network['tenant_id'],
+                                        'port_id': port_id}})
 
-                    epg_name = self.name_mapper.network(
-                        self._neutron_context.session, network['id'])
-                    epg_tenant = network['tenant_id']
+                self._bind_port_to_host(port_id, 'h1')
+                mapping = self.driver.get_gbp_details(
+                    self._neutron_admin_context, device='tap%s' % port_id,
+                    host='h1')
+                self.assertEqual('mydomain.', mapping['dns_domain'])
+                req_mapping = self.driver.request_endpoint_details(
+                    nctx.get_admin_context(),
+                    request={'device': 'tap%s' % port_id,
+                             'timestamp': 0, 'request_id': 'request_id'},
+                    host='h1')
+                if not routed:
+                    vrf_name = ('%s_UnroutedVRF' %
+                                self.driver.aim_mech_driver.apic_system_id)
+                    vrf_tenant = 'common'
+                elif use_as and pre_vrf:
+                    vrf_name = pre_vrf.name
+                    vrf_tenant = pre_vrf.tenant_name
+                else:
+                    vrf_name = (self.name_mapper.address_scope(
+                                    None, address_scope['id'])
+                                if use_as else 'DefaultVRF')
+                    vrf_tenant = self.name_mapper.project(None,
+                                                          self._tenant_id)
+                vrf_id = '%s %s' % (vrf_tenant, vrf_name)
+                vrf_mapping = self.driver.get_vrf_details(
+                    self._neutron_admin_context, vrf_id=vrf_id)
 
-                    self._verify_gbp_details_assertions(
-                        mapping, req_mapping, port_id, epg_name, epg_tenant,
-                        subnet, default_route='1.1.2.1')
-                    supernet = ['1.1.2.0/24']
-                    if use_as:
-                        supernet = ['10.10.0.0/26', '1.1.0.0/16', '2.1.0.0/16']
-                    self._verify_vrf_details_assertions(
-                        mapping, vrf_name, vrf_id, supernet, vrf_tenant)
-                    self._verify_vrf_details_assertions(
-                        vrf_mapping, vrf_name, vrf_id, supernet, vrf_tenant)
-                    if routed:
-                        self._verify_fip_details(mapping, fip, 't1', 'EXT-l1')
-                        self._verify_ip_mapping_details(mapping,
-                            'uni:tn-t1:out-l2:instP-n2', 't1', 'EXT-l2')
-                        self._verify_host_snat_ip_details(mapping,
-                            'uni:tn-t1:out-l2:instP-n2', '200.200.0.2',
-                            '200.200.0.1/16')
-                    else:
-                        self.assertFalse(mapping['floating_ip'])
-                        self.assertFalse(mapping['ip_mapping'])
-                        self.assertFalse(mapping['host_snat_ips'])
-                    self.assertEqual(1000, mapping['interface_mtu'])
+                epg_name = self.name_mapper.network(
+                    self._neutron_context.session, network['id'])
+                epg_tenant = network['tenant_id']
+
+                self._verify_gbp_details_assertions(
+                    mapping, req_mapping, port_id, epg_name, epg_tenant,
+                    subnet, default_route='1.1.2.1')
+                supernet = ['1.1.2.0/24']
+                if use_as:
+                    supernet = ['10.10.0.0/26', '1.1.0.0/16', '2.1.0.0/16']
+                self._verify_vrf_details_assertions(
+                    mapping, vrf_name, vrf_id, supernet, vrf_tenant)
+                self._verify_vrf_details_assertions(
+                    vrf_mapping, vrf_name, vrf_id, supernet, vrf_tenant)
+                if routed:
+                    self._verify_fip_details(mapping, fip, 't1', 'EXT-l1')
+                    self._verify_ip_mapping_details(mapping,
+                        'uni:tn-t1:out-l2:instP-n2', 't1', 'EXT-l2')
+                    self._verify_host_snat_ip_details(mapping,
+                        'uni:tn-t1:out-l2:instP-n2', '200.200.0.2',
+                        '200.200.0.1/16')
+                else:
+                    self.assertFalse(mapping['floating_ip'])
+                    self.assertFalse(mapping['ip_mapping'])
+                    self.assertFalse(mapping['host_snat_ips'])
+                self.assertEqual(1000, mapping['interface_mtu'])
 
     def test_get_gbp_details(self):
         self._do_test_get_gbp_details()
