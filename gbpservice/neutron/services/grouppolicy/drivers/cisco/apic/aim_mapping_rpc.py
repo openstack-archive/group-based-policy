@@ -126,6 +126,7 @@ class AIMMappingRPCMixin(ha_ip_db.HAIPOwnerDbMixin):
     # - self._is_dhcp_optimized(context, port);
     # - self._is_metadata_optimized(context, port);
     # - self._set_dhcp_lease_time(details)
+    # - self._get_dns_domain(context, port)
     @db_api.retry_db_errors
     def _get_gbp_details(self, context, request, host):
         with context.session.begin(subtransactions=True):
@@ -178,6 +179,7 @@ class AIMMappingRPCMixin(ha_ip_db.HAIPOwnerDbMixin):
             mtu = self._get_port_mtu(context, port)
             if mtu:
                 details['interface_mtu'] = mtu
+            details['dns_domain'] = self._get_dns_domain(context, port)
 
             # NOTE(ivar): having these methods cleanly separated actually makes
             # things less efficient by requiring lots of calls duplication.

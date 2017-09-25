@@ -3025,7 +3025,7 @@ class TestPolicyTarget(AIMBaseTestCase):
         self._update('subnets', ext_net2_sub2['id'],
                      {'subnet': {SNAT_HOST_POOL: True}})
 
-        with self.network() as network:
+        with self.network(dns_domain='my_domain') as network:
             with self.subnet(network=network, cidr='1.1.2.0/24',
                              subnetpool_id=subnetpool['id']) as subnet:
                 if routed:
@@ -3052,6 +3052,7 @@ class TestPolicyTarget(AIMBaseTestCase):
                     mapping = self.driver.get_gbp_details(
                         self._neutron_admin_context, device='tap%s' % port_id,
                         host='h1')
+                    self.assertEqual('my_domain', mapping['dns_domain'])
                     req_mapping = self.driver.request_endpoint_details(
                         nctx.get_admin_context(),
                         request={'device': 'tap%s' % port_id,
