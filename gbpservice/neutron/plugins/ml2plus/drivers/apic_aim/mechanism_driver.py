@@ -524,9 +524,13 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             # Find router interfaces involving subnets from this pool.
             pool_id = current['id']
             rps = (session.query(l3_db.RouterPort).
-                   join(models_v2.Port).
-                   join(models_v2.IPAllocation).
-                   join(models_v2.Subnet).
+                   join(models_v2.Port,
+                        models_v2.Port.id == l3_db.RouterPort.port_id).
+                   join(models_v2.IPAllocation,
+                        models_v2.IPAllocation.port_id == models_v2.Port.id).
+                   join(models_v2.Subnet,
+                        models_v2.Subnet.id ==
+                        models_v2.IPAllocation.subnet_id).
                    filter(models_v2.Subnet.subnetpool_id == pool_id,
                           l3_db.RouterPort.port_type ==
                           n_constants.DEVICE_OWNER_ROUTER_INTF).
@@ -667,8 +671,9 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             # REVISIT(rkukura): Refactor to share common code below with
             # extend_router_dict.
             for intf in (session.query(models_v2.IPAllocation).
-                         join(models_v2.Port).
-                         join(l3_db.RouterPort).
+                         join(l3_db.RouterPort,
+                              l3_db.RouterPort.port_id ==
+                              models_v2.IPAllocation.port_id).
                          filter(l3_db.RouterPort.router_id == current['id'],
                                 l3_db.RouterPort.port_type ==
                                 n_constants.DEVICE_OWNER_ROUTER_INTF)):
@@ -776,12 +781,15 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         for intf in (session.query(models_v2.IPAllocation.ip_address,
                                    models_v2.Subnet,
                                    models_v2.Network).
-                     join(models_v2.Subnet, models_v2.Subnet.id ==
+                     join(models_v2.Subnet,
+                          models_v2.Subnet.id ==
                           models_v2.IPAllocation.subnet_id).
-                     join(models_v2.Network).
-                     join(models_v2.Port, models_v2.Port.id ==
+                     join(models_v2.Network,
+                          models_v2.Network.id ==
+                          models_v2.Subnet.network_id).
+                     join(l3_db.RouterPort,
+                          l3_db.RouterPort.port_id ==
                           models_v2.IPAllocation.port_id).
-                     join(l3_db.RouterPort).
                      filter(l3_db.RouterPort.router_id == router_db.id,
                             l3_db.RouterPort.port_type ==
                             n_constants.DEVICE_OWNER_ROUTER_INTF)):
@@ -849,11 +857,13 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         # the DB session.
         net_intfs = (session.query(l3_db.RouterPort.router_id,
                                    models_v2.Subnet).
-                     join(models_v2.Port).
-                     join(models_v2.IPAllocation).
-                     join(models_v2.Subnet, models_v2.Subnet.id ==
+                     join(models_v2.IPAllocation,
+                          models_v2.IPAllocation.port_id ==
+                          l3_db.RouterPort.port_id).
+                     join(models_v2.Subnet,
+                          models_v2.Subnet.id ==
                           models_v2.IPAllocation.subnet_id).
-                     filter(models_v2.Port.network_id == network_id,
+                     filter(models_v2.Subnet.network_id == network_id,
                             l3_db.RouterPort.port_type ==
                             n_constants.DEVICE_OWNER_ROUTER_INTF).
                      limit(2).
@@ -1085,7 +1095,8 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         # Find remaining routers with interfaces to this network.
         router_ids = [r[0] for r in
                       session.query(l3_db.RouterPort.router_id).
-                      join(models_v2.Port).
+                      join(models_v2.Port,
+                           models_v2.Port.id == l3_db.RouterPort.port_id).
                       filter(models_v2.Port.network_id == network_id,
                              l3_db.RouterPort.port_type ==
                              n_constants.DEVICE_OWNER_ROUTER_INTF).distinct()]
@@ -1553,9 +1564,12 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                      join(models_v2.Subnet,
                           models_v2.Subnet.subnetpool_id ==
                           models_v2.SubnetPool.id).
-                     join(models_v2.IPAllocation).
-                     join(models_v2.Port).
-                     join(l3_db.RouterPort).
+                     join(models_v2.IPAllocation,
+                          models_v2.IPAllocation.subnet_id ==
+                          models_v2.Subnet.id).
+                     join(l3_db.RouterPort,
+                          l3_db.RouterPort.port_id ==
+                          models_v2.IPAllocation.port_id).
                      filter(l3_db.RouterPort.router_id == router_id).
                      filter(l3_db.RouterPort.port_type ==
                             n_constants.DEVICE_OWNER_ROUTER_INTF).
@@ -1566,13 +1580,18 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
 
         # Find VRF for first unscoped interface.
         network_db = (session.query(models_v2.Network).
-                      join(models_v2.Port).
-                      join(models_v2.IPAllocation).
-                      join(models_v2.Subnet).
+                      join(models_v2.Subnet,
+                           models_v2.Subnet.network_id ==
+                           models_v2.Network.id).
+                      join(models_v2.IPAllocation,
+                           models_v2.IPAllocation.subnet_id ==
+                           models_v2.Subnet.id).
                       outerjoin(models_v2.SubnetPool,
                                 models_v2.SubnetPool.id ==
                                 models_v2.Subnet.subnetpool_id).
-                      join(l3_db.RouterPort).
+                      join(l3_db.RouterPort,
+                           l3_db.RouterPort.port_id ==
+                           models_v2.IPAllocation.port_id).
                       filter(l3_db.RouterPort.router_id == router_id,
                              l3_db.RouterPort.port_type ==
                              n_constants.DEVICE_OWNER_ROUTER_INTF).
@@ -1602,13 +1621,17 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         scope_ids = self._get_address_scope_ids_for_vrf(session, vrf)
         if scope_ids:
             rtr_dbs = (session.query(l3_db.Router)
-                       .join(l3_db.RouterPort)
-                       .join(models_v2.Port)
-                       .join(models_v2.IPAllocation)
-                       .join(models_v2.Subnet)
+                       .join(l3_db.RouterPort,
+                             l3_db.RouterPort.router_id == l3_db.Router.id)
+                       .join(models_v2.IPAllocation,
+                             models_v2.IPAllocation.port_id ==
+                             l3_db.RouterPort.port_id)
+                       .join(models_v2.Subnet,
+                             models_v2.Subnet.id ==
+                             models_v2.IPAllocation.subnet_id)
                        .join(models_v2.SubnetPool,
-                             models_v2.Subnet.subnetpool_id ==
-                             models_v2.SubnetPool.id)
+                             models_v2.SubnetPool.id ==
+                             models_v2.Subnet.subnetpool_id)
                        .filter(l3_db.RouterPort.port_type ==
                                n_constants.DEVICE_OWNER_ROUTER_INTF)
                        .filter(models_v2.SubnetPool.address_scope_id.in_(
@@ -1617,8 +1640,10 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         else:
             net_ids = self._get_network_ids_for_vrf(session, vrf)
             rtr_dbs = (session.query(l3_db.Router).
-                       join(l3_db.RouterPort).
-                       join(models_v2.Port).
+                       join(l3_db.RouterPort,
+                            l3_db.RouterPort.router_id == l3_db.Router.id).
+                       join(models_v2.Port,
+                            models_v2.Port.id == l3_db.RouterPort.port_id).
                        filter(models_v2.Port.network_id.in_(net_ids),
                               l3_db.RouterPort.port_type ==
                               n_constants.DEVICE_OWNER_ROUTER_INTF).
@@ -1807,10 +1832,14 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             LOG.debug("Querying for networks interfaced to routers %s",
                       added_ids)
             query = (session.query(models_v2.Network, models_v2.Subnet).
-                     join(models_v2.Port).
-                     join(models_v2.IPAllocation).
-                     join(models_v2.Subnet).
-                     join(l3_db.RouterPort).
+                     join(models_v2.Subnet,
+                          models_v2.Subnet.network_id == models_v2.Network.id).
+                     join(models_v2.IPAllocation,
+                          models_v2.IPAllocation.subnet_id ==
+                          models_v2.Subnet.id).
+                     join(l3_db.RouterPort,
+                          l3_db.RouterPort.port_id ==
+                          models_v2.IPAllocation.port_id).
                      filter(l3_db.RouterPort.router_id.in_(added_ids)))
             if visited_networks:
                 query = query.filter(
@@ -1837,7 +1866,8 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             LOG.debug("Querying for routers interfaced to networks %s",
                       added_ids)
             query = (session.query(l3_db.RouterPort.router_id).
-                     join(models_v2.Port).
+                     join(models_v2.Port,
+                          models_v2.Port.id == l3_db.RouterPort.port_id).
                      filter(models_v2.Port.network_id.in_(added_ids)))
             if visited_router_ids:
                 query = query.filter(
@@ -1868,8 +1898,9 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
     def _subnet_router_ips(self, session, subnet_id):
         return (session.query(models_v2.IPAllocation.ip_address,
                               l3_db.RouterPort.router_id).
-                join(models_v2.Port).
-                join(l3_db.RouterPort).
+                join(l3_db.RouterPort,
+                     l3_db.RouterPort.port_id ==
+                     models_v2.IPAllocation.port_id).
                 filter(
                     models_v2.IPAllocation.subnet_id == subnet_id,
                     l3_db.RouterPort.port_type ==
@@ -2074,12 +2105,15 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                       count())
         elif scope_id == NO_ADDR_SCOPE:
             result = (session.query(l3_db.RouterPort).
-                      join(models_v2.Port).
-                      join(models_v2.IPAllocation).
-                      join(models_v2.Subnet).
+                      join(models_v2.IPAllocation,
+                           models_v2.IPAllocation.port_id ==
+                           l3_db.RouterPort.port_id).
+                      join(models_v2.Subnet,
+                           models_v2.Subnet.id ==
+                           models_v2.IPAllocation.subnet_id).
                       outerjoin(models_v2.SubnetPool,
-                           models_v2.Subnet.subnetpool_id ==
-                           models_v2.SubnetPool.id).
+                                models_v2.SubnetPool.id ==
+                                models_v2.Subnet.subnetpool_id).
                       filter(l3_db.RouterPort.router_id == router['id']).
                       filter(l3_db.RouterPort.port_type ==
                              n_constants.DEVICE_OWNER_ROUTER_INTF).
@@ -2094,12 +2128,15 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             mappings = self._get_address_scope_mappings_for_vrf(session, vrf)
             scope_ids = [mapping.scope_id for mapping in mappings]
             result = (session.query(l3_db.RouterPort).
-                      join(models_v2.Port).
-                      join(models_v2.IPAllocation).
-                      join(models_v2.Subnet).
+                      join(models_v2.IPAllocation,
+                           models_v2.IPAllocation.port_id ==
+                           l3_db.RouterPort.port_id).
+                      join(models_v2.Subnet,
+                           models_v2.Subnet.id ==
+                           models_v2.IPAllocation.subnet_id).
                       join(models_v2.SubnetPool,
-                           models_v2.Subnet.subnetpool_id ==
-                           models_v2.SubnetPool.id).
+                           models_v2.SubnetPool.id ==
+                           models_v2.Subnet.subnetpool_id).
                       filter(l3_db.RouterPort.router_id == router['id']).
                       filter(l3_db.RouterPort.port_type ==
                              n_constants.DEVICE_OWNER_ROUTER_INTF).
@@ -2203,7 +2240,9 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             addr_pair = (
                 plugin_context.session.query(
                     n_addr_pair_db.AllowedAddressPair)
-                .join(models_v2.Port)
+                .join(models_v2.Port,
+                      models_v2.Port.id ==
+                      n_addr_pair_db.AllowedAddressPair.port_id)
                 .filter(models_v2.Port.network_id == port['network_id'])
                 .filter(n_addr_pair_db.AllowedAddressPair.ip_address.in_(
                     fixed_ips)).all())
@@ -2241,7 +2280,8 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             # allocate SNAT port
             extn_db_sn = extension_db.SubnetExtensionDb
             snat_subnets = (session.query(models_v2.Subnet)
-                            .join(extn_db_sn)
+                            .join(extn_db_sn,
+                                  extn_db_sn.subnet_id == models_v2.Subnet.id)
                             .filter(models_v2.Subnet.network_id ==
                                     ext_network['id'])
                             .filter(extn_db_sn.snat_host_pool.is_(True))
@@ -2285,7 +2325,8 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
     def _has_snat_ip_ports(self, plugin_context, subnet_id):
         session = plugin_context.session
         return (session.query(models_v2.Port)
-                .join(models_v2.IPAllocation)
+                .join(models_v2.IPAllocation,
+                      models_v2.IPAllocation.port_id == models_v2.Port.id)
                 .filter(models_v2.IPAllocation.subnet_id == subnet_id)
                 .filter(models_v2.Port.device_owner == DEVICE_OWNER_SNAT_PORT)
                 .first())
@@ -2326,7 +2367,8 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         elif floatingip.get('floating_ip_address'):
             extn_db_sn = extension_db.SubnetExtensionDb
             cidrs = (session.query(models_v2.Subnet.cidr)
-                    .join(extn_db_sn)
+                    .join(extn_db_sn,
+                          extn_db_sn.subnet_id == models_v2.Subnet.id)
                     .filter(models_v2.Subnet.network_id ==
                             floatingip['floating_network_id'])
                     .filter(extn_db_sn.snat_host_pool.is_(True))
@@ -2339,7 +2381,8 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         session = context.session
         extn_db_sn = extension_db.SubnetExtensionDb
         other_sn = (session.query(models_v2.Subnet.id)
-                    .outerjoin(extn_db_sn)
+                    .outerjoin(extn_db_sn,
+                               extn_db_sn.subnet_id == models_v2.Subnet.id)
                     .filter(models_v2.Subnet.network_id ==
                             floatingip['floating_network_id'])
                     .filter(sa.or_(extn_db_sn.snat_host_pool.is_(False),
@@ -2594,8 +2637,10 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
     def _get_non_opflex_segments_on_host(self, context, host):
         session = context.session
         segments = (session.query(segments_db.NetworkSegment)
-                    .join(models.PortBindingLevel)
-                    .filter_by(host=host)
+                    .join(models.PortBindingLevel,
+                          models.PortBindingLevel.segment_id ==
+                          segments_db.NetworkSegment.id)
+                    .filter(models.PortBindingLevel.host == host)
                     .all())
         net_ids = set([])
         result = []
@@ -2610,8 +2655,8 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
     def _get_router_interface_subnets(self, session, router_id):
         subnet_ids = (session.query(models_v2.IPAllocation.subnet_id)
                       .join(l3_db.RouterPort,
-                            models_v2.IPAllocation.port_id ==
-                            l3_db.RouterPort.port_id)
+                            l3_db.RouterPort.port_id ==
+                            models_v2.IPAllocation.port_id)
                       .filter(l3_db.RouterPort.router_id == router_id)
                       .distinct())
         return [s[0] for s in subnet_ids]
@@ -2620,7 +2665,8 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         if not subnet_ids:
             return []
         port_ids = (session.query(models_v2.IPAllocation.port_id)
-                    .join(models_v2.Port)
+                    .join(models_v2.Port,
+                          models_v2.Port.id == models_v2.IPAllocation.port_id)
                     .filter(models_v2.IPAllocation.subnet_id.in_(subnet_ids))
                     .filter(models_v2.Port.device_owner !=
                             n_constants.DEVICE_OWNER_ROUTER_INTF)
