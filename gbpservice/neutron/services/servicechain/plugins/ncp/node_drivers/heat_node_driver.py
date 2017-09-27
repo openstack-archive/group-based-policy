@@ -31,6 +31,8 @@ from gbpservice.neutron.services.servicechain.plugins.ncp import driver_base
 from gbpservice.neutron.services.servicechain.plugins.ncp.node_drivers import (
                                 openstack_heat_api_client as heat_api_client)
 
+from six.moves import range
+
 LOG = logging.getLogger(__name__)
 
 service_chain_opts = [

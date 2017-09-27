@@ -22,6 +22,7 @@ from oslo_config import cfg as oslo_config
 from oslo_log import log as oslo_logging
 import random
 import six
+from six.moves import range
 import time
 import unittest2
 LOG = oslo_logging.getLogger(__name__)

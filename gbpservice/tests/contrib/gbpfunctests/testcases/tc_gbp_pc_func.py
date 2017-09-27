@@ -18,6 +18,7 @@ import sys
 from libs import config_libs
 from libs import utils_libs
 from libs import verify_libs
+from six.moves import range
 
 
 def main():

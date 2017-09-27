@@ -11,6 +11,7 @@
 #    under the License.
 
 import oslo_serialization.jsonutils as jsonutils
+from six.moves import range
 
 from neutron.common import rpc as n_rpc
 from oslo_config import cfg

@@ -17,6 +17,7 @@ import copy
 import hashlib
 import mock
 import netaddr
+from six.moves import range
 
 from aim.api import infra as aim_infra
 from aim.api import resource as aim_resource

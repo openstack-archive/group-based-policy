@@ -23,6 +23,8 @@ import sys
 import time
 
 
+from six.moves import range
+
 oslo_logging.register_options(oslo_config.CONF)
 
 if not hasattr(oslo_config.CONF, 'module'):

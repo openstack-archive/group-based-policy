@@ -21,6 +21,7 @@ from gbpservice.contrib.nfp.configurator.drivers.loadbalancer.v2.haproxy.\
     config import cfg
 sys.modules['octavia.common.config'] = config
 sys.modules['octavia.common.config.cfg'] = cfg
+from six.moves import range
 
 from octavia.amphorae.driver_exceptions import exceptions as driver_except
 from octavia.amphorae.drivers.haproxy import rest_api_driver

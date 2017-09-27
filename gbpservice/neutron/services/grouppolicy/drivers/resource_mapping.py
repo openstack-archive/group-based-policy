@@ -50,6 +50,8 @@ from gbpservice.neutron.services.grouppolicy.common import exceptions as exc
 from gbpservice.neutron.services.grouppolicy.common import utils as gbp_utils
 from gbpservice.neutron.services.grouppolicy.drivers import nsp_manager
 
+from six.moves import range
+
 
 LOG = logging.getLogger(__name__)
 DEFAULT_SG_PREFIX = 'gbp_%s'

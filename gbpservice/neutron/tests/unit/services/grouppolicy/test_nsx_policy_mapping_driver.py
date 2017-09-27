@@ -13,6 +13,7 @@
 
 import mock
 from mock import call
+from six.moves import range
 import webob.exc
 
 from neutron.db import api as db_api

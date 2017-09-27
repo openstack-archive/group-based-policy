@@ -16,6 +16,7 @@
 import mock
 import netaddr
 import six
+from six.moves import range
 
 from aim.aim_lib import nat_strategy
 from aim import aim_manager

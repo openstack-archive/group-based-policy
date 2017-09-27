@@ -25,6 +25,7 @@ from gbpservice.neutron.services.grouppolicy.common import constants as g_const
 from gbpservice.neutron.services.grouppolicy.common import exceptions as gpexc
 from gbpservice.neutron.services.grouppolicy.drivers import (
     resource_mapping as api)
+from six.moves import range
 
 
 LOG = logging.getLogger(__name__)

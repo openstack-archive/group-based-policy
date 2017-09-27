@@ -32,6 +32,8 @@ from gbpservice.neutron.tests.unit.services.servicechain.ncp import (
     test_ncp_plugin as test_ncp_plugin)
 from gbpservice.nfp.orchestrator.db import nfp_db as nfp_db
 
+from six.moves import range
+
 SERVICE_DELETE_TIMEOUT = 15
 SVC_MANAGEMENT_PTG = 'foo'
 

@@ -15,6 +15,7 @@ import paramiko
 import prettytable
 import re
 import six
+from six.moves import range
 import subprocess
 import sys
 
