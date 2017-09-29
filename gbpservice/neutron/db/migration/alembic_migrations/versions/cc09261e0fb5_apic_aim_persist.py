@@ -69,7 +69,7 @@ def upgrade():
             from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import (
                 data_migrations)
 
-            session = sa.orm.Session(bind=bind)
+            session = sa.orm.Session(bind=bind, autocommit=True)
             data_migrations.do_apic_aim_persist_migration(session)
         except ImportError:
             util.warn("AIM schema present, but failed to import AIM libraries"
