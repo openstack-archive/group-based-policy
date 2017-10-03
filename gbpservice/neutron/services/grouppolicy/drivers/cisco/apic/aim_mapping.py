@@ -2342,6 +2342,10 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
             return network.get('mtu')
         return None
 
+    def _get_dns_domain(self, context, port):
+        network = self._get_network(context, port['network_id'])
+        return network.get('dns_domain')
+
     def _get_admin_context_reuse_session(self, session):
         admin_context = n_context.get_admin_context()
         admin_context._session = session
