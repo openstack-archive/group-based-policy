@@ -1,0 +1,10 @@
+Code-Review+2: Robert Kukura <kukura@noironetworks.com>
+Code-Review+2: Anna Khmelnitsky <akhmelnitsky@vmware.com>
+Code-Review+2: Sumit Naiksatam <sumitnaiksatam@gmail.com>
+Workflow+1: Sumit Naiksatam <sumitnaiksatam@gmail.com>
+Verified+2: Zuul
+Submitted-by: Zuul
+Submitted-at: Tue, 03 Oct 2017 17:28:37 +0000
+Reviewed-on: https://review.openstack.org/507303
+Project: openstack/group-based-policy
+Branch: refs/heads/master
