@@ -12,6 +12,7 @@
 from neutron._i18n import _LI
 from neutron.agent import securitygroups_rpc
 from neutron.api import extensions
+from neutron.quota import resource
 from neutron.quota import resource_registry
 from neutron.scheduler import l3_agent_scheduler
 from stevedore import named
@@ -31,3 +32,27 @@ l3_agent_scheduler.LOG.warning = l3_agent_scheduler.LOG.info
 securitygroups_rpc.LOG.warning = securitygroups_rpc.LOG.info
 local_api.LOG.warning = local_api.LOG.info
 named.LOG.warning = named.LOG.info
+
+
+import sys
+orig_warning = resource.LOG.warning
+
+
+def warning(*args):
+    i = 1
+    not_found = True
+    try:
+        while not_found:
+            for val in sys._getframe(i).f_locals.itervalues():
+                if isinstance(val, resource.TrackedResource) and (
+                        sys._getframe(1).f_code.co_name == (
+                            'unregister_events')):
+                    not_found = False
+                    return
+            i = i + 1
+    except Exception:
+        pass
+    orig_warning(*args)
+
+
+resource.LOG.warning = warning
