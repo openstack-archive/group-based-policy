@@ -22,7 +22,7 @@ import netaddr
 from neutron.db import l3_db
 from neutron.db.l3_db import DEVICE_OWNER_ROUTER_INTF
 from neutron.db.l3_db import EXTERNAL_GW_INFO
-from neutron.db.l3_db import RouterPort
+from neutron.db.models.l3 import RouterPort
 from neutron.db import models_v2
 from neutron.extensions import l3
 from neutron.plugins.common import constants as n_const
