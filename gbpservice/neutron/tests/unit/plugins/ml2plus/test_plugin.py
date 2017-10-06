@@ -68,7 +68,8 @@ class TestEnsureTenant(Ml2PlusPluginV2TestCase):
         with mock.patch.object(mech_logger.LoggerPlusMechanismDriver,
                                'ensure_tenant') as et:
             self._make_network(self.fmt, 'net', True, tenant_id='t1')
-            et.assert_called_once_with(mock.ANY, 't1')
+            et.assert_has_calls([mock.call(mock.ANY, 't1')])
+            self.assertEqual(2, et.call_count)
 
     def test_network_bulk(self):
         with mock.patch.object(mech_logger.LoggerPlusMechanismDriver,
@@ -84,7 +85,7 @@ class TestEnsureTenant(Ml2PlusPluginV2TestCase):
             et.assert_has_calls([mock.call(mock.ANY, 't1'),
                                  mock.call(mock.ANY, 't2')],
                                 any_order=True)
-            self.assertEqual(2, et.call_count)
+            self.assertEqual(4, et.call_count)
 
     def test_subnet(self):
         net = self._make_network(self.fmt, 'net', True)
@@ -129,7 +130,8 @@ class TestEnsureTenant(Ml2PlusPluginV2TestCase):
         with mock.patch.object(mech_logger.LoggerPlusMechanismDriver,
                                'ensure_tenant') as et:
             self._make_port(self.fmt, net['network']['id'], tenant_id='t1')
-            et.assert_called_once_with(mock.ANY, 't1')
+            et.assert_has_calls([mock.call(mock.ANY, 't1')])
+            self.assertEqual(2, et.call_count)
 
     def test_port_bulk(self):
         net = self._make_network(self.fmt, 'net', True)
@@ -151,7 +153,7 @@ class TestEnsureTenant(Ml2PlusPluginV2TestCase):
             et.assert_has_calls([mock.call(mock.ANY, 't1'),
                                  mock.call(mock.ANY, 't2')],
                                 any_order=True)
-            self.assertEqual(2, et.call_count)
+            self.assertEqual(4, et.call_count)
 
     def test_subnetpool(self):
         with mock.patch.object(mech_logger.LoggerPlusMechanismDriver,
