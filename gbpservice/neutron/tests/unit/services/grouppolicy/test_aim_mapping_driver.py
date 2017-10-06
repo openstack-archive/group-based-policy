@@ -286,11 +286,11 @@ class AIMBaseTestCase(test_nr_base.CommonNeutronBaseTestCase,
 
     def _switch_to_tenant1(self):
         self._tenant_id = self.first_tenant_id
-        self._neutron_context.tenant = self._tenant_id
+        self._neutron_context.project_id = self._tenant_id
 
     def _switch_to_tenant2(self):
         self._tenant_id = 'test_tenant-2'
-        self._neutron_context.tenant = self._tenant_id
+        self._neutron_context.project_id = self._tenant_id
 
     def _show_subnet(self, id):
         req = self.new_show_request('subnets', id, fmt=self.fmt)
