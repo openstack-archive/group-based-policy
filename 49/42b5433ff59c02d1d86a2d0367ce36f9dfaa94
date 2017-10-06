@@ -1,0 +1,10 @@
+Verified-1: Zuul
+Code-Review+2: Thomas Bachman <bachman@noironetworks.com>
+Code-Review+2: Anna Khmelnitsky <akhmelnitsky@vmware.com>
+Workflow+1: Anna Khmelnitsky <akhmelnitsky@vmware.com>
+Verified+2: Jenkins
+Submitted-by: Jenkins
+Submitted-at: Fri, 06 Oct 2017 21:19:35 +0000
+Reviewed-on: https://review.openstack.org/508606
+Project: openstack/group-based-policy
+Branch: refs/heads/stable/newton
