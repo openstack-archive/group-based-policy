@@ -1,0 +1,10 @@
+Code-Review+2: Anna Khmelnitsky <akhmelnitsky@vmware.com>
+Verified+1: Zuul
+Code-Review+2: Robert Kukura <kukura@noironetworks.com>
+Workflow+1: Robert Kukura <kukura@noironetworks.com>
+Verified+2: Jenkins
+Submitted-by: Jenkins
+Submitted-at: Sat, 07 Oct 2017 13:51:09 +0000
+Reviewed-on: https://review.openstack.org/509940
+Project: openstack/group-based-policy
+Branch: refs/heads/stable/ocata
