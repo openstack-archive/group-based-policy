@@ -172,6 +172,7 @@ class ApicAimTestCase(test_address_scope.AddressScopeTestCase,
         config.cfg.CONF.set_override('extension_drivers',
                                      ['apic_aim', 'port_security', 'dns'],
                                      'ml2')
+        config.cfg.CONF.set_override('api_extensions_path', None)
         config.cfg.CONF.set_override('type_drivers',
                                      ['opflex', 'local', 'vlan'],
                                      'ml2')
