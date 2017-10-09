@@ -28,9 +28,9 @@ from neutron.agent import securitygroups_rpc
 from neutron.common import rpc as n_rpc
 from neutron.common import topics as n_topics
 from neutron.db import api as db_api
-from neutron.db import l3_db
 from neutron.db.models import address_scope as as_db
 from neutron.db.models import allowed_address_pair as n_addr_pair_db
+from neutron.db.models import l3 as l3_db
 from neutron.db.models import securitygroup as sg_models
 from neutron.db import models_v2
 from neutron.db import rbac_db_models

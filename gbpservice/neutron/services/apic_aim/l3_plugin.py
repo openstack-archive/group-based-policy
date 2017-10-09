@@ -18,8 +18,8 @@ from neutron.db import common_db_mixin
 from neutron.db import db_base_plugin_v2
 from neutron.db import dns_db
 from neutron.db import extraroute_db
-from neutron.db import l3_db
 from neutron.db import l3_gwmode_db
+from neutron.db.models import l3 as l3_db
 from neutron.extensions import l3
 from neutron.extensions import portbindings
 from neutron.quota import resource_registry
