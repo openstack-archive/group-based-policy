@@ -19,12 +19,10 @@ from gbpservice.nfp.core import worker as nfp_worker
 import mock
 import multiprocessing as multiprocessing
 from oslo_config import cfg as oslo_config
-from oslo_log import log as oslo_logging
 import random
 import six
 import time
 import unittest2
-LOG = oslo_logging.getLogger(__name__)
 
 NFP_MODULES_PATH = ['gbpservice.neutron.tests.unit.nfp.core']
 

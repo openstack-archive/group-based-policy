@@ -13,9 +13,6 @@
 from gbpservice.nfp.core import context as nfp_context
 from gbpservice.nfp.core import event
 from gbpservice.nfp.core import module as nfp_api
-from oslo_log import log as logging
-
-LOG = logging.getLogger(__name__)
 
 """An example NFP module used for UT.
 

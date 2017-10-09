@@ -19,10 +19,6 @@ Routines for configuring Octavia Haproxy driver
 
 from oslo_config import cfg
 
-from gbpservice.nfp.core import log as nfp_logging
-
-LOG = nfp_logging.getLogger(__name__)
-
 haproxy_amphora_opts = [
     cfg.StrOpt('base_path',
                default='/var/lib/octavia',
