@@ -11,9 +11,6 @@
 #    under the License.
 
 from gbpservice.contrib.nfp.configurator.lib import constants as const
-from gbpservice.nfp.core import log as nfp_logging
-
-LOG = nfp_logging.getLogger(__name__)
 
 
 class ServiceAgentDemuxer(object):
