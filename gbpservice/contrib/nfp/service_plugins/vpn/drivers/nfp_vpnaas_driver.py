@@ -13,6 +13,7 @@
 import socket
 import time
 
+from gbpservice._i18n import _LI
 from gbpservice.contrib.nfp.config_orchestrator.common import topics
 from gbpservice.nfp.core import log as nfp_logging
 from neutron.common import rpc as n_rpc
@@ -108,6 +109,7 @@ class NFPIPsecVpnAgentApi(base_ipsec.IPsecVpnAgentApi):
             # failed. Return whichever agent is available.
             for agent in agents:
                 if not agent['alive']:
+                    LOG.debug(_LI("Cannot get a active vpn agent, skipped"))
                     continue
                 return agent
         except Exception:
