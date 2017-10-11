@@ -79,4 +79,4 @@ class NoopNodeDriver(driver_base.NodeDriverBase):
 
     @log.log_method_call
     def get_status(self, context):
-        pass
+        return {'status': '', 'status_details': ''}

@@ -3281,7 +3281,11 @@ class TestServiceChain(ResourceMappingTestCase):
             expected_provider_ptg_ids = set([provider_ptg, provider_ptg_new])
             self.assertEqual(expected_provider_ptg_ids,
                              sc_instances_provider_ptg_ids)
-            self.assertEqual([], sc_instance_update.call_args_list)
+            # verify all update calls are on new instances only
+            new_instance_ids = [inst['id'] for inst in sc_instances_new]
+            for call in sc_instance_update.call_args_list:
+                args, kwargs = call
+                self.assertIn(args[1], new_instance_ids)
 
     # This test is being skipped because the NCP plugin does not support
     # multiple servicechain_specs per servicechain_instance
