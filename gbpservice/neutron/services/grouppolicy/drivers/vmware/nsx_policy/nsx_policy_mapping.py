@@ -21,6 +21,7 @@ from vmware_nsxlib.v3 import config
 from vmware_nsxlib.v3 import exceptions as nsxlib_exc
 from vmware_nsxlib.v3 import resources as nsx_resources
 
+from gbpservice._i18n import _LW
 from gbpservice.neutron.services.grouppolicy.common import constants as g_const
 from gbpservice.neutron.services.grouppolicy.common import exceptions as gpexc
 from gbpservice.neutron.services.grouppolicy.drivers import (
@@ -194,13 +195,13 @@ class NsxPolicyMappingDriver(api.ResourceMappingDriver):
             self.nsx_policy.deployment_map.delete(project_id,
                                                   domain_id=project_id)
         except nsxlib_exc.ManagerError:
-            LOG.warning('Domain %s is not deployed on backend',
+            LOG.warning(_LW('Domain %s is not deployed on backend'),
                         project_id)
 
         try:
             self.nsx_policy.domain.delete(project_id)
         except nsxlib_exc.ManagerError:
-            LOG.warning('Domain %s was not found on backend',
+            LOG.warning(_LW('Domain %s was not found on backend'),
                         project_id)
 
     def _create_or_update_communication_profile(self, profile_id, name,
