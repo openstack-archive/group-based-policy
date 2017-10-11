@@ -108,6 +108,7 @@ class NFPIPsecVpnAgentApi(base_ipsec.IPsecVpnAgentApi):
             # failed. Return whichever agent is available.
             for agent in agents:
                 if not agent['alive']:
+                    LOG.debug("Cannot get a active vpn agent, skipped")
                     continue
                 return agent
         except Exception:
