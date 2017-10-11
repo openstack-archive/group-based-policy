@@ -521,7 +521,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                       filter_by(id=subnet_db.network_id).
                       one_or_none())
         if not network_db:
-            LOG.warning("Network not found in extend_subnet_dict for %s",
+            LOG.warning(_LW("Network not found in extend_subnet_dict for %s"),
                         result)
             return
 
