@@ -48,6 +48,11 @@ class APICNameMapper(object):
         return (id if id == "common" else
                 self._map(session, id, PROJECT_TYPE_TAG, prefix))
 
+    def reverse_project(self, session, name, prefix="", enforce=True):
+        # REVISIT: See project() above.
+        return (name if name == "common" else
+                self._unmap(session, name, PROJECT_TYPE_TAG, prefix, enforce))
+
     def network(self, session, id, prefix=""):
         return self._map(session, id, NETWORK_TYPE_TAG, prefix)
 
