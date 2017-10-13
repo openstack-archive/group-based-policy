@@ -16,6 +16,7 @@ from aim.api import service_graph as aim_sg
 from aim import context as aim_context
 from aim import utils as aim_utils
 import netaddr
+from networking_sfc.db import flowclassifier_db as flowc_db
 from networking_sfc.db import sfc_db
 from networking_sfc.extensions import flowclassifier as flowc_ext
 from networking_sfc.extensions import sfc as sfc_ext
@@ -975,3 +976,36 @@ class SfcAIMDriver(SfcAIMDriverBase):
         name = self.name_mapper.network(plugin_context.session, net['id'],
                                         prefix=cidr + '_')
         return name
+
+    def validate_aim_mapping(self, mgr):
+        # REVISIT: Register all AIM resource types used by the SFC
+        # mapping but not the Neutron or GBP mappings.
+
+        # REVISIT:  Register DB tables to be validated.
+
+        # Determine expected AIM resources and DB records for each
+        # SFC resource type.
+        self._validate_flow_classifiers(mgr)
+        self._validate_port_pair_groups(mgr)
+        self._validate_port_chains(mgr)
+
+    def _validate_flow_classifiers(self, mgr):
+        # REVISIT: Implement validation of actual mapping to AIM
+        # resources.
+        if mgr.actual_session.query(flowc_db.FlowClassifier).first():
+            mgr.validation_failed(
+                "SFC->AIM validation for FC not yet implemented")
+
+    def _validate_port_pair_groups(self, mgr):
+        # REVISIT: Implement validation of actual mapping to AIM
+        # resources.
+        if mgr.actual_session.query(sfc_db.PortPairGroup).first():
+            mgr.validation_failed(
+                "SFC->AIM validation for PPG not yet implemented")
+
+    def _validate_port_chains(self, mgr):
+        # REVISIT: Implement validation of actual mapping to AIM
+        # resources.
+        if mgr.actual_session.query(sfc_db.PortChain).first():
+            mgr.validation_failed(
+                "SFC->AIM validation for PC not yet implemented")

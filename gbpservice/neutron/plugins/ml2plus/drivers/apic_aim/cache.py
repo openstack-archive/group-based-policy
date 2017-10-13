@@ -43,6 +43,9 @@ class ProjectNameCache(object):
         self.gbp = None
 
     def _get_keystone_client(self):
+        # REVISIT: It seems load_from_conf_options() and
+        # keystoneclient auth plugins have been deprecated, and we
+        # should use keystoneauth instead.
         LOG.debug("Getting keystone client")
         auth = ksc_auth.load_from_conf_options(cfg.CONF, AUTH_GROUP)
         LOG.debug("Got auth: %s", auth)
@@ -69,21 +72,18 @@ class ProjectNameCache(object):
         inside a transaction with a project_id not already in the
         cache.
         """
+        if project_id and project_id not in self.project_names:
+            self.load_projects()
 
-        if not project_id:
-            return
-
-        # TODO(rkukura): It seems load_from_conf_options() and
-        # keystoneclient auth plugins have been deprecated, and we
-        # should use keystoneauth instead.
-        if project_id not in self.project_names:
-            if self.keystone is None:
-                self._get_keystone_client()
-            LOG.debug("Calling project API")
-            projects = self.keystone.projects.list()
-            LOG.debug("Received projects: %s", projects)
-            for project in projects:
-                self.project_names[project.id] = project.name
+    def load_projects(self):
+        # REVISIT: Does this need locking to prevent concurrent calls?
+        if self.keystone is None:
+            self._get_keystone_client()
+        LOG.debug("Calling project API")
+        projects = self.keystone.projects.list()
+        LOG.debug("Received projects: %s", projects)
+        for project in projects:
+            self.project_names[project.id] = project.name
 
     def get_project_name(self, project_id):
         """Get name of project from cache.

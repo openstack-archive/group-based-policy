@@ -238,6 +238,7 @@ class ApicL3Plugin(common_db_mixin.CommonDbMixin,
 
     def create_floatingip(self, context, floatingip):
         fip = floatingip['floatingip']
+        self._md.ensure_tenant(context, fip['tenant_id'])
         # Verify that subnet is not a SNAT host-pool
         self._md.check_floatingip_external_address(context, fip)
         with context.session.begin(subtransactions=True):

@@ -75,6 +75,7 @@ function prepare_gbp_aim_devstack {
     sudo cp $CONTRIB_DIR/devstack/local-aim.conf $TOP_DIR/local.conf
     append_to_localconf
     sudo cp $CONTRIB_DIR/devstack/exercises-aim/gbp_aim.sh $TOP_DIR/exercises/
+    sudo cp $CONTRIB_DIR/devstack/exercises-aim/neutron_aim.sh $TOP_DIR/exercises/
     # Use the aim version of the shared PRS test
     sudo mv $GBP_FUNC_DIR/testcases/tc_gbp_prs_pr_shared_func.py.aim $GBP_FUNC_DIR/testcases/tc_gbp_prs_pr_shared_func.py
     sudo mv $GBP_FUNC_DIR/testcases/tc_gbp_prs_func.py.aim $GBP_FUNC_DIR/testcases/tc_gbp_prs_func.py

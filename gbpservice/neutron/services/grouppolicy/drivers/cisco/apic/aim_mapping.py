@@ -53,6 +53,8 @@ from gbpservice.neutron.services.grouppolicy.drivers import (
 from gbpservice.neutron.services.grouppolicy.drivers.cisco.apic import (
     aim_mapping_rpc as aim_rpc)
 from gbpservice.neutron.services.grouppolicy.drivers.cisco.apic import (
+    aim_validation)
+from gbpservice.neutron.services.grouppolicy.drivers.cisco.apic import (
     apic_mapping_lib as alib)
 from gbpservice.neutron.services.grouppolicy.drivers.cisco.apic import (
     nova_client as nclient)
@@ -180,6 +182,10 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
     @log.log_method_call
     def start_rpc_listeners(self):
         return self.setup_opflex_rpc_listeners()
+
+    def validate_state(self, repair):
+        mgr = aim_validation.ValidationManager()
+        return mgr.validate(repair)
 
     @property
     def aim_mech_driver(self):
@@ -2435,3 +2441,95 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
         self._aim = None
         self._name_mapper = None
         self._aim_tenant_name = orig_aim_tenant_name
+
+    def validate_neutron_mapping(self, mgr):
+        # REVISIT: Implement.
+        pass
+
+    def validate_aim_mapping(self, mgr):
+        # REVISIT: Register all AIM resource types used by GBP mapping
+        # but not the Neutron mapping.
+
+        # REVISIT:  Register DB tables to be validated.
+
+        # Determine expected AIM resources and DB records for each
+        # GBP resource type.
+        self._validate_l3_policies(mgr)
+        self._validate_l2_policies(mgr)
+        self._validate_policy_target_groups(mgr)
+        self._validate_policy_targets(mgr)
+        self._validate_application_policy_groups(mgr)
+        self._validate_policy_classifiers(mgr)
+        self._validate_policy_rule_sets(mgr)
+        self._validate_external_segments(mgr)
+        self._validate_external_policies(mgr)
+
+        # REVISIT: Do any of the following top-level GBP resources map
+        # to or effect AIM resources: NetworkServicePolicy,
+        # PolicyAction, NATPool?
+
+    def _validate_l3_policies(self, mgr):
+        # REVISIT: Implement validation of actual mapping to AIM
+        # resources.
+        if mgr.actual_session.query(gpdb.L3Policy).first():
+            mgr.validation_failed(
+                "GBP->AIM validation for L3P not yet implemented")
+
+    def _validate_l2_policies(self, mgr):
+        # REVISIT: Implement validation of actual mapping to AIM
+        # resources.
+        if mgr.actual_session.query(gpdb.L2Policy).first():
+            mgr.validation_failed(
+                "GBP->AIM validation for L2P not yet implemented")
+
+    def _validate_policy_target_groups(self, mgr):
+        # REVISIT: Implement validation of actual mapping to AIM
+        # resources.
+        if mgr.actual_session.query(gpdb.PolicyTargetGroup).first():
+            mgr.validation_failed(
+                "GBP->AIM validation for PTG not yet implemented")
+
+    def _validate_policy_targets(self, mgr):
+        # REVISIT: Implement validation of actual mapping to AIM
+        # resources.
+        if mgr.actual_session.query(gpdb.PolicyTarget).first():
+            mgr.validation_failed(
+                "GBP->AIM validation for PT not yet implemented")
+
+    def _validate_application_policy_groups(self, mgr):
+        # REVISIT: Implement validation of actual mapping to AIM
+        # resources.
+        if mgr.actual_session.query(gpdb.ApplicationPolicyGroup).first():
+            mgr.validation_failed(
+                "GBP->AIM validation for APG not yet implemented")
+
+    def _validate_policy_classifiers(self, mgr):
+        # REVISIT: Implement validation of actual mapping to AIM
+        # resources.
+        if mgr.actual_session.query(gpdb.PolicyClassifier).first():
+            mgr.validation_failed(
+                "GBP->AIM validation for PC not yet implemented")
+
+    def _validate_policy_rule_sets(self, mgr):
+        # REVISIT: Implement validation of actual mapping to AIM
+        # resources.
+        if mgr.actual_session.query(gpdb.PolicyRuleSet).first():
+            mgr.validation_failed(
+                "GBP->AIM validation for PRS not yet implemented")
+
+    def _validate_external_segments(self, mgr):
+        # REVISIT: Implement validation of actual mapping to AIM
+        # resources. This should probably be called from
+        # validate_neutron_mapping rather than validate_aim_mapping,
+        # since external_routes maps to the cisco_apic.EXTERNAL_CIDRS
+        # network extension.
+        if mgr.actual_session.query(gpdb.ExternalSegment).first():
+            mgr.validation_failed(
+                "GBP->AIM validation for ES not yet implemented")
+
+    def _validate_external_policies(self, mgr):
+        # REVISIT: Implement validation of actual mapping to AIM
+        # resources.
+        if mgr.actual_session.query(gpdb.ExternalPolicy).first():
+            mgr.validation_failed(
+                "GBP->AIM validation for EP not yet implemented")
