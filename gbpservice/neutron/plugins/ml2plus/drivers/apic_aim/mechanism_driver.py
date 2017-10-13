@@ -2211,8 +2211,10 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                 filter_by(id=scope_id).
                 one_or_none())
 
-    def _map_network(self, session, network):
-        tenant_aname = self.name_mapper.project(session, network['tenant_id'])
+    def _map_network(self, session, network, vrf=None):
+        tenant_aname = (vrf.tenant_name if vrf and vrf.tenant_name != 'common'
+                        else self.name_mapper.project(
+                                session, network['tenant_id']))
         id = network['id']
         aname = self.name_mapper.network(session, id)
 
@@ -3042,3 +3044,275 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                            n_constants.DEVICE_OWNER_ROUTER_INTF).
                     all())
         return [p[0] for p in port_ids]
+
+    def validate_aim_mapping(self, mgr):
+        # Declare all AIM resource types used by mapping.
+        mgr.register_aim_resource_type(aim_resource.ApplicationProfile)
+        mgr.register_aim_resource_type(aim_resource.BridgeDomain)
+        mgr.register_aim_resource_type(aim_resource.Contract)
+        mgr.register_aim_resource_type(aim_resource.ContractSubject)
+        mgr.register_aim_resource_type(aim_resource.EndpointGroup)
+        mgr.register_aim_resource_type(aim_resource.ExternalNetwork)
+        # mgr.register_aim_resource_type(aim_resource.Filter)
+        # mgr.register_aim_resource_type(aim_resource.FilterEntry)
+        mgr.register_aim_resource_type(aim_resource.L3Outside)
+        mgr.register_aim_resource_type(aim_resource.PhysicalDomain)
+        # mgr.register_aim_resource_type(aim_resource.SecurityGroup)
+        # mgr.register_aim_resource_type(aim_resource.SecurityGroupRule)
+        # mgr.register_aim_resource_type(aim_resource.SecurityGroupSubject)
+        mgr.register_aim_resource_type(aim_resource.Subnet)
+        mgr.register_aim_resource_type(aim_resource.Tenant)
+        mgr.register_aim_resource_type(aim_resource.VMMDomain)
+        mgr.register_aim_resource_type(aim_resource.VRF)
+
+        # Expect common Tenant.
+        #
+        # REVISIT: Share code with _ensure_common_tenant(), use global
+        # for display_name.
+        tenant = aim_resource.Tenant(
+            name=COMMON_TENANT_NAME, display_name='CommonTenant',
+            monitored=True)
+        mgr.expect_aim_resource(tenant)
+
+        # Expect unrouted VRF.
+        #
+        # REVISIT: Share code with _ensure_unrouted_vrf(), use global
+        # for display_name.
+        vrf = self._map_unrouted_vrf()
+        vrf.display_name = 'CommonUnroutedVRF'
+        mgr.expect_aim_resource(vrf)
+
+        # Validate address scopes.
+        for scope_db in mgr.session.query(as_db.AddressScope).all():
+            mapping = scope_db.aim_mapping
+            # REVISIT: If mapping exists and vrf_owned is True,
+            # validate its VRF identity?
+            if not mapping:
+                if mgr.should_repair():
+                    vrf = self._map_address_scope(mgr.session, scope_db)
+                    mapping = self._add_address_scope_mapping(
+                        mgr.session, scope_db.id, vrf)
+                    print("Repaired missing mapping record for %s" % scope_db)
+            if mapping:
+                vrf = self._get_address_scope_vrf(mapping)
+                # REVISIT: Conditionalize on vrf_owned.
+                vrf.monitored = not mapping.vrf_owned
+                # REVISIT: Need deterministic display_name for
+                # isomorphic address scopes that own VRF.
+                vrf.display_name = (
+                    aim_utils.sanitize_display_name(scope_db.name)
+                    if mapping.vrf_owned else "")
+                vrf.policy_enforcement_pref = 'enforced'
+                mgr.expect_aim_resource(vrf)
+                if mapping.vrf_owned:
+                    self._expect_tenant(mgr, vrf.tenant_name)
+
+        # Validate routers.
+        router_dbs = {}
+        for router_db in mgr.session.query(l3_db.Router).all():
+            router_dbs[router_db.id] = router_db
+            contract, subject = self._map_router(mgr.session, router_db)
+            dname = aim_utils.sanitize_display_name(router_db.name)
+
+            contract.scope = "context"
+            contract.display_name = dname
+            contract.monitored = False
+            mgr.expect_aim_resource(contract)
+
+            subject.in_filters = []
+            subject.out_filters = []
+            subject.bi_filters = [self._any_filter_name]
+            subject.service_graph_name = ''
+            subject.in_service_graph_name = ''
+            subject.out_service_graph_name = ''
+            subject.display_name = dname
+            subject.monitored = False
+            mgr.expect_aim_resource(subject)
+
+            # REVISIT: Although routers map to Contracts and
+            # ContractSubjects under the common Tenant, ensure_tenant
+            # is called for the project that owns the router, so its
+            # resources must be expected. Remove this once per-project
+            # resources are managed more dynamically.
+            tenant_name = self.name_mapper.project(
+                mgr.session, router_db.tenant_id)
+            self._expect_tenant(mgr, tenant_name)
+
+        # Determine VRFs for routed networks.
+        results = (mgr.session.query(l3_db.RouterPort,
+                                     models_v2.IPAllocation,
+                                     models_v2.Subnet,
+                                     models_v2.Network,
+                                     db.AddressScopeMapping).
+                   join(models_v2.IPAllocation,
+                        models_v2.IPAllocation.port_id ==
+                        l3_db.RouterPort.port_id).
+                   join(models_v2.Subnet,
+                        models_v2.Subnet.id ==
+                        models_v2.IPAllocation.subnet_id).
+                   join(models_v2.Network,
+                        models_v2.Network.id ==
+                        models_v2.IPAllocation.network_id).
+                   outerjoin(models_v2.SubnetPool,
+                             models_v2.SubnetPool.id ==
+                             models_v2.Subnet.subnetpool_id).
+                   outerjoin(db.AddressScopeMapping,
+                        db.AddressScopeMapping.scope_id ==
+                        models_v2.SubnetPool.address_scope_id).
+                   filter(l3_db.RouterPort.port_type ==
+                          n_constants.DEVICE_OWNER_ROUTER_INTF).
+                   all())
+        routed_nets = {}
+        for result in results:
+            router_port, ip_allocation, subnet, network, scope_mapping = result
+            routed_nets.setdefault(network.id, []).append(result)
+        print("routed nets: %s" % routed_nets)
+
+        # Determine VRFs for all scoped routed networks, as well of
+        # list of unscoped routed networks whose topologies need to be
+        # determined.
+        network_vrfs = {}
+        unscoped_nets = []
+        for routed_net in routed_nets.values():
+            net_id = None
+            v4_scope_mapping = None
+            v6_scope_mapping = None
+            for routed_subnet in routed_net:
+                _, _, subnet, network, scope_mapping = routed_subnet
+                if not net_id:
+                    net_id = network.id
+                if scope_mapping:
+                    if subnet.ip_version == 4:
+                        if (v4_scope_mapping and
+                            v4_scope_mapping != scope_mapping):
+                            print("Inconsistent IPv4 scopes for network %s" %
+                                  routed_net)
+                        else:
+                            v4_scope_mapping = scope_mapping
+                    elif subnet.ip_version == 6:
+                        if (v6_scope_mapping and
+                            v6_scope_mapping != scope_mapping):
+                            print("Inconsistent IPv6 scopes for network %s" %
+                                  routed_net)
+                        else:
+                            v6_scope_mapping = scope_mapping
+            if v4_scope_mapping:
+                network_vrfs[net_id] = self._get_address_scope_vrf(
+                    v4_scope_mapping)
+            elif v6_scope_mapping:
+                # REVISIT: If there are unscoped v4 subnets, use
+                # unscoped topology's default VRF?
+                network_vrfs[net_id] = self._get_address_scope_vrf(
+                    v6_scope_mapping)
+            else:
+                unscoped_nets.append(net_id)
+        print("network_vrfs: %s" % network_vrfs)
+        print("unscoped_nets: %s" % unscoped_nets)
+
+        # REVISIT: Find unscoped topologies and expect default VRFs.
+
+        # Validate networks.
+        for net_db in mgr.session.query(models_v2.Network).all():
+            if net_db.external:
+                # REVISIT: Implement.
+                print("Validation of external networks not implemented")
+            else:
+                routed_vrf = network_vrfs.get(net_db.id)
+                vrf = routed_vrf or self._map_unrouted_vrf()
+                bd, epg = self._map_network(mgr.session, net_db, vrf)
+
+                mapping = net_db.aim_mapping
+                if mapping:
+                    if bd.identity != self._get_network_bd(mapping).identity:
+                        if mgr.should_repair():
+                            self._set_network_bd(mapping, bd)
+                            print("Repaired mapping record BD for %s" %
+                                  net_db)
+                    if epg.identity != self._get_network_epg(mapping).identity:
+                        if mgr.should_repair():
+                            self._set_network_epg(mapping, epg)
+                            print("Repaired mapping record EPG for %s" %
+                                  net_db)
+                    if vrf.identity != self._get_network_vrf(mapping).identity:
+                        if mgr.should_repair():
+                            self._set_network_vrf(mapping, vrf)
+                            print("Repaired mapping record VRF for %s" %
+                                  net_db)
+                else:
+                    if mgr.should_repair():
+                        mapping = self._add_network_mapping(
+                            mgr.session, net_db.id, bd, epg, vrf)
+                        print("Repaired missing mapping record for %s" %
+                              net_db)
+
+                router_contract_names = set()
+                for routed_subnet in routed_nets.get(net_db.id, []):
+                    router_port, ip_allocation, subnet_db, _, _ = routed_subnet
+
+                    # REVISIT: Refactor to share code.
+                    gw_ip = ip_allocation.ip_address
+                    router_db = router_dbs[router_port.router_id]
+                    dname = aim_utils.sanitize_display_name(
+                        router_db['name'] + '-' +
+                        (subnet_db['name'] or subnet_db['cidr']))
+                    sn = self._map_subnet(subnet_db, gw_ip, bd)
+                    sn.scope = 'public'
+                    sn.display_name = dname
+                    sn.monitored = False
+                    mgr.expect_aim_resource(sn)
+
+                    contract = self._map_router(mgr.session, router_db, True)
+                    router_contract_names.add(contract.name)
+                router_contract_names = list(router_contract_names)
+
+                # REVISIT: Refactor to share code.
+                dname = aim_utils.sanitize_display_name(net_db.name)
+
+                bd.display_name = dname
+                bd.vrf_name = vrf.name
+                bd.enable_arp_flood = True
+                bd.enable_routing = len(router_contract_names) is not 0
+                bd.limit_ip_learn_to_subnets = True
+                bd.ep_move_detect_mode = 'garp'
+                bd.l3out_names = []
+                bd.monitored = False
+                mgr.expect_aim_resource(bd)
+                self._expect_tenant(mgr, bd.tenant_name)
+
+                epg.display_name = dname
+                epg.bd_name = bd.name
+                epg.policy_enforcement_pref = 'unenforced'
+                epg.provided_contract_names = router_contract_names
+                epg.consumed_contract_names = router_contract_names
+                epg.openstack_vmm_domain_names = []
+                epg.physical_domain_names = []
+                epg.vmm_domains = []
+                epg.physical_domains = []
+                epg.static_paths = []
+                epg.epg_contract_masters = []
+                epg.monitored = False
+                mgr.expect_aim_resource(epg)
+                self._expect_tenant(mgr, epg.tenant_name)
+
+    def _expect_tenant(self, mgr, tenant_name):
+        # Should not be called for pre-existing Tenants, such as
+        # "common".
+        tenant = aim_resource.Tenant(name=tenant_name)
+        if not mgr.expected_aim_resource(tenant):
+            # REVISIT: Refactor to share code with _ensure_tenant?
+            tenant.monitored = False
+            project_id = self.name_mapper.reverse_project(
+                mgr.session, tenant_name)
+            project_name = self.project_name_cache.get_project_name(project_id)
+            tenant.display_name = aim_utils.sanitize_display_name(project_name)
+            tenant.descr = self.apic_system_id
+            mgr.expect_aim_resource(tenant)
+
+        # REVISIT: Manage ApplicationProfiles more dynamically?
+        ap = aim_resource.ApplicationProfile(
+            tenant_name=tenant_name, name=self.ap_name)
+        if not mgr.expected_aim_resource(ap):
+            # REVISIT: Refactor to share code with _ensure_tenant?
+            ap.display_name = ""
+            ap.monitored = False
+            mgr.expect_aim_resource(ap)
