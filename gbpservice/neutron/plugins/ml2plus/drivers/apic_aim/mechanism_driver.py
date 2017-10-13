@@ -99,7 +99,6 @@ class KeystoneNotificationEndpoint(object):
 
     def __init__(self, mechanism_driver):
         self._driver = mechanism_driver
-        self._dvs_notifier = None
 
     def info(self, ctxt, publisher_id, event_type, payload, metadata):
         LOG.debug("Keystone notification getting called!")
@@ -165,6 +164,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             self.md.delete_link(*args, **kwargs)
 
     def __init__(self):
+        self._dvs_notifier = None
         LOG.info(_LI("APIC AIM MD __init__"))
 
     def initialize(self):
@@ -1666,7 +1666,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         if self.dvs_notifier:
             booked_port_info = self.dvs_notifier.bind_port_call(
                 currentcopy,
-                [context.bottom_bound_segment],
+                context.network.network_segments,
                 context.network.current,
                 context.host
             )
@@ -2262,10 +2262,11 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         self.ap_name = new_conf['value']
 
     def get_aim_domains(self, aim_ctx):
-        vmms = [x.name for x in self.aim.find(aim_ctx, aim_resource.VMMDomain)
-                if x.type == utils.OPENSTACK_VMM_TYPE]
-        phys = [x.name for x in
-                self.aim.find(aim_ctx, aim_resource.PhysicalDomain)]
+        vmms = [{'type': x.type, 'name': x.name}
+            for x in self.aim.find(aim_ctx, aim_resource.VMMDomain)
+                if x.type in utils.KNOWN_VMM_TYPES.values()]
+        phys = [{'name': x.name}
+            for x in self.aim.find(aim_ctx, aim_resource.PhysicalDomain)]
         return vmms, phys
 
     def _is_external(self, network):
@@ -2734,28 +2735,29 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         try:
             if is_vmm:
                 if aim_hd_mapping:
-                    domain = aim_hd_mapping.vmm_domain_name
+                    domain = {'type': utils.OPENSTACK_VMM_TYPE,
+                              'name': aim_hd_mapping.vmm_domain_name}
                 if not domain:
                     vmms, phys = self.get_aim_domains(aim_ctx)
                     self.aim.update(aim_ctx, epg,
-                                    openstack_vmm_domain_names=vmms)
-                elif domain not in aim_epg.openstack_vmm_domain_names:
-                    aim_epg.openstack_vmm_domain_names.append(domain)
-                    vmms = aim_epg.openstack_vmm_domain_names
+                                    vmm_domains=vmms)
+                elif domain not in aim_epg.vmm_domains:
+                    aim_epg.vmm_domains.append(domain)
+                    vmms = aim_epg.vmm_domains
                     self.aim.update(aim_ctx, epg,
-                                    openstack_vmm_domain_names=vmms)
+                                    vmm_domains=vmms)
             else:
                 if aim_hd_mapping:
-                    domain = aim_hd_mapping.physical_domain_name
+                    domain = {'name': aim_hd_mapping.physical_domain_name}
                 if not domain:
                     vmms, phys = self.get_aim_domains(aim_ctx)
                     self.aim.update(aim_ctx, epg,
-                                    physical_domain_names=phys)
-                elif domain not in aim_epg.physical_domain_names:
-                    aim_epg.physical_domain_names.append(domain)
-                    phys = aim_epg.physical_domain_names
+                                    physical_domains=phys)
+                elif domain not in aim_epg.physical_domains:
+                    aim_epg.physical_domains.append(domain)
+                    phys = aim_epg.physical_domains
                     self.aim.update(aim_ctx, epg,
-                                    physical_domain_names=phys)
+                                    physical_domains=phys)
         # this could be caused by concurrent transactions
         except db_exc.DBDuplicateEntry as e:
             LOG.debug(e)
@@ -2788,7 +2790,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                 if domain:
                     hd_mappings = self.aim.find(aim_ctx,
                                                 aim_infra.HostDomainMapping,
-                                                physical_domain_name=domain)
+                                                physical_domains=domain)
             if not domain:
                 return
             hosts = [x.host_name for x in hd_mappings]
@@ -2834,17 +2836,20 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             aim_epg = self.aim.get(aim_ctx, epg)
             try:
                 if self._is_opflex_type(btm[api.NETWORK_TYPE]):
-                    if domain in aim_epg.openstack_vmm_domain_names:
-                        aim_epg.openstack_vmm_domain_names.remove(domain)
-                        vmms = aim_epg.openstack_vmm_domain_names
+                    mapping = {'type': utils.OPENSTACK_VMM_TYPE,
+                               'name': domain}
+                    if mapping in aim_epg.vmm_domains:
+                        aim_epg.vmm_domains.remove(mapping)
+                        vmms = aim_epg.vmm_domains
                         self.aim.update(aim_ctx, epg,
-                                        openstack_vmm_domain_names=vmms)
+                                        vmm_domains=vmms)
                 else:
-                    if domain in aim_epg.physical_domain_names:
-                        aim_epg.physical_domain_names.remove(domain)
-                        phys = aim_epg.physical_domain_names
+                    mapping = {'name': domain}
+                    if mapping in aim_epg.physical_domains:
+                        aim_epg.physical_domains.remove(mapping)
+                        phys = aim_epg.physical_domains
                         self.aim.update(aim_ctx, epg,
-                                        physical_domain_names=phys)
+                                        physical_domains=phys)
             # this could be caused by concurrent transactions
             except db_exc.DBDuplicateEntry as e:
                 LOG.debug(e)
