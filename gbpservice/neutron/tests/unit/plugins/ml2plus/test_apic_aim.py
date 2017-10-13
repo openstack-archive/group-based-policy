@@ -64,6 +64,8 @@ from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import data_migrations
 from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import db
 from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import exceptions
 from gbpservice.neutron.plugins.ml2plus import patch_neutron
+from gbpservice.neutron.services.grouppolicy.drivers.cisco.apic import (
+    aim_validation as av)
 
 PLUGIN_NAME = 'gbpservice.neutron.plugins.ml2plus.plugin.Ml2PlusPlugin'
 
@@ -408,6 +410,7 @@ class TestAimMapping(ApicAimTestCase):
             nat_strategy.DistributedNatStrategy)
         self._actual_scopes = {}
         super(TestAimMapping, self).setUp()
+        self.validation_mgr = av.ValidationManager()
 
     def tearDown(self):
         self.call_wrapper.tearDown()
@@ -866,6 +869,10 @@ class TestAimMapping(ApicAimTestCase):
         self.assertEqual('unspecified', aim_entry.tcp_flags)
         self.assertFalse(aim_entry.stateful)
         self.assertFalse(aim_entry.fragment_only)
+
+    def _validate(self):
+        # Validate should pass.
+        self.assertEqual(av.VALIDATION_PASSED, self.validation_mgr.validate())
 
     def test_static_resources(self):
         # Check common Tenant.
@@ -2484,6 +2491,7 @@ class TestAimMapping(ApicAimTestCase):
         check_net(net4, sn4, [], [], [gw4C], t2)
         check_default_vrf(t1, False)
         check_default_vrf(t2, False)
+        self._validate()
 
         # Add subnet 1 to router A, which should create tenant 1's
         # default VRF.
@@ -2498,6 +2506,7 @@ class TestAimMapping(ApicAimTestCase):
         check_net(net4, sn4, [], [], [gw4C], t2)
         check_default_vrf(t1, True)
         check_default_vrf(t2, False)
+        self._validate()
 
         # Add subnet 2 to router A.
         add_interface(rA, net2, sn2, gw2A, t1)
@@ -2511,6 +2520,7 @@ class TestAimMapping(ApicAimTestCase):
         check_net(net4, sn4, [], [], [gw4C], t2)
         check_default_vrf(t1, True)
         check_default_vrf(t2, False)
+        self._validate()
 
         # Add subnet 2 to router B.
         add_interface(rB, net2, sn2, gw2B, t1)
@@ -2524,6 +2534,7 @@ class TestAimMapping(ApicAimTestCase):
         check_net(net4, sn4, [], [], [gw4C], t2)
         check_default_vrf(t1, True)
         check_default_vrf(t2, False)
+        self._validate()
 
         # Add subnet 3 to router B.
         add_interface(rB, net3, sn3, gw3B, t1)
@@ -2537,6 +2548,7 @@ class TestAimMapping(ApicAimTestCase):
         check_net(net4, sn4, [], [], [gw4C], t2)
         check_default_vrf(t1, True)
         check_default_vrf(t2, False)
+        self._validate()
 
         # Add subnet 3 to router C.
         add_interface(rC, net3, sn3, gw3C, t1)
@@ -2550,6 +2562,7 @@ class TestAimMapping(ApicAimTestCase):
         check_net(net4, sn4, [], [], [gw4C], t2)
         check_default_vrf(t1, True)
         check_default_vrf(t2, False)
+        self._validate()
 
         # Add shared subnet 4 to router C, which should move router
         # C's topology (networks 1, 2 and 3 and routers A, B and C) to
@@ -2566,6 +2579,7 @@ class TestAimMapping(ApicAimTestCase):
         check_net(net4, sn4, [rC], [(gw4C, rC)], [], t2)
         check_default_vrf(t1, False)
         check_default_vrf(t2, True)
+        self._validate()
 
         # Remove subnet 3 from router B, which should move router B's
         # topology (networks 1 and 2 and routers A and B) to tenant 1
@@ -2581,6 +2595,7 @@ class TestAimMapping(ApicAimTestCase):
         check_net(net4, sn4, [rC], [(gw4C, rC)], [], t2)
         check_default_vrf(t1, True)
         check_default_vrf(t2, True)
+        self._validate()
 
         # Add subnet 3 back to router B, which should move router B's
         # topology (networks 1 and 2 and routers A and B) to tenant 2
@@ -2596,6 +2611,7 @@ class TestAimMapping(ApicAimTestCase):
         check_net(net4, sn4, [rC], [(gw4C, rC)], [], t2)
         check_default_vrf(t1, False)
         check_default_vrf(t2, True)
+        self._validate()
 
         # Remove subnet 2 from router B, which should move network 2's
         # topology (networks 1 and 2 and router A) back to tenant 1
@@ -2611,6 +2627,7 @@ class TestAimMapping(ApicAimTestCase):
         check_net(net4, sn4, [rC], [(gw4C, rC)], [], t2)
         check_default_vrf(t1, True)
         check_default_vrf(t2, True)
+        self._validate()
 
         # Add subnet 2 back to router B, which should move network 2's
         # topology (networks 1 and 2 and router A) to tenant 2 again
@@ -2626,6 +2643,7 @@ class TestAimMapping(ApicAimTestCase):
         check_net(net4, sn4, [rC], [(gw4C, rC)], [], t2)
         check_default_vrf(t1, False)
         check_default_vrf(t2, True)
+        self._validate()
 
         # Remove subnet 4 from router C, which should move network 3's
         # topology (networks 1, 2 and 3 and routers A and B) to tenant
@@ -2642,6 +2660,7 @@ class TestAimMapping(ApicAimTestCase):
         check_net(net4, sn4, [], [], [gw4C], t2)
         check_default_vrf(t1, True)
         check_default_vrf(t2, False)
+        self._validate()
 
         # Remove subnet 3 from router C.
         remove_interface(rC, net3, sn3, gw3C, t1)
@@ -2708,6 +2727,7 @@ class TestAimMapping(ApicAimTestCase):
         check_net(net4, sn4, [], [], [gw4C], t2)
         check_default_vrf(t1, False)
         check_default_vrf(t2, False)
+        self._validate()
 
     def test_address_scope_pre_existing_vrf(self):
         aim_ctx = aim_context.AimContext(self.db_session)
