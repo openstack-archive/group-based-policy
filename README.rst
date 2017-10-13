@@ -37,3 +37,5 @@ Acronyms used in code for brevity:
 - NSP: Network Service Policy
 - EP: External Policy
 - ES: External Segment
+- SC: Service Chain
+- SP: Service Profile
