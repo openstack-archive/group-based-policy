@@ -2208,8 +2208,10 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                 filter_by(id=scope_id).
                 one_or_none())
 
-    def _map_network(self, session, network):
-        tenant_aname = self.name_mapper.project(session, network['tenant_id'])
+    def _map_network(self, session, network, vrf=None):
+        tenant_aname = (vrf.tenant_name if vrf and vrf.tenant_name != 'common'
+                        else self.name_mapper.project(
+                                session, network['tenant_id']))
         id = network['id']
         aname = self.name_mapper.network(session, id)
 
@@ -3039,3 +3041,116 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                            n_constants.DEVICE_OWNER_ROUTER_INTF).
                     all())
         return [p[0] for p in port_ids]
+
+    def validate_aim_mapping(self, mgr):
+        # Expect common Tenant.
+        #
+        # REVISIT: Share code with _ensure_common_tenant(), use global
+        # for display_name.
+        tenant = aim_resource.Tenant(
+            name=COMMON_TENANT_NAME, display_name='CommonTenant',
+            monitored=True)
+        mgr.expect_aim_resource(tenant)
+
+        # Expect unrouted VRF.
+        #
+        # REVISIT: Share code with _ensure_unrouted_vrf(), use global
+        # for display_name.
+        vrf = self._map_unrouted_vrf()
+        vrf.display_name = 'CommonUnroutedVRF'
+        mgr.expect_aim_resource(vrf)
+
+        # Validate address scopes.
+        for scope_db in mgr.session.query(as_db.AddressScope).all():
+            mapping = scope_db.aim_mapping
+            # REVISIT: If mapping exists and vrf_owned is True,
+            # validate its VRF identity?
+            if not mapping:
+                if mgr.should_repair():
+                    vrf = self._map_address_scope(mgr.session, scope_db)
+                    mapping = self._add_address_scope_mapping(
+                        mgr.session, scope_db.id, vrf)
+                    print("Repaired missing mapping record for %s" % scope_db)
+            if mapping:
+                vrf = self._get_address_scope_vrf(mapping)
+                # REVISIT: Conditionalize on vrf_owned.
+                vrf.monitored = not mapping.vrf_owned
+                # REVISIT: Need deterministic display_name for
+                # isomorphic address scopes that own VRF.
+                vrf.display_name = (
+                    aim_utils.sanitize_display_name(scope_db.name)
+                    if mapping.vrf_owned else "")
+                vrf.policy_enforcement_pref = 'enforced'
+                mgr.expect_aim_resource(vrf)
+                if mapping.vrf_owned:
+                    self._expect_tenant(mgr, vrf.tenant_name)
+
+        # Validate networks.
+        for net_db in mgr.session.query(models_v2.Network).all():
+            mapping = net_db.aim_mapping
+            # REVISIT: If mapping exists and network is not external,
+            # validate its VRF, BD and EPG identities?
+            if not mapping:
+                if mgr.should_repair():
+                    # REVISIT: Fail for external networks, handle
+                    # various routed cases.
+                    vrf = self._map_unrouted_vrf()
+                    bd, epg = self._map_network(mgr.session, net_db, vrf)
+                    mapping = self._add_network_mapping(
+                        mgr.session, net_db.id, bd, epg, vrf)
+                    print("Repaired missing mapping record for %s" % net_db)
+            if mapping:
+                # REVISIT: Handle external networks and refactor to
+                # share code.
+                dname = aim_utils.sanitize_display_name(net_db.name)
+
+                bd = self._get_network_bd(mapping)
+                bd.display_name = dname
+                bd.vrf_name = vrf.name
+                bd.enable_arp_flood = True
+                bd.enable_routing = False  # REVISIT: Handle routed networks.
+                bd.limit_ip_learn_to_subnets = True
+                bd.ep_move_detect_mode = 'garp'
+                bd.l3out_names = []
+                bd.monitored = False  # REVISIT: external?
+                mgr.expect_aim_resource(bd)
+                self._expect_tenant(mgr, bd.tenant_name)
+
+                epg = self._get_network_epg(mapping)
+                epg.display_name = dname
+                epg.bd_name = bd.name
+                epg.policy_enforcement_pref = 'unenforced'
+                epg.provided_contract_names = []  # REVISIT
+                epg.consumed_contract_names = []  # REVISIT
+                epg.openstack_vmm_domain_names = []
+                epg.physical_domain_names = []
+                epg.vmm_domains = []
+                epg.physical_domains = []
+                epg.static_paths = []
+                epg.epg_contract_masters = []
+                epg.monitored = False  # REVISIT: external?
+                mgr.expect_aim_resource(epg)
+                self._expect_tenant(mgr, epg.tenant_name)
+
+    def _expect_tenant(self, mgr, tenant_name):
+        # Should not be called for pre-existing Tenants, such as
+        # "common".
+        tenant = aim_resource.Tenant(name=tenant_name)
+        if not mgr.expected_aim_resource(tenant):
+            # REVISIT: Refactor to share code with _ensure_tenant?
+            tenant.monitored = False
+            project_id = self.name_mapper.reverse_project(
+                mgr.session, tenant_name)
+            project_name = self.project_name_cache.get_project_name(project_id)
+            tenant.display_name = aim_utils.sanitize_display_name(project_name)
+            tenant.descr = self.apic_system_id
+            mgr.expect_aim_resource(tenant)
+
+        # REVISIT: Manage ApplicationProfiles more dynamically?
+        ap = aim_resource.ApplicationProfile(
+            tenant_name=tenant_name, name=self.ap_name)
+        if not mgr.expected_aim_resource(ap):
+            # REVISIT: Refactor to share code with _ensure_tenant?
+            ap.display_name = ""
+            ap.monitored = False
+            mgr.expect_aim_resource(ap)
