@@ -64,6 +64,10 @@ from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import data_migrations
 from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import db
 from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import exceptions
 from gbpservice.neutron.plugins.ml2plus import patch_neutron
+from gbpservice.neutron.services.grouppolicy import (
+    group_policy_driver_api as pd_api)
+from gbpservice.neutron.services.grouppolicy.drivers.cisco.apic import (
+    aim_validation as av)
 
 PLUGIN_NAME = 'gbpservice.neutron.plugins.ml2plus.plugin.Ml2PlusPlugin'
 
@@ -267,6 +271,8 @@ class ApicAimTestCase(test_address_scope.AddressScopeTestCase,
         self.ext_api = test_extensions.setup_extensions_middleware(ext_mgr)
         self.port_create_status = 'DOWN'
 
+        self.validation_mgr = av.ValidationManager()
+
         self.saved_keystone_client = ksc_client.Client
         ksc_client.Client = FakeKeystoneClient
         self.plugin = directory.get_plugin()
@@ -306,6 +312,11 @@ class ApicAimTestCase(test_address_scope.AddressScopeTestCase,
         registry._get_callback_manager()._notify_loop = (
             patch_neutron.original_notify_loop)
         super(ApicAimTestCase, self).tearDown()
+
+    def _validate(self):
+        # Validate should pass.
+        self.assertEqual(
+            pd_api.VALIDATION_PASSED, self.validation_mgr.validate())
 
     def _find_by_dn(self, dn, cls):
         aim_ctx = aim_context.AimContext(self.db_session)
@@ -2593,6 +2604,7 @@ class TestAimMapping(ApicAimTestCase):
         check_net(net4, sn4, [], [], [gw4C], t2)
         check_default_vrf(t1, False)
         check_default_vrf(t2, False)
+        self._validate()
 
         # Add subnet 1 to router A, which should create tenant 1's
         # default VRF.
@@ -2607,6 +2619,7 @@ class TestAimMapping(ApicAimTestCase):
         check_net(net4, sn4, [], [], [gw4C], t2)
         check_default_vrf(t1, True)
         check_default_vrf(t2, False)
+        self._validate()
 
         # Add subnet 2 to router A.
         add_interface(rA, net2, sn2, gw2A, t1)
@@ -2620,6 +2633,7 @@ class TestAimMapping(ApicAimTestCase):
         check_net(net4, sn4, [], [], [gw4C], t2)
         check_default_vrf(t1, True)
         check_default_vrf(t2, False)
+        self._validate()
 
         # Add subnet 2 to router B.
         add_interface(rB, net2, sn2, gw2B, t1)
@@ -2633,6 +2647,7 @@ class TestAimMapping(ApicAimTestCase):
         check_net(net4, sn4, [], [], [gw4C], t2)
         check_default_vrf(t1, True)
         check_default_vrf(t2, False)
+        self._validate()
 
         # Add subnet 3 to router B.
         add_interface(rB, net3, sn3, gw3B, t1)
@@ -2646,6 +2661,7 @@ class TestAimMapping(ApicAimTestCase):
         check_net(net4, sn4, [], [], [gw4C], t2)
         check_default_vrf(t1, True)
         check_default_vrf(t2, False)
+        self._validate()
 
         # Add subnet 3 to router C.
         add_interface(rC, net3, sn3, gw3C, t1)
@@ -2659,6 +2675,7 @@ class TestAimMapping(ApicAimTestCase):
         check_net(net4, sn4, [], [], [gw4C], t2)
         check_default_vrf(t1, True)
         check_default_vrf(t2, False)
+        self._validate()
 
         # Add shared subnet 4 to router C, which should move router
         # C's topology (networks 1, 2 and 3 and routers A, B and C) to
@@ -2675,6 +2692,7 @@ class TestAimMapping(ApicAimTestCase):
         check_net(net4, sn4, [rC], [(gw4C, rC)], [], t2)
         check_default_vrf(t1, False)
         check_default_vrf(t2, True)
+        self._validate()
 
         # Remove subnet 3 from router B, which should move router B's
         # topology (networks 1 and 2 and routers A and B) to tenant 1
@@ -2690,6 +2708,7 @@ class TestAimMapping(ApicAimTestCase):
         check_net(net4, sn4, [rC], [(gw4C, rC)], [], t2)
         check_default_vrf(t1, True)
         check_default_vrf(t2, True)
+        self._validate()
 
         # Add subnet 3 back to router B, which should move router B's
         # topology (networks 1 and 2 and routers A and B) to tenant 2
@@ -2705,6 +2724,7 @@ class TestAimMapping(ApicAimTestCase):
         check_net(net4, sn4, [rC], [(gw4C, rC)], [], t2)
         check_default_vrf(t1, False)
         check_default_vrf(t2, True)
+        self._validate()
 
         # Remove subnet 2 from router B, which should move network 2's
         # topology (networks 1 and 2 and router A) back to tenant 1
@@ -2720,6 +2740,7 @@ class TestAimMapping(ApicAimTestCase):
         check_net(net4, sn4, [rC], [(gw4C, rC)], [], t2)
         check_default_vrf(t1, True)
         check_default_vrf(t2, True)
+        self._validate()
 
         # Add subnet 2 back to router B, which should move network 2's
         # topology (networks 1 and 2 and router A) to tenant 2 again
@@ -2735,6 +2756,7 @@ class TestAimMapping(ApicAimTestCase):
         check_net(net4, sn4, [rC], [(gw4C, rC)], [], t2)
         check_default_vrf(t1, False)
         check_default_vrf(t2, True)
+        self._validate()
 
         # Remove subnet 4 from router C, which should move network 3's
         # topology (networks 1, 2 and 3 and routers A and B) to tenant
@@ -2751,6 +2773,7 @@ class TestAimMapping(ApicAimTestCase):
         check_net(net4, sn4, [], [], [gw4C], t2)
         check_default_vrf(t1, True)
         check_default_vrf(t2, False)
+        self._validate()
 
         # Remove subnet 3 from router C.
         remove_interface(rC, net3, sn3, gw3C, t1)
@@ -2817,6 +2840,7 @@ class TestAimMapping(ApicAimTestCase):
         check_net(net4, sn4, [], [], [gw4C], t2)
         check_default_vrf(t1, False)
         check_default_vrf(t2, False)
+        self._validate()
 
     def test_address_scope_pre_existing_vrf(self):
         aim_ctx = aim_context.AimContext(self.db_session)
@@ -4735,6 +4759,7 @@ class TestExternalConnectivityBase(object):
         self._check_dn(net1, ext_epg, 'EndpointGroup')
         self._check_dn(net1, ext_bd, 'BridgeDomain')
         self._check_dn(net1, ext_vrf, 'VRF')
+        self._validate()
 
         # test no-op CIDR update
         self.mock_ns.reset_mock()
@@ -4748,6 +4773,7 @@ class TestExternalConnectivityBase(object):
             {'network': {CIDR: ['33.33.33.0/30']}})['network']
         self.mock_ns.update_external_cidrs.assert_called_once_with(
             mock.ANY, a_ext_net, ['33.33.33.0/30'])
+        self._validate()
 
         # delete
         self.mock_ns.reset_mock()
@@ -4768,6 +4794,7 @@ class TestExternalConnectivityBase(object):
             mock.ANY, a_ext_net)
         self.mock_ns.update_external_cidrs.assert_called_once_with(
             mock.ANY, a_ext_net, ['0.0.0.0/0'])
+        self._validate()
 
     def test_unmanaged_external_network_lifecycle(self):
         net1 = self._make_ext_network('net1')
@@ -4777,6 +4804,7 @@ class TestExternalConnectivityBase(object):
         self._check_no_dn(net1, 'EndpointGroup')
         self._check_no_dn(net1, 'BridgeDomain')
         self._check_no_dn(net1, 'VRF')
+        self._validate()
 
         self._delete('networks', net1['id'])
         self.mock_ns.delete_l3outside.assert_not_called()
@@ -4798,6 +4826,7 @@ class TestExternalConnectivityBase(object):
             tenant_name=self.t1_aname, bd_name='EXT-l1',
             gw_ip_mask='10.0.0.1/24')
         self._check_dn(subnet, ext_sub, 'Subnet')
+        self._validate()
 
         # Update gateway
         self.mock_ns.reset_mock()
@@ -4810,6 +4839,7 @@ class TestExternalConnectivityBase(object):
         self.mock_ns.create_subnet.assert_called_once_with(
             mock.ANY, l3out, '10.0.0.251/24')
         self._check_dn(subnet, ext_sub, 'Subnet')
+        self._validate()
 
         # delete subnet
         self.mock_ns.reset_mock()
@@ -4827,6 +4857,7 @@ class TestExternalConnectivityBase(object):
         self.mock_ns.create_subnet.assert_not_called()
         self._check_no_dn(subnet, 'Subnet')
         self.assertEqual('N/A', subnet['apic:synchronization_state'])
+        self._validate()
 
         # Update gateway
         self._update('subnets', subnet['id'],
@@ -4835,6 +4866,7 @@ class TestExternalConnectivityBase(object):
         self.mock_ns.delete_subnet.assert_not_called()
         self.mock_ns.create_subnet.assert_not_called()
         self._check_no_dn(subnet, 'Subnet')
+        self._validate()
 
         # delete subnet
         self._delete('subnets', subnet['id'])
@@ -4895,6 +4927,7 @@ class TestExternalConnectivityBase(object):
                 objs.setdefault(t, []).append(
                     tuple([router, [sub1, sub2], addr_scope]))
                 self.mock_ns.connect_vrf.assert_not_called()
+        self._validate()
 
         # Connect the router interfaces to the subnets
         vrf_objs = {}
@@ -4927,6 +4960,7 @@ class TestExternalConnectivityBase(object):
                         cv.assert_called_once_with(mock.ANY, a_ext_net, a_vrf)
                     else:
                         cv.assert_not_called()
+                    self._validate()
             vrf_objs[tenant] = a_ext_net
 
         # Remove the router interfaces
@@ -4964,6 +4998,7 @@ class TestExternalConnectivityBase(object):
                     else:
                         cv.assert_not_called()
                         dv.assert_not_called()
+                    self._validate()
 
         self.mock_ns.reset_mock()
         self._delete('routers', router['id'])
@@ -5151,11 +5186,13 @@ class TestExternalConnectivityBase(object):
             routers.append(r['id'])
             contracts.append(self.name_mapper.router(None, r['id']))
         cv.assert_not_called()
+        self._validate()
 
         self._add_external_gateway_to_router(routers[0], ext_nets[0])
         a_ext_nets[0].provided_contract_names = [contracts[0]]
         a_ext_nets[0].consumed_contract_names = [contracts[0]]
         cv.assert_called_once_with(mock.ANY, a_ext_nets[0], a_vrf)
+        self._validate()
 
         self.mock_ns.reset_mock()
         self._add_external_gateway_to_router(routers[1], ext_nets[1])
@@ -5166,6 +5203,7 @@ class TestExternalConnectivityBase(object):
             a_ext_nets[1].provided_contract_names = [contracts[1]]
             a_ext_nets[1].consumed_contract_names = [contracts[1]]
         cv.assert_called_once_with(mock.ANY, a_ext_nets[1], a_vrf)
+        self._validate()
 
         self.mock_ns.reset_mock()
         self._router_interface_action('remove', routers[0], sub1['id'], None)
@@ -5179,12 +5217,14 @@ class TestExternalConnectivityBase(object):
             a_ext_nets[0].consumed_contract_names = []
             dv.assert_called_once_with(mock.ANY, a_ext_nets[0], a_vrf)
             cv.assert_not_called()
+        self._validate()
 
         self.mock_ns.reset_mock()
         self._router_interface_action('remove', routers[1], sub1['id'], None)
         a_ext_nets[1].provided_contract_names = []
         a_ext_nets[1].consumed_contract_names = []
         dv.assert_called_once_with(mock.ANY, a_ext_nets[1], a_vrf)
+        self._validate()
 
     def test_multiple_router(self):
         self._do_test_multiple_router(use_addr_scope=False)
@@ -5559,6 +5599,7 @@ class TestExternalConnectivityBase(object):
                                     name='EXT-l1')
         self.assertEqual(1, len(ext_epg))
         self.assertEqual(ext_epg[0].vmm_domains, vmm_domains)
+        self._validate()
 
     def test_external_network_default_domains(self):
         self._test_external_network_lifecycle_with_domains()
@@ -5693,6 +5734,15 @@ class TestExternalNoNat(TestExternalConnectivityBase,
                                        name=l3out_name)
         aim_ctx = aim_context.AimContext(self.db_session)
         self.aim_mgr.update(aim_ctx, l3out, vrf_name=vrf_name)
+
+    def _validate(self):
+        # REVISIT: Validation does not currently work for these NoNat
+        # tests because the L3Out's vrf_name is not updated as in
+        # fix_l3out_vrf(), resulting in L3OutsideVrfChangeDisallowed
+        # exception from NoNatStrategy.connect_vrf(). A more realistic
+        # test using correctly setup monitored pre-existing
+        # ExternalNetwork resources should avoid this issue.
+        pass
 
     def test_shared_unscoped_network(self):
         # Skip test since the topology tested is not valid with no-NAT
@@ -5970,6 +6020,7 @@ class TestPortVlanNetwork(ApicAimTestCase):
                 # unbound port -> no static paths expected
                 epg = self.aim_mgr.get(aim_ctx, epg)
                 self.assertEqual([], epg.static_paths)
+                self._validate()
 
                 # bind to host h1
                 p1 = self._bind_port_to_host(p1['port']['id'], 'h1')
@@ -5979,6 +6030,7 @@ class TestPortVlanNetwork(ApicAimTestCase):
                     [{'path': self.hlink1.path, 'encap': 'vlan-%s' % vlan_h1,
                       'host': 'h1'}],
                     epg.static_paths)
+                self._validate()
 
                 # move port to host h2
                 p1 = self._bind_port_to_host(p1['port']['id'], 'h2')
@@ -5988,12 +6040,14 @@ class TestPortVlanNetwork(ApicAimTestCase):
                     [{'path': hlink2.path, 'encap': 'vlan-%s' % vlan_h2,
                       'host': 'h2'}],
                     epg.static_paths)
+                self._validate()
 
                 # delete port
                 self._delete('ports', p1['port']['id'])
                 self._check_no_dynamic_segment(net1['id'])
                 epg = self.aim_mgr.get(aim_ctx, epg)
                 self.assertEqual([], epg.static_paths)
+                self._validate()
 
     def test_port_lifecycle_internal_network(self):
         self._do_test_port_lifecycle()
@@ -7157,6 +7211,7 @@ class TestPortOnPhysicalNode(TestPortVlanNetwork):
                     expected_binding_info=[('apic_aim', 'opflex')])
                 epg1 = self.aim_mgr.get(aim_ctx, epg1)
                 self.assertEqual([], epg1.static_paths)
+                self._validate()
 
             # port on non-opflex host
             with self.port(subnet=sub1) as p2:
@@ -7167,6 +7222,7 @@ class TestPortOnPhysicalNode(TestPortVlanNetwork):
                     [{'path': self.hlink1.path, 'encap': 'vlan-%s' % vlan_p2,
                       'host': 'h1'}],
                     epg1.static_paths)
+                self._validate()
 
     def test_mixed_ports_on_network_with_default_domains(self):
         aim_ctx = aim_context.AimContext(self.db_session)
@@ -7205,6 +7261,7 @@ class TestPortOnPhysicalNode(TestPortVlanNetwork):
                 self.assertEqual(set([]),
                                  set(self._doms(epg1.physical_domains,
                                                 with_type=False)))
+                self._validate()
                 # move port to another host
                 p1 = self._bind_port_to_host(p1['port']['id'], 'opflex-2')
                 epg1 = self.aim_mgr.get(aim_ctx, epg1)
@@ -7214,6 +7271,7 @@ class TestPortOnPhysicalNode(TestPortVlanNetwork):
                 self.assertEqual(set([]),
                                  set(self._doms(epg1.physical_domains,
                                                 with_type=False)))
+                self._validate()
                 # delete port
                 self._delete('ports', p1['port']['id'])
                 epg1 = self.aim_mgr.get(aim_ctx, epg1)
@@ -7234,6 +7292,7 @@ class TestPortOnPhysicalNode(TestPortVlanNetwork):
                 self.assertEqual(set(['ph1', 'ph2']),
                                  set(self._doms(epg1.physical_domains,
                                                 with_type=False)))
+                self._validate()
                 # move port to another host
                 p2 = self._bind_port_to_host(p2['port']['id'], 'h2')
                 epg1 = self.aim_mgr.get(aim_ctx, epg1)
@@ -7243,6 +7302,7 @@ class TestPortOnPhysicalNode(TestPortVlanNetwork):
                 self.assertEqual(set(['ph1', 'ph2']),
                                  set(self._doms(epg1.physical_domains,
                                                 with_type=False)))
+                self._validate()
                 # delete port
                 self._delete('ports', p2['port']['id'])
                 epg1 = self.aim_mgr.get(aim_ctx, epg1)
