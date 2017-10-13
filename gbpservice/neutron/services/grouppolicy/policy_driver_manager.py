@@ -20,8 +20,9 @@ import stevedore
 
 from gbpservice._i18n import _LE
 from gbpservice._i18n import _LI
+from gbpservice.neutron.services.grouppolicy import (
+    group_policy_driver_api as api)
 from gbpservice.neutron.services.grouppolicy.common import exceptions as gp_exc
-from gbpservice.neutron.services.grouppolicy import group_policy_driver_api
 
 
 LOG = log.getLogger(__name__)
@@ -153,7 +154,7 @@ class PolicyDriverManager(stevedore.named.NamedExtensionManager):
 
     def ensure_tenant(self, plugin_context, tenant_id):
         for driver in self.ordered_policy_drivers:
-            if isinstance(driver.obj, group_policy_driver_api.PolicyDriver):
+            if isinstance(driver.obj, api.PolicyDriver):
                 try:
                     driver.obj.ensure_tenant(plugin_context, tenant_id)
                 except Exception as e:
@@ -474,3 +475,14 @@ class PolicyDriverManager(stevedore.named.NamedExtensionManager):
 
     def get_nat_pool_status(self, context):
         self._call_on_drivers("get_nat_pool_status", context)
+
+    def validate_state(self, repair):
+        result = api.VALIDATION_PASSED
+        for driver in self.ordered_policy_drivers:
+            this_result = driver.obj.validate_state(repair)
+            if this_result == api.VALIDATION_FAILED:
+                result = this_result
+            elif (this_result == api.VALIDATION_REPAIRED and
+                  result != api.VALIDATION_FAILED):
+                result = this_result
+        return result

@@ -69,6 +69,9 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
             self._aliases = aliases
         return self._aliases
 
+    def validate_state(self, repair):
+        return self.policy_driver_manager.validate_state(repair)
+
     @property
     def servicechain_plugin(self):
         # REVISIT(rkukura): Need initialization method after all

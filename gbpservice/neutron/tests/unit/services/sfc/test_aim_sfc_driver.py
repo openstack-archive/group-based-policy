@@ -23,7 +23,7 @@ from networking_sfc.services.sfc.common import config as sfc_cfg
 from networking_sfc.services.sfc import driver_manager as sfc_driverm
 from neutron.callbacks import exceptions as c_exc
 from neutron import context
-from neutron.db.models import l3 as l3_db
+from neutron.db import l3_db
 from neutron import manager
 from oslo_log import log as logging
 

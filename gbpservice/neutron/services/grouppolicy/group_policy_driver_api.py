@@ -18,6 +18,10 @@ from sqlalchemy.orm import exc as orm_exc
 
 from gbpservice.common import utils
 
+VALIDATION_PASSED = "passed"
+VALIDATION_REPAIRED = "repaired"
+VALIDATION_FAILED = "failed"
+
 
 @six.add_metaclass(abc.ABCMeta)
 class PolicyTargetContext(object):
@@ -1378,6 +1382,17 @@ class PolicyDriver(object):
         performed.
         """
         pass
+
+    def validate_state(self, repair):
+        """Validate persistent state managed by the driver.
+
+        :param repair: Repair invalid state if True.
+
+        Called from validation tool to validate policy driver's persistent
+        state. Returns VALIDATION_PASSED, VALIDATION_REPAIRED, or
+        VALIDATION_FAILED.
+        """
+        return VALIDATION_PASSED
 
 
 @six.add_metaclass(abc.ABCMeta)

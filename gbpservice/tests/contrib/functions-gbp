@@ -48,6 +48,7 @@ function prepare_gbp_aim_devstack {
     sudo git checkout stable/newton
     sudo cp $CONTRIB_DIR/devstack/local-aim.conf $TOP_DIR/local.conf
     sudo cp $CONTRIB_DIR/devstack/exercises-aim/gbp_aim.sh $TOP_DIR/exercises/
+    sudo cp $CONTRIB_DIR/devstack/exercises-aim/neutron_aim.sh $TOP_DIR/exercises/
     sudo sed -i 's/DEST=\/opt\/stack/DEST=\/opt\/stack\/new/g' $TOP_DIR/stackrc
     # Use the aim version of the shared PRS test
     sudo mv $GBP_FUNC_DIR/testcases/tc_gbp_prs_pr_shared_func.py.aim $GBP_FUNC_DIR/testcases/tc_gbp_prs_pr_shared_func.py 
