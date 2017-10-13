@@ -52,6 +52,8 @@ from gbpservice.neutron.services.grouppolicy.drivers import (
 from gbpservice.neutron.services.grouppolicy.drivers.cisco.apic import (
     aim_mapping_rpc as aim_rpc)
 from gbpservice.neutron.services.grouppolicy.drivers.cisco.apic import (
+    aim_validation)
+from gbpservice.neutron.services.grouppolicy.drivers.cisco.apic import (
     apic_mapping_lib as alib)
 from gbpservice.neutron.services.grouppolicy.drivers.cisco.apic import (
     nova_client as nclient)
@@ -179,6 +181,10 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
     @log.log_method_call
     def start_rpc_listeners(self):
         return self.setup_opflex_rpc_listeners()
+
+    def validate_state(self, repair):
+        mgr = aim_validation.ValidationManager()
+        return mgr.validate(repair)
 
     @property
     def aim_mech_driver(self):
@@ -1043,6 +1049,14 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
             context._plugin_context, context.current['id'])
         np_db.update({'subnet_id': None})
         self._delete_subnet_on_nat_pool_delete(context)
+
+    def validate_neutron_mapping(self, mgr):
+        # REVISIT: Implement.
+        pass
+
+    def validate_aim_mapping(self, mgr):
+        # REVISIT: Implement.
+        pass
 
     def check_allow_vm_names(self, context, port):
         ok_to_bind = True
