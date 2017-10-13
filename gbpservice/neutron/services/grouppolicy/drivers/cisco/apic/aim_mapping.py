@@ -1142,6 +1142,14 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
         np_db.update({'subnet_id': None})
         self._delete_subnet_on_nat_pool_delete(context)
 
+    def validate_neutron_mapping(self, mgr):
+        # REVISIT: Implement.
+        pass
+
+    def validate_aim_mapping(self, mgr):
+        # REVISIT: Implement.
+        pass
+
     def check_allow_vm_names(self, context, port):
         ok_to_bind = True
         ptg, pt = self._port_id_to_ptg(context._plugin_context, port['id'])
