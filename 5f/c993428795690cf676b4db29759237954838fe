@@ -1,0 +1,10 @@
+Verified+1: Jenkins
+Code-Review+2: Sumit Naiksatam <sumitnaiksatam@gmail.com>
+Code-Review+2: Anna Khmelnitsky <akhmelnitsky@vmware.com>
+Workflow+1: Sumit Naiksatam <sumitnaiksatam@gmail.com>
+Verified+2: Zuul
+Submitted-by: Zuul
+Submitted-at: Mon, 16 Oct 2017 18:53:53 +0000
+Reviewed-on: https://review.openstack.org/511785
+Project: openstack/group-based-policy
+Branch: refs/heads/master
