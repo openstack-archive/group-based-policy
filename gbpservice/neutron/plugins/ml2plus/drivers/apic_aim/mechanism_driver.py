@@ -2668,17 +2668,40 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             if exist:
                 return
 
+        static_path_updated = False
         aim_ctx = aim_context.AimContext(db_session=session)
-        host_link = self.aim.find(aim_ctx, aim_infra.HostLink, host_name=host)
-        if not host_link or not host_link[0].path:
-            LOG.warning(_LW('No host link information found for host %s'),
-                        host)
-            return
-        host_link = host_link[0].path
+        host_link_net_labels = self.aim.find(
+            aim_ctx, aim_infra.HostLinkNetworkLabel, host_name=host,
+            network_label=segment[api.PHYSICAL_NETWORK])
+        if host_link_net_labels:
+            for hl_net_label in host_link_net_labels:
+                interface = hl_net_label.interface_name
+                host_link = self.aim.find(
+                    aim_ctx, aim_infra.HostLink, host_name=host,
+                    interface_name=interface)
+                if not host_link or not host_link[0].path:
+                    LOG.warning(_LW('No host link information found for host: '
+                                    '%(host)s, interface: %(interface)s'),
+                                {'host': host, 'interface': interface})
+                    continue
+                host_link = host_link[0].path
+                self._update_static_path_for_network(
+                    session, port_context.network.current, segment,
+                    **{'old_path' if remove else 'new_path': host_link})
+                static_path_updated = True
 
-        self._update_static_path_for_network(
-            session, port_context.network.current, segment,
-            **{'old_path' if remove else 'new_path': host_link})
+        # acting as a fallback also
+        if not static_path_updated:
+            host_link = self.aim.find(aim_ctx, aim_infra.HostLink,
+                                      host_name=host)
+            if not host_link or not host_link[0].path:
+                LOG.warning(_LW('No host link information found for host %s'),
+                            host)
+                return
+            host_link = host_link[0].path
+            self._update_static_path_for_network(
+                session, port_context.network.current, segment,
+                **{'old_path' if remove else 'new_path': host_link})
 
     def _release_dynamic_segment(self, port_context, use_original=False):
         top = (port_context.original_top_bound_segment if use_original
