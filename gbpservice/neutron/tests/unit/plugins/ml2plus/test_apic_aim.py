@@ -43,6 +43,7 @@ from neutron.tests.unit.extensions import test_securitygroup
 from neutron_lib import constants as n_constants
 from neutron_lib.plugins import directory
 from opflexagent import constants as ofcst
+from oslo_config import cfg
 import webob.exc
 
 from gbpservice.neutron.db import implicitsubnetpool_db  # noqa
@@ -5041,6 +5042,74 @@ class TestPortVlanNetwork(ApicAimTestCase):
         epg1 = self.aim_mgr.get(aim_ctx, epg1)
         self.assertEqual(
             [{'path': self.hlink1.path, 'encap': 'vlan-%s' % vlan_p1}],
+            epg1.static_paths)
+
+    def test_ports_with_2_hostlinks(self):
+        aim_ctx = aim_context.AimContext(self.db_session)
+        hlink_1a = aim_infra.HostLink(
+            host_name='h1',
+            interface_name='eth1',
+            path='topology/pod-1/paths-102/pathep-[eth1/8]')
+        self.aim_mgr.create(aim_ctx, hlink_1a)
+        hlink_net_lable1 = aim_infra.HostLinkNetworkLabel(
+            host_name='h1', network_label='physnet3',
+            interface_name='eth1')
+        self.aim_mgr.create(aim_ctx, hlink_net_lable1)
+        hlink_net_lable2 = aim_infra.HostLinkNetworkLabel(
+            host_name='h1', network_label='physnet2',
+            interface_name='eth999')
+        self.aim_mgr.create(aim_ctx, hlink_net_lable2)
+
+        net_type = cfg.CONF.ml2.tenant_network_types[0]
+        net1 = self._make_network(
+            self.fmt, 'net1', True,
+            arg_list=('provider:physical_network', 'provider:network_type'),
+            **{'provider:physical_network': 'physnet3',
+               'provider:network_type': net_type})['network']
+        epg1 = self._net_2_epg(net1)
+
+        with self.subnet(network={'network': net1}) as sub1:
+            with self.port(subnet=sub1) as p1:
+                # bind p1 to host h1
+                p1 = self._bind_port_to_host(p1['port']['id'], 'h1')
+                vlan_p1 = self._check_binding(p1['port']['id'])
+
+        epg1 = self.aim_mgr.get(aim_ctx, epg1)
+        self.assertEqual(
+            [{'path': hlink_1a.path, 'encap': 'vlan-%s' % vlan_p1}],
+            epg1.static_paths)
+
+        # test the fallback
+        net2 = self._make_network(
+            self.fmt, 'net2', True,
+            arg_list=('provider:physical_network', 'provider:network_type'),
+            **{'provider:physical_network': 'physnet2',
+               'provider:network_type': net_type})['network']
+        epg2 = self._net_2_epg(net2)
+
+        with self.subnet(network={'network': net2}) as sub2:
+            with self.port(subnet=sub2) as p2:
+                # bind p2 to host h1
+                p2 = self._bind_port_to_host(p2['port']['id'], 'h1')
+                vlan_p2 = self._check_binding(p2['port']['id'])
+
+        self.assertNotEqual(vlan_p1, vlan_p2)
+
+        host_links = self.aim_mgr.find(aim_ctx, aim_infra.HostLink,
+                                       host_name='h1')
+        epg2 = self.aim_mgr.get(aim_ctx, epg2)
+        self.assertEqual(
+            [{'path': host_links[0].path, 'encap': 'vlan-%s' % vlan_p2}],
+            epg2.static_paths)
+
+        self._delete('ports', p2['port']['id'])
+        epg2 = self.aim_mgr.get(aim_ctx, epg2)
+        self._check_no_dynamic_segment(net2['id'])
+        self.assertEqual([], epg2.static_paths)
+
+        epg1 = self.aim_mgr.get(aim_ctx, epg1)
+        self.assertEqual(
+            [{'path': hlink_1a.path, 'encap': 'vlan-%s' % vlan_p1}],
             epg1.static_paths)
 
     def test_network_on_multiple_hosts(self):
