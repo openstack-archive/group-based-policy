@@ -3516,20 +3516,36 @@ class TestMl2NetworksV2(test_plugin.TestNetworksV2,
                             overwrite=True)
         self.aim_mgr.create(aim_ctx,
                             aim_resource.VMMDomain(type='OpenStack',
+                                                   name='vm_m',
+                                                   monitored=True),
+                            overwrite=True)
+        self.aim_mgr.create(aim_ctx,
+                            aim_resource.VMMDomain(type='OpenStack',
                                                    name='vm2'),
+                            overwrite=True)
+        self.aim_mgr.create(aim_ctx,
+                            aim_resource.VMMDomain(type='VMware',
+                                                   name='vm3'),
                             overwrite=True)
         self.aim_mgr.create(aim_ctx,
                             aim_resource.PhysicalDomain(name='ph1'),
                             overwrite=True)
         self.aim_mgr.create(aim_ctx,
-                            aim_resource.PhysicalDomain(name='ph2'),
+                            aim_resource.PhysicalDomain(name='ph2',
+                                                        monitored=True),
                             overwrite=True)
-        with self.network(name='net'):
+        net1 = self._make_network(self.fmt, 'pvt-net1', True)['network']
+        sub1 = self._make_subnet(
+            self.fmt, {'network': net1}, '10.10.1.1', '10.10.1.0/24')
+        self._register_agent('host1', AGENT_CONF_OPFLEX)
+        with self.port(subnet=sub1) as port:
+            self._bind_port_to_host(port['port']['id'], 'host1')
             epg = self.aim_mgr.find(aim_ctx, aim_resource.EndpointGroup)[0]
-            self.assertEqual(set([]),
-                             set(epg.openstack_vmm_domain_names))
-            self.assertEqual(set([]),
-                             set(epg.physical_domain_names))
+            self.assertEqual(sorted([{'type': 'OpenStack', 'name': 'vm1'},
+                                     {'type': 'OpenStack', 'name': 'vm2'},
+                                     {'type': 'VMware', 'name': 'vm3'}]),
+                             sorted(epg.vmm_domains))
+            self.assertEqual(sorted([]), sorted(epg.physical_domains))
 
 
 class TestMl2SubnetsV2(test_plugin.TestSubnetsV2,
