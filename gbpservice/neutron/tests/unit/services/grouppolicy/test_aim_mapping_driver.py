@@ -2661,11 +2661,6 @@ class TestPolicyTarget(AIMBaseTestCase):
                             aim_resource.VMMDomain(type='OpenStack',
                                                    name='vm2'),
                             overwrite=True)
-        self.aim_mgr.create(aim_ctx,
-                            aim_resource.VMMDomain(type='OpenStack',
-                                                   name='vm_m',
-                                                   monitored=True),
-                            overwrite=True)
         ptg = self.create_policy_target_group(
             name="ptg1")['policy_target_group']
         pt = self.create_policy_target(
@@ -2702,11 +2697,6 @@ class TestPolicyTarget(AIMBaseTestCase):
         self.aim_mgr.create(aim_ctx,
                             aim_resource.VMMDomain(type='OpenStack',
                                                    name='vm2'),
-                            overwrite=True)
-        self.aim_mgr.create(aim_ctx,
-                            aim_resource.VMMDomain(type='OpenStack',
-                                                   name='vm_m',
-                                                   monitored=True),
                             overwrite=True)
         with self.port() as port:
             port_id = port['port']['id']

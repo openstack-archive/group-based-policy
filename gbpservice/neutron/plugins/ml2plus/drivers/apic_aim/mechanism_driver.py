@@ -2258,12 +2258,10 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         self.ap_name = new_conf['value']
 
     def get_aim_domains(self, aim_ctx):
-        vmms = [{'name': x.name, 'type': x.type} for x in
-                self.aim.find(aim_ctx, aim_resource.VMMDomain, monitored=False)
-                if x.type.lower() in utils.KNOWN_VMM_TYPES]
-        phys = [{'name': x.name} for x in
-                self.aim.find(aim_ctx, aim_resource.PhysicalDomain,
-                              monitored=False)]
+        vmms = [x.name for x in self.aim.find(aim_ctx, aim_resource.VMMDomain)
+                if x.type == utils.OPENSTACK_VMM_TYPE]
+        phys = [x.name for x in
+                self.aim.find(aim_ctx, aim_resource.PhysicalDomain)]
         return vmms, phys
 
     def _is_external(self, network):
@@ -2735,7 +2733,8 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                     domain = aim_hd_mapping.vmm_domain_name
                 if not domain:
                     vmms, phys = self.get_aim_domains(aim_ctx)
-                    self.aim.update(aim_ctx, epg, vmm_domains=vmms)
+                    self.aim.update(aim_ctx, epg,
+                                    openstack_vmm_domain_names=vmms)
                 elif domain not in aim_epg.openstack_vmm_domain_names:
                     aim_epg.openstack_vmm_domain_names.append(domain)
                     vmms = aim_epg.openstack_vmm_domain_names
@@ -2746,11 +2745,13 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                     domain = aim_hd_mapping.physical_domain_name
                 if not domain:
                     vmms, phys = self.get_aim_domains(aim_ctx)
-                    self.aim.update(aim_ctx, epg, physical_domains=phys)
+                    self.aim.update(aim_ctx, epg,
+                                    physical_domain_names=phys)
                 elif domain not in aim_epg.physical_domain_names:
                     aim_epg.physical_domain_names.append(domain)
                     phys = aim_epg.physical_domain_names
-                    self.aim.update(aim_ctx, epg, physical_domain_names=phys)
+                    self.aim.update(aim_ctx, epg,
+                                    physical_domain_names=phys)
         # this could be caused by concurrent transactions
         except db_exc.DBDuplicateEntry as e:
             LOG.debug(e)
