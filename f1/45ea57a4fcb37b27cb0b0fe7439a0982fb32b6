@@ -1,0 +1,10 @@
+Verified+1: Jenkins
+Code-Review+2: Sumit Naiksatam <sumitnaiksatam@gmail.com>
+Code-Review+2: Robert Kukura <kukura@noironetworks.com>
+Workflow+1: Robert Kukura <kukura@noironetworks.com>
+Verified+2: Zuul
+Submitted-by: Zuul
+Submitted-at: Sun, 22 Oct 2017 14:37:55 +0000
+Reviewed-on: https://review.openstack.org/511181
+Project: openstack/group-based-policy
+Branch: refs/heads/master
