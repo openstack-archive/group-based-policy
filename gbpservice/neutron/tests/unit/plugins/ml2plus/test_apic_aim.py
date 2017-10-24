@@ -33,16 +33,15 @@ from aim import utils as aim_utils
 
 from keystoneclient.v3 import client as ksc_client
 from neutron.api import extensions
-from neutron.callbacks import registry
 from neutron.db import api as db_api
 from neutron.db import segments_db
-from neutron.plugins.ml2 import config
 from neutron.tests.unit.api import test_extensions
 from neutron.tests.unit.db import test_db_base_plugin_v2 as test_plugin
 from neutron.tests.unit.extensions import test_address_scope
 from neutron.tests.unit.extensions import test_l3
 from neutron.tests.unit.extensions import test_securitygroup
 from neutron.tests.unit import testlib_api
+from neutron_lib.callbacks import registry
 from neutron_lib import constants as n_constants
 from neutron_lib import context as n_context
 from neutron_lib.plugins import directory
@@ -52,12 +51,13 @@ import webob.exc
 
 from gbpservice.neutron.db import all_models  # noqa
 from gbpservice.neutron.extensions import cisco_apic_l3 as l3_ext
+from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import (  # noqa
+    config as aimcfg)
 from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import (
     extension_db as extn_db)
 from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import (
     mechanism_driver as md)
 from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import apic_mapper
-from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import config  # noqa
 from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import data_migrations
 from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import db
 from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import exceptions
@@ -195,21 +195,20 @@ class ApicAimTestCase(test_address_scope.AddressScopeTestCase,
         # we can successfully call through to all mechanism
         # driver apis.
         mech = mechanism_drivers or ['logger', 'apic_aim']
-        config.cfg.CONF.set_override('mechanism_drivers', mech, 'ml2')
-        config.cfg.CONF.set_override('extension_drivers',
-                                     ['apic_aim', 'port_security', 'dns'],
-                                     'ml2')
-        config.cfg.CONF.set_override('api_extensions_path', None)
-        config.cfg.CONF.set_override('type_drivers',
-                                     ['opflex', 'local', 'vlan'],
-                                     'ml2')
+        cfg.CONF.set_override('mechanism_drivers', mech,
+                group='ml2')
+        cfg.CONF.set_override('extension_drivers',
+                ['apic_aim', 'port_security', 'dns'],
+                group='ml2')
+        cfg.CONF.set_override('api_extensions_path', None)
+        cfg.CONF.set_override('type_drivers',
+                ['opflex', 'local', 'vlan'], group='ml2')
         net_type = tenant_network_types or ['opflex']
-        config.cfg.CONF.set_override('tenant_network_types', net_type, 'ml2')
-        config.cfg.CONF.set_override('network_vlan_ranges',
-                                     ['physnet1:1000:1099',
-                                      'physnet2:123:165',
-                                      'physnet3:347:513'],
-                                     group='ml2_type_vlan')
+        cfg.CONF.set_override('tenant_network_types', net_type,
+                group='ml2')
+        cfg.CONF.set_override('network_vlan_ranges',
+                ['physnet1:1000:1099', 'physnet2:123:165',
+                    'physnet3:347:513'], group='ml2_type_vlan')
         service_plugins = {
             'L3_ROUTER_NAT':
             'gbpservice.neutron.services.apic_aim.l3_plugin.ApicL3Plugin'}
@@ -217,7 +216,7 @@ class ApicAimTestCase(test_address_scope.AddressScopeTestCase,
         self.useFixture(AimSqlFixture())
         super(ApicAimTestCase, self).setUp(PLUGIN_NAME,
                                            service_plugins=service_plugins)
-        self.db_session = db_api.get_session()
+        self.db_session = db_api.get_writer_session()
         self.initialize_db_config(self.db_session)
 
         ext_mgr = extensions.PluginAwareExtensionManager.get_instance()
@@ -3402,7 +3401,8 @@ class TestMigrations(ApicAimTestCase, db.DbMixin):
         scope1_id = scope['id']
         scope1_vrf = scope[DN]['VRF']
         mapping = self._get_address_scope_mapping(self.db_session, scope1_id)
-        self.db_session.delete(mapping)
+        with self.db_session.begin():
+            self.db_session.delete(mapping)
 
         # Create an address scope with pre-existing VRF, delete its
         # mapping, and create record in old DB table.
@@ -3419,7 +3419,8 @@ class TestMigrations(ApicAimTestCase, db.DbMixin):
         self.db_session.delete(mapping)
         old_db = data_migrations.DefunctAddressScopeExtensionDb(
             address_scope_id=scope2_id, vrf_dn=scope2_vrf)
-        self.db_session.add(old_db)
+        with self.db_session.begin():
+            self.db_session.add(old_db)
 
         # Create a normal network and delete its mapping.
         net = self._make_network(self.fmt, 'net1', True)['network']
@@ -3427,8 +3428,10 @@ class TestMigrations(ApicAimTestCase, db.DbMixin):
         net1_bd = net[DN]['BridgeDomain']
         net1_epg = net[DN]['EndpointGroup']
         net1_vrf = net[DN]['VRF']
+        #self.db_session = db_api.get_writer_session()
         mapping = self._get_network_mapping(self.db_session, net1_id)
-        self.db_session.delete(mapping)
+        with self.db_session.begin():
+            self.db_session.delete(mapping)
 
         # Create an external network and delete its mapping.
         net = self._make_ext_network('net2', dn=self.dn_t1_l1_n1)
@@ -3437,7 +3440,8 @@ class TestMigrations(ApicAimTestCase, db.DbMixin):
         net2_epg = net[DN]['EndpointGroup']
         net2_vrf = net[DN]['VRF']
         mapping = self._get_network_mapping(self.db_session, net2_id)
-        self.db_session.delete(mapping)
+        with self.db_session.begin():
+            self.db_session.delete(mapping)
 
         # Create an unmanaged external network and verify it has no
         # mapping.
@@ -3528,9 +3532,9 @@ class TestMigrations(ApicAimTestCase, db.DbMixin):
 
         # Verify deleting external network deletes BD and EPG.
         self._delete('networks', net2_id)
-        bd = self._find_by_dn(net1_bd, aim_resource.BridgeDomain)
+        bd = self._find_by_dn(net2_bd, aim_resource.BridgeDomain)
         self.assertIsNone(bd)
-        epg = self._find_by_dn(net1_epg, aim_resource.EndpointGroup)
+        epg = self._find_by_dn(net2_epg, aim_resource.EndpointGroup)
         self.assertIsNone(epg)
 
     def test_ap_name_change(self):
