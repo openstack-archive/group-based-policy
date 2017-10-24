@@ -12,7 +12,7 @@
 
 from gbpservice.nfp.proxy_agent.modules import proxy_agent
 import mock
-from neutron import context as ctx
+from neutron_lib import context as ctx
 import unittest2
 
 rpc_manager = proxy_agent.RpcHandler
