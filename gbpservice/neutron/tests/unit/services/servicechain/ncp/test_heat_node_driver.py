@@ -16,9 +16,9 @@ import itertools
 import copy
 import heatclient
 import mock
-from neutron import context as neutron_context
 from neutron.extensions import external_net as external_net
 from neutron.plugins.common import constants
+from neutrono_lib import context as neutron_context
 from oslo_serialization import jsonutils
 from oslo_utils import uuidutils
 import webob
