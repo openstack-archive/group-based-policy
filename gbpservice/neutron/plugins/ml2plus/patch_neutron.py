@@ -35,7 +35,8 @@ extensions.get_extensions_path = get_extensions_path
 
 import sys
 
-from neutron import context as n_context
+from neutron_lib import context as n_context
+from neutron import context as old_context
 
 from gbpservice.network.neutronv2 import local_api
 
@@ -46,7 +47,13 @@ def get_current_session():
     try:
         while not_found:
             for val in sys._getframe(i).f_locals.itervalues():
-                if isinstance(val, n_context.Context):
+                # REVISIT (Sumit); In Ocata, neutron is still
+                # using not using the neutron_lib context,
+                # hence we need to check for both. This should
+                # be changed in Pike to only check for the
+                # neutron_lib context.
+                if isinstance(val, n_context.Context) or (
+                        isinstance(val, old_context.Context)):
                     ctx = val
                     not_found = False
                     break

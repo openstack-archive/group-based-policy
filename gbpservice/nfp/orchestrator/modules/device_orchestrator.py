@@ -27,8 +27,8 @@ from gbpservice.nfp.orchestrator.db import nfp_db as nfp_db
 from gbpservice.nfp.orchestrator.drivers import orchestration_driver
 from gbpservice.nfp.orchestrator.openstack import openstack_driver
 from neutron.common import rpc as n_rpc
-from neutron import context as n_context
 from neutron.db import api as db_api
+from neutron_lib import context as n_context
 
 import copy
 import sys

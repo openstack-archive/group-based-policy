@@ -31,7 +31,6 @@ from aim import utils as aim_utils
 from keystoneclient.v3 import client as ksc_client
 from neutron.api import extensions
 from neutron.callbacks import registry
-from neutron import context as n_context
 from neutron.db import api as db_api
 from neutron.db import segments_db
 from neutron.plugins.ml2 import config
@@ -41,6 +40,7 @@ from neutron.tests.unit.extensions import test_address_scope
 from neutron.tests.unit.extensions import test_l3
 from neutron.tests.unit.extensions import test_securitygroup
 from neutron_lib import constants as n_constants
+from neutron_lib import context as n_context
 from neutron_lib.plugins import directory
 from opflexagent import constants as ofcst
 from oslo_config import cfg
@@ -318,7 +318,7 @@ class ApicAimTestCase(test_address_scope.AddressScopeTestCase,
                                       {'address_scope': attrs}, self.fmt)
         neutron_context = n_context.Context('', kwargs.get('tenant_id',
                                                            self._tenant_id))
-        req.environ['neutron.context'] = neutron_context
+        req.environ['neutron_lib.context'] = neutron_context
 
         res = req.get_response(self.ext_api)
         if expected_status:
