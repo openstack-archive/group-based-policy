@@ -46,7 +46,7 @@ class NetworkMapping(model_base.BASEV2):
         primary_key=True)
 
     network = orm.relationship(
-        models_v2.Network, lazy='joined',
+        models_v2.Network,
         backref=orm.backref(
             'aim_mapping', lazy='joined', uselist=False, cascade='delete'))
 
