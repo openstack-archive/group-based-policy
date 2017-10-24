@@ -14,7 +14,7 @@
 #    under the License.
 
 import mock
-from neutron import context
+from neutron_lib import context
 
 from gbpservice.neutron.services.apic_aim import l3_plugin
 from gbpservice.neutron.tests.unit.services.grouppolicy import (

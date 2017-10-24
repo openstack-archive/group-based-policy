@@ -10,9 +10,6 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-import sys
-
-from neutron import context as n_context
 from neutron.db import models_v2
 from neutron_lib.db import model_base
 from neutron_lib import exceptions as nexc
@@ -21,6 +18,7 @@ from oslo_utils import uuidutils
 import sqlalchemy as sa
 from sqlalchemy import orm
 
+from gbpservice.common import utils as gbp_utils
 from gbpservice.neutron.db.grouppolicy import group_policy_db as gpdb
 from gbpservice.neutron.extensions import group_policy as gpolicy
 from gbpservice.neutron.services.grouppolicy.common import exceptions
@@ -28,19 +26,7 @@ from gbpservice.neutron.services.grouppolicy.common import utils
 
 
 def get_current_context():
-    i = 1
-    not_found = True
-    try:
-        while not_found:
-            for val in sys._getframe(i).f_locals.values():
-                if isinstance(val, n_context.Context):
-                    ctx = val
-                    not_found = False
-                    break
-            i = i + 1
-        return ctx
-    except Exception:
-        return
+    return gbp_utils.get_current_context()
 
 
 class AddressScopeUpdateForL3PNotSupported(nexc.BadRequest):

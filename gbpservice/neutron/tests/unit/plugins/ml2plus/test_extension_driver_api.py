@@ -16,8 +16,8 @@
 import mock
 import uuid
 
-from neutron import context
 from neutron.plugins.ml2 import config
+from neutron_lib import context
 from neutron_lib.plugins import directory
 
 from gbpservice.neutron.tests.unit.plugins.ml2plus.drivers import (
