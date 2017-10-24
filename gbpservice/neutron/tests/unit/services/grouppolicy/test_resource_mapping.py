@@ -22,6 +22,7 @@ from neutron.db.qos import models as qos_models
 from neutron.extensions import external_net as external_net
 from neutron.extensions import securitygroup as ext_sg
 from neutron.plugins.common import constants as pconst
+from neutron.services.qos.drivers.openvswitch import driver as qos_ovs_driver
 from neutron.tests.unit.extensions import test_address_scope
 from neutron.tests.unit.extensions import test_l3
 from neutron.tests.unit.extensions import test_securitygroup
@@ -4391,7 +4392,13 @@ class TestNetworkServicePolicy(ResourceMappingTestCase):
 
     def setUp(self):
         qos_plugin = 'qos'
+        # The following forces the QoS driver to be reset
+        # and subsequently reinitialized for every test in this class.
+        qos_ovs_driver.DRIVER = None
         super(TestNetworkServicePolicy, self).setUp(qos_plugin=qos_plugin)
+
+    def tearDown(self):
+        super(TestNetworkServicePolicy, self).tearDown()
 
     def test_create_nsp_multiple_ptgs(self):
         nsp = self.create_network_service_policy(
