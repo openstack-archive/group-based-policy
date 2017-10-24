@@ -12,7 +12,6 @@
 
 import sys
 
-from neutron import context as old_context
 from neutron_lib import context as n_context
 from oslo_config import cfg
 from oslo_log import log as logging
@@ -25,21 +24,20 @@ LOG = logging.getLogger(__name__)
 cfg.CONF.import_group('keystone_authtoken', 'keystonemiddleware.auth_token')
 
 
-def get_current_context():
+def get_obj_from_stack(cls):
     i = 1
     try:
         while True:
             for val in sys._getframe(i).f_locals.itervalues():
-                # REVISIT (Sumit); In Ocata, neutron is still
-                # using the neutron_lib context, hence we need
-                # to check for both. This should be changed in
-                # Pike to only check for the neutron_lib context.
-                if isinstance(val, n_context.Context) or (
-                        isinstance(val, old_context.Context)):
+                if isinstance(val, cls):
                     return val
             i = i + 1
     except Exception:
         return
+
+
+def get_current_context():
+    return get_obj_from_stack(n_context.Context)
 
 
 def get_current_session():
