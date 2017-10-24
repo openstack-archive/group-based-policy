@@ -13,9 +13,11 @@
 from neutron.db import api as db_api
 from neutron_lib import exceptions as n_exc
 from oslo_config import cfg
+from oslo_db import exception as oslo_db_excp
 from oslo_log import log
 from oslo_policy import policy as oslo_policy
 from oslo_utils import excutils
+from sqlalchemy import exc as sqlalchemy_exc
 import stevedore
 
 from gbpservice.neutron.services.grouppolicy.common import exceptions as gp_exc
@@ -145,6 +147,12 @@ class PolicyDriverManager(stevedore.named.NamedExtensionManager):
                             " %(method)s",
                             {'name': driver.name, 'method': method_name}
                         )
+                elif isinstance(e, sqlalchemy_exc.InvalidRequestError):
+                    LOG.exception(
+                        "Policy driver '%(name)s' failed in %(method)s ",
+                        "with sqlalchemy.exc.InvalidRequestError",
+                        {'name': driver.name, 'method': method_name})
+                    raise oslo_db_excp.RetryRequest(e)
                 else:
                     error = True
                     # We are eating a non-GBP/non-Neutron exception here
