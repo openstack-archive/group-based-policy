@@ -749,7 +749,7 @@ class ChainMappingDriver(api.PolicyDriver, local_api.LocalAPI,
                     key = service_parameter.get("name")
                     servicepolicy_ptg_ip_map = (
                         self._get_ptg_policy_ipaddress_mapping(
-                            session, provider_ptg_id))
+                            context._plugin_context, provider_ptg_id))
                     servicepolicy_ip = servicepolicy_ptg_ip_map.get(
                                                         "ipaddress")
                     config_param_values[key] = servicepolicy_ip
@@ -757,7 +757,7 @@ class ChainMappingDriver(api.PolicyDriver, local_api.LocalAPI,
                     key = service_parameter.get("name")
                     fip_maps = (
                         self._get_ptg_policy_fip_mapping(
-                            context._plugin_context.session,
+                            context._plugin_context,
                             provider_ptg_id))
                     servicepolicy_fip_ids = []
                     for fip_map in fip_maps:
